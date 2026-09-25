@@ -2,8 +2,8 @@
   "source": {
     "repository": "knit-next",
     "path": "vectors/keyed-v1.json",
-    "commit": "02051b64256dda4ee84ea58a5be884e334b0b3cf",
-    "uncommitted": true,
+    "commit": "1f3befcdd389cd6872575a7621d3e72d179f9156",
+    "uncommitted": false,
     "sha256": "ff4911ef7aeb1afdad3dc32ede7ac48c184273a7199718ce2ac33e6155bd0c54"
   },
   "about": "Keyed vectors: two fixed identities, the frames Alice signs, a v1 DM she seals to Bob, their safety number, and the link records and advert a peer reads first. KeyedVectorTest checks them. See vectors/README.md.",

@@ -1,6 +1,7 @@
 // The few BlueZ socket definitions KnitBlueZ needs, written out from the kernel ABI so the build does not
-// depend on libbluetooth-dev. Linux only; empty elsewhere. Values are checked against a live adapter in the
-// P4 radio spike before anything relies on them.
+// depend on libbluetooth-dev. Linux only; empty elsewhere. Spike (e) checked them against hci1 on
+// 2026-09-25 (.agents/context/linux-peer.md): the address size, the LE address type, a dynamic PSM at
+// BT_SECURITY_LOW, and BT_MODE reading back LE flow control.
 #ifndef KNIT_BLUETOOTH_SHIM_H
 #define KNIT_BLUETOOTH_SHIM_H
 

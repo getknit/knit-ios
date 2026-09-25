@@ -6,11 +6,9 @@
     python3 scripts/sync-vectors.py --knit-next PATH # another checkout or worktree
     python3 scripts/sync-vectors.py --export         # copy Tests/Vectors/ios-emitted-v1.json into knit-next
 
-knit-next keeps its vectors in `vectors/` (companion change A2). `wire-v1.json` holds the codec fixtures and
+knit-next keeps its vectors in `vectors/` (its ADR 2026-09.fzh7). `wire-v1.json` holds the codec fixtures and
 the bundle probe, and `keyed-v1.json` holds fixed identities, their signed frames, a sealed DM, the safety
-number, the link records and an advert. Both are copied into `Tests/Vectors/` under the same names. A
-checkout from before A2 has no `vectors/`: the codec fixtures then come from the inline map in
-`GoldenVectorTest.kt`, and there are no keyed vectors to copy.
+number, the link records and an advert. Both are copied into `Tests/Vectors/` under the same names.
 
 `Sources/KnitCrypto/AliasWords.swift` is generated from `identity/AliasWords.kt`. If the lists differ by one
 word, the two platforms show different names for the same person.
@@ -35,16 +33,10 @@ VECTORS = ROOT / "Tests" / "Vectors"
 WIRE = "wire-v1.json"
 KEYED = "keyed-v1.json"
 EMITTED = "ios-emitted-v1.json"
-LEGACY_SOURCE = Path("app/src/test/java/app/getknit/knit/mesh/protocol/GoldenVectorTest.kt")
 ALIAS_OUTPUT = ROOT / "Sources" / "KnitCrypto" / "AliasWords.swift"
 ALIAS_SOURCE = Path("app/src/main/java/app/getknit/knit/identity/AliasWords.kt")
 ALIAS_LISTS = (("ALIAS_ADVERBS", "adverbs"), ("ALIAS_ADJECTIVES", "adjectives"), ("ALIAS_NOUNS", "nouns"))
 LINE_LIMIT = 132
-
-ENTRY = re.compile(r'"(\w+)"\s+to\s*((?:"[0-9a-f]*"\s*\+?\s*)+)')
-LITERAL = re.compile(r'"([0-9a-f]*)"')
-CONSTANT = re.compile(r'const val (\w+)\s*=\s*((?:"[^"]*"\s*\+?\s*)+)')
-
 
 def git(knit_next: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(knit_next), *args], text=True).strip()
@@ -60,22 +52,11 @@ def provenance(knit_next: Path, path: Path) -> dict:
     }
 
 
-def legacy_wire(knit_next: Path) -> dict:
-    """The codec fixtures from a knit-next checkout that predates `vectors/`."""
-    kotlin = (knit_next / LEGACY_SOURCE).read_text(encoding="utf-8")
-    start = kotlin.index("val EXPECTED")
-    end = kotlin.index("const val BUNDLE_ENCODED")
-    vectors = {name: "".join(LITERAL.findall(body)) for name, body in ENTRY.findall(kotlin[start:end])}
-    constants = {name: "".join(re.findall(r'"([^"]*)"', body)) for name, body in CONSTANT.findall(kotlin[end:])}
-    bundle = {"encoded": constants["BUNDLE_ENCODED"], "nodeId": constants["BUNDLE_NODE_ID"]}
-    return {"source": provenance(knit_next, LEGACY_SOURCE), "vectors": vectors, "bundle": bundle}
-
-
-def copied(knit_next: Path, name: str) -> dict | None:
-    """A file from knit-next's `vectors/`, with its provenance first, or `None` when there is no such file."""
+def copied(knit_next: Path, name: str) -> dict:
+    """A file from knit-next's `vectors/`, with its provenance first."""
     path = Path("vectors") / name
     if not (knit_next / path).is_file():
-        return None
+        sys.exit(f"sync-vectors: {knit_next / path} is missing; is {knit_next} a knit-next checkout from 1f3befcd on?")
     content = json.loads((knit_next / path).read_text(encoding="utf-8"))
     return {"source": provenance(knit_next, path), **content}
 
@@ -146,7 +127,7 @@ def main() -> int:
         print(f"sync-vectors: copied {EMITTED} to {target}")
         return 0
 
-    wire = copied(args.knit_next, WIRE) or legacy_wire(args.knit_next)
+    wire = copied(args.knit_next, WIRE)
     if not wire["vectors"]:
         sys.exit("sync-vectors: found no codec vectors; has knit-next changed shape?")
     keyed = copied(args.knit_next, KEYED)
@@ -154,7 +135,7 @@ def main() -> int:
     commit = wire["source"]["commit"][:8]
 
     if args.check:
-        stale = [name for name, fresh in ((WIRE, wire), (KEYED, keyed)) if fresh is not None and is_stale(name, fresh)]
+        stale = [name for name, fresh in ((WIRE, wire), (KEYED, keyed)) if is_stale(name, fresh)]
         # The generated header names a commit; compare the lists, not the stamp.
         if ALIAS_OUTPUT.read_text(encoding="utf-8").split("\n", 1)[1] != words.split("\n", 1)[1]:
             stale.append(ALIAS_OUTPUT.name)
@@ -165,14 +146,11 @@ def main() -> int:
         return 0
 
     VECTORS.mkdir(parents=True, exist_ok=True)
-    written = []
     for name, content in ((WIRE, wire), (KEYED, keyed)):
-        if content is not None:
-            (VECTORS / name).write_text(render(content), encoding="utf-8")
-            written.append(name)
+        (VECTORS / name).write_text(render(content), encoding="utf-8")
     ALIAS_OUTPUT.write_text(words, encoding="utf-8")
-    written.append(ALIAS_OUTPUT.name)
-    uncommitted = [name for name, content in ((WIRE, wire), (KEYED, keyed)) if content and content["source"]["uncommitted"]]
+    written = [WIRE, KEYED, ALIAS_OUTPUT.name]
+    uncommitted = [name for name, content in ((WIRE, wire), (KEYED, keyed)) if content["source"]["uncommitted"]]
     note = f" (uncommitted there: {', '.join(uncommitted)})" if uncommitted else ""
     print(f"sync-vectors: wrote {', '.join(written)} from knit-next {commit}{note}")
     return 0

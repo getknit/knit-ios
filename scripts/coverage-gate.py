@@ -93,6 +93,12 @@ def main() -> int:
         if args.ratchet:
             floors[target] = max(floor or 0, math.floor(percent))
 
+    covered_all = sum(covered for covered, _ in totals.values())
+    count_all = sum(count for _, count in totals.values())
+    if count_all:
+        # test:coverage's `coverage:` regex reads this line for the MR widget and the project's coverage badge.
+        print(f"coverage-gate: total line coverage {100.0 * covered_all / count_all:.1f}% ({covered_all}/{count_all})")
+
     if args.ratchet:
         args.floors.write_text(json.dumps(dict(sorted(floors.items())), indent=2) + "\n")
         print(f"coverage-gate: floors written to {args.floors}")

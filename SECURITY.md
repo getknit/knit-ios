@@ -26,8 +26,8 @@ reports:
   scheme (v1): whoever later obtains your identity key can read every direct message sent to it. The epoch
   ratchet that Knit for Android already runs is the next milestone. Until then, delivery ticks and
   reactions on direct messages also travel in the clear.
-- **The Bluetooth link itself is not encrypted.** Trust comes from a signature on every frame and from the
-  end-to-end layer on direct messages, not from the radio.
+- **The Bluetooth link itself is not encrypted.** Trust comes from the signature Knit checks on every frame
+  it acts on, and from end-to-end encryption on direct messages, not from the radio.
 - **Direct messages flood the mesh.** Only the recipient can open one, but relaying phones can see who is
   writing to whom, and how often.
 - **Keys are trusted on first sight.** Someone relaying a substituted key before your first contact with a

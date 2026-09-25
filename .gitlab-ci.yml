@@ -48,6 +48,9 @@ variables:
     - unzip -q -o -d /usr/local/bin /tmp/swiftlint.zip swiftlint
 
 .local:
+  # A shell job on the maintainer's desktop has no container limits. The runner takes one job at a time
+  # (`concurrent = 1`, .agents/context/toolchain.md), and check.sh and fuzz.sh cap their own parallelism and
+  # priority.
   tags:
     - knit-local
 
@@ -116,6 +119,8 @@ test:coverage:
   needs: [build:linux]
   script:
     - scripts/check.sh coverage
+  # The total that scripts/coverage-gate.py prints, for the MR widget and the project's coverage badge.
+  coverage: '/total line coverage \d+\.\d+%/'
 
 test:tsan:
   extends: .local

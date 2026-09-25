@@ -13,6 +13,15 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
+# This machine runs a lot besides Knit, so every build here is a considerate neighbour: at most $SWIFT_JOBS
+# compilers at a time, at low CPU priority, the way linux-host's CI containers are capped (.agents/rules/build-and-test.md).
+# Raise them for one run with SWIFT_JOBS=16 KNIT_NICE=0 when the machine is otherwise idle.
+swift_jobs=${SWIFT_JOBS:-8}
+jobs=(-j "$swift_jobs")
+if [ "${KNIT_NICE:-10}" != 0 ]; then
+	renice -n "${KNIT_NICE:-10}" -p $$ >/dev/null 2>&1 || true
+fi
+
 swift_sources=(Package.swift Sources Tests Fuzz/Package.swift Fuzz/Sources)
 pure_targets=(Sources/KnitWire Sources/KnitCrypto Sources/KnitStore Sources/KnitMesh Sources/KnitAppCore)
 
@@ -38,31 +47,31 @@ gate_lint() {
 
 gate_build() {
 	step "swift build (warnings are errors)"
-	swift build --build-tests --only-use-versions-from-resolved-file
+	swift build "${jobs[@]}" --build-tests --only-use-versions-from-resolved-file
 }
 
 gate_test() {
 	step "swift test"
 	# Swift Testing appends -swift-testing to the name: CI reads .build/xunit-swift-testing.xml.
-	swift test --disable-xctest --only-use-versions-from-resolved-file --xunit-output .build/xunit.xml
+	swift test "${jobs[@]}" --disable-xctest --only-use-versions-from-resolved-file --xunit-output .build/xunit.xml
 }
 
 gate_coverage() {
 	step "coverage floors"
-	swift test --disable-xctest --only-use-versions-from-resolved-file --enable-code-coverage --scratch-path .build-cov
+	swift test "${jobs[@]}" --disable-xctest --only-use-versions-from-resolved-file --enable-code-coverage --scratch-path .build-cov
 	python3 scripts/coverage-gate.py --scratch-path .build-cov
 }
 
 gate_tsan() {
 	step "swift test --sanitize=thread"
-	swift test --disable-xctest --only-use-versions-from-resolved-file --sanitize=thread --scratch-path .build-tsan
+	swift test "${jobs[@]}" --disable-xctest --only-use-versions-from-resolved-file --sanitize=thread --scratch-path .build-tsan
 }
 
 gate_asan() {
 	step "swift test --sanitize=address"
 	# The suppressions file hides one Swift Testing leak and says why; keep every other leak fatal.
 	LSAN_OPTIONS="suppressions=$PWD/scripts/lsan-suppressions.txt:print_suppressions=0" \
-		swift test --disable-xctest --only-use-versions-from-resolved-file --sanitize=address --scratch-path .build-asan
+		swift test "${jobs[@]}" --disable-xctest --only-use-versions-from-resolved-file --sanitize=address --scratch-path .build-asan
 }
 
 gate_analyze() {
@@ -70,7 +79,7 @@ gate_analyze() {
 	# The compiler log must come from a fresh build, or SwiftLint sees no invocations to analyze.
 	rm -rf .build-analyze
 	local log=.build-analyze.log
-	swift build -v --only-use-versions-from-resolved-file --scratch-path .build-analyze >"$log" 2>&1
+	swift build "${jobs[@]}" -v --only-use-versions-from-resolved-file --scratch-path .build-analyze >"$log" 2>&1
 	# Apple-only targets compile to empty modules here, and SourceKit reports their SwiftUI and CoreBluetooth
 	# imports as noise; the Mac runner analyzes the whole tree.
 	local output status=0
@@ -91,7 +100,7 @@ gate_periphery() {
 	fi
 	# Swift Build writes the index store to .build/out, which Periphery does not look for by default. The
 	# store also holds xtool's iOS build, so Apple-only code is visible when `check.sh ios` ran first.
-	swift build --build-tests --only-use-versions-from-resolved-file
+	swift build "${jobs[@]}" --build-tests --only-use-versions-from-resolved-file
 	# Advisory on Linux until the Mac runner exists (PERIPHERY_STRICT=1 there): a declaration that only
 	# Apple-only code uses reads as unused when the iOS build has not been indexed.
 	periphery scan --quiet --skip-build --index-store-path .build/out --retain-public ${PERIPHERY_STRICT:+--strict}
@@ -110,7 +119,12 @@ gate_lintorama() {
 gate_ios() {
 	step "xtool dev build (arm64-apple-ios)"
 	scripts/xtool-sdk-fixup.sh --check
-	xtool dev build
+	# xtool takes no -j, so its compilers share $swift_jobs cores instead of spreading over all of them.
+	local cpus=()
+	if command -v taskset >/dev/null 2>&1 && [ "$(nproc)" -gt "$swift_jobs" ]; then
+		cpus=(taskset -c "0-$((swift_jobs - 1))")
+	fi
+	"${cpus[@]}" xtool dev build
 }
 
 run() {

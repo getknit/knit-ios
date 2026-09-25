@@ -11,10 +11,15 @@
 set -euo pipefail
 
 seconds="${1:-60}"
+# Considerate on a shared machine, like scripts/check.sh: capped compiler parallelism, low CPU priority.
+jobs=(-j "${SWIFT_JOBS:-8}")
+if [ "${KNIT_NICE:-10}" != 0 ]; then
+	renice -n "${KNIT_NICE:-10}" -p $$ >/dev/null 2>&1 || true
+fi
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
-swift build --package-path Fuzz --scratch-path .build-fuzz \
+swift build "${jobs[@]}" --package-path Fuzz --scratch-path .build-fuzz \
 	-Xswiftc -sanitize=fuzzer,address -Xswiftc -parse-as-library
 products=$(swift build --package-path Fuzz --scratch-path .build-fuzz --show-bin-path \
 	-Xswiftc -sanitize=fuzzer,address -Xswiftc -parse-as-library)

@@ -11,7 +11,7 @@ one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 | `KnitWire` | all | CBOR (kotlinx profile), wire types, registries, link records, HELLO/DIGEST, advert, NodeId/FrameId/FrameKey, UTF-16 limits, FNV fold | P1 |
 | `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM seal/open, safety number, alias words | P2 |
 | `KnitStore` | all | repository protocols and an in-memory store | P3 |
-| `KnitStoreSQL` | Apple, Linux if GRDB builds there | GRDB schema and migrations | P5 |
+| `KnitStoreSQL` | all (spike a) | GRDB schema and migrations | P5 |
 | `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol, router, SeenSet, custody, sync, receipts, key recovery, profiles, conversations, policies | P3 |
 | `KnitAppCore` | all | `@Observable` view models, UI state, the copy catalog | P6 |
 | `KnitBLE` | Apple | the CoreBluetooth `Radio`: central, peripheral with the GATT payload, L2CAP streams, restoration | P6 |

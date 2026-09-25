@@ -34,8 +34,9 @@ tree, so switching between them never rebuilds the plain debug tree.
   `--check` fails when a copy is stale, and `--knit-next PATH` reads another checkout or worktree. Run it
   whenever the knit-next pin moves.
 - **Vectors this port emits:** `KNIT_WRITE_VECTORS=1 swift test --filter EmittedVectorTests` rewrites
-  `Tests/Vectors/ios-emitted-v1.json`, and `scripts/sync-vectors.py --export` copies it into knit-next,
-  where `IosEmittedVectorTest` checks it with Tink and kotlinx.
+  `Tests/Vectors/ios-emitted-v1.json`, keeping every committed frame that is still current, so a rewrite
+  moves only what changed. `scripts/sync-vectors.py --export` copies it into knit-next, where
+  `IosEmittedVectorTest` checks it with Tink and kotlinx.
 - **Sanitizer and analyzer exceptions:** `scripts/lsan-suppressions.txt` hides one Swift Testing leak from
   the ASan gate, and `scripts/swiftlint-analyze-linux.yml` keeps `import Foundation` from reading as unused
   on Linux. Each file says why, and when to delete it.

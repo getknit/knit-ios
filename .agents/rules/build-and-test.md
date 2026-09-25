@@ -1,5 +1,10 @@
 # Building and testing
 
+- **Be a considerate neighbour.** This machine runs a lot besides Knit. `check.sh` and `fuzz.sh` cap the
+  compilers at `SWIFT_JOBS` (8) and run at nice 10, and the CI runners are capped too (linux-host: two jobs of 8 GB
+  and 8 cores; knit-local: one job). Give new scripts and CI jobs the same caps, never raise a runner's
+  `concurrent`, run the one gate you need while iterating, and save `check.sh all` and long runs (ten
+  minutes of fuzzing, knit-next's whole Gradle suite) for the end of a change.
 - **Before pushing,** `scripts/check.sh fast` passes. The `pre-push` hook runs it.
 - **After touching `KnitWire`, `KnitCrypto` or `KnitMesh`,** `scripts/check.sh all` passes, sanitizers
   included. Wire code also gets `scripts/fuzz.sh`.
