@@ -79,8 +79,12 @@ let package = Package(
             dependencies: ["KnitCrypto", "KnitWire", "KnitTestSupport", crypto],
             swiftSettings: strict
         ),
-        .testTarget(name: "KnitStoreTests", dependencies: ["KnitStore"], swiftSettings: strict),
-        .testTarget(name: "KnitMeshTests", dependencies: ["KnitMesh", "KnitWire", "KnitTestSupport"], swiftSettings: strict),
+        .testTarget(name: "KnitStoreTests", dependencies: ["KnitStore", "KnitWire", "KnitTestSupport"], swiftSettings: strict),
+        .testTarget(
+            name: "KnitMeshTests",
+            dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
+            swiftSettings: strict
+        ),
         .testTarget(name: "KnitAppCoreTests", dependencies: ["KnitAppCore"], swiftSettings: strict),
         .testTarget(name: "RepoConventionTests", dependencies: [crypto], swiftSettings: strict),
     ]

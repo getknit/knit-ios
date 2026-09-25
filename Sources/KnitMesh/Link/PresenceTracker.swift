@@ -110,6 +110,15 @@ public struct PresenceTracker: Sendable {
         entries[nodeId]?.advert
     }
 
+    /// Whether `nodeId` was seen within the linger window: whether this node has sighted it, for the link
+    /// layer's admission rule.
+    public func isPresent(_ nodeId: NodeId, now: Int64) -> Bool {
+        guard let entry = entries[nodeId] else {
+            return false
+        }
+        return now - entry.lastSeenAt <= configuration.lingerMilliseconds
+    }
+
     /// `nodeId`'s smoothed RSSI, or `nil` if unseen.
     public func smoothedRssi(of nodeId: NodeId) -> Double? {
         entries[nodeId]?.smoothedRssi

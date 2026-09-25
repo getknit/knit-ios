@@ -14,12 +14,13 @@ ladder, not the first.
    `EmittedVectorTests` writes frames this port signs, and knit-next's `IosEmittedVectorTest` verifies them
    with Tink and re-encodes them with kotlinx. Signatures are verified, never compared: CryptoKit
    randomizes Ed25519 signatures and swift-crypto on Linux does not.
-3. **The mesh lab (P3).** Several complete nodes in one process over `LabTransport`/`LabRadio`, with a
-   `LabClock` that moves decisions rather than schedulers. A change to what two nodes exchange gets a lab
-   scenario that ends in `assertConverged`. It is modelled on knit-next's `mesh/lab/`, and the
-   mesh-lab-reviewer persona arrives with it.
-4. **Chaos.** Seeded delays at the same seams, with a heavy tail. Fixed seeds are blocking in CI, and a
-   random seed is advisory.
+3. **The engine and the link layer, one node at a time.** `MeshEngine` and `LinkManager` are synchronous
+   (ADR 2026-09.gq84), so a test hands one a `ManualClock`, a `RecordingTransport` or a `FakeRadio`, feeds it
+   frames signed by fixed `TestPeer` keys, and moves the clock itself to fire timers. `MeshTests` drives the
+   `Mesh` actor the same way and awaits the fake radio's activity stream. Nothing sleeps.
+4. **The mesh lab: deferred.** Multi-node scenarios with `assertConverged`, and seeded chaos, were skipped
+   for now at the maintainer's call (`.agents/memory/roadmap.md`). The synchronous engine is what would let
+   a later lab run deterministically from a seed.
 5. **Fuzzing.** Every parser that reads bytes off the radio has a libFuzzer harness in `Fuzz/`. A crash is
    a finding by construction; its input joins the corpus once the fix lands.
 6. **Over the air, from Linux (P4).** `knit-peer` on `hci1` against Android phones running Knit: checklist

@@ -1,8 +1,11 @@
+import KnitWire
+
 /// Keys with a millisecond stamp each, evicted oldest-inserted first once there are more than `capacity`.
 ///
 /// This is Kotlin's insertion-ordered `LinkedHashMap` with `removeEldestEntry`, which knit-next's `SeenSet` is
 /// built on. Restamping a key keeps its place in line; removing it and inserting it again sends it to the back.
-/// Removed keys leave stale entries in the queue, which eviction skips and compaction drops.
+/// Removed keys leave stale entries in the queue, which eviction skips and compaction drops. Keys compare by
+/// their bytes, as Kotlin's do (``ExactKey``).
 internal struct StampedKeys: Sendable {
     /// Consumed queue entries are dropped once they are more than half the queue.
     private static let compactionDivisor = 2
@@ -13,21 +16,22 @@ internal struct StampedKeys: Sendable {
     }
 
     private let capacity: Int
-    private var entries: [String: Entry] = [:]
-    private var queue: [(key: String, sequence: Int)] = []
+    private var entries: [ExactKey: Entry] = [:]
+    private var queue: [(key: ExactKey, sequence: Int)] = []
     private var head = 0
     private var nextSequence = 0
 
     init(capacity: Int) {
-        precondition(capacity > 0, "a stamped key set holds at least one key")
-        self.capacity = capacity
+        // A set that holds nothing would evict every key as it arrived.
+        self.capacity = max(1, capacity)
     }
 
     /// The key's stamp, or `nil` when the key is not held.
-    subscript(key: String) -> Int64? { entries[key]?.stamp }
+    subscript(key: String) -> Int64? { entries[ExactKey(key)]?.stamp }
 
     /// Stamps `key`, appending it when it is new and evicting the oldest-inserted key past `capacity`.
-    mutating func stamp(_ key: String, at stamp: Int64) {
+    mutating func stamp(_ text: String, at stamp: Int64) {
+        let key = ExactKey(text)
         if entries[key] != nil {
             entries[key]?.stamp = stamp
             return
@@ -42,7 +46,7 @@ internal struct StampedKeys: Sendable {
 
     /// Drops `key`, if it is held.
     mutating func remove(_ key: String) {
-        entries[key] = nil
+        entries[ExactKey(key)] = nil
     }
 
     private mutating func evictOldest() {

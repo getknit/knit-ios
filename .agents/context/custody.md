@@ -96,3 +96,16 @@ publish it honestly.
   - refuse a different key for a pinned id;
   - take presentation fields last-writer-wins on `version ?: sentAt`, clamped to now plus 5 minutes;
   - clamp the name to 32 and the status to 100 UTF-16 units.
+
+## In this port
+
+- **Where it lives:** the router is `KnitMesh/Router/Router.swift`, and the custody rules are
+  `KnitStore/Custody/CustodyRules.swift`, which every store applies. `KnitMesh/Custody/CustodySync.swift`
+  decides what to carry and serve, `KnitMesh/Receipts/AckSync.swift` owes the room ticks, and
+  `KnitMesh/Recovery/` holds key requests and parked frames (ADR 2026-09.p6nb).
+- **Ids compare by their bytes** (`ExactKey`), never by Swift's `String` equality (ADR 2026-09.jc2x).
+- **Where the iPhone differs from Android, all of it delivery-side, none of it custody:**
+  - a cleartext DM is dropped, not shown;
+  - a `blobreq` is ignored rather than asked onward, since the MVP holds no blobs;
+  - group frames are carried and relayed, never shown;
+  - every receipt and room tick is cleartext, because this build cannot seal one.

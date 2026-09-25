@@ -10,7 +10,7 @@ one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 | --- | --- | --- | --- |
 | `KnitWire` | all | CBOR (kotlinx profile), wire types, registries, link records, HELLO/DIGEST, advert, NodeId/FrameId/FrameKey, UTF-16 limits, FNV fold | P1 |
 | `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM seal/open, safety number, alias words | P2 |
-| `KnitStore` | all | repository protocols and an in-memory store | P3 |
+| `KnitStore` | all | repository protocols, in-memory stores, and the custody rules every store applies | P3 |
 | `KnitStoreSQL` | all (spike a) | GRDB schema and migrations | P5 |
 | `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol, router, SeenSet, custody, sync, receipts, key recovery, profiles, conversations, policies | P3 |
 | `KnitAppCore` | all | `@Observable` view models, UI state, the copy catalog | P6 |
@@ -18,7 +18,7 @@ one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 | `Knit` | Apple | SwiftUI, `@main`, Keychain, notifications, the composition root | P6 |
 | `KnitBlueZ`, `CDBus`, `CBluetoothShim` | Linux | the BlueZ `Radio`: D-Bus advert, scan and GATT through libdbus-1, LE CoC sockets | P4 |
 | `knit-peer` | Linux (a stub `main` elsewhere) | the headless peer with a JSON-lines control interface | P4 |
-| `KnitLabSupport` | all | LabTransport, LabRadio, LabClock, MeshLab | P3 |
+| `KnitLabSupport` | all | LabTransport, LabRadio, LabClock, MeshLab: deferred (`.agents/memory/roadmap.md`) | later |
 
 Platform-only code sits behind `#if canImport(CoreBluetooth)`, `#if canImport(SwiftUI)`, `#if os(iOS)` or
 `#if os(Linux)`, so `swift build` works everywhere and an Apple-only target compiles to an empty module on
@@ -55,7 +55,9 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
 ## Concurrency
 
 - **Language mode:** Swift 6, with complete concurrency checking.
-- **Actors and streams:** the mesh engine is an actor, and transports report events as AsyncStreams.
+- **One actor, synchronous state machines:** `MeshEngine` and `LinkManager` are synchronous classes that keep
+  their timers as deadlines. The `Mesh` actor owns both, feeds them what the `Radio` reports through its
+  AsyncStream, and runs one timer task aimed at the earliest deadline (ADR 2026-09.gq84).
 - **Radio threading:** CoreBluetooth delegates run on one serial queue. L2CAP `Stream`s run on a dedicated
   run-loop thread inside one class.
 - **Locks:** `Synchronization.Mutex` (iOS 18) where a lock is needed. A database transaction sits outside

@@ -1,0 +1,86 @@
+public import KnitStore
+public import KnitWire
+
+/// Store-and-forward over a link (`ForwardSync.kt`): which frames this node takes into custody, what it serves a
+/// neighbour whose digest lists what it holds, and what a receipt purges.
+///
+/// The link-up and 60-second digest exchange is the whole protocol. Each side sends the ids of every live frame
+/// it carries; on receiving the other's, it serves every live frame the list omits. Android serves custody only
+/// in answer to a digest, so a node that never sends one never gets back-filled (`.agents/context/custody.md`).
+public struct CustodySync: Sendable {
+    /// How long a purged DM's id stays tombstoned: the custody TTL, so the tombstone outlives every copy still
+    /// in flight (`ACK_TOMBSTONE_TTL_MS`).
+    public static let tombstoneMilliseconds: Int64 = 86_400_000
+
+    /// Ids purged by a receipt, on the wall clock, so a copy an unvaccinated peer re-serves is not taken again.
+    private var tombstones: SeenSet
+
+    /// Custody bookkeeping with knit-next's tombstone window unless told otherwise.
+    public init(tombstoneMilliseconds: Int64 = Self.tombstoneMilliseconds) {
+        tombstones = SeenSet(windowMilliseconds: tombstoneMilliseconds)
+    }
+
+    /// Takes a relayed frame into custody (`ForwardSync.onSeen`) if `authenticate` says so, and answers whether it
+    /// was stored just now.
+    ///
+    /// Only custodial types are carried, never an id already held or tombstoned. The store applies the TTL and the
+    /// quotas, and refuses a frame that is dead on arrival or dated too far ahead. Times are on the wall clock.
+    public func carry(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64, authenticate: () -> Bool) -> Bool {
+        guard admits(frame, in: store, now: now), authenticate() else {
+            return false
+        }
+        return store.store(frame, origin: .relayed, now: now)
+    }
+
+    /// Takes a frame of ours into custody (ORIGIN_SELF): trivially authentic, and under the same quotas as
+    /// everyone's, so every node keeps the same newest frames.
+    public func carryOwn(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64) -> Bool {
+        guard admits(frame, in: store, now: now) else {
+            return false
+        }
+        return store.store(frame, origin: .own, now: now)
+    }
+
+    /// Every live frame a neighbour's digest omits, each in a fresh ``WireEnvelope`` around its verbatim bytes,
+    /// with a full hop budget (`ForwardSync.onDigest`).
+    ///
+    /// A frame the peer authored is served too when its digest lacks it: that is how a node whose custody was
+    /// wiped gets its own frames back. A group frame goes only to a member of its roster.
+    public func missing(from theirIds: [String], for peer: NodeId, in store: some CustodyStore, now: Int64) -> [WireEnvelope] {
+        let held = Set(theirIds.map(ExactKey.init))
+        let peerKey = ExactKey(peer.string)
+        return store.liveFrames(now: now).compactMap { frame in
+            guard !held.contains(ExactKey(frame.envelope.id)) else {
+                return nil
+            }
+            if let members = frame.envelope.group?.members, !members.contains(where: { ExactKey($0) == peerKey }) {
+                return nil
+            }
+            return frame.reserved
+        }
+    }
+
+    /// Applies a verified receipt for `ackId` from `sender` (`ForwardSync.onAck`): the carried DM is purged, and its
+    /// id tombstoned, only when `sender` is that DM's recipient, so a forged receipt cannot evict an undelivered
+    /// message. A room or group frame names no recipient, so nothing purges it but its TTL. Answers whether
+    /// anything was purged.
+    @discardableResult
+    public mutating func acknowledge(_ ackId: String, from sender: String, in store: some CustodyStore, now: Int64) -> Bool {
+        guard let recipient = store.recipient(of: ackId), ExactKey(recipient) == ExactKey(sender) else {
+            return false
+        }
+        store.remove(ackId)
+        _ = tombstones.insert(ackId, now: now)
+        return true
+    }
+
+    private func admits(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64) -> Bool {
+        let id = frame.envelope.id
+        return frame.envelope.type.isCustodial && !tombstones.contains(id, now: now) && !store.contains(id)
+    }
+
+    /// Whether `ackId` was purged by its recipient within the window.
+    public func isTombstoned(_ ackId: String, now: Int64) -> Bool {
+        tombstones.contains(ackId, now: now)
+    }
+}

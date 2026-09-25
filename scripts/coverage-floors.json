@@ -4,8 +4,8 @@
   "KnitBLE": 0,
   "KnitBlueZ": 0,
   "KnitCrypto": 97,
-  "KnitMesh": 98,
-  "KnitStore": 0,
+  "KnitMesh": 100,
+  "KnitStore": 100,
   "KnitWire": 98,
   "knit-peer": 0
 }

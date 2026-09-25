@@ -45,7 +45,13 @@ public enum FrameKey {
 
     /// The key for a frame.
     public static func of(_ wire: WireEnvelope, _ envelope: RelayEnvelope) -> String {
-        wire.sig.isEmpty ? "u:\(envelope.id)" : Hex.encode(Array(wire.sig.prefix(signatureBytes)))
+        ofSigned(wire) ?? "u:\(envelope.id)"
+    }
+
+    /// The key for a frame whose envelope was not decoded, or `nil` when it is unsigned (`FrameKey.ofSigned`). An
+    /// unsigned frame is point to point and never fanned out, so a send skips the memo for it.
+    public static func ofSigned(_ wire: WireEnvelope) -> String? {
+        wire.sig.isEmpty ? nil : Hex.encode(Array(wire.sig.prefix(signatureBytes)))
     }
 }
 

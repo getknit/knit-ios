@@ -59,7 +59,7 @@ Each phase ends when its exit check passes. P7 starts the day the Mac arrives, w
 | P0 Foundation | repo, dotagents, ADRs, package skeleton, gates, CI, spikes | pipeline green on the skeleton; `xtool dev build` yields `Knit.app` |
 | P1 Wire | `KnitWire`: CBOR, wire types, link records, advert, ids, fuzz targets | all 57 goldens pass; each fuzzer runs 10 minutes clean |
 | P2 Crypto | `KnitCrypto`: bundle, node id, signatures, v1 DMs, safety number, alias | RFC and golden vectors pass, including A2's keyed vectors |
-| P3 Mesh | `KnitMesh`, the lab, `LinkManager` | lab ×3 and 20 chaos runs clean; mesh-lab-reviewer reports CLEAN |
+| P3 Mesh | `KnitMesh`, `KnitStore`, `LinkManager` | ported suites pass under TSan and ASan; coverage floors hold (the lab is deferred) |
 | P4 Linux peer | `KnitBlueZ`, `knit-peer` on hci1 | checklist L passes |
 | P5 Store | `KnitStoreSQL` on GRDB | schema v1 frozen; migrations tested |
 | P6 App | SwiftUI screens, `KnitBLE`, Keychain, notifications | `xtool dev build` green in CI; AppCore tests pass |

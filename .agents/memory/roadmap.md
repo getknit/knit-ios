@@ -19,10 +19,18 @@ explicit direction.** Update this file in the change that ships an item.
   knit-next golden. Line coverage is 97 %. A2's keyed vectors pass, the safety number among them, and
   knit-next verifies and opens the frames this port emits. Done: A2 merged, and the vectors are pinned to
   knit-next `1f3befcd`.
-- **P3, the mesh engine (`KnitMesh`):** started. In so far: the seen set, the room-post ingress budget, link
-  crossings, the presence tracker, and the promotion and connect-backoff policies, each with its knit-next
-  tests ported. Next: the custody store, the router, the `LinkManager` behind a `Radio` protocol, sync,
-  profiles, receipts and key recovery, then the lab.
+- **P3, the mesh engine (`KnitMesh`, `KnitStore`):** done on 2026-09-25, pending the maintainer's review.
+  - **Link layer:** the `LinkManager` behind a `Radio` protocol, with A1's admission rules (ADR 2026-09.6es2).
+  - **Router and custody:** flooding and custody under Android's quotas, with the rules in one `CustodyRules`
+    the SQL store will share (ADR 2026-09.p6nb).
+  - **The rest of the engine:** profiles, room ticks and DM receipts, key recovery with parking, message
+    requests, and the pending-key outbox.
+  - **Engine and driver:** the engine is synchronous behind one `Mesh` actor (ADR 2026-09.gq84), and wire ids
+    key every map by their bytes (ADR 2026-09.jc2x).
+  - **Tests:** the MVP cases of knit-next's `MeshRouterTest`, `ForwardSyncTest`, `ForwardRepositoryTest`,
+    `ForwardDaoTest`, `AckSyncTest`, `KeyExchangeTest` and `PendingInboundTest` are ported. Line coverage is
+    100 % in both targets, and the suite is clean under TSan and ASan.
+  - **Still owed:** the mesh lab, deferred below; P3's exit is these gates instead.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted. It is needed
   before MVP acceptance and should land during P3 or P4. Not started.
 - **Companion change A2 in knit-next:** merged on 2026-09-25 as `0c0756f6` and `1f3befcd`. Done.
@@ -37,6 +45,11 @@ explicit direction.** Update this file in the change that ships an item.
 - **Companion change A3:** Android finds and dials iPhones.
 
 ## Deferred by design
+
+- **The mesh lab:** multi-node scenarios over a lab transport and radio, `assertConverged`, seeded chaos runs
+  and the mesh-lab-reviewer persona. The maintainer asked on 2026-09-25 to skip it for now, so P3 closed on
+  unit tests, coverage and both sanitizers. Because the engine is synchronous, a later lab could run
+  deterministically from a seed (ADR 2026-09.gq84).
 
 - **Message features:** avatars, attachments, reactions, replies, mentions and typing indicators.
 - **Groups,** with group keys and roster rules.

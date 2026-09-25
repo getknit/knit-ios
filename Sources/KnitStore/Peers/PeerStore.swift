@@ -1,0 +1,96 @@
+public import KnitWire
+import Synchronization
+
+/// A peer whose profile this node has pinned (`PeerEntity` in knit-next, the fields the MVP reads).
+///
+/// The key is pinned on the first profile whose key derives to the node id, and never changes after. The
+/// presentation fields follow the newest profile, ordered by ``updatedAt``.
+public struct PeerRecord: Sendable, Equatable {
+    /// The peer.
+    public var nodeId: NodeId
+    /// The display name, at most 32 UTF-16 units; empty shows the alias.
+    public var name: String
+    /// The status line, at most 100 UTF-16 units.
+    public var status: String
+    /// The pinned public key bundle, base64.
+    public var publicKey: String
+    /// The key-independent device tag, if the peer sent one.
+    public var deviceTag: String?
+    /// The peer's protocol version, from its profile.
+    public var protocolVersion: Int?
+    /// The peer's capability bits, from its signed profile: the copy that gates what we send.
+    public var capabilities: Int64?
+    /// The presentation watermark: the newest profile's `version`, or its `sentAt` when it has none, clamped to
+    /// five minutes past our clock.
+    public var updatedAt: Int64
+    /// Whether the user compared safety numbers and marked the peer verified.
+    public var verified: Bool
+    /// Whether the peer invites DMs from people it has not met.
+    public var openToChat: Bool
+
+    /// Makes a record.
+    public init(
+        nodeId: NodeId,
+        name: String,
+        status: String,
+        publicKey: String,
+        deviceTag: String? = nil,
+        protocolVersion: Int? = nil,
+        capabilities: Int64? = nil,
+        updatedAt: Int64,
+        verified: Bool = false,
+        openToChat: Bool = false
+    ) {
+        self.nodeId = nodeId
+        self.name = name
+        self.status = status
+        self.publicKey = publicKey
+        self.deviceTag = deviceTag
+        self.protocolVersion = protocolVersion
+        self.capabilities = capabilities
+        self.updatedAt = updatedAt
+        self.verified = verified
+        self.openToChat = openToChat
+    }
+}
+
+/// The pinned peers (`PeerRepository` in knit-next).
+public protocol PeerStore: AnyObject, Sendable {
+    /// The pinned peer, or `nil`.
+    func peer(_ nodeId: NodeId) -> PeerRecord?
+
+    /// Inserts or replaces a peer.
+    func upsert(_ peer: PeerRecord)
+
+    /// Every peer the user marked verified.
+    func verifiedNodeIds() -> Set<NodeId>
+
+    /// Every pinned peer, for the UI and diagnostics.
+    func allPeers() -> [PeerRecord]
+}
+
+/// A ``PeerStore`` in memory, safe to share across threads.
+public final class MemoryPeerStore: PeerStore {
+    private let peers = Mutex<[NodeId: PeerRecord]>([:])
+
+    /// An empty store.
+    public init() {
+        // Nothing to set up.
+    }
+
+    public func peer(_ nodeId: NodeId) -> PeerRecord? {
+        peers.withLock { $0[nodeId] }
+    }
+
+    public func upsert(_ peer: PeerRecord) {
+        peers.withLock { $0[peer.nodeId] = peer }
+    }
+
+    public func verifiedNodeIds() -> Set<NodeId> {
+        peers.withLock { Set($0.values.filter(\.verified).map(\.nodeId)) }
+    }
+
+    public func allPeers() -> [PeerRecord] {
+        peers.withLock { $0.values.sorted { $0.nodeId < $1.nodeId } }
+    }
+}

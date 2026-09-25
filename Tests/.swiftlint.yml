@@ -4,3 +4,4 @@ disabled_rules:
   - explicit_top_level_acl
   - missing_docs
   - no_magic_numbers
+  - discouraged_default_parameter  # fixture builders take defaults, as knit-next's test builders do

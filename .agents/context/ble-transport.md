@@ -127,3 +127,12 @@ radio.
   link.
 - **Nothing is encrypted at this layer.** Profiles, room posts and HELLOs are plaintext on the air, and DMs
   carry their own end-to-end encryption.
+
+## In this port
+
+`KnitMesh/Link/LinkManager.swift` applies these rules for every radio, and the radios only move bytes
+(ADR 2026-09.6es2). It keeps Android's numbers: 12 s of dwell at −90 dBm or better, six links with an 8 dB
+hysteresis and a 20 s hold, the 10 s × 2ⁿ backoff capped at 180 s, and the 5 s HELLO and 12 s connect
+timeouts. Its admission rule is A1's, which Android 2.7 does not have yet: it admits a dialer it never
+sighted whatever the order, lets such a dialer replace its own stale link, scores an unsighted link at
+−90 dBm, and keys links by channel, so one channel's teardown never touches another's.
