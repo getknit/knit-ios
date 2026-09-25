@@ -1,0 +1,7 @@
+# `.agents/memory/decisions.md` is a generated router (`python3 scripts/adr.py index`) whose only
+# churn is appended table rows, one per new ADR. Branches that each add a decision
+# conflict on that append every time, and the resolution is always "keep both rows";
+# `merge=union` does that automatically. If union ever produces something odd, rerun
+# `index` and it overwrites the file wholesale; `index --check` proves the committed
+# router matches the files it describes.
+.agents/memory/decisions.md merge=union

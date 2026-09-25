@@ -1,0 +1,28 @@
+#!/bin/sh
+# Two cheap checks before a commit lands. CI runs both again; this just moves the failure earlier.
+#
+#   1. The staged ADR router agrees with the staged ADRs (.githooks/adr-index, from the adr skill).
+#   2. Every staged Swift file passes swift-format and SwiftLint, the two gates that need no build.
+#
+# Active once `git config core.hooksPath .githooks` is set (CONTRIBUTING.md); `git commit --no-verify`
+# bypasses it for one commit.
+
+set -e
+
+repo=$(git rev-parse --show-toplevel)
+"$repo/.githooks/adr-index"
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- '*.swift')
+[ -n "$staged" ] || exit 0
+
+if [ "$(uname -s)" = Linux ] && [ -z "${LINUX_SOURCEKIT_LIB_PATH:-}" ]; then
+	resources=$(swift -print-target-info | python3 -c 'import json, sys; print(json.load(sys.stdin)["paths"]["runtimeResourcePath"])')
+	LINUX_SOURCEKIT_LIB_PATH=$(readlink -f "$resources/..")
+	export LINUX_SOURCEKIT_LIB_PATH
+fi
+
+# Filenames come from git and are paths inside the repo; the unquoted expansion splits them on newlines.
+# shellcheck disable=SC2086
+swift format lint --strict $staged
+# shellcheck disable=SC2086
+swiftlint lint --strict --quiet --force-exclude $staged

@@ -1,0 +1,9 @@
+# Merged over .swiftlint.yml by `scripts/check.sh analyze` on Linux only.
+#
+# On Linux, Foundation's types (FileManager, URL, Data, JSONSerialization) are declared in FoundationEssentials,
+# so SourceKit attributes them to that module and `unused_import` reports every needed `import Foundation` as
+# unused. Removing one breaks the build. The Mac runner analyzes with .swiftlint.yml alone, where Foundation is
+# one module, so a Foundation import that really is unused is still caught there.
+unused_import:
+  always_keep_imports:
+    - Foundation

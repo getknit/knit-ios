@@ -1,0 +1,6 @@
+# xtool packs the `Knit` library product as the iOS app. Keys: xtool's Sources/PackLib/PackSchema.swift.
+version: 1
+bundleID: app.getknit.knit
+product: Knit
+infoPath: App/Info.plist
+iconPath: App/AppIcon.png

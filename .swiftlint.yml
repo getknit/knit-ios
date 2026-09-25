@@ -1,0 +1,159 @@
+# SwiftLint runs with --strict, so a warning fails the build exactly like an error. Every opt-in rule is on.
+# A rule leaves only for one of three reasons, written beside it: it contradicts another rule we keep, it
+# fights swift-format (which owns layout), or it breaks a wire invariant.
+
+included:
+  - Package.swift
+  - Sources
+  - Tests
+  - Fuzz/Package.swift
+  - Fuzz/Sources
+excluded:
+  - .build
+  - Fuzz/.build
+  - xtool
+
+opt_in_rules:
+  - all
+
+disabled_rules:
+  # Contradictory pairs: we keep the other half.
+  - explicit_acl                    # explicit_top_level_acl covers the API surface; members stay implicit
+  - explicit_type_interface         # contradicts redundant_type_annotation
+  - extension_access_modifier       # contradicts no_extension_access_modifier and swift-format's rule
+  - explicit_self                   # contradicts redundant_self
+  - pattern_matching_keywords       # contradicts swift-format's UseLetInEveryBoundCaseVariable
+  # swift-format owns layout; these rules disagree with its output.
+  - attributes
+  - contrasted_opening_brace        # Allman braces; swift-format writes K&R, and opening_brace agrees
+  - closure_end_indentation
+  - conditional_returns_on_newline
+  - indentation_width
+  - let_var_whitespace              # swift-format owns vertical spacing
+  - vertical_whitespace_between_cases  # swift-format owns vertical spacing
+  - literal_expression_end_indentation
+  - multiline_arguments
+  - multiline_arguments_brackets
+  - multiline_function_chains
+  - multiline_literal_brackets
+  - multiline_parameters
+  - multiline_parameters_brackets
+  - sorted_imports                  # swift-format's OrderedImports groups @testable and conditional imports
+  - trailing_comma
+  - vertical_parameter_alignment_on_call
+  # Wire invariants.
+  - discouraged_optional_collection # nil and [] encode differently on the wire (`acks`, `departed`)
+  - function_default_parameter_at_end  # wire initializers follow the Kotlin declaration order
+  - sorted_enum_cases               # wire enums keep the declaration order knit-next encodes
+  # Organisation rules that fight how the code reads.
+  - file_header                     # no per-file headers, as in knit-next; the license is repo-wide
+  - file_types_order
+  - no_grouping_extension           # conformances live in their own extensions
+  - one_declaration_per_file
+  - prefixed_toplevel_constant
+  - required_deinit
+  - type_contents_order
+
+analyzer_rules:
+  - capture_variable
+  - typesafe_array_init
+  - unused_declaration
+  - unused_import
+
+nesting:
+  type_level: 2
+
+line_length:
+  warning: 140
+  ignores_urls: true
+
+identifier_name:
+  min_length: 2
+  excluded:
+    - i
+    - j
+    - n
+
+type_name:
+  min_length: 3
+
+number_separator:
+  minimum_length: 5
+
+cyclomatic_complexity:
+  ignores_case_statements: true
+
+missing_docs:
+  warning: [open, public]
+  excludes_extensions: true
+  excludes_inherited_types: true
+
+file_name:
+  excluded:
+    - main.swift
+    - Package.swift
+
+# One importer per framework, as in knit-next's rules/mesh.md; each rule is the machine check for a seam in
+# .agents/context/architecture.md.
+custom_rules:
+  seam_corebluetooth:
+    name: CoreBluetooth stays in KnitBLE
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+CoreBluetooth\b'
+    excluded: 'Sources/KnitBLE/'
+    message: Only KnitBLE imports CoreBluetooth; everything above the radio talks to MeshTransport.
+    severity: error
+  seam_ui_frameworks:
+    name: SwiftUI and UIKit stay in the app target
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+(SwiftUI|UIKit)\b'
+    excluded: 'Sources/Knit/'
+    message: Only the Knit app target imports SwiftUI or UIKit; view models live in KnitAppCore.
+    severity: error
+  seam_security:
+    name: Security stays in the app target
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+Security\b'
+    excluded: 'Sources/Knit/'
+    message: Only the app's Keychain store imports Security.
+    severity: error
+  seam_grdb:
+    name: GRDB stays in KnitStoreSQL
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+GRDB\b'
+    excluded: 'Sources/KnitStoreSQL/'
+    message: Only KnitStoreSQL imports GRDB; everything else talks to the KnitStore protocols.
+    severity: error
+  seam_cdbus:
+    name: libdbus stays in KnitBlueZ
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+(CDBus|CBluetoothShim)\b'
+    excluded: 'Sources/KnitBlueZ/'
+    message: Only KnitBlueZ imports libdbus and the Bluetooth socket shim.
+    severity: error
+  no_cryptokit:
+    name: Import Crypto, not CryptoKit
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+CryptoKit\b'
+    message: Import swift-crypto's Crypto, which is CryptoKit on Apple platforms and also builds on Linux.
+    severity: error
+  no_print:
+    name: No print in shipped code
+    regex: '(?<![\w.])print\('
+    included: 'Sources/'
+    match_kinds: [identifier]
+    message: Log through KnitLog; knit-peer writes its JSON lines to FileHandle.standardOutput.
+    severity: error
+  mesh_injected_clock:
+    name: The mesh reads time through its injected clocks
+    regex: '(\bDate\(\)|\bDate\.now\b|\bTask\.sleep\b|\bContinuousClock\(\))'
+    included: 'Sources/(KnitWire|KnitCrypto|KnitStore|KnitMesh)/'
+    message: Take the wall clock and the monotonic clock as dependencies, so the lab can drive them.
+    severity: error
+  mesh_injected_randomness:
+    name: The mesh draws randomness through its injected generator
+    regex: '(\bUUID\(\)|\bSystemRandomNumberGenerator\(\)|\.random\()'
+    included: 'Sources/(KnitWire|KnitStore|KnitMesh)/'
+    message: Take a RandomNumberGenerator as a dependency, so chaos runs are reproducible from a seed.
+    severity: error
+  wire_no_codable:
+    name: CBOR types are encoded by hand
+    regex: ':\s*[^{\n]*\b(Codable|Encodable|Decodable)\b'
+    included: 'Sources/KnitWire/'
+    excluded: 'Sources/KnitWire/.*JSON\.swift'
+    message: Signed bytes are never round-tripped through Codable; JSON link records live in *JSON.swift.
+    severity: error

@@ -1,0 +1,150 @@
+# Wire format
+
+What a frame looks like on the air, as knit-next's `mesh/protocol/Wire.kt` encodes it at the pinned commit
+(`.agents/context/knit-next.md`). The rules for changing any of it are in `.agents/rules/interop.md`.
+
+## The CBOR profile
+
+knit-next uses kotlinx-serialization-cbor 1.11.0 with `useDefiniteLengthEncoding = true`,
+`encodeDefaults = false` and `ignoreUnknownKeys = true`. For a Swift codec that means:
+
+- **Map keys are text strings**, equal to the Kotlin property names, written in declaration order.
+  Decoding must not depend on order; encoding should match it, so our bytes diff cleanly against the
+  goldens.
+- **Default-valued fields are omitted**, never written as null. An absent field and a null field are not
+  the same thing.
+- **Byte arrays are byte strings** (major type 2). Integers use the shortest encoding, booleans are `F4` and
+  `F5`, and there are no tags.
+- **Unknown keys are ignored** on decode. That is how the wire grows.
+- **The exception is the v3 DM plaintext** (`MessageContentV2`), which uses integer keys and raw ids. We
+  decode it for carrying only.
+
+A required field that is missing makes Android's decode fail, and the frame is neither delivered nor
+carried. The frame is dropped with no error sent back. These fields must always be written, even when empty:
+
+| Type | Required fields |
+| --- | --- |
+| `WireEnvelope` | `sig` (may be an empty byte string), `signed` |
+| `RelayEnvelope` | `type`, `id`, `senderId`, `payload` |
+| `ProfileContent` | `name`, `status` (an empty status is the empty text string, `60`) |
+| `MessageContent` (named layout) | `body` |
+| `EncEnvelope` | `nonce` (may be empty), `ct`, `keys` (may be the empty array `80`) |
+| `WrappedKey` | `to`, `wk` |
+| `ReceiptContent` / `ReactionContent` | `ackId` / `messageId` |
+
+## Three layers
+
+1. **`WireEnvelope`**, the unit on the radio:
+   `{ ttl: Int = 8, hops: Int = 0, relay: Boolean = true, sig: bstr, signed: bstr }`.
+   A fresh frame omits `ttl`, `hops` and `relay` because they sit at their defaults, so it encodes as
+   `A2 63"sig" 58 40 <64 bytes> 66"signed" 59 …`. A relay rewrites only `ttl = min(ttl, 8)` and
+   `hops + 1`; `sig` and `signed` pass through untouched.
+2. **`RelayEnvelope`**, the bytes that are signed:
+   `{ type: text, id: text, senderId: text, sentAt: Long = 0, recipientId: text?, group: GroupInfo?, payload: bstr }`.
+   A DM sets `recipientId`. A group message sets `group`. A Nearby room post sets neither.
+3. **The payload**: CBOR inside `payload` that only endpoints read. The types are listed below.
+
+The payload types:
+
+- `ChatContent { body = "", mentions = [], attachmentHash?, attachmentMime?, enc: EncEnvelope?, replyTo: ReplyRef? }`
+- `ProfileContent { name, status, avatarHash?, pubKey?, deviceTag?, protoVersion?, capabilities?, prekey?, version?, openToChat = false, loraNode?, loraKey? }`
+- `ReceiptContent { ackId }`, `ReactionContent { messageId, emoji? }`, `KeyReqContent { nodeIds }`,
+  `BlobReqContent { hash }`, `TypingContent { groupId? }`
+- `EncEnvelope { v = 1, nonce, ct, keys: [WrappedKey { to, wk }], r: RatchetHeader?, g: GroupRatchetHeader? }`
+
+`ProfileContent.pubKey` is effectively required: a profile without it is dropped. Keep every field we
+decode, including the ones we don't use (`prekey`, `loraNode`), so a profile we carry for others is never
+thinned.
+
+## Registries
+
+These only ever grow. A value is never reused, even after it is retired.
+
+- **Frame types are strings:** `chat`, `groupupdate`, `groupleave`, `profile`, `receipt`, `reaction`,
+  `blobreq`, `keyreq`, `typing`, `commons`. `meshpost` is burned.
+  - `isReplayable` covers chat, reaction, receipt, groupupdate and groupleave.
+  - `isCustodial` is `isReplayable` plus `profile`.
+- **`MessageContent.ctl`:**
+
+  | Code | Meaning |
+  | --- | --- |
+  | 1 | session reset |
+  | 2 | group key |
+  | 3 | group key request |
+  | 4 | group key ack |
+  | 5 | receipt |
+  | 6 | reaction |
+  | 7 | reserved |
+  | 8 | profile |
+  | 9 | transfer |
+
+  An unknown value is a silent no-op.
+- **`EncEnvelope.v`:** 1 is static keys, 2 is the epoch ratchet, and 3 is the compact ratchet. An envelope
+  version we cannot open is dropped locally, counted, and still relayed and carried.
+- **Capabilities** (a Long in `ProfileContent.capabilities`, the low byte in the advert, hex in HELLO):
+
+  | Bit | Name | Bit | Name |
+  | --- | --- | --- | --- |
+  | `0x001` | `E2E` | `0x040` | `INLINE_ACK` |
+  | `0x002` | `GROUPS` | `0x080` | `FRAME_TRANSCODE` |
+  | `0x004` | `REACTIONS` | `0x100` | `CRYPTO_V3` |
+  | `0x008` | `STORE_FORWARD` | `0x200` | `FILES` |
+  | `0x010` | `RATCHET` | `0x400` | `LINK_PREVIEW` |
+  | `0x020` | `FAST_COMPACT` | `0x800` | `DIRECT_TRANSFER` |
+
+  Android sends `0xFFF`. Only the signed profile copy gates anything, and only at send time: `RATCHET`
+  (with a prekey) picks v2 DMs, `CRYPTO_V3` picks v3, `INLINE_ACK`, `FILES`, `LINK_PREVIEW` and
+  `DIRECT_TRANSFER` gate features. The rest are diagnostic.
+
+## Signatures, ids and clocks
+
+- **Signature:** a raw 64-byte Ed25519 signature over exactly the `signed` bytes. Verification runs over
+  the bytes as received, against a key whose node id is the frame's `senderId`:
+  - our own frames verify with our own key;
+  - a `profile` verifies with the key inside its own payload;
+  - everything else verifies with the sender's pinned key.
+- **Unsigned frames** come in exactly two shapes: `blobreq`, and the v3 live-link tick (a `relay = false`
+  DM-form `chat` addressed to us). Anything else with an empty `sig` is refused.
+- **Frame id:** 16 random bytes, base64url, no padding, 22 characters. Profiles use
+  `profile-<nodeId>-<publishedAt>`.
+- **`ttl` is a hop limit, not a time.** A frame is relayed only while `hops < min(ttl, 8)`.
+- **`relay`** is set per frame. `false` means point to point: never flooded, only handed on.
+- **`sentAt`** is the originator's wall clock in epoch milliseconds, and it is signed. Custody expires at
+  `sentAt` plus the TTL. A frame dated more than 5 minutes ahead is refused, and a custodial frame with
+  `sentAt = 0` expired in 1970, so nobody carries it.
+
+## Additive rules
+
+From `docs/WIRE_COMPAT.md`:
+
+1. Add only nullable or defaulted fields. New opaque bytes get a type of their own.
+2. Never rename, re-type or repurpose a field.
+3. Never recycle a type string, capability bit, ctl code or record tag.
+4. The signature covers the `signed` blob verbatim. Never re-encode before verifying. Only `ttl` and `hops`
+   change in flight, and they live outside the signature.
+5. A version gate is a delivery gate, never a relay gate.
+
+Adding a custodial type is a flag day, not an additive change. Breaking changes wait in knit-next's
+`docs/NEXT_WIRE_BREAK.md` so one future break carries them all.
+
+## What the MVP sends and understands
+
+| Frame | We send | We receive |
+| --- | --- | --- |
+| `profile` | on every new link, on edit, and at least every 12 h | pin, verify, carry |
+| `chat` DM, `enc.v = 1` | yes | yes, always |
+| `chat` DM, `enc.v = 2` or `3` | no (`CAP_RATCHET` stays off) | carry and relay; cannot open |
+| `chat` room post (no recipient, no group) | yes, signed and cleartext | yes |
+| `receipt`, `relay = true`, `sentAt` set | our DM acks | yes: ✓✓ on our DMs |
+| `receipt`, `relay = false`, no `sentAt` | room ticks over the link | yes: Android's room ticks to us |
+| `keyreq` (`relay = false`, signed) | when a sender's key is missing | answer with cached signed profiles |
+| `blobreq` (unsigned) | no | ignore; we publish no avatar |
+| `reaction`, `typing`, group frames, `commons`, unknown types | no | carry and relay where custodial; never crash |
+
+## Golden vectors
+
+`GoldenVectorTest.kt` holds 57 fixtures as inline hex in its `EXPECTED` map. The inputs are generated:
+`bytes(n, seed)[i] = (7 * i + seed) & 0xFF`, with `frameId(seed)` and `nodeId(seed)` built from
+`bytes(16, seed)`. They are codec vectors only, with placeholder ids like `"m1"`; none carries a real
+signature or ciphertext. The bundle probe (`sigPub = bytes(32, 10)`, `hpkePub = bytes(32, 20)`) derives node
+id `cswad43wmlont27jr4tyvu63i4`.

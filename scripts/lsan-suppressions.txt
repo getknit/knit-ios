@@ -1,0 +1,8 @@
+# LeakSanitizer suppressions for `scripts/check.sh asan`. Each entry names what it hides and why.
+#
+# Swift Testing (Swift 6.4) over-retains parameterized test arguments that are indirect enums: every CBOR value
+# built in an `@Test(arguments:)` list is reported as a direct leak, allocated in the macro's `generator`
+# closure. Plain code, async closures, casts and reflection do not leak the same values (checked 2026-09-25
+# with a standalone repro), so the pattern matches only the peer macro's argument generators, `…TestfMp_…
+# generator…` in the mangled name. Delete this entry when a toolchain update makes the asan gate pass without it.
+leak:*TestfMp_*generator*

@@ -1,0 +1,3 @@
+# The house markdown style, which the adr skill's `lint` also applies. It is stricter than knit-next's
+# `relaxed` profile; the rules it drops, and why, are in the style file.
+style "scripts/mdl-style.rb"

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "dotagents-standard": {
+      "source": "zaventh/dotagents-standard-skill",
+      "sourceType": "github",
+      "skillPath": "skills/dotagents-standard/SKILL.md",
+      "computedHash": "962f0037eb5ecf5ea450d9f9d1f69e781f4cf5b8d95371a98a469a1a29c35b0f"
+    },
+    "humanizer": {
+      "source": "NousResearch/hermes-agent",
+      "sourceType": "github",
+      "skillPath": "skills/creative/humanizer/SKILL.md",
+      "computedHash": "887d5e3467a682da9b166e5293007f8bbbc299f8a6718ae00f26161b7d062b04"
+    },
+    "product-language-editor": {
+      "source": "maintainer (Jeffrey Walter Mixon)",
+      "sourceType": "local",
+      "skillPath": "product-language-editor/SKILL.md",
+      "computedHash": "82eef5a9a47f4e3e0294348664bf6181627becd59405424f839e98b6a31ad476"
+    }
+  }
+}

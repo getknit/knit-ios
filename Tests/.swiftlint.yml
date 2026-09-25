@@ -1,0 +1,6 @@
+# Tests inherit the root config. These rules guard the shipped API surface and add nothing but noise to test
+# code, where top-level @Test functions, literal fixtures and undocumented helpers are the norm.
+disabled_rules:
+  - explicit_top_level_acl
+  - missing_docs
+  - no_magic_numbers

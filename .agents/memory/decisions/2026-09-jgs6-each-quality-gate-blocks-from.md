@@ -1,0 +1,37 @@
+---
+id: "2026-09.jgs6"
+slug: each-quality-gate-blocks-from
+title: "each quality gate blocks from the commit that gives it work"
+date: 2026-09-25
+topics: [tooling, ci, testing]
+---
+
+# ADR 2026-09.jgs6 — each quality gate blocks from the commit that gives it work
+
+Status: Accepted (2026-09-25)
+
+**Context:** in knit-next, detekt, ktlint and Kover run as allowed failures in CI. The CI comments say the
+Stop hooks enforce them locally, but commit `0ff5ca2f` removed those hooks on 2026-08-17, and a full Android
+lint now runs nowhere. The rules exist on paper. knit-ios starts with no backlog to baseline.
+
+**Decision:** every gate blocks in CI from the commit that first gives it something to check, with no
+baseline:
+
+- swift-format and SwiftLint in `--strict`, with every opt-in rule on;
+- warnings as errors, strict concurrency, and strict memory safety on the platform-free targets;
+- coverage floors that only ratchet up;
+- TSan, ASan and fuzz crashes.
+
+The advisory exceptions each have a written reason:
+
+- Periphery on Linux, which cannot see Apple-only code;
+- a random chaos seed, beside the fixed seeds that block;
+- Trivy, as in knit-next.
+
+The Claude Stop hook runs only the no-build linters, because knit-next dropped its build and test hooks
+once each turn cost minutes. Builds and tests run in `pre-push` and CI instead.
+
+**Consequences / limits:** a new toolchain's warnings stop the build. `KNIT_WARNINGS_AS_ERRORS=0` gets past them
+locally, and CI never sets it. Disabling a lint rule means a line with its reason in `.swiftlint.yml`. The
+guard is `.gitlab-ci.yml` itself: it carries no `allow_failure` beyond the named advisories, and every job
+runs a `scripts/check.sh` gate that is also run locally.

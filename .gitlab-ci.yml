@@ -1,0 +1,170 @@
+# knit-ios pipeline. Every Swift job runs a `scripts/check.sh` gate, so `scripts/check.sh all` on a laptop
+# predicts this pipeline. Each gate is blocking from the commit that first gives it something to check
+# (ADR router: .agents/memory/decisions.md). The advisory jobs say why beside `allow_failure`.
+#
+# Two kinds of runner:
+#   - shared Linux runners for the light jobs;
+#   - `knit-local`, a runner on the maintainer's machine, for the heavy builds (sanitizers, fuzzing) and for
+#     `build:ios`, which needs xtool and the Darwin SDK. The SDK never goes into an image or a shared cache:
+#     Apple's terms tie it to that machine. `.agents/context/toolchain.md` has the runner setup.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+stages:
+  - lint
+  - build
+  - test
+  - verify
+
+variables:
+  SWIFT_IMAGE: "swift:6.4-noble@sha256:64bab762bc73a3fda6d9ebc559258bd6d7660c10a705bb25ecacad2f99d066f9"
+  SWIFTLINT_VERSION: "0.65.1"
+  SWIFTLINT_SHA256: "caeed6f4a679c35539ffaf124f6c4ab4a8416917f7d8796279dc52b74026059d"
+
+.swift:
+  image: $SWIFT_IMAGE
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq --no-install-recommends libdbus-1-dev pkg-config python3 unzip curl ca-certificates >/dev/null
+  cache:
+    key: swiftpm-$CI_COMMIT_REF_SLUG
+    paths:
+      - .build/checkouts/
+      - .build/repositories/
+    policy: pull-push
+
+.swiftlint:
+  extends: .swift
+  before_script:
+    - !reference [.swift, before_script]
+    - curl -fsSL -o /tmp/swiftlint.zip "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/swiftlint_linux_amd64.zip"
+    - echo "$SWIFTLINT_SHA256  /tmp/swiftlint.zip" | sha256sum -c -
+    - unzip -q -o -d /usr/local/bin /tmp/swiftlint.zip swiftlint
+
+.local:
+  tags:
+    - knit-local
+
+lint:lintorama:
+  stage: lint
+  image:
+    name: zaventh/lintorama:7
+    entrypoint: [""]
+  script:
+    - lint-extras
+
+lint:adr-index:
+  stage: lint
+  image: python:3.13-alpine
+  script:
+    - python3 scripts/adr.py index --check
+
+lint:dco:
+  stage: lint
+  image: alpine/git:2.47.2
+  variables:
+    GIT_DEPTH: "0"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  before_script:
+    - apk add --no-cache bash >/dev/null
+  script:
+    - bash scripts/dco-check.sh "$CI_MERGE_REQUEST_DIFF_BASE_SHA" "$CI_COMMIT_SHA"
+
+lint:swift:
+  extends: .swiftlint
+  stage: lint
+  script:
+    - scripts/check.sh format lint
+
+build:linux:
+  extends: .swift
+  stage: build
+  script:
+    - scripts/check.sh build
+
+build:ios:
+  extends: .local
+  stage: build
+  script:
+    - scripts/check.sh ios
+  artifacts:
+    paths:
+      - xtool/Knit.app/
+    expire_in: 1 week
+
+test:linux:
+  extends: .swift
+  stage: test
+  needs: [build:linux]
+  script:
+    - scripts/check.sh test
+  artifacts:
+    when: always
+    reports:
+      junit: .build/xunit-swift-testing.xml
+
+test:coverage:
+  extends: .swift
+  stage: test
+  needs: [build:linux]
+  script:
+    - scripts/check.sh coverage
+
+test:tsan:
+  extends: .local
+  stage: test
+  needs: [build:linux]
+  script:
+    - scripts/check.sh tsan
+
+test:asan:
+  extends: .local
+  stage: test
+  needs: [build:linux]
+  script:
+    - scripts/check.sh asan
+
+verify:analyze:
+  extends: .swiftlint
+  stage: verify
+  needs: [build:linux]
+  script:
+    - scripts/check.sh analyze
+
+verify:fuzz:
+  extends: .local
+  stage: verify
+  needs: [build:linux]
+  script:
+    - scripts/fuzz.sh 60
+  artifacts:
+    when: on_failure
+    paths:
+      - Fuzz/Crashes/
+    expire_in: 4 weeks
+
+verify:periphery:
+  extends: .local
+  stage: verify
+  needs: [build:ios]
+  script:
+    - scripts/check.sh ios periphery
+  # Advisory until the Mac runner exists: code only Apple-only targets use can read as unused on Linux.
+  allow_failure: true
+
+verify:trivy:
+  stage: verify
+  image:
+    name: aquasec/trivy:0.74.0
+    entrypoint: [""]
+  script:
+    - trivy fs --scanners vuln,secret,misconfig,license --exit-code 0 --format table .
+  # Informational, as in knit-next: a finding opens an issue rather than blocking a merge.
+  allow_failure: true

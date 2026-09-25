@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Add the DCO sign-off CONTRIBUTING.md asks for, so a commit carries the trailer whether or not `-s` was
+# remembered. Opt in with `git config core.hooksPath .githooks`.
+#
+# It signs with the COMMITTER identity, which is what `git commit -s` does. That only matters on a
+# cherry-pick, where the author is someone else: signing as them would forge a certification they never
+# gave. CI's `verify:dco` job accepts either identity.
+#
+# It never fails a commit. Blocking work to add a trailer CI already checks would be a bad trade, so every
+# failure path exits 0 and leaves the message alone.
+
+set -uo pipefail
+
+# $2 is the message source. A merge commit is generated rather than authored, and verify:dco skips merges.
+case "${2-}" in
+	merge) exit 0 ;;
+esac
+
+# GIT_COMMITTER_IDENT is "Name <email> 1700000000 -0800"; drop the trailing timestamp.
+sob=$(git var GIT_COMMITTER_IDENT 2>/dev/null | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
+[ -n "$sob" ] || exit 0
+
+# --if-exists doNothing keeps it idempotent across `git commit -s`, an amend, and a rebase.
+git interpret-trailers --if-exists doNothing --trailer "$sob" --in-place "$1" || exit 0

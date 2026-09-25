@@ -1,0 +1,43 @@
+.DS_Store
+
+# SwiftPM, including the per-gate scratch trees scripts/check.sh keeps apart (.build-cov, .build-tsan, …).
+/.build*/
+/.build-analyze.log
+/Packages
+/Fuzz/.build/
+.swiftpm/
+
+# xtool's app bundle output and the LSP file it regenerates on every build.
+/xtool/
+/.bsp/
+
+# Xcode, once the Mac arrives.
+xcuserdata/
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/
+
+# Signing material and secrets never enter the tree.
+*.p12
+*.cer
+*.mobileprovision
+*.pem
+*.key
+.env
+.env.*
+.netrc
+
+# Personal Claude Code overrides; the shared .claude/settings.json stays tracked.
+.claude/settings.local.json
+
+# Private working area, loaded as a nested router when present.
+.private/
+
+scripts/__pycache__/
+
+# libFuzzer crash reproducers: scripts/fuzz.sh writes them under Fuzz/Crashes/, a stray run to the cwd.
+/Fuzz/Crashes/
+crash-*
+leak-*
+timeout-*
+oom-*

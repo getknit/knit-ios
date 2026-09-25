@@ -1,0 +1,39 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[{*.{yml,yaml,json},.swift-format,.yamllint,Package.resolved}]
+indent_size = 2
+
+# Markdown indents list continuations to the marker's width (2 under "-", 3 under "1."), which no single
+# indent size describes.
+[*.md]
+indent_size = unset
+
+# Fuzz corpora are raw bytes.
+[Fuzz/Corpus/**]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+indent_style = unset
+indent_size = unset
+
+[*.{sh,bash}]
+indent_style = tab
+
+[.githooks/*]
+indent_style = tab
+
+[*.plist]
+indent_style = tab
+
+[{COPYING,DCO}]
+indent_style = unset
+indent_size = unset

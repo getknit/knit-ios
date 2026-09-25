@@ -1,0 +1,4 @@
+#!/bin/sh
+# Run the fast gates (format, lint, build, unit tests) before anything leaves the machine. The full set,
+# sanitizers and coverage included, is `scripts/check.sh all` and CI. `git push --no-verify` skips this once.
+exec "$(git rev-parse --show-toplevel)/scripts/check.sh" fast
