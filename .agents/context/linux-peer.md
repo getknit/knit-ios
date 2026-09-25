@@ -26,10 +26,34 @@ Run on 2026-09-25 as `maintainer`, without root; D-Bus policy lets a user regist
   LE flow control. `CBluetoothShim`'s `sockaddr_l2` is 14 bytes, the same as the kernel's.
 - **`btmgmt --index 1 advinfo` hangs for a normal user.** Read state from the D-Bus properties instead.
 
-## Still to check, with a second device
+## What the Pixel 3 showed
 
-- **The bytes on the air:** a legacy connectable advert holding Flags and the 28-byte Service Data element,
-  31 bytes in all, which is the only kind Android's scanner reports by default. It needs another scanner, or
-  `sudo btmon -i hci1`.
-- **The first inbound connection:** that an Android dial reaches the listener and sends its HELLO, and that
-  the advert comes back afterwards. It needs a Knit phone nearby, under the per-session go-ahead.
+Three runs on 2026-09-25 against the Pixel 3 (Knit 2.7.0-alpha.0, a debug build), with the peer advertising a
+node id just below the Pixel's so that the Pixel dials. The two other Knit phones in range sort lower and
+never dialed.
+
+- **Android finds the advert and dials the PSM:** RSSI −54 to −56 dBm, PSM parsed as 128, promotion after
+  the 12 s dwell, and an L2CAP connect in 0.2 to 3.6 s.
+- **The two-way HELLO works.** Android sends `nodeId|1|fff`, accepts our `nodeId|1|9`, and logs `bt link up`.
+  It dials from a resolvable private address (LE random), which stayed the same across four links in five
+  minutes.
+- **After every link-up** Android sends its profile (one 548-byte `FRAME`), then a `DIGEST`, and another
+  `DIGEST` about every 60 s while it is awake. No `KEEPALIVE`, and nothing else while we send nothing.
+- **A link we close** reads `eof` on Android, which retries after about 10 s.
+- **The advert comes back when an inbound link ends:** the Pixel saw the peer again and re-dialed four times
+  in a row, 24 to 34 s after each close, the first after a link held for 100 s.
+- **It is probably off while the link is up.** After each close the Pixel's dwell started again from zero,
+  which fits the kernel re-enabling a connected advertising instance only at disconnect. Confirming it takes
+  `sudo btmon -i hci1`, or a second phone looking for the peer while it is linked. Either way, KnitBlueZ
+  registers its advertisement again after each inbound connection (hci1 has 4 instances), so the peer stays
+  findable while it is linked, as an Android phone does.
+- **The advert interval is the kernel's default,** probably 1.28 s, close to Android's presence advert
+  (`INTERVAL_HIGH`, about 1 s). BlueZ's `MinInterval` and `MaxInterval` are experimental, and `Experimental`
+  is off in `/etc/bluetooth/main.conf`, so changing it would need root.
+
+## Android's scan cadence decides how long a test waits
+
+A settled Pixel 3 on battery with its screen off ran Knit's scan only every 17 minutes or so (`dumpsys
+bluetooth_manager`), so it can take that long to notice a new peer. Awake, it found the peer within 15 s. With
+the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) and send the bridge's
+`…debug.HEAL` to start a scan.

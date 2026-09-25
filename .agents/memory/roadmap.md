@@ -7,9 +7,9 @@ explicit direction.** Update this file in the change that ships an item.
 
 - **The MVP** (`.agents/specs/mvp.md`). P0 is nearly done: the repo, the gates and CI are in place,
   spikes (a), (b), (c), (d) and (f) passed, and the GitLab project `knit/knit-ios` exists with its
-  `knit-local` runner created. Still owed: registering that runner on this machine
-  (`.agents/context/toolchain.md`), the first push, and the half of spike (e) that needs a second device
-  (`.agents/context/linux-peer.md`).
+  `knit-local` runner registered and online. Spike (e) passed against the Pixel 3: Android finds the BlueZ
+  advert, dials the LE CoC listener and completes the two-way HELLO, and the advert comes back after each
+  link (`.agents/context/linux-peer.md`). Still owed: the first push.
 - **P1, the wire (`KnitWire`):** the CBOR codec, every MVP wire type, link records, HELLO, DIGEST, the advert
   and the id and text rules are in. All 57 knit-next golden vectors round-trip, and 33 typed fixtures
   encode to Kotlin's exact bytes. Line coverage is 98 %, and each of the three libFuzzer harnesses ran ten
