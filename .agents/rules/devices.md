@@ -1,7 +1,11 @@
 # Devices and radios
 
-- **The Linux peer uses `hci1` only.** `hci0` is the maintainer's own adapter, with live connections; never
-  bind, scan, advertise or change anything on it. knit-peer refuses `hci0` and exits when `hci1` is absent.
+- **The Linux peer uses `hci1`.** `hci0` is the maintainer's own adapter, with live connections. knit-peer
+  refuses it and exits when `hci1` is absent.
+- **`hci0` needs a go-ahead, every session.** The maintainer allows it for tests that need two adapters, such as
+  the relay line (`interop.py relay`). The peer runs there only with `--shared-adapter`, which leaves every
+  link it did not make alone, and nothing else on `hci0` changes: no supervision timeout, no power or pairing
+  changes, no `sudo`.
 - **Ask before driving a physical phone, every session.** That covers installing, launching, adb broadcasts
   and UI automation, on Android or iPhone. A go-ahead does not carry over to a new task or conversation.
 - **An emulator is fair game.** knit-next's `scripts/emulator-ble-mesh.sh` gives an Android emulator a real

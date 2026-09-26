@@ -106,9 +106,28 @@ internal struct BlueZDevice: Equatable {
     var serviceData: [String: [UInt8]] = [:]
     /// The service UUIDs it advertised, and once linked the GATT services it serves, in lower case.
     var uuids: [String] = []
+    /// Whether it is paired, bonded or trusted: somebody's own device, which the radio never asks BlueZ to forget.
+    var paired = false
+    var bonded = false
+    var trusted = false
+    /// When BlueZ last said it heard the device, on the loop's clock.
+    var heardAt: Int64?
+    /// Listed by a shared adapter before the radio started, so another user's: never forgotten.
+    var listedBeforeUs = false
 
     init(path: String) {
         self.path = path
+    }
+
+    /// Whether BlueZ should forget the device: a discovery result nobody paired, bonded or trusted, with no link, and
+    /// not heard for `quietMilliseconds`. With `TemporaryTimeout = 0`, bluetoothd keeps every device it ever saw,
+    /// every address a phone rotated through among them, until the desktop's own Bluetooth applet runs out of D-Bus
+    /// match rules (`.agents/context/linux-peer.md`); the radio forgets its own instead.
+    func isStale(now: Int64, quietMilliseconds: Int64) -> Bool {
+        guard !listedBeforeUs, !connected, !paired, !bonded, !trusted, let heardAt else {
+            return false
+        }
+        return now - heardAt >= quietMilliseconds
     }
 
     /// Takes the properties in an `a{sv}` from `InterfacesAdded`, `GetManagedObjects` or `PropertiesChanged`.
@@ -126,6 +145,12 @@ internal struct BlueZDevice: Equatable {
                 connected = value.bool ?? connected
             case "ServicesResolved":
                 servicesResolved = value.bool ?? servicesResolved
+            case "Paired":
+                paired = value.bool ?? paired
+            case "Bonded":
+                bonded = value.bool ?? bonded
+            case "Trusted":
+                trusted = value.bool ?? trusted
             case "UUIDs":
                 uuids = value.textArray?.map { $0.lowercased() } ?? uuids
             case "ServiceData":

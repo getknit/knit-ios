@@ -19,6 +19,7 @@ import Testing
             (#"{"cmd":"peers"}"#, .peers),
             (#"{"cmd":"links"}"#, .links),
             (#"{"cmd":"digest"}"#, .digest),
+            (#"{"cmd":"custody"}"#, .custody),
             (#"{"cmd":"quit"}"#, .quit),
             (#"{"cmd":"room","text":"hi"}"#, .room("hi")),
             (#"{"cmd":"dm","to":"\#(peer)","text":"psst"}"#, .directMessage(to: peer, text: "psst")),
@@ -64,11 +65,14 @@ import Testing
         let names = [
             ControlCommand.status, .peers, .links, .room(""), .directMessage(to: peer, text: ""), .accept(""),
             .name(nil, status: nil, openToChat: nil),
-            .denyLink(peer), .allowLink(peer), .digest, .messages("", limit: 1), .quit,
+            .denyLink(peer), .allowLink(peer), .digest, .custody, .messages("", limit: 1), .quit,
         ]
         .map(\.name)
         #expect(
-            names == ["status", "peers", "links", "room", "dm", "accept", "name", "deny-link", "allow-link", "digest", "messages", "quit"])
+            names == [
+                "status", "peers", "links", "room", "dm", "accept", "name", "deny-link", "allow-link", "digest", "custody",
+                "messages", "quit",
+            ])
     }
 
     // MARK: JSON

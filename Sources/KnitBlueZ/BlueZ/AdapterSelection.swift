@@ -41,14 +41,15 @@ public struct BluetoothAddress: Hashable, Sendable, CustomStringConvertible {
 }
 
 /// Which adapter the peer may use, and the address it must have. `hci0` is the maintainer's own adapter, with live
-/// connections, so it is refused by name, and the chosen adapter must have the address it was expected to have, in
-/// case the dongles were enumerated in another order (`.agents/rules/devices.md`).
+/// connections, so it is refused by name unless the selection is shared, which the maintainer allows one session at
+/// a time. The chosen adapter must have the address it was expected to have, in case the dongles were enumerated in
+/// another order (`.agents/rules/devices.md`).
 public struct AdapterSelection: Equatable, Sendable {
     /// Why an adapter was refused.
     public enum Refusal: Error, Equatable, Sendable {
         /// Not an `hciN` name.
         case notAnAdapterName(String)
-        /// `hci0`, which is never used.
+        /// `hci0`, which is used only when shared.
         case reservedAdapter
         /// Not a Bluetooth address.
         case notAnAddress(String)
@@ -62,14 +63,17 @@ public struct AdapterSelection: Equatable, Sendable {
     public let name: String
     /// The address it must have.
     public let address: BluetoothAddress
+    /// Whether other devices use the adapter too. The peer then leaves alone every link it did not make.
+    public let shared: Bool
 
-    /// Selects `name`, which must have `expectedAddress`. Refuses `hci0` and anything that is not `hciN`.
-    public init(name: String, expectedAddress: String) throws(Refusal) {
+    /// Selects `name`, which must have `expectedAddress`. Refuses anything that is not `hciN`, and `hci0` unless
+    /// `shared`.
+    public init(name: String, expectedAddress: String, shared: Bool = false) throws(Refusal) {
         let digits = name.utf8.dropFirst("hci".utf8.count)
         guard name.hasPrefix("hci"), !digits.isEmpty, digits.allSatisfy({ (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }) else {
             throw .notAnAdapterName(name)
         }
-        guard name != "hci0" else {
+        guard name != "hci0" || shared else {
             throw .reservedAdapter
         }
         guard let parsed = BluetoothAddress(expectedAddress) else {
@@ -77,6 +81,7 @@ public struct AdapterSelection: Equatable, Sendable {
         }
         self.name = name
         address = parsed
+        self.shared = shared
     }
 
     /// The adapter's BlueZ object path, `/org/bluez/hci1`.
@@ -84,8 +89,8 @@ public struct AdapterSelection: Equatable, Sendable {
         "/org/bluez/" + name
     }
 
-    /// Whether `objectPath` is the adapter or one of its devices. Everything else on the bus, `hci0`'s devices
-    /// above all, is ignored.
+    /// Whether `objectPath` is the adapter or one of its devices. Everything else on the bus, another adapter's
+    /// devices above all, is ignored.
     public func owns(_ objectPath: String) -> Bool {
         objectPath == path || objectPath.hasPrefix(path + "/")
     }

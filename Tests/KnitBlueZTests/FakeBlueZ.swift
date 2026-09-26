@@ -56,6 +56,8 @@
         var refusesInventory = false
         /// The devices the radio asked to disconnect, in order.
         private(set) var disconnected: [String] = []
+        /// The devices the radio asked BlueZ to forget, in order.
+        private(set) var forgotten: [String] = []
         /// The GATT servers of remote devices, by device path.
         var remoteGatt: [String: RemoteGatt] = [:]
         /// The devices the radio asked to link, in order.
@@ -113,6 +115,11 @@
                 return .values([])
             case (BlueZ.adapterInterface, "StopDiscovery"):
                 discovering = false
+                return .values([])
+            case (BlueZ.adapterInterface, "RemoveDevice"):
+                let path = arguments.first?.text ?? ""
+                forgotten.append(path)
+                try? remove(path, interfaces: [BlueZ.deviceInterface])
                 return .values([])
             case (BlueZ.advertisingManager, "RegisterAdvertisement"):
                 return register(advert: arguments.first?.text ?? "", call: call)

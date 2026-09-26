@@ -284,11 +284,12 @@
             try rig.fake.add(device: LoopRig.peerPath, LoopRig.uuidOnlyDevice())
             rig.settle { rig.fake.connectRequests.count == 1 }
             rig.post(.stop)
-            rig.settle { rig.fake.disconnected == [LoopRig.peerPath] }
+            rig.settle { rig.fake.disconnected == [LoopRig.peerPath] && rig.fake.forgotten == [LoopRig.peerPath] }
             #expect(rig.loop.gatt.current == nil)
             rig.post(.start)
             rig.settle { rig.loop.isUp }
-            try GattRig.strength(-60, on: rig)
+            // Forgotten at the stop, the device is listed afresh once BlueZ hears it again.
+            try rig.fake.add(device: LoopRig.peerPath, LoopRig.uuidOnlyDevice())
             rig.settle("no wait after a cancelled read") { rig.fake.connectRequests.count == 2 }
         }
 

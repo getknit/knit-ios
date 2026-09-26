@@ -143,6 +143,10 @@ public actor PeerNode {
             return .success([
                 "ids": .array(ids.map(JSONValue.string)), "count": .int(Int64(ids.count)), "fingerprint": .string(fingerprint),
             ])
+        case .custody:
+            let frames = stores.custody.liveFrames(now: clock.wallMilliseconds())
+                .sorted { $0.envelope.id.utf8.lexicographicallyPrecedes($1.envelope.id.utf8) }
+            return .success(["frames": .array(frames.map { EventReporter.describe($0.envelope) })])
         case .messages(let conversation, let limit):
             let messages = stores.messages.messages(in: conversation).suffix(limit)
             return .success(["conv": .string(conversation), "messages": .array(messages.map(EventReporter.describe))])
@@ -296,6 +300,18 @@ internal struct EventReporter: Sendable {
 
     static func describe(_ record: MessageRecord) -> JSONValue {
         .object(fields(of: record))
+    }
+
+    /// A carried frame's addressing, for the `custody` reply.
+    static func describe(_ envelope: RelayEnvelope) -> JSONValue {
+        .object([
+            "id": .string(envelope.id),
+            "type": .string(envelope.type.rawValue),
+            "from": .string(envelope.senderId),
+            "to": .text(envelope.recipientId),
+            "group": .text(envelope.group?.id),
+            "sentAt": .int(envelope.sentAt),
+        ])
     }
 
     private static func fields(of record: MessageRecord) -> [String: JSONValue] {

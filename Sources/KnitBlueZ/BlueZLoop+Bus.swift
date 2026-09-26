@@ -42,7 +42,7 @@
             bringDown()
         }
 
-        /// Signals about this adapter and its devices only: `hci0`'s never reach this process.
+        /// Signals about this adapter and its devices only: another adapter's never reach this process.
         private func subscribe(_ connection: BusConnection) {
             let adapter = configuration.adapter.path
             let fromBlueZ = "type='signal',sender='\(BlueZ.service)'"
@@ -114,13 +114,20 @@
             for object in owned where object.path != configuration.adapter.path {
                 for interface in object.interfaces where interface.name == BlueZ.deviceInterface {
                     devices[object.path, default: BlueZDevice(path: object.path)].apply(interface.properties)
+                    devices[object.path]?.heardAt = now
+                    devices[object.path]?.listedBeforeUs = configuration.adapter.shared
                 }
             }
             // A link left from before, held by bluetoothd's own GATT client, keeps the adapter a peripheral, and
-            // this controller cannot advertise while it is one. The adapter is the peer's alone, so let it go.
+            // this controller cannot advertise while it is one. An adapter that is the peer's alone lets it go; a
+            // shared one's links belong to whoever else uses it.
             for (path, device) in devices.sorted(by: { $0.key < $1.key }) where device.connected {
-                log.log(.info, "bluez dropping a link left from before: \(path)")
-                dropLink(to: path, now: now)
+                if configuration.adapter.shared {
+                    log.log(.info, "bluez leaving a link on the shared adapter alone: \(path)")
+                } else {
+                    log.log(.info, "bluez dropping a link left from before: \(path)")
+                    dropLink(to: path, now: now)
+                }
             }
             reconcile(now: now)
         }
@@ -141,6 +148,7 @@
             }
             for (name, properties) in interfaces where name == BlueZ.deviceInterface {
                 devices[path, default: BlueZDevice(path: path)].apply(properties)
+                devices[path]?.heardAt = Monotonic.milliseconds()
                 sight(path)
             }
         }
@@ -193,7 +201,10 @@
                 }
                 gattDeviceChanged(path, changed, now: Monotonic.milliseconds())
                 if changed["RSSI"] != nil || changed["ServiceData"] != nil || changed["UUIDs"] != nil {
+                    devices[path]?.heardAt = Monotonic.milliseconds()
                     sight(path)
+                } else if changed["Connected"] != nil || changed["ManufacturerData"] != nil {
+                    devices[path]?.heardAt = Monotonic.milliseconds()
                 }
             default:
                 return
@@ -262,6 +273,46 @@
             }
             bus.call(call, now: now) { [weak self] result in
                 self?.log.log(.debug, "bluez disconnect \(path): \((try? result.get()) == nil ? "not connected" : "done")")
+            }
+        }
+
+        /// Asks BlueZ to forget the devices it has not heard for a while (`BlueZDevice.isStale`), bar any a channel or a
+        /// GATT read still uses. BlueZ answers with `InterfacesRemoved`, which drops each from ``devices``.
+        func forgetQuietDevices(now: Int64) {
+            let quiet = devices.values
+                .filter { $0.isStale(now: now, quietMilliseconds: configuration.forgetQuietDevicesMilliseconds) && !linkInUse($0.path) }
+                .map(\.path)
+                .sorted()
+                .prefix(Self.forgetsPerSweep)
+            guard !quiet.isEmpty else {
+                return
+            }
+            log.log(.debug, "bluez forgetting \(quiet.count) devices not heard for \(configuration.forgetQuietDevicesMilliseconds) ms")
+            for path in quiet {
+                // Asked once: a device that stays is forgotten again only once it has been heard, and gone quiet, anew.
+                devices[path]?.heardAt = nil
+                adapterCall("RemoveDevice", interface: BlueZ.adapterInterface, [.objectPath(path)], now: now)
+            }
+        }
+
+        /// Asks BlueZ, as the plane comes down, to forget every device this run found: with `TemporaryTimeout = 0`
+        /// nothing else ever will. A device someone paired, bonded or trusted stays, as does one a shared adapter
+        /// listed before the radio started or another user holds a link to.
+        func forgetDevicesFound(now: Int64, linkedByUs: Set<String>) {
+            let found = devices.values
+                .filter { device in
+                    !device.listedBeforeUs && !device.paired && !device.bonded && !device.trusted
+                        && (!device.connected || linkedByUs.contains(device.path))
+                }
+                .map(\.path)
+                .sorted()
+            guard !found.isEmpty else {
+                return
+            }
+            log.log(.debug, "bluez forgetting the \(found.count) devices this run found")
+            for path in found {
+                devices[path]?.heardAt = nil
+                adapterCall("RemoveDevice", interface: BlueZ.adapterInterface, [.objectPath(path)], now: now)
             }
         }
 

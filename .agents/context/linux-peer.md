@@ -9,8 +9,10 @@ the rules for the radios and phones it touches.
 - **`hci1` is an Edimax BT-8500** (USB `7392:c611`, Realtek RTL8761BU), public address `0A:BC:DE:00:00:A1`,
   named "linux-host #2". It has the central and peripheral roles, `LEAdvertisingManager1` with 4 advertising
   instances, and `GattManager1`.
-- **`hci0` is the maintainer's.** The peer checks that `/org/bluez/hci1` has the address above before it does
-  anything, and binds every socket to that address, so nothing it does can land on `hci0`.
+- **`hci0` is the maintainer's**, an Intel controller (Bluetooth 5.4) at `A0:00:00:00:00:01` that holds the
+  maintainer's own devices. The peer checks that its adapter has the expected address before it does anything,
+  and binds every socket to that address, so nothing it does lands on another adapter. It runs on `hci0` only
+  as a shared adapter, with a go-ahead (below).
 - **knit-next's emulator script passes the same dongle through** to an Android emulator; the two cannot use it
   at once.
 
@@ -90,7 +92,11 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window |
 
 - **Every command checks the adapter first.** `--adapter` defaults to `hci1` and `--adapter-address` to the Edimax's
-  address. `hci0` is refused by name, and an adapter with another address stops the peer before anything opens.
+  address. An adapter with another address stops the peer before anything opens.
+- **`hci0` is refused by name** unless `--shared-adapter` is given, with its address
+  (`--adapter hci0 --adapter-address A0:00:00:00:00:01 --shared-adapter`). A shared adapter keeps the links other
+  devices hold: at start the peer drops only links on an adapter of its own, and it only ever drops links it made.
+  `.agents/rules/devices.md` says when it may be used.
 - **State** lives in `~/.local/state/knit-peer/<instance>/`: `identity` (0600) and `profile.json`, which keeps the
   profile version and publish stamp across restarts. Custody, peers and messages live in memory.
 - **Control lines** are JSON objects with a `cmd`, and an optional `tag` that the reply echoes:
@@ -106,11 +112,22 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 
 `scripts/interop.py` runs checklist L against one phone through knit-next's debug bridge: `check` in either
 dial order (`--blank-name` for alias parity, `--expect-avatar` for FILE records, `--radio-profile ios` for the
-A1 group), `refusal` for the `ios` profile against Android 2.7, `replace` for A1's stale-link rule, and `soak`.
-It needs the session's go-ahead for the phone (`.agents/rules/devices.md`). It keeps the run on that phone:
+A1 group), `refusal` for the `ios` profile against Android 2.7, `replace` for A1's stale-link rule, `soak` and
+`relay`. It needs the session's go-ahead for the phone (`.agents/rules/devices.md`). It keeps the run on that phone:
 
 - **Before the peer starts**, it scans and picks a node id that no other phone in range dials.
-- **Once the peer is up**, it refuses every other phone with `deny-link`.
+- **Once the peer is up**, it refuses every other phone with `deny-link`, and then any node it sights later
+  (`soak`, `relay`).
+
+`soak` is MVP item 11's hour against that phone: room posts both ways, 20 a minute in all. With `--extras`, the
+phone also reacts, types, sends DMs and posts photos, and the peer DMs back. It checks why each link ended, every
+post's arrival and tick, the footprint against the caps, memory through the second half, and custody at the end,
+and writes `.build/interop-soak/<start>/`.
+
+`relay` rehearses MVP item 7's line with a second peer on `hci0`, which needs its own go-ahead. The line is the
+phone, then peer A on `hci1` in the `ios` profile standing in for the iPhone, then peer B on `hci0`, which refuses
+the phone. Both peers sort above every phone, and A above B, so A dials the phone and B and nobody dials either.
+Posts and DMs go both ways across A, and the three custody sets must converge.
 
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
 needs no go-ahead for a phone. The peer takes a node id above every phone's and dials them all, since this adapter
@@ -254,9 +271,22 @@ the mixed hour. The run's directory is `.build/soak/20260926-0523/`.
   link on the old one is cut 30 s after its last advert. The socket reads `ECONNABORTED` (HCI reason 0x16,
   terminated by the local host), a whole-second GLib tick after the silence. Each of the 127 came 29.5 to 32 s
   after its address went quiet. No D-Bus call prevents it: `btd_device_set_temporary` ignores private addresses,
-  so `Connect` and `Pair` cannot keep the device. `TemporaryTimeout = 0` in `/etc/bluetooth/main.conf` does, but
-  it needs root and a bluetoothd restart, which also drops `hci0`'s links: the maintainer's call. The iPhone does
-  not have this problem; it is this rig's BlueZ.
+  so `Connect` and `Pair` cannot keep the device. `TemporaryTimeout = 0` in `/etc/bluetooth/main.conf` does. The
+  maintainer set it the same day; below is what it took. The iPhone does not have this problem; it is this rig's
+  BlueZ.
+- **`TemporaryTimeout = 0` has to sit under `[General]`.** Appended at the end of `main.conf`, it lands in
+  `[AdvMon]`, and bluetoothd logs `Unknown key TemporaryTimeout for group AdvMon` at start and keeps 30 s. That
+  cost the first relay trial its link to the Pixel, cut 30.16 s after the Pixel's old address went quiet.
+- **With it, nothing forgets a device, and the desktop's applet power-cycled both adapters.** bluetoothd kept every
+  address every phone and every passing device rotated through: 124 objects on `hci0` and 114 on `hci1` within
+  25 minutes. `blueman-applet` adds a D-Bus match rule per device. At 14:37:29 it hit the system bus's 2,048 match
+  rules and then its 1,024 pending replies. A second later `blueman-mechanism` started and both adapters powered
+  off for 25 s, which dropped every link on both, the maintainer's own included. So the radio now forgets quiet
+  devices itself (`BlueZDevice.isStale`):
+  - it forgets a device 60 s after it was last heard;
+  - never one with a link, a channel or a GATT read in progress;
+  - never one that is paired, bonded or trusted;
+  - on a shared adapter, only a device that appeared after the peer started.
 - **The rest of the drops were the radio's.**
   - **77 supervision timeouts,** most of them on the Pixel 7 once its signal fell to −93 dBm and below.
   - **4 unexplained `ECONNABORTED`s,** also on the Pixel 7 near the edge of range, with no silence and no
@@ -275,10 +305,64 @@ the mixed hour. The run's directory is `.build/soak/20260926-0523/`.
   minutes at the start. After that the median was 6 to 8 s, and 90 % came within about 20 s. The dark phase's
   bursts, landing on dozing phones, had a median of 10 s and a 95th percentile of 52 s. All of it is above the
   MVP's 5 s. Each link lasted a few minutes before bluetoothd cut it, and every new link starts with a digest
-  exchange, so the churn is the likely cause; a run with `TemporaryTimeout = 0` would tell.
+  exchange, so the churn is the likely cause; a run with `TemporaryTimeout = 0` and the radio forgetting quiet
+  devices would tell.
 - **Two traps in the rig.** The lab phones' custody holds the profiles of about 33 old knit-peer identities, so the
   peer pins them all. The first trial DMed every pinned peer, which put 66 DMs into the lab's custody for a day;
   the driver now DMs only the phones in range. And while the peer is linked, its `android` advert is re-registered
   with every custody change. The dongle then answers each change with an advertising-set-terminated event, and
   the kernel logs `Unexpected advertising set terminated event`, about every 1.5 s in the shakeout. It did no
   visible harm.
+
+## What the relay line showed
+
+Three runs of `interop.py relay` on 2026-09-26, against the Pixel 3 on a debug build of knit-next `aeba5382`. Peer
+A was on `hci1` in the `ios` profile, and peer B on `hci0`, shared, in the `android` profile.
+
+- **Run 3 passed all 16 steps.**
+  - **Links:** A linked B in 19.7 s and the Pixel in 6.7 s. B never linked the Pixel, and no link dropped.
+  - **Custody:** A matched the Pixel's 451 frames in 195 s, and B matched A at once. At the end, B matched the
+    Pixel at 455 frames. A relayed 455 frames and refused none.
+  - **Group frames are left out.** Android serves a group frame only to the group's members
+    (`ForwardSync.onDigest`), as `CustodySync.missing` does, so the check leaves out the Pixel's one group frame.
+  - **Room:** B's post was on the Pixel in 2.4 s. The Pixel's took 22.6 s to reach B (below).
+  - **DMs:** the Pixel's first DM reached B as a message request in 2.4 s, and B's reply was delivered in 1.7 s.
+    The Pixel's DM was ticked.
+- **Runs 1 and 2 failed on the rig, not the line.** Run 1 lost its link to the ignored `TemporaryTimeout`, and run
+  2 lost both links to blueman's power cycle ("What the soak found"). Run 2 also held one frame, `fOqw…`, on A and
+  B for seven minutes that the Pixel did not hold. It never came back, and the check now names the frames that
+  differ (the peer's `custody` command and the phone's `STORE` rows).
+- **A post right after a back-fill waits behind stale digests.** Android re-offers its whole custody id list, 13.6 KB
+  at 451 ids, to every neighbour every 60 s (`reofferToNeighborsPeriodically`), on the link's single write queue.
+  Behind the three-minute back-fill, three of them queued. Once the back-fill drained, they went out back to back
+  at the Pixel's 1.6 KB/s, and the Pixel's post, written at 15:00:51, came after them. For knit-next: a queued
+  DIGEST could give way to the newest one rather than wait beside it.
+- **Back-fill ran at 2.3 frames a second in run 3,** and under one a second in runs 1 and 2. Android sends every
+  missing frame in one loop, so the rate is its link's.
+
+## What the both-ways soak showed
+
+`interop.py soak --extras` against the Pixel 3, 15:07 to 16:12 on 2026-09-26. It ran MVP item 11's hour at 20
+room posts a minute, both sides together, and 1,123 posts in all. Every 15 posts the phone also reacted, sent a
+typing cue, posted a photo, or traded a DM with the peer, 74 extras in all. The run's directory is
+`.build/interop-soak/20260926-1507/`. It passed 11 of 12 checks.
+
+- **Against item 11:**
+  - **Crashes:** none.
+  - **Links:** the peer ended none. One link lasted 57 minutes, and then two ended a minute apart. On each, the
+    Pixel logged reason 0x28, "Instant Passed", and the peer read `ETIMEDOUT` 5 s later. Both times the link had
+    carried almost nothing for about 70 s before it ended. The Pixel was holding three links, as in the night
+    soak.
+  - **Growth:** custody peaked at 669 frames and the SeenSet at 2,250. Memory held at 38 MB and peaked at 40.6.
+  - **What Android sends:** every photo's caption and every DM arrived. The three FILE records the photos carried
+    were discarded without dropping the link. The peer refused no frame.
+- **Delivery:** all 561 of the phone's posts arrived, with a median of 1.5 s and a 90th percentile of 14 s. 426 of
+  them arrived within 5 s. The peer ticked every one, the ones the Pixel served again after a drop included.
+  Custody matched at the end, at 668 frames.
+- **21 of the peer's 562 posts were never ticked.** They are the ones sent in the stall before the first drop and
+  across both drops. All 21 reached the Pixel, which shows them. The ticks were lost with the links: Android sends
+  a room tick once, straight onto the author's link, and does not send it again once that link dies. For
+  knit-next: a post can stay at ✓ though it was delivered.
+- **Late phones are refused in time.** Two phones came into range during the hour, and the peer refused each
+  before either could dial.
+

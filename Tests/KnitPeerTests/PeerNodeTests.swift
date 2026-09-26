@@ -192,6 +192,29 @@ import Testing
         #expect((digest["fingerprint"] as? String)?.isEmpty == false)
     }
 
+    @Test func custodyDescribesEveryFrameTheDigestLists() async throws {
+        let rig = PeerRig()
+        await rig.node.start(name: "Near")
+        try await rig.link()
+        rig.farEngine.start()
+        rig.farEngine.linkUp(Neighbor(nodeId: rig.keys.nodeId, capabilities: .local))
+        rig.farEngine.postToRoom("hello from far")
+        rig.deliverFromFar()
+        _ = try #require(await rig.lines.first { $0["event"] as? String == "message" })
+
+        let ids = try #require(try await rig.send(#"{"cmd":"digest"}"#)["ids"] as? [String])
+        let frames = try #require(try await rig.send(#"{"cmd":"custody"}"#)["frames"] as? [[String: Any]])
+        #expect(frames.compactMap { $0["id"] as? String } == ids)
+        let ownProfile = try #require(frames.first { ($0["id"] as? String)?.hasPrefix("profile-\(rig.keys.nodeId)-") == true })
+        #expect(ownProfile["type"] as? String == "profile")
+        #expect(ownProfile["from"] as? String == rig.keys.nodeId.string)
+        #expect(ownProfile["to"] is NSNull)
+        #expect(ownProfile["group"] is NSNull)
+        let post = try #require(frames.first { $0["type"] as? String == "chat" })
+        #expect(post["from"] as? String == rig.far.nodeId.string)
+        #expect((post["sentAt"] as? Int ?? 0) > 0)
+    }
+
     @Test func aSealedDMWaitingForItsKeyIsReportedSentWhenTheKeyPins() async throws {
         let rig = PeerRig()
         await rig.node.start(name: nil)

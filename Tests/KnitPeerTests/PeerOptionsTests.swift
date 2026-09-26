@@ -24,7 +24,26 @@ import Testing
         #expect(options.name == nil)
         #expect(options.logLevel == "info")
         #expect(options.rssiFloor == nil, "Android's floor unless asked")
+        #expect(!options.sharedAdapter)
         #expect(try run(["run"]) == options)
+    }
+
+    @Test func aSharedAdapterIsASwitchForRunAndScanOnly() throws {
+        let options = try run(["--adapter", "hci0", "--shared-adapter", "--adapter-address", "A0:00:00:00:00:01"])
+        #expect(options.sharedAdapter)
+        #expect(options.adapter == "hci0")
+        guard case .scan(let scan) = try PeerCommand.parse(["scan", "--shared-adapter", "--seconds", "5"], environment: home) else {
+            Issue.record("not a scan")
+            return
+        }
+        #expect(scan.sharedAdapter)
+        #expect(scan.seconds == 5)
+        #expect(throws: UsageError.unknownFlag("--shared-adapter")) {
+            try PeerCommand.parse(["keygen", "--above", "cswad43wmlont27jr4tyvu63i4", "--shared-adapter"], environment: home)
+        }
+        #expect(throws: UsageError.repeated("--shared-adapter")) {
+            try PeerCommand.parse(["--shared-adapter", "--shared-adapter"], environment: home)
+        }
     }
 
     @Test func everyRunFlagIsRead() throws {

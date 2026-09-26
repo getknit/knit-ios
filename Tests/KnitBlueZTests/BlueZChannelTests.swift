@@ -217,5 +217,68 @@
             rig.settle { rig.fake.disconnected == [LoopRig.peerPath] }
             #expect(rig.log.all.contains { $0.contains("left from before") })
         }
+
+        @Test func aDeviceNotHeardForAWhileIsForgottenUnlessSomebodyOwnsIt() throws {
+            let rig = try LoopRig(forgetQuietDevicesAfter: 60)
+            let quiet = LoopRig.peerPath
+            let paired = FakeBlueZ.adapter + "/dev_4B_00_00_00_00_EE"
+            rig.startAdvertising()
+            try rig.fake.add(device: quiet, FakeBlueZ.device(address: LoopRig.peerAddress, advert: LoopRig.advert()))
+            try rig.fake.add(device: paired, .properties([("Address", .string("4B:00:00:00:00:EE")), ("Paired", .boolean(true))]))
+            rig.settle { rig.fake.forgotten == [quiet] }
+            #expect(rig.log.all.contains { $0.contains("forgetting 1 devices") })
+        }
+
+        @Test func aDeviceWithAChannelIsNeverForgotten() throws {
+            let rig = try LoopRig(forgetQuietDevicesAfter: 60)
+            rig.start()
+            let listener = try RemoteListener(for: try LoopRig.target(), psm: UnixSockets.psm, in: rig.sockets.directory)
+            let (id, remote) = try rig.dialPeer(listener)
+            let deadline = Monotonic.milliseconds() + 300
+            rig.settle { Monotonic.milliseconds() > deadline }
+            #expect(rig.fake.forgotten.isEmpty)
+            rig.post(.close(id))
+            rig.settle { rig.fake.forgotten == [LoopRig.peerPath] }
+            _ = remote
+        }
+
+        @Test func aSharedAdapterForgetsOnlyWhatAppearedWhileTheRadioRan() throws {
+            let rig = try LoopRig(sharedAdapter: true, forgetQuietDevicesAfter: 60)
+            let before = FakeBlueZ.adapter + "/dev_4C_00_00_00_00_C8"
+            rig.fake.knownDevices[before] = FakeBlueZ.device(address: "4C:00:00:00:00:C8", advert: nil)
+            rig.startAdvertising()
+            try rig.fake.add(device: LoopRig.peerPath, FakeBlueZ.device(address: LoopRig.peerAddress, advert: LoopRig.advert()))
+            rig.settle { rig.fake.forgotten == [LoopRig.peerPath] }
+            let deadline = Monotonic.milliseconds() + 200
+            rig.settle { Monotonic.milliseconds() > deadline }
+            #expect(rig.fake.forgotten == [LoopRig.peerPath])
+        }
+
+        @Test func stoppingForgetsWhatTheRunFoundButNotWhatAnotherUserHolds() throws {
+            let rig = try LoopRig(sharedAdapter: true)
+            let before = FakeBlueZ.adapter + "/dev_4C_00_00_00_00_C8"
+            let paired = FakeBlueZ.adapter + "/dev_4B_00_00_00_00_EE"
+            let held = FakeBlueZ.adapter + "/dev_DD_00_00_00_00_7C"
+            rig.fake.knownDevices[before] = FakeBlueZ.device(address: "4C:00:00:00:00:C8", advert: nil)
+            rig.startAdvertising()
+            try rig.fake.add(device: LoopRig.peerPath, FakeBlueZ.device(address: LoopRig.peerAddress, advert: LoopRig.advert()))
+            try rig.fake.add(device: paired, .properties([("Address", .string("4B:00:00:00:00:EE")), ("Paired", .boolean(true))]))
+            try rig.fake.add(device: held, .properties([("Address", .string("DD:00:00:00:00:7C")), ("Connected", .boolean(true))]))
+            rig.settle { rig.log.all.contains { $0.contains("dev_DD_00_00_00_00_7C") } || rig.loop.devices[held] != nil }
+            rig.post(.stop)
+            rig.settle { rig.fake.forgotten == [LoopRig.peerPath] }
+            #expect(rig.log.all.contains { $0.contains("forgetting the 1 devices this run found") })
+        }
+
+        @Test func aSharedAdaptersLinksAreLeftAlone() throws {
+            let rig = try LoopRig(sharedAdapter: true)
+            rig.fake.knownDevices[LoopRig.peerPath] = .properties([
+                ("Address", .string(LoopRig.peerAddress)), ("Connected", .boolean(true)),
+            ])
+            // The advert is registered after the links left from before are seen to, so a Disconnect would be in first.
+            rig.startAdvertising()
+            #expect(rig.log.all.contains { $0.contains("shared adapter alone") })
+            #expect(rig.fake.disconnected.isEmpty)
+        }
     }
 #endif

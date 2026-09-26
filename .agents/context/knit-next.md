@@ -9,10 +9,16 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`. The port started from HEAD `02051b64`, five test-only commits
   later, on 2026-09-25.
-- **The pin is `05dc2be1`,** knit-next `main` once companion change A1 merged, on 2026-09-25. Before it were
-  A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and Gradle's test inputs) and two ratchet
-  fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but never opens), so of what the files
-  below say, only the BLE responder moved.
+- **The pin is `aeba5382`,** knit-next `main` once the custody-convergence fix merged, on 2026-09-26.
+  - **Up to `05dc2be1`** (A1's merge, the previous pin): A2's two commits (`0c0756f6`, `1f3befcd`: tests,
+    `vectors/`, docs and Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only,
+    which this port carries but never opens). Of what the files below say, only the BLE responder moved.
+  - **Since then:**
+    - `aeba5382` (ADR 2026-09.9xuu) serves profiles first and parks a whole backlog per sender. It merged
+      unchanged from the branch commit `CustodySync` and `PendingInbound` already mirror.
+    - `cfa4a627` adds a debug-only link cap, the bridge's `BLECAP`. Release still runs 6 links.
+    - `e8b98398` keeps spool copies out of overhear suppression. There is no spool here.
+  - No wire bytes or vectors moved.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`. Moving the pin means re-reading the files below and updating
   those four, in the same change, then running `scripts/sync-vectors.py`.

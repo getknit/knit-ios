@@ -53,7 +53,7 @@ import Foundation
         private static func scan(_ options: ScanOptions) async {
             let log = JSONLinesLog(
                 threshold: JSONLinesLog.level(named: options.logLevel) ?? .info, clock: SystemClock(), write: Lines.error.write)
-            let selection = checkedAdapter(options.adapter, options.adapterAddress, log: log)
+            let selection = checkedAdapter(options.adapter, options.adapterAddress, shared: options.sharedAdapter, log: log)
             let profile = options.advertise.flatMap(RadioProfile.init(name:))
             var configuration = BlueZRadio.Configuration(adapter: selection, profile: profile ?? .android, log: log)
             configuration.readsGattPayloads = true
@@ -95,11 +95,12 @@ import Foundation
             Lines.output.write(report.summary)
         }
 
-        private static func checkedAdapter(_ name: String, _ address: String, log: any KnitLog) -> AdapterSelection {
+        private static func checkedAdapter(_ name: String, _ address: String, shared: Bool, log: any KnitLog) -> AdapterSelection {
             do {
-                let selection = try AdapterSelection(name: name, expectedAddress: address)
+                let selection = try AdapterSelection(name: name, expectedAddress: address, shared: shared)
                 let status = try AdapterProbe.check(selection)
-                log.log(.info, "adapter \(selection.name) is \(selection.address), \(status.powered ? "powered" : "not powered")")
+                let use = shared ? ", shared" : ""
+                log.log(.info, "adapter \(selection.name) is \(selection.address)\(use), \(status.powered ? "powered" : "not powered")")
                 return selection
             } catch {
                 fail("refusing to start: \(error)")
@@ -112,7 +113,7 @@ import Foundation
                     JSONLinesLog(threshold: level, clock: SystemClock(), write: Lines.error.write)
                 }
                 ?? SilentLog()
-            let selection = checkedAdapter(options.adapter, options.adapterAddress, log: log)
+            let selection = checkedAdapter(options.adapter, options.adapterAddress, shared: options.sharedAdapter, log: log)
             let profile = RadioProfile(name: options.radioProfile) ?? .android
             var radioConfiguration = BlueZRadio.Configuration(adapter: selection, profile: profile, log: log)
             let receiveMTU = options.receiveMTU.flatMap(UInt16.init(exactly:))

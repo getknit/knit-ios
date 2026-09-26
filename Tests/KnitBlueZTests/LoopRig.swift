@@ -48,18 +48,20 @@
         init(
             profile: RadioProfile = .android,
             expectedAddress: String = FakeBlueZ.adapterAddress,
+            sharedAdapter: Bool = false,
             failsToListen: Bool = false,
             limit: Int = 100,
             acceptedPeer: DialTarget? = nil,
             readsGattPayloads: Bool = false,
-            gatt: GattPayloads.Configuration = LoopRig.gattPacing
+            gatt: GattPayloads.Configuration = LoopRig.gattPacing,
+            forgetQuietDevicesAfter quiet: Int64 = 60_000
         ) throws {
             fake = try FakeBlueZ()
             sockets = UnixSockets(
                 directory: UnixSockets.temporaryDirectory(), limit: limit, failsToListen: failsToListen, acceptedPeer: acceptedPeer)
             var configuration = BlueZLoop.Configuration(
                 bus: .peer(fake.address),
-                adapter: try AdapterSelection(name: "hci1", expectedAddress: expectedAddress),
+                adapter: try AdapterSelection(name: "hci1", expectedAddress: expectedAddress, shared: sharedAdapter),
                 profile: profile,
                 sockets: sockets,
                 objectRoot: "/app/getknit/test",
@@ -69,6 +71,8 @@
             configuration.retryDelayMilliseconds = 20
             configuration.readsGattPayloads = readsGattPayloads
             configuration.gatt = gatt
+            configuration.forgetQuietDevicesMilliseconds = quiet
+            configuration.forgetSweepMilliseconds = min(quiet, 30_000) / 2
             let recorder = box
             loop = BlueZLoop(configuration: configuration, mailbox: mailbox) { recorder.events.append($0) }
         }

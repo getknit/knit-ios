@@ -6,10 +6,13 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
                                 [--blank-name] [--expect-avatar]
     scripts/interop.py refusal --device SERIAL [--seconds 120]
     scripts/interop.py replace --device SERIAL
-    scripts/interop.py soak    --device SERIAL [--minutes 60] [--per-minute 12]
+    scripts/interop.py soak    --device SERIAL [--minutes 60] [--per-minute 20] [--extras]
+    scripts/interop.py relay   --device SERIAL [--radio-profile ios|android]
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
+`relay` also runs a second peer on hci0, the maintainer's own adapter, which needs its own go-ahead: that peer runs
+with --shared-adapter, so it never drops a link it did not make.
 
 Each step prints one JSON line, {"step": ..., "ok": ..., ...}, and the run ends with a summary line. The exit code
 is the number of failed steps.
@@ -19,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import queue
 import re
 import secrets
 import shlex
@@ -35,9 +37,14 @@ ROOT = Path(__file__).resolve().parent.parent
 PEER = ROOT / ".build" / "out" / "Products" / "Debug-linux-x86_64" / "knit-peer"
 PACKAGE = "app.getknit.knit"
 INSTANCE = "interop"
+# The maintainer's own adapter, for `relay` only, shared with the devices already on it (.agents/rules/devices.md).
+HCI0 = ["--adapter", "hci0", "--adapter-address", "A0:00:00:00:00:01", "--shared-adapter"]
 # Diagnostic knobs for the L2CAP receive MTU and the largest SDU written, set with --receive-mtu and --send-mtu.
 RECEIVE_MTU = ""
 SEND_MTU = ""
+# Android's caps: the SeenSet's entries, and custody's frames overall.
+SEEN_CAP = 4096
+CUSTODY_CAP = 1000
 
 
 class Phone:
@@ -104,7 +111,15 @@ class Peer:
     not carry the run's traffic."""
 
     def __init__(
-        self, profile: str, name: str, refuse: set[str], log_level: str, rssi_floor: int | None, instance: str = INSTANCE
+        self,
+        profile: str,
+        name: str,
+        refuse: set[str],
+        log_level: str,
+        rssi_floor: int | None,
+        instance: str = INSTANCE,
+        adapter: list[str] | None = None,
+        log_path: Path | None = None,
     ) -> None:
         self.instance = instance
         self.profile = profile
@@ -112,20 +127,25 @@ class Peer:
         self.refuse = refuse
         self.log_level = log_level
         self.rssi_floor = rssi_floor
+        self.adapter = adapter or []
+        self.log_path = log_path or ROOT / ".build" / ("interop-peer.log" if instance == INSTANCE else f"interop-{instance}.log")
         self.process: subprocess.Popen[str] | None = None
-        self.events: queue.Queue[dict] = queue.Queue()
+        # Every line the peer has written, in order. Waits scan it under `arrived`, so two threads can wait at once.
         self.seen: list[dict] = []
+        self.arrived = threading.Condition()
+        self.writing = threading.Lock()
         self.node_id = ""
 
     def start(self) -> None:
         command = [str(PEER), "run", "--instance", self.instance, "--radio-profile", self.profile, "--name", self.name, "--log", self.log_level]
+        command += self.adapter
         if self.rssi_floor is not None:
             command += ["--rssi-floor", str(self.rssi_floor)]
         if RECEIVE_MTU:
             command += ["--receive-mtu", RECEIVE_MTU]
         if SEND_MTU:
             command += ["--send-mtu", SEND_MTU]
-        log = open(ROOT / ".build" / "interop-peer.log", "a", encoding="utf-8")  # noqa: SIM115 - lives with the process
+        log = open(self.log_path, "a", encoding="utf-8")  # noqa: SIM115 - lives with the process
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, text=True, bufsize=1)
         threading.Thread(target=self._read, daemon=True).start()
         ready = self.wait(lambda line: line.get("event") == "ready", 20)
@@ -137,31 +157,40 @@ class Peer:
         assert self.process and self.process.stdout
         for raw in self.process.stdout:
             try:
-                self.events.put(json.loads(raw))
+                line = json.loads(raw)
             except json.JSONDecodeError:
                 continue
+            line["_at"] = time.monotonic()
+            with self.arrived:
+                self.seen.append(line)
+                self.arrived.notify_all()
 
     def wait(self, match, timeout: float) -> dict:
         """The first line, already seen or still to come, that matches; raises TimeoutError otherwise."""
-        for line in self.seen:
-            if match(line):
-                return line
         deadline = time.monotonic() + timeout
-        while (left := deadline - time.monotonic()) > 0:
-            try:
-                line = self.events.get(timeout=min(left, 1))
-            except queue.Empty:
-                continue
-            self.seen.append(line)
-            if match(line):
-                return line
-        raise TimeoutError("no matching line from knit-peer")
+        checked = 0
+        with self.arrived:
+            while True:
+                for line in self.seen[checked:]:
+                    if match(line):
+                        return line
+                checked = len(self.seen)
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise TimeoutError("no matching line from knit-peer")
+                self.arrived.wait(min(left, 1))
+
+    def lines(self, match) -> list[dict]:
+        """Every line so far that matches."""
+        with self.arrived:
+            return [line for line in self.seen if match(line)]
 
     def command(self, **fields) -> dict:
         tag = secrets.token_hex(4)
         assert self.process and self.process.stdin
-        self.process.stdin.write(json.dumps({**fields, "tag": tag}) + "\n")
-        self.process.stdin.flush()
+        with self.writing:
+            self.process.stdin.write(json.dumps({**fields, "tag": tag}) + "\n")
+            self.process.stdin.flush()
         return self.wait(lambda line: line.get("tag") == tag, 10)
 
     def stop(self) -> None:
@@ -175,24 +204,30 @@ class Peer:
             except subprocess.TimeoutExpired:
                 self.process.terminate()
         self.process = None
-        self.seen.clear()
+        with self.arrived:
+            self.seen.clear()
 
 
 class Run:
     def __init__(self) -> None:
         self.failed = 0
         self.steps = 0
+        self.results: list[dict] = []
 
     def step(self, name: str, check, **context) -> object:
         self.steps += 1
         started = time.monotonic()
         try:
             detail = check()
-            print(json.dumps({"step": name, "ok": True, "seconds": round(time.monotonic() - started, 1), **context, **(detail or {})}))
+            result = {"step": name, "ok": True, "seconds": round(time.monotonic() - started, 1), **context, **(detail or {})}
+            self.results.append(result)
+            print(json.dumps(result))
             return detail
         except Exception as error:  # noqa: BLE001 - every failure is reported, then the run goes on
             self.failed += 1
-            print(json.dumps({"step": name, "ok": False, "seconds": round(time.monotonic() - started, 1), "error": str(error), **context}))
+            result = {"step": name, "ok": False, "seconds": round(time.monotonic() - started, 1), "error": str(error), **context}
+            self.results.append(result)
+            print(json.dumps(result))
             return None
         finally:
             sys.stdout.flush()
@@ -344,7 +379,7 @@ def refusal(arguments: argparse.Namespace) -> int:
         connected = {m.split()[1] for m in messages if m.endswith(" connected")}
         ended = {m.split()[1] for m in messages if m.endswith(" ended")}
         refused = [channel for channel in dials if channel in connected and channel in ended]
-        ups = [line for line in peer.seen if line.get("event") == "link" and line.get("peer") == phone_id and line.get("up")]
+        ups = peer.lines(lambda line: line.get("event") == "link" and line.get("peer") == phone_id and line.get("up"))
         run.step("peer-dials-the-phone", lambda: {"dials": len(dials)} if dials else _fail("the peer never dialed"))
         # Android closes a lower dialer right after reading its HELLO, without a reply and without a log line:
         # a dial that opened and then ended, as opposed to one that never connected.
@@ -480,46 +515,380 @@ def _fail(reason: str) -> dict:
 
 
 def soak(arguments: argparse.Namespace) -> int:
+    """MVP item 11 against one phone: an hour of room traffic both ways at `--per-minute` posts a minute, both sides
+    together (Android refuses more than 30 a minute on a link). With `--extras`, the phone also reacts to the peer's
+    posts, sends typing cues, DMs and photos, and the peer DMs back, so the peer meets reactions, typing, FILE records
+    and the phone's requests while the room runs.
+
+    It passes with no link drop the peer caused, no crash, every post of each side arriving and the peer's ticked,
+    custody and the SeenSet under their caps, memory flat through the second half, and custody converged at the end.
+    Everything lands in `.build/interop-soak/<start>/`: the peer's log, `samples.jsonl` and `summary.json`."""
     phone = Phone(arguments.device)
-    phone_id = phone.state()["self"]["nodeId"]
-    peer = Peer(arguments.radio_profile, "knit-peer soak", others_in_range(phone_id), arguments.peer_log, arguments.rssi_floor)
-    peer.start()
     run = Run()
-    sent_by_peer: set[str] = set()
-    sent_by_phone: set[str] = set()
+    nonce = secrets.token_hex(3)
+    phone_id = phone.state()["self"]["nodeId"]
+    others = others_in_range(phone_id)
+    peer_id = keygen(phone_id, "peer-dials", others)
+    out = ROOT / ".build" / "interop-soak" / time.strftime("%Y%m%d-%H%M")
+    out.mkdir(parents=True, exist_ok=True)
+    header = {"run": "soak", "phone": phone_id, "peer": peer_id, "refused": sorted(others), "out": str(out), **vars(arguments)}
+    print(json.dumps(header))
+    image = _stage_image(phone) if arguments.extras else None
+    peer = Peer(arguments.radio_profile, f"knit-peer soak {nonce}", others, arguments.peer_log, arguments.rssi_floor, log_path=out / "peer.log")
+    peer.start()
+    stop = threading.Event()
+    threading.Thread(target=_keep_to, args=(peer, {phone_id}, stop), daemon=True).start()
+    traffic = SoakTraffic(peer, phone, peer_id, phone_id, image)
+    samples: list[dict] = []
     try:
         run.step("link", lambda: link_up(peer, phone, phone_id) and {})
+        # The phone back-fills every frame the peer lacks first, one record per write; timing starts after it.
+        run.step("custody-converges-first", lambda: _converges(peer, phone, 420))
         interval = 60 / arguments.per_minute
-        end = time.monotonic() + arguments.minutes * 60
-        turn = 0
+        started = time.monotonic()
+        end = started + arguments.minutes * 60
+        next_sample = started
         while time.monotonic() < end:
-            body = f"soak {turn}"
-            if turn % 2 == 0:
-                peer.command(cmd="room", text=body)
-                sent_by_peer.add(body)
-            else:
-                phone.send(body)
-                sent_by_phone.add(body)
-            turn += 1
-            if turn % 50 == 0:
-                status = peer.command(cmd="status")
-                print(json.dumps({"soak": turn, "links": status["links"], "custody": status["custody"], "dropped": status["dropped"]}))
+            beat = time.monotonic()
+            traffic.post()
+            if arguments.extras and traffic.turn % SoakTraffic.EXTRA_EVERY == 0:
+                traffic.extra()
+            if beat >= next_sample:
+                samples.append(_sample(peer, round(beat - started)))
+                print(json.dumps({"sample": samples[-1]}))
                 sys.stdout.flush()
-            time.sleep(interval)
-        time.sleep(15)
-        heard = {line.get("body") for line in peer.seen if line.get("event") == "message"}
-        run.step("no-link-dropped", lambda: _no_link_dropped(peer))
-        run.step("phone-posts-all-arrived", lambda: _all(sent_by_phone, heard))
-        # The bridge lists a thread's newest messages, so the phone side checks the most recent posts.
-        shown = {message["body"] for message in phone.state("nearby", limit=200).get("messages", [])}
-        recent = {f"soak {n}" for n in range(max(0, turn - 100), turn, 2) if f"soak {n}" in sent_by_peer}
-        run.step("peer-posts-reached-phone", lambda: _all(recent, shown))
-        run.step("custody-bounded", lambda: _bounded(peer))
+                next_sample += 120
+            time.sleep(max(0.0, interval - (time.monotonic() - beat)))
+        time.sleep(20)
+        samples.append(_sample(peer, round(time.monotonic() - started)))
         run.step("peer-alive", lambda: _alive(peer))
+        run.step("no-link-dropped-by-us", lambda: _endings(out / "peer.log"))
+        run.step("phone-posts-arrived", lambda: _all(traffic.phone_bodies, traffic.heard()))
+        run.step("peer-posts-ticked", lambda: traffic.ticks())
+        shown = {message["body"] for message in phone.state("nearby", limit=200).get("messages", [])}
+        run.step("peer-posts-on-phone", lambda: _all(set(list(traffic.peer_posts.values())[-60:]), shown))
+        run.step("phone-latency", lambda: traffic.latency())
+        if arguments.extras:
+            run.step("extras", lambda: traffic.extras_report())
+        run.step("footprint-bounded", lambda: _footprint(samples))
+        run.step("memory-flat", lambda: _memory(samples))
+        run.step("custody-converges-at-end", lambda: _converges(peer, phone, 300))
     finally:
+        stop.set()
         peer.stop()
-    print(json.dumps({"summary": "soak", "turns": turn, "steps": run.steps, "failed": run.failed}))
+    summary = {"summary": "soak", "turns": traffic.turn, "steps": run.steps, "failed": run.failed, "failures": traffic.failures}
+    (out / "samples.jsonl").write_text("".join(json.dumps(sample) + "\n" for sample in samples), encoding="utf-8")
+    (out / "summary.json").write_text(json.dumps({**summary, "run": header, "results": run.results}, indent=1), encoding="utf-8")
+    print(json.dumps(summary))
     return run.failed
+
+
+class SoakTraffic:
+    """What the soak sends, and what it made of the answers. Bodies start with "soak " so knit-next's
+    `.private/scripts/soak/cleanup.sh` purges them from the phones afterwards."""
+
+    # One extra every so many posts, round-robin through EXTRAS.
+    EXTRA_EVERY = 15
+    EXTRAS = ("react", "typing", "dm-from-phone", "dm-from-peer", "photo")
+
+    def __init__(self, peer: Peer, phone: Phone, peer_id: str, phone_id: str, image: str | None) -> None:
+        self.peer = peer
+        self.phone = phone
+        self.peer_id = peer_id
+        self.phone_id = phone_id
+        self.image = image
+        self.turn = 0
+        self.extra_turn = 0
+        self.peer_posts: dict[str, str] = {}  # id -> body
+        self.posted_at: dict[str, float] = {}  # id -> monotonic
+        self.phone_bodies: set[str] = set()
+        self.photo_bodies: set[str] = set()
+        self.phone_dms: set[str] = set()
+        self.peer_dms: dict[str, str] = {}
+        self.extras: dict[str, int] = dict.fromkeys(self.EXTRAS, 0)
+        self.failures: dict[str, int] = {}
+
+    def _try(self, what: str, action) -> object:
+        try:
+            return action()
+        except (RuntimeError, TimeoutError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
+            self.failures[what] = self.failures.get(what, 0) + 1
+            print(json.dumps({"failed": what, "error": str(error)[:200]}))
+            sys.stdout.flush()
+            return None
+
+    def post(self) -> None:
+        stamp = time.strftime("%H%M%S")
+        if self.turn % 2 == 0:
+            body = f"soak mvp11 #{self.turn} peer {stamp}"
+            reply = self._try("peer-post", lambda: self.peer.command(cmd="room", text=body))
+            if reply and reply.get("id"):
+                self.peer_posts[reply["id"]] = body
+                self.posted_at[reply["id"]] = time.monotonic()
+        else:
+            body = f"soak mvp11 #{self.turn} phone {stamp}"
+            if self._try("phone-post", lambda: self.phone.send(body)) is not None:
+                self.phone_bodies.add(body)
+        self.turn += 1
+
+    def extra(self) -> None:
+        kind = self.EXTRAS[self.extra_turn % len(self.EXTRAS)]
+        self.extra_turn += 1
+        stamp = time.strftime("%H%M%S")
+        n = self.extras[kind]
+        if kind == "react" and self.peer_posts:
+            latest = next(reversed(self.peer_posts))
+            done = self._try(kind, lambda: self.phone.bridge("REACT", id=latest, emoji="\U0001f44d"))
+        elif kind == "typing":
+            done = self._try(kind, lambda: self.phone.bridge("TYPING", conv=self.peer_id))
+        elif kind == "dm-from-phone":
+            body = f"soak mvp11 dm #{n} phone {stamp}"
+            done = self._try(kind, lambda: self.phone.send(body, conversation=self.peer_id))
+            if done is not None:
+                self.phone_dms.add(body)
+                if n == 0:
+                    # The first is a message request; accepting it lets the peer's own DMs through as replies.
+                    self._try("accept", lambda: self.peer.wait(lambda line: line.get("body") == body, 60))
+                    self._try("accept", lambda: self.peer.command(cmd="accept", conv=self.phone_id))
+        elif kind == "dm-from-peer":
+            body = f"soak mvp11 dm #{n} peer {stamp}"
+            done = self._try(kind, lambda: self.peer.command(cmd="dm", to=self.phone_id, text=body))
+            if done and done.get("id"):
+                self.peer_dms[done["id"]] = body
+        elif kind == "photo" and self.image:
+            body = f"soak mvp11 photo #{n} {stamp}"
+            done = self._try(kind, lambda: self.phone.bridge("SENDIMG", path=self.image, text=body, conv="nearby"))
+            if done is not None:
+                self.photo_bodies.add(body)
+        else:
+            done = None
+        if done is not None:
+            self.extras[kind] += 1
+
+    def heard(self) -> set[str]:
+        return {line.get("body") for line in self.peer.lines(lambda line: line.get("event") == "message")}
+
+    def _delivered(self) -> dict[str, float]:
+        return {line["id"]: line["_at"] for line in self.peer.lines(lambda line: line.get("event") == "delivered")}
+
+    def ticks(self) -> dict:
+        delivered = self._delivered()
+        waits = sorted(delivered[i] - self.posted_at[i] for i in self.peer_posts if i in delivered)
+        missing = [body for i, body in self.peer_posts.items() if i not in delivered]
+        detail = {"ticked": len(waits), "of": len(self.peer_posts), "medianS": _at(waits, 0.5), "p90S": _at(waits, 0.9), "maxS": _at(waits, 1)}
+        if missing:
+            raise RuntimeError(f"{len(missing)} unticked, first {missing[:3]}: {detail}")
+        return detail
+
+    def latency(self) -> dict:
+        """The phone's posts, from its clock to ours: MVP item 4 wants 5 s over a live link."""
+        waits = sorted(
+            (line["arrivedAt"] - line["sentAt"]) / 1000
+            for line in self.peer.lines(lambda line: line.get("event") == "message" and line.get("body") in self.phone_bodies)
+            if line.get("arrivedAt") and line.get("sentAt")
+        )
+        detail = {"posts": len(waits), "medianS": _at(waits, 0.5), "p90S": _at(waits, 0.9), "maxS": _at(waits, 1)}
+        detail["withinFiveSeconds"] = len([w for w in waits if w <= 5])
+        return detail
+
+    def extras_report(self) -> dict:
+        heard = self.heard()
+        delivered = self._delivered()
+        status = self.peer.command(cmd="status")
+        detail = {
+            "sent": self.extras,
+            "photosHeard": len(self.photo_bodies & heard),
+            "phoneDmsHeard": len(self.phone_dms & heard),
+            "peerDmsDelivered": len([i for i in self.peer_dms if i in delivered]),
+            "fileRecords": status.get("fileRecords"),
+            "router": status.get("router"),
+        }
+        problems = []
+        if self.photo_bodies - heard:
+            problems.append(f"{len(self.photo_bodies - heard)} photo captions never arrived")
+        if self.phone_dms - heard:
+            problems.append(f"{len(self.phone_dms - heard)} of the phone's DMs never arrived")
+        if detail["peerDmsDelivered"] < len(self.peer_dms):
+            problems.append(f"{len(self.peer_dms) - detail['peerDmsDelivered']} of the peer's DMs never ticked")
+        if problems:
+            raise RuntimeError(f"{'; '.join(problems)}: {detail}")
+        return detail
+
+
+def _stage_image(phone: Phone) -> str:
+    """A small JPEG copied into the app's own storage, where SENDIMG can read it (scoped storage keeps the app off
+    /sdcard). Only the debug build's files directory changes."""
+    local = ROOT / ".build" / "interop-soak" / "soak-photo.jpg"
+    if not local.exists():
+        from PIL import Image  # noqa: PLC0415 - only the photo extra needs it
+
+        Image.effect_noise((320, 240), 64).convert("RGB").save(local, quality=70)
+    subprocess.run(["adb", "-s", phone.serial, "push", str(local), "/data/local/tmp/knit-soak.jpg"], capture_output=True, check=True, timeout=60)
+    phone.shell(f"cat /data/local/tmp/knit-soak.jpg | run-as {PACKAGE} sh -c 'cat > files/knit-soak.jpg'")
+    return f"/data/data/{PACKAGE}/files/knit-soak.jpg"
+
+
+def _sample(peer: Peer, elapsed: int) -> dict:
+    status = peer.command(cmd="status")
+    sample = {"t": elapsed, **{key: status.get(key) for key in ("links", "custody", "dropped", "fileRecords", "footprint", "router")}}
+    if peer.process:
+        for line in Path(f"/proc/{peer.process.pid}/status").read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition(":")
+            if key == "VmRSS":
+                sample["rssKb"] = int(value.split()[0])
+    return sample
+
+
+def _endings(log: Path) -> dict:
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from soak import link_endings  # noqa: PLC0415 - the one classifier, shared with the night soak
+
+    endings, reasons = link_endings(log)
+    ours = [ending for ending in endings if ending["reason"].startswith("ours")]
+    if ours:
+        raise RuntimeError(f"{len(ours)} of {len(endings)} links ended by us: {dict(reasons)}")
+    return {"endings": len(endings), "reasons": dict(reasons)}
+
+
+def _footprint(samples: list[dict]) -> dict:
+    footprints = [sample["footprint"] for sample in samples if sample.get("footprint")]
+    if not footprints:
+        raise RuntimeError("no footprint sampled")
+    peaks = {key: max(f[key] for f in footprints) for key in footprints[0]}
+    custody = max(sample.get("custody") or 0 for sample in samples)
+    if peaks.get("seen", 0) > SEEN_CAP or custody > CUSTODY_CAP:
+        raise RuntimeError(f"over a cap: seen {peaks.get('seen')}, custody {custody}")
+    return {"peaks": peaks, "custodyPeak": custody, "last": footprints[-1]}
+
+
+def _memory(samples: list[dict]) -> dict:
+    """Flat means the second half's resident size grew less than 8 MB: the first minutes fill caches and tables."""
+    sizes = [(sample["t"], sample["rssKb"]) for sample in samples if sample.get("rssKb")]
+    half = [kb for t, kb in sizes if t >= sizes[-1][0] / 2]
+    if not half:
+        raise RuntimeError("no memory sampled")
+    growth = half[-1] - half[0]
+    detail = {"firstKb": sizes[0][1], "halfKb": half[0], "lastKb": half[-1], "peakKb": max(kb for _, kb in sizes)}
+    if growth > 8 * 1024:
+        raise RuntimeError(f"grew {growth} kB in the second half: {detail}")
+    return detail
+
+
+def _at(values: list[float], fraction: float) -> float | None:
+    if not values:
+        return None
+    return round(values[min(len(values) - 1, int(fraction * len(values)))], 1)
+
+
+def relay(arguments: argparse.Namespace) -> int:
+    """MVP item 7's line, rehearsed with two peers: the phone, then peer A on hci1 standing in for the iPhone, then
+    peer B on hci0, which refuses the phone. B links to A alone, so whatever B hears from the phone, and the phone
+    from B, crossed A. Both peers sort above every phone in range, so no phone dials either; A sorts above B and dials
+    both the phone and B."""
+    phone = Phone(arguments.device)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    phone_id = phone.state()["self"]["nodeId"]
+    others = others_in_range(phone_id)
+    b_id = _keygen("relay-b", "--above", max(others | {phone_id}))
+    a_id = _keygen("relay-a", "--above", b_id)
+    print(json.dumps({"run": "relay", "phone": phone_id, "a": a_id, "b": b_id, "refused": sorted(others)}))
+    b = Peer("android", f"knit-peer B {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "relay-b", HCI0)
+    a = Peer(arguments.radio_profile, f"knit-peer A {nonce}", others, arguments.peer_log, arguments.rssi_floor, "relay-a")
+    b.start()
+    a.start()
+    stop = threading.Event()
+    threading.Thread(target=_keep_to, args=(b, {a_id}, stop), daemon=True).start()
+    threading.Thread(target=_keep_to, args=(a, {phone_id, b_id}, stop), daemon=True).start()
+    try:
+        run.step("link-a-b", lambda: a.wait(lambda line: _link(line, b_id), 180) and b.wait(lambda line: _link(line, a_id), 10) and {})
+        run.step("link-a-phone", lambda: link_up(a, phone, phone_id) and {})
+        run.step("phone-profile-reaches-b", lambda: {"name": b.wait(lambda line: line.get("event") == "profile" and line.get("peer") == phone_id, 240)["displayName"]})
+        # The phone back-fills a newcomer at under a frame a second while it serves its other links, and its own new
+        # frames queue behind that, so the room and DM steps wait for it.
+        run.step("custody-a-phone", lambda: _converges(a, phone, 900))
+        run.step("custody-b-a", lambda: _peers_converge(b, a, 180))
+        body = f"interop relay room from phone {nonce}"
+        phone.send(body)
+        run.step("room-phone-to-b", lambda: _latency(b.wait(lambda line: line.get("event") == "message" and line.get("body") == body, 30)))
+        body = f"interop relay room from b {nonce}"
+        b.command(cmd="room", text=body)
+        run.step("room-b-to-phone", lambda: poll(lambda: _has(phone.state("nearby"), body), 30) and {})
+        first = f"interop relay dm from phone {nonce}"
+        phone.send(first, conversation=b_id)
+        run.step("dm-phone-to-b-is-a-request", lambda: _request(b.wait(lambda line: line.get("event") == "message" and line.get("body") == first, 60)))
+        b.command(cmd="accept", conv=phone_id)
+        body = f"interop relay dm from b {nonce}"
+        sent = b.command(cmd="dm", to=phone_id, text=body)
+        run.step("dm-b-to-phone-delivered", lambda: b.wait(lambda line: line.get("event") == "delivered" and line.get("id") == sent.get("id"), 60) and {})
+        run.step("dm-b-to-phone-shown", lambda: poll(lambda: _has(phone.state(b_id), body), 30) and {})
+        run.step("dm-phone-to-b-ticked", lambda: poll(lambda: _received(phone.state(b_id), first), 60) and {})
+        run.step("custody-b-phone", lambda: _converges(b, phone, 420))
+        run.step("a-relayed", lambda: _relayed(a))
+        run.step("b-never-linked-phone", lambda: _never_linked(b, phone_id))
+        run.step("no-link-dropped-a", lambda: _no_link_dropped(a))
+        run.step("no-link-dropped-b", lambda: _no_link_dropped(b))
+    finally:
+        stop.set()
+        a.stop()
+        b.stop()
+    print(json.dumps({"summary": "relay", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _keygen(instance: str, *bounds: str) -> str:
+    result = subprocess.run([str(PEER), "keygen", *bounds, "--instance", instance], capture_output=True, text=True, check=True)
+    return json.loads(result.stdout)["nodeId"]
+
+
+def _keep_to(peer: Peer, allowed: set[str], stop: threading.Event) -> None:
+    """Refuses every node the peer sights outside `allowed`, well inside the 12 s promotion dwell, so a phone the
+    first scan missed never joins the line."""
+    refused = set(peer.refuse)
+    while not stop.wait(3):
+        try:
+            sightings = peer.command(cmd="links").get("sightings", [])
+        except (TimeoutError, BrokenPipeError, ValueError, AssertionError):
+            continue
+        for node in {sighting["peer"] for sighting in sightings} - allowed - refused:
+            peer.command(cmd="deny-link", peer=node)
+            refused.add(node)
+            print(json.dumps({"refused-late": node, "by": peer.instance}))
+            sys.stdout.flush()
+
+
+def _link(line: dict, node: str) -> bool:
+    return line.get("event") == "link" and line.get("peer") == node and bool(line.get("up"))
+
+
+def _peers_converge(first: Peer, second: Peer, timeout: float) -> dict:
+    def same() -> dict | None:
+        ours = {frame["id"]: frame for frame in first.command(cmd="custody")["frames"]}
+        theirs = {frame["id"]: frame for frame in second.command(cmd="custody")["frames"]}
+        LAST_CUSTODY_DIFFERENCE.clear()
+        LAST_CUSTODY_DIFFERENCE.update(
+            onlyFirst=[_brief(ours[i]) for i in sorted(ours.keys() - theirs.keys())[:5]],
+            onlySecond=[_brief(theirs[i]) for i in sorted(theirs.keys() - ours.keys())[:5]],
+        )
+        return {"ids": len(ours)} if ours.keys() == theirs.keys() else None
+
+    try:
+        return poll(same, timeout, every=10)
+    except TimeoutError as error:
+        raise TimeoutError(f"custody still differs: {LAST_CUSTODY_DIFFERENCE}") from error
+
+
+def _relayed(peer: Peer) -> dict:
+    router = peer.command(cmd="status")["router"]
+    if not router.get("relayed"):
+        raise RuntimeError(f"relayed nothing: {router}")
+    return {"router": router}
+
+
+def _never_linked(peer: Peer, node: str) -> dict:
+    if peer.lines(lambda line: _link(line, node)):
+        raise RuntimeError(f"linked to {node}")
+    return {}
 
 
 def _latency(message: dict) -> dict:
@@ -561,17 +930,31 @@ LAST_CUSTODY_DIFFERENCE: dict = {}
 
 
 def _converged(peer: Peer, phone: Phone) -> dict | None:
+    """Whether the peer's live custody ids are the phone's. The phone serves a group frame only to the group's members
+    (`ForwardSync.onDigest`), and the peer is in no group, so the phone's group frames are left out."""
     ours = set(peer.command(cmd="digest")["ids"])
-    store = phone.bridge("STORE")
+    store = phone.bridge("STORE", limit=5000)
     expired = set(store.get("expiredIds", []))
-    theirs = set(store.get("allIds", [])) - expired
+    groups = {row["id"] for row in store.get("rows", []) if row.get("group")}
+    theirs = set(store.get("allIds", [])) - expired - groups
     if ours == theirs:
-        return {"ids": len(ours)}
-    # Kept for the report when the poll gives up.
+        return {"ids": len(ours), "groupFramesLeftOut": len(groups)}
+    # Kept for the report when the poll gives up: what each side holds that the other does not.
+    rows = {row["id"]: row for row in store.get("rows", [])}
+    frames = {frame["id"]: frame for frame in peer.command(cmd="custody")["frames"]}
+    LAST_CUSTODY_DIFFERENCE.clear()
     LAST_CUSTODY_DIFFERENCE.update(
-        onlyPeer=len(ours - theirs), onlyPhone=len(theirs - ours), samples=sorted(ours ^ theirs)[:5]
+        onlyPeer=[_brief(frames.get(i, {"id": i})) for i in sorted(ours - theirs)[:5]],
+        onlyPhone=[_brief(rows.get(i, {"id": i})) for i in sorted(theirs - ours)[:5]],
+        counts={"onlyPeer": len(ours - theirs), "onlyPhone": len(theirs - ours)},
     )
     return None
+
+
+def _brief(frame: dict) -> dict:
+    """A frame's addressing, from the peer's `custody` or the phone's STORE row, with node ids cut to six."""
+    keep = ("id", "type", "from", "sender", "to", "recipient", "group", "sentAt", "ageSec", "ttlLeftSec", "origin")
+    return {key: value[:6] if key in ("from", "sender", "to", "recipient") and value else value for key, value in frame.items() if key in keep}
 
 
 def _converges(peer: Peer, phone: Phone, timeout: float) -> dict:
@@ -582,17 +965,10 @@ def _converges(peer: Peer, phone: Phone, timeout: float) -> dict:
 
 
 def _no_link_dropped(peer: Peer) -> dict:
-    downs = [line for line in peer.seen if line.get("event") == "link" and not line.get("up")]
+    downs = peer.lines(lambda line: line.get("event") == "link" and not line.get("up"))
     if downs:
         raise RuntimeError(f"{len(downs)} link downs")
     return {}
-
-
-def _bounded(peer: Peer) -> dict:
-    custody = peer.command(cmd="status")["custody"]
-    if custody > 1000:
-        raise RuntimeError(f"custody holds {custody}, over Android's 1000")
-    return {"custody": custody}
 
 
 def _alive(peer: Peer) -> dict:
@@ -611,7 +987,7 @@ def _all(expected: set[str], seen: set[str]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("check", "refusal", "replace", "soak"):
+    for name in ("check", "refusal", "replace", "soak", "relay"):
         sub = commands.add_parser(name)
         sub.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
         sub.add_argument("--radio-profile", default="android", choices=["android", "ios"])
@@ -626,7 +1002,8 @@ def main() -> int:
     commands.choices["check"].add_argument("--expect-avatar", action="store_true", help="the phone has a photo: check its FILE records")
     commands.choices["refusal"].add_argument("--seconds", type=float, default=120, help="how long to watch the dials fail")
     commands.choices["soak"].add_argument("--minutes", type=float, default=60)
-    commands.choices["soak"].add_argument("--per-minute", type=float, default=12, help="posts a minute, both sides together")
+    commands.choices["soak"].add_argument("--per-minute", type=float, default=20, help="posts a minute, both sides together")
+    commands.choices["soak"].add_argument("--extras", action="store_true", help="the phone also reacts, types, DMs and posts photos")
     for sub in commands.choices.values():
         sub.add_argument("--receive-mtu", default="", help="the receive MTU each peer channel offers, for diagnosis")
         sub.add_argument("--send-mtu", default="", help="the largest SDU each peer channel writes, for diagnosis")
@@ -636,7 +1013,10 @@ def main() -> int:
     SEND_MTU = arguments.send_mtu
     if not PEER.exists():
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
-    return {"check": check, "refusal": refusal, "replace": replace, "soak": soak}[arguments.command](arguments)
+    if arguments.command == "relay" and "--radio-profile" not in sys.argv:
+        # Peer A stands in for the iPhone, which Android finds only by its GATT payload.
+        arguments.radio_profile = "ios"
+    return {"check": check, "refusal": refusal, "replace": replace, "soak": soak, "relay": relay}[arguments.command](arguments)
 
 
 if __name__ == "__main__":

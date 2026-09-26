@@ -27,6 +27,11 @@
             var readsGattPayloads = false
             /// How those reads are paced.
             var gatt = GattPayloads.Configuration()
+            /// How long a device goes unheard before the radio asks BlueZ to forget it (`BlueZDevice.isStale`), and
+            /// how often it looks. bluetoothd's own default is 30 s; the radio waits longer, since it never forgets
+            /// a linked device anyway.
+            var forgetQuietDevicesMilliseconds: Int64 = 60_000
+            var forgetSweepMilliseconds: Int64 = 30_000
         }
 
         /// A channel's socket and what waits to be written to it.
@@ -56,6 +61,8 @@
         static let readBufferSize = 65_536
         /// How many SDUs one channel may deliver per turn of the loop, so a busy one cannot starve the rest.
         static let readsPerTurn = 64
+        /// How many devices one sweep asks BlueZ to forget, so a backlog cannot flood the bus.
+        static let forgetsPerSweep = 64
         /// How long one turn waits when nothing is due.
         static let idleWaitMilliseconds: Int32 = 1000
         /// How long shutdown waits for BlueZ to hear our withdrawals, and how long each wait for the bus lasts.
@@ -87,6 +94,8 @@
         var pendingAdvert: (path: String, payload: AdvertPayload)?
         var advertGeneration = 0
         var refreshAdvertAt: Int64?
+        /// When the next sweep for devices to forget runs, while the plane is up.
+        var forgetSweepAt: Int64?
         var gattRegistered = false
         /// Discovery was started and not yet stopped.
         var scanning = false
@@ -156,8 +165,8 @@
         }
 
         private func wait(atMost limit: Int32, now: Int64) -> Int32 {
-            let deadlines = [bus?.nextDeadline, pendingAdvert == nil ? refreshAdvertAt : nil, reconnectAt, gatt.current?.deadline]
-                .compactMap(\.self)
+            let advert = pendingAdvert == nil ? refreshAdvertAt : nil
+            let deadlines = [bus?.nextDeadline, advert, reconnectAt, gatt.current?.deadline, forgetSweepAt].compactMap(\.self)
             guard let next = deadlines.min() else {
                 return limit
             }
@@ -173,6 +182,14 @@
                 syncAdvert(now: now)
             }
             expireGattRead(now: now)
+            if !isUp {
+                forgetSweepAt = nil
+            } else if let due = forgetSweepAt, now >= due {
+                forgetQuietDevices(now: now)
+                forgetSweepAt = now + configuration.forgetSweepMilliseconds
+            } else if forgetSweepAt == nil {
+                forgetSweepAt = now + configuration.forgetSweepMilliseconds
+            }
         }
 
         // MARK: Commands
@@ -264,6 +281,7 @@
             for path in linked.sorted() {
                 dropLink(to: path, now: now)
             }
+            forgetDevicesFound(now: now, linkedByUs: linked)
             if let listener {
                 Descriptor.close(listener.descriptor)
             }

@@ -18,7 +18,7 @@ explicit direction.** Update this file in the change that ships an item.
   v1 DM seal and open, the safety number, aliases and the device tag are in, with the RFC vectors and every
   knit-next golden. Line coverage is 97 %. A2's keyed vectors pass, the safety number among them, and
   knit-next verifies and opens the frames this port emits. Done: A2 merged, and the vectors are pinned to
-  knit-next `05dc2be1` (A1's merge; nothing they hold moved since `1f3befcd`).
+  knit-next `aeba5382` (2026-09-26; nothing they hold moved since `1f3befcd`).
 - **P3, the mesh engine (`KnitMesh`, `KnitStore`):** done on 2026-09-25, pending the maintainer's review.
   - **Link layer:** the `LinkManager` behind a `Radio` protocol, with A1's admission rules (ADR 2026-09.6es2).
   - **Router and custody:** flooding and custody under Android's quotas, with the rules in one `CustodyRules`
@@ -54,10 +54,12 @@ explicit direction.** Update this file in the change that ships an item.
       in 3 of 3 checks with 8192-byte SDUs, and passed with `--send-mtu 247`, so the radio now writes 247-byte
       SDUs by default (the maintainer, 2026-09-26). What the iPhone's SDUs will be is a P8 risk.
   - **Custody convergence:** a newcomer took ten minutes to converge on a stranger's backlog, on both platforms.
-    knit-next's fix (ADR 2026-09.9xuu, branch `fix/custody-converge`, not yet merged) serves profiles first and
-    parks a whole custody quota per sender; `CustodySync` and `PendingInbound` mirror it now. Once it merges,
-    re-check the port against the merged code and move the pin.
-  - **Still owed:** the two-peer relay line, which needs a second adapter.
+    knit-next's fix (ADR 2026-09.9xuu) serves profiles first and parks a whole custody quota per sender;
+    `CustodySync` and `PendingInbound` mirror it. It merged unchanged as `aeba5382` on 2026-09-26, and the pin
+    moved there. Done.
+  - **The relay line (2026-09-26):** rehearsed with a second peer on `hci0`, shared (`--shared-adapter`), on the
+    maintainer's go-ahead. `interop.py relay` passed 16 of 16: posts and DMs crossed peer A both ways, and the three
+    custody sets converged (`.agents/context/linux-peer.md`, "What the relay line showed").
   - **The soak (2026-09-26):** `scripts/soak.py` ran 8.1 hours against the four lab phones in range, driving
     none of them. The peer's `status` now reports the size of each in-memory table, so the run could show them
     level off.
@@ -65,8 +67,13 @@ explicit direction.** Update this file in the change that ships an item.
       ticked and every DM delivered.
     - **Found:** bluetoothd cut 127 of 213 links, 30 s after a phone rotated its address
       (`.agents/context/linux-peer.md`, "What the soak found"). Ticks were slower than the MVP's 5 s.
-    - **Still owed:** a rerun with `TemporaryTimeout = 0` (root; the maintainer's call), and room traffic both
-      ways, which needs a phone driven (`interop.py soak`).
+    - **Room traffic both ways (2026-09-26):** `interop.py soak --extras` ran MVP item 11's hour against the Pixel
+      3 and passed 11 of 12. There was no drop, crash or growth on our side, and reactions, typing cues, photos
+      and DMs were handled. The miss was 21 room ticks lost when the Pixel's controller ended two links
+      (`.agents/context/linux-peer.md`, "What the both-ways soak showed").
+    - **`TemporaryTimeout = 0`:** set on 2026-09-26. The radio now forgets quiet devices itself, since bluetoothd
+      no longer does and the pile power-cycled both adapters through the desktop's Bluetooth applet. A night
+      rerun started that evening, `.build/soak/current`.
   - **The GATT read (2026-09-26):** in the `ios` profile the peer reads the payload of a UUID-only advert and sets
     `FLAG_DIALS_GATT_PEERS`, so it can dial an iPhone. It reads on rules in `KnitMesh`'s `GattPayloads`, which
     KnitBLE will share (ADR 2026-09.xzpt, amended). Only the fake BlueZ has served it a payload so far; the first

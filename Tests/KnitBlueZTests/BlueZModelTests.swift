@@ -14,6 +14,15 @@ import Testing
         }
     }
 
+    @Test func hci0IsTakenOnlyAsSharedAndStillByItsAddress() throws {
+        let selection = try AdapterSelection(name: "hci0", expectedAddress: "A0:00:00:00:00:01", shared: true)
+        #expect(selection.shared)
+        #expect(selection.path == "/org/bluez/hci0")
+        try selection.check(reportedAddress: "A0:00:00:00:00:01")
+        #expect(throws: AdapterSelection.Refusal.self) { try selection.check(reportedAddress: "0A:BC:DE:00:00:A1") }
+        #expect(try !AdapterSelection(name: "hci1", expectedAddress: "0A:BC:DE:00:00:A1").shared)
+    }
+
     @Test(arguments: ["", "hci", "hci1a", "HCI1", "wlan0", "hci-1", "/org/bluez/hci1"])
     func onlyAnHciNameIsAnAdapter(_ name: String) {
         #expect(throws: AdapterSelection.Refusal.notAnAdapterName(name)) {
@@ -44,6 +53,21 @@ import Testing
         #expect(!selection.owns("/org/bluez/hci0/dev_4A_00_00_00_00_EF"))
         #expect(!selection.owns("/org/bluez/hci10"), "hci10 is not hci1")
         #expect(!selection.owns("/org/bluez"))
+    }
+
+    @Test func onlyAQuietUnlinkedDeviceNobodyOwnsIsStale() {
+        var device = BlueZDevice(path: "/org/bluez/hci1/dev_4A_00_00_00_00_EF")
+        #expect(!device.isStale(now: 100_000, quietMilliseconds: 60_000), "never heard, so never forgotten")
+        device.heardAt = 30_000
+        #expect(!device.isStale(now: 89_999, quietMilliseconds: 60_000))
+        #expect(device.isStale(now: 90_000, quietMilliseconds: 60_000))
+        for owned in ["Paired", "Bonded", "Trusted", "Connected"] {
+            var kept = device
+            kept.apply(.properties([(owned, .boolean(true))]))
+            #expect(!kept.isStale(now: 1_000_000, quietMilliseconds: 60_000), "\(owned) is kept")
+        }
+        device.listedBeforeUs = true
+        #expect(!device.isStale(now: 1_000_000, quietMilliseconds: 60_000), "a shared adapter's own list is kept")
     }
 
     @Test func aDevicesPathComesFromItsAddress() throws {

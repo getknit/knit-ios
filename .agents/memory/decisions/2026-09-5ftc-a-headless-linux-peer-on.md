@@ -54,7 +54,26 @@ implementation instead of this one. knit-next's emulator script takes the same d
   `interop.py` times posts only after custody converges.
 - **Not tested here.** Relaying between two peers needs a second adapter. Reading a GATT payload from a
   UUID-only advert is not built, so the advert never sets `FLAG_DIALS_GATT_PEERS`. (Amended 2026-09-26: the
-  `ios` profile reads it now and sets the flag, ADR 2026-09.xzpt; no real device has served it one yet.)
+  `ios` profile reads it now and sets the flag, ADR 2026-09.xzpt; no real device has served it one yet. The
+  relay line runs with a second peer on a shared `hci0`, below.)
 - **Guards.** `BlueZLoopTests`, `BlueZAdvertTests`, `BlueZChannelTests`, `BlueZModelTests`' `hci0IsRefusedWhateverItsAddress`
   and `BlueZEdgeTests` guard the radio. `PeerNodeTests` guards the control surface. `LinkRefusalTests` guards
   `deny-link`, and a floor in `scripts/coverage-floors.json` guards each target.
+
+**Amended 2026-09-26, for the relay line and `TemporaryTimeout = 0`:** the maintainer allowed `hci0` for tests that
+need two adapters, one session at a time (`.agents/rules/devices.md`). Two rules came with it:
+
+- **A shared adapter.** `hci0` is still refused by name unless `--shared-adapter` is given, and its address is
+  checked like any adapter's. A shared adapter's links belong to whoever else uses it, so the peer skips the start's
+  release of links left from before, and it only ever drops a link it made. `interop.py relay` runs peer B there,
+  and passed 16 of 16. The guards are `BlueZModelTests`' `hci0IsTakenOnlyAsSharedAndStillByItsAddress` and
+  `BlueZChannelTests`' `aSharedAdaptersLinksAreLeftAlone`.
+- **The radio forgets quiet devices.** With `TemporaryTimeout = 0`, which stops bluetoothd cutting a link when a
+  phone rotates its address, bluetoothd forgets no device at all. In 25 minutes, about 240 piled up across the two
+  adapters, until the desktop's Bluetooth applet ran out of D-Bus match rules and power-cycled both adapters. So
+  the radio asks BlueZ to forget a device it has not heard for 60 s, and when it stops, every device its run
+  found. It never forgets a device with a link, a channel or a GATT read in progress, or one that is paired,
+  bonded or trusted. On a shared adapter it forgets only what appeared after it started. The guards are
+  `BlueZModelTests`' `onlyAQuietUnlinkedDeviceNobodyOwnsIsStale` and `BlueZChannelTests`' forgetting cases. The
+  alternative was to keep bluetoothd's 30 s and live with the cuts, which ended 127 of the night soak's 213 links.
+

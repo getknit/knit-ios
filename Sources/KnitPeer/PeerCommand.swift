@@ -4,11 +4,12 @@ import KnitWire
 /// What `knit-peer` was asked to do, from its arguments.
 ///
 /// ```text
-/// knit-peer [run] [--adapter hci1] [--adapter-address AA:BB:CC:DD:EE:FF] [--radio-profile android|ios]
-///           [--instance NAME | --state DIR] [--name NAME] [--log debug|info|warning|off] [--rssi-floor DBM]
+/// knit-peer [run] [--adapter hci1] [--adapter-address AA:BB:CC:DD:EE:FF] [--shared-adapter]
+///           [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
+///           [--log debug|info|warning|off] [--rssi-floor DBM]
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
-/// knit-peer scan [--adapter hci1] [--adapter-address ADDRESS] [--seconds 20] [--advertise android|ios]
-///                [--instance NAME | --state DIR]
+/// knit-peer scan [--adapter hci1] [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
+///                [--advertise android|ios] [--instance NAME | --state DIR]
 /// knit-peer help
 /// ```
 public enum PeerCommand: Equatable, Sendable {
@@ -27,15 +28,16 @@ public enum PeerCommand: Equatable, Sendable {
     /// The usage text.
     public static let usage = """
         usage:
-            knit-peer [run] [--adapter hci1] [--adapter-address ADDRESS] [--radio-profile android|ios]
-                [--instance NAME | --state DIR] [--name NAME] [--log debug|info|warning|off] [--rssi-floor DBM]
-                [--receive-mtu BYTES] [--send-mtu BYTES]
+            knit-peer [run] [--adapter hci1] [--adapter-address ADDRESS] [--shared-adapter]
+                [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
+                [--log debug|info|warning|off] [--rssi-floor DBM] [--receive-mtu BYTES] [--send-mtu BYTES]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
-            knit-peer scan [--adapter hci1] [--adapter-address ADDRESS] [--seconds 20] [--advertise android|ios]
-                [--log debug|info|warning] [--instance NAME | --state DIR]
+            knit-peer scan [--adapter hci1] [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
+                [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
 
-        A headless Knit node on a Bluetooth adapter that is never hci0. Commands arrive as JSON lines on standard
-        input, and replies and events leave as JSON lines on standard output.
+        A headless Knit node on a Bluetooth adapter of its own. Commands arrive as JSON lines on standard input,
+        and replies and events leave as JSON lines on standard output. hci0 is refused unless --shared-adapter
+        says other devices use it too; the peer then leaves every link it did not make alone.
         """
 
     /// Parses the arguments after the program name. `environment` supplies `HOME` and `XDG_STATE_HOME` for the
@@ -46,7 +48,7 @@ public enum PeerCommand: Equatable, Sendable {
         if verb != nil {
             rest.removeFirst()
         }
-        var flags = try Flags(parsing: rest)
+        var flags = try Flags(parsing: rest, switches: ["--shared-adapter"])
         switch verb {
         case nil, "run":
             let options = try RunOptions(flags: &flags, environment: environment)
@@ -75,6 +77,8 @@ public struct RunOptions: Equatable, Sendable {
     public var adapter = "hci1"
     /// The address the adapter must have.
     public var adapterAddress = PeerCommand.defaultAdapterAddress
+    /// Whether other devices use the adapter too, which `hci0` needs (`AdapterSelection.shared`).
+    public var sharedAdapter = false
     /// `android` or `ios`.
     public var radioProfile = "android"
     /// Where the identity and profile live.
@@ -103,6 +107,7 @@ public struct RunOptions: Equatable, Sendable {
         stateDirectory = try StateDirectory.resolve(flags: &flags, environment: environment)
         adapter = flags.take("--adapter") ?? adapter
         adapterAddress = flags.take("--adapter-address") ?? adapterAddress
+        sharedAdapter = flags.take(switch: "--shared-adapter")
         radioProfile = try flags.take("--radio-profile", oneOf: Self.profiles) ?? radioProfile
         name = flags.take("--name")
         let level = try flags.take("--log", oneOf: Self.logLevels) ?? "info"
@@ -143,6 +148,8 @@ public struct ScanOptions: Equatable, Sendable {
     public var adapter = "hci1"
     /// The address the adapter must have.
     public var adapterAddress = PeerCommand.defaultAdapterAddress
+    /// Whether other devices use the adapter too, which `hci0` needs (`AdapterSelection.shared`).
+    public var sharedAdapter = false
     /// How long to listen.
     public var seconds = 20
     /// The profile to advertise under, or `nil` to stay silent.
@@ -159,6 +166,7 @@ public struct ScanOptions: Equatable, Sendable {
         logLevel = try flags.take("--log", oneOf: ["debug", "info", "warning"]) ?? logLevel
         adapter = flags.take("--adapter") ?? adapter
         adapterAddress = flags.take("--adapter-address") ?? adapterAddress
+        sharedAdapter = flags.take(switch: "--shared-adapter")
         advertise = try flags.take("--advertise", oneOf: RunOptions.profiles)
         if let text = flags.take("--seconds") {
             guard let parsed = Int(text), (1...Self.longest).contains(parsed) else {
@@ -215,18 +223,22 @@ public enum UsageError: Error, Equatable, Sendable {
     case missing(String)
 }
 
-/// The `--flag value` pairs, taken one by one so that whatever is left over is an error.
+/// The `--flag value` pairs and the valueless `switches`, taken one by one so that whatever is left over is an error.
 internal struct Flags {
     private var values: [String: String] = [:]
 
-    init(parsing arguments: ArraySlice<String>) throws(UsageError) {
+    init(parsing arguments: ArraySlice<String>, switches: Set<String>) throws(UsageError) {
         var rest = arguments
         while let flag = rest.popFirst() {
             guard flag.hasPrefix("--") else {
                 throw .unknownFlag(flag)
             }
-            guard let value = rest.popFirst(), !value.hasPrefix("--") else {
-                throw .missingValue(flag)
+            var value = ""
+            if !switches.contains(flag) {
+                guard let next = rest.popFirst(), !next.hasPrefix("--") else {
+                    throw .missingValue(flag)
+                }
+                value = next
             }
             guard values.updateValue(value, forKey: flag) == nil else {
                 throw .repeated(flag)
@@ -236,6 +248,11 @@ internal struct Flags {
 
     mutating func take(_ flag: String) -> String? {
         values.removeValue(forKey: flag)
+    }
+
+    /// Whether the switch `flag` was given.
+    mutating func take(switch flag: String) -> Bool {
+        values.removeValue(forKey: flag) != nil
     }
 
     mutating func take(_ flag: String, oneOf allowed: [String]) throws(UsageError) -> String? {

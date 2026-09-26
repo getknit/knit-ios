@@ -25,6 +25,9 @@ public enum ControlCommand: Equatable, Sendable {
     case allowLink(NodeId)
     /// `{"cmd":"digest"}`: the live custody ids and their fingerprint, to check convergence.
     case digest
+    /// `{"cmd":"custody"}`: every live frame in custody, with its type, sender, recipient, group and sent time, to
+    /// say why two custody sets differ.
+    case custody
     /// `{"cmd":"messages","conv":"nearby","limit":20}`: a thread's newest messages and their ticks.
     case messages(String, limit: Int)
     /// `{"cmd":"quit"}`: stop and exit.
@@ -53,6 +56,8 @@ public enum ControlCommand: Equatable, Sendable {
             "allow-link"
         case .digest:
             "digest"
+        case .custody:
+            "custody"
         case .messages:
             "messages"
         case .quit:
@@ -108,6 +113,8 @@ public struct ControlRequest: Equatable, Sendable {
             .success(.links)
         case "digest":
             .success(.digest)
+        case "custody":
+            .success(.custody)
         case "quit":
             .success(.quit)
         case "room":
