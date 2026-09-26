@@ -95,6 +95,21 @@ import Testing
         #expect(sync.missing(from: ["r1", "r2", "r3", "extra"], for: zed, in: store, now: now).isEmpty)
     }
 
+    @Test func profilesAreServedAheadOfEverythingElse() {
+        // Newest-received first put a sender's profile behind its chat, so a newcomer refused the chat for want
+        // of the key (knit-next ADR 2026-09.9xuu). Profiles lead; the rest keep the store's order.
+        let store = MemoryCustodyStore()
+        let sync = CustodySync()
+        _ = sync.carry(frame("profile-a", type: .profile), in: store, now: now) { true }
+        for id in ["c1", "c2", "c3"] {
+            _ = sync.carry(frame(id), in: store, now: now + 1) { true }
+        }
+        _ = sync.carry(frame("profile-b", type: .profile, from: bob), in: store, now: now + 2) { true }
+        let served = ids(sync.missing(from: [], for: zed, in: store, now: now + 3))
+        #expect(served.prefix(2).sorted() == ["profile-a", "profile-b"])
+        #expect(served.dropFirst(2).sorted() == ["c1", "c2", "c3"])
+    }
+
     @Test func aServedFrameIsAFreshFloodAroundTheVerbatimBytes() throws {
         let store = MemoryCustodyStore()
         let original = frame("p1", type: .profile)

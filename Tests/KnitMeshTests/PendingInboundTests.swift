@@ -1,4 +1,5 @@
 import KnitMesh
+import KnitStore
 import KnitTestSupport
 import KnitWire
 import Testing
@@ -50,6 +51,39 @@ import Testing
         #expect(parked == [true, true, false, false, false])
         let released = buffer.release(alice)
         #expect(released.map(\.frame.envelope.id) == ["m0", "m1"])
+    }
+
+    @Test func aWholeCustodyQuotaParksForOneSender() {
+        // A newcomer is served a stranger's backlog in one burst; the park must hold all of it (ADR 2026-09.9xuu).
+        var buffer = PendingInbound()
+        let quota = CustodyLimits().maxPerSender
+        let parked = (0...quota).map { park(&buffer, "m\($0)", from: alice, at: Int64($0)) }
+        #expect(!parked.dropLast().contains(false), "the whole quota parks")
+        #expect(parked.last == false, "one past the quota")
+        #expect(PendingInbound.defaultCapacity == 512)
+    }
+
+    @Test func theByteBudgetEvictsTheOldestAndFreesOnRelease() throws {
+        var probe = PendingInbound()
+        _ = park(&probe, "m0", from: alice)
+        let size = try #require(probe.release(alice).first).bytes
+        var buffer = PendingInbound(maxBytes: size * 2)
+        _ = park(&buffer, "a1", from: alice, at: 0)
+        _ = park(&buffer, "b1", from: bob, at: 1)
+        _ = park(&buffer, "b2", from: bob, at: 2)
+        #expect(buffer.release(alice).isEmpty, "the oldest went to make room")
+        #expect(buffer.release(bob).map(\.frame.envelope.id) == ["b1", "b2"])
+        #expect(park(&buffer, "a2", from: alice, at: 3) && park(&buffer, "a3", from: alice, at: 4), "a release frees its bytes")
+        #expect(buffer.count == 2)
+    }
+
+    @Test func aFrameOverTheWholeBudgetIsNeverParked() throws {
+        var probe = PendingInbound()
+        _ = park(&probe, "m0", from: alice)
+        let size = try #require(probe.release(alice).first).bytes
+        var buffer = PendingInbound(maxBytes: size - 1)
+        #expect(!park(&buffer, "m0", from: alice))
+        #expect(buffer.isEmpty)
     }
 
     @Test func theGlobalCapEvictsTheOldest() {

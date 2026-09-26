@@ -180,7 +180,9 @@ sights it.
 - **A third phone's frames wait out the SeenSet.** The Moto G's back-fill carries the Pixel's frames ahead of the
   Pixel's profile, so a fresh peer drops them for want of the key (57 in one run), parks 16, and marks all seen;
   41 stayed unconverged through each check. Android's router marks a frame seen before it verifies it too
-  (`MeshRouter.handleInbound`), so both platforms converge only after the 10 minutes.
+  (`MeshRouter.handleInbound`), so both platforms converged only after the 10 minutes. knit-next's fix (its ADR
+  2026-09.9xuu, branch `fix/custody-converge`) serves profiles first and parks a whole custody quota per
+  sender, and this port mirrors both (`CustodySync.missing`, `PendingInbound`).
 - **A replaced link is not a new neighbour to Android,** so the Pixel does not push its profile again. The
   second process, holding no keys, gets the Pixel's frames by back-fill before the Pixel's profile, drops them
   (77 in one run, 16 parked), and marks them seen, so custody converges only after the SeenSet's 10 minutes.

@@ -77,8 +77,11 @@ publish it honestly.
 
 ## Key recovery
 
-- **Parking:** a frame from a sender whose key we lack is parked for 2 minutes, at most 128 frames and 16
-  per sender (`PendingInbound.kt`).
+- **Parking:** a frame from a sender whose key we lack is parked for 2 minutes, at most 512 frames and 4 MiB
+  in all, and a carrier's custody quota (200) per sender, so a stranger's whole served backlog parks
+  (`PendingInbound.kt`, knit-next ADR 2026-09.9xuu).
+- **Serving order:** a digest is answered profiles first, then everything else newest-received first, so a
+  newcomer pins each sender's key before that sender's chat arrives (`ForwardSync.onDigest`, the same ADR).
 - **Asking:** a signed `keyreq` with `relay = false` goes to our neighbours, with a 30-second cooldown.
 - **Serving:** a holder answers with the cached signed profile, verbatim and `relay = false`. Android skips
   a request for its own id, which is why every node pushes its own profile at link-up.

@@ -46,10 +46,16 @@ public struct CustodySync: Sendable {
     ///
     /// A frame the peer authored is served too when its digest lacks it: that is how a node whose custody was
     /// wiped gets its own frames back. A group frame goes only to a member of its roster.
+    ///
+    /// Profiles go first (knit-next ADR 2026-09.9xuu). The store reads newest-received first, which put a sender's
+    /// profile, usually the oldest frame held of theirs, behind all of their chat, so a peer meeting that sender
+    /// for the first time dropped the backlog for want of the key it was about to be handed.
     public func missing(from theirIds: [String], for peer: NodeId, in store: some CustodyStore, now: Int64) -> [WireEnvelope] {
         let held = Set(theirIds.map(ExactKey.init))
         let peerKey = ExactKey(peer.string)
-        return store.liveFrames(now: now).compactMap { frame in
+        let live = store.liveFrames(now: now)
+        let keysFirst = live.filter { $0.envelope.type == .profile } + live.filter { $0.envelope.type != .profile }
+        return keysFirst.compactMap { frame in
             guard !held.contains(ExactKey(frame.envelope.id)) else {
                 return nil
             }

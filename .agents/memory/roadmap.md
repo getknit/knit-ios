@@ -53,6 +53,10 @@ explicit direction.** Update this file in the change that ships an item.
     - **The Moto G on merged A1:** admitted in both orders, but it lost everything the peer sent after the profile
       in 3 of 3 checks with 8192-byte SDUs, and passed with `--send-mtu 247`, so the radio now writes 247-byte
       SDUs by default (the maintainer, 2026-09-26). What the iPhone's SDUs will be is a P8 risk.
+  - **Custody convergence:** a newcomer took ten minutes to converge on a stranger's backlog, on both platforms.
+    knit-next's fix (ADR 2026-09.9xuu, branch `fix/custody-converge`, not yet merged) serves profiles first and
+    parks a whole custody quota per sender; `CustodySync` and `PendingInbound` mirror it now. Once it merges,
+    re-check the port against the merged code and move the pin.
   - **Still owed:** the two-peer relay line, which needs a second adapter; and the hour-long soak, which the
     maintainer deferred.
   - **Before P8:** `KnitBlueZ` reads the GATT payload of a UUID-only advert, so the peer can dial an iPhone and
