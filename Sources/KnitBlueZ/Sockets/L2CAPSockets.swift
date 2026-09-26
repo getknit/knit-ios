@@ -14,6 +14,10 @@
         public static let largestReceiveMTU: UInt16 = 65_535
         /// Android caps each of its writes at 8 KiB, and so does this.
         static let largestWrite = 8192
+        /// The largest SDU written unless told otherwise. A Moto G on an Android 14 GSI lost the stream after one
+        /// large SDU in every full interop check, and none with SDUs this small (`.agents/context/linux-peer.md`).
+        /// Android reads the channel as a byte stream, so smaller SDUs change nothing on the wire but their count.
+        public static let defaultSendMTU: UInt16 = 247
         /// The smallest SDU an LE channel must carry, when the kernel will not say.
         static let fallbackSendMTU = 23
         private static let backlog: Int32 = 8
@@ -22,12 +26,12 @@
         public let adapter: BluetoothAddress
         /// The receive MTU each socket offers. The kernel also caps the segment size at it.
         public let receiveMTU: UInt16
-        /// The largest SDU to write, below what the peer offers, for diagnosing a phone; `nil` writes up to that.
-        public let sendMTU: UInt16?
+        /// The largest SDU to write, below what the peer offers and never above 8 KiB.
+        public let sendMTU: UInt16
 
         /// Sockets on the adapter with `adapter`'s address, offering `receiveMTU` and writing SDUs of at most
-        /// `sendMTU`, when given.
-        public init(adapter: BluetoothAddress, receiveMTU: UInt16 = largestReceiveMTU, sendMTU: UInt16? = nil) {
+        /// `sendMTU`.
+        public init(adapter: BluetoothAddress, receiveMTU: UInt16 = largestReceiveMTU, sendMTU: UInt16 = defaultSendMTU) {
             self.adapter = adapter
             self.receiveMTU = receiveMTU
             self.sendMTU = sendMTU
@@ -74,7 +78,7 @@
             guard getsockopt(descriptor, KNIT_SOL_BLUETOOTH, KNIT_BT_SNDMTU, &mtu, &length) == 0, mtu > 0 else {
                 return Self.fallbackSendMTU
             }
-            return min(Int(mtu), Self.largestWrite, sendMTU.map(Int.init) ?? Self.largestWrite)
+            return min(Int(mtu), Self.largestWrite, Int(sendMTU))
         }
 
         public func peer(of descriptor: Int32) -> DialTarget? {

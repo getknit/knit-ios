@@ -63,7 +63,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | Command | Does |
 | --- | --- |
 | `knit-peer run [--radio-profile android\|ios] [--instance NAME] [--name NAME] [--log debug\|info\|warning\|off]` | runs the node; JSON lines in on stdin, out on stdout, logs on stderr |
-| `knit-peer run … --rssi-floor -100 --receive-mtu 247 --send-mtu 247` | development knobs: a promotion floor below Android's −90 dBm, the L2CAP receive MTU (65535 by default), and the largest SDU written (what the peer offers, up to 8192, by default) |
+| `knit-peer run … --rssi-floor -100 --receive-mtu 247 --send-mtu 8192` | development knobs: a promotion floor below Android's −90 dBm, the L2CAP receive MTU (65535 by default), and the largest SDU written (247 by default, never above what the peer offers or 8192) |
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing; `--advertise` also shows the advert |
 | `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window |
 
@@ -175,7 +175,8 @@ sights it.
   link ended, so its reader had lost its place in the stream early on. With `--send-mtu 247` the same check
   delivered everything. Short probes at 512 to 8192 bytes, without the check's long back-fill, delivered their
   post every time, one of them with a bad record at close. The suspect is its stack reassembling a many-packet
-  SDU while it is itself sending hard; not proven. The Pixel 3 takes 8192-byte SDUs throughout.
+  SDU while it is itself sending hard; not proven. The Pixel 3 takes 8192-byte SDUs throughout. Android reads
+  the channel as a stream, so the radio now writes SDUs of 247 bytes by default.
 - **A third phone's frames wait out the SeenSet.** The Moto G's back-fill carries the Pixel's frames ahead of the
   Pixel's profile, so a fresh peer drops them for want of the key (57 in one run), parks 16, and marks all seen;
   41 stayed unconverged through each check. Android's router marks a frame seen before it verifies it too

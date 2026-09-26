@@ -47,6 +47,9 @@ implementation instead of this one. knit-next's emulator script takes the same d
   gets its 420 ms default supervision timeout, where Android's own is 5 s, and a busy phone misses that. The
   phone-dials order is the reliable one for checklist L until hci1's `supervision_timeout` is raised
   (`sudo scripts/hci1-supervision.sh`, or its udev rule, since a replug resets it).
+- **Small SDUs.** The radio writes SDUs of 247 bytes at most (`L2CAPSockets.defaultSendMTU`, `--send-mtu` to
+  change it). A Moto G on an Android 14 GSI lost the stream after large SDUs in every full check and never with
+  these; Android reads the channel as a byte stream, so only the SDU count changes.
 - **Slow back-fill.** Android's back-fill runs at about 1 KB/s over this pair, and a new post queues behind it.
   `interop.py` times posts only after custody converges.
 - **Not tested here.** Relaying between two peers needs a second adapter. Reading a GATT payload from a

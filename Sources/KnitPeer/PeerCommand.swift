@@ -90,7 +90,7 @@ public struct RunOptions: Equatable, Sendable {
     static let weakestFloor = -127
     /// The receive MTU each L2CAP channel offers, for diagnosing a link; `nil` keeps the radio's default.
     public var receiveMTU: Int?
-    /// The largest SDU each L2CAP channel writes, below what the peer offers, for diagnosing a phone.
+    /// The largest SDU each L2CAP channel writes, below what the peer offers; `nil` keeps the radio's 247 bytes.
     public var sendMTU: Int?
     /// An LE channel's MTU range.
     static let mtuRange = 23...65_535

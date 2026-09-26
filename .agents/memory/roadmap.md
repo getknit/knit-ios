@@ -51,8 +51,8 @@ explicit direction.** Update this file in the change that ships an item.
     radio now releases links itself. The `ios` profile no longer re-registers its advert when only the digest
     cue moves (`.agents/context/linux-peer.md`, "What P4 found").
     - **The Moto G on merged A1:** admitted in both orders, but it lost everything the peer sent after the profile
-      in 3 of 3 checks with 8192-byte SDUs, and passed with `--send-mtu 247`. Open: whether to cap SDUs by
-      default, and what the iPhone's SDUs will be (a P8 risk).
+      in 3 of 3 checks with 8192-byte SDUs, and passed with `--send-mtu 247`, so the radio now writes 247-byte
+      SDUs by default (the maintainer, 2026-09-26). What the iPhone's SDUs will be is a P8 risk.
   - **Still owed:** the two-peer relay line, which needs a second adapter; and the hour-long soak, which the
     maintainer deferred.
   - **Before P8:** `KnitBlueZ` reads the GATT payload of a UUID-only advert, so the peer can dial an iPhone and
@@ -73,6 +73,10 @@ explicit direction.** Update this file in the change that ships an item.
 - **Companion change A3:** Android finds and dials iPhones.
 
 ## Deferred by design
+
+- **A lock TSan can see.** TSan on Linux reports false races inside `Synchronization.Mutex` bodies, since it
+  cannot see the futex (`.agents/context/testing.md`). The fix is a pthread-backed lock beside `Mutex` and a
+  change to `.agents/rules/coding.md`; the maintainer chose on 2026-09-26 to live with the flake for now.
 
 - **The mesh lab:** multi-node scenarios over a lab transport and radio, `assertConverged`, seeded chaos runs
   and the mesh-lab-reviewer persona. The maintainer asked on 2026-09-25 to skip it for now, so P3 closed on

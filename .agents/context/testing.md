@@ -7,7 +7,11 @@ ladder, not the first.
 
 1. **Swift Testing on Linux.** Every platform-free target has a test target, and the whole suite runs
    under `swift test`, TSan and ASan. Use `@Test` and `#expect`/`#require`; XCTest is disabled
-   (`--disable-xctest`) so each target writes one xUnit report.
+   (`--disable-xctest`) so each target writes one xUnit report. TSan sometimes reports an access race inside a
+   `Mutex.withLock` body, most often in `CustodyStoreTests.concurrentStoresAndSweepsLeaveAConsistentSet` (10 of
+   15 runs on its own): it cannot see `Synchronization.Mutex`'s futex on Linux, only the pthread calls it
+   intercepts. It is a false positive, and the maintainer chose on 2026-09-26 to live with it for now; rerun
+   the gate. The fix, a pthread-backed lock, is on the roadmap's deferred list.
 2. **Golden and known-answer vectors.** knit-next's `vectors/` (the 57 codec fixtures, and keyed vectors:
    identities, signed frames, a sealed DM, the safety number, the link records and an advert), its node id,
    alias and card goldens, and the RFC 7748, 8032, 5869 and 9180 vectors. The other direction runs too:

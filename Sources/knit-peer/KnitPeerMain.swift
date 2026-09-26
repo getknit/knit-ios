@@ -119,10 +119,10 @@ import Foundation
                 radioConfiguration.sockets = L2CAPSockets(
                     adapter: selection.address,
                     receiveMTU: receiveMTU ?? L2CAPSockets.largestReceiveMTU,
-                    sendMTU: sendMTU
+                    sendMTU: sendMTU ?? L2CAPSockets.defaultSendMTU
                 )
                 let offered = receiveMTU.map(String.init) ?? "the default"
-                let written = sendMTU.map(String.init) ?? "what the peer offers"
+                let written = sendMTU ?? L2CAPSockets.defaultSendMTU
                 log.log(.info, "channels offer a receive MTU of \(offered) and write at most \(written)")
             }
             let radio = BlueZRadio(configuration: radioConfiguration)
