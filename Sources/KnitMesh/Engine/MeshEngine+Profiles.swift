@@ -1,6 +1,6 @@
 import KnitCrypto
 import KnitStore
-import KnitWire
+public import KnitWire
 
 extension MeshEngine {
     // MARK: Our profile
@@ -88,6 +88,17 @@ extension MeshEngine {
     }
 
     // MARK: Their profiles
+
+    /// Marks a pinned peer verified, or not, once the user has compared safety numbers (`PeerRepository.setVerified`).
+    /// A verified peer's DMs are never a message request. A peer that has not pinned has no key to verify.
+    public func setVerified(_ peer: NodeId, _ verified: Bool) {
+        guard var record = stores.peers.peer(peer), record.verified != verified else {
+            return
+        }
+        record.verified = verified
+        stores.peers.upsert(record)
+        events.append(.peerUpdated(peer))
+    }
 
     /// A verified profile (`InboundPipeline.handleProfile`). Its key pins only if it derives to the sender, which
     /// ``verify(_:)`` checked, and a pinned key never changes. The presentation follows the newest version,

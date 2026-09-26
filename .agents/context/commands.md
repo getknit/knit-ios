@@ -60,6 +60,19 @@ sudo scripts/hci1-supervision.sh                                  # hci1's super
 scripts/hci1-supervision.sh --udev-rule                           # a udev rule that sets it on every plug-in
 ```
 
+## The app
+
+```sh
+scripts/check.sh ios                                              # xtool dev build: xtool/Knit.app
+```
+
+Launch arguments, set in the scheme on the Mac (P7):
+
+- `-seedDemo` runs the app on seeded stores in memory, a fixed identity and a radio that goes nowhere: four
+  people, a room conversation, an accepted DM and a message request.
+- `-demoRadio on|off|unauthorized|unsupported` (with `-seedDemo`) is the state that radio reports, which is how
+  the status line's messages are checked, the unsupported device's among them (MVP item 10).
+
 ## Decisions
 
 ```sh

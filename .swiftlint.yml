@@ -142,6 +142,8 @@ custom_rules:
     name: The mesh reads time through its injected clocks
     regex: '(\bDate\(\)|\bDate\.now\b|\bTask\.sleep\b|\bContinuousClock\(\))'
     included: 'Sources/(KnitWire|KnitCrypto|KnitStore|KnitStoreSQL|KnitMesh)/'
+    # SystemClock is the one real clock behind MeshClock, which the app and knit-peer inject.
+    excluded: 'Sources/KnitMesh/Engine/SystemClock\.swift'
     message: Take the wall clock and the monotonic clock as dependencies, so the lab can drive them.
     severity: error
   mesh_injected_randomness:

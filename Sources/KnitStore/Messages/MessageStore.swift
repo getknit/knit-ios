@@ -79,6 +79,10 @@ public protocol MessageStore: AnyObject, Sendable {
 
     /// A thread's messages in reading order: by `sentAt`, ties in the order they were stored.
     func messages(in conversationId: String) -> [MessageRecord]
+
+    /// The newest message of every thread, newest thread first: what a list row shows for its thread
+    /// (`observeNewestPerConversation` in knit-next). A thread's newest is the last in its reading order.
+    func threadHeads() -> [MessageRecord]
 }
 
 /// A ``MessageStore`` in memory, keyed by the ids' bytes (``ExactKey``) and safe to share across threads.
@@ -107,8 +111,13 @@ public final class MemoryMessageStore: MessageStore {
         func inReadingOrder(where isIncluded: (MessageRecord) -> Bool) -> [MessageRecord] {
             rows.values
                 .filter { isIncluded($0.record) }
-                .sorted { ($0.record.sentAt, $0.order) < ($1.record.sentAt, $1.order) }
+                .sorted(by: Self.precedes)
                 .map(\.record)
+        }
+
+        /// Whether `first` reads before `second` in a thread.
+        static func precedes(_ first: Row, _ second: Row) -> Bool {
+            (first.record.sentAt, first.order) < (second.record.sentAt, second.order)
         }
     }
 
@@ -171,6 +180,20 @@ public final class MemoryMessageStore: MessageStore {
     public func messages(in conversationId: String) -> [MessageRecord] {
         state.withLock { state in
             state.inReadingOrder { $0.conversationId == conversationId }
+        }
+    }
+
+    public func threadHeads() -> [MessageRecord] {
+        state.withLock { state in
+            var heads: [ExactKey: Row] = [:]
+            for row in state.rows.values {
+                let thread = ExactKey(row.record.conversationId)
+                if let head = heads[thread], State.precedes(row, head) {
+                    continue
+                }
+                heads[thread] = row
+            }
+            return heads.values.sorted { State.precedes($1, $0) }.map(\.record)
         }
     }
 }

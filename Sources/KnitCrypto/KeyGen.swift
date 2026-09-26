@@ -1,9 +1,9 @@
-public import KnitCrypto
 public import KnitWire
 
-/// Makes an identity whose node id sorts inside a window: `knit-peer keygen --above/--below`, so an interop run can
-/// put the peer on either side of a phone and check both dial orders (MVP item 2). Both bounds together put it
-/// between two phones: below the one that should dial it, and above the rest, which then never do.
+/// Makes an identity whose node id sorts inside a window: `knit-peer keygen --above/--below`, and the debug app's
+/// Diagnostics, so an interop run can put a node on either side of a phone and check both dial orders (MVP item 2).
+/// Both bounds together put it between two phones: below the one that should dial it, and above the rest, which
+/// then never do.
 public enum KeyGen {
     /// Where the new node id must sort, as node ids compare: as ASCII strings, the order Android's tie-break uses.
     public struct Window: Equatable, Sendable {
@@ -21,6 +21,14 @@ public enum KeyGen {
         /// Whether `nodeId` is inside the window, bounds excluded.
         public func contains(_ nodeId: NodeId) -> Bool {
             (above.map { nodeId > $0 } ?? true) && (below.map { nodeId < $0 } ?? true)
+        }
+
+        /// Whether the bounds cross or meet, so nothing can sort between them.
+        public var isEmpty: Bool {
+            guard let above, let below else {
+                return false
+            }
+            return above >= below
         }
     }
 
@@ -40,6 +48,9 @@ public enum KeyGen {
         attempts: Int = attempts,
         generate: () -> IdentityKeys = IdentityKeys.generate
     ) throws(Failure) -> IdentityKeys {
+        guard !window.isEmpty else {
+            throw .noRoom(attempts: 0)
+        }
         for _ in 0..<attempts {
             let keys = generate()
             if window.contains(keys.nodeId) {

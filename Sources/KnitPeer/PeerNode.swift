@@ -233,6 +233,8 @@ internal struct EventReporter: Sendable {
                 output(JSONValue.object(["event": "link", "peer": .string(neighbor.nodeId.string), "up": false]).line)
             }
             return neighbors
+        case .radioChanged(let state):
+            output(JSONValue.object(["event": "radio", "state": .string("\(state)")]).line)
         }
         return linked
     }

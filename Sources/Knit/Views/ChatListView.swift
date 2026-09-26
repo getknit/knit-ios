@@ -1,0 +1,226 @@
+#if os(iOS)
+    import KnitAppCore
+    import KnitStore
+    import SwiftUI
+
+    /// The chat list: the status line, the first-run card, the room, the DMs and the requests entry.
+    internal struct ChatListView: View {
+        @State private var model: ChatListModel
+
+        init(session: AppSession) {
+            _model = State(initialValue: ChatListModel(session: session))
+        }
+
+        var body: some View {
+            let state = model.state
+            List {
+                Section {
+                    StatusLine(status: model.status) { Task { await model.start() } }
+                }
+                if state.showsGettingStarted {
+                    Section {
+                        GettingStartedCard()
+                    }
+                }
+                Section {
+                    ForEach(state.rows) { row in
+                        NavigationLink(value: Route.chat(row.id)) {
+                            ChatRowView(row: row)
+                        }
+                        .accessibilityIdentifier(AccessibilityID.chatRow(row.id))
+                    }
+                    if state.requestCount > 0 {
+                        RequestsEntry(count: state.requestCount)
+                    }
+                }
+            }
+            .navigationTitle(Copy.ChatList.title)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(value: Route.settings) {
+                        Label(Copy.ChatList.settings, systemImage: "gearshape")
+                    }
+                }
+            }
+        }
+    }
+
+    /// The way into the message requests, with how many wait.
+    private struct RequestsEntry: View {
+        let count: Int
+
+        var body: some View {
+            NavigationLink(value: Route.requests) {
+                LabeledContent(Copy.ChatList.requests) {
+                    Text(count, format: .number)
+                        .monospacedDigit()
+                }
+            }
+            .accessibilityValue(Copy.ChatList.requestCount(count))
+        }
+    }
+
+    /// How many peers are linked, or why none can be, with the one control that helps.
+    private struct StatusLine: View {
+        let status: ConnectionStatus
+        let start: () -> Void
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: Layout.small) {
+                Label {
+                    Text(status.line)
+                } icon: {
+                    Image(systemName: symbol)
+                        .foregroundStyle(status.isWarning ? .orange : .accentColor)
+                }
+                if status.offersStart {
+                    Button(Copy.Status.start, action: start)
+                        .buttonStyle(.bordered)
+                }
+                if status.offersSettings {
+                    OpenSettingsButton()
+                        .buttonStyle(.bordered)
+                }
+                if case .linked = status {
+                    Text(Copy.Status.boundary)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .contain)
+        }
+
+        private var symbol: String {
+            switch status {
+            case .linked(let count):
+                count > 0 ? "dot.radiowaves.left.and.right" : "magnifyingglass"
+            case .starting:
+                "hourglass"
+            case .stopped:
+                "pause.circle"
+            case .bluetoothOff, .notAllowed, .unsupported:
+                "exclamationmark.triangle"
+            }
+        }
+    }
+
+    /// The button that opens Knit's page in the Settings app, where a refused permission can change.
+    internal struct OpenSettingsButton: View {
+        @Environment(\.openURL) private var openURL
+
+        var body: some View {
+            Button(Copy.Common.openSettings) {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    openURL(url)
+                }
+            }
+        }
+    }
+
+    private struct GettingStartedCard: View {
+        var body: some View {
+            VStack(alignment: .leading, spacing: Layout.small) {
+                Text(Copy.ChatList.gettingStartedTitle)
+                    .font(.headline)
+                Text(Copy.ChatList.gettingStartedBody)
+                    .foregroundStyle(.secondary)
+                NavigationLink(value: Route.chat(Conversations.nearby)) {
+                    Text(Copy.ChatList.gettingStartedAction)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(.vertical, Layout.tight)
+        }
+    }
+
+    /// One thread: one VoiceOver element that reads the title, the preview, the time and the tick.
+    private struct ChatRowView: View {
+        let row: ChatRow
+
+        var body: some View {
+            HStack(spacing: Layout.medium) {
+                Image(systemName: row.isRoom ? "person.3.fill" : "person.crop.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(row.isRoom ? Color.accentColor : .secondary)
+                    .frame(width: Layout.glyphColumn)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: Layout.hairline) {
+                    RowTitle(row: row)
+                    HStack(spacing: Layout.tight) {
+                        if let status = row.lastStatus {
+                            DeliveryTick(status: status)
+                        }
+                        Text(row.preview ?? Copy.ChatList.noMessages)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(Layout.previewLines)
+                    }
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// A row's first line: the title, its badges, and when the newest message was sent.
+    private struct RowTitle: View {
+        let row: ChatRow
+
+        var body: some View {
+            HStack {
+                Text(row.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                if row.isVerified {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.tint)
+                        .accessibilityLabel(Copy.Profile.verified)
+                }
+                if row.isLinked {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                        .accessibilityLabel(Copy.ChatList.inRange)
+                }
+                Spacer()
+                if let at = row.lastMessageAt {
+                    Text(Date(milliseconds: at), format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    /// The tick on one of our messages: a clock, one check, or a filled check. The glyph never carries the meaning
+    /// alone; its label is the status's words.
+    internal struct DeliveryTick: View {
+        let status: DeliveryStatus
+
+        var body: some View {
+            Image(systemName: symbol)
+                .font(.caption)
+                .foregroundStyle(status == .delivered ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .accessibilityLabel(status.label)
+        }
+
+        private var symbol: String {
+            switch status {
+            case .waitingForKey:
+                "clock"
+            case .sent:
+                "checkmark"
+            case .delivered:
+                "checkmark.circle.fill"
+            }
+        }
+    }
+
+    extension Date {
+        private static let millisecondsPerSecond = 1000.0
+
+        /// A mesh timestamp, in milliseconds since the epoch.
+        init(milliseconds: Int64) {
+            self.init(timeIntervalSince1970: Double(milliseconds) / Self.millisecondsPerSecond)
+        }
+    }
+#endif

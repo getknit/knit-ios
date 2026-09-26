@@ -22,21 +22,25 @@ ladder, not the first.
    (ADR 2026-09.gq84), so a test hands one a `ManualClock`, a `RecordingTransport` or a `FakeRadio`, feeds it
    frames signed by fixed `TestPeer` keys, and moves the clock itself to fire timers. `MeshTests` drives the
    `Mesh` actor the same way and awaits the fake radio's activity stream. Nothing sleeps.
-4. **The mesh lab: deferred.** Multi-node scenarios with `assertConverged`, and seeded chaos, were skipped
+4. **The app's logic, without a screen.** `KnitAppCoreTests` drives `AppSession` and every view model
+   through a `FakeMesh` that writes to in-memory stores as the engine would, and reads every catalog string.
+   `DemoTests` runs the real `Mesh` on `-seedDemo`'s radio. The SwiftUI views, the Keychain store and
+   `KnitBLE` compile only for iOS: `scripts/check.sh ios` type-checks them, and the Mac runs them (P7).
+5. **The mesh lab: deferred.** Multi-node scenarios with `assertConverged`, and seeded chaos, were skipped
    for now at the maintainer's call (`.agents/memory/roadmap.md`). The synchronous engine is what would let
    a later lab run deterministically from a seed.
-5. **Fuzzing.** Every parser that reads bytes off the radio has a libFuzzer harness in `Fuzz/`. A crash is
+6. **Fuzzing.** Every parser that reads bytes off the radio has a libFuzzer harness in `Fuzz/`. A crash is
    a finding by construction; its input joins the corpus once the fix lands.
-6. **The Linux peer, without a radio.** `KnitBlueZTests` runs the BlueZ radio against a fake BlueZ on a
+7. **The Linux peer, without a radio.** `KnitBlueZTests` runs the BlueZ radio against a fake BlueZ on a
    peer-to-peer libdbus server, with Unix `SOCK_SEQPACKET` sockets in place of L2CAP, so the whole radio runs
    in CI with no adapter and no bus daemon. The fake also plays remote devices' GATT servers, so the GATT
    read runs too. No test opens a Bluetooth socket (`.agents/context/linux-peer.md` says why). `KnitPeerTests` drives the control surface through a real `Mesh`, with a second engine signing
    the far side's frames.
-7. **Over the air, from Linux (P4).** `knit-peer` on `hci1` against Android phones running Knit: checklist
+8. **Over the air, from Linux (P4).** `knit-peer` on `hci1` against Android phones running Knit: checklist
    L, through `scripts/interop.py`. Obey `.agents/rules/devices.md` before touching a phone.
-8. **The Mac (P7).** The full suite on macOS, the `KnitBLE` delegate tests, Simulator XCUITest with
+9. **The Mac (P7).** The full suite on macOS, the `KnitBLE` delegate tests, Simulator XCUITest with
    `performAccessibilityAudit`, and a native Mac run against Android and the Linux peer: checklist M.
-9. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`.
+10. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`.
 
 ## Coverage
 

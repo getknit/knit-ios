@@ -80,6 +80,14 @@ import Testing
         #expect(dm["pendingKey"] as? Bool == true)
     }
 
+    @Test func theRadiosStateIsReported() async throws {
+        let rig = PeerRig()
+        await rig.node.start(name: nil)
+        rig.radio.emit(.state(.off))
+        let radio = try #require(await rig.lines.first { $0["event"] as? String == "radio" })
+        #expect(radio["state"] as? String == "off")
+    }
+
     @Test func aLinkIsReportedListedAndCutByDenyLink() async throws {
         let rig = PeerRig()
         await rig.node.start(name: nil)

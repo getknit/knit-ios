@@ -101,6 +101,23 @@ public final class SQLMessageStore: MessageStore {
         }
     }
 
+    public func threadHeads() -> [MessageRecord] {
+        // One seek per thread down the (conversationId, sentAt, seq) index, however long the threads grow.
+        let headColumns = Self.columns.split(separator: ", ").map { "m.\($0)" }.joined(separator: ", ")
+        return database.read(or: []) { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT \(headColumns) FROM (SELECT DISTINCT conversationId AS thread FROM messages) AS t
+                    JOIN messages AS m ON m.seq = (
+                        SELECT seq FROM messages WHERE conversationId = t.thread ORDER BY sentAt DESC, seq DESC LIMIT 1
+                    )
+                    ORDER BY m.sentAt DESC, m.seq DESC
+                    """
+            ).map(Self.record)
+        }
+    }
+
     /// The values for ``insert``, in ``columns`` order.
     private static func arguments(_ message: MessageRecord) -> StatementArguments {
         [

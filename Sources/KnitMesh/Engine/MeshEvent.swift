@@ -14,6 +14,8 @@ public enum MeshEvent: Sendable, Equatable {
     case peerUpdated(NodeId)
     /// The live links changed.
     case neighborsChanged([Neighbor])
+    /// The radio's state changed: Bluetooth switched on or off, allowed or refused.
+    case radioChanged(RadioState)
 }
 
 /// Why the engine dropped a frame locally (`DropReason` in knit-next's `MeshMetrics.kt`). A dropped frame is

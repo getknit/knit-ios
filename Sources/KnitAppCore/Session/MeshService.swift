@@ -1,0 +1,67 @@
+public import KnitMesh
+public import KnitStore
+public import KnitWire
+
+/// What the app asks of the mesh: ``Mesh`` in the app and in `-seedDemo`, a stand-in in tests. Everything above
+/// the radio talks to the mesh through this, and reads what it stored through the stores.
+public protocol MeshService: AnyObject, Sendable {
+    /// This node's id.
+    var nodeId: NodeId { get }
+    /// What the mesh did. One consumer, the ``AppSession``.
+    var events: AsyncStream<MeshEvent> { get }
+    /// Whether the mesh runs.
+    var isRunning: Bool { get async }
+    /// What the radio last said of its state.
+    var radioState: RadioState? { get async }
+    /// The peers linked now.
+    var neighbors: [Neighbor] { get async }
+    /// What Diagnostics shows.
+    var diagnostics: MeshDiagnostics { get async }
+
+    /// Starts the mesh and its radio.
+    func start() async
+    /// Stops the radio and closes every link.
+    func stop() async
+    /// Posts to the Nearby room.
+    func postToRoom(_ text: String) async -> MessageRecord?
+    /// Sends a DM.
+    func sendDirectMessage(_ text: String, to recipient: NodeId) async -> MessageRecord?
+    /// Accepts a message request.
+    func accept(_ conversationId: String) async
+    /// Changes our profile and floods it.
+    func updateProfile(name: String, status: String, openToChat: Bool) async
+    /// Marks a pinned peer verified, or not.
+    func setVerified(_ peer: NodeId, _ verified: Bool) async
+}
+
+/// The mesh's counters and radio view, read in one hop for Diagnostics.
+public struct MeshDiagnostics: Sendable, Equatable {
+    /// The peers linked now.
+    public var neighbors: [Neighbor]
+    /// The peers sighted now, linked or not.
+    public var sightings: [PresenceTracker.Snapshot]
+    /// Why frames were dropped so far.
+    public var dropped: [DropReason: Int]
+    /// FILE records discarded so far.
+    public var discardedFileRecords: Int
+
+    /// Bundles the counters.
+    public init(
+        neighbors: [Neighbor] = [],
+        sightings: [PresenceTracker.Snapshot] = [],
+        dropped: [DropReason: Int] = [:],
+        discardedFileRecords: Int = 0
+    ) {
+        self.neighbors = neighbors
+        self.sightings = sightings
+        self.dropped = dropped
+        self.discardedFileRecords = discardedFileRecords
+    }
+}
+
+extension Mesh: MeshService {
+    /// The counters and the radio view, read together.
+    public var diagnostics: MeshDiagnostics {
+        MeshDiagnostics(neighbors: neighbors, sightings: sightings, dropped: dropped, discardedFileRecords: discardedFileRecords)
+    }
+}

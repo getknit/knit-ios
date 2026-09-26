@@ -27,7 +27,9 @@ growing an explanation, that explanation belongs in the ADR.
 | a set, map or column keyed by a frame id, a frame key or an unparsed sender id | [ADR 2026-09.jc2x](../memory/decisions/2026-09-jc2x-wire-ids-compare-by-their.md) |
 | a timer, a `Task`, the `Mesh` actor, or how the engine reads time | [ADR 2026-09.gq84](../memory/decisions/2026-09-gq84-the-mesh-engine-is-a.md) |
 | `KnitBlueZ`, `knit-peer`, `scripts/interop.py`, or anything that touches `hci1` | [ADR 2026-09.5ftc](../memory/decisions/2026-09-5ftc-a-headless-linux-peer-on.md) |
-| the GATT payload, its UUIDs, `FLAG_DIALS_GATT_PEERS`, `Radio.dialsGattPeers`, or `GattPayloads` | [ADR 2026-09.xzpt](../memory/decisions/2026-09-xzpt-an-iphone-is-found-through.md) |
+| the GATT payload, its UUIDs, `FLAG_DIALS_GATT_PEERS`, `Radio.dialsGattPeers`, `GattPayloads`, or `KnitBLE` | [ADR 2026-09.xzpt](../memory/decisions/2026-09-xzpt-an-iphone-is-found-through.md) |
+| the Keychain identity, `KeychainSecretStore`, or what onboarding publishes | [ADR 2026-09.tkww](../memory/decisions/2026-09-tkww-a-reinstall-keeps-the-keychain.md) |
+| a string a person reads, `Copy`, `App/Info.plist`'s usage strings, or a view's text | [ADR 2026-09.ycza](../memory/decisions/2026-09-ycza-user-facing-copy-lives-in.md) |
 
 ## Where they live
 

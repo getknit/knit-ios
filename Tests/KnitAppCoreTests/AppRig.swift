@@ -1,0 +1,249 @@
+import Foundation
+import KnitCrypto
+import KnitMesh
+import KnitStore
+import KnitTestSupport
+import KnitWire
+import Synchronization
+
+@testable import KnitAppCore
+
+/// A person with fixed keys.
+struct Person {
+    let keys: IdentityKeys
+
+    init(seed: Int) {
+        guard let made = IdentityKeys(signingSeed: fixtureBytes(32, seed: seed), agreementScalar: fixtureBytes(32, seed: seed + 100)) else {
+            fatalError("fixed seeds make valid keys")
+        }
+        keys = made
+    }
+
+    var nodeId: NodeId { keys.nodeId }
+    var bundle: PublicKeyBundle { keys.bundle }
+
+    /// The peer row our engine would pin for this person.
+    func record(name: String, status: String = "", verified: Bool = false, openToChat: Bool = false) -> PeerRecord {
+        PeerRecord(
+            nodeId: nodeId,
+            name: name,
+            status: status,
+            publicKey: bundle.encoded,
+            updatedAt: 1,
+            verified: verified,
+            openToChat: openToChat
+        )
+    }
+}
+
+/// A mesh that does what the engine does to the stores for each of the app's calls, records them, and reports
+/// whatever the test emits.
+final class FakeMesh: MeshService {
+    struct Calls: Equatable {
+        var starts = 0
+        var stops = 0
+        var room: [String] = []
+        var direct: [String] = []
+        var accepted: [String] = []
+        var verified: [String] = []
+        var profiles: [String] = []
+    }
+
+    let nodeId: NodeId
+    let events: AsyncStream<MeshEvent>
+    private let continuation: AsyncStream<MeshEvent>.Continuation
+    private let stores: MeshStores
+    private struct State {
+        var calls = Calls()
+        var running = false
+        var radio: RadioState?
+        var next = 0
+    }
+
+    private let state: Mutex<State>
+    let clock: Int64
+
+    init(nodeId: NodeId, stores: MeshStores, radio: RadioState? = nil, clock: Int64 = 1_790_000_000_000) {
+        self.nodeId = nodeId
+        self.stores = stores
+        self.clock = clock
+        state = Mutex(State(radio: radio))
+        (events, continuation) = AsyncStream<MeshEvent>.makeStream()
+    }
+
+    var calls: Calls { state.withLock { $0.calls } }
+
+    /// Reports `event`, as the mesh would.
+    func emit(_ event: MeshEvent) {
+        continuation.yield(event)
+    }
+
+    /// Ends the event stream, so a listening session returns.
+    func finish() {
+        continuation.finish()
+    }
+
+    var isRunning: Bool { state.withLock { $0.running } }
+    var radioState: RadioState? { state.withLock { $0.radio } }
+    var neighbors: [Neighbor] { [] }
+    var diagnostics: MeshDiagnostics { MeshDiagnostics() }
+
+    func start() {
+        state.withLock { state in
+            state.calls.starts += 1
+            state.running = true
+        }
+    }
+
+    func stop() {
+        state.withLock { state in
+            state.calls.stops += 1
+            state.running = false
+        }
+    }
+
+    func postToRoom(_ text: String) -> MessageRecord? {
+        state.withLock { $0.calls.room.append(text) }
+        return store(text, to: nil)
+    }
+
+    func sendDirectMessage(_ text: String, to recipient: NodeId) -> MessageRecord? {
+        state.withLock { $0.calls.direct.append("\(recipient): \(text)") }
+        return store(text, to: recipient)
+    }
+
+    func accept(_ conversationId: String) {
+        state.withLock { $0.calls.accepted.append(conversationId) }
+        stores.conversations.accept(conversationId)
+    }
+
+    func updateProfile(name: String, status: String, openToChat: Bool) {
+        state.withLock { $0.calls.profiles.append("\(name)|\(status)|\(openToChat)") }
+        var own = stores.ownProfile.load()
+        own.name = name
+        own.status = status
+        own.openToChat = openToChat
+        stores.ownProfile.save(own)
+    }
+
+    func setVerified(_ peer: NodeId, _ verified: Bool) {
+        state.withLock { $0.calls.verified.append("\(peer): \(verified)") }
+        if var record = stores.peers.peer(peer) {
+            record.verified = verified
+            stores.peers.upsert(record)
+        }
+    }
+
+    private func store(_ text: String, to recipient: NodeId?) -> MessageRecord {
+        let index = state.withLock { state in
+            defer { state.next += 1 }
+            return state.next
+        }
+        let record = MessageRecord(
+            id: "sent-\(index)",
+            senderId: nodeId,
+            recipientId: recipient,
+            conversationId: Conversations.id(sender: nodeId, recipient: recipient, me: nodeId),
+            body: text,
+            sentAt: clock + Int64(index),
+            pendingKey: recipient.map { stores.peers.peer($0) == nil } ?? false
+        )
+        stores.messages.save(record)
+        return record
+    }
+}
+
+/// A notifier that keeps what it is asked.
+final class RecordingNotifier: Notifier {
+    private let postedList = Mutex<[LocalNotification]>([])
+    private let withdrawnList = Mutex<[String]>([])
+
+    var posted: [LocalNotification] { postedList.withLock { $0 } }
+    var withdrawn: [String] { withdrawnList.withLock { $0 } }
+
+    func post(_ notification: LocalNotification) {
+        postedList.withLock { $0.append(notification) }
+    }
+
+    func withdraw(threadId: String) {
+        withdrawnList.withLock { $0.append(threadId) }
+    }
+}
+
+/// A notification permission that answers what it is told to.
+final class FakePermission: NotificationPermission {
+    private let answer = Mutex(NotificationAuthorization.notDetermined)
+    private let onRequest: NotificationAuthorization
+
+    init(current: NotificationAuthorization = .notDetermined, onRequest: NotificationAuthorization = .allowed) {
+        answer.withLock { $0 = current }
+        self.onRequest = onRequest
+    }
+
+    func authorization() -> NotificationAuthorization {
+        answer.withLock { $0 }
+    }
+
+    func request() -> NotificationAuthorization {
+        answer.withLock { answer in
+            if answer == .notDetermined {
+                answer = onRequest
+            }
+            return answer
+        }
+    }
+}
+
+/// A session over a fake mesh and in-memory stores, with our own identity and three people to talk to.
+@MainActor
+struct AppRig {
+    static let me = Person(seed: 1)
+    static let sam = Person(seed: 2)
+    static let priya = Person(seed: 3)
+    static let stranger = Person(seed: 4)
+
+    let stores: MeshStores
+    let mesh: FakeMesh
+    let notifier: RecordingNotifier
+    let session: AppSession
+
+    init(radio: RadioState? = nil) {
+        stores = MeshStores.inMemory()
+        mesh = FakeMesh(nodeId: Self.me.nodeId, stores: stores, radio: radio)
+        notifier = RecordingNotifier()
+        session = AppSession(identity: OwnIdentity(bundle: Self.me.bundle), stores: stores, mesh: mesh, notifier: notifier)
+    }
+
+    var me: NodeId { Self.me.nodeId }
+
+    /// Stores a message from `sender` to `recipient` (the room when `nil`), as the engine would on arrival.
+    @discardableResult
+    func receive(
+        _ body: String,
+        from sender: NodeId,
+        to recipient: NodeId? = nil,
+        id: String? = nil,
+        sentAt: Int64 = 1000,
+        arrivedAt: Int64 = 1000
+    ) async -> MessageRecord {
+        let record = MessageRecord(
+            id: id ?? "\(sender)-\(sentAt)-\(body)",
+            senderId: sender,
+            recipientId: recipient,
+            conversationId: Conversations.id(sender: sender, recipient: recipient, me: me),
+            body: body,
+            sentAt: sentAt,
+            arrivedAt: arrivedAt
+        )
+        stores.messages.save(record)
+        let isRequest = session.threads().isRequest(record.conversationId)
+        await session.handle(.received(record, isRequest: isRequest))
+        return record
+    }
+
+    /// Pins `person` under `name`.
+    func pin(_ person: Person, name: String, verified: Bool = false) async {
+        stores.peers.upsert(person.record(name: name, verified: verified))
+        await session.handle(.peerUpdated(person.nodeId))
+    }
+}

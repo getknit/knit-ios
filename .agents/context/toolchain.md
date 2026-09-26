@@ -60,6 +60,13 @@ uploaded. The Mac Mini takes over iOS builds when it arrives.
   install -m 0755 .build/out/Products/Release-linux-x86_64/periphery ~/.local/bin/periphery
   ```
 
+- **`swiftlint analyze` skips `KnitAppCore`, `Knit` and `KnitBLE` on Linux.** The last two compile to empty
+  modules here. For `KnitAppCore`, SourceKit, run in-process by SwiftLint 0.65.1 with the Swift 6.4 toolchain,
+  crashes (SIGSEGV) expanding `@Observable` in any file of the module, whether macro plugins load in-process or
+  through `swift-plugin-server`; the real compiler builds the same files under every other gate.
+  `scripts/swiftlint-analyze-linux.yml` holds the exclusions, since SwiftLint analyzes every file its
+  configuration includes whatever paths it is given. The Mac runner analyzes the whole tree. Try `KnitAppCore`
+  again on the next toolchain or SwiftLint, and drop it from the list once it passes.
 - **lintorama:** `zaventh/lintorama:7` runs yamllint, the GitLab CI schema, actionlint, shellcheck, mdl and
   editorconfig-checker over every tracked file, through its `lint-extras` entrypoint.
 

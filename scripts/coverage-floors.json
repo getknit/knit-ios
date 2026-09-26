@@ -1,9 +1,9 @@
 {
   "Knit": 0,
-  "KnitAppCore": 0,
+  "KnitAppCore": 99,
   "KnitBLE": 0,
   "KnitBlueZ": 91,
-  "KnitCrypto": 97,
+  "KnitCrypto": 98,
   "KnitMesh": 100,
   "KnitPeer": 99,
   "KnitStore": 100,

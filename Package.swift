@@ -51,11 +51,16 @@ let package = Package(
         // in-memory stores.
         .target(name: "KnitStoreSQL", dependencies: ["KnitStore", "KnitWire", grdb], swiftSettings: pure),
         .target(name: "KnitMesh", dependencies: ["KnitWire", "KnitCrypto", "KnitStore"], swiftSettings: pure),
-        .target(name: "KnitAppCore", dependencies: ["KnitMesh"], swiftSettings: strict),
+        // View models, UI state and the copy catalog: everything the screens show, tested on Linux.
+        .target(name: "KnitAppCore", dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
 
         // Apple: the CoreBluetooth radio and the SwiftUI app. Both compile to empty modules elsewhere.
-        .target(name: "KnitBLE", dependencies: ["KnitMesh"], swiftSettings: strict),
-        .target(name: "Knit", dependencies: ["KnitAppCore", "KnitBLE", "KnitStoreSQL"], swiftSettings: strict),
+        .target(name: "KnitBLE", dependencies: ["KnitMesh", "KnitWire"], swiftSettings: strict),
+        .target(
+            name: "Knit",
+            dependencies: ["KnitAppCore", "KnitBLE", "KnitStoreSQL", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"],
+            swiftSettings: strict
+        ),
 
         // Linux: the BlueZ radio and the headless peer used for interop runs.
         .systemLibrary(name: "CDBus", pkgConfig: "dbus-1", providers: [.apt(["libdbus-1-dev"])]),
@@ -111,7 +116,11 @@ let package = Package(
             dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
             swiftSettings: strict
         ),
-        .testTarget(name: "KnitAppCoreTests", dependencies: ["KnitAppCore"], swiftSettings: strict),
+        .testTarget(
+            name: "KnitAppCoreTests",
+            dependencies: ["KnitAppCore", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
+            swiftSettings: strict
+        ),
         .testTarget(
             name: "KnitPeerTests",
             dependencies: ["KnitPeer", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],

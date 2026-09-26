@@ -8,7 +8,7 @@ import KnitWire
 import Synchronization
 import Testing
 
-/// The control lines, the JSON they come back as, the state directory, keygen, the log and the scan report.
+/// The control lines, the JSON they come back as, the state directory, the log and the scan report.
 @Suite struct PeerPartsTests {
     // MARK: Control lines
 
@@ -135,27 +135,6 @@ import Testing
         #expect(store.lastError?.contains("cannot write") == true)
     }
 
-    // MARK: Keygen
-
-    @Test func keygenLandsInsideTheWindow() throws {
-        let reference = identity(1).nodeId
-        #expect(try KeyGen.identity(in: KeyGen.Window(above: reference)).nodeId > reference)
-        #expect(try KeyGen.identity(in: KeyGen.Window(below: reference)).nodeId < reference)
-        let low = min(identity(2).nodeId, identity(3).nodeId)
-        let high = max(identity(2).nodeId, identity(3).nodeId)
-        let window = KeyGen.Window(above: low, below: high)
-        #expect(window.contains(try KeyGen.identity(in: window).nodeId))
-        #expect(!window.contains(low), "the bounds are outside")
-        #expect(!window.contains(high))
-    }
-
-    @Test func keygenGivesUpWhenNothingLandsInTheWindow() {
-        let only = identity(1)
-        #expect(throws: KeyGen.Failure.noRoom(attempts: 50)) {
-            try KeyGen.identity(in: KeyGen.Window(above: only.nodeId), attempts: 50) { only }
-        }
-    }
-
     // MARK: The log
 
     @Test func theLogKeepsItsThresholdAndUp() {
@@ -199,16 +178,5 @@ import Testing
         #expect(summary.contains(#""address":"/dev_b""#), "the newest address")
         #expect(summary.contains(#""capabilities":"ff""#))
         #expect(!summary.contains(own.string))
-    }
-
-    // MARK: The clock
-
-    @Test func theSystemClockCountsUpAndSleepsToItsDeadline() async throws {
-        let clock = SystemClock()
-        let start = clock.monotonicMilliseconds()
-        #expect(start >= 1000)
-        #expect(abs(clock.wallMilliseconds() - Int64(Date().timeIntervalSince1970 * 1000)) < 1000)
-        try await clock.sleep(untilMonotonic: start + 20)
-        #expect(clock.monotonicMilliseconds() >= start + 20)
     }
 }

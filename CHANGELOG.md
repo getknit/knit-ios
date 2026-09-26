@@ -19,6 +19,12 @@ document:
 
 ## Unreleased
 
+### Added
+
+- Knit for iPhone has its first screens: onboarding, the Nearby room, direct messages and message requests,
+  profiles with safety numbers, Settings and Diagnostics. It finds people over Bluetooth while it's open, and
+  keeps its open links going in the background.
+
 ## About this file
 
 This heading does not match the release-heading grammar, so a consumer skips it, the same way it skips

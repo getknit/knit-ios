@@ -1,5 +1,4 @@
 import Foundation
-public import KnitMesh
 
 /// The real clocks, for a node that runs on a device rather than in a test: the wall clock for dating frames, and
 /// `ContinuousClock` for timers, which keeps counting while the machine sleeps, as Android's elapsed-realtime clock

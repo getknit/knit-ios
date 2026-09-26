@@ -9,13 +9,13 @@ one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 | Target | Builds on | Role | Phase |
 | --- | --- | --- | --- |
 | `KnitWire` | all | CBOR (kotlinx profile), wire types, registries, link records, HELLO/DIGEST, advert, NodeId/FrameId/FrameKey, UTF-16 limits, FNV fold | P1 |
-| `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM seal/open, safety number, alias words | P2 |
+| `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM seal/open, safety number, alias words, identities minted inside a node id window | P2 |
 | `KnitStore` | all | repository protocols, in-memory stores, and the custody rules every store applies | P3 |
 | `KnitStoreSQL` | all | the `KnitStore` protocols on SQLite through GRDB: the frozen schema, its migrations and the SQL stores | P5 |
-| `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol, router, SeenSet, custody, sync, receipts, key recovery, profiles, conversations, policies | P3 |
-| `KnitAppCore` | all | `@Observable` view models, UI state, the copy catalog | P6 |
-| `KnitBLE` | Apple | the CoreBluetooth `Radio`: central, peripheral with the GATT payload, L2CAP streams, restoration | P6 |
-| `Knit` | Apple | SwiftUI, `@main`, Keychain, notifications, the composition root | P6 |
+| `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol, router, SeenSet, custody, sync, receipts, key recovery, profiles, conversations, policies, the system clock | P3 |
+| `KnitAppCore` | all | one `AppSession` over the mesh, the `@Observable` view models each screen reads, collision-aware labels, the notification policy, the copy catalog (ADR 2026-09.ycza), and `-seedDemo`'s seed and radio | P6 |
+| `KnitBLE` | Apple | the CoreBluetooth `Radio`: central and GATT reads, peripheral with the GATT payload, L2CAP streams on one thread, restoration | P6 |
+| `Knit` | iOS | the SwiftUI screens, `@main` and the app delegate, the Keychain store, notifications, the unified log, and the composition root | P6 |
 | `KnitBlueZ`, `CDBus`, `CBluetoothShim` | Linux | the BlueZ `Radio`: one `poll` thread over a libdbus connection and LE CoC sockets; advert, scan, and serving and reading the GATT payload | P4 |
 | `KnitPeer` | all | the peer's logic: options, its state directory, keygen, the scan report and the JSON-lines control surface | P4 |
 | `knit-peer` | Linux (a stub `main` elsewhere) | the headless peer: `KnitPeer` on the BlueZ radio, on `hci1` only | P4 |
@@ -38,7 +38,7 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
   | --- | --- |
   | CoreBluetooth | `KnitBLE` |
   | SwiftUI and UIKit | `Knit` |
-  | Security (the Keychain) | `Knit` |
+  | Security (the Keychain) | `Knit`'s `KeychainSecretStore` |
   | GRDB | `KnitStoreSQL` |
   | CDBus and the socket shim | `KnitBlueZ`, and `KnitBlueZTests`, which hosts a fake BlueZ |
   | CryptoKit | nowhere: import swift-crypto's `Crypto`, which is CryptoKit on Apple platforms |
@@ -51,7 +51,10 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
   `Task.sleep`, `UUID()` and `.random(` in the protocol targets.
 - **`identifierForVendor`** reaches `KnitCrypto` as a value, not as a UIKit call.
 - **Logging goes through a small `KnitLog` protocol.** `print` is banned in `Sources/`, and knit-peer writes
-  its JSON lines to standard output directly.
+  its JSON lines to standard output directly. The app writes JSON lines to the unified log (`UnifiedLog`),
+  every level in a debug build and warnings only in a release one.
+- **The real clocks are `SystemClock`** in `KnitMesh`, the one file the clock ban exempts. The app and knit-peer
+  inject it; tests inject their own.
 
 ## Concurrency
 
@@ -73,7 +76,8 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
   string is a UTF-8 `BLOB`, because GRDB cuts a bound `String` at its first NUL.
 - **Errors:** a SQL store answers as if nothing were there and reports the error to the closure the app hands
   `KnitDatabase`, because the store protocols cannot throw.
-- **Keys:** the Keychain, as `…AfterFirstUnlockThisDeviceOnly`.
+- **Keys:** the Keychain, as `…AfterFirstUnlockThisDeviceOnly`. A reinstall finds them and keeps the identity,
+  and onboarding republishes its profile (ADR 2026-09.tkww).
 - **SQLCipher** waits until there is a reason beyond iOS's own file protection.
 - **The Linux peer** uses the in-memory stores. The store contract tests run against both.
 

@@ -179,6 +179,32 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
     }
 
     @Test(arguments: kinds)
+    func eachThreadsHeadIsItsNewestMessageAndTheNewestThreadLeads(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        #expect(store.threadHeads().isEmpty)
+        store.save(message("room-old", from: alice, to: nil, sentAt: 1))
+        store.save(message("room-new", from: bob, to: nil, sentAt: 8))
+        store.save(message("dm-first", from: bob, to: alice, sentAt: 5))
+        store.save(message("dm-tie", from: alice, to: bob, sentAt: 5))
+        store.save(message("other", from: fixtureNodeId(3), to: alice, sentAt: 2))
+        #expect(store.threadHeads().map(\.id) == ["room-new", "dm-tie", "other"], "a tie goes to the one stored last")
+        store.save(message("dm-first", from: bob, to: alice, sentAt: 5, pendingKey: true))
+        #expect(store.threadHeads().map(\.id) == ["room-new", "dm-tie", "other"], "a save keeps its place among ties")
+    }
+
+    @Test(arguments: kinds)
+    func threadsWhoseIdsDifferInTheirBytesHaveTheirOwnHeads(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        var kelvin = message("k", from: bob, to: nil)
+        kelvin.conversationId = "\u{212A}"
+        var plain = message("p", from: bob, to: nil, sentAt: 2)
+        plain.conversationId = "K"
+        store.save(kelvin)
+        store.save(plain)
+        #expect(store.threadHeads().map(\.id) == ["p", "k"])
+    }
+
+    @Test(arguments: kinds)
     func messageIdsCompareByTheirBytes(kind: RepositoryKind) throws {
         let store = try kind.make().messages
         store.insertIfAbsent(message("idK", from: bob, to: alice))

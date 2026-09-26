@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitPeer
 import KnitTestSupport
 import KnitWire

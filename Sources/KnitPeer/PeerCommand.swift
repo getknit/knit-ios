@@ -1,3 +1,4 @@
+public import KnitCrypto
 import KnitWire
 
 /// What `knit-peer` was asked to do, from its arguments.

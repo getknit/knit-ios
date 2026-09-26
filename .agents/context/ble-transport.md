@@ -144,3 +144,11 @@ service data serves that payload as a read-only characteristic, `848eedcd-a2e3-4
 primary `0xFE30` service, with the digest cue zeroed (ADR 2026-09.xzpt). A radio that reads those payloads
 paces itself by `GattPayloads`: one peer at a time, each read once until a dial to it fails, a failed read
 tried again after 30 s, and a device that serves no payload left alone for ten minutes.
+
+`KnitBLE` is the iPhone's radio. Its central scans every advert with duplicates while Knit is open, takes
+Android's `0xFE30` service data as a sighting, and reads the GATT payload of a peer that lists only the UUID,
+in its service list or its overflow area. A dial connects the peripheral and opens an L2CAP channel on the
+advertised PSM. Its peripheral publishes an insecure channel, serves the payload and advertises the UUID
+alone. Each channel's streams run on one run-loop thread, read in 64 KiB gulps and written 8 KiB at a time.
+The managers carry restoration identifiers; a restored connection is dropped, since its channels did not
+survive. None of it has run on a radio yet: the Mac's checklist M (P7) is its first.

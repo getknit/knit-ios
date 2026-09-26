@@ -152,6 +152,68 @@ import Testing
         #expect(await rig.mesh.sightings.isEmpty)
     }
 
+    @Test func aStoppedMeshStartsAgainOnTheSameRadio() async {
+        let rig = rig()
+        await rig.mesh.start()
+        await rig.mesh.stop()
+        await rig.mesh.stop()
+        #expect(await !rig.mesh.isRunning, "stopping a stopped mesh changes nothing")
+        await rig.mesh.postToRoom("Waits in custody")
+        #expect(rig.clock.sleeperCount == 0, "a stopped mesh sets no timer")
+        await rig.mesh.start()
+        #expect(await rig.mesh.isRunning)
+        rig.radio.emit(.accepted(channel))
+        rig.radio.emit(.received(channel, hello(bob)))
+        for await event in rig.mesh.events {
+            if case .neighborsChanged(let neighbors) = event, !neighbors.isEmpty {
+                break
+            }
+        }
+        #expect(await rig.mesh.neighbors.map(\.nodeId) == [bob.nodeId], "the radio's stream still reaches the mesh")
+    }
+
+    @Test func theRadiosStateIsKeptAndReportedWhileStopped() async {
+        let rig = rig()
+        #expect(await rig.mesh.radioState == nil)
+        await rig.mesh.process(.state(.unauthorized))
+        await rig.mesh.process(.state(.unauthorized))
+        await rig.mesh.start()
+        await rig.mesh.process(.state(.on))
+        var reported: [RadioState] = []
+        for await event in rig.mesh.events {
+            if case .radioChanged(let state) = event {
+                reported.append(state)
+            }
+            if reported.count == 2 {
+                break
+            }
+        }
+        #expect(reported == [.unauthorized, .on], "a repeat says nothing new")
+        #expect(await rig.mesh.radioState == .on)
+    }
+
+    @Test func aPinnedPeerIsVerifiedThroughTheMesh() async throws {
+        let rig = rig()
+        await rig.mesh.start()
+        await linkBob(rig)
+        let profile = try bob.profile(publishedAt: EngineFixture.start)
+        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: profile.wire.encoded).encoded ?? []))
+        await rig.mesh.setVerified(bob.nodeId, true)
+        #expect(rig.stores.peers.verifiedNodeIds() == [bob.nodeId])
+        await rig.mesh.setVerified(alice.nodeId, true)
+        #expect(rig.stores.peers.verifiedNodeIds() == [bob.nodeId], "our own id has no pinned key")
+        var updates = 0
+        for await event in rig.mesh.events {
+            if case .peerUpdated(let peer) = event, peer == bob.nodeId {
+                updates += 1
+            }
+            if updates == 2 {
+                break
+            }
+        }
+        #expect(updates == 2, "the pin, then the verification")
+    }
+
     @Test func aRefusedPeerIsCutAndKeptOutUntilPermitted() async {
         let rig = rig()
         await rig.mesh.start()

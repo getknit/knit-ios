@@ -99,7 +99,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   `allow-link` (`peer`), `digest` (live custody ids and their fingerprint), `messages` (`conv`, `limit`) and
   `quit`.
 - **Events** are `ready`, `link` (`up` true or false), `profile`, `message` (with `request` for a stranger's
-  first DM), `sent` and `delivered`.
+  first DM), `sent`, `delivered` and `radio` (`state`: `on`, `off`, `unauthorized` or `unsupported`).
 - **Log lines** carry `ms`, the wall-clock time, so they line up with a phone's logcat.
 
 `scripts/interop.py` runs checklist L against one phone through knit-next's debug bridge: `check` in either

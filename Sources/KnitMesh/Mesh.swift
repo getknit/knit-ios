@@ -8,6 +8,10 @@ public import KnitWire
 ///
 /// Both state machines are synchronous, so every radio event, timer and send runs to completion inside the actor,
 /// one at a time, and a test can drive the same code without it.
+///
+/// The mesh can stop and start again, as Settings' Stop and Start do. It listens to the radio from the first
+/// start on, since a radio's stream ends for good when its listener is cancelled; while stopped it hears only the
+/// radio's state.
 public actor Mesh {
     /// What the mesh did that the app should know about.
     nonisolated public let events: AsyncStream<MeshEvent>
@@ -23,6 +27,11 @@ public actor Mesh {
     private var timer: Task<Void, Never>?
     private var scheduled: Int64?
     private var advertisedRevision = -1
+
+    /// Whether the mesh is running: started, and not stopped since.
+    public private(set) var isRunning = false
+    /// What the radio last said of its state, or `nil` before it has said anything.
+    public private(set) var radioState: RadioState?
 
     /// A mesh node for `identity`, on `radio`.
     public init(
@@ -69,23 +78,28 @@ public actor Mesh {
 
     /// Starts the node and its radio, and begins listening to it.
     public func start() {
-        guard eventLoop == nil else {
+        guard !isRunning else {
             return
         }
+        isRunning = true
         engine.start()
         links.start()
-        eventLoop = Task { [weak self, events = radio.events] in
-            for await event in events {
-                await self?.process(event)
+        if eventLoop == nil {
+            eventLoop = Task { [weak self, events = radio.events] in
+                for await event in events {
+                    await self?.process(event)
+                }
             }
         }
         settle()
     }
 
-    /// Stops the radio and closes every link.
+    /// Stops the radio and closes every link. What the app sends meanwhile waits in custody for the next start.
     public func stop() {
-        eventLoop?.cancel()
-        eventLoop = nil
+        guard isRunning else {
+            return
+        }
+        isRunning = false
         timer?.cancel()
         timer = nil
         scheduled = nil
@@ -93,8 +107,16 @@ public actor Mesh {
         publish()
     }
 
-    /// Handles one radio event: what the radio's stream delivers, one at a time.
+    /// Handles one radio event: what the radio's stream delivers, one at a time. While stopped, only a change of
+    /// state is heard.
     public func process(_ event: RadioEvent) {
+        if case .state(let state) = event, state != radioState {
+            radioState = state
+            continuation.yield(.radioChanged(state))
+        }
+        guard isRunning else {
+            return
+        }
         apply(links.handle(event))
         settle()
     }
@@ -131,6 +153,12 @@ public actor Mesh {
     public func updateProfile(name: String, status: String, openToChat: Bool) {
         engine.updateProfile(name: name, status: status, openToChat: openToChat)
         settle()
+    }
+
+    /// Marks a pinned peer verified, or not (``MeshEngine/setVerified(_:_:)``).
+    public func setVerified(_ peer: NodeId, _ verified: Bool) {
+        engine.setVerified(peer, verified)
+        publish()
     }
 
     /// Refuses links with `peer`, both ways, until ``permitLinks(with:)`` (``LinkManager/refuse(_:)``).
@@ -192,7 +220,8 @@ public actor Mesh {
     }
 
     private func schedule() {
-        let next = [engine.nextDeadline, links.nextDeadline].compactMap(\.self).min()
+        // A stopped mesh keeps its deadlines, and the next start fires whatever fell due meanwhile.
+        let next = isRunning ? [engine.nextDeadline, links.nextDeadline].compactMap(\.self).min() : nil
         guard next != scheduled else {
             return
         }

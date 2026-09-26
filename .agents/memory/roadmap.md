@@ -73,6 +73,21 @@ explicit direction.** Update this file in the change that ships an item.
   - **Tests:** the custody and repository contract suites run against the memory and SQL stores alike. Line
     coverage is 99 %. The SQL stores are not wired into anything yet: the app composes them in P6.
   - **Still owed:** checking the backup flag on the Mac (P7) and the protection class on the iPhone (P8).
+- **P6, the app (`KnitAppCore`, `Knit`, `KnitBLE`):** begun on 2026-09-26.
+  - **`KnitAppCore`:** one `AppSession` over the mesh, and a view model for every MVP screen: onboarding, the
+    chat list and its status line, a thread with its composer, message requests, both profiles, Settings,
+    About and Diagnostics. Diagnostics shows per-peer clock skew, and in a debug build mints an identity inside
+    a node id window. The notification policy lives here too, with Android's collision-aware labels
+    (`PeerLabelIndex`) and `-seedDemo`'s seed and radio. Line coverage is 99 %.
+  - **The copy catalog:** every string in `Copy`, through `product-language-editor` and `humanizer` (ADR
+    2026-09.ycza).
+  - **`Knit`:** the SwiftUI screens, the Keychain key store (a reinstall keeps its identity, ADR 2026-09.tkww),
+    local notifications, the unified log and the composition root, with `-seedDemo`.
+  - **`KnitBLE`:** the CoreBluetooth radio, with GATT reads on `GattPayloads`' rules.
+  - **The mesh for the app:** it reports the radio's state, stops and starts again on the same radio, marks a
+    peer verified, and stores list each thread's newest message.
+  - **Still owed:** the app, the Keychain store and `KnitBLE` compile for iOS (`scripts/check.sh ios`) but have
+    not run: the Mac (P7) runs them first. No unread counts yet, and no block, delete or Sign out.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).

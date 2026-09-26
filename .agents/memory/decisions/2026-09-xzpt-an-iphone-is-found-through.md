@@ -44,6 +44,13 @@ it lists iPhones. `GattPayloadsTests`, `BlueZGattReadTests` (`aUUIDOnlyDeviceOfH
 and `BlueZModelTests`' `eachProfileFindsPeersAsItsPlatformDoes` guard it. So far only the fake BlueZ has served
 this reader a payload; the first real one will be the Mac's (P7) or the iPhone's (P8).
 
+**Amended 2026-09-26, when `KnitBLE` was written:** the CoreBluetooth radio serves the characteristic as a
+static value, read-only, and replaces the service only when the value changes, which is only with the PSM. It
+advertises the `0xFE30` UUID and nothing else. It reads a UUID-only peer on `GattPayloads`' rules: connect,
+discover the service and the characteristic, read, then drop the connection unless a dial came to use it. It
+counts the UUID in the overflow area too, where a backgrounded iPhone's advert keeps it, and sets the flag.
+Nothing in it has run on hardware yet; the Mac's checklist M (P7) is its first radio.
+
 **Consequences / limits:**
 
 - **Cross-platform law.** The UUID is law once A3 ships. Change it only together with knit-next.
