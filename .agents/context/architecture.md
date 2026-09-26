@@ -11,7 +11,7 @@ one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 | `KnitWire` | all | CBOR (kotlinx profile), wire types, registries, link records, HELLO/DIGEST, advert, NodeId/FrameId/FrameKey, UTF-16 limits, FNV fold | P1 |
 | `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM seal/open, safety number, alias words | P2 |
 | `KnitStore` | all | repository protocols, in-memory stores, and the custody rules every store applies | P3 |
-| `KnitStoreSQL` | all (spike a) | GRDB schema and migrations | P5 |
+| `KnitStoreSQL` | all | the `KnitStore` protocols on SQLite through GRDB: the frozen schema, its migrations and the SQL stores | P5 |
 | `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol, router, SeenSet, custody, sync, receipts, key recovery, profiles, conversations, policies | P3 |
 | `KnitAppCore` | all | `@Observable` view models, UI state, the copy catalog | P6 |
 | `KnitBLE` | Apple | the CoreBluetooth `Radio`: central, peripheral with the GATT payload, L2CAP streams, restoration | P6 |
@@ -66,11 +66,16 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
 
 ## Storage
 
-- **Database:** GRDB over SQLite, with file protection `completeUntilFirstUserAuthentication` (the mesh runs
-  while the phone is locked), excluded from backups.
+- **Database:** GRDB over SQLite, one `knit.sqlite` in a directory of its own, with file protection
+  `completeUntilFirstUserAuthentication` (the mesh runs while the phone is locked), excluded from backups
+  (ADR 2026-09.nyya).
+- **Schema:** an append-only list of literal SQL migrations; v1 is frozen. Every table is `STRICT` and every
+  string is a UTF-8 `BLOB`, because GRDB cuts a bound `String` at its first NUL.
+- **Errors:** a SQL store answers as if nothing were there and reports the error to the closure the app hands
+  `KnitDatabase`, because the store protocols cannot throw.
 - **Keys:** the Keychain, as `…AfterFirstUnlockThisDeviceOnly`.
 - **SQLCipher** waits until there is a reason beyond iOS's own file protection.
-- **Tests and the Linux peer** use the in-memory store.
+- **The Linux peer** uses the in-memory stores. The store contract tests run against both.
 
 ## Dependencies
 

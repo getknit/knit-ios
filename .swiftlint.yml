@@ -117,8 +117,8 @@ custom_rules:
   seam_grdb:
     name: GRDB stays in KnitStoreSQL
     regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+GRDB\b'
-    excluded: 'Sources/KnitStoreSQL/'
-    message: Only KnitStoreSQL imports GRDB; everything else talks to the KnitStore protocols.
+    excluded: 'Sources/KnitStoreSQL/|Tests/KnitStoreSQLTests/'
+    message: Only KnitStoreSQL and its tests import GRDB; everything else talks to the KnitStore protocols.
     severity: error
   seam_cdbus:
     name: libdbus stays in KnitBlueZ
@@ -141,13 +141,13 @@ custom_rules:
   mesh_injected_clock:
     name: The mesh reads time through its injected clocks
     regex: '(\bDate\(\)|\bDate\.now\b|\bTask\.sleep\b|\bContinuousClock\(\))'
-    included: 'Sources/(KnitWire|KnitCrypto|KnitStore|KnitMesh)/'
+    included: 'Sources/(KnitWire|KnitCrypto|KnitStore|KnitStoreSQL|KnitMesh)/'
     message: Take the wall clock and the monotonic clock as dependencies, so the lab can drive them.
     severity: error
   mesh_injected_randomness:
     name: The mesh draws randomness through its injected generator
     regex: '(\bUUID\(\)|\bSystemRandomNumberGenerator\(\)|\.random\()'
-    included: 'Sources/(KnitWire|KnitStore|KnitMesh)/'
+    included: 'Sources/(KnitWire|KnitStore|KnitStoreSQL|KnitMesh)/'
     message: Take a RandomNumberGenerator as a dependency, so chaos runs are reproducible from a seed.
     severity: error
   wire_no_codable:

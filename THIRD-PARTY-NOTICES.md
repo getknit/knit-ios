@@ -9,10 +9,12 @@ package this file does not account for.
 
 | Package | Project | License |
 | --- | --- | --- |
+| `grdb.swift` | [groue/GRDB.swift](https://github.com/groue/GRDB.swift) | MIT |
 | `swift-crypto` | [apple/swift-crypto](https://github.com/apple/swift-crypto) | Apache-2.0 |
 
-On iPhone, swift-crypto hands every operation to Apple's CryptoKit. Its bundled copies of BoringSSL and XKCP
-compile only into Linux builds, such as the `knit-peer` test tool, which is not distributed.
+GRDB links the SQLite that ships with iOS and bundles none of its own. On iPhone, swift-crypto hands every
+operation to Apple's CryptoKit. Its bundled copies of BoringSSL and XKCP compile only into Linux builds, such as
+the `knit-peer` test tool, which is not distributed.
 
 ## Resolved but not shipped
 

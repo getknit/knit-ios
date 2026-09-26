@@ -7,6 +7,7 @@
   "KnitMesh": 100,
   "KnitPeer": 99,
   "KnitStore": 100,
+  "KnitStoreSQL": 99,
   "KnitWire": 98,
   "knit-peer": 0
 }

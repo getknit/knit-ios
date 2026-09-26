@@ -61,6 +61,16 @@ explicit direction.** Update this file in the change that ships an item.
     maintainer deferred.
   - **Before P8:** `KnitBlueZ` reads the GATT payload of a UUID-only advert, so the peer can dial an iPhone and
     set `FLAG_DIALS_GATT_PEERS`.
+- **P5, the store (`KnitStoreSQL`):** built on 2026-09-26 (ADR 2026-09.nyya).
+  - **The stores:** every `KnitStore` protocol on GRDB 7.11.1: custody, peers, messages, accepted
+    conversations and our own profile, in one `knit.sqlite` under Data Protection and out of backups.
+  - **Schema v1 is frozen:** literal SQL, `STRICT` tables, and every string a UTF-8 `BLOB`, because GRDB cuts
+    a bound `String` at its first NUL. `SchemaTests` pins the migrations and the schema each leaves.
+  - **Found on the way:** `CustodyRules` removed evicted ids through a `Set<String>` and matched groups with
+    `==`, so ids Swift calls equal could change what the overall trim kept. Both now compare by bytes.
+  - **Tests:** the custody and repository contract suites run against the memory and SQL stores alike. Line
+    coverage is 99 %. The SQL stores are not wired into anything yet: the app composes them in P6.
+  - **Still owed:** checking the backup flag on the Mac (P7) and the protection class on the iPhone (P8).
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).

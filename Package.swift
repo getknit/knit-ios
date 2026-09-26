@@ -26,6 +26,7 @@ let strict: [SwiftSetting] =
 let pure: [SwiftSetting] = strict + [.strictMemorySafety()]
 
 let crypto: Target.Dependency = .product(name: "Crypto", package: "swift-crypto")
+let grdb: Target.Dependency = .product(name: "GRDB", package: "GRDB.swift")
 
 let package = Package(
     name: "Knit",
@@ -38,19 +39,23 @@ let package = Package(
         .library(name: "KnitWire", targets: ["KnitWire"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0")
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0"),
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.11.1"),
     ],
     targets: [
         // Platform-free protocol core (Linux + Apple).
         .target(name: "KnitWire", swiftSettings: pure),
         .target(name: "KnitCrypto", dependencies: ["KnitWire", crypto], swiftSettings: pure),
         .target(name: "KnitStore", dependencies: ["KnitWire"], swiftSettings: pure),
+        // The app's store: the KnitStore protocols on SQLite through GRDB. Tests and the Linux peer keep the
+        // in-memory stores.
+        .target(name: "KnitStoreSQL", dependencies: ["KnitStore", "KnitWire", grdb], swiftSettings: pure),
         .target(name: "KnitMesh", dependencies: ["KnitWire", "KnitCrypto", "KnitStore"], swiftSettings: pure),
         .target(name: "KnitAppCore", dependencies: ["KnitMesh"], swiftSettings: strict),
 
         // Apple: the CoreBluetooth radio and the SwiftUI app. Both compile to empty modules elsewhere.
         .target(name: "KnitBLE", dependencies: ["KnitMesh"], swiftSettings: strict),
-        .target(name: "Knit", dependencies: ["KnitAppCore", "KnitBLE"], swiftSettings: strict),
+        .target(name: "Knit", dependencies: ["KnitAppCore", "KnitBLE", "KnitStoreSQL"], swiftSettings: strict),
 
         // Linux: the BlueZ radio and the headless peer used for interop runs.
         .systemLibrary(name: "CDBus", pkgConfig: "dbus-1", providers: [.apt(["libdbus-1-dev"])]),
@@ -90,7 +95,17 @@ let package = Package(
             dependencies: ["KnitCrypto", "KnitWire", "KnitTestSupport", crypto],
             swiftSettings: strict
         ),
-        .testTarget(name: "KnitStoreTests", dependencies: ["KnitStore", "KnitWire", "KnitTestSupport"], swiftSettings: strict),
+        // The store contract tests run against every implementation, the SQL one included.
+        .testTarget(
+            name: "KnitStoreTests",
+            dependencies: ["KnitStore", "KnitStoreSQL", "KnitWire", "KnitTestSupport"],
+            swiftSettings: strict
+        ),
+        .testTarget(
+            name: "KnitStoreSQLTests",
+            dependencies: ["KnitStoreSQL", "KnitStore", "KnitWire", "KnitTestSupport", grdb],
+            swiftSettings: strict
+        ),
         .testTarget(
             name: "KnitMeshTests",
             dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],

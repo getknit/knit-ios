@@ -1,0 +1,172 @@
+import Foundation
+import GRDB
+import Testing
+
+@testable import KnitStoreSQL
+
+/// The schema is append-only, and each migration leaves exactly the schema pinned here (ADR 2026-09.nyya).
+///
+/// To change the schema, add a migration at the end of ``Schema/migrations``, pin what it leaves in
+/// ``SchemaPins/after``, and add a test that migrates rows written under the previous one. Never edit a pin that
+/// is already here: a phone that ran that migration keeps the schema it left.
+@Suite struct SchemaTests {
+    /// The migrations every earlier build has run, in order.
+    private static let frozen = ["v1"]
+
+    @Test func migrationsOnlyEverGrowAtTheEnd() {
+        let identifiers = Schema.migrations.map(\.identifier)
+        #expect(Array(identifiers.prefix(Self.frozen.count)) == Self.frozen)
+        #expect(Set(identifiers).count == identifiers.count, "an identifier names one migration")
+        #expect(KnitDatabase.schemaVersion == identifiers.count)
+    }
+
+    @Test func everyMigrationLeavesItsPinnedSchema() throws {
+        #expect(Schema.migrations.map(\.identifier) == SchemaPins.after.map(\.identifier), "every migration has a pin")
+        for (identifier, pinned) in SchemaPins.after {
+            let queue = try DatabaseQueue()
+            try Schema.migrator.migrate(queue, upTo: identifier)
+            let schema = try SchemaPins.dump(queue)
+            #expect(schema == pinned, "the schema after \(identifier)")
+        }
+    }
+
+    @Test func aFreshDatabaseHasTheNewestSchema() throws {
+        let database = try KnitDatabase.inMemory(failures: recordFailure)
+        let schema = try SchemaPins.dump(database.writer)
+        #expect(schema == SchemaPins.after.last?.schema)
+    }
+
+    @Test func everyTableIsStrict() throws {
+        let database = try KnitDatabase.inMemory(failures: recordFailure)
+        let tables = try database.writer.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT name, strict FROM pragma_table_list
+                    WHERE schema = 'main' AND type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'grdb_migrations'
+                    ORDER BY name
+                    """
+            ).map { (name: $0["name"] as String, strict: $0["strict"] as Bool) }
+        }
+        #expect(tables.map(\.name) == ["accepted_conversations", "forward_store", "messages", "own_profile", "peers"])
+        let loose = tables.filter { !$0.strict }.map(\.name)
+        #expect(loose.isEmpty, "not STRICT: \(loose)")
+    }
+
+    @Test func grdbCutsABoundStringAtItsFirstNul() throws {
+        // Why every string is a BLOB (StoredText). If GRDB ever binds a String's whole length, TEXT columns become
+        // possible, though v1 stays as it is.
+        let length = try DatabaseQueue().read { db in
+            try Int.fetchOne(db, sql: "SELECT length(CAST(? AS BLOB))", arguments: ["a\u{0}b"])
+        }
+        #expect(length == 1)
+        #expect(StoredText.bytes("a\u{0}b") == Data([0x61, 0, 0x62]))
+    }
+
+    @Test func aStringBoundAsTextIsRefusedRatherThanStoredAsOtherBytes() throws {
+        // GRDB binds a String NUL-terminated. A strict BLOB column refuses TEXT, so a store that forgot StoredText
+        // fails in every test instead of keying rows by the wrong bytes.
+        let database = try KnitDatabase.inMemory(failures: recordFailure)
+        #expect(throws: DatabaseError.self) {
+            try database.writer.write { db in
+                try db.execute(sql: "INSERT INTO accepted_conversations (conversationId) VALUES (?)", arguments: ["nearby"])
+            }
+        }
+    }
+}
+
+/// The schema each migration leaves, as `sqlite_master` spells it.
+enum SchemaPins {
+    /// Each migration's identifier and the schema a database has after it, oldest first. Frozen once committed.
+    static let after: [(identifier: String, schema: String)] = [
+        ("v1", v1)
+    ]
+
+    /// Every table, index and trigger this app made, sorted, with the statement SQLite keeps for it. GRDB's own
+    /// bookkeeping and SQLite's automatic indexes are left out.
+    static func dump(_ reader: any DatabaseReader) throws -> String {
+        try reader.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT type, name, sql FROM sqlite_master
+                    WHERE name NOT LIKE 'sqlite_%' AND name != 'grdb_migrations'
+                    ORDER BY type, name
+                    """
+            ).map { "\($0["type"] as String) \($0["name"] as String)\n\($0["sql"] as String);\n" }.joined(separator: "\n")
+        }
+    }
+
+    private static let v1 = """
+        index forward_store_expiresAt
+        CREATE INDEX forward_store_expiresAt ON forward_store (expiresAt);
+
+        index messages_conversationId_sentAt_seq
+        CREATE INDEX messages_conversationId_sentAt_seq ON messages (conversationId, sentAt, seq);
+
+        index messages_pendingKey
+        CREATE INDEX messages_pendingKey ON messages (recipientId, sentAt, seq) WHERE pendingKey = 1;
+
+        index messages_senderId_conversationId
+        CREATE INDEX messages_senderId_conversationId ON messages (senderId, conversationId);
+
+        table accepted_conversations
+        CREATE TABLE accepted_conversations (conversationId BLOB NOT NULL PRIMARY KEY) STRICT;
+
+        table forward_store
+        CREATE TABLE forward_store (
+            seq INTEGER PRIMARY KEY,
+            id BLOB NOT NULL UNIQUE,
+            senderId BLOB NOT NULL,
+            recipientId BLOB,
+            groupId BLOB,
+            type BLOB NOT NULL,
+            isRoomChat INTEGER NOT NULL,
+            origin INTEGER NOT NULL,
+            signed BLOB NOT NULL,
+            sig BLOB NOT NULL,
+            sentAt INTEGER NOT NULL,
+            receivedAt INTEGER NOT NULL,
+            expiresAt INTEGER NOT NULL
+        ) STRICT;
+
+        table messages
+        CREATE TABLE messages (
+            seq INTEGER PRIMARY KEY,
+            id BLOB NOT NULL UNIQUE,
+            senderId BLOB NOT NULL,
+            recipientId BLOB,
+            conversationId BLOB NOT NULL,
+            body BLOB NOT NULL,
+            sentAt INTEGER NOT NULL,
+            arrivedAt INTEGER,
+            delivered INTEGER NOT NULL,
+            pendingKey INTEGER NOT NULL
+        ) STRICT;
+
+        table own_profile
+        CREATE TABLE own_profile (
+            slot INTEGER PRIMARY KEY CHECK (slot = 0),
+            name BLOB NOT NULL,
+            status BLOB NOT NULL,
+            openToChat INTEGER NOT NULL,
+            version INTEGER NOT NULL,
+            publishedAt INTEGER NOT NULL
+        ) STRICT;
+
+        table peers
+        CREATE TABLE peers (
+            nodeId BLOB NOT NULL PRIMARY KEY,
+            name BLOB NOT NULL,
+            status BLOB NOT NULL,
+            publicKey BLOB NOT NULL,
+            deviceTag BLOB,
+            protocolVersion INTEGER,
+            capabilities INTEGER,
+            updatedAt INTEGER NOT NULL,
+            verified INTEGER NOT NULL,
+            openToChat INTEGER NOT NULL
+        ) STRICT;
+
+        """
+}

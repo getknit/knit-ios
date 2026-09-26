@@ -1,7 +1,7 @@
 # Interop with knit-next
 
 Everything this repo puts on the air must match what Knit for Android does. These rules hold for
-`KnitWire`, `KnitCrypto`, `KnitMesh` and both radio adapters.
+`KnitWire`, `KnitCrypto`, `KnitMesh`, both stores (custody is theirs to bound) and both radio adapters.
 
 - **The pinned knit-next commit is the source of truth** (`.agents/context/knit-next.md`). When a knit-next
   doc and its Kotlin disagree, the Kotlin wins. Read the Kotlin before porting a rule, and cite the file and

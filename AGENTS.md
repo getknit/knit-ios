@@ -18,10 +18,10 @@ correctness under strict concurrency, and the surrounding code's style over clev
 - **Before and after building or testing:** obey `.agents/rules/build-and-test.md`. The commands are in
   `.agents/context/commands.md`.
 - **When editing Swift:** obey `.agents/rules/coding.md`.
-- **When touching `KnitWire`, `KnitCrypto`, `KnitMesh`, `KnitBLE`, `KnitBlueZ` or `knit-peer`:** obey
-  `.agents/rules/interop.md`, then READ the matching reference in `.agents/context/`: `wire-format.md`,
-  `ble-transport.md`, `crypto.md`, `custody.md` or `linux-peer.md`. For the Kotlin behind them, READ
-  `.agents/context/knit-next.md`.
+- **When touching `KnitWire`, `KnitCrypto`, `KnitMesh`, `KnitStore`, `KnitStoreSQL`, `KnitBLE`, `KnitBlueZ`
+  or `knit-peer`:** obey `.agents/rules/interop.md`, then READ the matching reference in `.agents/context/`:
+  `wire-format.md`, `ble-transport.md`, `crypto.md`, `custody.md` or `linux-peer.md`. For the Kotlin behind
+  them, READ `.agents/context/knit-next.md`.
 - **When writing text a person reads** (UI strings, Info.plist, notifications, README, docs, ADRs): obey
   `.agents/rules/copy.md`, which says when to RUN `product-language-editor` and `humanizer`.
 - **When adding to `CHANGELOG.md`'s `## Unreleased`:** obey `.agents/rules/changelog.md`.

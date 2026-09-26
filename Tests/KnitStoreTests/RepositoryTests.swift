@@ -1,10 +1,57 @@
 import KnitStore
+import KnitStoreSQL
 import KnitTestSupport
 import KnitWire
 import Testing
 
-/// The peer, message, conversation and own-profile stores.
+/// Every implementation of the peer, message, conversation and own-profile stores. Each runs the whole
+/// ``RepositoryTests`` suite.
+enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
+    case memory
+    case sql
+
+    /// One set of stores, sharing one database where the kind has one.
+    struct Stores {
+        var peers: any PeerStore
+        var messages: any MessageStore
+        var conversations: any ConversationStore
+        var ownProfile: any OwnProfileStore
+    }
+
+    var testDescription: String {
+        switch self {
+        case .memory:
+            "memory"
+        case .sql:
+            "sql"
+        }
+    }
+
+    func make() throws -> Stores {
+        switch self {
+        case .memory:
+            return Stores(
+                peers: MemoryPeerStore(),
+                messages: MemoryMessageStore(),
+                conversations: MemoryConversationStore(),
+                ownProfile: MemoryOwnProfileStore()
+            )
+        case .sql:
+            let database = try KnitDatabase.inMemory(failures: recordFailure)
+            return Stores(
+                peers: SQLPeerStore(database),
+                messages: SQLMessageStore(database),
+                conversations: SQLConversationStore(database),
+                ownProfile: SQLOwnProfileStore(database)
+            )
+        }
+    }
+}
+
+/// The peer, message, conversation and own-profile stores, run against every implementation.
 @Suite struct RepositoryTests {
+    private static let kinds = RepositoryKind.allCases
+
     private let alice = fixtureNodeId(1)
     private let bob = fixtureNodeId(2)
 
@@ -26,8 +73,9 @@ import Testing
         )
     }
 
-    @Test func peersUpsertAndReportTheVerifiedOnes() {
-        let store = MemoryPeerStore()
+    @Test(arguments: kinds)
+    func peersUpsertAndReportTheVerifiedOnes(kind: RepositoryKind) throws {
+        let store = try kind.make().peers
         #expect(store.peer(bob) == nil)
         store.upsert(PeerRecord(nodeId: bob, name: "Bob", status: "", publicKey: "key", updatedAt: 1))
         store.upsert(PeerRecord(nodeId: alice, name: "Alice", status: "", publicKey: "key", updatedAt: 1, verified: true))
@@ -36,20 +84,59 @@ import Testing
         #expect(store.allPeers().map(\.nodeId) == [alice, bob].sorted())
     }
 
-    @Test func aMessageIsStoredOnceAndReadInOrder() {
-        let store = MemoryMessageStore()
+    @Test(arguments: kinds)
+    func aPeerKeepsEveryFieldAndAnUpsertReplacesThem(kind: RepositoryKind) throws {
+        let store = try kind.make().peers
+        let full = PeerRecord(
+            nodeId: bob,
+            name: "Bob",
+            status: "around",
+            publicKey: "key",
+            deviceTag: "tag",
+            protocolVersion: 3,
+            capabilities: 0x9,
+            updatedAt: 7,
+            verified: true,
+            openToChat: true
+        )
+        store.upsert(full)
+        #expect(store.peer(bob) == full)
+        let bare = PeerRecord(nodeId: bob, name: "", status: "", publicKey: "key", updatedAt: 8)
+        store.upsert(bare)
+        #expect(store.peer(bob) == bare, "nil fields read back as nil, not as the old values")
+        #expect(store.allPeers() == [bare])
+    }
+
+    @Test(arguments: kinds)
+    func aMessageIsStoredOnceAndReadInOrder(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
         #expect(store.insertIfAbsent(message("m2", from: bob, to: alice, sentAt: 5)))
         #expect(!store.insertIfAbsent(message("m2", from: bob, to: alice, sentAt: 9)), "a re-served frame says nothing new")
         store.insertIfAbsent(message("m1", from: bob, to: alice, sentAt: 5))
         store.insertIfAbsent(message("m0", from: alice, to: bob, sentAt: 1))
         #expect(store.message("m2")?.sentAt == 5)
         #expect(store.contains("m1"))
+        #expect(!store.contains("missing"))
         #expect(store.messages(in: bob.string).map(\.id) == ["m0", "m2", "m1"], "ties keep the order they were stored")
         #expect(store.message("missing") == nil)
     }
 
-    @Test func saveReplacesAndDeliveryMarksOnce() {
-        let store = MemoryMessageStore()
+    @Test(arguments: kinds)
+    func aMessageKeepsEveryField(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        var inbound = message("in", from: bob, to: alice, sentAt: 4)
+        inbound.arrivedAt = 6
+        inbound.body = "multi\nline \u{1F9F6} and a NUL \u{0} inside"
+        store.save(inbound)
+        let room = message("room", from: alice, to: nil, sentAt: 5)
+        store.save(room)
+        #expect(store.message("in") == inbound)
+        #expect(store.message("room") == room, "a room post has no recipient and no arrival")
+    }
+
+    @Test(arguments: kinds)
+    func saveReplacesAndDeliveryMarksOnce(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
         store.save(message("m1", from: alice, to: bob))
         #expect(store.markDelivered("m1"))
         #expect(!store.markDelivered("m1"), "already delivered")
@@ -61,8 +148,18 @@ import Testing
         #expect(store.messages(in: bob.string).count == 1)
     }
 
-    @Test func pendingKeyDMsListOldestFirstUntilCleared() {
-        let store = MemoryMessageStore()
+    @Test(arguments: kinds)
+    func aSaveOverAnExistingMessageKeepsItsPlaceAmongTies(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        store.save(message("first", from: alice, to: bob, sentAt: 3))
+        store.save(message("second", from: alice, to: bob, sentAt: 3))
+        store.save(message("first", from: alice, to: bob, sentAt: 3, pendingKey: true))
+        #expect(store.messages(in: bob.string).map(\.id) == ["first", "second"])
+    }
+
+    @Test(arguments: kinds)
+    func pendingKeyDMsListOldestFirstUntilCleared(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
         store.save(message("late", from: alice, to: bob, sentAt: 9, pendingKey: true))
         store.save(message("early", from: alice, to: bob, sentAt: 2, pendingKey: true))
         store.save(message("sent", from: alice, to: bob, sentAt: 1))
@@ -72,19 +169,22 @@ import Testing
         #expect(store.pendingKey(to: bob).map(\.id) == ["late"])
     }
 
-    @Test func authoredConversationsNameTheThreadsWeWroteIn() {
-        let store = MemoryMessageStore()
+    @Test(arguments: kinds)
+    func authoredConversationsNameTheThreadsWeWroteIn(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
         store.save(message("room", from: alice, to: nil))
         store.save(message("dm", from: alice, to: bob))
         store.save(message("in", from: fixtureNodeId(3), to: alice))
         #expect(store.conversations(authoredBy: alice) == [Conversations.nearby, bob.string])
     }
 
-    @Test func messageIdsCompareByTheirBytes() {
-        let store = MemoryMessageStore()
+    @Test(arguments: kinds)
+    func messageIdsCompareByTheirBytes(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
         store.insertIfAbsent(message("idK", from: bob, to: alice))
         #expect(store.insertIfAbsent(message("id\u{212A}", from: bob, to: alice)), "the Kelvin sign is not a K on Android")
-        #expect(store.messages(in: bob.string).count == 2)
+        #expect(store.insertIfAbsent(message("idK\u{0}x", from: bob, to: alice)), "nor is an id its own prefix")
+        #expect(store.messages(in: bob.string).count == 3)
     }
 
     @Test func conversationIdsFollowTheOtherParty() {
@@ -106,20 +206,29 @@ import Testing
         #expect(!accepted("not-a-node-id", verified: [fixtureNodeId(3)]))
     }
 
-    @Test func acceptedConversationsAccumulate() {
-        let store = MemoryConversationStore()
+    @Test(arguments: kinds)
+    func acceptedConversationsAccumulate(kind: RepositoryKind) throws {
+        let store = try kind.make().conversations
         #expect(store.acceptedConversations().isEmpty)
         store.accept(bob.string)
         store.accept(bob.string)
-        #expect(store.acceptedConversations() == [bob.string])
+        store.accept(Conversations.nearby)
+        #expect(store.acceptedConversations() == [bob.string, Conversations.nearby])
     }
 
-    @Test func theOwnProfileStartsUnpublishedAndSaves() {
-        let store = MemoryOwnProfileStore()
+    @Test(arguments: kinds)
+    func theOwnProfileStartsUnpublishedAndSaves(kind: RepositoryKind) throws {
+        let store = try kind.make().ownProfile
         #expect(store.load() == OwnProfile())
         #expect(store.load().publishedAt == 0 && store.load().version == 0)
-        store.save(OwnProfile(name: "Alice", status: "here", openToChat: true, version: 7, publishedAt: 9))
-        #expect(store.load().name == "Alice")
+        let saved = OwnProfile(name: "Alice", status: "here", openToChat: true, version: 7, publishedAt: 9)
+        store.save(saved)
+        #expect(store.load() == saved)
+        store.save(OwnProfile(name: "Al", version: 8, publishedAt: 10))
+        #expect(store.load() == OwnProfile(name: "Al", version: 8, publishedAt: 10), "one profile, replaced")
+    }
+
+    @Test func theMemoryOwnProfileStoreStartsFromWhatItIsGiven() {
         #expect(MemoryOwnProfileStore(OwnProfile(name: "Seeded")).load().name == "Seeded")
     }
 }

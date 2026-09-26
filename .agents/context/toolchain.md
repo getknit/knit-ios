@@ -73,6 +73,9 @@ uploaded. The Mac Mini takes over iOS builds when it arrives.
   targets. A plain `swift build --swift-sdk arm64-apple-ios` fails under Swift Build ("unable to find
   platform for 'iphoneos'"), so a manual iOS build of a package needs `--build-system native`; the app
   itself goes through `xtool dev build`.
+- **GRDB in the package (P5):** pinned at 7.11.1 in both `Package.resolved` files. The `STRICT` tables need
+  SQLite 3.37 or later: iOS 18 and noble both have it, and an older SQLite fails the first migration rather
+  than opening a looser schema. CI's Swift image installs `libsqlite3-dev` in `.swift`'s `before_script`.
 - **Not needed:** `libbluetooth-dev`. `CBluetoothShim` writes out the few socket definitions itself.
 
 ## CI runners

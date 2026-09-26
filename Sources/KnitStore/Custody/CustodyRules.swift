@@ -84,12 +84,14 @@ public enum CustodyRules {
             }
             let doomed = bucket.prefix(bucket.count - quota).map(\.id)
             evicted += doomed
-            let doomedSet = Set(doomed)
-            remaining.removeAll { doomedSet.contains($0.id) }
+            // Keyed by bytes: a `Set<String>` would also drop every id Swift calls equal to a doomed one.
+            let doomedSet = Set(doomed.map(ExactKey.init))
+            remaining.removeAll { doomedSet.contains(ExactKey($0.id)) }
         }
-        trim(to: limits.maxPerSender) { $0.senderId == inserted.senderId }
+        // Buckets match by bytes too, as Android's `senderId = ?` and `groupId = ?` do (ADR 2026-09.jc2x).
+        trim(to: limits.maxPerSender) { $0.senderId.utf8.elementsEqual(inserted.senderId.utf8) }
         if let group = inserted.groupId {
-            trim(to: limits.maxPerGroup) { $0.groupId == group }
+            trim(to: limits.maxPerGroup) { $0.groupId?.utf8.elementsEqual(group.utf8) == true }
         }
         if inserted.isRoomChat {
             trim(to: limits.maxRoomChat, \.isRoomChat)

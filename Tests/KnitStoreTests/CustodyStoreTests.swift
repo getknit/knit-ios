@@ -1,29 +1,40 @@
 import KnitStore
+import KnitStoreSQL
 import KnitWire
 import Testing
 
-/// Every custody store implementation. Each runs the whole ``CustodyStoreTests`` suite, so the SQL store (P5)
-/// is held to exactly the rules the memory store keeps.
+/// Every custody store implementation. Each runs the whole ``CustodyStoreTests`` suite, so the SQL store is held to
+/// exactly the rules the memory store keeps.
 enum CustodyStoreKind: CaseIterable, Sendable, CustomTestStringConvertible {
     case memory
+    case sql
 
     var testDescription: String {
         switch self {
         case .memory:
             "memory"
+        case .sql:
+            "sql"
         }
     }
 
-    func make() -> any CustodyStore {
-        make(CustodyLimits())
+    func make() throws -> any CustodyStore {
+        try make(CustodyLimits())
     }
 
-    func make(_ limits: CustodyLimits) -> any CustodyStore {
+    func make(_ limits: CustodyLimits) throws -> any CustodyStore {
         switch self {
         case .memory:
             MemoryCustodyStore(limits: limits)
+        case .sql:
+            SQLCustodyStore(try KnitDatabase.inMemory(failures: recordFailure), limits: limits)
         }
     }
+}
+
+/// Fails the test that met a database error: the stores would otherwise answer as if nothing were there.
+@Sendable func recordFailure(_ error: any Error) {
+    Issue.record("the database failed: \(error)")
 }
 
 /// A carried frame with knit-next's test shapes (`ForwardRepositoryTest.dm` and `chat`): a DM to `bob` unless
@@ -64,24 +75,24 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     private static let kinds = CustodyStoreKind.allCases
 
     @Test(arguments: kinds)
-    func aHeldIdIsNeverStoredTwice(kind: CustodyStoreKind) {
-        let store = kind.make()
+    func aHeldIdIsNeverStoredTwice(kind: CustodyStoreKind) throws {
+        let store = try kind.make()
         #expect(store.store(carried("f1", sender: "first"), origin: .relayed, now: 0))
         #expect(store.store(carried("f1", sender: "second"), origin: .relayed, now: 0), "already held still answers true")
         #expect(store.liveFrames(now: 0).map(\.envelope.senderId) == ["first"])
     }
 
     @Test(arguments: kinds)
-    func aPayloadThatDoesNotDecodeIsStillCarried(kind: CustodyStoreKind) {
+    func aPayloadThatDoesNotDecodeIsStillCarried(kind: CustodyStoreKind) throws {
         // The id set is what the digests compare, so nothing about the payload may gate the insert.
-        let store = kind.make()
+        let store = try kind.make()
         #expect(store.store(carried("d3", payload: [0xFF, 0xFF, 0xFF]), origin: .relayed, now: 0))
         #expect(store.contains("d3"))
     }
 
     @Test(arguments: kinds)
-    func ourOwnFramesCountAgainstTheSenderQuota(kind: CustodyStoreKind) {
-        let store = kind.make(CustodyLimits(maxPerSender: 5))
+    func ourOwnFramesCountAgainstTheSenderQuota(kind: CustodyStoreKind) throws {
+        let store = try kind.make(CustodyLimits(maxPerSender: 5))
         for index in 1...8 {
             store.store(carried("f0\(index)", sender: "self", sentAt: Int64(index)), origin: .own, now: 0)
         }
@@ -89,10 +100,10 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func arrivalOrderDoesNotChangeWhatIsKept(kind: CustodyStoreKind) {
+    func arrivalOrderDoesNotChangeWhatIsKept(kind: CustodyStoreKind) throws {
         let frames = (1...8).map { carried("f0\($0)", sentAt: Int64($0)) }
-        let ascending = kind.make(CustodyLimits(maxPerSender: 5))
-        let descending = kind.make(CustodyLimits(maxPerSender: 5))
+        let ascending = try kind.make(CustodyLimits(maxPerSender: 5))
+        let descending = try kind.make(CustodyLimits(maxPerSender: 5))
         for frame in frames {
             ascending.store(frame, origin: .relayed, now: 0)
         }
@@ -105,8 +116,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func removeForgetsTheFrame(kind: CustodyStoreKind) {
-        let store = kind.make()
+    func removeForgetsTheFrame(kind: CustodyStoreKind) throws {
+        let store = try kind.make()
         store.store(carried("keep", sentAt: 1), origin: .relayed, now: 0)
         store.store(carried("gone", sentAt: 2), origin: .relayed, now: 0)
         store.remove("gone")
@@ -118,7 +129,7 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
 
     @Test(arguments: kinds)
     func aFrameIsServedVerbatimWhileLiveAndNotOnceExpired(kind: CustodyStoreKind) throws {
-        let store = kind.make()
+        let store = try kind.make()
         let frame = carried("f1", sentAt: 1000)
         store.store(frame, origin: .relayed, now: 1000)
         let back = try #require(store.frame("f1", now: 1000))
@@ -131,10 +142,10 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func expiryIsFrameGlobalNotFromArrival(kind: CustodyStoreKind) {
+    func expiryIsFrameGlobalNotFromArrival(kind: CustodyStoreKind) throws {
         let limits = CustodyLimits(ttlMilliseconds: 1000)
-        let early = kind.make(limits)
-        let late = kind.make(limits)
+        let early = try kind.make(limits)
+        let late = try kind.make(limits)
         early.store(carried("d1", sentAt: 500), origin: .relayed, now: 600)
         late.store(carried("d1", sentAt: 500), origin: .relayed, now: 1400)
         for store in [early, late] {
@@ -144,8 +155,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func aFramePastItsExpiryIsRefused(kind: CustodyStoreKind) {
-        let store = kind.make(CustodyLimits(ttlMilliseconds: 1000))
+    func aFramePastItsExpiryIsRefused(kind: CustodyStoreKind) throws {
+        let store = try kind.make(CustodyLimits(ttlMilliseconds: 1000))
         #expect(!store.store(carried("dead", sentAt: 500), origin: .relayed, now: 2000))
         #expect(!store.contains("dead"))
         #expect(store.fingerprint(now: 2000) == 0)
@@ -153,15 +164,15 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func aFrameWithNoSentAtIsRefused(kind: CustodyStoreKind) {
+    func aFrameWithNoSentAtIsRefused(kind: CustodyStoreKind) throws {
         // A custodial frame whose sender forgot `sentAt` expired in 1970, so nobody carries it (work item #16).
-        let store = kind.make()
+        let store = try kind.make()
         #expect(!store.store(carried("r1", sentAt: 0, type: .receipt), origin: .own, now: 1_756_200_000_000))
     }
 
     @Test(arguments: kinds)
-    func aFutureDatedFrameIsRefusedAndEvictsNothing(kind: CustodyStoreKind) {
-        let store = kind.make(CustodyLimits(maxPerSender: 5))
+    func aFutureDatedFrameIsRefusedAndEvictsNothing(kind: CustodyStoreKind) throws {
+        let store = try kind.make(CustodyLimits(maxPerSender: 5))
         for index in 1...5 {
             store.store(carried("h\(index)", sentAt: 1000 + Int64(index)), origin: .relayed, now: 1000)
         }
@@ -173,8 +184,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func sweepingIsHousekeepingOnly(kind: CustodyStoreKind) {
-        let store = kind.make(CustodyLimits(ttlMilliseconds: 1000))
+    func sweepingIsHousekeepingOnly(kind: CustodyStoreKind) throws {
+        let store = try kind.make(CustodyLimits(ttlMilliseconds: 1000))
         store.store(carried("dies", sentAt: 0), origin: .relayed, now: 0)
         store.store(carried("lives", sentAt: 5000), origin: .relayed, now: 0)
         let atBoundary = store.fingerprint(now: 2000)
@@ -186,8 +197,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func theSweepKeepsAFrameOnItsLastLiveMillisecond(kind: CustodyStoreKind) {
-        let store = kind.make(CustodyLimits(ttlMilliseconds: 1000))
+    func theSweepKeepsAFrameOnItsLastLiveMillisecond(kind: CustodyStoreKind) throws {
+        let store = try kind.make(CustodyLimits(ttlMilliseconds: 1000))
         store.store(carried("gone", sentAt: 0), origin: .relayed, now: 0)
         store.store(carried("keep", sentAt: 1), origin: .relayed, now: 0)
         #expect(store.sweepExpired(now: 1001) == 1)
@@ -195,12 +206,12 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func unsweptResidueDoesNotChangeWhichLiveFramesAreEvicted(kind: CustodyStoreKind) {
+    func unsweptResidueDoesNotChangeWhichLiveFramesAreEvicted(kind: CustodyStoreKind) throws {
         // An expired room post is newer by sentAt than two live DMs. One node swept it and one has not; when a
         // fourth frame arrives at both, counting the residue would evict a live DM on the unswept node only.
         let limits = CustodyLimits(ttlMilliseconds: 10_000, roomChatTTLMilliseconds: 1000, maxPerSender: 3)
-        let swept = kind.make(limits)
-        let unswept = kind.make(limits)
+        let swept = try kind.make(limits)
+        let unswept = try kind.make(limits)
         let frames = [
             carried("dm_old", sender: "S", sentAt: 100),
             carried("dm_mid", sender: "S", sentAt: 200),
@@ -220,8 +231,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func theSenderBucketEvictsTheOldestThenTheSmallestId(kind: CustodyStoreKind) {
-        let store = kind.make(CustodyLimits(maxPerSender: 2))
+    func theSenderBucketEvictsTheOldestThenTheSmallestId(kind: CustodyStoreKind) throws {
+        let store = try kind.make(CustodyLimits(maxPerSender: 2))
         store.store(carried("a0", sender: "A", sentAt: 1), origin: .relayed, now: 0)
         store.store(carried("a1", sender: "A", sentAt: 5), origin: .relayed, now: 0)
         store.store(carried("b0", sender: "B", sentAt: 1), origin: .relayed, now: 0)
@@ -232,8 +243,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func groupAndRoomBucketsTrimOnlyThemselves(kind: CustodyStoreKind) {
-        let store = kind.make(CustodyLimits(maxPerGroup: 1, maxRoomChat: 1))
+    func groupAndRoomBucketsTrimOnlyThemselves(kind: CustodyStoreKind) throws {
+        let store = try kind.make(CustodyLimits(maxPerGroup: 1, maxRoomChat: 1))
         store.store(carried("g_old", sender: "a", sentAt: 1, recipient: nil, group: "g1"), origin: .relayed, now: 0)
         store.store(carried("g_other", sender: "b", sentAt: 1, recipient: nil, group: "g2"), origin: .relayed, now: 0)
         store.store(carried("g_new", sender: "c", sentAt: 9, recipient: nil, group: "g1"), origin: .relayed, now: 0)
@@ -243,8 +254,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func theGlobalCapEvictsTheOldestAcrossSenders(kind: CustodyStoreKind) {
-        let store = kind.make(CustodyLimits(maxFrames: 2))
+    func theGlobalCapEvictsTheOldestAcrossSenders(kind: CustodyStoreKind) throws {
+        let store = try kind.make(CustodyLimits(maxFrames: 2))
         store.store(carried("x2", sender: "A", sentAt: 2), origin: .relayed, now: 0)
         store.store(carried("x1", sender: "B", sentAt: 1), origin: .relayed, now: 0)
         store.store(carried("x3", sender: "A", sentAt: 3), origin: .relayed, now: 0)
@@ -254,8 +265,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func onlyRoomPostsCountTowardTheRoomQuota(kind: CustodyStoreKind) {
-        let store = kind.make(CustodyLimits(maxRoomChat: 1))
+    func onlyRoomPostsCountTowardTheRoomQuota(kind: CustodyStoreKind) throws {
+        let store = try kind.make(CustodyLimits(maxRoomChat: 1))
         store.store(roomPost("bc", sender: "a", sentAt: 1), origin: .relayed, now: 0)
         store.store(carried("dm", sender: "b", sentAt: 2), origin: .relayed, now: 0)
         store.store(carried("gp", sender: "c", sentAt: 3, recipient: nil, group: "g1"), origin: .relayed, now: 0)
@@ -267,8 +278,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func roomMetadataKeepsTheFullTTL(kind: CustodyStoreKind) {
-        let store = kind.make()
+    func roomMetadataKeepsTheFullTTL(kind: CustodyStoreKind) throws {
+        let store = try kind.make()
         let sixHours = CustodyLimits().roomChatTTLMilliseconds
         store.store(roomPost("post", sentAt: 0), origin: .relayed, now: 0)
         store.store(carried("tick", sentAt: 0, recipient: nil, type: .receipt), origin: .relayed, now: 0)
@@ -278,8 +289,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func liveFramesComeMostRecentlyReceivedFirst(kind: CustodyStoreKind) {
-        let store = kind.make(CustodyLimits(ttlMilliseconds: 1000))
+    func liveFramesComeMostRecentlyReceivedFirst(kind: CustodyStoreKind) throws {
+        let store = try kind.make(CustodyLimits(ttlMilliseconds: 1000))
         store.store(carried("dead", sentAt: 0), origin: .relayed, now: 1)
         store.store(carried("edge", sentAt: 1), origin: .relayed, now: 2)
         store.store(carried("tie", sentAt: 900), origin: .relayed, now: 7)
@@ -289,8 +300,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func recipientAndContainsAddressRowsById(kind: CustodyStoreKind) {
-        let store = kind.make()
+    func recipientAndContainsAddressRowsById(kind: CustodyStoreKind) throws {
+        let store = try kind.make()
         store.store(carried("dm", recipient: "bob"), origin: .relayed, now: 0)
         store.store(roomPost("bc"), origin: .relayed, now: 0)
         #expect(store.recipient(of: "dm") == "bob")
@@ -302,9 +313,9 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func idsThatSwiftCallsEqualAreTwoFrames(kind: CustodyStoreKind) {
+    func idsThatSwiftCallsEqualAreTwoFrames(kind: CustodyStoreKind) throws {
         // Kotlin compares code units, so the Kelvin sign is not a "K" and these are two frames on Android.
-        let store = kind.make()
+        let store = try kind.make()
         store.store(carried("idK"), origin: .relayed, now: 0)
         store.store(carried("id\u{212A}"), origin: .relayed, now: 0)
         #expect(store.liveIds(now: 0).count == 2)
@@ -314,8 +325,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     }
 
     @Test(arguments: kinds)
-    func concurrentStoresAndSweepsLeaveAConsistentSet(kind: CustodyStoreKind) async {
-        let store = kind.make(CustodyLimits(maxPerSender: 5))
+    func concurrentStoresAndSweepsLeaveAConsistentSet(kind: CustodyStoreKind) async throws {
+        let store = try kind.make(CustodyLimits(maxPerSender: 5))
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
                 for index in 0..<300 {
@@ -329,6 +340,23 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
             }
         }
         #expect(liveSet(store, now: 0) == ["f295", "f296", "f297", "f298", "f299"])
+    }
+}
+
+/// Ids key rows by their exact bytes in every store (ADR 2026-09.jc2x): a C string, or Swift's `String` equality,
+/// would make two of Android's frames one.
+@Suite struct CustodyStoreByteKeyTests {
+    @Test(arguments: CustodyStoreKind.allCases)
+    func anIdWithANulIsNotItsOwnPrefix(kind: CustodyStoreKind) throws {
+        // A C string ends at the NUL, which would make these one row; on Android they are two frames.
+        let store = try kind.make()
+        store.store(carried("a"), origin: .relayed, now: 0)
+        store.store(carried("a\u{0}b"), origin: .relayed, now: 0)
+        #expect(Set(store.liveIds(now: 0).map { Array($0.utf8) }) == [Array("a".utf8), [0x61, 0, 0x62]])
+        #expect(store.frame("a\u{0}b", now: 0)?.envelope.id.utf8.count == 3)
+        store.remove("a")
+        #expect(store.contains("a\u{0}b"))
+        #expect(!store.contains("a"))
     }
 }
 

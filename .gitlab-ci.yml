@@ -31,7 +31,7 @@ variables:
   image: $SWIFT_IMAGE
   before_script:
     - apt-get update -qq
-    - apt-get install -y -qq --no-install-recommends libdbus-1-dev pkg-config python3 unzip curl ca-certificates >/dev/null
+    - apt-get install -y -qq --no-install-recommends libdbus-1-dev libsqlite3-dev pkg-config python3 unzip curl ca-certificates >/dev/null
   cache:
     key: swiftpm-$CI_COMMIT_REF_SLUG
     paths:

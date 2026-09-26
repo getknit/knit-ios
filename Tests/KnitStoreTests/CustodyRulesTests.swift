@@ -45,6 +45,29 @@ import Testing
         #expect(CustodyRules.evictsBefore(entry("z", sentAt: 1), entry("a", sentAt: 2)), "sentAt decides first")
     }
 
+    @Test func anEvictedIdTakesOnlyItsOwnBytesOutOfTheCount() {
+        // Swift calls "idK" and "id\u{212A}" (the Kelvin sign) equal. Evicting A's "idK" to the sender quota must
+        // leave B's frame in the count, or the overall trim sees one frame too few and keeps what Android evicts.
+        let live = [
+            CustodyRules.Entry(id: "idK", senderId: "A", groupId: nil, isRoomChat: false, sentAt: 1, expiresAt: 100),
+            CustodyRules.Entry(id: "idX", senderId: "A", groupId: nil, isRoomChat: false, sentAt: 2, expiresAt: 100),
+            CustodyRules.Entry(id: "id\u{212A}", senderId: "B", groupId: nil, isRoomChat: false, sentAt: 3, expiresAt: 100),
+        ]
+        let evicted = CustodyRules.evictions(after: live[1], among: live, limits: CustodyLimits(maxFrames: 1, maxPerSender: 1))
+        #expect(evicted.map { Array($0.utf8) } == [Array("idK".utf8), Array("idX".utf8)], "compared by bytes, as the rule must")
+    }
+
+    @Test func groupsThatSwiftCallsEqualAreTwoBuckets() {
+        // A sender picks its group ids freely. One canonically equivalent to another group's must not share that
+        // group's quota, which Android counts by code units.
+        func entry(_ id: String, group: String, sentAt: Int64) -> CustodyRules.Entry {
+            CustodyRules.Entry(id: id, senderId: id, groupId: group, isRoomChat: false, sentAt: sentAt, expiresAt: 100)
+        }
+        let real = entry("real", group: "caf\u{E9}", sentAt: 1)
+        let crafted = entry("crafted", group: "cafe\u{301}", sentAt: 2)
+        #expect(CustodyRules.evictions(after: crafted, among: [real, crafted], limits: CustodyLimits(maxPerGroup: 1)).isEmpty)
+    }
+
     @Test func anEntryReadsItsBucketsOffTheEnvelope() {
         let group = GroupInfo(id: "g1", members: ["a"], createdBy: "a")
         let grouped = RelayEnvelope(type: .chat, id: "g", senderId: "a", sentAt: 5, group: group, payload: [])

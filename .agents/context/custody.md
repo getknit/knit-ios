@@ -106,7 +106,12 @@ publish it honestly.
   `KnitStore/Custody/CustodyRules.swift`, which every store applies. `KnitMesh/Custody/CustodySync.swift`
   decides what to carry and serve, `KnitMesh/Receipts/AckSync.swift` owes the room ticks, and
   `KnitMesh/Recovery/` holds key requests and parked frames (ADR 2026-09.p6nb).
-- **Ids compare by their bytes** (`ExactKey`), never by Swift's `String` equality (ADR 2026-09.jc2x).
+- **Two stores apply them:** `MemoryCustodyStore` for the Linux peer and the tests, and `SQLCustodyStore`
+  (`KnitStoreSQL`) for the app. Both run `CustodyRules` over their live rows and the same `CustodyStoreTests`
+  (ADR 2026-09.nyya).
+- **Ids compare by their bytes** (`ExactKey`), never by Swift's `String` equality (ADR 2026-09.jc2x). That
+  includes the sender and group buckets and the ids an eviction removes. The SQL store keeps every id as a
+  UTF-8 `BLOB`, which SQLite orders exactly as BINARY orders text.
 - **Where the iPhone differs from Android, all of it delivery-side, none of it custody:**
   - a cleartext DM is dropped, not shown;
   - a `blobreq` is ignored rather than asked onward, since the MVP holds no blobs;
