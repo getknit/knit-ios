@@ -68,7 +68,7 @@ extension LinkManager {
             nodeId: localId,
             digestCue: digestCue,
             psm: psm,
-            flags: AdvertPayload.dialsGattPeersFlag
+            flags: radio.dialsGattPeers ? AdvertPayload.dialsGattPeersFlag : 0
         )
         guard payload != advertised else {
             return

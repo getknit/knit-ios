@@ -123,8 +123,8 @@ custom_rules:
   seam_cdbus:
     name: libdbus stays in KnitBlueZ
     regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+(CDBus|CBluetoothShim)\b'
-    excluded: 'Sources/KnitBlueZ/'
-    message: Only KnitBlueZ imports libdbus and the Bluetooth socket shim.
+    excluded: 'Sources/KnitBlueZ/|Tests/KnitBlueZTests/'
+    message: Only KnitBlueZ, and the tests that host its fake BlueZ, import libdbus and the Bluetooth socket shim.
     severity: error
   no_cryptokit:
     name: Import Crypto, not CryptoKit

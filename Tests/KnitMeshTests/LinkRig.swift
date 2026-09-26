@@ -16,8 +16,13 @@ struct LinkRig {
     let log = RecordingLog()
     let links: LinkManager
 
-    init(local: NodeId, advertisesServiceData: Bool = true, configuration: LinkManager.Configuration = LinkManager.Configuration()) {
-        radio = FakeRadio(advertisesServiceData: advertisesServiceData)
+    init(
+        local: NodeId,
+        advertisesServiceData: Bool = true,
+        dialsGattPeers: Bool = true,
+        configuration: LinkManager.Configuration = LinkManager.Configuration()
+    ) {
+        radio = FakeRadio(advertisesServiceData: advertisesServiceData, dialsGattPeers: dialsGattPeers)
         clock = ManualClock(wall: 1_756_200_000_000, monotonic: 1000)
         links = LinkManager(
             localId: local,

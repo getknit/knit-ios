@@ -31,6 +31,24 @@ explicit direction.** Update this file in the change that ships an item.
     `ForwardDaoTest`, `AckSyncTest`, `KeyExchangeTest` and `PendingInboundTest` are ported. Line coverage is
     100 % in both targets, and the suite is clean under TSan and ASan.
   - **Still owed:** the mesh lab, deferred below; P3's exit is these gates instead.
+- **P4, the Linux peer (`KnitBlueZ`, `KnitPeer`, `knit-peer`):** built on 2026-09-25 (ADR 2026-09.5ftc).
+  - **The radio:** BlueZ over libdbus on one `poll` thread, with the advert, the scan and LE CoC sockets on
+    `hci1` only. The `ios` profile serves the GATT payload (ADR 2026-09.xzpt).
+  - **The peer:** JSON-lines control, `deny-link`, `keygen` windows and `scan`. `scripts/interop.py` drives
+    checklist L through knit-next's debug bridge.
+  - **Tests:** a fake BlueZ on a peer-to-peer bus and Unix sockets run the whole radio in CI. Coverage is 90 %
+    in `KnitBlueZ` and 99 % in `KnitPeer`, and both suites are clean under TSan and ASan.
+  - **Checklist L so far:** the first group passed 11 of 11 against the Pixel 3 with the phone dialing (link,
+    names both ways, the room both ways, v1 DMs both ways with both ticks, custody convergence, back-fill),
+    and 10 of 11 with the peer dialing.
+  - **Blocked on the radio path:** later runs failed at connection setup on both sides, in a control run of
+    spike (e)'s own tools too. The Pixel had drifted to about −84 dBm from −55 in the morning. The rest waits
+    for the phone to sit nearer the dongle.
+  - **Still owed:** the `ios`-profile refusal against Android 2.7 (`interop.py refusal`); the `ios` group, which
+    needs A1; the two-peer relay line, which needs a second adapter; and the hour-long soak, which the
+    maintainer deferred.
+  - **Before P8:** `KnitBlueZ` reads the GATT payload of a UUID-only advert, so the peer can dial an iPhone and
+    set `FLAG_DIALS_GATT_PEERS`.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted. It is needed
   before MVP acceptance and should land during P3 or P4. Not started.
 - **Companion change A2 in knit-next:** merged on 2026-09-25 as `0c0756f6` and `1f3befcd`. Done.

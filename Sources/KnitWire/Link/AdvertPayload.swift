@@ -21,6 +21,13 @@ public struct AdvertPayload: Sendable, Equatable {
     /// `.agents/memory/decisions.md`).
     public static let dialsGattPeersFlag: UInt8 = 0x02
 
+    /// The 16-bit service UUID under which Android puts the payload in its advert's service data, and under which
+    /// a node that cannot advertise service data (an iPhone) lists a GATT service instead.
+    public static let serviceUUID = "0000fe30-0000-1000-8000-00805f9b34fb"
+    /// The read-only characteristic in that GATT service whose value is ``gattValue``. Minted by this port on
+    /// 2026-09-25; Android reads it once companion change A3 lands, so it is cross-platform law from then on.
+    public static let characteristicUUID = "848eedcd-a2e3-4fb2-86f9-e2c80821a497"
+
     private static let capabilitiesMask: Int64 = 0xFF
 
     /// The capability bits' low byte.
@@ -56,6 +63,14 @@ public struct AdvertPayload: Sendable, Equatable {
         digestCue = bytes[cueStart..<psmStart].reduce(0) { $0 << UInt8.bitWidth | UInt32($1) }
         psm = bytes[psmStart..<Self.minimumSize].reduce(0) { $0 << UInt8.bitWidth | UInt16($1) }
         flags = bytes.count > Self.minimumSize ? bytes[Self.minimumSize] : 0
+    }
+
+    /// What the GATT characteristic serves: the same 24 bytes with the digest cue at 0. Nothing on Bluetooth reads
+    /// the cue, so the value changes only when the PSM does, and a reader never sees it churn.
+    public var gattValue: [UInt8] {
+        var value = self
+        value.digestCue = 0
+        return value.bytes
     }
 
     /// The 24 bytes.

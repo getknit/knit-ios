@@ -152,6 +152,21 @@ import Testing
         #expect(await rig.mesh.sightings.isEmpty)
     }
 
+    @Test func aRefusedPeerIsCutAndKeptOutUntilPermitted() async {
+        let rig = rig()
+        await rig.mesh.start()
+        await linkBob(rig)
+        await rig.mesh.refuseLinks(with: bob.nodeId)
+        #expect(await rig.mesh.neighbors.isEmpty)
+        #expect(rig.radio.closed == [channel])
+        await linkBob(rig)
+        #expect(await rig.mesh.neighbors.isEmpty, "its next dial is closed at the HELLO")
+        await rig.mesh.permitLinks(with: bob.nodeId)
+        await rig.mesh.process(.accepted(ChannelID(51)))
+        await rig.mesh.process(.received(ChannelID(51), hello(bob)))
+        #expect(await rig.mesh.neighbors.map(\.nodeId) == [bob.nodeId])
+    }
+
     @Test func startingTwiceStartsOnce() async {
         let rig = rig()
         await rig.mesh.start()

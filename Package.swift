@@ -59,14 +59,25 @@ let package = Package(
             name: "KnitBlueZ",
             dependencies: [
                 "KnitMesh",
+                "KnitWire",
                 "CBluetoothShim",
                 .target(name: "CDBus", condition: .when(platforms: [.linux])),
             ],
             swiftSettings: strict
         ),
+        // The peer's logic, platform-free so its tests run anywhere: options, its state directory, keygen and the
+        // JSON-lines control surface. `knit-peer` wires it to the BlueZ radio.
+        .target(name: "KnitPeer", dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
         .executableTarget(
             name: "knit-peer",
-            dependencies: ["KnitMesh", .target(name: "KnitBlueZ", condition: .when(platforms: [.linux]))],
+            dependencies: [
+                "KnitPeer",
+                "KnitMesh",
+                "KnitCrypto",
+                "KnitStore",
+                "KnitWire",
+                .target(name: "KnitBlueZ", condition: .when(platforms: [.linux])),
+            ],
             swiftSettings: strict
         ),
 
@@ -86,6 +97,19 @@ let package = Package(
             swiftSettings: strict
         ),
         .testTarget(name: "KnitAppCoreTests", dependencies: ["KnitAppCore"], swiftSettings: strict),
+        .testTarget(
+            name: "KnitPeerTests",
+            dependencies: ["KnitPeer", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
+            swiftSettings: strict
+        ),
+        // Runs the BlueZ radio against a fake BlueZ on a peer-to-peer bus, and Unix sockets in place of L2CAP.
+        .testTarget(
+            name: "KnitBlueZTests",
+            dependencies: [
+                "KnitBlueZ", "KnitMesh", "KnitWire", "KnitTestSupport", .target(name: "CDBus", condition: .when(platforms: [.linux])),
+            ],
+            swiftSettings: strict
+        ),
         .testTarget(name: "RepoConventionTests", dependencies: [crypto], swiftSettings: strict),
     ]
 )

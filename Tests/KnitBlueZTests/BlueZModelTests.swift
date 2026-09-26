@@ -1,0 +1,159 @@
+import KnitTestSupport
+import KnitWire
+import Testing
+
+@testable import KnitBlueZ
+
+/// The adapter guard, and what the radio makes of BlueZ's properties.
+@Suite struct BlueZModelTests {
+    // MARK: The adapter
+
+    @Test func hci0IsRefusedWhateverItsAddress() {
+        #expect(throws: AdapterSelection.Refusal.reservedAdapter) {
+            try AdapterSelection(name: "hci0", expectedAddress: "0A:BC:DE:00:00:A1")
+        }
+    }
+
+    @Test(arguments: ["", "hci", "hci1a", "HCI1", "wlan0", "hci-1", "/org/bluez/hci1"])
+    func onlyAnHciNameIsAnAdapter(_ name: String) {
+        #expect(throws: AdapterSelection.Refusal.notAnAdapterName(name)) {
+            try AdapterSelection(name: name, expectedAddress: "0A:BC:DE:00:00:A1")
+        }
+    }
+
+    @Test func theExpectedAddressMustBeAnAddress() {
+        #expect(throws: AdapterSelection.Refusal.notAnAddress("0A:BC:DE")) {
+            try AdapterSelection(name: "hci1", expectedAddress: "0A:BC:DE")
+        }
+    }
+
+    @Test func theAdapterMustBePresentWithItsAddress() throws {
+        let selection = try AdapterSelection(name: "hci1", expectedAddress: "0a:bc:de:00:00:a1")
+        #expect(selection.path == "/org/bluez/hci1")
+        try selection.check(reportedAddress: "0A:BC:DE:00:00:A1")
+        #expect(throws: AdapterSelection.Refusal.absent("hci1")) { try selection.check(reportedAddress: nil) }
+        #expect(throws: AdapterSelection.Refusal.self) { try selection.check(reportedAddress: "0B:00:00:00:00:13") }
+        #expect(throws: AdapterSelection.Refusal.self) { try selection.check(reportedAddress: "garbage") }
+    }
+
+    @Test func onlyTheAdapterAndItsDevicesBelongToIt() throws {
+        let selection = try AdapterSelection(name: "hci1", expectedAddress: "0A:BC:DE:00:00:A1")
+        #expect(selection.owns("/org/bluez/hci1"))
+        #expect(selection.owns("/org/bluez/hci1/dev_4A_00_00_00_00_EF"))
+        #expect(!selection.owns("/org/bluez/hci0"))
+        #expect(!selection.owns("/org/bluez/hci0/dev_4A_00_00_00_00_EF"))
+        #expect(!selection.owns("/org/bluez/hci10"), "hci10 is not hci1")
+        #expect(!selection.owns("/org/bluez"))
+    }
+
+    @Test func addressesParseEitherCaseAndPrintInUpperCase() throws {
+        let address = try #require(BluetoothAddress("0a:bc:de:00:00:a1"))
+        #expect(address.description == "0A:BC:DE:00:00:A1")
+        #expect(address.bytes == [0x0A, 0xBC, 0xDE, 0x00, 0x00, 0xA1])
+        #expect(address.littleEndian == [0xA1, 0x00, 0x00, 0xDE, 0xBC, 0x0A], "bdaddr_t is least significant first")
+        #expect(BluetoothAddress("0:1:2:3:4:5") == nil)
+        #expect(BluetoothAddress("0A:BC:DE:00:00") == nil)
+        #expect(BluetoothAddress("0A:BC:DE:00:00:GG") == nil)
+        #expect(BluetoothAddress("") == nil)
+    }
+
+    // MARK: Devices
+
+    @Test func aDeviceTakesWhatBlueZSays() throws {
+        let advert = AdvertPayload(capabilities: 0xFFF, nodeId: fixtureNodeId(4), digestCue: 1, psm: 0x81)
+        var device = BlueZDevice(path: "/org/bluez/hci1/dev_x")
+        device.apply(
+            .properties([
+                ("Address", .string("4A:00:00:00:00:EF")), ("AddressType", .string("random")), ("RSSI", .int16(-58)),
+                ("ServiceData", .properties([("0000FE30-0000-1000-8000-00805F9B34FB", .bytes(advert.bytes))])),
+                ("Name", .string("ignored")),
+            ])
+        )
+        #expect(device.rssi == -58)
+        #expect(device.advert == advert, "the UUID is matched in any case")
+        let target = try #require(device.dialTarget)
+        #expect(target.isRandom)
+        #expect(target.address.description == "4A:00:00:00:00:EF")
+        device.invalidate(["RSSI", "Name"])
+        #expect(device.rssi == nil)
+        device.invalidate(["ServiceData"])
+        #expect(device.advert == nil)
+    }
+
+    @Test func aPublicAddressDialsAsPublic() throws {
+        var device = BlueZDevice(path: "/org/bluez/hci1/dev_x")
+        device.apply(.properties([("Address", .string("0A:BC:DE:00:00:A1")), ("AddressType", .string("public"))]))
+        #expect(try #require(device.dialTarget).isRandom == false)
+    }
+
+    @Test func serviceDataThatIsNotAKnitAdvertIsNoAdvert() {
+        var device = BlueZDevice(path: "/org/bluez/hci1/dev_x")
+        device.apply(.properties([("ServiceData", .properties([(AdvertPayload.serviceUUID, .bytes([1, 2, 3]))]))]))
+        #expect(device.advert == nil)
+        device.apply(
+            .properties([("ServiceData", .properties([("0000feaa-0000-1000-8000-00805f9b34fb", .bytes([UInt8](repeating: 1, count: 24)))]))]
+            ))
+        #expect(device.advert == nil)
+        #expect(device.dialTarget == nil)
+    }
+
+    @Test func managedObjectsReadAsPathsAndInterfaces() {
+        let objects = DBusValue.dictionary(
+            key: .objectPath,
+            value: .dictionary(key: .string, value: .dictionary(key: .string, value: .variant)),
+            [
+                DBusEntry(
+                    key: .objectPath("/a"),
+                    value: .dictionary(
+                        key: .string,
+                        value: .dictionary(key: .string, value: .variant),
+                        [DBusEntry(key: .string("org.example.One"), value: .properties([("X", .int32(1))]))]
+                    )
+                )
+            ]
+        )
+        let read = BlueZ.objects(from: objects)
+        #expect(read.map(\.path) == ["/a"])
+        #expect(read.first?.interfaces.first?.name == "org.example.One")
+        #expect(BlueZ.objects(from: .string("nothing")).isEmpty)
+    }
+
+    // MARK: What the radio publishes
+
+    @Test func theAndroidAdvertIsServiceDataWithNoName() {
+        let advert = AdvertPayload(capabilities: .local, nodeId: fixtureNodeId(5), digestCue: 0, psm: 0x80)
+        let properties = DBusValue.properties(AdvertisementProperties.of(advert, profile: .android))
+        #expect(properties.textKeyed?.map(\.key) == ["Type", "Discoverable", "ServiceData"])
+        #expect(properties["ServiceData"]?["FE30"]?.byteArray == advert.bytes)
+    }
+
+    @Test func theIOSAdvertIsTheUUIDAlone() {
+        let advert = AdvertPayload(capabilities: .local, nodeId: fixtureNodeId(5), digestCue: 0, psm: 0x80)
+        let properties = DBusValue.properties(AdvertisementProperties.of(advert, profile: .ios))
+        #expect(properties.textKeyed?.map(\.key) == ["Type", "Discoverable", "ServiceUUIDs"])
+        #expect(properties["ServiceUUIDs"]?.textArray == ["FE30"])
+    }
+
+    @Test func aGATTReadHonoursItsOffset() {
+        let value: [UInt8] = Array(0..<24)
+        #expect(GattApplication.read(value, options: nil) == value)
+        #expect(GattApplication.read(value, options: .properties([("offset", .uint16(22))])) == [22, 23])
+        #expect(GattApplication.read(value, options: .properties([("offset", .uint16(24))]))?.isEmpty == true)
+        #expect(GattApplication.read(value, options: .properties([("offset", .uint16(25))])) == nil)
+        #expect(GattApplication.read(value, options: .properties([("offset", .int32(-1))])) == nil)
+    }
+
+    @Test func theApplicationIsOneServiceWithOneCharacteristic() {
+        let application = GattApplication(root: "/app/x/gatt")
+        #expect(application.servicePath == "/app/x/gatt/service0")
+        #expect(application.characteristicPath == "/app/x/gatt/service0/char0")
+        #expect(application.managedObjects.isWellFormed)
+        #expect(BlueZ.objects(from: application.managedObjects).map(\.path) == [application.servicePath, application.characteristicPath])
+    }
+
+    @Test func everyProfileHasAName() {
+        #expect(RadioProfile.allCases.map(\.name) == ["android", "ios"])
+        #expect(RadioProfile(name: "ios") == .ios)
+        #expect(RadioProfile(name: "lora") == nil)
+    }
+}

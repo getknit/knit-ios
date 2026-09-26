@@ -122,6 +122,8 @@ public final class LinkManager: MeshTransport {
     /// The registered links, one per peer, in the order they came up.
     var liveLinks: [LiveLink] = []
     var dialing: [NodeId: ChannelID] = [:]
+    /// Peers refused both ways (``refuse(_:)``).
+    var refused: Set<NodeId> = []
     var presence: PresenceTracker
     var addresses: [NodeId: RadioAddress] = [:]
     var backoffs: [NodeId: Backoff] = [:]

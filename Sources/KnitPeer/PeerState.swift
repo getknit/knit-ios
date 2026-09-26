@@ -1,0 +1,102 @@
+import Foundation
+public import KnitCrypto
+public import KnitStore
+import Synchronization
+
+/// A peer's state directory: its identity in `identity` (mode 0600, in a 0700 directory) and its own profile in
+/// `profile.json`, including the version and publish stamp. Keeping those two across restarts matters: Android keeps
+/// the newest version it saw, so a peer that forgot its version would publish edits nobody took.
+///
+/// Everything else, custody, peers and messages, lives in memory and starts empty.
+public struct PeerState: Sendable {
+    /// The directory.
+    public let directory: String
+
+    /// The state in `directory`.
+    public init(directory: String) {
+        self.directory = directory
+    }
+
+    /// Where the private keys live.
+    public var identity: FileSecretStore {
+        FileSecretStore(path: directory + "/identity")
+    }
+
+    /// The stored identity, made and kept first if there is none.
+    public func loadIdentity() throws(SecretStoreError) -> IdentityKeys.Loaded {
+        try IdentityKeys.load(from: identity)
+    }
+
+    /// Keeps `keys` as this peer's identity, and forgets the old identity's profile clocks with it.
+    public func replaceIdentity(with keys: IdentityKeys) throws(SecretStoreError) {
+        try identity.write(keys.storedForm)
+        let profile = profileStore()
+        var fresh = OwnProfile()
+        fresh.name = profile.load().name
+        profile.save(fresh)
+    }
+
+    /// The own profile, kept in `profile.json`.
+    public func profileStore() -> FileOwnProfileStore {
+        FileOwnProfileStore(path: directory + "/profile.json")
+    }
+}
+
+/// An ``OwnProfileStore`` in one JSON file, rewritten atomically on every save. A file that is missing or does not
+/// parse reads as a fresh profile.
+public final class FileOwnProfileStore: OwnProfileStore {
+    private struct Stored: Codable {
+        var name: String
+        var status: String
+        var openToChat: Bool
+        var version: Int64
+        var publishedAt: Int64
+    }
+
+    private static let fileMode = 0o600
+
+    /// The file's path.
+    public let path: String
+    private let cached: Mutex<OwnProfile>
+    /// Why the last save failed, if it did; the peer logs it.
+    public var lastError: String? { failure.withLock { $0 } }
+    private let failure = Mutex<String?>(nil)
+
+    /// The store at `path`, read once now.
+    public init(path: String) {
+        self.path = path
+        let stored = FileManager.default.contents(atPath: path).flatMap { try? JSONDecoder().decode(Stored.self, from: $0) }
+        let profile = stored.map { saved in
+            OwnProfile(
+                name: saved.name, status: saved.status, openToChat: saved.openToChat, version: saved.version, publishedAt: saved.publishedAt
+            )
+        }
+        cached = Mutex(profile ?? OwnProfile())
+    }
+
+    public func load() -> OwnProfile {
+        cached.withLock { $0 }
+    }
+
+    public func save(_ profile: OwnProfile) {
+        cached.withLock { $0 = profile }
+        let stored = Stored(
+            name: profile.name,
+            status: profile.status,
+            openToChat: profile.openToChat,
+            version: profile.version,
+            publishedAt: profile.publishedAt
+        )
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+            let url = URL(fileURLWithPath: path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try encoder.encode(stored).write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: Self.fileMode], ofItemAtPath: path)
+            failure.withLock { $0 = nil }
+        } catch {
+            failure.withLock { $0 = "cannot write \(path): \(error)" }
+        }
+    }
+}

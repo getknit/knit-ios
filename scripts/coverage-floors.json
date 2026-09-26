@@ -2,9 +2,10 @@
   "Knit": 0,
   "KnitAppCore": 0,
   "KnitBLE": 0,
-  "KnitBlueZ": 0,
+  "KnitBlueZ": 90,
   "KnitCrypto": 97,
   "KnitMesh": 100,
+  "KnitPeer": 99,
   "KnitStore": 100,
   "KnitWire": 98,
   "knit-peer": 0

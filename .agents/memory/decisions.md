@@ -17,6 +17,7 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | ADR | Decision | Topics |
 | --- | --- | --- |
 | [2026-09.2ved](decisions/2026-09-2ved-knit-next-s-code-and.md) | knit-next's code and golden vectors are the wire contract | interop, wire, testing |
+| [2026-09.5ftc](decisions/2026-09-5ftc-a-headless-linux-peer-on.md) | a headless Linux peer on hci1 is the first interop rig | interop, ble, testing |
 | [2026-09.5phg](decisions/2026-09-5phg-knit-for-ios-is-gpl.md) | Knit for iOS is GPL-3.0-or-later with an App Store exception | license, legal |
 | [2026-09.5vbh](decisions/2026-09-5vbh-xtool-builds-with-the-compiling.md) | xtool builds with the compiling toolchain's clang headers | toolchain, build |
 | [2026-09.6es2](decisions/2026-09-6es2-one-linkmanager-owns-dialing-and.md) | one LinkManager owns dialing and admission for every radio | ble, transport, interop |
@@ -28,4 +29,5 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-09.qsd9](decisions/2026-09-qsd9-dms-seal-with-v1-static.md) | DMs seal with v1 static keys until the ratchet lands | crypto, dm, interop |
 | [2026-09.txqp](decisions/2026-09-txqp-ios-18-is-the-floor.md) | iOS 18 is the floor and the bundle id is app.getknit.knit | platform, build |
 | [2026-09.wde9](decisions/2026-09-wde9-the-protocol-core-is-platform.md) | the protocol core is platform-free Swift that builds and tests on Linux | architecture, build, testing |
+| [2026-09.xzpt](decisions/2026-09-xzpt-an-iphone-is-found-through.md) | an iPhone is found through a read-only GATT payload under 0xFE30 | ble, wire, interop |
 | [2026-09.zwdp](decisions/2026-09-zwdp-knit-for-ios-meshes-over.md) | Knit for iOS meshes over Bluetooth LE only | scope, transport, ble |

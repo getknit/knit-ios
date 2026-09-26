@@ -21,6 +21,12 @@ import Testing
         #expect(advert?.capabilities == 0x9)
     }
 
+    @Test func aRadioThatCannotReadGATTPayloadsLeavesTheFlagClear() {
+        let rig = LinkRig(local: high, dialsGattPeers: false)
+        _ = rig.handle(.listening(psm: 0x81))
+        #expect(rig.radio.advertised.last?.flags == 0)
+    }
+
     @Test func aCustodyChangeReAdvertisesOnceTheBurstSettles() {
         let rig = LinkRig(local: high)
         _ = rig.handle(.listening(psm: 0x81))

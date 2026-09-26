@@ -23,11 +23,16 @@ ladder, not the first.
    a later lab run deterministically from a seed.
 5. **Fuzzing.** Every parser that reads bytes off the radio has a libFuzzer harness in `Fuzz/`. A crash is
    a finding by construction; its input joins the corpus once the fix lands.
-6. **Over the air, from Linux (P4).** `knit-peer` on `hci1` against Android phones running Knit: checklist
-   L. Obey `.agents/rules/devices.md` before touching a phone.
-7. **The Mac (P7).** The full suite on macOS, the `KnitBLE` delegate tests, Simulator XCUITest with
+6. **The Linux peer, without a radio.** `KnitBlueZTests` runs the BlueZ radio against a fake BlueZ on a
+   peer-to-peer libdbus server, with Unix `SOCK_SEQPACKET` sockets in place of L2CAP, so the whole radio runs
+   in CI with no adapter and no bus daemon. No test opens a Bluetooth socket (`.agents/context/linux-peer.md`
+   says why). `KnitPeerTests` drives the control surface through a real `Mesh`, with a second engine signing
+   the far side's frames.
+7. **Over the air, from Linux (P4).** `knit-peer` on `hci1` against Android phones running Knit: checklist
+   L, through `scripts/interop.py`. Obey `.agents/rules/devices.md` before touching a phone.
+8. **The Mac (P7).** The full suite on macOS, the `KnitBLE` delegate tests, Simulator XCUITest with
    `performAccessibilityAudit`, and a native Mac run against Android and the Linux peer: checklist M.
-8. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`.
+9. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`.
 
 ## Coverage
 

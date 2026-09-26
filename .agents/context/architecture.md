@@ -16,8 +16,9 @@ one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 | `KnitAppCore` | all | `@Observable` view models, UI state, the copy catalog | P6 |
 | `KnitBLE` | Apple | the CoreBluetooth `Radio`: central, peripheral with the GATT payload, L2CAP streams, restoration | P6 |
 | `Knit` | Apple | SwiftUI, `@main`, Keychain, notifications, the composition root | P6 |
-| `KnitBlueZ`, `CDBus`, `CBluetoothShim` | Linux | the BlueZ `Radio`: D-Bus advert, scan and GATT through libdbus-1, LE CoC sockets | P4 |
-| `knit-peer` | Linux (a stub `main` elsewhere) | the headless peer with a JSON-lines control interface | P4 |
+| `KnitBlueZ`, `CDBus`, `CBluetoothShim` | Linux | the BlueZ `Radio`: one `poll` thread over a libdbus connection and LE CoC sockets; advert, scan and the GATT payload | P4 |
+| `KnitPeer` | all | the peer's logic: options, its state directory, keygen, the scan report and the JSON-lines control surface | P4 |
+| `knit-peer` | Linux (a stub `main` elsewhere) | the headless peer: `KnitPeer` on the BlueZ radio, on `hci1` only | P4 |
 | `KnitLabSupport` | all | LabTransport, LabRadio, LabClock, MeshLab: deferred (`.agents/memory/roadmap.md`) | later |
 
 Platform-only code sits behind `#if canImport(CoreBluetooth)`, `#if canImport(SwiftUI)`, `#if os(iOS)` or
@@ -39,7 +40,7 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
   | SwiftUI and UIKit | `Knit` |
   | Security (the Keychain) | `Knit` |
   | GRDB | `KnitStoreSQL` |
-  | CDBus and the socket shim | `KnitBlueZ` |
+  | CDBus and the socket shim | `KnitBlueZ`, and `KnitBlueZTests`, which hosts a fake BlueZ |
   | CryptoKit | nowhere: import swift-crypto's `Crypto`, which is CryptoKit on Apple platforms |
 
 ## Time, randomness and logging

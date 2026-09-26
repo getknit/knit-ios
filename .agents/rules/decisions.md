@@ -25,6 +25,8 @@ growing an explanation, that explanation belongs in the ADR.
 | the router, custody rules or quotas, the digest exchange, or receipts | [ADR 2026-09.p6nb](../memory/decisions/2026-09-p6nb-the-iphone-relays-and-carries.md) |
 | a set, map or column keyed by a frame id, a frame key or an unparsed sender id | [ADR 2026-09.jc2x](../memory/decisions/2026-09-jc2x-wire-ids-compare-by-their.md) |
 | a timer, a `Task`, the `Mesh` actor, or how the engine reads time | [ADR 2026-09.gq84](../memory/decisions/2026-09-gq84-the-mesh-engine-is-a.md) |
+| `KnitBlueZ`, `knit-peer`, `scripts/interop.py`, or anything that touches `hci1` | [ADR 2026-09.5ftc](../memory/decisions/2026-09-5ftc-a-headless-linux-peer-on.md) |
+| the GATT payload, its UUIDs, `FLAG_DIALS_GATT_PEERS`, or `Radio.dialsGattPeers` | [ADR 2026-09.xzpt](../memory/decisions/2026-09-xzpt-an-iphone-is-found-through.md) |
 
 ## Where they live
 

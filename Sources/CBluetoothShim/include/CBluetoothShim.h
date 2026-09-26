@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <sys/socket.h>
 
+#define KNIT_AF_BLUETOOTH 31
 #define KNIT_BTPROTO_L2CAP 0
 #define KNIT_SOL_BLUETOOTH 274
 

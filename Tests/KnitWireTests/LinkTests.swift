@@ -159,4 +159,16 @@ import Testing
         let flagged = AdvertPayload(capabilities: [], nodeId: node, digestCue: 0, psm: 1, flags: AdvertPayload.dialsGattPeersFlag)
         #expect(AdvertPayload(serviceData: flagged.bytes)?.flags == AdvertPayload.dialsGattPeersFlag)
     }
+
+    @Test func theGATTValueIsThePayloadWithItsCueZeroed() throws {
+        let node = try #require(NodeId(nodeA))
+        let payload = AdvertPayload(capabilities: Capabilities(rawValue: 0x9), nodeId: node, digestCue: 0x1234_5678, psm: 0x80, flags: 2)
+        #expect(Hex.encode(payload.gattValue) == "09294213fa67091e03c2f2ae8d071b9d6700000000008002")
+        #expect(AdvertPayload(serviceData: payload.gattValue)?.psm == 0x80)
+    }
+
+    @Test func theGATTIdentifiersArePinned() {
+        #expect(AdvertPayload.serviceUUID == "0000fe30-0000-1000-8000-00805f9b34fb")
+        #expect(AdvertPayload.characteristicUUID == "848eedcd-a2e3-4fb2-86f9-e2c80821a497")
+    }
 }

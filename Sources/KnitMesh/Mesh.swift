@@ -133,6 +133,18 @@ public actor Mesh {
         settle()
     }
 
+    /// Refuses links with `peer`, both ways, until ``permitLinks(with:)`` (``LinkManager/refuse(_:)``).
+    public func refuseLinks(with peer: NodeId) {
+        apply(links.refuse(peer))
+        settle()
+    }
+
+    /// Lets `peer` link again.
+    public func permitLinks(with peer: NodeId) {
+        apply(links.permit(peer))
+        settle()
+    }
+
     /// The peers linked now.
     public var neighbors: [Neighbor] { links.neighbors }
 

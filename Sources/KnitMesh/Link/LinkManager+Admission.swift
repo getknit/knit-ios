@@ -1,4 +1,4 @@
-import KnitWire
+public import KnitWire
 
 /// Who dials whom, and who is admitted: the dial rule, promotion, the HELLO exchange and the records behind it.
 extension LinkManager {
@@ -23,7 +23,9 @@ extension LinkManager {
         // A peer that left, and whose window has passed, starts fresh when it returns.
         let busy = Set(liveLinks.map(\.neighbor.nodeId)).union(dialing.keys)
         backoffs = backoffs.filter { now < $0.value.nextAt || present.contains($0.key) || busy.contains($0.key) }
-        let candidates = snapshots.filter { weDial($0.nodeId, flags: $0.advert.flags) && !busy.contains($0.nodeId) }
+        let candidates = snapshots.filter { snapshot in
+            weDial(snapshot.nodeId, flags: snapshot.advert.flags) && !busy.contains(snapshot.nodeId) && !refused.contains(snapshot.nodeId)
+        }
         let links = liveLinks.map { link in
             let node = link.neighbor.nodeId
             let rssi = presence.smoothedRssi(of: node) ?? configuration.unsightedLinkRssi
@@ -68,6 +70,24 @@ extension LinkManager {
         writeHello(on: id)
         channels[id]?.stage = .awaitingHello
         channels[id]?.deadline = now + configuration.helloTimeoutMilliseconds
+    }
+
+    // MARK: Refusals
+
+    /// Refuses every link with `peer`, both ways, until ``permit(_:)``: closes its live link and any dial to it,
+    /// never dials it, and closes its HELLO when it dials us. A rig's tool for forcing a line of nodes that could
+    /// all hear each other (knit-peer's `deny-link`). Answers the link that went down.
+    public func refuse(_ peer: NodeId) -> [Event] {
+        refused.insert(peer)
+        let now = clock.monotonicMilliseconds()
+        let theirs = channels.filter { $0.value.stage == .live(peer) || $0.value.role == .dialer(peer) }
+        return theirs.keys.sorted(by: Self.inOrder).flatMap { retire($0, backingOff: false, now: now) }
+    }
+
+    /// Lets `peer` link again, and dials it now if the promotion rules say so.
+    public func permit(_ peer: NodeId) -> [Event] {
+        refused.remove(peer)
+        return promote(now: clock.monotonicMilliseconds())
     }
 
     // MARK: Records
@@ -122,7 +142,7 @@ extension LinkManager {
 
     /// A dialer's HELLO: the responder's rule (`superviseAccepted`, with A1).
     func admit(_ id: ChannelID, hello: Hello, now: Int64) -> [Event] {
-        guard let dialer = NodeId(hello.nodeId), dialer != localId else {
+        guard let dialer = NodeId(hello.nodeId), dialer != localId, !refused.contains(dialer) else {
             return retire(id, backingOff: false, now: now)
         }
         let sighting = presence.isPresent(dialer, now: now) ? presence.advert(of: dialer) : nil

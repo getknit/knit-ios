@@ -83,6 +83,11 @@ public protocol Radio: AnyObject, Sendable {
     /// 2.7 never reads.
     var advertisesServiceData: Bool { get }
 
+    /// Whether this radio reads the GATT payload of a peer whose advert carries only the `0xFE30` UUID, and so can
+    /// find an iPhone. The advert sets `FLAG_DIALS_GATT_PEERS` only when it does: a peer that trusts the flag
+    /// waits to be dialed, and a node that set it without reading GATT would never link that peer.
+    var dialsGattPeers: Bool { get }
+
     /// What the radio reports.
     var events: AsyncStream<RadioEvent> { get }
 
