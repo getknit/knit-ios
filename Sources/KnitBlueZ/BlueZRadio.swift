@@ -16,6 +16,10 @@
             public var adapter: AdapterSelection
             /// How the peer shows itself.
             public var profile: RadioProfile
+            /// Whether the radio reads the GATT payload of a peer that advertises only the `0xFE30` UUID, and so
+            /// can find an iPhone. The `ios` profile does, as an iPhone does, and the `android` profile does not, as
+            /// Android does not; `knit-peer scan` reads them whatever it advertises, to list iPhones too.
+            public var readsGattPayloads: Bool
             /// Where channels come from.
             public var sockets: any SocketProvider
             /// Where D-Bus objects of this process live.
@@ -28,21 +32,25 @@
             public init(adapter: AdapterSelection, profile: RadioProfile, objectRoot: String = "/app/getknit/peer", log: any KnitLog) {
                 self.adapter = adapter
                 self.profile = profile
+                readsGattPayloads = profile.readsGattPayloads
                 sockets = L2CAPSockets(adapter: adapter.address)
                 self.objectRoot = objectRoot
                 self.log = log
             }
 
             var loop: BlueZLoop.Configuration {
-                BlueZLoop.Configuration(bus: bus, adapter: adapter, profile: profile, sockets: sockets, objectRoot: objectRoot, log: log)
+                var configuration = BlueZLoop.Configuration(
+                    bus: bus, adapter: adapter, profile: profile, sockets: sockets, objectRoot: objectRoot, log: log)
+                configuration.readsGattPayloads = readsGattPayloads
+                return configuration
             }
         }
 
         /// Only the `android` profile's advert carries service data.
         public let advertisesServiceData: Bool
-        /// Reading a GATT payload from a peer that advertises only the `0xFE30` UUID is not built yet, so the advert
-        /// never claims it and such a peer knows to dial us.
-        public let dialsGattPeers = false
+        /// Whether the radio reads the GATT payload of a peer that advertises only the `0xFE30` UUID
+        /// (``Configuration/readsGattPayloads``), so the advert says so and such a peer waits for us to dial it.
+        public let dialsGattPeers: Bool
         public let events: AsyncStream<RadioEvent>
         private let mailbox = Mailbox()
         private let finished: AsyncStream<Void>
@@ -50,7 +58,8 @@
         /// Starts the radio's thread. Nothing touches BlueZ or the adapter until ``start()``, except reading which
         /// objects exist.
         public init(configuration: Configuration) {
-            advertisesServiceData = configuration.profile == .android
+            advertisesServiceData = configuration.profile.advertisesServiceData
+            dialsGattPeers = configuration.readsGattPayloads
             let (stream, continuation) = AsyncStream<RadioEvent>.makeStream()
             let (ended, done) = AsyncStream<Void>.makeStream()
             events = stream

@@ -32,6 +32,18 @@ read.
 The alternative was the payload in a local name or a manufacturer-data field. iOS drops both from a backgrounded
 advert, and a name is visible in every scanner's list.
 
+**Amended 2026-09-26, when `KnitBlueZ` learned to read the payload:** the rules for reading live in `KnitMesh`'s
+`GattPayloads`, so KnitBLE reads on the same ones in P6. A radio reads a peer once, then sights it with that
+payload on every advert, until a dial to it fails; then it reads it again, in case the peer restarted on a new
+PSM. It reads one peer at a time and gives each read 12 s, Android's connect watchdog. A failed read is tried
+again after 30 s. A peer that answers but serves no Knit payload waits ten minutes, since `0xFE30` is not
+Knit's alone. BlueZ links the peer for the read, and the radio drops that link afterwards unless a channel uses
+it. Only the `ios` profile reads. Neither Android 2.7 nor A1 does, so the `android` profile leaves the flag
+clear, and an iPhone treats it exactly as it treats Android. `knit-peer scan` reads whatever it advertises, so
+it lists iPhones. `GattPayloadsTests`, `BlueZGattReadTests` (`aUUIDOnlyDeviceOfHci0IsNeverRead` among them), `BlueZGattRetryTests`
+and `BlueZModelTests`' `eachProfileFindsPeersAsItsPlatformDoes` guard it. So far only the fake BlueZ has served
+this reader a payload; the first real one will be the Mac's (P7) or the iPhone's (P8).
+
 **Consequences / limits:**
 
 - **Cross-platform law.** The UUID is law once A3 ships. Change it only together with knit-next.

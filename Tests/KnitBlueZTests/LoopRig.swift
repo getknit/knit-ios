@@ -40,12 +40,19 @@
         let loop: BlueZLoop
         private let box = EventBox()
 
+        /// GATT reads for the tests: a short deadline, and waits long enough that a test sees no second read unless
+        /// it asks for a shorter one.
+        static let gattPacing = GattPayloads.Configuration(
+            readTimeoutMilliseconds: 300, retryMilliseconds: 60_000, strangerRetryMilliseconds: 60_000)
+
         init(
             profile: RadioProfile = .android,
             expectedAddress: String = FakeBlueZ.adapterAddress,
             failsToListen: Bool = false,
             limit: Int = 100,
-            acceptedPeer: DialTarget? = nil
+            acceptedPeer: DialTarget? = nil,
+            readsGattPayloads: Bool = false,
+            gatt: GattPayloads.Configuration = LoopRig.gattPacing
         ) throws {
             fake = try FakeBlueZ()
             sockets = UnixSockets(
@@ -60,6 +67,8 @@
             )
             configuration.readvertiseDelayMilliseconds = 20
             configuration.retryDelayMilliseconds = 20
+            configuration.readsGattPayloads = readsGattPayloads
+            configuration.gatt = gatt
             let recorder = box
             loop = BlueZLoop(configuration: configuration, mailbox: mailbox) { recorder.events.append($0) }
         }
@@ -79,6 +88,18 @@
         /// A peer's advert.
         static func advert(_ seed: Int = 7) -> AdvertPayload {
             AdvertPayload(capabilities: 0xFFF, nodeId: fixtureNodeId(seed), digestCue: 9, psm: UnixSockets.psm)
+        }
+
+        /// A peer's advert as its GATT characteristic serves it: the digest cue at 0.
+        static func gattAdvert(_ seed: Int = 7) -> AdvertPayload {
+            var advert = advert(seed)
+            advert.digestCue = 0
+            return advert
+        }
+
+        /// A device that advertises the `0xFE30` UUID and no service data, as an iPhone does.
+        static func uuidOnlyDevice(address: String = peerAddress, rssi: Int16 = -55) -> DBusValue {
+            FakeBlueZ.device(address: address, rssi: rssi, advert: nil, uuids: ["0000FE30-0000-1000-8000-00805F9B34FB"])
         }
 
         /// Turns the loop and the fake until `condition` holds, or two seconds pass.

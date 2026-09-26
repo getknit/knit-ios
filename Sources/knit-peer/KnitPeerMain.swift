@@ -55,7 +55,9 @@ import Foundation
                 threshold: JSONLinesLog.level(named: options.logLevel) ?? .info, clock: SystemClock(), write: Lines.error.write)
             let selection = checkedAdapter(options.adapter, options.adapterAddress, log: log)
             let profile = options.advertise.flatMap(RadioProfile.init(name:))
-            let radio = BlueZRadio(configuration: BlueZRadio.Configuration(adapter: selection, profile: profile ?? .android, log: log))
+            var configuration = BlueZRadio.Configuration(adapter: selection, profile: profile ?? .android, log: log)
+            configuration.readsGattPayloads = true
+            let radio = BlueZRadio(configuration: configuration)
             var own: NodeId?
             if profile != nil {
                 do {

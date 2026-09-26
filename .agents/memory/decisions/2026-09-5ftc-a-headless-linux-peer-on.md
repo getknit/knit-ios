@@ -53,7 +53,8 @@ implementation instead of this one. knit-next's emulator script takes the same d
 - **Slow back-fill.** Android's back-fill runs at about 1 KB/s over this pair, and a new post queues behind it.
   `interop.py` times posts only after custody converges.
 - **Not tested here.** Relaying between two peers needs a second adapter. Reading a GATT payload from a
-  UUID-only advert is not built, so the advert never sets `FLAG_DIALS_GATT_PEERS`.
+  UUID-only advert is not built, so the advert never sets `FLAG_DIALS_GATT_PEERS`. (Amended 2026-09-26: the
+  `ios` profile reads it now and sets the flag, ADR 2026-09.xzpt; no real device has served it one yet.)
 - **Guards.** `BlueZLoopTests`, `BlueZAdvertTests`, `BlueZChannelTests`, `BlueZModelTests`' `hci0IsRefusedWhateverItsAddress`
   and `BlueZEdgeTests` guard the radio. `PeerNodeTests` guards the control surface. `LinkRefusalTests` guards
   `deny-link`, and a floor in `scripts/coverage-floors.json` guards each target.

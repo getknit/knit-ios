@@ -18,6 +18,7 @@
                 channels[id] = Channel(descriptor: descriptor, connecting: true, devicePath: address.rawValue)
             } catch {
                 log.log(.info, "bluez dial \(id) failed: \(error.call) errno \(error.code)")
+                gattDialFailed(address.rawValue)
                 emit(.dialFailed(id))
             }
         }
@@ -52,6 +53,9 @@
                 guard opened else {
                     Descriptor.close(channel.descriptor)
                     channels[id] = nil
+                    if let path = channel.devicePath {
+                        gattDialFailed(path)
+                    }
                     emit(.dialFailed(id))
                     return
                 }
@@ -139,7 +143,7 @@
             }
             Descriptor.close(channel.descriptor)
             emit(.closed(id))
-            if let path = channel.devicePath, !channels.values.contains(where: { $0.devicePath == path }) {
+            if let path = channel.devicePath, !linkInUse(path) {
                 dropLink(to: path, now: Monotonic.milliseconds())
             }
         }

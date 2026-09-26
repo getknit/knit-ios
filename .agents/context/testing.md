@@ -29,8 +29,8 @@ ladder, not the first.
    a finding by construction; its input joins the corpus once the fix lands.
 6. **The Linux peer, without a radio.** `KnitBlueZTests` runs the BlueZ radio against a fake BlueZ on a
    peer-to-peer libdbus server, with Unix `SOCK_SEQPACKET` sockets in place of L2CAP, so the whole radio runs
-   in CI with no adapter and no bus daemon. No test opens a Bluetooth socket (`.agents/context/linux-peer.md`
-   says why). `KnitPeerTests` drives the control surface through a real `Mesh`, with a second engine signing
+   in CI with no adapter and no bus daemon. The fake also plays remote devices' GATT servers, so the GATT
+   read runs too. No test opens a Bluetooth socket (`.agents/context/linux-peer.md` says why). `KnitPeerTests` drives the control surface through a real `Mesh`, with a second engine signing
    the far side's frames.
 7. **Over the air, from Linux (P4).** `knit-peer` on `hci1` against Android phones running Knit: checklist
    L, through `scripts/interop.py`. Obey `.agents/rules/devices.md` before touching a phone.

@@ -110,6 +110,37 @@ import Testing
         #expect(device.dialTarget == nil)
     }
 
+    @Test func aDeviceListingTheServiceWithoutServiceDataServesItsPayloadOverGATT() {
+        var device = BlueZDevice(path: "/org/bluez/hci1/dev_x")
+        #expect(!device.servesPayloadOverGatt)
+        device.apply(.properties([("UUIDs", .strings(["0000180F-0000-1000-8000-00805F9B34FB", "0000FE30-0000-1000-8000-00805F9B34FB"]))]))
+        #expect(device.servesPayloadOverGatt, "the UUID is matched in any case")
+        device.apply(.properties([("UUIDs", .string("garbled"))]))
+        #expect(device.servesPayloadOverGatt, "a value that is not a list changes nothing")
+        let advert = AdvertPayload(capabilities: 0xFFF, nodeId: fixtureNodeId(4), digestCue: 1, psm: 0x81)
+        device.apply(.properties([("ServiceData", .properties([(AdvertPayload.serviceUUID, .bytes(advert.bytes))]))]))
+        #expect(!device.servesPayloadOverGatt, "its service data is the advert")
+        device.invalidate(["ServiceData", "UUIDs"])
+        #expect(device.uuids.isEmpty)
+        #expect(!device.servesPayloadOverGatt)
+        #expect(!device.servicesResolved)
+        device.apply(.properties([("ServicesResolved", .boolean(true))]))
+        #expect(device.servicesResolved)
+    }
+
+    @Test func thePayloadCharacteristicIsTheKnitOneInAnFE30ServiceOfThatDevice() {
+        let device = "/org/bluez/hci1/dev_x"
+        let knit = RemoteGattObjects.managedObjects(RemoteGattObjects.on(device, knit: true))
+        #expect(BlueZ.payloadCharacteristic(in: knit, on: device) == device + "/service0010/char0011")
+        #expect(BlueZ.payloadCharacteristic(in: knit, on: "/org/bluez/hci1/dev_y") == nil, "another device's")
+        #expect(BlueZ.payloadCharacteristic(in: knit, on: "/org/bluez/hci1/dev") == nil, "a path that only starts alike")
+        let battery = RemoteGattObjects.on(device, knit: false)
+        #expect(BlueZ.payloadCharacteristic(in: RemoteGattObjects.managedObjects(battery), on: device) == nil)
+        // The Knit characteristic, but in a service that is not 0xFE30.
+        let misplaced = [battery[0], RemoteGattObjects.on(device, knit: true)[1]]
+        #expect(BlueZ.payloadCharacteristic(in: RemoteGattObjects.managedObjects(misplaced), on: device) == nil)
+    }
+
     @Test func managedObjectsReadAsPathsAndInterfaces() {
         let objects = DBusValue.dictionary(
             key: .objectPath,
@@ -168,5 +199,12 @@ import Testing
         #expect(RadioProfile.allCases.map(\.name) == ["android", "ios"])
         #expect(RadioProfile(name: "ios") == .ios)
         #expect(RadioProfile(name: "lora") == nil)
+    }
+
+    @Test func eachProfileFindsPeersAsItsPlatformDoes() {
+        #expect(RadioProfile.android.advertisesServiceData)
+        #expect(!RadioProfile.android.readsGattPayloads, "neither Android 2.7 nor A1 reads a GATT payload")
+        #expect(!RadioProfile.ios.advertisesServiceData)
+        #expect(RadioProfile.ios.readsGattPayloads)
     }
 }

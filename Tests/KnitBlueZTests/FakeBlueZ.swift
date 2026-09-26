@@ -4,8 +4,27 @@
 
     /// Just enough of bluetoothd for the radio: an object tree with `hci1` (and `hci0`, which the radio must ignore),
     /// discovery, the advertising manager, which reads each advert back through `Properties.GetAll` before it
-    /// answers as BlueZ does, and the GATT manager, which reads the application's objects.
+    /// answers as BlueZ does, the GATT manager, which reads the application's objects, and remote devices' GATT
+    /// servers, which BlueZ resolves once `Device1.Connect` links them.
     final class FakeBlueZ {
+        /// A remote device's GATT server, as BlueZ finds it once linked.
+        struct RemoteGatt {
+            /// The payload characteristic's value, or `nil` for a device whose `0xFE30` UUID is someone else's: it
+            /// serves a battery service instead.
+            var value: [UInt8]?
+            /// Whether `Connect` links it; if not, `Connect` answers `org.bluez.Error.Failed`.
+            var connects = true
+            /// Whether `Connect` is answered at all.
+            var answersConnect = true
+            /// Whether BlueZ resolves its services once linked.
+            var resolves = true
+            /// Whether they are resolved before `Connect` is answered. BlueZ 5.72 answers first, once the link is up
+            /// (`att_connect_cb` in `src/device.c`), but the radio must not depend on the order.
+            var resolvesBeforeAnswering = false
+            /// Whether `ReadValue` fails.
+            var readFails = false
+        }
+
         static let adapter = "/org/bluez/hci1"
         static let adapterAddress = "0A:BC:DE:00:00:A1"
         static let otherAdapter = "/org/bluez/hci0"
@@ -37,6 +56,14 @@
         var refusesInventory = false
         /// The devices the radio asked to disconnect, in order.
         private(set) var disconnected: [String] = []
+        /// The GATT servers of remote devices, by device path.
+        var remoteGatt: [String: RemoteGatt] = [:]
+        /// The devices the radio asked to link, in order.
+        private(set) var connectRequests: [String] = []
+        /// The devices linked through `Connect` and not disconnected since.
+        private(set) var linked: Set<String> = []
+        /// The `Connect` calls left unanswered, oldest first.
+        private(set) var heldConnects: [BusMessage] = []
 
         init() throws {
             server = try BusServer()
@@ -99,7 +126,12 @@
                 return .values([])
             case (BlueZ.deviceInterface, "Disconnect"):
                 disconnected.append(call.path ?? "")
+                unlink(call.path ?? "")
                 return .values([])
+            case (BlueZ.deviceInterface, "Connect"):
+                return connect(call)
+            case (BlueZ.gattCharacteristic, "ReadValue"):
+                return readValue(call)
             default:
                 return .unknown
             }
@@ -159,6 +191,9 @@
             for (path, properties) in knownDevices.sorted(by: { $0.key < $1.key }) {
                 objects.append(DBusEntry(key: .objectPath(path), value: Self.interfaces([(BlueZ.deviceInterface, properties)])))
             }
+            for path in linked.sorted() {
+                objects += RemoteGattObjects.on(path, knit: remoteGatt[path]?.value != nil)
+            }
             return .dictionary(key: .objectPath, value: interfacesType, objects)
         }
 
@@ -173,13 +208,18 @@
         // MARK: What BlueZ tells the radio
 
         /// A device's properties, as BlueZ publishes them.
-        static func device(address: String, random: Bool = true, rssi: Int16? = -55, advert: AdvertPayload?) -> DBusValue {
+        static func device(
+            address: String, random: Bool = true, rssi: Int16? = -55, advert: AdvertPayload?, uuids: [String] = []
+        ) -> DBusValue {
             var pairs: [(String, DBusValue)] = [("Address", .string(address)), ("AddressType", .string(random ? "random" : "public"))]
             if let rssi {
                 pairs.append(("RSSI", .int16(rssi)))
             }
             if let advert {
                 pairs.append(("ServiceData", .properties([(AdvertPayload.serviceUUID, .bytes(advert.bytes))])))
+            }
+            if !uuids.isEmpty {
+                pairs.append(("UUIDs", .strings(uuids)))
             }
             return .properties(pairs)
         }
@@ -246,6 +286,68 @@
             }
             try call.append(arguments)
             radio.call(call, now: Monotonic.milliseconds(), reply: then)
+        }
+    }
+
+    /// The remote devices' GATT servers: linking them, reading them, and letting them go.
+    extension FakeBlueZ {
+        private func connect(_ call: BusMessage) -> BusConnection.Answer {
+            let path = call.path ?? ""
+            connectRequests.append(path)
+            guard !linked.contains(path) else {
+                return .error(name: "org.bluez.Error.AlreadyConnected", message: "Already Connected")
+            }
+            guard let gatt = remoteGatt[path], gatt.connects else {
+                return .error(name: "org.bluez.Error.Failed", message: "le-connection-abort-by-local")
+            }
+            guard gatt.answersConnect else {
+                heldConnects.append(call)
+                return .later
+            }
+            linked.insert(path)
+            _ = try? change(path, interface: BlueZ.deviceInterface, .properties([("Connected", .boolean(true))]))
+            if gatt.resolves, gatt.resolvesBeforeAnswering {
+                _ = try? change(path, interface: BlueZ.deviceInterface, .properties([("ServicesResolved", .boolean(true))]))
+                return .values([])
+            }
+            radio?.reply(to: call, with: [])
+            if gatt.resolves {
+                _ = try? change(path, interface: BlueZ.deviceInterface, .properties([("ServicesResolved", .boolean(true))]))
+            }
+            return .later
+        }
+
+        /// Answers the oldest `Connect` left unanswered with the error BlueZ gives a cancelled one.
+        func failHeldConnect() {
+            guard !heldConnects.isEmpty else {
+                return
+            }
+            radio?.reply(to: heldConnects.removeFirst(), error: "org.bluez.Error.Failed", message: "Connection canceled")
+        }
+
+        /// Links a device and resolves its services without being asked, as bluetoothd does for a peer that dials us.
+        func holdLink(_ path: String) throws {
+            linked.insert(path)
+            try change(
+                path, interface: BlueZ.deviceInterface, .properties([("Connected", .boolean(true)), ("ServicesResolved", .boolean(true))]))
+        }
+
+        private func unlink(_ path: String) {
+            guard linked.remove(path) != nil else {
+                return
+            }
+            let down = DBusValue.properties([("Connected", .boolean(false)), ("ServicesResolved", .boolean(false))])
+            _ = try? change(path, interface: BlueZ.deviceInterface, down)
+        }
+
+        private func readValue(_ call: BusMessage) -> BusConnection.Answer {
+            let path = call.path ?? ""
+            guard let device = linked.first(where: { path.hasPrefix($0 + "/") }), let gatt = remoteGatt[device], !gatt.readFails,
+                let value = gatt.value
+            else {
+                return .error(name: "org.bluez.Error.Failed", message: "Operation failed with ATT error: 0x0e")
+            }
+            return .values([.bytes(value)])
         }
     }
 #endif

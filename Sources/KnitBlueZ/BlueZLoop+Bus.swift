@@ -157,6 +157,7 @@
                 report(.off)
             } else if names.contains(BlueZ.deviceInterface) {
                 devices[path] = nil
+                gattDeviceRemoved(path)
             }
         }
 
@@ -184,12 +185,14 @@
             case BlueZ.deviceInterface:
                 devices[path, default: BlueZDevice(path: path)].apply(changed)
                 devices[path]?.invalidate(invalidated)
-                if devices[path]?.advert != nil {
+                if devices[path]?.advert != nil || devices[path]?.servesPayloadOverGatt == true {
                     let keys = (changed.textKeyed ?? []).map(\.key).joined(separator: ",")
-                    let device = path.split(separator: "/").last ?? ""
-                    log.log(.debug, "bluez \(device) changed \(keys) invalidated \(invalidated) rssi \(devices[path]?.rssi ?? 0)")
+                    log.log(
+                        .debug, "bluez \(Self.deviceName(path)) changed \(keys) invalidated \(invalidated) rssi \(devices[path]?.rssi ?? 0)"
+                    )
                 }
-                if changed["RSSI"] != nil || changed["ServiceData"] != nil {
+                gattDeviceChanged(path, changed, now: Monotonic.milliseconds())
+                if changed["RSSI"] != nil || changed["ServiceData"] != nil || changed["UUIDs"] != nil {
                     sight(path)
                 }
             default:
@@ -217,9 +220,12 @@
             }
         }
 
-        /// Reports a device whose advert carries a Knit payload, while the plane is up.
-        private func sight(_ path: String) {
-            guard isUp, let device = devices[path], let advert = device.advert, let rssi = device.rssi else {
+        /// Reports a device whose advert carries a Knit payload, or whose GATT characteristic did, while the plane is
+        /// up. A device whose characteristic has not been read yet is read, and sighted once the read ends.
+        func sight(_ path: String) {
+            guard isUp, let device = devices[path], let rssi = device.rssi,
+                let advert = device.advert ?? gattPayload(of: device, now: Monotonic.milliseconds())
+            else {
                 return
             }
             emit(.sighted(RadioSighting(address: RadioAddress(path), advert: advert, rssi: rssi)))

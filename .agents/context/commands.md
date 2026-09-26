@@ -47,7 +47,7 @@ tree, so switching between them never rebuilds the plain debug tree.
 
 ```sh
 swift build --product knit-peer                                   # .build/out/Products/Debug-linux-x86_64/knit-peer
-knit-peer scan --seconds 20                                       # the Knit nodes in range, never dialing
+knit-peer scan --seconds 20                                       # the Knit nodes in range, iPhones too; never dials
 knit-peer keygen --above <node id> [--below <node id>]            # an identity for one dial order
 knit-peer run --radio-profile android --name "knit-peer"          # JSON lines on stdin and stdout
 python3 scripts/interop.py check --device <adb serial> --order phone-dials   # checklist L, with the go-ahead

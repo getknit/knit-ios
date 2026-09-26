@@ -135,7 +135,8 @@ public struct RunOptions: Equatable, Sendable {
 /// How long to list the nodes in range, and whether to advertise meanwhile.
 ///
 /// The scan never dials, and a node dials only a peer whose id sorts below its own, so advertising from an identity
-/// above every phone in range (`keygen --above`) checks the advert without linking to anyone.
+/// above every phone in range (`keygen --above`) checks the advert without linking to anyone. A node that advertises
+/// only the `0xFE30` UUID, as an iPhone does, is linked just long enough to read its payload over GATT.
 public struct ScanOptions: Equatable, Sendable {
     /// The adapter's name.
     public var adapter = "hci1"

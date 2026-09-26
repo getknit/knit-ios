@@ -68,10 +68,23 @@
             await listening.value
         }
 
-        @Test func theIOSProfileAdvertisesNoServiceData() throws {
+        @Test func theIOSProfileAdvertisesNoServiceDataAndReadsGATTPayloads() throws {
             let fake = try FakeBlueZ()
             let radio = try radio(fake, sockets: UnixSockets(directory: UnixSockets.temporaryDirectory()), profile: .ios)
             #expect(!radio.advertisesServiceData)
+            #expect(radio.dialsGattPeers)
+        }
+
+        @Test func aRadioReadsGATTPayloadsWhenToldWhateverItsProfile() throws {
+            var configuration = BlueZRadio.Configuration(
+                adapter: try AdapterSelection(name: "hci1", expectedAddress: FakeBlueZ.adapterAddress),
+                profile: .android,
+                log: CapturingLog()
+            )
+            #expect(!configuration.readsGattPayloads)
+            #expect(!configuration.loop.readsGattPayloads)
+            configuration.readsGattPayloads = true
+            #expect(configuration.loop.readsGattPayloads, "knit-peer scan lists iPhones")
         }
 
         @Test func theDefaultConfigurationUsesL2CAPOnTheSystemBus() throws {

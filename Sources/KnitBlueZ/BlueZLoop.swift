@@ -23,6 +23,10 @@
             var readvertiseDelayMilliseconds: Int64 = 1000
             /// How long to wait before retrying a failed advert registration, or a bus that could not be reached.
             var retryDelayMilliseconds: Int64 = 5000
+            /// Whether to read the GATT payload of a peer that advertises only the `0xFE30` UUID.
+            var readsGattPayloads = false
+            /// How those reads are paced.
+            var gatt = GattPayloads.Configuration()
         }
 
         /// A channel's socket and what waits to be written to it.
@@ -86,6 +90,10 @@
         var gattRegistered = false
         /// Discovery was started and not yet stopped.
         var scanning = false
+        /// The GATT payloads read, and the read in progress: its stage, and its number among the reads started.
+        var gatt: GattPayloads
+        var gattStage: GattStage?
+        var gattReads = 0
 
         var listener: ListeningSocket?
         var channels: [ChannelID: Channel] = [:]
@@ -96,6 +104,7 @@
             self.configuration = configuration
             self.mailbox = mailbox
             self.emit = emit
+            gatt = GattPayloads(configuration: configuration.gatt)
         }
 
         // MARK: Running
@@ -147,7 +156,8 @@
         }
 
         private func wait(atMost limit: Int32, now: Int64) -> Int32 {
-            let deadlines = [bus?.nextDeadline, pendingAdvert == nil ? refreshAdvertAt : nil, reconnectAt].compactMap(\.self)
+            let deadlines = [bus?.nextDeadline, pendingAdvert == nil ? refreshAdvertAt : nil, reconnectAt, gatt.current?.deadline]
+                .compactMap(\.self)
             guard let next = deadlines.min() else {
                 return limit
             }
@@ -162,6 +172,7 @@
             if let due = refreshAdvertAt, now >= due, pendingAdvert == nil {
                 syncAdvert(now: now)
             }
+            expireGattRead(now: now)
         }
 
         // MARK: Commands
@@ -248,7 +259,7 @@
             for (_, channel) in channels {
                 Descriptor.close(channel.descriptor)
             }
-            let linked = Set(channels.values.compactMap(\.devicePath))
+            let linked = Set(channels.values.compactMap(\.devicePath) + [cancelGattRead()].compactMap(\.self))
             channels.removeAll()
             for path in linked.sorted() {
                 dropLink(to: path, now: now)

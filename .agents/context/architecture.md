@@ -16,7 +16,7 @@ one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 | `KnitAppCore` | all | `@Observable` view models, UI state, the copy catalog | P6 |
 | `KnitBLE` | Apple | the CoreBluetooth `Radio`: central, peripheral with the GATT payload, L2CAP streams, restoration | P6 |
 | `Knit` | Apple | SwiftUI, `@main`, Keychain, notifications, the composition root | P6 |
-| `KnitBlueZ`, `CDBus`, `CBluetoothShim` | Linux | the BlueZ `Radio`: one `poll` thread over a libdbus connection and LE CoC sockets; advert, scan and the GATT payload | P4 |
+| `KnitBlueZ`, `CDBus`, `CBluetoothShim` | Linux | the BlueZ `Radio`: one `poll` thread over a libdbus connection and LE CoC sockets; advert, scan, and serving and reading the GATT payload | P4 |
 | `KnitPeer` | all | the peer's logic: options, its state directory, keygen, the scan report and the JSON-lines control surface | P4 |
 | `knit-peer` | Linux (a stub `main` elsewhere) | the headless peer: `KnitPeer` on the BlueZ radio, on `hci1` only | P4 |
 | `KnitLabSupport` | all | LabTransport, LabRadio, LabClock, MeshLab: deferred (`.agents/memory/roadmap.md`) | later |

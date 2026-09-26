@@ -48,6 +48,28 @@ never dialed.
   (`INTERVAL_HIGH`, about 1 s). BlueZ's `MinInterval` and `MaxInterval` are experimental, and `Experimental`
   is off in `/etc/bluetooth/main.conf`, so changing it would need root.
 
+## Reading a GATT payload
+
+In the `ios` profile the peer finds a node that advertises only the `0xFE30` UUID, as an iPhone does, by reading
+the payload from its GATT characteristic (ADR 2026-09.xzpt), and its advert sets `FLAG_DIALS_GATT_PEERS`. The
+`android` profile reads none and leaves the flag clear, as Android 2.7 and A1 do, so an iPhone meets it as it
+meets Android.
+
+- **A read** is `Device1.Connect`, then a wait for `ServicesResolved`, then `GetManagedObjects` to find the Knit
+  characteristic in the device's `0xFE30` service, then `ReadValue`. The radio then drops the link, unless a
+  channel uses it, for the reason bluetoothd's links are dropped below.
+- **What BlueZ does with it** (BlueZ 5.72's `src/device.c`): `Connect` answers once the link is up, and
+  `ServicesResolved` follows. A `Disconnect` while it is still connecting cancels it, which is how a read that
+  runs out of time ends. `Connect` also makes a device permanent, and BlueZ stores it under
+  `/var/lib/bluetooth/`, unless its address is private. Phones' addresses are, so reading an iPhone leaves
+  nothing behind; reading another Linux peer, on a public address, leaves its entry under hci1.
+- **The pacing** is `GattPayloads`' in `KnitMesh`: one device at a time, 12 s for each read, and a device read
+  once until a dial to it fails. A failed read waits 30 s, and a device that serves no payload waits ten
+  minutes. The log says `bluez read <node id> on PSM <psm> from dev_… over GATT`, or why a read failed.
+- **Not yet seen on the air.** The fake BlueZ's GATT servers are the only ones this reader has met. Nothing in
+  range serves the payload until the Mac (P7) or the iPhone (P8). A read makes hci1 a central for a second or
+  two, and whether this controller keeps advertising meanwhile is unmeasured.
+
 ## Android's scan cadence decides how long a test waits
 
 A settled Pixel 3 on battery with its screen off ran Knit's scan only every 17 minutes or so (`dumpsys
@@ -64,7 +86,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | --- | --- |
 | `knit-peer run [--radio-profile android\|ios] [--instance NAME] [--name NAME] [--log debug\|info\|warning\|off]` | runs the node; JSON lines in on stdin, out on stdout, logs on stderr |
 | `knit-peer run … --rssi-floor -100 --receive-mtu 247 --send-mtu 8192` | development knobs: a promotion floor below Android's −90 dBm, the L2CAP receive MTU (65535 by default), and the largest SDU written (247 by default, never above what the peer offers or 8192) |
-| `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing; `--advertise` also shows the advert |
+| `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing, and links a node that advertises only the UUID just long enough to read its payload; `--advertise` also shows the advert |
 | `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window |
 
 - **Every command checks the adapter first.** `--adapter` defaults to `hci1` and `--adapter-address` to the Edimax's

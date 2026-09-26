@@ -8,6 +8,18 @@ public enum RadioProfile: Sendable, CaseIterable {
     /// 2.7 cannot see it, so it stands in for an iPhone in interop runs.
     case ios
 
+    /// Whether the advert carries the payload as service data, as Android's does.
+    var advertisesServiceData: Bool {
+        self == .android
+    }
+
+    /// Whether the radio reads the GATT payload of a peer that advertises only the `0xFE30` UUID, as an iPhone does,
+    /// and so sets `FLAG_DIALS_GATT_PEERS`. The `android` profile reads none, as neither Android 2.7 nor A1 does, so
+    /// an iPhone meets it as it meets Android: a peer it must dial whatever the order.
+    var readsGattPayloads: Bool {
+        self == .ios
+    }
+
     /// The profile named `android` or `ios`, as `--radio-profile` spells it.
     public init?(name: String) {
         guard let profile = Self.allCases.first(where: { $0.name == name }) else {
@@ -56,6 +68,26 @@ internal enum BlueZ {
             (path: object.key, interfaces: (object.value.textKeyed ?? []).map { (name: $0.key, properties: $0.value) })
         }
     }
+
+    /// The object path of the payload characteristic BlueZ found on `device`, from `GetManagedObjects`' answer: the
+    /// Knit characteristic of one of that device's `0xFE30` services (ADR 2026-09.xzpt). `nil` when it serves none.
+    static func payloadCharacteristic(in value: DBusValue, on device: String) -> String? {
+        let owned = objects(from: value).filter { $0.path.hasPrefix(device + "/") }
+        let hasUUID: (DBusValue, String) -> Bool = { properties, uuid in properties["UUID"]?.text?.lowercased() == uuid }
+        let services = Set(
+            owned.filter { object in
+                object.interfaces.contains { $0.name == gattService && hasUUID($0.properties, AdvertPayload.serviceUUID) }
+            }
+            .map(\.path)
+        )
+        return owned.first { object in
+            object.interfaces.contains { interface in
+                interface.name == gattCharacteristic && hasUUID(interface.properties, AdvertPayload.characteristicUUID)
+                    && interface.properties["Service"]?.text.map(services.contains) == true
+            }
+        }?
+        .path
+    }
 }
 
 /// What BlueZ has said about one remote device, from `org.bluez.Device1`'s properties.
@@ -68,8 +100,12 @@ internal struct BlueZDevice: Equatable {
     var rssi: Int?
     /// Whether BlueZ holds a link to it.
     var connected = false
+    /// Whether BlueZ has read its GATT services over that link.
+    var servicesResolved = false
     /// Service data by lower-case 128-bit UUID.
     var serviceData: [String: [UInt8]] = [:]
+    /// The service UUIDs it advertised, and once linked the GATT services it serves, in lower case.
+    var uuids: [String] = []
 
     init(path: String) {
         self.path = path
@@ -88,6 +124,10 @@ internal struct BlueZDevice: Equatable {
                 rssi = value.integer.map { Int($0) }
             case "Connected":
                 connected = value.bool ?? connected
+            case "ServicesResolved":
+                servicesResolved = value.bool ?? servicesResolved
+            case "UUIDs":
+                uuids = value.textArray?.map { $0.lowercased() } ?? uuids
             case "ServiceData":
                 let pairs = (value.textKeyed ?? []).compactMap { entry in entry.value.byteArray.map { (entry.key.lowercased(), $0) } }
                 serviceData = Dictionary(pairs) { _, last in last }
@@ -105,6 +145,8 @@ internal struct BlueZDevice: Equatable {
                 rssi = nil
             case "ServiceData":
                 serviceData = [:]
+            case "UUIDs":
+                uuids = []
             default:
                 continue
             }
@@ -114,6 +156,12 @@ internal struct BlueZDevice: Equatable {
     /// The Knit advert in its service data, if it has one that parses.
     var advert: AdvertPayload? {
         serviceData[AdvertPayload.serviceUUID].flatMap(AdvertPayload.init(serviceData:))
+    }
+
+    /// Whether it lists the `0xFE30` service without a Knit advert in its service data: an iPhone, or a peer in the
+    /// `ios` profile, whose payload is in a GATT characteristic instead.
+    var servesPayloadOverGatt: Bool {
+        advert == nil && uuids.contains(AdvertPayload.serviceUUID)
     }
 
     /// BlueZ's object path for the device with `address` on `adapter`: `/org/bluez/hci1/dev_4A_00_00_00_00_EF`.

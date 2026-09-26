@@ -141,4 +141,6 @@ one channel's teardown never touches another's.
 The advert sets `FLAG_DIALS_GATT_PEERS` only when the radio reads the GATT payload of a UUID-only peer
 (`Radio.dialsGattPeers`), since a peer that trusts the flag waits to be dialed. A node that cannot advertise
 service data serves that payload as a read-only characteristic, `848eedcd-a2e3-4fb2-86f9-e2c80821a497`, in a
-primary `0xFE30` service, with the digest cue zeroed (ADR 2026-09.xzpt).
+primary `0xFE30` service, with the digest cue zeroed (ADR 2026-09.xzpt). A radio that reads those payloads
+paces itself by `GattPayloads`: one peer at a time, each read once until a dial to it fails, a failed read
+tried again after 30 s, and a device that serves no payload left alone for ten minutes.

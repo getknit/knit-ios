@@ -59,8 +59,10 @@ explicit direction.** Update this file in the change that ships an item.
     re-check the port against the merged code and move the pin.
   - **Still owed:** the two-peer relay line, which needs a second adapter; and the hour-long soak, which the
     maintainer deferred.
-  - **Before P8:** `KnitBlueZ` reads the GATT payload of a UUID-only advert, so the peer can dial an iPhone and
-    set `FLAG_DIALS_GATT_PEERS`.
+  - **The GATT read (2026-09-26):** in the `ios` profile the peer reads the payload of a UUID-only advert and sets
+    `FLAG_DIALS_GATT_PEERS`, so it can dial an iPhone. It reads on rules in `KnitMesh`'s `GattPayloads`, which
+    KnitBLE will share (ADR 2026-09.xzpt, amended). Only the fake BlueZ has served it a payload so far; the first
+    real one will be the Mac's or the iPhone's.
 - **P5, the store (`KnitStoreSQL`):** built on 2026-09-26 (ADR 2026-09.nyya).
   - **The stores:** every `KnitStore` protocol on GRDB 7.11.1: custody, peers, messages, accepted
     conversations and our own profile, in one `knit.sqlite` under Data Protection and out of backups.
