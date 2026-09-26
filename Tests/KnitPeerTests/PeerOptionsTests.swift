@@ -29,7 +29,7 @@ import Testing
     @Test func everyRunFlagIsRead() throws {
         let options = try run([
             "run", "--adapter", "hci2", "--adapter-address", "00:11:22:33:44:55", "--radio-profile", "ios", "--instance", "b",
-            "--name", "Peer B", "--log", "off", "--rssi-floor", "-100", "--receive-mtu", "247",
+            "--name", "Peer B", "--log", "off", "--rssi-floor", "-100", "--receive-mtu", "247", "--send-mtu", "512",
         ])
         #expect(options.adapter == "hci2")
         #expect(options.adapterAddress == "00:11:22:33:44:55")
@@ -39,12 +39,15 @@ import Testing
         #expect(options.logLevel == nil)
         #expect(options.rssiFloor == -100)
         #expect(options.receiveMTU == 247)
+        #expect(options.sendMTU == 512)
     }
 
     @Test func anMTUMustFitAnLEChannel() {
-        for bad in ["22", "65536", "big"] {
-            #expect(throws: UsageError.invalid(flag: "--receive-mtu", value: bad)) {
-                try PeerCommand.parse(["--receive-mtu", bad], environment: home)
+        for flag in ["--receive-mtu", "--send-mtu"] {
+            for bad in ["22", "65536", "big"] {
+                #expect(throws: UsageError.invalid(flag: flag, value: bad)) {
+                    try PeerCommand.parse([flag, bad], environment: home)
+                }
             }
         }
     }

@@ -205,6 +205,20 @@ import Testing
         #expect(events == [.down(high)], "the sighted −95 link is weaker than an unsighted one at −90")
     }
 
+    @Test func aLinkWhosePeerWasSightedThenLostIsShedFirst() {
+        // Only a peer never sighted during its link keeps the floor's score; one the scan saw and lost is gone.
+        let configuration = LinkManager.Configuration(promotion: PromotionPolicy.Configuration(maxLinks: 1))
+        let never = LinkRig(local: high, configuration: configuration)
+        _ = never.accept(middle, on: ChannelID(100))
+        _ = never.advance(100_000)
+        #expect(never.sightToPromotion(low, rssi: -89).isEmpty, "−89 does not beat −90 by the 8 dB hysteresis")
+        let lost = LinkRig(local: high, configuration: configuration)
+        _ = lost.accept(middle, on: ChannelID(100))
+        _ = lost.handle(.sighted(LinkRig.sighting(middle, rssi: -70)))
+        _ = lost.advance(100_000)
+        #expect(lost.sightToPromotion(low, rssi: -89) == [.down(middle)], "a lost peer scores −127")
+    }
+
     @Test func switchingTheRadioOffTakesEveryLinkDown() {
         let rig = LinkRig(local: high)
         _ = rig.accept(low, on: ChannelID(100))

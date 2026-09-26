@@ -22,11 +22,15 @@
         public let adapter: BluetoothAddress
         /// The receive MTU each socket offers. The kernel also caps the segment size at it.
         public let receiveMTU: UInt16
+        /// The largest SDU to write, below what the peer offers, for diagnosing a phone; `nil` writes up to that.
+        public let sendMTU: UInt16?
 
-        /// Sockets on the adapter with `adapter`'s address, offering `receiveMTU`.
-        public init(adapter: BluetoothAddress, receiveMTU: UInt16 = largestReceiveMTU) {
+        /// Sockets on the adapter with `adapter`'s address, offering `receiveMTU` and writing SDUs of at most
+        /// `sendMTU`, when given.
+        public init(adapter: BluetoothAddress, receiveMTU: UInt16 = largestReceiveMTU, sendMTU: UInt16? = nil) {
             self.adapter = adapter
             self.receiveMTU = receiveMTU
+            self.sendMTU = sendMTU
         }
 
         public func listen() throws(SocketError) -> ListeningSocket {
@@ -70,7 +74,7 @@
             guard getsockopt(descriptor, KNIT_SOL_BLUETOOTH, KNIT_BT_SNDMTU, &mtu, &length) == 0, mtu > 0 else {
                 return Self.fallbackSendMTU
             }
-            return min(Int(mtu), Self.largestWrite)
+            return min(Int(mtu), Self.largestWrite, sendMTU.map(Int.init) ?? Self.largestWrite)
         }
 
         public func peer(of descriptor: Int32) -> DialTarget? {

@@ -74,11 +74,23 @@ import Testing
     @Test func anUnsightedLinkedPeerDialingAgainReplacesItsStaleLink() {
         let rig = LinkRig(local: high)
         _ = rig.accept(low, on: ChannelID(100))
+        _ = rig.advance(30_000)
         let events = rig.accept(low, on: ChannelID(101))
         #expect(events == [.down(low), .up(Neighbor(nodeId: low, protocolVersion: 1, capabilities: 0xFFF))])
         #expect(rig.radio.closed == [ChannelID(100)])
         // The stale channel's close arriving now must not take the new link down (Android's bug at :787).
         #expect(rig.handle(.closed(ChannelID(100))).isEmpty)
+        #expect(rig.links.neighbors.map(\.nodeId) == [low])
+    }
+
+    @Test func aLinkYoungerThanThirtySecondsIsNeverReplaced() {
+        // A1's floor: the HELLO is unauthenticated, so a device claiming the peer's id can cut its link at most
+        // this often.
+        let rig = LinkRig(local: high)
+        _ = rig.accept(low, on: ChannelID(100))
+        _ = rig.advance(29_999)
+        #expect(rig.accept(low, on: ChannelID(101)).isEmpty)
+        #expect(rig.radio.closed == [ChannelID(101)])
         #expect(rig.links.neighbors.map(\.nodeId) == [low])
     }
 

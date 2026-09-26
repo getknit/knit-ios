@@ -63,7 +63,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | Command | Does |
 | --- | --- |
 | `knit-peer run [--radio-profile android\|ios] [--instance NAME] [--name NAME] [--log debug\|info\|warning\|off]` | runs the node; JSON lines in on stdin, out on stdout, logs on stderr |
-| `knit-peer run … --rssi-floor -100 --receive-mtu 247` | development knobs: a promotion floor below Android's −90 dBm, and the L2CAP receive MTU (65535 by default) |
+| `knit-peer run … --rssi-floor -100 --receive-mtu 247 --send-mtu 247` | development knobs: a promotion floor below Android's −90 dBm, the L2CAP receive MTU (65535 by default), and the largest SDU written (what the peer offers, up to 8192, by default) |
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing; `--advertise` also shows the advert |
 | `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window |
 
@@ -144,18 +144,42 @@ in range.
 
 ## What A1 showed
 
-Run on 2026-09-25 against the Pixel 3 on a knit-next build with companion change A1 (knit-next ADR 2026-09.shzv),
-the peer in the `ios` profile, so the Pixel never sights it.
+Run on 2026-09-25 against the Pixel 3, first on the reviewed branch of companion change A1 and then on knit-next
+`main` once it merged as `05dc2be1` (knit-next ADR 2026-09.shzv), the peer in the `ios` profile, so the Pixel never
+sights it.
 
 - **Android 2.7 refuses, as expected.** In 5 minutes the peer dialed the Pixel 5 times from below its id; 2 dials
   connected, and the Pixel closed each right after the HELLO. 3 never connected, the usual cost of the peer
   dialing.
 - **A1 admits in both orders.** The Pixel logs `bt accepted client <id> (Admit, sighted=false)`. From below its
-  id the checklist passed 14 of 14 and 13 of 13, and from above it 13 of 13.
+  id the checklist passed 14 of 14 and 13 of 13, and from above it 13 of 13, on the branch. On `main` it passed
+  13 of 13 in each order.
 - **A1 replaces a stale link.** `interop.py replace` links one peer, freezes it (the kernel keeps its channel
   open, so the Pixel's link goes quiet), then dials from a second process with the same identity. The Pixel
   logs `Replace, sighted=false` and no link-down for the replaced link, and the new link carries posts both
   ways in 1.5 to 4.9 s.
+- **`main` holds a link 30 s before it replaces it.** A second dial 11.8 s and 22.4 s into the hold was refused
+  (`bt refused client <id> (sighted=false heldAgeMs=…)`), and one 31 to 34 s in replaced the link. `interop.py
+  replace` shows the two in turn: the refused process does what the radio always does when its last channel on a
+  device closes and disconnects the phone, which ends the shared ACL and the first link with it, so the trial
+  links again before the replacement.
+- **The rig's weak spot is the shared ACL.** Two peer processes share one ACL to the phone, and in two of the runs
+  on `main` the new link ended from this host 40 s after the replacement, with nothing in bluetoothd's log. In
+  another, both processes crashed at once, when a write to their log file failed and `FileHandle.write(_: Data)`
+  trapped (a CI container had just exited on this 98 % full disk); knit-peer now drops a line it cannot write.
+  None of this is A1's: the replaced link's end never took the new link down.
+- **The Moto G admits in both orders too.** It runs a TrebleDroid GSI (Android 14, LineageOS's stack) and logs
+  `Admit, sighted=false` from below and above its id, and the two A1 phones still link to each other as before.
+- **The Moto G loses what the peer sends it.** In 3 of 3 full checks with the default SDUs (up to 8192 bytes) the
+  profile arrived and nothing after it did: no room post, no DM, no tick, and `unknown record type 0` when the
+  link ended, so its reader had lost its place in the stream early on. With `--send-mtu 247` the same check
+  delivered everything. Short probes at 512 to 8192 bytes, without the check's long back-fill, delivered their
+  post every time, one of them with a bad record at close. The suspect is its stack reassembling a many-packet
+  SDU while it is itself sending hard; not proven. The Pixel 3 takes 8192-byte SDUs throughout.
+- **A third phone's frames wait out the SeenSet.** The Moto G's back-fill carries the Pixel's frames ahead of the
+  Pixel's profile, so a fresh peer drops them for want of the key (57 in one run), parks 16, and marks all seen;
+  41 stayed unconverged through each check. Android's router marks a frame seen before it verifies it too
+  (`MeshRouter.handleInbound`), so both platforms converge only after the 10 minutes.
 - **A replaced link is not a new neighbour to Android,** so the Pixel does not push its profile again. The
   second process, holding no keys, gets the Pixel's frames by back-fill before the Pixel's profile, drops them
   (77 in one run, 16 parked), and marks them seen, so custody converges only after the SeenSet's 10 minutes.

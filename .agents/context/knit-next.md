@@ -9,8 +9,10 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`. The port started from HEAD `02051b64`, five test-only commits
   later, on 2026-09-25.
-- **The pin is `1f3befcd`,** knit-next `main` once companion change A2 merged, on 2026-09-25. The two A2
-  commits change only tests, `vectors/`, docs and Gradle's test inputs, so nothing read at `02051b64` moved.
+- **The pin is `05dc2be1`,** knit-next `main` once companion change A1 merged, on 2026-09-25. Before it were
+  A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and Gradle's test inputs) and two ratchet
+  fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but never opens), so of what the files
+  below say, only the BLE responder moved.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`. Moving the pin means re-reading the files below and updating
   those four, in the same change, then running `scripts/sync-vectors.py`.
@@ -48,8 +50,10 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
 - **A1:** Android's responder accepts a HELLO from a dialer it never sighted, whatever the node id order;
   it replaces a stale link from such a dialer; teardown removes a link only if it is still the registered
   one; an unsighted link scores −90 dBm rather than −127. Without A1, an iPhone links to an Android phone
-  only when the iPhone's node id sorts higher. Built as knit-next ADR 2026-09.shzv on branch
-  `feat/a1-unsighted-dialer`; `.agents/context/linux-peer.md` has its trial.
+  only when the iPhone's node id sorts higher. Merged as `05dc2be1` (knit-next ADR 2026-09.shzv), with two
+  changes from review: a held link is replaced only once it is 30 s old (`REPLACE_MIN_HOLD_MS`), and only a
+  link whose peer was never sighted during it scores −90 dBm; one sighted and then lost still scores −127.
+  `.agents/context/linux-peer.md` has its trial.
 - **A2** (merged as `0c0756f6` and `1f3befcd`): the golden vectors moved into JSON in `vectors/` that
   `GoldenVectorTest` reads, joined by keyed vectors (fixed identities, signed frames, a sealed v1 DM, the
   safety number, advert, HELLO, DIGEST and FNV hex) and a test that checks the fixtures this repo emits.

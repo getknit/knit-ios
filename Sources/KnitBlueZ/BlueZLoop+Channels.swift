@@ -35,7 +35,7 @@
                     devicePath: device,
                     limit: configuration.sockets.sendLimit(of: descriptor)
                 )
-                log.log(.debug, "bluez accepted \(id)")
+                log.log(.debug, "bluez accepted \(id), writing SDUs of up to \(channels[id]?.limit ?? 0) bytes")
                 emit(.accepted(id))
                 let due = now + configuration.readvertiseDelayMilliseconds
                 refreshAdvertAt = min(refreshAdvertAt ?? due, due)
@@ -57,7 +57,7 @@
                 }
                 channels[id]?.connecting = false
                 channels[id]?.limit = configuration.sockets.sendLimit(of: channel.descriptor)
-                log.log(.debug, "bluez \(id) connected")
+                log.log(.debug, "bluez \(id) connected, writing SDUs of up to \(channels[id]?.limit ?? 0) bytes")
                 emit(.connected(id))
                 flush(id)
                 return

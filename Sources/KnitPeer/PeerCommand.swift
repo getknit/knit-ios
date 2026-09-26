@@ -28,7 +28,7 @@ public enum PeerCommand: Equatable, Sendable {
         usage:
             knit-peer [run] [--adapter hci1] [--adapter-address ADDRESS] [--radio-profile android|ios]
                 [--instance NAME | --state DIR] [--name NAME] [--log debug|info|warning|off] [--rssi-floor DBM]
-                [--receive-mtu BYTES]
+                [--receive-mtu BYTES] [--send-mtu BYTES]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
             knit-peer scan [--adapter hci1] [--adapter-address ADDRESS] [--seconds 20] [--advertise android|ios]
                 [--log debug|info|warning] [--instance NAME | --state DIR]
@@ -90,6 +90,8 @@ public struct RunOptions: Equatable, Sendable {
     static let weakestFloor = -127
     /// The receive MTU each L2CAP channel offers, for diagnosing a link; `nil` keeps the radio's default.
     public var receiveMTU: Int?
+    /// The largest SDU each L2CAP channel writes, below what the peer offers, for diagnosing a phone.
+    public var sendMTU: Int?
     /// An LE channel's MTU range.
     static let mtuRange = 23...65_535
 
@@ -110,12 +112,18 @@ public struct RunOptions: Equatable, Sendable {
             }
             rssiFloor = floor
         }
-        if let text = flags.take("--receive-mtu") {
-            guard let mtu = Int(text), Self.mtuRange.contains(mtu) else {
-                throw .invalid(flag: "--receive-mtu", value: text)
-            }
-            receiveMTU = mtu
+        receiveMTU = try Self.mtu(flags.take("--receive-mtu"), flag: "--receive-mtu")
+        sendMTU = try Self.mtu(flags.take("--send-mtu"), flag: "--send-mtu")
+    }
+
+    private static func mtu(_ text: String?, flag: String) throws(UsageError) -> Int? {
+        guard let text else {
+            return nil
         }
+        guard let mtu = Int(text), Self.mtuRange.contains(mtu) else {
+            throw .invalid(flag: flag, value: text)
+        }
+        return mtu
     }
 
     /// Options as given, for tests and callers that build them.

@@ -35,8 +35,9 @@ ROOT = Path(__file__).resolve().parent.parent
 PEER = ROOT / ".build" / "out" / "Products" / "Debug-linux-x86_64" / "knit-peer"
 PACKAGE = "app.getknit.knit"
 INSTANCE = "interop"
-# A diagnostic knob for the L2CAP receive MTU, set with --receive-mtu.
+# Diagnostic knobs for the L2CAP receive MTU and the largest SDU written, set with --receive-mtu and --send-mtu.
 RECEIVE_MTU = ""
+SEND_MTU = ""
 
 
 class Phone:
@@ -122,6 +123,8 @@ class Peer:
             command += ["--rssi-floor", str(self.rssi_floor)]
         if RECEIVE_MTU:
             command += ["--receive-mtu", RECEIVE_MTU]
+        if SEND_MTU:
+            command += ["--send-mtu", SEND_MTU]
         log = open(ROOT / ".build" / "interop-peer.log", "a", encoding="utf-8")  # noqa: SIM115 - lives with the process
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, text=True, bufsize=1)
         threading.Thread(target=self._read, daemon=True).start()
@@ -354,13 +357,17 @@ def refusal(arguments: argparse.Namespace) -> int:
 
 
 def replace(arguments: argparse.Namespace) -> int:
-    """Companion change A1's stale-link rule on hardware. A peer the phone never sighted (the `ios` profile) links,
-    then freezes: the kernel keeps its channel up, so the phone's link stays open but goes quiet, as it does when a
-    peer's end dies first. A second knit-peer with the same identity then dials. An A1 phone replaces the old link
-    with the new one (logged `Replace, sighted=false`) and keeps it: the old link's end must not take the new one
-    with it. Android 2.7 refuses the second dial as a duplicate instead.
+    """Companion change A1's stale-link rule on hardware, with a peer the phone never sighted (the `ios` profile)
+    and a second knit-peer with the same identity. Android 2.7 refuses every second dial as a duplicate.
 
-    Nothing else may drop the new link meanwhile, so the run also fails if the phone logs any link-down for it."""
+    1. **The hold.** The first process links, and the second dials at once. An A1 phone refuses it while the held
+        link is under 30 s old (`REPLACE_MIN_HOLD_MS`). The refused process then does what the radio always does
+        when its last channel on a device closes, and disconnects the phone, which ends the shared ACL and the
+        first link with it: a cost of running both on one adapter.
+    2. **The replacement.** The first process links again, then freezes: the kernel keeps its channel up, so the
+        phone's link stays open but goes quiet, as it does when a peer's end dies first. Once that link is 30 s
+        old the second process dials. The phone replaces the old link (logged `Replace, sighted=false`) and keeps
+        the new one: the old link's end must not take it down, and nothing else may drop it meanwhile."""
     phone = Phone(arguments.device)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -379,11 +386,23 @@ def replace(arguments: argparse.Namespace) -> int:
     second = Peer("ios", name, others | {phone_id}, arguments.peer_log, arguments.rssi_floor, instance=f"{INSTANCE}-b")
     second.start()
     phone.shell("logcat -c")
-    first.command(cmd="allow-link", peer=phone_id)
     try:
+        first.command(cmd="allow-link", peer=phone_id)
+        run.step("hold-first-link", lambda: link_up(first, phone, phone_id) and {})
+        second.command(cmd="allow-link", peer=phone_id)
+        run.step("phone-refused-inside-the-hold", lambda: poll(lambda: _refused_inside_hold(phone, peer_id), 90, every=1))
+        second.command(cmd="deny-link", peer=phone_id)
+        first.stop()
+        time.sleep(5)
+        phone.shell("logcat -c")
+        first = Peer("ios", name, others | {phone_id}, arguments.peer_log, arguments.rssi_floor)
+        first.start()
+        first.command(cmd="allow-link", peer=phone_id)
         run.step("first-link", lambda: link_up(first, phone, phone_id) and {})
+        linked_at = time.monotonic()
         assert first.process
         first.process.send_signal(signal.SIGSTOP)
+        time.sleep(max(0.0, linked_at + 31 - time.monotonic()))
         second.command(cmd="allow-link", peer=phone_id)
         run.step("second-link", lambda: link_up(second, phone, phone_id) and {})
         run.step("phone-replaced-the-stale-link", lambda: poll(lambda: _replaced(phone, peer_id), 20))
@@ -431,6 +450,13 @@ def _custody_after_replace(peer: Peer, phone: Phone) -> dict:
         if difference.get("onlyPeer") or not dropped.get("noSenderKey"):
             raise RuntimeError(f"custody differs, and not for want of the key: {difference}, dropped {dropped}") from None
         return {"converged": False, "onlyPhone": difference["onlyPhone"], "noSenderKey": dropped["noSenderKey"]}
+
+
+def _refused_inside_hold(phone: Phone, peer_id: str) -> dict | None:
+    log = phone.shell("logcat -d -s BluetoothMeshTransport:*")
+    ages = [int(age) for age in re.findall(rf"bt refused client {peer_id} \(sighted=false heldAgeMs=(\d+)\)", log)]
+    young = [age for age in ages if age < 30_000]
+    return {"refusedAtHeldAgeMs": young} if young else None
 
 
 def _replaced(phone: Phone, peer_id: str) -> dict | None:
@@ -603,9 +629,11 @@ def main() -> int:
     commands.choices["soak"].add_argument("--per-minute", type=float, default=12, help="posts a minute, both sides together")
     for sub in commands.choices.values():
         sub.add_argument("--receive-mtu", default="", help="the receive MTU each peer channel offers, for diagnosis")
+        sub.add_argument("--send-mtu", default="", help="the largest SDU each peer channel writes, for diagnosis")
     arguments = parser.parse_args()
-    global RECEIVE_MTU  # noqa: PLW0603 - one knob, read by Peer.start
+    global RECEIVE_MTU, SEND_MTU  # noqa: PLW0603 - two knobs, read by Peer.start
     RECEIVE_MTU = arguments.receive_mtu
+    SEND_MTU = arguments.send_mtu
     if not PEER.exists():
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
     return {"check": check, "refusal": refusal, "replace": replace, "soak": soak}[arguments.command](arguments)

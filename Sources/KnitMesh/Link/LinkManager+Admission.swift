@@ -28,7 +28,7 @@ extension LinkManager {
         }
         let links = liveLinks.map { link in
             let node = link.neighbor.nodeId
-            let rssi = presence.smoothedRssi(of: node) ?? configuration.unsightedLinkRssi
+            let rssi = presence.smoothedRssi(of: node) ?? (link.sighted ? configuration.absentLinkRssi : configuration.unsightedLinkRssi)
             return PromotionPolicy.LinkSnapshot(nodeId: node, smoothedRssi: rssi, ageMilliseconds: now - link.since)
         }
         let backingOff = Set(backoffs.filter { now < $0.value.nextAt }.keys)
@@ -131,7 +131,7 @@ extension LinkManager {
             guard let hello, NodeId(hello.nodeId) == expected else {
                 return retire(id, backingOff: true, now: now) + promote(now: now)
             }
-            return register(id, hello: hello, peer: expected, now: now)
+            return register(id, hello: hello, peer: expected, sighted: true, now: now)
         case .responder:
             guard let hello else {
                 return retire(id, backingOff: false, now: now)
@@ -151,19 +151,23 @@ extension LinkManager {
             return retire(id, backingOff: false, now: now)
         }
         var events: [Event] = []
-        if let existing = liveChannel(to: dialer) {
+        if let existing = liveLinks.first(where: { $0.neighbor.nodeId == dialer }) {
             guard sighting == nil else {
                 log.log(.info, "link refused \(dialer): already linked")
                 return retire(id, backingOff: false, now: now)
             }
-            log.log(.info, "link \(dialer) replaced its stale link \(existing) with \(id)")
-            events += retire(existing, backingOff: false, now: now)
+            guard now - existing.since >= configuration.replaceMinHoldMilliseconds else {
+                log.log(.info, "link refused \(dialer): its link is too young to replace")
+                return retire(id, backingOff: false, now: now)
+            }
+            log.log(.info, "link \(dialer) replaced its stale link \(existing.channel) with \(id)")
+            events += retire(existing.channel, backingOff: false, now: now)
         }
         writeHello(on: id)
-        return events + register(id, hello: hello, peer: dialer, now: now)
+        return events + register(id, hello: hello, peer: dialer, sighted: sighting != nil, now: now)
     }
 
-    func register(_ id: ChannelID, hello: Hello, peer: NodeId, now: Int64) -> [Event] {
+    func register(_ id: ChannelID, hello: Hello, peer: NodeId, sighted: Bool, now: Int64) -> [Event] {
         if liveChannel(to: peer) != nil {
             // Our dial landed while the peer's own link to us was already up: keep the older one.
             return retire(id, backingOff: false, now: now)
@@ -171,7 +175,7 @@ extension LinkManager {
         let neighbor = Neighbor(nodeId: peer, protocolVersion: hello.version, capabilities: hello.capabilities)
         channels[id]?.stage = .live(peer)
         channels[id]?.deadline = nil
-        liveLinks.append(LiveLink(channel: id, neighbor: neighbor, since: now))
+        liveLinks.append(LiveLink(channel: id, neighbor: neighbor, since: now, sighted: sighted))
         dialing[peer] = nil
         backoffs[peer] = nil
         crossings.forget(link: id)

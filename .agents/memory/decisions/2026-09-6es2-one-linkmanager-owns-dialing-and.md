@@ -30,10 +30,17 @@ A1's rules, which the iPhone and the Linux peer run from the start. The first al
 each radio adapter, would write these rules twice, and the CoreBluetooth copy could not run under the Linux
 test suite.
 
+**Amended 2026-09-25, when A1 merged (knit-next `05dc2be1`, its ADR 2026-09.shzv):** review added two rules,
+and this port takes both. A held link is replaced only once it is 30 s old, so a device that claims an unsighted
+peer's id can cut its link at most that often. And the −90 dBm score is for a link whose peer has not once been
+sighted since it came up; a peer sighted during the link and then lost scores −127, as on Android 2.7, and is shed
+first.
+
 **Consequences / limits:** the admission rule differs from Android 2.7 in three ways (unsighted dialers,
-stale-link replacement, −90 dBm), and A1 is what brings Android level. Until A1 ships, Android still refuses
+stale-link replacement, −90 dBm), and A1 is what brings Android level. An Android build without A1 still refuses
 the iPhone's dial whenever the iPhone's id sorts lower. The HELLO is unauthenticated, so a device that
-claims a node id we are not sighting can replace that peer's link. Frames stay signed, so the most it can do
-is cut a link. The radio adapters must stay thin: a rule added to KnitBLE or KnitBlueZ is a rule the other
-radio does not have. `LinkManagerTests`, `LinkAdmissionTests` and `LinkEdgeTests` pin each rule, including
-`anUnsightedLinkedPeerDialingAgainReplacesItsStaleLink` for the teardown bug.
+claims a node id we are not sighting can replace that peer's link, once every 30 s at most. Frames stay signed,
+so the most it can do is cut a link. The radio adapters must stay thin: a rule added to KnitBLE or KnitBlueZ is
+a rule the other radio does not have. `LinkManagerTests`, `LinkAdmissionTests` and `LinkEdgeTests` pin each rule, including
+`anUnsightedLinkedPeerDialingAgainReplacesItsStaleLink` for the teardown bug,
+`aLinkYoungerThanThirtySecondsIsNeverReplaced` and `aLinkWhosePeerWasSightedThenLostIsShedFirst`.

@@ -113,9 +113,17 @@ import Foundation
             let selection = checkedAdapter(options.adapter, options.adapterAddress, log: log)
             let profile = RadioProfile(name: options.radioProfile) ?? .android
             var radioConfiguration = BlueZRadio.Configuration(adapter: selection, profile: profile, log: log)
-            if let mtu = options.receiveMTU.flatMap(UInt16.init(exactly:)) {
-                radioConfiguration.sockets = L2CAPSockets(adapter: selection.address, receiveMTU: mtu)
-                log.log(.info, "channels offer a receive MTU of \(mtu)")
+            let receiveMTU = options.receiveMTU.flatMap(UInt16.init(exactly:))
+            let sendMTU = options.sendMTU.flatMap(UInt16.init(exactly:))
+            if receiveMTU != nil || sendMTU != nil {
+                radioConfiguration.sockets = L2CAPSockets(
+                    adapter: selection.address,
+                    receiveMTU: receiveMTU ?? L2CAPSockets.largestReceiveMTU,
+                    sendMTU: sendMTU
+                )
+                let offered = receiveMTU.map(String.init) ?? "the default"
+                let written = sendMTU.map(String.init) ?? "what the peer offers"
+                log.log(.info, "channels offer a receive MTU of \(offered) and write at most \(written)")
             }
             let radio = BlueZRadio(configuration: radioConfiguration)
             var links = LinkManager.Configuration()
@@ -207,9 +215,11 @@ import Foundation
             self.handle = Mutex(handle)
         }
 
+        /// Writes `line`, or loses it. `FileHandle.write(_: Data)` traps on any error, and a failed write to the log
+        /// file took both peers of an interop run down mid-line on 2026-09-25: the node must outlive its log.
         @Sendable
         func write(_ line: String) {
-            handle.withLock { $0.write(Data((line + "\n").utf8)) }
+            handle.withLock { try? $0.write(contentsOf: Data((line + "\n").utf8)) }
         }
     }
 

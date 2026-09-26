@@ -108,10 +108,13 @@ import Testing
         _ = rig.accept(high, on: ChannelID(100))
         _ = rig.accept(high, on: ChannelID(101))
         _ = rig.accept(middle, on: ChannelID(102))
+        _ = rig.accept(middle, on: ChannelID(104))
+        _ = rig.advance(30_000)
         _ = rig.accept(middle, on: ChannelID(103))
         _ = rig.handle(.received(ChannelID(103), [9, 0, 0, 0, 0]))
         let lines = rig.log.all
         #expect(lines.contains("info link refused \(high): already linked"))
+        #expect(lines.contains("info link refused \(middle): its link is too young to replace"))
         #expect(lines.contains("info link \(middle) replaced its stale link ch102 with ch103"))
         #expect(lines.contains { $0.hasPrefix("warning link ch103 sent a bad record") })
     }

@@ -29,9 +29,15 @@ public final class LinkManager: MeshTransport {
         public var advertDebounceMilliseconds: Int64
         /// The largest single write: Android caps its own at 8 KiB.
         public var maxWriteBytes: Int
-        /// What a link to a peer we are not sighting scores for eviction. Android 2.7 scores it −127, so it is
-        /// shed first; A1 moves Android to −90, the promotion floor, and so does this.
+        /// What a link scores for eviction while its peer has not once been sighted since the link came up (every
+        /// inbound iPhone): the promotion floor, as A1 has it, not −127.
         public var unsightedLinkRssi: Double
+        /// What a link scores once its peer, sighted during the link, has left presence: shed first, as on Android.
+        public var absentLinkRssi: Double
+        /// How old a held link must be before a second dial from the same unsighted peer may replace it
+        /// (A1's `REPLACE_MIN_HOLD_MS`). The HELLO is unauthenticated, so this bounds how often a device that
+        /// claims the peer's id can cut its link.
+        public var replaceMinHoldMilliseconds: Int64
         /// Whom to link.
         public var promotion: PromotionPolicy.Configuration
         /// How long to wait after failures.
@@ -46,6 +52,8 @@ public final class LinkManager: MeshTransport {
             advertDebounceMilliseconds: Int64 = 1500,
             maxWriteBytes: Int = 8192,
             unsightedLinkRssi: Double = -90,
+            absentLinkRssi: Double = -127,
+            replaceMinHoldMilliseconds: Int64 = 30_000,
             promotion: PromotionPolicy.Configuration = PromotionPolicy.Configuration(),
             backoff: ConnectBackoff.Configuration = ConnectBackoff.Configuration(),
             presence: PresenceTracker.Configuration = PresenceTracker.Configuration()
@@ -55,6 +63,8 @@ public final class LinkManager: MeshTransport {
             self.advertDebounceMilliseconds = advertDebounceMilliseconds
             self.maxWriteBytes = maxWriteBytes
             self.unsightedLinkRssi = unsightedLinkRssi
+            self.absentLinkRssi = absentLinkRssi
+            self.replaceMinHoldMilliseconds = replaceMinHoldMilliseconds
             self.promotion = promotion
             self.backoff = backoff
             self.presence = presence
@@ -94,6 +104,8 @@ public final class LinkManager: MeshTransport {
         let channel: ChannelID
         let neighbor: Neighbor
         let since: Int64
+        /// Whether the peer has been sighted since the link came up; a dialer we dial always has.
+        var sighted: Bool
     }
 
     struct Channel {
@@ -260,6 +272,9 @@ public final class LinkManager: MeshTransport {
             }
             presence.record(PresenceTracker.Sighting(advert: sighting.advert, rssi: sighting.rssi), now: now)
             addresses[sighting.advert.nodeId] = sighting.address
+            for index in liveLinks.indices where liveLinks[index].neighbor.nodeId == sighting.advert.nodeId {
+                liveLinks[index].sighted = true
+            }
             return promote(now: now)
         case .connected(let id):
             connected(id, now: now)

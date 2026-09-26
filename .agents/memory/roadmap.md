@@ -18,7 +18,7 @@ explicit direction.** Update this file in the change that ships an item.
   v1 DM seal and open, the safety number, aliases and the device tag are in, with the RFC vectors and every
   knit-next golden. Line coverage is 97 %. A2's keyed vectors pass, the safety number among them, and
   knit-next verifies and opens the frames this port emits. Done: A2 merged, and the vectors are pinned to
-  knit-next `1f3befcd`.
+  knit-next `05dc2be1` (A1's merge; nothing they hold moved since `1f3befcd`).
 - **P3, the mesh engine (`KnitMesh`, `KnitStore`):** done on 2026-09-25, pending the maintainer's review.
   - **Link layer:** the `LinkManager` behind a `Radio` protocol, with A1's admission rules (ADR 2026-09.6es2).
   - **Router and custody:** flooding and custody under Android's quotas, with the rules in one `CustodyRules`
@@ -43,18 +43,24 @@ explicit direction.** Update this file in the change that ships an item.
       name and a photo on the Pixel. That covers alias parity both ways and FILE records tolerated (the avatar's
       3 records discarded, the link kept).
     - **`ios` profile against Android 2.7:** the refusal reproduces (`interop.py refusal`).
-    - **`ios` profile against an A1 build:** 14 of 14 below the Pixel's id and 13 of 13 above it, and the
-      stale-link replacement holds (`interop.py replace`, 9 of 9).
+    - **`ios` profile against A1:** on the reviewed branch, 14 of 14 below the Pixel's id and 13 of 13 above it,
+      and the stale-link replacement held (`interop.py replace`, 9 of 9). On merged `main`, 13 of 13 in each
+      order, and the 30 s hold refused early second dials and then let one replace the link; the two-process
+      rig's shared ACL still drops some runs afterwards (`.agents/context/linux-peer.md`).
   - **Found on the way:** bluetoothd holds every LE link after its channels close, which blocked the advert; the
     radio now releases links itself. The `ios` profile no longer re-registers its advert when only the digest
     cue moves (`.agents/context/linux-peer.md`, "What P4 found").
-  - **Still owed:** the `ios` group on the Moto G, which has the A1 build but whose mesh has not started; the
-    two-peer relay line, which needs a second adapter; and the hour-long soak, which the maintainer deferred.
+    - **The Moto G on merged A1:** admitted in both orders, but it lost everything the peer sent after the profile
+      in 3 of 3 checks with 8192-byte SDUs, and passed with `--send-mtu 247`. Open: whether to cap SDUs by
+      default, and what the iPhone's SDUs will be (a P8 risk).
+  - **Still owed:** the two-peer relay line, which needs a second adapter; and the hour-long soak, which the
+    maintainer deferred.
   - **Before P8:** `KnitBlueZ` reads the GATT payload of a UUID-only advert, so the peer can dial an iPhone and
     set `FLAG_DIALS_GATT_PEERS`.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
-  2026-09.shzv). Built and trialled on 2026-09-25 on branch `feat/a1-unsighted-dialer`, in the worktree
-  `~/source/knit-next-a1`; not yet committed or merged. The Pixel 3 and the Moto G run that build.
+  2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
+  −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
+  Done.
 - **Companion change A2 in knit-next:** merged on 2026-09-25 as `0c0756f6` and `1f3befcd`. Done.
 
 ## Next, after the MVP
