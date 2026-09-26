@@ -185,6 +185,17 @@ public actor Mesh {
     /// FILE records discarded so far, avatars and attachments alike.
     public var discardedFileRecords: Int { links.discardedFileRecords }
 
+    /// What the router has done so far.
+    public var routerCounters: Router.Counters { engine.routerCounters }
+
+    /// What the engine and the link manager hold in memory, table by table.
+    public var footprint: MeshFootprint {
+        var tables = engine.footprint
+        tables.channels = links.channelCount
+        tables.crossings = links.crossingCount
+        return tables
+    }
+
     // MARK: Plumbing
 
     private func apply(_ linkEvents: [LinkManager.Event]) {

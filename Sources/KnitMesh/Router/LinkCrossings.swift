@@ -18,6 +18,9 @@ public struct LinkCrossings<Link: Hashable & Sendable>: Sendable {
         window = windowMilliseconds
     }
 
+    /// The frame ids held, over every link.
+    public var count: Int { perLink.values.reduce(0) { $0 + $1.count } }
+
     /// Records that the frame with `key` crosses `link` now. `true` the first time inside the window: write it.
     /// `false` for a repeat: skip it, the far end has it.
     public mutating func firstCrossing(link: Link, key: String, now: Int64) -> Bool {

@@ -29,6 +29,19 @@ import Testing
         #expect(steps == [true, true, true, true, false], "c evicts a, so a is new again and c is still held")
     }
 
+    /// A soak reads the count to watch the set level off: an id whose window has passed stays until capacity
+    /// evicts it.
+    @Test func theCountLevelsOffAtTheCapacity() {
+        var seen = SeenSet(capacity: 3, windowMilliseconds: 10)
+        _ = Self.insert([("a", 0), ("b", 0), ("a", 5)], into: &seen)
+        #expect(seen.count == 2, "a repeat is counted once")
+        _ = Self.insert((0..<10).map { ("id\($0)", Int64(100 + $0)) }, into: &seen)
+        #expect(seen.count == 3)
+        let reopened = seen.reopen("id9", now: 110)
+        #expect(reopened)
+        #expect(seen.count == 2, "a reopened id is let go")
+    }
+
     /// Kotlin's insertion-ordered map keeps a restamped id in its place, so a busy id is still evicted first.
     @Test func restampingAnIdKeepsItsPlaceInLine() {
         var seen = SeenSet(capacity: 2, windowMilliseconds: 10)

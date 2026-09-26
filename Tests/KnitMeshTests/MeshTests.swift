@@ -141,6 +141,30 @@ import Testing
         #expect(await rig.mesh.dropped.isEmpty)
     }
 
+    @Test func theFootprintCountsTheEnginesTablesAndTheLinks() async throws {
+        let rig = rig()
+        await rig.mesh.start()
+        #expect(await rig.mesh.footprint == MeshFootprint(), "our profile is marked seen when it first goes out")
+        await linkBob(rig)
+        let profile = try bob.profile(publishedAt: EngineFixture.start)
+        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: profile.wire.encoded).encoded ?? []))
+        let stranger = try TestPeer(seed: 3).roomPost("Whose key?", id: "stranger-1", sentAt: EngineFixture.start)
+        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: stranger.wire.encoded).encoded ?? []))
+        let sent = rig.radio.frames(on: channel).compactMap { try? RelayEnvelope(decoding: $0.signed).type }
+        #expect(sent == [.profile, .keyRequest])
+        let footprint = await rig.mesh.footprint
+        #expect(footprint.seen == 3, "our profile, Bob's, and the stranger's post")
+        #expect(footprint.pendingRelays == 2, "Bob's profile and the post wait out their jitter")
+        #expect(footprint.parked == 1)
+        #expect(footprint.missingKeys == 1)
+        #expect(footprint.cachedProfiles == 1, "Bob's")
+        #expect(footprint.channels == 1)
+        #expect(footprint.crossings == 4, "our profile and the key request out, Bob's profile and the post in")
+        #expect(footprint.tombstones == 0)
+        #expect(footprint.owedTicks == 0)
+        #expect(await rig.mesh.routerCounters.admitted == 2)
+    }
+
     @Test func stoppingTakesTheLinksDownAndStopsTheRadio() async {
         let rig = rig()
         await rig.mesh.start()

@@ -168,6 +168,34 @@ public actor PeerNode {
             "custody": .int(Int64(stores.custody.liveIds(now: clock.wallMilliseconds()).count)),
             "dropped": .object(Dictionary(dropped) { first, _ in first }),
             "fileRecords": .int(Int64(await mesh.discardedFileRecords)),
+            "footprint": Self.describe(await mesh.footprint),
+            "router": Self.describe(await mesh.routerCounters),
+        ]
+    }
+
+    /// The mesh's in-memory tables, which a soak watches level off.
+    private static func describe(_ footprint: MeshFootprint) -> JSONValue {
+        [
+            "seen": .int(Int64(footprint.seen)),
+            "pendingRelays": .int(Int64(footprint.pendingRelays)),
+            "tombstones": .int(Int64(footprint.tombstones)),
+            "parked": .int(Int64(footprint.parked)),
+            "owedTicks": .int(Int64(footprint.owedTicks)),
+            "cachedProfiles": .int(Int64(footprint.cachedProfiles)),
+            "missingKeys": .int(Int64(footprint.missingKeys)),
+            "channels": .int(Int64(footprint.channels)),
+            "crossings": .int(Int64(footprint.crossings)),
+        ]
+    }
+
+    private static func describe(_ counters: Router.Counters) -> JSONValue {
+        [
+            "admitted": .int(Int64(counters.admitted)),
+            "deduplicated": .int(Int64(counters.deduplicated)),
+            "refused": .int(Int64(counters.refused)),
+            "relayed": .int(Int64(counters.relayed)),
+            "suppressed": .int(Int64(counters.suppressed)),
+            "handedOn": .int(Int64(counters.handedOn)),
         ]
     }
 

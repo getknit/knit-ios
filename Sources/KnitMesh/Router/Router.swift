@@ -97,6 +97,12 @@ public struct Router: Sendable {
         self.budget = budget
     }
 
+    /// The frame ids in the router's ``SeenSet``.
+    public var seenCount: Int { seen.count }
+
+    /// Relays waiting out their jitter.
+    public var pendingRelayCount: Int { pending.count }
+
     /// When the next pending relay fires, on the monotonic clock, or `nil` when none waits.
     public var nextDeadline: Int64? { pending.values.map(\.fireAt).min() }
 

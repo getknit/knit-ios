@@ -160,6 +160,12 @@ public final class LinkManager: MeshTransport {
     /// FILE records discarded as they streamed by (avatars and attachments are out of the MVP).
     public internal(set) var discardedFileRecords = 0
 
+    /// Channels open or opening.
+    public var channelCount: Int { channels.count }
+
+    /// The frame ids the open channels have carried, either way (``LinkCrossings``).
+    public var crossingCount: Int { crossings.count }
+
     /// A link manager for `localId` over `radio`.
     public init(
         localId: NodeId,

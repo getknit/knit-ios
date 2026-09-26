@@ -25,6 +25,14 @@ import Testing
         steps.map { crossings.firstCrossing(link: $0.link, key: $0.key, now: $0.now) }
     }
 
+    @Test func theCountIsEveryLinksIdsAndGoesWithTheLink() {
+        var crossings = Self.crossings()
+        _ = Self.cross([Crossing("bob", "k1", 1000), Crossing("bob", "k2", 1000), Crossing("carol", "k1", 1000)], over: &crossings)
+        #expect(crossings.count == 3)
+        crossings.forget(link: "bob")
+        #expect(crossings.count == 1)
+    }
+
     @Test func theFirstCrossingWritesAndTheSecondSkips() {
         var crossings = Self.crossings()
         #expect(Self.cross([Crossing("bob", "k1", 1000), Crossing("bob", "k1", 1000)], over: &crossings) == [true, false])

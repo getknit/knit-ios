@@ -56,6 +56,8 @@ python3 scripts/interop.py check … --radio-profile ios            # the ios gr
 python3 scripts/interop.py refusal --device <adb serial>          # the ios profile against Android 2.7
 python3 scripts/interop.py replace --device <adb serial>          # A1's stale-link replacement
 python3 scripts/interop.py check … --send-mtu 8192                # SDUs above the default 247, to test a phone
+python3 scripts/soak.py run [--hours 10]                          # a night against every phone in range; drives none
+python3 scripts/soak.py status | report [--json] | stop           # the latest run (.build/soak/current)
 sudo scripts/hci1-supervision.sh                                  # hci1's supervision timeout to 5 s, until a replug
 scripts/hci1-supervision.sh --udev-rule                           # a udev rule that sets it on every plug-in
 ```

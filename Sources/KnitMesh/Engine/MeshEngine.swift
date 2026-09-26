@@ -68,6 +68,22 @@ public final class MeshEngine {
     /// This node's id.
     public var nodeId: NodeId { identity.nodeId }
 
+    /// What the router has done so far.
+    public var routerCounters: Router.Counters { router.counters }
+
+    /// What the engine holds in memory. The link manager's two tables are the driver's to fill (``Mesh``).
+    public var footprint: MeshFootprint {
+        MeshFootprint(
+            seen: router.seenCount,
+            pendingRelays: router.pendingRelayCount,
+            tombstones: custody.tombstoneCount,
+            parked: pendingInbound.count,
+            owedTicks: ackSync.count,
+            cachedProfiles: keyExchange.cachedProfileCount,
+            missingKeys: keyExchange.missingIds.count
+        )
+    }
+
     /// Whether ``start()`` has run.
     public var isStarted: Bool { timers != nil }
 

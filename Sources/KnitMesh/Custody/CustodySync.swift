@@ -20,6 +20,9 @@ public struct CustodySync: Sendable {
         tombstones = SeenSet(windowMilliseconds: tombstoneMilliseconds)
     }
 
+    /// The purged ids tombstoned now.
+    public var tombstoneCount: Int { tombstones.count }
+
     /// Takes a relayed frame into custody (`ForwardSync.onSeen`) if `authenticate` says so, and answers whether it
     /// was stored just now.
     ///

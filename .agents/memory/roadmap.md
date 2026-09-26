@@ -57,8 +57,16 @@ explicit direction.** Update this file in the change that ships an item.
     knit-next's fix (ADR 2026-09.9xuu, branch `fix/custody-converge`, not yet merged) serves profiles first and
     parks a whole custody quota per sender; `CustodySync` and `PendingInbound` mirror it now. Once it merges,
     re-check the port against the merged code and move the pin.
-  - **Still owed:** the two-peer relay line, which needs a second adapter; and the hour-long soak, which the
-    maintainer deferred.
+  - **Still owed:** the two-peer relay line, which needs a second adapter.
+  - **The soak (2026-09-26):** `scripts/soak.py` ran 8.1 hours against the four lab phones in range, driving
+    none of them. The peer's `status` now reports the size of each in-memory table, so the run could show them
+    level off.
+    - **Passed:** no crash, memory flat after the first hour, custody and the SeenSet bounded, and every post
+      ticked and every DM delivered.
+    - **Found:** bluetoothd cut 127 of 213 links, 30 s after a phone rotated its address
+      (`.agents/context/linux-peer.md`, "What the soak found"). Ticks were slower than the MVP's 5 s.
+    - **Still owed:** a rerun with `TemporaryTimeout = 0` (root; the maintainer's call), and room traffic both
+      ways, which needs a phone driven (`interop.py soak`).
   - **The GATT read (2026-09-26):** in the `ios` profile the peer reads the payload of a UUID-only advert and sets
     `FLAG_DIALS_GATT_PEERS`, so it can dial an iPhone. It reads on rules in `KnitMesh`'s `GattPayloads`, which
     KnitBLE will share (ADR 2026-09.xzpt, amended). Only the fake BlueZ has served it a payload so far; the first

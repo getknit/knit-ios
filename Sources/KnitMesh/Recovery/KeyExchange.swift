@@ -49,6 +49,9 @@ public struct KeyExchange: Sendable {
     /// The ids still wanted, oldest first.
     public var missingIds: [NodeId] { missing.map(\.id) }
 
+    /// The signed profiles cached.
+    public var cachedProfileCount: Int { cache.count }
+
     /// The cached signed profile of `nodeId`, if pinned.
     public func cachedProfile(of nodeId: NodeId) -> WireEnvelope? {
         cache[nodeId]

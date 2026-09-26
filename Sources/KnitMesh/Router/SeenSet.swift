@@ -21,6 +21,10 @@ public struct SeenSet: Sendable {
         seen = StampedKeys(capacity: capacity)
     }
 
+    /// The ids held. One whose window has passed stays until capacity evicts it, so this reaches `capacity` and
+    /// stays there.
+    public var count: Int { seen.count }
+
     /// Records `id` and answers whether it is new: never seen, or last seen a full window ago.
     public mutating func insert(_ id: String, now: Int64) -> Bool {
         if let last = seen[id], now - last < window {

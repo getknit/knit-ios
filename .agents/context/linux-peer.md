@@ -94,7 +94,9 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 - **State** lives in `~/.local/state/knit-peer/<instance>/`: `identity` (0600) and `profile.json`, which keeps the
   profile version and publish stamp across restarts. Custody, peers and messages live in memory.
 - **Control lines** are JSON objects with a `cmd`, and an optional `tag` that the reply echoes:
-  `status` (with `fileRecords`, the FILE records discarded so far), `peers` (names, aliases and safety numbers), `links` (links and sightings), `room` (`text`),
+  `status` (with `fileRecords`, the FILE records discarded so far; `footprint`, the size of each table the mesh
+  keeps in memory; and `router`, what the router has admitted, relayed and refused), `peers` (names, aliases and
+  safety numbers), `links` (links and sightings), `room` (`text`),
   `dm` (`to`, `text`), `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `deny-link` and
   `allow-link` (`peer`), `digest` (live custody ids and their fingerprint), `messages` (`conv`, `limit`) and
   `quit`.
@@ -109,6 +111,20 @@ It needs the session's go-ahead for the phone (`.agents/rules/devices.md`). It k
 
 - **Before the peer starts**, it scans and picks a node id that no other phone in range dials.
 - **Once the peer is up**, it refuses every other phone with `deny-link`.
+
+`scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
+needs no go-ahead for a phone. The peer takes a node id above every phone's and dials them all, since this adapter
+cannot be a central and a peripheral at once. It then sends traffic by phase, the way knit-next's lab soak does:
+
+- **shakeout:** MVP item 11's hour, at 6 posts a minute.
+- **sparse:** a post every few minutes.
+- **dark:** only a burst or a round of DMs every hour or two, so the phones can doze.
+- **mixed:** a last hour of steady posts.
+
+Its posts carry knit-next's audit keys (`soak …` and `burst …`), so that repo's `.private/scripts/soak/cleanup.sh`
+can purge them from the fleet afterwards; running it drives every phone. `status` and `report` read a run's
+directory while it runs, and `report` checks it against item 11: crashes, why each link ended, custody, the
+footprint, memory, and tick and DM delivery by phase.
 
 ## What P4 found
 
@@ -214,3 +230,55 @@ sights it.
   has replaced its link. Two processes with one identity must publish the same profile frame, or the phone
   holds a copy the second never carries, so the second copies the first's state after the first is up.
 
+
+## What the soak found
+
+The first run of `scripts/soak.py`, 05:24 to 13:32 on 2026-09-26, against the Pixel 7, the Pixel 9, the Moto G
+and the Pixel 3, with the peer dialing all four. It ran the shakeout, sparse and dark phases and was stopped before
+the mixed hour. The run's directory is `.build/soak/20260926-0523/`.
+
+- **Against MVP item 11:**
+  - **Crashes:** none. The peer ran 8.1 hours without a restart.
+  - **Growth:** none. Memory rose from 33.5 to 40.9 MB in the first hour, then held at 41.0 to 41.9 MB for seven.
+    Open files stayed at 14 to 18. Custody peaked at 583 and fell to 441 as the room posts reached their 6 h
+    TTL. The SeenSet held 2,603 ids, under its 4,096 cap. The other tables stayed flat, and no frame was
+    parked.
+  - **Delivery:** all 422 room posts were ticked, and all 36 DMs were delivered, 9 to each phone.
+  - **Frames Android sends:** the peer discarded 14 FILE records without dropping a link.
+  - **Link drops:** our side ended 1 of 213 links, on the bad read below.
+  - **Not covered:** the phones posted nothing, since the run drives none of them. The room traffic went one way
+    (the 145 posts received were back-fill), and `interop.py soak` is still the test for both ways.
+- **bluetoothd cut 127 links: phones rotate their address.** BlueZ removes a device it has not heard for
+  `TemporaryTimeout` (30 s by default), and removing a connected device disconnects it. Every advert restarts the
+  timer, connected or not (5.72's `device_update_last_seen`). So when a phone moves to a new private address, the
+  link on the old one is cut 30 s after its last advert. The socket reads `ECONNABORTED` (HCI reason 0x16,
+  terminated by the local host), a whole-second GLib tick after the silence. Each of the 127 came 29.5 to 32 s
+  after its address went quiet. No D-Bus call prevents it: `btd_device_set_temporary` ignores private addresses,
+  so `Connect` and `Pair` cannot keep the device. `TemporaryTimeout = 0` in `/etc/bluetooth/main.conf` does, but
+  it needs root and a bluetoothd restart, which also drops `hci0`'s links: the maintainer's call. The iPhone does
+  not have this problem; it is this rig's BlueZ.
+- **The rest of the drops were the radio's.**
+  - **77 supervision timeouts,** most of them on the Pixel 7 once its signal fell to −93 dBm and below.
+  - **4 unexplained `ECONNABORTED`s,** also on the Pixel 7 near the edge of range, with no silence and no
+    disconnect from us or bluetoothd before them. Probably the dongle's controller ending a weak link and
+    reporting it as a local disconnect; only btmon, which needs root, would show it.
+  - **1 close from the phone.**
+  - **Share of the run each link was up:** the Pixel 3 96 %, the Moto G 94 %, the Pixel 7 85 %, and the Pixel 9
+    13 %. The Pixel 9 is a daily driver: it reset most dials with `ECONNRESET`, and was often out of range.
+- **The 65,535-byte read came back at a 5 s supervision timeout.** Once in 213 links, after two minutes of quiet, a
+  Pixel 3 channel read the whole receive MTU starting `00 00 00 d0`, and the link manager dropped the link on its
+  tag-0 record. P4 blamed the 420 ms timeout; that no longer explains it.
+- **The Pixel 3's own drops are a controller matter.** Its HCI log shows hci1's links at a 5 s supervision
+  timeout, and it ends them with 0x28, "Instant Passed": holding six links, it misses the dongle's link-layer
+  update instant.
+- **Ticks wait for back-fill, and churn.** The phones carried about 300 custody frames, so a post's tick took four
+  minutes at the start. After that the median was 6 to 8 s, and 90 % came within about 20 s. The dark phase's
+  bursts, landing on dozing phones, had a median of 10 s and a 95th percentile of 52 s. All of it is above the
+  MVP's 5 s. Each link lasted a few minutes before bluetoothd cut it, and every new link starts with a digest
+  exchange, so the churn is the likely cause; a run with `TemporaryTimeout = 0` would tell.
+- **Two traps in the rig.** The lab phones' custody holds the profiles of about 33 old knit-peer identities, so the
+  peer pins them all. The first trial DMed every pinned peer, which put 66 DMs into the lab's custody for a day;
+  the driver now DMs only the phones in range. And while the peer is linked, its `android` advert is re-registered
+  with every custody change. The dongle then answers each change with an advertising-set-terminated event, and
+  the kernel logs `Unexpected advertising set terminated event`, about every 1.5 s in the shakeout. It did no
+  visible harm.

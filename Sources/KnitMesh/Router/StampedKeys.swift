@@ -26,6 +26,9 @@ internal struct StampedKeys: Sendable {
         self.capacity = max(1, capacity)
     }
 
+    /// The keys held, stale ones included until they are evicted.
+    var count: Int { entries.count }
+
     /// The key's stamp, or `nil` when the key is not held.
     subscript(key: String) -> Int64? { entries[ExactKey(key)]?.stamp }
 
