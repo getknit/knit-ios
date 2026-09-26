@@ -14,7 +14,7 @@
                 return
             }
             let refreshing = refreshAdvertAt.map { now >= $0 } ?? false
-            guard activeAdvert?.payload != desired || refreshing else {
+            guard Self.changesTheAir(from: activeAdvert?.payload, to: desired, profile: configuration.profile) || refreshing else {
                 return
             }
             refreshAdvertAt = nil
@@ -25,6 +25,21 @@
             let arguments: [DBusValue] = [.objectPath(path), .properties([])]
             adapterCall("RegisterAdvertisement", interface: BlueZ.advertisingManager, arguments, now: now) { [weak self] success in
                 self?.advertRegistered(path, success: success)
+            }
+        }
+
+        /// Whether advertising `desired` puts different bytes on the air than `active` does. The `ios` profile's
+        /// advert is the UUID alone and its GATT value zeroes the digest cue, so a new cue changes nothing there,
+        /// and re-registering for it would only toggle an advertising instance every time custody moves.
+        static func changesTheAir(from active: AdvertPayload?, to desired: AdvertPayload, profile: RadioProfile) -> Bool {
+            guard let active else {
+                return true
+            }
+            switch profile {
+            case .android:
+                return active != desired
+            case .ios:
+                return active.gattValue != desired.gattValue
             }
         }
 

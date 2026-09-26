@@ -121,6 +121,7 @@ import Testing
         let events = rig.handle(.received(ChannelID(100), noise.compactMap(\.encoded).flatMap(\.self)))
         #expect(events.isEmpty)
         #expect(rig.links.undecodableFrames == 1)
+        #expect(rig.links.discardedFileRecords == 3)
         #expect(rig.links.neighbors.count == 1, "the link stays up")
     }
 

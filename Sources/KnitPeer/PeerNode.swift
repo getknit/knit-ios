@@ -167,6 +167,7 @@ public actor PeerNode {
             "peers": .int(Int64(stores.peers.allPeers().count)),
             "custody": .int(Int64(stores.custody.liveIds(now: clock.wallMilliseconds()).count)),
             "dropped": .object(Dictionary(dropped) { first, _ in first }),
+            "fileRecords": .int(Int64(await mesh.discardedFileRecords)),
         ]
     }
 

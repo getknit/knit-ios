@@ -3,7 +3,9 @@
 driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .agents/context/linux-peer.md).
 
     scripts/interop.py check   --device SERIAL [--order phone-dials|peer-dials] [--radio-profile android|ios]
+                                [--blank-name] [--expect-avatar]
     scripts/interop.py refusal --device SERIAL [--seconds 120]
+    scripts/interop.py replace --device SERIAL
     scripts/interop.py soak    --device SERIAL [--minutes 60] [--per-minute 12]
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
@@ -21,6 +23,8 @@ import queue
 import re
 import secrets
 import shlex
+import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -98,7 +102,10 @@ class Peer:
     the 12 s promotion dwell lets either side dial: the go-ahead covers one phone, and the rest of the mesh should
     not carry the run's traffic."""
 
-    def __init__(self, profile: str, name: str, refuse: set[str], log_level: str, rssi_floor: int | None) -> None:
+    def __init__(
+        self, profile: str, name: str, refuse: set[str], log_level: str, rssi_floor: int | None, instance: str = INSTANCE
+    ) -> None:
+        self.instance = instance
         self.profile = profile
         self.name = name
         self.refuse = refuse
@@ -110,7 +117,7 @@ class Peer:
         self.node_id = ""
 
     def start(self) -> None:
-        command = [str(PEER), "run", "--instance", INSTANCE, "--radio-profile", self.profile, "--name", self.name, "--log", self.log_level]
+        command = [str(PEER), "run", "--instance", self.instance, "--radio-profile", self.profile, "--name", self.name, "--log", self.log_level]
         if self.rssi_floor is not None:
             command += ["--rssi-floor", str(self.rssi_floor)]
         if RECEIVE_MTU:
@@ -244,7 +251,9 @@ def check(arguments: argparse.Namespace) -> int:
             {"run": "check", "phone": phone_id, "phoneName": phone_name, "peer": peer_id, "order": arguments.order, "refused": sorted(others)}
         )
     )
-    peer = Peer(arguments.radio_profile, f"knit-peer {nonce}", others, arguments.peer_log, arguments.rssi_floor)
+    # A blank name makes both sides fall back to the alias, which is how alias parity is seen over the air.
+    name = "" if arguments.blank_name else f"knit-peer {nonce}"
+    peer = Peer(arguments.radio_profile, name, others, arguments.peer_log, arguments.rssi_floor)
     peer.start()
     try:
         run.step("link", lambda: link_up(peer, phone, phone_id) and {})
@@ -262,7 +271,12 @@ def check(arguments: argparse.Namespace) -> int:
         # A new link starts with the phone back-filling every frame our digest lacks, one record per write, and
         # anything the phone sends meanwhile queues behind it. MVP item 4 times a post over a live link, so the
         # timed steps wait for that sync to finish.
-        run.step("custody-converges", lambda: poll(lambda: _converged(peer, phone), 180, every=10))
+        run.step("custody-converges", lambda: _converges(peer, phone, 180))
+        # The aliases as this port computes them, to hold against what the phone's own screens show.
+        run.step("aliases", lambda: _aliases(peer, phone_id))
+        # A phone with a photo pushes it as FILE records at link-up; the peer discards them and keeps the link.
+        if arguments.expect_avatar:
+            run.step("file-records-discarded", lambda: poll(lambda: _file_records(peer), 60))
         body = f"interop room from peer {nonce}"
         peer.command(cmd="room", text=body)
         run.step("room-peer-to-phone", lambda: poll(lambda: _has(phone.state("nearby"), body), 15) and {})
@@ -284,7 +298,7 @@ def check(arguments: argparse.Namespace) -> int:
             "dm-phone-to-peer-ticked",
             lambda: poll(lambda: _received(phone.state(peer_id), f"interop dm from phone {nonce}"), 30) and {},
         )
-        run.step("custody-converges-again", lambda: poll(lambda: _converged(peer, phone), 90, every=10))
+        run.step("custody-converges-again", lambda: _converges(peer, phone, 90))
         # Back-fill: a post made while the peer is away arrives once it links again (MVP item 6).
         peer.stop()
         body = f"interop backfill {nonce}"
@@ -337,6 +351,102 @@ def refusal(arguments: argparse.Namespace) -> int:
         peer.stop()
     print(json.dumps({"summary": "refusal", "steps": run.steps, "failed": run.failed}))
     return run.failed
+
+
+def replace(arguments: argparse.Namespace) -> int:
+    """Companion change A1's stale-link rule on hardware. A peer the phone never sighted (the `ios` profile) links,
+    then freezes: the kernel keeps its channel up, so the phone's link stays open but goes quiet, as it does when a
+    peer's end dies first. A second knit-peer with the same identity then dials. An A1 phone replaces the old link
+    with the new one (logged `Replace, sighted=false`) and keeps it: the old link's end must not take the new one
+    with it. Android 2.7 refuses the second dial as a duplicate instead.
+
+    Nothing else may drop the new link meanwhile, so the run also fails if the phone logs any link-down for it."""
+    phone = Phone(arguments.device)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    phone_id = phone.state()["self"]["nodeId"]
+    others = others_in_range(phone_id)
+    peer_id = keygen(phone_id, arguments.order, others)
+    print(json.dumps({"run": "replace", "phone": phone_id, "peer": peer_id, "refused": sorted(others)}))
+    state = Path.home() / ".local" / "state" / "knit-peer"
+    name = f"knit-peer {nonce}"
+    # Both processes refuse the phone until both are up, so neither one's start releases the other's link. The
+    # second copies the first's state once the first has published its profile, so the two publish the same
+    # profile frame; different stamps under one identity would be a clone, and custody would never converge.
+    first = Peer("ios", name, others | {phone_id}, arguments.peer_log, arguments.rssi_floor)
+    first.start()
+    shutil.copytree(state / INSTANCE, state / f"{INSTANCE}-b", dirs_exist_ok=True)
+    second = Peer("ios", name, others | {phone_id}, arguments.peer_log, arguments.rssi_floor, instance=f"{INSTANCE}-b")
+    second.start()
+    phone.shell("logcat -c")
+    first.command(cmd="allow-link", peer=phone_id)
+    try:
+        run.step("first-link", lambda: link_up(first, phone, phone_id) and {})
+        assert first.process
+        first.process.send_signal(signal.SIGSTOP)
+        second.command(cmd="allow-link", peer=phone_id)
+        run.step("second-link", lambda: link_up(second, phone, phone_id) and {})
+        run.step("phone-replaced-the-stale-link", lambda: poll(lambda: _replaced(phone, peer_id), 20))
+        # The frozen process has done its part. Left frozen, it still holds an advert and a GATT application in
+        # bluetoothd that no longer answer, and bluetoothd then ended the whole ACL about a minute later. Killed,
+        # it releases them without the clean exit that would disconnect the phone.
+        first.process.kill()
+        first.process.wait()
+        first.process = None
+        # A fresh link starts with the phone's back-fill, and a post queues behind it (see `check`).
+        run.step("custody-after-replace", lambda: _custody_after_replace(second, phone))
+        for turn in range(2):
+            body = f"interop replace from phone {nonce} {turn}"
+            phone.send(body)
+            run.step(
+                f"new-link-carries-phone-to-peer-{turn}",
+                lambda b=body: _latency(second.wait(lambda line: line.get("event") == "message" and line.get("body") == b, 20)),
+            )
+            body = f"interop replace from peer {nonce} {turn}"
+            second.command(cmd="room", text=body)
+            run.step(f"new-link-carries-peer-to-phone-{turn}", lambda b=body: poll(lambda: _has(phone.state("nearby"), b), 15) and {})
+            time.sleep(30)
+        run.step("new-link-still-up", lambda: _still_linked(phone, peer_id))
+    finally:
+        if first.process:
+            first.process.kill()
+            first.process = None
+        second.stop()
+        shutil.rmtree(state / f"{INSTANCE}-b", ignore_errors=True)
+    print(json.dumps({"summary": "replace", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _custody_after_replace(peer: Peer, phone: Phone) -> dict:
+    """A replaced link is the same neighbour to the phone, so it does not push its profile again the way a new
+    link does; its frames reach this fresh process by back-fill, ahead of the key they verify against. Those are
+    dropped, 16 of them parked, and all marked seen, so their re-serves are duplicates for the SeenSet's 10
+    minutes (Android's pipeline does the same). Custody converges after that; the run does not wait for it, but
+    it does check that the key is the whole story."""
+    try:
+        return _converges(peer, phone, 120)
+    except TimeoutError:
+        dropped = peer.command(cmd="status")["dropped"]
+        difference = dict(LAST_CUSTODY_DIFFERENCE)
+        if difference.get("onlyPeer") or not dropped.get("noSenderKey"):
+            raise RuntimeError(f"custody differs, and not for want of the key: {difference}, dropped {dropped}") from None
+        return {"converged": False, "onlyPhone": difference["onlyPhone"], "noSenderKey": dropped["noSenderKey"]}
+
+
+def _replaced(phone: Phone, peer_id: str) -> dict | None:
+    log = phone.shell("logcat -d -s BluetoothMeshTransport:*")
+    lines = [line.split(": ", 1)[-1] for line in log.splitlines() if f"client {peer_id}" in line or f"link down: {peer_id}" in line]
+    return {"phoneLog": lines} if any("Replace" in line for line in lines) else None
+
+
+def _still_linked(phone: Phone, peer_id: str) -> dict:
+    log = phone.shell("logcat -d -s BluetoothMeshTransport:*")
+    downs = [line.split(": ", 1)[-1] for line in log.splitlines() if f"link down: {peer_id}" in line]
+    if downs:
+        raise RuntimeError(f"the phone dropped the link: {downs}")
+    if not any(p["nodeId"] == peer_id for p in phone.state()["reachable"]):
+        raise RuntimeError("the phone no longer holds the peer")
+    return {}
 
 
 def _fail(reason: str) -> dict:
@@ -407,6 +517,23 @@ def _received(state: dict, body: str) -> bool:
     return any(message.get("body") == body and message.get("received") for message in state.get("messages", []))
 
 
+def _aliases(peer: Peer, phone_id: str) -> dict:
+    own = peer.command(cmd="status")
+    phone = next((p for p in peer.command(cmd="peers")["peers"] if p["peer"] == phone_id), None)
+    if phone is None:
+        raise RuntimeError("the peer has not pinned the phone")
+    return {"peerDisplayName": own["displayName"], "peerAlias": own["alias"], "phoneAlias": phone["alias"]}
+
+
+def _file_records(peer: Peer) -> dict | None:
+    status = peer.command(cmd="status")
+    count = status.get("fileRecords", 0)
+    return {"fileRecords": count, "links": status["links"]} if count and status["links"] else None
+
+
+LAST_CUSTODY_DIFFERENCE: dict = {}
+
+
 def _converged(peer: Peer, phone: Phone) -> dict | None:
     ours = set(peer.command(cmd="digest")["ids"])
     store = phone.bridge("STORE")
@@ -414,7 +541,18 @@ def _converged(peer: Peer, phone: Phone) -> dict | None:
     theirs = set(store.get("allIds", [])) - expired
     if ours == theirs:
         return {"ids": len(ours)}
+    # Kept for the report when the poll gives up.
+    LAST_CUSTODY_DIFFERENCE.update(
+        onlyPeer=len(ours - theirs), onlyPhone=len(theirs - ours), samples=sorted(ours ^ theirs)[:5]
+    )
     return None
+
+
+def _converges(peer: Peer, phone: Phone, timeout: float) -> dict:
+    try:
+        return poll(lambda: _converged(peer, phone), timeout, every=10)
+    except TimeoutError as error:
+        raise TimeoutError(f"custody still differs: {LAST_CUSTODY_DIFFERENCE}") from error
 
 
 def _no_link_dropped(peer: Peer) -> dict:
@@ -447,7 +585,7 @@ def _all(expected: set[str], seen: set[str]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("check", "refusal", "soak"):
+    for name in ("check", "refusal", "replace", "soak"):
         sub = commands.add_parser(name)
         sub.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
         sub.add_argument("--radio-profile", default="android", choices=["android", "ios"])
@@ -456,7 +594,10 @@ def main() -> int:
         # Android's -90 dBm floor and may never dial it. A looser floor is a development aid, not law: nothing in
         # checklist L may pass only because of it.
         sub.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
-    commands.choices["check"].add_argument("--order", default="phone-dials", choices=["phone-dials", "peer-dials"])
+    for name in ("check", "replace"):
+        commands.choices[name].add_argument("--order", default="phone-dials", choices=["phone-dials", "peer-dials"])
+    commands.choices["check"].add_argument("--blank-name", action="store_true", help="run the peer with no name, so each side shows the alias")
+    commands.choices["check"].add_argument("--expect-avatar", action="store_true", help="the phone has a photo: check its FILE records")
     commands.choices["refusal"].add_argument("--seconds", type=float, default=120, help="how long to watch the dials fail")
     commands.choices["soak"].add_argument("--minutes", type=float, default=60)
     commands.choices["soak"].add_argument("--per-minute", type=float, default=12, help="posts a minute, both sides together")
@@ -467,7 +608,7 @@ def main() -> int:
     RECEIVE_MTU = arguments.receive_mtu
     if not PEER.exists():
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
-    return {"check": check, "refusal": refusal, "soak": soak}[arguments.command](arguments)
+    return {"check": check, "refusal": refusal, "replace": replace, "soak": soak}[arguments.command](arguments)
 
 
 if __name__ == "__main__":

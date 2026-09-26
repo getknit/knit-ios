@@ -194,9 +194,12 @@ extension LinkManager {
                 return []
             }
             return [.digest(ids, from: peer)]
-        case .fileHeader, .fileChunk, .fileEnd, .keepalive, .hello:
-            // Avatars and attachments are out of the MVP: their records are discarded as they stream by. A stray
-            // HELLO after the handshake means nothing, and a keepalive's arrival is all it says.
+        case .fileHeader, .fileChunk, .fileEnd:
+            // Avatars and attachments are out of the MVP: their records are discarded as they stream by.
+            discardedFileRecords += 1
+            return []
+        case .keepalive, .hello:
+            // A stray HELLO after the handshake means nothing, and a keepalive's arrival is all it says.
             return []
         }
     }

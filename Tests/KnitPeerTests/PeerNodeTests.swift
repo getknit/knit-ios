@@ -40,6 +40,7 @@ import Testing
         #expect(status["displayName"] as? String == Alias.alias(for: rig.keys.nodeId.string), "no name, so the alias")
         #expect(status["links"] as? Int == 0)
         #expect(status["custody"] as? Int == 1, "our own profile")
+        #expect(status["fileRecords"] as? Int == 0)
     }
 
     @Test func aBadLineIsAnswered() async throws {

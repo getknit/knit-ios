@@ -38,18 +38,23 @@ explicit direction.** Update this file in the change that ships an item.
     checklist L through knit-next's debug bridge.
   - **Tests:** a fake BlueZ on a peer-to-peer bus and Unix sockets run the whole radio in CI. Coverage is 90 %
     in `KnitBlueZ` and 99 % in `KnitPeer`, and both suites are clean under TSan and ASan.
-  - **Checklist L so far:** the first group passes 12 of 12 against the Pixel 3 with the phone dialing, twice in
-    a row (link, names both ways, the room both ways within 5 s, v1 DMs both ways with both ticks, custody
-    convergence, back-fill). With the peer dialing it passed 10 of 11 once, then failed to hold a link.
+  - **Checklist L so far** (the Pixel 3, `.agents/context/linux-peer.md` has the runs):
+    - **`android` profile against Android 2.7:** 12 of 12 in both dial orders, and 14 of 14 with a blank peer
+      name and a photo on the Pixel. That covers alias parity both ways and FILE records tolerated (the avatar's
+      3 records discarded, the link kept).
+    - **`ios` profile against Android 2.7:** the refusal reproduces (`interop.py refusal`).
+    - **`ios` profile against an A1 build:** 14 of 14 below the Pixel's id and 13 of 13 above it, and the
+      stale-link replacement holds (`interop.py replace`, 9 of 9).
   - **Found on the way:** bluetoothd holds every LE link after its channels close, which blocked the advert; the
-    radio now releases links itself (`.agents/context/linux-peer.md`, "What P4 found").
-  - **Still owed:** the `ios`-profile refusal against Android 2.7 (`interop.py refusal`); the `ios` group, which
-    needs A1; the two-peer relay line, which needs a second adapter; and the hour-long soak, which the
-    maintainer deferred.
+    radio now releases links itself. The `ios` profile no longer re-registers its advert when only the digest
+    cue moves (`.agents/context/linux-peer.md`, "What P4 found").
+  - **Still owed:** the `ios` group on the Moto G, which has the A1 build but whose mesh has not started; the
+    two-peer relay line, which needs a second adapter; and the hour-long soak, which the maintainer deferred.
   - **Before P8:** `KnitBlueZ` reads the GATT payload of a UUID-only advert, so the peer can dial an iPhone and
     set `FLAG_DIALS_GATT_PEERS`.
-- **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted. It is needed
-  before MVP acceptance and should land during P3 or P4. Not started.
+- **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
+  2026-09.shzv). Built and trialled on 2026-09-25 on branch `feat/a1-unsighted-dialer`, in the worktree
+  `~/source/knit-next-a1`; not yet committed or merged. The Pixel 3 and the Moto G run that build.
 - **Companion change A2 in knit-next:** merged on 2026-09-25 as `0c0756f6` and `1f3befcd`. Done.
 
 ## Next, after the MVP

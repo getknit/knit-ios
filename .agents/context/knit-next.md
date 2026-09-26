@@ -48,7 +48,8 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
 - **A1:** Android's responder accepts a HELLO from a dialer it never sighted, whatever the node id order;
   it replaces a stale link from such a dialer; teardown removes a link only if it is still the registered
   one; an unsighted link scores −90 dBm rather than −127. Without A1, an iPhone links to an Android phone
-  only when the iPhone's node id sorts higher.
+  only when the iPhone's node id sorts higher. Built as knit-next ADR 2026-09.shzv on branch
+  `feat/a1-unsighted-dialer`; `.agents/context/linux-peer.md` has its trial.
 - **A2** (merged as `0c0756f6` and `1f3befcd`): the golden vectors moved into JSON in `vectors/` that
   `GoldenVectorTest` reads, joined by keyed vectors (fixed identities, signed frames, a sealed v1 DM, the
   safety number, advert, HELLO, DIGEST and FNV hex) and a test that checks the fixtures this repo emits.

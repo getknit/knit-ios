@@ -132,9 +132,11 @@ final class LineCollector: Sendable {
         all.compactMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] }
     }
 
-    /// Waits, yielding, until a line matches, for at most a few thousand turns.
+    /// Waits, yielding, until a line matches, for at most five seconds. A count of turns is no budget: under
+    /// coverage instrumentation on a busy machine, five thousand of them ran out before the node wrote its line.
     func first(where match: ([String: Any]) -> Bool) async -> [String: Any]? {
-        for _ in 0..<5000 {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while ContinuousClock.now < deadline {
             if let line = objects.first(where: match) {
                 return line
             }

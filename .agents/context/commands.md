@@ -51,7 +51,12 @@ knit-peer scan --seconds 20                                       # the Knit nod
 knit-peer keygen --above <node id> [--below <node id>]            # an identity for one dial order
 knit-peer run --radio-profile android --name "knit-peer"          # JSON lines on stdin and stdout
 python3 scripts/interop.py check --device <adb serial> --order phone-dials   # checklist L, with the go-ahead
+python3 scripts/interop.py check … --blank-name --expect-avatar   # alias parity; FILE records from a phone with a photo
+python3 scripts/interop.py check … --radio-profile ios            # the ios group, against an A1 build
 python3 scripts/interop.py refusal --device <adb serial>          # the ios profile against Android 2.7
+python3 scripts/interop.py replace --device <adb serial>          # A1's stale-link replacement
+sudo scripts/hci1-supervision.sh                                  # hci1's supervision timeout to 5 s, until a replug
+scripts/hci1-supervision.sh --udev-rule                           # a udev rule that sets it on every plug-in
 ```
 
 ## Decisions

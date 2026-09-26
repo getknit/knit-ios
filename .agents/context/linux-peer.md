@@ -72,7 +72,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 - **State** lives in `~/.local/state/knit-peer/<instance>/`: `identity` (0600) and `profile.json`, which keeps the
   profile version and publish stamp across restarts. Custody, peers and messages live in memory.
 - **Control lines** are JSON objects with a `cmd`, and an optional `tag` that the reply echoes:
-  `status`, `peers` (names, aliases and safety numbers), `links` (links and sightings), `room` (`text`),
+  `status` (with `fileRecords`, the FILE records discarded so far), `peers` (names, aliases and safety numbers), `links` (links and sightings), `room` (`text`),
   `dm` (`to`, `text`), `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `deny-link` and
   `allow-link` (`peer`), `digest` (live custody ids and their fingerprint), `messages` (`conv`, `limit`) and
   `quit`.
@@ -81,8 +81,9 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 - **Log lines** carry `ms`, the wall-clock time, so they line up with a phone's logcat.
 
 `scripts/interop.py` runs checklist L against one phone through knit-next's debug bridge: `check` in either
-dial order, `refusal` for the `ios` profile against Android 2.7, and `soak`. It needs the session's go-ahead
-for the phone (`.agents/rules/devices.md`). It keeps the run on that phone:
+dial order (`--blank-name` for alias parity, `--expect-avatar` for FILE records, `--radio-profile ios` for the
+A1 group), `refusal` for the `ios` profile against Android 2.7, `replace` for A1's stale-link rule, and `soak`.
+It needs the session's go-ahead for the phone (`.agents/rules/devices.md`). It keeps the run on that phone:
 
 - **Before the peer starts**, it scans and picks a node id that no other phone in range dials.
 - **Once the peer is up**, it refuses every other phone with `deny-link`.
@@ -109,8 +110,11 @@ in range.
   2M PHY and 251-byte packets. The supervision timeout differs: 5 s when the Pixel dials, 420 ms when hci1
   does. 420 ms is the kernel's default for connections it makes (`le_supv_timeout`, 0x2a). A Pixel busy
   with three other links misses that much, and the link ends in `ETIMEDOUT`, often within a minute. Only root
-  can change it, per adapter and until the dongle is replugged:
-  `echo 500 | sudo tee /sys/kernel/debug/bluetooth/hci1/supervision_timeout` (units of 10 ms). Until then the
+  can change it, per adapter and until the dongle is replugged: `sudo scripts/hci1-supervision.sh` writes 500
+  (units of 10 ms) to `/sys/kernel/debug/bluetooth/hci1/supervision_timeout` once it has checked the adapter's
+  address, and `scripts/hci1-supervision.sh --udev-rule` prints a rule that does it on every plug-in. No normal
+  user can read the value back (`btmgmt` hangs, debugfs is root's). With it at 5 s,
+  the peer-dials order passed 12 of 12, and the Pixel's log showed the link at 5000 ms. Without it, the
   phone-dials order is the reliable one. `interop.py` loosens the peer's promotion floor to −100 dBm, a
   development aid that nothing may depend on, so that the peer dials a quiet phone at all.
 - **Back-fill is slow.** The Pixel sends its custody, 45 to 90 frames, at 0.5 to 0.8 KB/s, one record per write,
@@ -129,4 +133,35 @@ in range.
   boundary. The link manager drops the link on it, as Android does, and custody re-syncs after the redial.
   The short supervision timeout above is the likely trigger; the radio logs every read at debug level
   (`bluez chN read …`) to confirm it.
+- **The `ios` profile re-registered its advert on every custody change.** The digest cue moves with each frame
+  back-fill brings in, and the radio re-registered the advert each time, although neither the UUID-only advert
+  nor the GATT value (cue zeroed) changes with it. The kernel logged `Unexpected advertising set terminated
+  event` on `hci1` every second or two. The radio now re-registers only for bytes that reach the air.
+- **bluetoothd on this machine is degraded.** Since 02:17 on 2026-09-25 it has logged `Unable to register device
+  interface` for most newly found devices, about 14,000 times by evening; the log does not say which adapter
+  found them. The peer still works, since the phones' device objects already exist. A restart of bluetoothd
+  probably clears it, but it would also drop `hci0`'s live connections, so that is the maintainer's call.
+
+## What A1 showed
+
+Run on 2026-09-25 against the Pixel 3 on a knit-next build with companion change A1 (knit-next ADR 2026-09.shzv),
+the peer in the `ios` profile, so the Pixel never sights it.
+
+- **Android 2.7 refuses, as expected.** In 5 minutes the peer dialed the Pixel 5 times from below its id; 2 dials
+  connected, and the Pixel closed each right after the HELLO. 3 never connected, the usual cost of the peer
+  dialing.
+- **A1 admits in both orders.** The Pixel logs `bt accepted client <id> (Admit, sighted=false)`. From below its
+  id the checklist passed 14 of 14 and 13 of 13, and from above it 13 of 13.
+- **A1 replaces a stale link.** `interop.py replace` links one peer, freezes it (the kernel keeps its channel
+  open, so the Pixel's link goes quiet), then dials from a second process with the same identity. The Pixel
+  logs `Replace, sighted=false` and no link-down for the replaced link, and the new link carries posts both
+  ways in 1.5 to 4.9 s.
+- **A replaced link is not a new neighbour to Android,** so the Pixel does not push its profile again. The
+  second process, holding no keys, gets the Pixel's frames by back-fill before the Pixel's profile, drops them
+  (77 in one run, 16 parked), and marks them seen, so custody converges only after the SeenSet's 10 minutes.
+  An iPhone that keeps its peers' keys will not see this.
+- **Two traps in the rig.** A frozen process still holds its advert and GATT application in bluetoothd, and
+  bluetoothd ended the whole ACL about a minute later, so the trial kills the frozen process once the phone
+  has replaced its link. Two processes with one identity must publish the same profile frame, or the phone
+  holds a copy the second never carries, so the second copies the first's state after the first is up.
 

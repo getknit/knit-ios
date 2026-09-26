@@ -93,6 +93,23 @@
             #expect(rig.fake.calls.filter { $0.hasSuffix("RegisterAdvertisement") }.count == 1)
         }
 
+        @Test func aNewCueMovesNothingInTheIOSProfileButANewPSMDoes() throws {
+            let rig = try LoopRig(profile: .ios)
+            rig.startAdvertising()
+            let first = try #require(rig.fake.registered.first)
+            var changed = LoopRig.ours
+            changed.digestCue = 99
+            rig.post(.advertise(changed))
+            rig.turn()
+            #expect(rig.fake.calls.filter { $0.hasSuffix("RegisterAdvertisement") }.count == 1, "the GATT value zeroes the cue")
+            changed.psm += 1
+            rig.post(.advertise(changed))
+            rig.settle { rig.fake.registered.count == 1 && rig.fake.registered.first != first }
+            try rig.fake.read(characteristic: rig.loop.application.characteristicPath)
+            rig.settle { rig.fake.readResult != nil }
+            #expect(try rig.fake.readResult?.get() == changed.gattValue)
+        }
+
         @Test func aPayloadWhileTheRadioIsDownWaitsForTheNextStart() throws {
             let rig = try LoopRig()
             rig.loop.connect(now: Monotonic.milliseconds())

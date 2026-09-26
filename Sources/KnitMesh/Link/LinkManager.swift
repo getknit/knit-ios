@@ -145,6 +145,8 @@ public final class LinkManager: MeshTransport {
 
     /// Frames dropped because they did not decode; the link stays up, as on Android.
     public internal(set) var undecodableFrames = 0
+    /// FILE records discarded as they streamed by (avatars and attachments are out of the MVP).
+    public internal(set) var discardedFileRecords = 0
 
     /// A link manager for `localId` over `radio`.
     public init(

@@ -154,6 +154,9 @@ public actor Mesh {
     /// Why frames were dropped so far.
     public var dropped: [DropReason: Int] { engine.dropped }
 
+    /// FILE records discarded so far, avatars and attachments alike.
+    public var discardedFileRecords: Int { links.discardedFileRecords }
+
     // MARK: Plumbing
 
     private func apply(_ linkEvents: [LinkManager.Event]) {
