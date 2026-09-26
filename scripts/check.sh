@@ -86,6 +86,9 @@ gate_analyze() {
 	# The Linux override keeps `import Foundation`, which SourceKit misattributes here; the file says why.
 	local configs=(--config .swiftlint.yml)
 	[[ "$(uname -s)" == Linux ]] && configs+=(--config scripts/swiftlint-analyze-linux.yml)
+	# SourceKit keeps every file's compiler instance, and the ten Clang modules it holds open, until the run ends.
+	# Docker's soft limit of 1024 descriptors runs out a hundred files in, so lift it to the hard limit.
+	ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
 	output=$(swiftlint analyze "${configs[@]}" --strict --quiet --compiler-log-path "$log" "${pure_targets[@]}" 2>&1) ||
 		status=$?
 	grep -v -E 'no such module|^[[:space:]]+(import|\^)' <<<"$output" || true

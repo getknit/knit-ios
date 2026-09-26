@@ -67,6 +67,10 @@ uploaded. The Mac Mini takes over iOS builds when it arrives.
   `scripts/swiftlint-analyze-linux.yml` holds the exclusions, since SwiftLint analyzes every file its
   configuration includes whatever paths it is given. The Mac runner analyzes the whole tree. Try `KnitAppCore`
   again on the next toolchain or SwiftLint, and drop it from the list once it passes.
+- **`swiftlint analyze` needs about ten file descriptors per analyzed file.** SourceKit keeps each file's
+  compiler instance and its Clang `.pcm` modules open until the run ends. The `swift` image's soft limit of
+  1024 runs out about a hundred files in, and SourceKit then fails every request and crashes (exit 132), so
+  `check.sh analyze` raises the soft limit to the hard one first.
 - **lintorama:** `zaventh/lintorama:7` runs yamllint, the GitLab CI schema, actionlint, shellcheck, mdl and
   editorconfig-checker over every tracked file, through its `lint-extras` entrypoint.
 
