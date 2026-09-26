@@ -46,6 +46,14 @@ import Testing
         #expect(!selection.owns("/org/bluez"))
     }
 
+    @Test func aDevicesPathComesFromItsAddress() throws {
+        let adapter = try AdapterSelection(name: "hci1", expectedAddress: "0A:BC:DE:00:00:A1")
+        let address = try #require(BluetoothAddress("4a:00:00:00:00:ef"))
+        #expect(BlueZDevice.path(of: address, on: adapter) == "/org/bluez/hci1/dev_4A_00_00_00_00_EF")
+        #expect(BluetoothAddress(bytes: address.bytes) == address)
+        #expect(BluetoothAddress(bytes: [1, 2, 3]) == nil)
+    }
+
     @Test func addressesParseEitherCaseAndPrintInUpperCase() throws {
         let address = try #require(BluetoothAddress("0a:bc:de:00:00:a1"))
         #expect(address.description == "0A:BC:DE:00:00:A1")
@@ -74,6 +82,11 @@ import Testing
         let target = try #require(device.dialTarget)
         #expect(target.isRandom)
         #expect(target.address.description == "4A:00:00:00:00:EF")
+        #expect(!device.connected)
+        device.apply(.properties([("Connected", .boolean(true))]))
+        #expect(device.connected)
+        device.apply(.properties([("Connected", .string("garbled"))]))
+        #expect(device.connected, "a value that is not a boolean changes nothing")
         device.invalidate(["RSSI", "Name"])
         #expect(device.rssi == nil)
         device.invalidate(["ServiceData"])

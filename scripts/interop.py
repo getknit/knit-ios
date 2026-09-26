@@ -31,6 +31,8 @@ ROOT = Path(__file__).resolve().parent.parent
 PEER = ROOT / ".build" / "out" / "Products" / "Debug-linux-x86_64" / "knit-peer"
 PACKAGE = "app.getknit.knit"
 INSTANCE = "interop"
+# A diagnostic knob for the L2CAP receive MTU, set with --receive-mtu.
+RECEIVE_MTU = ""
 
 
 class Phone:
@@ -51,17 +53,27 @@ class Phone:
             except subprocess.TimeoutExpired:
                 if attempt or ":" not in self.serial:
                     raise
-                subprocess.run(["adb", "disconnect", self.serial], capture_output=True, timeout=20, check=False)
-                subprocess.run(["adb", "connect", self.serial], capture_output=True, timeout=30, check=False)
+                self.reconnect()
         return ""
+
+    def reconnect(self) -> None:
+        """Drops and remakes this host's adb connection to the phone; nothing on the phone changes."""
+        subprocess.run(["adb", "disconnect", self.serial], capture_output=True, timeout=20, check=False)
+        subprocess.run(["adb", "connect", self.serial], capture_output=True, timeout=30, check=False)
 
     def bridge(self, action: str, **extras: str | int) -> dict:
         parts = [f"am broadcast -a {PACKAGE}.debug.{action} -p {PACKAGE}"]
         for key, value in extras.items():
             kind = "--ei" if isinstance(value, int) else "--es"
             parts.append(f"{kind} {key} {shlex.quote(str(value))}")
-        output = self.shell(" ".join(parts))
+        command = " ".join(parts)
+        output = self.shell(command)
         match = re.search(r'data="(.*)"\s*$', output.strip(), re.S)
+        if not match and ":" in self.serial:
+            # A network adb link sometimes answers with nothing at all; reconnect and ask once more.
+            self.reconnect()
+            output = self.shell(command)
+            match = re.search(r'data="(.*)"\s*$', output.strip(), re.S)
         if not match:
             raise RuntimeError(f"no bridge reply to {action}: {output.strip()[:200]}")
         # The bridge writes its JSON between the quotes as it is, unescaped.
@@ -86,11 +98,12 @@ class Peer:
     the 12 s promotion dwell lets either side dial: the go-ahead covers one phone, and the rest of the mesh should
     not carry the run's traffic."""
 
-    def __init__(self, profile: str, name: str, refuse: set[str], log_level: str) -> None:
+    def __init__(self, profile: str, name: str, refuse: set[str], log_level: str, rssi_floor: int | None) -> None:
         self.profile = profile
         self.name = name
         self.refuse = refuse
         self.log_level = log_level
+        self.rssi_floor = rssi_floor
         self.process: subprocess.Popen[str] | None = None
         self.events: queue.Queue[dict] = queue.Queue()
         self.seen: list[dict] = []
@@ -98,6 +111,10 @@ class Peer:
 
     def start(self) -> None:
         command = [str(PEER), "run", "--instance", INSTANCE, "--radio-profile", self.profile, "--name", self.name, "--log", self.log_level]
+        if self.rssi_floor is not None:
+            command += ["--rssi-floor", str(self.rssi_floor)]
+        if RECEIVE_MTU:
+            command += ["--receive-mtu", RECEIVE_MTU]
         log = open(ROOT / ".build" / "interop-peer.log", "a", encoding="utf-8")  # noqa: SIM115 - lives with the process
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, text=True, bufsize=1)
         threading.Thread(target=self._read, daemon=True).start()
@@ -227,7 +244,7 @@ def check(arguments: argparse.Namespace) -> int:
             {"run": "check", "phone": phone_id, "phoneName": phone_name, "peer": peer_id, "order": arguments.order, "refused": sorted(others)}
         )
     )
-    peer = Peer(arguments.radio_profile, f"knit-peer {nonce}", others, arguments.peer_log)
+    peer = Peer(arguments.radio_profile, f"knit-peer {nonce}", others, arguments.peer_log, arguments.rssi_floor)
     peer.start()
     try:
         run.step("link", lambda: link_up(peer, phone, phone_id) and {})
@@ -298,7 +315,7 @@ def refusal(arguments: argparse.Namespace) -> int:
     print(json.dumps({"run": "refusal", "phone": phone_id, "peer": peer_id, "refused": sorted(others)}))
     log = ROOT / ".build" / "interop-peer.log"
     before = log.stat().st_size if log.exists() else 0
-    peer = Peer("ios", "knit-peer refusal", others, "debug")
+    peer = Peer("ios", "knit-peer refusal", others, "debug", arguments.rssi_floor)
     peer.start()
     try:
         deadline = time.monotonic() + arguments.seconds
@@ -329,7 +346,7 @@ def _fail(reason: str) -> dict:
 def soak(arguments: argparse.Namespace) -> int:
     phone = Phone(arguments.device)
     phone_id = phone.state()["self"]["nodeId"]
-    peer = Peer(arguments.radio_profile, "knit-peer soak", others_in_range(phone_id), arguments.peer_log)
+    peer = Peer(arguments.radio_profile, "knit-peer soak", others_in_range(phone_id), arguments.peer_log, arguments.rssi_floor)
     peer.start()
     run = Run()
     sent_by_peer: set[str] = set()
@@ -435,11 +452,19 @@ def main() -> int:
         sub.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
         sub.add_argument("--radio-profile", default="android", choices=["android", "ios"])
         sub.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+        # Knit advertises at medium power (the Pixel 3's controller picks -11 dBm), so the peer hears a phone near
+        # Android's -90 dBm floor and may never dial it. A looser floor is a development aid, not law: nothing in
+        # checklist L may pass only because of it.
+        sub.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     commands.choices["check"].add_argument("--order", default="phone-dials", choices=["phone-dials", "peer-dials"])
     commands.choices["refusal"].add_argument("--seconds", type=float, default=120, help="how long to watch the dials fail")
     commands.choices["soak"].add_argument("--minutes", type=float, default=60)
     commands.choices["soak"].add_argument("--per-minute", type=float, default=12, help="posts a minute, both sides together")
+    for sub in commands.choices.values():
+        sub.add_argument("--receive-mtu", default="", help="the receive MTU each peer channel offers, for diagnosis")
     arguments = parser.parse_args()
+    global RECEIVE_MTU  # noqa: PLW0603 - one knob, read by Peer.start
+    RECEIVE_MTU = arguments.receive_mtu
     if not PEER.exists():
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
     return {"check": check, "refusal": refusal, "soak": soak}[arguments.command](arguments)

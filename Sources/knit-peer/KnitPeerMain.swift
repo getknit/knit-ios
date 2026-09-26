@@ -112,8 +112,18 @@ import Foundation
                 ?? SilentLog()
             let selection = checkedAdapter(options.adapter, options.adapterAddress, log: log)
             let profile = RadioProfile(name: options.radioProfile) ?? .android
-            let radio = BlueZRadio(configuration: BlueZRadio.Configuration(adapter: selection, profile: profile, log: log))
-            let node = makeNode(options, radio: radio, profile: profile, log: log)
+            var radioConfiguration = BlueZRadio.Configuration(adapter: selection, profile: profile, log: log)
+            if let mtu = options.receiveMTU.flatMap(UInt16.init(exactly:)) {
+                radioConfiguration.sockets = L2CAPSockets(adapter: selection.address, receiveMTU: mtu)
+                log.log(.info, "channels offer a receive MTU of \(mtu)")
+            }
+            let radio = BlueZRadio(configuration: radioConfiguration)
+            var links = LinkManager.Configuration()
+            if let floor = options.rssiFloor {
+                links.promotion.rssiFloor = Double(floor)
+                log.log(.info, "promotion floor loosened to \(floor) dBm for development; Android's is -90")
+            }
+            let node = makeNode(options, radio: radio, profile: profile, links: links, log: log)
             let signals = stopOnSignals(node, radio)
             await node.start(name: options.name)
             for await line in StandardInput.lines() where !line.isEmpty {
@@ -129,7 +139,13 @@ import Foundation
         }
 
         /// The node, on the identity and profile kept in the state directory, with everything else in memory.
-        private static func makeNode(_ options: RunOptions, radio: BlueZRadio, profile: RadioProfile, log: any KnitLog) -> PeerNode {
+        private static func makeNode(
+            _ options: RunOptions,
+            radio: BlueZRadio,
+            profile: RadioProfile,
+            links: LinkManager.Configuration,
+            log: any KnitLog
+        ) -> PeerNode {
             let state = PeerState(directory: options.stateDirectory)
             let identity: IdentityKeys.Loaded
             do {
@@ -151,6 +167,7 @@ import Foundation
                 radioProfile: profile.name,
                 clock: SystemClock(),
                 random: SystemRandomNumberGenerator(),
+                linkConfiguration: links,
                 log: log,
                 output: Lines.output.write
             )

@@ -14,11 +14,14 @@
         let limit: Int
         /// Makes ``listen()`` fail, as a missing adapter would.
         let failsToListen: Bool
+        /// Who every accepted channel claims to come from, as an L2CAP socket's peer address says.
+        let acceptedPeer: DialTarget?
 
-        init(directory: String, limit: Int = 100, failsToListen: Bool = false) {
+        init(directory: String, limit: Int = 100, failsToListen: Bool = false, acceptedPeer: DialTarget? = nil) {
             self.directory = directory
             self.limit = limit
             self.failsToListen = failsToListen
+            self.acceptedPeer = acceptedPeer
         }
 
         var listenerPath: String { directory + "/listener" }
@@ -54,6 +57,10 @@
 
         func sendLimit(of _: Int32) -> Int {
             limit
+        }
+
+        func peer(of _: Int32) -> DialTarget? {
+            acceptedPeer
         }
 
         static func socket(blocking: Bool = false) throws(SocketError) -> Int32 {

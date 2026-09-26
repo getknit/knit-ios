@@ -66,6 +66,7 @@
         @Test func aChannelWhoseMTUIsUnknownWritesTheSmallestSDU() throws {
             let sockets = L2CAPSockets(adapter: try #require(BluetoothAddress("00:00:00:00:00:01")))
             #expect(sockets.sendLimit(of: -1) == L2CAPSockets.fallbackSendMTU)
+            #expect(sockets.peer(of: -1) == nil)
         }
 
         @Test func aClosedDescriptorFailsEveryCall() {

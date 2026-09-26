@@ -63,6 +63,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | Command | Does |
 | --- | --- |
 | `knit-peer run [--radio-profile android\|ios] [--instance NAME] [--name NAME] [--log debug\|info\|warning\|off]` | runs the node; JSON lines in on stdin, out on stdout, logs on stderr |
+| `knit-peer run … --rssi-floor -100 --receive-mtu 247` | development knobs: a promotion floor below Android's −90 dBm, and the L2CAP receive MTU (65535 by default) |
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing; `--advertise` also shows the advert |
 | `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window |
 
@@ -88,24 +89,44 @@ for the phone (`.agents/rules/devices.md`). It keeps the run on that phone:
 
 ## What P4 found
 
-Measured on 2026-09-25 against the Pixel 3, with three other Knit phones in range.
+Measured on 2026-09-25 against the Pixel 3, less than a metre from the dongle, with three other Knit phones
+in range.
 
-- **No advertising while a phone is linked.** `Roles` on hci1 is `central` and `peripheral`, without
-  `central-peripheral`. While any phone is connected to the peer, `RegisterAdvertisement` fails with
-  `org.bluez.Error.Failed`, and the advert that was up is silent until the link closes. So one phone dialing
-  in, even one refused at its HELLO, hides the peer from every other phone. The radio keeps retrying every 5 s.
-- **Phones are heard rarely.** A scan hears each busy phone (three links and Wi-Fi Aware) only 2 to 10 times
-  in 30 s, though Android advertises once a second, while other BLE devices nearby come through 20 to 44
-  times in 20 s. Restarting discovery every 1 or 3 s changed nothing, so it was taken out. When the peer
-  dials, promotion's 12 s dwell with gaps under 8 s can take a minute or more.
-- **Back-fill is slow on a weak link.** At −84 dBm the Pixel sent its custody, about 45 frames, at roughly
-  1 KB/s, one record per write. A post it makes meanwhile queues behind that and arrives about 10 s late.
-  Posts made once custody has converged arrive within the MVP's 5 s.
+- **bluetoothd keeps a link after the channel closes.** On every LE connection bluetoothd attaches its own
+  GATT client and reads the peer's services, and that holds the ACL up after every L2CAP channel on it has
+  closed. A link from spike (e) was still up hours later. While one is held, the adapter stays a peripheral,
+  and this controller cannot advertise connectable while it is one. `Roles` lacks `central-peripheral`, and
+  `RegisterAdvertisement` fails with `org.bluez.Error.Failed`. The Pixel's dials then end in the controller
+  with HCI status 0x02, cancelled before our advert was ever heard (its `dumpsys bluetooth_manager` snoop
+  summary). So the radio asks BlueZ to disconnect a device once its last channel closes, when the plane goes
+  down, and at start for any link left from before. With that, the phone-dials order passed 12 of 12 twice.
+- **The Pixel advertises quietly.** Knit asks for `TX_POWER_MEDIUM`, and the Pixel's controller picks −11 dBm, so
+  the dongle hears it at −84 to −88 dBm while the Pixel hears the dongle at −55. A scan hears it only 3 to 10
+  times in 30 s. Other BLE devices nearby come through 20 to 44 times in 20 s, and restarting discovery
+  changed nothing. When the peer must dial the Pixel, promotion (12 s of dwell at −90 dBm or better) took up
+  to nine minutes.
+- **A link the peer dials times out in 420 ms.** The Pixel's HCI log shows every link at a 45 ms interval, the
+  2M PHY and 251-byte packets. The supervision timeout differs: 5 s when the Pixel dials, 420 ms when hci1
+  does. 420 ms is the kernel's default for connections it makes (`le_supv_timeout`, 0x2a). A Pixel busy
+  with three other links misses that much, and the link ends in `ETIMEDOUT`, often within a minute. Only root
+  can change it, per adapter and until the dongle is replugged:
+  `echo 500 | sudo tee /sys/kernel/debug/bluetooth/hci1/supervision_timeout` (units of 10 ms). Until then the
+  phone-dials order is the reliable one. `interop.py` loosens the peer's promotion floor to −100 dBm, a
+  development aid that nothing may depend on, so that the peer dials a quiet phone at all.
+- **Back-fill is slow.** The Pixel sends its custody, 45 to 90 frames, at 0.5 to 0.8 KB/s, one record per write,
+  in either dial order and at a 247 or a 65535 receive MTU alike: about two writes a second whatever their
+  size. knit-next does not pace it, and the link parameters above are sound, so the Pixel's own stack is the
+  limit. A post made meanwhile queues behind it and arrives about 10 s late. Posts made once custody has
+  converged arrived in 1.3 to 2.9 s, within the MVP's 5 s.
 - **The kernel binds to any address.** An LE socket binds and even listens on `00:00:00:00:00:01`, an address no
   adapter has. The BlueZ address check is therefore the only thing that keeps the peer on its own adapter,
   and no test opens a Bluetooth socket.
-- **adb over the network goes stale** while the phone sleeps: `adb shell` hangs although `adb devices` lists it.
-  `interop.py` reconnects that one serial and retries once.
-- **One corrupted stream,** once in six runs: a record with tag 0 after the link had dropped with `ETIMEDOUT` and
-  redialed. The radio logs every read at debug level (`bluez chN read …`), for the next time it happens.
+- **adb over the network goes stale** while the phone sleeps: `adb shell` hangs or returns nothing although
+  `adb devices` lists it. `interop.py` reconnects that one serial and retries once.
+- **A corrupted stream,** twice, both with the peer dialing: once a record with tag 0 after an `ETIMEDOUT`
+  redial, and once a single 65,535-byte read, the whole receive MTU, starting `00 00 00 58`, after 79 s of
+  quiet. Android never writes more than 8 KiB, so the kernel handed up a bogus SDU, apparently from a lost SDU
+  boundary. The link manager drops the link on it, as Android does, and custody re-syncs after the redial.
+  The short supervision timeout above is the likely trigger; the radio logs every read at debug level
+  (`bluez chN read …`) to confirm it.
 

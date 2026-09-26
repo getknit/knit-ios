@@ -17,6 +17,14 @@ public struct BluetoothAddress: Hashable, Sendable, CustomStringConvertible {
         bytes = parsed
     }
 
+    /// An address from its six bytes, most significant first.
+    init?(bytes: [UInt8]) {
+        guard bytes.count == Self.byteCount else {
+            return nil
+        }
+        self.bytes = bytes
+    }
+
     /// The bytes in the kernel's `bdaddr_t` order, least significant first.
     public var littleEndian: [UInt8] {
         bytes.reversed()

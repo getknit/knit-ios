@@ -9,9 +9,9 @@
     /// Every socket binds to the adapter's address before it listens or dials, so the kernel can use no other
     /// adapter. That is what keeps the peer off `hci0`.
     public struct L2CAPSockets: SocketProvider {
-        /// What each channel offers to receive in one SDU: the largest an LE channel allows, so Android's 8 KiB
-        /// writes arrive whole. The radio reads 64 KiB at a time, which holds one.
-        static let receiveMTU: UInt16 = 65_535
+        /// What each channel offers to receive in one SDU, by default: the largest an LE channel allows, so
+        /// Android's 8 KiB writes arrive whole. The radio reads 64 KiB at a time, which holds one.
+        public static let largestReceiveMTU: UInt16 = 65_535
         /// Android caps each of its writes at 8 KiB, and so does this.
         static let largestWrite = 8192
         /// The smallest SDU an LE channel must carry, when the kernel will not say.
@@ -20,14 +20,17 @@
 
         /// The adapter every socket binds to.
         public let adapter: BluetoothAddress
+        /// The receive MTU each socket offers. The kernel also caps the segment size at it.
+        public let receiveMTU: UInt16
 
-        /// Sockets on the adapter with `adapter`'s address.
-        public init(adapter: BluetoothAddress) {
+        /// Sockets on the adapter with `adapter`'s address, offering `receiveMTU`.
+        public init(adapter: BluetoothAddress, receiveMTU: UInt16 = largestReceiveMTU) {
             self.adapter = adapter
+            self.receiveMTU = receiveMTU
         }
 
         public func listen() throws(SocketError) -> ListeningSocket {
-            let descriptor = try Self.open(on: adapter)
+            let descriptor = try Self.open(on: adapter, receiveMTU: receiveMTU)
             do throws(SocketError) {
                 guard Glibc.listen(descriptor, Self.backlog) == 0 else {
                     throw SocketError(call: "listen", code: errno)
@@ -48,7 +51,7 @@
         }
 
         public func dial(_ target: DialTarget, psm: UInt16) throws(SocketError) -> Int32 {
-            let descriptor = try Self.open(on: adapter)
+            let descriptor = try Self.open(on: adapter, receiveMTU: receiveMTU)
             var remote = Self.address(target.address, type: target.isRandom ? KNIT_BDADDR_LE_RANDOM : KNIT_BDADDR_LE_PUBLIC, psm: psm)
             let result = withUnsafePointer(to: &remote) { pointer in
                 pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(descriptor, $0, Self.addressLength) }
@@ -70,8 +73,23 @@
             return min(Int(mtu), Self.largestWrite)
         }
 
+        public func peer(of descriptor: Int32) -> DialTarget? {
+            var remote = knit_sockaddr_l2()
+            var length = Self.addressLength
+            let named = withUnsafeMutablePointer(to: &remote) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { getpeername(descriptor, $0, &length) }
+            }
+            guard named == 0 else {
+                return nil
+            }
+            let random = Int32(remote.l2_bdaddr_type) == KNIT_BDADDR_LE_RANDOM
+            // bdaddr_t is least significant first.
+            let address = withUnsafeBytes(of: remote.l2_bdaddr) { BluetoothAddress(bytes: Array($0.reversed())) }
+            return address.map { DialTarget(address: $0, isRandom: random) }
+        }
+
         /// A non-blocking LE socket bound to the adapter, at low security, offering the large receive MTU.
-        private static func open(on adapter: BluetoothAddress) throws(SocketError) -> Int32 {
+        private static func open(on adapter: BluetoothAddress, receiveMTU: UInt16) throws(SocketError) -> Int32 {
             let kind = Int32(SOCK_SEQPACKET.rawValue) | Int32(SOCK_NONBLOCK.rawValue) | Int32(SOCK_CLOEXEC.rawValue)
             let descriptor = socket(KNIT_AF_BLUETOOTH, kind, KNIT_BTPROTO_L2CAP)
             guard descriptor >= 0 else {

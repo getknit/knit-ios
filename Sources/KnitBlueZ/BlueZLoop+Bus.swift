@@ -116,6 +116,12 @@
                     devices[object.path, default: BlueZDevice(path: object.path)].apply(interface.properties)
                 }
             }
+            // A link left from before, held by bluetoothd's own GATT client, keeps the adapter a peripheral, and
+            // this controller cannot advertise while it is one. The adapter is the peer's alone, so let it go.
+            for (path, device) in devices.sorted(by: { $0.key < $1.key }) where device.connected {
+                log.log(.info, "bluez dropping a link left from before: \(path)")
+                dropLink(to: path, now: now)
+            }
             reconcile(now: now)
         }
 
@@ -236,6 +242,21 @@
             }
             scanning = false
             adapterCall("StopDiscovery", interface: BlueZ.adapterInterface, [], now: now)
+        }
+
+        /// Asks BlueZ to drop its link to a device on this adapter. When a channel closes, bluetoothd's GATT client
+        /// keeps the link up; the adapter then stays a peripheral, and this controller cannot advertise while it is
+        /// one (ADR 2026-09.5ftc). A device that has already gone answers `NotConnected`, which is fine.
+        func dropLink(to path: String, now: Int64) {
+            guard let bus, bus.isOpen, configuration.adapter.owns(path), path != configuration.adapter.path,
+                let call = BusMessage.methodCall(
+                    destination: BlueZ.service, path: path, interface: BlueZ.deviceInterface, member: "Disconnect")
+            else {
+                return
+            }
+            bus.call(call, now: now) { [weak self] result in
+                self?.log.log(.debug, "bluez disconnect \(path): \((try? result.get()) == nil ? "not connected" : "done")")
+            }
         }
 
         /// Calls a method on the adapter and logs a failure; nothing waits on these.

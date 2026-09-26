@@ -37,14 +37,17 @@ implementation instead of this one. knit-next's emulator script takes the same d
 **Consequences / limits:**
 
 - **No advertising while linked.** The RTL8761BU cannot advertise while a peer is connected to it: `Roles` lacks
-  `central-peripheral`, and `RegisterAdvertisement` fails until the link closes. While one phone is linked to
-  the peer, no other phone can find it, so an interop run keeps every other phone from dialing it (the `keygen`
-  window, then `deny-link`).
-- **Sparse sightings.** The peer hears a busy Android phone only 2 to 10 times in 30 s. Restarting discovery made
-  no difference; the phones' own links and Wi-Fi Aware seem to crowd out their adverts. Promotion in the
-  peer-dials order therefore takes up to a minute.
-- **Slow back-fill.** Over a link at −84 dBm, Android's back-fill runs at about 1 KB/s, and a new post queues
-  behind it. `interop.py` times posts only after custody converges.
+  `central-peripheral`, and `RegisterAdvertisement` fails until the link closes. bluetoothd's own GATT client
+  holds every LE link up after its channels close, which left the peer unreachable for hours after spike (e).
+  So the radio disconnects a device once its last channel closes, when it goes down, and at start
+  (`BlueZChannelTests`' link-release cases). An interop run also keeps every other phone from dialing the
+  peer (the `keygen` window, then `deny-link`).
+- **The peer dialing a phone is fragile.** The Pixel advertises at −11 dBm, so the peer hears it near the
+  promotion floor and rarely; `--rssi-floor` loosens the floor for development only. A link the kernel dials
+  gets its 420 ms default supervision timeout, where Android's own is 5 s, and a busy phone misses that. The
+  phone-dials order is the reliable one for checklist L until hci1's `supervision_timeout` is raised.
+- **Slow back-fill.** Android's back-fill runs at about 1 KB/s over this pair, and a new post queues behind it.
+  `interop.py` times posts only after custody converges.
 - **Not tested here.** Relaying between two peers needs a second adapter. Reading a GATT payload from a
   UUID-only advert is not built, so the advert never sets `FLAG_DIALS_GATT_PEERS`.
 - **Guards.** `BlueZLoopTests`, `BlueZAdvertTests`, `BlueZChannelTests`, `BlueZModelTests`' `hci0IsRefusedWhateverItsAddress`

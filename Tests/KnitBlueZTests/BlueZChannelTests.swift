@@ -136,5 +136,86 @@
             #expect(rig.loop.channels.isEmpty)
             #expect(remote.sawEnd())
         }
+
+        // MARK: Letting go of links
+
+        @Test func closingTheLastChannelToADeviceDropsItsLink() throws {
+            let rig = try LoopRig()
+            rig.start()
+            let listener = try RemoteListener(for: try LoopRig.target(), psm: UnixSockets.psm, in: rig.sockets.directory)
+            let (id, remote) = try rig.dialPeer(listener)
+            rig.post(.close(id))
+            rig.settle { rig.fake.disconnected == [LoopRig.peerPath] }
+            rig.settle { rig.log.all.contains("bluez disconnect \(LoopRig.peerPath): done") }
+            _ = remote
+        }
+
+        @Test func noLinkIsDroppedOffThisAdapter() throws {
+            let rig = try LoopRig()
+            rig.start()
+            rig.loop.dropLink(to: LoopRig.otherPath, now: Monotonic.milliseconds())
+            rig.loop.dropLink(to: FakeBlueZ.adapter, now: Monotonic.milliseconds())
+            rig.turn()
+            #expect(rig.fake.disconnected.isEmpty, "hci0's devices, and the adapter itself, are never asked to disconnect")
+        }
+
+        @Test func aPeerHangingUpDropsItsLinkToo() throws {
+            let rig = try LoopRig()
+            rig.start()
+            let listener = try RemoteListener(for: try LoopRig.target(), psm: UnixSockets.psm, in: rig.sockets.directory)
+            let (_, remote) = try rig.dialPeer(listener)
+            remote.hangUp()
+            rig.settle { rig.fake.disconnected == [LoopRig.peerPath] }
+        }
+
+        @Test func aDeviceWithTwoChannelsKeepsItsLinkUntilBothClose() throws {
+            let rig = try LoopRig()
+            rig.start()
+            let listener = try RemoteListener(for: try LoopRig.target(), psm: UnixSockets.psm, in: rig.sockets.directory)
+            let (first, firstRemote) = try rig.dialPeer(listener)
+            let second = rig.mailbox.nextChannel()
+            rig.post(.dial(second, RadioAddress(LoopRig.peerPath), psm: UnixSockets.psm))
+            rig.settle { rig.events.contains(.connected(second)) }
+            let secondRemote = try #require(listener.accept())
+            rig.post(.close(first))
+            rig.settle { rig.events.contains(.closed(first)) }
+            rig.turn()
+            #expect(rig.fake.disconnected.isEmpty)
+            rig.post(.close(second))
+            rig.settle { rig.fake.disconnected == [LoopRig.peerPath] }
+            _ = (firstRemote, secondRemote)
+        }
+
+        @Test func aPeerThatDialedUsIsLetGoByItsAddress() throws {
+            let rig = try LoopRig(acceptedPeer: try LoopRig.target())
+            rig.start()
+            let remote = try RemoteEnd.dial(rig.sockets)
+            rig.settle { rig.lastAccepted != nil }
+            let id = try #require(rig.lastAccepted)
+            rig.post(.close(id))
+            rig.settle { rig.fake.disconnected == [LoopRig.peerPath] }
+            _ = remote
+        }
+
+        @Test func goingDownLetsGoOfEveryLinkWithAChannel() throws {
+            let rig = try LoopRig()
+            rig.start()
+            let listener = try RemoteListener(for: try LoopRig.target(), psm: UnixSockets.psm, in: rig.sockets.directory)
+            let (_, remote) = try rig.dialPeer(listener)
+            rig.post(.stop)
+            rig.settle { rig.fake.disconnected == [LoopRig.peerPath] }
+            _ = remote
+        }
+
+        @Test func aLinkLeftFromBeforeIsDroppedAtStart() throws {
+            let rig = try LoopRig()
+            rig.fake.knownDevices[LoopRig.peerPath] = .properties([
+                ("Address", .string(LoopRig.peerAddress)), ("Connected", .boolean(true)),
+            ])
+            rig.fake.knownDevices[LoopRig.peerPath + "0"] = FakeBlueZ.device(address: "4A:00:00:00:00:E0", advert: nil)
+            rig.start()
+            rig.settle { rig.fake.disconnected == [LoopRig.peerPath] }
+            #expect(rig.log.all.contains { $0.contains("left from before") })
+        }
     }
 #endif

@@ -35,6 +35,8 @@
         var refuseNextRegistration = false
         /// Answers `GetManagedObjects` with an error, as a bus with no bluetoothd does.
         var refusesInventory = false
+        /// The devices the radio asked to disconnect, in order.
+        private(set) var disconnected: [String] = []
 
         init() throws {
             server = try BusServer()
@@ -94,6 +96,9 @@
                 return register(application: arguments.first?.text ?? "", call: call)
             case (BlueZ.gattManager, "UnregisterApplication"):
                 applicationRoot = nil
+                return .values([])
+            case (BlueZ.deviceInterface, "Disconnect"):
+                disconnected.append(call.path ?? "")
                 return .values([])
             default:
                 return .unknown

@@ -38,12 +38,11 @@ explicit direction.** Update this file in the change that ships an item.
     checklist L through knit-next's debug bridge.
   - **Tests:** a fake BlueZ on a peer-to-peer bus and Unix sockets run the whole radio in CI. Coverage is 90 %
     in `KnitBlueZ` and 99 % in `KnitPeer`, and both suites are clean under TSan and ASan.
-  - **Checklist L so far:** the first group passed 11 of 11 against the Pixel 3 with the phone dialing (link,
-    names both ways, the room both ways, v1 DMs both ways with both ticks, custody convergence, back-fill),
-    and 10 of 11 with the peer dialing.
-  - **Blocked on the radio path:** later runs failed at connection setup on both sides, in a control run of
-    spike (e)'s own tools too. The Pixel had drifted to about −84 dBm from −55 in the morning. The rest waits
-    for the phone to sit nearer the dongle.
+  - **Checklist L so far:** the first group passes 12 of 12 against the Pixel 3 with the phone dialing, twice in
+    a row (link, names both ways, the room both ways within 5 s, v1 DMs both ways with both ticks, custody
+    convergence, back-fill). With the peer dialing it passed 10 of 11 once, then failed to hold a link.
+  - **Found on the way:** bluetoothd holds every LE link after its channels close, which blocked the advert; the
+    radio now releases links itself (`.agents/context/linux-peer.md`, "What P4 found").
   - **Still owed:** the `ios`-profile refusal against Android 2.7 (`interop.py refusal`); the `ios` group, which
     needs A1; the two-peer relay line, which needs a second adapter; and the hour-long soak, which the
     maintainer deferred.

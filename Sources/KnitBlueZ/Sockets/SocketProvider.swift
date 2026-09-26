@@ -55,4 +55,8 @@ public protocol SocketProvider: Sendable {
 
     /// The largest single write an open channel takes.
     func sendLimit(of descriptor: Int32) -> Int
+
+    /// Who is on the other end of an accepted channel, so the radio can let go of that device's link when the
+    /// channel closes, or `nil` when the socket cannot say.
+    func peer(of descriptor: Int32) -> DialTarget?
 }

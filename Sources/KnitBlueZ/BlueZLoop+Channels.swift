@@ -15,7 +15,7 @@
             }
             do {
                 let descriptor = try configuration.sockets.dial(target, psm: psm)
-                channels[id] = Channel(descriptor: descriptor, connecting: true)
+                channels[id] = Channel(descriptor: descriptor, connecting: true, devicePath: address.rawValue)
             } catch {
                 log.log(.info, "bluez dial \(id) failed: \(error.call) errno \(error.code)")
                 emit(.dialFailed(id))
@@ -28,7 +28,13 @@
             }
             while let descriptor = Descriptor.accept(listener.descriptor) {
                 let id = mailbox.nextChannel()
-                channels[id] = Channel(descriptor: descriptor, connecting: false, limit: configuration.sockets.sendLimit(of: descriptor))
+                let device = configuration.sockets.peer(of: descriptor).map { BlueZDevice.path(of: $0.address, on: configuration.adapter) }
+                channels[id] = Channel(
+                    descriptor: descriptor,
+                    connecting: false,
+                    devicePath: device,
+                    limit: configuration.sockets.sendLimit(of: descriptor)
+                )
                 log.log(.debug, "bluez accepted \(id)")
                 emit(.accepted(id))
                 let due = now + configuration.readvertiseDelayMilliseconds
@@ -126,13 +132,16 @@
             }
         }
 
-        /// Closes a channel and reports it closed, whoever asked.
+        /// Closes a channel and reports it closed, whoever asked, and drops the device's link once no channel uses it.
         func closeChannel(_ id: ChannelID) {
             guard let channel = channels.removeValue(forKey: id) else {
                 return
             }
             Descriptor.close(channel.descriptor)
             emit(.closed(id))
+            if let path = channel.devicePath, !channels.values.contains(where: { $0.devicePath == path }) {
+                dropLink(to: path, now: Monotonic.milliseconds())
+            }
         }
     }
 #endif

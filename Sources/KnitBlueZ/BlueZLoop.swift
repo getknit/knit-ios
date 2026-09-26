@@ -29,6 +29,8 @@
         struct Channel {
             let descriptor: Int32
             var connecting: Bool
+            /// The BlueZ device on the other end, when known: its link is dropped once its last channel closes.
+            var devicePath: String?
             /// The largest single write, known once the channel is open.
             var limit = 0
             var outbox: [[UInt8]] = []
@@ -246,7 +248,11 @@
             for (_, channel) in channels {
                 Descriptor.close(channel.descriptor)
             }
+            let linked = Set(channels.values.compactMap(\.devicePath))
             channels.removeAll()
+            for path in linked.sorted() {
+                dropLink(to: path, now: now)
+            }
             if let listener {
                 Descriptor.close(listener.descriptor)
             }

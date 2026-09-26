@@ -44,10 +44,12 @@
             profile: RadioProfile = .android,
             expectedAddress: String = FakeBlueZ.adapterAddress,
             failsToListen: Bool = false,
-            limit: Int = 100
+            limit: Int = 100,
+            acceptedPeer: DialTarget? = nil
         ) throws {
             fake = try FakeBlueZ()
-            sockets = UnixSockets(directory: UnixSockets.temporaryDirectory(), limit: limit, failsToListen: failsToListen)
+            sockets = UnixSockets(
+                directory: UnixSockets.temporaryDirectory(), limit: limit, failsToListen: failsToListen, acceptedPeer: acceptedPeer)
             var configuration = BlueZLoop.Configuration(
                 bus: .peer(fake.address),
                 adapter: try AdapterSelection(name: "hci1", expectedAddress: expectedAddress),

@@ -4,7 +4,7 @@ import KnitWire
 ///
 /// ```text
 /// knit-peer [run] [--adapter hci1] [--adapter-address AA:BB:CC:DD:EE:FF] [--radio-profile android|ios]
-///           [--instance NAME | --state DIR] [--name NAME] [--log debug|info|warning|off]
+///           [--instance NAME | --state DIR] [--name NAME] [--log debug|info|warning|off] [--rssi-floor DBM]
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
 /// knit-peer scan [--adapter hci1] [--adapter-address ADDRESS] [--seconds 20] [--advertise android|ios]
 ///                [--instance NAME | --state DIR]
@@ -27,7 +27,8 @@ public enum PeerCommand: Equatable, Sendable {
     public static let usage = """
         usage:
             knit-peer [run] [--adapter hci1] [--adapter-address ADDRESS] [--radio-profile android|ios]
-                [--instance NAME | --state DIR] [--name NAME] [--log debug|info|warning|off]
+                [--instance NAME | --state DIR] [--name NAME] [--log debug|info|warning|off] [--rssi-floor DBM]
+                [--receive-mtu BYTES]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
             knit-peer scan [--adapter hci1] [--adapter-address ADDRESS] [--seconds 20] [--advertise android|ios]
                 [--log debug|info|warning] [--instance NAME | --state DIR]
@@ -81,6 +82,16 @@ public struct RunOptions: Equatable, Sendable {
     public var name: String?
     /// The lowest level logged to standard error, or `nil` for none.
     public var logLevel: String? = "info"
+    /// A promotion floor below Android's −90 dBm, for development only: a quiet phone the peer hears near the
+    /// floor then still gets dialed. Nothing may depend on it; the app keeps Android's floor.
+    public var rssiFloor: Int?
+
+    /// The loosest floor accepted, the weakest reading a controller reports.
+    static let weakestFloor = -127
+    /// The receive MTU each L2CAP channel offers, for diagnosing a link; `nil` keeps the radio's default.
+    public var receiveMTU: Int?
+    /// An LE channel's MTU range.
+    static let mtuRange = 23...65_535
 
     static let profiles = ["android", "ios"]
     static let logLevels = ["debug", "info", "warning", "off"]
@@ -93,6 +104,18 @@ public struct RunOptions: Equatable, Sendable {
         name = flags.take("--name")
         let level = try flags.take("--log", oneOf: Self.logLevels) ?? "info"
         logLevel = level == "off" ? nil : level
+        if let text = flags.take("--rssi-floor") {
+            guard let floor = Int(text), (Self.weakestFloor...0).contains(floor) else {
+                throw .invalid(flag: "--rssi-floor", value: text)
+            }
+            rssiFloor = floor
+        }
+        if let text = flags.take("--receive-mtu") {
+            guard let mtu = Int(text), Self.mtuRange.contains(mtu) else {
+                throw .invalid(flag: "--receive-mtu", value: text)
+            }
+            receiveMTU = mtu
+        }
     }
 
     /// Options as given, for tests and callers that build them.

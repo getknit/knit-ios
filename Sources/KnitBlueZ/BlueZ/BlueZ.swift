@@ -66,6 +66,8 @@ internal struct BlueZDevice: Equatable {
     /// `public` or `random`.
     var addressType: String?
     var rssi: Int?
+    /// Whether BlueZ holds a link to it.
+    var connected = false
     /// Service data by lower-case 128-bit UUID.
     var serviceData: [String: [UInt8]] = [:]
 
@@ -84,6 +86,8 @@ internal struct BlueZDevice: Equatable {
                 addressType = value.text
             case "RSSI":
                 rssi = value.integer.map { Int($0) }
+            case "Connected":
+                connected = value.bool ?? connected
             case "ServiceData":
                 let pairs = (value.textKeyed ?? []).compactMap { entry in entry.value.byteArray.map { (entry.key.lowercased(), $0) } }
                 serviceData = Dictionary(pairs) { _, last in last }
@@ -110,6 +114,11 @@ internal struct BlueZDevice: Equatable {
     /// The Knit advert in its service data, if it has one that parses.
     var advert: AdvertPayload? {
         serviceData[AdvertPayload.serviceUUID].flatMap(AdvertPayload.init(serviceData:))
+    }
+
+    /// BlueZ's object path for the device with `address` on `adapter`: `/org/bluez/hci1/dev_4A_00_00_00_00_EF`.
+    static func path(of address: BluetoothAddress, on adapter: AdapterSelection) -> String {
+        adapter.path + "/dev_" + String(address.description.map { $0 == ":" ? "_" : $0 })
     }
 
     /// Where to dial it: its address and whether that address is random, as Android's always is.

@@ -22,13 +22,14 @@ import Testing
         #expect(options.stateDirectory == "/home/tester/.local/state/knit-peer/default")
         #expect(options.name == nil)
         #expect(options.logLevel == "info")
+        #expect(options.rssiFloor == nil, "Android's floor unless asked")
         #expect(try run(["run"]) == options)
     }
 
     @Test func everyRunFlagIsRead() throws {
         let options = try run([
             "run", "--adapter", "hci2", "--adapter-address", "00:11:22:33:44:55", "--radio-profile", "ios", "--instance", "b",
-            "--name", "Peer B", "--log", "off",
+            "--name", "Peer B", "--log", "off", "--rssi-floor", "-100", "--receive-mtu", "247",
         ])
         #expect(options.adapter == "hci2")
         #expect(options.adapterAddress == "00:11:22:33:44:55")
@@ -36,6 +37,24 @@ import Testing
         #expect(options.stateDirectory == "/home/tester/.local/state/knit-peer/b")
         #expect(options.name == "Peer B")
         #expect(options.logLevel == nil)
+        #expect(options.rssiFloor == -100)
+        #expect(options.receiveMTU == 247)
+    }
+
+    @Test func anMTUMustFitAnLEChannel() {
+        for bad in ["22", "65536", "big"] {
+            #expect(throws: UsageError.invalid(flag: "--receive-mtu", value: bad)) {
+                try PeerCommand.parse(["--receive-mtu", bad], environment: home)
+            }
+        }
+    }
+
+    @Test func aFloorMustBeAReading() {
+        for bad in ["loud", "5", "-128", "-90.5"] {
+            #expect(throws: UsageError.invalid(flag: "--rssi-floor", value: bad)) {
+                try PeerCommand.parse(["--rssi-floor", bad], environment: home)
+            }
+        }
     }
 
     @Test func theStateDirectoryFollowsXDGOrAnExplicitPath() throws {
