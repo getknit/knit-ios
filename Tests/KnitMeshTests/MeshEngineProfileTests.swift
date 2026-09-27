@@ -203,4 +203,60 @@ import Testing
         #expect(fixture.stores.custody.contains(served.envelope.id))
         #expect(fixture.stores.peers.peer(bob.nodeId) != nil)
     }
+
+    @Test func aServedProfileCustodyRefusesAsDeadOnArrivalStillPins() throws {
+        // The pin path has no age check, so a key sent ahead of a backlog pins even when its frame has expired, and
+        // the digests stay convergent: every node refuses that frame alike (knit-next ADR 2026-09.g64k).
+        let fixture = EngineFixture(alice)
+        let expired = try bob.profile(publishedAt: EngineFixture.start - CustodyLimits().ttlMilliseconds - 1, relay: false)
+        fixture.deliver(expired, from: TestPeer(seed: 3))
+        #expect(!fixture.stores.custody.contains(expired.envelope.id))
+        #expect(fixture.stores.peers.peer(bob.nodeId)?.publicKey == bob.keys.bundle.encoded)
+    }
+
+    // MARK: The proof of key (knit-next ADR 2026-09.g64k)
+
+    @Test func aPinnedProfileIsKeptVerbatimAsItsSendersProofOfKey() throws {
+        let fixture = EngineFixture(alice)
+        let profile = try bob.profile(publishedAt: EngineFixture.start)
+        fixture.deliver(profile, from: bob)
+        let kept = try #require(fixture.stores.peers.profileFrame(of: bob.nodeId))
+        #expect(kept == WireEnvelope(relay: false, sig: profile.wire.sig, signed: profile.wire.signed))
+    }
+
+    @Test func theNewestPublishStampIsKeptWhateverTheArrivalOrder() throws {
+        // A republish keeps the version and moves the stamp; an older copy re-served later passes the version check
+        // and still never replaces the newer proof.
+        let fixture = EngineFixture(alice)
+        let older = try bob.profile(version: 1, publishedAt: EngineFixture.start - 2)
+        let newer = try bob.profile(version: 1, publishedAt: EngineFixture.start - 1)
+        fixture.deliver(newer, from: bob)
+        fixture.deliver(older, from: bob)
+        #expect(fixture.stores.peers.profileFrame(of: bob.nodeId)?.signed == newer.wire.signed)
+    }
+
+    @Test func aFarFutureStampIsClampedSoItCannotWedgeTheProof() throws {
+        // The peer picks the stamp. Unclamped, one stamped at the end of time would outrank every honest copy after it.
+        let fixture = EngineFixture(alice)
+        fixture.deliver(try bob.profile(version: 1, publishedAt: .max), from: bob)
+        fixture.clock.advance(WireProtocol.maxFutureSkewMilliseconds + 1)
+        let now = fixture.clock.wallMilliseconds()
+        let honest = try bob.profile(version: now, publishedAt: now)
+        fixture.deliver(honest, from: bob)
+        #expect(fixture.stores.peers.profileFrame(of: bob.nodeId)?.signed == honest.wire.signed)
+    }
+
+    @Test func aProfileThatPinsNothingKeepsNoProofOfKey() throws {
+        // Never our own, never one refusing a pinned key, never one older than the pin's watermark.
+        let stores = MeshStores.inMemory()
+        let carol = TestPeer(seed: 3)
+        stores.peers.upsert(
+            PeerRecord(nodeId: bob.nodeId, name: "", status: "", publicKey: TestPeer(seed: 9).keys.bundle.encoded, updatedAt: 0))
+        stores.peers.upsert(PeerRecord(nodeId: carol.nodeId, name: "", status: "", publicKey: carol.keys.bundle.encoded, updatedAt: 100))
+        let fixture = EngineFixture(alice, stores: stores)
+        fixture.deliver(try alice.profile(name: "Me", publishedAt: EngineFixture.start - 10), from: bob)
+        fixture.deliver(try bob.profile(version: 1, publishedAt: EngineFixture.start), from: bob)
+        fixture.deliver(try carol.profile(version: 6, publishedAt: EngineFixture.start), from: carol)
+        #expect([alice, bob, carol].allSatisfy { stores.peers.profileFrame(of: $0.nodeId) == nil })
+    }
 }

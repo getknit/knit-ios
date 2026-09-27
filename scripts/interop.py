@@ -12,7 +12,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
     scripts/interop.py iphone-rings [--udid UDID]
-    scripts/interop.py android-rings --device SERIAL
+    scripts/interop.py android-rings --device SERIAL [--converge-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
     scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
 
@@ -762,13 +762,17 @@ def android_rings(arguments: argparse.Namespace) -> int:
     and says so in its HELLO. The phone never sights it, so the peer dials the phone, and Android rings only a link it
     accepted. The phone looks the doorbell up over that link and rings it after its link-up frames. Then it posts and
     DMs through its debug bridge, each after a spell with no ring, and each must ring the peer within seconds. Android
-    rings as it queues a frame, so the ring comes even while the frame waits behind the link-up back-fill, which on
-    `hci1` may not drain at all; whether the frames arrived is only reported. The phone must run a debug build with
-    A4 (knit-next `c3191717` or later); the first step checks, before the peer starts."""
+    rings as it queues a frame, so the ring comes even while the frame waits behind the link-up back-fill; whether
+    the frames arrived is only reported. Before the rings, the back-fill must drain: custody converges, but for frames
+    from senders the phone pinned before it kept their signed profiles (knit-next ADR 2026-09.g64k, database v16).
+    The phone must run a debug build with A4 (knit-next `c3191717` or later); the first step checks, before the peer
+    starts."""
     phone = Phone(arguments.device)
     run = Run()
     nonce = secrets.token_hex(3)
-    phone_id = phone.state()["self"]["nodeId"]
+    state = phone.state()
+    phone_id = state["self"]["nodeId"]
+    served_before = state.get("metrics", {}).get("keysServed", 0)
     if run.step("phone-build-rings", lambda: _rings_doorbells(phone)) is None:
         print(json.dumps({"summary": "android-rings", "steps": run.steps, "failed": run.failed}))
         return run.failed
@@ -784,8 +788,12 @@ def android_rings(arguments: argparse.Namespace) -> int:
         if run.step("peer-dials-the-phone", lambda: link_up(peer, phone, phone_id) and {}) is not None:
             run.step("phone-found-the-doorbell", lambda: _doorbell_found(phone, peer_id, 60))
             run.step("link-up-rang", lambda: _rung(peer, 1, 60))
+            # The back-fill drains now that the phone sends each sender's key ahead of their backlog (knit-next ADR
+            # 2026-09.g64k), and the rings below then come on a quiet link.
+            converge = arguments.converge_timeout
+            run.step("custody-converged", lambda: _custody_converges_with_keys(peer, phone, converge, served_before))
             # Android rings as it queues a frame, not as it writes it, so a ring shows up at once even while the frame
-            # waits behind the back-fill, which on `hci1` runs at under 1 KB/s. A ring that comes within seconds of a
+            # waits behind any back-fill, which on `hci1` runs at under 1 KB/s. A ring that comes within seconds of a
             # post, after a spell with none, is the post's.
             bodies = {name: f"interop {name} rings from phone {nonce}" for name in ("post", "dm")}
             for name, conversation in (("post", "nearby"), ("dm", peer_id)):
@@ -1304,14 +1312,37 @@ def _custody_after_replace(peer: Peer, phone: Phone) -> dict:
     dropped, 16 of them parked, and all marked seen, so their re-serves are duplicates for the SeenSet's 10
     minutes (Android's pipeline does the same). Custody converges after that; the run does not wait for it, but
     it does check that the key is the whole story."""
+    return _converges_unless_keyless(peer, phone, 120)
+
+
+def _converges_unless_keyless(peer: Peer, phone: Phone, timeout: float) -> dict:
+    """Custody converges within `timeout`, or the difference is only frames the phone holds and the peer dropped for
+    want of their sender's key."""
     try:
-        return _converges(peer, phone, 120)
+        return _converges(peer, phone, timeout)
     except TimeoutError:
         dropped = peer.command(cmd="status")["dropped"]
         difference = dict(LAST_CUSTODY_DIFFERENCE)
         if difference.get("onlyPeer") or not dropped.get("noSenderKey"):
             raise RuntimeError(f"custody differs, and not for want of the key: {difference}, dropped {dropped}") from None
-        return {"converged": False, "onlyPhone": difference["onlyPhone"], "noSenderKey": dropped["noSenderKey"]}
+        return {
+            "converged": False,
+            "onlyPhone": difference["counts"]["onlyPhone"],
+            "sample": difference["onlyPhone"],
+            "noSenderKey": dropped["noSenderKey"],
+        }
+
+
+def _custody_converges_with_keys(peer: Peer, phone: Phone, timeout: float, served_before: int) -> dict:
+    """knit-next ADR 2026-09.g64k: a phone that keeps the signed profile each pin came from sends a sender's key
+    ahead of their backlog, so a fresh peer keeps all of it and custody converges. The phone kept no such profile
+    before database v16, so a sender it pinned before its upgrade still reaches the peer keyless, and those frames
+    stay behind until they expire: that difference is allowed, and counted. `keysServed` counts every key the phone
+    handed any neighbour during the step, this peer's among them."""
+    started = time.monotonic()
+    result = _converges_unless_keyless(peer, phone, timeout)
+    served = phone.state()["metrics"].get("keysServed", 0) - served_before
+    return {**result, "seconds": round(time.monotonic() - started), "keysServed": served}
 
 
 def _refused_inside_hold(phone: Phone, peer_id: str) -> dict | None:
@@ -1948,6 +1979,7 @@ def main() -> int:
     android.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     android.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
     android.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
+    android.add_argument("--converge-timeout", type=float, default=600, help="seconds for the back-fill to converge custody")
     for sub in (ios, wake, rings, scan, by_hand, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()

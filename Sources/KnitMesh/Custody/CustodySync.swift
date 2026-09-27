@@ -44,8 +44,17 @@ public struct CustodySync: Sendable {
         return store.store(frame, origin: .own, now: now)
     }
 
+    /// What a neighbour's digest is answered with (`ForwardSync.onDigest`).
+    public struct DigestReply: Sendable, Equatable {
+        /// The senders whose key goes ahead of ``frames``, each as its signed profile from the pin store, point to
+        /// point (knit-next ADR 2026-09.g64k).
+        public var keysAhead: [NodeId]
+        /// Every live frame the digest omits, profiles first.
+        public var frames: [WireEnvelope]
+    }
+
     /// Every live frame a neighbour's digest omits, each in a fresh ``WireEnvelope`` around its verbatim bytes,
-    /// with a full hop budget (`ForwardSync.onDigest`).
+    /// with a full hop budget, and the senders whose key goes ahead of them (`ForwardSync.onDigest`).
     ///
     /// A frame the peer authored is served too when its digest lacks it: that is how a node whose custody was
     /// wiped gets its own frames back. A group frame goes only to a member of its roster.
@@ -53,20 +62,41 @@ public struct CustodySync: Sendable {
     /// Profiles go first (knit-next ADR 2026-09.9xuu). The store reads newest-received first, which put a sender's
     /// profile, usually the oldest frame held of theirs, behind all of their chat, so a peer meeting that sender
     /// for the first time dropped the backlog for want of the key it was about to be handed.
-    public func missing(from theirIds: [String], for peer: NodeId, in store: some CustodyStore, now: Int64) -> [WireEnvelope] {
+    ///
+    /// When custody holds no profile, the pin store does (knit-next ADR 2026-09.g64k). The per-sender quota evicts
+    /// a chatty sender's profile, and the TTL takes a departed sender's up to a republish period before their last
+    /// posts, so a carrier often serves frames whose author's profile it no longer carries. ``DigestReply/keysAhead``
+    /// names each sender of the frames served whose key the peer may lack: not the peer itself, with no live profile
+    /// in our custody, and with none of our live frames of theirs in the peer's digest. A peer that custodies one of
+    /// their frames verified it, so it holds the key; that rule keeps two carriers of one chatty sender from trading
+    /// the key on every reconcile.
+    public func missing(from theirIds: [String], for peer: NodeId, in store: some CustodyStore, now: Int64) -> DigestReply {
         let held = Set(theirIds.map(ExactKey.init))
         let peerKey = ExactKey(peer.string)
         let live = store.liveFrames(now: now)
         let keysFirst = live.filter { $0.envelope.type == .profile } + live.filter { $0.envelope.type != .profile }
-        return keysFirst.compactMap { frame in
+        let outgoing = keysFirst.filter { frame in
             guard !held.contains(ExactKey(frame.envelope.id)) else {
-                return nil
+                return false
             }
-            if let members = frame.envelope.group?.members, !members.contains(where: { ExactKey($0) == peerKey }) {
-                return nil
+            guard let members = frame.envelope.group?.members else {
+                return true
             }
-            return frame.reserved
+            return members.contains { ExactKey($0) == peerKey }
         }
+        // Senders whose key the peer holds or gets anyway: a live profile goes first or the peer has it, and a frame
+        // the peer holds, it verified. Each keyless sender joins the set as it is named, so it is named once.
+        let keyedFrames = live.filter { $0.envelope.type == .profile || held.contains(ExactKey($0.envelope.id)) }
+        var keyed = Set(keyedFrames.map { ExactKey($0.envelope.senderId) })
+        var keysAhead: [NodeId] = []
+        for frame in outgoing {
+            guard keyed.insert(ExactKey(frame.envelope.senderId)).inserted, let sender = NodeId(frame.envelope.senderId), sender != peer
+            else {
+                continue
+            }
+            keysAhead.append(sender)
+        }
+        return DigestReply(keysAhead: keysAhead, frames: outgoing.map(\.reserved))
     }
 
     /// Applies a verified receipt for `ackId` from `sender` (`ForwardSync.onAck`): the carried DM is purged, and its

@@ -1,5 +1,8 @@
 import Foundation
 import GRDB
+import KnitStore
+import KnitTestSupport
+import KnitWire
 import Testing
 
 @testable import KnitStoreSQL
@@ -11,7 +14,7 @@ import Testing
 /// is already here: a phone that ran that migration keeps the schema it left.
 @Suite struct SchemaTests {
     /// The migrations every earlier build has run, in order.
-    private static let frozen = ["v1"]
+    private static let frozen = ["v1", "v2"]
 
     @Test func migrationsOnlyEverGrowAtTheEnd() {
         let identifiers = Schema.migrations.map(\.identifier)
@@ -48,9 +51,30 @@ import Testing
                     """
             ).map { (name: $0["name"] as String, strict: $0["strict"] as Bool) }
         }
-        #expect(tables.map(\.name) == ["accepted_conversations", "forward_store", "messages", "own_profile", "peers"])
+        #expect(tables.map(\.name) == ["accepted_conversations", "forward_store", "messages", "own_profile", "peer_profiles", "peers"])
         let loose = tables.filter { !$0.strict }.map(\.name)
         #expect(loose.isEmpty, "not STRICT: \(loose)")
+    }
+
+    @Test func v2KeepsEveryPinAndStartsItsProofsEmpty() throws {
+        // A pin made under v1 gets its proof of key when that peer's profile next arrives (knit-next ADR 2026-09.g64k).
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v1")
+        let bob = fixtureNodeId(2)
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO peers (nodeId, name, status, publicKey, updatedAt, verified, openToChat)
+                    VALUES (?, ?, ?, ?, 7, 1, 0)
+                    """,
+                arguments: [StoredText.bytes(bob.string), StoredText.bytes("Bob"), StoredText.bytes(""), StoredText.bytes("key")]
+            )
+        }
+        let database = try KnitDatabase(writer: queue, failures: recordFailure)
+        let peers = SQLPeerStore(database)
+        #expect(peers.peer(bob)?.name == "Bob")
+        #expect(peers.peer(bob)?.verified == true)
+        #expect(peers.profileFrame(of: bob) == nil)
     }
 
     @Test func grdbCutsABoundStringAtItsFirstNul() throws {
@@ -79,7 +103,8 @@ import Testing
 enum SchemaPins {
     /// Each migration's identifier and the schema a database has after it, oldest first. Frozen once committed.
     static let after: [(identifier: String, schema: String)] = [
-        ("v1", v1)
+        ("v1", v1),
+        ("v2", v2),
     ]
 
     /// Every table, index and trigger this app made, sorted, with the statement SQLite keeps for it. GRDB's own
@@ -152,6 +177,87 @@ enum SchemaPins {
             openToChat INTEGER NOT NULL,
             version INTEGER NOT NULL,
             publishedAt INTEGER NOT NULL
+        ) STRICT;
+
+        table peers
+        CREATE TABLE peers (
+            nodeId BLOB NOT NULL PRIMARY KEY,
+            name BLOB NOT NULL,
+            status BLOB NOT NULL,
+            publicKey BLOB NOT NULL,
+            deviceTag BLOB,
+            protocolVersion INTEGER,
+            capabilities INTEGER,
+            updatedAt INTEGER NOT NULL,
+            verified INTEGER NOT NULL,
+            openToChat INTEGER NOT NULL
+        ) STRICT;
+
+        """
+
+    private static let v2 = """
+        index forward_store_expiresAt
+        CREATE INDEX forward_store_expiresAt ON forward_store (expiresAt);
+
+        index messages_conversationId_sentAt_seq
+        CREATE INDEX messages_conversationId_sentAt_seq ON messages (conversationId, sentAt, seq);
+
+        index messages_pendingKey
+        CREATE INDEX messages_pendingKey ON messages (recipientId, sentAt, seq) WHERE pendingKey = 1;
+
+        index messages_senderId_conversationId
+        CREATE INDEX messages_senderId_conversationId ON messages (senderId, conversationId);
+
+        table accepted_conversations
+        CREATE TABLE accepted_conversations (conversationId BLOB NOT NULL PRIMARY KEY) STRICT;
+
+        table forward_store
+        CREATE TABLE forward_store (
+            seq INTEGER PRIMARY KEY,
+            id BLOB NOT NULL UNIQUE,
+            senderId BLOB NOT NULL,
+            recipientId BLOB,
+            groupId BLOB,
+            type BLOB NOT NULL,
+            isRoomChat INTEGER NOT NULL,
+            origin INTEGER NOT NULL,
+            signed BLOB NOT NULL,
+            sig BLOB NOT NULL,
+            sentAt INTEGER NOT NULL,
+            receivedAt INTEGER NOT NULL,
+            expiresAt INTEGER NOT NULL
+        ) STRICT;
+
+        table messages
+        CREATE TABLE messages (
+            seq INTEGER PRIMARY KEY,
+            id BLOB NOT NULL UNIQUE,
+            senderId BLOB NOT NULL,
+            recipientId BLOB,
+            conversationId BLOB NOT NULL,
+            body BLOB NOT NULL,
+            sentAt INTEGER NOT NULL,
+            arrivedAt INTEGER,
+            delivered INTEGER NOT NULL,
+            pendingKey INTEGER NOT NULL
+        ) STRICT;
+
+        table own_profile
+        CREATE TABLE own_profile (
+            slot INTEGER PRIMARY KEY CHECK (slot = 0),
+            name BLOB NOT NULL,
+            status BLOB NOT NULL,
+            openToChat INTEGER NOT NULL,
+            version INTEGER NOT NULL,
+            publishedAt INTEGER NOT NULL
+        ) STRICT;
+
+        table peer_profiles
+        CREATE TABLE peer_profiles (
+            nodeId BLOB NOT NULL PRIMARY KEY,
+            signed BLOB NOT NULL,
+            sig BLOB NOT NULL,
+            sentAt INTEGER NOT NULL
         ) STRICT;
 
         table peers

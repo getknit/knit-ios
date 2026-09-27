@@ -1,8 +1,13 @@
+import Foundation
 import GRDB
 public import KnitStore
 public import KnitWire
 
-/// The ``PeerStore`` on SQLite: the `peers` table (`PeerDao.kt` in knit-next).
+/// The ``PeerStore`` on SQLite: the `peers` table, and `peer_profiles` beside it (`PeerDao.kt` in knit-next).
+///
+/// `peer_profiles` holds the signed frame each pin came from, in a table of its own as knit-next keeps it. Nothing
+/// in this port deletes a pin yet. A door that does must delete its `peer_profiles` row too, as knit-next's sweeps
+/// do, so the proof never outlives the pin it proves.
 public final class SQLPeerStore: PeerStore {
     private static let columns =
         "nodeId, name, status, publicKey, deviceTag, protocolVersion, capabilities, updatedAt, verified, openToChat"
@@ -47,6 +52,30 @@ public final class SQLPeerStore: PeerStore {
         // BLOB order is byte order, which is how node ids compare.
         database.read(or: []) { db in
             try Row.fetchAll(db, sql: "SELECT \(Self.columns) FROM peers ORDER BY nodeId").map(Self.record)
+        }
+    }
+
+    public func recordProfileFrame(_ frame: WireEnvelope, of nodeId: NodeId, sentAt: Int64) {
+        // An upsert that only ever moves forward, not INSERT OR REPLACE: a copy we already hold is never rewritten.
+        database.write(or: ()) { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO peer_profiles (nodeId, signed, sig, sentAt) VALUES (?, ?, ?, ?)
+                    ON CONFLICT (nodeId) DO UPDATE SET signed = excluded.signed, sig = excluded.sig, sentAt = excluded.sentAt
+                    WHERE excluded.sentAt > peer_profiles.sentAt
+                    """,
+                arguments: [StoredText.bytes(nodeId.string), Data(frame.signed), Data(frame.sig), sentAt]
+            )
+        }
+    }
+
+    public func profileFrame(of nodeId: NodeId) -> WireEnvelope? {
+        database.read(or: nil) { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT signed, sig FROM peer_profiles WHERE nodeId = ?",
+                arguments: [StoredText.bytes(nodeId.string)]
+            ).map { WireEnvelope(relay: false, sig: try $0.bytes("sig"), signed: try $0.bytes("signed")) }
         }
     }
 

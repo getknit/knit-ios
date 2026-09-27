@@ -61,6 +61,13 @@ What stayed out, and why:
 - **`message_receipts` and `met_peers`.** No MVP screen reads them. Each arrives as a migration with the
   feature that needs it.
 
+**Amended 2026-09-27, schema v2:** `peer_profiles` keeps the signed profile each pin came from, one row per
+pinned peer, as knit-next's database v16 does (its ADR 2026-09.g64k). It is a table of its own, as there: the
+peer rows stay plain, and the proof can go when its pin does. Nothing in this port deletes a pin yet, so nothing
+deletes a proof either. The first door that deletes pins must delete their proofs too. `SchemaTests`'
+`v2KeepsEveryPinAndStartsItsProofsEmpty` migrates a v1 pin, and `RepositoryTests`'
+`theNewestProofOfKeyIsKeptWhateverTheArrivalOrder` runs over both stores.
+
 **Consequences / limits:**
 
 - **A new string column is a `BLOB` bound through `StoredText`, in a `STRICT` table.** A query that binds a

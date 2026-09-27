@@ -140,14 +140,19 @@ has it, and the first step checks that before the peer starts. A debug build log
 line every minute, and only an A4 build's counts `doorbells=` and `rings=`, so a line without them ends the run.
 The peer then runs on `hci1` in the `ios` profile. Its GATT application serves a doorbell that counts rings
 (`status.rung`), and its HELLO carries `CAP_DOORBELL`. Its id sorts below the phone's, and the phone never sights
-it, so the peer dials the phone, and Android rings only a link it accepted. The run checks four things in turn:
+it, so the peer dials the phone, and Android rings only a link it accepted. The run checks five things in turn:
 
 1. The phone logs `bt doorbell found <peer>` and rings the peer for its link-up frames.
-2. A room post from the phone, sent through its debug bridge, rings the peer again, and so does a DM. Android rings
+2. The back-fill drains, and custody converges within `--converge-timeout` (600 s). A phone with knit-next's ADR
+   2026-09.g64k sends each sender's key ahead of their backlog, so the fresh peer keeps all of it. It kept no key
+   proofs before database v16, so frames from senders it pinned before its upgrade may stay behind until they
+   expire. Those are allowed, and counted, as long as the peer holds nothing the phone lacks and dropped them
+   for want of a key. The step also reports how many keys the phone served meanwhile, to anyone.
+3. A room post from the phone, sent through its debug bridge, rings the peer again, and so does a DM. Android rings
    as it queues a frame, not as it writes it, so the run waits for 6 s with no ring, sends, and wants a ring
    within 8 s. That ring is the post's, even while the post itself waits behind the back-fill.
-3. The phone logs `bt ring <peer>`.
-4. Neither side drops the link.
+4. The phone logs `bt ring <peer>`.
+5. Neither side drops the link.
 
 Whether the post and the DM arrived is reported, not checked ("What A4 showed").
 
@@ -609,9 +614,15 @@ third run passed 9 of 9, after the first two had shown what the run should measu
   the run ended.
 - **The back-fill never drained.** The link carried about 0.5 KB/s for eight minutes, `hci1`'s rate, as in P4. The
   Pixel's custody is larger now, and 81 of its frames are relayed chats and receipts from senders whose keys a fresh
-  peer lacks. The peer cannot verify them, so it keeps none, and the Pixel pushes them again after every 60 s
-  digest. The first run timed the post's arrival and the second waited seven minutes for custody to converge; both
-  failed on that queue. So the run checks rings, which do not wait for it, and only reports arrivals.
+  peer lacks. The peer cannot verify them, so it keeps none, and the Pixel pushes them again while the link lasts,
+  about every 10 minutes, since `LinkCrossings` holds back a frame that crossed the link inside that window. The
+  first run timed the post's arrival and the second waited seven minutes for custody to converge; both failed on
+  that queue. So the run checks rings, which do not wait for it, and only reports arrivals. knit-next found why
+  (its ADR 2026-09.g64k). The Pixel held no signed copy of those senders' profiles: custody had lost them to the
+  quota and the TTL, and its reinstall had emptied the only other copy, in memory. So neither it nor anyone else
+  could send the key, and the peer's `keyreq` went unanswered. Android now keeps the frame each pin came from and
+  sends that key ahead of a backlog, and this port mirrors it (`custody.md`, "Key recovery"). Senders the Pixel
+  pinned before its upgrade stay stranded until their frames expire.
 - **The link held** in all three runs, on both sides.
 
 Then the iPhone, with a build whose HELLO carries `CAP_DOORBELL`. `interop.py iphone-wake --sender phone
@@ -653,3 +664,21 @@ It did not catch a drop:
   32 bytes as hex and as text, names the last four records' tags and sizes with the end of the last payload, and
   lists the last six reads (`LinkTrace`). A record that overran its length, a read that went missing and bytes
   that were never a record each look different there, on the iPhone and the peer alike.
+
+## What the carrier's kept keys showed
+
+knit-next's ADR 2026-09.g64k keeps the signed profile each pin came from and sends a sender's key ahead of their
+backlog. The Pixel 3 ran it from 13:22 on 2026-09-27, as a debug build of that uncommitted work on
+`fix/carrier-keeps-profile`, with A4 and database v16. Its custody still held about 200 room posts from knit-next's
+own test sender, whose profile its quota had evicted. `interop.py android-rings` passed 10 of 10 from 14:46, with the
+new custody step:
+
+- **Custody converged.** The peer linked at 14:47:10, and 501 s later it held every one of the Pixel's 796 live ids,
+  with nothing left behind. The Pixel served 2 keys during that time, to this peer or another neighbour. The
+  morning's runs never converged, since 81 frames stayed unreadable.
+- **The rings came on a quiet link.** The post rang the peer 3.5 s after it was sent, and the DM 1.6 s after, each
+  after 6 s with no ring. Both phones held the link.
+- **Neither frame had arrived when the run ended,** 12 s after the post and 3 s after the DM, although the back-fill
+  had drained. `arrivals` looks once and does not wait, so this shows only that both were slower than that. Why is
+  not known yet.
+

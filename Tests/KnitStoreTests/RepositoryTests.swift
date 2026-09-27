@@ -108,6 +108,22 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
     }
 
     @Test(arguments: kinds)
+    func theNewestProofOfKeyIsKeptWhateverTheArrivalOrder(kind: RepositoryKind) throws {
+        // The signed profile a pin came from (knit-next ADR 2026-09.g64k): the newest publish stamp wins, and an
+        // equal or older copy never rewrites the one held.
+        let store = try kind.make().peers
+        #expect(store.profileFrame(of: bob) == nil)
+        store.recordProfileFrame(WireEnvelope(ttl: 3, hops: 2, relay: true, sig: [1], signed: [1, 1]), of: bob, sentAt: 10)
+        #expect(store.profileFrame(of: bob) == WireEnvelope(relay: false, sig: [1], signed: [1, 1]), "verbatim, point to point")
+        store.recordProfileFrame(WireEnvelope(sig: [2], signed: [2, 2]), of: bob, sentAt: 10)
+        store.recordProfileFrame(WireEnvelope(sig: [3], signed: [3, 3]), of: bob, sentAt: 9)
+        #expect(store.profileFrame(of: bob)?.sig == [1])
+        store.recordProfileFrame(WireEnvelope(sig: [4], signed: [4, 4]), of: bob, sentAt: 11)
+        #expect(store.profileFrame(of: bob)?.signed == [4, 4])
+        #expect(store.profileFrame(of: alice) == nil)
+    }
+
+    @Test(arguments: kinds)
     func aMessageIsStoredOnceAndReadInOrder(kind: RepositoryKind) throws {
         let store = try kind.make().messages
         #expect(store.insertIfAbsent(message("m2", from: bob, to: alice, sentAt: 5)))

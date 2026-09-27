@@ -33,8 +33,8 @@ import Testing
         return CarriedFrame(envelope: envelope, sig: Array(repeating: 1, count: 64), signed: envelope.encoded)
     }
 
-    private func ids(_ wires: [WireEnvelope]) -> [String] {
-        wires.compactMap { try? RelayEnvelope(decoding: $0.signed).id }
+    private func ids(_ reply: CustodySync.DigestReply) -> [String] {
+        reply.frames.compactMap { try? RelayEnvelope(decoding: $0.signed).id }
     }
 
     @Test func aRelayedFrameIsCarriedOnlyWhenItAuthenticates() {
@@ -92,7 +92,7 @@ import Testing
             _ = sync.carry(frame(id), in: store, now: now) { true }
         }
         #expect(Set(ids(sync.missing(from: ["r2"], for: zed, in: store, now: now))) == ["r1", "r3"])
-        #expect(sync.missing(from: ["r1", "r2", "r3", "extra"], for: zed, in: store, now: now).isEmpty)
+        #expect(sync.missing(from: ["r1", "r2", "r3", "extra"], for: zed, in: store, now: now).frames.isEmpty)
     }
 
     @Test func profilesAreServedAheadOfEverythingElse() {
@@ -114,7 +114,7 @@ import Testing
         let store = MemoryCustodyStore()
         let original = frame("p1", type: .profile)
         _ = CustodySync().carry(original, in: store, now: now) { true }
-        let served = try #require(CustodySync().missing(from: [], for: bob, in: store, now: now).first)
+        let served = try #require(CustodySync().missing(from: [], for: bob, in: store, now: now).frames.first)
         #expect(served == WireEnvelope(ttl: 8, hops: 0, relay: true, sig: original.sig, signed: original.signed))
     }
 
@@ -123,7 +123,7 @@ import Testing
         let store = MemoryCustodyStore()
         let sync = CustodySync()
         _ = sync.carry(frame("m1", from: alice, to: bob), in: store, now: now) { true }
-        #expect(sync.missing(from: ["m1"], for: alice, in: store, now: now).isEmpty)
+        #expect(sync.missing(from: ["m1"], for: alice, in: store, now: now).frames.isEmpty)
         #expect(ids(sync.missing(from: [], for: alice, in: store, now: now)) == ["m1"])
     }
 
@@ -140,8 +140,75 @@ import Testing
         let store = MemoryCustodyStore()
         let sync = CustodySync()
         _ = sync.carryOwn(frame("g1", members: [alice, bob]), in: store, now: now)
-        #expect(sync.missing(from: [], for: zed, in: store, now: now).isEmpty)
+        #expect(sync.missing(from: [], for: zed, in: store, now: now).frames.isEmpty)
         #expect(ids(sync.missing(from: [], for: bob, in: store, now: now)) == ["g1"])
+    }
+
+    // MARK: The key ahead of a backlog (knit-next ADR 2026-09.g64k, `ForwardSyncTest`'s `onDigestServes…Key…`)
+
+    @Test func aKeylessSendersKeyGoesAheadOfTheirBacklogOncePerSender() {
+        // Custody holds no profile of theirs, and the peer holds none of their frames: each key goes first, once.
+        let store = MemoryCustodyStore()
+        let sync = CustodySync()
+        for (id, sender) in [("r1", alice), ("r2", alice), ("s1", bob)] {
+            _ = sync.carry(frame(id, from: sender), in: store, now: now) { true }
+        }
+        let reply = sync.missing(from: [], for: zed, in: store, now: now)
+        #expect(reply.keysAhead.sorted() == [alice, bob].sorted())
+        #expect(reply.frames.count == 3)
+    }
+
+    @Test func noKeyGoesForASenderWhoseProfileCustodyHolds() {
+        // Their profile goes first already, or the peer holds it: no second copy of the key.
+        let store = MemoryCustodyStore()
+        let sync = CustodySync()
+        _ = sync.carry(frame("p1", type: .profile), in: store, now: now) { true }
+        _ = sync.carry(frame("r1"), in: store, now: now) { true }
+        #expect(sync.missing(from: [], for: zed, in: store, now: now).keysAhead.isEmpty)
+        #expect(sync.missing(from: ["p1"], for: zed, in: store, now: now).keysAhead.isEmpty)
+    }
+
+    @Test func noKeyGoesToAPeerHoldingAFrameOfTheSenders() {
+        // A peer that custodies one of their frames verified it, so it has the key: two carriers of one chatty
+        // sender whose profile the quota evicted do not trade the key on every reconcile.
+        let store = MemoryCustodyStore()
+        let sync = CustodySync()
+        _ = sync.carry(frame("r1"), in: store, now: now) { true }
+        _ = sync.carry(frame("r2"), in: store, now: now) { true }
+        let reply = sync.missing(from: ["r1"], for: zed, in: store, now: now)
+        #expect(ids(reply) == ["r2"])
+        #expect(reply.keysAhead.isEmpty)
+    }
+
+    @Test func noKeyGoesForTheDigestsOwnSender() {
+        // Its own frames coming home after a wipe: the key is its own.
+        let store = MemoryCustodyStore()
+        let sync = CustodySync()
+        _ = sync.carry(frame("r1", from: zed), in: store, now: now) { true }
+        let reply = sync.missing(from: [], for: zed, in: store, now: now)
+        #expect(ids(reply) == ["r1"])
+        #expect(reply.keysAhead.isEmpty)
+    }
+
+    @Test func noKeyGoesWhenNothingOfTheSendersGoesOut() {
+        // A key rides only with a backlog: here the peer holds Alice's post, and is not in Bob's group.
+        let store = MemoryCustodyStore()
+        let sync = CustodySync()
+        _ = sync.carry(frame("r1"), in: store, now: now) { true }
+        _ = sync.carry(frame("g1", from: bob, members: [bob, alice]), in: store, now: now) { true }
+        let reply = sync.missing(from: ["r1"], for: zed, in: store, now: now)
+        #expect(reply.frames.isEmpty)
+        #expect(reply.keysAhead.isEmpty)
+    }
+
+    @Test func noKeyGoesForASenderThatIsNoNodeId() {
+        // Nothing pins such a sender, so nothing holds a key to send; the frame itself still goes.
+        let store = MemoryCustodyStore()
+        let envelope = RelayEnvelope(type: .chat, id: "odd", senderId: "not-a-node", sentAt: now, payload: [])
+        _ = CustodySync().carry(CarriedFrame(envelope: envelope, sig: [1], signed: envelope.encoded), in: store, now: now) { true }
+        let reply = CustodySync().missing(from: [], for: zed, in: store, now: now)
+        #expect(ids(reply) == ["odd"])
+        #expect(reply.keysAhead.isEmpty)
     }
 
     @Test func aReceiptFromTheRecipientPurgesAndTombstonesTheDM() {

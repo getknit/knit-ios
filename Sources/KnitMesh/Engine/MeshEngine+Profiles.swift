@@ -102,8 +102,8 @@ extension MeshEngine {
 
     /// A verified profile (`InboundPipeline.handleProfile`). Its key pins only if it derives to the sender, which
     /// ``verify(_:)`` checked, and a pinned key never changes. The presentation follows the newest version,
-    /// clamped to five minutes past our clock. Once the key pins, our DMs that waited for it go out, neighbours that
-    /// asked us for it are served, and frames parked for it are delivered.
+    /// clamped to five minutes past our clock. Once the key pins, our DMs that waited for it go out, the frame is kept
+    /// as the key's proof, neighbours that asked us for it are served, and frames parked for it are delivered.
     func handleProfile(_ wire: WireEnvelope, _ envelope: RelayEnvelope) {
         // Our own profile coming back is not a peer to pin.
         guard let sender = NodeId(envelope.senderId), sender != nodeId,
@@ -141,6 +141,10 @@ extension MeshEngine {
             events.append(.peerUpdated(sender))
         }
         flushPending(to: sender)
+        // Keep the frame the key pinned from beside the pin, so this node can prove the key to a newcomer after a
+        // restart and after custody has lost it to the quota or the TTL (knit-next ADR 2026-09.g64k). The newest
+        // publish stamp wins, clamped, because the peer picks it.
+        stores.peers.recordProfileFrame(wire, of: sender, sentAt: clampFuture(envelope.sentAt))
         for neighbor in keyExchange.onProfilePinned(sender, wire: wire) {
             transport.send(KeyExchange.served(wire), to: neighbor)
         }

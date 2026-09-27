@@ -67,11 +67,21 @@ public protocol PeerStore: AnyObject, Sendable {
 
     /// Every pinned peer, for the UI and diagnostics.
     func allPeers() -> [PeerRecord]
+
+    /// Keeps `frame`, the signed `profile` frame `nodeId`'s key was just pinned from, as the proof of that key this
+    /// node hands on (`PeerRepository.recordProfileFrame`, knit-next ADR 2026-09.g64k). A copy already held that is
+    /// stamped `sentAt` or later stays, so the newest publish wins in any arrival order. The peer picks the stamp,
+    /// so the caller clamps it first.
+    func recordProfileFrame(_ frame: WireEnvelope, of nodeId: NodeId, sentAt: Int64)
+
+    /// `nodeId`'s kept proof of key, its signed bytes verbatim in a point-to-point wrapper, or `nil`.
+    func profileFrame(of nodeId: NodeId) -> WireEnvelope?
 }
 
 /// A ``PeerStore`` in memory, safe to share across threads.
 public final class MemoryPeerStore: PeerStore {
     private let peers = Mutex<[NodeId: PeerRecord]>([:])
+    private let profiles = Mutex<[NodeId: (frame: WireEnvelope, sentAt: Int64)]>([:])
 
     /// An empty store.
     public init() {
@@ -92,5 +102,18 @@ public final class MemoryPeerStore: PeerStore {
 
     public func allPeers() -> [PeerRecord] {
         peers.withLock { $0.values.sorted { $0.nodeId < $1.nodeId } }
+    }
+
+    public func recordProfileFrame(_ frame: WireEnvelope, of nodeId: NodeId, sentAt: Int64) {
+        profiles.withLock { profiles in
+            if let held = profiles[nodeId], held.sentAt >= sentAt {
+                return
+            }
+            profiles[nodeId] = (WireEnvelope(relay: false, sig: frame.sig, signed: frame.signed), sentAt)
+        }
+    }
+
+    public func profileFrame(of nodeId: NodeId) -> WireEnvelope? {
+        profiles.withLock { $0[nodeId]?.frame }
     }
 }

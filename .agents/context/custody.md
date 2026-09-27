@@ -59,7 +59,9 @@ A node carries frames for people who are not in range yet. This is store-and-for
   `WireEnvelope` with `ttl = 8` and `hops = 0`, with `sig` and `signed` copied verbatim. Group frames go
   only to roster members.
 - **Android pushes custody only in answer to a DIGEST.** A node that sends none gets no back-fill. A node
-  whose digest under-reports gets the missing frames re-pushed every minute.
+  whose digest under-reports gets the missing frames re-pushed at each exchange, though on a Bluetooth link
+  `LinkCrossings` lets one frame cross only once in 10 minutes, so the repeat comes that often while the link
+  lasts.
 
 The advert's digest cue is the low 32 bits of an FNV-1a-64 fold (offset `0xCBF29CE484222325`, prime
 `0x100000001B3`) over each live id's UTF-8 bytes, XORed across the set. Nothing on BLE reads it, but we
@@ -82,9 +84,21 @@ publish it honestly.
   (`PendingInbound.kt`, knit-next ADR 2026-09.9xuu).
 - **Serving order:** a digest is answered profiles first, then everything else newest-received first, so a
   newcomer pins each sender's key before that sender's chat arrives (`ForwardSync.onDigest`, the same ADR).
+- **The key ahead of a backlog:** when custody holds no live profile of a sender whose frames the reply
+  serves, the reply sends that sender's key first, from the pin store and `relay = false`
+  (`ForwardSync.keylessSenders`, knit-next ADR 2026-09.g64k). No key goes to the sender itself, or to a peer
+  whose digest lists any of our live frames from that sender: it verified that frame, so it has the key.
 - **Asking:** a signed `keyreq` with `relay = false` goes to our neighbours, with a 30-second cooldown.
-- **Serving:** a holder answers with the cached signed profile, verbatim and `relay = false`. Android skips
-  a request for its own id, which is why every node pushes its own profile at link-up.
+- **Serving:** a holder answers with the signed profile its pin came from, verbatim and `relay = false`, from
+  memory or else from the pin store. Android skips a request for its own id, which is why every node pushes
+  its own profile at link-up.
+- **The pin store** (`peer_profiles`, this port's schema v2 and knit-next's database v16): each pin keeps the
+  signed frame it came from. The newest publish stamp wins, clamped to 5 minutes ahead, and an equal or older
+  copy never replaces it. Custody is no substitute. The per-sender quota evicts a chatty sender's profile
+  first, since it is their oldest frame, and the TTL takes a departed sender's up to 12 h before their last
+  posts. Before the store, a restarted carrier served backlogs nobody could read until they expired, and a
+  keyreq for them found nobody to answer it. The rows start empty after an upgrade, so a pin made before one
+  gets its proof only when that peer's profile next arrives.
 
 ## Profiles
 

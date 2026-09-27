@@ -8,6 +8,11 @@ public import KnitWire
 /// the profile back once it arrives. The profile self-certifies on pin, so the answer needs no signature of its
 /// own.
 ///
+/// The cache is the hot layer over the pin store, which keeps the signed frame each pin came from (knit-next ADR
+/// 2026-09.g64k). A carrier must still prove the key of anyone whose frames it serves after a restart has emptied
+/// the cache and custody has lost their profile to the quota or the TTL. ``serveKey(_:)`` is the other door onto
+/// it: a digest reply sends a key ahead of a backlog its reader could not otherwise verify.
+///
 /// Every key here is an unauthenticated sender id, so everything is bounded: 256 wanted ids and 256 relayed
 /// wants, oldest first, a 30-second cooldown per id, and 128 ids per request each way. This type is bookkeeping
 /// only: the engine builds, signs and sends the requests it asks for. Times are on the monotonic clock.
@@ -33,17 +38,20 @@ public struct KeyExchange: Sendable {
         public var ask: [NodeId] = []
     }
 
-    /// Every pinned peer's verbatim signed profile, to serve on request. Unbounded: each entry cost a
-    /// self-certifying pin.
+    /// Every pinned peer's verbatim signed profile, to serve on request: each one pinned since launch, and each one
+    /// read from the pin store since. Unbounded: each entry cost a self-certifying pin.
     private var cache: [NodeId: WireEnvelope] = [:]
+    /// The pin store's copy of a pinned peer's signed profile, read on a cache miss only.
+    private let storedProfile: @Sendable (NodeId) -> WireEnvelope?
     /// Wanted ids, oldest first, each with when it was last broadcast.
     private var missing: [(id: NodeId, askedAt: Int64)] = []
     /// Ids we are fetching for neighbours, oldest first, each with the neighbours waiting.
     private var wanters: [(id: NodeId, neighbors: Set<NodeId>)] = []
 
-    /// An empty exchange.
-    public init() {
-        // Nothing to set up.
+    /// An empty exchange over `storedProfile`, the pin store's signed profiles. The default holds none.
+    @preconcurrency
+    public init(storedProfile: @escaping @Sendable (NodeId) -> WireEnvelope? = { _ in nil }) {
+        self.storedProfile = storedProfile
     }
 
     /// The ids still wanted, oldest first.
@@ -82,8 +90,8 @@ public struct KeyExchange: Sendable {
     public mutating func onRequest(_ ids: [String], from requester: NodeId, me: NodeId, now: Int64) -> Answer {
         var answer = Answer()
         for id in ids.prefix(Self.maxRequestIds).compactMap(NodeId.init) where id != me {
-            if let profile = cache[id] {
-                answer.serve.append(Self.served(profile))
+            if let profile = serveKey(id) {
+                answer.serve.append(profile)
                 continue
             }
             addWanter(requester, for: id)
@@ -92,6 +100,19 @@ public struct KeyExchange: Sendable {
             }
         }
         return answer
+    }
+
+    /// The key of `nodeId`, its signed profile in the point-to-point wrapper it is served in, if we hold one: the
+    /// cache, else the pin store, cached on the way out (`KeyExchange.serveKey` and `profileFor`).
+    public mutating func serveKey(_ nodeId: NodeId) -> WireEnvelope? {
+        if let held = cache[nodeId] {
+            return Self.served(held)
+        }
+        guard let kept = storedProfile(nodeId) else {
+            return nil
+        }
+        cache[nodeId] = kept
+        return Self.served(kept)
     }
 
     /// A profile for `nodeId` pinned, delivered as `wire`: caches it, stops wanting it, and answers the

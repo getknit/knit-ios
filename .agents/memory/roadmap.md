@@ -57,6 +57,13 @@ explicit direction.** Update this file in the change that ships an item.
     knit-next's fix (ADR 2026-09.9xuu) serves profiles first and parks a whole custody quota per sender;
     `CustodySync` and `PendingInbound` mirror it. It merged unchanged as `aeba5382` on 2026-09-26, and the pin
     moved there. Done.
+  - **A backlog whose key the carrier lost (2026-09-27):** in `android-rings` the Pixel 3 served 81 frames a fresh
+    peer could not read, because it no longer held a signed copy of their senders' profiles. knit-next's fix (ADR
+    2026-09.g64k) keeps the signed frame each pin came from and sends a sender's key ahead of their backlog. This
+    port mirrors it in schema v2, `KeyExchange` and `CustodySync`. Against the Pixel 3 on that build,
+    `android-rings` now converges custody first, and it passed 10 of 10 with all 796 live ids held in 501 s
+    (`.agents/context/linux-peer.md`, "What the carrier's kept keys showed"). Still owed: the fix reaching
+    knit-next's `main`, and the pin moving past it.
   - **The relay line (2026-09-26):** rehearsed with a second peer on `hci0`, shared (`--shared-adapter`), on the
     maintainer's go-ahead. `interop.py relay` passed 16 of 16: posts and DMs crossed peer A both ways, and the three
     custody sets converged (`.agents/context/linux-peer.md`, "What the relay line showed").

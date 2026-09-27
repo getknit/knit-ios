@@ -51,6 +51,28 @@ import Testing
         #expect(exchange.cachedProfile(of: wanted) == cached)
     }
 
+    @Test func aHolderWhoseCacheARestartEmptiedAnswersFromItsPinStore() {
+        // Only the signed frame its pin came from is left (knit-next ADR 2026-09.g64k): the request is answered from
+        // there, asks nobody else, and the frame is cached on the way out.
+        let kept = profile(9)
+        var exchange = KeyExchange { [wanted] in $0 == wanted ? kept : nil }
+        let answer = exchange.onRequest([wanted.string], from: neighbor, me: me, now: 0)
+        #expect(answer.serve == [WireEnvelope(relay: false, sig: kept.sig, signed: kept.signed)])
+        #expect(answer.ask.isEmpty)
+        #expect(exchange.missingIds.isEmpty)
+        #expect(exchange.cachedProfile(of: wanted) == kept)
+    }
+
+    @Test func serveKeyHandsTheHeldProfileOverPointToPointAndNothingWhenNoneIsHeld() {
+        let pinned = profile(1)
+        let stored = profile(2)
+        var exchange = KeyExchange { [wanted] in $0 == wanted ? stored : nil }
+        #expect(exchange.serveKey(wanted) == WireEnvelope(relay: false, sig: stored.sig, signed: stored.signed), "from the pin store")
+        #expect(exchange.serveKey(neighbor) == nil, "no key held for it")
+        _ = exchange.onProfilePinned(wanted, wire: pinned)
+        #expect(exchange.serveKey(wanted) == WireEnvelope(relay: false, sig: pinned.sig, signed: pinned.signed), "the cache first")
+    }
+
     @Test func aNonHolderAsksOnTheRequestersBehalfAndServesItLater() {
         var exchange = KeyExchange()
         let answer = exchange.onRequest([wanted.string], from: neighbor, me: me, now: 0)

@@ -25,7 +25,7 @@ public final class MeshEngine {
     var router: Router
     var custody = CustodySync()
     var pendingInbound = PendingInbound()
-    var keyExchange = KeyExchange()
+    var keyExchange: KeyExchange
     var ackSync = AckSync()
     var events: [MeshEvent] = []
     /// Our profile frame for the current publish stamp, signed once and reused (ADR 2026-09.qztx in knit-next).
@@ -63,6 +63,7 @@ public final class MeshEngine {
         self.configuration = configuration
         self.log = log
         router = Router(configuration: configuration.router)
+        keyExchange = KeyExchange { [peers = stores.peers] in peers.profileFrame(of: $0) }
     }
 
     /// This node's id.
@@ -153,9 +154,17 @@ public final class MeshEngine {
         perform(router.relay(frame, neighbors: neighborIds, jitter: drawJitter(), now: now))
     }
 
-    /// A neighbour's custody digest arrived (`ForwardSync.onDigest`): serve every live frame it lacks.
+    /// A neighbour's custody digest arrived (`ForwardSync.onDigest`): serve every live frame it lacks, each sender's
+    /// key ahead of a backlog the neighbour could not otherwise verify.
     public func receiveDigest(_ ids: [String], from neighbor: NodeId) {
-        for wire in custody.missing(from: ids, for: neighbor, in: stores.custody, now: clock.wallMilliseconds()) {
+        let reply = custody.missing(from: ids, for: neighbor, in: stores.custody, now: clock.wallMilliseconds())
+        for sender in reply.keysAhead {
+            // Point to point, as a key request's answer goes, so it is never flooded (knit-next ADR 2026-09.7bu7).
+            if let key = keyExchange.serveKey(sender) {
+                transport.send(key, to: neighbor)
+            }
+        }
+        for wire in reply.frames {
             transport.send(wire, to: neighbor)
         }
     }

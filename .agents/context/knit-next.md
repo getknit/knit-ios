@@ -19,6 +19,13 @@ Kotlin wins.
     - `cfa4a627` adds a debug-only link cap, the bridge's `BLECAP`. Release still runs 6 links.
     - `e8b98398` keeps spool copies out of overhear suppression. There is no spool here.
   - No wire bytes or vectors moved.
+- **Mirrored ahead of the pin: knit-next ADR 2026-09.g64k,** a carrier keeps the signed profile of everyone it
+  carries. On 2026-09-27 it is uncommitted work on knit-next's `fix/carrier-keeps-profile`, whose `HEAD` is
+  `main`'s `4f9aa75a`, and it is not on `main`. This port already mirrors it: `peer_profiles`, `KeyExchange`'s
+  fallback to the pin store, and the keys `CustodySync.missing` sends ahead (`custody.md`, "Key recovery"). So this
+  port depends on it. If review changes it, change the mirror to match, and move the pin past it once it merges.
+  It changes no wire bytes. Android's database moves to v16, so a phone that runs it cannot go back to a v15
+  build; the lab Pixels 3, 7, 8 and 9 run it now.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`. Moving the pin means re-reading the files below and updating
   those four, in the same change, then running `scripts/sync-vectors.py`.

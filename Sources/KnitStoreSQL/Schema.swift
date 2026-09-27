@@ -17,7 +17,8 @@ import GRDB
 internal enum Schema {
     /// Each migration's identifier and statements, oldest first.
     static let migrations: [(identifier: String, statements: [String])] = [
-        ("v1", v1)
+        ("v1", v1),
+        ("v2", v2),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -89,6 +90,19 @@ internal enum Schema {
             publishedAt INTEGER NOT NULL
         ) STRICT
         """,
+    ]
+
+    /// Schema v2: the signed profile each pin came from (`peer_profiles`, knit-next's database v16, its ADR
+    /// 2026-09.g64k). It starts empty: a pin made before it gets its proof when that peer's profile next arrives.
+    private static let v2 = [
+        """
+        CREATE TABLE peer_profiles (
+            nodeId BLOB NOT NULL PRIMARY KEY,
+            signed BLOB NOT NULL,
+            sig BLOB NOT NULL,
+            sentAt INTEGER NOT NULL
+        ) STRICT
+        """
     ]
 
     /// The migrator that brings any database this build knows up to date.
