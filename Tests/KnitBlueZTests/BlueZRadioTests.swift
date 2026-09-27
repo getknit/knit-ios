@@ -50,6 +50,7 @@
             let radio = try radio(fake, sockets: sockets)
             #expect(radio.advertisesServiceData)
             #expect(!radio.dialsGattPeers)
+            #expect(!radio.servesDoorbell, "the android profile serves no GATT, so its HELLO never asks to be rung")
             let collector = Collector()
             let listening = Task { await collector.take(radio.events) }
             radio.start()
@@ -68,11 +69,12 @@
             await listening.value
         }
 
-        @Test func theIOSProfileAdvertisesNoServiceDataAndReadsGATTPayloads() throws {
+        @Test func theIOSProfileAdvertisesNoServiceDataReadsGATTPayloadsAndServesADoorbell() throws {
             let fake = try FakeBlueZ()
             let radio = try radio(fake, sockets: UnixSockets(directory: UnixSockets.temporaryDirectory()), profile: .ios)
             #expect(!radio.advertisesServiceData)
             #expect(radio.dialsGattPeers)
+            #expect(radio.servesDoorbell)
         }
 
         @Test func aRadioReadsGATTPayloadsWhenToldWhateverItsProfile() throws {
@@ -85,6 +87,7 @@
             #expect(!configuration.loop.readsGattPayloads)
             configuration.readsGattPayloads = true
             #expect(configuration.loop.readsGattPayloads, "knit-peer scan lists iPhones")
+            #expect(!configuration.profile.servesDoorbell, "reading GATT is not serving it")
         }
 
         @Test func theDefaultConfigurationUsesL2CAPOnTheSystemBus() throws {

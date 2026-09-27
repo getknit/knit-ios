@@ -28,9 +28,13 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     public static let linkPreview: Self = 0x400
     /// Wi-Fi Direct file transfer.
     public static let directTransfer: Self = 0x800
+    /// This node serves the GATT doorbell; ring it after frames. Read from the HELLO only, and sent only there, by a
+    /// radio that serves one (`Radio.servesDoorbell`): it is above the advert's 8 bits, and never in the profile.
+    public static let doorbell: Self = 0x1000
 
     /// What this build advertises: end-to-end DMs (v1) and store-and-forward, `0x9`. Never the ratchet
-    /// until it ships, or Android would seal DMs we cannot open.
+    /// until it ships, or Android would seal DMs we cannot open. Never ``doorbell`` either: that is the radio's to
+    /// claim, in the HELLO alone.
     public static let local: Self = [.endToEnd, .storeForward]
 
     /// The bit field, a Kotlin `Long`.

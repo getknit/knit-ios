@@ -45,7 +45,7 @@ ladder, not the first.
     iPhone through a debug build's USB bridge and an Android phone through knit-next's, for items 2 to 6
     (ADR 2026-09.kwa8). `iphone-relay` adds a peer on `hci0` beyond the iPhone for item 7, `iphone-wake`
     runs item 9's wake test, with someone to lock and unlock the iPhone, and `iphone-scan` runs the scan-filter
-    check, with the same help.
+    check, with the same help. `iphone-rings` and `android-rings` check the doorbell's rings each way.
 
 ## Coverage
 

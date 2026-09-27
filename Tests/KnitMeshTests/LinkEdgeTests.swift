@@ -102,6 +102,29 @@ import Testing
         #expect(lines.contains("warning link dropped a frame too large for a record"))
     }
 
+    @Test func aBadRecordIsLoggedWithWhatCameBeforeIt() throws {
+        let rig = LinkRig(local: high)
+        let id = try rig.link(low)
+        let hello = LinkRig.helloRecord(low)
+        let frame = LinkRig.frameRecord(LinkRig.signedFrame("f1"))
+        let garbage: [UInt8] = [0x57, 0x36, 0x00, 0x01, 0x02]
+        _ = rig.handle(.received(id, frame + garbage))
+        let line = try #require(rig.log.all.first { $0.hasPrefix("warning link \(id) sent a bad record") })
+        let at = hello.count + frame.count
+        #expect(line.contains("unknownTag(87) at byte \(at) of \(at + garbage.count); next 5736000102 \"W6...\""))
+        let tail = Hex.encode(Array(frame.suffix(16)))
+        #expect(line.contains("after hello \(hello.count - 5), frame \(frame.count - 5) ending \(tail)"))
+        #expect(line.hasSuffix("; reads \(hello.count), \(frame.count + garbage.count)"))
+    }
+
+    @Test func aBadFirstRecordSaysNothingCameBeforeIt() throws {
+        let rig = LinkRig(local: high)
+        _ = rig.handle(.accepted(ChannelID(200)))
+        _ = rig.handle(.received(ChannelID(200), [9, 0, 0, 0, 0]))
+        let line = try #require(rig.log.all.first { $0.hasPrefix("warning link ch200 sent a bad record") })
+        #expect(line.hasSuffix("unknownTag(9) at byte 0 of 5; next 0900000000 \".....\"; no record before it; reads 5"))
+    }
+
     @Test func refusalsAndReplacementsAreLogged() {
         let rig = LinkRig(local: low)
         _ = rig.handle(.sighted(LinkRig.sighting(high)))

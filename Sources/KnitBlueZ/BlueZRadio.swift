@@ -51,6 +51,8 @@
         /// Whether the radio reads the GATT payload of a peer that advertises only the `0xFE30` UUID
         /// (``Configuration/readsGattPayloads``), so the advert says so and such a peer waits for us to dial it.
         public let dialsGattPeers: Bool
+        /// Whether the radio serves the doorbell (``RadioProfile/servesDoorbell``): the `ios` profile only.
+        public let servesDoorbell: Bool
         public let events: AsyncStream<RadioEvent>
         private let mailbox = Mailbox()
         private let finished: AsyncStream<Void>
@@ -60,6 +62,7 @@
         public init(configuration: Configuration) {
             advertisesServiceData = configuration.profile.advertisesServiceData
             dialsGattPeers = configuration.readsGattPayloads
+            servesDoorbell = configuration.profile.servesDoorbell
             let (stream, continuation) = AsyncStream<RadioEvent>.makeStream()
             let (ended, done) = AsyncStream<Void>.makeStream()
             events = stream

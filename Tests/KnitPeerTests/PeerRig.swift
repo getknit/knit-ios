@@ -29,6 +29,7 @@ final class StillClock: MeshClock {
 final class PeerRadio: Radio {
     let advertisesServiceData = true
     let dialsGattPeers = false
+    let servesDoorbell = false
     let events: AsyncStream<RadioEvent>
     private let emitter: AsyncStream<RadioEvent>.Continuation
     private struct State {

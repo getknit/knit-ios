@@ -72,6 +72,17 @@ struct LinkDoorbellTests {
         #expect(rig.radio.rings == [low, middle, low])
     }
 
+    @Test func ringsDueTogetherGoOutInChannelOrder() throws {
+        let rig = LinkRig(local: LinkRig.high)
+        let low = try rig.link(LinkRig.low)
+        let middle = try rig.link(LinkRig.middle)
+        rig.links.send(LinkRig.signedFrame("f1"), to: nil)
+        rig.clock.advance(1000)
+        rig.links.send(LinkRig.signedFrame("f2", sig: 2), to: nil)
+        _ = rig.advance(interval - 1000)
+        #expect(rig.radio.rings == [low, middle, low, middle])
+    }
+
     @Test func aLinkThatClosesForgetsItsNextRing() throws {
         let rig = LinkRig(local: LinkRig.high)
         let id = try rig.link(LinkRig.low)
@@ -90,6 +101,74 @@ struct LinkDoorbellTests {
         #expect(rig.links.ringsHeard == 2)
         #expect(rig.links.rings == 0)
     }
+
+    // MARK: What rings
+
+    @Test(arguments: [FrameType.typing, .blobRequest, .keyRequest])
+    func upkeepGoesOutWithoutRinging(type: FrameType) throws {
+        // Android skips the same three (`DoorbellPolicy.rings`): the 60 s tick re-sends the requests.
+        let rig = LinkRig(local: LinkRig.high)
+        let id = try rig.link(LinkRig.low)
+        rig.links.send(LinkRig.signedFrame("u1", type: type), to: LinkRig.low)
+        _ = rig.advance(interval)
+        #expect(rig.radio.frames(on: id).count == 1)
+        #expect(rig.radio.rings.isEmpty)
+        #expect(rig.links.rings == 0)
+    }
+
+    @Test func anUnsignedRequestDoesNotRing() throws {
+        let rig = LinkRig(local: LinkRig.high)
+        let id = try rig.link(LinkRig.low)
+        let request = RelayEnvelope(type: .blobRequest, id: "b1", senderId: LinkRig.high.string, payload: [])
+        rig.links.send(WireEnvelope(ttl: 1, relay: false, sig: [], signed: request.encoded), to: LinkRig.low)
+        #expect(rig.radio.frames(on: id).count == 1)
+        #expect(rig.radio.rings.isEmpty)
+    }
+
+    @Test(arguments: [FrameType.chat, .profile, .receipt, .reaction, FrameType(rawValue: "future")])
+    func everyOtherTypeRings(type: FrameType) throws {
+        let rig = LinkRig(local: LinkRig.high)
+        let id = try rig.link(LinkRig.low)
+        rig.links.send(LinkRig.signedFrame("f1", type: type), to: LinkRig.low)
+        #expect(rig.radio.rings == [id])
+    }
+
+    @Test func aFrameWhoseTypeCannotBeReadRings() throws {
+        let rig = LinkRig(local: LinkRig.high)
+        let id = try rig.link(LinkRig.low)
+        rig.links.send(WireEnvelope(sig: Array(repeating: 1, count: 64), signed: [0xFF]), to: LinkRig.low)
+        #expect(rig.radio.rings == [id])
+    }
+
+    @Test func upkeepLeavesTheScheduleAlone() throws {
+        let rig = LinkRig(local: LinkRig.high)
+        let id = try rig.link(LinkRig.low)
+        rig.links.send(LinkRig.signedFrame("k1", type: .keyRequest), to: LinkRig.low)
+        rig.clock.advance(1000)
+        rig.links.send(LinkRig.signedFrame("f1", sig: 2), to: LinkRig.low)
+        #expect(rig.radio.rings == [id], "the chat rings at once: the keyreq before it did not start the interval")
+        _ = rig.advance(interval)
+        #expect(rig.radio.rings == [id])
+    }
+
+    // MARK: Asking to be rung
+
+    @Test(arguments: [false, true])
+    func theHelloAsksToBeRungExactlyWhenTheRadioServesADoorbell(serves: Bool) throws {
+        let rig = LinkRig(local: LinkRig.high, servesDoorbell: serves)
+        rig.sightToPromotion(LinkRig.low)
+        let dialed = try #require(rig.radio.dials.first?.channel)
+        _ = rig.handle(.connected(dialed))
+        let accepted = ChannelID(100)
+        _ = rig.accept(LinkRig.middle, on: accepted)
+        for id in [dialed, accepted] {
+            let hello = try #require(rig.radio.records(on: id).first)
+            #expect(hello == LinkRig.ourHello(LinkRig.high, servesDoorbell: serves))
+            #expect(Hello(payload: hello.payload).capabilities.hex == (serves ? "1009" : "9"))
+        }
+    }
+
+    // MARK: Tuning
 
     @Test func aZeroIntervalNeverRings() throws {
         let rig = LinkRig(local: LinkRig.high, configuration: LinkManager.Configuration(ringIntervalMilliseconds: 0))

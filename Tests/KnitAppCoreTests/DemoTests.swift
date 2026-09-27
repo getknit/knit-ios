@@ -67,7 +67,7 @@ import Testing
 
     @Test func theDemoRadioGoesNowhere() async {
         let radio = DemoRadio(state: .on)
-        #expect(!radio.advertisesServiceData && !radio.dialsGattPeers)
+        #expect(!radio.advertisesServiceData && !radio.dialsGattPeers && !radio.servesDoorbell)
         radio.start()
         radio.advertise(AdvertPayload(capabilities: 0, nodeId: AppRig.me.nodeId, digestCue: 0, psm: 0))
         radio.write([1], to: ChannelID(1))

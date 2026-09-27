@@ -78,6 +78,14 @@ public struct LinkRecordReader: Sendable {
     /// Whether a partial record is buffered. At end of stream, a partial record means a truncated link.
     public var hasPartialRecord: Bool { start < buffer.count }
 
+    /// How many of the link's bytes went into whole records: where the next record starts, counted from the first.
+    public private(set) var consumed = 0
+
+    /// Up to `count` buffered bytes from where the next record starts, which is what a bad record was, for the log.
+    public func upcoming(_ count: Int) -> [UInt8] {
+        Array(buffer[start..<min(buffer.count, start + count)])
+    }
+
     /// Buffers bytes read from the link.
     public mutating func append(_ bytes: some Collection<UInt8>) {
         buffer += bytes
@@ -104,6 +112,7 @@ public struct LinkRecordReader: Sendable {
             return nil
         }
         let record = LinkRecord(tag, payload: Array(buffer[(start + LinkRecord.headerBytes)..<end]))
+        consumed += end - start
         start = end
         compact()
         return record

@@ -97,6 +97,7 @@ extension LinkManager {
             return []
         }
         channels[id]?.reader.append(bytes)
+        channels[id]?.trace.read(bytes.count)
         var events: [Event] = []
         // The role and stage only, never the whole channel: a copy of its reader would copy the buffer each record.
         while let (role, stage) = channels[id].map({ ($0.role, $0.stage) }) {
@@ -104,13 +105,16 @@ extension LinkManager {
             do {
                 record = try channels[id]?.reader.next()
             } catch {
-                // Android throws on an unknown tag or a bad length and drops the link; so do we.
-                log.log(.warning, "link \(id) sent a bad record: \(error)")
+                // Android throws on an unknown tag or a bad length and drops the link; so do we, and say what came.
+                if let channel = channels[id] {
+                    log.log(.warning, "link \(id) sent a bad record: \(error) \(channel.trace.explain(channel.reader))")
+                }
                 return events + retire(id, backingOff: true, now: now) + promote(now: now)
             }
             guard let record else {
                 break
             }
+            channels[id]?.trace.parsed(record)
             switch stage {
             case .connecting:
                 events += retire(id, backingOff: true, now: now)

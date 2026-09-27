@@ -20,6 +20,13 @@ public enum RadioProfile: Sendable, CaseIterable {
         self == .ios
     }
 
+    /// Whether the peer serves the GATT doorbell, and so asks to be rung in its HELLO. Only the `ios` profile
+    /// registers the GATT application the doorbell lives in; the `android` profile serves no GATT, as Android does not,
+    /// and must never claim the bit.
+    var servesDoorbell: Bool {
+        self == .ios
+    }
+
     /// The profile named `android` or `ios`, as `--radio-profile` spells it.
     public init?(name: String) {
         guard let profile = Self.allCases.first(where: { $0.name == name }) else {

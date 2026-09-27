@@ -78,8 +78,11 @@ extension LinkManager {
         radio.advertise(payload)
     }
 
+    /// Writes our HELLO: this build's capabilities, plus `CAP_DOORBELL` when the radio serves one, so Android rings
+    /// it (knit-next ADR 2026-09.dqvb). The bit goes nowhere else: not in the advert, and not in the signed profile.
     func writeHello(on id: ChannelID) {
-        if let record = LinkRecord(.hello, payload: Hello(nodeId: localId.string).payload).encoded {
+        let capabilities: Capabilities = radio.servesDoorbell ? Capabilities.local.union(.doorbell) : .local
+        if let record = LinkRecord(.hello, payload: Hello(nodeId: localId.string, capabilities: capabilities).payload).encoded {
             write(record, on: id)
         }
     }

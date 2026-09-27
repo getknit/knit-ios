@@ -118,6 +118,8 @@ public final class LinkManager: MeshTransport {
         let role: Role
         var stage: Stage
         var reader = LinkRecordReader()
+        /// What the channel carried lately, for the warning if a record fails to parse.
+        var trace = LinkTrace()
         /// When the dial or HELLO times out.
         var deadline: Int64?
     }
@@ -216,13 +218,16 @@ public final class LinkManager: MeshTransport {
         let targets = peer.map { liveChannel(to: $0).map { [$0] } ?? [] } ?? liveLinks.map(\.channel)
         let key = FrameKey.ofSigned(wire)
         let now = clock.monotonicMilliseconds()
+        let wakesThePeer = Self.rings(wire)
         for id in targets {
             // One write per link per frame, either way: the far end's seen set would drop the rest.
             if let key, !crossings.firstCrossing(link: id, key: key, now: now) {
                 continue
             }
             write(record, on: id)
-            ringAfterFrame(on: id, now: now)
+            if wakesThePeer {
+                ringAfterFrame(on: id, now: now)
+            }
         }
     }
 

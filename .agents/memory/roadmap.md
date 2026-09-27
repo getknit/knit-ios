@@ -126,7 +126,8 @@ explicit direction.** Update this file in the change that ships an item.
     which is the item's fallback. A write to a GATT doorbell does wake it (ADR 2026-09.khjj): tried by hand, a
     locked iPhone took the peer's DM 4.8 s after a ring. `LinkManager` now rings after frames, and the Linux peer
     rings. Item 9 passes against it: `iphone-wake --sender peer` passed 9 of 9, with every DM of ten minutes
-    locked read within 0.5 s and notified. Android rings once A4 lands, and until then falls back.
+    locked read within 0.5 s and notified. Against Android it passes with A4: `iphone-wake --sender phone
+    --expect-wakes` passed 10 of 10 against the Pixel 3, and a phone without A4 falls back.
   - **Scan filter:** a scan filtered on `0xFE30` matches Android's advert, which has no UUID list, with Knit open
     and with the iPhone locked (`scripts/interop.py iphone-scan`). Locked, it found new peers in 30 to 120 s, but
     each match woke Knit, which then ran three quarters of the time among five Android phones, so Knit keeps its
@@ -150,8 +151,17 @@ explicit direction.** Update this file in the change that ships an item.
 - **Companion change A3:** Android finds and dials iPhones.
 - **Companion change A4:** Android rings an iPhone's doorbell (ADR 2026-09.khjj) after the frames it writes on the
   iPhone's link, on `LinkManager`'s schedule: a GATT write without response over the link's own connection, once
-  service discovery finds the doorbell. Until it lands, a locked iPhone reads Android's frames only at its next
-  foreground. It pairs naturally with A3, which gives Android a GATT client for iPhones anyway.
+  service discovery finds the doorbell. Built as knit-next `c3191717` (its ADR 2026-09.dqvb), for a peer whose
+  HELLO carries `CAP_DOORBELL` (`0x1000`); it is on knit-next's local `main`, not yet pushed. This port sends the
+  bit whenever its radio serves the doorbell, and rings nothing for `typing`, `blobreq` and `keyreq`, as Android
+  does. On 2026-09-27 `scripts/interop.py android-rings` passed against the Pixel 3, and so did `iphone-wake
+  --sender phone --expect-wakes`, with every DM of ten locked minutes waking Knit. Still owed: the push, and the
+  link-up drops that run found. Twice in three links the iPhone read a record tag outside 1..7 while the Pixel was
+  still looking up its doorbell, and dropped the link. A snoop log on the Pixel did not catch one in 19 more
+  relinks, and showed the Pixel keeping every L2CAP frame whole (`.agents/context/linux-peer.md`, "What A4
+  showed"). A bad record's warning now carries what the link read around it, so the next one can be read from the
+  iPhone's log. Android rings only links the iPhone dialed until A3, which must then take a dialed iPhone's
+  capabilities from its HELLO reply rather than its advert.
 - **Two iPhones both ways:** an iPhone rings only the peers it dialed, so of two iPhones the one with the smaller id
   cannot wake the other. A second GATT connection toward its dialer would let it; nothing needs it before two
   iPhones are on hand.

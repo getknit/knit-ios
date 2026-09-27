@@ -3,16 +3,26 @@
 How knit-next's `mesh/bluetooth/` and `mesh/link/` behave at the pinned commit, and what that means for an
 iPhone. The iPhone's own design decisions are ADRs; this file is the Android ground they stand on.
 
-## No GATT on the mesh plane
+## GATT on the mesh plane: only a doorbell
 
-Android uses no services, characteristics, notifications or MTU exchange. Each phone is both roles at
-once:
+At the pinned commit Android serves no GATT and reads none: no services, characteristics, notifications or MTU
+exchange. Each phone is both roles at once:
 
 - **Peripheral:** a connectable advert and an L2CAP server (`listenUsingInsecureL2capChannel`).
 - **Central:** a scanner and an L2CAP client (`createInsecureL2capChannel(psm)`).
 
 Channels are LE credit-based and insecure: no pairing, no bonding, no link encryption. CoreBluetooth's
 equivalents are `publishL2CAPChannel(withEncryption: false)` and `CBPeripheral.openL2CAPChannel(_:)`.
+
+Companion change A4 (knit-next `c3191717`, its ADR 2026-09.dqvb, on its local `main` but not yet pushed) makes Android a
+GATT client toward one kind of peer: one whose HELLO carries `CAP_DOORBELL` (`0x1000`), which says the peer serves
+the doorbell. On a link it accepted from such a peer, Android attaches a GATT client to that link's own connection
+(`connectGatt` on a device it is already connected to does not dial). It discovers the `0xFE30` service and finds
+the doorbell, `f34c056b-5830-4243-a888-01f92f49e446`, provided it takes a write without response. Then it rings it
+after the frames it writes, with a 1-byte write without response, at most once every 5 s plus once after a burst.
+`typing`, `blobreq` and `keyreq` frames never ring; nor do digests, FILE records or the HELLO. It never writes with
+a response, never serves GATT itself, and never sets the bit. A link it dialed takes its capabilities from the
+advert's low byte, which cannot show the bit, so it rings only links it accepted until A3.
 
 ## The advert
 
@@ -49,7 +59,7 @@ bytes. The tags:
 | 3 | `FILE_CHUNK` | raw bytes, 16 KiB from Android; a file over 8 MiB + 64 KiB is aborted |
 | 4 | `FILE_END` | empty |
 | 5 | `KEEPALIVE` | empty; Android never sends one and ignores it on receipt |
-| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|fff` |
+| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|fff`; the caps may carry `CAP_DOORBELL` (`0x1000`), which no advert can |
 | 7 | `DIGEST` | UTF-8 JSON `{"ids":[…]}` |
 
 - **An unknown tag, a bad length or a truncated record throws on Android and drops the link.** Never send
@@ -129,8 +139,10 @@ radio.
   wake a suspended Knit. It waits on the link, and arrives when Knit next comes to the front. A link held through
   14 minutes locked, and ten DMs arrived within a second of Knit opening (MVP item 9's wake test,
   `.agents/context/linux-peer.md`). A write to the doorbell beside the GATT payload does wake it, for about 9 s,
-  and the link manager rings after the frames it writes (ADR 2026-09.khjj). The Linux peer rings, Android does
-  once companion change A4 lands, and an iPhone rings the peers it dialed.
+  and the link manager rings after the frames it writes (ADR 2026-09.khjj). The Linux peer rings, and an iPhone
+  rings the peers it dialed. Android rings with A4, and the Pixel 3's rings woke a locked iPhone for every DM of a
+  ten-minute test: the iPhone's HELLO asks for it with `CAP_DOORBELL`, and Android rings the links the iPhone
+  dialed, which until A3 is all of them. A phone whose build predates A4 never rings, and its frames wait for the next foreground.
 - **Address rotation is harmless**, because everything keys on node id.
 - **Stale links block reconnects** until Android's link-supervision timeout notices the drop, because the
   responder refuses a peer it still thinks is linked. A1 lets an unsighted dialer replace its own stale
@@ -154,6 +166,11 @@ service data serves that payload as a read-only characteristic, `848eedcd-a2e3-4
 primary `0xFE30` service, with the digest cue zeroed (ADR 2026-09.xzpt). A radio that reads those payloads
 paces itself by `GattPayloads`: one peer at a time, each read once until a dial to it fails, a failed read
 tried again after 30 s, and a device that serves no payload left alone for ten minutes.
+
+The HELLO adds `CAP_DOORBELL` (`0x1000`) to this build's `0x9`, reading `1009`, only when the radio serves the
+doorbell (`Radio.servesDoorbell`): `KnitBLE`, and knit-peer's `ios` profile. The `android` profile, like Android,
+serves no GATT and never sends it. The link manager rings after every frame it writes except `typing`, `blobreq`
+and `keyreq`, as Android does, so both platforms wake an iPhone equally often (ADR 2026-09.khjj).
 
 `KnitBLE` is the iPhone's radio. Its central scans every advert with duplicates while Knit is open, takes
 Android's `0xFE30` service data as a sighting, and reads the GATT payload of a peer that lists only the UUID,

@@ -45,6 +45,27 @@ Three alternatives were weighed:
 - **Item 9's fallback, where a DM arrives at the next foreground.** It needs nothing new, but a locked iPhone
   would then carry nothing for the mesh.
 
+**Amended 2026-09-27, when A4 was built** (knit-next `c3191717` on branch `feat/ble-doorbell`, its ADR 2026-09.dqvb;
+on knit-next's local `main`, not yet pushed): Android rings a peer that asks to be rung, and the peer asks with a capability bit in its HELLO,
+`CAP_DOORBELL = 0x1000`. Whether the HELLO carries it is the radio's call: `Radio.servesDoorbell` is true for
+`KnitBLE` and for the Linux peer's `ios` profile, whose HELLOs read `1009`, and false everywhere else, where they
+still read `9`. The bit stays out of `Capabilities.local`, the signed profile and the advert, whose one capability
+byte could not hold it anyway, so no fixture or emitted vector moved. Android reads it only from the HELLO of a link
+it accepted, because a dialed link takes its capabilities from the advert, so until A3 only links the iPhone dialed
+ring. It then opens a GATT client on that link's own connection, looks the doorbell up once, and rings it with a
+write without response, on this ADR's schedule. Both sides also stopped ringing for three frame types: `typing`,
+`blobreq` and `keyreq` now wait for the next wake, as digests do. They are the link's upkeep, and the 60 s tick
+re-sends both requests for as long as a blob or a key is missing, which would wake the iPhone every minute. The UUID
+is cross-platform law once that commit reaches knit-next's `origin/main`. `LinkTests`'
+`theDoorbellBitIsPinnedAndNeverOurs` and `LinkDoorbellTests` guard the bit and the filter. On hardware,
+`interop.py android-rings` checks that Android rings, and it passed 9 of 9 against the Pixel 3 on 2026-09-27: the
+Pixel found the doorbell 4 s after the link came up, and a post and a DM each rang within 1.5 s of being sent.
+`interop.py iphone-wake --sender phone --expect-wakes` checks that those rings wake a locked iPhone. It passed 10 of
+10 the same morning: every DM of ten locked minutes woke Knit, arrived within 0.3 s, was delivered within 3.2 s and
+was notified. One cost showed up at link-up: twice in three links, the iPhone read a record tag outside 1..7 while
+the Pixel was still discovering its GATT services, and dropped the link. The iPhone dialed again at once, and the
+third link held for the whole run (`.agents/context/linux-peer.md`, "What A4 showed"). The cause is not yet known.
+
 **Consequences / limits:**
 
 - **Cross-platform law.** The UUID becomes law once Android rings, which is companion change A4 in knit-next.

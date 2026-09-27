@@ -206,6 +206,7 @@ private final class StillClock: MeshClock {
 private final class QuietRadio: Radio {
     let advertisesServiceData = true
     let dialsGattPeers = false
+    let servesDoorbell = false
     let events = AsyncStream<RadioEvent> { _ in
         // Nothing to report.
     }

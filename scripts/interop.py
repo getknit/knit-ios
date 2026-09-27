@@ -10,15 +10,17 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py relay   --device SERIAL [--radio-profile ios|android]
     scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline]
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
-    scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--udid UDID] [--minutes 10]
+    scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
     scripts/interop.py iphone-rings [--udid UDID]
+    scripts/interop.py android-rings --device SERIAL
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
     scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
 
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
 bridge over USB (ADR 2026-09.kwa8); `iphone-relay` runs MVP item 7's line through the iPhone; `iphone-wake` is item 9's
 wake test, with someone to lock the iPhone and unlock it again; `iphone-scan` is P8's scan-filter check, with someone to
-do the same; `bridge` sends that bridge commands by hand and prints what comes back.
+do the same; `bridge` sends that bridge commands by hand and prints what comes back. `iphone-rings` checks the doorbell
+rings an iPhone sends, and `android-rings` those an Android phone sends, with companion change A4.
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
@@ -540,8 +542,10 @@ def iphone_wake(arguments: argparse.Namespace) -> int:
 
     Data on an open link does not wake a suspended Knit; a write to its doorbell does (.agents/context/linux-peer.md).
     `--sender peer` has knit-peer on hci0 send the DMs, ringing after each as its link manager does, and every DM
-    must wake Knit. `--sender phone` has the Android phone send them. Android rings no doorbell yet (companion change
-    A4), so its DMs are only counted, and the check is the fallback: each arrives within 60 s of Knit opening."""
+    must wake Knit. `--sender phone` has the Android phone send them. A build with companion change A4 (knit-next
+    `feat/ble-doorbell`) rings the iPhone's doorbell too, and with `--expect-wakes` every DM must wake Knit, as with
+    the peer, and the phone must have logged its rings. Without it the phone's DMs are only counted, for a build that
+    predates A4, and the check is item 9's fallback: each arrives within 60 s of Knit opening."""
     ios = IPhone(arguments.udid)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -555,8 +559,22 @@ def iphone_wake(arguments: argparse.Namespace) -> int:
         sender = _PeerSender(ios, arguments, nonce)
     else:
         sender = _PhoneSender(Phone(arguments.device), ios)
-    print(json.dumps({"run": "iphone-wake", "sender": arguments.sender, "from": sender.node_id, "iphone": ios.node_id, "minutes": arguments.minutes}))
+    expect_wakes = arguments.sender == "peer" or arguments.expect_wakes
+    print(
+        json.dumps(
+            {
+                "run": "iphone-wake",
+                "sender": arguments.sender,
+                "from": sender.node_id,
+                "iphone": ios.node_id,
+                "minutes": arguments.minutes,
+                "expectWakes": expect_wakes,
+            }
+        )
+    )
     try:
+        if isinstance(sender, _PhoneSender) and arguments.expect_wakes:
+            run.step("phone-build-rings", lambda: _rings_doorbells(sender.phone))
         try:
             run.step("link", lambda: sender.link(ios))
             print(json.dumps({"action": "lock the iPhone"}), flush=True)
@@ -567,9 +585,9 @@ def iphone_wake(arguments: argparse.Namespace) -> int:
         sent = _wake_window(sender, nonce, arguments.minutes)
         ticks = [dm["tickedAfter"] for dm in sent]
         woke = [tick for tick in ticks if tick is not None and tick <= 60]
-        if arguments.sender == "peer":
+        if expect_wakes:
             run.step("dms-woke-knit", lambda: _all_woke(len(woke), ticks))
-            run.step("peer-rang", sender.rang)
+            run.step(f"{arguments.sender}-rang", sender.rang)
         else:
             run.step("dms-that-woke-knit", lambda: {"count": len(woke), "of": len(sent), "tickedAfter": ticks})
         run.step("link-held", lambda: sender.held(sum(dm["linkGone"] for dm in sent)))
@@ -617,11 +635,14 @@ class _PhoneSender:
 
     def held(self, gone: int) -> dict:
         """The phone listed the iPhone among its links at every look, and logged no link down for it."""
-        log = self.phone.shell("logcat -d -s BluetoothMeshTransport:*")
-        downs = [line.split(": ", 1)[-1] for line in log.splitlines() if f"link down: {self.ios_id}" in line]
+        downs = _phone_log(self.phone, f"link down: {self.ios_id}")
         if downs or gone:
             raise RuntimeError(f"the link went down: {gone} looks without it, {downs[:3]}")
         return {}
+
+    def rang(self) -> dict:
+        """The phone rang the iPhone's doorbell while it was locked: the rings it logged since ``begin`` cleared its log."""
+        return _phone_rang(self.phone, self.ios_id)
 
     def stop(self) -> None:
         pass
@@ -733,6 +754,121 @@ def _positive(status: dict, key: str) -> int:
     if not status.get(key):
         raise RuntimeError(f"{key} is {status.get(key)}")
     return status[key]
+
+
+def android_rings(arguments: argparse.Namespace) -> int:
+    """Companion change A4, the mirror of `iphone-rings`: Android rings the doorbell of a peer whose HELLO asks for it
+    (`CAP_DOORBELL`, knit-next ADR 2026-09.dqvb). knit-peer runs on hci1 in the `ios` profile, which serves a doorbell
+    and says so in its HELLO. The phone never sights it, so the peer dials the phone, and Android rings only a link it
+    accepted. The phone looks the doorbell up over that link and rings it after its link-up frames. Then it posts and
+    DMs through its debug bridge, each after a spell with no ring, and each must ring the peer within seconds. Android
+    rings as it queues a frame, so the ring comes even while the frame waits behind the link-up back-fill, which on
+    `hci1` may not drain at all; whether the frames arrived is only reported. The phone must run a debug build with
+    A4 (knit-next `c3191717` or later); the first step checks, before the peer starts."""
+    phone = Phone(arguments.device)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    phone_id = phone.state()["self"]["nodeId"]
+    if run.step("phone-build-rings", lambda: _rings_doorbells(phone)) is None:
+        print(json.dumps({"summary": "android-rings", "steps": run.steps, "failed": run.failed}))
+        return run.failed
+    others = others_in_range(phone_id)
+    # Below the phone, as `refusal` has it: only A1's rule admits an unsighted dialer whose id sorts lower.
+    peer_id = keygen(phone_id, "phone-dials", others)
+    print(json.dumps({"run": "android-rings", "phone": phone_id, "peer": peer_id, "refused": sorted(others)}))
+    peer = Peer("ios", f"knit-peer rings {nonce}", others, arguments.peer_log, arguments.rssi_floor)
+    stop = threading.Event()
+    try:
+        peer.start()
+        threading.Thread(target=_keep_to, args=(peer, {phone_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
+        if run.step("peer-dials-the-phone", lambda: link_up(peer, phone, phone_id) and {}) is not None:
+            run.step("phone-found-the-doorbell", lambda: _doorbell_found(phone, peer_id, 60))
+            run.step("link-up-rang", lambda: _rung(peer, 1, 60))
+            # Android rings as it queues a frame, not as it writes it, so a ring shows up at once even while the frame
+            # waits behind the back-fill, which on `hci1` runs at under 1 KB/s. A ring that comes within seconds of a
+            # post, after a spell with none, is the post's.
+            bodies = {name: f"interop {name} rings from phone {nonce}" for name in ("post", "dm")}
+            for name, conversation in (("post", "nearby"), ("dm", peer_id)):
+                run.step(f"a-{name}-rings", lambda name=name, conversation=conversation: _rings_for(peer, phone, bodies[name], conversation))
+            run.step("phone-logged-its-rings", lambda: _phone_rang(phone, peer_id))
+            run.step("link-held", lambda: {**_phone_held(phone, peer_id), **_no_link_dropped(peer, {phone_id})})
+            # Not a check: how far each frame got behind the back-fill.
+            run.step("arrivals", lambda: {name: bool(peer.lines(lambda line, body=body: _message(line, body))) for name, body in bodies.items()})
+    finally:
+        stop.set()
+        peer.stop()
+    print(json.dumps({"summary": "android-rings", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _rings_for(peer: Peer, phone: Phone, body: str, conversation: str, quiet: float = 6, timeout: float = 8) -> dict:
+    """Sends `body` from the phone once the peer has heard no ring for `quiet` seconds, past the 5 s interval, and
+    waits `timeout` seconds for the ring it owes: at once, or at most 5 s later if something else rang first."""
+    started = time.monotonic()
+    last = peer.command(cmd="status")["rung"]
+    still = time.monotonic()
+    while time.monotonic() - still < quiet:
+        if time.monotonic() - started > 120:
+            raise RuntimeError(f"the peer was rung at least every {quiet:.0f} s for 120 s")
+        time.sleep(1)
+        rung = peer.command(cmd="status")["rung"]
+        if rung != last:
+            last, still = rung, time.monotonic()
+    sent = time.monotonic()
+    phone.send(body, conversation=conversation)
+    try:
+        rang = poll(lambda: (count := peer.command(cmd="status")["rung"]) > last and count, timeout, every=0.5)
+    except TimeoutError as error:
+        raise RuntimeError(f"no ring within {timeout:.0f} s of the send") from error
+    return {"rung": rang, "afterSend": round(time.monotonic() - sent, 1), "waitedForQuiet": round(sent - started, 1)}
+
+
+def _phone_log(phone: Phone, needle: str) -> list[str]:
+    """The messages of the phone's Bluetooth transport log lines that contain `needle`."""
+    log = phone.shell("logcat -d -s BluetoothMeshTransport:*", timeout=60)
+    return [line.split(": ", 1)[-1] for line in log.splitlines() if needle in line]
+
+
+def _rings_doorbells(phone: Phone) -> dict:
+    """The phone runs an A4 build: the state line its Bluetooth transport logs every 60 s in a debug build counts
+    doorbells and rings. The line of a build that predates A4 has neither."""
+    try:
+        lines = poll(lambda: _phone_log(phone, "bt state "), 75, every=5)
+    except TimeoutError as error:
+        raise RuntimeError("the phone logged no bt state line in 75 s: is Knit running, and a debug build?") from error
+    counts = re.search(r"doorbells=(\d+) rings=(\d+)", lines[-1])
+    if not counts:
+        raise RuntimeError("the phone's build predates A4: install a debug build of knit-next feat/ble-doorbell")
+    return {"doorbells": int(counts.group(1)), "rings": int(counts.group(2))}
+
+
+def _doorbell_found(phone: Phone, node: str, timeout: float) -> dict:
+    """The phone looked up `node`'s doorbell over the link, and found it."""
+
+    def looked() -> dict | None:
+        lookups = [line for line in _phone_log(phone, "bt doorbell ") if f" {node}" in line]
+        if any(line.startswith("bt doorbell absent") for line in lookups):
+            raise RuntimeError(f"the phone found no doorbell: {lookups[-3:]}")
+        found = [line for line in lookups if line.startswith("bt doorbell found")]
+        return {"found": found[-1], "failedLookups": sum("lookup failed" in line for line in lookups)} if found else None
+
+    return poll(looked, timeout, every=3)
+
+
+def _phone_rang(phone: Phone, node: str) -> dict:
+    """The phone logged a ring of `node`'s doorbell (`bt ring`, a debug build's line)."""
+    rings = _phone_log(phone, f"bt ring {node}")
+    if not rings:
+        raise RuntimeError(f"the phone logged no ring of {node}")
+    return {"rings": len(rings)}
+
+
+def _phone_held(phone: Phone, node: str) -> dict:
+    """The phone logged no link down for `node`."""
+    downs = _phone_log(phone, f"link down: {node}")
+    if downs:
+        raise RuntimeError(f"the phone dropped the link: {downs[:3]}")
+    return {}
 
 
 def iphone_scan(arguments: argparse.Namespace) -> int:
@@ -1792,6 +1928,9 @@ def main() -> int:
     wake.add_argument("--minutes", type=int, default=10, help="how long the iPhone stays locked, with a DM each minute")
     wake.add_argument("--lock-wait", type=float, default=900, help="how long to wait for someone to lock the iPhone")
     wake.add_argument("--unlock-wait", type=float, default=1800, help="how long to wait for someone to open Knit again")
+    wake.add_argument(
+        "--expect-wakes", action="store_true", help="the phone runs A4 (knit-next feat/ble-doorbell): every DM must wake Knit, as with --sender peer"
+    )
     by_hand = commands.add_parser("bridge")
     by_hand.add_argument("--watch", type=float, default=0, help="print the bridge's events for this many seconds")
     by_hand.add_argument("commands", nargs="*", help='commands as JSON, such as \'{"cmd":"status"}\'')
@@ -1805,6 +1944,10 @@ def main() -> int:
     scan.add_argument("--first", default="android", choices=["android", "ios"], help="which peer starts first once the iPhone is locked")
     scan.add_argument("--lock-wait", type=float, default=900, help="how long to wait for someone to lock the iPhone")
     scan.add_argument("--unlock-wait", type=float, default=1800, help="how long to wait for someone to open Knit again")
+    android = commands.add_parser("android-rings")
+    android.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    android.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    android.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     for sub in (ios, wake, rings, scan, by_hand, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
@@ -1816,6 +1959,8 @@ def main() -> int:
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
     if arguments.command == "iphone-rings":
         return iphone_rings(arguments)
+    if arguments.command == "android-rings":
+        return android_rings(arguments)
     if arguments.command == "iphone-scan":
         return iphone_scan(arguments)
     global RECEIVE_MTU, SEND_MTU  # noqa: PLW0603 - two knobs, read by Peer.start

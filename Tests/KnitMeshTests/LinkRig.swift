@@ -20,9 +20,10 @@ struct LinkRig {
         local: NodeId,
         advertisesServiceData: Bool = true,
         dialsGattPeers: Bool = true,
+        servesDoorbell: Bool = false,
         configuration: LinkManager.Configuration = LinkManager.Configuration()
     ) {
-        radio = FakeRadio(advertisesServiceData: advertisesServiceData, dialsGattPeers: dialsGattPeers)
+        radio = FakeRadio(advertisesServiceData: advertisesServiceData, dialsGattPeers: dialsGattPeers, servesDoorbell: servesDoorbell)
         clock = ManualClock(wall: 1_756_200_000_000, monotonic: 1000)
         links = LinkManager(
             localId: local,
@@ -86,13 +87,13 @@ struct LinkRig {
     }
 
     /// A signed-looking frame from the low peer; the link layer never checks signatures.
-    static func signedFrame(_ id: String, sig: UInt8 = 1) -> WireEnvelope {
-        let envelope = RelayEnvelope(type: .chat, id: id, senderId: low.string, payload: ChatContent(body: id).encoded)
+    static func signedFrame(_ id: String, sig: UInt8 = 1, type: FrameType = .chat) -> WireEnvelope {
+        let envelope = RelayEnvelope(type: type, id: id, senderId: low.string, payload: ChatContent(body: id).encoded)
         return WireEnvelope(sig: Array(repeating: sig, count: 64), signed: envelope.encoded)
     }
 
-    /// The HELLO this node sends.
-    static func ourHello(_ local: NodeId) -> LinkRecord {
-        LinkRecord(.hello, payload: Array("\(local)|1|9".utf8))
+    /// The HELLO this node sends: caps `9`, or `1009` when its radio serves a doorbell.
+    static func ourHello(_ local: NodeId, servesDoorbell: Bool = false) -> LinkRecord {
+        LinkRecord(.hello, payload: Array("\(local)|1|\(servesDoorbell ? "1009" : "9")".utf8))
     }
 }

@@ -66,4 +66,9 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
 - **A3:** Android finds and dials iPhones: it reads the `0xFE30` GATT payload from an advert that carries
   no service data, and sets `FLAG_DIALS_GATT_PEERS`. Its own advert needs no UUID list, since an iPhone's scan
   filtered on `0xFE30` matches the service data, locked or not (P8's scan-filter check,
-  `.agents/context/linux-peer.md`).
+  `.agents/context/linux-peer.md`). A dialed iPhone's capabilities must then come from its HELLO reply, or A4
+  never rings it.
+- **A4** (`c3191717`, knit-next ADR 2026-09.dqvb; on knit-next's local `main`, not yet pushed): Android rings the GATT
+  doorbell of a peer whose HELLO carries `CAP_DOORBELL` (`0x1000`), after the frames it writes on a link it
+  accepted, on this port's schedule and with the same three upkeep types left out (ADR 2026-09.khjj). It never
+  claims the bit itself. `.agents/context/ble-transport.md` has the details.

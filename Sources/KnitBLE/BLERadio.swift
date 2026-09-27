@@ -19,6 +19,8 @@
     public final class BLERadio: Radio {
         public let advertisesServiceData = false
         public let dialsGattPeers = true
+        /// iOS suspends Knit, and a write to its doorbell resumes it, so the HELLO asks the peer to ring.
+        public let servesDoorbell = true
         public let events: AsyncStream<RadioEvent>
         let core: BLECore
 
@@ -169,6 +171,9 @@
                     peripheralManager.unpublishL2CAPChannel(psm)
                 }
             }
+            // The service is gone, so the next start serves it again. iOS hands back the same PSM, so the value does
+            // not change, and without this the iPhone came back serving neither its payload nor its doorbell.
+            servedValue = nil
             forgetLinks()
             log.log(.info, "ble stopped")
         }

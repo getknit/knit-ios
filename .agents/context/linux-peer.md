@@ -115,8 +115,9 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 
 `scripts/interop.py` runs checklist L against one phone through knit-next's debug bridge: `check` in either
 dial order (`--blank-name` for alias parity, `--expect-avatar` for FILE records, `--radio-profile ios` for the
-A1 group), `refusal` for the `ios` profile against Android 2.7, `replace` for A1's stale-link rule, `soak` and
-`relay`. It needs the session's go-ahead for the phone (`.agents/rules/devices.md`). It keeps the run on that phone:
+A1 group), `refusal` for the `ios` profile against Android 2.7, `replace` for A1's stale-link rule, `soak`,
+`relay`, and `android-rings` for companion change A4. It needs the session's go-ahead for the phone
+(`.agents/rules/devices.md`). It keeps the run on that phone:
 
 - **Before the peer starts**, it scans and picks a node id that no other phone in range dials.
 - **Once the peer is up**, it refuses every other phone with `deny-link`, and then any node it sights later
@@ -132,6 +133,23 @@ the line itself, with the iPhone in the middle ("What the iPhone showed"). The l
 phone, then peer A on `hci1` in the `ios` profile standing in for the iPhone, then peer B on `hci0`, which refuses
 the phone. Both peers sort above every phone, and A above B, so A dials the phone and B and nobody dials either.
 Posts and DMs go both ways across A, and the three custody sets must converge.
+
+`android-rings` is `iphone-rings` the other way round: Android rings the doorbell of a peer whose HELLO asks for it,
+which is companion change A4 (knit-next `c3191717`, its ADR 2026-09.dqvb). The phone must run a debug build that
+has it, and the first step checks that before the peer starts. A debug build logs a `bt state`
+line every minute, and only an A4 build's counts `doorbells=` and `rings=`, so a line without them ends the run.
+The peer then runs on `hci1` in the `ios` profile. Its GATT application serves a doorbell that counts rings
+(`status.rung`), and its HELLO carries `CAP_DOORBELL`. Its id sorts below the phone's, and the phone never sights
+it, so the peer dials the phone, and Android rings only a link it accepted. The run checks four things in turn:
+
+1. The phone logs `bt doorbell found <peer>` and rings the peer for its link-up frames.
+2. A room post from the phone, sent through its debug bridge, rings the peer again, and so does a DM. Android rings
+   as it queues a frame, not as it writes it, so the run waits for 6 s with no ring, sends, and wants a ring
+   within 8 s. That ring is the post's, even while the post itself waits behind the back-fill.
+3. The phone logs `bt ring <peer>`.
+4. Neither side drops the link.
+
+Whether the post and the DM arrived is reported, not checked ("What A4 showed").
 
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
 needs no go-ahead for a phone. The peer takes a node id above every phone's and dials them all, since this adapter
@@ -481,7 +499,9 @@ and the peer, then let the rest link again at the end.
 
 `interop.py iphone-wake` ran MVP item 9's wake test from 23:46, with the maintainer locking the iPhone and later
 unlocking it. Knit was open and linked to the Pixel 3 and three other lab phones. Every link was one the iPhone had
-dialed, so a link to the iPhone's own channel is still untested.
+dialed, so a link to the iPhone's own channel is still untested. That run predates A4, so the Pixel 3 rang nothing.
+Against a build with A4, `--expect-wakes` asks for what `--sender peer` does: every DM delivered within its minute,
+and `bt ring` lines for the iPhone in the phone's log. Without it the run checks only the fallback.
 
 - **L2CAP data does not wake a suspended Knit.** The iPhone locked at 23:47:14. bluetoothd released its last
   assertion on Knit at 23:47:23, and runningboardd suspended Knit that second. The Pixel 3 then sent a DM every
@@ -574,3 +594,62 @@ Also found on the way:
   it still shows.
 - **Launching needs a hand.** `xtool launch` fails on iOS 27 (`DebugserverClient.Error.unknown`), so someone
   opens Knit on the phone.
+
+## What A4 showed
+
+The Pixel 3 ran a debug build of knit-next `c3191717`, built from a clean worktree and installed on 2026-09-27.
+`interop.py android-rings` ran three times against it from 03:57, with the peer on `hci1` in the `ios` profile. The
+third run passed 9 of 9, after the first two had shown what the run should measure:
+
+- **Android rings the peer that asks.** In every run the Pixel looked up the peer's doorbell over the link's own
+  connection and found it 4 s after the link came up, with no failed lookups. It rang once for its link-up frames,
+  and once more 5 s later as that burst ended.
+- **A ring comes as a frame is queued.** In the third run the post rang the peer 1.4 s after the bridge was told to
+  send it, and the DM 1.5 s after, each after at least 6 s with no ring. Neither frame had reached the peer when
+  the run ended.
+- **The back-fill never drained.** The link carried about 0.5 KB/s for eight minutes, `hci1`'s rate, as in P4. The
+  Pixel's custody is larger now, and 81 of its frames are relayed chats and receipts from senders whose keys a fresh
+  peer lacks. The peer cannot verify them, so it keeps none, and the Pixel pushes them again after every 60 s
+  digest. The first run timed the post's arrival and the second waited seven minutes for custody to converge; both
+  failed on that queue. So the run checks rings, which do not wait for it, and only reports arrivals.
+- **The link held** in all three runs, on both sides.
+
+Then the iPhone, with a build whose HELLO carries `CAP_DOORBELL`. `interop.py iphone-wake --sender phone
+--expect-wakes` passed 10 of 10 from 04:24, with the maintainer locking the iPhone and later opening Knit. It is MVP
+item 9 against Android:
+
+- **Every DM woke Knit.** The Pixel rang the iPhone within a second of each DM of the ten locked minutes. By Knit's
+  database each DM arrived 0.1 to 0.3 s after it was sent, and the Pixel showed each delivered 3.2 s after it sent
+  it. Knit posted a notification for each, without an error.
+- **The iPhone heard 12 rings from the Pixel,** one for each DM and two for other frames. The Pixel's log held only
+  the last 7 by the end, since its buffer turns over in about ten minutes, so `phone-rang` counts what is left.
+  Another lab phone rang the iPhone too, so it runs an A4 build.
+- **The first link attempt failed first.** Knit was opened at 04:20 and dialed the Pixel only at 04:21:53. That
+  link, and the next at 04:22:05, each dropped within 2 s: the iPhone read a record whose tag was 87 (`W`), then one
+  whose tag was 54 (`6`). Both bytes are printable, so the iPhone had lost its place in the stream, and it dropped
+  the link, as it must. Each time the Pixel was still discovering the iPhone's GATT services for the doorbell,
+  1 to 2 s into the link. The third link found the doorbell 4.5 s in and held for the whole run. The run's link
+  check gave up at 120 s, before that third link, and the second run found it up at once.
+- **The cause is not known yet.** It is new with A4 on both sides, and in every iPhone log kept this session these
+  are the only two bad records. The iPhone's own streams are ruled out for the first drop, when no other channel
+  was open, but not for the second, when one opened at the same moment.
+
+A Bluetooth snoop log on the Pixel came next, from 04:45, turned on in Developer options and off again afterwards.
+It did not catch a drop:
+
+- **The drops did not come back.** The iPhone relinked 19 times, once after the Pixel's Bluetooth restarted and 18
+  times through the bridge's `stop` and `start`, and no link dropped. What those links lacked was the first ones'
+  load: the Pixel's avatar and a large back-fill, sent while its lookup ran.
+- **The Pixel keeps each L2CAP frame whole.** The snoop kept only the last 11 of those link-ups, since Android
+  keeps two files and the older one began at 11:24. On each, the Pixel discovered the iPhone's GATT services while
+  L2CAP traffic ran, and no L2CAP frame on any connection, sent or received, was cut into by another. So the Pixel
+  interleaving GATT packets into a frame is unlikely, though not ruled out under the first links' load.
+- **Stop and Start left the iPhone without its GATT service.** In the first 8 relinks the Pixel found no doorbell.
+  `stop()` removed the service, and the next start served it only if its value had changed, which it does only
+  with the PSM, and iOS handed back PSM 192 every time. So after Settings' Stop and Start an iPhone served neither
+  its payload nor its doorbell: no peer that reads GATT payloads could find it, and Android could not wake it.
+  `stop()` now forgets the served value. With that build the Pixel found the doorbell on all 10 relinks.
+- **The next drop explains itself.** A bad record's warning now says where in the stream it came, shows its first
+  32 bytes as hex and as text, names the last four records' tags and sizes with the end of the last payload, and
+  lists the last six reads (`LinkTrace`). A record that overran its length, a read that went missing and bytes
+  that were never a record each look different there, on the iPhone and the peer alike.

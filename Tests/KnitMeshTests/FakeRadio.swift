@@ -33,6 +33,7 @@ final class FakeRadio: Radio {
 
     let advertisesServiceData: Bool
     let dialsGattPeers: Bool
+    let servesDoorbell: Bool
     let events: AsyncStream<RadioEvent>
     /// Everything asked of the radio, in order.
     let activity: AsyncStream<Activity>
@@ -40,9 +41,10 @@ final class FakeRadio: Radio {
     private let recorder: AsyncStream<Activity>.Continuation
     private let state = Mutex(State())
 
-    init(advertisesServiceData: Bool, dialsGattPeers: Bool = true) {
+    init(advertisesServiceData: Bool, dialsGattPeers: Bool = true, servesDoorbell: Bool = false) {
         self.advertisesServiceData = advertisesServiceData
         self.dialsGattPeers = dialsGattPeers
+        self.servesDoorbell = servesDoorbell
         (events, emitter) = AsyncStream<RadioEvent>.makeStream()
         (activity, recorder) = AsyncStream<Activity>.makeStream()
     }

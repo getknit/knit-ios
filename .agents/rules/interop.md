@@ -19,6 +19,9 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
 - **Advertise only what is implemented.** The MVP sends capabilities `0x9` (E2E and STORE_FORWARD).
   `CAP_RATCHET` is a promise to handle v2 DMs, their ctl codes and resets; it stays off until the ratchet
   milestone ships.
+- **`CAP_DOORBELL` (`0x1000`) lives in the HELLO alone.** The HELLO adds it, reading `1009`, when the radio
+  serves the doorbell (`Radio.servesDoorbell`). Nothing else ever advertises it: not `Capabilities.local`, not the
+  signed profile, not the advert, and never the Linux peer's `android` profile, which serves no GATT.
 - **Text limits count UTF-16 code units,** and whitespace means Java's `\s`. Node ids compare as ASCII
   strings, never as raw bytes.
 - **Changes stay additive** (`docs/WIRE_COMPAT.md` in knit-next). If a change can only be made by breaking

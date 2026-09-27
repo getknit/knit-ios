@@ -64,6 +64,24 @@ import Testing
         }
     }
 
+    @Test func theReaderSaysWhereTheNextRecordStarts() throws {
+        var reader = LinkRecordReader()
+        let first = try #require(LinkRecord(.keepalive).encoded)
+        let second = try #require(LinkRecord(.digest, payload: [1, 2, 3]).encoded)
+        reader.append(first + second + [0x57, 0x36])
+        #expect(reader.consumed == 0)
+        #expect(reader.upcoming(2) == [0x05, 0x00])
+        _ = try reader.next()
+        _ = try reader.next()
+        #expect(reader.consumed == first.count + second.count)
+        #expect(reader.upcoming(32) == [0x57, 0x36], "no more than is buffered")
+        reader.append([0, 0, 0])
+        #expect(throws: LinkRecordError.unknownTag(0x57)) {
+            try reader.next()
+        }
+        #expect(reader.consumed == first.count + second.count, "a bad record is not consumed")
+    }
+
     @Test func aLengthPastTheCapEndsTheLink() {
         var reader = LinkRecordReader()
         reader.append([0x01, 0x00, 0x08, 0x00, 0x01])
@@ -97,6 +115,14 @@ import Testing
         #expect(Hello(nodeId: nodeA).payload == Array("\(nodeA)|1|9".utf8))
         #expect(Capabilities.local.hex == "9")
         #expect(Capabilities(rawValue: 0xFFF).hex == "fff")
+    }
+
+    @Test func theDoorbellBitIsPinnedAndNeverOurs() {
+        // `Protocol.CAP_DOORBELL`: the radio adds it to the HELLO, and this build never advertises it anywhere else.
+        #expect(Capabilities.doorbell.rawValue == 0x1000)
+        #expect(!Capabilities.local.contains(.doorbell))
+        #expect(Capabilities.local.union(.doorbell).hex == "1009")
+        #expect(Hello(payload: Array("\(nodeA)|1|1009".utf8)).capabilities == [.endToEnd, .storeForward, .doorbell])
     }
 
     @Test func helloParsesTheWayAndroidDoes() {

@@ -31,6 +31,8 @@ public final class DemoRadio: Radio {
     public let advertisesServiceData = false
     /// And never reads anyone's GATT payload.
     public let dialsGattPeers = false
+    /// Nor serves a doorbell: nobody links it to ring one.
+    public let servesDoorbell = false
     /// What it reports: its state, once started.
     public let events: AsyncStream<RadioEvent>
     private let continuation: AsyncStream<RadioEvent>.Continuation

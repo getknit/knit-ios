@@ -90,6 +90,11 @@ public protocol Radio: AnyObject, Sendable {
     /// waits to be dialed, and a node that set it without reading GATT would never link that peer.
     var dialsGattPeers: Bool { get }
 
+    /// Whether this radio serves the GATT doorbell, so a peer should ring it after the frames it sends. The HELLO
+    /// adds `CAP_DOORBELL` only when it does: a peer that trusts the bit opens a GATT client on the link to find
+    /// the doorbell, and a node that set it without serving one would cost that peer a lookup on every link.
+    var servesDoorbell: Bool { get }
+
     /// What the radio reports.
     var events: AsyncStream<RadioEvent> { get }
 
