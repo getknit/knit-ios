@@ -54,6 +54,8 @@
                 environment.session.isActive = active
                 if active {
                     environment.foregrounded()
+                } else {
+                    environment.backgrounded()
                 }
             }
         }

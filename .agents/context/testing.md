@@ -43,8 +43,9 @@ ladder, not the first.
    `performAccessibilityAudit`, and a native Mac run against Android and the Linux peer: checklist M.
 10. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`. `scripts/interop.py iphone` drives the
     iPhone through a debug build's USB bridge and an Android phone through knit-next's, for items 2 to 6
-    (ADR 2026-09.kwa8). `iphone-relay` adds a peer on `hci0` beyond the iPhone for item 7, and `iphone-wake`
-    runs item 9's wake test, with someone to lock and unlock the iPhone.
+    (ADR 2026-09.kwa8). `iphone-relay` adds a peer on `hci0` beyond the iPhone for item 7, `iphone-wake`
+    runs item 9's wake test, with someone to lock and unlock the iPhone, and `iphone-scan` runs the scan-filter
+    check, with the same help.
 
 ## Coverage
 

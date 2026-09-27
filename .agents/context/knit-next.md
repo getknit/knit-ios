@@ -64,4 +64,6 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
   `GoldenVectorTest` reads, joined by keyed vectors (fixed identities, signed frames, a sealed v1 DM, the
   safety number, advert, HELLO, DIGEST and FNV hex) and a test that checks the fixtures this repo emits.
 - **A3:** Android finds and dials iPhones: it reads the `0xFE30` GATT payload from an advert that carries
-  no service data, sets `FLAG_DIALS_GATT_PEERS`, and adds a UUID list to its scan response.
+  no service data, and sets `FLAG_DIALS_GATT_PEERS`. Its own advert needs no UUID list, since an iPhone's scan
+  filtered on `0xFE30` matches the service data, locked or not (P8's scan-filter check,
+  `.agents/context/linux-peer.md`).

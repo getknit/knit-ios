@@ -135,6 +135,11 @@
             }
             let address = RadioAddress(uuid.uuidString)
             let strength = strengths[uuid] ?? Int(LinkManager.Configuration().unsightedLinkRssi)
+            #if DEBUG
+                if probe.isOn {
+                    probeSaw(peripheral, advertisementData, rssi: strength)
+                }
+            #endif
             if let advert = BLEAdvert.payload(advertisementData) {
                 emit(.sighted(RadioSighting(address: address, advert: advert, rssi: strength)))
             } else if BLEAdvert.listsService(advertisementData) {

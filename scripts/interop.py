@@ -12,12 +12,13 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--udid UDID] [--minutes 10]
     scripts/interop.py iphone-rings [--udid UDID]
+    scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
     scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
 
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
 bridge over USB (ADR 2026-09.kwa8); `iphone-relay` runs MVP item 7's line through the iPhone; `iphone-wake` is item 9's
-wake test, with someone to lock the iPhone and unlock it again; `bridge` sends that bridge commands by hand and prints
-what comes back.
+wake test, with someone to lock the iPhone and unlock it again; `iphone-scan` is P8's scan-filter check, with someone to
+do the same; `bridge` sends that bridge commands by hand and prints what comes back.
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
@@ -732,6 +733,154 @@ def _positive(status: dict, key: str) -> int:
     if not status.get(key):
         raise RuntimeError(f"{key} is {status.get(key)}")
     return status[key]
+
+
+def iphone_scan(arguments: argparse.Namespace) -> int:
+    """P8's scan-filter check (.agents/specs/mvp.md): what an iPhone matches when it scans for the 0xFE30 UUID alone,
+    as a scan in the background must. Android's advert carries 0xFE30 only as service data; an iPhone's, and the `ios`
+    profile's, lists it as a UUID. A debug build's scan probe, `scan-filter` over the bridge, turns the filter on and
+    records each match, and whether Knit was away from the front when it came.
+
+    Two peers advertise, each on its own adapter so each has an address of its own: the `android` profile on hci0 and
+    the `ios` profile on hci1. The iPhone refuses both, so it only watches them. With Knit open, the run checks that the
+    unfiltered scan sights both, then turns the filter on and reads what it matched. Then someone locks the iPhone.
+    Once Knit is suspended the peers stop and start again one at a time, the `android` peer first unless `--first ios`,
+    and someone opens Knit again. A match that came after its peer started and before anyone was asked to unlock is one
+    the locked iPhone's scan delivered, waking Knit to take it; one that came as the screen woke does not count. The
+    Android phones in range show what real Android adverts match."""
+    ios = IPhone(arguments.udid)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    try:
+        ios.start()
+    except TimeoutError:
+        print(json.dumps({"action": "open Knit"}), flush=True)
+        _reopened(ios, 900)
+    others = others_in_range(ios.node_id) - {ios.node_id}
+    # The android peer sorts above every phone, so no phone dials it. The ios peer keeps its identity from run to
+    # run: the iPhone keeps a GATT payload it read for as long as Knit runs, so a new identity on hci1 would go unseen.
+    # Android cannot see the ios peer, and the iPhone refuses both.
+    data_id = _keygen("scan-data", "--above", max(others | {ios.node_id}))
+    if not (Path.home() / ".local" / "state" / "knit-peer" / "scan-uuid" / "identity").exists():
+        _keygen("scan-uuid", "--above", max(others | {ios.node_id}))
+    data = Peer("android", f"knit-peer scan data {nonce}", others | {ios.node_id}, arguments.peer_log, None, "scan-data", HCI0)
+    uuid = Peer("ios", f"knit-peer scan uuid {nonce}", others | {ios.node_id}, arguments.peer_log, None, "scan-uuid")
+    stop = threading.Event()
+    starts: dict[str, float] = {}
+    try:
+        for peer in (data, uuid):
+            peer.start()
+            ios.command(cmd="deny-link", peer=peer.node_id)
+            threading.Thread(target=_keep_to, args=(peer, set(), peer.refuse, stop, peer.instance), daemon=True).start()
+        uuid_id = uuid.node_id
+        print(json.dumps({"run": "iphone-scan", "iphone": ios.node_id, "androidPeer": data_id, "iosPeer": uuid_id, "androids": sorted(others)}))
+        run.step("unfiltered-sights-the-android-peer", lambda: _ios_sights(ios, {data_id}, others, 120))
+        ios.command(cmd="scan-filter", on=True)
+        time.sleep(arguments.window)
+        open_report = ios.command(cmd="scan-filter")
+        run.step("open-matches-the-uuid-list", lambda: _matched(open_report))
+        run.step("open-finding-service-data", lambda: _service_data_finding(open_report, data_id, others))
+        for peer in (data, uuid):
+            peer.stop()
+        print(json.dumps({"action": "lock the iPhone"}), flush=True)
+        run.step("suspended", lambda: _suspended(ios, arguments.lock_wait))
+        ios.stop()
+        time.sleep(20)
+        for peer in (uuid, data) if arguments.first == "ios" else (data, uuid):
+            # Taken before the peer starts, since it may advertise before it says it is ready.
+            starts[peer.instance] = time.time()
+            peer.start()
+            print(json.dumps({"started": peer.instance, "profile": peer.profile}), flush=True)
+            time.sleep(arguments.away_window)
+        # Nobody unlocks before being asked, so a match before this came while the iPhone was locked. One after it
+        # may have come as the screen woke, which starts the scan again.
+        locked_until = time.time()
+        print(json.dumps({"action": "unlock the iPhone and open Knit"}), flush=True)
+        run.step("reopened", lambda: _reopened(ios, arguments.unlock_wait))
+        away_report = ios.command(cmd="scan-filter", on=False)
+        offset = away_report["now"] - time.time() * 1000
+        window = {instance: (started * 1000 + offset, locked_until * 1000 + offset) for instance, started in starts.items()}
+        run.step("locked-finding-uuid-list", lambda: _uuid_list_finding(away_report, window["scan-uuid"]))
+        run.step("locked-finding-service-data", lambda: _service_data_finding(away_report, data_id, others, window["scan-data"]))
+    finally:
+        stop.set()
+        for peer in (data, uuid):
+            peer.stop()
+        try:
+            ios.command(cmd="scan-filter", on=False)
+            for node in (data.node_id, uuid.node_id):
+                ios.command(cmd="allow-link", peer=node)
+        except (TimeoutError, OSError, AssertionError):
+            pass
+        ios.stop()
+    print(json.dumps({"summary": "iphone-scan", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _ios_sights(ios: IPhone, peers: set[str], androids: set[str], timeout: float) -> dict:
+    """Waits for the iPhone's unfiltered scan to sight every one of `peers`, and says which Android phones it sights."""
+
+    def sighted() -> set[str] | None:
+        near = {sighting["peer"] for sighting in ios.command(cmd="links").get("sightings", [])}
+        return near if peers <= near else None
+
+    near = poll(sighted, timeout)
+    return {"androids": sorted(near & androids)}
+
+
+def _listed(match: dict) -> bool:
+    """Whether a match is the ios peer's: it lists the UUID and carries no service data, and no other advert in range
+    does. Its node id is the iPhone's, from a GATT payload, which can be one the peer's adapter served before."""
+    return match["listed"] and not match["serviceData"]
+
+
+def _matched(report: dict) -> dict:
+    """The probe matched the ios peer with Knit open."""
+    found = [match for match in report["matches"] if _listed(match)]
+    if not found:
+        raise RuntimeError(f"the probe matched no advert that lists the UUID: {[_brief_match(match) for match in report['matches']]}")
+    return {"match": _brief_match(found[0])}
+
+
+def _locked(match: dict, window: tuple[float, float]) -> float | None:
+    """How long after its peer started a match first came while the iPhone was locked, in seconds, or None."""
+    first = match.get("firstAwayAt")
+    return round((first - window[0]) / 1000, 1) if first is not None and window[0] <= first < window[1] else None
+
+
+def _uuid_list_finding(report: dict, window: tuple[float, float]) -> dict:
+    """Whether the locked iPhone matched the ios peer, which lists the UUID. A finding, so it never fails."""
+    found = [match for match in report["matches"] if _listed(match)]
+    return {
+        "uuidListMatchedLocked": any(_locked(match, window) is not None for match in found),
+        "afterStart": next((_locked(match, window) for match in found if _locked(match, window) is not None), None),
+        "iosPeer": _brief_match(found[0]) if found else None,
+        "firstAwayAfterStart": round((found[0]["firstAwayAt"] - window[0]) / 1000, 1) if found and found[0].get("firstAwayAt") else None,
+        "lockedFor": round((window[1] - window[0]) / 1000, 1),
+    }
+
+
+def _service_data_finding(report: dict, data_id: str, androids: set[str], window: tuple[float, float] | None = None) -> dict:
+    """What the probe matched by service data alone: the android peer, and the Android phones in range; with
+    `window`, only what first matched while the iPhone was locked. A finding, not a check, so it never fails."""
+    by_data = [match for match in report["matches"] if match["serviceData"] and not match["listed"]]
+    if window is not None:
+        by_data = [match for match in by_data if match.get("firstAwayAt") is not None and match["firstAwayAt"] < window[1]]
+    peer = [match for match in by_data if match.get("node") == data_id]
+    found = {
+        "serviceDataMatched": bool(by_data),
+        "androidPeer": _brief_match(peer[0]) if peer else None,
+        "androids": sorted({match["node"] for match in by_data if match.get("node") in androids}),
+        "matches": len(report["matches"]),
+    }
+    if window is not None:
+        found["androidPeerAfterStart"] = _locked(peer[0], window) if peer else None
+    return found
+
+
+def _brief_match(match: dict) -> dict:
+    carried = [name for name in ("serviceData", "listed", "overflow") if match[name]]
+    return {"node": match.get("node"), "by": carried, "count": match["count"], "away": match["awayCount"], "rssi": match["rssi"]}
 
 
 def _suspended(ios: IPhone, timeout: float) -> dict:
@@ -1649,7 +1798,14 @@ def main() -> int:
     rings = commands.add_parser("iphone-rings")
     rings.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
     rings.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
-    for sub in (ios, wake, rings, by_hand, commands.choices["iphone-relay"]):
+    scan = commands.add_parser("iphone-scan")
+    scan.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    scan.add_argument("--window", type=float, default=30, help="how long the filtered scan runs with Knit open, in seconds")
+    scan.add_argument("--away-window", type=float, default=60, help="how long each peer advertises alone with the iPhone locked")
+    scan.add_argument("--first", default="android", choices=["android", "ios"], help="which peer starts first once the iPhone is locked")
+    scan.add_argument("--lock-wait", type=float, default=900, help="how long to wait for someone to lock the iPhone")
+    scan.add_argument("--unlock-wait", type=float, default=1800, help="how long to wait for someone to open Knit again")
+    for sub in (ios, wake, rings, scan, by_hand, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
     if arguments.command == "iphone-wake" and arguments.sender == "phone" and not arguments.device:
@@ -1660,6 +1816,8 @@ def main() -> int:
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
     if arguments.command == "iphone-rings":
         return iphone_rings(arguments)
+    if arguments.command == "iphone-scan":
+        return iphone_scan(arguments)
     global RECEIVE_MTU, SEND_MTU  # noqa: PLW0603 - two knobs, read by Peer.start
     RECEIVE_MTU = arguments.receive_mtu
     SEND_MTU = arguments.send_mtu

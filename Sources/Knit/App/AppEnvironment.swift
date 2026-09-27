@@ -73,6 +73,13 @@
             #endif
         }
 
+        /// Knit left the front. Only a debug build's scan probe wants to know.
+        func backgrounded() {
+            #if DEBUG
+                radio?.backgrounded()
+            #endif
+        }
+
         /// The environment `options` ask for. Throws when the Keychain or the database cannot be read yet, before
         /// the first unlock since a reboot: the app then waits for protected data rather than making a new identity.
         static func make(_ options: LaunchOptions) throws -> AppEnvironment {
@@ -152,6 +159,7 @@
                 environment.bridge = Bridge(
                     session: app,
                     mesh: node,
+                    radio: environment.radio,
                     bundle: parts.identity.bundle,
                     clock: clock,
                     log: parts.log,

@@ -117,10 +117,14 @@ radio.
   Companion change A1 accepts a dialer Android never sighted. Until A1 ships, roughly half of iPhone and
   Android pairs cannot link.
 - **Backgrounded iPhones are not rediscovered.** An iOS app in the background loses its local name, and its
-  service UUID moves to an overflow area that only foreground iOS scanners see. Android's advert has no
-  UUID list, so a background scan filtered on `0xFE30` probably cannot match it either; check that on
-  hardware. Open L2CAP links survive backgrounding with the `bluetooth-central` and `bluetooth-peripheral`
-  modes.
+  service UUID moves to an overflow area that only an iOS scan for that UUID sees. Open L2CAP links survive
+  backgrounding with the `bluetooth-central` and `bluetooth-peripheral` modes.
+- **A locked iPhone can find peers, at a price.** iOS scans in the background only for named services. A scan
+  filtered on `0xFE30` matches Android's advert, which carries the UUID only as service data, and a UUID list too
+  (P8's scan-filter check, `.agents/context/linux-peer.md`). Locked, it found each new peer 30 to 120 s after the
+  peer appeared, and each match woke Knit for about 10 s. Among five Android phones Knit ran three quarters of
+  the time, where the unfiltered scan, which goes quiet in the background, let it sleep for 14 minutes. So Knit
+  scans unfiltered, and background discovery waits for a design that bounds the wakes.
 - **A suspended app gets nothing on its links, until a peer rings.** Data arriving on an L2CAP channel does not
   wake a suspended Knit. It waits on the link, and arrives when Knit next comes to the front. A link held through
   14 minutes locked, and ten DMs arrived within a second of Knit opening (MVP item 9's wake test,

@@ -20,7 +20,7 @@
         public let advertisesServiceData = false
         public let dialsGattPeers = true
         public let events: AsyncStream<RadioEvent>
-        private let core: BLECore
+        let core: BLECore
 
         /// A radio that logs to `log`.
         public init(log: any KnitLog = SilentLog()) {
@@ -41,7 +41,12 @@
         /// scan asked for there still found nobody once Knit came to the front (the iPhone 12, 2026-09-26). A
         /// relaunch to restore Bluetooth starts the radio in the background, so the scan starts again here.
         public func foregrounded() {
-            core.onQueue { $0.rescan() }
+            core.onQueue { core in
+                #if DEBUG
+                    core.probe.cameToFront()
+                #endif
+                core.rescan()
+            }
         }
 
         public func advertise(_ payload: AdvertPayload) {
@@ -116,6 +121,9 @@
         var psm: UInt16?
         var wantedValue: [UInt8]?
         var servedValue: [UInt8]?
+        #if DEBUG
+            var probe = ScanProbe()
+        #endif
 
         init(emit: @escaping @Sendable (RadioEvent) -> Void, log: any KnitLog) {
             self.emit = emit
@@ -178,22 +186,6 @@
                 peripheralManager.publishL2CAPChannel(withEncryption: false)
             }
             serve()
-        }
-
-        /// Every advert, every time: a foreground scan filtered by service would miss Android's, which lists `0xFE30`
-        /// only as service data (P8 checks what a filter matches).
-        func scan(with central: CBCentralManager) {
-            central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
-            log.log(.info, "ble scanning")
-        }
-
-        /// Starts the scan again, for ``BLERadio/foregrounded()``.
-        func rescan() {
-            guard running, reported == .on, let central else {
-                return
-            }
-            central.stopScan()
-            scan(with: central)
         }
 
         /// The state both managers agree on: any refusal or absence wins, then off, then on.

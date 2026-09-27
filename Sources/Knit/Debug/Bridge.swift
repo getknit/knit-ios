@@ -1,5 +1,6 @@
 #if os(iOS) && DEBUG
     import KnitAppCore
+    import KnitBLE
     import KnitControl
     import KnitCrypto
     import KnitMesh
@@ -9,13 +10,22 @@
     /// A debug build's bridge: `knit-peer`'s control protocol (``MeshControl``) served over USB to every computer
     /// connected (``BridgeListener``), so a script drives and checks this phone as it does the Linux peer
     /// (ADR 2026-09.kwa8). Commands go through the session, so they show on screen as taps would. Replies go to the
-    /// connection that asked, and events to every connection.
+    /// connection that asked, and events to every connection. The bridge answers `scan-filter` itself, since only
+    /// the iPhone's radio has a scan probe (``ScanProbeCommand``).
     @MainActor
     internal final class Bridge {
         private let listener: BridgeListener
 
-        /// A bridge to `mesh`, driven through `session`, which it also taps for events.
-        init(session: AppSession, mesh: Mesh, bundle: PublicKeyBundle, clock: any MeshClock, log: any KnitLog, version: String) {
+        /// A bridge to `mesh`, driven through `session`, which it also taps for events, and to `radio`'s scan probe.
+        init(
+            session: AppSession,
+            mesh: Mesh,
+            radio: BLERadio?,
+            bundle: PublicKeyBundle,
+            clock: any MeshClock,
+            log: any KnitLog,
+            version: String
+        ) {
             let control = MeshControl(
                 bundle: bundle,
                 mesh: mesh,
@@ -27,6 +37,9 @@
             let channel = BridgeListener(log: log) {
                 control.ready
             } answer: { line in
+                if let probe = ScanProbeCommand.parse(line) {
+                    return (await probe.answer(radio), false)
+                }
                 let reply = await control.handle(line)
                 return (reply.line, reply.quits)
             }

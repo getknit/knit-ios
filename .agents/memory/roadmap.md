@@ -127,10 +127,13 @@ explicit direction.** Update this file in the change that ships an item.
     locked iPhone took the peer's DM 4.8 s after a ring. `LinkManager` now rings after frames, and the Linux peer
     rings. Item 9 passes against it: `iphone-wake --sender peer` passed 9 of 9, with every DM of ten minutes
     locked read within 0.5 s and notified. Android rings once A4 lands, and until then falls back.
+  - **Scan filter:** a scan filtered on `0xFE30` matches Android's advert, which has no UUID list, with Knit open
+    and with the iPhone locked (`scripts/interop.py iphone-scan`). Locked, it found new peers in 30 to 120 s, but
+    each match woke Knit, which then ran three quarters of the time among five Android phones, so Knit keeps its
+    scan unfiltered. Android needs no UUID list for A3.
   - **Still owed:** the app's background copy (it says open links keep working in the background, which holds only
-    for a peer that rings), the scan-filter check, and the soak. Items 2 to 7 pass against the Pixel 3 through the
-    bridge, unattended, and item 9's test needs someone to lock and unlock the iPhone
-    (`.agents/context/linux-peer.md`).
+    for a peer that rings), and the soak. Items 2 to 7 pass against the Pixel 3 through the bridge, unattended, and
+    item 9's test needs someone to lock and unlock the iPhone (`.agents/context/linux-peer.md`).
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
@@ -170,6 +173,8 @@ explicit direction.** Update this file in the change that ships an item.
 - **Moderation, block and report.** App Store rule 1.2 requires them before a store build.
 - **App Store readiness:** the privacy manifest, the export-compliance answers and the review notes. The
   GPL exception is already in place.
-- **Background discovery,** once P8 shows what iOS allows.
+- **Background discovery:** a locked iPhone's scan filtered on `0xFE30` finds Android phones and other Knit peers,
+  in 30 to 120 s, but wakes Knit for every match (P8's scan-filter check, `.agents/context/linux-peer.md`). It
+  needs a design that bounds the wakes, such as filtering only while Knit has too few links.
 - **Never on iOS:** Wi-Fi Aware, the BLE side channel, spool relays and commons, LoRa, and Wi-Fi Direct.
   These are ADR-recorded scope decisions, not a backlog.

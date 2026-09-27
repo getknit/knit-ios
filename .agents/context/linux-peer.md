@@ -535,6 +535,38 @@ iPhone read its payload and dialed it:
   found none, and did not look again. None of those links dropped.
 - **The peer rang back** in the same second. BlueZ read the iPhone's services far sooner than on `hci0`.
 
+`interop.py iphone-scan` is P8's scan-filter check. A debug build's scan probe (`scan-filter` over the bridge) makes
+Knit scan for the `0xFE30` UUID alone, as a scan in the background must, and records each advert it matches. Two
+peers advertised, each on its own adapter: the `android` profile on a shared `hci0`, whose advert carries `0xFE30`
+only as service data, and the `ios` profile on `hci1`, which lists it as a UUID. The iPhone refused both, so it only
+watched them. The check ran three times from 02:25. The second run was stopped early (below), and the first and
+third passed 7 of 7:
+
+- **A filtered scan matches Android's advert.** With Knit open, the filter matched the `android` peer about once a
+  second and all five lab phones by their service data, and the `ios` peer by its UUID list. iOS matches a UUID in
+  service data as it does a listed one, so Android needs no UUID list for an iPhone to find it.
+- **A locked iPhone matches both, slowly.** With the iPhone locked and Knit suspended, each peer started
+  advertising on its own. The `android` peer first matched 30 s after its radio came on in the first run and 120 s
+  in the third, and the `ios` peer 41 s in the third. In the first run the `ios` peer went unmatched for all of its
+  60 s, and matched only as the screen woke, which starts the scan again, so the third run gave each peer 150 s.
+  The lab phones matched too, each time one took a new address.
+- **Each match wakes Knit.** bluetoothd took an assertion on Knit to deliver a match, as it does for a ring, and
+  Knit ran for about 10 s each time. With five Android phones in range, the third run matched 71 adverts in five
+  minutes locked, and runningboardd resumed Knit 16 times: it ran for 74 % of the window, and 77 % in the first
+  run. In item 9's wake test, with the unfiltered scan, Knit slept for 14 minutes.
+- **So Knit keeps its scan unfiltered.** An unfiltered scan goes quiet in the background, which is what lets a
+  locked iPhone sleep between rings. Background discovery works with a filter, but needs a design that bounds its
+  wakes, such as filtering only while Knit has too few links, since a link's disconnect wakes Knit anyway.
+- **The iPhone keeps a GATT payload for as long as Knit runs,** unless a dial to that peer fails. The second run
+  gave the `ios` peer a new identity, and the iPhone went on naming `hci1` by the old one. It never dialed the peer
+  to find out, since the peer's id is the larger and the peer dials. The check now keeps the `ios` peer's identity
+  from run to run. Only a test gives an address a new identity. A peer whose PSM changed fails the dial, and its
+  payload is read again.
+- **The `ios` peer hides while it reads.** With Knit open, the `ios` peer kept trying to read the iPhone's own
+  payload, and a read can take over 12 s. `hci1` does not advertise while it holds a connection, so the filter
+  matched the peer 5 times in 30 s, against 30 in the first run. While the iPhone was locked its advert listed no
+  UUID, and the peer read nothing.
+
 Also found on the way:
 
 - **200 notifications for one back-fill.** The first build posted one per message. Each conversation now keeps
