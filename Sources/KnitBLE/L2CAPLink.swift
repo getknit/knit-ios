@@ -49,12 +49,15 @@
         let id: ChannelID
         private let channel: CBL2CAPChannel
         private let thread: StreamThread
+        private let log: any KnitLog
         private let received: @Sendable ([UInt8]) -> Void
         private let ended: @Sendable () -> Void
         private var pending: [UInt8] = []
         private var written = 0
         private var isOpen = false
         private var isClosed = false
+        /// Whether the last drain left bytes waiting for the stream's space, so a stall is logged once.
+        private var isWaiting = false
 
         /// A link over `channel`. `received` hears every read; `ended` hears once that the far side closed it or it
         /// failed, and never after ``close()``.
@@ -62,12 +65,14 @@
             id: ChannelID,
             channel: CBL2CAPChannel,
             thread: StreamThread,
+            log: any KnitLog,
             received: @escaping @Sendable ([UInt8]) -> Void,
             ended: @escaping @Sendable () -> Void
         ) {
             self.id = id
             self.channel = channel
             self.thread = thread
+            self.log = log
             self.received = received
             self.ended = ended
         }
@@ -106,13 +111,16 @@
             }
         }
 
-        func stream(_: Stream, handle event: Stream.Event) {
+        func stream(_ stream: Stream, handle event: Stream.Event) {
             switch event {
+            case .openCompleted:
+                log.log(.debug, "ble \(id) \(stream === channel.inputStream ? "input" : "output") open")
             case .hasBytesAvailable:
                 readAvailable()
             case .hasSpaceAvailable:
                 drain()
             case .endEncountered, .errorOccurred:
+                log.log(.debug, "ble \(id) \(event == .endEncountered ? "ended" : "failed: \(String(describing: stream.streamError))")")
                 if !isClosed {
                     shutDown()
                     ended()
@@ -132,6 +140,7 @@
                 guard count > 0 else {
                     break
                 }
+                log.log(.debug, "ble \(id) read \(count)")
                 received(Array(buffer[0..<count]))
             }
         }
@@ -144,13 +153,19 @@
                 let chunk = Array(pending[written..<min(written + Self.writeSize, pending.count)])
                 let count = output.write(chunk, maxLength: chunk.count)
                 guard count > 0 else {
+                    log.log(.debug, "ble \(id) write of \(chunk.count) returned \(count)")
                     break
                 }
                 written += count
+                log.log(.debug, "ble \(id) wrote \(count), \(pending.count - written) waiting")
             }
             if written == pending.count {
                 pending.removeAll(keepingCapacity: true)
                 written = 0
+                isWaiting = false
+            } else if !isWaiting {
+                isWaiting = true
+                log.log(.debug, "ble \(id) waits for space with \(pending.count - written) bytes")
             }
         }
 

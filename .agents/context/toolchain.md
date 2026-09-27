@@ -27,6 +27,18 @@ exact interval, then update this file in the same change.
   `Knit` product's closure, so the Linux-only targets never compile for iOS.
 - **Bundle id:** xtool installs dev builds under an `XTL-<team>.` prefix, so a Keychain identity made by an
   xtool install does not carry over to an Xcode-signed build (use `app.getknit.knit.dev` there).
+- **Static archives:** xtool links each target as a static archive (the `.o` files under
+  `.build/out/Products/Debug-iphoneos/` are `ar` archives), and the linker keeps only the members something
+  names. A file that only the Objective-C runtime calls into, like KnitBLE's CoreBluetooth delegates, is
+  dropped without a warning; the first install on the iPhone stopped at the Bluetooth grant for that reason.
+  The `Knit` target links with `-ObjC`, and `scripts/check.sh ios` checks the app for the delegate methods.
+- **Installing on the iPhone:** `xtool dev run --usb` builds, signs and installs over USB, and
+  `idevicesyslog -p Knit` reads the app's log (a debug build logs at notice, the least it relays). The team is on
+  free provisioning: an install lasts 7 days, and the phone trusts the developer once under VPN & Device
+  Management. `xtool launch` fails on iOS 27, so Knit is opened by hand.
+- **xtool drops a serial's leading zeros** (`Certificate.serialNumber()`) and then finds no match on Apple's
+  side, so it asks to revoke a certificate whose serial starts with `0` and make another, on every install. The
+  prompt needs a terminal. One in sixteen certificates does this; the one made on 2026-09-26 does not.
 
 **The SDK bundle needs one fix.** xtool 1.20.1's bundle ships clang builtin headers older than Swift 6.4's
 clang 21. Their `float.h` still does `#include_next <float.h>` on Apple platforms, which lands on the Xcode

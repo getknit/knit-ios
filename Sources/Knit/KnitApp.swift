@@ -39,12 +39,13 @@
 
         nonisolated func userNotificationCenter(
             _: UNUserNotificationCenter,
-            willPresent _: UNNotification,
+            willPresent notification: UNNotification,
             // swiftlint:disable:next unneeded_escaping - UserNotifications declares the handler escaping
             withCompletionHandler completion: @escaping (UNNotificationPresentationOptions) -> Void
         ) {
-            // The policy already kept the thread on screen quiet.
-            completion([.banner, .list, .sound])
+            // The policy already kept the thread on screen quiet. A passive one replaces a notification still showing.
+            let passive = notification.request.content.interruptionLevel == .passive
+            completion(passive ? [.list] : [.banner, .list, .sound])
         }
 
         nonisolated func userNotificationCenter(_: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {

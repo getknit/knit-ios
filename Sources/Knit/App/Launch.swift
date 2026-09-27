@@ -52,6 +52,9 @@
         func setActive(_ active: Bool) {
             if case .ready(let environment) = stage {
                 environment.session.isActive = active
+                if active {
+                    environment.foregrounded()
+                }
             }
         }
     }

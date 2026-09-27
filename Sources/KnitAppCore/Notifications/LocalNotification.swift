@@ -3,7 +3,7 @@ public import KnitWire
 
 /// A notification the app should post: what it says, and where a tap leads.
 public struct LocalNotification: Sendable, Equatable {
-    /// Replaces any notification with the same id, so request alerts coalesce into one.
+    /// Replaces any notification with the same id: each conversation keeps one, and every request shares one.
     public var id: String
     /// Groups the notifications of one thread.
     public var threadId: String
@@ -26,7 +26,8 @@ public struct LocalNotification: Sendable, Equatable {
 
 /// Where notifications go: UserNotifications in the app, a recorder in tests.
 public protocol Notifier: Sendable {
-    /// Posts `notification`, replacing one with the same id.
+    /// Posts `notification`, replacing one with the same id. A replacement stays quiet while the one it replaces is
+    /// still showing, so a burst of messages alerts once (Android's `setOnlyAlertOnce`).
     func post(_ notification: LocalNotification) async
     /// Removes what was posted for a thread, or for the requests list with ``NotificationPolicy/requestsThread``.
     func withdraw(threadId: String) async
@@ -34,10 +35,11 @@ public protocol Notifier: Sendable {
 
 /// What reaches the user as a notification (`MessageNotifier` in knit-next, the MVP's part of it).
 ///
-/// A message notifies once, when it first arrives, and never our own. The thread on screen while the app is in
-/// front stays quiet. A stranger's DM is a message request: it never shows its words or its sender, and every request
-/// shares one notification that counts them. Control frames never arrive here: the engine stores and reports only
-/// messages.
+/// A message notifies once, when it first arrives, and never our own. Each conversation keeps one notification that
+/// shows its newest message, as Android's does, so a room's back-fill of 200 posts is one notification rather than
+/// 200. The thread on screen while the app is in front stays quiet. A stranger's DM is a message request: it never
+/// shows its words or its sender, and every request shares one notification that counts them. Control frames never
+/// arrive here: the engine stores and reports only messages.
 public enum NotificationPolicy {
     /// The id and thread of the one notification that counts requests.
     public static let requestsThread = "requests"
@@ -82,7 +84,7 @@ public enum NotificationPolicy {
         let sender = context.directory.label(for: message.senderId).text
         let isRoom = message.conversationId == Conversations.nearby
         return LocalNotification(
-            id: message.id,
+            id: message.conversationId,
             threadId: message.conversationId,
             conversationId: message.conversationId,
             title: isRoom ? Copy.Notifications.nearbyTitle : sender,

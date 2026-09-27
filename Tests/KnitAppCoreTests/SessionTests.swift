@@ -100,7 +100,7 @@ import Testing
         let message = await rig.receive("See you at 6", from: AppRig.sam.nodeId, to: rig.me)
         let posted = try #require(rig.notifier.posted.first)
         let expected = LocalNotification(
-            id: message.id,
+            id: message.conversationId,
             threadId: message.conversationId,
             conversationId: message.conversationId,
             title: "Sam",
@@ -117,6 +117,19 @@ import Testing
         #expect(posted.title == Copy.Notifications.nearbyTitle)
         #expect(posted.body == "Sam: Anyone here?")
         #expect(posted.threadId == Conversations.nearby)
+    }
+
+    @Test func aConversationKeepsOneNotificationThatShowsItsNewestMessage() async {
+        let rig = AppRig()
+        await rig.pin(AppRig.sam, name: "Sam")
+        await rig.pin(AppRig.priya, name: "Priya")
+        rig.stores.conversations.accept(AppRig.sam.nodeId.string)
+        await rig.receive("First", from: AppRig.sam.nodeId)
+        await rig.receive("Second", from: AppRig.priya.nodeId)
+        await rig.receive("Just us", from: AppRig.sam.nodeId, to: rig.me)
+        let posted = rig.notifier.posted
+        #expect(posted.map(\.id) == [Conversations.nearby, Conversations.nearby, AppRig.sam.nodeId.string])
+        #expect(posted.map(\.body) == ["Sam: First", "Priya: Second", "Just us"])
     }
 
     @Test func requestsShareOneNotificationThatCountsThemAndShowsNoWords() async {

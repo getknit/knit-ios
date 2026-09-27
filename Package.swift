@@ -59,7 +59,11 @@ let package = Package(
         .target(
             name: "Knit",
             dependencies: ["KnitAppCore", "KnitBLE", "KnitStoreSQL", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"],
-            swiftSettings: strict
+            swiftSettings: strict,
+            // xtool links every target as a static archive, and the linker keeps only the members something names.
+            // CoreBluetooth calls KnitBLE's delegates through the Objective-C runtime alone, so without -ObjC their
+            // file never reached the app, and iOS stopped it at the first Bluetooth grant. `check.sh ios` checks.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-ObjC"], .when(platforms: [.iOS]))]
         ),
 
         // Linux: the BlueZ radio and the headless peer used for interop runs.

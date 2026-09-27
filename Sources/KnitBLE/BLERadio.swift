@@ -37,6 +37,13 @@
             core.onQueue { $0.stop() }
         }
 
+        /// Knit came to the front. iOS gives a scan for every advert nothing while Knit is in the background, and a
+        /// scan asked for there still found nobody once Knit came to the front (the iPhone 12, 2026-09-26). A
+        /// relaunch to restore Bluetooth starts the radio in the background, so the scan starts again here.
+        public func foregrounded() {
+            core.onQueue { $0.rescan() }
+        }
+
         public func advertise(_ payload: AdvertPayload) {
             core.onQueue { $0.advertise(payload.gattValue) }
         }
@@ -160,15 +167,29 @@
                 return
             }
             if !central.isScanning {
-                // Every advert, every time: a foreground scan filtered by service would miss Android's, which lists
-                // `0xFE30` only as service data (P8 checks what a filter matches).
-                central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+                scan(with: central)
             }
             if psm == nil, !publishing {
                 publishing = true
                 peripheralManager.publishL2CAPChannel(withEncryption: false)
             }
             serve()
+        }
+
+        /// Every advert, every time: a foreground scan filtered by service would miss Android's, which lists `0xFE30`
+        /// only as service data (P8 checks what a filter matches).
+        func scan(with central: CBCentralManager) {
+            central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+            log.log(.info, "ble scanning")
+        }
+
+        /// Starts the scan again, for ``BLERadio/foregrounded()``.
+        func rescan() {
+            guard running, reported == .on, let central else {
+                return
+            }
+            central.stopScan()
+            scan(with: central)
         }
 
         /// The state both managers agree on: any refusal or absence wins, then off, then on.
@@ -268,7 +289,11 @@
         }
 
         func write(_ bytes: [UInt8], to channel: ChannelID) {
-            links[channel]?.write(bytes)
+            guard let link = links[channel] else {
+                log.log(.debug, "ble dropped \(bytes.count) bytes for \(channel), which has no link")
+                return
+            }
+            link.write(bytes)
         }
 
         func close(_ channel: ChannelID) {
@@ -291,6 +316,7 @@
                 id: id,
                 channel: channel,
                 thread: streams,
+                log: log,
                 received: { [emit] bytes in emit(.received(id, bytes)) },
                 ended: { [weak self] in self?.onQueue { $0.ended(id) } }
             )

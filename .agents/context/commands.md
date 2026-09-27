@@ -61,6 +61,7 @@ python3 scripts/interop.py relay --device <serial>                # MVP item 7's
 python3 scripts/soak.py run [--hours 10]                          # a night against every phone in range; drives none
 python3 scripts/soak.py status | report [--json] | stop           # the latest run (.build/soak/current)
 sudo scripts/hci1-supervision.sh                                  # hci1's supervision timeout to 5 s, until a replug
+sudo scripts/bluetoothd-no-battery.sh [--undo]                    # bluetoothd without its battery plugin, for iPhone runs
 scripts/hci1-supervision.sh --udev-rule                           # a udev rule that sets it on every plug-in
 ```
 
@@ -68,6 +69,9 @@ scripts/hci1-supervision.sh --udev-rule                           # a udev rule 
 
 ```sh
 scripts/check.sh ios                                              # xtool dev build: xtool/Knit.app
+xtool dev run --usb                                               # build, sign and install on the iPhone, with the go-ahead
+idevicesyslog -p Knit                                             # the app's log, one JSON line per entry in a debug build
+idevicecrashreport -k -e <dir>                                    # copy the phone's crash and hang reports, keeping them there
 ```
 
 Launch arguments, set in the scheme on the Mac (P7):

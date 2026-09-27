@@ -77,3 +77,17 @@ need two adapters, one session at a time (`.agents/rules/devices.md`). Two rules
   `BlueZModelTests`' `onlyAQuietUnlinkedDeviceNobodyOwnsIsStale` and `BlueZChannelTests`' forgetting cases. The
   alternative was to keep bluetoothd's 30 s and live with the cuts, which ended 127 of the night soak's 213 links.
 
+**Amended 2026-09-26, for the iPhone:** two rig limits showed once an iPhone joined (`.agents/context/linux-peer.md`,
+"What the iPhone showed").
+
+- **iPhone runs put the peer on a shared `hci0`.** `hci1`'s controller has 27-byte LE buffers, so the kernel
+  offers an MPS of 23. On such a channel the iPhone sends about 16 fragments and then stops, with credits to
+  spare, so its second message never completes. On `hci0` its writes arrive. The maintainer allows `hci0` for
+  iPhone runs, one session at a time, under the shared-adapter rules above.
+- **bluetoothd runs without its battery plugin** (`scripts/bluetoothd-no-battery.sh`). The plugin reads an
+  iPhone's Battery Service, which needs encryption, so bluetoothd asks the iPhone to pair, and the kernel drops
+  an unanswered link 30 s later. The change is machine-wide, so `hci0`'s devices show no battery level while it
+  is in place.
+
+The alternatives were pairing the iPhone with the rig, which would test an encrypted link that no phone uses,
+and a dongle with larger LE buffers, which this machine does not have.

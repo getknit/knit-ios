@@ -3,9 +3,9 @@
     import KnitAppCore
     import UserNotifications
 
-    /// Posts what ``NotificationPolicy`` decides through UserNotifications, and asks for the permission. A
-    /// notification's thread groups it with the rest of its conversation, and a request's fixed id makes a new one
-    /// replace the last.
+    /// Posts what ``NotificationPolicy`` decides through UserNotifications, and asks for the permission. Each
+    /// conversation's notification, and the one for requests, has a fixed id, so a new one replaces the last. While
+    /// the last still shows, the replacement is passive: no sound, no banner, the screen stays dark.
     internal struct LocalNotifier: Notifier, NotificationPermission {
         /// The user-info key that carries the thread a tap opens.
         static let conversationKey = "conversation"
@@ -17,7 +17,12 @@
             content.title = notification.title
             content.body = notification.body
             content.threadIdentifier = notification.threadId
-            content.sound = .default
+            let showing = await center.deliveredNotifications().contains { $0.request.identifier == notification.id }
+            if showing {
+                content.interruptionLevel = .passive
+            } else {
+                content.sound = .default
+            }
             if let conversation = notification.conversationId {
                 content.userInfo = [Self.conversationKey: conversation]
             }

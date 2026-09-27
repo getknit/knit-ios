@@ -20,17 +20,21 @@
         /// Stores a minted test identity for the next launch, in a debug build.
         let replaceIdentity: IdentityReplacer?
         private let mesh: Mesh
+        /// The CoreBluetooth radio, which a demo has none of.
+        private let radio: BLERadio?
         private var listening: Task<Void, Never>?
 
         private init(
             session: AppSession,
             mesh: Mesh,
+            radio: BLERadio?,
             preferences: any AppPreferences,
             notifier: LocalNotifier,
             replaceIdentity: IdentityReplacer?
         ) {
             self.session = session
             self.mesh = mesh
+            self.radio = radio
             self.preferences = preferences
             self.notifier = notifier
             self.replaceIdentity = replaceIdentity
@@ -52,6 +56,11 @@
             if preferences.hasOnboarded {
                 Task { await running.start() }
             }
+        }
+
+        /// Knit came to the front: the radio scans again, since a scan started in the background finds nobody.
+        func foregrounded() {
+            radio?.foregrounded()
         }
 
         /// The environment `options` ask for. Throws when the Keychain or the database cannot be read yet, before
@@ -120,7 +129,14 @@
             )
             let alerts = LocalNotifier()
             let app = AppSession(identity: OwnIdentity(bundle: parts.identity.bundle), stores: parts.stores, mesh: node, notifier: alerts)
-            return AppEnvironment(session: app, mesh: node, preferences: parts.preferences, notifier: alerts, replaceIdentity: replace)
+            return AppEnvironment(
+                session: app,
+                mesh: node,
+                radio: parts.radio as? BLERadio,
+                preferences: parts.preferences,
+                notifier: alerts,
+                replaceIdentity: replace
+            )
         }
 
         /// The database's own directory, under Application Support, which is backed up unless told otherwise; the

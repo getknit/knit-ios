@@ -51,6 +51,13 @@ discover the service and the characteristic, read, then drop the connection unle
 counts the UUID in the overflow area too, where a backgrounded iPhone's advert keeps it, and sets the flag.
 Nothing in it has run on hardware yet; the Mac's checklist M (P7) is its first radio.
 
+**Amended 2026-09-26, when `KnitBLE` first ran on an iPhone** (an iPhone 12 on iOS 27.0): it dialed the Linux
+peer and the lab's Android phones within seconds and carried the room both ways. Two things changed. The app
+links with `-ObjC`, because only the Objective-C runtime reaches the delegates and the linker left their file
+out. `BLERadio.foregrounded()` starts the scan again when Knit comes to the front, because a central restored
+in the background reports a scan that finds nobody. No peer has read its GATT payload yet: that is the Linux
+peer's `ios` profile against it, MVP item 8.
+
 **Consequences / limits:**
 
 - **Cross-platform law.** The UUID is law once A3 ships. Change it only together with knit-next.

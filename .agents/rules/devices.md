@@ -3,7 +3,7 @@
 - **The Linux peer uses `hci1`.** `hci0` is the maintainer's own adapter, with live connections. knit-peer
   refuses it and exits when `hci1` is absent.
 - **`hci0` needs a go-ahead, every session.** The maintainer allows it for tests that need two adapters, such as
-  the relay line (`interop.py relay`). The peer runs there only with `--shared-adapter`, which leaves every
+  the relay line (`interop.py relay`), and for iPhone runs, which stall on `hci1`'s 23-byte fragments. The peer runs there only with `--shared-adapter`, which leaves every
   link it did not make alone, and nothing else on `hci0` changes: no supervision timeout, no power or pairing
   changes, no `sudo`.
 - **Ask before driving a physical phone, every session.** That covers installing, launching, adb broadcasts

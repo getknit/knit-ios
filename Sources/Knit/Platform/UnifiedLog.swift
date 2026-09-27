@@ -30,14 +30,20 @@
             else {
                 return
             }
-            switch level {
-            case .debug:
-                Self.logger.debug("\(line, privacy: .public)")
-            case .info:
-                Self.logger.info("\(line, privacy: .public)")
-            case .warning:
-                Self.logger.warning("\(line, privacy: .public)")
-            }
+            #if DEBUG
+                // idevicesyslog relays only notice and above, so a debug build says everything at notice. The line
+                // keeps its own level.
+                Self.logger.notice("\(line, privacy: .public)")
+            #else
+                switch level {
+                case .debug:
+                    Self.logger.debug("\(line, privacy: .public)")
+                case .info:
+                    Self.logger.info("\(line, privacy: .public)")
+                case .warning:
+                    Self.logger.warning("\(line, privacy: .public)")
+                }
+            #endif
         }
     }
 #endif

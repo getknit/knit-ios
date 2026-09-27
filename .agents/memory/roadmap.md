@@ -52,7 +52,7 @@ explicit direction.** Update this file in the change that ships an item.
     cue moves (`.agents/context/linux-peer.md`, "What P4 found").
     - **The Moto G on merged A1:** admitted in both orders, but it lost everything the peer sent after the profile
       in 3 of 3 checks with 8192-byte SDUs, and passed with `--send-mtu 247`, so the radio now writes 247-byte
-      SDUs by default (the maintainer, 2026-09-26). What the iPhone's SDUs will be is a P8 risk.
+      SDUs by default (the maintainer, 2026-09-26). The iPhone reads those, and writes 2,570-byte SDUs.
   - **Custody convergence:** a newcomer took ten minutes to converge on a stranger's backlog, on both platforms.
     knit-next's fix (ADR 2026-09.9xuu) serves profiles first and parks a whole custody quota per sender;
     `CustodySync` and `PendingInbound` mirror it. It merged unchanged as `aeba5382` on 2026-09-26, and the pin
@@ -101,8 +101,19 @@ explicit direction.** Update this file in the change that ships an item.
   - **`KnitBLE`:** the CoreBluetooth radio, with GATT reads on `GattPayloads`' rules.
   - **The mesh for the app:** it reports the radio's state, stops and starts again on the same radio, marks a
     peer verified, and stores list each thread's newest message.
-  - **Still owed:** the app, the Keychain store and `KnitBLE` compile for iOS (`scripts/check.sh ios`) but have
-    not run: the Mac (P7) runs them first. No unread counts yet, and no block, delete or Sign out.
+  - **Still owed:** no unread counts yet, and no block, delete or Sign out. The Mac (P7) still owes the UI tests
+    and the accessibility audit.
+- **P8, the iPhone:** begun early on 2026-09-26, without the Mac: an iPhone 12 on iOS 27.0, installed over USB
+  by xtool on free provisioning. The app runs and links the Linux peer and the lab's Android phones. Against
+  the peer, items 3 to 5 pass: safety numbers match, the room works both ways with ticks, and DMs go request,
+  accept, reply, delivered (`.agents/context/linux-peer.md`, "What the iPhone showed").
+  - **Fixed on the way:** the linker dropped KnitBLE's delegates (`-ObjC`); a relaunch to restore Bluetooth never
+    scanned; the debug log went unrelayed; a back-fill posted a notification per message.
+  - **The rig for iPhone runs:** the Linux peer on a shared `hci0`, since `hci1`'s 23-byte fragments stall the
+    iPhone, and bluetoothd without its battery plugin, which asked the iPhone to pair.
+  - **Still owed:** items 3 to 5 against an Android phone, offline delivery (item 6), relay (item 7), the
+    discovery profile against the iPhone's GATT payload (item 8), the wake test (item 9), the scan-filter
+    check, and the soak.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).

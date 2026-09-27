@@ -8,11 +8,12 @@ the rules for the radios and phones it touches.
 
 - **`hci1` is an Edimax BT-8500** (USB `7392:c611`, Realtek RTL8761BU), public address `0A:BC:DE:00:00:A1`,
   named "linux-host #2". It has the central and peripheral roles, `LEAdvertisingManager1` with 4 advertising
-  instances, and `GattManager1`.
+  instances, and `GattManager1`. Its controller has 27-byte LE buffers, so the kernel offers a channel an MPS
+  of 23, the least the spec allows. Android copes with that; an iPhone does not ("What the iPhone showed").
 - **`hci0` is the maintainer's**, an Intel controller (Bluetooth 5.4) at `A0:00:00:00:00:01` that holds the
   maintainer's own devices. The peer checks that its adapter has the expected address before it does anything,
   and binds every socket to that address, so nothing it does lands on another adapter. It runs on `hci0` only
-  as a shared adapter, with a go-ahead (below).
+  as a shared adapter, with a go-ahead: for the relay line's second peer, and for every iPhone run.
 - **knit-next's emulator script passes the same dongle through** to an Android emulator; the two cannot use it
   at once.
 
@@ -366,3 +367,49 @@ typing cue, posted a photo, or traded a DM with the peer, 74 extras in all. The 
 - **Late phones are refused in time.** Two phones came into range during the hour, and the peer refused each
   before either could dial.
 
+## What the iPhone showed
+
+An iPhone 12 on iOS 27.0, from 2026-09-26, installed from this machine with `xtool dev run --usb` and read with
+`idevicesyslog -p Knit` (`.agents/context/toolchain.md`). It links the Linux peer and the lab's Android phones
+within seconds of opening. Two app bugs and two rig limits stood in the way first.
+
+- **The app stopped at the Bluetooth grant.** xtool links every target as a static archive, and the linker left
+  out `BLECore+Delegates.o`, which only the Objective-C runtime calls into. iOS then refuses a central manager
+  with a restore identifier and no `willRestoreState`. The `Knit` target links with `-ObjC`, and
+  `scripts/check.sh ios` checks the app for the delegate methods.
+- **A relaunch to restore Bluetooth found nobody.** iOS relaunches Knit in the background after an install, and
+  the restored central already reports a scan, so the radio never asked for one. A scan for every advert finds
+  nothing in the background, and still nothing once Knit comes to the front. `BLERadio.foregrounded()` starts
+  the scan again whenever the scene becomes active.
+- **bluetoothd asks the iPhone to pair.** Once a link is up, bluetoothd's battery plugin reads the iPhone's
+  Battery Service, which iOS guards with encryption, so bluetoothd raises the link's security. The prompt comes
+  back on every link, and left unanswered, the kernel's SMP timeout drops the link 30 s later.
+  `sudo scripts/bluetoothd-no-battery.sh` runs bluetoothd without the plugin, for the whole machine, and
+  `--undo` puts it back. Android phones serve no such service, so only the rig hits this.
+- **The iPhone's writes to `hci1` stop after the HELLO.** `btmon` shows the kernel offering MTU 65535, MPS 23
+  and 2,850 credits. The iPhone sends 16 or 17 fragments of 19 bytes in all, then nothing, with thousands of
+  credits left. Its second message never completes, so the peer never reads it, though the link stays up and
+  the peer's own traffic reaches the iPhone. A 247-byte receive MTU let one more message through and then
+  stalled the same way. On `hci0` the iPhone's writes arrive at once, in 2,570-byte SDUs, so iPhone runs put
+  the peer there with `--shared-adapter`. The iPhone's writes to the Android phones flow either way.
+
+On `hci0`, with the peer refusing the Android phones so that it can advertise:
+
+- **The room works both ways.** A post from the peer reached the iPhone, and the iPhone's tick marked it
+  delivered: the peer reports a tick as a `delivered` event. The iPhone's posts reached the peer.
+- **Profiles cross.** The peer pinned the iPhone's profile, which has no name, under its alias, and the
+  iPhone's profile screen showed the peer's safety number.
+- **DMs work both ways.** The iPhone's first DM reached the peer as a message request 84 ms after it was
+  sent. Once the peer accepted it, the peer's sealed reply was opened on the iPhone and receipted as delivered,
+  and the iPhone showed its own DM as delivered too. With the room, that passes MVP items 3 to 5 against the
+  peer.
+- **Back-fill is heavy.** Each side served the other hundreds of frames from the lab phones' old runs, and the
+  iPhone's digest, about 20 KB, goes out again every minute.
+
+Also found on the way:
+
+- **200 notifications for one back-fill.** The first build posted one per message. Each conversation now keeps
+  one notification that shows its newest message, as Android's does, and a newer one replaces it quietly while
+  it still shows.
+- **Launching needs a hand.** `xtool launch` fails on iOS 27 (`DebugserverClient.Error.unknown`), so someone
+  opens Knit on the phone.
