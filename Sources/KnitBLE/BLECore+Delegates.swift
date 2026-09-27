@@ -23,7 +23,25 @@
 
     extension BLECore: CBCentralManagerDelegate, CBPeripheralManagerDelegate {
         func centralManagerDidUpdateState(_: CBCentralManager) {
+            dropRestored()
             updateState()
+        }
+
+        /// Drops the connections a relaunch handed back. Their channels died with the old process, and one left up
+        /// kept every later dial to that phone waiting on it: four dials to the Pixel 3 hung for two minutes after an
+        /// install, until Stop and Start (`.agents/context/linux-peer.md`). CoreBluetooth refuses the command before
+        /// the central is powered on, which is when `willRestoreState` runs.
+        func dropRestored() {
+            guard let central, central.state == .poweredOn, !restored.isEmpty else {
+                return
+            }
+            for uuid in restored where !inUse(uuid) {
+                if let peripheral = peripherals[uuid], peripheral.state != .disconnected {
+                    central.cancelPeripheralConnection(peripheral)
+                }
+            }
+            log.log(.info, "ble dropped \(restored.count) restored connections")
+            restored.removeAll()
         }
 
         func peripheralManagerDidUpdateState(_: CBPeripheralManager) {
@@ -31,14 +49,15 @@
         }
 
         #if os(iOS)
-            /// iOS relaunched Knit for Bluetooth. The channels did not survive, so connections it kept are dropped.
-            func centralManager(_ central: CBCentralManager, willRestoreState state: [String: Any]) {
+            /// iOS relaunched Knit for Bluetooth. The channels did not survive, so the connections it kept are dropped
+            /// once the central is powered on (``BLECore/dropRestored()``).
+            func centralManager(_: CBCentralManager, willRestoreState state: [String: Any]) {
                 for peripheral in state[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? [] {
                     peripherals[peripheral.identifier] = peripheral
                     peripheral.delegate = self
-                    central.cancelPeripheralConnection(peripheral)
+                    restored.insert(peripheral.identifier)
                 }
-                log.log(.info, "ble restored the central")
+                log.log(.info, "ble restored the central with \(restored.count) connections")
             }
 
             /// The services come back from the next advert.

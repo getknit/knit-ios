@@ -100,6 +100,8 @@
         var reported: RadioState?
         /// The newest reference to every peripheral sighted, which CoreBluetooth needs to connect it again.
         var peripherals: [UUID: CBPeripheral] = [:]
+        /// Connections a relaunch handed back, to drop once the central is powered on and can take the command.
+        var restored: Set<UUID> = []
         var strengths: [UUID: Int] = [:]
         var dials: [ChannelID: Dial] = [:]
         var links: [ChannelID: L2CAPLink] = [:]
