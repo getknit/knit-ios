@@ -54,7 +54,7 @@ scan then fails with `requires feature 'found_incompatible_headers__check_search
 
 **The SDK never leaves this machine.** Apple's terms tie the Xcode SDKs to Apple hardware, and xtool on
 Linux is a stopgap. The SDK stays out of images, caches and artifacts; only the built `Knit.app` is
-uploaded. The Mac Mini takes over iOS builds when it arrives.
+uploaded. The Mac Mini takes over iOS builds once `build:ios` moves to its runner.
 
 ## Linters and analyzers
 
@@ -104,7 +104,7 @@ uploaded. The Mac Mini takes over iOS builds when it arrives.
 
 ## CI runners
 
-- **linux-host, the instance runner,** takes the untagged jobs in the `swift:6.4-noble` image (pinned by digest in
+- **linux-host, the Linux instance runner,** takes the untagged jobs in the `swift:6.4-noble` image (pinned by digest in
   `.gitlab-ci.yml`). It is the `gitlab-runner` Docker container on the maintainer's machine, configured in
   `~/.gitlab-runner/config.toml`: two jobs at once, each capped at 8 GB and 8 cores, so CI never takes the
   whole desktop. Leave that directory to it.
@@ -143,11 +143,57 @@ uploaded. The Mac Mini takes over iOS builds when it arrives.
     is there.
   - **A shell runner runs pipeline code as `maintainer`,** with full access to that home directory. Keep it a
     project runner, and move it to an account of its own before anyone else can push to knit-ios.
+- **`mac-runner`, the Mac's runner,** is instance runner 9 with the tag `macos`, and it takes no untagged
+  jobs: any project's `macos` jobs run there, and nothing else does. No knit-ios job carries the tag yet.
+  - **What it is:** gitlab-runner's shell executor (bash) as `maintainer`, in a LaunchAgent in the desktop
+    session, because the Simulator needs one. It takes one job at a time (`concurrent = 1` in
+    `~/.gitlab-runner/config.toml`), and its builds and cache live in `~/.local/share/gitlab-runner`.
+  - **Recreating it:** the same two steps as `knit-local`, with `runner_type=instance_type`,
+    `tag_list=macos` and `run_untagged=false`. Register it without `sudo`, which makes it a LaunchAgent, then
+    `gitlab-runner install --working-directory ~/.local/share/gitlab-runner` and `gitlab-runner start`.
+  - **Every project's jobs run as `maintainer`,** whose home holds the glab token. Give it an account of its own
+    before a project that someone else can push to uses the tag.
 
-## When the Mac arrives
+## The Mac Mini
 
-- Install Xcode 27 and register a `macos` runner. Move `build:ios` to it, and make `verify:periphery`
-  blocking there (`PERIPHERY_STRICT=1`).
+`mac.example`, set up on 2026-09-27: an M6 Mac Mini with 12 cores and 16 GB on macOS 27.0, reached as
+`maintainer` over ssh with passwordless `sudo`. It logs in to the desktop by itself, restarts after a power cut,
+and never sleeps.
+
+- **Xcode 27.0 (`27A266a`)**, the build the Linux Darwin SDK came from, is the selected developer
+  directory. The iOS 27.0 Simulator runtime came with it, and developer mode is on. Its Swift is 6.4
+  (`swiftlang-6.4.0.34.1`), which matches `.swift-version`, so the Mac builds with Xcode's toolchain and has
+  no swiftly.
+- **Homebrew has the rest:** SwiftLint 0.65.1 and Periphery 3.8.0 (the pinned versions); bash 5 and
+  Python 3.14, because macOS ships bash 3.2 and Python 3.9; xcbeautify, xcodes, libimobiledevice and
+  ideviceinstaller; glab, gh and gitlab-runner; Colima and the docker CLI. `~/.zshenv` and `~/.bash_profile`
+  put Homebrew on the `PATH` for every shell, login or not.
+- **Docker runs in Colima,** a `vz` VM with Rosetta, 4 CPUs and 4 GB, started at login. `zaventh/lintorama:7`
+  is amd64 only, so it runs under Rosetta until the image ships an arm64 build.
+- **The checkouts** are `~/source/knit-ios`, with the hooks on, and `~/source/knit-next`. Git reaches GitLab
+  through `glab auth git-credential`. Commits made there are unsigned, because the GPG key stays on the Linux
+  desktop.
+- **What passes there** (2026-09-27, at `b03c841`): `check.sh fast`, in three minutes. `xcodebuild build
+  -scheme Knit` builds every target of the package for `generic/platform=iOS` and for the Simulator,
+  unsigned, with no Xcode project.
+- **What does not pass yet:**
+  - **`check.sh analyze`** runs in 26 minutes, and SourceKit gets through `KnitAppCore` without crashing.
+    It fails on seven findings that only macOS sees. swift-crypto's `Crypto` re-exports CryptoKit on Apple
+    platforms, so four `import Crypto` lines in `KnitCrypto` read as unused. `knit-peer`'s macOS stub
+    `main()` has no `unused_declaration` exemption, and the Linux branch's exemption reads as superfluous.
+    It also analyzes `Knit` from the macOS host build, where the app's iOS code does not compile; that
+    needs an iOS compiler log from `xcodebuild`.
+  - **`check.sh periphery`** is advisory and exits 0 with 21 findings, 18 of them in `KnitBlueZ`, whose
+    callers compile only on Linux. Linux reports 8. The two share three: `ChatListModel`'s `linked` and
+    `revision`, and `StoredText`'s `column`.
+
+## Still owed on the Mac
+
+- Move `build:ios` to the `macos` runner, and make `verify:periphery` blocking there
+  (`PERIPHERY_STRICT=1`), with `KnitBlueZ` left to Linux. ADR 2026-09.d3jv changes with it.
+- Make `check.sh analyze` pass on macOS: a macOS counterpart to `scripts/swiftlint-analyze-linux.yml`, and
+  `Knit` and `KnitBLE` analyzed from an iOS build.
 - Add a macOS test job: `swift test`, the KnitBLE delegate tests, and Simulator XCUITest with
   `performAccessibilityAudit`.
 - Pick the Xcode project generator by ADR. No `.pbxproj` is committed.
+- Sign Xcode in to the Apple ID, and pair the iPhone with the Mac. Both need someone at the Mac.
