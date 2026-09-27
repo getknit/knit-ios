@@ -62,6 +62,7 @@ python3 scripts/interop.py iphone --device <serial>               # MVP items 2 
 python3 scripts/interop.py iphone-relay --device <serial>         # MVP item 7: phone, iPhone, then a peer on hci0; Knit open on both
 python3 scripts/interop.py iphone-wake --device <serial>          # MVP item 9 from the phone: someone locks the iPhone, a DM a minute
 python3 scripts/interop.py iphone-wake --sender peer              # the same from a peer on hci0, which rings the iPhone's doorbell
+python3 scripts/interop.py iphone-rings                           # the iPhone rings a peer's doorbell (hci1, ios profile); Knit open
 python3 scripts/interop.py bridge '{"cmd":"status"}' --watch 60   # the iPhone's bridge by hand: replies, then events
 python3 scripts/soak.py run [--hours 10]                          # a night against every phone in range; drives none
 python3 scripts/soak.py status | report [--json] | stop           # the latest run (.build/soak/current)

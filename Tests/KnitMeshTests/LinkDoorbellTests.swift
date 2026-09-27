@@ -83,6 +83,14 @@ struct LinkDoorbellTests {
         #expect(rig.radio.rings == [id])
     }
 
+    @Test func ringsHeardAreCounted() {
+        let rig = LinkRig(local: LinkRig.high)
+        #expect(rig.handle(.rung).isEmpty)
+        #expect(rig.handle(.rung).isEmpty)
+        #expect(rig.links.ringsHeard == 2)
+        #expect(rig.links.rings == 0)
+    }
+
     @Test func aZeroIntervalNeverRings() throws {
         let rig = LinkRig(local: LinkRig.high, configuration: LinkManager.Configuration(ringIntervalMilliseconds: 0))
         _ = try rig.link(LinkRig.low)

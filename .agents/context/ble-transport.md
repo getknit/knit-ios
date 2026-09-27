@@ -126,7 +126,7 @@ radio.
   14 minutes locked, and ten DMs arrived within a second of Knit opening (MVP item 9's wake test,
   `.agents/context/linux-peer.md`). A write to the doorbell beside the GATT payload does wake it, for about 9 s,
   and the link manager rings after the frames it writes (ADR 2026-09.khjj). The Linux peer rings, Android does
-  once companion change A4 lands, and an iPhone does not yet.
+  once companion change A4 lands, and an iPhone rings the peers it dialed.
 - **Address rotation is harmless**, because everything keys on node id.
 - **Stale links block reconnects** until Android's link-supervision timeout notices the drop, because the
   responder refuses a peer it still thinks is linked. A1 lets an unsighted dialer replace its own stale

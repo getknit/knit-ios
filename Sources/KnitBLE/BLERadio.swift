@@ -61,6 +61,10 @@
         public func close(_ channel: ChannelID) {
             core.onQueue { $0.close(channel) }
         }
+
+        public func ring(_ channel: ChannelID) {
+            core.onQueue { $0.ring(channel) }
+        }
     }
 
     /// The radio's state and CoreBluetooth's delegates, all on ``queue``.
@@ -104,6 +108,7 @@
         var links: [ChannelID: L2CAPLink] = [:]
         /// The peripheral a dialed link runs to; an accepted link has none of ours.
         var owners: [ChannelID: UUID] = [:]
+        var doorbells = Doorbells()
         var gatt = GattPayloads()
         var gattTarget: UUID?
         var gattReads = 0
@@ -229,6 +234,7 @@
             links.removeAll()
             owners.removeAll()
             dials.removeAll()
+            doorbells = Doorbells()
             gatt.cancel()
             gattTarget = nil
         }

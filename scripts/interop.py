@@ -11,6 +11,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline]
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--udid UDID] [--minutes 10]
+    scripts/interop.py iphone-rings [--udid UDID]
     scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
 
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
@@ -679,6 +680,58 @@ def _all_woke(woke: int, ticks: list) -> dict:
 def _all_ticked(sender: _PhoneSender | _PeerSender, sent: list[dict]) -> bool:
     look = sender.look()
     return look is not None and {dm["body"] for dm in sent} <= look[0]
+
+
+def iphone_rings(arguments: argparse.Namespace) -> int:
+    """The iPhone rings the peers it dialed (ADR 2026-09.khjj). knit-peer runs on hci1 in the `ios` profile, whose
+    GATT application serves a doorbell and counts its rings, with an id below the iPhone's, so the iPhone reads its
+    payload and dials it. The iPhone's frames on that link stall after the HELLO (hci1's 23-byte fragments,
+    .agents/context/linux-peer.md), but a ring is a GATT write, which is not a frame on the link and still arrives.
+    The peer rings the iPhone back, once BlueZ has read the iPhone's services."""
+    ios = IPhone(arguments.udid)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    try:
+        ios.start()
+    except TimeoutError:
+        print(json.dumps({"action": "open Knit"}), flush=True)
+        _reopened(ios, 900)
+    others = others_in_range(ios.node_id) - {ios.node_id}
+    peer_id = keygen(ios.node_id, "phone-dials", others)
+    print(json.dumps({"run": "iphone-rings", "iphone": ios.node_id, "peer": peer_id, "refused": sorted(others)}))
+    peer = Peer("ios", f"knit-peer doorbell {nonce}", others, arguments.peer_log, arguments.rssi_floor)
+    stop = threading.Event()
+    try:
+        peer.start()
+        threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
+        run.step("iphone-dials-the-peer", lambda: _timed(lambda: peer.lines(lambda line: _link(line, ios.node_id)), 180))
+        run.step("iphone-rang", lambda: _rung(peer, 1, 60))
+        rang = peer.command(cmd="status")["rung"]
+        time.sleep(6)
+        ios.command(cmd="room", text=f"interop rings from iphone {nonce}")
+        run.step("a-post-rings-again", lambda: _rung(peer, rang + 1, 20))
+        run.step("iphone-counted-its-rings", lambda: {"rings": _positive(ios.command(cmd="status"), "rings")})
+        run.step("peer-rang-back", lambda: _rung(ios, 1, 120))
+        run.step("no-link-dropped", lambda: _no_link_dropped(peer, {ios.node_id}))
+    finally:
+        stop.set()
+        peer.stop()
+        ios.stop()
+    print(json.dumps({"summary": "iphone-rings", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _rung(node: Node, at_least: int, timeout: float) -> dict:
+    """Waits for `node` to count `at_least` rings of its own doorbell."""
+    started = time.monotonic()
+    rung = poll(lambda: (count := node.command(cmd="status").get("rung", 0)) >= at_least and count, timeout, every=1)
+    return {"rung": rung, "seconds": round(time.monotonic() - started, 1)}
+
+
+def _positive(status: dict, key: str) -> int:
+    if not status.get(key):
+        raise RuntimeError(f"{key} is {status.get(key)}")
+    return status[key]
 
 
 def _suspended(ios: IPhone, timeout: float) -> dict:
@@ -1593,13 +1646,20 @@ def main() -> int:
     by_hand = commands.add_parser("bridge")
     by_hand.add_argument("--watch", type=float, default=0, help="print the bridge's events for this many seconds")
     by_hand.add_argument("commands", nargs="*", help='commands as JSON, such as \'{"cmd":"status"}\'')
-    for sub in (ios, wake, by_hand, commands.choices["iphone-relay"]):
+    rings = commands.add_parser("iphone-rings")
+    rings.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    rings.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
+    for sub in (ios, wake, rings, by_hand, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
     if arguments.command == "iphone-wake" and arguments.sender == "phone" and not arguments.device:
         parser.error("--sender phone needs --device")
     if arguments.command in ("iphone", "iphone-wake", "bridge"):
         return {"iphone": iphone, "iphone-wake": iphone_wake, "bridge": bridge}[arguments.command](arguments)
+    if not PEER.exists():
+        sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
+    if arguments.command == "iphone-rings":
+        return iphone_rings(arguments)
     global RECEIVE_MTU, SEND_MTU  # noqa: PLW0603 - two knobs, read by Peer.start
     RECEIVE_MTU = arguments.receive_mtu
     SEND_MTU = arguments.send_mtu

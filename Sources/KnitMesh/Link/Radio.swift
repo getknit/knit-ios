@@ -73,6 +73,8 @@ public enum RadioEvent: Sendable, Equatable {
     case received(ChannelID, [UInt8])
     /// A channel closed: end of stream, a reset, or our own close completing.
     case closed(ChannelID)
+    /// A peer rang this node's doorbell, which woke the app if iOS had suspended it.
+    case rung
 }
 
 /// The radio under ``LinkManager``: it advertises, scans, dials, accepts and moves bytes, and decides nothing.

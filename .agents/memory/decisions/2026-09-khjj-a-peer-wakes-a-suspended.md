@@ -27,7 +27,10 @@ so a burst costs two wakes. Digests and HELLOs do not ring: they are the link's 
 wake. The radio decides whether it can ring. `Radio.ring(_:)` does nothing by default. `KnitBlueZ` does a write
 without response to the doorbell BlueZ found on the device at the channel's other end, so the write rides the
 link the channel already uses. It waits until BlueZ has read that device's services. `KnitBLE` serves the doorbell
-and answers each write.
+and answers each write. It rings the peers it dialed, looking the doorbell up once per connection and writing
+without a response when CoreBluetooth has room for one. A ring heard is a `RadioEvent.rung`, counted as `rung` in
+the control protocol's `status`. The Linux peer's `ios` profile serves a doorbell too, though it never sleeps, so
+that the iPhone's rings can be checked.
 
 It was tried by hand before it was built. On 2026-09-27, with the iPhone locked and knit-peer on a shared `hci0`, a
 DM that went unanswered for 40 s was delivered 4.8 s after a write without response, and 7.7 s after a write with
@@ -50,11 +53,14 @@ Three alternatives were weighed:
   12 wakes a minute per link.
 - **Anyone in range can ring.** The doorbell is unauthenticated. iOS wakes Knit before Knit can decide anything,
   so a stranger can spend the iPhone's battery, though a ring carries nothing.
-- **An iPhone rings nobody yet.** It could ring only the peers it dialed, since CoreBluetooth has no GATT client
-  toward a central that dialed it. Two locked iPhones wake each other only once `KnitBLE` rings.
+- **An iPhone rings only the peers it dialed.** CoreBluetooth has no GATT client toward a central that dialed
+  it. Between two iPhones the larger node id dials, so it can wake the smaller, and the smaller cannot wake it.
+  Nothing on an Android link rings from the iPhone: Android serves no doorbell, and one service discovery per
+  connection finds that out.
 - **BlueZ reads the services of a peer that dialed it on its own, some time after the link comes up.** A ring
   before then waits for that read. `Device1.Connect` does not force it: for an iPhone it takes BlueZ's BR/EDR path
   and hangs until the D-Bus timeout.
 - **Guards.** `LinkTests`' `theGATTIdentifiersArePinned`, `LinkDoorbellTests`, `BlueZDoorbellTests`, and
   `scripts/check.sh ios`, which fails if the app lacks `peripheralManager:didReceiveWriteRequests:`.
-  `interop.py iphone-wake --sender peer` checks the whole path on hardware.
+  `interop.py iphone-wake --sender peer` checks the whole path on hardware, and `interop.py iphone-rings` checks
+  the iPhone's rings.

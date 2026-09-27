@@ -172,8 +172,11 @@ public final class LinkManager: MeshTransport {
     public internal(set) var undecodableFrames = 0
     /// FILE records discarded as they streamed by (avatars and attachments are out of the MVP).
     public internal(set) var discardedFileRecords = 0
-    /// Doorbells rung, on every link since the manager was made.
+    /// Rings asked of the radio, on every link since the manager was made. A radio that cannot ring, or a peer with no
+    /// doorbell, makes nothing of one.
     public internal(set) var rings = 0
+    /// Rings of this node's own doorbell.
+    public internal(set) var ringsHeard = 0
 
     /// Channels open or opening.
     public var channelCount: Int { channels.count }
@@ -311,6 +314,9 @@ public final class LinkManager: MeshTransport {
             return receive(bytes, on: id, now: now)
         case .closed(let id):
             return retire(id, backingOff: true, now: now) + promote(now: now)
+        case .rung:
+            ringsHeard += 1
+            return []
         }
     }
 

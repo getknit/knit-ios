@@ -151,6 +151,9 @@
             bus.export(gatt.characteristicPath) { [weak self] call in
                 self?.answerCharacteristic(call) ?? .unknown
             }
+            bus.export(gatt.doorbellPath) { [weak self] call in
+                self?.answerDoorbell(call) ?? .unknown
+            }
             gattRegistered = true
             let registered: (Bool) -> Void = { [weak self] success in
                 if success {
@@ -177,6 +180,20 @@
             return .values([.bytes(slice)])
         }
 
+        /// A peer rang: its write woke nothing here, since the peer never sleeps, and is counted.
+        private func answerDoorbell(_ call: BusMessage) -> BusConnection.Answer {
+            guard isFromBlueZ(call) else {
+                return .error(name: BlueZ.accessDenied, message: "only BlueZ may write the doorbell")
+            }
+            guard call.interface == BlueZ.gattCharacteristic, call.member == "WriteValue" else {
+                return .unknown
+            }
+            let device = (try? call.arguments())?.dropFirst().first?["device"]?.text
+            log.log(.info, "bluez rung by \(device.map { Self.deviceName($0) } ?? "a peer")")
+            emit(.rung)
+            return .values([])
+        }
+
         func withdrawApplication(now: Int64) {
             guard gattRegistered else {
                 return
@@ -186,6 +203,7 @@
             adapterCall("UnregisterApplication", interface: BlueZ.gattManager, [.objectPath(gatt.root)], now: now) { [weak self] _ in
                 self?.bus?.unexport(gatt.root)
                 self?.bus?.unexport(gatt.characteristicPath)
+                self?.bus?.unexport(gatt.doorbellPath)
             }
         }
     }

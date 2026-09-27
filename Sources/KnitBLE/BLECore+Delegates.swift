@@ -108,6 +108,7 @@
             }
             manager.respond(to: first, withResult: .success)
             log.log(.info, "ble rung by \(first.central.identifier)")
+            emit(.rung)
         }
 
         func peripheralManager(_: CBPeripheralManager, didOpen channel: CBL2CAPChannel?, error: (any Error)?) {
@@ -161,6 +162,7 @@
 
         func centralManager(_: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error _: (any Error)?) {
             let uuid = peripheral.identifier
+            doorbells.forget(uuid)
             failDials(on: uuid)
             finishGattRead(uuid, .failed)
             for (channel, owner) in owners where owner == uuid {
@@ -220,16 +222,22 @@
 
         func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: (any Error)?) {
             guard gattTarget == peripheral.identifier else {
+                if doorbells.isLooking(peripheral.identifier) {
+                    doorbellServicesFound(peripheral, error: error)
+                }
                 return
             }
             guard error == nil, let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
                 finishGattRead(peripheral.identifier, error == nil ? .stranger : .failed)
                 return
             }
-            peripheral.discoverCharacteristics([Self.characteristicUUID], for: service)
+            peripheral.discoverCharacteristics([Self.characteristicUUID, Self.doorbellUUID], for: service)
         }
 
         func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: (any Error)?) {
+            if doorbells.isLooking(peripheral.identifier) {
+                doorbellCharacteristicsFound(peripheral, in: service, error: error)
+            }
             guard gattTarget == peripheral.identifier else {
                 return
             }

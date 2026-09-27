@@ -524,6 +524,17 @@ steps from 00:55, which is MVP item 9 against a sender that rings:
   00:55:58, and the ring the peer had been holding went out the same second.
 - **The link held,** and the bridge answered as soon as Knit was opened, after 17 minutes suspended.
 
+Then the iPhone rang. `interop.py iphone-rings` passed all 6 steps at 01:49, with the peer on `hci1` in the `ios`
+profile, whose GATT application serves a doorbell that counts rings. The peer's id sorted below the iPhone's, so the
+iPhone read its payload and dialed it:
+
+- **The iPhone rings the peers it dialed.** It dialed the peer in 22 s. It found the peer's doorbell and rang it at
+  once for the frames it sent at link-up, and rang again after a room post. Its frames on that link stalled on
+  `hci1`'s fragments as before, but a ring is a GATT write, not a frame on the link, so it arrived.
+- **Android links cost one look each.** The iPhone looked for a doorbell once on each of its three Android links,
+  found none, and did not look again. None of those links dropped.
+- **The peer rang back** in the same second. BlueZ read the iPhone's services far sooner than on `hci0`.
+
 Also found on the way:
 
 - **200 notifications for one back-fill.** The first build posted one per message. Each conversation now keeps

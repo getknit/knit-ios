@@ -211,12 +211,16 @@ import Testing
         #expect(GattApplication.read(value, options: .properties([("offset", .int32(-1))])) == nil)
     }
 
-    @Test func theApplicationIsOneServiceWithOneCharacteristic() {
+    @Test func theApplicationIsOneServiceWithThePayloadAndTheDoorbell() {
         let application = GattApplication(root: "/app/x/gatt")
         #expect(application.servicePath == "/app/x/gatt/service0")
         #expect(application.characteristicPath == "/app/x/gatt/service0/char0")
+        #expect(application.doorbellPath == "/app/x/gatt/service0/char1")
         #expect(application.managedObjects.isWellFormed)
-        #expect(BlueZ.objects(from: application.managedObjects).map(\.path) == [application.servicePath, application.characteristicPath])
+        #expect(
+            BlueZ.objects(from: application.managedObjects).map(\.path)
+                == [application.servicePath, application.characteristicPath, application.doorbellPath])
+        #expect(BlueZ.doorbellCharacteristic(in: application.managedObjects, on: "/app/x/gatt") == application.doorbellPath)
     }
 
     @Test func everyProfileHasAName() {

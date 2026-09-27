@@ -88,6 +88,19 @@
             remote.hangUp()
         }
 
+        @Test func theIOSProfileServesADoorbellThatCountsRings() throws {
+            let rig = try LoopRig(profile: .ios)
+            rig.startAdvertising()
+            rig.settle { rig.fake.applicationRoot != nil }
+            var answered = false
+            let options = DBusValue.properties([("type", .string("command")), ("device", .objectPath(LoopRig.peerPath))])
+            try rig.fake.call(
+                rig.loop.application.doorbellPath, interface: BlueZ.gattCharacteristic, member: "WriteValue", [.bytes([1]), options]
+            ) { result in answered = (try? result.get()) != nil }
+            rig.settle { answered && rig.events.contains(.rung) }
+            #expect(rig.log.all.contains { $0.contains("bluez rung by dev_4A_00_00_00_00_EF") })
+        }
+
         @Test func aChannelWithNoDeviceRingsNothing() throws {
             let rig = try LoopRig()
             rig.start()

@@ -211,6 +211,7 @@ public actor MeshControl {
             "dropped": .object(Dictionary(dropped) { first, _ in first }),
             "fileRecords": .int(Int64(await mesh.discardedFileRecords)),
             "rings": .int(Int64(await mesh.rings)),
+            "rung": .int(Int64(await mesh.ringsHeard)),
             "footprint": ControlLines.describe(await mesh.footprint),
             "router": ControlLines.describe(await mesh.routerCounters),
         ]) { _, own in own }

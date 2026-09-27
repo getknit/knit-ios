@@ -229,13 +229,15 @@ internal enum AdvertisementProperties {
     }
 }
 
-/// The GATT application a `--radio-profile ios` peer registers: one primary `0xFE30` service with one read-only
-/// characteristic holding the payload (``AdvertPayload/gattValue``), the way an iPhone serves it.
+/// The GATT application a `--radio-profile ios` peer registers, the way an iPhone serves it: one primary `0xFE30`
+/// service with a read-only characteristic holding the payload (``AdvertPayload/gattValue``), and the doorbell beside
+/// it (ADR 2026-09.khjj). The peer never sleeps, so a ring only counts; it is how an iPhone's rings are checked.
 internal struct GattApplication {
     let root: String
 
     var servicePath: String { root + "/service0" }
     var characteristicPath: String { servicePath + "/char0" }
+    var doorbellPath: String { servicePath + "/char1" }
 
     /// `GetManagedObjects`' answer for the application.
     var managedObjects: DBusValue {
@@ -244,6 +246,11 @@ internal struct GattApplication {
             ("UUID", .string(AdvertPayload.characteristicUUID)),
             ("Service", .objectPath(servicePath)),
             ("Flags", .strings(["read"])),
+        ])
+        let doorbell = DBusValue.properties([
+            ("UUID", .string(AdvertPayload.doorbellUUID)),
+            ("Service", .objectPath(servicePath)),
+            ("Flags", .strings(["write-without-response", "write"])),
         ])
         let interfaces: (String, DBusValue) -> DBusValue = { name, properties in
             .dictionary(key: .string, value: .dictionary(key: .string, value: .variant), [DBusEntry(key: .string(name), value: properties)])
@@ -254,6 +261,7 @@ internal struct GattApplication {
             [
                 DBusEntry(key: .objectPath(servicePath), value: interfaces(BlueZ.gattService, service)),
                 DBusEntry(key: .objectPath(characteristicPath), value: interfaces(BlueZ.gattCharacteristic, characteristic)),
+                DBusEntry(key: .objectPath(doorbellPath), value: interfaces(BlueZ.gattCharacteristic, doorbell)),
             ]
         )
     }

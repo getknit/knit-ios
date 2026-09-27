@@ -149,7 +149,9 @@ explicit direction.** Update this file in the change that ships an item.
   iPhone's link, on `LinkManager`'s schedule: a GATT write without response over the link's own connection, once
   service discovery finds the doorbell. Until it lands, a locked iPhone reads Android's frames only at its next
   foreground. It pairs naturally with A3, which gives Android a GATT client for iPhones anyway.
-- **An iPhone that rings:** `KnitBLE.ring` for the peers it dialed, so two locked iPhones wake each other.
+- **Two iPhones both ways:** an iPhone rings only the peers it dialed, so of two iPhones the one with the smaller id
+  cannot wake the other. A second GATT connection toward its dialer would let it; nothing needs it before two
+  iPhones are on hand.
 
 ## Deferred by design
 
