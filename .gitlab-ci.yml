@@ -4,8 +4,8 @@
 #
 # Two kinds of runner:
 #   - shared Linux runners for the light jobs;
-#   - `knit-local`, a runner on the maintainer's machine, for the heavy builds (sanitizers, fuzzing) and for
-#     `build:ios`, which needs xtool and the Darwin SDK. The SDK never goes into an image or a shared cache:
+#   - `knit-local`, a runner on the maintainer's machine, for the heavy jobs (sanitizers, fuzzing, analyze) and
+#     for `build:ios`, which needs xtool and the Darwin SDK. The SDK never goes into an image or a shared cache:
 #     Apple's terms tie it to that machine. `.agents/context/toolchain.md` has the runner setup.
 
 workflow:
@@ -137,7 +137,9 @@ test:asan:
     - scripts/check.sh asan
 
 verify:analyze:
-  extends: .swiftlint
+  # SourceKit holds every analyzed file's compiler instance until the run ends, and on Linux that outgrows
+  # linux-host's 8 GB per-job cap (OOM-killed at 8.35 GB, pipeline 795). knit-local has no cap and SwiftLint 0.65.1.
+  extends: .local
   stage: verify
   needs: [build:linux]
   script:

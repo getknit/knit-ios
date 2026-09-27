@@ -104,14 +104,15 @@ uploaded. The Mac Mini takes over iOS builds once `build:ios` moves to its runne
 
 ## CI runners
 
-- **linux-host, the Linux instance runner,** takes the untagged jobs in the `swift:6.4-noble` image (pinned by digest in
-  `.gitlab-ci.yml`). It is the `gitlab-runner` Docker container on the maintainer's machine, configured in
-  `~/.gitlab-runner/config.toml`: two jobs at once, each capped at 8 GB and 8 cores, so CI never takes the
-  whole desktop. Leave that directory to it.
-- **The `knit-local` runner** takes the five jobs that need the machine itself: `build:ios` and
+- **linux-host, the Linux instance runner,** takes the untagged jobs in the `swift:6.4-noble` image (pinned by
+  digest in `.gitlab-ci.yml`). It is the `gitlab-runner` Docker container on the maintainer's machine,
+  configured in `~/.gitlab-runner/config.toml`: two jobs at once, each capped at 8 GB and 8 cores, so CI never
+  takes the whole desktop. Leave that directory to it.
+- **The `knit-local` runner** takes the six jobs that need the machine itself: `build:ios` and
   `verify:periphery` (the Darwin SDK, xtool and Periphery live only here, ADR 2026-09.d3jv), and the heavy
-  `test:tsan`, `test:asan` and `verify:fuzz`. Until it is registered they wait for a runner, and no
-  pipeline finishes.
+  `test:tsan`, `test:asan`, `verify:fuzz` and `verify:analyze`. Analyze needs more than linux-host's 8 GB:
+  SourceKit keeps every file's compiler instance until the run ends, and linux-host's cap killed it at 8.35 GB.
+  Until the runner is registered these jobs wait for it, and no pipeline finishes.
   - **What it is:** project runner 7 on `knit/knit-ios`, tag `knit-local`, locked to the project, not
     taking untagged jobs. It is the apt package's system service with the shell executor, so jobs run as
     `maintainer`, who owns `~/.swiftpm/swift-sdks`, in a login shell whose `~/.profile` puts swiftly, xtool,
@@ -166,13 +167,21 @@ and never sleeps.
   no swiftly.
 - **Homebrew has the rest:** SwiftLint 0.65.1 and Periphery 3.8.0 (the pinned versions); bash 5 and
   Python 3.14, because macOS ships bash 3.2 and Python 3.9; xcbeautify, xcodes, libimobiledevice and
-  ideviceinstaller; glab, gh and gitlab-runner; Colima and the docker CLI. `~/.zshenv` and `~/.bash_profile`
-  put Homebrew on the `PATH` for every shell, login or not.
+  ideviceinstaller; glab, gh and gitlab-runner; GnuPG and pinentry-mac; Colima, the docker CLI and
+  docker-credential-helper. `~/.zshenv` and `~/.bash_profile` put Homebrew on the `PATH` for every shell,
+  login or not.
 - **Docker runs in Colima,** a `vz` VM with Rosetta, 4 CPUs and 4 GB, started at login. `zaventh/lintorama:7`
   is amd64 only, so it runs under Rosetta until the image ships an arm64 build.
 - **The checkouts** are `~/source/knit-ios`, with the hooks on, and `~/source/knit-next`. Git reaches GitLab
-  through `glab auth git-credential`. Commits made there are unsigned, because the GPG key stays on the Linux
-  desktop.
+  through `glab auth git-credential`.
+- **Signing:** the maintainer's GPG key is imported, and git signs every commit and tag with it. A LaunchAgent
+  (`org.gnupg.gpg-agent`) starts `gpg-agent` in the desktop session at login, so `pinentry-mac` can show its
+  dialog and read the passphrase from the Keychain even when the first `gpg` call comes over ssh. The
+  passphrase is asked once: tick "Save in Keychain" at the Mac, or unlock over ssh with
+  `gpg --pinentry-mode loopback`, which lasts until the agent restarts.
+- **The login Keychain is locked to ssh sessions.** `docker login` stores through
+  `docker-credential-osxkeychain` (`credsStore` in `~/.docker/config.json`), so run it at the Mac's desktop;
+  the CI runner shares that session. glab keeps its token in its config file for the same reason.
 - **What passes there** (2026-09-27, at `b03c841`): `check.sh fast`, in three minutes. `xcodebuild build
   -scheme Knit` builds every target of the package for `generic/platform=iOS` and for the Simulator,
   unsigned, with no Xcode project.

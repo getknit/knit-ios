@@ -35,11 +35,13 @@
             return BlueZRadio(configuration: configuration)
         }
 
-        /// Turns the fake until `condition` holds, or two seconds pass.
-        private func settle(_ fake: FakeBlueZ, until condition: () -> Bool) -> Bool {
+        /// Turns the fake until `condition` holds, or two seconds pass. It yields after every turn: a one-core runner's
+        /// cooperative pool has a single thread, and a loop that kept it would starve the collector's task.
+        private func settle(_ fake: FakeBlueZ, until condition: () -> Bool) async -> Bool {
             let deadline = Monotonic.milliseconds() + 2000
             while !condition(), Monotonic.milliseconds() < deadline {
                 fake.iterate(waitMilliseconds: 2)
+                await Task.yield()
             }
             return condition()
         }
@@ -54,17 +56,17 @@
             let collector = Collector()
             let listening = Task { await collector.take(radio.events) }
             radio.start()
-            #expect(settle(fake) { collector.all.contains(.listening(psm: UnixSockets.psm)) })
+            #expect(await settle(fake) { collector.all.contains(.listening(psm: UnixSockets.psm)) })
             radio.advertise(LoopRig.ours)
-            #expect(settle(fake) { fake.registered.count == 1 })
+            #expect(await settle(fake) { fake.registered.count == 1 })
             let dialed = radio.dial(RadioAddress(LoopRig.peerPath), psm: UnixSockets.psm)
-            #expect(settle(fake) { collector.all.contains(.dialFailed(dialed)) })
+            #expect(await settle(fake) { collector.all.contains(.dialFailed(dialed)) })
             radio.write([1], to: dialed)
             radio.close(dialed)
             radio.stop()
-            #expect(settle(fake) { fake.registered.isEmpty })
+            #expect(await settle(fake) { fake.registered.isEmpty })
             let shutdown = Task { await radio.shutdown() }
-            #expect(settle(fake) { collector.isFinished })
+            #expect(await settle(fake) { collector.isFinished })
             await shutdown.value
             await listening.value
         }
