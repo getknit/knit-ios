@@ -10,11 +10,13 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py relay   --device SERIAL [--radio-profile ios|android]
     scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline]
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--udid UDID] [--minutes 10]
     scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
 
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
-bridge over USB (ADR 2026-09.kwa8); `iphone-relay` runs MVP item 7's line through the iPhone; `bridge` sends that
-bridge commands by hand and prints what comes back.
+bridge over USB (ADR 2026-09.kwa8); `iphone-relay` runs MVP item 7's line through the iPhone; `iphone-wake` is item 9's
+wake test, with someone to lock the iPhone and unlock it again; `bridge` sends that bridge commands by hand and prints
+what comes back.
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
@@ -156,11 +158,11 @@ class Node:
         with self.arrived:
             return [line for line in self.seen if match(line)]
 
-    def command(self, **fields) -> dict:
+    def command(self, timeout: float = 10, **fields) -> dict:
         tag = secrets.token_hex(4)
         with self.writing:
             self._write(json.dumps({**fields, "tag": tag}) + "\n")
-        return self.wait(lambda line: line.get("tag") == tag, 10)
+        return self.wait(lambda line: line.get("tag") == tag, timeout)
 
 
 class Peer(Node):
@@ -525,6 +527,234 @@ def _offline(run: Run, ios: IPhone, phone: Phone, phone_id: str, nonce: str) -> 
     linked_at = started + link["seconds"]
     for name, body in (("offline-room-arrives", room), ("offline-dm-arrives", direct)):
         run.step(name, lambda body=body: _arrives_after(ios, body, linked_at))
+
+
+def iphone_wake(arguments: argparse.Namespace) -> int:
+    """MVP item 9, and P8's first task: whether a DM wakes Knit while the iPhone is locked. With Knit open and linked
+    to the sender, someone locks the iPhone. Once iOS suspends Knit, which the run sees as its bridge going quiet, the
+    sender DMs it every minute. Knit sends a DM's receipt only once it has opened the DM, so a DM the sender sees
+    delivered within its minute woke Knit. Then someone unlocks the iPhone and opens Knit, and the run reads when each
+    DM arrived there. The link must hold throughout.
+
+    Data on an open link does not wake a suspended Knit; a write to its doorbell does (.agents/context/linux-peer.md).
+    `--sender peer` has knit-peer on hci0 send the DMs, ringing after each as its link manager does, and every DM
+    must wake Knit. `--sender phone` has the Android phone send them. Android rings no doorbell yet (companion change
+    A4), so its DMs are only counted, and the check is the fallback: each arrives within 60 s of Knit opening."""
+    ios = IPhone(arguments.udid)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    try:
+        ios.start()
+    except TimeoutError:
+        print(json.dumps({"action": "open Knit"}), flush=True)
+        _reopened(ios, arguments.lock_wait)
+    sender: _PhoneSender | _PeerSender
+    if arguments.sender == "peer":
+        sender = _PeerSender(ios, arguments, nonce)
+    else:
+        sender = _PhoneSender(Phone(arguments.device), ios)
+    print(json.dumps({"run": "iphone-wake", "sender": arguments.sender, "from": sender.node_id, "iphone": ios.node_id, "minutes": arguments.minutes}))
+    try:
+        try:
+            run.step("link", lambda: sender.link(ios))
+            print(json.dumps({"action": "lock the iPhone"}), flush=True)
+            run.step("iphone-suspended", lambda: _suspended(ios, arguments.lock_wait))
+        finally:
+            ios.stop()
+        sender.begin()
+        sent = _wake_window(sender, nonce, arguments.minutes)
+        ticks = [dm["tickedAfter"] for dm in sent]
+        woke = [tick for tick in ticks if tick is not None and tick <= 60]
+        if arguments.sender == "peer":
+            run.step("dms-woke-knit", lambda: _all_woke(len(woke), ticks))
+            run.step("peer-rang", sender.rang)
+        else:
+            run.step("dms-that-woke-knit", lambda: {"count": len(woke), "of": len(sent), "tickedAfter": ticks})
+        run.step("link-held", lambda: sender.held(sum(dm["linkGone"] for dm in sent)))
+        print(json.dumps({"action": "unlock the iPhone and open Knit"}), flush=True)
+        opened = run.step("knit-opened", lambda: _reopened(ios, arguments.unlock_wait))
+        if opened is not None:
+            try:
+                run.step("dms-arrived", lambda: _arrivals(ios, sender.node_id, sent, opened["wall"]))
+                run.step("dms-ticked-after-opening", lambda: _timed(lambda: _all_ticked(sender, sent), 60))
+                run.step("link-held-on-iphone", lambda: _ios_still_linked(ios, sender.node_id))
+            finally:
+                ios.stop()
+    finally:
+        sender.stop()
+    print(json.dumps({"summary": "iphone-wake", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+class _PhoneSender:
+    """The Android phone sends the wake test's DMs, through knit-next's debug bridge."""
+
+    def __init__(self, phone: Phone, ios: IPhone) -> None:
+        self.phone = phone
+        self.ios_id = ios.node_id
+        self.node_id = phone.state()["self"]["nodeId"]
+
+    def link(self, ios: IPhone) -> dict:
+        return _ios_linked(ios, self.phone, self.node_id)
+
+    def begin(self) -> None:
+        self.phone.shell("logcat -c")
+
+    def send(self, body: str) -> None:
+        self.phone.shell("input keyevent KEYCODE_WAKEUP")
+        self.phone.send(body, conversation=self.ios_id)
+
+    def look(self) -> tuple[set[str], bool] | None:
+        """The DMs the phone shows delivered, and whether the iPhone is among its links; None if it did not answer."""
+        try:
+            state = self.phone.state(self.ios_id, limit=50)
+        except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError):
+            return None
+        ticked = {message["body"] for message in state.get("messages", []) if message.get("received")}
+        return ticked, any(peer["nodeId"] == self.ios_id for peer in state.get("reachable", []))
+
+    def held(self, gone: int) -> dict:
+        """The phone listed the iPhone among its links at every look, and logged no link down for it."""
+        log = self.phone.shell("logcat -d -s BluetoothMeshTransport:*")
+        downs = [line.split(": ", 1)[-1] for line in log.splitlines() if f"link down: {self.ios_id}" in line]
+        if downs or gone:
+            raise RuntimeError(f"the link went down: {gone} looks without it, {downs[:3]}")
+        return {}
+
+    def stop(self) -> None:
+        pass
+
+
+class _PeerSender:
+    """knit-peer on hci0 sends the wake test's DMs, and refuses every node but the iPhone. Its link manager rings the
+    iPhone's doorbell after each frame it writes (`LinkManager+Doorbell.swift`)."""
+
+    def __init__(self, ios: IPhone, arguments: argparse.Namespace, nonce: str) -> None:
+        if not PEER.exists():
+            sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
+        others = others_in_range(ios.node_id) - {ios.node_id}
+        self.node_id = _keygen("iphone-wake", "--above", max(others | {ios.node_id}))
+        self.ios_id = ios.node_id
+        self.ids: dict[str, str] = {}
+        self.stopping = threading.Event()
+        self.peer = Peer("android", f"knit-peer wake {nonce}", others, arguments.peer_log, arguments.rssi_floor, "iphone-wake", HCI0)
+        self.peer.start()
+        keep = (self.peer, {ios.node_id}, set(self.peer.refuse), self.stopping, self.peer.instance)
+        threading.Thread(target=_keep_to, args=keep, daemon=True).start()
+
+    def link(self, _ios: IPhone) -> dict:
+        return _timed(lambda: self.peer.lines(lambda line: _link(line, self.ios_id)), 180)
+
+    def begin(self) -> None:
+        pass
+
+    def send(self, body: str) -> None:
+        self.ids[self.peer.command(cmd="dm", to=self.ios_id, text=body)["id"]] = body
+
+    def look(self) -> tuple[set[str], bool]:
+        delivered = self.peer.lines(lambda line: line.get("event") == "delivered" and line.get("id") in self.ids)
+        down = self.peer.lines(lambda line: line.get("event") == "link" and line.get("peer") == self.ios_id and not line.get("up"))
+        return {self.ids[line["id"]] for line in delivered}, not down
+
+    def held(self, _gone: int) -> dict:
+        return _no_link_dropped(self.peer, {self.ios_id})
+
+    def rang(self) -> dict:
+        rings = self.peer.command(cmd="status").get("rings", 0)
+        if not rings:
+            raise RuntimeError("the peer rang no doorbell")
+        return {"rings": rings}
+
+    def stop(self) -> None:
+        self.stopping.set()
+        self.peer.stop()
+
+
+def _all_woke(woke: int, ticks: list) -> dict:
+    if woke < len(ticks):
+        raise RuntimeError(f"{woke} of {len(ticks)} DMs were delivered within their minute: {ticks}")
+    return {"count": woke, "tickedAfter": ticks}
+
+
+def _all_ticked(sender: _PhoneSender | _PeerSender, sent: list[dict]) -> bool:
+    look = sender.look()
+    return look is not None and {dm["body"] for dm in sent} <= look[0]
+
+
+def _suspended(ios: IPhone, timeout: float) -> dict:
+    """Waits for Knit to stop answering its bridge, which it does once iOS suspends it: the lock took."""
+    started = time.monotonic()
+    while time.monotonic() - started < timeout:
+        try:
+            ios.command(cmd="status", timeout=5)
+        except TimeoutError:
+            return {"seconds": round(time.monotonic() - started, 1)}
+        time.sleep(2)
+    raise TimeoutError("Knit kept answering: the iPhone was not locked, or something kept Knit awake")
+
+
+def _wake_window(sender: _PhoneSender | _PeerSender, nonce: str, minutes: int) -> list[dict]:
+    """A DM at the top of each minute. Between them the sender is read every few seconds for which DMs it has seen
+    delivered, and whether the iPhone is still linked."""
+    sent: list[dict] = []
+    started = time.monotonic()
+    end = started + 60 * minutes
+    while time.monotonic() < end:
+        if len(sent) < minutes and time.monotonic() >= started + 60 * len(sent):
+            body = f"interop wake {nonce} {len(sent) + 1}"
+            sender.send(body)
+            sent.append({"body": body, "at": time.monotonic(), "wall": time.time(), "tickedAfter": None, "linkGone": 0})
+        look = sender.look()
+        if look is None:
+            time.sleep(3)
+            continue
+        ticked, linked = look
+        for dm in sent:
+            if dm["tickedAfter"] is None and dm["body"] in ticked:
+                dm["tickedAfter"] = round(time.monotonic() - dm["at"], 1)
+                print(json.dumps({"dm": dm["body"], "tickedAfter": dm["tickedAfter"]}), flush=True)
+        if not linked:
+            sent[-1]["linkGone"] += 1
+            print(json.dumps({"linked": False, "minute": len(sent)}), flush=True)
+        time.sleep(3)
+    return sent
+
+
+def _reopened(ios: IPhone, timeout: float) -> dict:
+    """Waits for Knit to answer its bridge again, once someone has unlocked the iPhone and opened it."""
+    started = time.monotonic()
+    while True:
+        try:
+            ios.start()
+            return {"seconds": round(time.monotonic() - started, 1), "wall": time.time()}
+        except (TimeoutError, OSError):
+            ios.stop()
+            if time.monotonic() - started > timeout:
+                raise
+
+
+def _arrivals(ios: IPhone, phone_id: str, sent: list[dict], opened_at: float) -> dict:
+    """When each DM reached Knit, by Knit's own clock, which NTP keeps near this one: all of them by 60 s after the
+    bridge answered again, which is itself a little after Knit came to the front."""
+    messages = {m["body"]: m for m in ios.command(cmd="messages", conv=phone_id, limit=200)["messages"]}
+    missing = [dm["body"] for dm in sent if dm["body"] not in messages]
+    if missing:
+        raise RuntimeError(f"{len(missing)} of {len(sent)} never arrived")
+    arrived = [messages[dm["body"]]["arrivedAt"] / 1000 for dm in sent]
+    detail = {
+        "secondsAfterSending": [round(at - dm["wall"], 1) for at, dm in zip(arrived, sent, strict=True)],
+        "latestAfterOpening": round(max(arrived) - opened_at, 1),
+    }
+    if detail["latestAfterOpening"] > 60:
+        raise RuntimeError(f"arrived more than 60 s after Knit opened: {detail}")
+    return detail
+
+
+def _ios_still_linked(ios: IPhone, phone_id: str) -> dict:
+    downs = ios.lines(lambda line: line.get("event") == "link" and line.get("peer") == phone_id and not line.get("up"))
+    if downs or not any(link["peer"] == phone_id for link in ios.command(cmd="links")["links"]):
+        raise RuntimeError("the iPhone is not linked to the phone")
+    return {}
 
 
 def _ios_linked(ios: IPhone, phone: Phone, phone_id: str, timeout: float = 120) -> dict:
@@ -1352,14 +1582,24 @@ def main() -> int:
     ios = commands.add_parser("iphone")
     ios.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios.add_argument("--skip-offline", action="store_true", help="leave out MVP item 6, which stops the iPhone's mesh")
+    wake = commands.add_parser("iphone-wake")
+    wake.add_argument("--sender", default="phone", choices=["phone", "peer"], help="who DMs the locked iPhone: the phone, or knit-peer on hci0")
+    wake.add_argument("--device", help="the adb serial of a phone the maintainer approved for this session; needed with --sender phone")
+    wake.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    wake.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
+    wake.add_argument("--minutes", type=int, default=10, help="how long the iPhone stays locked, with a DM each minute")
+    wake.add_argument("--lock-wait", type=float, default=900, help="how long to wait for someone to lock the iPhone")
+    wake.add_argument("--unlock-wait", type=float, default=1800, help="how long to wait for someone to open Knit again")
     by_hand = commands.add_parser("bridge")
     by_hand.add_argument("--watch", type=float, default=0, help="print the bridge's events for this many seconds")
     by_hand.add_argument("commands", nargs="*", help='commands as JSON, such as \'{"cmd":"status"}\'')
-    for sub in (ios, by_hand, commands.choices["iphone-relay"]):
+    for sub in (ios, wake, by_hand, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
-    if arguments.command in ("iphone", "bridge"):
-        return {"iphone": iphone, "bridge": bridge}[arguments.command](arguments)
+    if arguments.command == "iphone-wake" and arguments.sender == "phone" and not arguments.device:
+        parser.error("--sender phone needs --device")
+    if arguments.command in ("iphone", "iphone-wake", "bridge"):
+        return {"iphone": iphone, "iphone-wake": iphone_wake, "bridge": bridge}[arguments.command](arguments)
     global RECEIVE_MTU, SEND_MTU  # noqa: PLW0603 - two knobs, read by Peer.start
     RECEIVE_MTU = arguments.receive_mtu
     SEND_MTU = arguments.send_mtu

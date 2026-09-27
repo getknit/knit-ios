@@ -121,6 +121,12 @@ radio.
   UUID list, so a background scan filtered on `0xFE30` probably cannot match it either; check that on
   hardware. Open L2CAP links survive backgrounding with the `bluetooth-central` and `bluetooth-peripheral`
   modes.
+- **A suspended app gets nothing on its links, until a peer rings.** Data arriving on an L2CAP channel does not
+  wake a suspended Knit. It waits on the link, and arrives when Knit next comes to the front. A link held through
+  14 minutes locked, and ten DMs arrived within a second of Knit opening (MVP item 9's wake test,
+  `.agents/context/linux-peer.md`). A write to the doorbell beside the GATT payload does wake it, for about 9 s,
+  and the link manager rings after the frames it writes (ADR 2026-09.khjj). The Linux peer rings, Android does
+  once companion change A4 lands, and an iPhone does not yet.
 - **Address rotation is harmless**, because everything keys on node id.
 - **Stale links block reconnects** until Android's link-supervision timeout notices the drop, because the
   responder refuses a peer it still thinks is linked. A1 lets an unsighted dialer replace its own stale

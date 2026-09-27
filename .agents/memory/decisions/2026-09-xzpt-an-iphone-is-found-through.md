@@ -62,6 +62,10 @@ dial does, as the rule above says. A relaunch's restored connections are cancell
 on, not in `willRestoreState`, where CoreBluetooth refused the command and a connection left up kept every dial
 to that phone waiting.
 
+**Amended 2026-09-27:** the service holds a second characteristic, a writable doorbell that wakes a suspended
+iPhone (ADR 2026-09.khjj). The payload characteristic is unchanged, and a reader that looks it up by UUID skips the
+doorbell.
+
 **Consequences / limits:**
 
 - **Cross-platform law.** The UUID is law once A3 ships. Change it only together with knit-next.

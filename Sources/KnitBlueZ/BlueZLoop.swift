@@ -103,6 +103,10 @@
         var gatt: GattPayloads
         var gattStage: GattStage?
         var gattReads = 0
+        /// Each linked device's doorbell, once looked up among BlueZ's objects, and the devices a ring waits on.
+        var doorbells: [String: Doorbell] = [:]
+        var ringsWaiting: Set<String> = []
+        var doorbellLookups: Set<String> = []
 
         var listener: ListeningSocket?
         var channels: [ChannelID: Channel] = [:]
@@ -214,6 +218,8 @@
                 enqueue(bytes, on: id)
             case .close(let id):
                 closeChannel(id)
+            case .ring(let id):
+                ring(id, now: now)
             case .shutdown:
                 shutdown(now: now)
             }

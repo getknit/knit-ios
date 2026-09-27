@@ -121,8 +121,16 @@ explicit direction.** Update this file in the change that ships an item.
   - **Relay (item 7):** passes through the iPhone. `scripts/interop.py iphone-relay` ran the line twice, with
     the Pixel 3, then the iPhone, then a peer on `hci0` that refused the Pixel 3. It passed 17 of 17 both times:
     posts and DMs crossed the iPhone both ways, and the three custody sets converged.
-  - **Still owed:** the wake test (item 9), the scan-filter check, and the soak. Items 2 to 7 pass against the
-    Pixel 3 through the bridge, unattended (`.agents/context/linux-peer.md`).
+  - **Background (item 9):** L2CAP data does not wake a suspended Knit. With the iPhone locked, the link to the
+    Pixel 3 held for 14 minutes and none of ten DMs arrived. All ten arrived within a second of Knit opening,
+    which is the item's fallback. A write to a GATT doorbell does wake it (ADR 2026-09.khjj): tried by hand, a
+    locked iPhone took the peer's DM 4.8 s after a ring. `LinkManager` now rings after frames, and the Linux peer
+    rings. Item 9 passes against it: `iphone-wake --sender peer` passed 9 of 9, with every DM of ten minutes
+    locked read within 0.5 s and notified. Android rings once A4 lands, and until then falls back.
+  - **Still owed:** the app's background copy (it says open links keep working in the background, which holds only
+    for a peer that rings), the scan-filter check, and the soak. Items 2 to 7 pass against the Pixel 3 through the
+    bridge, unattended, and item 9's test needs someone to lock and unlock the iPhone
+    (`.agents/context/linux-peer.md`).
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
@@ -137,6 +145,11 @@ explicit direction.** Update this file in the change that ships an item.
 - **Contacts:** QR verification in person, and contact links at a distance (`docs/CONTACT_CARD.md` in
   knit-next).
 - **Companion change A3:** Android finds and dials iPhones.
+- **Companion change A4:** Android rings an iPhone's doorbell (ADR 2026-09.khjj) after the frames it writes on the
+  iPhone's link, on `LinkManager`'s schedule: a GATT write without response over the link's own connection, once
+  service discovery finds the doorbell. Until it lands, a locked iPhone reads Android's frames only at its next
+  foreground. It pairs naturally with A3, which gives Android a GATT client for iPhones anyway.
+- **An iPhone that rings:** `KnitBLE.ring` for the peers it dialed, so two locked iPhones wake each other.
 
 ## Deferred by design
 

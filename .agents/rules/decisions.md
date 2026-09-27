@@ -29,6 +29,7 @@ growing an explanation, that explanation belongs in the ADR.
 | `KnitBlueZ`, `knit-peer`, `scripts/interop.py`, or anything that touches `hci1` | [ADR 2026-09.5ftc](../memory/decisions/2026-09-5ftc-a-headless-linux-peer-on.md) |
 | `KnitControl`, the control protocol, the app's debug bridge (`Sources/Knit/Debug/`), or `AppSession.eventTap` | [ADR 2026-09.kwa8](../memory/decisions/2026-09-kwa8-a-debug-build-takes-knit.md) |
 | the GATT payload, its UUIDs, `FLAG_DIALS_GATT_PEERS`, `Radio.dialsGattPeers`, `GattPayloads`, or `KnitBLE` | [ADR 2026-09.xzpt](../memory/decisions/2026-09-xzpt-an-iphone-is-found-through.md) |
+| the doorbell, `Radio.ring`, `LinkManager+Doorbell`, or what wakes a suspended iPhone | [ADR 2026-09.khjj](../memory/decisions/2026-09-khjj-a-peer-wakes-a-suspended.md) |
 | the Keychain identity, `KeychainSecretStore`, or what onboarding publishes | [ADR 2026-09.tkww](../memory/decisions/2026-09-tkww-a-reinstall-keeps-the-keychain.md) |
 | a string a person reads, `Copy`, `App/Info.plist`'s usage strings, or a view's text | [ADR 2026-09.ycza](../memory/decisions/2026-09-ycza-user-facing-copy-lives-in.md) |
 

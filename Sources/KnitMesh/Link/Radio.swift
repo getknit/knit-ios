@@ -109,4 +109,16 @@ public protocol Radio: AnyObject, Sendable {
 
     /// Closes a channel.
     func close(_ channel: ChannelID)
+
+    /// Rings the doorbell of the peer on `channel`, which wakes its app if iOS has suspended it: data arriving on
+    /// an open link does not, and a write to the doorbell does (ADR router: `.agents/memory/decisions.md`). A radio
+    /// that cannot ring, or a peer without a doorbell, does nothing.
+    func ring(_ channel: ChannelID)
+}
+
+extension Radio {
+    /// Rings nothing: a radio that cannot reach a doorbell.
+    public func ring(_: ChannelID) {
+        // A radio that can ring implements this; the rest leave the peer to wake at its next foreground.
+    }
 }

@@ -27,6 +27,9 @@ public struct AdvertPayload: Sendable, Equatable {
     /// The read-only characteristic in that GATT service whose value is ``gattValue``. Minted by this port on
     /// 2026-09-25; Android reads it once companion change A3 lands, so it is cross-platform law from then on.
     public static let characteristicUUID = "848eedcd-a2e3-4fb2-86f9-e2c80821a497"
+    /// The writable characteristic beside it, which a peer writes to wake a node whose app iOS has suspended: data on
+    /// an open link does not wake it, and a write does. The value means nothing. Minted by this port on 2026-09-27.
+    public static let doorbellUUID = "f34c056b-5830-4243-a888-01f92f49e446"
 
     private static let capabilitiesMask: Int64 = 0xFF
 

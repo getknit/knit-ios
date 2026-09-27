@@ -170,5 +170,6 @@ import Testing
     @Test func theGATTIdentifiersArePinned() {
         #expect(AdvertPayload.serviceUUID == "0000fe30-0000-1000-8000-00805f9b34fb")
         #expect(AdvertPayload.characteristicUUID == "848eedcd-a2e3-4fb2-86f9-e2c80821a497")
+        #expect(AdvertPayload.doorbellUUID == "f34c056b-5830-4243-a888-01f92f49e446")
     }
 }

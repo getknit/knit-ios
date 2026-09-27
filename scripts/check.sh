@@ -129,10 +129,12 @@ gate_ios() {
 	fi
 	"${cpus[@]}" xtool dev build
 	# Only the Objective-C runtime calls these, so only Package.swift's -ObjC keeps them in the app. Without the
-	# restore ones, iOS stops Knit the moment Bluetooth is allowed.
+	# restore ones, iOS stops Knit the moment Bluetooth is allowed; without the write one, the doorbell wakes Knit
+	# and nothing answers it.
 	local selector
 	for selector in centralManager:willRestoreState: peripheralManager:willRestoreState: \
-		centralManager:didDiscoverPeripheral:advertisementData:RSSI: peripheralManager:didOpenL2CAPChannel:error:; do
+		centralManager:didDiscoverPeripheral:advertisementData:RSSI: peripheralManager:didOpenL2CAPChannel:error: \
+		peripheralManager:didReceiveWriteRequests:; do
 		if ! grep -q -a -F "$selector" xtool/Knit.app/Knit; then
 			echo "xtool/Knit.app lacks the delegate method $selector: is -ObjC still in the Knit target's linkerSettings?" >&2
 			return 1

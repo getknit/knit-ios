@@ -72,6 +72,16 @@ internal enum BlueZ {
     /// The object path of the payload characteristic BlueZ found on `device`, from `GetManagedObjects`' answer: the
     /// Knit characteristic of one of that device's `0xFE30` services (ADR 2026-09.xzpt). `nil` when it serves none.
     static func payloadCharacteristic(in value: DBusValue, on device: String) -> String? {
+        knitCharacteristic(AdvertPayload.characteristicUUID, in: value, on: device)
+    }
+
+    /// The object path of the doorbell BlueZ found on `device`, beside its payload characteristic. `nil` when it has
+    /// none: an Android phone, or an iPhone on a build from before the doorbell.
+    static func doorbellCharacteristic(in value: DBusValue, on device: String) -> String? {
+        knitCharacteristic(AdvertPayload.doorbellUUID, in: value, on: device)
+    }
+
+    private static func knitCharacteristic(_ uuid: String, in value: DBusValue, on device: String) -> String? {
         let owned = objects(from: value).filter { $0.path.hasPrefix(device + "/") }
         let hasUUID: (DBusValue, String) -> Bool = { properties, uuid in properties["UUID"]?.text?.lowercased() == uuid }
         let services = Set(
@@ -82,7 +92,7 @@ internal enum BlueZ {
         )
         return owned.first { object in
             object.interfaces.contains { interface in
-                interface.name == gattCharacteristic && hasUUID(interface.properties, AdvertPayload.characteristicUUID)
+                interface.name == gattCharacteristic && hasUUID(interface.properties, uuid)
                     && interface.properties["Service"]?.text.map(services.contains) == true
             }
         }?

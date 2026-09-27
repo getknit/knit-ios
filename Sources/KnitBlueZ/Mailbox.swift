@@ -12,6 +12,7 @@
         case dial(ChannelID, RadioAddress, psm: UInt16)
         case write(ChannelID, [UInt8])
         case close(ChannelID)
+        case ring(ChannelID)
         case shutdown
     }
 

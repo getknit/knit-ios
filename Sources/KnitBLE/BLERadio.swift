@@ -74,9 +74,6 @@
             var opening = false
         }
 
-        /// `CBUUID` is not `Sendable`, so these are built where they are used rather than stored.
-        static var serviceUUID: CBUUID { CBUUID(string: AdvertPayload.serviceUUID) }
-        static var characteristicUUID: CBUUID { CBUUID(string: AdvertPayload.characteristicUUID) }
         #if os(iOS)
             static let centralRestoreId = "app.getknit.knit.central"
             static let peripheralRestoreId = "app.getknit.knit.peripheral"
@@ -243,8 +240,8 @@
             serve()
         }
 
-        /// Serves the wanted value from the `0xFE30` service, and advertises the UUID alone. The value is static, so
-        /// the service is replaced whenever it changes, which is only with the PSM.
+        /// Serves the wanted value from the `0xFE30` service, with the doorbell beside it, and advertises the UUID alone.
+        /// The value is static, so the service is replaced whenever it changes, which is only with the PSM.
         func serve() {
             guard running, reported == .on, let peripheralManager, let value = wantedValue, value != servedValue else {
                 return
@@ -257,8 +254,14 @@
                 value: Data(value),
                 permissions: [.readable]
             )
+            let doorbell = CBMutableCharacteristic(
+                type: Self.doorbellUUID,
+                properties: [.write, .writeWithoutResponse],
+                value: nil,
+                permissions: [.writeable]
+            )
             let service = CBMutableService(type: Self.serviceUUID, primary: true)
-            service.characteristics = [characteristic]
+            service.characteristics = [characteristic, doorbell]
             peripheralManager.add(service)
             servedValue = value
         }
@@ -366,5 +369,14 @@
                 gatt.forget(RadioAddress(uuid.uuidString))
             }
         }
+    }
+
+    // MARK: The GATT identifiers
+
+    extension BLECore {
+        /// `CBUUID` is not `Sendable`, so these are built where they are used rather than stored.
+        static var serviceUUID: CBUUID { CBUUID(string: AdvertPayload.serviceUUID) }
+        static var characteristicUUID: CBUUID { CBUUID(string: AdvertPayload.characteristicUUID) }
+        static var doorbellUUID: CBUUID { CBUUID(string: AdvertPayload.doorbellUUID) }
     }
 #endif

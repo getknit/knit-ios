@@ -479,6 +479,51 @@ and the peer, then let the rest link again at the end.
 - **The iPhone's router relayed 8 and 9 frames** and refused none. These counts cover only frames the router
   passed on. The back-fill goes by digest, so it isn't counted.
 
+`interop.py iphone-wake` ran MVP item 9's wake test from 23:46, with the maintainer locking the iPhone and later
+unlocking it. Knit was open and linked to the Pixel 3 and three other lab phones. Every link was one the iPhone had
+dialed, so a link to the iPhone's own channel is still untested.
+
+- **L2CAP data does not wake a suspended Knit.** The iPhone locked at 23:47:14. bluetoothd released its last
+  assertion on Knit at 23:47:23, and runningboardd suspended Knit that second. The Pixel 3 then sent a DM every
+  minute for ten minutes. None was delivered in that window. runningboardd never resumed Knit, and bluetoothd took
+  no new assertion on it, though four phones' traffic kept arriving on its links.
+- **The link held.** The Pixel 3 listed the iPhone as linked at every look, 3 s apart, and logged no link down
+  for it. The iPhone stayed locked for 14 minutes in all.
+- **Everything waited on the link.** The maintainer opened Knit at 00:01:08, and all ten DMs arrived within the
+  same second. They came from the link's buffer, not from custody. The Pixel 3 then showed all ten delivered.
+  Knit posted a notification for each DM with Knit in front, each replacing the last, and none while the iPhone
+  was locked.
+- **The bridge did not come back.** iOS shuts an app's sockets when it suspends it (runningboardd logs
+  `Shutdown sockets (SVC)`) and tells the listener nothing. The listener still looked ready, so the foreground
+  left it alone. The arrival times above come from Knit's database, through the read-only mount, which also
+  had to be mounted again. The bridge now makes a new listener at every foreground.
+
+A doorbell then woke it (ADR 2026-09.khjj). Knit gained a writable characteristic beside its GATT payload, and a
+peer on a shared `hci0` linked the locked iPhone, with the doorbell rung by hand through BlueZ's `WriteValue`:
+
+- **A ring wakes Knit, and a DM with no ring still waits.** In each round the peer sent a DM and waited 40 s, and
+  none was delivered. After a write without response the DM was delivered 4.8 s later, and after a write with a
+  response 7.7 s later. At each ring runningboardd showed bluetoothd resuming Knit, which then ran for 9 s. In the
+  third round a lab phone's link to the iPhone dropped first, and that disconnect woke Knit just the same.
+- **BlueZ had not read the iPhone's services 13 s after the iPhone dialed the peer,** so its doorbell had no D-Bus
+  object yet. BlueZ does read them on its own, and the devices left over from earlier runs held them, so the
+  radio waits for the read. `Device1.Connect` is no way to hurry it: for the iPhone it took BlueZ's BR/EDR path,
+  hung until the D-Bus timeout, and the link dropped and came back meanwhile.
+- **bluetoothd refuses new devices.** Its journal shows `Unable to register device interface` for devices passing
+  by, 709 times since midnight. The iPhone's own device registered, but a new phone might not. Restarting
+  bluetoothd clears it, and would drop `hci0`'s live connections, so that is the maintainer's call.
+
+With the ringing built into `LinkManager` and the Linux peer, `interop.py iphone-wake --sender peer` passed all 9
+steps from 00:55, which is MVP item 9 against a sender that rings:
+
+- **Every DM woke Knit.** For ten minutes locked, the peer sent a DM a minute and rang after each. By Knit's own clock
+  each DM arrived 0.1 to 0.5 s after it was sent, and the peer saw each delivered at its next look, 3 s later (6 s
+  once). The system log shows the same cycle ten times: Knit suspended, resumed by a ring, a notification posted,
+  and suspended again. The peer rang 16 times in all.
+- **The first ring waited 42 s for BlueZ.** The link came up at 00:55:16, BlueZ read the iPhone's services at
+  00:55:58, and the ring the peer had been holding went out the same second.
+- **The link held,** and the bridge answered as soon as Knit was opened, after 17 minutes suspended.
+
 Also found on the way:
 
 - **200 notifications for one back-fill.** The first build posted one per message. Each conversation now keeps

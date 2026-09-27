@@ -36,6 +36,8 @@
         /// BlueZ, or the adapter, or the bus went away, and with it everything we had registered.
         private func forgetBlueZ() {
             adapterPresent = false
+            doorbells.removeAll()
+            ringsWaiting.removeAll()
             activeAdvert = nil
             pendingAdvert = nil
             gattRegistered = false
@@ -166,6 +168,7 @@
             } else if names.contains(BlueZ.deviceInterface) {
                 devices[path] = nil
                 gattDeviceRemoved(path)
+                doorbellDeviceGone(path)
             }
         }
 
@@ -200,6 +203,7 @@
                     )
                 }
                 gattDeviceChanged(path, changed, now: Monotonic.milliseconds())
+                doorbellDeviceChanged(path, changed, now: Monotonic.milliseconds())
                 if changed["RSSI"] != nil || changed["ServiceData"] != nil || changed["UUIDs"] != nil {
                     devices[path]?.heardAt = Monotonic.milliseconds()
                     sight(path)

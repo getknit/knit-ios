@@ -100,6 +100,16 @@
             psm = nil
         }
 
+        /// A peer rang the doorbell. Data on an open link does not wake a suspended Knit, and a write does, so a peer
+        /// that has written to our link rings to have it read. The wake is the point, and the value is ignored.
+        func peripheralManager(_ manager: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
+            guard let first = requests.first else {
+                return
+            }
+            manager.respond(to: first, withResult: .success)
+            log.log(.info, "ble rung by \(first.central.identifier)")
+        }
+
         func peripheralManager(_: CBPeripheralManager, didOpen channel: CBL2CAPChannel?, error: (any Error)?) {
             guard let channel, error == nil, running else {
                 log.log(.info, "ble refused an incoming channel: \(error.map { "\($0)" } ?? "stopped")")

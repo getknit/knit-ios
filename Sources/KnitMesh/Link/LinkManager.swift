@@ -38,6 +38,10 @@ public final class LinkManager: MeshTransport {
         /// (A1's `REPLACE_MIN_HOLD_MS`). The HELLO is unauthenticated, so this bounds how often a device that
         /// claims the peer's id can cut its link.
         public var replaceMinHoldMilliseconds: Int64
+        /// How often a link's doorbell rings, at most, while frames go out on it. A ring wakes a suspended iPhone for
+        /// about 9 s (iOS 27), so ringing at most every 5 s, and once more after the last frame of a burst, has every
+        /// frame read within about 5 s of reaching the link. 0 never rings.
+        public var ringIntervalMilliseconds: Int64
         /// Whom to link.
         public var promotion: PromotionPolicy.Configuration
         /// How long to wait after failures.
@@ -54,6 +58,7 @@ public final class LinkManager: MeshTransport {
             unsightedLinkRssi: Double = -90,
             absentLinkRssi: Double = -127,
             replaceMinHoldMilliseconds: Int64 = 30_000,
+            ringIntervalMilliseconds: Int64 = 5000,
             promotion: PromotionPolicy.Configuration = PromotionPolicy.Configuration(),
             backoff: ConnectBackoff.Configuration = ConnectBackoff.Configuration(),
             presence: PresenceTracker.Configuration = PresenceTracker.Configuration()
@@ -65,6 +70,7 @@ public final class LinkManager: MeshTransport {
             self.unsightedLinkRssi = unsightedLinkRssi
             self.absentLinkRssi = absentLinkRssi
             self.replaceMinHoldMilliseconds = replaceMinHoldMilliseconds
+            self.ringIntervalMilliseconds = ringIntervalMilliseconds
             self.promotion = promotion
             self.backoff = backoff
             self.presence = presence
@@ -121,6 +127,12 @@ public final class LinkManager: MeshTransport {
         var nextAt: Int64
     }
 
+    /// A link's doorbell: when it last rang, and when it rings again for frames written since.
+    struct Doorbell {
+        var rang: Int64
+        var due: Int64?
+    }
+
     /// This node.
     public let localId: NodeId
     let radio: any Radio
@@ -139,6 +151,7 @@ public final class LinkManager: MeshTransport {
     var presence: PresenceTracker
     var addresses: [NodeId: RadioAddress] = [:]
     var backoffs: [NodeId: Backoff] = [:]
+    var doorbells: [ChannelID: Doorbell] = [:]
     var crossings = LinkCrossings<ChannelID>()
     var psm: UInt16?
     var digestCue: UInt32 = 0
@@ -159,6 +172,8 @@ public final class LinkManager: MeshTransport {
     public internal(set) var undecodableFrames = 0
     /// FILE records discarded as they streamed by (avatars and attachments are out of the MVP).
     public internal(set) var discardedFileRecords = 0
+    /// Doorbells rung, on every link since the manager was made.
+    public internal(set) var rings = 0
 
     /// Channels open or opening.
     public var channelCount: Int { channels.count }
@@ -204,6 +219,7 @@ public final class LinkManager: MeshTransport {
                 continue
             }
             write(record, on: id)
+            ringAfterFrame(on: id, now: now)
         }
     }
 
@@ -256,7 +272,8 @@ public final class LinkManager: MeshTransport {
     public var nextDeadline: Int64? {
         let now = clock.monotonicMilliseconds()
         let backoffDue = backoffs.values.map(\.nextAt).filter { $0 > now }.min()
-        return (channels.values.compactMap(\.deadline) + [advertDue, backoffDue].compactMap(\.self)).min()
+        let ringDue = doorbells.values.compactMap(\.due).min()
+        return (channels.values.compactMap(\.deadline) + [advertDue, backoffDue, ringDue].compactMap(\.self)).min()
     }
 
     // MARK: Radio events
@@ -297,7 +314,8 @@ public final class LinkManager: MeshTransport {
         }
     }
 
-    /// Times out dials and HELLOs, re-advertises a settled cue, and retries peers whose backoff has run out.
+    /// Times out dials and HELLOs, re-advertises a settled cue, rings doorbells that are due, and retries peers whose
+    /// backoff has run out.
     public func advance() -> [Event] {
         let now = clock.monotonicMilliseconds()
         var events: [Event] = []
@@ -311,6 +329,7 @@ public final class LinkManager: MeshTransport {
             advertDue = nil
             advertiseNow()
         }
+        ringDue(now: now)
         return events + promote(now: now)
     }
 }

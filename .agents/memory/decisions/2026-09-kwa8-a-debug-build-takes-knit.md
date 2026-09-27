@@ -41,8 +41,8 @@ Apple's developer disk image.
 - **The listener exists only in a debug build** (`#if DEBUG`), and only on loopback, so only a computer on the
   USB cable reaches it. Using it counts as driving the phone (`.agents/rules/devices.md`).
 - **Knit has to be running.** Nothing here opens it: someone opens Knit after each install or crash. A
-  suspended Knit answers nothing until it resumes, and then answers what waited. iOS may take the listening
-  socket back during a long suspension, so the app listens again at every foreground.
+  suspended Knit answers nothing. iOS shuts Knit's sockets when it suspends it and tells the listener nothing,
+  so a connection open across a suspension is lost, and the app makes a new listener at every foreground.
 - **It checks the mesh and the store, not the screens.** What the UI shows is left to XCUITest on the Mac.
 - **Guards.** `MeshControlTests` covers the session path, `stop`, `start` and the event lines. `PeerNodeTests`
   covers the protocol through the peer. `SessionTests`' `theTapHearsEveryEventAfterTheSession` covers the tap.

@@ -23,6 +23,16 @@
             var resolvesBeforeAnswering = false
             /// Whether `ReadValue` fails.
             var readFails = false
+            /// Whether it serves the doorbell beside the payload.
+            var doorbell = false
+        }
+
+        /// A write to a remote characteristic.
+        struct Write: Equatable {
+            var path: String
+            var value: [UInt8]
+            /// The `type` option: `command` for a write without response.
+            var type: String?
         }
 
         static let adapter = "/org/bluez/hci1"
@@ -66,6 +76,8 @@
         private(set) var linked: Set<String> = []
         /// The `Connect` calls left unanswered, oldest first.
         private(set) var heldConnects: [BusMessage] = []
+        /// Every `WriteValue` to a remote characteristic, in order.
+        private(set) var writes: [Write] = []
 
         init() throws {
             server = try BusServer()
@@ -139,6 +151,8 @@
                 return connect(call)
             case (BlueZ.gattCharacteristic, "ReadValue"):
                 return readValue(call)
+            case (BlueZ.gattCharacteristic, "WriteValue"):
+                return writeValue(call, arguments)
             default:
                 return .unknown
             }
@@ -199,7 +213,7 @@
                 objects.append(DBusEntry(key: .objectPath(path), value: Self.interfaces([(BlueZ.deviceInterface, properties)])))
             }
             for path in linked.sorted() {
-                objects += RemoteGattObjects.on(path, knit: remoteGatt[path]?.value != nil)
+                objects += RemoteGattObjects.on(path, knit: remoteGatt[path]?.value != nil, doorbell: remoteGatt[path]?.doorbell == true)
             }
             return .dictionary(key: .objectPath, value: interfacesType, objects)
         }
@@ -337,6 +351,28 @@
             linked.insert(path)
             try change(
                 path, interface: BlueZ.deviceInterface, .properties([("Connected", .boolean(true)), ("ServicesResolved", .boolean(true))]))
+        }
+
+        /// Links a device that dialed us, and leaves its services unread until ``resolve(_:)``, as bluetoothd does for a
+        /// while after such a link comes up.
+        func holdLinkUnresolved(_ path: String) throws {
+            linked.insert(path)
+            try change(path, interface: BlueZ.deviceInterface, .properties([("Connected", .boolean(true))]))
+        }
+
+        /// bluetoothd finished reading a linked device's services.
+        func resolve(_ path: String) throws {
+            try change(path, interface: BlueZ.deviceInterface, .properties([("ServicesResolved", .boolean(true))]))
+        }
+
+        private func writeValue(_ call: BusMessage, _ arguments: [DBusValue]) -> BusConnection.Answer {
+            let path = call.path ?? ""
+            guard linked.contains(where: { path.hasPrefix($0 + "/") }) else {
+                return .error(name: "org.bluez.Error.Failed", message: "Not connected")
+            }
+            let type = arguments.dropFirst().first?["type"]?.text
+            writes.append(Write(path: path, value: arguments.first?.byteArray ?? [], type: type))
+            return .values([])
         }
 
         private func unlink(_ path: String) {

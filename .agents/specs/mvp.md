@@ -29,7 +29,9 @@ Items 2–6 and 11 also pass between the iPhone and the Linux peer.
    `--radio-profile ios`) finds and links the iPhone. This stands in for iPhone to iPhone.
 9. **Background.** An open link survives 10 minutes with the iPhone locked, and a DM in that window posts a
    local notification. If P8's wake test shows that L2CAP data cannot wake a suspended app, this item
-   becomes "the DM arrives at the next foreground, through custody", and the copy says so.
+   becomes "the DM arrives at the next foreground, through custody", and the copy says so. It showed that,
+   and a sender that rings the iPhone's doorbell wakes it (ADR 2026-09.khjj), so the item holds against a
+   sender that rings, and falls back for one that does not.
 10. **Status.** The chat list shows how many peers are linked. Bluetooth off and Bluetooth not allowed each
     have their own message. The unsupported-device message is checked through `-seedDemo`. Settings has
     Stop and Start.

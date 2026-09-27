@@ -104,6 +104,10 @@
             mailbox.post(.close(channel))
         }
 
+        public func ring(_ channel: ChannelID) {
+            mailbox.post(.ring(channel))
+        }
+
         /// Stops, withdraws the advert and the GATT application from BlueZ, closes the bus, and waits for the
         /// radio's thread to end. The events stream finishes with it.
         public func shutdown() async {

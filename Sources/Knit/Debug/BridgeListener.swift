@@ -8,8 +8,9 @@
     /// build has no listener at all.
     ///
     /// Each connection hears the greeting, then one reply per line it sends, in order, and every line
-    /// ``broadcast(_:)`` sends while it is open. iOS may take a listening socket back while the app is suspended, so
-    /// ``start()`` runs again at every foreground and makes a new listener if the old one failed.
+    /// ``broadcast(_:)`` sends while it is open. iOS shuts an app's sockets when it suspends it (runningboardd logs
+    /// "Shutdown sockets") and tells the listener nothing, so it still looks ready. ``start()`` therefore runs at every
+    /// foreground and makes a new listener each time; connections already open are left as they are.
     internal final class BridgeListener: @unchecked Sendable {
         // @unchecked: `listener` and `connections` are touched on `queue` only, and the rest is immutable.
         /// What a line gets back, and whether the connection closes after it.
@@ -18,12 +19,16 @@
         static let port: NWEndpoint.Port = 5648
         private static let readSize = 65_536
         private static let newline = UInt8(ascii: "\n")
+        /// How often a listener that failed is made again, a second apart, before the bridge gives up until the next
+        /// foreground: the port can still be held for a moment by the listener just cancelled.
+        private static let retries = 5
 
         private let queue = DispatchQueue(label: "app.getknit.knit.bridge")
         private let log: any KnitLog
         private let greeting: @Sendable () -> String
         private let answer: Answer
         private var listener: NWListener?
+        private var attempts = 0
         private var connections: [ObjectIdentifier: NWConnection] = [:]
 
         /// A listener that greets each connection with `greeting` and hands each line it sends to `answer`.
@@ -33,23 +38,40 @@
             self.answer = answer
         }
 
-        /// Listens, unless a listener is already up.
+        /// Listens anew, in place of any listener from before.
         func start() {
             queue.async { [self] in
-                if let listener, listener.state != .cancelled {
-                    return
-                }
-                let parameters = NWParameters.tcp
-                parameters.requiredInterfaceType = .loopback
-                parameters.allowLocalEndpointReuse = true
-                do {
-                    let made = try NWListener(using: parameters, on: Self.port)
-                    made.stateUpdateHandler = { [self] state in changed(made, to: state) }
-                    made.newConnectionHandler = { [self] connection in serve(connection) }
-                    made.start(queue: queue)
-                    listener = made
-                } catch {
-                    log.log(.warning, "bridge could not listen: \(error)")
+                listener?.cancel()
+                listener = nil
+                attempts = 0
+                listen()
+            }
+        }
+
+        private func listen() {
+            let parameters = NWParameters.tcp
+            parameters.requiredInterfaceType = .loopback
+            parameters.allowLocalEndpointReuse = true
+            do {
+                let made = try NWListener(using: parameters, on: Self.port)
+                made.stateUpdateHandler = { [self] state in changed(made, to: state) }
+                made.newConnectionHandler = { [self] connection in serve(connection) }
+                made.start(queue: queue)
+                listener = made
+            } catch {
+                log.log(.warning, "bridge could not listen: \(error)")
+                retry()
+            }
+        }
+
+        private func retry() {
+            guard attempts < Self.retries else {
+                return
+            }
+            attempts += 1
+            queue.asyncAfter(deadline: .now() + .seconds(1)) { [self] in
+                if listener == nil {
+                    listen()
                 }
             }
         }
@@ -70,6 +92,10 @@
             case .failed(let error):
                 log.log(.debug, "bridge listener failed: \(error)")
                 made.cancel()
+                if made === listener {
+                    listener = nil
+                    retry()
+                }
             default:
                 break
             }

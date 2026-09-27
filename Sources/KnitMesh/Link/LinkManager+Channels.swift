@@ -11,6 +11,7 @@ extension LinkManager {
         }
         radio.close(id)
         crossings.forget(link: id)
+        doorbells[id] = nil
         var events: [Event] = []
         var peer: NodeId?
         switch channel.stage {

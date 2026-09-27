@@ -184,6 +184,8 @@ public actor Mesh {
 
     /// FILE records discarded so far, avatars and attachments alike.
     public var discardedFileRecords: Int { links.discardedFileRecords }
+    /// Doorbells rung on peers' links, to wake a suspended iPhone (``LinkManager/rings``).
+    public var rings: Int { links.rings }
 
     /// What the router has done so far.
     public var routerCounters: Router.Counters { engine.routerCounters }

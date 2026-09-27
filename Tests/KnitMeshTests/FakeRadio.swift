@@ -17,6 +17,7 @@ final class FakeRadio: Radio {
         case dialed(Dial)
         case wrote(ChannelID, [UInt8])
         case closed(ChannelID)
+        case rang(ChannelID)
     }
 
     private struct State {
@@ -26,6 +27,7 @@ final class FakeRadio: Radio {
         var dials: [Dial] = []
         var writes: [ChannelID: [[UInt8]]] = [:]
         var closed: [ChannelID] = []
+        var rings: [ChannelID] = []
         var nextChannel: UInt64 = 1
     }
 
@@ -55,6 +57,8 @@ final class FakeRadio: Radio {
     var advertised: [AdvertPayload] { state.withLock { $0.advertised } }
     var dials: [Dial] { state.withLock { $0.dials } }
     var closed: [ChannelID] { state.withLock { $0.closed } }
+    /// Every ring, in order, by channel.
+    var rings: [ChannelID] { state.withLock { $0.rings } }
 
     /// Reports `event`, as the radio would.
     func emit(_ event: RadioEvent) {
@@ -93,6 +97,11 @@ final class FakeRadio: Radio {
     func close(_ channel: ChannelID) {
         state.withLock { $0.closed.append(channel) }
         recorder.yield(.closed(channel))
+    }
+
+    func ring(_ channel: ChannelID) {
+        state.withLock { $0.rings.append(channel) }
+        recorder.yield(.rang(channel))
     }
 
     /// The size of each write on `channel`.
