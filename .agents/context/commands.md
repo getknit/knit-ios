@@ -59,6 +59,7 @@ python3 scripts/interop.py check … --send-mtu 8192                # SDUs above
 python3 scripts/interop.py soak --device <serial> --extras        # MVP item 11's hour, both ways, with the go-ahead
 python3 scripts/interop.py relay --device <serial>                # MVP item 7's line; a second peer on hci0, its go-ahead too
 python3 scripts/interop.py iphone --device <serial>               # MVP items 2 to 6, iPhone and phone both driven; Knit open on both
+python3 scripts/interop.py iphone-relay --device <serial>         # MVP item 7: phone, iPhone, then a peer on hci0; Knit open on both
 python3 scripts/interop.py bridge '{"cmd":"status"}' --watch 60   # the iPhone's bridge by hand: replies, then events
 python3 scripts/soak.py run [--hours 10]                          # a night against every phone in range; drives none
 python3 scripts/soak.py status | report [--json] | stop           # the latest run (.build/soak/current)

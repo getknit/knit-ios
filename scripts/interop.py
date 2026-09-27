@@ -9,15 +9,17 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py soak    --device SERIAL [--minutes 60] [--per-minute 20] [--extras]
     scripts/interop.py relay   --device SERIAL [--radio-profile ios|android]
     scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline]
+    scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
     scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
 
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
-bridge over USB (ADR 2026-09.kwa8); `bridge` sends that bridge commands by hand and prints what comes back.
+bridge over USB (ADR 2026-09.kwa8); `iphone-relay` runs MVP item 7's line through the iPhone; `bridge` sends that
+bridge commands by hand and prints what comes back.
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
-`relay` also runs a second peer on hci0, the maintainer's own adapter, which needs its own go-ahead: that peer runs
-with --shared-adapter, so it never drops a link it did not make.
+`relay` also runs a second peer on hci0, the maintainer's own adapter, and `iphone-relay` runs its one peer there; hci0
+needs its own go-ahead. The peer runs there with --shared-adapter, so it never drops a link it did not make.
 
 Each step prints one JSON line, {"step": ..., "ok": ..., ...}, and the run ends with a summary line. The exit code
 is the number of failed steps.
@@ -1055,8 +1057,8 @@ def relay(arguments: argparse.Namespace) -> int:
     b.start()
     a.start()
     stop = threading.Event()
-    threading.Thread(target=_keep_to, args=(b, {a_id}, stop), daemon=True).start()
-    threading.Thread(target=_keep_to, args=(a, {phone_id, b_id}, stop), daemon=True).start()
+    threading.Thread(target=_keep_to, args=(b, {a_id}, set(b.refuse), stop, b.instance), daemon=True).start()
+    threading.Thread(target=_keep_to, args=(a, {phone_id, b_id}, set(a.refuse), stop, a.instance), daemon=True).start()
     try:
         run.step("link-a-b", lambda: a.wait(lambda line: _link(line, b_id), 180) and b.wait(lambda line: _link(line, a_id), 10) and {})
         run.step("link-a-phone", lambda: link_up(a, phone, phone_id) and {})
@@ -1093,24 +1095,96 @@ def relay(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def iphone_relay(arguments: argparse.Namespace) -> int:
+    """MVP item 7: the phone, then the iPhone, then knit-peer on hci0, which refuses the phone. The peer links to the
+    iPhone alone, so whatever the peer hears from the phone, and the phone from the peer, crossed the iPhone. The
+    iPhone refuses every node but the phone and the peer, which makes the line the one `relay` rehearses, and it
+    lets those nodes link again at the end.
+
+    The peer runs in the `android` profile, which leaves FLAG_DIALS_GATT_PEERS clear, so the iPhone dials it, and it
+    sorts above every phone in range, so no phone dials it. It runs on hci0 because the iPhone's writes to hci1
+    stall after the HELLO (.agents/context/linux-peer.md)."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    phone_id = phone.state()["self"]["nodeId"]
+    others = others_in_range(phone_id) - {ios.node_id}
+    peer_id = _keygen("iphone-relay", "--above", max(others | {phone_id}))
+    print(json.dumps({"run": "iphone-relay", "phone": phone_id, "iphone": ios.node_id, "peer": peer_id, "refused": sorted(others)}))
+    before = ios.command(cmd="status")["router"]
+    stop = threading.Event()
+    kept_off: set[str] = set()
+    threading.Thread(target=_keep_to, args=(ios, {phone_id, peer_id}, kept_off, stop, "iphone"), daemon=True).start()
+    peer = Peer(
+        arguments.radio_profile, f"knit-peer relay {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-relay", HCI0
+    )
+    try:
+        peer.start()
+        threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
+        run.step("link-iphone-phone", lambda: _ios_linked(ios, phone, phone_id))
+        run.step("link-iphone-peer", lambda: _timed(lambda: peer.lines(lambda line: _link(line, ios.node_id)), 180))
+        run.step(
+            "phone-profile-reaches-peer",
+            lambda: {"name": peer.wait(lambda line: line.get("event") == "profile" and line.get("peer") == phone_id, 240)["displayName"]},
+        )
+        # The phone and the iPhone back-fill the newcomer, and new frames queue behind that, as in `relay`.
+        run.step("custody-iphone-phone", lambda: _converges(ios, phone, 900))
+        run.step("custody-peer-iphone", lambda: _peers_converge(peer, ios, 300))
+        body = f"interop iphone relay room from phone {nonce}"
+        phone.send(body)
+        run.step("room-phone-to-peer", lambda: _latency(peer.wait(lambda line: _message(line, body), 30)))
+        body = f"interop iphone relay room from peer {nonce}"
+        peer.command(cmd="room", text=body)
+        run.step("room-peer-to-phone", lambda: _timed(lambda: _has(phone.state("nearby"), body), 30))
+        first = f"interop iphone relay dm from phone {nonce}"
+        phone.send(first, conversation=peer_id)
+        run.step("dm-phone-to-peer-is-a-request", lambda: _request(peer.wait(lambda line: _message(line, first), 60)))
+        peer.command(cmd="accept", conv=phone_id)
+        body = f"interop iphone relay dm from peer {nonce}"
+        sent = peer.command(cmd="dm", to=phone_id, text=body)
+        run.step("dm-peer-to-phone-delivered", lambda: _delivered(peer, sent, 60))
+        run.step("dm-peer-to-phone-shown", lambda: _timed(lambda: _has(phone.state(peer_id), body), 30))
+        run.step("dm-phone-to-peer-ticked", lambda: _timed(lambda: _received(phone.state(peer_id), first), 60))
+        run.step("custody-peer-phone", lambda: _converges(peer, phone, 420))
+        run.step("custody-iphone-phone-again", lambda: _converges(ios, phone, 180))
+        run.step("iphone-relayed", lambda: _relayed(ios, before))
+        run.step("peer-linked-only-the-iphone", lambda: _linked_only(peer, {ios.node_id}))
+        run.step("no-link-dropped-peer", lambda: _no_link_dropped(peer))
+        run.step("no-link-dropped-iphone", lambda: _no_link_dropped(ios, {phone_id, peer_id}))
+    finally:
+        stop.set()
+        peer.stop()
+        for node in sorted(kept_off):
+            try:
+                ios.command(cmd="allow-link", peer=node)
+            except (TimeoutError, OSError):
+                pass
+        ios.stop()
+    print(json.dumps({"summary": "iphone-relay", "steps": run.steps, "failed": run.failed, "keptOff": len(kept_off)}))
+    return run.failed
+
+
 def _keygen(instance: str, *bounds: str) -> str:
     result = subprocess.run([str(PEER), "keygen", *bounds, "--instance", instance], capture_output=True, text=True, check=True)
     return json.loads(result.stdout)["nodeId"]
 
 
-def _keep_to(peer: Peer, allowed: set[str], stop: threading.Event) -> None:
-    """Refuses every node the peer sights outside `allowed`, well inside the 12 s promotion dwell, so a phone the
-    first scan missed never joins the line."""
-    refused = set(peer.refuse)
+def _keep_to(node: Node, allowed: set[str], refused: set[str], stop: threading.Event, by: str) -> None:
+    """Refuses every node that `node` sights or links outside `allowed`, well inside the 12 s promotion dwell, so a
+    phone the first scan missed never joins the line. `refused` starts with what is already refused, and gains each
+    node refused here."""
     while not stop.wait(3):
         try:
-            sightings = peer.command(cmd="links").get("sightings", [])
-        except (TimeoutError, BrokenPipeError, ValueError, AssertionError):
+            reply = node.command(cmd="links")
+        except (TimeoutError, BrokenPipeError, ValueError, AssertionError, OSError):
             continue
-        for node in {sighting["peer"] for sighting in sightings} - allowed - refused:
-            peer.command(cmd="deny-link", peer=node)
-            refused.add(node)
-            print(json.dumps({"refused-late": node, "by": peer.instance}))
+        near = {sighting["peer"] for sighting in reply.get("sightings", [])} | {link["peer"] for link in reply.get("links", [])}
+        for other in near - allowed - refused:
+            node.command(cmd="deny-link", peer=other)
+            refused.add(other)
+            print(json.dumps({"refused-late": other, "by": by}))
             sys.stdout.flush()
 
 
@@ -1118,7 +1192,7 @@ def _link(line: dict, node: str) -> bool:
     return line.get("event") == "link" and line.get("peer") == node and bool(line.get("up"))
 
 
-def _peers_converge(first: Peer, second: Peer, timeout: float) -> dict:
+def _peers_converge(first: Node, second: Node, timeout: float) -> dict:
     def same() -> dict | None:
         ours = {frame["id"]: frame for frame in first.command(cmd="custody")["frames"]}
         theirs = {frame["id"]: frame for frame in second.command(cmd="custody")["frames"]}
@@ -1135,8 +1209,11 @@ def _peers_converge(first: Peer, second: Peer, timeout: float) -> dict:
         raise TimeoutError(f"custody still differs: {LAST_CUSTODY_DIFFERENCE}") from error
 
 
-def _relayed(peer: Peer) -> dict:
+def _relayed(peer: Node, before: dict | None = None) -> dict:
+    """What the node's router passed on, since `before` when given: a `status` reply's `router` counters."""
     router = peer.command(cmd="status")["router"]
+    if before:
+        router = {key: value - before.get(key, 0) for key, value in router.items()}
     if not router.get("relayed"):
         raise RuntimeError(f"relayed nothing: {router}")
     return {"router": router}
@@ -1145,6 +1222,13 @@ def _relayed(peer: Peer) -> dict:
 def _never_linked(peer: Peer, node: str) -> dict:
     if peer.lines(lambda line: _link(line, node)):
         raise RuntimeError(f"linked to {node}")
+    return {}
+
+
+def _linked_only(node: Node, allowed: set[str]) -> dict:
+    others = {line["peer"] for line in node.lines(lambda line: line.get("event") == "link" and line.get("up"))} - allowed
+    if others:
+        raise RuntimeError(f"linked to {sorted(others)}")
     return {}
 
 
@@ -1221,8 +1305,9 @@ def _converges(peer: Node, phone: Phone, timeout: float) -> dict:
         raise TimeoutError(f"custody still differs: {LAST_CUSTODY_DIFFERENCE}") from error
 
 
-def _no_link_dropped(peer: Peer) -> dict:
-    downs = peer.lines(lambda line: line.get("event") == "link" and not line.get("up"))
+def _no_link_dropped(peer: Node, among: set[str] | None = None) -> dict:
+    """No link went down, or none to a node in `among` when given: a node that refuses the rest drops their links."""
+    downs = peer.lines(lambda line: line.get("event") == "link" and not line.get("up") and (among is None or line.get("peer") in among))
     if downs:
         raise RuntimeError(f"{len(downs)} link downs")
     return {}
@@ -1244,7 +1329,7 @@ def _all(expected: set[str], seen: set[str]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("check", "refusal", "replace", "soak", "relay"):
+    for name in ("check", "refusal", "replace", "soak", "relay", "iphone-relay"):
         sub = commands.add_parser(name)
         sub.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
         sub.add_argument("--radio-profile", default="android", choices=["android", "ios"])
@@ -1270,7 +1355,7 @@ def main() -> int:
     by_hand = commands.add_parser("bridge")
     by_hand.add_argument("--watch", type=float, default=0, help="print the bridge's events for this many seconds")
     by_hand.add_argument("commands", nargs="*", help='commands as JSON, such as \'{"cmd":"status"}\'')
-    for sub in (ios, by_hand):
+    for sub in (ios, by_hand, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
     if arguments.command in ("iphone", "bridge"):
@@ -1283,7 +1368,8 @@ def main() -> int:
     if arguments.command == "relay" and "--radio-profile" not in sys.argv:
         # Peer A stands in for the iPhone, which Android finds only by its GATT payload.
         arguments.radio_profile = "ios"
-    return {"check": check, "refusal": refusal, "replace": replace, "soak": soak, "relay": relay}[arguments.command](arguments)
+    scenarios = {"check": check, "refusal": refusal, "replace": replace, "soak": soak, "relay": relay, "iphone-relay": iphone_relay}
+    return scenarios[arguments.command](arguments)
 
 
 if __name__ == "__main__":

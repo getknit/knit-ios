@@ -127,7 +127,8 @@ phone also reacts, types, sends DMs and posts photos, and the peer DMs back. It 
 post's arrival and tick, the footprint against the caps, memory through the second half, and custody at the end,
 and writes `.build/interop-soak/<start>/`.
 
-`relay` rehearses MVP item 7's line with a second peer on `hci0`, which needs its own go-ahead. The line is the
+`relay` rehearses MVP item 7's line with a second peer on `hci0`, which needs its own go-ahead; `iphone-relay` runs
+the line itself, with the iPhone in the middle ("What the iPhone showed"). The line is the
 phone, then peer A on `hci1` in the `ios` profile standing in for the iPhone, then peer B on `hci0`, which refuses
 the phone. Both peers sort above every phone, and A above B, so A dials the phone and B and nobody dials either.
 Posts and DMs go both ways across A, and the three custody sets must converge.
@@ -461,6 +462,22 @@ either phone, and 13 of its 15 steps passed:
   dropped all 6 with no refusal, and at 23:12 the iPhone linked the Pixel 3 directly in 16 s. Posts and DMs
   crossed both ways in 1.0 to 1.5 s, the offline pair arrived 0.6 s after the link, and custody converged at
   519 ids.
+
+`interop.py iphone-relay` ran MVP item 7's line twice from 23:28 with nobody at either phone, and both runs
+passed all 17 steps. The line ran from the Pixel 3 through the iPhone to the peer, which ran on a shared `hci0`
+in the `android` profile. The peer refused every node but the iPhone. The iPhone refused every node but the Pixel 3
+and the peer, then let the rest link again at the end.
+
+- **Links:** the iPhone dialed the peer about 23 s after it started. The peer linked nothing else, and neither
+  side dropped a link.
+- **Custody:** the iPhone already matched the Pixel 3, at 523 and 530 frames. It back-filled each new peer in
+  40 s, and at the end all three sets matched, at 528 and 533.
+- **The room:** the Pixel 3's post reached the peer in about 1.5 s, and the peer's reached the Pixel 3 in 1.4 and
+  2.1 s.
+- **DMs:** the Pixel 3's first DM reached the peer as a message request in 1.8 and 2.6 s. After Accept, the peer's
+  reply was delivered in about 1.5 s, and the Pixel 3's DM showed delivered.
+- **The iPhone's router relayed 8 and 9 frames** and refused none. These counts cover only frames the router
+  passed on. The back-fill goes by digest, so it isn't counted.
 
 Also found on the way:
 

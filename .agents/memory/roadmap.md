@@ -118,8 +118,11 @@ explicit direction.** Update this file in the change that ships an item.
     is open on it.
   - **The rig for iPhone runs:** the Linux peer on a shared `hci0`, since `hci1`'s 23-byte fragments stall the
     iPhone, and bluetoothd without its battery plugin, which asked the iPhone to pair.
-  - **Still owed:** relay (item 7), the wake test (item 9), the scan-filter check, and the soak. Items 2 to 6
-    pass against the Pixel 3 through the bridge, unattended (`.agents/context/linux-peer.md`).
+  - **Relay (item 7):** passes through the iPhone. `scripts/interop.py iphone-relay` ran the line twice, with
+    the Pixel 3, then the iPhone, then a peer on `hci0` that refused the Pixel 3. It passed 17 of 17 both times:
+    posts and DMs crossed the iPhone both ways, and the three custody sets converged.
+  - **Still owed:** the wake test (item 9), the scan-filter check, and the soak. Items 2 to 7 pass against the
+    Pixel 3 through the bridge, unattended (`.agents/context/linux-peer.md`).
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
