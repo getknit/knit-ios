@@ -6,8 +6,8 @@
   the relay line (`interop.py relay`), and for iPhone runs, which stall on `hci1`'s 23-byte fragments. The peer runs there only with `--shared-adapter`, which leaves every
   link it did not make alone, and nothing else on `hci0` changes: no supervision timeout, no power or pairing
   changes, no `sudo`.
-- **Ask before driving a physical phone, every session.** That covers installing, launching, adb broadcasts
-  and UI automation, on Android or iPhone. A go-ahead does not carry over to a new task or conversation.
+- **Ask before driving a physical phone, every session.** That covers installing, launching, adb broadcasts,
+  the iPhone's USB bridge (`interop.py iphone` and `bridge`) and UI automation, on Android or iPhone. A go-ahead does not carry over to a new task or conversation.
 - **An emulator is fair game.** knit-next's `scripts/emulator-ble-mesh.sh` gives an Android emulator a real
   radio by passing the Edimax BT-8500 dongle through. That is the same dongle `hci1` uses, so the emulator
   and the Linux peer cannot share it: hand it back (`emulator-ble-mesh.sh down`) before starting the peer.

@@ -1,3 +1,4 @@
+import KnitControl
 public import KnitMesh
 public import KnitWire
 

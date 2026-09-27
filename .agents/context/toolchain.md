@@ -35,7 +35,8 @@ exact interval, then update this file in the same change.
 - **Installing on the iPhone:** `xtool dev run --usb` builds, signs and installs over USB, and
   `idevicesyslog -p Knit` reads the app's log (a debug build logs at notice, the least it relays). The team is on
   free provisioning: an install lasts 7 days, and the phone trusts the developer once under VPN & Device
-  Management. `xtool launch` fails on iOS 27, so Knit is opened by hand.
+  Management. `xtool launch` fails on iOS 27, so Knit is opened by hand. An install waits at Verifying while
+  Knit is open on the phone, until someone swipes it away.
 - **xtool drops a serial's leading zeros** (`Certificate.serialNumber()`) and then finds no match on Apple's
   side, so it asks to revoke a certificate whose serial starts with `0` and make another, on every install. The
   prompt needs a terminal. One in sixteen certificates does this; the one made on 2026-09-26 does not.

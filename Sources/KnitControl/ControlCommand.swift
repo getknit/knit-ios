@@ -1,8 +1,8 @@
 import Foundation
 public import KnitWire
 
-/// One control command, from one JSON line on the peer's standard input (`.agents/context/linux-peer.md` lists
-/// them with examples).
+/// One control command, from one JSON line: on `knit-peer`'s standard input, or over USB to a debug build of the app
+/// (`.agents/context/linux-peer.md` lists them with examples).
 public enum ControlCommand: Equatable, Sendable {
     /// `{"cmd":"status"}`: this node, its name and its counts.
     case status
@@ -30,7 +30,11 @@ public enum ControlCommand: Equatable, Sendable {
     case custody
     /// `{"cmd":"messages","conv":"nearby","limit":20}`: a thread's newest messages and their ticks.
     case messages(String, limit: Int)
-    /// `{"cmd":"quit"}`: stop and exit.
+    /// `{"cmd":"stop"}`: stop the mesh, closing every link, as Settings' Stop does.
+    case stop
+    /// `{"cmd":"start"}`: start it again.
+    case start
+    /// `{"cmd":"quit"}`: `knit-peer` stops and exits; the app's bridge closes the connection and runs on.
     case quit
 
     /// The name a reply carries back.
@@ -60,6 +64,10 @@ public enum ControlCommand: Equatable, Sendable {
             "custody"
         case .messages:
             "messages"
+        case .stop:
+            "stop"
+        case .start:
+            "start"
         case .quit:
             "quit"
         }
@@ -115,6 +123,10 @@ public struct ControlRequest: Equatable, Sendable {
             .success(.digest)
         case "custody":
             .success(.custody)
+        case "stop":
+            .success(.stop)
+        case "start":
+            .success(.start)
         case "quit":
             .success(.quit)
         case "room":
@@ -149,7 +161,7 @@ public struct ControlRequest: Equatable, Sendable {
 public enum ControlError: Error, Equatable, Sendable {
     /// Not a JSON object with a `cmd`.
     case notJSON
-    /// A `cmd` the peer does not know.
+    /// A `cmd` nobody knows.
     case unknownCommand(String)
     /// A field the command needs.
     case missing(String)

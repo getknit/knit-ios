@@ -100,14 +100,16 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   `.agents/rules/devices.md` says when it may be used.
 - **State** lives in `~/.local/state/knit-peer/<instance>/`: `identity` (0600) and `profile.json`, which keeps the
   profile version and publish stamp across restarts. Custody, peers and messages live in memory.
-- **Control lines** are JSON objects with a `cmd`, and an optional `tag` that the reply echoes:
+- **Control lines** are JSON objects with a `cmd`, and an optional `tag` that the reply echoes. `KnitControl`
+  holds the protocol, and a debug build of the app speaks it too, over USB (ADR 2026-09.kwa8):
   `status` (with `fileRecords`, the FILE records discarded so far; `footprint`, the size of each table the mesh
   keeps in memory; and `router`, what the router has admitted, relayed and refused), `peers` (names, aliases and
   safety numbers), `links` (links and sightings), `room` (`text`),
   `dm` (`to`, `text`), `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `deny-link` and
-  `allow-link` (`peer`), `digest` (live custody ids and their fingerprint), `messages` (`conv`, `limit`) and
-  `quit`.
-- **Events** are `ready`, `link` (`up` true or false), `profile`, `message` (with `request` for a stranger's
+  `allow-link` (`peer`), `digest` (live custody ids and their fingerprint), `custody` (every live frame),
+  `messages` (`conv`, `limit`), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the
+  peer exits; the app's bridge only closes the connection).
+- **Events** are `ready` (with `radioProfile`, and `host` and `version` from the app), `link` (`up` true or false), `profile`, `message` (with `request` for a stranger's
   first DM), `sent`, `delivered` and `radio` (`state`: `on`, `off`, `unauthorized` or `unsupported`).
 - **Log lines** carry `ms`, the wall-clock time, so they line up with a phone's logcat.
 
@@ -422,6 +424,43 @@ through the GATT payload:
 - **A new identity at an old address draws a stale dial.** Swapping the peer's identity on `hci1` left the old
   node's sighting at the same address, so the iPhone dialed the old id once more, and the new peer refused it,
   until the sighting's 90 s linger ran out.
+
+Against the Pixel 3 (Knit 2.7.0, a debug build with A1), with the iPhone dialing it, the peer refusing it, and
+the other lab phones linked to both. The iPhone side was read from its database through a read-only container
+mount (`.agents/context/commands.md`):
+
+- **Profiles and safety numbers match.** The Pixel 3 renders the nameless iPhone as RegallyCosmicDune, the alias
+  the iPhone shows for itself, and the iPhone shows Pixel3 by name. Both profile screens show the same safety
+  number.
+- **The room works both ways.** A post from the Pixel 3 reached the iPhone 1.4 s after it was sent. A post from
+  the iPhone reached the Pixel 3 in under 3.1 s, a bound set by polling once a second, and the iPhone marked it
+  delivered. Both posts showed ✓✓. The Pixel 3's tick can't be pinned on the iPhone, since the other phones tick
+  too.
+- **DMs work both ways, with the Android phone asking first.** The Pixel 3's first DM reached the iPhone in
+  1.5 s and waited there as a request. The iPhone receipted it at once, and the Pixel 3 showed it delivered.
+  After Accept, the iPhone's reply and the Pixel 3's answer each crossed in under 1.7 s, and each showed
+  delivered on its sender. Only the recipient can sign a DM receipt, so Android takes the iPhone's receipts. An
+  iPhone's first DM arriving as a request on Android is left untested, because this pair's conversation now
+  exists; the peer covers the iPhone's side of that.
+
+Through the debug bridge (ADR 2026-09.kwa8), `interop.py iphone` ran against the Pixel 3 at 23:02 with nobody at
+either phone, and 13 of its 15 steps passed:
+
+- **Items 3 to 6 hold unattended.** The iPhone pinned Pixel3 with the safety number the Pixel 3 shows. Posts and
+  DMs crossed both ways in about 1.5 s, and each was ticked; the iPhone's DM carried the Pixel 3's own receipt.
+  With the iPhone's mesh stopped, the Pixel 3 wrote a room post and a DM. The iPhone linked again 13.8 s after
+  `start`, and both arrived 1.1 s after the link. Custody converged at 505 ids.
+- **The direct link failed until the radio restarted.** Every dial to the Pixel 3 hung at connect for the 12 s
+  watchdog, four times in two minutes, while three other phones linked in seconds, and the messages above went
+  through them. After `stop` and `start` the Pixel 3 linked on the first dial. The cause was state restoration:
+  when iOS relaunched Knit after the install, `willRestoreState` cancelled the connections the old process held
+  before the central was powered on, and CoreBluetooth refused all 16 (`API MISUSE: can only accept this
+  command while in the powered on state`), so they stayed up.
+- **Fixed, and all 15 steps pass.** The radio now keeps restored connections aside and cancels them once the
+  central reports `poweredOn` (`BLECore.dropRestored()`). After the next install iOS handed back 6, the radio
+  dropped all 6 with no refusal, and at 23:12 the iPhone linked the Pixel 3 directly in 16 s. Posts and DMs
+  crossed both ways in 1.0 to 1.5 s, the offline pair arrived 0.6 s after the link, and custody converged at
+  519 ids.
 
 Also found on the way:
 

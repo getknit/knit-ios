@@ -8,6 +8,11 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py replace --device SERIAL
     scripts/interop.py soak    --device SERIAL [--minutes 60] [--per-minute 20] [--extras]
     scripts/interop.py relay   --device SERIAL [--radio-profile ios|android]
+    scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline]
+    scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
+
+`iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
+bridge over USB (ADR 2026-09.kwa8); `bridge` sends that bridge commands by hand and prints what comes back.
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
@@ -27,6 +32,7 @@ import secrets
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -103,12 +109,66 @@ class Phone:
         return self.bridge("SEND", text=text, conv=conversation)
 
 
-class Peer:
+class Node:
+    """What knit-peer and the iPhone's bridge share: JSON lines in, replies and events out (ADR 2026-09.kwa8). Every
+    line is kept, so a wait finds one that came before it, and two threads can wait at once."""
+
+    label = "the node"
+
+    def __init__(self) -> None:
+        self.seen: list[dict] = []
+        self.arrived = threading.Condition()
+        self.writing = threading.Lock()
+        self.node_id = ""
+
+    def _arrive(self, raw: str) -> None:
+        try:
+            line = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+        line["_at"] = time.monotonic()
+        with self.arrived:
+            self.seen.append(line)
+            self.arrived.notify_all()
+
+    def _write(self, line: str) -> None:
+        raise NotImplementedError
+
+    def wait(self, match, timeout: float) -> dict:
+        """The first line, already seen or still to come, that matches; raises TimeoutError otherwise."""
+        deadline = time.monotonic() + timeout
+        checked = 0
+        with self.arrived:
+            while True:
+                for line in self.seen[checked:]:
+                    if match(line):
+                        return line
+                checked = len(self.seen)
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise TimeoutError(f"no matching line from {self.label}")
+                self.arrived.wait(min(left, 1))
+
+    def lines(self, match) -> list[dict]:
+        """Every line so far that matches."""
+        with self.arrived:
+            return [line for line in self.seen if match(line)]
+
+    def command(self, **fields) -> dict:
+        tag = secrets.token_hex(4)
+        with self.writing:
+            self._write(json.dumps({**fields, "tag": tag}) + "\n")
+        return self.wait(lambda line: line.get("tag") == tag, 10)
+
+
+class Peer(Node):
     """knit-peer as a child process: JSON lines in on stdin, replies and events out on stdout.
 
     Every Knit node in range other than the phone under test is refused a link as soon as the peer is up, before
     the 12 s promotion dwell lets either side dial: the go-ahead covers one phone, and the rest of the mesh should
     not carry the run's traffic."""
+
+    label = "knit-peer"
 
     def __init__(
         self,
@@ -121,6 +181,7 @@ class Peer:
         adapter: list[str] | None = None,
         log_path: Path | None = None,
     ) -> None:
+        super().__init__()
         self.instance = instance
         self.profile = profile
         self.name = name
@@ -130,11 +191,6 @@ class Peer:
         self.adapter = adapter or []
         self.log_path = log_path or ROOT / ".build" / ("interop-peer.log" if instance == INSTANCE else f"interop-{instance}.log")
         self.process: subprocess.Popen[str] | None = None
-        # Every line the peer has written, in order. Waits scan it under `arrived`, so two threads can wait at once.
-        self.seen: list[dict] = []
-        self.arrived = threading.Condition()
-        self.writing = threading.Lock()
-        self.node_id = ""
 
     def start(self) -> None:
         command = [str(PEER), "run", "--instance", self.instance, "--radio-profile", self.profile, "--name", self.name, "--log", self.log_level]
@@ -156,42 +212,12 @@ class Peer:
     def _read(self) -> None:
         assert self.process and self.process.stdout
         for raw in self.process.stdout:
-            try:
-                line = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            line["_at"] = time.monotonic()
-            with self.arrived:
-                self.seen.append(line)
-                self.arrived.notify_all()
+            self._arrive(raw)
 
-    def wait(self, match, timeout: float) -> dict:
-        """The first line, already seen or still to come, that matches; raises TimeoutError otherwise."""
-        deadline = time.monotonic() + timeout
-        checked = 0
-        with self.arrived:
-            while True:
-                for line in self.seen[checked:]:
-                    if match(line):
-                        return line
-                checked = len(self.seen)
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    raise TimeoutError("no matching line from knit-peer")
-                self.arrived.wait(min(left, 1))
-
-    def lines(self, match) -> list[dict]:
-        """Every line so far that matches."""
-        with self.arrived:
-            return [line for line in self.seen if match(line)]
-
-    def command(self, **fields) -> dict:
-        tag = secrets.token_hex(4)
+    def _write(self, line: str) -> None:
         assert self.process and self.process.stdin
-        with self.writing:
-            self.process.stdin.write(json.dumps({**fields, "tag": tag}) + "\n")
-            self.process.stdin.flush()
-        return self.wait(lambda line: line.get("tag") == tag, 10)
+        self.process.stdin.write(line)
+        self.process.stdin.flush()
 
     def stop(self) -> None:
         if self.process and self.process.poll() is None:
@@ -206,6 +232,88 @@ class Peer:
         self.process = None
         with self.arrived:
             self.seen.clear()
+
+
+class IPhone(Node):
+    """Knit on an iPhone over USB: a debug build's bridge (ADR 2026-09.kwa8), reached through `iproxy`. It speaks
+    knit-peer's protocol, so a run drives it as it drives the peer. Knit has to be open on the phone, since nothing
+    here can launch it, and `stop` closes the connection and leaves Knit and its mesh running."""
+
+    label = "the iPhone's bridge"
+    DEVICE_PORT = 5648
+
+    def __init__(self, udid: str | None = None) -> None:
+        super().__init__()
+        self.udid = udid or first_usb_iphone()
+        self.proxy: subprocess.Popen[bytes] | None = None
+        self.socket: socket.socket | None = None
+        self.name = ""
+
+    def start(self) -> None:
+        port = free_port()
+        self.proxy = subprocess.Popen(
+            ["iproxy", f"{port}:{self.DEVICE_PORT}", "-u", self.udid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        deadline = time.monotonic() + 10
+        while self.socket is None:
+            try:
+                self.socket = socket.create_connection(("127.0.0.1", port), timeout=5)
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.2)
+        self.socket.settimeout(None)
+        threading.Thread(target=self._read, daemon=True).start()
+        try:
+            ready = self.wait(lambda line: line.get("event") == "ready", 15)
+        except TimeoutError as error:
+            self.stop()
+            raise TimeoutError("the iPhone's bridge did not answer: open Knit, a debug build, on the phone") from error
+        self.node_id = ready["nodeId"]
+        self.name = self.command(cmd="status")["name"]
+
+    def _read(self) -> None:
+        assert self.socket
+        with self.socket.makefile("r", encoding="utf-8") as stream:
+            try:
+                for raw in stream:
+                    self._arrive(raw)
+            except OSError:
+                pass
+
+    def _write(self, line: str) -> None:
+        assert self.socket
+        self.socket.sendall(line.encode())
+
+    def stop(self) -> None:
+        if self.socket:
+            try:
+                self.socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            self.socket.close()
+            self.socket = None
+        if self.proxy:
+            self.proxy.terminate()
+            self.proxy.wait(timeout=10)
+            self.proxy = None
+        with self.arrived:
+            self.seen.clear()
+
+
+def first_usb_iphone() -> str:
+    """The first iPhone usbmuxd lists over USB."""
+    result = subprocess.run(["idevice_id", "-l"], capture_output=True, text=True, check=False)
+    udids = result.stdout.split()
+    if not udids:
+        raise RuntimeError("no iPhone on USB (idevice_id -l lists none)")
+    return udids[0]
+
+
+def free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
 
 
 class Run:
@@ -353,6 +461,155 @@ def check(arguments: argparse.Namespace) -> int:
         peer.stop()
     print(json.dumps({"summary": "check", "steps": run.steps, "failed": run.failed}))
     return run.failed
+
+
+def iphone(arguments: argparse.Namespace) -> int:
+    """MVP items 2 to 6 between the iPhone and an Android phone, both driven through their bridges, with Knit open on
+    both. The first DM between two phones is a message request only once, so a pair that has talked before checks
+    the replies alone. Item 6 stops the iPhone's mesh, which closes every link it has, not only the phone's."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    state = phone.state()
+    phone_id = state["self"]["nodeId"]
+    phone_name = state["self"]["name"]
+    print(json.dumps({"run": "iphone", "iphone": ios.node_id, "iphoneName": ios.name, "phone": phone_id, "phoneName": phone_name}))
+    try:
+        run.step("link", lambda: _ios_linked(ios, phone, phone_id))
+        run.step("profile-on-iphone", lambda: _ios_pinned(ios, phone_id, phone_name))
+        run.step("profile-on-phone", lambda: _phone_pinned(phone, ios))
+        body = f"interop room from iphone {nonce}"
+        sent = ios.command(cmd="room", text=body)
+        run.step("room-iphone-to-phone", lambda: _timed(lambda: _has(phone.state("nearby"), body), 15))
+        run.step("room-iphone-ticked", lambda: _delivered(ios, sent, 30))
+        body = f"interop room from phone {nonce}"
+        phone.send(body)
+        run.step("room-phone-to-iphone", lambda: _latency(ios.wait(lambda line: _message(line, body), 15)))
+        run.step("room-phone-ticked", lambda: _timed(lambda: _received(phone.state("nearby"), body), 30))
+        body = f"interop dm from iphone {nonce}"
+        sent = ios.command(cmd="dm", to=phone_id, text=body)
+        # Only the phone signs a receipt for a DM to it, so this is Android taking the iPhone's DM and receipting it.
+        run.step("dm-iphone-to-phone-delivered", lambda: _delivered(ios, sent, 30))
+        run.step("dm-iphone-to-phone-shown", lambda: _timed(lambda: _has(phone.state(ios.node_id), body), 15))
+        body = f"interop dm from phone {nonce}"
+        phone.send(body, conversation=ios.node_id)
+        run.step("dm-phone-to-iphone", lambda: _latency(ios.wait(lambda line: _message(line, body), 20)))
+        run.step("dm-phone-to-iphone-ticked", lambda: _timed(lambda: _received(phone.state(ios.node_id), body), 30))
+        if not arguments.skip_offline:
+            _offline(run, ios, phone, phone_id, nonce)
+        run.step("custody-converges", lambda: _converges(ios, phone, 180))
+    finally:
+        ios.stop()
+    print(json.dumps({"summary": "iphone", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _offline(run: Run, ios: IPhone, phone: Phone, phone_id: str, nonce: str) -> None:
+    """MVP item 6: a room post and a DM the phone writes while the iPhone's mesh is stopped arrive within 60 s of the
+    next link."""
+    ios.command(cmd="stop")
+    room = f"interop offline room {nonce}"
+    direct = f"interop offline dm {nonce}"
+    phone.send(room)
+    phone.send(direct, conversation=ios.node_id)
+    time.sleep(5)
+    started = time.monotonic()
+    ios.command(cmd="start")
+    link = run.step("offline-relinks", lambda: _relinked(ios, phone, phone_id, started))
+    if link is None:
+        return
+    linked_at = started + link["seconds"]
+    for name, body in (("offline-room-arrives", room), ("offline-dm-arrives", direct)):
+        run.step(name, lambda body=body: _arrives_after(ios, body, linked_at))
+
+
+def _ios_linked(ios: IPhone, phone: Phone, phone_id: str, timeout: float = 120) -> dict:
+    started = time.monotonic()
+
+    def linked() -> bool:
+        phone.wake()
+        return any(link["peer"] == phone_id for link in ios.command(cmd="links")["links"])
+
+    poll(linked, timeout, every=5)
+    return {"seconds": round(time.monotonic() - started, 1)}
+
+
+def _relinked(ios: IPhone, phone: Phone, phone_id: str, since: float, timeout: float = 120) -> dict:
+    """The next link to the phone after `since`, from the iPhone's own link event."""
+    deadline = time.monotonic() + timeout
+    while True:
+        phone.wake()
+        try:
+            line = ios.wait(lambda line: _link(line, phone_id) and line.get("up") and line["_at"] > since, 15)
+            return {"seconds": round(line["_at"] - since, 1)}
+        except TimeoutError:
+            if time.monotonic() > deadline:
+                raise
+
+
+def _arrives_after(ios: IPhone, body: str, linked_at: float) -> dict:
+    line = ios.wait(lambda line: _message(line, body), 60 + max(0, linked_at - time.monotonic()))
+    after = round(line["_at"] - linked_at, 1)
+    if after > 60:
+        raise RuntimeError(f"arrived {after} s after the link")
+    return {"secondsAfterLink": after}
+
+
+def _ios_pinned(ios: IPhone, phone_id: str, phone_name: str) -> dict:
+    peer = poll(lambda: next((p for p in ios.command(cmd="peers")["peers"] if p["peer"] == phone_id), None), 60)
+    if phone_name and peer["name"] != phone_name:
+        raise RuntimeError(f"the iPhone shows {peer['displayName']!r}")
+    return {"displayName": peer["displayName"], "safetyNumber": peer["safetyNumber"]}
+
+
+def _phone_pinned(phone: Phone, ios: IPhone) -> dict:
+    """The phone knows the iPhone, under its name or, with none, under the alias Android renders for it."""
+    shown = poll(lambda: next((p for p in phone.state()["reachable"] if p["nodeId"] == ios.node_id), None), 30)
+    if shown["name"] != ios.name:
+        raise RuntimeError(f"the phone has {shown['name']!r} for the iPhone's {ios.name!r}")
+    return {"name": shown["name"]}
+
+
+def _message(line: dict, body: str) -> bool:
+    return line.get("event") == "message" and line.get("body") == body
+
+
+def _delivered(node: Node, sent: dict, timeout: float) -> dict:
+    started = time.monotonic()
+    node.wait(lambda line: line.get("event") == "delivered" and line.get("id") == sent.get("id"), timeout)
+    return {"seconds": round(time.monotonic() - started, 1)}
+
+
+def _timed(check, timeout: float) -> dict:
+    started = time.monotonic()
+    poll(check, timeout, every=0.5)
+    return {"seconds": round(time.monotonic() - started, 1)}
+
+
+def bridge(arguments: argparse.Namespace) -> int:
+    """Sends each command to the iPhone's bridge and prints its reply, then prints its events for --watch seconds."""
+    ios = IPhone(arguments.udid)
+    ios.start()
+    try:
+        print(json.dumps({"ready": ios.node_id, "name": ios.name}), flush=True)
+        for text in arguments.commands:
+            reply = ios.command(**json.loads(text))
+            print(json.dumps({key: value for key, value in reply.items() if key not in ("_at", "tag")}), flush=True)
+        deadline = time.monotonic() + arguments.watch
+        printed = 0
+        while time.monotonic() < deadline:
+            with ios.arrived:
+                ios.arrived.wait(min(1, max(0, deadline - time.monotonic())))
+                fresh = ios.seen[printed:]
+                printed = len(ios.seen)
+            for line in fresh:
+                if line.get("event") not in (None, "ready"):
+                    print(json.dumps({key: value for key, value in line.items() if key != "_at"}), flush=True)
+    finally:
+        ios.stop()
+    return 0
 
 
 def refusal(arguments: argparse.Namespace) -> int:
@@ -929,7 +1186,7 @@ def _file_records(peer: Peer) -> dict | None:
 LAST_CUSTODY_DIFFERENCE: dict = {}
 
 
-def _converged(peer: Peer, phone: Phone) -> dict | None:
+def _converged(peer: Node, phone: Phone) -> dict | None:
     """Whether the peer's live custody ids are the phone's. The phone serves a group frame only to the group's members
     (`ForwardSync.onDigest`), and the peer is in no group, so the phone's group frames are left out."""
     ours = set(peer.command(cmd="digest")["ids"])
@@ -957,7 +1214,7 @@ def _brief(frame: dict) -> dict:
     return {key: value[:6] if key in ("from", "sender", "to", "recipient") and value else value for key, value in frame.items() if key in keep}
 
 
-def _converges(peer: Peer, phone: Phone, timeout: float) -> dict:
+def _converges(peer: Node, phone: Phone, timeout: float) -> dict:
     try:
         return poll(lambda: _converged(peer, phone), timeout, every=10)
     except TimeoutError as error:
@@ -1007,7 +1264,17 @@ def main() -> int:
     for sub in commands.choices.values():
         sub.add_argument("--receive-mtu", default="", help="the receive MTU each peer channel offers, for diagnosis")
         sub.add_argument("--send-mtu", default="", help="the largest SDU each peer channel writes, for diagnosis")
+    ios = commands.add_parser("iphone")
+    ios.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios.add_argument("--skip-offline", action="store_true", help="leave out MVP item 6, which stops the iPhone's mesh")
+    by_hand = commands.add_parser("bridge")
+    by_hand.add_argument("--watch", type=float, default=0, help="print the bridge's events for this many seconds")
+    by_hand.add_argument("commands", nargs="*", help='commands as JSON, such as \'{"cmd":"status"}\'')
+    for sub in (ios, by_hand):
+        sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
+    if arguments.command in ("iphone", "bridge"):
+        return {"iphone": iphone, "bridge": bridge}[arguments.command](arguments)
     global RECEIVE_MTU, SEND_MTU  # noqa: PLW0603 - two knobs, read by Peer.start
     RECEIVE_MTU = arguments.receive_mtu
     SEND_MTU = arguments.send_mtu

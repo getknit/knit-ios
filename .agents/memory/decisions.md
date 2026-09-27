@@ -31,6 +31,7 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-09.wde9](decisions/2026-09-wde9-the-protocol-core-is-platform.md) | the protocol core is platform-free Swift that builds and tests on Linux | architecture, build, testing |
 | [2026-09.xzpt](decisions/2026-09-xzpt-an-iphone-is-found-through.md) | an iPhone is found through a read-only GATT payload under 0xFE30 | ble, wire, interop |
 | [2026-09.zwdp](decisions/2026-09-zwdp-knit-for-ios-meshes-over.md) | Knit for iOS meshes over Bluetooth LE only | scope, transport, ble |
+| [2026-09.kwa8](decisions/2026-09-kwa8-a-debug-build-takes-knit.md) | a debug build takes knit-peer's commands over USB | interop, testing, app |
 | [2026-09.nyya](decisions/2026-09-nyya-the-store-is-grdb-on.md) | the store is GRDB on SQLite under Data Protection, and SQLCipher waits | store, storage, interop |
 | [2026-09.tkww](decisions/2026-09-tkww-a-reinstall-keeps-the-keychain.md) | a reinstall keeps the Keychain identity and republishes its profile | identity, storage, app |
 | [2026-09.ycza](decisions/2026-09-ycza-user-facing-copy-lives-in.md) | user-facing copy lives in one catalog in KnitAppCore | copy, app |

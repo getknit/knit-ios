@@ -58,7 +58,9 @@ out. `BLERadio.foregrounded()` starts the scan again when Knit comes to the fron
 in the background reports a scan that finds nobody. For MVP item 8 the Linux peer's `ios` profile and the
 iPhone then read each other's payloads, the first reads of a real device's on either side, and linked in both
 orders. A read no longer forgets the payload when the radio drops its own connection afterwards; only a failed
-dial does, as the rule above says.
+dial does, as the rule above says. A relaunch's restored connections are cancelled once the central is powered
+on, not in `willRestoreState`, where CoreBluetooth refused the command and a connection left up kept every dial
+to that phone waiting.
 
 **Consequences / limits:**
 

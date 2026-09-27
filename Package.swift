@@ -58,7 +58,7 @@ let package = Package(
         .target(name: "KnitBLE", dependencies: ["KnitMesh", "KnitWire"], swiftSettings: strict),
         .target(
             name: "Knit",
-            dependencies: ["KnitAppCore", "KnitBLE", "KnitStoreSQL", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"],
+            dependencies: ["KnitAppCore", "KnitBLE", "KnitStoreSQL", "KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"],
             swiftSettings: strict,
             // xtool links every target as a static archive, and the linker keeps only the members something names.
             // CoreBluetooth calls KnitBLE's delegates through the Objective-C runtime alone, so without -ObjC their
@@ -79,13 +79,17 @@ let package = Package(
             ],
             swiftSettings: strict
         ),
-        // The peer's logic, platform-free so its tests run anywhere: options, its state directory, keygen and the
-        // JSON-lines control surface. `knit-peer` wires it to the BlueZ radio.
-        .target(name: "KnitPeer", dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
+        // The JSON-lines control surface, platform-free: what `knit-peer` answers on standard input, and a debug build
+        // of the app over USB.
+        .target(name: "KnitControl", dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
+        // The peer's logic, platform-free so its tests run anywhere: options, its state directory and keygen.
+        // `knit-peer` wires it to the BlueZ radio.
+        .target(name: "KnitPeer", dependencies: ["KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
         .executableTarget(
             name: "knit-peer",
             dependencies: [
                 "KnitPeer",
+                "KnitControl",
                 "KnitMesh",
                 "KnitCrypto",
                 "KnitStore",
@@ -126,8 +130,13 @@ let package = Package(
             swiftSettings: strict
         ),
         .testTarget(
+            name: "KnitControlTests",
+            dependencies: ["KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
+            swiftSettings: strict
+        ),
+        .testTarget(
             name: "KnitPeerTests",
-            dependencies: ["KnitPeer", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
+            dependencies: ["KnitPeer", "KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
             swiftSettings: strict
         ),
         // Runs the BlueZ radio against a fake BlueZ on a peer-to-peer bus, and Unix sockets in place of L2CAP.

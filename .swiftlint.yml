@@ -114,6 +114,12 @@ custom_rules:
     excluded: 'Sources/Knit/'
     message: Only the app's Keychain store imports Security.
     severity: error
+  seam_network:
+    name: Network stays in the debug bridge
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+Network\b'
+    excluded: 'Sources/Knit/Debug/'
+    message: Only the app's debug bridge imports Network; Knit meshes over Bluetooth alone (ADR 2026-09.zwdp).
+    severity: error
   seam_grdb:
     name: GRDB stays in KnitStoreSQL
     regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+GRDB\b'

@@ -106,15 +106,20 @@ explicit direction.** Update this file in the change that ships an item.
 - **P8, the iPhone:** begun early on 2026-09-26, without the Mac: an iPhone 12 on iOS 27.0, installed over USB
   by xtool on free provisioning. The app runs and links the Linux peer and the lab's Android phones. Against
   the peer, items 3 to 5 pass: safety numbers match, the room works both ways with ticks, and DMs go request,
-  accept, reply, delivered. Item 8 passes in both orders (`.agents/context/linux-peer.md`, "What the iPhone
+  accept, reply, delivered. Items 3 to 5 pass against the Pixel 3 too, with Android sending the first DM and the
+  iPhone accepting it. Item 8 passes in both orders (`.agents/context/linux-peer.md`, "What the iPhone
   showed").
   - **Fixed on the way:** the linker dropped KnitBLE's delegates (`-ObjC`); a relaunch to restore Bluetooth never
     scanned; the debug log went unrelayed; a back-fill posted a notification per message; a GATT payload was
-    read again every few seconds.
+    read again every few seconds; a relaunch's restored connections were cancelled before the central was
+    powered on, which CoreBluetooth refused, and a dial to a phone they held hung until Stop and Start.
+  - **The debug bridge (ADR 2026-09.kwa8):** a debug build answers `knit-peer`'s control protocol over USB, so
+    `scripts/interop.py iphone` runs items 2 to 6 against an Android phone with no one at the iPhone, once Knit
+    is open on it.
   - **The rig for iPhone runs:** the Linux peer on a shared `hci0`, since `hci1`'s 23-byte fragments stall the
     iPhone, and bluetoothd without its battery plugin, which asked the iPhone to pair.
-  - **Still owed:** items 3 to 5 against an Android phone, offline delivery (item 6), relay (item 7), the wake
-    test (item 9), the scan-filter check, and the soak.
+  - **Still owed:** relay (item 7), the wake test (item 9), the scan-filter check, and the soak. Items 2 to 6
+    pass against the Pixel 3 through the bridge, unattended (`.agents/context/linux-peer.md`).
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).

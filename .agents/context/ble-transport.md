@@ -150,5 +150,7 @@ Android's `0xFE30` service data as a sighting, and reads the GATT payload of a p
 in its service list or its overflow area. A dial connects the peripheral and opens an L2CAP channel on the
 advertised PSM. Its peripheral publishes an insecure channel, serves the payload and advertises the UUID
 alone. Each channel's streams run on one run-loop thread, read in 64 KiB gulps and written 8 KiB at a time.
-The managers carry restoration identifiers; a restored connection is dropped, since its channels did not
-survive. None of it has run on a radio yet: the Mac's checklist M (P7) is its first.
+The managers carry restoration identifiers. A restored connection is dropped, since its channels did not
+survive, but only once the central is powered on: CoreBluetooth refuses the command earlier, and a connection
+left up kept every dial to that phone waiting. It first ran on an iPhone 12 on 2026-09-26
+(`.agents/context/linux-peer.md`, "What the iPhone showed").

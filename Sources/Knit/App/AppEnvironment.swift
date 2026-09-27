@@ -23,6 +23,10 @@
         /// The CoreBluetooth radio, which a demo has none of.
         private let radio: BLERadio?
         private var listening: Task<Void, Never>?
+        #if DEBUG
+            /// The debug bridge, which a computer reaches over USB.
+            private var bridge: Bridge?
+        #endif
 
         private init(
             session: AppSession,
@@ -53,6 +57,9 @@
             }
             let running = session
             listening = Task { await running.listen() }
+            #if DEBUG
+                bridge?.start()
+            #endif
             if preferences.hasOnboarded {
                 Task { await running.start() }
             }
@@ -61,6 +68,9 @@
         /// Knit came to the front: the radio scans again, since a scan started in the background finds nobody.
         func foregrounded() {
             radio?.foregrounded()
+            #if DEBUG
+                bridge?.start()
+            #endif
         }
 
         /// The environment `options` ask for. Throws when the Keychain or the database cannot be read yet, before
@@ -118,18 +128,19 @@
         }
 
         private static func compose(_ parts: Parts, replace: IdentityReplacer?) -> AppEnvironment {
+            let clock = SystemClock()
             let node = Mesh(
                 identity: parts.identity,
                 deviceTag: DeviceTag.derive(UIDevice.current.identifierForVendor?.uuidString),
                 stores: parts.stores,
                 radio: parts.radio,
-                clock: SystemClock(),
+                clock: clock,
                 random: SystemRandomNumberGenerator(),
                 log: parts.log
             )
             let alerts = LocalNotifier()
             let app = AppSession(identity: OwnIdentity(bundle: parts.identity.bundle), stores: parts.stores, mesh: node, notifier: alerts)
-            return AppEnvironment(
+            let environment = AppEnvironment(
                 session: app,
                 mesh: node,
                 radio: parts.radio as? BLERadio,
@@ -137,6 +148,17 @@
                 notifier: alerts,
                 replaceIdentity: replace
             )
+            #if DEBUG
+                environment.bridge = Bridge(
+                    session: app,
+                    mesh: node,
+                    bundle: parts.identity.bundle,
+                    clock: clock,
+                    log: parts.log,
+                    version: "\(environment.about.version) (\(environment.about.build))"
+                )
+            #endif
+            return environment
         }
 
         /// The database's own directory, under Application Support, which is backed up unless told otherwise; the

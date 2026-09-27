@@ -8,82 +8,8 @@ import KnitWire
 import Synchronization
 import Testing
 
-/// The control lines, the JSON they come back as, the state directory, the log and the scan report.
+/// The state directory, the log and the scan report.
 @Suite struct PeerPartsTests {
-    // MARK: Control lines
-
-    @Test func everyCommandParses() throws {
-        let peer = fixtureNodeId(4)
-        let cases: [(String, ControlCommand)] = [
-            (#"{"cmd":"status"}"#, .status),
-            (#"{"cmd":"peers"}"#, .peers),
-            (#"{"cmd":"links"}"#, .links),
-            (#"{"cmd":"digest"}"#, .digest),
-            (#"{"cmd":"custody"}"#, .custody),
-            (#"{"cmd":"quit"}"#, .quit),
-            (#"{"cmd":"room","text":"hi"}"#, .room("hi")),
-            (#"{"cmd":"dm","to":"\#(peer)","text":"psst"}"#, .directMessage(to: peer, text: "psst")),
-            (#"{"cmd":"accept","conv":"\#(peer)"}"#, .accept(peer.string)),
-            (#"{"cmd":"accept","peer":"\#(peer)"}"#, .accept(peer.string)),
-            (#"{"cmd":"name","name":"B"}"#, .name("B", status: nil, openToChat: nil)),
-            (#"{"cmd":"name","status":"s","openToChat":true}"#, .name(nil, status: "s", openToChat: true)),
-            (#"{"cmd":"deny-link","peer":"\#(peer)"}"#, .denyLink(peer)),
-            (#"{"cmd":"allow-link","peer":"\#(peer)"}"#, .allowLink(peer)),
-            (#"{"cmd":"messages","conv":"nearby"}"#, .messages("nearby", limit: 20)),
-            (#"{"cmd":"messages","conv":"nearby","limit":0}"#, .messages("nearby", limit: 1)),
-        ]
-        for (line, command) in cases {
-            #expect(try ControlRequest.parse(line).get() == ControlRequest(command: command, tag: nil), "\(line)")
-        }
-        #expect(try ControlRequest.parse(#"{"cmd":"status","tag":"t1"}"#).get().tag == "t1")
-    }
-
-    @Test func badLinesSayWhy() {
-        let cases: [(String, ControlError)] = [
-            ("not json", .notJSON),
-            (#"{"text":"no cmd"}"#, .notJSON),
-            (#"{"cmd":"fly"}"#, .unknownCommand("fly")),
-            (#"{"cmd":"room"}"#, .missing("text")),
-            (#"{"cmd":"dm","text":"x"}"#, .missing("to")),
-            (#"{"cmd":"dm","to":"NOPE","text":"x"}"#, .invalidNodeId("NOPE")),
-            (#"{"cmd":"accept"}"#, .missing("conv")),
-            (#"{"cmd":"deny-link"}"#, .missing("peer")),
-            (#"{"cmd":"messages"}"#, .missing("conv")),
-        ]
-        for (line, error) in cases {
-            #expect(throws: error) { try ControlRequest.parse(line).get() }
-        }
-        #expect(ControlError.refused("because").message == "because")
-        #expect(ControlError.notJSON.message.contains("JSON"))
-        #expect(ControlError.unknownCommand("fly").message == "unknown command fly")
-        #expect(ControlError.missing("text").message == "missing text")
-        #expect(ControlError.invalidNodeId("x").message == "not a node id: x")
-    }
-
-    @Test func everyCommandHasTheNameItWasSentAs() {
-        let peer = fixtureNodeId(4)
-        let names = [
-            ControlCommand.status, .peers, .links, .room(""), .directMessage(to: peer, text: ""), .accept(""),
-            .name(nil, status: nil, openToChat: nil),
-            .denyLink(peer), .allowLink(peer), .digest, .custody, .messages("", limit: 1), .quit,
-        ]
-        .map(\.name)
-        #expect(
-            names == [
-                "status", "peers", "links", "room", "dm", "accept", "name", "deny-link", "allow-link", "digest", "custody",
-                "messages", "quit",
-            ])
-    }
-
-    // MARK: JSON
-
-    @Test func aLineIsCompactWithSortedKeys() {
-        let value: JSONValue = ["b": 1, "a": ["x", true, .null], "c": ["n": -2], "path": "/org/bluez"]
-        #expect(value.line == #"{"a":["x",true,null],"b":1,"c":{"n":-2},"path":"/org/bluez"}"#)
-        #expect(JSONValue.text(nil) == .null)
-        #expect(JSONValue.text("x") == .string("x"))
-    }
-
     // MARK: State
 
     private func temporaryDirectory() -> String {

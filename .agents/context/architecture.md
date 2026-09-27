@@ -15,9 +15,10 @@ one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 | `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol, router, SeenSet, custody, sync, receipts, key recovery, profiles, conversations, policies, the system clock | P3 |
 | `KnitAppCore` | all | one `AppSession` over the mesh, the `@Observable` view models each screen reads, collision-aware labels, the notification policy, the copy catalog (ADR 2026-09.ycza), and `-seedDemo`'s seed and radio | P6 |
 | `KnitBLE` | Apple | the CoreBluetooth `Radio`: central and GATT reads, peripheral with the GATT payload, L2CAP streams on one thread, restoration | P6 |
-| `Knit` | iOS | the SwiftUI screens, `@main` and the app delegate, the Keychain store, notifications, the unified log, and the composition root | P6 |
+| `Knit` | iOS | the SwiftUI screens, `@main` and the app delegate, the Keychain store, notifications, the unified log, the composition root, and a debug build's USB bridge (ADR 2026-09.kwa8) | P6 |
 | `KnitBlueZ`, `CDBus`, `CBluetoothShim` | Linux | the BlueZ `Radio`: one `poll` thread over a libdbus connection and LE CoC sockets; advert, scan, and serving and reading the GATT payload | P4 |
-| `KnitPeer` | all | the peer's logic: options, its state directory, keygen, the scan report and the JSON-lines control surface | P4 |
+| `KnitControl` | all | the JSON-lines control protocol: commands, replies and event lines over a `Mesh` (`MeshControl`), spoken by `knit-peer` and a debug build of the app (ADR 2026-09.kwa8) | P8 |
+| `KnitPeer` | all | the peer's logic: options, its state directory, keygen and the scan report | P4 |
 | `knit-peer` | Linux (a stub `main` elsewhere) | the headless peer: `KnitPeer` on the BlueZ radio, on `hci1` only | P4 |
 | `KnitLabSupport` | all | LabTransport, LabRadio, LabClock, MeshLab: deferred (`.agents/memory/roadmap.md`) | later |
 
@@ -39,6 +40,7 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
   | CoreBluetooth | `KnitBLE` |
   | SwiftUI and UIKit | `Knit` |
   | Security (the Keychain) | `Knit`'s `KeychainSecretStore` |
+  | Network | `Knit`'s `BridgeListener`, in a debug build |
   | GRDB | `KnitStoreSQL` |
   | CDBus and the socket shim | `KnitBlueZ`, and `KnitBlueZTests`, which hosts a fake BlueZ |
   | CryptoKit | nowhere: import swift-crypto's `Crypto`, which is CryptoKit on Apple platforms |

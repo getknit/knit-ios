@@ -35,12 +35,15 @@ ladder, not the first.
    peer-to-peer libdbus server, with Unix `SOCK_SEQPACKET` sockets in place of L2CAP, so the whole radio runs
    in CI with no adapter and no bus daemon. The fake also plays remote devices' GATT servers, so the GATT
    read runs too. No test opens a Bluetooth socket (`.agents/context/linux-peer.md` says why). `KnitPeerTests` drives the control surface through a real `Mesh`, with a second engine signing
-   the far side's frames.
+   the far side's frames. `KnitControlTests` covers what the app's bridge adds: changing a node through the
+   session's actions, `stop` and `start`, and the event lines.
 8. **Over the air, from Linux (P4).** `knit-peer` on `hci1` against Android phones running Knit: checklist
    L, through `scripts/interop.py`. Obey `.agents/rules/devices.md` before touching a phone.
 9. **The Mac (P7).** The full suite on macOS, the `KnitBLE` delegate tests, Simulator XCUITest with
    `performAccessibilityAudit`, and a native Mac run against Android and the Linux peer: checklist M.
-10. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`.
+10. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`. `scripts/interop.py iphone` drives the
+    iPhone through a debug build's USB bridge and an Android phone through knit-next's, for items 2 to 6
+    (ADR 2026-09.kwa8).
 
 ## Coverage
 

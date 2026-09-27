@@ -4,6 +4,7 @@ import Foundation
     import Dispatch
     import Glibc
     import KnitBlueZ
+    import KnitControl
     import KnitCrypto
     import KnitMesh
     import KnitPeer

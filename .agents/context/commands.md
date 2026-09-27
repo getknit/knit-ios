@@ -58,6 +58,8 @@ python3 scripts/interop.py replace --device <adb serial>          # A1's stale-l
 python3 scripts/interop.py check … --send-mtu 8192                # SDUs above the default 247, to test a phone
 python3 scripts/interop.py soak --device <serial> --extras        # MVP item 11's hour, both ways, with the go-ahead
 python3 scripts/interop.py relay --device <serial>                # MVP item 7's line; a second peer on hci0, its go-ahead too
+python3 scripts/interop.py iphone --device <serial>               # MVP items 2 to 6, iPhone and phone both driven; Knit open on both
+python3 scripts/interop.py bridge '{"cmd":"status"}' --watch 60   # the iPhone's bridge by hand: replies, then events
 python3 scripts/soak.py run [--hours 10]                          # a night against every phone in range; drives none
 python3 scripts/soak.py status | report [--json] | stop           # the latest run (.build/soak/current)
 sudo scripts/hci1-supervision.sh                                  # hci1's supervision timeout to 5 s, until a replug
@@ -72,7 +74,20 @@ scripts/check.sh ios                                              # xtool dev bu
 xtool dev run --usb                                               # build, sign and install on the iPhone, with the go-ahead
 idevicesyslog -p Knit                                             # the app's log, one JSON line per entry in a debug build
 idevicecrashreport -k -e <dir>                                    # copy the phone's crash and hang reports, keeping them there
+ifuse --container XTL-<team id>.app.getknit.knit -o ro <dir>     # mount Knit's sandbox read-only; fusermount -u <dir> to drop it
+iproxy 5648:5648                                                  # the debug bridge on localhost:5648, for any client
 ```
+
+A debug build answers `knit-peer`'s control lines on the phone's loopback, port 5648 (ADR 2026-09.kwa8), while
+Knit is open. `scripts/interop.py` starts `iproxy` itself; run it by hand only to reach the bridge from something
+else, with one JSON command per line.
+
+The debug log carries link events, not messages; the bridge's `messages`, `peers` and `digest` answer what the
+store holds. When Knit is not running, copy
+`<dir>/Library/Application Support/Database/knit.sqlite` and its `-wal` out of the mount and open the copy with
+`sqlite3`. The mount is read-only, and SQLite needs to write the `-shm` file. Text columns are UTF-8 blobs, so
+cast them (`CAST(body AS TEXT)`). `messages.arrivedAt - sentAt` gives the delay across the air, and `delivered`
+is the tick.
 
 Launch arguments, set in the scheme on the Mac (P7):
 

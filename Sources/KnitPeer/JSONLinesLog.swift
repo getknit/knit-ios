@@ -1,3 +1,4 @@
+import KnitControl
 public import KnitMesh
 
 /// A ``KnitLog`` that writes each line kept as a JSON line, `{"log":"info","message":"…"}`, through `write`: standard

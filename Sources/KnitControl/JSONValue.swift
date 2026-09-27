@@ -1,6 +1,6 @@
 import Foundation
 
-/// A JSON value, for the control lines the peer writes. Objects are written with their keys sorted, so a line is the
+/// A JSON value, for the control lines a node writes. Objects are written with their keys sorted, so a line is the
 /// same every time and a script can compare lines.
 public enum JSONValue: Equatable, Sendable, Encodable {
     case string(String)

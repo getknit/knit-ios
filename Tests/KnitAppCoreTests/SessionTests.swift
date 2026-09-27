@@ -2,6 +2,7 @@ import KnitCrypto
 import KnitMesh
 import KnitStore
 import KnitWire
+import Synchronization
 import Testing
 
 @testable import KnitAppCore
@@ -34,6 +35,19 @@ import Testing
         #expect(rig.session.neighbors.count == 1)
         await rig.session.listen()
         #expect(rig.session.radioState == .on, "a second listen returns at once")
+    }
+
+    @Test func theTapHearsEveryEventAfterTheSession() async {
+        let rig = AppRig(radio: .off)
+        let heard = Mutex<[MeshEvent]>([])
+        rig.session.eventTap = { event in
+            heard.withLock { $0.append(event) }
+        }
+        rig.mesh.emit(.radioChanged(.on))
+        rig.mesh.emit(.delivered(messageId: "x"))
+        rig.mesh.finish()
+        await rig.session.listen()
+        #expect(heard.withLock { $0 } == [.radioChanged(.on), .delivered(messageId: "x")])
     }
 
     @Test func startAndStopFollowTheMesh() async {

@@ -1,0 +1,236 @@
+import Foundation
+import KnitControl
+import KnitCrypto
+import KnitMesh
+import KnitStore
+import KnitTestSupport
+import KnitWire
+import Synchronization
+import Testing
+
+/// The control surface on its own: what the app's bridge relies on beyond what `PeerNodeTests` covers through the
+/// peer, namely changing the node through another front, `stop` and `start`, and the event lines.
+@Suite(.timeLimit(.minutes(1))) struct MeshControlTests {
+    @Test func readyNamesTheNodeAndItsDetails() throws {
+        let rig = ControlRig()
+        let ready = try rig.object(rig.control.ready)
+        #expect(ready["event"] as? String == "ready")
+        #expect(ready["nodeId"] as? String == rig.keys.nodeId.string)
+        #expect(ready["host"] as? String == "test")
+    }
+
+    @Test func changesGoThroughTheActionsGiven() async throws {
+        let actions = RecordingActions(me: fixtureNodeId(1))
+        let rig = ControlRig(actions: actions)
+        let peer = fixtureNodeId(4)
+        let room = try await rig.send(#"{"cmd":"room","text":"hi"}"#)
+        #expect(room["id"] as? String == "room-hi")
+        let direct = try await rig.send(#"{"cmd":"dm","to":"\#(peer)","text":"psst"}"#)
+        #expect(direct["id"] as? String == "dm-psst")
+        #expect(direct["pendingKey"] as? Bool == false)
+        _ = try await rig.send(#"{"cmd":"accept","conv":"\#(peer)"}"#)
+        _ = try await rig.send(#"{"cmd":"name","name":"Near"}"#)
+        _ = try await rig.send(#"{"cmd":"stop"}"#)
+        _ = try await rig.send(#"{"cmd":"start"}"#)
+        #expect(
+            actions.calls == ["room hi", "dm \(peer) psst", "accept \(peer)", "profile Near  false", "stop", "start"],
+            "the actions heard every change, in order"
+        )
+        #expect(rig.stores.messages.messages(in: Conversations.nearby).isEmpty, "the mesh itself posted nothing")
+    }
+
+    @Test func whatTheActionsRefuseIsRefused() async throws {
+        let rig = ControlRig(actions: RecordingActions(me: fixtureNodeId(1), refuses: true))
+        let room = try await rig.send(#"{"cmd":"room","text":"hi"}"#)
+        #expect(room["ok"] as? Bool == false)
+        let direct = try await rig.send(#"{"cmd":"dm","to":"\#(fixtureNodeId(4))","text":"psst"}"#)
+        #expect(direct["ok"] as? Bool == false)
+    }
+
+    @Test func stopAndStartSayWhetherTheMeshRuns() async throws {
+        let rig = ControlRig()
+        let started = try await rig.send(#"{"cmd":"start"}"#)
+        #expect(started["running"] as? Bool == true)
+        #expect(try await rig.send(#"{"cmd":"status"}"#)["running"] as? Bool == true)
+        let stopped = try await rig.send(#"{"cmd":"stop","tag":"s"}"#)
+        #expect(stopped["reply"] as? String == "stop")
+        #expect(stopped["running"] as? Bool == false)
+        #expect(stopped["tag"] as? String == "s")
+    }
+
+    @Test func quitIsAnsweredAndMarked() async throws {
+        let rig = ControlRig()
+        let reply = await rig.control.handle(#"{"cmd":"quit"}"#)
+        #expect(reply.quits)
+        #expect(try rig.object(reply.line)["reply"] as? String == "quit")
+        #expect(await rig.control.handle(#"{"cmd":"status"}"#).quits == false)
+    }
+
+    @Test func statusCarriesTheDetails() async throws {
+        let rig = ControlRig()
+        let status = try await rig.send(#"{"cmd":"status"}"#)
+        #expect(status["host"] as? String == "test")
+        #expect(status["nodeId"] as? String == rig.keys.nodeId.string)
+    }
+
+    @Test func linkEventsNameOnlyThePeersThatChanged() async throws {
+        let rig = ControlRig()
+        let first = Neighbor(nodeId: fixtureNodeId(4))
+        let second = Neighbor(nodeId: fixtureNodeId(5))
+        let up = try await rig.report(.neighborsChanged([first]))
+        #expect(up.map { $0["peer"] as? String } == [first.nodeId.string])
+        #expect(up.first?["up"] as? Bool == true)
+        let changed = try await rig.report(.neighborsChanged([second]))
+        #expect(changed.map { $0["peer"] as? String } == [second.nodeId.string, first.nodeId.string])
+        #expect(changed.map { $0["up"] as? Bool } == [true, false])
+        #expect(try await rig.report(.neighborsChanged([second])).isEmpty, "nothing changed")
+    }
+
+    @Test func everyOtherEventIsALine() async throws {
+        let rig = ControlRig()
+        let record = MessageRecord(
+            id: "m1", senderId: fixtureNodeId(4), recipientId: nil, conversationId: Conversations.nearby, body: "hi", sentAt: 5
+        )
+        let message = try #require(try await rig.report(.received(record, isRequest: false)).first)
+        #expect(message["event"] as? String == "message")
+        #expect(message["body"] as? String == "hi")
+        #expect(message["request"] as? Bool == false)
+        #expect(try await rig.report(.delivered(messageId: "m1")).first?["event"] as? String == "delivered")
+        #expect(try await rig.report(.sent(messageId: "m1")).first?["event"] as? String == "sent")
+        #expect(try await rig.report(.radioChanged(.off)).first?["state"] as? String == "off")
+        #expect(try await rig.report(.peerUpdated(fixtureNodeId(4))).isEmpty, "a peer never pinned has no profile to show")
+    }
+}
+
+/// A control surface over a real ``Mesh`` on a radio that goes nowhere.
+private struct ControlRig {
+    let keys: IdentityKeys
+    let stores = MeshStores.inMemory()
+    let control: MeshControl
+
+    init(actions: (any ControlActions)? = nil) {
+        guard let made = IdentityKeys(signingSeed: fixtureBytes(32, seed: 1), agreementScalar: fixtureBytes(32, seed: 101)) else {
+            fatalError("fixed seeds make valid keys")
+        }
+        keys = made
+        let clock = StillClock()
+        let mesh = Mesh(
+            identity: made,
+            deviceTag: nil,
+            stores: stores,
+            radio: QuietRadio(),
+            clock: clock,
+            random: SystemRandomNumberGenerator(),
+            log: SilentLog()
+        )
+        control = MeshControl(bundle: made.bundle, mesh: mesh, actions: actions, stores: stores, clock: clock, details: ["host": "test"])
+    }
+
+    func object(_ line: String) throws -> [String: Any] {
+        try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+    }
+
+    func send(_ line: String) async throws -> [String: Any] {
+        try object(await control.handle(line).line)
+    }
+
+    func report(_ event: MeshEvent) async throws -> [[String: Any]] {
+        try await control.report(event).map(object)
+    }
+}
+
+/// Actions that record what they were asked, as the app's session would take them.
+private final class RecordingActions: ControlActions {
+    private let me: NodeId
+    private let refuses: Bool
+    private let recorded = Mutex<[String]>([])
+
+    init(me: NodeId, refuses: Bool = false) {
+        self.me = me
+        self.refuses = refuses
+    }
+
+    var calls: [String] { recorded.withLock { $0 } }
+
+    func start() {
+        record("start")
+    }
+
+    func stop() {
+        record("stop")
+    }
+
+    func postToRoom(_ text: String) -> MessageRecord? {
+        record("room \(text)")
+        return refuses
+            ? nil
+            : MessageRecord(id: "room-\(text)", senderId: me, recipientId: nil, conversationId: Conversations.nearby, body: text, sentAt: 1)
+    }
+
+    func sendDirectMessage(_ text: String, to recipient: NodeId) -> MessageRecord? {
+        record("dm \(recipient) \(text)")
+        return refuses
+            ? nil
+            : MessageRecord(id: "dm-\(text)", senderId: me, recipientId: recipient, conversationId: recipient.string, body: text, sentAt: 1)
+    }
+
+    func accept(_ conversationId: String) {
+        record("accept \(conversationId)")
+    }
+
+    func updateProfile(name: String, status: String, openToChat: Bool) {
+        record("profile \(name) \(status) \(openToChat)")
+    }
+
+    private func record(_ call: String) {
+        recorded.withLock { $0.append(call) }
+    }
+}
+
+/// Clocks that stand still; a sleeper waits until it is cancelled.
+private final class StillClock: MeshClock {
+    func wallMilliseconds() -> Int64 {
+        1_790_300_000_000
+    }
+
+    func monotonicMilliseconds() -> Int64 {
+        1000
+    }
+
+    func sleep(untilMonotonic _: Int64) async throws {
+        try await Task.sleep(for: .seconds(3600))
+    }
+}
+
+/// A radio that goes nowhere and reports nothing.
+private final class QuietRadio: Radio {
+    let advertisesServiceData = true
+    let dialsGattPeers = false
+    let events = AsyncStream<RadioEvent> { _ in
+        // Nothing to report.
+    }
+
+    func start() {
+        // Nothing to power.
+    }
+
+    func stop() {
+        // Nothing to power down.
+    }
+
+    func advertise(_: AdvertPayload) {
+        // Nobody listens.
+    }
+
+    func dial(_: RadioAddress, psm _: UInt16) -> ChannelID {
+        ChannelID(1)
+    }
+
+    func write(_: [UInt8], to _: ChannelID) {
+        // Nowhere to write.
+    }
+
+    func close(_: ChannelID) {
+        // Nothing open.
+    }
+}
