@@ -406,6 +406,23 @@ On `hci0`, with the peer refusing the Android phones so that it can advertise:
 - **Back-fill is heavy.** Each side served the other hundreds of frames from the lab phones' old runs, and the
   iPhone's digest, about 20 KB, goes out again every minute.
 
+On `hci1` again, for MVP item 8, with the peer in `--radio-profile ios`, so both sides find each other only
+through the GATT payload:
+
+- **Both orders link.** With the peer's id below the iPhone's, the iPhone read the peer's payload in 3 s and
+  dialed it. With a `keygen --above` identity, the peer read the iPhone's payload, the first a real device has
+  served it, waited out the 12 s dwell and dialed. `hci1`'s 23-byte fragments still stall the iPhone's writes
+  after the HELLO, so item 8 checks the link here and `hci0` checks the traffic.
+- **A backgrounded iPhone takes a dial.** iOS relaunched Knit in the background after an install, and the peer,
+  which already knew the iPhone's address and PSM, dialed it; the link held when Knit came to the front. That
+  is not background discovery, since the peer never had to find it.
+- **The iPhone read its peer's payload again every 5 to 30 s.** After each read it drops the connection it made,
+  CoreBluetooth reports a disconnect, and the handler forgot the payload as if a dial had failed. It forgets now
+  only when a dial did.
+- **A new identity at an old address draws a stale dial.** Swapping the peer's identity on `hci1` left the old
+  node's sighting at the same address, so the iPhone dialed the old id once more, and the new peer refused it,
+  until the sighting's 90 s linger ran out.
+
 Also found on the way:
 
 - **200 notifications for one back-fill.** The first build posted one per message. Each conversation now keeps

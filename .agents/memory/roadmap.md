@@ -106,14 +106,15 @@ explicit direction.** Update this file in the change that ships an item.
 - **P8, the iPhone:** begun early on 2026-09-26, without the Mac: an iPhone 12 on iOS 27.0, installed over USB
   by xtool on free provisioning. The app runs and links the Linux peer and the lab's Android phones. Against
   the peer, items 3 to 5 pass: safety numbers match, the room works both ways with ticks, and DMs go request,
-  accept, reply, delivered (`.agents/context/linux-peer.md`, "What the iPhone showed").
+  accept, reply, delivered. Item 8 passes in both orders (`.agents/context/linux-peer.md`, "What the iPhone
+  showed").
   - **Fixed on the way:** the linker dropped KnitBLE's delegates (`-ObjC`); a relaunch to restore Bluetooth never
-    scanned; the debug log went unrelayed; a back-fill posted a notification per message.
+    scanned; the debug log went unrelayed; a back-fill posted a notification per message; a GATT payload was
+    read again every few seconds.
   - **The rig for iPhone runs:** the Linux peer on a shared `hci0`, since `hci1`'s 23-byte fragments stall the
     iPhone, and bluetoothd without its battery plugin, which asked the iPhone to pair.
-  - **Still owed:** items 3 to 5 against an Android phone, offline delivery (item 6), relay (item 7), the
-    discovery profile against the iPhone's GATT payload (item 8), the wake test (item 9), the scan-filter
-    check, and the soak.
+  - **Still owed:** items 3 to 5 against an Android phone, offline delivery (item 6), relay (item 7), the wake
+    test (item 9), the scan-filter check, and the soak.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).

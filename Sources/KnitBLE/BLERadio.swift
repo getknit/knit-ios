@@ -349,13 +349,20 @@
             central?.cancelPeripheralConnection(peripheral)
         }
 
-        /// Every dial waiting on `uuid` failed; a payload read over GATT may name a PSM it no longer listens on.
+        /// Every dial waiting on `uuid` failed; a payload read over GATT may name a PSM it no longer listens on, so
+        /// it is read again (``GattPayloads``). A connection that ends with no dial waiting keeps the payload: the
+        /// radio ends its own after every read, and forgetting it then meant reading the same peer every few
+        /// seconds (the iPhone 12, 2026-09-26).
         func failDials(on uuid: UUID) {
+            var failed = false
             for (channel, dial) in dials where dial.peripheral == uuid {
                 dials[channel] = nil
                 emit(.dialFailed(channel))
+                failed = true
             }
-            gatt.forget(RadioAddress(uuid.uuidString))
+            if failed {
+                gatt.forget(RadioAddress(uuid.uuidString))
+            }
         }
     }
 #endif

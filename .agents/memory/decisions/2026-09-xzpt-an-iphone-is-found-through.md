@@ -55,8 +55,10 @@ Nothing in it has run on hardware yet; the Mac's checklist M (P7) is its first r
 peer and the lab's Android phones within seconds and carried the room both ways. Two things changed. The app
 links with `-ObjC`, because only the Objective-C runtime reaches the delegates and the linker left their file
 out. `BLERadio.foregrounded()` starts the scan again when Knit comes to the front, because a central restored
-in the background reports a scan that finds nobody. No peer has read its GATT payload yet: that is the Linux
-peer's `ios` profile against it, MVP item 8.
+in the background reports a scan that finds nobody. For MVP item 8 the Linux peer's `ios` profile and the
+iPhone then read each other's payloads, the first reads of a real device's on either side, and linked in both
+orders. A read no longer forgets the payload when the radio drops its own connection afterwards; only a failed
+dial does, as the rule above says.
 
 **Consequences / limits:**
 
