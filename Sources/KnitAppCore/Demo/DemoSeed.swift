@@ -4,8 +4,8 @@ import KnitStore
 public import KnitWire
 
 /// How the app was launched: `-seedDemo`, the radio state the demo reports (`-demoRadio off`), so a screen can be
-/// checked in a state no real phone here is in, the unsupported device's among them (MVP item 10), and the scene it
-/// seeds (`-demoScene marketing`).
+/// checked in a state no real phone here is in, the unsupported device's among them (MVP item 10), the scene it
+/// seeds (`-demoScene marketing`), and whether it starts at onboarding (`-demoOnboarding`).
 public struct LaunchOptions: Sendable, Equatable {
     /// Whether to run the demo: seeded stores in memory, a radio that goes nowhere, and a fixed identity.
     public var seedDemo = false
@@ -13,6 +13,8 @@ public struct LaunchOptions: Sendable, Equatable {
     public var demoRadio = RadioState.on
     /// Who and what the demo seeds.
     public var demoScene = DemoScene.edgeCases
+    /// Whether the demo starts at onboarding, as a first run does, rather than at the chat list. The UI tests walk it.
+    public var demoOnboarding = false
 
     /// The options in `arguments`, the process's own. Anything unknown is left for the system.
     public init(arguments: [String]) {
@@ -23,6 +25,7 @@ public struct LaunchOptions: Sendable, Equatable {
         if let flag = arguments.firstIndex(of: "-demoScene"), arguments.indices.contains(flag + 1) {
             demoScene = DemoScene(rawValue: arguments[flag + 1]) ?? .edgeCases
         }
+        demoOnboarding = arguments.contains("-demoOnboarding")
     }
 
     private static let radioStates: [String: RadioState] = [

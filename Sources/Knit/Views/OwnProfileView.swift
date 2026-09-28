@@ -26,19 +26,19 @@
                     Toggle(Copy.Profile.openToChat, isOn: $model.openToChat)
                         .accessibilityIdentifier(AccessibilityID.profileOpenToChat)
                 } header: {
-                    Text(Copy.Profile.publicSection)
+                    SectionNote(Copy.Profile.publicSection)
                 } footer: {
-                    Text(Copy.Profile.openToChatFooter)
+                    SectionNote(Copy.Profile.openToChatFooter)
                 }
                 Section {
-                    LabeledContent(Copy.Profile.aliasLabel, value: model.alias)
+                    ValueRow(Copy.Profile.aliasLabel, value: model.alias)
                         .accessibilityIdentifier(AccessibilityID.profileAlias)
                     NodeIdRow(nodeId: model.nodeId)
                         .accessibilityIdentifier(AccessibilityID.profileNodeId)
                 } header: {
-                    Text(Copy.Profile.deviceSection)
+                    SectionNote(Copy.Profile.deviceSection)
                 } footer: {
-                    Text(Copy.Profile.aliasFooter)
+                    SectionNote(Copy.Profile.aliasFooter)
                 }
             }
             .navigationTitle(Copy.Profile.title)
@@ -71,7 +71,7 @@
                 if let remaining {
                     Text(Copy.Profile.remaining(remaining))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.secondaryText)
                 }
             }
         }

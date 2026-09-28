@@ -16,6 +16,7 @@
             List {
                 Section {
                     StatusLine(status: model.status) { Task { await model.start() } }
+                        .accessibilityIdentifier(AccessibilityID.chatListStatus)
                 }
                 if state.showsGettingStarted {
                     Section {
@@ -40,6 +41,7 @@
                     NavigationLink(value: Route.settings) {
                         Label(Copy.ChatList.settings, systemImage: "gearshape")
                     }
+                    .accessibilityIdentifier(AccessibilityID.chatListSettings)
                 }
             }
         }
@@ -54,9 +56,11 @@
                 LabeledContent(Copy.ChatList.requests) {
                     Text(count, format: .number)
                         .monospacedDigit()
+                        .foregroundStyle(Palette.secondaryText)
                 }
             }
             .accessibilityValue(Copy.ChatList.requestCount(count))
+            .accessibilityIdentifier(AccessibilityID.chatListRequests)
         }
     }
 
@@ -71,7 +75,7 @@
                     Text(status.line)
                 } icon: {
                     Image(systemName: symbol)
-                        .foregroundStyle(status.isWarning ? .orange : .accentColor)
+                        .foregroundStyle(status.isWarning ? Palette.warning : Palette.accent)
                 }
                 if status.offersStart {
                     Button(Copy.Status.start, action: start)
@@ -84,7 +88,7 @@
                 if case .linked = status {
                     Text(Copy.Status.boundary)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.secondaryText)
                 }
             }
             .accessibilityElement(children: .contain)
@@ -123,11 +127,11 @@
                 Text(Copy.ChatList.gettingStartedTitle)
                     .font(.headline)
                 Text(Copy.ChatList.gettingStartedBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.secondaryText)
                 NavigationLink(value: Route.chat(Conversations.nearby)) {
                     Text(Copy.ChatList.gettingStartedAction)
                 }
-                .buttonStyle(.borderedProminent)
+                .prominentButton()
             }
             .padding(.vertical, Layout.tight)
         }
@@ -136,14 +140,18 @@
     /// One thread: one VoiceOver element that reads the title, the preview, the time and the tick.
     private struct ChatRowView: View {
         let row: ChatRow
+        @Environment(\.dynamicTypeSize) private var typeSize
 
         var body: some View {
             HStack(spacing: Layout.medium) {
-                Image(systemName: row.isRoom ? "person.3.fill" : "person.crop.circle.fill")
-                    .font(.title)
-                    .foregroundStyle(row.isRoom ? Color.accentColor : .secondary)
-                    .frame(width: Layout.glyphColumn)
-                    .accessibilityHidden(true)
+                // At the accessibility sizes the glyph would take a third of the row from the title, which says the same.
+                if !typeSize.isAccessibilitySize {
+                    Image(systemName: row.isRoom ? "person.3.fill" : "person.crop.circle.fill")
+                        .font(.title)
+                        .foregroundStyle(row.isRoom ? Palette.accent : Palette.secondaryText)
+                        .frame(width: Layout.glyphColumn)
+                        .accessibilityHidden(true)
+                }
                 VStack(alignment: .leading, spacing: Layout.hairline) {
                     RowTitle(row: row)
                     HStack(spacing: Layout.tight) {
@@ -152,7 +160,7 @@
                         }
                         Text(row.preview ?? Copy.ChatList.noMessages)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Palette.secondaryText)
                             .lineLimit(Layout.previewLines)
                     }
                 }
@@ -164,12 +172,15 @@
     /// A row's first line: the title, its badges, and when the newest message was sent.
     private struct RowTitle: View {
         let row: ChatRow
+        @Environment(\.dynamicTypeSize) private var typeSize
 
         var body: some View {
-            HStack {
+            // One line while it fits; at the accessibility sizes the time goes under a title that may wrap.
+            let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading)) : AnyLayout(HStackLayout())
+            layout {
                 Text(row.title)
                     .font(.headline)
-                    .lineLimit(1)
+                    .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                 if row.isVerified {
                     Image(systemName: "checkmark.seal.fill")
                         .foregroundStyle(.tint)
@@ -178,14 +189,16 @@
                 if row.isLinked {
                     Image(systemName: "dot.radiowaves.left.and.right")
                         .font(.caption)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Palette.positive)
                         .accessibilityLabel(Copy.ChatList.inRange)
                 }
-                Spacer()
+                if !typeSize.isAccessibilitySize {
+                    Spacer()
+                }
                 if let at = row.lastMessageAt {
                     Text(Date(milliseconds: at), format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.secondaryText)
                 }
             }
         }
@@ -199,7 +212,7 @@
         var body: some View {
             Image(systemName: symbol)
                 .font(.caption)
-                .foregroundStyle(status == .delivered ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .foregroundStyle(status == .delivered ? AnyShapeStyle(.tint) : AnyShapeStyle(Palette.secondaryText))
                 .accessibilityLabel(status.label)
         }
 

@@ -23,6 +23,8 @@ import Testing
         #expect(LaunchOptions(arguments: ["-seedDemo", "-demoScene", "edge-cases"]).demoScene == .edgeCases)
         #expect(LaunchOptions(arguments: ["-seedDemo", "-demoScene", "sideways"]).demoScene == .edgeCases)
         #expect(LaunchOptions(arguments: ["-seedDemo", "-demoScene"]).demoScene == .edgeCases, "a flag with no value")
+        #expect(!demo.demoOnboarding, "the demo starts at the chat list")
+        #expect(LaunchOptions(arguments: ["-seedDemo", "-demoOnboarding"]).demoOnboarding)
     }
 
     @Test(arguments: DemoScene.allCases)

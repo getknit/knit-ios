@@ -37,21 +37,21 @@
             VStack(spacing: Layout.large) {
                 Image(systemName: "lock.fill")
                     .font(.largeTitle)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.secondaryText)
                     .accessibilityHidden(true)
                 Text(Copy.Launch.waitingTitle)
                     .font(.title2.bold())
                 Text(Copy.Launch.waitingBody)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.secondaryText)
                 if !reason.isEmpty {
                     Text(verbatim: reason)
                         .font(.caption.monospaced())
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Palette.secondaryText)
                         .textSelection(.enabled)
                 }
                 Button(Copy.Launch.retry, action: retry)
-                    .buttonStyle(.borderedProminent)
+                    .prominentButton()
             }
             .padding(Layout.spacious)
         }

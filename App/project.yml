@@ -51,16 +51,38 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.dev
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit
+  # The Simulator's UI tests and accessibility audit (`scripts/check.sh uitest`). The sources live under Tests/ so
+  # both linters see them, and AccessibilityID.swift comes straight from KnitAppCore, so the ids have one source.
+  KnitUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ../Tests/KnitUITests
+      - path: ../Sources/KnitAppCore/AccessibilityID.swift
+    dependencies:
+      - target: KnitApp
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.uitests
+        TARGETED_DEVICE_FAMILY: "1,2"
 schemes:
   Knit:
     build:
       targets:
         KnitApp: all
+        KnitUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - KnitUITests
     run:
       config: Debug
       # The launch arguments in .agents/context/commands.md, all off. Tick the ones a run needs.
       commandLineArguments:
         "-seedDemo": false
+        "-demoOnboarding": false
         "-demoScene marketing": false
         "-demoScene edge-cases": false
         "-demoRadio on": false

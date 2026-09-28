@@ -23,7 +23,7 @@
                         ToolbarItem(placement: .principal) {
                             Text(progress)
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Palette.secondaryText)
                         }
                     }
                 }
@@ -36,20 +36,34 @@
     private struct PageButton: View {
         let title: String
         let identifier: String
+        /// What the page scrolls on, which the button's band matches.
+        var backdrop = Color(uiColor: .systemGroupedBackground)
         let action: () -> Void
 
         var body: some View {
             Button(title, action: action)
-                .buttonStyle(.borderedProminent)
+                .prominentButton()
                 .controlSize(.large)
                 .frame(maxWidth: .infinity)
                 .padding()
+                // Opaque: at the largest sizes the page's text scrolls under the button, and read through it.
+                .background(backdrop)
                 .accessibilityIdentifier(identifier)
         }
     }
 
     private struct WelcomePage: View {
         let model: OnboardingModel
+        @Environment(\.dynamicTypeSize) private var typeSize
+
+        private var button: PageButton {
+            PageButton(
+                title: Copy.Onboarding.getStarted,
+                identifier: AccessibilityID.onboardingNext,
+                backdrop: Color(uiColor: .systemBackground),
+                action: model.next
+            )
+        }
 
         var body: some View {
             ScrollView {
@@ -59,18 +73,25 @@
                             .font(.largeTitle.bold())
                         Text(Copy.Onboarding.welcomeTagline)
                             .font(.title3)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Palette.secondaryText)
                     }
                     Point(symbol: "antenna.radiowaves.left.and.right", title: Copy.Onboarding.hopTitle, detail: Copy.Onboarding.hopBody)
                     Point(symbol: "lock.fill", title: Copy.Onboarding.sealedTitle, detail: Copy.Onboarding.sealedBody)
                     Point(symbol: "person.3.fill", title: Copy.Onboarding.carryTitle, detail: Copy.Onboarding.carryBody)
+                    // At the accessibility sizes the button ends the page instead of covering most of it.
+                    if typeSize.isAccessibilitySize {
+                        button
+                    }
                 }
                 .padding(Layout.page)
             }
-            .safeAreaInset(edge: .bottom) {
-                PageButton(title: Copy.Onboarding.getStarted, identifier: AccessibilityID.onboardingNext, action: model.next)
-            }
+            // Before the inset, so the page's id stays off its button, which has one of its own.
             .accessibilityIdentifier(AccessibilityID.onboardingWelcome)
+            .safeAreaInset(edge: .bottom) {
+                if !typeSize.isAccessibilitySize {
+                    button
+                }
+            }
         }
     }
 
@@ -91,7 +112,7 @@
                     Text(title)
                         .font(.headline)
                     Text(detail)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.secondaryText)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -101,6 +122,15 @@
     private struct NamePage: View {
         @Bindable var model: OnboardingModel
         @FocusState private var focused: Bool
+        @Environment(\.dynamicTypeSize) private var typeSize
+
+        private var button: PageButton {
+            PageButton(
+                title: model.skipsName ? Copy.Onboarding.nameSkip : Copy.Onboarding.nameNext,
+                identifier: AccessibilityID.onboardingNext,
+                action: model.next
+            )
+        }
 
         var body: some View {
             Form {
@@ -114,18 +144,33 @@
                 } header: {
                     PageHeading(text: Copy.Onboarding.nameTitle)
                 } footer: {
-                    Text(Copy.Onboarding.nameBody(alias: model.alias))
+                    SectionNote(Copy.Onboarding.nameBody(alias: model.alias))
                 }
+                InlinePageButton(button: button, inline: typeSize.isAccessibilitySize)
             }
             .onAppear { focused = true }
-            .safeAreaInset(edge: .bottom) {
-                PageButton(
-                    title: model.skipsName ? Copy.Onboarding.nameSkip : Copy.Onboarding.nameNext,
-                    identifier: AccessibilityID.onboardingNext,
-                    action: model.next
-                )
-            }
             .accessibilityIdentifier(AccessibilityID.onboardingNamePage)
+            .safeAreaInset(edge: .bottom) {
+                if !typeSize.isAccessibilitySize {
+                    button
+                }
+            }
+        }
+    }
+
+    /// A form page's button as its last section, at the accessibility sizes, where pinned it would cover most of the page.
+    private struct InlinePageButton: View {
+        let button: PageButton
+        let inline: Bool
+
+        var body: some View {
+            if inline {
+                Section {
+                    button
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                }
+            }
         }
     }
 
@@ -136,7 +181,8 @@
         var body: some View {
             Text(text)
                 .font(.title2.bold())
-                .foregroundStyle(.primary)
+                // `Color.primary`, not the hierarchical `.primary`, which a section header resolves to its own gray.
+                .foregroundStyle(Color.primary)
                 .textCase(nil)
         }
     }
@@ -144,6 +190,13 @@
     private struct PermissionsPage: View {
         let model: OnboardingModel
         @Environment(\.scenePhase) private var scenePhase
+        @Environment(\.dynamicTypeSize) private var typeSize
+
+        private var button: PageButton {
+            PageButton(title: Copy.Onboarding.start, identifier: AccessibilityID.onboardingStart) {
+                Task { await model.finish() }
+            }
+        }
 
         var body: some View {
             Form {
@@ -168,7 +221,9 @@
                     PageHeading(text: Copy.Onboarding.permissionsTitle)
                 } footer: {
                     BluetoothFooter(grant: model.bluetooth)
+                        .foregroundStyle(Palette.secondaryText)
                 }
+                InlinePageButton(button: button, inline: typeSize.isAccessibilitySize)
             }
             .task { await model.refresh() }
             .onChange(of: scenePhase) { _, phase in
@@ -176,12 +231,12 @@
                     Task { await model.refresh() }
                 }
             }
+            .accessibilityIdentifier(AccessibilityID.onboardingPermissions)
             .safeAreaInset(edge: .bottom) {
-                PageButton(title: Copy.Onboarding.start, identifier: AccessibilityID.onboardingStart) {
-                    Task { await model.finish() }
+                if !typeSize.isAccessibilitySize {
+                    button
                 }
             }
-            .accessibilityIdentifier(AccessibilityID.onboardingPermissions)
         }
     }
 
@@ -252,12 +307,12 @@
                         if optional {
                             Text(Copy.Onboarding.optional)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Palette.secondaryText)
                         }
                     }
                     Text(detail)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.secondaryText)
                 }
                 Spacer()
                 outcome
@@ -276,10 +331,10 @@
             case .allowed:
                 Label(Copy.Onboarding.allowed, systemImage: "checkmark.circle.fill")
                     .labelStyle(.iconOnly)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Palette.positive)
             case .refused:
                 Image(systemName: "xmark.circle")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.secondaryText)
                     .accessibilityHidden(true)
             }
         }

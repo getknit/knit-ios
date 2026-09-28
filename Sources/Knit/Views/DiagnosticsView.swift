@@ -16,13 +16,15 @@
 
         var body: some View {
             Form {
-                Section(Copy.Diagnostics.thisDevice) {
-                    LabeledContent(Copy.Profile.aliasLabel, value: model.alias)
+                Section {
+                    ValueRow(Copy.Profile.aliasLabel, value: model.alias)
                     NodeIdRow(nodeId: model.nodeId)
                     if let state = model.state {
-                        LabeledContent(Copy.Diagnostics.bluetooth, value: state.radio)
-                        LabeledContent(Copy.Diagnostics.mesh, value: state.isRunning ? Copy.Diagnostics.running : Copy.Diagnostics.stopped)
+                        ValueRow(Copy.Diagnostics.bluetooth, value: state.radio)
+                        ValueRow(Copy.Diagnostics.mesh, value: state.isRunning ? Copy.Diagnostics.running : Copy.Diagnostics.stopped)
                     }
+                } header: {
+                    SectionNote(Copy.Diagnostics.thisDevice)
                 }
                 if let state = model.state {
                     PeerSection(title: Copy.Diagnostics.linked(state.linked.count), peers: state.linked, none: Copy.Diagnostics.noneLinked)
@@ -31,14 +33,7 @@
                     if !state.known.isEmpty {
                         PeerSection(title: Copy.Diagnostics.known(state.known.count), peers: state.known, none: nil)
                     }
-                    Section(Copy.Diagnostics.counters) {
-                        ForEach(state.counters) { counter in
-                            LabeledContent(counter.id) {
-                                Text(counter.count, format: .number)
-                                    .monospacedDigit()
-                            }
-                        }
-                    }
+                    CounterSection(counters: state.counters)
                 }
                 if model.mintsIdentities {
                     TestIdentitySection(model: model)
@@ -55,6 +50,25 @@
         }
     }
 
+    /// The mesh's counters, by name.
+    private struct CounterSection: View {
+        let counters: [DiagnosticsState.Counter]
+
+        var body: some View {
+            Section {
+                ForEach(counters) { counter in
+                    LabeledContent(counter.id) {
+                        Text(counter.count, format: .number)
+                            .monospacedDigit()
+                            .foregroundStyle(Palette.secondaryText)
+                    }
+                }
+            } header: {
+                SectionNote(Copy.Diagnostics.counters)
+            }
+        }
+    }
+
     /// A list of peers, each opening its profile.
     private struct PeerSection: View {
         let title: String
@@ -62,10 +76,10 @@
         let none: String?
 
         var body: some View {
-            Section(title) {
+            Section {
                 if peers.isEmpty, let none {
                     Text(none)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.secondaryText)
                 }
                 ForEach(peers) { peer in
                     NavigationLink(value: Route.peer(peer.id)) {
@@ -73,16 +87,18 @@
                             Text(peer.title)
                             Text(peer.detail)
                                 .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Palette.secondaryText)
                             if let clock = peer.clock {
                                 Text(clock)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Palette.secondaryText)
                             }
                         }
                         .accessibilityElement(children: .combine)
                     }
                 }
+            } header: {
+                SectionNote(title)
             }
         }
     }
@@ -106,9 +122,9 @@
                         .textSelection(.enabled)
                 }
             } header: {
-                Text(Copy.TestIdentity.title)
+                SectionNote(Copy.TestIdentity.title)
             } footer: {
-                Text(Copy.TestIdentity.footer)
+                SectionNote(Copy.TestIdentity.footer)
             }
         }
     }

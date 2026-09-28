@@ -9,7 +9,8 @@
 - **After touching `KnitWire`, `KnitCrypto` or `KnitMesh`,** `scripts/check.sh all` passes, sanitizers
   included. Wire code also gets `scripts/fuzz.sh`.
 - **After touching `Knit`, `KnitBLE`, `App/` or `xtool.yml`,** `scripts/check.sh ios` passes, and so does
-  `scripts/mac.sh run scripts/check.sh xcode` on the Mac. If xtool fails in clang's module scan, run
+  `scripts/mac.sh run scripts/check.sh xcode` on the Mac. A change to a view also runs
+  `scripts/mac.sh run scripts/check.sh uitest`, the accessibility audit (ADR 2026-09.jcdx). If xtool fails in clang's module scan, run
   `scripts/xtool-sdk-fixup.sh` first (`.agents/context/toolchain.md`).
 - **Never commit build products:** `.build*/`, `xtool/`, `Fuzz/Crashes/`.
 - **A dependency change** (a package, the Swift toolchain, SwiftLint, a CI image) starts with the

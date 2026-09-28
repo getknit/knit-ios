@@ -117,16 +117,20 @@ explicit direction.** Update this file in the change that ships an item.
   - **`KnitBLE`:** the CoreBluetooth radio, with GATT reads on `GattPayloads`' rules.
   - **The mesh for the app:** it reports the radio's state, stops and starts again on the same radio, marks a
     peer verified, and stores list each thread's newest message.
-  - **Still owed:** no unread counts yet, and no block, delete or Sign out. The Mac (P7) still owes the UI tests
-    and the accessibility audit.
+  - **Still owed:** no unread counts yet, and no block, delete or Sign out.
 - **P7, the Mac:** begun on 2026-09-27. `mac.example` has Xcode 27.0 and the tools, `check.sh fast` passes
   there, and the `macos` runner is online (`.agents/context/toolchain.md`, "The Mac Mini"). XcodeGen
   generates the app project (ADR 2026-09.de8f), which builds for the iPhone and the Simulator in
   `build:ios:xcode` and runs in the Simulator. The Mac signs in its desktop session through a launchd job, so
   ssh and CI can sign and renew the free profile (ADR 2026-09.zawh): `check.sh device` and the
   `build:ios:signed` job build a signed iPhone app. The `mac-docker-runner` runner takes untagged Linux jobs on
-  arm64 beside linux-host and service (2026-09-28, `toolchain.md`). Still owed: installing on the iPhone from the
-  Mac, the test job, the UI tests and the accessibility audit, and checklist M.
+  arm64 beside linux-host and service (2026-09-28, `toolchain.md`).
+  - **Tests (2026-09-28):** `test:macos` runs the whole suite on the Mac, where `KnitBLETests` runs `L2CAPLink`
+    over bound stream pairs. `test:ios:simulator` walks every MVP screen through the accessibility audit, at the
+    default and the largest text size, and all 7 walks pass (ADR 2026-09.jcdx). The audit's first run found over a
+    hundred issues. Fixing them gave the app a WCAG AA palette, opaque bars under text, and rows and onboarding that
+    rearrange at the accessibility sizes. MVP item 12's audit half is met.
+  - **Still owed:** installing on the iPhone from the Mac, and checklist M.
 - **P8, the iPhone:** begun early on 2026-09-26, without the Mac: an iPhone 12 on iOS 27.0, installed over USB
   by xtool on free provisioning. The app runs and links the Linux peer and the lab's Android phones. Against
   the peer, items 3 to 5 pass: safety numbers match, the room works both ways with ticks, and DMs go request,

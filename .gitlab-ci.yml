@@ -9,7 +9,7 @@
 #     for `build:ios`, which needs xtool and the Darwin SDK. The SDK never goes into an image or a shared cache:
 #     Apple's terms tie it to that machine;
 #   - `macos`, the Mac Mini's shell runner, for `build:ios:xcode` (ADR 2026-09.de8f), the signed
-#     `build:ios:signed` (ADR 2026-09.zawh), and `test:macos`.
+#     `build:ios:signed` (ADR 2026-09.zawh), `test:macos`, and `test:ios:simulator` (ADR 2026-09.jcdx).
 # `.agents/context/toolchain.md` has the runner setup.
 
 workflow:
@@ -175,6 +175,22 @@ test:macos:
     when: always
     reports:
       junit: .build/xunit-swift-testing.xml
+
+test:ios:simulator:
+  # The UI tests and the accessibility audit on every MVP screen, at the default and the largest text size
+  # (ADR 2026-09.jcdx). The result bundle keeps the largest-size screenshots and each failing element's.
+  extends: .mac
+  stage: test
+  needs: []
+  variables:
+    GIT_CLEAN_FLAGS: -ffdx -e /.build-xcode/
+  script:
+    - scripts/check.sh uitest
+  artifacts:
+    when: always
+    paths:
+      - .build-xcode/uitest.xcresult/
+    expire_in: 1 week
 
 test:coverage:
   extends: .swift

@@ -6,6 +6,7 @@
     /// Another person's profile: who they are, their safety number, and Message (MVP items 3 and 5).
     internal struct PeerProfileView: View {
         @State private var model: PeerProfileModel
+        @Environment(\.dynamicTypeSize) private var typeSize
 
         init(nodeId: NodeId, session: AppSession) {
             _model = State(initialValue: PeerProfileModel(nodeId: nodeId, session: session))
@@ -18,13 +19,18 @@
                     PeerHeader(state: state)
                     if !model.isSelf {
                         NavigationLink(value: Route.chat(state.conversationId)) {
-                            Label(Copy.Profile.message, systemImage: "message")
+                            // At the accessibility sizes the glyph left the word too little room, and it broke.
+                            if typeSize.isAccessibilitySize {
+                                Text(Copy.Profile.message)
+                            } else {
+                                Label(Copy.Profile.message, systemImage: "message")
+                            }
                         }
                         .accessibilityIdentifier(AccessibilityID.profileDetailsMessage)
                     }
                 }
                 Section {
-                    LabeledContent(Copy.Profile.aliasLabel, value: state.alias)
+                    ValueRow(Copy.Profile.aliasLabel, value: state.alias)
                         .accessibilityIdentifier(AccessibilityID.profileDetailsAlias)
                     NodeIdRow(nodeId: state.nodeId.string)
                         .accessibilityIdentifier(AccessibilityID.profileDetailsNodeId)
@@ -54,7 +60,7 @@
                     systemImage: state.isLinked ? "dot.radiowaves.left.and.right" : "circle.dashed"
                 )
                 .font(.subheadline)
-                .foregroundStyle(state.isLinked ? .green : .secondary)
+                .foregroundStyle(state.isLinked ? Palette.positive : Palette.secondaryText)
                 .accessibilityIdentifier(AccessibilityID.profileDetailsPresence)
                 if !state.status.isEmpty {
                     Text(state.status)
@@ -76,6 +82,7 @@
             LabeledContent(Copy.Profile.nodeIdLabel) {
                 Text(nodeId)
                     .font(.footnote.monospaced())
+                    .foregroundStyle(Palette.secondaryText)
                     .textSelection(.enabled)
             }
         }
@@ -92,7 +99,7 @@
                     state.isVerified ? Copy.Profile.verified : Copy.Profile.notVerified,
                     systemImage: state.isVerified ? "checkmark.seal.fill" : "seal"
                 )
-                .foregroundStyle(state.isVerified ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .foregroundStyle(state.isVerified ? AnyShapeStyle(.tint) : AnyShapeStyle(Palette.secondaryText))
                 .accessibilityIdentifier(AccessibilityID.profileDetailsVerified)
                 if let number = state.safetyNumber {
                     SafetyNumberView(lines: number, name: state.title)
@@ -101,10 +108,10 @@
                     }
                 } else {
                     Text(Copy.Profile.noKey)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.secondaryText)
                 }
             } header: {
-                Text(Copy.Profile.encryptionSection)
+                SectionNote(Copy.Profile.encryptionSection)
             }
         }
     }
@@ -123,7 +130,7 @@
                 }
                 Text(Copy.Profile.safetyNumberCaption(name))
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.secondaryText)
             }
             .accessibilityElement(children: .combine)
             .textSelection(.enabled)

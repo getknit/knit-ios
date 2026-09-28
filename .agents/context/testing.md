@@ -40,8 +40,11 @@ ladder, not the first.
    `L2CAPLink` over bound stream pairs (`Stream.getBoundStreams`) in place of a CoreBluetooth channel, with a far
    end on a stream thread of its own. It covers write order, the 8 KiB cuts, the digest slot, back-pressure and
    both ways a link ends. CoreBluetooth's own delegates need a radio, so the Mac's run and the iPhone's cover
-   them. Then Simulator XCUITest with `performAccessibilityAudit`, and a native Mac run against Android and the
-   Linux peer: checklist M.
+   them. `KnitUITests` walks every MVP screen in the Simulator on `-seedDemo` (`scripts/check.sh uitest`,
+   `test:ios:simulator`), each through `performAccessibilityAudit`, once at the default text size and once at the
+   largest, where it keeps a screenshot of every screen. `AuditPolicy` names what the audit may report without
+   failing and why (ADR 2026-09.jcdx); everything else fails the gate. The sources live in `Tests/KnitUITests/`,
+   which SwiftPM ignores and XcodeGen builds. Then a native Mac run against Android and the Linux peer: checklist M.
 10. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`. `scripts/interop.py iphone` drives the
     iPhone through a debug build's USB bridge and an Android phone through knit-next's, for items 2 to 6
     (ADR 2026-09.kwa8). `iphone-relay` adds a peer on `hci0` beyond the iPhone for item 7, `iphone-wake`

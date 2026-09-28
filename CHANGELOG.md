@@ -24,6 +24,9 @@ document:
 - Knit for iPhone has its first screens: onboarding, the Nearby room, direct messages and message requests,
   profiles with safety numbers, Settings and Diagnostics. It finds people over Bluetooth while it's open, and
   keeps its open links going in the background.
+- Knit stays readable at the largest text sizes, and its text and buttons meet the contrast WCAG AA sets for
+  normal text. Chats, message requests and onboarding rearrange as the text grows, so names and buttons keep
+  their room.
 
 ## About this file
 

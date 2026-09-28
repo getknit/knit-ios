@@ -25,11 +25,13 @@
                         NotificationControl(authorization: model.notifications) { Task { await model.requestNotifications() } }
                     }
                 } footer: {
-                    Text(Copy.Settings.notificationsFooter)
+                    SectionNote(Copy.Settings.notificationsFooter)
                 }
                 Section {
                     NavigationLink(Copy.Settings.about, value: Route.about)
+                        .accessibilityIdentifier(AccessibilityID.settingsAbout)
                     NavigationLink(Copy.Settings.diagnostics, value: Route.diagnostics)
+                        .accessibilityIdentifier(AccessibilityID.settingsDiagnostics)
                 }
             }
             .navigationTitle(Copy.Settings.title)
@@ -51,13 +53,15 @@
         var body: some View {
             Section {
                 Button(isRunning ? Copy.Settings.stop : Copy.Settings.start, action: toggle)
+                    .accessibilityIdentifier(AccessibilityID.settingsMesh)
             } header: {
-                Text(Copy.Settings.meshSection)
+                SectionNote(Copy.Settings.meshSection)
             } footer: {
                 VStack(alignment: .leading, spacing: Layout.small) {
                     Text(Copy.Settings.stopFooter)
                     Text(Copy.Status.boundary)
                 }
+                .foregroundStyle(Palette.secondaryText)
             }
         }
     }

@@ -18,6 +18,7 @@ tree, so switching between them never rebuilds the plain debug tree.
 | `scripts/check.sh adr` / `lintorama` | the ADR router check; markdown, YAML, shell and editorconfig | after touching docs |
 | `scripts/check.sh ios` | the SDK fixup check, then `xtool dev build` | after touching `Knit`, `KnitBLE` or `App/` |
 | `scripts/check.sh xcode` | on the Mac: XcodeGen, then `xcodebuild` for the iPhone and the Simulator, unsigned | the same, through `scripts/mac.sh run` |
+| `scripts/check.sh uitest` | on the Mac: `KnitUITests` in the Simulator, every MVP screen through the accessibility audit at the default and the largest text size, into `.build-xcode/uitest.xcresult` | after touching a view, `Palette` or `App/`, through `scripts/mac.sh run` |
 | `scripts/check.sh device` | on the Mac: the signed iPhone build, in the desktop session; renews the profile and prints its expiry | before installing on the iPhone |
 
 ## Other scripts
@@ -125,6 +126,7 @@ Launch arguments, set in the scheme on the Mac (P7):
   people, a room conversation, an accepted DM and a message request.
 - `-demoRadio on|off|unauthorized|unsupported` (with `-seedDemo`) is the state that radio reports, which is how
   the status line's messages are checked, the unsupported device's among them (MVP item 10).
+- `-demoOnboarding` (with `-seedDemo`) starts at onboarding, as a first run does. The UI tests walk it.
 - `-demoScene edge-cases|marketing` (with `-seedDemo`) picks what is seeded. `edge-cases`, the default, is the
   cast above: two people with one name, one with none, and nobody linked. `marketing` is for store screenshots
   and social posts, after knit-next's hiking theme: seven named people, a room, two DMs and a request, with

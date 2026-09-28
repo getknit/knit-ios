@@ -25,12 +25,12 @@
                     ForEach(ThirdPartyNotice.shipped) { notice in
                         if let url = URL(string: notice.url) {
                             Link(destination: url) {
-                                LabeledContent(notice.name, value: notice.license)
+                                ValueRow(notice.name, value: notice.license)
                             }
                         }
                     }
                 } header: {
-                    Text(Copy.About.notices)
+                    SectionNote(Copy.About.notices)
                 }
             }
             .navigationTitle(Copy.About.title)

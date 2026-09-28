@@ -3,7 +3,7 @@
 #
 #     scripts/check.sh fast        # format, lint, build, unit tests (the pre-push hook)
 #     scripts/check.sh all         # every gate that runs on Linux
-#     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama ios xcode device
+#     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama ios xcode uitest device
 #
 # Each build variant (coverage, TSan, ASan, analyze) gets its own --scratch-path, so switching between them never
 # rebuilds the plain debug tree. `.agents/context/commands.md` explains when to run which.
@@ -201,6 +201,18 @@ gate_xcode() {
 	check_xcode_app
 }
 
+# The UI tests and the accessibility audit, in the Simulator (MVP item 12): every MVP screen on -seedDemo's stores,
+# each through performAccessibilityAudit. The Simulator build signs to run locally, which needs no Keychain, so this
+# runs over ssh too. KNIT_SIMULATOR picks the device; the result bundle keeps each failing audit's screenshot.
+gate_uitest() {
+	step "xcodebuild test (UI tests and the accessibility audit, in the Simulator)"
+	xcode_project uitest
+	local results=.build-xcode/uitest.xcresult
+	rm -rf "$results"
+	xcodebuild "${xcode_build[@]}" -destination "platform=iOS Simulator,name=${KNIT_SIMULATOR:-iPhone 18 Pro}" \
+		-resultBundlePath "$results" -collect-test-diagnostics never test | "${xcode_pretty[@]}"
+}
+
 # The signed iPhone build (ADR 2026-09.zawh). Signing needs the login Keychain, which only the desktop session has
 # unlocked, so xcodebuild runs there through scripts/mac-desktop.sh, from ssh and CI alike. -allowProvisioningUpdates
 # lets it renew the free team's 7-day profile. The team comes from App/Local.xcconfig or $KNIT_DEVELOPMENT_TEAM.
@@ -242,9 +254,9 @@ run() {
 case "${1:-fast}" in
 fast) run format lint build test ;;
 all) run format lint adr build test coverage tsan asan analyze lintorama ;;
-format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | ios | xcode | device) run "$@" ;;
+format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | ios | xcode | uitest | device) run "$@" ;;
 *)
-	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|ios|xcode|device]" >&2
+	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|ios|xcode|uitest|device]" >&2
 	exit 2
 	;;
 esac

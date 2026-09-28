@@ -84,7 +84,7 @@
         /// The environment `options` ask for. Throws when the Keychain or the database cannot be read yet, before
         /// the first unlock since a reboot: the app then waits for protected data rather than making a new identity.
         static func make(_ options: LaunchOptions) throws -> AppEnvironment {
-            options.seedDemo ? try demo(radio: options.demoRadio, scene: options.demoScene) : try live()
+            options.seedDemo ? try demo(options) : try live()
         }
 
         private static func live() throws -> AppEnvironment {
@@ -109,20 +109,20 @@
             #endif
         }
 
-        private static func demo(radio: RadioState, scene: DemoScene) throws -> AppEnvironment {
+        private static func demo(_ options: LaunchOptions) throws -> AppEnvironment {
             guard let identity = DemoSeed.identity else {
                 throw SecretStoreError.unavailable("the demo identity")
             }
             let clock = SystemClock()
             let stores = MeshStores.inMemory()
-            DemoSeed.populate(stores, me: identity.nodeId, now: clock.wallMilliseconds(), scene: scene)
+            DemoSeed.populate(stores, me: identity.nodeId, now: clock.wallMilliseconds(), scene: options.demoScene)
             let parts = Parts(
                 identity: identity,
                 stores: stores,
-                radio: DemoRadio(state: radio),
+                radio: DemoRadio(state: options.demoRadio),
                 log: UnifiedLog(clock: clock),
-                preferences: MemoryPreferences(hasOnboarded: true),
-                linked: DemoSeed.linked(in: scene)
+                preferences: MemoryPreferences(hasOnboarded: !options.demoOnboarding),
+                linked: DemoSeed.linked(in: options.demoScene)
             )
             return compose(parts, replace: nil)
         }

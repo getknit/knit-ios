@@ -35,6 +35,7 @@
                             NavigationLink(value: Route.peer(peer)) {
                                 Label(Copy.Chat.profile, systemImage: "person.crop.circle")
                             }
+                            .accessibilityIdentifier(AccessibilityID.chatProfile)
                         }
                     }
                 }
@@ -87,7 +88,7 @@
             } else {
                 Text(state.isLinked ? Copy.Chat.inRange : Copy.Chat.outOfRange)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.secondaryText)
                 if state.messages.isEmpty {
                     Notice(symbol: "lock", text: Copy.Chat.directEmpty(state.title))
                 }
@@ -103,7 +104,7 @@
         var body: some View {
             Label(text, systemImage: symbol)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.secondaryText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Layout.tight)
@@ -161,7 +162,7 @@
                 }
             }
             .font(.caption2)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Palette.secondaryText)
         }
     }
 
@@ -174,7 +175,7 @@
                 if let remaining = model.remaining {
                     Text(Copy.Chat.remaining(remaining))
                         .font(.caption)
-                        .foregroundStyle(remaining == 0 ? .red : .secondary)
+                        .foregroundStyle(remaining == 0 ? Palette.critical : Palette.secondaryText)
                 }
                 HStack(alignment: .bottom) {
                     TextField(Copy.Chat.composerPlaceholder, text: $model.draft, axis: .vertical)
@@ -194,7 +195,8 @@
             }
             .padding(.horizontal)
             .padding(.vertical, Layout.small)
-            .background(.bar)
+            // Opaque, like the request bar: the newest message sits against it, and its material let the thread through.
+            .background(.background.secondary)
         }
     }
 
@@ -209,14 +211,15 @@
                     .font(.headline)
                 Text(Copy.Chat.requestBody)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.secondaryText)
                     .multilineTextAlignment(.center)
                 Button(Copy.Chat.accept, action: accept)
-                    .buttonStyle(.borderedProminent)
+                    .prominentButton()
             }
             .padding()
             .frame(maxWidth: .infinity)
-            .background(.bar)
+            // Opaque, for the same reason as the encryption sheet: the bar's material let the thread through.
+            .background(.background.secondary)
         }
     }
 
@@ -239,7 +242,9 @@
                     }
                 }
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
+            // Opaque: text over the glass sheet took its contrast from whatever the thread showed behind it.
+            .presentationBackground(.background)
         }
     }
 #endif

@@ -1,0 +1,67 @@
+---
+id: "2026-09.jcdx"
+slug: the-accessibility-audit-blocks
+title: "The accessibility audit blocks, with named exemptions and a largest-size walk"
+date: 2026-09-28
+topics: [accessibility, testing, ui, ci]
+---
+
+# ADR 2026-09.jcdx — The accessibility audit blocks, with named exemptions and a largest-size walk
+
+Status: Accepted (2026-09-28)
+
+**Context:** MVP item 12 wants the accessibility audit to find no errors on MVP screens. The first run of
+`performAccessibilityAudit` over every screen, on `-seedDemo` in the iPhone 18 Pro Simulator, reported more than
+a hundred issues. Most were real:
+
+- **Contrast:** the system's secondary gray measures 2.8 to 3.4:1 on the app's grouped backgrounds, and white on the
+  default blue 4.0:1, under WCAG AA's 4.5:1 for text.
+- **Materials:** text on the encryption sheet, the request bar and the composer took its contrast from the thread
+  showing through their glass.
+- **Layout:** at the largest text size a chat row squeezed "Nearby" to "Ne…" between its glyph and a three-line
+  time, and the onboarding button covered its page's text.
+
+Some were not defects. The Dynamic Type check resizes the text in place and reports whatever it then cannot
+measure: rows that scroll out of a lazy list, the last rows and footers of every form, and toolbar items, which
+the Large Content Viewer serves instead. A screenshot at the largest size shows those same elements scaling. The
+clipping check flags wrapped text: it flagged the chat list's status line, which the same screenshot shows whole.
+It also flags a one-line field, which scrolls rather than loses text. The contrast check reads a sheet's glass
+Done button against what lies behind the sheet (the button's own screenshot reads 6:1), reads the part of an
+element below the screen's edge as black, and fails the newest message of a thread at the largest size, black
+text on light gray. That last one held whatever the view did: an opaque composer, no text selection, no scroll
+edge effect, a settled scroll.
+
+**Decision:** the audit blocks. `scripts/check.sh uitest` runs `KnitUITests` in the Simulator on the `macos`
+runner as `test:ios:simulator`.
+
+- **The walks:** onboarding, the chat list and the room, a DM with its profile and encryption sheet, the requests,
+  Settings with each page and Stop, and the three radio states each walk every MVP screen at the default size.
+  `testEveryScreenAtTheLargestTextSize` walks them all again at AccessibilityXXXL and keeps a screenshot of every
+  screen.
+- **The fixes:** `Palette` defines text colors that pass 4.5:1 in light and dark, and the tint. Rows stack at the
+  accessibility sizes. Bars and sheets under text are opaque, and the onboarding button scrolls with its page at
+  those sizes.
+- **The exemptions,** in `AuditPolicy`, each with its reason:
+  - the Dynamic Type check, which the largest-size walk replaces;
+  - contrast on a disabled control, which WCAG 1.4.3 exempts;
+  - anything in or under a navigation bar;
+  - contrast of an element not wholly on screen;
+  - contrast that the element's own screenshot passes, darkest pixel against lightest, at 4.5:1;
+  - clipping of static text and text fields.
+
+The alternative a reader reaches for first is to accept every audit finding as a defect. That is the rule for
+what the app draws, but no change to the app clears these findings. The other is to audit only contrast and
+labels, which would have missed the real layout and material defects the full audit found.
+
+**Consequences / limits:**
+
+- **The pixel measurement trusts extremes.** It passes an element whose darkest and lightest pixels contrast
+  enough, so a pale label beside a dark glyph in one element could pass. SwiftUI rows here combine a glyph and text
+  only where the glyph is hidden from accessibility, and a gate run with the old gray put back failed every screen
+  it touched.
+- **Clipping is left to the eye.** No view limits its lines except the chat list's two-line preview. The
+  largest-size screenshots in the result bundle are the check, and a new `lineLimit` should come with one.
+- **Dark mode is designed, not audited.** `Palette`'s dark values pass on paper; the walks run in light only.
+- **The run takes six minutes,** about half of it the largest-size walk, on a runner that takes one job at a time.
+- **The guards:** `KnitUITests`, `AuditPolicy`, and the `test:ios:simulator` job, which carries no
+  `allow_failure`.

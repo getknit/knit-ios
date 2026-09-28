@@ -14,6 +14,7 @@
         var body: some Scene {
             WindowGroup {
                 RootView(launch: delegate.launch)
+                    .tint(Palette.accent)
             }
             .onChange(of: scenePhase) { _, phase in
                 delegate.launch.setActive(phase == .active)

@@ -16,6 +16,13 @@ public enum AccessibilityID {
     /// The button that finishes onboarding.
     public static let onboardingStart = "onboarding_start"
 
+    /// The chat list's status line: how many peers are linked, or why none can be.
+    public static let chatListStatus = "chat_list_status"
+    /// The chat list's way to Settings.
+    public static let chatListSettings = "chat_list_settings"
+    /// The chat list's way to the message requests.
+    public static let chatListRequests = "chat_list_requests"
+
     /// The chat list's rows, each `contact_<conversation id>` as on Android.
     public static func chatRow(_ conversationId: String) -> String {
         "contact_\(conversationId)"
@@ -34,6 +41,8 @@ public enum AccessibilityID {
 
     /// A verified DM's shield.
     public static let chatVerified = "chat_verified_shield"
+    /// A DM's way to the other person's profile.
+    public static let chatProfile = "chat_profile"
 
     /// A request's row, `request_row_<conversation id>`.
     public static func requestRow(_ conversationId: String) -> String {
@@ -77,6 +86,12 @@ public enum AccessibilityID {
     public static let settingsScreen = "screen_settings"
     /// Settings' profile row.
     public static let settingsProfileRow = "settings_profile_row"
+    /// Settings' Stop or Start button.
+    public static let settingsMesh = "settings_mesh"
+    /// Settings' way to About, Android's `settings_menu_about`.
+    public static let settingsAbout = "settings_menu_about"
+    /// Settings' way to Diagnostics.
+    public static let settingsDiagnostics = "settings_diagnostics"
     /// About.
     public static let aboutScreen = "screen_about"
     /// About's licence notice.
