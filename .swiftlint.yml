@@ -137,6 +137,13 @@ custom_rules:
     regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+CryptoKit\b'
     message: Import swift-crypto's Crypto, which is CryptoKit on Apple platforms and also builds on Linux.
     severity: error
+  no_mutex:
+    name: Lock, not Mutex
+    regex: '\bMutex\b'
+    excluded: 'Sources/KnitSync/'
+    match_kinds: [identifier, typeidentifier]
+    message: Use KnitSync's Lock. TSan on Linux cannot see Mutex's futex and reports races it rules out (ADR 2026-09.ahrr).
+    severity: error
   no_print:
     name: No print in shipped code
     regex: '(?<![\w.])print\('

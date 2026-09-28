@@ -188,10 +188,6 @@ explicit direction.** Update this file in the change that ships an item.
 
 ## Deferred by design
 
-- **A lock TSan can see.** TSan on Linux reports false races inside `Synchronization.Mutex` bodies, since it
-  cannot see the futex (`.agents/context/testing.md`). The fix is a pthread-backed lock beside `Mutex` and a
-  change to `.agents/rules/coding.md`; the maintainer chose on 2026-09-26 to live with the flake for now.
-
 - **The mesh lab:** multi-node scenarios over a lab transport and radio, `assertConverged`, seeded chaos runs
   and the mesh-lab-reviewer persona. The maintainer asked on 2026-09-25 to skip it for now, so P3 closed on
   unit tests, coverage and both sanitizers. Because the engine is synchronous, a later lab could run

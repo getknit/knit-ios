@@ -4,12 +4,12 @@
     import KnitMesh
     import KnitTestSupport
     import KnitWire
-    import Synchronization
+    import KnitSync
     import Testing
 
     /// A log that keeps its lines, for tests that check what was said.
     final class CapturingLog: KnitLog {
-        private let lines = Mutex<[String]>([])
+        private let lines = Lock<[String]>([])
 
         var all: [String] { lines.withLock { $0 } }
 

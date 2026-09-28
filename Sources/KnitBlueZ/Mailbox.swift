@@ -2,7 +2,7 @@
     import Glibc
     import KnitMesh
     import KnitWire
-    import Synchronization
+    import KnitSync
 
     /// What the radio's callers ask of its thread.
     internal enum RadioCommand: Equatable, Sendable {
@@ -28,7 +28,7 @@
 
         private static let drainSize = 64
 
-        private let state = Mutex(State())
+        private let state = Lock(State())
         /// The pipe's read end, which the loop polls. If `pipe` failed both ends are -1, which `poll` skips; the
         /// loop then sees commands at its next timeout instead of at once.
         let descriptor: Int32

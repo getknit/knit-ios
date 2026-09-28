@@ -3,9 +3,9 @@ import KnitControl
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitSync
 import KnitTestSupport
 import KnitWire
-import Synchronization
 import Testing
 
 /// The control surface on its own: what the app's bridge relies on beyond what `PeerNodeTests` covers through the
@@ -143,7 +143,7 @@ private struct ControlRig {
 private final class RecordingActions: ControlActions {
     private let me: NodeId
     private let refuses: Bool
-    private let recorded = Mutex<[String]>([])
+    private let recorded = Lock<[String]>([])
 
     init(me: NodeId, refuses: Bool = false) {
         self.me = me

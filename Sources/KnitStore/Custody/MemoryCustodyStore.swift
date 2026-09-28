@@ -1,5 +1,5 @@
+import KnitSync
 import KnitWire
-import Synchronization
 
 /// A ``CustodyStore`` in memory, for the Linux peer and the tests. It applies ``CustodyRules`` exactly as the SQL
 /// store will, keys frames by their ids' bytes (``ExactKey``), and is safe to share across threads.
@@ -23,7 +23,7 @@ public final class MemoryCustodyStore: CustodyStore {
     }
 
     private let limits: CustodyLimits
-    private let state = Mutex(State())
+    private let state = Lock(State())
 
     /// An empty store with knit-next's limits unless told otherwise.
     public init(limits: CustodyLimits = CustodyLimits()) {

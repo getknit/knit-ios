@@ -9,6 +9,7 @@ one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 
 | Target | Builds on | Role | Phase |
 | --- | --- | --- | --- |
+| `KnitSync` | all | `Lock`, the lock every target uses in place of `Synchronization.Mutex` (ADR 2026-09.ahrr) | P6 |
 | `KnitWire` | all | CBOR (kotlinx profile), wire types, registries, link records, HELLO/DIGEST, advert, NodeId/FrameId/FrameKey, UTF-16 limits, FNV fold | P1 |
 | `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM seal/open, safety number, alias words, identities minted inside a node id window | P2 |
 | `KnitStore` | all | repository protocols, in-memory stores, and the custody rules every store applies | P3 |
@@ -67,7 +68,8 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
   AsyncStream, and runs one timer task aimed at the earliest deadline (ADR 2026-09.gq84).
 - **Radio threading:** CoreBluetooth delegates run on one serial queue. L2CAP `Stream`s run on a dedicated
   run-loop thread inside one class.
-- **Locks:** `Synchronization.Mutex` (iOS 18) where a lock is needed. A database transaction sits outside
+- **Locks:** `KnitSync`'s `Lock`, `Mutex`'s API over a pthread mutex that TSan can see (ADR 2026-09.ahrr).
+  `Atomic` is fine where one word is enough. A database transaction sits outside
   any crypto lock, the same ordering as knit-next's `rules/mesh.md`.
 
 ## Storage

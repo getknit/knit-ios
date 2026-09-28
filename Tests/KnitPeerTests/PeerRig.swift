@@ -3,9 +3,9 @@ import KnitCrypto
 import KnitMesh
 import KnitPeer
 import KnitStore
+import KnitSync
 import KnitTestSupport
 import KnitWire
-import Synchronization
 import Testing
 
 /// Clocks that stand still. A sleeper waits until it is cancelled, so no timer ever fires in these tests.
@@ -39,7 +39,7 @@ final class PeerRadio: Radio {
         var closed: [ChannelID] = []
     }
 
-    private let state = Mutex(State())
+    private let state = Lock(State())
 
     init() {
         (events, emitter) = AsyncStream<RadioEvent>.makeStream()
@@ -119,7 +119,7 @@ final class CapturingTransport: MeshTransport {
 
 /// Collects the lines a node writes, so a test can wait for one.
 final class LineCollector: Sendable {
-    private let lines = Mutex<[String]>([])
+    private let lines = Lock<[String]>([])
 
     var all: [String] { lines.withLock { $0 } }
 

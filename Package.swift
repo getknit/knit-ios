@@ -43,16 +43,19 @@ let package = Package(
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.11.1"),
     ],
     targets: [
+        // A lock ThreadSanitizer can see, which every target uses in place of Synchronization.Mutex (ADR 2026-09.ahrr).
+        .target(name: "KnitSync", swiftSettings: pure),
+
         // Platform-free protocol core (Linux + Apple).
         .target(name: "KnitWire", swiftSettings: pure),
         .target(name: "KnitCrypto", dependencies: ["KnitWire", crypto], swiftSettings: pure),
-        .target(name: "KnitStore", dependencies: ["KnitWire"], swiftSettings: pure),
+        .target(name: "KnitStore", dependencies: ["KnitSync", "KnitWire"], swiftSettings: pure),
         // The app's store: the KnitStore protocols on SQLite through GRDB. Tests and the Linux peer keep the
         // in-memory stores.
         .target(name: "KnitStoreSQL", dependencies: ["KnitStore", "KnitWire", grdb], swiftSettings: pure),
         .target(name: "KnitMesh", dependencies: ["KnitWire", "KnitCrypto", "KnitStore"], swiftSettings: pure),
         // View models, UI state and the copy catalog: everything the screens show, tested on Linux.
-        .target(name: "KnitAppCore", dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
+        .target(name: "KnitAppCore", dependencies: ["KnitSync", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
 
         // Apple: the CoreBluetooth radio and the SwiftUI app. Both compile to empty modules elsewhere.
         .target(name: "KnitBLE", dependencies: ["KnitMesh", "KnitWire"], swiftSettings: strict),
@@ -72,6 +75,7 @@ let package = Package(
         .target(
             name: "KnitBlueZ",
             dependencies: [
+                "KnitSync",
                 "KnitMesh",
                 "KnitWire",
                 "CBluetoothShim",
@@ -84,10 +88,15 @@ let package = Package(
         .target(name: "KnitControl", dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
         // The peer's logic, platform-free so its tests run anywhere: options, its state directory and keygen.
         // `knit-peer` wires it to the BlueZ radio.
-        .target(name: "KnitPeer", dependencies: ["KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
+        .target(
+            name: "KnitPeer",
+            dependencies: ["KnitSync", "KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"],
+            swiftSettings: strict
+        ),
         .executableTarget(
             name: "knit-peer",
             dependencies: [
+                "KnitSync",
                 "KnitPeer",
                 "KnitControl",
                 "KnitMesh",
@@ -102,10 +111,11 @@ let package = Package(
         // What more than one test target reads: the golden vectors and knit-next's fixture bytes. Not a product.
         .target(name: "KnitTestSupport", dependencies: ["KnitWire"], path: "Tests/KnitTestSupport", swiftSettings: strict),
 
+        .testTarget(name: "KnitSyncTests", dependencies: ["KnitSync"], swiftSettings: strict),
         .testTarget(name: "KnitWireTests", dependencies: ["KnitWire", "KnitTestSupport"], swiftSettings: strict),
         .testTarget(
             name: "KnitCryptoTests",
-            dependencies: ["KnitCrypto", "KnitWire", "KnitTestSupport", crypto],
+            dependencies: ["KnitSync", "KnitCrypto", "KnitWire", "KnitTestSupport", crypto],
             swiftSettings: strict
         ),
         // The store contract tests run against every implementation, the SQL one included.
@@ -116,33 +126,34 @@ let package = Package(
         ),
         .testTarget(
             name: "KnitStoreSQLTests",
-            dependencies: ["KnitStoreSQL", "KnitStore", "KnitWire", "KnitTestSupport", grdb],
+            dependencies: ["KnitSync", "KnitStoreSQL", "KnitStore", "KnitWire", "KnitTestSupport", grdb],
             swiftSettings: strict
         ),
         .testTarget(
             name: "KnitMeshTests",
-            dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
+            dependencies: ["KnitSync", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
             swiftSettings: strict
         ),
         .testTarget(
             name: "KnitAppCoreTests",
-            dependencies: ["KnitAppCore", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
+            dependencies: ["KnitSync", "KnitAppCore", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
             swiftSettings: strict
         ),
         .testTarget(
             name: "KnitControlTests",
-            dependencies: ["KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
+            dependencies: ["KnitSync", "KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
             swiftSettings: strict
         ),
         .testTarget(
             name: "KnitPeerTests",
-            dependencies: ["KnitPeer", "KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
+            dependencies: ["KnitSync", "KnitPeer", "KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
             swiftSettings: strict
         ),
         // Runs the BlueZ radio against a fake BlueZ on a peer-to-peer bus, and Unix sockets in place of L2CAP.
         .testTarget(
             name: "KnitBlueZTests",
             dependencies: [
+                "KnitSync",
                 "KnitBlueZ", "KnitMesh", "KnitWire", "KnitTestSupport", .target(name: "CDBus", condition: .when(platforms: [.linux])),
             ],
             swiftSettings: strict

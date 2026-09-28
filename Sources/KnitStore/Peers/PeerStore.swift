@@ -1,5 +1,5 @@
+import KnitSync
 public import KnitWire
-import Synchronization
 
 /// A peer whose profile this node has pinned (`PeerEntity` in knit-next, the fields the MVP reads).
 ///
@@ -80,8 +80,8 @@ public protocol PeerStore: AnyObject, Sendable {
 
 /// A ``PeerStore`` in memory, safe to share across threads.
 public final class MemoryPeerStore: PeerStore {
-    private let peers = Mutex<[NodeId: PeerRecord]>([:])
-    private let profiles = Mutex<[NodeId: (frame: WireEnvelope, sentAt: Int64)]>([:])
+    private let peers = Lock<[NodeId: PeerRecord]>([:])
+    private let profiles = Lock<[NodeId: (frame: WireEnvelope, sentAt: Int64)]>([:])
 
     /// An empty store.
     public init() {

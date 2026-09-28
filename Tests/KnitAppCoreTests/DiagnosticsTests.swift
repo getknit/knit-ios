@@ -1,9 +1,9 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitSync
 import KnitTestSupport
 import KnitWire
-import Synchronization
 import Testing
 
 @testable import KnitAppCore
@@ -83,7 +83,7 @@ import Testing
 
     @Test func aMintedIdentitySortsInsideTheBoundsAndIsStored() async throws {
         let rig = AppRig()
-        let stored = Mutex<IdentityKeys?>(nil)
+        let stored = Lock<IdentityKeys?>(nil)
         let model = DiagnosticsModel(session: rig.session) { keys in stored.withLock { $0 = keys } }
         #expect(model.mintsIdentities)
         await model.mint(above: " \(AppRig.sam.nodeId) ", below: "")

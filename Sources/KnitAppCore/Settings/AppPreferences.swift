@@ -1,4 +1,4 @@
-import Synchronization
+import KnitSync
 
 /// The app's own settings, which outlive a launch: UserDefaults in the app, memory in tests and `-seedDemo`.
 public protocol AppPreferences: AnyObject, Sendable {
@@ -8,11 +8,11 @@ public protocol AppPreferences: AnyObject, Sendable {
 
 /// ``AppPreferences`` in memory.
 public final class MemoryPreferences: AppPreferences {
-    private let onboarded: Mutex<Bool>
+    private let onboarded: Lock<Bool>
 
     /// Preferences starting from `hasOnboarded`.
     public init(hasOnboarded: Bool = false) {
-        onboarded = Mutex(hasOnboarded)
+        onboarded = Lock(hasOnboarded)
     }
 
     public var hasOnboarded: Bool {

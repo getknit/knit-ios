@@ -10,7 +10,7 @@ import Foundation
     import KnitPeer
     import KnitStore
     import KnitWire
-    import Synchronization
+    import KnitSync
 
     /// `knit-peer`: a headless Knit node on a BlueZ adapter that is never `hci0` (`.agents/context/linux-peer.md`).
     @main
@@ -213,10 +213,10 @@ import Foundation
         static let output = Lines(FileHandle.standardOutput)
         static let error = Lines(FileHandle.standardError)
 
-        private let handle: Mutex<FileHandle>
+        private let handle: Lock<FileHandle>
 
         private init(_ handle: FileHandle) {
-            self.handle = Mutex(handle)
+            self.handle = Lock(handle)
         }
 
         /// Writes `line`, or loses it. `FileHandle.write(_: Data)` traps on any error, and a failed write to the log

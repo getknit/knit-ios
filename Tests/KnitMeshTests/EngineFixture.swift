@@ -1,9 +1,9 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitSync
 import KnitTestSupport
 import KnitWire
-import Synchronization
 
 /// One engine under test, on a clock and a transport the test controls.
 struct EngineFixture {
@@ -205,10 +205,10 @@ final class ManualClock: MeshClock {
         case cancel
     }
 
-    private let state: Mutex<State>
+    private let state: Lock<State>
 
     init(wall: Int64, monotonic: Int64) {
-        state = Mutex(State(wall: wall, monotonic: monotonic))
+        state = Lock(State(wall: wall, monotonic: monotonic))
     }
 
     func wallMilliseconds() -> Int64 {
@@ -282,7 +282,7 @@ final class ManualClock: MeshClock {
 
 /// A log that keeps every line, so a test can read what the mesh said and every message is built.
 final class RecordingLog: KnitLog {
-    private let lines = Mutex<[String]>([])
+    private let lines = Lock<[String]>([])
 
     func log(_ level: LogLevel, _ message: @autoclosure () -> String) {
         let line = "\(level) \(message())"

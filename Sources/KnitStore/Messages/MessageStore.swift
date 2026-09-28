@@ -1,5 +1,5 @@
+import KnitSync
 public import KnitWire
-import Synchronization
 
 /// A message in a thread (`MessageEntity` in knit-next, the fields the MVP reads): ours, or one delivered to us.
 public struct MessageRecord: Sendable, Equatable {
@@ -121,7 +121,7 @@ public final class MemoryMessageStore: MessageStore {
         }
     }
 
-    private let state = Mutex(State())
+    private let state = Lock(State())
 
     /// An empty store.
     public init() {

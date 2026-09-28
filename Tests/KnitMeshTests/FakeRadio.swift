@@ -1,6 +1,6 @@
 import KnitMesh
+import KnitSync
 import KnitWire
-import Synchronization
 
 /// A radio that records what the link manager asks of it, reports whatever the test emits, and streams its own
 /// activity so an async test can await a write rather than sleep for one.
@@ -40,7 +40,7 @@ final class FakeRadio: Radio {
     let activity: AsyncStream<Activity>
     private let emitter: AsyncStream<RadioEvent>.Continuation
     private let recorder: AsyncStream<Activity>.Continuation
-    private let state = Mutex(State())
+    private let state = Lock(State())
 
     init(advertisesServiceData: Bool, dialsGattPeers: Bool = true, servesDoorbell: Bool = false) {
         self.advertisesServiceData = advertisesServiceData

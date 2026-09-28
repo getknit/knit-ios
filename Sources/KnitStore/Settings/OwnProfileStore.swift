@@ -1,4 +1,4 @@
-import Synchronization
+import KnitSync
 
 /// What this node publishes about itself, and the two clocks that make a published profile propagate
 /// (`SettingsStore.profileVersion` and `profilePublishedAt` in knit-next).
@@ -38,11 +38,11 @@ public protocol OwnProfileStore: AnyObject, Sendable {
 
 /// An ``OwnProfileStore`` in memory.
 public final class MemoryOwnProfileStore: OwnProfileStore {
-    private let profile: Mutex<OwnProfile>
+    private let profile: Lock<OwnProfile>
 
     /// A store holding `profile`.
     public init(_ profile: OwnProfile = OwnProfile()) {
-        self.profile = Mutex(profile)
+        self.profile = Lock(profile)
     }
 
     public func load() -> OwnProfile {

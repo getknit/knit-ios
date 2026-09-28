@@ -1,5 +1,5 @@
 import KnitCrypto
-import Synchronization
+import KnitSync
 
 /// A ``SecretStore`` in memory, which can be told to refuse.
 final class MemorySecretStore: SecretStore {
@@ -8,10 +8,10 @@ final class MemorySecretStore: SecretStore {
         var refuses: Bool
     }
 
-    private let state: Mutex<State>
+    private let state: Lock<State>
 
     init(secret: [UInt8]?, refuses: Bool) {
-        state = Mutex(State(secret: secret, refuses: refuses))
+        state = Lock(State(secret: secret, refuses: refuses))
     }
 
     var contents: [UInt8]? { state.withLock { $0.secret } }

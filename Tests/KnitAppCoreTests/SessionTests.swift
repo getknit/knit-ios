@@ -1,8 +1,8 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitSync
 import KnitWire
-import Synchronization
 import Testing
 
 @testable import KnitAppCore
@@ -39,7 +39,7 @@ import Testing
 
     @Test func theTapHearsEveryEventAfterTheSession() async {
         let rig = AppRig(radio: .off)
-        let heard = Mutex<[MeshEvent]>([])
+        let heard = Lock<[MeshEvent]>([])
         rig.session.eventTap = { event in
             heard.withLock { $0.append(event) }
         }

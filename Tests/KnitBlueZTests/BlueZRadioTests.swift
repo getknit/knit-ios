@@ -2,15 +2,15 @@
     @testable import KnitBlueZ
     import KnitMesh
     import KnitWire
-    import Synchronization
+    import KnitSync
     import Testing
 
     /// The radio's public face: its own thread, driven only through the `Radio` calls, against the fake BlueZ.
     @Suite(.timeLimit(.minutes(1))) struct BlueZRadioTests {
         /// Collects a radio's events from its stream, so the test thread can keep the fake turning.
         private final class Collector: Sendable {
-            private let events = Mutex<[RadioEvent]>([])
-            private let finished = Mutex(false)
+            private let events = Lock<[RadioEvent]>([])
+            private let finished = Lock(false)
 
             var all: [RadioEvent] { events.withLock { $0 } }
             var isFinished: Bool { finished.withLock { $0 } }

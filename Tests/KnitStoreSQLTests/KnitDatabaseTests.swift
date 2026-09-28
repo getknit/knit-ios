@@ -1,9 +1,9 @@
 import Foundation
 import GRDB
 import KnitStore
+import KnitSync
 import KnitTestSupport
 import KnitWire
-import Synchronization
 import Testing
 
 @testable import KnitStoreSQL
@@ -15,7 +15,7 @@ import Testing
 
 /// The errors a database reported, for the tests that expect some.
 final class Failures: Sendable {
-    private let errors = Mutex<[any Error]>([])
+    private let errors = Lock<[any Error]>([])
 
     var count: Int { errors.withLock(\.count) }
 

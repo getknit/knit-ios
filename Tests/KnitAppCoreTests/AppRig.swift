@@ -2,9 +2,9 @@ import Foundation
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitSync
 import KnitTestSupport
 import KnitWire
-import Synchronization
 
 @testable import KnitAppCore
 
@@ -60,14 +60,14 @@ final class FakeMesh: MeshService {
         var next = 0
     }
 
-    private let state: Mutex<State>
+    private let state: Lock<State>
     let clock: Int64
 
     init(nodeId: NodeId, stores: MeshStores, radio: RadioState? = nil, clock: Int64 = 1_790_000_000_000) {
         self.nodeId = nodeId
         self.stores = stores
         self.clock = clock
-        state = Mutex(State(radio: radio))
+        state = Lock(State(radio: radio))
         (events, continuation) = AsyncStream<MeshEvent>.makeStream()
     }
 
@@ -155,8 +155,8 @@ final class FakeMesh: MeshService {
 
 /// A notifier that keeps what it is asked.
 final class RecordingNotifier: Notifier {
-    private let postedList = Mutex<[LocalNotification]>([])
-    private let withdrawnList = Mutex<[String]>([])
+    private let postedList = Lock<[LocalNotification]>([])
+    private let withdrawnList = Lock<[String]>([])
 
     var posted: [LocalNotification] { postedList.withLock { $0 } }
     var withdrawn: [String] { withdrawnList.withLock { $0 } }
@@ -172,7 +172,7 @@ final class RecordingNotifier: Notifier {
 
 /// A notification permission that answers what it is told to.
 final class FakePermission: NotificationPermission {
-    private let answer = Mutex(NotificationAuthorization.notDetermined)
+    private let answer = Lock(NotificationAuthorization.notDetermined)
     private let onRequest: NotificationAuthorization
 
     init(current: NotificationAuthorization = .notDetermined, onRequest: NotificationAuthorization = .allowed) {

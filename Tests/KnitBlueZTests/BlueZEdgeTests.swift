@@ -2,12 +2,12 @@
     import Foundation
     import Glibc
     @testable import KnitBlueZ
-    import Synchronization
+    import KnitSync
     import Testing
 
     /// One result, handed from the probe's thread to the test's.
     private final class Handoff: Sendable {
-        let result = Mutex<Result<AdapterProbe.Status, AdapterProbe.Failure>?>(nil)
+        let result = Lock<Result<AdapterProbe.Status, AdapterProbe.Failure>?>(nil)
     }
 
     /// The probe `knit-peer` runs first, and the socket calls where they fail.

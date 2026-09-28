@@ -18,8 +18,9 @@ Standing rules for all Swift in this repo. Interop rules for wire, crypto and me
 
 - **Warnings are errors.** Fix the cause. A `@preconcurrency` import or a `nonisolated(unsafe)` needs a
   comment saying why it is safe.
-- **Strict concurrency.** Shared mutable state lives in an actor, or behind a `Synchronization.Mutex`. A
-  global holds only `Sendable` values; build a non-`Sendable` value (a `CBUUID`) where it is used.
+- **Strict concurrency.** Shared mutable state lives in an actor, or behind `KnitSync`'s `Lock`, never a
+  `Synchronization.Mutex`, whose futex TSan cannot see on Linux (ADR 2026-09.ahrr). A global holds only
+  `Sendable` values; build a non-`Sendable` value (a `CBUUID`) where it is used.
 - **Strict memory safety** is on in the platform-free targets. An `unsafe` expression is kept small and says
   what makes it sound.
 - **`try!`, force unwraps and implicitly unwrapped optionals are banned.** Use `guard` and `#require`.

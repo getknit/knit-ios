@@ -1,7 +1,7 @@
 import Foundation
 public import KnitCrypto
 public import KnitStore
-import Synchronization
+import KnitSync
 
 /// A peer's state directory: its identity in `identity` (mode 0600, in a 0700 directory) and its own profile in
 /// `profile.json`, including the version and publish stamp. Keeping those two across restarts matters: Android keeps
@@ -57,10 +57,10 @@ public final class FileOwnProfileStore: OwnProfileStore {
 
     /// The file's path.
     public let path: String
-    private let cached: Mutex<OwnProfile>
+    private let cached: Lock<OwnProfile>
     /// Why the last save failed, if it did; the peer logs it.
     public var lastError: String? { failure.withLock { $0 } }
-    private let failure = Mutex<String?>(nil)
+    private let failure = Lock<String?>(nil)
 
     /// The store at `path`, read once now.
     public init(path: String) {
@@ -71,7 +71,7 @@ public final class FileOwnProfileStore: OwnProfileStore {
                 name: saved.name, status: saved.status, openToChat: saved.openToChat, version: saved.version, publishedAt: saved.publishedAt
             )
         }
-        cached = Mutex(profile ?? OwnProfile())
+        cached = Lock(profile ?? OwnProfile())
     }
 
     public func load() -> OwnProfile {

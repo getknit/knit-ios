@@ -23,7 +23,7 @@ if [ "${KNIT_NICE:-10}" != 0 ]; then
 fi
 
 swift_sources=(Package.swift Sources Tests Fuzz/Package.swift Fuzz/Sources)
-pure_targets=(Sources/KnitWire Sources/KnitCrypto Sources/KnitStore Sources/KnitMesh Sources/KnitAppCore Sources/KnitPeer Sources/KnitBlueZ)
+pure_targets=(Sources/KnitSync Sources/KnitWire Sources/KnitCrypto Sources/KnitStore Sources/KnitMesh Sources/KnitAppCore Sources/KnitPeer Sources/KnitBlueZ)
 
 # SwiftLint looks for SourceKit beside the `swift` binary, which under swiftly is a proxy rather than the
 # toolchain. Ask the compiler where its resources live instead.

@@ -38,4 +38,5 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-09.3ch7](decisions/2026-09-3ch7-a-link-holds-at-most.md) | a link holds at most one digest waiting, in an outbox both radios share | mesh, transport, interop |
 | [2026-09.de8f](decisions/2026-09-de8f-xcodegen-generates-the-app-project.md) | XcodeGen generates the app project, and the Mac builds the iOS app | toolchain, build, ci |
 | [2026-09.khjj](decisions/2026-09-khjj-a-peer-wakes-a-suspended.md) | a peer wakes a suspended iPhone by writing its GATT doorbell | ble, interop, transport |
+| [2026-09.ahrr](decisions/2026-09-ahrr-locks-are-pthread-mutexes.md) | Locks are pthread mutexes, so TSan can see them | concurrency, testing, tooling |
 | [2026-09.zawh](decisions/2026-09-zawh-the-mac-signs-in-its.md) | The Mac signs in its desktop session, reached through a launchd job | toolchain, build, ci, signing |

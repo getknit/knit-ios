@@ -9,6 +9,7 @@
   "KnitPeer": 99,
   "KnitStore": 100,
   "KnitStoreSQL": 99,
+  "KnitSync": 100,
   "KnitWire": 98,
   "knit-peer": 0
 }

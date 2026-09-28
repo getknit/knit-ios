@@ -1,4 +1,4 @@
-import Synchronization
+import KnitSync
 
 /// The threads the user accepted (`SettingsStore.acceptedConversations` in knit-next): a stranger's first DM is a
 /// message request until then.
@@ -12,7 +12,7 @@ public protocol ConversationStore: AnyObject, Sendable {
 
 /// A ``ConversationStore`` in memory.
 public final class MemoryConversationStore: ConversationStore {
-    private let accepted = Mutex<Set<String>>([])
+    private let accepted = Lock<Set<String>>([])
 
     /// An empty store.
     public init() {
