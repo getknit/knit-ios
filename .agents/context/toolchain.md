@@ -109,6 +109,9 @@ installing on the iPhone moves there too.
   digest in `.gitlab-ci.yml`). It is the `gitlab-runner` Docker container on the maintainer's machine,
   configured in `~/.gitlab-runner/config.toml`: two jobs at once, each capped at 8 GB and 8 cores, so CI never
   takes the whole desktop. Leave that directory to it.
+- **`service`, instance runner 4,** also takes untagged jobs, in Docker. It is slower than linux-host: pipeline
+  808's `test:coverage` took 643 s there, against about 250 s on linux-host (2026-09-28). A test that waits on a
+  thread needs a deadline with room for that, as `LoopRig.settleMilliseconds` has.
 - **The `knit-local` runner** takes the six jobs that need the machine itself: `build:ios` and
   `verify:periphery` (the Darwin SDK, xtool and Periphery live only here, ADR 2026-09.d3jv), and the heavy
   `test:tsan`, `test:asan`, `verify:fuzz` and `verify:analyze`. Analyze needs more than linux-host's 8 GB:

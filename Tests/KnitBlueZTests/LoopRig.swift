@@ -31,6 +31,11 @@
         /// A device of the maintainer's adapter, which the radio must never report.
         static let otherPath = FakeBlueZ.otherAdapter + "/dev_11_22_33_44_55_66"
         /// Our own advert.
+        /// How long a test waits for the loop to reach a state before it fails. Each wait returns as soon as its
+        /// condition holds, so this only bounds a broken run. Two seconds proved too short on a loaded CI runner,
+        /// where the radio thread took longer than that to start (job 5961, 2026-09-28).
+        static let settleMilliseconds: Int64 = 10_000
+
         static let ours = AdvertPayload(capabilities: .local, nodeId: fixtureNodeId(3), digestCue: 5, psm: UnixSockets.psm)
 
         let fake: FakeBlueZ
@@ -42,8 +47,11 @@
 
         /// GATT reads for the tests: a short deadline, and waits long enough that a test sees no second read unless
         /// it asks for a shorter one.
+        /// A read deadline long enough that the fake BlueZ answers in time on a loaded machine under TSan, where 300 ms
+        /// ran out before a read that answers and failed the GATT suites (2026-09-28). A test that waits for a read
+        /// to be given up picks a shorter one.
         static let gattPacing = GattPayloads.Configuration(
-            readTimeoutMilliseconds: 300, retryMilliseconds: 60_000, strangerRetryMilliseconds: 60_000)
+            readTimeoutMilliseconds: 5000, retryMilliseconds: 60_000, strangerRetryMilliseconds: 60_000)
 
         init(
             profile: RadioProfile = .android,
@@ -106,10 +114,10 @@
             FakeBlueZ.device(address: address, rssi: rssi, advert: nil, uuids: ["0000FE30-0000-1000-8000-00805F9B34FB"])
         }
 
-        /// Turns the loop and the fake until `condition` holds, or two seconds pass.
+        /// Turns the loop and the fake until `condition` holds, or ``settleMilliseconds`` pass.
         @discardableResult
         func settle(_ comment: Comment? = nil, sourceLocation: SourceLocation = #_sourceLocation, until condition: () -> Bool) -> Bool {
-            let deadline = Monotonic.milliseconds() + 2000
+            let deadline = Monotonic.milliseconds() + Self.settleMilliseconds
             while !condition() {
                 guard Monotonic.milliseconds() < deadline else {
                     Issue.record(comment ?? "never settled", sourceLocation: sourceLocation)

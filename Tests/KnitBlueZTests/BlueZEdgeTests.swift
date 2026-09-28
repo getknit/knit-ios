@@ -24,7 +24,7 @@
                 handoff.result.withLock { $0 = outcome }
             }
             thread.start()
-            let deadline = Monotonic.milliseconds() + 3000
+            let deadline = Monotonic.milliseconds() + LoopRig.settleMilliseconds
             while handoff.result.withLock({ $0 }) == nil, Monotonic.milliseconds() < deadline {
                 fake.iterate(waitMilliseconds: 2)
             }

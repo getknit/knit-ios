@@ -16,6 +16,11 @@
             try LoopRig(profile: .ios, acceptedPeer: acceptedPeer, readsGattPayloads: true, gatt: gatt)
         }
 
+        /// Pacing that gives a read up quickly, for a test that waits for that to happen: its fake never answers, so
+        /// a slow run cannot change the outcome.
+        static let brisk = GattPayloads.Configuration(
+            readTimeoutMilliseconds: 300, retryMilliseconds: 60_000, strangerRetryMilliseconds: 60_000)
+
         /// Pacing whose deadline a slow run (TSan) cannot reach before the test has looked.
         static func patient(retryMilliseconds: Int64 = 60_000) -> GattPayloads.Configuration {
             GattPayloads.Configuration(
@@ -204,7 +209,7 @@
         }
 
         @Test func aReadThatNeverAnswersIsGivenUpAtItsDeadline() throws {
-            let rig = try GattRig.reading()
+            let rig = try GattRig.reading(GattRig.brisk)
             rig.start()
             var gatt = FakeBlueZ.RemoteGatt(value: LoopRig.advert().gattValue)
             gatt.answersConnect = false
@@ -310,7 +315,7 @@
         }
 
         @Test func aChannelOpenedMidReadKeepsTheLinkWhenTheReadEnds() throws {
-            let rig = try GattRig.reading(acceptedPeer: try LoopRig.target())
+            let rig = try GattRig.reading(GattRig.patient(), acceptedPeer: try LoopRig.target())
             rig.start()
             var gatt = FakeBlueZ.RemoteGatt(value: LoopRig.advert().gattValue)
             gatt.resolves = false

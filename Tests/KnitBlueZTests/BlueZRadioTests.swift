@@ -38,7 +38,7 @@
         /// Turns the fake until `condition` holds, or two seconds pass. It yields after every turn: a one-core runner's
         /// cooperative pool has a single thread, and a loop that kept it would starve the collector's task.
         private func settle(_ fake: FakeBlueZ, until condition: () -> Bool) async -> Bool {
-            let deadline = Monotonic.milliseconds() + 2000
+            let deadline = Monotonic.milliseconds() + LoopRig.settleMilliseconds
             while !condition(), Monotonic.milliseconds() < deadline {
                 fake.iterate(waitMilliseconds: 2)
                 await Task.yield()
