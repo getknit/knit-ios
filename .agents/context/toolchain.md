@@ -165,15 +165,22 @@ and never sleeps.
   directory. The iOS 27.0 Simulator runtime came with it, and developer mode is on. Its Swift is 6.4
   (`swiftlang-6.4.0.34.1`), which matches `.swift-version`, so the Mac builds with Xcode's toolchain and has
   no swiftly.
-- **Homebrew has the rest:** SwiftLint 0.65.1 and Periphery 3.8.0 (the pinned versions); bash 5 and
-  Python 3.14, because macOS ships bash 3.2 and Python 3.9; xcbeautify, xcodes, libimobiledevice and
-  ideviceinstaller; glab, gh and gitlab-runner; GnuPG and pinentry-mac; Colima, the docker CLI and
-  docker-credential-helper. `~/.zshenv` and `~/.bash_profile` put Homebrew on the `PATH` for every shell,
-  login or not.
+- **Homebrew has the rest:** SwiftLint 0.65.1 and Periphery 3.8.0 (the pinned versions); bash 5 and Python
+  3.14, because macOS ships bash 3.2 and Python 3.9; xcbeautify, xcodes, libimobiledevice and
+  ideviceinstaller; rsync 3, because macOS ships openrsync; glab, gh and gitlab-runner; GnuPG and
+  pinentry-mac; Colima, the docker CLI and docker-credential-helper. `~/.zshenv` and `~/.bash_profile` put
+  Homebrew on the `PATH` for every shell, login or not.
 - **Docker runs in Colima,** a `vz` VM with Rosetta, 4 CPUs and 4 GB, started at login. `zaventh/lintorama:7`
   is amd64 only, so it runs under Rosetta until the image ships an arm64 build.
 - **The checkouts** are `~/source/knit-ios`, with the hooks on, and `~/source/knit-next`. Git reaches GitLab
   through `glab auth git-credential`.
+- **`~/source/knit-ios-mirror` belongs to `scripts/mac.sh`,** which drives the Mac from linux-host. Each sync
+  overwrites it with linux-host's working tree, so do real work at the Mac in `~/source/knit-ios`. The script
+  calls `/opt/homebrew/bin/rsync` by path: openrsync speaks protocol 29 and gets the filter rules wrong.
+- **linux-host reaches the Mac through one shared connection.** The `Host mac.example` block in linux-host's
+  `~/.ssh/config` keeps a master connection open for 20 minutes (`ControlMaster`, `ControlPersist`), so
+  each later command takes about 30 ms. `scripts/mac.sh` passes the same options, so it works without
+  the block.
 - **Signing:** the maintainer's GPG key is imported, and git signs every commit and tag with it. A LaunchAgent
   (`org.gnupg.gpg-agent`) starts `gpg-agent` in the desktop session at login, so `pinentry-mac` can show its
   dialog and read the passphrase from the Keychain even when the first `gpg` call comes over ssh. The
