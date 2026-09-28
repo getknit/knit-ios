@@ -741,3 +741,30 @@ knit-next `11b91371`, which has knit-next's own slot.
   both windows passed. At 21:46 both phones held the same 570 ids: the returned receipt had evicted the
   Pixel's older profile. knit-next found no rule on either side that drops such a frame for good. Wait out 11
   minutes, or flap the link, before reading this step as a failure.
+
+## What the Mac showed (checklist M)
+
+`knit-peer` runs on the Mac Mini on KnitBLE's CoreBluetooth radio, the iPhone's own, in the `ios` profile
+(ADR 2026-09.vcdk). `scripts/mac-peer.sh` builds and signs it and runs it in the desktop session; macOS asked for
+Bluetooth once, at the Mac, on 2026-09-28.
+
+- **First light:** left alone for a minute with nobody refused, it linked three lab phones, learned 20 peers,
+  converged custody on 366 frames, discarded 9 FILE records, and heard 12 doorbell rings from the A4 phones.
+- **`interop.py check --mac` against the Pixel 3** (A1 and A4), 2026-09-28:
+  - with the Mac's id below the phone's, 13 of 13: the link in 31 s, names both ways, custody converged on 369 ids
+    in 21 s, the room both ways (1.7 s to the Mac), a DM from the phone arriving as a request, a DM from the Mac
+    delivered and ticked, and the back-fill in 37 s;
+  - with its id above, blank-named, 14 of 14: the same, plus alias parity (each side's alias the other shows) and
+    the phone's three avatar FILE records discarded with the link kept.
+- **The Mac always dials.** Android finds an `ios`-profile peer only with A3, so in both id orders the Mac's
+  central dials the phone, and A1 admits it unsighted. That is the same shape as the iPhone's links.
+- **`interop.py soak --mac --extras`, one hour against the Pixel 3** (12:19 to 13:24), passed 11 of 12. The link
+  held all hour with no ending on either side, and the Mac's memory stayed at 12.5 MB. All 505 of the phone's
+  posts arrived, 504 within 5 s (median 1.6 s), and all 506 of the Mac's were ticked (median 1.1 s). The extras
+  crossed too: reactions, typing cues, 13 DMs each way, and 13 photos, whose FILE records were discarded. The
+  footprint stayed bounded, and custody peaked at 501. The miss was `custody-converges-at-end`, at 303 s, on
+  two of the Pixel's own frames at its sender quota, the case the one-digest slot's run describes: allow 11
+  minutes.
+- **The soak's guard had been dead since `7c77354`,** which gave `_keep_to` two more parameters and left `soak`
+  calling it with the old three. The thread died at start, so a node the first scan missed could join a soak.
+  It is fixed, and this soak refused the iPhone as it appeared.

@@ -27,6 +27,10 @@ let pure: [SwiftSetting] = strict + [.strictMemorySafety()]
 
 let crypto: Target.Dependency = .product(name: "Crypto", package: "swift-crypto")
 let grdb: Target.Dependency = .product(name: "GRDB", package: "GRDB.swift")
+// knit-peer's Info.plist, linked into its __TEXT segment on a Mac for the Bluetooth usage string.
+let peerInfoPlist = [
+    "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", "Sources/knit-peer/Info.plist",
+]
 
 let package = Package(
     name: "Knit",
@@ -69,7 +73,7 @@ let package = Package(
             linkerSettings: [.unsafeFlags(["-Xlinker", "-ObjC"], .when(platforms: [.iOS]))]
         ),
 
-        // Linux: the BlueZ radio and the headless peer used for interop runs.
+        // The headless peer used for interop runs, on BlueZ under Linux and CoreBluetooth on a Mac, and its Linux radio.
         .systemLibrary(name: "CDBus", pkgConfig: "dbus-1", providers: [.apt(["libdbus-1-dev"])]),
         .target(name: "CBluetoothShim"),
         .target(
@@ -104,8 +108,13 @@ let package = Package(
                 "KnitStore",
                 "KnitWire",
                 .target(name: "KnitBlueZ", condition: .when(platforms: [.linux])),
+                .target(name: "KnitBLE", condition: .when(platforms: [.macOS])),
             ],
-            swiftSettings: strict
+            // Linked into the binary on a Mac: macOS asks for Bluetooth with its usage string, and ends a process that
+            // touches CoreBluetooth without one.
+            exclude: ["Info.plist"],
+            swiftSettings: strict,
+            linkerSettings: [.unsafeFlags(peerInfoPlist, .when(platforms: [.macOS]))]
         ),
 
         // What more than one test target reads: the golden vectors and knit-next's fixture bytes. Not a product.

@@ -79,8 +79,9 @@ public struct RunOptions: Equatable, Sendable {
     public var adapterAddress = PeerCommand.defaultAdapterAddress
     /// Whether other devices use the adapter too, which `hci0` needs (`AdapterSelection.shared`).
     public var sharedAdapter = false
-    /// `android` or `ios`.
-    public var radioProfile = "android"
+    /// `android` or `ios`, or `nil` for the radio's own: `android` on BlueZ, and `ios` on a Mac, whose CoreBluetooth
+    /// advertises as an iPhone does.
+    public var radioProfile: String?
     /// Where the identity and profile live.
     public var stateDirectory: String
     /// A profile name to publish at start, when it differs from the stored one.
@@ -108,7 +109,7 @@ public struct RunOptions: Equatable, Sendable {
         adapter = flags.take("--adapter") ?? adapter
         adapterAddress = flags.take("--adapter-address") ?? adapterAddress
         sharedAdapter = flags.take(switch: "--shared-adapter")
-        radioProfile = try flags.take("--radio-profile", oneOf: Self.profiles) ?? radioProfile
+        radioProfile = try flags.take("--radio-profile", oneOf: Self.profiles)
         name = flags.take("--name")
         let level = try flags.take("--log", oneOf: Self.logLevels) ?? "info"
         logLevel = level == "off" ? nil : level

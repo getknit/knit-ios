@@ -132,7 +132,14 @@ explicit direction.** Update this file in the change that ships an item.
     rearrange at the accessibility sizes. MVP item 12's audit half is met.
   - **Installing from the Mac (2026-09-28):** `check.sh device`, then `devicectl` installs and launches the signed
     `.dev` build on the iPhone 12, and its debug bridge answers `interop.py` as the xtool build's did.
-  - **Still owed:** checklist M. Retiring xtool's `build:ios` can follow (`toolchain.md`, "Still owed on the Mac").
+  - **Checklist M (2026-09-28):** `knit-peer` runs on the Mac on KnitBLE's CoreBluetooth radio, in the desktop
+    session (ADR 2026-09.vcdk). Against the Pixel 3, `check --mac` passed 13 of 13 below its id and 14 of 14 above
+    it, with alias parity and FILE records, and the hour's `soak --mac --extras` passed 11 of 12. The miss was
+    custody at the end, the Pixel's quota case that takes up to 11 minutes (`.agents/context/linux-peer.md`,
+    "What the Mac showed"). Checklist M's `android` group cannot run as written: a Mac, like an iPhone, has no
+    service-data advert, so every run is the `ios` profile against A1.
+  - **Still owed:** CI's first run of `test:macos` and `test:ios:simulator` after the push. Retiring xtool's
+    `build:ios` can follow (`toolchain.md`, "Still owed on the Mac").
 - **P8, the iPhone:** begun early on 2026-09-26, without the Mac: an iPhone 12 on iOS 27.0, installed over USB
   by xtool on free provisioning. The app runs and links the Linux peer and the lab's Android phones. Against
   the peer, items 3 to 5 pass: safety numbers match, the room works both ways with ticks, and DMs go request,

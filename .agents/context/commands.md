@@ -66,6 +66,8 @@ python3 scripts/interop.py replace --device <adb serial>          # A1's stale-l
 python3 scripts/interop.py check … --send-mtu 8192                # SDUs above the default 247, to test a phone
 python3 scripts/interop.py soak --device <serial> --extras        # MVP item 11's hour, both ways, with the go-ahead
 python3 scripts/interop.py relay --device <serial>                # MVP item 7's line; a second peer on hci0, its go-ahead too
+python3 scripts/interop.py check … --mac                          # checklist M: the peer on the Mac, on CoreBluetooth (ADR 2026-09.vcdk)
+python3 scripts/interop.py soak … --mac --extras                  # checklist M's hour, the peer on the Mac
 python3 scripts/interop.py iphone --device <serial>               # MVP items 2 to 6, iPhone and phone both driven; Knit open on both
 python3 scripts/interop.py iphone-relay --device <serial>         # MVP item 7: phone, iPhone, then a peer on hci0; Knit open on both
 python3 scripts/interop.py iphone-wake --device <serial>          # MVP item 9 from the phone: someone locks the iPhone, a DM a minute
@@ -81,6 +83,10 @@ sudo scripts/hci1-supervision.sh                                  # hci1's super
 sudo scripts/bluetoothd-no-battery.sh [--undo]                    # bluetoothd without its battery plugin, for iPhone runs
 scripts/hci1-supervision.sh --udev-rule                           # a udev rule that sets it on every plug-in
 ```
+
+`scripts/mac-peer.sh` runs on the Mac, and `interop.py --mac` calls it over ssh. `build` builds knit-peer and signs
+it in the desktop session with a fixed identifier, so macOS's one Bluetooth grant lasts across builds; `run` starts it
+there through `scripts/mac-desktop.sh --stdio`, with stdin and stdout attached to the caller.
 
 ## The app
 

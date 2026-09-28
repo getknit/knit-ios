@@ -258,6 +258,9 @@ and never sleeps.
     install app` then `devicectl device process launch` put it on the iPhone 12, over the network connection.
     The iPhone holds the `.dev` build alone now; xtool's was already gone. The debug bridge answers `interop.py`
     from linux-host over USB as before, since it never named a bundle id; only `ifuse` does.
+  - **Bluetooth for `knit-peer`:** allowed at the Mac on 2026-09-28 for the signature `scripts/mac-peer.sh`
+    makes, identifier `app.getknit.knit-peer` under team `<team id>` (ADR 2026-09.vcdk). A new signing
+    certificate asks again. From ssh, CoreBluetooth reports it unauthorized whatever the grant.
   - **The phone's log:** `idevicesyslog` finds the iPhone only over USB, not while it is connected over the
     network. Console.app at the Mac reads it either way.
 - **What does not pass yet:**

@@ -21,7 +21,7 @@ one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 | `KnitBlueZ`, `CDBus`, `CBluetoothShim` | Linux | the BlueZ `Radio`: one `poll` thread over a libdbus connection and LE CoC sockets; advert, scan, and serving and reading the GATT payload | P4 |
 | `KnitControl` | all | the JSON-lines control protocol: commands, replies and event lines over a `Mesh` (`MeshControl`), spoken by `knit-peer` and a debug build of the app (ADR 2026-09.kwa8) | P8 |
 | `KnitPeer` | all | the peer's logic: options, its state directory, keygen and the scan report | P4 |
-| `knit-peer` | Linux (a stub `main` elsewhere) | the headless peer: `KnitPeer` on the BlueZ radio, on `hci1` only | P4 |
+| `knit-peer` | Linux and macOS (a stub `main` elsewhere) | the headless peer: `KnitPeer` on the BlueZ radio, on `hci1` only, or on a Mac on KnitBLE's CoreBluetooth radio for checklist M (ADR 2026-09.vcdk) | P4, P7 |
 | `KnitLabSupport` | all | LabTransport, LabRadio, LabClock, MeshLab: deferred (`.agents/memory/roadmap.md`) | later |
 
 Platform-only code sits behind `#if canImport(CoreBluetooth)`, `#if canImport(SwiftUI)`, `#if os(iOS)` or

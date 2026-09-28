@@ -3,10 +3,10 @@
 driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .agents/context/linux-peer.md).
 
     scripts/interop.py check   --device SERIAL [--order phone-dials|peer-dials] [--radio-profile android|ios]
-                                [--blank-name] [--expect-avatar]
+                                [--blank-name] [--expect-avatar] [--mac]
     scripts/interop.py refusal --device SERIAL [--seconds 120]
     scripts/interop.py replace --device SERIAL
-    scripts/interop.py soak    --device SERIAL [--minutes 60] [--per-minute 20] [--extras]
+    scripts/interop.py soak    --device SERIAL [--minutes 60] [--per-minute 20] [--extras] [--mac]
     scripts/interop.py relay   --device SERIAL [--radio-profile ios|android]
     scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline]
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
@@ -21,6 +21,10 @@ bridge over USB (ADR 2026-09.kwa8); `iphone-relay` runs MVP item 7's line throug
 wake test, with someone to lock the iPhone and unlock it again; `iphone-scan` is P8's scan-filter check, with someone to
 do the same; `bridge` sends that bridge commands by hand and prints what comes back. `iphone-rings` checks the doorbell
 rings an iPhone sends, and `android-rings` those an Android phone sends, with companion change A4.
+
+`--mac` runs the peer on the Mac Mini instead of hci1, on CoreBluetooth, the iPhone's own radio: checklist M (ADR
+2026-09.vcdk). It always runs the `ios` profile, in the Mac's desktop session through `scripts/mac-peer.sh`, and the
+scan that finds the nodes to refuse still runs here.
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
@@ -53,6 +57,11 @@ PACKAGE = "app.getknit.knit"
 INSTANCE = "interop"
 # The maintainer's own adapter, for `relay` only, shared with the devices already on it (.agents/rules/devices.md).
 HCI0 = ["--adapter", "hci0", "--adapter-address", "A0:00:00:00:00:01", "--shared-adapter"]
+# The Mac that runs the peer with --mac, and its mirror of this tree (scripts/mac.sh).
+MAC_HOST = "mac.example"
+MAC_MIRROR = "source/knit-ios-mirror"
+# Set by --mac: the peer runs on the Mac, on CoreBluetooth.
+ON_MAC = False
 # Diagnostic knobs for the L2CAP receive MTU and the largest SDU written, set with --receive-mtu and --send-mtu.
 RECEIVE_MTU = ""
 SEND_MTU = ""
@@ -201,14 +210,18 @@ class Peer(Node):
         self.process: subprocess.Popen[str] | None = None
 
     def start(self) -> None:
-        command = [str(PEER), "run", "--instance", self.instance, "--radio-profile", self.profile, "--name", self.name, "--log", self.log_level]
-        command += self.adapter
+        arguments = ["--instance", self.instance, "--radio-profile", self.profile, "--name", self.name, "--log", self.log_level]
         if self.rssi_floor is not None:
-            command += ["--rssi-floor", str(self.rssi_floor)]
-        if RECEIVE_MTU:
-            command += ["--receive-mtu", RECEIVE_MTU]
-        if SEND_MTU:
-            command += ["--send-mtu", SEND_MTU]
+            arguments += ["--rssi-floor", str(self.rssi_floor)]
+        if ON_MAC:
+            # The adapter and the MTU knobs are BlueZ's; CoreBluetooth has one radio and picks its own MTU.
+            command = on_mac("run", arguments)
+        else:
+            command = [str(PEER), "run", *arguments, *self.adapter]
+            if RECEIVE_MTU:
+                command += ["--receive-mtu", RECEIVE_MTU]
+            if SEND_MTU:
+                command += ["--send-mtu", SEND_MTU]
         log = open(self.log_path, "a", encoding="utf-8")  # noqa: SIM115 - lives with the process
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, text=True, bufsize=1)
         threading.Thread(target=self._read, daemon=True).start()
@@ -367,6 +380,12 @@ def others_in_range(phone_id: str, seconds: int = 20) -> set[str]:
     return {node["peer"] for node in summary["nodes"]} - {phone_id}
 
 
+def on_mac(verb: str, arguments: list[str]) -> list[str]:
+    """The Mac's knit-peer `verb` over ssh (scripts/mac-peer.sh): `run` goes to its desktop session, where macOS lets
+    it use Bluetooth, with stdin and stdout still attached here."""
+    return ["ssh", MAC_HOST, f"cd {MAC_MIRROR} && scripts/mac-peer.sh {verb} {shlex.join(arguments)}"]
+
+
 def keygen(phone_id: str, order: str, others: set[str]) -> str:
     """An identity the phone dials, or that dials the phone, and that no other phone in range dials: this adapter
     cannot advertise while a peer is connected to it, so a refused phone dialing in would hide the peer from the
@@ -376,8 +395,10 @@ def keygen(phone_id: str, order: str, others: set[str]) -> str:
     bounds = ["--below", phone_id] if order == "phone-dials" else ["--above", max(phone_id, above or phone_id)]
     if order == "phone-dials" and above:
         bounds += ["--above", above]
-    result = subprocess.run([str(PEER), "keygen", *bounds, "--instance", INSTANCE], capture_output=True, text=True, check=True)
-    return json.loads(result.stdout)["nodeId"]
+    arguments = [*bounds, "--instance", INSTANCE]
+    command = on_mac("keygen", arguments) if ON_MAC else [str(PEER), "keygen", *arguments]
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    return json.loads(result.stdout.strip().splitlines()[-1])["nodeId"]
 
 
 def link_up(peer: Peer, phone: Phone, phone_id: str, timeout: float = 180) -> dict:
@@ -1421,7 +1442,7 @@ def soak(arguments: argparse.Namespace) -> int:
     peer = Peer(arguments.radio_profile, f"knit-peer soak {nonce}", others, arguments.peer_log, arguments.rssi_floor, log_path=out / "peer.log")
     peer.start()
     stop = threading.Event()
-    threading.Thread(target=_keep_to, args=(peer, {phone_id}, stop), daemon=True).start()
+    threading.Thread(target=_keep_to, args=(peer, {phone_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
     traffic = SoakTraffic(peer, phone, peer_id, phone_id, image)
     samples: list[dict] = []
     try:
@@ -1971,6 +1992,8 @@ def main() -> int:
     commands.choices["soak"].add_argument("--minutes", type=float, default=60)
     commands.choices["soak"].add_argument("--per-minute", type=float, default=20, help="posts a minute, both sides together")
     commands.choices["soak"].add_argument("--extras", action="store_true", help="the phone also reacts, types, DMs and posts photos")
+    for name in ("check", "soak"):
+        commands.choices[name].add_argument("--mac", action="store_true", help="run the peer on the Mac, on CoreBluetooth: checklist M")
     for sub in commands.choices.values():
         sub.add_argument("--receive-mtu", default="", help="the receive MTU each peer channel offers, for diagnosis")
         sub.add_argument("--send-mtu", default="", help="the largest SDU each peer channel writes, for diagnosis")
@@ -2027,6 +2050,12 @@ def main() -> int:
     SEND_MTU = arguments.send_mtu
     if not PEER.exists():
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
+    if getattr(arguments, "mac", False):
+        global ON_MAC  # noqa: PLW0603 - one switch, read by Peer.start and keygen
+        ON_MAC = True
+        arguments.radio_profile = "ios"
+        # Syncs this tree to the Mac and builds and signs the peer there, so the run tests what is here.
+        subprocess.run([str(ROOT / "scripts" / "mac.sh"), "run", "scripts/mac-peer.sh", "build"], check=True, stdout=subprocess.DEVNULL)
     if arguments.command == "relay" and "--radio-profile" not in sys.argv:
         # Peer A stands in for the iPhone, which Android finds only by its GATT payload.
         arguments.radio_profile = "ios"

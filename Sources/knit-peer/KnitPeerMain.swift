@@ -1,9 +1,7 @@
 import Foundation
 
-#if os(Linux)
+#if os(Linux) || os(macOS)
     import Dispatch
-    import Glibc
-    import KnitBlueZ
     import KnitControl
     import KnitCrypto
     import KnitMesh
@@ -11,8 +9,12 @@ import Foundation
     import KnitStore
     import KnitWire
     import KnitSync
+    #if os(Linux)
+        import Glibc
+    #endif
 
-    /// `knit-peer`: a headless Knit node on a BlueZ adapter that is never `hci0` (`.agents/context/linux-peer.md`).
+    /// `knit-peer`: a headless Knit node. On Linux its radio is a BlueZ adapter that is never `hci0`
+    /// (`.agents/context/linux-peer.md`); on a Mac it is CoreBluetooth, the iPhone's own radio (``PeerHost``).
     @main
     internal enum KnitPeerMain {
         // The @main attribute calls it, which `swiftlint analyze` does not see.
@@ -31,7 +33,8 @@ import Foundation
             case .keygen(let options):
                 keygen(options)
             case .scan(let options):
-                await scan(options)
+                let host: any PeerRadioHost.Type = PeerHost.self
+                await host.scan(options)
             case .run(let options):
                 await run(options)
             }
@@ -50,93 +53,25 @@ import Foundation
             }
         }
 
-        /// Lists the nodes in range without linking: the radio is driven directly, with no link manager to dial.
-        private static func scan(_ options: ScanOptions) async {
-            let log = JSONLinesLog(
-                threshold: JSONLinesLog.level(named: options.logLevel) ?? .info, clock: SystemClock(), write: Lines.error.write)
-            let selection = checkedAdapter(options.adapter, options.adapterAddress, shared: options.sharedAdapter, log: log)
-            let profile = options.advertise.flatMap(RadioProfile.init(name:))
-            var configuration = BlueZRadio.Configuration(adapter: selection, profile: profile ?? .android, log: log)
-            configuration.readsGattPayloads = true
-            let radio = BlueZRadio(configuration: configuration)
-            var own: NodeId?
-            if profile != nil {
-                do {
-                    own = try PeerState(directory: options.stateDirectory).loadIdentity().keys.nodeId
-                } catch {
-                    fail("cannot load the identity in \(options.stateDirectory): \(error)")
-                }
-            }
-            var report = ScanReport(own: own)
-            let deadline = ContinuousClock.now.advanced(by: .seconds(options.seconds))
-            let stopper = Task {
-                try? await Task.sleep(until: deadline, clock: .continuous)
-                await radio.shutdown()
-            }
-            radio.start()
-            for await event in radio.events {
-                switch event {
-                case .listening(let psm):
-                    if let own {
-                        radio.advertise(AdvertPayload(capabilities: .local, nodeId: own, digestCue: 0, psm: psm))
-                        log.log(.info, "advertising \(own) on PSM \(psm)")
-                    }
-                case .sighted(let sighting):
-                    report.take(sighting).map(Lines.output.write)
-                case .accepted(let channel):
-                    // Someone dialed the advert anyway: hang up before any HELLO.
-                    radio.close(channel)
-                case .state(let state) where state != .on:
-                    log.log(.warning, "radio \(state)")
-                default:
-                    continue
-                }
-            }
-            _ = await stopper.result
-            Lines.output.write(report.summary)
-        }
-
-        private static func checkedAdapter(_ name: String, _ address: String, shared: Bool, log: any KnitLog) -> AdapterSelection {
-            do {
-                let selection = try AdapterSelection(name: name, expectedAddress: address, shared: shared)
-                let status = try AdapterProbe.check(selection)
-                let use = shared ? ", shared" : ""
-                log.log(.info, "adapter \(selection.name) is \(selection.address)\(use), \(status.powered ? "powered" : "not powered")")
-                return selection
-            } catch {
-                fail("refusing to start: \(error)")
-            }
-        }
-
         private static func run(_ options: RunOptions) async {
             let log: any KnitLog =
                 options.logLevel.flatMap(JSONLinesLog.level(named:)).map { level in
                     JSONLinesLog(threshold: level, clock: SystemClock(), write: Lines.error.write)
                 }
                 ?? SilentLog()
-            let selection = checkedAdapter(options.adapter, options.adapterAddress, shared: options.sharedAdapter, log: log)
-            let profile = RadioProfile(name: options.radioProfile) ?? .android
-            var radioConfiguration = BlueZRadio.Configuration(adapter: selection, profile: profile, log: log)
-            let receiveMTU = options.receiveMTU.flatMap(UInt16.init(exactly:))
-            let sendMTU = options.sendMTU.flatMap(UInt16.init(exactly:))
-            if receiveMTU != nil || sendMTU != nil {
-                radioConfiguration.sockets = L2CAPSockets(
-                    adapter: selection.address,
-                    receiveMTU: receiveMTU ?? L2CAPSockets.largestReceiveMTU,
-                    sendMTU: sendMTU ?? L2CAPSockets.defaultSendMTU
-                )
-                let offered = receiveMTU.map(String.init) ?? "the default"
-                let written = sendMTU ?? L2CAPSockets.defaultSendMTU
-                log.log(.info, "channels offer a receive MTU of \(offered) and write at most \(written)")
+            let host: any PeerRadioHost
+            do {
+                host = try PeerHost(options, log: log)
+            } catch {
+                fail("refusing to start: \(error)")
             }
-            let radio = BlueZRadio(configuration: radioConfiguration)
             var links = LinkManager.Configuration()
             if let floor = options.rssiFloor {
                 links.promotion.rssiFloor = Double(floor)
                 log.log(.info, "promotion floor loosened to \(floor) dBm for development; Android's is -90")
             }
-            let node = makeNode(options, radio: radio, profile: profile, links: links, log: log)
-            let signals = stopOnSignals(node, radio)
+            let node = makeNode(options, host: host, links: links, log: log)
+            let signals = stopOnSignals(node, host)
             await node.start(name: options.name)
             for await line in StandardInput.lines() where !line.isEmpty {
                 guard await node.handle(line) else {
@@ -144,7 +79,7 @@ import Foundation
                 }
             }
             await node.stop()
-            await radio.shutdown()
+            await host.shutdown()
             for source in signals {
                 source.cancel()
             }
@@ -153,8 +88,7 @@ import Foundation
         /// The node, on the identity and profile kept in the state directory, with everything else in memory.
         private static func makeNode(
             _ options: RunOptions,
-            radio: BlueZRadio,
-            profile: RadioProfile,
+            host: any PeerRadioHost,
             links: LinkManager.Configuration,
             log: any KnitLog
         ) -> PeerNode {
@@ -175,8 +109,8 @@ import Foundation
             return PeerNode(
                 identity: identity.keys,
                 stores: stores,
-                radio: radio,
-                radioProfile: profile.name,
+                radio: host.radio,
+                radioProfile: host.profile,
                 clock: SystemClock(),
                 random: SystemRandomNumberGenerator(),
                 linkConfiguration: links,
@@ -186,14 +120,14 @@ import Foundation
         }
 
         /// Stops cleanly on `SIGINT` and `SIGTERM`: the advert is withdrawn and every link closed before the exit.
-        private static func stopOnSignals(_ node: PeerNode, _ radio: BlueZRadio) -> [any DispatchSourceSignal] {
+        private static func stopOnSignals(_ node: PeerNode, _ host: any PeerRadioHost) -> [any DispatchSourceSignal] {
             [SIGINT, SIGTERM].map { number in
                 signal(number, SIG_IGN)
                 let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
                 source.setEventHandler {
                     Task {
                         await node.stop()
-                        await radio.shutdown()
+                        await host.shutdown()
                         exit(0)
                     }
                 }
@@ -202,7 +136,7 @@ import Foundation
             }
         }
 
-        private static func fail(_ message: String) -> Never {
+        static func fail(_ message: String) -> Never {
             Lines.error.write(JSONValue.object(["log": "error", "message": .string(message)]).line)
             exit(1)
         }
@@ -271,7 +205,7 @@ import Foundation
     @main
     internal enum KnitPeerMain {
         static func main() {
-            FileHandle.standardError.write(Data("knit-peer drives BlueZ, so it runs on Linux only.\n".utf8))
+            FileHandle.standardError.write(Data("knit-peer needs BlueZ on Linux or CoreBluetooth on a Mac.\n".utf8))
             exit(1)
         }
     }
