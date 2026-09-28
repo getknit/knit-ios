@@ -50,6 +50,7 @@
         private static let writeSize = 8192
 
         let id: ChannelID
+        // periphery:ignore - held, never read: CoreBluetooth closes a channel once its last reference goes
         /// What keeps the streams open: the channel, for a real link.
         private let owner: AnyObject?
         private let input: InputStream?

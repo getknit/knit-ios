@@ -20,7 +20,6 @@
         let about: AboutInfo
         /// Stores a minted test identity for the next launch, in a debug build.
         let replaceIdentity: IdentityReplacer?
-        private let mesh: Mesh
         /// The CoreBluetooth radio, which a demo has none of.
         private let radio: BLERadio?
         private var listening: Task<Void, Never>?
@@ -31,14 +30,12 @@
 
         private init(
             session: AppSession,
-            mesh: Mesh,
             radio: BLERadio?,
             preferences: any AppPreferences,
             notifier: LocalNotifier,
             replaceIdentity: IdentityReplacer?
         ) {
             self.session = session
-            self.mesh = mesh
             self.radio = radio
             self.preferences = preferences
             self.notifier = notifier
@@ -155,7 +152,6 @@
                 identity: OwnIdentity(bundle: parts.identity.bundle), stores: parts.stores, mesh: service, notifier: alerts)
             let environment = AppEnvironment(
                 session: app,
-                mesh: node,
                 radio: parts.radio as? BLERadio,
                 preferences: parts.preferences,
                 notifier: alerts,

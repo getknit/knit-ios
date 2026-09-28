@@ -18,7 +18,7 @@ growing an explanation, that explanation belongs in the ADR.
 | the deployment target, the bundle id or `App/Info.plist` | [ADR 2026-09.txqp](../memory/decisions/2026-09-txqp-ios-18-is-the-floor.md) |
 | a CI job's `allow_failure`, a disabled lint rule, a compiler setting, or coverage floors | [ADR 2026-09.jgs6](../memory/decisions/2026-09-jgs6-each-quality-gate-blocks-from.md) |
 | `COPYING`, `APP-STORE-EXCEPTION.md`, or how contributions are licensed | [ADR 2026-09.5phg](../memory/decisions/2026-09-5phg-knit-for-ios-is-gpl.md) |
-| where the iPhone app builds, the `knit-local` runner, `verify:periphery`, CI caches or artifacts | [ADR 2026-09.fkqb](../memory/decisions/2026-09-fkqb-the-mac-builds-every-iphone.md) |
+| where the iPhone app builds, the `knit-local` runner, CI caches or artifacts | [ADR 2026-09.fkqb](../memory/decisions/2026-09-fkqb-the-mac-builds-every-iphone.md) |
 | `App/project.yml`, `App/Knit.xcconfig`, `scripts/check.sh xcode`, or a job on the `macos` runner | [ADR 2026-09.de8f](../memory/decisions/2026-09-de8f-xcodegen-generates-the-app-project.md) |
 | signing, `scripts/mac-desktop.sh`, `scripts/check.sh device`, `build:ios:signed`, or `App/Local.xcconfig` | [ADR 2026-09.zawh](../memory/decisions/2026-09-zawh-the-mac-signs-in-its.md) |
 | a lock, `KnitSync`, `Mutex`, or a TSan report | [ADR 2026-09.ahrr](../memory/decisions/2026-09-ahrr-locks-are-pthread-mutexes.md) |
@@ -36,6 +36,7 @@ growing an explanation, that explanation belongs in the ADR.
 | the doorbell, `Radio.ring`, `Radio.servesDoorbell`, `CAP_DOORBELL`, `LinkManager+Doorbell`, or what wakes a suspended iPhone | [ADR 2026-09.khjj](../memory/decisions/2026-09-khjj-a-peer-wakes-a-suspended.md) |
 | the Keychain identity, `KeychainSecretStore`, or what onboarding publishes | [ADR 2026-09.tkww](../memory/decisions/2026-09-tkww-a-reinstall-keeps-the-keychain.md) |
 | a string a person reads, `Copy`, `App/Info.plist`'s usage strings, or a view's text | [ADR 2026-09.ycza](../memory/decisions/2026-09-ycza-user-facing-copy-lives-in.md) |
+| `check.sh periphery`, a `verify:periphery` job, a `periphery:ignore`, or a Periphery finding | [ADR 2026-09.xgtz](../memory/decisions/2026-09-xgtz-periphery-blocks-on-the-mac.md) |
 | a view's colors, `Palette`, `KnitUITests`, `AuditPolicy`, `scripts/check.sh uitest`, or an accessibility audit finding | [ADR 2026-09.jcdx](../memory/decisions/2026-09-jcdx-the-accessibility-audit-blocks.md) |
 
 ## Where they live

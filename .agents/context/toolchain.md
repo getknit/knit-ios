@@ -39,9 +39,12 @@ exact interval, then update this file in the same change.
   `LINUX_SOURCEKIT_LIB_PATH=~/.local/share/swiftly/toolchains/6.4.0/usr/lib`. The scripts and hooks derive
   it themselves.
 - **swift-format** comes with the toolchain (`swift format`), configured in `.swift-format`.
-- **Periphery 3.8.0** ships macOS binaries only, so on Linux it is built from source and installed at user
-  level. It finds the Swift Build index store only when told to (`--index-store-path .build/out`), which
-  `scripts/check.sh periphery` does:
+- **Periphery 3.8.0** blocks on both platforms (ADR 2026-09.xgtz). It finds the Swift Build index store only
+  when told to (`--index-store-path .build/out`), which `scripts/check.sh periphery` does. On the Mac the gate
+  also reads the iPhone build's index in `.build-xcode`, so run `check.sh xcode periphery` there, and leaves
+  `KnitBlueZ` to Linux. An index keeps records of deleted files until the tree is rebuilt, so clear
+  `.build/out` before trusting a finding in code that is gone. Periphery ships macOS binaries only, so on
+  Linux it is built from source and installed at user level:
 
   ```sh
   git clone --depth 1 --branch 3.8.0 https://github.com/peripheryapp/periphery.git
@@ -85,8 +88,9 @@ exact interval, then update this file in the same change.
 - **`service`, instance runner 4,** also takes untagged jobs, in Docker. It is slower than linux-host: pipeline
   808's `test:coverage` took 643 s there, against about 250 s on linux-host (2026-09-28). A test that waits on a
   thread needs a deadline with room for that, as `LoopRig.settleMilliseconds` has.
-- **The `knit-local` runner** takes the four heavy jobs: `test:tsan`, `test:asan`, `verify:fuzz` and
-  `verify:analyze` (ADR 2026-09.fkqb). Analyze needs more than linux-host's 8 GB:
+- **The `knit-local` runner** takes the four heavy jobs, `test:tsan`, `test:asan`, `verify:fuzz` and
+  `verify:analyze` (ADR 2026-09.fkqb), and `verify:periphery:linux`, since Periphery is built from source
+  there. Analyze needs more than linux-host's 8 GB:
   SourceKit keeps every file's compiler instance until the run ends, and linux-host's cap killed it at 8.35 GB.
   Until the runner is registered these jobs wait for it, and no pipeline finishes.
   - **What it is:** project runner 7 on `knit/knit-ios`, tag `knit-local`, locked to the project, not
@@ -239,14 +243,8 @@ and never sleeps.
     `main()` has no `unused_declaration` exemption, and the Linux branch's exemption reads as superfluous.
     It also analyzes `Knit` from the macOS host build, where the app's iOS code does not compile; that
     needs an iOS compiler log from `xcodebuild`.
-  - **`check.sh periphery`** is advisory, in `verify:periphery` too. On 2026-09-28 it exited 0 with 23
-    findings, 18 of them in `KnitBlueZ`, whose callers compile only on Linux. The other five are
-    `ChatListModel`'s `linked` and `revision`, `StoredText`'s `column`, `L2CAPLink`'s `owner` and
-    `PeerRadioHost`'s `init(_:log:)`.
 
 ## Still owed on the Mac
 
-- Make `verify:periphery` block on the `macos` runner (`PERIPHERY_STRICT=1`), with `KnitBlueZ` left to Linux,
-  once the five findings outside it are cleared (ADR 2026-09.fkqb).
 - Make `check.sh analyze` pass on macOS: a macOS counterpart to `scripts/swiftlint-analyze-linux.yml`, and
   `Knit` and `KnitBLE` analyzed from an iOS build.

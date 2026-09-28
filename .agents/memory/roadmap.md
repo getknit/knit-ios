@@ -140,8 +140,9 @@ explicit direction.** Update this file in the change that ships an item.
     service-data advert, so every run is the `ios` profile against A1.
   - **xtool retired (2026-09-28):** every iPhone build now comes from the Mac, and `verify:periphery` moved
     to the `macos` runner, still advisory (ADR 2026-09.fkqb).
-  - **Still owed:** CI's first run of `test:macos` and `test:ios:simulator` after the push, and Periphery
-    blocking on the Mac (`toolchain.md`, "Still owed on the Mac").
+  - **Periphery blocks (2026-09-28):** on the Mac, over the iPhone build's index too, and on Linux for
+    `KnitBlueZ` (ADR 2026-09.xgtz).
+  - **Still owed:** CI's first run of `test:macos` and `test:ios:simulator` after the push.
 - **P8, the iPhone:** begun early on 2026-09-26, without the Mac: an iPhone 12 on iOS 27.0, installed over USB
   by xtool on free provisioning. The app runs and links the Linux peer and the lab's Android phones. Against
   the peer, items 3 to 5 pass: safety numbers match, the room works both ways with ticks, and DMs go request,

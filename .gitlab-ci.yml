@@ -5,7 +5,8 @@
 # Three kinds of runner:
 #   - shared Linux runners for the light jobs: linux-host and service, both amd64, and the Mac's arm64 Docker runner,
 #     so an untagged job runs on either architecture;
-#   - `knit-local`, a runner on the maintainer's machine, for the heavy jobs: sanitizers, fuzzing and analyze;
+#   - `knit-local`, a runner on the maintainer's machine, for the heavy jobs (sanitizers, fuzzing, analyze) and for
+#     `verify:periphery:linux`, since Periphery is built from source there;
 #   - `macos`, the Mac Mini's shell runner, for the Apple jobs: `build:ios:xcode` (ADR 2026-09.de8f), the signed
 #     `build:ios:signed` (ADR 2026-09.zawh), `test:macos`, `test:ios:simulator` (ADR 2026-09.jcdx) and
 #     `verify:periphery`. Every iPhone build happens there.
@@ -226,16 +227,23 @@ verify:fuzz:
     expire_in: 4 weeks
 
 verify:periphery:
+  # Unused code, over the host build's index and the iPhone build's, which `check.sh xcode` leaves in .build-xcode
+  # (ADR 2026-09.xgtz). KnitBlueZ is left to verify:periphery:linux, since its callers compile only there.
   extends: .mac
   stage: verify
   needs: []
   variables:
-    GIT_CLEAN_FLAGS: -ffdx -e /.build/
+    GIT_CLEAN_FLAGS: -ffdx -e /.build/ -e /.build-xcode/
+  script:
+    - scripts/check.sh xcode periphery
+
+verify:periphery:linux:
+  # The same scan on Linux, where KnitBlueZ, knit-peer's BlueZ host and their tests compile.
+  extends: .local
+  stage: verify
+  needs: []
   script:
     - scripts/check.sh periphery
-  # Advisory until its findings are cleared: KnitBlueZ's callers compile only on Linux, so the Mac reads most of
-  # it as unused, and three findings the Mac and Linux share are still open (.agents/context/toolchain.md).
-  allow_failure: true
 
 verify:trivy:
   stage: verify

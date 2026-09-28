@@ -14,7 +14,7 @@ tree, so switching between them never rebuilds the plain debug tree.
 | `scripts/check.sh coverage` | tests in `.build-cov`, then `scripts/coverage-gate.py` | before a phase closes |
 | `scripts/check.sh tsan` / `asan` | tests under a sanitizer, in `.build-tsan` / `.build-asan` | after touching actors, locks or unsafe code |
 | `scripts/check.sh analyze` | `swiftlint analyze` over the platform-free targets | before a merge request |
-| `scripts/check.sh periphery` | Periphery over the Swift Build index store (advisory; CI runs it on the Mac) | after deleting or renaming API |
+| `scripts/check.sh periphery` | Periphery over the Swift Build index store; on the Mac, run `xcode periphery` for the app's index too | after deleting or renaming API |
 | `scripts/check.sh adr` / `lintorama` | the ADR router check; markdown, YAML, shell and editorconfig | after touching docs |
 | `scripts/check.sh xcode` | on the Mac: XcodeGen, then `xcodebuild` for the iPhone and the Simulator, unsigned, and the delegate check | after touching `Knit`, `KnitBLE` or `App/`, through `scripts/mac.sh run` |
 | `scripts/check.sh uitest` | on the Mac: `KnitUITests` in the Simulator, every MVP screen through the accessibility audit at the default and the largest text size, into `.build-xcode/uitest.xcresult` | after touching a view, `Palette` or `App/`, through `scripts/mac.sh run` |

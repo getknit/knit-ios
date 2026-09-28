@@ -59,9 +59,10 @@ import Foundation
                     JSONLinesLog(threshold: level, clock: SystemClock(), write: Lines.error.write)
                 }
                 ?? SilentLog()
+            let kind: any PeerRadioHost.Type = PeerHost.self
             let host: any PeerRadioHost
             do {
-                host = try PeerHost(options, log: log)
+                host = try kind.init(options, log: log)
             } catch {
                 fail("refusing to start: \(error)")
             }

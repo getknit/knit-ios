@@ -103,9 +103,20 @@ gate_periphery() {
 	fi
 	# Swift Build writes the index store to .build/out, which Periphery does not look for by default.
 	swift build "${jobs[@]}" --build-tests --only-use-versions-from-resolved-file
-	# Advisory for now, on the Mac runner too (PERIPHERY_STRICT=1 makes it block): the host build never indexes
-	# the iOS app, and KnitBlueZ's callers compile only on Linux (.agents/context/toolchain.md).
-	periphery scan --quiet --skip-build --index-store-path .build/out --retain-public ${PERIPHERY_STRICT:+--strict}
+	local stores=(--index-store-path .build/out) excludes=()
+	if [ "$(uname -s)" = Darwin ]; then
+		# The host build compiles the app to an empty module, so the Mac also reads the index of the iPhone build
+		# `check.sh xcode` leaves (CI runs that gate first). KnitBlueZ is Linux's to judge: its callers compile only
+		# there, and on a Mac its D-Bus names all read as unused.
+		if [ ! -d "$xcode_index" ]; then
+			echo "no iPhone index at $xcode_index: run scripts/check.sh xcode periphery" >&2
+			return 1
+		fi
+		stores+=(--index-store-path "$xcode_index")
+		excludes=(--report-exclude 'Sources/KnitBlueZ/**' --report-exclude 'Tests/KnitBlueZTests/**')
+	fi
+	# A property of an Equatable type is read by its synthesized ==, which Periphery does not see.
+	periphery scan --quiet --strict --retain-public --retain-equatable-properties "${stores[@]}" "${excludes[@]}"
 }
 
 gate_adr() {
@@ -152,6 +163,8 @@ xcode_project() {
 
 xcode_resolved=App/Knit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 xcode_app=.build-xcode/Build/Products/Debug-iphoneos/Knit.app
+# Xcode indexes while it builds; Periphery reads this store for the app's own code.
+xcode_index=.build-xcode/Index.noindex/DataStore
 xcode_build=(-project App/Knit.xcodeproj -scheme Knit -configuration Debug -derivedDataPath .build-xcode
 	-jobs "$swift_jobs" -disableAutomaticPackageResolution)
 
