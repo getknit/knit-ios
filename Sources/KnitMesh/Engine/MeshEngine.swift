@@ -157,6 +157,8 @@ public final class MeshEngine {
     /// A neighbour's custody digest arrived (`ForwardSync.onDigest`): serve every live frame it lacks, each sender's
     /// key ahead of a backlog the neighbour could not otherwise verify.
     public func receiveDigest(_ ids: [String], from neighbor: NodeId) {
+        // When each one lands shows what a slow link spends on them: every 60 s, the whole live id set each way.
+        log.log(.debug, "mesh digest from \(neighbor): \(ids.count) ids")
         let reply = custody.missing(from: ids, for: neighbor, in: stores.custody, now: clock.wallMilliseconds())
         for sender in reply.keysAhead {
             // Point to point, as a key request's answer goes, so it is never flooded (knit-next ADR 2026-09.7bu7).

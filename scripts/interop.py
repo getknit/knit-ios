@@ -12,7 +12,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
     scripts/interop.py iphone-rings [--udid UDID]
-    scripts/interop.py android-rings --device SERIAL [--converge-timeout 600]
+    scripts/interop.py android-rings --device SERIAL [--converge-timeout 600] [--arrival-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
     scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
 
@@ -762,11 +762,11 @@ def android_rings(arguments: argparse.Namespace) -> int:
     and says so in its HELLO. The phone never sights it, so the peer dials the phone, and Android rings only a link it
     accepted. The phone looks the doorbell up over that link and rings it after its link-up frames. Then it posts and
     DMs through its debug bridge, each after a spell with no ring, and each must ring the peer within seconds. Android
-    rings as it queues a frame, so the ring comes even while the frame waits behind the link-up back-fill; whether
-    the frames arrived is only reported. Before the rings, the back-fill must drain: custody converges, but for frames
-    from senders the phone pinned before it kept their signed profiles (knit-next ADR 2026-09.g64k, database v16).
-    The phone must run a debug build with A4 (knit-next `c3191717` or later); the first step checks, before the peer
-    starts."""
+    rings as it queues a frame, so the ring comes even while the frame waits in the link's queue; each frame must then
+    arrive within `--arrival-timeout` of its send. Before the rings, the back-fill must drain: custody converges, but
+    for frames from senders the phone pinned before it kept their signed profiles (knit-next ADR 2026-09.g64k,
+    database v16). The phone must run a debug build with A4 (knit-next `c3191717` or later); the first step checks,
+    before the peer starts."""
     phone = Phone(arguments.device)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -796,12 +796,15 @@ def android_rings(arguments: argparse.Namespace) -> int:
             # waits behind any back-fill, which on `hci1` runs at under 1 KB/s. A ring that comes within seconds of a
             # post, after a spell with none, is the post's.
             bodies = {name: f"interop {name} rings from phone {nonce}" for name in ("post", "dm")}
+            sent_at: dict[str, float] = {}
             for name, conversation in (("post", "nearby"), ("dm", peer_id)):
-                run.step(f"a-{name}-rings", lambda name=name, conversation=conversation: _rings_for(peer, phone, bodies[name], conversation))
+                run.step(
+                    f"a-{name}-rings",
+                    lambda name=name, conversation=conversation: _rings_for(peer, phone, bodies[name], conversation, sent_at),
+                )
             run.step("phone-logged-its-rings", lambda: _phone_rang(phone, peer_id))
             run.step("link-held", lambda: {**_phone_held(phone, peer_id), **_no_link_dropped(peer, {phone_id})})
-            # Not a check: how far each frame got behind the back-fill.
-            run.step("arrivals", lambda: {name: bool(peer.lines(lambda line, body=body: _message(line, body))) for name, body in bodies.items()})
+            run.step("arrivals", lambda: _frames_arrived(peer, bodies, sent_at, arguments.arrival_timeout))
     finally:
         stop.set()
         peer.stop()
@@ -809,9 +812,12 @@ def android_rings(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
-def _rings_for(peer: Peer, phone: Phone, body: str, conversation: str, quiet: float = 6, timeout: float = 8) -> dict:
+def _rings_for(
+    peer: Peer, phone: Phone, body: str, conversation: str, sent_at: dict[str, float], quiet: float = 6, timeout: float = 8
+) -> dict:
     """Sends `body` from the phone once the peer has heard no ring for `quiet` seconds, past the 5 s interval, and
-    waits `timeout` seconds for the ring it owes: at once, or at most 5 s later if something else rang first."""
+    waits `timeout` seconds for the ring it owes: at once, or at most 5 s later if something else rang first. When it
+    sent goes in `sent_at`, keyed by the body."""
     started = time.monotonic()
     last = peer.command(cmd="status")["rung"]
     still = time.monotonic()
@@ -823,12 +829,32 @@ def _rings_for(peer: Peer, phone: Phone, body: str, conversation: str, quiet: fl
         if rung != last:
             last, still = rung, time.monotonic()
     sent = time.monotonic()
+    sent_at[body] = sent
     phone.send(body, conversation=conversation)
     try:
         rang = poll(lambda: (count := peer.command(cmd="status")["rung"]) > last and count, timeout, every=0.5)
     except TimeoutError as error:
         raise RuntimeError(f"no ring within {timeout:.0f} s of the send") from error
     return {"rung": rang, "afterSend": round(time.monotonic() - sent, 1), "waitedForQuiet": round(sent - started, 1)}
+
+
+def _frames_arrived(peer: Peer, bodies: dict[str, str], sent_at: dict[str, float], timeout: float) -> dict:
+    """Each frame the phone sent reached the peer within `timeout` of its send, and how long it took. The phone's
+    link writer is first in, first out, and it queues a digest of its whole custody every 60 s whatever is already
+    queued. So on `hci1`, where a newcomer's back-fill takes about 9 minutes, the digests made meanwhile (about 20 KB
+    each for 780 ids) still stand ahead of a frame sent once custody matches, and the frame waits minutes behind
+    them. A link that drops meanwhile loses the queue, and custody serves the frame again on the next link."""
+    latencies = {}
+    for name, body in bodies.items():
+        sent = sent_at.get(body)
+        if sent is None:
+            raise RuntimeError(f"the {name} was never sent")
+        try:
+            line = peer.wait(lambda line, body=body: _message(line, body), max(0, sent + timeout - time.monotonic()))
+        except TimeoutError:
+            raise RuntimeError(f"the {name} had not arrived {timeout:.0f} s after it was sent") from None
+        latencies[name] = round(line["_at"] - sent, 1)
+    return latencies
 
 
 def _phone_log(phone: Phone, needle: str) -> list[str]:
@@ -1980,6 +2006,7 @@ def main() -> int:
     android.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
     android.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     android.add_argument("--converge-timeout", type=float, default=600, help="seconds for the back-fill to converge custody")
+    android.add_argument("--arrival-timeout", type=float, default=600, help="seconds for the post and the DM to reach the peer")
     for sub in (ios, wake, rings, scan, by_hand, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()

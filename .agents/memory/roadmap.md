@@ -64,6 +64,11 @@ explicit direction.** Update this file in the change that ships an item.
     `android-rings` now converges custody first, and it passed 10 of 10 with all 796 live ids held in 501 s
     (`.agents/context/linux-peer.md`, "What the carrier's kept keys showed"). Still owed: the fix reaching
     knit-next's `main`, and the pin moving past it.
+  - **Digests queue behind a back-fill (2026-09-27):** a post the Pixel 3 sent once custody matched took 6.5 minutes
+    to reach the peer on `hci1`. It was not lost. It waited behind about ten 20 KB digests the Pixel had queued
+    during the 9-minute back-fill, since both platforms queue a digest every 60 s whatever is already queued
+    (`.agents/context/linux-peer.md`, "Why the frames were late"). Open: whether both keep at most one digest queued
+    per link, replacing it with the newer. That is wire-neutral, but it is knit-next's call.
   - **The relay line (2026-09-26):** rehearsed with a second peer on `hci0`, shared (`--shared-adapter`), on the
     maintainer's go-ahead. `interop.py relay` passed 16 of 16: posts and DMs crossed peer A both ways, and the three
     custody sets converged (`.agents/context/linux-peer.md`, "What the relay line showed").

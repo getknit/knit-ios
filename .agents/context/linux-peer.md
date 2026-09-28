@@ -150,11 +150,13 @@ it, so the peer dials the phone, and Android rings only a link it accepted. The 
    for want of a key. The step also reports how many keys the phone served meanwhile, to anyone.
 3. A room post from the phone, sent through its debug bridge, rings the peer again, and so does a DM. Android rings
    as it queues a frame, not as it writes it, so the run waits for 6 s with no ring, sends, and wants a ring
-   within 8 s. That ring is the post's, even while the post itself waits behind the back-fill.
+   within 8 s. That ring is the post's, even while the post itself waits in the link's queue.
 4. The phone logs `bt ring <peer>`.
 5. Neither side drops the link.
 
-Whether the post and the DM arrived is reported, not checked ("What A4 showed").
+Last, the post and the DM must each reach the peer within `--arrival-timeout` (600 s) of being sent, and the step
+reports how long each took. On `hci1` that can be minutes, behind the digests the phone queued during the back-fill
+("Why the frames were late").
 
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
 needs no go-ahead for a phone. The peer takes a node id above every phone's and dials them all, since this adapter
@@ -678,7 +680,38 @@ new custody step:
   morning's runs never converged, since 81 frames stayed unreadable.
 - **The rings came on a quiet link.** The post rang the peer 3.5 s after it was sent, and the DM 1.6 s after, each
   after 6 s with no ring. Both phones held the link.
-- **Neither frame had arrived when the run ended,** 12 s after the post and 3 s after the DM, although the back-fill
-  had drained. `arrivals` looks once and does not wait, so this shows only that both were slower than that. Why is
-  not known yet.
+- **Neither frame had arrived when the run ended,** 12 s after the post and 3 s after the DM. `arrivals` looked
+  once and did not wait. Both were late, not lost ("Why the frames were late").
+
+## Why the frames were late
+
+Six more runs against the Pixel 3 that afternoon found the frames late, not lost. One was a probe of five posts,
+and five were `android-rings` runs as its `arrivals` step learned to wait. Every frame given long enough arrived: all
+five posts, and the post and DM of the one run that waited 900 s. Three runs waited only 60 s and saw nothing, and
+one failed on a helper bug before it looked. A frame the phone sends waits in its link's queue, and on `hci1` the
+queue can hold minutes:
+
+- **Android's link writer is first in, first out.** Frames and digests share one queue (`FramedLink.outbound`);
+  only a file's chunks let frames in between them. The port's writer is the same (`Radio.write` writes "after
+  everything written before").
+- **A back-fill goes into it all at once.** A newcomer's digest reply queues every frame it lacks, about 780 and
+  500 KB here, which `hci1` carries in about 9 minutes at 0.5 to 2.5 KB/s.
+- **Digests pile up behind it.** Every 60 s the phone queues another digest of its whole custody, about 20 KB for 780
+  ids, however much is already queued, and nothing merges or drops a stale one. After a 9-minute back-fill, about
+  ten of them stand in line.
+- **So a frame sent as custody matches waits behind them all.** In the run with a 900 s wait, the post and the DM
+  took 393 s and 383 s. In the 6.5 minutes the post waited, ten digests landed where the phone makes one a minute,
+  about 204 KB of the 211 KB the link carried. The link then dropped (`errno 110`) as that queue emptied, and the
+  phone served both frames again from custody within 30 s of the next link.
+- **Once the queue has emptied, frames are quick.** The probe sent its posts after custody had taken 10 minutes to
+  match, and they took 1.0 to 6.3 s. The slowest landed 0.1 s after a digest it had queued behind.
+
+Two runs had their first link drop with `errno 110`, 3 and 16 minutes in, and the peer dialed again within 20 s. In
+three runs custody never matched within 600 s: once after such a drop, and twice because the other lab phones were
+sending DMs, which queued behind the same digests. The custody step allows only frames the peer dropped for want of a
+key, so live traffic like that fails it.
+
+On a link between two phones, which carries tens of KB/s, the same queue drains in seconds, which is why only `hci1`
+shows it. Both platforms could keep at most one digest queued per link and replace it with the newer one. That
+changes no wire bytes, but the platforms should agree on it, so it is knit-next's decision (roadmap).
 

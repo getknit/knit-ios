@@ -62,6 +62,10 @@ A node carries frames for people who are not in range yet. This is store-and-for
   whose digest under-reports gets the missing frames re-pushed at each exchange, though on a Bluetooth link
   `LinkCrossings` lets one frame cross only once in 10 minutes, so the repeat comes that often while the link
   lasts.
+- **A link's writer is first in, first out, on both platforms,** and digests queue like frames. A back-fill is
+  queued whole, each 60 s digest joins the queue behind it, and nothing drops a stale one. On a slow link a frame
+  sent after a back-fill waits behind every digest made meanwhile: minutes on `hci1`
+  (`.agents/context/linux-peer.md`, "Why the frames were late").
 
 The advert's digest cue is the low 32 bits of an FNV-1a-64 fold (offset `0xCBF29CE484222325`, prime
 `0x100000001B3`) over each live id's UTF-8 bytes, XORed across the set. Nothing on BLE reads it, but we
