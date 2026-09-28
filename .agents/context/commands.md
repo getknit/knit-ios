@@ -107,6 +107,10 @@ Launch arguments, set in the scheme on the Mac (P7):
   people, a room conversation, an accepted DM and a message request.
 - `-demoRadio on|off|unauthorized|unsupported` (with `-seedDemo`) is the state that radio reports, which is how
   the status line's messages are checked, the unsupported device's among them (MVP item 10).
+- `-demoScene edge-cases|marketing` (with `-seedDemo`) picks what is seeded. `edge-cases`, the default, is the
+  cast above: two people with one name, one with none, and nobody linked. `marketing` is for store screenshots
+  and social posts, after knit-next's hiking theme: seven named people, a room, two DMs and a request, with
+  three people shown as linked (`DemoMesh`), so the status line reads "Connected to 3 nearby devices".
 
 ## Decisions
 

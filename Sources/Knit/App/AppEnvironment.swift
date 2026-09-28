@@ -6,6 +6,7 @@
     import KnitMesh
     import KnitStore
     import KnitStoreSQL
+    import KnitWire
     import UIKit
 
     /// Everything a running app holds, built once per launch: the identity, the stores, the radio, the mesh and the
@@ -83,7 +84,7 @@
         /// The environment `options` ask for. Throws when the Keychain or the database cannot be read yet, before
         /// the first unlock since a reboot: the app then waits for protected data rather than making a new identity.
         static func make(_ options: LaunchOptions) throws -> AppEnvironment {
-            options.seedDemo ? try demo(radio: options.demoRadio) : try live()
+            options.seedDemo ? try demo(radio: options.demoRadio, scene: options.demoScene) : try live()
         }
 
         private static func live() throws -> AppEnvironment {
@@ -108,19 +109,20 @@
             #endif
         }
 
-        private static func demo(radio: RadioState) throws -> AppEnvironment {
+        private static func demo(radio: RadioState, scene: DemoScene) throws -> AppEnvironment {
             guard let identity = DemoSeed.identity else {
                 throw SecretStoreError.unavailable("the demo identity")
             }
             let clock = SystemClock()
             let stores = MeshStores.inMemory()
-            DemoSeed.populate(stores, me: identity.nodeId, now: clock.wallMilliseconds())
+            DemoSeed.populate(stores, me: identity.nodeId, now: clock.wallMilliseconds(), scene: scene)
             let parts = Parts(
                 identity: identity,
                 stores: stores,
                 radio: DemoRadio(state: radio),
                 log: UnifiedLog(clock: clock),
-                preferences: MemoryPreferences(hasOnboarded: true)
+                preferences: MemoryPreferences(hasOnboarded: true),
+                linked: DemoSeed.linked(in: scene)
             )
             return compose(parts, replace: nil)
         }
@@ -132,6 +134,8 @@
             let radio: any Radio
             let log: any KnitLog
             let preferences: any AppPreferences
+            /// The peers a demo scene shows as linked, which only a demo has.
+            var linked: [NodeId] = []
         }
 
         private static func compose(_ parts: Parts, replace: IdentityReplacer?) -> AppEnvironment {
@@ -146,7 +150,9 @@
                 log: parts.log
             )
             let alerts = LocalNotifier()
-            let app = AppSession(identity: OwnIdentity(bundle: parts.identity.bundle), stores: parts.stores, mesh: node, notifier: alerts)
+            let service: any MeshService = parts.linked.isEmpty ? node : DemoMesh(node, linked: parts.linked)
+            let app = AppSession(
+                identity: OwnIdentity(bundle: parts.identity.bundle), stores: parts.stores, mesh: service, notifier: alerts)
             let environment = AppEnvironment(
                 session: app,
                 mesh: node,

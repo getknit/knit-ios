@@ -24,7 +24,7 @@ ladder, not the first.
    `Mesh` actor the same way and awaits the fake radio's activity stream. Nothing sleeps.
 4. **The app's logic, without a screen.** `KnitAppCoreTests` drives `AppSession` and every view model
    through a `FakeMesh` that writes to in-memory stores as the engine would, and reads every catalog string.
-   `DemoTests` runs the real `Mesh` on `-seedDemo`'s radio. The SwiftUI views, the Keychain store and
+   `DemoTests` runs the real `Mesh` on `-seedDemo`'s radio, in each scene. The SwiftUI views, the Keychain store and
    `KnitBLE` compile only for iOS: `scripts/check.sh ios` type-checks them, and the Mac runs them (P7).
 5. **The mesh lab: deferred.** Multi-node scenarios with `assertConverged`, and seeded chaos, were skipped
    for now at the maintainer's call (`.agents/memory/roadmap.md`). The synchronous engine is what would let

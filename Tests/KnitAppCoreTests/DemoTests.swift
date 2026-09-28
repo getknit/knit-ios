@@ -7,7 +7,7 @@ import Testing
 
 @testable import KnitAppCore
 
-/// `-seedDemo`: its launch options, its radio, and what it seeds, driven through a real mesh.
+/// `-seedDemo`: its launch options, its radio, its scenes, and what they seed, driven through a real mesh.
 @MainActor
 @Suite(.timeLimit(.minutes(1))) struct DemoTests {
     @Test func theLaunchOptionsReadTheDemoAndItsRadio() {
@@ -18,24 +18,32 @@ import Testing
         #expect(LaunchOptions(arguments: ["-seedDemo", "-demoRadio", "sideways"]).demoRadio == .on)
         #expect(LaunchOptions(arguments: ["-seedDemo", "-demoRadio"]).demoRadio == .on, "a flag with no value")
         #expect(LaunchOptions(arguments: ["-demoRadio", "off"]).demoRadio == .off)
+        #expect(demo.demoScene == .edgeCases, "the default scene")
+        #expect(LaunchOptions(arguments: ["-seedDemo", "-demoScene", "marketing"]).demoScene == .marketing)
+        #expect(LaunchOptions(arguments: ["-seedDemo", "-demoScene", "edge-cases"]).demoScene == .edgeCases)
+        #expect(LaunchOptions(arguments: ["-seedDemo", "-demoScene", "sideways"]).demoScene == .edgeCases)
+        #expect(LaunchOptions(arguments: ["-seedDemo", "-demoScene"]).demoScene == .edgeCases, "a flag with no value")
     }
 
-    @Test func theSeedIsTheSameEveryLaunch() throws {
+    @Test(arguments: DemoScene.allCases)
+    func theSeedIsTheSameEveryLaunch(scene: DemoScene) throws {
         let first = try #require(DemoSeed.identity)
         let second = try #require(DemoSeed.identity)
         #expect(first.nodeId == second.nodeId)
         let once = MeshStores.inMemory()
         let again = MeshStores.inMemory()
-        DemoSeed.populate(once, me: first.nodeId, now: 1_000_000)
-        DemoSeed.populate(again, me: first.nodeId, now: 1_000_000)
+        DemoSeed.populate(once, me: first.nodeId, now: 1_000_000, scene: scene)
+        DemoSeed.populate(again, me: first.nodeId, now: 1_000_000, scene: scene)
         #expect(once.peers.allPeers() == again.peers.allPeers())
         #expect(once.messages.threadHeads() == again.messages.threadHeads())
+        #expect(once.ownProfile.load() == again.ownProfile.load())
     }
 
     @Test func theDemoShowsARoomADMARequestAndTwoSams() async throws {
         let identity = try #require(DemoSeed.identity)
         let stores = MeshStores.inMemory()
-        DemoSeed.populate(stores, me: identity.nodeId, now: 10_000_000)
+        DemoSeed.populate(stores, me: identity.nodeId, now: 10_000_000, scene: .edgeCases)
+        #expect(DemoSeed.linked(in: .edgeCases).isEmpty)
         let radio = DemoRadio(state: .unsupported)
         let mesh = Mesh(
             identity: identity,
@@ -63,6 +71,76 @@ import Testing
         #expect(await session.diagnostics().neighbors.isEmpty)
         #expect(stores.messages.messages(in: Conversations.nearby).last?.body == "Nobody hears this")
         listening.cancel()
+    }
+
+    @Test func theMarketingSceneNamesEveryoneAndLinksThree() async throws {
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        DemoSeed.populate(stores, me: identity.nodeId, now: 100_000_000, scene: .marketing)
+        #expect(stores.ownProfile.load().name == "Maya Okonkwo")
+        let names = stores.peers.allPeers().map(\.name)
+        #expect(!names.contains(""), "nobody shown by alias")
+        #expect(Set(names).count == names.count, "nobody told apart by alias")
+        let linked = DemoSeed.linked(in: .marketing)
+        #expect(linked.count == 3)
+        let (session, mesh) = Self.session(stores, identity: identity, radio: .on, linked: linked)
+        let list = ChatListModel(session: session)
+        #expect(list.state.rows.map(\.title) == ["Nearby", "Sam Rivera", "Dani Cho"])
+        #expect(list.state.requestCount == 1)
+        #expect(list.state.rows[2].isVerified)
+        #expect(list.state.rows.dropFirst().allSatisfy { $0.lastStatus == .delivered || $0.lastStatus == nil })
+        let listening = Task { await session.listen() }
+        await session.start()
+        while session.neighbors.count < 3 {
+            await Task.yield()
+        }
+        #expect(list.status == .linked(3))
+        let everyDMLinked = list.state.rows.dropFirst().allSatisfy(\.isLinked)
+        #expect(everyDMLinked)
+        #expect(await session.diagnostics().neighbors.map(\.nodeId) == linked)
+        await session.stop()
+        while !session.neighbors.isEmpty {
+            await Task.yield()
+        }
+        #expect(list.status == .stopped)
+        #expect(await mesh.neighbors.isEmpty)
+        listening.cancel()
+    }
+
+    @Test func aRadioThatCannotRunShowsNobodyLinked() async throws {
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        DemoSeed.populate(stores, me: identity.nodeId, now: 100_000_000, scene: .marketing)
+        let (session, mesh) = Self.session(stores, identity: identity, radio: .off, linked: DemoSeed.linked(in: .marketing))
+        let listening = Task { await session.listen() }
+        await session.start()
+        while session.radioState == nil {
+            await Task.yield()
+        }
+        #expect(session.radioState == .off)
+        #expect(session.neighbors.isEmpty)
+        #expect(await mesh.neighbors.isEmpty)
+        #expect(ChatListModel(session: session).status == .bluetoothOff)
+        listening.cancel()
+    }
+
+    /// A session over a real mesh on the demo's radio, in `radio`'s state, showing `linked` as linked.
+    private static func session(
+        _ stores: MeshStores,
+        identity: IdentityKeys,
+        radio: RadioState,
+        linked: [NodeId]
+    ) -> (AppSession, DemoMesh) {
+        let node = Mesh(
+            identity: identity,
+            deviceTag: nil,
+            stores: stores,
+            radio: DemoRadio(state: radio),
+            clock: DemoClock(),
+            random: SystemRandomNumberGenerator()
+        )
+        let mesh = DemoMesh(node, linked: linked)
+        return (AppSession(identity: OwnIdentity(bundle: identity.bundle), stores: stores, mesh: mesh), mesh)
     }
 
     @Test func theDemoRadioGoesNowhere() async {

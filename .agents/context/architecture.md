@@ -13,7 +13,7 @@ one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 | `KnitStore` | all | repository protocols, in-memory stores, and the custody rules every store applies | P3 |
 | `KnitStoreSQL` | all | the `KnitStore` protocols on SQLite through GRDB: the frozen schema, its migrations and the SQL stores | P5 |
 | `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol, router, SeenSet, custody, sync, receipts, key recovery, profiles, conversations, policies, the system clock | P3 |
-| `KnitAppCore` | all | one `AppSession` over the mesh, the `@Observable` view models each screen reads, collision-aware labels, the notification policy, the copy catalog (ADR 2026-09.ycza), and `-seedDemo`'s seed and radio | P6 |
+| `KnitAppCore` | all | one `AppSession` over the mesh, the `@Observable` view models each screen reads, collision-aware labels, the notification policy, the copy catalog (ADR 2026-09.ycza), and `-seedDemo`'s scenes, radio and shown links | P6 |
 | `KnitBLE` | Apple | the CoreBluetooth `Radio`: central and GATT reads, peripheral with the GATT payload, L2CAP streams on one thread, restoration | P6 |
 | `Knit` | iOS | the SwiftUI screens, `@main` and the app delegate, the Keychain store, notifications, the unified log, the composition root, and a debug build's USB bridge (ADR 2026-09.kwa8) | P6 |
 | `KnitBlueZ`, `CDBus`, `CBluetoothShim` | Linux | the BlueZ `Radio`: one `poll` thread over a libdbus connection and LE CoC sockets; advert, scan, and serving and reading the GATT payload | P4 |
