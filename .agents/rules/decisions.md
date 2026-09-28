@@ -15,14 +15,13 @@ growing an explanation, that explanation belongs in the ADR.
 | a radio plane, a capability bit we advertise, or anything Wi-Fi Aware, LoRa, spool or Wi-Fi Direct | [ADR 2026-09.zwdp](../memory/decisions/2026-09-zwdp-knit-for-ios-meshes-over.md) |
 | `KnitWire`, `KnitCrypto`, `KnitMesh`, golden vectors, or the knit-next pin | [ADR 2026-09.2ved](../memory/decisions/2026-09-2ved-knit-next-s-code-and.md) |
 | the target layout in `Package.swift`, or a `#if canImport` / `#if os` guard | [ADR 2026-09.wde9](../memory/decisions/2026-09-wde9-the-protocol-core-is-platform.md) |
-| the deployment target, the bundle id, `xtool.yml` or `App/Info.plist` | [ADR 2026-09.txqp](../memory/decisions/2026-09-txqp-ios-18-is-the-floor.md) |
+| the deployment target, the bundle id or `App/Info.plist` | [ADR 2026-09.txqp](../memory/decisions/2026-09-txqp-ios-18-is-the-floor.md) |
 | a CI job's `allow_failure`, a disabled lint rule, a compiler setting, or coverage floors | [ADR 2026-09.jgs6](../memory/decisions/2026-09-jgs6-each-quality-gate-blocks-from.md) |
 | `COPYING`, `APP-STORE-EXCEPTION.md`, or how contributions are licensed | [ADR 2026-09.5phg](../memory/decisions/2026-09-5phg-knit-for-ios-is-gpl.md) |
-| `build:ios`, the `knit-local` runner, CI caches or artifacts | [ADR 2026-09.d3jv](../memory/decisions/2026-09-d3jv-the-darwin-sdk-stays-on.md) |
+| where the iPhone app builds, the `knit-local` runner, `verify:periphery`, CI caches or artifacts | [ADR 2026-09.fkqb](../memory/decisions/2026-09-fkqb-the-mac-builds-every-iphone.md) |
 | `App/project.yml`, `App/Knit.xcconfig`, `scripts/check.sh xcode`, or a job on the `macos` runner | [ADR 2026-09.de8f](../memory/decisions/2026-09-de8f-xcodegen-generates-the-app-project.md) |
 | signing, `scripts/mac-desktop.sh`, `scripts/check.sh device`, `build:ios:signed`, or `App/Local.xcconfig` | [ADR 2026-09.zawh](../memory/decisions/2026-09-zawh-the-mac-signs-in-its.md) |
 | a lock, `KnitSync`, `Mutex`, or a TSan report | [ADR 2026-09.ahrr](../memory/decisions/2026-09-ahrr-locks-are-pthread-mutexes.md) |
-| `scripts/xtool-sdk-fixup.sh`, `xtool sdk install`, or a clang module-scan failure | [ADR 2026-09.5vbh](../memory/decisions/2026-09-5vbh-xtool-builds-with-the-compiling.md) |
 | DM sealing, `EncEnvelope` versions, or the capability bits `CAP_RATCHET` and `CAP_CRYPTO_V3` | [ADR 2026-09.qsd9](../memory/decisions/2026-09-qsd9-dms-seal-with-v1-static.md) |
 | who dials whom, HELLO admission, link teardown, or a `Radio` adapter | [ADR 2026-09.6es2](../memory/decisions/2026-09-6es2-one-linkmanager-owns-dialing-and.md) |
 | the router, custody rules or quotas, the digest exchange, or receipts | [ADR 2026-09.p6nb](../memory/decisions/2026-09-p6nb-the-iphone-relays-and-carries.md) |

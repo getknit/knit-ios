@@ -31,5 +31,5 @@ SwiftPM resolves these while building the packages above, and none of their code
 | SwiftLint | [realm/SwiftLint](https://github.com/realm/SwiftLint) | MIT |
 | swift-format | [swiftlang/swift-format](https://github.com/swiftlang/swift-format) | Apache-2.0 |
 | Periphery | [peripheryapp/periphery](https://github.com/peripheryapp/periphery) | MIT |
-| xtool | [xtool-org/xtool](https://github.com/xtool-org/xtool) | MIT |
+| XcodeGen | [yonaskolb/XcodeGen](https://github.com/yonaskolb/XcodeGen) | MIT |
 | lintorama | [zaventh/lintorama](https://github.com/zaventh/lintorama) | MIT |

@@ -8,7 +8,7 @@ topics: [ci, toolchain, legal]
 
 # ADR 2026-09.d3jv — the Darwin SDK stays on this machine
 
-Status: Accepted (2026-09-25)
+Status: Superseded by ADR 2026-09.fkqb (2026-09-28)
 
 **Context:** xtool builds iOS apps on Linux against a Darwin SDK extracted from `Xcode.xip`. Apple's Xcode and
 SDK agreement ties that SDK to Apple-branded computers. CI jobs cache directories and upload artifacts,

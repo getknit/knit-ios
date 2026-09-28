@@ -5,11 +5,10 @@
 # Three kinds of runner:
 #   - shared Linux runners for the light jobs: linux-host and service, both amd64, and the Mac's arm64 Docker runner,
 #     so an untagged job runs on either architecture;
-#   - `knit-local`, a runner on the maintainer's machine, for the heavy jobs (sanitizers, fuzzing, analyze) and
-#     for `build:ios`, which needs xtool and the Darwin SDK. The SDK never goes into an image or a shared cache:
-#     Apple's terms tie it to that machine;
-#   - `macos`, the Mac Mini's shell runner, for `build:ios:xcode` (ADR 2026-09.de8f), the signed
-#     `build:ios:signed` (ADR 2026-09.zawh), `test:macos`, and `test:ios:simulator` (ADR 2026-09.jcdx).
+#   - `knit-local`, a runner on the maintainer's machine, for the heavy jobs: sanitizers, fuzzing and analyze;
+#   - `macos`, the Mac Mini's shell runner, for the Apple jobs: `build:ios:xcode` (ADR 2026-09.de8f), the signed
+#     `build:ios:signed` (ADR 2026-09.zawh), `test:macos`, `test:ios:simulator` (ADR 2026-09.jcdx) and
+#     `verify:periphery`. Every iPhone build happens there.
 # `.agents/context/toolchain.md` has the runner setup.
 
 workflow:
@@ -109,16 +108,6 @@ build:linux:
   stage: build
   script:
     - scripts/check.sh build
-
-build:ios:
-  extends: .local
-  stage: build
-  script:
-    - scripts/check.sh ios
-  artifacts:
-    paths:
-      - xtool/Knit.app/
-    expire_in: 1 week
 
 build:ios:xcode:
   extends: .mac
@@ -237,12 +226,15 @@ verify:fuzz:
     expire_in: 4 weeks
 
 verify:periphery:
-  extends: .local
+  extends: .mac
   stage: verify
-  needs: [build:ios]
+  needs: []
+  variables:
+    GIT_CLEAN_FLAGS: -ffdx -e /.build/
   script:
-    - scripts/check.sh ios periphery
-  # Advisory until the Mac runner exists: code only Apple-only targets use can read as unused on Linux.
+    - scripts/check.sh periphery
+  # Advisory until its findings are cleared: KnitBlueZ's callers compile only on Linux, so the Mac reads most of
+  # it as unused, and three findings the Mac and Linux share are still open (.agents/context/toolchain.md).
   allow_failure: true
 
 verify:trivy:

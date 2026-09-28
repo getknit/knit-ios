@@ -404,7 +404,7 @@ within seconds of opening. Two app bugs and two rig limits stood in the way firs
 - **The app stopped at the Bluetooth grant.** xtool links every target as a static archive, and the linker left
   out `BLECore+Delegates.o`, which only the Objective-C runtime calls into. iOS then refuses a central manager
   with a restore identifier and no `willRestoreState`. The `Knit` target links with `-ObjC`, and
-  `scripts/check.sh ios` checks the app for the delegate methods.
+  `scripts/check.sh xcode` checks the app for the delegate methods.
 - **A relaunch to restore Bluetooth found nobody.** iOS relaunches Knit in the background after an install, and
   the restored central already reports a scan, so the radio never asked for one. A scan for every advert finds
   nothing in the background, and still nothing once Knit comes to the front. `BLERadio.foregrounded()` starts

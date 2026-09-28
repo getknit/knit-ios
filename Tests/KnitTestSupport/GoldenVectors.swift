@@ -2,7 +2,7 @@ public import KnitWire
 
 /// knit-next's codec vectors, `vectors/wire-v1.json`, copied into `Tests/Vectors/` by `scripts/sync-vectors.py`.
 ///
-/// This target holds what more than one test target reads. It is not a product, and xtool never builds it.
+/// This target holds what more than one test target reads. It is not a product, so the app never links it.
 public enum GoldenVectors {
     /// The JSON file's shape.
     public struct File: Decodable, Sendable {

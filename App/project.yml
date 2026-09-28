@@ -1,6 +1,6 @@
 # XcodeGen spec for the Xcode build on the Mac (ADR 2026-09.de8f). `scripts/check.sh xcode` generates
-# App/Knit.xcodeproj from it; the project is never committed. Like xtool's wrapper (`xtool.yml`), the app target
-# is only a host: every line of Swift, @main included, comes from the root package's `Knit` product.
+# App/Knit.xcodeproj from it; the project is never committed. The app target is only a host: every line of
+# Swift, @main included, comes from the root package's `Knit` product.
 name: Knit
 options:
   minimumXcodeGenVersion: 2.46.0
@@ -31,7 +31,7 @@ targets:
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
         INFOPLIST_FILE: Info.plist
-        # Adds the keys xtool injects (bundle id, executable) to App/Info.plist's own.
+        # Adds the bundle id and executable keys to App/Info.plist's own.
         GENERATE_INFOPLIST_FILE: true
         # The generated plist takes its version keys from these two, over App/Info.plist's. Keep them equal to
         # its CFBundleShortVersionString and CFBundleVersion; `check.sh xcode` fails when they differ.

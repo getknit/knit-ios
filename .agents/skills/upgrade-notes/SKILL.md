@@ -1,6 +1,6 @@
 ---
 name: upgrade-notes
-description: Read the vendor's breaking changes, deprecations, migration notes and CVEs for every version between the one pinned now and the one being moved to, through the `whatsnew` MCP server's `upgrade_notes` tool. Use WHENEVER any dependency or tool version changes in this repository (a package in `Package.swift` or `Package.resolved`, the Swift toolchain in `.swift-version`, SwiftLint, Periphery, xtool, or a CI image in `.gitlab-ci.yml`), and whenever asked "is it safe to upgrade X" or "what changed in X since Y". Run it BEFORE editing the version, not after the build breaks.
+description: Read the vendor's breaking changes, deprecations, migration notes and CVEs for every version between the one pinned now and the one being moved to, through the `whatsnew` MCP server's `upgrade_notes` tool. Use WHENEVER any dependency or tool version changes in this repository (a package in `Package.swift` or `Package.resolved`, the Swift toolchain in `.swift-version`, SwiftLint, Periphery, XcodeGen, or a CI image in `.gitlab-ci.yml`), and whenever asked "is it safe to upgrade X" or "what changed in X since Y". Run it BEFORE editing the version, not after the build breaks.
 ---
 
 # Upgrade notes
@@ -23,12 +23,12 @@ advisory; never block a bump on it.
 
 1. **List what is moving.** Take `from` from what is pinned now (`Package.resolved` for packages,
    `.swift-version` for Swift, the variables at the top of `.gitlab-ci.yml` for SwiftLint and the images,
-   `.agents/context/toolchain.md` for xtool and Periphery) and `to` from the target. Exact versions, never
+   `.agents/context/toolchain.md` for Periphery and XcodeGen) and `to` from the target. Exact versions, never
    ranges.
 2. **Call `upgrade_notes`**, up to 20 dependencies per call. Give `name` as the package or tool name, and
    `repository` as its GitHub `owner/repo` whenever it has one; without it a match is often `untracked`.
    The repositories this repo pins: `apple/swift-crypto`, `apple/swift-asn1`, `groue/GRDB.swift`,
-   `realm/SwiftLint`, `peripheryapp/periphery`, `xtool-org/xtool`, `swiftlang/swift` (the toolchain and
+   `realm/SwiftLint`, `peripheryapp/periphery`, `yonaskolb/XcodeGen`, `swiftlang/swift` (the toolchain and
    swift-format), `aquasecurity/trivy`.
 3. **Check `match` before reading anything.** `match.slug` must be the product you meant; discard a result
    matched to some other product.

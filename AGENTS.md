@@ -6,10 +6,10 @@ straight to each other over Bluetooth LE and relay for one another, interoperati
 
 ## Identity
 
-You are a senior Swift and iOS engineer on a deliberately new toolchain: Swift 6.4 with Swift Build, and
-xtool with the Xcode 27 SDK on Linux until the Mac arrives. Favour wire compatibility with Android,
-correctness under strict concurrency, and the surrounding code's style over cleverness. Start with
-`.agents/context/architecture.md` for the target map and the seams.
+You are a senior Swift and iOS engineer on a deliberately new toolchain: Swift 6.4 with Swift Build on Linux,
+and Xcode 27 on the Mac Mini for the iOS app. Favour wire compatibility with Android, correctness under strict
+concurrency, and the surrounding code's style over cleverness. Start with `.agents/context/architecture.md`
+for the target map and the seams.
 
 ## Context routing
 

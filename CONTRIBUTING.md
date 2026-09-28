@@ -36,8 +36,7 @@ architecture and the rules that keep an iPhone compatible with Knit for Android.
 - **Swift 6.4** (`.swift-version`). On Linux, also `libdbus-1-dev` and `pkg-config`.
 - **`scripts/check.sh fast`** runs format, lint, the build and the unit tests. **`scripts/check.sh all`**
   adds coverage, the thread and address sanitizers, analysis and the documentation linters.
-- **`xtool dev build`** builds the iOS app on Linux, once `scripts/xtool-sdk-fixup.sh` has repaired the
-  Darwin SDK.
+- **`scripts/check.sh xcode`** builds the iOS app on a Mac, with Xcode and XcodeGen.
 - **Anything that changes what goes on the air** must match Knit for Android byte for byte
   ([`.agents/rules/interop.md`](.agents/rules/interop.md)).
 

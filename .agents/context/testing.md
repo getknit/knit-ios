@@ -22,7 +22,8 @@ ladder, not the first.
 4. **The app's logic, without a screen.** `KnitAppCoreTests` drives `AppSession` and every view model
    through a `FakeMesh` that writes to in-memory stores as the engine would, and reads every catalog string.
    `DemoTests` runs the real `Mesh` on `-seedDemo`'s radio, in each scene. The SwiftUI views, the Keychain store and
-   `KnitBLE` compile only for iOS: `scripts/check.sh ios` type-checks them, and the Mac runs them (P7).
+   `KnitBLE` compile only on Apple platforms: `scripts/check.sh xcode` builds them for iOS, `test:macos` runs
+   `KnitBLETests`, and `test:ios:simulator` walks the screens (P7).
 5. **The mesh lab: deferred.** Multi-node scenarios with `assertConverged`, and seeded chaos, were skipped
    for now at the maintainer's call (`.agents/memory/roadmap.md`). The synchronous engine is what would let
    a later lab run deterministically from a seed.
@@ -78,7 +79,7 @@ ladder, not the first.
   keeping the rules the memory store keeps. `KnitStoreSQLTests` covers only what the SQL stores add: the
   schema pins, the file and its reopening, and how failures are reported (ADR 2026-09.nyya).
 - **Shared fixtures live in `KnitTestSupport`** (`Tests/KnitTestSupport/`): the golden vectors and
-  knit-next's `bytes(n, seed)`. It is a plain target, not a product, so xtool never builds it.
+  knit-next's `bytes(n, seed)`. It is a plain target, not a product, so the app never links it.
 - **Parameterized tests over `CBOR` values leak under ASan.** Swift Testing over-retains indirect-enum
   arguments. `scripts/lsan-suppressions.txt` hides exactly those allocations, and a real leak in a test body
   still fails the gate.

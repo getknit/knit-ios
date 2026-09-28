@@ -5,8 +5,9 @@ import PackageDescription
 // A manifest's top-level lets are build script, not API.
 // swiftlint:disable explicit_top_level_acl
 
-// The one library product, `Knit`, is the iOS app that xtool packs (`xtool.yml`). Everything else is either
-// platform-free protocol code that builds and tests on Linux, or a thin radio adapter for one platform.
+// The one library product, `Knit`, is the iOS app that the Xcode project packs (`App/project.yml`). Everything
+// else is either platform-free protocol code that builds and tests on Linux, or a thin radio adapter for one
+// platform.
 // ADR 2026-09.wde9 records the split; `.agents/context/architecture.md` has the target map.
 
 /// knit-next's `-Pknit.warningsAsErrors=false`: set `KNIT_WARNINGS_AS_ERRORS=0` to build locally through a
@@ -39,7 +40,7 @@ let package = Package(
     products: [
         .library(name: "Knit", targets: ["Knit"]),
         .executable(name: "knit-peer", targets: ["knit-peer"]),
-        // For the fuzz package in Fuzz/, which needs its own sanitizer flags. xtool.yml names `Knit` explicitly.
+        // For the fuzz package in Fuzz/, which needs its own sanitizer flags. App/project.yml names `Knit` explicitly.
         .library(name: "KnitWire", targets: ["KnitWire"]),
     ],
     dependencies: [
@@ -67,9 +68,9 @@ let package = Package(
             name: "Knit",
             dependencies: ["KnitAppCore", "KnitBLE", "KnitStoreSQL", "KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"],
             swiftSettings: strict,
-            // xtool links every target as a static archive, and the linker keeps only the members something names.
+            // The app links every target as a static archive, and the linker keeps only the members something names.
             // CoreBluetooth calls KnitBLE's delegates through the Objective-C runtime alone, so without -ObjC their
-            // file never reached the app, and iOS stopped it at the first Bluetooth grant. `check.sh ios` checks.
+            // file never reached the app, and iOS stopped it at the first Bluetooth grant. `check.sh xcode` checks.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-ObjC"], .when(platforms: [.iOS]))]
         ),
 

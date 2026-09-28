@@ -64,7 +64,7 @@ Each phase ends when its exit check passes. P7 starts the day the Mac arrives, w
 | P3 Mesh | `KnitMesh`, `KnitStore`, `LinkManager` | ported suites pass under TSan and ASan; coverage floors hold (the lab is deferred) |
 | P4 Linux peer | `KnitBlueZ`, `knit-peer` on hci1 | checklist L passes |
 | P5 Store | `KnitStoreSQL` on GRDB | schema v1 frozen; migrations tested |
-| P6 App | SwiftUI screens, `KnitBLE`, Keychain, notifications | `xtool dev build` green in CI; AppCore tests pass |
+| P6 App | SwiftUI screens, `KnitBLE`, Keychain, notifications | the iOS build green in CI; AppCore tests pass |
 | P7 Mac | macOS runner, Simulator UI tests, a native Mac radio run | checklist M passes |
 | P8 iPhone | the wake test, the scan-filter check, acceptance | the list above passes; tag `v0.1.0` |
 

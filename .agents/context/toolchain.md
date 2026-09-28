@@ -19,43 +19,18 @@ exact interval, then update this file in the same change.
 - **Escape hatch:** `KNIT_WARNINGS_AS_ERRORS=0` builds through a new toolchain's warnings locally. CI never
   sets it.
 
-## xtool and the Darwin SDK
+## The iPhone app
 
-- **Versions:** xtool 1.20.1, with a Darwin SDK built from Xcode 27.0 (`27A266a`), which provides iPhoneOS,
-  iPhoneSimulator and MacOSX 27.0.
-- **Build:** `xtool dev build` cross-compiles `arm64-apple-ios` into `xtool/Knit.app`. xtool builds only the
-  `Knit` product's closure, so the Linux-only targets never compile for iOS.
-- **Bundle id:** xtool installs dev builds under an `XTL-<team>.` prefix, so a Keychain identity made by an
-  xtool install does not carry over to an Xcode-signed build (use `app.getknit.knit.dev` there).
-- **Static archives:** xtool links each target as a static archive (the `.o` files under
-  `.build/out/Products/Debug-iphoneos/` are `ar` archives), and the linker keeps only the members something
-  names. A file that only the Objective-C runtime calls into, like KnitBLE's CoreBluetooth delegates, is
-  dropped without a warning; the first install on the iPhone stopped at the Bluetooth grant for that reason.
-  The `Knit` target links with `-ObjC`, and `scripts/check.sh ios` checks the app for the delegate methods.
-- **Installing on the iPhone:** `xtool dev run --usb` builds, signs and installs over USB, and
-  `idevicesyslog -p Knit` reads the app's log (a debug build logs at notice, the least it relays). The team is on
-  free provisioning: an install lasts 7 days, and the phone trusts the developer once under VPN & Device
-  Management. `xtool launch` fails on iOS 27, so Knit is opened by hand. An install waits at Verifying while
-  Knit is open on the phone, until someone swipes it away.
-- **xtool drops a serial's leading zeros** (`Certificate.serialNumber()`) and then finds no match on Apple's
-  side, so it asks to revoke a certificate whose serial starts with `0` and make another, on every install. The
-  prompt needs a terminal. One in sixteen certificates does this; the one made on 2026-09-26 does not.
-
-**The SDK bundle needs one fix.** xtool 1.20.1's bundle ships clang builtin headers older than Swift 6.4's
-clang 21. Their `float.h` still does `#include_next <float.h>` on Apple platforms, which lands on the Xcode
-27 SDK's own `float.h`. The SDK fences that header off in `_c_standard_library_obsolete`, and every C module
-scan then fails with `requires feature 'found_incompatible_headers__check_search_paths'`.
-
-- `scripts/xtool-sdk-fixup.sh` points the bundle at the compiling toolchain's own headers, keeping the
-  bundle's compiler-rt libraries.
-- `xtool sdk install` rebuilds the bundle and drops the fix, so rerun the script afterwards.
-- `--check` tells whether it is in place, and `scripts/check.sh ios` runs that check first.
-- ADR router: `.agents/memory/decisions.md`.
-
-**The SDK never leaves this machine.** Apple's terms tie the Xcode SDKs to Apple hardware, and xtool on
-Linux is a stopgap. The SDK stays out of images, caches and artifacts; only the built `Knit.app` is
-uploaded. The Mac Mini builds the app with Xcode (ADR 2026-09.de8f), and xtool's `build:ios` stays until
-installing on the iPhone moves there too.
+- **Built on the Mac only** (ADR 2026-09.fkqb). Xcode builds the project `App/project.yml` generates (ADR
+  2026-09.de8f), and "The Mac Mini" below has the setup. xtool, which built the app on Linux until 2026-09-28,
+  is retired, and nothing on Linux compiles `Knit` or `KnitBLE` for iOS.
+- **Static archives:** the app links each package target as a static archive, and the linker keeps only the
+  members something names. A file that only the Objective-C runtime calls into, like KnitBLE's CoreBluetooth
+  delegates, is dropped without a warning; the first install on the iPhone stopped at the Bluetooth grant for
+  that reason. The `Knit` target links with `-ObjC`, and `scripts/check.sh xcode` checks the app for the
+  delegate methods.
+- **Free provisioning:** an install lasts 7 days, and the phone trusts the developer once under VPN & Device
+  Management. An install waits at Verifying while Knit is open on the phone, until someone swipes it away.
 
 ## Linters and analyzers
 
@@ -93,11 +68,9 @@ installing on the iPhone moves there too.
 - **Needed:** `libdbus-1-dev` and `pkg-config` (the `CDBus` target), `libsqlite3-dev` (GRDB on Linux),
   `docker` (lintorama), and `usbmuxd`/libimobiledevice for installing on a phone later.
 - **GRDB on Linux (spike a, 2026-09-25):** GRDB 7.11.1 builds and passes under Swift Build against the
-  system SQLite (3.45.1: a WAL pool, migrations, BINARY ordering), and cross-builds for `arm64-apple-ios`
+  system SQLite (3.45.1: a WAL pool, migrations, BINARY ordering), and cross-built for `arm64-apple-ios`
   against the SDK's SQLite. `KnitStoreSQL` and its tests build on Linux like the other platform-free
-  targets. A plain `swift build --swift-sdk arm64-apple-ios` fails under Swift Build ("unable to find
-  platform for 'iphoneos'"), so a manual iOS build of a package needs `--build-system native`; the app
-  itself goes through `xtool dev build`.
+  targets.
 - **GRDB in the package (P5):** pinned at 7.11.1 in both `Package.resolved` files. The `STRICT` tables need
   SQLite 3.37 or later: iOS 18 and noble both have it, and an older SQLite fails the first migration rather
   than opening a looser schema. CI's Swift image installs `libsqlite3-dev` in `.swift`'s `before_script`.
@@ -112,15 +85,13 @@ installing on the iPhone moves there too.
 - **`service`, instance runner 4,** also takes untagged jobs, in Docker. It is slower than linux-host: pipeline
   808's `test:coverage` took 643 s there, against about 250 s on linux-host (2026-09-28). A test that waits on a
   thread needs a deadline with room for that, as `LoopRig.settleMilliseconds` has.
-- **The `knit-local` runner** takes the six jobs that need the machine itself: `build:ios` and
-  `verify:periphery` (the Darwin SDK, xtool and Periphery live only here, ADR 2026-09.d3jv), and the heavy
-  `test:tsan`, `test:asan`, `verify:fuzz` and `verify:analyze`. Analyze needs more than linux-host's 8 GB:
+- **The `knit-local` runner** takes the four heavy jobs: `test:tsan`, `test:asan`, `verify:fuzz` and
+  `verify:analyze` (ADR 2026-09.fkqb). Analyze needs more than linux-host's 8 GB:
   SourceKit keeps every file's compiler instance until the run ends, and linux-host's cap killed it at 8.35 GB.
   Until the runner is registered these jobs wait for it, and no pipeline finishes.
   - **What it is:** project runner 7 on `knit/knit-ios`, tag `knit-local`, locked to the project, not
     taking untagged jobs. It is the apt package's system service with the shell executor, so jobs run as
-    `maintainer`, who owns `~/.swiftpm/swift-sdks`, in a login shell whose `~/.profile` puts swiftly, xtool,
-    Periphery and SwiftLint on the `PATH`. Its builds and cache live in `~/.local/share/knit-local-runner`.
+    `maintainer`, in a login shell whose `~/.profile` puts swiftly and SwiftLint on the `PATH`. Its builds and cache live in `~/.local/share/knit-local-runner`.
   - **One job at a time** (`concurrent = 1` in `/etc/gitlab-runner/config.toml`), reniced by the `.local`
     template: a shell job cannot be capped the way linux-host's containers are.
   - **Creating it:** tags live on the server, because a `glrt-` token refuses `--tag-list`, so the runner
@@ -149,8 +120,8 @@ installing on the iPhone moves there too.
   - **A shell runner runs pipeline code as `maintainer`,** with full access to that home directory. Keep it a
     project runner, and move it to an account of its own before anyone else can push to knit-ios.
 - **`mac-runner`, the Mac's runner,** is instance runner 9 with the tag `macos`, and it takes no untagged
-  jobs: any project's `macos` jobs run there, and nothing else does. `build:ios:xcode` and `build:ios:signed`
-  carry the tag.
+  jobs: any project's `macos` jobs run there, and nothing else does. `build:ios:xcode`, `build:ios:signed`,
+  `test:macos`, `test:ios:simulator` and `verify:periphery` carry the tag.
   - **What it is:** gitlab-runner's shell executor (bash) as `maintainer`, in a LaunchAgent in the desktop
     session, because the Simulator needs one. It takes one job at a time (`limit = 1` in
     `~/.gitlab-runner/config.toml`), and its builds and cache live in `~/.local/share/gitlab-runner`.
@@ -190,7 +161,7 @@ installing on the iPhone moves there too.
 `maintainer` over ssh with passwordless `sudo`. It logs in to the desktop by itself, restarts after a power cut,
 and never sleeps.
 
-- **Xcode 27.0 (`27A266a`)**, the build the Linux Darwin SDK came from, is the selected developer
+- **Xcode 27.0 (`27A266a`)** is the selected developer
   directory. The iOS 27.0 Simulator runtime came with it, and developer mode is on. Its Swift is 6.4
   (`swiftlang-6.4.0.34.1`), which matches `.swift-version`, so the Mac builds with Xcode's toolchain and has
   no swiftly.
@@ -224,8 +195,8 @@ and never sleeps.
   unsigned, with no Xcode project.
 - **The app project** (ADR 2026-09.de8f): XcodeGen generates `App/Knit.xcodeproj` from `App/project.yml`,
   and `check.sh xcode` builds it unsigned for the iPhone and the Simulator into `.build-xcode`. The
-  `build:ios:xcode` job runs the same gate on the `macos` runner. The app target is a host like xtool's: one
-  `stub.c`, linked to the package's `Knit` product.
+  `build:ios:xcode` job runs the same gate on the `macos` runner. The app target is only a host: one `stub.c`,
+  linked to the package's `Knit` product.
   - **Version keys:** a generated `Info.plist` takes its version keys from `MARKETING_VERSION` and
     `CURRENT_PROJECT_VERSION`, not from `App/Info.plist`, so `project.yml` repeats both and the gate checks
     they agree.
@@ -250,10 +221,8 @@ and never sleeps.
   - **The `.dev` id keeps `app.getknit.knit` unclaimed.** Apple gives a bundle id to the first team that
     registers it, and the free team registers every id it signs, so it signs only the `.dev` one.
   - **One Knit per phone.** Two installs would both advertise the GATT payload and scan, and a peer would see
-    two nodes on one iPhone, as with Android, which has no debug package for that reason. xtool's
-    `XTL-<team id>.app.getknit.knit` is a separate app with its own Keychain identity, so delete one build
-    before using the other.
-  - **Free provisioning** limits a team to three installed apps, each for 7 days, and the xtool build counts.
+    two nodes on one iPhone, as with Android, which has no debug package for that reason.
+  - **Free provisioning** limits a team to three installed apps, each for 7 days.
   - **Installing from the Mac (2026-09-28):** `check.sh device` builds the signed app, and `devicectl device
     install app` then `devicectl device process launch` put it on the iPhone 12, over the network connection.
     The iPhone holds the `.dev` build alone now; xtool's was already gone. The debug bridge answers `interop.py`
@@ -270,13 +239,14 @@ and never sleeps.
     `main()` has no `unused_declaration` exemption, and the Linux branch's exemption reads as superfluous.
     It also analyzes `Knit` from the macOS host build, where the app's iOS code does not compile; that
     needs an iOS compiler log from `xcodebuild`.
-  - **`check.sh periphery`** is advisory and exits 0 with 21 findings, 18 of them in `KnitBlueZ`, whose
-    callers compile only on Linux. Linux reports 8. The two share three: `ChatListModel`'s `linked` and
-    `revision`, and `StoredText`'s `column`.
+  - **`check.sh periphery`** is advisory, in `verify:periphery` too. On 2026-09-28 it exited 0 with 23
+    findings, 18 of them in `KnitBlueZ`, whose callers compile only on Linux. The other five are
+    `ChatListModel`'s `linked` and `revision`, `StoredText`'s `column`, `L2CAPLink`'s `owner` and
+    `PeerRadioHost`'s `init(_:log:)`.
 
 ## Still owed on the Mac
 
-- Retire xtool's `build:ios` now that the Mac installs, and move `verify:periphery` to the `macos` runner,
-  blocking there (`PERIPHERY_STRICT=1`), with `KnitBlueZ` left to Linux. ADR 2026-09.d3jv changes with it.
+- Make `verify:periphery` block on the `macos` runner (`PERIPHERY_STRICT=1`), with `KnitBlueZ` left to Linux,
+  once the five findings outside it are cleared (ADR 2026-09.fkqb).
 - Make `check.sh analyze` pass on macOS: a macOS counterpart to `scripts/swiftlint-analyze-linux.yml`, and
   `Knit` and `KnitBLE` analyzed from an iOS build.

@@ -7,10 +7,6 @@
 /Fuzz/.build/
 .swiftpm/
 
-# xtool's app bundle output and the LSP file it regenerates on every build.
-/xtool/
-/.bsp/
-
 # Xcode. XcodeGen generates App/Knit.xcodeproj from App/project.yml, and App/Local.xcconfig holds a signing team.
 xcuserdata/
 DerivedData/

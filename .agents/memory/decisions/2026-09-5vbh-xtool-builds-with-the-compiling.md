@@ -8,7 +8,7 @@ topics: [toolchain, build]
 
 # ADR 2026-09.5vbh — xtool builds with the compiling toolchain's clang headers
 
-Status: Accepted (2026-09-25)
+Status: Superseded by ADR 2026-09.fkqb (2026-09-28)
 
 **Context:** the first `xtool dev build`, on 2026-09-25, failed in clang's module scan of the Xcode 27 SDK with
 `module '_c_standard_library_obsolete' requires feature 'found_incompatible_headers__check_search_paths'`.

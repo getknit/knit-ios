@@ -3,7 +3,7 @@
 #
 #     scripts/check.sh fast        # format, lint, build, unit tests (the pre-push hook)
 #     scripts/check.sh all         # every gate that runs on Linux
-#     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama ios xcode uitest device
+#     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama xcode uitest device
 #
 # Each build variant (coverage, TSan, ASan, analyze) gets its own --scratch-path, so switching between them never
 # rebuilds the plain debug tree. `.agents/context/commands.md` explains when to run which.
@@ -101,11 +101,10 @@ gate_periphery() {
 		echo "periphery is not installed; .agents/context/toolchain.md has the Linux build steps" >&2
 		return 1
 	fi
-	# Swift Build writes the index store to .build/out, which Periphery does not look for by default. The
-	# store also holds xtool's iOS build, so Apple-only code is visible when `check.sh ios` ran first.
+	# Swift Build writes the index store to .build/out, which Periphery does not look for by default.
 	swift build "${jobs[@]}" --build-tests --only-use-versions-from-resolved-file
-	# Advisory on Linux until the Mac runner exists (PERIPHERY_STRICT=1 there): a declaration that only
-	# Apple-only code uses reads as unused when the iOS build has not been indexed.
+	# Advisory for now, on the Mac runner too (PERIPHERY_STRICT=1 makes it block): the host build never indexes
+	# the iOS app, and KnitBlueZ's callers compile only on Linux (.agents/context/toolchain.md).
 	periphery scan --quiet --skip-build --index-store-path .build/out --retain-public ${PERIPHERY_STRICT:+--strict}
 }
 
@@ -117,18 +116,6 @@ gate_adr() {
 gate_lintorama() {
 	step "lintorama (markdown, YAML, shell, editorconfig)"
 	docker run --rm -v "$root":/code zaventh/lintorama:7
-}
-
-gate_ios() {
-	step "xtool dev build (arm64-apple-ios)"
-	scripts/xtool-sdk-fixup.sh --check
-	# xtool takes no -j, so its compilers share $swift_jobs cores instead of spreading over all of them.
-	local cpus=()
-	if command -v taskset >/dev/null 2>&1 && [ "$(nproc)" -gt "$swift_jobs" ]; then
-		cpus=(taskset -c "0-$((swift_jobs - 1))")
-	fi
-	"${cpus[@]}" xtool dev build
-	check_delegates xtool/Knit.app/Knit
 }
 
 # Only the Objective-C runtime calls these, so only Package.swift's -ObjC keeps them in the app. Without the
@@ -254,9 +241,9 @@ run() {
 case "${1:-fast}" in
 fast) run format lint build test ;;
 all) run format lint adr build test coverage tsan asan analyze lintorama ;;
-format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | ios | xcode | uitest | device) run "$@" ;;
+format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | xcode | uitest | device) run "$@" ;;
 *)
-	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|ios|xcode|uitest|device]" >&2
+	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device]" >&2
 	exit 2
 	;;
 esac

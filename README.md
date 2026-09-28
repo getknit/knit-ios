@@ -29,8 +29,8 @@ that meets someone later hands over what it was carrying for them.
 
 ## Build
 
-Knit for iOS is one Swift package. The protocol code builds and tests on Linux and macOS. On Linux, the
-app itself builds with [xtool](https://github.com/xtool-org/xtool); on a Mac it builds with Xcode.
+Knit for iOS is one Swift package. The protocol code builds and tests on Linux and macOS. The app itself
+builds on a Mac with Xcode, from a project that [XcodeGen](https://github.com/yonaskolb/XcodeGen) generates.
 
 You need Swift 6.4 (`.swift-version`), plus `libdbus-1-dev` and `pkg-config` on Linux.
 
@@ -38,12 +38,10 @@ You need Swift 6.4 (`.swift-version`), plus `libdbus-1-dev` and `pkg-config` on 
 git config core.hooksPath .githooks   # sign-off, lint and ADR checks on every commit
 scripts/check.sh fast                 # format, lint, build and unit tests
 scripts/check.sh all                  # every gate that runs on Linux, sanitizers included
-xtool dev build                       # the iOS app, into xtool/Knit.app
+scripts/check.sh xcode                # on a Mac: the iOS app, for the iPhone and the Simulator
 ```
 
-On Linux, the Darwin SDK that xtool installs needs one repair before it can build: run
-`scripts/xtool-sdk-fixup.sh` after `xtool sdk install`. [`.agents/context/toolchain.md`](.agents/context/toolchain.md)
-explains why, and lists every tool and version the gates use.
+[`.agents/context/toolchain.md`](.agents/context/toolchain.md) lists every tool and version the gates use.
 
 ## Contributing
 

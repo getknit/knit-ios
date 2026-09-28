@@ -17,7 +17,6 @@ unused_import:
 excluded:
   - ../.build
   - ../Fuzz/.build
-  - ../xtool
   - ../Sources/Knit
   - ../Sources/KnitBLE
   - ../Sources/KnitAppCore
