@@ -22,6 +22,9 @@ correctness under strict concurrency, and the surrounding code's style over clev
   or `knit-peer`:** obey `.agents/rules/interop.md`, then READ the matching reference in `.agents/context/`:
   `wire-format.md`, `ble-transport.md`, `crypto.md`, `custody.md` or `linux-peer.md`. For the Kotlin behind
   them, READ `.agents/context/knit-next.md`.
+- **When your first prompt opens with "# Paired change", or a message arrives from the `knit-pair` supervisor
+  or a `knit-android-*` worker:** obey `.agents/rules/paired-change.md`. The Android half runs in its own
+  session under knit-next's rules; never edit that repo.
 - **When writing text a person reads** (UI strings, Info.plist, notifications, README, docs, ADRs): obey
   `.agents/rules/copy.md`, which says when to RUN `product-language-editor` and `humanizer`.
 - **When adding to `CHANGELOG.md`'s `## Unreleased`:** obey `.agents/rules/changelog.md`.
