@@ -718,3 +718,26 @@ passed all ten steps with a 900 s wait, and the post and DM took 133 s and 124 s
 Android socket's own buffer, at least 120 KB: six digests already written there went out 33 to 37 s apart, and
 the post landed right behind the sixth. The slot cannot reach bytes the socket holds.
 
+
+## What the one-digest slot showed
+
+This port's slot (ADR 2026-09.3ch7, at `5a05071`) ran on both radios on 2026-09-27, with the Pixel 3 on
+knit-next `11b91371`, which has knit-next's own slot.
+
+- **The Linux peer on `hci1`:** `interop.py android-rings --peer-log debug --arrival-timeout 900` passed 10 of
+  10 from 19:26 to 19:40. Custody converged at 742 ids in 522 s, and the post and DM arrived in 142 s and 133
+  s. The peer never replaced a digest: the Pixel was back-filling it, so its own queue never backed up.
+- **The iPhone 12, from `xtool dev run --usb`:** `interop.py iphone` passed 14 of 15 at 20:46 against the
+  Pixel 3. Posts and DMs crossed both ways in about 1.6 s, and the offline pair arrived 3.4 to 3.6 s after the
+  link. Its links waited for socket space 44 times in 373 writes, once with 6,641 bytes waiting, about one
+  digest, and each wait drained. It never replaced a digest either, since links between phones drain too fast.
+  The replacement itself is checked by `LinkOutboxTests` and `BlueZOutboxTests`.
+- **`custody-converges` can fail at a sender's quota for up to 10 minutes.** It failed at 180 s on two frames
+  the Pixel 3 wrote itself. The iPhone held a receipt of the Pixel's, from 13:37, that the Pixel had lost. The
+  Pixel held its own profile, which it signs again and stores at every link-up, and the iPhone lacked it. The
+  Pixel held 195 of its own frames against the per-sender quota of 200, so, as knit-next reads it, each of
+  those arrivals was the oldest row and was evicted as it came in. The id stays in the 10-minute seen set, and
+  `LinkCrossings` holds a frame off a link for 10 minutes after it crosses, so neither copy came back until
+  both windows passed. At 21:46 both phones held the same 570 ids: the returned receipt had evicted the
+  Pixel's older profile. knit-next found no rule on either side that drops such a frame for good. Wait out 11
+  minutes, or flap the link, before reading this step as a failure.
