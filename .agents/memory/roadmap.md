@@ -130,7 +130,9 @@ explicit direction.** Update this file in the change that ships an item.
     default and the largest text size, and all 7 walks pass (ADR 2026-09.jcdx). The audit's first run found over a
     hundred issues. Fixing them gave the app a WCAG AA palette, opaque bars under text, and rows and onboarding that
     rearrange at the accessibility sizes. MVP item 12's audit half is met.
-  - **Still owed:** installing on the iPhone from the Mac, and checklist M.
+  - **Installing from the Mac (2026-09-28):** `check.sh device`, then `devicectl` installs and launches the signed
+    `.dev` build on the iPhone 12, and its debug bridge answers `interop.py` as the xtool build's did.
+  - **Still owed:** checklist M. Retiring xtool's `build:ios` can follow (`toolchain.md`, "Still owed on the Mac").
 - **P8, the iPhone:** begun early on 2026-09-26, without the Mac: an iPhone 12 on iOS 27.0, installed over USB
   by xtool on free provisioning. The app runs and links the Linux peer and the lab's Android phones. Against
   the peer, items 3 to 5 pass: safety numbers match, the room works both ways with ticks, and DMs go request,

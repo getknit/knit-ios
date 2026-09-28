@@ -254,8 +254,10 @@ and never sleeps.
     `XTL-<team id>.app.getknit.knit` is a separate app with its own Keychain identity, so delete one build
     before using the other.
   - **Free provisioning** limits a team to three installed apps, each for 7 days, and the xtool build counts.
-  - **Interop tooling:** `scripts/interop.py` and the `ifuse` lines still name xtool's container, so interop
-    runs stay on the xtool build until they learn the `.dev` id. Then xtool's install and `build:ios` retire.
+  - **Installing from the Mac (2026-09-28):** `check.sh device` builds the signed app, and `devicectl device
+    install app` then `devicectl device process launch` put it on the iPhone 12, over the network connection.
+    The iPhone holds the `.dev` build alone now; xtool's was already gone. The debug bridge answers `interop.py`
+    from linux-host over USB as before, since it never named a bundle id; only `ifuse` does.
   - **The phone's log:** `idevicesyslog` finds the iPhone only over USB, not while it is connected over the
     network. Console.app at the Mac reads it either way.
 - **What does not pass yet:**
@@ -271,8 +273,7 @@ and never sleeps.
 
 ## Still owed on the Mac
 
-- Install on the iPhone from Xcode (above), then retire xtool's `build:ios` and move `verify:periphery` to
-  the `macos` runner, blocking there (`PERIPHERY_STRICT=1`), with `KnitBlueZ` left to Linux. ADR
-  2026-09.d3jv changes with it.
+- Retire xtool's `build:ios` now that the Mac installs, and move `verify:periphery` to the `macos` runner,
+  blocking there (`PERIPHERY_STRICT=1`), with `KnitBlueZ` left to Linux. ADR 2026-09.d3jv changes with it.
 - Make `check.sh analyze` pass on macOS: a macOS counterpart to `scripts/swiftlint-analyze-linux.yml`, and
   `Knit` and `KnitBLE` analyzed from an iOS build.

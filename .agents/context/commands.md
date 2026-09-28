@@ -89,7 +89,7 @@ scripts/check.sh ios                                              # xtool dev bu
 xtool dev run --usb                                               # build, sign and install on the iPhone, with the go-ahead
 idevicesyslog -p Knit                                             # the app's log, one JSON line per entry in a debug build
 idevicecrashreport -k -e <dir>                                    # copy the phone's crash and hang reports, keeping them there
-ifuse --container XTL-<team id>.app.getknit.knit -o ro <dir>     # mount Knit's sandbox read-only; fusermount -u <dir> to drop it
+ifuse --container app.getknit.knit.dev -o ro <dir>                # mount Knit's sandbox read-only; fusermount -u <dir> to drop it
 iproxy 5648:5648                                                  # the debug bridge on localhost:5648, for any client
 ```
 
