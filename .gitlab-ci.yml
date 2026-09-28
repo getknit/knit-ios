@@ -3,12 +3,13 @@
 # (ADR router: .agents/memory/decisions.md). The advisory jobs say why beside `allow_failure`.
 #
 # Three kinds of runner:
-#   - shared Linux runners for the light jobs;
+#   - shared Linux runners for the light jobs: linux-host and service, both amd64, and the Mac's arm64 Docker runner,
+#     so an untagged job runs on either architecture;
 #   - `knit-local`, a runner on the maintainer's machine, for the heavy jobs (sanitizers, fuzzing, analyze) and
 #     for `build:ios`, which needs xtool and the Darwin SDK. The SDK never goes into an image or a shared cache:
 #     Apple's terms tie it to that machine;
-#   - `macos`, the Mac Mini, for `build:ios:xcode` (ADR 2026-09.de8f) and the signed `build:ios:signed`
-#     (ADR 2026-09.zawh).
+#   - `macos`, the Mac Mini's shell runner, for `build:ios:xcode` (ADR 2026-09.de8f) and the signed
+#     `build:ios:signed` (ADR 2026-09.zawh).
 # `.agents/context/toolchain.md` has the runner setup.
 
 workflow:
@@ -28,7 +29,9 @@ stages:
 variables:
   SWIFT_IMAGE: "swift:6.4-noble@sha256:64bab762bc73a3fda6d9ebc559258bd6d7660c10a705bb25ecacad2f99d066f9"
   SWIFTLINT_VERSION: "0.65.1"
-  SWIFTLINT_SHA256: "caeed6f4a679c35539ffaf124f6c4ab4a8416917f7d8796279dc52b74026059d"
+  # One SHA-256 per architecture: the Mac's Docker runner is arm64, linux-host and service are amd64.
+  SWIFTLINT_SHA256_AMD64: "caeed6f4a679c35539ffaf124f6c4ab4a8416917f7d8796279dc52b74026059d"
+  SWIFTLINT_SHA256_ARM64: "9ffa52f478e6d8eb485d37d14715ffac90abc81c58f3370d598bf75be05605f8"
 
 .swift:
   image: $SWIFT_IMAGE
@@ -46,8 +49,14 @@ variables:
   extends: .swift
   before_script:
     - !reference [.swift, before_script]
-    - curl -fsSL -o /tmp/swiftlint.zip "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/swiftlint_linux_amd64.zip"
-    - echo "$SWIFTLINT_SHA256  /tmp/swiftlint.zip" | sha256sum -c -
+    - |
+      case "$(uname -m)" in
+      x86_64) arch=amd64 sum=$SWIFTLINT_SHA256_AMD64 ;;
+      aarch64) arch=arm64 sum=$SWIFTLINT_SHA256_ARM64 ;;
+      *) echo "no SwiftLint build for $(uname -m)" >&2; exit 1 ;;
+      esac
+      curl -fsSL -o /tmp/swiftlint.zip "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/swiftlint_linux_$arch.zip"
+      echo "$sum  /tmp/swiftlint.zip" | sha256sum -c -
     - unzip -q -o -d /usr/local/bin /tmp/swiftlint.zip swiftlint
 
 .local:

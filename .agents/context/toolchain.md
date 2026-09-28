@@ -60,7 +60,7 @@ installing on the iPhone moves there too.
 ## Linters and analyzers
 
 - **SwiftLint 0.65.1** (`/usr/local/bin/swiftlint` here; CI installs the pinned `swiftlint_linux_amd64.zip`
-  and checks its SHA-256). On Linux it needs SourceKit from the toolchain:
+  or `swiftlint_linux_arm64.zip` to match the runner, and checks each against its own SHA-256). On Linux it needs SourceKit from the toolchain:
   `LINUX_SOURCEKIT_LIB_PATH=~/.local/share/swiftly/toolchains/6.4.0/usr/lib`. The scripts and hooks derive
   it themselves.
 - **swift-format** comes with the toolchain (`swift format`), configured in `.swift-format`.
@@ -149,15 +149,40 @@ installing on the iPhone moves there too.
   - **A shell runner runs pipeline code as `maintainer`,** with full access to that home directory. Keep it a
     project runner, and move it to an account of its own before anyone else can push to knit-ios.
 - **`mac-runner`, the Mac's runner,** is instance runner 9 with the tag `macos`, and it takes no untagged
-  jobs: any project's `macos` jobs run there, and nothing else does. No knit-ios job carries the tag yet.
+  jobs: any project's `macos` jobs run there, and nothing else does. `build:ios:xcode` and `build:ios:signed`
+  carry the tag.
   - **What it is:** gitlab-runner's shell executor (bash) as `maintainer`, in a LaunchAgent in the desktop
-    session, because the Simulator needs one. It takes one job at a time (`concurrent = 1` in
+    session, because the Simulator needs one. It takes one job at a time (`limit = 1` in
     `~/.gitlab-runner/config.toml`), and its builds and cache live in `~/.local/share/gitlab-runner`.
   - **Recreating it:** the same two steps as `knit-local`, with `runner_type=instance_type`,
     `tag_list=macos` and `run_untagged=false`. Register it without `sudo`, which makes it a LaunchAgent, then
     `gitlab-runner install --working-directory ~/.local/share/gitlab-runner` and `gitlab-runner start`.
   - **Every project's jobs run as `maintainer`,** whose home holds the glab token. Give it an account of its own
     before a project that someone else can push to uses the tag.
+- **`mac-docker-runner`, the Mac's Linux runner,** is instance runner 11 (2026-09-28). It takes any project's
+  untagged jobs, beside linux-host and service, and carries the tags `docker` and `arm64` for a job that wants it.
+  Its jobs run in containers inside the VM, not as `maintainer`, and without `privileged`. A job from another
+  project that needs more than 4 GB and the swap can hold is killed here, so give such a job a tag this
+  runner lacks.
+  - **What it is:** gitlab-runner's Docker executor in the same process as `mac-runner`, running jobs in
+    Colima's VM (`host = unix:///Users/maintainer/.colima/default/docker.sock`). The process takes two jobs at once
+    (`concurrent = 2`), one per runner (`limit = 1` each), so an Xcode job never waits behind a Linux one. Jobs
+    get `SWIFT_JOBS=4`, one compiler per VM CPU.
+  - **Sized to leave the Mac for iOS work:** the VM keeps 4 CPUs and 4 GB, because it holds on to memory it
+    has used and the Mac has 16 GB. It has 4 GB of swap for the rare peak, set up by a `provision` script in
+    `~/.colima/default/colima.yaml` that runs at every VM start.
+  - **Measured in the VM** (2026-09-28, image `swift:6.4-noble` on arm64): `check.sh build` in 61 s at a
+    2.2 GB peak, `test` in 5 s, and `coverage` in 100 s at 3.6 GB. Without swap, SwiftPM's own coverage export
+    was killed at that peak. The same build took 627 s on `service` and about 90 s on linux-host.
+  - **Architectures:** `swift:6.4-noble`, `python:3.13-alpine`, `alpine/git` and `zaventh/lintorama:7` all
+    publish arm64 images. The line total can differ from amd64 by a line or so (10827 against 10826 of 11114),
+    which the whole-percent floors absorb.
+  - **Recreating it:** create it through the API with `runner_type=instance_type`, `tag_list=docker,arm64` and
+    `run_untagged=true`, then register it without `sudo`:
+    `gitlab-runner register --executor docker --docker-image alpine:3.22 --docker-host
+    unix:///Users/maintainer/.colima/default/docker.sock --env SWIFT_JOBS=4 --limit 1`, passing the token on
+    standard input rather than the command line. A runner's type cannot change: `gitlab-runner unregister`
+    removes only its manager, so delete the old runner through the API too (`DELETE runners/<id>`).
 
 ## The Mac Mini
 
@@ -174,8 +199,9 @@ and never sleeps.
   ideviceinstaller; rsync 3, because macOS ships openrsync; glab, gh and gitlab-runner; GnuPG and
   pinentry-mac; Colima, the docker CLI and docker-credential-helper. `~/.zshenv` and `~/.bash_profile` put
   Homebrew on the `PATH` for every shell, login or not.
-- **Docker runs in Colima,** a `vz` VM with Rosetta, 4 CPUs and 4 GB, started at login. `zaventh/lintorama:7`
-  is amd64 only, so it runs under Rosetta until the image ships an arm64 build.
+- **Docker runs in Colima,** a `vz` VM with Rosetta, 4 CPUs, 4 GB and 4 GB of swap, started at login. It runs
+  lintorama here and the `mac-docker-runner` runner's jobs. `zaventh/lintorama:7` now publishes an arm64 image,
+  so it runs without Rosetta.
 - **The checkouts** are `~/source/knit-ios`, with the hooks on, and `~/source/knit-next`. Git reaches GitLab
   through `glab auth git-credential`.
 - **`~/source/knit-ios-mirror` belongs to `scripts/mac.sh`,** which drives the Mac from linux-host. Each sync
