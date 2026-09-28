@@ -156,6 +156,37 @@ import Testing
         #expect(await events.next() == .state(.on))
         #expect(await events.next() == .dialFailed(channel))
     }
+
+    @Test func theDemoMeshPassesEverythingButTheLinksThrough() async {
+        let sam = Person(seed: 7)
+        let fake = FakeMesh(nodeId: AppRig.me.nodeId, stores: MeshStores.inMemory(), radio: .on)
+        let mesh = DemoMesh(fake, linked: [sam.nodeId])
+        let shown = [Neighbor(nodeId: sam.nodeId)]
+        #expect(mesh.nodeId == fake.nodeId)
+        await mesh.start()
+        #expect(await mesh.postToRoom("hi") != nil)
+        #expect(await mesh.sendDirectMessage("hey", to: sam.nodeId) != nil)
+        await mesh.accept("c1")
+        await mesh.updateProfile(name: "Maya", status: "", openToChat: true)
+        await mesh.setVerified(sam.nodeId, true)
+        let expected = FakeMesh.Calls(
+            starts: 1,
+            room: ["hi"],
+            direct: ["\(sam.nodeId): hey"],
+            accepted: ["c1"],
+            verified: ["\(sam.nodeId): true"],
+            profiles: ["Maya||true"]
+        )
+        #expect(fake.calls == expected)
+        var events = mesh.events.makeAsyncIterator()
+        #expect(await events.next() == .neighborsChanged(shown), "start shows the links")
+        fake.emit(.delivered(messageId: "m1"))
+        #expect(await events.next() == .delivered(messageId: "m1"))
+        fake.emit(.neighborsChanged([]))
+        #expect(await events.next() == .neighborsChanged(shown), "the links shown, whatever the mesh linked")
+        fake.finish()
+        #expect(await events.next() == nil)
+    }
 }
 
 /// The wall and monotonic clocks, for a mesh whose timers never need to fire in a test.
