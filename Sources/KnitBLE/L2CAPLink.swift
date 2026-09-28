@@ -37,13 +37,15 @@
     }
 
     /// One L2CAP channel's two streams, read as one byte stream in 64 KiB gulps and written in order. Everything
-    /// here runs on the ``StreamThread``; the radio reaches it only through ``write(_:)`` and ``close()``.
+    /// here runs on the ``StreamThread``; the radio reaches it only through ``write(_:)``, ``writeDigest(_:)`` and
+    /// ``close()``.
     ///
     /// The channel object is held for the link's whole life: CoreBluetooth closes a channel whose last reference goes.
     internal final class L2CAPLink: NSObject, StreamDelegate, @unchecked Sendable {
         // @unchecked: every mutable member is touched on the stream thread only.
         private static let readSize = 65_536
-        /// The most one stream write takes; the link manager's records are already cut to this (`maxWriteBytes`).
+        /// The most one stream write takes, Android's own cap: the link manager cuts its records to this
+        /// (`maxWriteBytes`), and ``drain()`` cuts a digest, which comes whole.
         private static let writeSize = 8192
 
         let id: ChannelID
@@ -52,8 +54,7 @@
         private let log: any KnitLog
         private let received: @Sendable ([UInt8]) -> Void
         private let ended: @Sendable () -> Void
-        private var pending: [UInt8] = []
-        private var written = 0
+        private var outbox = LinkOutbox()
         private var isOpen = false
         private var isClosed = false
         /// Whether the last drain left bytes waiting for the stream's space, so a stall is logged once.
@@ -98,7 +99,21 @@
                 guard !isClosed else {
                     return
                 }
-                pending += bytes
+                outbox.append(bytes)
+                drain()
+            }
+        }
+
+        /// Writes a DIGEST record after everything written before, or in the place of the one still waiting
+        /// (``LinkOutbox/offerDigest(_:)``).
+        func writeDigest(_ record: [UInt8]) {
+            thread.perform { [self] in
+                guard !isClosed else {
+                    return
+                }
+                if outbox.offerDigest(record) {
+                    log.log(.debug, "ble \(id) digest of \(record.count) bytes replaced the one waiting")
+                }
                 drain()
             }
         }
@@ -149,23 +164,21 @@
             guard isOpen, let output = channel.outputStream else {
                 return
             }
-            while written < pending.count, output.hasSpaceAvailable {
-                let chunk = Array(pending[written..<min(written + Self.writeSize, pending.count)])
+            while output.hasSpaceAvailable, let next = outbox.next(atMost: Self.writeSize) {
+                let chunk = Array(next)
                 let count = output.write(chunk, maxLength: chunk.count)
                 guard count > 0 else {
                     log.log(.debug, "ble \(id) write of \(chunk.count) returned \(count)")
                     break
                 }
-                written += count
-                log.log(.debug, "ble \(id) wrote \(count), \(pending.count - written) waiting")
+                outbox.wrote(count)
+                log.log(.debug, "ble \(id) wrote \(count), \(outbox.queuedBytes) waiting")
             }
-            if written == pending.count {
-                pending.removeAll(keepingCapacity: true)
-                written = 0
+            if outbox.isEmpty {
                 isWaiting = false
             } else if !isWaiting {
                 isWaiting = true
-                log.log(.debug, "ble \(id) waits for space with \(pending.count - written) bytes")
+                log.log(.debug, "ble \(id) waits for space with \(outbox.queuedBytes) bytes")
             }
         }
 
@@ -179,7 +192,7 @@
                 stream.close()
                 stream.remove(from: .current, forMode: .default)
             }
-            pending = []
+            outbox.removeAll()
         }
     }
 #endif

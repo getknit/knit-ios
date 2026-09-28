@@ -206,6 +206,19 @@ import Testing
         #expect(digests.map(\.payload) == [Array(#"{"ids":["m1","m2"]}"#.utf8)])
     }
 
+    @Test func aDigestReachesTheRadioWholeSoItCanReplaceOneStillWaiting() {
+        // Cut into writes, a digest could not be found in the radio's queue again (knit-next ADR 2026-09.tjfb).
+        let rig = LinkRig(local: high, configuration: LinkManager.Configuration(maxWriteBytes: 64))
+        _ = rig.accept(low, on: ChannelID(100))
+        let hello = rig.radio.writeSizes(on: ChannelID(100)).count
+        let ids = (0..<20).map { "frame-\($0)" }
+        rig.links.sendDigest(ids, to: low)
+        let sizes = rig.radio.writeSizes(on: ChannelID(100)).dropFirst(hello)
+        #expect(sizes.count == 1)
+        #expect(sizes.first ?? 0 > 64)
+        #expect(rig.radio.records(on: ChannelID(100)).last?.tag == .digest)
+    }
+
     @Test func aFrameForAnUnlinkedPeerGoesNowhere() {
         let rig = LinkRig(local: high)
         rig.links.send(LinkRig.signedFrame("lost"), to: low)

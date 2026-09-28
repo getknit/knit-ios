@@ -85,7 +85,7 @@ import Testing
         rig.clock.advance(60_000)
         var digests = 0
         while digests < 2, let next = await activity.next() {
-            if case .wrote(let id, let bytes) = next, id == channel, bytes.first == LinkRecord.Tag.digest.rawValue {
+            if case .wroteDigest(let id, _) = next, id == channel {
                 digests += 1
             }
         }

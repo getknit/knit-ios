@@ -42,10 +42,7 @@
             var devicePath: String?
             /// The largest single write, known once the channel is open.
             var limit = 0
-            var outbox: [[UInt8]] = []
-            /// How much of the outbox's first entry is already written.
-            var written = 0
-            var queuedBytes = 0
+            var outbox = LinkOutbox()
         }
 
         private enum Polled {
@@ -216,6 +213,8 @@
                 dial(id, address: address, psm: psm)
             case .write(let id, let bytes):
                 enqueue(bytes, on: id)
+            case .writeDigest(let id, let record):
+                enqueueDigest(record, on: id)
             case .close(let id):
                 closeChannel(id)
             case .ring(let id):

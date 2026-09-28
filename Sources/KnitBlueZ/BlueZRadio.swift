@@ -103,6 +103,10 @@
             mailbox.post(.write(channel, bytes))
         }
 
+        public func writeDigest(_ record: [UInt8], to channel: ChannelID) {
+            mailbox.post(.writeDigest(channel, record))
+        }
+
         public func close(_ channel: ChannelID) {
             mailbox.post(.close(channel))
         }

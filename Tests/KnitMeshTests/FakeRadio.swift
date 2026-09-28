@@ -16,6 +16,7 @@ final class FakeRadio: Radio {
         case advertised(AdvertPayload)
         case dialed(Dial)
         case wrote(ChannelID, [UInt8])
+        case wroteDigest(ChannelID, [UInt8])
         case closed(ChannelID)
         case rang(ChannelID)
     }
@@ -94,6 +95,12 @@ final class FakeRadio: Radio {
     func write(_ bytes: [UInt8], to channel: ChannelID) {
         state.withLock { $0.writes[channel, default: []].append(bytes) }
         recorder.yield(.wrote(channel, bytes))
+    }
+
+    /// Records the digest as one write, the way it came: a real radio's ``LinkOutbox`` is tested on its own.
+    func writeDigest(_ record: [UInt8], to channel: ChannelID) {
+        state.withLock { $0.writes[channel, default: []].append(record) }
+        recorder.yield(.wroteDigest(channel, record))
     }
 
     func close(_ channel: ChannelID) {

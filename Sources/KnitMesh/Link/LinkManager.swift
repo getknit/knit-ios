@@ -231,11 +231,13 @@ public final class LinkManager: MeshTransport {
         }
     }
 
+    /// Hands the radio the whole record, not slices of it, so it can put a newer digest in the place of one still
+    /// waiting on a busy link (``Radio/writeDigest(_:to:)``).
     public func sendDigest(_ ids: [String], to peer: NodeId) {
         guard let id = liveChannel(to: peer), let record = LinkRecord(.digest, payload: LinkJSON.digestPayload(ids: ids)).encoded else {
             return
         }
-        write(record, on: id)
+        radio.writeDigest(record, to: id)
     }
 
     // MARK: Lifecycle

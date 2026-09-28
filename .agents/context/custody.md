@@ -62,10 +62,11 @@ A node carries frames for people who are not in range yet. This is store-and-for
   whose digest under-reports gets the missing frames re-pushed at each exchange, though on a Bluetooth link
   `LinkCrossings` lets one frame cross only once in 10 minutes, so the repeat comes that often while the link
   lasts.
-- **A link's writer is first in, first out, on both platforms,** and digests queue like frames. A back-fill is
-  queued whole, each 60 s digest joins the queue behind it, and nothing drops a stale one. On a slow link a frame
-  sent after a back-fill waits behind every digest made meanwhile: minutes on `hci1`
-  (`.agents/context/linux-peer.md`, "Why the frames were late").
+- **A link's writer is first in, first out, on both platforms, but holds at most one digest not yet written**
+  (ADR 2026-09.3ch7, knit-next's ADR 2026-09.tjfb). A back-fill is queued whole. A digest made while an older
+  one still waits takes that one's place, so a slow link writes one current digest behind a back-fill, not one
+  per 60 s tick. What the socket already holds goes out as it was: on `hci1` that can still be minutes of
+  digests (`.agents/context/linux-peer.md`, "Why the frames were late").
 
 The advert's digest cue is the low 32 bits of an FNV-1a-64 fold (offset `0xCBF29CE484222325`, prime
 `0x100000001B3`) over each live id's UTF-8 bytes, XORed across the set. Nothing on BLE reads it, but we

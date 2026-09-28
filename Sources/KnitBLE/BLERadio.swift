@@ -65,6 +65,10 @@
             core.onQueue { $0.write(bytes, to: channel) }
         }
 
+        public func writeDigest(_ record: [UInt8], to channel: ChannelID) {
+            core.onQueue { $0.writeDigest(record, to: channel) }
+        }
+
         public func close(_ channel: ChannelID) {
             core.onQueue { $0.close(channel) }
         }
@@ -302,6 +306,14 @@
                 return
             }
             link.write(bytes)
+        }
+
+        func writeDigest(_ record: [UInt8], to channel: ChannelID) {
+            guard let link = links[channel] else {
+                log.log(.debug, "ble dropped a digest of \(record.count) bytes for \(channel), which has no link")
+                return
+            }
+            link.writeDigest(record)
         }
 
         func close(_ channel: ChannelID) {

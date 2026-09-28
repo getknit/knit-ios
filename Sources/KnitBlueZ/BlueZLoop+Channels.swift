@@ -103,9 +103,28 @@
                 return
             }
             channel.outbox.append(bytes)
-            channel.queuedBytes += bytes.count
             channels[id] = channel
-            guard channel.queuedBytes <= Self.maximumQueuedBytes else {
+            flushWithinBound(id)
+        }
+
+        /// Queues a DIGEST record, or puts it in the place of the one still waiting (``LinkOutbox/offerDigest(_:)``).
+        func enqueueDigest(_ record: [UInt8], on id: ChannelID) {
+            guard var channel = channels[id] else {
+                return
+            }
+            if channel.outbox.offerDigest(record) {
+                log.log(.debug, "bluez \(id) digest of \(record.count) bytes replaced the one waiting")
+            }
+            channels[id] = channel
+            flushWithinBound(id)
+        }
+
+        /// Closes a channel whose peer stopped reading, and otherwise writes what it can.
+        private func flushWithinBound(_ id: ChannelID) {
+            guard let channel = channels[id] else {
+                return
+            }
+            guard channel.outbox.queuedBytes <= Self.maximumQueuedBytes else {
                 log.log(.warning, "bluez \(id) stopped reading; closing it")
                 closeChannel(id)
                 return
@@ -115,16 +134,10 @@
 
         /// Writes queued bytes, one SDU of at most the channel's limit at a time, until the socket would block.
         private func flush(_ id: ChannelID) {
-            while var channel = channels[id], !channel.connecting, let head = channel.outbox.first {
-                let end = min(head.count, channel.written + max(1, channel.limit))
-                switch Descriptor.write(channel.descriptor, head[channel.written..<end]) {
+            while var channel = channels[id], !channel.connecting, let chunk = channel.outbox.next(atMost: channel.limit) {
+                switch Descriptor.write(channel.descriptor, chunk) {
                 case .wrote(let count):
-                    channel.written += count
-                    channel.queuedBytes -= count
-                    if channel.written == head.count {
-                        channel.outbox.removeFirst()
-                        channel.written = 0
-                    }
+                    channel.outbox.wrote(count)
                     channels[id] = channel
                 case .wouldBlock:
                     return

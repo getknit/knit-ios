@@ -114,6 +114,11 @@ public protocol Radio: AnyObject, Sendable {
     /// Writes bytes on an open channel, after everything written before.
     func write(_ bytes: [UInt8], to channel: ChannelID)
 
+    /// Writes a whole encoded DIGEST record on an open channel, after everything written before, or in the place of
+    /// a digest that still waits there unwritten (knit-next ADR 2026-09.tjfb). A radio queues it in its
+    /// ``LinkOutbox`` with ``LinkOutbox/offerDigest(_:)``, and cuts it into writes of its own size.
+    func writeDigest(_ record: [UInt8], to channel: ChannelID)
+
     /// Closes a channel.
     func close(_ channel: ChannelID)
 
@@ -124,6 +129,11 @@ public protocol Radio: AnyObject, Sendable {
 }
 
 extension Radio {
+    /// Writes the digest like any record: a radio that holds no queue of its own has none to replace it in.
+    public func writeDigest(_ record: [UInt8], to channel: ChannelID) {
+        write(record, to: channel)
+    }
+
     /// Rings nothing: a radio that cannot reach a doorbell.
     public func ring(_: ChannelID) {
         // A radio that can ring implements this; the rest leave the peer to wake at its next foreground.

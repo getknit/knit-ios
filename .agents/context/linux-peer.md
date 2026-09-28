@@ -711,7 +711,10 @@ three runs custody never matched within 600 s: once after such a drop, and twice
 sending DMs, which queued behind the same digests. The custody step allows only frames the peer dropped for want of a
 key, so live traffic like that fails it.
 
-On a link between two phones, which carries tens of KB/s, the same queue drains in seconds, which is why only `hci1`
-shows it. Both platforms could keep at most one digest queued per link and replace it with the newer one. That
-changes no wire bytes, but the platforms should agree on it, so it is knit-next's decision (roadmap).
+On a link between two phones, which carries tens of KB/s, the same queue drains in seconds, which is why only
+`hci1` shows it. Both platforms now keep at most one digest waiting per link, and a newer one takes its place
+(knit-next's ADR 2026-09.tjfb, this port's ADR 2026-09.3ch7). With that build on the Pixel 3, `android-rings`
+passed all ten steps with a 900 s wait, and the post and DM took 133 s and 124 s. What was left was the
+Android socket's own buffer, at least 120 KB: six digests already written there went out 33 to 37 s apart, and
+the post landed right behind the sixth. The slot cannot reach bytes the socket holds.
 
