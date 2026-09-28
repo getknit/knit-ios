@@ -41,6 +41,7 @@
     /// ``close()``.
     ///
     /// The channel object is held for the link's whole life: CoreBluetooth closes a channel whose last reference goes.
+    /// The link reads and writes only its streams, so tests run it over a bound stream pair instead.
     internal final class L2CAPLink: NSObject, StreamDelegate, @unchecked Sendable {
         // @unchecked: every mutable member is touched on the stream thread only.
         private static let readSize = 65_536
@@ -49,7 +50,10 @@
         private static let writeSize = 8192
 
         let id: ChannelID
-        private let channel: CBL2CAPChannel
+        /// What keeps the streams open: the channel, for a real link.
+        private let owner: AnyObject?
+        private let input: InputStream?
+        private let output: OutputStream?
         private let thread: StreamThread
         private let log: any KnitLog
         private let received: @Sendable ([UInt8]) -> Void
@@ -60,9 +64,9 @@
         /// Whether the last drain left bytes waiting for the stream's space, so a stall is logged once.
         private var isWaiting = false
 
-        /// A link over `channel`. `received` hears every read; `ended` hears once that the far side closed it or it
-        /// failed, and never after ``close()``.
-        init(
+        /// A link over `channel`'s streams. `received` hears every read; `ended` hears once that the far side closed it
+        /// or it failed, and never after ``close()``.
+        convenience init(
             id: ChannelID,
             channel: CBL2CAPChannel,
             thread: StreamThread,
@@ -70,8 +74,33 @@
             received: @escaping @Sendable ([UInt8]) -> Void,
             ended: @escaping @Sendable () -> Void
         ) {
+            self.init(
+                id: id,
+                input: channel.inputStream,
+                output: channel.outputStream,
+                owner: channel,
+                thread: thread,
+                log: log,
+                received: received,
+                ended: ended
+            )
+        }
+
+        /// A link over `input` and `output`, holding `owner` for as long as it lives.
+        init(
+            id: ChannelID,
+            input: InputStream?,
+            output: OutputStream?,
+            owner: AnyObject?,
+            thread: StreamThread,
+            log: any KnitLog,
+            received: @escaping @Sendable ([UInt8]) -> Void,
+            ended: @escaping @Sendable () -> Void
+        ) {
             self.id = id
-            self.channel = channel
+            self.input = input
+            self.output = output
+            self.owner = owner
             self.thread = thread
             self.log = log
             self.received = received
@@ -81,7 +110,7 @@
         /// Opens both streams on the stream thread.
         func open() {
             thread.perform { [self] in
-                guard !isClosed, let input = channel.inputStream, let output = channel.outputStream else {
+                guard !isClosed, let input, let output else {
                     return
                 }
                 for stream in [input, output] as [Stream] {
@@ -129,7 +158,7 @@
         func stream(_ stream: Stream, handle event: Stream.Event) {
             switch event {
             case .openCompleted:
-                log.log(.debug, "ble \(id) \(stream === channel.inputStream ? "input" : "output") open")
+                log.log(.debug, "ble \(id) \(stream === input ? "input" : "output") open")
             case .hasBytesAvailable:
                 readAvailable()
             case .hasSpaceAvailable:
@@ -146,7 +175,7 @@
         }
 
         private func readAvailable() {
-            guard let input = channel.inputStream else {
+            guard let input else {
                 return
             }
             var buffer = [UInt8](repeating: 0, count: Self.readSize)
@@ -161,7 +190,7 @@
         }
 
         private func drain() {
-            guard isOpen, let output = channel.outputStream else {
+            guard isOpen, let output else {
                 return
             }
             while output.hasSpaceAvailable, let next = outbox.next(atMost: Self.writeSize) {
@@ -187,7 +216,7 @@
                 return
             }
             isClosed = true
-            for stream in [channel.inputStream, channel.outputStream].compactMap(\.self) as [Stream] {
+            for stream in [input, output].compactMap(\.self) as [Stream] {
                 stream.delegate = nil
                 stream.close()
                 stream.remove(from: .current, forMode: .default)

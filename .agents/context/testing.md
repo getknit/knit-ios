@@ -36,8 +36,12 @@ ladder, not the first.
    session's actions, `stop` and `start`, and the event lines.
 8. **Over the air, from Linux (P4).** `knit-peer` on `hci1` against Android phones running Knit: checklist
    L, through `scripts/interop.py`. Obey `.agents/rules/devices.md` before touching a phone.
-9. **The Mac (P7).** The full suite on macOS, the `KnitBLE` delegate tests, Simulator XCUITest with
-   `performAccessibilityAudit`, and a native Mac run against Android and the Linux peer: checklist M.
+9. **The Mac (P7).** `test:macos` runs the whole suite on macOS, where `KnitBLETests` has something to test:
+   `L2CAPLink` over bound stream pairs (`Stream.getBoundStreams`) in place of a CoreBluetooth channel, with a far
+   end on a stream thread of its own. It covers write order, the 8 KiB cuts, the digest slot, back-pressure and
+   both ways a link ends. CoreBluetooth's own delegates need a radio, so the Mac's run and the iPhone's cover
+   them. Then Simulator XCUITest with `performAccessibilityAudit`, and a native Mac run against Android and the
+   Linux peer: checklist M.
 10. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`. `scripts/interop.py iphone` drives the
     iPhone through a debug build's USB bridge and an Android phone through knit-next's, for items 2 to 6
     (ADR 2026-09.kwa8). `iphone-relay` adds a peer on `hci0` beyond the iPhone for item 7, `iphone-wake`

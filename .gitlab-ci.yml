@@ -8,8 +8,8 @@
 #   - `knit-local`, a runner on the maintainer's machine, for the heavy jobs (sanitizers, fuzzing, analyze) and
 #     for `build:ios`, which needs xtool and the Darwin SDK. The SDK never goes into an image or a shared cache:
 #     Apple's terms tie it to that machine;
-#   - `macos`, the Mac Mini's shell runner, for `build:ios:xcode` (ADR 2026-09.de8f) and the signed
-#     `build:ios:signed` (ADR 2026-09.zawh).
+#   - `macos`, the Mac Mini's shell runner, for `build:ios:xcode` (ADR 2026-09.de8f), the signed
+#     `build:ios:signed` (ADR 2026-09.zawh), and `test:macos`.
 # `.agents/context/toolchain.md` has the runner setup.
 
 workflow:
@@ -155,6 +155,20 @@ test:linux:
   extends: .swift
   stage: test
   needs: [build:linux]
+  script:
+    - scripts/check.sh test
+  artifacts:
+    when: always
+    reports:
+      junit: .build/xunit-swift-testing.xml
+
+test:macos:
+  # The whole suite on macOS, KnitBLETests included: KnitBLE compiles to an empty module on Linux.
+  extends: .mac
+  stage: test
+  needs: []
+  variables:
+    GIT_CLEAN_FLAGS: -ffdx -e /.build/
   script:
     - scripts/check.sh test
   artifacts:

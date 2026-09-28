@@ -158,6 +158,8 @@ let package = Package(
             ],
             swiftSettings: strict
         ),
+        // KnitBLE's stream code over bound stream pairs, on the Mac; an empty target elsewhere, like KnitBLE itself.
+        .testTarget(name: "KnitBLETests", dependencies: ["KnitSync", "KnitBLE", "KnitMesh"], swiftSettings: strict),
         .testTarget(name: "RepoConventionTests", dependencies: [crypto], swiftSettings: strict),
     ]
 )

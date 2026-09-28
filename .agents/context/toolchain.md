@@ -276,6 +276,5 @@ and never sleeps.
   2026-09.d3jv changes with it.
 - Make `check.sh analyze` pass on macOS: a macOS counterpart to `scripts/swiftlint-analyze-linux.yml`, and
   `Knit` and `KnitBLE` analyzed from an iOS build.
-- Add a macOS test job: `swift test`, the KnitBLE delegate tests, and Simulator XCUITest with
-  `performAccessibilityAudit`.
-- Add the package's test targets to the `Knit` scheme's test action, for the macOS test job.
+- Simulator XCUITest with `performAccessibilityAudit`. `test:macos` already runs the package's suite, KnitBLE's
+  included, with `swift test` on the `macos` runner.
