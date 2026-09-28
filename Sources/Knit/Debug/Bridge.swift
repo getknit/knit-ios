@@ -6,14 +6,18 @@
     import KnitMesh
     import KnitStore
     import KnitWire
+    import os
 
     /// A debug build's bridge: `knit-peer`'s control protocol (``MeshControl``) served over USB to every computer
     /// connected (``BridgeListener``), so a script drives and checks this phone as it does the Linux peer
     /// (ADR 2026-09.kwa8). Commands go through the session, so they show on screen as taps would. Replies go to the
     /// connection that asked, and events to every connection. The bridge answers `scan-filter` itself, since only
-    /// the iPhone's radio has a scan probe (``ScanProbeCommand``).
+    /// the iPhone's radio has a scan probe (``ScanProbeCommand``). Each `status` carries `memoryAvailableKb`, how much
+    /// more Knit may take before iOS ends it, so a soak can see its memory grow.
     @MainActor
     internal final class Bridge {
+        nonisolated private static let bytesPerKilobyte = 1024
+
         private let listener: BridgeListener
 
         /// A bridge to `mesh`, driven through `session`, which it also taps for events, and to `radio`'s scan probe.
@@ -33,7 +37,9 @@
                 stores: session.stores,
                 clock: clock,
                 details: ["radioProfile": "ios", "host": "app", "version": .string(version)]
-            )
+            ) {
+                ["memoryAvailableKb": .int(Int64(os_proc_available_memory() / Self.bytesPerKilobyte))]
+            }
             let channel = BridgeListener(log: log) {
                 control.ready
             } answer: { line in

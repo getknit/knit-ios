@@ -44,10 +44,12 @@ public actor MeshControl {
     private let stores: MeshStores
     private let clock: any MeshClock
     private let details: [String: JSONValue]
+    private let sample: (@Sendable () -> [String: JSONValue])?
     private var linked: [Neighbor] = []
 
     /// A control surface for `mesh`, whose keys are `bundle`. It changes the node through `actions`, the mesh itself
     /// when there are none. `details` join the `ready` event and the `status` reply, to say what kind of node answers.
+    /// `sample`, read at each `status`, joins it too, for what only the host can measure, such as its memory.
     @preconcurrency
     public init(
         bundle: PublicKeyBundle,
@@ -55,7 +57,8 @@ public actor MeshControl {
         actions: (any ControlActions)? = nil,
         stores: MeshStores,
         clock: any MeshClock,
-        details: [String: JSONValue] = [:]
+        details: [String: JSONValue] = [:],
+        sample: (@Sendable () -> [String: JSONValue])? = nil
     ) {
         self.bundle = bundle
         nodeId = bundle.nodeId
@@ -64,6 +67,7 @@ public actor MeshControl {
         self.stores = stores
         self.clock = clock
         self.details = details
+        self.sample = sample
     }
 
     /// The `ready` event: who answers, with the `details`.
@@ -197,6 +201,7 @@ public actor MeshControl {
         let own = stores.ownProfile.load()
         let dropped = await mesh.dropped.map { (String(describing: $0.key), JSONValue.int(Int64($0.value))) }
         var fields = details
+        fields.merge(sample?() ?? [:]) { _, sampled in sampled }
         fields.merge([
             "nodeId": .string(nodeId.string),
             "name": .string(own.name),

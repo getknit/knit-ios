@@ -179,16 +179,17 @@ extension Copy {
             )
         }
 
-        /// What Bluetooth does for Knit, and the one boundary: new people are found while Knit is open.
+        /// What Bluetooth does for Knit, and the one boundary: new people are found while Knit is open, and in the
+        /// background some phones' messages wait for the next time it is.
         public static var bluetoothBody: String {
             NSLocalizedString(
                 "onboarding.bluetooth.body",
                 bundle: .main,
                 value: """
-                    Finds phones in range and passes messages between them. Knit finds new people while it's open, and links it already \
-                    has keep working in the background.
+                    Finds phones in range and passes messages between them. Knit finds new people while it's open and stays linked to \
+                    them in the background, though messages from some phones wait until you open Knit again.
                     """,
-                comment: "Onboarding: what Bluetooth does, and that new people are found only while Knit is open"
+                comment: "Onboarding: what Bluetooth does, that new people are found only while Knit is open, and what waits"
             )
         }
 

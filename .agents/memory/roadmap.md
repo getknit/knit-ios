@@ -103,7 +103,9 @@ explicit direction.** Update this file in the change that ships an item.
     `==`, so ids Swift calls equal could change what the overall trim kept. Both now compare by bytes.
   - **Tests:** the custody and repository contract suites run against the memory and SQL stores alike. Line
     coverage is 99 %. The SQL stores are not wired into anything yet: the app composes them in P6.
-  - **Still owed:** checking the backup flag on the Mac (P7) and the protection class on the iPhone (P8).
+  - **The backup flag holds on the Mac:** `theDirectoryIsExcludedFromBackups` checks it on Darwin, and passed in
+    `test:macos` (pipeline 813, 2026-09-28).
+  - **Still owed:** the protection class on the iPhone (P8).
 - **P6, the app (`KnitAppCore`, `Knit`, `KnitBLE`):** begun on 2026-09-26.
   - **`KnitAppCore`:** one `AppSession` over the mesh, and a view model for every MVP screen: onboarding, the
     chat list and its status line, a thread with its composer, message requests, both profiles, Settings,
@@ -142,7 +144,8 @@ explicit direction.** Update this file in the change that ships an item.
     to the `macos` runner, still advisory (ADR 2026-09.fkqb).
   - **Periphery blocks (2026-09-28):** on the Mac, over the iPhone build's index too, and on Linux for
     `KnitBlueZ` (ADR 2026-09.xgtz).
-  - **Still owed:** CI's first run of `test:macos` and `test:ios:simulator` after the push.
+  - **CI's first run of `test:macos` and `test:ios:simulator`** passed on the push of `76d98fd` (pipeline 813,
+    2026-09-28).
 - **P8, the iPhone:** begun early on 2026-09-26, without the Mac: an iPhone 12 on iOS 27.0, installed over USB
   by xtool on free provisioning. The app runs and links the Linux peer and the lab's Android phones. Against
   the peer, items 3 to 5 pass: safety numbers match, the room works both ways with ticks, and DMs go request,
@@ -172,9 +175,21 @@ explicit direction.** Update this file in the change that ships an item.
     and with the iPhone locked (`scripts/interop.py iphone-scan`). Locked, it found new peers in 30 to 120 s, but
     each match woke Knit, which then ran three quarters of the time among five Android phones, so Knit keeps its
     scan unfiltered. Android needs no UUID list for A3.
-  - **Still owed:** the app's background copy (it says open links keep working in the background, which holds only
-    for a peer that rings), and the soak. Items 2 to 7 pass against the Pixel 3 through the bridge, unattended, and
-    item 9's test needs someone to lock and unlock the iPhone (`.agents/context/linux-peer.md`).
+  - **The background copy (2026-09-28):** onboarding, the chat list and Settings now say that Knit stays linked in
+    the background and that messages from some phones wait until it is next open. They used to say open links keep
+    working there, which holds only for a phone that rings.
+  - **The soak (item 11, 2026-09-28):** `scripts/interop.py iphone-soak --peer --extras` ran the hour on the iPhone,
+    in `iphone-relay`'s line with the Pixel 3 and a peer on a shared `hci0`, so every post crossed both of the
+    iPhone's links. It reads the iPhone's log through `idevicesyslog` for why each link ended, and its crash and
+    jetsam reports, and the bridge's `status` now reports Knit's memory headroom. It passed 21 of 27: no crash, no
+    link ended by the iPhone or the peer, every post delivered and ticked, and the tables and memory level. None
+    of the misses was the iPhone's. Custody never matched because of a receipt that arrives before its DM, which
+    both platforms leave (below, "A receipt ahead of its DM"). The Pixel's own room retention trimmed the peer's
+    posts, which the run now avoids, and a check asked for FILE records the phone did not send
+    (`.agents/context/linux-peer.md`, "What the iPhone's soak showed").
+  - **Still owed:** items 2 to 7 pass against the Pixel 3 through the bridge, unattended, and item 9's test needs
+    someone to lock and unlock the iPhone (`.agents/context/linux-peer.md`). A rerun of the soak on the fixed
+    harness would show the room check pass; custody will not match until that receipt question is settled.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
@@ -205,6 +220,14 @@ explicit direction.** Update this file in the change that ships an item.
 - **Two iPhones both ways:** an iPhone rings only the peers it dialed, so of two iPhones the one with the smaller id
   cannot wake the other. A second GATT connection toward its dialer would let it; nothing needs it before two
   iPhones are on hand.
+- **A receipt ahead of its DM:** on both platforms, a receipt that arrives before the DM it acknowledges purges
+  nothing, so the DM is carried to its expiry and offered at every exchange to neighbours that refuse it
+  (`.agents/context/custody.md`). Back-fill's newest-first order makes it common, and so does the recipient, which
+  sends its receipt at once and relays the DM after the jitter. It kept custody from matching in `iphone-soak` on
+  2026-09-28. A candidate paired change: keep an acknowledgement for a DM not yet held, for the tombstone's 24 h,
+  and apply it if the DM, when it arrives, is addressed to the receipt's sender. Not relaying a DM addressed to
+  ourselves would remove the second source, but the relay may be deliberate: a recipient that stops relaying
+  stands out to anyone watching.
 
 ## Deferred by design
 

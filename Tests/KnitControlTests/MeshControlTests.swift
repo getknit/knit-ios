@@ -71,6 +71,24 @@ import Testing
         let status = try await rig.send(#"{"cmd":"status"}"#)
         #expect(status["host"] as? String == "test")
         #expect(status["nodeId"] as? String == rig.keys.nodeId.string)
+        #expect(status["memoryKb"] == nil, "a host that samples nothing adds nothing")
+    }
+
+    @Test func statusReadsTheSampleEachTime() async throws {
+        let reads = Lock(0)
+        let rig = ControlRig {
+            let count = reads.withLock { reads in
+                reads += 1
+                return reads
+            }
+            // A sampled field never replaces one the mesh reports.
+            return ["memoryKb": .int(Int64(count * 100)), "links": .int(99)]
+        }
+        #expect(try await rig.send(#"{"cmd":"status"}"#)["memoryKb"] as? Int == 100)
+        let again = try await rig.send(#"{"cmd":"status"}"#)
+        #expect(again["memoryKb"] as? Int == 200)
+        #expect(again["links"] as? Int == 0)
+        #expect(try rig.object(rig.control.ready)["memoryKb"] == nil, "ready carries the details alone")
     }
 
     @Test func linkEventsNameOnlyThePeersThatChanged() async throws {
@@ -108,7 +126,7 @@ private struct ControlRig {
     let stores = MeshStores.inMemory()
     let control: MeshControl
 
-    init(actions: (any ControlActions)? = nil) {
+    init(actions: (any ControlActions)? = nil, sample: (@Sendable () -> [String: JSONValue])? = nil) {
         guard let made = IdentityKeys(signingSeed: fixtureBytes(32, seed: 1), agreementScalar: fixtureBytes(32, seed: 101)) else {
             fatalError("fixed seeds make valid keys")
         }
@@ -123,7 +141,15 @@ private struct ControlRig {
             random: SystemRandomNumberGenerator(),
             log: SilentLog()
         )
-        control = MeshControl(bundle: made.bundle, mesh: mesh, actions: actions, stores: stores, clock: clock, details: ["host": "test"])
+        control = MeshControl(
+            bundle: made.bundle,
+            mesh: mesh,
+            actions: actions,
+            stores: stores,
+            clock: clock,
+            details: ["host": "test"],
+            sample: sample
+        )
     }
 
     func object(_ line: String) throws -> [String: Any] {

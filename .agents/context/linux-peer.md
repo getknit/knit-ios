@@ -768,3 +768,41 @@ Bluetooth once, at the Mac, on 2026-09-28.
 - **The soak's guard had been dead since `7c77354`,** which gave `_keep_to` two more parameters and left `soak`
   calling it with the old three. The thread died at start, so a node the first scan missed could join a soak.
   It is fixed, and this soak refused the iPhone as it appeared.
+
+## What the iPhone's soak showed
+
+`interop.py iphone-soak --peer --extras` ran MVP item 11 on the iPhone 12 on 2026-09-28, 14:45 to 15:46, on a
+build with the memory headroom in `status`. It used `iphone-relay`'s line: the Pixel 3, then the iPhone, then a peer
+on a shared `hci0` that refused the Pixel. So every post crossed both of the iPhone's links, at 20 a minute each,
+relays included. The three authors took turns, 976 posts in all. Every 15 posts came an extra: 10 reactions,
+10 typing cues and 9 photos from the phone, and 9 DMs each way between the iPhone and each of the other two. The run's
+directory is `.build/interop-iphone-soak/20260928-1422/`. It passed 21 of 27 checks, and none of the 6 misses was
+the iPhone's.
+
+- **Against item 11:**
+  - **Crashes:** none. The bridge stayed open all hour, and the phone held no crash or jetsam report from Knit.
+  - **Links:** neither the iPhone nor the peer ended one. The one ending came before the hour: at 14:23:14 the Pixel
+    read EOF on all three of its links within 10 ms, the iPhone's among them. The iPhone dialed it again, and it was
+    back 24 s later. Both links then held for the whole hour.
+  - **Growth:** the iPhone's SeenSet peaked at 1,772 and its custody at 500. Its memory headroom fell 1.5 MB through
+    the second half, to 2,129,278 kB. `LinkCrossings` filled at 1,024 entries per link after 35 minutes, and relays
+    went on at the same pace.
+  - **What Android sends:** the iPhone took reactions, typing cues and photo captions without dropping a link. No
+    FILE record reached it this time, though the Mac's hour that morning discarded some from the same photo; why
+    is not known. The peer started empty, so it took its keys from the iPhone's back-fill.
+- **Delivery:** every post reached the other two nodes, 325 of the phone's at the peer through the iPhone. The
+  phone's posts reached the iPhone in a median of 1.6 s, 323 of 327 within 5 s, and the peer through it in 1.8 s.
+  Every post of the iPhone's and of the peer's was ticked, in a median of 0.1 s. Every DM was delivered, both ways,
+  with each partner.
+- **The misses:**
+  - **Custody never matched** (four checks). The iPhone carried a DM the Pixel had sent two hours earlier, which the
+    Pixel and the peer had both purged. The recipient's receipt reached the iPhone before the DM did, and a receipt
+    that arrives first purges nothing, on either platform (`.agents/context/custody.md`). By the end the Pixel held
+    one such DM too, a DM from the peer to the iPhone. The iPhone receipted it at once and relayed it after the
+    jitter, so the Pixel had the receipt first. Every other id matched.
+  - **The phone showed only the peer's last few minutes** (`peer-posts-on-phone`). The Pixel took and screened every
+    post, but its room was over Android's 2,000-row cap from the day's runs, and its sweep trims the room every
+    10 minutes, oldest first, starting with strangers. The peer was a stranger to it and the iPhone was not, so every
+    post of the peer's from before the last sweep, at 15:41, was gone. The run now has the phone DM the peer before the
+    hour, which makes the peer someone the phone talks to.
+  - **`extras` asked for FILE records,** which the phone decides whether to send. The run now reports them instead.

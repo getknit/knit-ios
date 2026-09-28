@@ -23,9 +23,12 @@ that meets someone later hands over what it was carrying for them.
 - **It meshes with Android.** An iPhone speaks the same protocol as Knit for Android and relays for Android
   phones the way they relay for each other. Knit for Android also meshes over Wi-Fi Aware, LoRa boards and
   internet relays, and an iPhone reaches those parts of the mesh through the Android phones around it.
-- **Knit finds new people while it is open.** iOS can keep an app's open Bluetooth links running in the
-  background, but it doesn't let other phones discover the app there. Direct messages meant for you wait
-  on the phones around you, for up to a day, until you are back in range with Knit open.
+- **Knit finds new people while it is open.** iOS keeps an app's open Bluetooth links running in the
+  background, but it doesn't let other phones discover the app there, and it suspends the app until something
+  wakes it. Newer builds of Knit for Android wake it when they have a message for you, and the message arrives
+  within seconds with a notification. Messages from a phone that can't wake Knit wait on the link until you
+  open it. Messages sent while you are out of range wait on the phones around you, for up to a day, until you
+  are back in range with Knit open.
 
 ## Build
 

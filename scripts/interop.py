@@ -10,6 +10,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py relay   --device SERIAL [--radio-profile ios|android]
     scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline]
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
     scripts/interop.py iphone-rings [--udid UDID]
     scripts/interop.py android-rings --device SERIAL [--converge-timeout 600] [--arrival-timeout 600]
@@ -17,10 +18,11 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
 
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
-bridge over USB (ADR 2026-09.kwa8); `iphone-relay` runs MVP item 7's line through the iPhone; `iphone-wake` is item 9's
-wake test, with someone to lock the iPhone and unlock it again; `iphone-scan` is P8's scan-filter check, with someone to
-do the same; `bridge` sends that bridge commands by hand and prints what comes back. `iphone-rings` checks the doorbell
-rings an iPhone sends, and `android-rings` those an Android phone sends, with companion change A4.
+bridge over USB (ADR 2026-09.kwa8); `iphone-relay` runs MVP item 7's line through the iPhone; `iphone-soak` is item
+11's hour on the iPhone, with the peer as a third author when asked; `iphone-wake` is item 9's wake test, with someone
+to lock the iPhone and unlock it again; `iphone-scan` is P8's scan-filter check, with someone to do the same; `bridge`
+sends that bridge commands by hand and prints what comes back. `iphone-rings` checks the doorbell rings an iPhone
+sends, and `android-rings` those an Android phone sends, with companion change A4.
 
 `--mac` runs the peer on the Mac Mini instead of hci1, on CoreBluetooth, the iPhone's own radio: checklist M (ADR
 2026-09.vcdk). It always runs the `ios` profile, in the Mac's desktop session through `scripts/mac-peer.sh`, and the
@@ -28,8 +30,9 @@ scan that finds the nodes to refuse still runs here.
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
-`relay` also runs a second peer on hci0, the maintainer's own adapter, and `iphone-relay` runs its one peer there; hci0
-needs its own go-ahead. The peer runs there with --shared-adapter, so it never drops a link it did not make.
+`relay` also runs a second peer on hci0, the maintainer's own adapter, and `iphone-relay` and `iphone-soak --peer` run
+their one peer there; hci0 needs its own go-ahead. The peer runs there with --shared-adapter, so it never drops a link it
+did not make.
 
 Each step prints one JSON line, {"step": ..., "ok": ..., ...}, and the run ends with a summary line. The exit code
 is the number of failed steps.
@@ -49,6 +52,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -269,8 +273,13 @@ class IPhone(Node):
         self.proxy: subprocess.Popen[bytes] | None = None
         self.socket: socket.socket | None = None
         self.name = ""
+        # When the bridge closed without `stop` asking: Knit crashed, or iOS suspended it and shut its sockets.
+        self.lost: float | None = None
+        self.stopping = False
 
     def start(self) -> None:
+        self.lost = None
+        self.stopping = False
         port = free_port()
         self.proxy = subprocess.Popen(
             ["iproxy", f"{port}:{self.DEVICE_PORT}", "-u", self.udid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -301,12 +310,15 @@ class IPhone(Node):
                     self._arrive(raw)
             except OSError:
                 pass
+        if not self.stopping:
+            self.lost = time.monotonic()
 
     def _write(self, line: str) -> None:
         assert self.socket
         self.socket.sendall(line.encode())
 
     def stop(self) -> None:
+        self.stopping = True
         if self.socket:
             try:
                 self.socket.shutdown(socket.SHUT_RDWR)
@@ -1812,6 +1824,481 @@ def iphone_relay(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def iphone_soak(arguments: argparse.Namespace) -> int:
+    """MVP item 11 on the iPhone: an hour of room traffic both ways between the iPhone and the Android phone, at
+    `--per-minute` posts a minute in all, with Knit open on both. The iPhone refuses every other node, and lets them
+    link again at the end.
+
+    With `--peer`, knit-peer on a shared hci0 joins as a third author, linked to the iPhone alone, which makes the
+    line `iphone-relay` runs: the phone's posts and the peer's reach each other only through the iPhone, so every post
+    crosses both of the iPhone's links and `--per-minute` is each link's rate, relays included (Android refuses more
+    than 30 a minute on a link). The peer starts with an empty store, so it asks the iPhone for the keys of the senders
+    in its back-fill. With `--extras` the phone also reacts to the iPhone's posts, sends it typing cues, trades DMs
+    with it and posts photos, and a peer trades DMs with the iPhone too. A photo's caption always crosses the link,
+    but Android sends its FILE records only now and then (three in the peer's whole hour, the same photo each time),
+    so `fileRecords` is reported, not required.
+
+    It passes with the bridge open throughout and no crash or jetsam report for Knit, no link the iPhone or the peer
+    ended, every post arriving and ticked, custody and the SeenSet under their caps, memory flat through the second
+    half, and custody converged at the end. `idevicesyslog` records the iPhone's log, which says why each of its links
+    ended. Knit must stay in front for the hour, so the iPhone's Auto-Lock should be Never. Everything lands in
+    `.build/interop-iphone-soak/<start>/`: the iPhone's log, the peer's, `samples.jsonl` and `summary.json`."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    started_wall = time.time()
+    ios.start()
+    phone_id = phone.state()["self"]["nodeId"]
+    out = ROOT / ".build" / "interop-iphone-soak" / time.strftime("%Y%m%d-%H%M")
+    out.mkdir(parents=True, exist_ok=True)
+    others: set[str] = set()
+    peer_id = ""
+    if arguments.peer:
+        others = others_in_range(phone_id) - {ios.node_id}
+        peer_id = _keygen("iphone-soak", "--above", max(others | {phone_id}))
+    partners = {phone_id} | ({peer_id} if peer_id else set())
+    header = {**vars(arguments), "run": "iphone-soak", "iphone": ios.node_id, "phone": phone_id, "peer": peer_id or None, "out": str(out)}
+    print(json.dumps(header), flush=True)
+    syslog = IPhoneLog(ios.udid, out / "iphone.log")
+    image = _stage_image(phone) if arguments.extras else None
+    stop = threading.Event()
+    kept_off: set[str] = set()
+    threading.Thread(target=_keep_to, args=(ios, partners, kept_off, stop, "iphone"), daemon=True).start()
+    peer: Peer | None = None
+    samples: list[dict] = []
+    traffic: IPhoneSoakTraffic | None = None
+    try:
+        if peer_id:
+            peer = Peer(
+                "android", f"knit-peer soak {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-soak", HCI0, out / "peer.log"
+            )
+            peer.start()
+            threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
+        traffic = IPhoneSoakTraffic(ios, phone, peer, phone_id, image)
+        run.step("link-iphone-phone", lambda: _ios_linked(ios, phone, phone_id))
+        if peer:
+            run.step("link-iphone-peer", lambda: _timed(lambda: peer.lines(lambda line: _link(line, ios.node_id)), 180))
+        # The back-fill comes first, as in `soak`: a newcomer takes the other side's whole custody, one record per write.
+        run.step("custody-converges-first", lambda: _converges(ios, phone, 900))
+        if peer:
+            run.step("custody-peer-converges-first", lambda: _peers_converge(peer, ios, 420))
+            # Android trims its room to 2,000 rows every 10 minutes, a stranger's posts first, so a lab phone full of
+            # earlier runs kept only the peer's last few minutes. A DM from the phone makes the peer someone it
+            # talks to, whose posts it keeps; it crosses the iPhone too.
+            hello = f"soak mvp11 hello {nonce}"
+            phone.send(hello, conversation=peer_id)
+            run.step("dm-phone-to-peer", lambda: _latency(peer.wait(lambda line: _message(line, hello), 60)))
+        interval = 60 / arguments.per_minute
+        started = time.monotonic()
+        end = started + arguments.minutes * 60
+        next_sample = started
+        while time.monotonic() < end:
+            beat = time.monotonic()
+            traffic.post()
+            if arguments.extras and traffic.turn % IPhoneSoakTraffic.EXTRA_EVERY == 0:
+                traffic.extra()
+            if beat >= next_sample:
+                samples.append(_ios_sample(ios, peer, round(beat - started)))
+                print(json.dumps({"sample": samples[-1]}), flush=True)
+                next_sample += 120
+            time.sleep(max(0.0, interval - (time.monotonic() - beat)))
+        time.sleep(20)
+        samples.append(_ios_sample(ios, peer, round(time.monotonic() - started)))
+        run.step("iphone-bridge-held", lambda: _bridge_held(ios))
+        run.step("iphone-no-crash", lambda: _knit_crashes(ios.udid, out / "crashes", started_wall))
+        run.step("no-link-dropped-by-iphone", lambda: _ios_endings(out / "iphone.log", partners, ios))
+        if peer:
+            run.step("peer-alive", lambda: _alive(peer))
+            run.step("no-link-dropped-by-peer", lambda: _endings(out / "peer.log"))
+        for step, check in traffic.checks():
+            run.step(step, check)
+        if arguments.extras:
+            run.step("extras", traffic.extras_report)
+        iphone_samples = [sample["iphone"] for sample in samples if sample.get("iphone")]
+        run.step("iphone-footprint-bounded", lambda: _footprint(iphone_samples))
+        run.step("iphone-memory-flat", lambda: _headroom(samples))
+        if peer:
+            peer_samples = [sample["peer"] for sample in samples if sample.get("peer")]
+            run.step("peer-footprint-bounded", lambda: _footprint(peer_samples))
+            run.step("peer-memory-flat", lambda: _memory(peer_samples))
+        run.step("custody-converges-at-end", lambda: _converges(ios, phone, 300))
+        if peer:
+            run.step("custody-peer-converges-at-end", lambda: _peers_converge(peer, ios, 300))
+    finally:
+        stop.set()
+        if peer:
+            peer.stop()
+        for node in sorted(kept_off):
+            try:
+                ios.command(cmd="allow-link", peer=node)
+            except (TimeoutError, OSError):
+                pass
+        syslog.stop()
+        ios.stop()
+    turns = traffic.turn if traffic else 0
+    failures = traffic.failures if traffic else {}
+    summary = {"summary": "iphone-soak", "turns": turns, "steps": run.steps, "failed": run.failed, "failures": failures, "keptOff": len(kept_off)}
+    (out / "samples.jsonl").write_text("".join(json.dumps(sample) + "\n" for sample in samples), encoding="utf-8")
+    (out / "summary.json").write_text(json.dumps({**summary, "run": header, "results": run.results}, indent=1), encoding="utf-8")
+    print(json.dumps(summary))
+    return run.failed
+
+
+class IPhoneLog:
+    """Knit's unified log over USB through `idevicesyslog`, kept as it comes. A debug build writes every level as one
+    JSON line (`UnifiedLog`), so the file reads like the peer's log once each line's syslog prefix is cut."""
+
+    def __init__(self, udid: str, path: Path) -> None:
+        self.path = path
+        self.file = open(path, "a", encoding="utf-8")  # noqa: SIM115 - lives with the process
+        self.process = subprocess.Popen(
+            ["idevicesyslog", "-u", udid, "-p", "Knit", "--no-colors"], stdout=self.file, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL
+        )
+
+    def stop(self) -> None:
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+        self.file.close()
+
+    @staticmethod
+    def entries(path: Path) -> list[dict]:
+        """Each of Knit's JSON lines in the file, with its syslog prefix cut."""
+        entries = []
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            start = line.find('{"')
+            if start < 0:
+                continue
+            try:
+                entry = json.loads(line[start:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(entry, dict) and "message" in entry:
+                entries.append(entry)
+        return entries
+
+
+class IPhoneSoakTraffic:
+    """What `iphone-soak` sends, and what it made of the answers. The authors take turns: the iPhone, the phone, and the
+    peer when there is one. Bodies start with "soak " so knit-next's `.private/scripts/soak/cleanup.sh` purges them
+    from the phones afterwards."""
+
+    # One extra every so many posts, round-robin through the extras that apply.
+    EXTRA_EVERY = 15
+    # How many of each author's latest posts the phone is checked for: its bridge lists the room's newest 200.
+    ON_PHONE = 50
+
+    def __init__(self, ios: IPhone, phone: Phone, peer: Peer | None, phone_id: str, image: str | None) -> None:
+        self.ios = ios
+        self.phone = phone
+        self.peer = peer
+        self.phone_id = phone_id
+        self.image = image
+        self.authors = ["iphone", "phone"] + (["peer"] if peer else [])
+        self.extras_order = ["react", "typing", "dm-from-phone", "dm-from-iphone", "photo"]
+        if peer:
+            self.extras_order += ["dm-from-peer", "dm-to-peer"]
+        self.turn = 0
+        self.extra_turn = 0
+        self.posts: dict[str, dict[str, str]] = {author: {} for author in self.authors}  # author -> body -> id, "" if none
+        self.posted_at: dict[str, float] = {}  # id -> monotonic
+        self.extras: dict[str, int] = dict.fromkeys(self.extras_order, 0)
+        self.photo_bodies: set[str] = set()
+        self.phone_dms: set[str] = set()
+        self.sent_dms: dict[str, dict[str, str]] = {"iphone": {}, "peer": {}, "to-peer": {}}  # id -> body
+        self.failures: dict[str, int] = {}
+
+    def _try(self, what: str, action) -> object:
+        try:
+            return action()
+        except (RuntimeError, TimeoutError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
+            self.failures[what] = self.failures.get(what, 0) + 1
+            print(json.dumps({"failed": what, "error": str(error)[:200]}), flush=True)
+            return None
+
+    def post(self) -> None:
+        author = self.authors[self.turn % len(self.authors)]
+        body = f"soak mvp11 #{self.turn} {author} {time.strftime('%H%M%S')}"
+        self.turn += 1
+        if author == "phone":
+            if self._try("phone-post", lambda: self.phone.send(body)) is not None:
+                self.posts["phone"][body] = ""
+            return
+        node = self.ios if author == "iphone" else self.peer
+        assert node
+        reply = self._try(f"{author}-post", lambda: node.command(cmd="room", text=body))
+        if reply and reply.get("id"):
+            self.posts[author][body] = reply["id"]
+            self.posted_at[reply["id"]] = time.monotonic()
+
+    def extra(self) -> None:
+        kind = self.extras_order[self.extra_turn % len(self.extras_order)]
+        self.extra_turn += 1
+        n = self.extras[kind]
+        body = f"soak mvp11 {kind} #{n} {time.strftime('%H%M%S')}"
+        done: object = None
+        if kind == "react" and self.posts["iphone"]:
+            latest = list(self.posts["iphone"].values())[-1]
+            done = self._try(kind, lambda: self.phone.bridge("REACT", id=latest, emoji="\U0001f44d"))
+        elif kind == "typing":
+            done = self._try(kind, lambda: self.phone.bridge("TYPING", conv=self.ios.node_id))
+        elif kind == "dm-from-phone":
+            done = self._try(kind, lambda: self.phone.send(body, conversation=self.ios.node_id))
+            if done is not None:
+                self.phone_dms.add(body)
+                if n == 0:
+                    # A first DM may be a message request; accepting it again is harmless.
+                    self._try("accept", lambda: self.ios.wait(lambda line: _message(line, body), 60))
+                    self._try("accept", lambda: self.ios.command(cmd="accept", conv=self.phone_id))
+        elif kind == "dm-from-iphone":
+            done = self._try(kind, lambda: self.ios.command(cmd="dm", to=self.phone_id, text=body))
+            if isinstance(done, dict) and done.get("id"):
+                self.sent_dms["iphone"][done["id"]] = body
+        elif kind == "photo" and self.image:
+            done = self._try(kind, lambda: self.phone.bridge("SENDIMG", path=self.image, text=body, conv="nearby"))
+            if done is not None:
+                self.photo_bodies.add(body)
+        elif kind == "dm-from-peer" and self.peer:
+            peer = self.peer
+            done = self._try(kind, lambda: peer.command(cmd="dm", to=self.ios.node_id, text=body))
+            if isinstance(done, dict) and done.get("id"):
+                self.sent_dms["peer"][done["id"]] = body
+                if n == 0:
+                    self._try("accept", lambda: self.ios.wait(lambda line: _message(line, body), 60))
+                    self._try("accept", lambda: self.ios.command(cmd="accept", conv=peer.node_id))
+        elif kind == "dm-to-peer" and self.peer:
+            peer = self.peer
+            done = self._try(kind, lambda: self.ios.command(cmd="dm", to=peer.node_id, text=body))
+            if isinstance(done, dict) and done.get("id"):
+                self.sent_dms["to-peer"][done["id"]] = body
+                if n == 0:
+                    self._try("accept", lambda: peer.wait(lambda line: _message(line, body), 60))
+                    self._try("accept", lambda: peer.command(cmd="accept", conv=self.ios.node_id))
+        if done is not None:
+            self.extras[kind] += 1
+
+    def checks(self) -> list[tuple[str, object]]:
+        """Each author's posts at every other node, and their ticks. The phone is read once, for its newest posts."""
+        shown = {message["body"]: message for message in self.phone.state("nearby", limit=200).get("messages", [])}
+        checks: list[tuple[str, object]] = [
+            ("phone-posts-on-iphone", lambda: _all(set(self.posts["phone"]), _heard(self.ios))),
+            ("iphone-posts-on-phone", lambda: _all(self._latest("iphone"), set(shown))),
+            ("iphone-posts-ticked", lambda: self._ticks(self.ios, "iphone")),
+            ("phone-posts-ticked", lambda: _all(self._latest("phone"), {body for body, m in shown.items() if m.get("received")})),
+            ("phone-latency", lambda: _post_latency(self.ios, set(self.posts["phone"]))),
+        ]
+        if self.peer:
+            peer = self.peer
+            checks += [
+                ("peer-posts-on-iphone", lambda: _all(set(self.posts["peer"]), _heard(self.ios))),
+                ("iphone-posts-on-peer", lambda: _all(set(self.posts["iphone"]), _heard(peer))),
+                ("phone-posts-on-peer", lambda: _all(set(self.posts["phone"]), _heard(peer))),
+                ("peer-posts-on-phone", lambda: _all(self._latest("peer"), set(shown))),
+                ("peer-posts-ticked", lambda: self._ticks(peer, "peer")),
+                ("phone-latency-to-peer", lambda: _post_latency(peer, set(self.posts["phone"]))),
+            ]
+        return checks
+
+    def _latest(self, author: str) -> set[str]:
+        return set(list(self.posts[author])[-self.ON_PHONE :])
+
+    def _ticks(self, node: Node, author: str) -> dict:
+        delivered = _delivered_at(node)
+        ids = self.posts[author]
+        waits = sorted(delivered[i] - self.posted_at[i] for i in ids.values() if i in delivered)
+        missing = [body for body, i in ids.items() if i not in delivered]
+        detail = {"ticked": len(waits), "of": len(ids), "medianS": _at(waits, 0.5), "p90S": _at(waits, 0.9), "maxS": _at(waits, 1)}
+        if missing:
+            raise RuntimeError(f"{len(missing)} unticked, first {missing[:3]}: {detail}")
+        return detail
+
+    def extras_report(self) -> dict:
+        heard = _heard(self.ios)
+        ios_delivered = _delivered_at(self.ios)
+        status = self.ios.command(cmd="status")
+        detail: dict[str, object] = {
+            "sent": self.extras,
+            "photosHeard": len(self.photo_bodies & heard),
+            "phoneDmsHeard": len(self.phone_dms & heard),
+            "iphoneDmsDelivered": len([i for i in self.sent_dms["iphone"] if i in ios_delivered]),
+            "fileRecords": status.get("fileRecords"),
+            "dropped": status.get("dropped"),
+        }
+        problems = []
+        if self.photo_bodies - heard:
+            problems.append(f"{len(self.photo_bodies - heard)} photo captions never arrived")
+        if self.phone_dms - heard:
+            problems.append(f"{len(self.phone_dms - heard)} of the phone's DMs never arrived")
+        if detail["iphoneDmsDelivered"] != len(self.sent_dms["iphone"]):
+            problems.append(f"{len(self.sent_dms['iphone']) - detail['iphoneDmsDelivered']} of the iPhone's DMs never ticked")
+        if self.peer:
+            peer_delivered = _delivered_at(self.peer)
+            detail["peerDmsDelivered"] = len([i for i in self.sent_dms["peer"] if i in peer_delivered])
+            detail["dmsToPeerDelivered"] = len([i for i in self.sent_dms["to-peer"] if i in ios_delivered])
+            if detail["peerDmsDelivered"] != len(self.sent_dms["peer"]):
+                problems.append(f"{len(self.sent_dms['peer']) - detail['peerDmsDelivered']} of the peer's DMs never ticked")
+            if detail["dmsToPeerDelivered"] != len(self.sent_dms["to-peer"]):
+                problems.append(f"{len(self.sent_dms['to-peer']) - detail['dmsToPeerDelivered']} of the iPhone's DMs to the peer never ticked")
+        if problems:
+            raise RuntimeError(f"{'; '.join(problems)}: {detail}")
+        return detail
+
+
+def _heard(node: Node) -> set[str]:
+    return {line.get("body") for line in node.lines(lambda line: line.get("event") == "message")}
+
+
+def _delivered_at(node: Node) -> dict[str, float]:
+    return {line["id"]: line["_at"] for line in node.lines(lambda line: line.get("event") == "delivered")}
+
+
+def _post_latency(node: Node, bodies: set[str]) -> dict:
+    """Posts from `bodies`, from their author's clock to the node's: MVP item 4 wants 5 s over a live link."""
+    waits = sorted(
+        (line["arrivedAt"] - line["sentAt"]) / 1000
+        for line in node.lines(lambda line: line.get("event") == "message" and line.get("body") in bodies)
+        if line.get("arrivedAt") and line.get("sentAt")
+    )
+    detail = {"posts": len(waits), "medianS": _at(waits, 0.5), "p90S": _at(waits, 0.9), "maxS": _at(waits, 1)}
+    detail["withinFiveSeconds"] = len([wait for wait in waits if wait <= 5])
+    return detail
+
+
+def _ios_sample(ios: IPhone, peer: Peer | None, elapsed: int) -> dict:
+    """The iPhone's tables and memory headroom, and the peer's `_sample`. An iPhone that does not answer is recorded as
+    None: iOS suspends a Knit that leaves the screen, and a locked iPhone stops the soak's traffic with it."""
+    sample: dict = {"t": elapsed}
+    try:
+        status = ios.command(cmd="status", timeout=20)
+        keys = ("links", "custody", "dropped", "fileRecords", "footprint", "router", "memoryAvailableKb")
+        sample["iphone"] = {"t": elapsed, **{key: status.get(key) for key in keys}}
+    except (TimeoutError, OSError) as error:
+        sample["iphone"] = None
+        print(json.dumps({"warning": f"the iPhone did not answer its status ({error}): is it locked?"}), flush=True)
+    if peer:
+        sample["peer"] = _sample(peer, elapsed)
+    return sample
+
+
+def _bridge_held(ios: IPhone) -> dict:
+    """The bridge stayed open for the whole run and still answers. It closes when Knit ends, and when iOS suspends it."""
+    if ios.lost is not None:
+        raise RuntimeError("the bridge closed during the run: Knit crashed, or left the screen")
+    status = ios.command(cmd="status")
+    return {"links": status.get("links"), "custody": status.get("custody")}
+
+
+# A crash is `Knit-<date>.ips`; `Knit.cpu_resource-<date>.ips` and the like are iOS saying Knit used too much of something.
+KNIT_REPORT = re.compile(r"^(Knit|JetsamEvent)(\.[a-z_]+)?-(\d{4}-\d{2}-\d{2}-\d{6})")
+
+
+def _knit_crashes(udid: str, folder: Path, since: float) -> dict:
+    """No crash report from Knit, and no jetsam report of iOS ending it, dated after `since`; a resource report, such
+    as too many wakeups, is listed and passes. `idevicecrashreport -k` copies every report the phone holds and leaves
+    them there. A report's name carries the phone's local time, which is this machine's: both keep the maintainer's
+    time zone."""
+    folder.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(["idevicecrashreport", "-u", udid, "-k", str(folder)], capture_output=True, text=True, timeout=600, check=False)
+    if result.returncode:
+        raise RuntimeError(f"idevicecrashreport failed: {(result.stderr or result.stdout).strip()[:200]}")
+    after = time.strftime("%Y-%m-%d-%H%M%S", time.localtime(since - 60))
+    crashes: list[str] = []
+    ended: list[str] = []
+    resources: list[str] = []
+    for path in sorted(folder.rglob("*.ips")):
+        match = KNIT_REPORT.match(path.name)
+        if not match or match[3] < after:
+            continue
+        if match[1] == "Knit":
+            (resources if match[2] else crashes).append(path.name)
+        elif _jetsam_ended_knit(path):
+            ended.append(path.name)
+    if crashes or ended:
+        raise RuntimeError(f"crash reports {crashes}, jetsam reports naming Knit {ended}, in {folder}")
+    return {"reports": len(list(folder.rglob("*.ips"))), "resourceReports": resources}
+
+
+def _jetsam_ended_knit(path: Path) -> bool:
+    """Whether a jetsam report gives a reason for Knit, which it does only for a process it ended. The report is a
+    JSON header line, then JSON; one that does not parse counts when it names Knit at all, so a human reads it."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    _, _, body = text.partition("\n")
+    try:
+        processes = json.loads(body).get("processes", [])
+    except (json.JSONDecodeError, AttributeError):
+        return '"Knit"' in text
+    return any(process.get("name") == "Knit" and process.get("reason") for process in processes if isinstance(process, dict))
+
+
+IOS_CHANNEL_ENDINGS = [
+    (re.compile(r"^ble (ch\d+) ended$"), lambda _: "the far end closed it"),
+    (re.compile(r"^ble (ch\d+) failed: (.*)"), lambda m: f"stream failed: {m[2][:80]}"),
+    (re.compile(r"^ble (ch\d+) lost its connection: (.*)"), lambda m: f"connection lost: {m[2][:80]}"),
+    (re.compile(r"^link (ch\d+) sent a bad record: (.*)"), lambda m: f"ours: bad record ({m[2][:60]})"),
+    (re.compile(r"^link (ch\d+) timed out"), lambda _: "ours: HELLO timed out"),
+    (re.compile(r"^link \S+ replaced its stale link (ch\d+) with ch\d+$"), lambda _: "replaced: the far end dialed again"),
+]
+
+
+def _ios_endings(log: Path, partners: set[str], ios: IPhone) -> dict:
+    """Why each of the iPhone's links to `partners` ended, from its log: the first thing said of the channel before
+    `link down`, as `soak.py`'s `link_endings` reads the peer's. Our side caused it when the link manager closed the
+    channel (a bad record, a missed HELLO, an eviction), or closed it with no reason given, since the run neither
+    stops the iPhone's mesh nor refuses a partner. A lost connection or a stream the far end ended is the radio's or
+    the far end's. The bridge's own link events count the drops, so a log that missed some is caught."""
+    entries = IPhoneLog.entries(log)
+    if not entries:
+        raise RuntimeError(f"the iPhone's log is empty: idevicesyslog recorded nothing to {log}")
+    down = re.compile(r"^link down (\S+) on (ch\d+)$")
+    evicting = re.compile(r"^link evicting (\S+)$")
+    first: dict[str, str] = {}
+    evicted: set[str] = set()
+    endings: list[dict] = []
+    for entry in entries:
+        message = entry["message"]
+        if match := evicting.match(message):
+            evicted.add(match[1])
+            continue
+        if match := down.match(message):
+            node, channel = match[1], match[2]
+            reason = "ours: evicted" if node in evicted else first.pop(channel, "ours: closed here, no reason logged")
+            evicted.discard(node)
+            if node in partners:
+                endings.append({"ms": entry.get("ms"), "peer": node[:6], "channel": channel, "reason": reason})
+            continue
+        for pattern, describe in IOS_CHANNEL_ENDINGS:
+            if match := pattern.match(message):
+                first.setdefault(match[1], describe(match))
+                break
+    reasons = Counter(ending["reason"] for ending in endings)
+    downs = len(ios.lines(lambda line: line.get("event") == "link" and not line.get("up") and line.get("peer") in partners))
+    detail = {"endings": len(endings), "bridgeDowns": downs, "reasons": dict(reasons), "logLines": len(entries)}
+    ours = [ending for ending in endings if ending["reason"].startswith("ours")]
+    if ours:
+        raise RuntimeError(f"{len(ours)} of {len(endings)} links ended by the iPhone: {detail}, first {ours[:3]}")
+    if downs > len(endings):
+        raise RuntimeError(f"the bridge saw {downs} links drop and the log explains {len(endings)}: {detail}")
+    return detail
+
+
+def _headroom(samples: list[dict]) -> dict:
+    """Flat means Knit's memory headroom (`memoryAvailableKb`, what iOS lets it take before ending it) fell less than
+    8 MB through the second half: the first minutes fill caches and tables."""
+    points = [(sample["t"], sample["iphone"]["memoryAvailableKb"]) for sample in samples if (sample.get("iphone") or {}).get("memoryAvailableKb")]
+    if not points:
+        raise RuntimeError("no memory sampled: the iPhone's build predates memoryAvailableKb")
+    half = [kb for t, kb in points if t >= points[-1][0] / 2]
+    fell = half[0] - half[-1]
+    detail = {"firstKb": points[0][1], "halfKb": half[0], "lastKb": half[-1], "leastKb": min(kb for _, kb in points)}
+    if fell > 8 * 1024:
+        raise RuntimeError(f"headroom fell {fell} kB in the second half: {detail}")
+    return detail
+
+
 def _keygen(instance: str, *bounds: str) -> str:
     result = subprocess.run([str(PEER), "keygen", *bounds, "--instance", instance], capture_output=True, text=True, check=True)
     return json.loads(result.stdout)["nodeId"]
@@ -2011,6 +2498,14 @@ def main() -> int:
     wake.add_argument(
         "--expect-wakes", action="store_true", help="the phone runs A4 (knit-next feat/ble-doorbell): every DM must wake Knit, as with --sender peer"
     )
+    ios_soak = commands.add_parser("iphone-soak")
+    ios_soak.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios_soak.add_argument("--peer", action="store_true", help="knit-peer on hci0 joins as a third author, linked to the iPhone alone")
+    ios_soak.add_argument("--minutes", type=float, default=60)
+    ios_soak.add_argument("--per-minute", type=float, default=20, help="posts a minute, every author together: each link's rate")
+    ios_soak.add_argument("--extras", action="store_true", help="the phone also reacts, types, DMs and posts photos; a peer DMs")
+    ios_soak.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    ios_soak.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     by_hand = commands.add_parser("bridge")
     by_hand.add_argument("--watch", type=float, default=0, help="print the bridge's events for this many seconds")
     by_hand.add_argument("commands", nargs="*", help='commands as JSON, such as \'{"cmd":"status"}\'')
@@ -2030,7 +2525,7 @@ def main() -> int:
     android.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     android.add_argument("--converge-timeout", type=float, default=600, help="seconds for the back-fill to converge custody")
     android.add_argument("--arrival-timeout", type=float, default=600, help="seconds for the post and the DM to reach the peer")
-    for sub in (ios, wake, rings, scan, by_hand, commands.choices["iphone-relay"]):
+    for sub in (ios, wake, rings, scan, by_hand, ios_soak, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
     if arguments.command == "iphone-wake" and arguments.sender == "phone" and not arguments.device:
@@ -2041,6 +2536,8 @@ def main() -> int:
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
     if arguments.command == "iphone-rings":
         return iphone_rings(arguments)
+    if arguments.command == "iphone-soak":
+        return iphone_soak(arguments)
     if arguments.command == "android-rings":
         return android_rings(arguments)
     if arguments.command == "iphone-scan":

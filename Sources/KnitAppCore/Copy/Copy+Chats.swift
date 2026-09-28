@@ -92,13 +92,17 @@ extension Copy {
             )
         }
 
-        /// The one boundary of the iPhone's radio, said once (`.agents/rules/copy.md`).
+        /// The one boundary of the iPhone's radio, said once (`.agents/rules/copy.md`): new people are found only while
+        /// Knit is open, and in the background a message waits for a phone that can wake Knit (ADR 2026-09.khjj).
         public static var boundary: String {
             NSLocalizedString(
                 "status.boundary",
                 bundle: .main,
-                value: "Knit finds new people while it's open. Links it already has keep working in the background.",
-                comment: "Where the app says once that new people are found only while it is open"
+                value: """
+                    Knit finds new people while it's open. In the background it stays linked to them, and some phones can wake it to \
+                    deliver a message. Messages from the rest arrive when you next open Knit.
+                    """,
+                comment: "Where the app says once that new people are found only while it is open, and what reaches it in the background"
             )
         }
     }

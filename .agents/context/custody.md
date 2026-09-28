@@ -51,6 +51,13 @@ A node carries frames for people who are not in range yet. This is store-and-for
   (byte order).
 - **Early purge:** a cleartext receipt from a DM's recipient removes that DM and tombstones its id for 24 h.
   Sealed receipts purge nothing.
+- **A receipt that arrives before its DM purges nothing,** on both platforms. The purge needs the DM's
+  recipient, which only the DM itself names, so `ForwardSync.onAck` returns when the DM isn't held. The DM
+  that arrives later is carried to its expiry, and every exchange offers it to neighbours that tombstoned it
+  and refuse it. Two things make this order common. Back-fill serves newest-received first, so a receipt goes
+  ahead of an older DM. And a DM's recipient relays it onward like any frame, after the jitter, but sends its
+  receipt at once, so its other neighbours hear the receipt first. In `iphone-soak` on 2026-09-28 each order left
+  one DM behind, and custody never matched (`.agents/context/linux-peer.md`, "What the iPhone's soak showed").
 
 ## Sync over a link
 

@@ -165,12 +165,14 @@
             finishGattRead(peripheral.identifier, .failed)
         }
 
-        func centralManager(_: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error _: (any Error)?) {
+        func centralManager(_: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: (any Error)?) {
             let uuid = peripheral.identifier
             doorbells.forget(uuid)
             failDials(on: uuid)
             finishGattRead(uuid, .failed)
             for (channel, owner) in owners where owner == uuid {
+                // Says why a link on a peer we dialed ended; `interop.py iphone-soak` reads it.
+                log.log(.info, "ble \(channel) lost its connection: \(error.map { "\($0)" } ?? "no reason")")
                 ended(channel)
             }
         }
