@@ -3,4 +3,4 @@ version: 1
 bundleID: app.getknit.knit
 product: Knit
 infoPath: App/Info.plist
-iconPath: App/AppIcon.png
+iconPath: App/Assets.xcassets/AppIcon.appiconset/AppIcon.png

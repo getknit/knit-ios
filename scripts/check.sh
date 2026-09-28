@@ -3,7 +3,7 @@
 #
 #     scripts/check.sh fast        # format, lint, build, unit tests (the pre-push hook)
 #     scripts/check.sh all         # every gate that runs on Linux
-#     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama ios
+#     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama ios xcode device
 #
 # Each build variant (coverage, TSan, ASan, analyze) gets its own --scratch-path, so switching between them never
 # rebuilds the plain debug tree. `.agents/context/commands.md` explains when to run which.
@@ -128,18 +128,109 @@ gate_ios() {
 		cpus=(taskset -c "0-$((swift_jobs - 1))")
 	fi
 	"${cpus[@]}" xtool dev build
-	# Only the Objective-C runtime calls these, so only Package.swift's -ObjC keeps them in the app. Without the
-	# restore ones, iOS stops Knit the moment Bluetooth is allowed; without the write one, the doorbell wakes Knit
-	# and nothing answers it.
+	check_delegates xtool/Knit.app/Knit
+}
+
+# Only the Objective-C runtime calls these, so only Package.swift's -ObjC keeps them in the app. Without the
+# restore ones, iOS stops Knit the moment Bluetooth is allowed; without the write one, the doorbell wakes Knit
+# and nothing answers it.
+check_delegates() {
 	local selector
 	for selector in centralManager:willRestoreState: peripheralManager:willRestoreState: \
 		centralManager:didDiscoverPeripheral:advertisementData:RSSI: peripheralManager:didOpenL2CAPChannel:error: \
 		peripheralManager:didReceiveWriteRequests:; do
-		if ! grep -q -a -F "$selector" xtool/Knit.app/Knit; then
-			echo "xtool/Knit.app lacks the delegate method $selector: is -ObjC still in the Knit target's linkerSettings?" >&2
+		if ! grep -q -a -F "$selector" "$1"; then
+			echo "$1 lacks the delegate method $selector: is -ObjC still in the Knit target's linkerSettings?" >&2
 			return 1
 		fi
 	done
+}
+
+# The Xcode project, on the Mac only (ADR 2026-09.de8f): XcodeGen generates App/Knit.xcodeproj from
+# App/project.yml. The project resolves its packages into a Package.resolved of its own, which is never committed,
+# so seed it with the root package's pins; each build then forbids resolution and checks they held.
+xcode_project() {
+	if [ "$(uname -s)" != Darwin ]; then
+		echo "this gate needs Xcode; run it on the Mac: scripts/mac.sh run scripts/check.sh $*" >&2
+		return 1
+	fi
+	xcodegen generate --spec App/project.yml --quiet
+	mkdir -p "$(dirname "$xcode_resolved")"
+	cp Package.resolved "$xcode_resolved"
+	xcode_pretty=(cat)
+	if command -v xcbeautify >/dev/null 2>&1; then
+		xcode_pretty=(xcbeautify --quiet)
+	fi
+}
+
+xcode_resolved=App/Knit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+xcode_app=.build-xcode/Build/Products/Debug-iphoneos/Knit.app
+xcode_build=(-project App/Knit.xcodeproj -scheme Knit -configuration Debug -derivedDataPath .build-xcode
+	-jobs "$swift_jobs" -disableAutomaticPackageResolution)
+
+# What every iPhone build must hold: the committed pins, App/Info.plist's version keys, and KnitBLE's delegates.
+check_xcode_app() {
+	python3 - "$xcode_resolved" "$xcode_app/Info.plist" <<'PY'
+import json, plistlib, sys
+def pins(path):
+	return {p["identity"]: p["state"] for p in json.load(open(path))["pins"]}
+if pins(sys.argv[1]) != pins("Package.resolved"):
+	sys.exit(f"{sys.argv[1]} drifted from Package.resolved: the app built other package versions")
+built, ours = (plistlib.load(open(path, "rb")) for path in (sys.argv[2], "App/Info.plist"))
+for key in ("CFBundleShortVersionString", "CFBundleVersion"):
+	if built.get(key) != ours[key]:
+		sys.exit(f"the Xcode build's {key} is {built.get(key)!r}, App/Info.plist's is {ours[key]!r}: "
+			"update MARKETING_VERSION or CURRENT_PROJECT_VERSION in App/project.yml")
+PY
+	# A Debug build keeps the app's code in Knit.debug.dylib, and Knit is a launcher for it.
+	if [ -f "$xcode_app/Knit.debug.dylib" ]; then
+		check_delegates "$xcode_app/Knit.debug.dylib"
+	else
+		check_delegates "$xcode_app/Knit"
+	fi
+}
+
+# The unsigned build any Mac can run: the iPhone and the Simulator, into .build-xcode.
+gate_xcode() {
+	step "xcodebuild App/Knit.xcodeproj (iOS and Simulator, unsigned)"
+	xcode_project xcode
+	local destination
+	for destination in 'generic/platform=iOS' 'generic/platform=iOS Simulator'; do
+		xcodebuild "${xcode_build[@]}" -destination "$destination" CODE_SIGNING_ALLOWED=NO build | "${xcode_pretty[@]}"
+	done
+	check_xcode_app
+}
+
+# The signed iPhone build (ADR 2026-09.zawh). Signing needs the login Keychain, which only the desktop session has
+# unlocked, so xcodebuild runs there through scripts/mac-desktop.sh, from ssh and CI alike. -allowProvisioningUpdates
+# lets it renew the free team's 7-day profile. The team comes from App/Local.xcconfig or $KNIT_DEVELOPMENT_TEAM.
+gate_device() {
+	step "xcodebuild App/Knit.xcodeproj (iPhone, signed in the desktop session)"
+	xcode_project device
+	local team=()
+	if [ -n "${KNIT_DEVELOPMENT_TEAM:-}" ]; then
+		team=("DEVELOPMENT_TEAM=$KNIT_DEVELOPMENT_TEAM")
+	elif ! grep -qs '^DEVELOPMENT_TEAM *= *[A-Z0-9]' App/Local.xcconfig; then
+		echo "no signing team: set KNIT_DEVELOPMENT_TEAM, or DEVELOPMENT_TEAM in App/Local.xcconfig" >&2
+		return 1
+	fi
+	# An incremental build that fetches a new profile copies it into the app without signing again, which leaves a
+	# broken seal (2026-09-28). The objects stay cached, so linking, copying and signing a fresh bundle is cheap.
+	rm -rf "$xcode_app"
+	scripts/mac-desktop.sh xcodebuild "${xcode_build[@]}" -destination 'generic/platform=iOS' \
+		-allowProvisioningUpdates "${team[@]}" build | "${xcode_pretty[@]}"
+	check_xcode_app
+	codesign --verify --strict --deep "$xcode_app"
+	# The profile's end date, so a renewal that stopped working shows here days before installs fail.
+	security cms -D -i "$xcode_app/embedded.mobileprovision" >"$xcode_app.profile.plist"
+	python3 - "$xcode_app.profile.plist" <<'PY'
+import datetime, plistlib, sys
+profile = plistlib.load(open(sys.argv[1], "rb"))
+left = profile["ExpirationDate"].replace(tzinfo=datetime.timezone.utc) - datetime.datetime.now(datetime.timezone.utc)
+print(f"signed for team {profile['TeamIdentifier'][0]}; profile {profile['Name']!r} "
+	f"covers {len(profile.get('ProvisionedDevices', []))} devices and expires in {left.days} days {left.seconds // 3600} hours")
+PY
+	rm -f "$xcode_app.profile.plist"
 }
 
 run() {
@@ -151,9 +242,9 @@ run() {
 case "${1:-fast}" in
 fast) run format lint build test ;;
 all) run format lint adr build test coverage tsan asan analyze lintorama ;;
-format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | ios) run "$@" ;;
+format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | ios | xcode | device) run "$@" ;;
 *)
-	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|ios]" >&2
+	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|ios|xcode|device]" >&2
 	exit 2
 	;;
 esac

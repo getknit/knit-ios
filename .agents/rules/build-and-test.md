@@ -8,8 +8,9 @@
 - **Before pushing,** `scripts/check.sh fast` passes. The `pre-push` hook runs it.
 - **After touching `KnitWire`, `KnitCrypto` or `KnitMesh`,** `scripts/check.sh all` passes, sanitizers
   included. Wire code also gets `scripts/fuzz.sh`.
-- **After touching `Knit`, `KnitBLE`, `App/` or `xtool.yml`,** `scripts/check.sh ios` passes. If it fails in
-  clang's module scan, run `scripts/xtool-sdk-fixup.sh` first (`.agents/context/toolchain.md`).
+- **After touching `Knit`, `KnitBLE`, `App/` or `xtool.yml`,** `scripts/check.sh ios` passes, and so does
+  `scripts/mac.sh run scripts/check.sh xcode` on the Mac. If xtool fails in clang's module scan, run
+  `scripts/xtool-sdk-fixup.sh` first (`.agents/context/toolchain.md`).
 - **Never commit build products:** `.build*/`, `xtool/`, `Fuzz/Crashes/`.
 - **A dependency change** (a package, the Swift toolchain, SwiftLint, a CI image) starts with the
   `upgrade-notes` skill. Commit the regenerated `Package.resolved` in the same change, add or update its

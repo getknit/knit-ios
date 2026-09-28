@@ -4,8 +4,8 @@
     import UIKit
     import UserNotifications
 
-    // periphery:ignore - the @main entry point; xtool's wrapper executable is its only caller
-    /// The app entry point xtool packs from the `Knit` library product.
+    // periphery:ignore - the @main entry point; xtool's wrapper and Xcode's KnitApp target are its only callers
+    /// The app entry point that xtool and the Xcode project (`App/project.yml`) pack from the `Knit` library product.
     @main
     internal struct KnitApp: App {
         @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate

@@ -2,11 +2,14 @@
 # predicts this pipeline. Each gate is blocking from the commit that first gives it something to check
 # (ADR router: .agents/memory/decisions.md). The advisory jobs say why beside `allow_failure`.
 #
-# Two kinds of runner:
+# Three kinds of runner:
 #   - shared Linux runners for the light jobs;
 #   - `knit-local`, a runner on the maintainer's machine, for the heavy jobs (sanitizers, fuzzing, analyze) and
 #     for `build:ios`, which needs xtool and the Darwin SDK. The SDK never goes into an image or a shared cache:
-#     Apple's terms tie it to that machine. `.agents/context/toolchain.md` has the runner setup.
+#     Apple's terms tie it to that machine;
+#   - `macos`, the Mac Mini, for `build:ios:xcode` (ADR 2026-09.de8f) and the signed `build:ios:signed`
+#     (ADR 2026-09.zawh).
+# `.agents/context/toolchain.md` has the runner setup.
 
 workflow:
   rules:
@@ -54,6 +57,12 @@ variables:
   tags:
     - knit-local
 
+.mac:
+  # The Mac Mini's shell runner, one job at a time and shared with every project's `macos` jobs. Its jobs run as
+  # maintainer with Xcode, XcodeGen and xcbeautify on the PATH (.agents/context/toolchain.md).
+  tags:
+    - macos
+
 lint:lintorama:
   stage: lint
   image:
@@ -100,6 +109,37 @@ build:ios:
   artifacts:
     paths:
       - xtool/Knit.app/
+    expire_in: 1 week
+
+build:ios:xcode:
+  extends: .mac
+  stage: build
+  variables:
+    # Keep DerivedData between jobs, so a pipeline rebuilds only what changed.
+    GIT_CLEAN_FLAGS: -ffdx -e /.build-xcode/
+  script:
+    - scripts/check.sh xcode
+  artifacts:
+    paths:
+      - .build-xcode/Build/Products/Debug-iphoneos/Knit.app/
+    expire_in: 1 week
+
+build:ios:signed:
+  # Signs with the maintainer's free team in the Mac's desktop session, and renews its 7-day profile as it goes.
+  # Only this project's pipelines sign: the runner takes every project's `macos` jobs, and a fork's would get the key.
+  extends: .mac
+  stage: build
+  needs: [build:ios:xcode]
+  rules:
+    - if: $CI_PROJECT_PATH == "knit/knit-ios"
+  variables:
+    GIT_CLEAN_FLAGS: -ffdx -e /.build-xcode/
+    KNIT_DEVELOPMENT_TEAM: <team id>
+  script:
+    - scripts/check.sh device
+  artifacts:
+    paths:
+      - .build-xcode/Build/Products/Debug-iphoneos/Knit.app/
     expire_in: 1 week
 
 test:linux:

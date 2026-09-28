@@ -1,0 +1,71 @@
+# XcodeGen spec for the Xcode build on the Mac (ADR 2026-09.de8f). `scripts/check.sh xcode` generates
+# App/Knit.xcodeproj from it; the project is never committed. Like xtool's wrapper (`xtool.yml`), the app target
+# is only a host: every line of Swift, @main included, comes from the root package's `Knit` product.
+name: Knit
+options:
+  minimumXcodeGenVersion: 2.46.0
+  deploymentTarget:
+    iOS: "18.0"
+configFiles:
+  Debug: Knit.xcconfig
+  Release: Knit.xcconfig
+packages:
+  Knit:
+    path: ..
+targets:
+  # Not `Knit`, which is the package's module. PRODUCT_NAME still makes it Knit.app/Knit.
+  KnitApp:
+    type: application
+    platform: iOS
+    sources:
+      - Host
+      - Assets.xcassets
+      - path: Info.plist
+        buildPhase: none
+    dependencies:
+      - package: Knit
+        product: Knit
+    settings:
+      base:
+        PRODUCT_NAME: Knit
+        SWIFT_VERSION: "6.0"
+        CODE_SIGN_STYLE: Automatic
+        INFOPLIST_FILE: Info.plist
+        # Adds the keys xtool injects (bundle id, executable) to App/Info.plist's own.
+        GENERATE_INFOPLIST_FILE: true
+        # The generated plist takes its version keys from these two, over App/Info.plist's. Keep them equal to
+        # its CFBundleShortVersionString and CFBundleVersion; `check.sh xcode` fails when they differ.
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: >-
+          UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
+          UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Package.swift already links Knit with -ObjC for KnitBLE's delegates; this keeps it if that moves.
+        OTHER_LDFLAGS: [-ObjC]
+      configs:
+        # ADR 2026-09.txqp: Xcode-signed development builds take the .dev id.
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.dev
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit
+schemes:
+  Knit:
+    build:
+      targets:
+        KnitApp: all
+    run:
+      config: Debug
+      # The launch arguments in .agents/context/commands.md, all off. Tick the ones a run needs.
+      commandLineArguments:
+        "-seedDemo": false
+        "-demoScene marketing": false
+        "-demoScene edge-cases": false
+        "-demoRadio on": false
+        "-demoRadio off": false
+        "-demoRadio unauthorized": false
+        "-demoRadio unsupported": false
+    archive:
+      config: Release

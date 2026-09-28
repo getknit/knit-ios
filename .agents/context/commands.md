@@ -17,6 +17,8 @@ tree, so switching between them never rebuilds the plain debug tree.
 | `scripts/check.sh periphery` | Periphery over the Swift Build index store (advisory on Linux) | after deleting or renaming API |
 | `scripts/check.sh adr` / `lintorama` | the ADR router check; markdown, YAML, shell and editorconfig | after touching docs |
 | `scripts/check.sh ios` | the SDK fixup check, then `xtool dev build` | after touching `Knit`, `KnitBLE` or `App/` |
+| `scripts/check.sh xcode` | on the Mac: XcodeGen, then `xcodebuild` for the iPhone and the Simulator, unsigned | the same, through `scripts/mac.sh run` |
+| `scripts/check.sh device` | on the Mac: the signed iPhone build, in the desktop session; renews the profile and prints its expiry | before installing on the iPhone |
 
 ## Other scripts
 
@@ -88,6 +90,22 @@ idevicesyslog -p Knit                                             # the app's lo
 idevicecrashreport -k -e <dir>                                    # copy the phone's crash and hang reports, keeping them there
 ifuse --container XTL-<team id>.app.getknit.knit -o ro <dir>     # mount Knit's sandbox read-only; fusermount -u <dir> to drop it
 iproxy 5648:5648                                                  # the debug bridge on localhost:5648, for any client
+```
+
+The Xcode build, from here through `scripts/mac.sh run` (the Mac's own checkout takes the same commands).
+`check.sh xcode` generates `App/Knit.xcodeproj`, which Xcode opens for the Simulator and the scheme's launch
+arguments:
+
+```sh
+scripts/mac.sh run scripts/check.sh xcode                         # .build-xcode/Build/Products/Debug-iphoneos/Knit.app, and -iphonesimulator
+scripts/mac.sh run scripts/check.sh device                        # the same app, signed for the iPhone (team in App/Local.xcconfig)
+scripts/mac.sh run scripts/mac-desktop.sh <command…>              # any command in the Mac's desktop session, where the Keychain is open
+scripts/mac.sh run bash -c 'xcrun simctl boot "iPhone 18 Pro"; xcrun simctl install booted .build-xcode/Build/Products/Debug-iphonesimulator/Knit.app'
+scripts/mac.sh run xcrun simctl launch --terminate-running-process booted app.getknit.knit.dev -seedDemo -demoScene marketing
+scripts/mac.sh run xcrun simctl io booted screenshot .build-xcode/shot.png   # then: scripts/mac.sh pull .build-xcode/shot.png
+xcrun devicectl list devices                                      # at the Mac, once the iPhone is paired (toolchain.md)
+xcrun devicectl device install app --device <id> .build-xcode/Build/Products/Debug-iphoneos/Knit.app   # after check.sh device, with the go-ahead
+xcrun devicectl device process launch --device <id> app.getknit.knit.dev   # devicectl launches where xtool launch fails
 ```
 
 A debug build answers `knit-peer`'s control lines on the phone's loopback, port 5648 (ADR 2026-09.kwa8), while

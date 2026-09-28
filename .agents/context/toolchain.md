@@ -54,7 +54,8 @@ scan then fails with `requires feature 'found_incompatible_headers__check_search
 
 **The SDK never leaves this machine.** Apple's terms tie the Xcode SDKs to Apple hardware, and xtool on
 Linux is a stopgap. The SDK stays out of images, caches and artifacts; only the built `Knit.app` is
-uploaded. The Mac Mini takes over iOS builds once `build:ios` moves to its runner.
+uploaded. The Mac Mini builds the app with Xcode (ADR 2026-09.de8f), and xtool's `build:ios` stays until
+installing on the iPhone moves there too.
 
 ## Linters and analyzers
 
@@ -165,8 +166,8 @@ and never sleeps.
   directory. The iOS 27.0 Simulator runtime came with it, and developer mode is on. Its Swift is 6.4
   (`swiftlang-6.4.0.34.1`), which matches `.swift-version`, so the Mac builds with Xcode's toolchain and has
   no swiftly.
-- **Homebrew has the rest:** SwiftLint 0.65.1 and Periphery 3.8.0 (the pinned versions); bash 5 and Python
-  3.14, because macOS ships bash 3.2 and Python 3.9; xcbeautify, xcodes, libimobiledevice and
+- **Homebrew has the rest:** SwiftLint 0.65.1 and Periphery 3.8.0 (the pinned versions); XcodeGen 2.46.0;
+  bash 5 and Python 3.14, because macOS ships bash 3.2 and Python 3.9; xcbeautify, xcodes, libimobiledevice and
   ideviceinstaller; rsync 3, because macOS ships openrsync; glab, gh and gitlab-runner; GnuPG and
   pinentry-mac; Colima, the docker CLI and docker-credential-helper. `~/.zshenv` and `~/.bash_profile` put
   Homebrew on the `PATH` for every shell, login or not.
@@ -192,6 +193,42 @@ and never sleeps.
 - **What passes there** (2026-09-27, at `b03c841`): `check.sh fast`, in three minutes. `xcodebuild build
   -scheme Knit` builds every target of the package for `generic/platform=iOS` and for the Simulator,
   unsigned, with no Xcode project.
+- **The app project** (ADR 2026-09.de8f): XcodeGen generates `App/Knit.xcodeproj` from `App/project.yml`,
+  and `check.sh xcode` builds it unsigned for the iPhone and the Simulator into `.build-xcode`. The
+  `build:ios:xcode` job runs the same gate on the `macos` runner. The app target is a host like xtool's: one
+  `stub.c`, linked to the package's `Knit` product.
+  - **Version keys:** a generated `Info.plist` takes its version keys from `MARKETING_VERSION` and
+    `CURRENT_PROJECT_VERSION`, not from `App/Info.plist`, so `project.yml` repeats both and the gate checks
+    they agree.
+  - **Package pins:** the project keeps a `Package.resolved` of its own. The gate seeds it from the root
+    file and fails if the pins drift.
+  - **The debug dylib:** a Debug build keeps the app's code in `Knit.debug.dylib`, where the gate looks for
+    KnitBLE's delegate methods.
+- **Signing on the Mac:** Xcode is signed in to the free Personal Team `<team id>`, and its first run on the
+  iPhone (2026-09-27) made an Apple Development certificate and a profile for `app.getknit.knit.dev`. Set up
+  once at the desk: Xcode, Settings, Accounts, the Apple ID; the iPhone plugged in and trusted, then set to
+  "Connect via network" in Devices so it can go back to this machine's USB. `App/Local.xcconfig` (git
+  ignores it) holds `DEVELOPMENT_TEAM = <team id>`.
+  - **Signing runs in the desktop session** (ADR 2026-09.zawh). Over ssh, `codesign` fails with
+    `errSecInternalComponent`, even after "Always Allow" on the key and under `sudo launchctl asuser`: the
+    login Keychain stays locked to an ssh session. `scripts/mac-desktop.sh` runs a command as a one-shot
+    launchd job in `gui/501`, where the Keychain is open, and `check.sh device` builds the signed app through
+    it. `-allowProvisioningUpdates` renews the 7-day profile there too: with the cached one moved aside, it
+    fetched a new one from Apple (2026-09-28). CI's `build:ios:signed` takes the same path, with the team in
+    `KNIT_DEVELOPMENT_TEAM`.
+  - **Anyone running as `maintainer` can sign as the team,** a `macos` job from any project included. The job's
+    rule keeps forks out; an account of its own for the runner is the real fix.
+  - **The `.dev` id keeps `app.getknit.knit` unclaimed.** Apple gives a bundle id to the first team that
+    registers it, and the free team registers every id it signs, so it signs only the `.dev` one.
+  - **One Knit per phone.** Two installs would both advertise the GATT payload and scan, and a peer would see
+    two nodes on one iPhone, as with Android, which has no debug package for that reason. xtool's
+    `XTL-<team id>.app.getknit.knit` is a separate app with its own Keychain identity, so delete one build
+    before using the other.
+  - **Free provisioning** limits a team to three installed apps, each for 7 days, and the xtool build counts.
+  - **Interop tooling:** `scripts/interop.py` and the `ifuse` lines still name xtool's container, so interop
+    runs stay on the xtool build until they learn the `.dev` id. Then xtool's install and `build:ios` retire.
+  - **The phone's log:** `idevicesyslog` finds the iPhone only over USB, not while it is connected over the
+    network. Console.app at the Mac reads it either way.
 - **What does not pass yet:**
   - **`check.sh analyze`** runs in 26 minutes, and SourceKit gets through `KnitAppCore` without crashing.
     It fails on seven findings that only macOS sees. swift-crypto's `Crypto` re-exports CryptoKit on Apple
@@ -205,11 +242,11 @@ and never sleeps.
 
 ## Still owed on the Mac
 
-- Move `build:ios` to the `macos` runner, and make `verify:periphery` blocking there
-  (`PERIPHERY_STRICT=1`), with `KnitBlueZ` left to Linux. ADR 2026-09.d3jv changes with it.
+- Install on the iPhone from Xcode (above), then retire xtool's `build:ios` and move `verify:periphery` to
+  the `macos` runner, blocking there (`PERIPHERY_STRICT=1`), with `KnitBlueZ` left to Linux. ADR
+  2026-09.d3jv changes with it.
 - Make `check.sh analyze` pass on macOS: a macOS counterpart to `scripts/swiftlint-analyze-linux.yml`, and
   `Knit` and `KnitBLE` analyzed from an iOS build.
 - Add a macOS test job: `swift test`, the KnitBLE delegate tests, and Simulator XCUITest with
   `performAccessibilityAudit`.
-- Pick the Xcode project generator by ADR. No `.pbxproj` is committed.
-- Sign Xcode in to the Apple ID, and pair the iPhone with the Mac. Both need someone at the Mac.
+- Add the package's test targets to the `Knit` scheme's test action, for the macOS test job.

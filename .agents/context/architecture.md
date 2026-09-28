@@ -1,6 +1,7 @@
 # Architecture
 
-One root SwiftPM package. xtool packs its `Knit` library product as the iOS app (`xtool.yml`); every other
+One root SwiftPM package. xtool packs its `Knit` library product as the iOS app (`xtool.yml`), and so does
+the Xcode project XcodeGen generates on the Mac (`App/project.yml`, ADR 2026-09.de8f); every other
 target is either platform-free protocol code that builds and tests on Linux, or a thin radio adapter for
 one platform. The libFuzzer harnesses live in their own package under `Fuzz/`.
 

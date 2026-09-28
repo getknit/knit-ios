@@ -11,11 +11,12 @@
 /xtool/
 /.bsp/
 
-# Xcode, once the Mac arrives.
+# Xcode. XcodeGen generates App/Knit.xcodeproj from App/project.yml, and App/Local.xcconfig holds a signing team.
 xcuserdata/
 DerivedData/
 *.xcodeproj/
 *.xcworkspace/
+/App/Local.xcconfig
 
 # Signing material and secrets never enter the tree.
 *.p12

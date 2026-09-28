@@ -1,0 +1,5 @@
+// Signing for the Xcode build (App/project.yml). The committed team is empty, so an unsigned build works
+// anywhere; put `DEVELOPMENT_TEAM = <team id>` in App/Local.xcconfig, which git ignores, to sign.
+DEVELOPMENT_TEAM =
+
+#include? "Local.xcconfig"
