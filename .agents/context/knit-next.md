@@ -9,26 +9,36 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`. The port started from HEAD `02051b64`, five test-only commits
   later, on 2026-09-25.
-- **The pin is `aeba5382`,** knit-next `main` once the custody-convergence fix merged, on 2026-09-26.
-  - **Up to `05dc2be1`** (A1's merge, the previous pin): A2's two commits (`0c0756f6`, `1f3befcd`: tests,
-    `vectors/`, docs and Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only,
-    which this port carries but never opens). Of what the files below say, only the BLE responder moved.
+- **The pin is `033c1edf`,** knit-next's local `main` on 2026-09-28, six commits ahead of its `origin/main`
+  (`4f9aa75a`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds it.
+  - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
+    Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
+    never opens). Of what the files below say, only the BLE responder moved.
+  - **Up to `aeba5382`** (the previous pin): `aeba5382` (ADR 2026-09.9xuu) serves profiles first and parks a whole
+    backlog per sender, merged unchanged from the branch commit `CustodySync` and `PendingInbound` mirror;
+    `cfa4a627` adds a debug-only link cap, the bridge's `BLECAP` (release still runs 6 links); and `e8b98398`
+    keeps spool copies out of overhear suppression, and there is no spool here.
   - **Since then:**
-    - `aeba5382` (ADR 2026-09.9xuu) serves profiles first and parks a whole backlog per sender. It merged
-      unchanged from the branch commit `CustodySync` and `PendingInbound` already mirror.
-    - `cfa4a627` adds a debug-only link cap, the bridge's `BLECAP`. Release still runs 6 links.
-    - `e8b98398` keeps spool copies out of overhear suppression. There is no spool here.
+    - `c3191717` is A4 (ADR 2026-09.dqvb): Android rings the doorbell of a peer whose HELLO carries
+      `CAP_DOORBELL`. `DoorbellPolicy.kt` holds the UUIDs, the 5 s interval and the three upkeep types that
+      `LinkManager+Doorbell` matches.
+    - `06f2040e` (ADR 2026-09.g64k) keeps the signed profile each pin came from, in `peer_profiles` (database
+      v16), and sends a sender's key ahead of a backlog. It matches what this port mirrored before it merged:
+      `ForwardSync.keylessSenders`' three rules, `KeyExchange.profileFor`'s cache then store, and
+      `PeerDao.recordProfile`'s forward-only upsert are `CustodySync.missing`, `KeyExchange.serveKey` and both
+      `recordProfileFrame`s.
+    - `11b91371` (ADR 2026-09.tjfb) holds at most one digest waiting per link (`FramedLink.pendingDigest`),
+      which `LinkOutbox` mirrors (ADR 2026-09.3ch7). `045d4e4a` only records its runs.
+    - `31a313e3` (ADR 2026-09.6gk8) backs off a cleartext tick's re-sends as it did a sealed one's. The back-off
+      gates only a best-effort send with no link, which here means LoRa, so this port's `AckSync`, which sends
+      owed ticks only over a link, has nothing to mirror. The rest of it is LoRa.
+    - The Wear OS prototype (`34d07dbb` to `033c1edf`, ADR 2026-09.wetm) serves a bonded watch its own GATT
+      service outside the mesh (`ble-transport.md`). `08aab191` adds knit-next's paired-change rules.
   - No wire bytes or vectors moved.
-- **Mirrored ahead of the pin: knit-next ADR 2026-09.g64k,** a carrier keeps the signed profile of everyone it
-  carries. On 2026-09-27 it is uncommitted work on knit-next's `fix/carrier-keeps-profile`, whose `HEAD` is
-  `main`'s `4f9aa75a`, and it is not on `main`. This port already mirrors it: `peer_profiles`, `KeyExchange`'s
-  fallback to the pin store, and the keys `CustodySync.missing` sends ahead (`custody.md`, "Key recovery"). So this
-  port depends on it. If review changes it, change the mirror to match, and move the pin past it once it merges.
-  It changes no wire bytes. Android's database moves to v16, so a phone that runs it cannot go back to a v15
-  build; the lab Pixels 3, 7, 8 and 9 run it now.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`. Moving the pin means re-reading the files below and updating
-  those four, in the same change, then running `scripts/sync-vectors.py`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `033c1edf`.
+  Moving the pin means re-reading the files below and updating those four, in the same change, then running
+  `scripts/sync-vectors.py`.
 
 ## Where to look
 
@@ -75,7 +85,7 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
   filtered on `0xFE30` matches the service data, locked or not (P8's scan-filter check,
   `.agents/context/linux-peer.md`). A dialed iPhone's capabilities must then come from its HELLO reply, or A4
   never rings it.
-- **A4** (`c3191717`, knit-next ADR 2026-09.dqvb; on knit-next's local `main`, not yet pushed): Android rings the GATT
+- **A4** (`c3191717`, knit-next ADR 2026-09.dqvb, in the pin): Android rings the GATT
   doorbell of a peer whose HELLO carries `CAP_DOORBELL` (`0x1000`), after the frames it writes on a link it
   accepted, on this port's schedule and with the same three upkeep types left out (ADR 2026-09.khjj). It never
   claims the bit itself. `.agents/context/ble-transport.md` has the details.

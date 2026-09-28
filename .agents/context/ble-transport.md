@@ -5,8 +5,8 @@ iPhone. The iPhone's own design decisions are ADRs; this file is the Android gro
 
 ## GATT on the mesh plane: only a doorbell
 
-At the pinned commit Android serves no GATT and reads none: no services, characteristics, notifications or MTU
-exchange. Each phone is both roles at once:
+On the mesh plane Android serves no GATT, and reads none but a peer's doorbell (below): no services,
+characteristics, notifications or MTU exchange. Each phone is both roles at once:
 
 - **Peripheral:** a connectable advert and an L2CAP server (`listenUsingInsecureL2capChannel`).
 - **Central:** a scanner and an L2CAP client (`createInsecureL2capChannel(psm)`).
@@ -14,7 +14,7 @@ exchange. Each phone is both roles at once:
 Channels are LE credit-based and insecure: no pairing, no bonding, no link encryption. CoreBluetooth's
 equivalents are `publishL2CAPChannel(withEncryption: false)` and `CBPeripheral.openL2CAPChannel(_:)`.
 
-Companion change A4 (knit-next `c3191717`, its ADR 2026-09.dqvb, on its local `main` but not yet pushed) makes Android a
+Companion change A4 (knit-next `c3191717`, its ADR 2026-09.dqvb, in the pin) makes Android a
 GATT client toward one kind of peer: one whose HELLO carries `CAP_DOORBELL` (`0x1000`), which says the peer serves
 the doorbell. On a link it accepted from such a peer, Android attaches a GATT client to that link's own connection
 (`connectGatt` on a device it is already connected to does not dial). It discovers the `0xFE30` service and finds
@@ -23,6 +23,11 @@ after the frames it writes, with a 1-byte write without response, at most once e
 `typing`, `blobreq` and `keyreq` frames never ring; nor do digests, FILE records or the HELLO. It never writes with
 a response, never serves GATT itself, and never sets the bit. A link it dialed takes its capabilities from the
 advert's low byte, which cannot show the bit, so it rings only links it accepted until A3.
+
+Off the mesh plane, a build with `WEAR_STATUS` on (every debug build; release keeps it dark) serves a bonded Wear OS
+watch one encrypted, read-only characteristic in a service of its own, `6b1f0a3e-5d2c-4f0e-9a57-3c8e2d41b7a0`
+(knit-next ADR 2026-09.wetm). While the mesh is paused it raises an empty connectable advert so the watch can
+reach it. Neither is in `0xFE30` or on the mesh wire, and Knit ignores both.
 
 ## The advert
 

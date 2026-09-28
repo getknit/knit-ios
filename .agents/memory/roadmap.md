@@ -5,11 +5,11 @@ explicit direction.** Update this file in the change that ships an item.
 
 ## In flight
 
-- **The MVP** (`.agents/specs/mvp.md`). P0 is nearly done: the repo, the gates and CI are in place,
-  spikes (a), (b), (c), (d) and (f) passed, and the GitLab project `knit/knit-ios` exists with its
-  `knit-local` runner registered and online. Spike (e) passed against the Pixel 3: Android finds the BlueZ
+- **The MVP** (`.agents/specs/mvp.md`). P0 is done: the repo, the gates and CI are in place, spikes (a),
+  (b), (c), (d) and (f) passed, and `main` is pushed to the GitLab project `knit/knit-ios`, whose
+  `knit-local` runner is registered and online. Spike (e) passed against the Pixel 3: Android finds the BlueZ
   advert, dials the LE CoC listener and completes the two-way HELLO, and the advert comes back after each
-  link (`.agents/context/linux-peer.md`). Still owed: the first push.
+  link (`.agents/context/linux-peer.md`).
 - **P1, the wire (`KnitWire`):** the CBOR codec, every MVP wire type, link records, HELLO, DIGEST, the advert
   and the id and text rules are in. All 57 knit-next golden vectors round-trip, and 33 typed fixtures
   encode to Kotlin's exact bytes. Line coverage is 98 %, and each of the three libFuzzer harnesses ran ten
@@ -18,7 +18,7 @@ explicit direction.** Update this file in the change that ships an item.
   v1 DM seal and open, the safety number, aliases and the device tag are in, with the RFC vectors and every
   knit-next golden. Line coverage is 97 %. A2's keyed vectors pass, the safety number among them, and
   knit-next verifies and opens the frames this port emits. Done: A2 merged, and the vectors are pinned to
-  knit-next `aeba5382` (2026-09-26; nothing they hold moved since `1f3befcd`).
+  knit-next `033c1edf` (2026-09-28; nothing they hold moved since `1f3befcd`).
 - **P3, the mesh engine (`KnitMesh`, `KnitStore`):** done on 2026-09-25, pending the maintainer's review.
   - **Link layer:** the `LinkManager` behind a `Radio` protocol, with A1's admission rules (ADR 2026-09.6es2).
   - **Router and custody:** flooding and custody under Android's quotas, with the rules in one `CustodyRules`
@@ -62,16 +62,17 @@ explicit direction.** Update this file in the change that ships an item.
     2026-09.g64k) keeps the signed frame each pin came from and sends a sender's key ahead of their backlog. This
     port mirrors it in schema v2, `KeyExchange` and `CustodySync`. Against the Pixel 3 on that build,
     `android-rings` now converges custody first, and it passed 10 of 10 with all 796 live ids held in 501 s
-    (`.agents/context/linux-peer.md`, "What the carrier's kept keys showed"). Still owed: the fix reaching
-    knit-next's `main`, and the pin moving past it.
+    (`.agents/context/linux-peer.md`, "What the carrier's kept keys showed"). The fix is on knit-next's local
+    `main` as `06f2040e` (2026-09-27), matching the mirror, and the pin moved past it on 2026-09-28. Still owed:
+    knit-next's push.
   - **Digests queue behind a back-fill (2026-09-27):** a post the Pixel 3 sent once custody matched took 6.5
     minutes to reach the peer on `hci1`. It was not lost. It waited behind about ten 20 KB digests the Pixel
     had queued during the 9-minute back-fill, since both platforms then queued a digest every 60 s whatever
     was already queued (`.agents/context/linux-peer.md`, "Why the frames were late"). Both now keep at most
     one digest waiting per link (knit-next's ADR 2026-09.tjfb, this port's ADR 2026-09.3ch7), which took the
-    Pixel's post from 393 s to 133 s. Still owed: the fix reaching knit-next's `main`, and the pin moving past
-    it. Open: what the socket already holds, which the slot cannot reach; shallow paced writes or a smaller
-    digest record would close it.
+    Pixel's post from 393 s to 133 s. knit-next's side is on its local `main` as `11b91371` (2026-09-27), and
+    the pin moved past it on 2026-09-28. Still owed: knit-next's push. Open: what the socket already holds, which
+    the slot cannot reach; shallow paced writes or a smaller digest record would close it.
   - **The relay line (2026-09-26):** rehearsed with a second peer on `hci0`, shared (`--shared-adapter`), on the
     maintainer's go-ahead. `interop.py relay` passed 16 of 16: posts and DMs crossed peer A both ways, and the three
     custody sets converged (`.agents/context/linux-peer.md`, "What the relay line showed").
@@ -121,8 +122,11 @@ explicit direction.** Update this file in the change that ships an item.
 - **P7, the Mac:** begun on 2026-09-27. `mac.example` has Xcode 27.0 and the tools, `check.sh fast` passes
   there, and the `macos` runner is online (`.agents/context/toolchain.md`, "The Mac Mini"). XcodeGen
   generates the app project (ADR 2026-09.de8f), which builds for the iPhone and the Simulator in
-  `build:ios:xcode` and runs in the Simulator. Still owed: a signed install from Xcode, the test job, the UI
-  tests and the accessibility audit, and checklist M.
+  `build:ios:xcode` and runs in the Simulator. The Mac signs in its desktop session through a launchd job, so
+  ssh and CI can sign and renew the free profile (ADR 2026-09.zawh): `check.sh device` and the
+  `build:ios:signed` job build a signed iPhone app. The `mac-docker-runner` runner takes untagged Linux jobs on
+  arm64 beside linux-host and service (2026-09-28, `toolchain.md`). Still owed: installing on the iPhone from the
+  Mac, the test job, the UI tests and the accessibility audit, and checklist M.
 - **P8, the iPhone:** begun early on 2026-09-26, without the Mac: an iPhone 12 on iOS 27.0, installed over USB
   by xtool on free provisioning. The app runs and links the Linux peer and the lab's Android phones. Against
   the peer, items 3 to 5 pass: safety numbers match, the room works both ways with ticks, and DMs go request,
@@ -172,10 +176,10 @@ explicit direction.** Update this file in the change that ships an item.
 - **Companion change A4:** Android rings an iPhone's doorbell (ADR 2026-09.khjj) after the frames it writes on the
   iPhone's link, on `LinkManager`'s schedule: a GATT write without response over the link's own connection, once
   service discovery finds the doorbell. Built as knit-next `c3191717` (its ADR 2026-09.dqvb), for a peer whose
-  HELLO carries `CAP_DOORBELL` (`0x1000`); it is on knit-next's local `main`, not yet pushed. This port sends the
-  bit whenever its radio serves the doorbell, and rings nothing for `typing`, `blobreq` and `keyreq`, as Android
-  does. On 2026-09-27 `scripts/interop.py android-rings` passed against the Pixel 3, and so did `iphone-wake
-  --sender phone --expect-wakes`, with every DM of ten locked minutes waking Knit. Still owed: the push, and the
+  HELLO carries `CAP_DOORBELL` (`0x1000`); it is pushed to knit-next's `main`, and in the pin. This port sends
+  the bit whenever its radio serves the doorbell, and rings nothing for `typing`, `blobreq` and `keyreq`, as
+  Android does. On 2026-09-27 `scripts/interop.py android-rings` passed against the Pixel 3, and so did
+  `iphone-wake --sender phone --expect-wakes`, with every DM of ten locked minutes waking Knit. Still owed: the
   link-up drops that run found. Twice in three links the iPhone read a record tag outside 1..7 while the Pixel was
   still looking up its doorbell, and dropped the link. A snoop log on the Pixel did not catch one in 19 more
   relinks, and showed the Pixel keeping every L2CAP frame whole (`.agents/context/linux-peer.md`, "What A4
