@@ -192,13 +192,14 @@ explicit direction.** Update this file in the change that ships an item.
     iphone-reboot` reads a new bridge reply, `storage`, for the node id, the Keychain item's class, the database's
     protection class, and how the launch went. Knit now also starts when it comes to the front while it still waits
     for the first unlock, in case iOS suspended a launch from before the unlock by the time protected data arrived.
-    The test phone has no passcode, so the launch before the first unlock never ran, though iOS relaunched Knit
-    20.5 s after the boot (`.agents/context/linux-peer.md`, "What the iPhone's reboot showed").
+    With a passcode set, the reboot passed 12 of 12. iOS did not launch Knit before the first unlock, though without a
+    passcode it had, 20.5 s after the boot. It launched Knit in the background 8.4 s after the unlock, and that launch
+    read its keys at once. The launch that waits for the first unlock has still not run on a phone, and its stages
+    have no test (`.agents/context/linux-peer.md`, "What the iPhone's reboot showed"). Item 1 passes.
   - **Still owed:** items 2 to 7 pass against the Pixel 3 through the bridge, unattended, and item 9's test needs
     someone to lock and unlock the iPhone (`.agents/context/linux-peer.md`). A rerun of the soak on the fixed
     harness would show the room check pass; custody should match too once the Pixel runs knit-next's early-receipt
-    fix, which this port now mirrors (below, "A receipt ahead of its DM"). Item 1's
-    launch before the first unlock needs a passcode on the test iPhone and a rerun of `iphone-reboot`.
+    fix, which this port now mirrors (below, "A receipt ahead of its DM").
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).

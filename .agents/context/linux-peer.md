@@ -825,8 +825,25 @@ launch went.
   class, and ran the mesh.
 - **iOS relaunched Knit on its own** 20.5 s after the boot, before the phone was back on USB, and before anyone
   touched it. Bluetooth state restoration is the likely cause, though the run cannot tell it from app prewarming.
-- **Not shown: a launch before the first unlock.** The phone has no passcode (`ideviceinfo -k PasswordProtected` is
-  `false`), so it counts as unlocked from boot and Data Protection holds nothing back. The early launch read the
-  Keychain at once. On a phone with a passcode, that same launch finds the Keychain locked and waits. It starts
-  when protected data arrives, when Knit comes to the front, or from Retry, and the `storage` reply's `launch`
-  names which. To see it, set a passcode and run `iphone-reboot --restart --skip-relaunch`.
+- **The phone had no passcode then,** so it counted as unlocked from boot, and the early launch read the Keychain at
+  once. `ideviceinfo -k PasswordProtected` cannot show whether a passcode is set: it reads `true` while the phone is
+  locked and `false` once it is unlocked.
+
+`iphone-reboot --restart --skip-relaunch` ran again at 22:24 that evening, with a passcode set, and passed 12 of 12
+(`.build/interop-iphone-reboot/20260928-2224.jsonl`).
+
+- **The USB pairing did not survive the passcode.** lockdownd answered `Invalid HostID` until `idevicepair pair` ran
+  again and someone accepted the Trust prompt on the phone.
+- **The phone stays off USB until the first unlock.** It left usbmuxd's list 9 s after the restart and stayed off
+  for the 4.5 minutes it sat locked, which fits USB Restricted Mode. It came back when it was unlocked. The script
+  used to wait for USB before it started the locked window. It now counts `--locked` from when the phone leaves
+  USB, asks for the unlock, and keeps Knit closed for `--closed` seconds before asking for it.
+- **iOS did not launch Knit before the first unlock.** Without a passcode it relaunched Knit 20.5 s after the boot.
+  With one, Knit stayed closed for the 4.5 locked minutes, and iOS launched it in the background 8.4 s after the
+  unlock. That launch read the Keychain at once (`readyBy` is `launch`, `waited` is null), and Knit was running
+  65 s before anyone opened it. It had the same node id, remembered onboarding, read its keys, kept the protection
+  class, and ran the mesh.
+- **The waiting launch has still not run on a phone.** Its guard is tested: `IdentityKeys.load(from:)` throws rather
+  than making new keys when the store is locked (`IdentityTests`). The `Launch` stages after it are not: waiting,
+  then starting from protected data, the foreground or Retry. If iOS ever launches Knit before the first unlock,
+  the `storage` reply's `launch` records which one started it.

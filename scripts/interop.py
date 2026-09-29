@@ -12,7 +12,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
-    scripts/interop.py iphone-reboot [--restart] [--locked 60] [--skip-relaunch] [--udid UDID]
+    scripts/interop.py iphone-reboot [--restart] [--locked 120] [--closed 60] [--skip-relaunch] [--udid UDID]
     scripts/interop.py iphone-rings [--udid UDID]
     scripts/interop.py android-rings --device SERIAL [--converge-timeout 600] [--arrival-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
@@ -1235,10 +1235,11 @@ def iphone_reboot(arguments: argparse.Namespace) -> int:
     reboot. The bridge's `storage` reply says where the launch found the identity and the database. First the run
     checks the Keychain item's class, the database's protection class and its backup flag. Then someone swipes Knit
     away and opens it again, and the new process must have the same node id and skip onboarding. Then the iPhone
-    restarts, by `idevicediagnostics` with --restart or by hand, and stays locked for --locked seconds, time for iOS
-    to launch Knit before the first unlock if it will. Then someone unlocks it and opens Knit, and the same holds.
-    The run reports whether Knit launched before that unlock, and what started it: a launch before the unlock waits
-    for protected data rather than making new keys (ADR 2026-09.tkww)."""
+    restarts, by `idevicediagnostics` with --restart or by hand, and stays locked for --locked seconds from when it
+    leaves USB, time for iOS to launch Knit before the first unlock if it will. Then someone unlocks it and leaves Knit
+    closed for --closed seconds, time for protected data to start a launch waiting in the background, then opens Knit,
+    and the same holds. The run reports whether Knit launched before that unlock, and what started it: a launch before
+    the unlock waits for protected data rather than making new keys (ADR 2026-09.tkww)."""
     ios = IPhone(arguments.udid)
     run = Run()
     try:
@@ -1269,11 +1270,10 @@ def iphone_reboot(arguments: argparse.Namespace) -> int:
         run.step("restart-asked", lambda: _restart(ios.udid))
     else:
         print(json.dumps({"action": "restart the iPhone, and leave it locked until asked"}), flush=True)
-    restarted = run.step("iphone-restarted", lambda: _usb_restart(ios.udid, arguments.unlock_wait))
+    restarted = run.step("iphone-restarted", lambda: _usb_restart(ios.udid, arguments.locked, arguments.unlock_wait))
     if restarted is not None:
-        print(json.dumps({"action": f"leave the iPhone locked for {arguments.locked:.0f} s"}), flush=True)
-        time.sleep(arguments.locked)
-        print(json.dumps({"action": "unlock the iPhone and open Knit"}), flush=True)
+        time.sleep(arguments.closed)
+        print(json.dumps({"action": "open Knit"}), flush=True)
         opened = run.step("knit-opened", lambda: _reopened(ios, arguments.unlock_wait))
         if opened is not None:
             try:
@@ -1367,8 +1367,10 @@ def _restart(udid: str) -> dict:
     return {}
 
 
-def _usb_restart(udid: str, timeout: float) -> dict:
-    """Waits for the iPhone to leave usbmuxd's list and come back, as it does across a restart."""
+def _usb_restart(udid: str, locked: float, timeout: float) -> dict:
+    """Waits for the iPhone to leave usbmuxd's list, keeps it locked for `locked` seconds from then, asks for the
+    unlock, and waits for it to come back. A phone with a passcode stays off USB until its first unlock (USB Restricted
+    Mode), so it comes back only at the unlock; one without comes back while still locked."""
     started = time.monotonic()
 
     def listed() -> bool:
@@ -1377,6 +1379,9 @@ def _usb_restart(udid: str, timeout: float) -> dict:
 
     poll(lambda: not listed(), timeout, every=1)
     gone = time.monotonic()
+    print(json.dumps({"action": f"leave the iPhone locked for {locked:.0f} s"}), flush=True)
+    time.sleep(locked)
+    print(json.dumps({"action": "unlock the iPhone, and leave Knit closed"}), flush=True)
     poll(listed, timeout, every=1)
     return {"goneAfter": round(gone - started, 1), "backAfter": round(time.monotonic() - gone, 1), "back": time.time()}
 
@@ -2682,7 +2687,8 @@ def main() -> int:
     ios_soak.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     reboot = commands.add_parser("iphone-reboot")
     reboot.add_argument("--restart", action="store_true", help="restart the iPhone with idevicediagnostics rather than by hand")
-    reboot.add_argument("--locked", type=float, default=60, help="how long the iPhone stays locked after it restarts, in seconds")
+    reboot.add_argument("--locked", type=float, default=120, help="how long the iPhone stays locked from when it leaves USB, in seconds")
+    reboot.add_argument("--closed", type=float, default=60, help="how long Knit stays closed after the unlock, in seconds")
     reboot.add_argument("--skip-relaunch", action="store_true", help="leave out closing Knit and opening it again")
     reboot.add_argument("--unlock-wait", type=float, default=1800, help="how long to wait for each thing someone does")
     by_hand = commands.add_parser("bridge")
