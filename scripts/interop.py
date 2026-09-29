@@ -1049,7 +1049,8 @@ def android_reads(arguments: argparse.Namespace) -> int:
     phone (`--never-sight`): it holds its dials, and admits the phone's as it admits an iPhone's.
 
     `--order peer-above`: the phone reads the payload and never dials; the peer dials, and the phone accepts it as a
-    dialer it sighted, which only the read can have given it.
+    dialer it sighted, which only the read can have given it. The peer refuses the phone until the phone has logged
+    the read, or its dial could land first and be admitted unsighted under A1.
 
     In both orders every payload the phone read belongs to a node that advertises no service data: the peer, or an
     iPhone or Mac in range, never an Android phone. The link must hold, and the run reports the first link's time from
@@ -1082,7 +1083,9 @@ def android_reads(arguments: argparse.Namespace) -> int:
         )
     )
     phone.shell("logcat -c")
-    peer = Peer("ios", f"knit-peer reads {nonce}", others, arguments.peer_log, arguments.rssi_floor, never_sight=held)
+    # Above the phone, the peer holds its dial until the phone has read it (`allow-link` below).
+    refused = others if below else others | {phone_id}
+    peer = Peer("ios", f"knit-peer reads {nonce}", refused, arguments.peer_log, arguments.rssi_floor, never_sight=held)
     mark = peer.log_mark()
     stop = threading.Event()
     try:
@@ -1090,6 +1093,8 @@ def android_reads(arguments: argparse.Namespace) -> int:
         peer.start()
         threading.Thread(target=_keep_to, args=(peer, {phone_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
         run.step("phone-read-the-peer", lambda: _phone_read(phone, peer_id, started, arguments.link_timeout))
+        if not below:
+            peer.command(cmd="allow-link", peer=phone_id)
         link = run.step("link", lambda: _first_link(peer, phone, phone_id, started, arguments.link_timeout))
         if link is not None:
             if below:

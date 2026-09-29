@@ -58,6 +58,19 @@ Kotlin wins.
     - `06dd410d` (closes #97) and `bc25507c` move DataStore, and `9449fd15` shows the git SHA in debug builds'
       About screen. They are Android's alone.
   - No wire bytes or vectors moved.
+- **Mirrored ahead of the pin: knit-next ADR 2026-09.kwq2,** companion change A3. On 2026-09-29 it is knit-next's
+  `feat/gatt-peers` at `7c16aae5`, two commits on `main`'s `82898694`, and not on `main`: `3c0116f1` holds the
+  code, and `7c16aae5` only mends the ADR's status line. An Android phone with
+  `BLE_GATT_PEERS` (debug builds; release keeps it dark) adds a scan filter on the `0xFE30` UUID, reads the GATT
+  payload of a node that lists only the UUID (`BleGattPayloadReader.kt`), and sights that node with it. `GattPayloads.kt`
+  ports `GattPayloads.swift`'s rules line for line, plus a 64-address cap on each map. A dial that fails before its
+  channel opens forgets the payload, and a HELLO refusal does not. A dialed link takes its capabilities from the
+  HELLO reply, so A4 rings it (`BluetoothMeshTransport.kt`). `BleAdvertPayload.kt` names `FLAG_DIALS_GATT_PEERS`
+  (`0x02`), and `docs/WIRE_COMPAT.md` says every parser tests only the bits it knows. The flag is not advertised
+  yet: it goes on in its own commit once `interop.py android-reads` passes on the lab phones. Nothing here mirrors
+  code, since the payload, the flag and `weDial` were law in this port first (ADR 2026-09.xzpt). ADR 2026-09.shzv
+  (A1) and 2026-09.dqvb (A4) are amended, and A1 stays whole. Move the pin once it merges, and re-read the files
+  above.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `82898694`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
@@ -103,8 +116,9 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
 - **A2** (merged as `0c0756f6` and `1f3befcd`): the golden vectors moved into JSON in `vectors/` that
   `GoldenVectorTest` reads, joined by keyed vectors (fixed identities, signed frames, a sealed v1 DM, the
   safety number, advert, HELLO, DIGEST and FNV hex) and a test that checks the fixtures this repo emits.
-- **A3** (knit-next #101): Android finds and dials iPhones: it reads the `0xFE30` GATT payload from an advert
-  that carries no service data, and sets `FLAG_DIALS_GATT_PEERS`. Its own advert needs no UUID list, since an
+- **A3** (knit-next #101, ADR 2026-09.kwq2, on `feat/gatt-peers`, mirrored ahead of the pin above): Android finds
+  and dials iPhones: it reads the `0xFE30` GATT payload from an advert that carries no service data, and sets
+  `FLAG_DIALS_GATT_PEERS`. Its own advert needs no UUID list, since an
   iPhone's scan filtered on `0xFE30` matches the service data, locked or not (P8's scan-filter check,
   `.agents/context/linux-peer.md`). A dialed iPhone's capabilities must then come from its HELLO reply, or A4
   never rings it.

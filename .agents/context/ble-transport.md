@@ -25,8 +25,9 @@ the link at a 720 ms supervision timeout, which the stack's own update during di
 back. BALANCED carries 5 s (30–50 ms, no latency), and iOS grants it. Then it rings the doorbell
 after the frames it writes, with a 1-byte write without response, at most once every 5 s plus once after a burst.
 `typing`, `blobreq` and `keyreq` frames never ring; nor do digests, FILE records or the HELLO. It never writes with
-a response, never serves GATT itself, and never sets the bit. A link it dialed takes its capabilities from the
-advert's low byte, which cannot show the bit, so it rings only links it accepted until A3.
+a response, never serves GATT itself, and never sets the bit. At the pin a link it dialed takes its capabilities
+from the advert's low byte, which cannot show the bit, so it rings only links it accepted. A3 (knit-next
+`feat/gatt-peers`, ahead of the pin, below) takes them from the HELLO reply instead, so it rings a dialed iPhone too.
 
 Off the mesh plane, a build with `WEAR_STATUS` on (every debug build; release keeps it dark) serves a bonded Wear OS
 watch one encrypted, read-only characteristic in a service of its own, `6b1f0a3e-5d2c-4f0e-9a57-3c8e2d41b7a0`
@@ -129,12 +130,18 @@ radio.
 
 ## What this means for an iPhone
 
-- **iOS cannot advertise service data**, only a local name and service UUIDs. Android's scanner filter
+- **iOS cannot advertise service data**, only a local name and service UUIDs. At the pin, Android's scanner filter
   requires service data, so Android never sees an iPhone. The iPhone can read Android's service data, so it
   sees Android.
 - **So the iPhone dials Android, and Android's responder refuses it** unless the iPhone's id sorts higher.
-  Companion change A1 accepts a dialer Android never sighted. Until A1 ships, roughly half of iPhone and
-  Android pairs cannot link.
+  Companion change A1 accepts a dialer Android never sighted, so every pair links.
+- **With companion change A3, Android sees a foreground iPhone** (knit-next ADR 2026-09.kwq2, on `feat/gatt-peers`
+  at `7c16aae5`, ahead of the pin). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
+  of an advert that lists only the UUID, on `GattPayloads`' rules, sights the iPhone with it, and dials it when its
+  own id sorts higher. It reads nothing while one of its dials is in flight, and holds its dials while a read runs.
+  Once it sets `FLAG_DIALS_GATT_PEERS`, an iPhone whose id sorts lower waits to be dialed, and Android refuses that
+  iPhone's own dial as a sighted dialer below it. It still cannot see a backgrounded iPhone, whose UUID sits in the
+  overflow area, and admits one unsighted under A1 when it dials.
 - **Backgrounded iPhones are not rediscovered.** An iOS app in the background loses its local name, and its
   service UUID moves to an overflow area that only an iOS scan for that UUID sees. Open L2CAP links survive
   backgrounding with the `bluetooth-central` and `bluetooth-peripheral` modes.
@@ -151,7 +158,8 @@ radio.
   and the link manager rings after the frames it writes (ADR 2026-09.khjj). The Linux peer rings, and an iPhone
   rings the peers it dialed. Android rings with A4, and the Pixel 3's rings woke a locked iPhone for every DM of a
   ten-minute test: the iPhone's HELLO asks for it with `CAP_DOORBELL`, and Android rings the links the iPhone
-  dialed, which until A3 is all of them. A phone whose build predates A4 never rings, and its frames wait for the next foreground.
+  dialed. With A3 it rings the links it dialed too, whose capabilities it takes from the iPhone's HELLO reply. A phone
+  whose build predates A4 never rings, and its frames wait for the next foreground.
 - **Address rotation is harmless**, because everything keys on node id.
 - **Stale links block reconnects** until Android's link-supervision timeout notices the drop, because the
   responder refuses a peer it still thinks is linked. A1 lets an unsighted dialer replace its own stale

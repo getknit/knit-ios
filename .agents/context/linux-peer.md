@@ -180,7 +180,8 @@ of the phone's:
   clear the peer would sight the phone, dial it, and refuse the phone's dial as one it makes itself, so the peer then
   runs with `--never-sight` for the phone: it holds its dials and admits the phone's unsighted.
 - **`peer-above`:** the phone reads the payload and never logs `bt initiating to <peer>`; the peer dials, and the
-  phone logs `bt accepted client <peer> (Admit, sighted=true)`, a sighting only the read can have given it.
+  phone logs `bt accepted client <peer> (Admit, sighted=true)`, a sighting only the read can have given it. The peer
+  refuses the phone until the phone has logged the read, or its dial could land first and be admitted unsighted.
 
 In both orders every `bt gatt read` names a node without service data, never an Android phone the scan heard, and the
 link must hold. The run reports the first link's time from the peer's start, MVP item 2's measure.
