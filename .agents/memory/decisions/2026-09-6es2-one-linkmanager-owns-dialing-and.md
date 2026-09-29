@@ -36,6 +36,14 @@ peer's id can cut its link at most that often. And the −90 dBm score is for a 
 sighted since it came up; a peer sighted during the link and then lost scores −127, as on Android 2.7, and is shed
 first.
 
+**Amended 2026-09-29, for MVP item 2's first link:** two promotion rules are this port's, and Android does not have
+them. A peer quiet for more than 8 s is never promoted. A sighting lingers 90 s and the dwell counts from the first
+advert, so after a Pixel left, the iPhone dialed it two or three times, and each timeout doubled the backoff, up to
+80 s. And `nextDeadline` wakes the link layer when a candidate's 12 s dwell ends, as long as the peer will still
+have been heard within those 8 s. Promotion ran only when something happened, so a dwell that ended between adverts
+waited for the next one, 3 to 10 s at a phone's rate. Nothing on the air changes. Making this a paired change first
+would leave item 2 waiting on Android, which cannot find an iPhone until A3. `LinkDwellTests` pins both rules.
+
 **Consequences / limits:** the admission rule differs from Android 2.7 in three ways (unsighted dialers,
 stale-link replacement, −90 dBm), and A1 is what brings Android level. An Android build without A1 still refuses
 the iPhone's dial whenever the iPhone's id sorts lower. The HELLO is unauthenticated, so a device that

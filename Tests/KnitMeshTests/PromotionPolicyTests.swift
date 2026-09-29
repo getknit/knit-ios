@@ -13,12 +13,12 @@ import Testing
         minimumHoldMilliseconds: 20_000
     )
 
-    private func candidate(_ seed: Int, rssi: Double, dwell: Int64 = 15_000) -> PresenceTracker.Snapshot {
+    private func candidate(_ seed: Int, rssi: Double, dwell: Int64 = 15_000, quiet: Int64 = 0) -> PresenceTracker.Snapshot {
         PresenceTracker.Snapshot(
             advert: AdvertPayload(capabilities: .local, nodeId: fixtureNodeId(seed), digestCue: 0, psm: 100),
             smoothedRssi: rssi,
             dwellMilliseconds: dwell,
-            lastSeenAgoMilliseconds: 0
+            lastSeenAgoMilliseconds: quiet
         )
     }
 
@@ -50,6 +50,29 @@ import Testing
     @Test func theRssiFloorAndDwellGatePromotion() {
         let decision = decide([candidate(1, rssi: -85), candidate(2, rssi: -50, dwell: 5000), candidate(3, rssi: -55)])
         #expect(decision.promote == ids([3]), "only the close peer that stayed promotes")
+    }
+
+    @Test func aPeerQuietForMoreThanEightSecondsIsSkipped() {
+        // This port's rule, not Android's (ADR 2026-09.6es2, amended 2026-09-29).
+        let decision = decide([candidate(1, rssi: -50, quiet: 8001), candidate(2, rssi: -60, quiet: 8000)])
+        #expect(decision.promote == ids([2]))
+    }
+
+    @Test func theWaitIsForTheSoonestDwellToEnd() {
+        let candidates = [candidate(1, rssi: -50, dwell: 5000, quiet: 1000), candidate(2, rssi: -60, dwell: 9000, quiet: 2000)]
+        #expect(PromotionPolicy.untilDwellEnds(candidates: candidates, backoff: [], configuration: configuration) == 3000)
+    }
+
+    @Test func noWaitForAPeerThatWillNotBePromotableWhenItsDwellEnds() {
+        func wait(_ candidate: PresenceTracker.Snapshot, backoff: Set<Int> = []) -> Int64? {
+            PromotionPolicy.untilDwellEnds(candidates: [candidate], backoff: Set(backoff.map(fixtureNodeId)), configuration: configuration)
+        }
+        #expect(wait(candidate(1, rssi: -50, dwell: 4000)) == 8000, "8 s quiet by then still counts as heard")
+        #expect(wait(candidate(1, rssi: -50, dwell: 4000, quiet: 1)) == nil, "too quiet by then")
+        #expect(wait(candidate(1, rssi: -85, dwell: 4000)) == nil, "below the floor")
+        #expect(wait(candidate(1, rssi: -50, dwell: 4000), backoff: [1]) == nil, "backing off, which wakes the caller itself")
+        #expect(wait(candidate(1, rssi: -50, dwell: 12_000)) == nil, "already past its dwell")
+        #expect(PromotionPolicy.untilDwellEnds(candidates: [], backoff: []) == nil)
     }
 
     @Test func backedOffPeersAreSkipped() {

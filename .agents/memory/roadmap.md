@@ -219,8 +219,11 @@ explicit direction.** Update this file in the change that ships an item.
   - **Still owed:** the soak's rerun (item 11), on the fixed harness with the Pixels on knit-next's early-receipt
     fix, and not before 12:17 on 2026-09-29, when that DM expires. Item 2's first link can run past 30 s, against
     a phone too: three of five to the Pixel 7 did, from gaps between sightings that restart the dwell, and from
-    backoff built by dialing a phone that has left, a rule both platforms share (`.agents/context/linux-peer.md`).
-    Items 2 to 8 run unattended through the bridge; item 9's test needs someone to lock and unlock the iPhone.
+    backoff built by dialing a phone that has left (`.agents/context/linux-peer.md`). `LinkManager` now dials when
+    a dwell ends and never dials a peer quiet for more than 8 s (ADR 2026-09.6es2, amended 2026-09-29); the Pixel 7
+    probe is owed again on a build that has them. The 8 s gap reset is unchanged, and knit-next could take both
+    rules later as a paired change. Items 2 to 8 run unattended through the bridge; item 9's test needs someone to
+    lock and unlock the iPhone.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
@@ -234,7 +237,7 @@ explicit direction.** Update this file in the change that ships an item.
   first (`.agents/context/crypto.md`).
 - **Contacts:** QR verification in person, and contact links at a distance (`docs/CONTACT_CARD.md` in
   knit-next).
-- **Companion change A3:** Android finds and dials iPhones.
+- **Companion change A3** (knit-next #101): Android finds and dials iPhones.
 - **Companion change A4:** Android rings an iPhone's doorbell (ADR 2026-09.khjj) after the frames it writes on the
   iPhone's link, on `LinkManager`'s schedule: a GATT write without response over the link's own connection, once
   service discovery finds the doorbell. Built as knit-next `c3191717` (its ADR 2026-09.dqvb), for a peer whose
@@ -248,6 +251,10 @@ explicit direction.** Update this file in the change that ships an item.
   showed"). A bad record's warning now carries what the link read around it, so the next one can be read from the
   iPhone's log. Android rings only links the iPhone dialed until A3, which must then take a dialed iPhone's
   capabilities from its HELLO reply rather than its advert.
+- **An iPhone's links run on a 720 ms supervision timeout** (knit-next #102): iOS sets it as the central, and Android's
+  stack puts it back after the doorbell lookup briefly raises it to 5 s. One dropped at about 10 m in the walk test
+  (`.agents/context/linux-peer.md`, "What the walk test showed"). The fix is on Android's side: ask for a longer
+  timeout once the lookup is done. A walk with Wi-Fi Aware off on the Pixels would then compare the ranges.
 - **Two iPhones both ways:** an iPhone rings only the peers it dialed, so of two iPhones the one with the smaller id
   cannot wake the other. A second GATT connection toward its dialer would let it; nothing needs it before two
   iPhones are on hand.

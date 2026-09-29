@@ -21,21 +21,17 @@ extension LinkManager {
         let snapshots = presence.snapshots(now: now)
         let present = Set(snapshots.map(\.nodeId))
         // A peer that left, and whose window has passed, starts fresh when it returns.
-        let busy = Set(liveLinks.map(\.neighbor.nodeId)).union(dialing.keys)
-        backoffs = backoffs.filter { now < $0.value.nextAt || present.contains($0.key) || busy.contains($0.key) }
-        let candidates = snapshots.filter { snapshot in
-            weDial(snapshot.nodeId, flags: snapshot.advert.flags) && !busy.contains(snapshot.nodeId) && !refused.contains(snapshot.nodeId)
-        }
+        let occupied = busy
+        backoffs = backoffs.filter { now < $0.value.nextAt || present.contains($0.key) || occupied.contains($0.key) }
         let links = liveLinks.map { link in
             let node = link.neighbor.nodeId
             let rssi = presence.smoothedRssi(of: node) ?? (link.sighted ? configuration.absentLinkRssi : configuration.unsightedLinkRssi)
             return PromotionPolicy.LinkSnapshot(nodeId: node, smoothedRssi: rssi, ageMilliseconds: now - link.since)
         }
-        let backingOff = Set(backoffs.filter { now < $0.value.nextAt }.keys)
         let decision = PromotionPolicy.decide(
-            candidates: candidates,
+            candidates: candidates(snapshots, busy: occupied),
             links: links,
-            backoff: backingOff,
+            backoff: backingOff(now: now),
             configuration: configuration.promotion
         )
         var events: [Event] = []
@@ -49,6 +45,36 @@ extension LinkManager {
             dial(node, now: now)
         }
         return events
+    }
+
+    /// When a sighted peer's dwell ends between its adverts, so that promotion runs then instead of at its next advert
+    /// (``PromotionPolicy/untilDwellEnds(candidates:backoff:configuration:)``). A peer backing off waits for its
+    /// backoff's own deadline, and the promotion that runs then asks again.
+    func dwellDue(now: Int64) -> Int64? {
+        let snapshots = presence.present(now: now)
+        let wait = PromotionPolicy.untilDwellEnds(
+            candidates: candidates(snapshots, busy: busy),
+            backoff: backingOff(now: now),
+            configuration: configuration.promotion
+        )
+        return wait.map { now + $0 }
+    }
+
+    /// Peers linked, or being dialed.
+    var busy: Set<NodeId> {
+        Set(liveLinks.map(\.neighbor.nodeId)).union(dialing.keys)
+    }
+
+    /// The sighted peers promotion may pick: ours to dial, not `busy`, and not refused.
+    func candidates(_ snapshots: [PresenceTracker.Snapshot], busy: Set<NodeId>) -> [PresenceTracker.Snapshot] {
+        snapshots.filter { snapshot in
+            weDial(snapshot.nodeId, flags: snapshot.advert.flags) && !busy.contains(snapshot.nodeId) && !refused.contains(snapshot.nodeId)
+        }
+    }
+
+    /// Peers whose backoff has not run out.
+    func backingOff(now: Int64) -> Set<NodeId> {
+        Set(backoffs.filter { now < $0.value.nextAt }.keys)
     }
 
     func dial(_ peer: NodeId, now: Int64) {

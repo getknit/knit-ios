@@ -928,3 +928,30 @@ Item 2's 30 s held for relinks to the phones, and not always for a first link:
   second `iphone-peer` run started 79 s after the first, so its 36.6 s is left out above. The scenario now waits for
   the iPhone to forget old peers (`iphone-forgot-old-peers`), and picks the peer's id so that as few phones as its
   order allows dial it and are refused.
+
+`LinkManager` has since taken fixes for two of these (ADR 2026-09.6es2, amended 2026-09-29): it never dials a peer
+quiet for more than 8 s, and it wakes when a candidate's dwell ends. Neither has been measured on the iPhone yet.
+Neither helps a late first sighting, or a gap over 8 s that restarts the dwell.
+
+## What the walk test showed
+
+On 2026-09-29 from 03:48, the maintainer walked the Pixel 7 away from the iPhone 12 until it had no links left.
+The iPhone stayed on this machine's USB, and the Pixel 7 had its Bluetooth snoop log on. The snoop, both Pixels'
+logcats, the iPhone's log and a once-a-second record are in `.build/interop-walk/20260929-0348/`, and `btmon -r`
+decodes the snoop.
+
+- **The iPhone's link timed out.** It dropped at 03:53:28 with HCI reason 0x08, Connection Timeout, 0.73 s after
+  the Pixel last heard the iPhone. The iPhone logged its channel ending, and the Pixel an EOF, within a second.
+  Before the drop the iPhone heard the Pixel's advert at −81 to −92 dBm, and not at all in its last 34 s.
+- **iOS sets a 720 ms supervision timeout.** The iPhone dialed, so it was the central. It opened the link at a
+  30 ms interval, no latency and a 720 ms timeout, then moved it to LE 2M. Every link an Android phone dialed ran at
+  a 5 s timeout, and the Pixel 3's moved to LE 2M too, so the radio mode is not the difference.
+- **iOS took 5 s when the Pixel asked, and the Pixel's stack put 720 ms back.** When A4's GATT client began its
+  discovery, Android's stack asked for a 10 to 20 ms interval and a 5 s timeout, and iOS granted 15 ms and 5 s.
+  When discovery found the doorbell 2 s later, the stack asked for the link's first values, 30 ms and 720 ms, and
+  got them. The next link-up went the same way (knit-next #102).
+- **There was no Bluetooth link between the Pixels to compare.** Turning the snoop on restarted the Pixel 7's
+  Bluetooth, and the Pixel 9 and Pixel 3 did not link to it again until after the walk. The Pixel 7 and Pixel 9
+  stayed in touch through Wi-Fi Aware discovery, which the Diagnostics screen shows as a link. knit-next's bridge
+  lists peers in reach as `reachable`, not links, so the Pixels' `bt state` lines in logcat are the record of their
+  links.

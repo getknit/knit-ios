@@ -5,6 +5,10 @@ public import KnitWire
 /// thrash the link set.
 ///
 /// The caller filters the candidates to peers it should dial and is not already linked to.
+///
+/// Two rules are this port's, not Android's (ADR 2026-09.6es2, amended 2026-09-29): a peer not heard lately is never
+/// promoted, and ``untilDwellEnds(candidates:backoff:configuration:)`` tells the caller when to run promotion again
+/// with nothing heard, since a dwell that ends between a peer's adverts is no event of its own.
 public enum PromotionPolicy {
     /// A link held now, for the eviction decision.
     public struct LinkSnapshot: Sendable, Equatable {
@@ -43,20 +47,27 @@ public enum PromotionPolicy {
         public var rssiHysteresis: Double
         /// A link younger than this is never evicted.
         public var minimumHoldMilliseconds: Int64
+        /// The longest a peer may go unheard and still be promoted. A sighting lingers 90 s and its dwell counts from
+        /// the first advert, so without this a phone that left is dialed until it lingers out, and each dial that
+        /// times out doubles its backoff. Knit for Android has no such limit.
+        public var heardWithinMilliseconds: Int64
 
-        /// knit-next's values unless told otherwise: 12 s, −90 dBm, 6 links, 8 dB and 20 s.
+        /// knit-next's values unless told otherwise: 12 s, −90 dBm, 6 links, 8 dB and 20 s. The 8 s silence limit is
+        /// this port's, and matches the presence gap reset, past which the peer's next advert restarts its dwell.
         public init(
             dwellMilliseconds: Int64 = 12_000,
             rssiFloor: Double = -90,
             maxLinks: Int = 6,
             rssiHysteresis: Double = 8,
-            minimumHoldMilliseconds: Int64 = 20_000
+            minimumHoldMilliseconds: Int64 = 20_000,
+            heardWithinMilliseconds: Int64 = 8000
         ) {
             self.dwellMilliseconds = dwellMilliseconds
             self.rssiFloor = rssiFloor
             self.maxLinks = maxLinks
             self.rssiHysteresis = rssiHysteresis
             self.minimumHoldMilliseconds = minimumHoldMilliseconds
+            self.heardWithinMilliseconds = heardWithinMilliseconds
         }
     }
 
@@ -92,10 +103,32 @@ public enum PromotionPolicy {
         return Decision(promote: promote, evict: evict)
     }
 
-    /// Close enough, present long enough, and not backing off.
+    /// How long until one of `candidates` becomes promotable with none of them heard meanwhile, or `nil` if none will.
+    /// Only a running dwell can end with nothing heard, so this is the soonest dwell to end among peers above the
+    /// floor, not backing off, and still heard recently enough when it does.
+    ///
+    /// Promotion runs when something happens, and a dwell that ends between a peer's adverts is nothing happening. An
+    /// iPhone hears a peer that advertises about once a second with gaps of several seconds, so it dialed up to 10 s
+    /// after the dwell had ended. A caller that wakes this long from now dials on time. A peer whose dwell ends with
+    /// no free slot is past the point afterwards and answers nothing, so the caller never wakes in a loop.
+    public static func untilDwellEnds(
+        candidates: [PresenceTracker.Snapshot],
+        backoff: Set<NodeId>,
+        configuration: Configuration = Configuration()
+    ) -> Int64? {
+        candidates.compactMap { candidate -> Int64? in
+            let wait = configuration.dwellMilliseconds - candidate.dwellMilliseconds
+            let heardThen = candidate.lastSeenAgoMilliseconds + wait <= configuration.heardWithinMilliseconds
+            let eligible = candidate.smoothedRssi >= configuration.rssiFloor && !backoff.contains(candidate.nodeId)
+            return wait > 0 && heardThen && eligible ? wait : nil
+        }
+        .min()
+    }
+
+    /// Close enough, present long enough, heard lately, and not backing off.
     private static func isPromotable(_ candidate: PresenceTracker.Snapshot, backoff: Set<NodeId>, configuration: Configuration) -> Bool {
         candidate.smoothedRssi >= configuration.rssiFloor && candidate.dwellMilliseconds >= configuration.dwellMilliseconds
-            && !backoff.contains(candidate.nodeId)
+            && candidate.lastSeenAgoMilliseconds <= configuration.heardWithinMilliseconds && !backoff.contains(candidate.nodeId)
     }
 
     private static func stableSorted<Element>(_ elements: [Element], by areInIncreasingOrder: (Element, Element) -> Bool) -> [Element] {

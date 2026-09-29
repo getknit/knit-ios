@@ -45,6 +45,28 @@ struct LinkRig {
         return links.advance()
     }
 
+    /// Moves the clock on, firing what falls due, while `peer` stays in range: sighted every two seconds, and once more
+    /// at the end.
+    @discardableResult
+    func advance(_ milliseconds: Int64, hearing peer: NodeId) -> [LinkManager.Event] {
+        var events: [LinkManager.Event] = []
+        var left = milliseconds
+        while left > 0 {
+            let step = min(left, 2000)
+            events += advance(step)
+            events += handle(.sighted(Self.sighting(peer)))
+            left -= step
+        }
+        return events
+    }
+
+    /// Sights `peer` twice, 5 s apart, and leaves it quiet: its dwell ends 7 s later with nothing heard.
+    func hear(_ peer: NodeId, rssi: Int = -50) {
+        _ = handle(.sighted(Self.sighting(peer, rssi: rssi)))
+        clock.advance(5000)
+        _ = handle(.sighted(Self.sighting(peer, rssi: rssi)))
+    }
+
     /// Sights `peer` every two seconds, as a scanner reports it, until it has dwelled long enough to promote.
     @discardableResult
     func sightToPromotion(_ peer: NodeId, flags: UInt8 = AdvertPayload.dialsGattPeersFlag, rssi: Int = -50) -> [LinkManager.Event] {

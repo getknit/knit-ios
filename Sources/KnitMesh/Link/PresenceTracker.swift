@@ -95,14 +95,21 @@ public struct PresenceTracker: Sendable {
     /// Every peer seen within the linger window, after dropping the rest.
     public mutating func snapshots(now: Int64) -> [Snapshot] {
         entries = entries.filter { now - $0.value.lastSeenAt <= configuration.lingerMilliseconds }
-        return entries.values.map { entry in
-            Snapshot(
-                advert: entry.advert,
-                smoothedRssi: entry.smoothedRssi,
-                dwellMilliseconds: now - entry.firstSeenAt,
-                lastSeenAgoMilliseconds: now - entry.lastSeenAt
-            )
-        }
+        return present(now: now)
+    }
+
+    /// Every peer seen within the linger window, as ``snapshots(now:)`` answers, without dropping the rest: for a
+    /// question asked without changing anything, such as when the link layer next has work.
+    public func present(now: Int64) -> [Snapshot] {
+        entries.values.filter { now - $0.lastSeenAt <= configuration.lingerMilliseconds }
+            .map { entry in
+                Snapshot(
+                    advert: entry.advert,
+                    smoothedRssi: entry.smoothedRssi,
+                    dwellMilliseconds: now - entry.firstSeenAt,
+                    lastSeenAgoMilliseconds: now - entry.lastSeenAt
+                )
+            }
     }
 
     /// The advert last seen from `nodeId`, for its PSM and flags, or `nil` if unknown.

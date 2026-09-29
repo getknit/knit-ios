@@ -278,12 +278,14 @@ public final class LinkManager: MeshTransport {
         presence.snapshots(now: clock.monotonicMilliseconds())
     }
 
-    /// When ``advance()`` next has work, on the monotonic clock.
+    /// When ``advance()`` next has work, on the monotonic clock: a dial or HELLO timing out, the advert, a doorbell, a
+    /// backoff running out, or a dwell ending between a peer's adverts.
     public var nextDeadline: Int64? {
         let now = clock.monotonicMilliseconds()
         let backoffDue = backoffs.values.map(\.nextAt).filter { $0 > now }.min()
         let ringDue = doorbells.values.compactMap(\.due).min()
-        return (channels.values.compactMap(\.deadline) + [advertDue, backoffDue, ringDue].compactMap(\.self)).min()
+        let due = [advertDue, backoffDue, ringDue, dwellDue(now: now)].compactMap(\.self)
+        return (channels.values.compactMap(\.deadline) + due).min()
     }
 
     // MARK: Radio events
@@ -327,8 +329,8 @@ public final class LinkManager: MeshTransport {
         }
     }
 
-    /// Times out dials and HELLOs, re-advertises a settled cue, rings doorbells that are due, and retries peers whose
-    /// backoff has run out.
+    /// Times out dials and HELLOs, re-advertises a settled cue, rings doorbells that are due, and dials peers whose
+    /// backoff has run out or whose dwell has just ended.
     public func advance() -> [Event] {
         let now = clock.monotonicMilliseconds()
         var events: [Event] = []

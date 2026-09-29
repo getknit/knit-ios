@@ -57,6 +57,17 @@ import Testing
         #expect(tracker.advert(of: fixtureNodeId(1)) == nil)
     }
 
+    @Test func presenceIsReadWithoutDroppingAnything() {
+        var tracker = PresenceTracker(configuration: .init(lingerMilliseconds: 90_000))
+        tracker.record(sighting(1, rssi: -50), now: 0)
+        tracker.record(sighting(2, rssi: -60), now: 50_000)
+        #expect(tracker.present(now: 95_000).map(\.nodeId) == [fixtureNodeId(2)])
+        #expect(tracker.advert(of: fixtureNodeId(1)) != nil, "still held, as only snapshots drop it")
+        let snapshot = tracker.present(now: 95_000).first
+        #expect(snapshot?.dwellMilliseconds == 45_000)
+        #expect(snapshot?.lastSeenAgoMilliseconds == 45_000)
+    }
+
     @Test func theLatestAdvertIsKeptForItsPsm() {
         var tracker = PresenceTracker()
         tracker.record(sighting(1, rssi: -55, psm: 137), now: 0)

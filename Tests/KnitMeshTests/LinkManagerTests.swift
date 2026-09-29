@@ -126,7 +126,7 @@ import Testing
         #expect(rig.radio.closed == [id])
         _ = rig.handle(.sighted(LinkRig.sighting(low)))
         #expect(rig.radio.dials.count == 1, "backing off")
-        _ = rig.advance(12_001)
+        rig.advance(12_001, hearing: low)
         #expect(rig.radio.dials.count == 2, "10 s ± 20 % later it tries again")
     }
 
@@ -173,12 +173,12 @@ import Testing
         rig.sightToPromotion(low)
         let failed = try #require(rig.radio.dials.first?.channel)
         _ = rig.handle(.dialFailed(failed))
-        _ = rig.advance(12_001)
+        rig.advance(12_001, hearing: low)
         let second = try #require(rig.radio.dials.last?.channel)
         _ = rig.handle(.connected(second))
         _ = rig.handle(.received(second, LinkRig.helloRecord(low)))
         _ = rig.handle(.closed(second))
-        _ = rig.advance(12_001)
+        rig.advance(12_001, hearing: low)
         #expect(rig.radio.dials.count == 3, "a fresh streak waits 10 s again, not 20")
     }
 
