@@ -192,6 +192,21 @@
             rig.settle { rig.events.last == .sighted(expected) }
         }
 
+        @Test func aNodeNeverSightedIsNeverReported() throws {
+            let rig = try LoopRig(neverSighted: [LoopRig.advert().nodeId])
+            rig.start()
+            try rig.fake.add(device: LoopRig.peerPath, FakeBlueZ.device(address: LoopRig.peerAddress, advert: LoopRig.advert()))
+            try rig.fake.change(LoopRig.peerPath, interface: BlueZ.deviceInterface, .properties([("RSSI", .int16(-70))]))
+            let other = FakeBlueZ.adapter + "/dev_5A_00_00_00_00_4F"
+            try rig.fake.add(device: other, FakeBlueZ.device(address: "5A:00:00:00:00:4F", advert: LoopRig.advert(8)))
+            let expected = RadioSighting(address: RadioAddress(other), advert: LoopRig.advert(8), rssi: -55)
+            rig.settle { rig.events.last == .sighted(expected) }
+            let sighted = rig.events.compactMap { event -> String? in
+                if case .sighted(let sighting) = event { sighting.address.rawValue } else { nil }
+            }
+            #expect(!sighted.contains(LoopRig.peerPath))
+        }
+
         @Test func everyAdvertIsASightingWithItsNewStrength() throws {
             let rig = try LoopRig()
             rig.start()

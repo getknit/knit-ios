@@ -20,6 +20,14 @@
             /// can find an iPhone. The `ios` profile does, as an iPhone does, and the `android` profile does not, as
             /// Android does not; `knit-peer scan` reads them whatever it advertises, to list iPhones too.
             public var readsGattPayloads: Bool
+            /// Whether the `ios` profile's GATT application serves the payload characteristic. A test switch: without
+            /// it the service holds the doorbell alone, and a reader files the peer as a stranger, so it never sights
+            /// it (``GattApplication``).
+            public var servesGattPayload = true
+            /// Nodes whose adverts and GATT payloads the radio never reports, a test switch. The link manager then
+            /// never dials them, and admits their dials as it admits a dialer it never sighted, which is how an
+            /// interop run keeps the peer from dialing a phone whose own dial is under test (`--never-sight`).
+            public var neverSighted: Set<NodeId> = []
             /// Where channels come from.
             public var sockets: any SocketProvider
             /// Where D-Bus objects of this process live.
@@ -42,6 +50,8 @@
                 var configuration = BlueZLoop.Configuration(
                     bus: bus, adapter: adapter, profile: profile, sockets: sockets, objectRoot: objectRoot, log: log)
                 configuration.readsGattPayloads = readsGattPayloads
+                configuration.servesGattPayload = servesGattPayload
+                configuration.neverSighted = neverSighted
                 return configuration
             }
         }

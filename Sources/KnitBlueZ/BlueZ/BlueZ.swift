@@ -239,8 +239,13 @@ internal enum AdvertisementProperties {
 /// The GATT application a `--radio-profile ios` peer registers, the way an iPhone serves it: one primary `0xFE30`
 /// service with a read-only characteristic holding the payload (``AdvertPayload/gattValue``), and the doorbell beside
 /// it (ADR 2026-09.khjj). The peer never sleeps, so a ring only counts; it is how an iPhone's rings are checked.
+///
+/// Without the payload (`--no-gatt-payload`, a test switch) the service holds the doorbell alone. A reader that
+/// connects then finds no payload and files the peer as a stranger for ten minutes (``GattPayloads``), so a phone
+/// with companion change A3 never sights it, and a run can check A1's paths for an unsighted dialer against it.
 internal struct GattApplication {
     let root: String
+    var servesPayload = true
 
     var servicePath: String { root + "/service0" }
     var characteristicPath: String { servicePath + "/char0" }
@@ -262,15 +267,12 @@ internal struct GattApplication {
         let interfaces: (String, DBusValue) -> DBusValue = { name, properties in
             .dictionary(key: .string, value: .dictionary(key: .string, value: .variant), [DBusEntry(key: .string(name), value: properties)])
         }
-        return .dictionary(
-            key: .objectPath,
-            value: .dictionary(key: .string, value: .dictionary(key: .string, value: .variant)),
-            [
-                DBusEntry(key: .objectPath(servicePath), value: interfaces(BlueZ.gattService, service)),
-                DBusEntry(key: .objectPath(characteristicPath), value: interfaces(BlueZ.gattCharacteristic, characteristic)),
-                DBusEntry(key: .objectPath(doorbellPath), value: interfaces(BlueZ.gattCharacteristic, doorbell)),
-            ]
-        )
+        var entries = [DBusEntry(key: .objectPath(servicePath), value: interfaces(BlueZ.gattService, service))]
+        if servesPayload {
+            entries.append(DBusEntry(key: .objectPath(characteristicPath), value: interfaces(BlueZ.gattCharacteristic, characteristic)))
+        }
+        entries.append(DBusEntry(key: .objectPath(doorbellPath), value: interfaces(BlueZ.gattCharacteristic, doorbell)))
+        return .dictionary(key: .objectPath, value: .dictionary(key: .string, value: .dictionary(key: .string, value: .variant)), entries)
     }
 
     /// `ReadValue`'s answer: the value from the requested offset, which BlueZ passes when the value is longer than

@@ -62,6 +62,29 @@ import Testing
         #expect(options.sendMTU == 512)
     }
 
+    @Test func theTestSwitchesAreOffUnlessAsked() throws {
+        let options = try run([])
+        #expect(options.neverSighted.isEmpty)
+        #expect(options.servesGattPayload)
+        let low = fixtureNodeId(8)
+        let high = fixtureNodeId(9)
+        let asked = try run(["--never-sight", "\(low.string),\(high.string)", "--no-gatt-payload", "--radio-profile", "ios"])
+        #expect(asked.neverSighted == [low, high])
+        #expect(!asked.servesGattPayload)
+        #expect(try run(["--never-sight", low.string]).neverSighted == [low])
+    }
+
+    @Test func aNodeNeverSightedMustBeANodeId() {
+        for bad in ["phone", "\(fixtureNodeId(8).string),", ",", "\(fixtureNodeId(8).string),x"] {
+            #expect(throws: UsageError.invalid(flag: "--never-sight", value: bad)) {
+                try PeerCommand.parse(["--never-sight", bad], environment: home)
+            }
+        }
+        #expect(throws: UsageError.unknownFlag("--no-gatt-payload")) {
+            try PeerCommand.parse(["scan", "--no-gatt-payload"], environment: home)
+        }
+    }
+
     @Test func anMTUMustFitAnLEChannel() {
         for flag in ["--receive-mtu", "--send-mtu"] {
             for bad in ["22", "65536", "big"] {

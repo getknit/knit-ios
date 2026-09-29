@@ -62,7 +62,9 @@
             acceptedPeer: DialTarget? = nil,
             readsGattPayloads: Bool = false,
             gatt: GattPayloads.Configuration = LoopRig.gattPacing,
-            forgetQuietDevicesAfter quiet: Int64 = 60_000
+            forgetQuietDevicesAfter quiet: Int64 = 60_000,
+            servesGattPayload: Bool = true,
+            neverSighted: Set<NodeId> = []
         ) throws {
             fake = try FakeBlueZ()
             sockets = UnixSockets(
@@ -79,6 +81,8 @@
             configuration.retryDelayMilliseconds = 20
             configuration.readsGattPayloads = readsGattPayloads
             configuration.gatt = gatt
+            configuration.servesGattPayload = servesGattPayload
+            configuration.neverSighted = neverSighted
             configuration.forgetQuietDevicesMilliseconds = quiet
             configuration.forgetSweepMilliseconds = min(quiet, 30_000) / 2
             let recorder = box

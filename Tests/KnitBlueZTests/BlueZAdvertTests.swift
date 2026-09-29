@@ -36,6 +36,19 @@
             #expect(service.properties["Primary"]?.bool == true)
         }
 
+        @Test func withoutThePayloadTheServiceHoldsTheDoorbellAlone() throws {
+            let rig = try LoopRig(profile: .ios, servesGattPayload: false)
+            rig.startAdvertising()
+            let properties = try #require(rig.fake.registered.first.flatMap { rig.fake.advertisements[$0] })
+            #expect(properties["ServiceUUIDs"]?.textArray == ["FE30"], "the advert is unchanged")
+            let application = try #require(rig.fake.application)
+            let uuids = BlueZ.objects(from: application).flatMap(\.interfaces).compactMap { $0.properties["UUID"]?.text }
+            #expect(uuids == [AdvertPayload.serviceUUID, AdvertPayload.doorbellUUID])
+            try rig.fake.read(characteristic: rig.loop.application.characteristicPath)
+            rig.settle { rig.fake.readResult != nil }
+            #expect(throws: (any Error).self, "nothing answers at the payload's path") { try rig.fake.readResult?.get() }
+        }
+
         @Test func theCharacteristicServesTheValueFromTheOffsetAsked() throws {
             let rig = try LoopRig(profile: .ios)
             rig.startAdvertising()

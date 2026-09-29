@@ -239,7 +239,8 @@
         /// up. A device whose characteristic has not been read yet is read, and sighted once the read ends.
         func sight(_ path: String) {
             guard isUp, let device = devices[path], let rssi = device.rssi,
-                let advert = device.advert ?? gattPayload(of: device, now: Monotonic.milliseconds())
+                let advert = device.advert ?? gattPayload(of: device, now: Monotonic.milliseconds()),
+                !configuration.neverSighted.contains(advert.nodeId)
             else {
                 return
             }

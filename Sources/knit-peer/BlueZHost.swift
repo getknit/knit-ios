@@ -23,7 +23,18 @@
                 throw .adapter(error)
             }
             let chosen = options.radioProfile.flatMap(RadioProfile.init(name:)) ?? .android
+            guard options.servesGattPayload || chosen == .ios else {
+                throw .unsupported("--no-gatt-payload: only the ios profile serves GATT")
+            }
             var configuration = BlueZRadio.Configuration(adapter: selection, profile: chosen, log: log)
+            configuration.servesGattPayload = options.servesGattPayload
+            configuration.neverSighted = options.neverSighted
+            if !options.neverSighted.isEmpty {
+                log.log(.info, "never sighting \(options.neverSighted.map(\.string).sorted().joined(separator: ", ")), a test switch")
+            }
+            if !options.servesGattPayload {
+                log.log(.info, "serving the doorbell without the payload, so readers take this peer for a stranger")
+            }
             let receiveMTU = options.receiveMTU.flatMap(UInt16.init(exactly:))
             let sendMTU = options.sendMTU.flatMap(UInt16.init(exactly:))
             if receiveMTU != nil || sendMTU != nil {

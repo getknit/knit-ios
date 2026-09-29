@@ -130,7 +130,7 @@
         // MARK: The GATT application
 
         var application: GattApplication {
-            GattApplication(root: configuration.objectRoot + "/gatt")
+            GattApplication(root: configuration.objectRoot + "/gatt", servesPayload: configuration.servesGattPayload)
         }
 
         /// Serves the payload the way an iPhone does, for `--radio-profile ios`.
@@ -148,8 +148,10 @@
                 }
                 return .values([gatt.managedObjects])
             }
-            bus.export(gatt.characteristicPath) { [weak self] call in
-                self?.answerCharacteristic(call) ?? .unknown
+            if gatt.servesPayload {
+                bus.export(gatt.characteristicPath) { [weak self] call in
+                    self?.answerCharacteristic(call) ?? .unknown
+                }
             }
             bus.export(gatt.doorbellPath) { [weak self] call in
                 self?.answerDoorbell(call) ?? .unknown
@@ -157,7 +159,8 @@
             gattRegistered = true
             let registered: (Bool) -> Void = { [weak self] success in
                 if success {
-                    self?.log.log(.info, "bluez serving the payload over GATT")
+                    self?.log.log(
+                        .info, gatt.servesPayload ? "bluez serving the payload over GATT" : "bluez serving the doorbell alone over GATT")
                 } else {
                     self?.gattRegistered = false
                 }

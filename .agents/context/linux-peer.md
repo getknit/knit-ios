@@ -89,6 +89,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | --- | --- |
 | `knit-peer run [--radio-profile android\|ios] [--instance NAME] [--name NAME] [--log debug\|info\|warning\|off]` | runs the node; JSON lines in on stdin, out on stdout, logs on stderr |
 | `knit-peer run … --rssi-floor -100 --receive-mtu 247 --send-mtu 8192` | development knobs: a promotion floor below Android's −90 dBm, the L2CAP receive MTU (65535 by default), and the largest SDU written (247 by default, never above what the peer offers or 8192) |
+| `knit-peer run … --never-sight NODE_ID[,NODE_ID…] --no-gatt-payload` | test switches, BlueZ only: never report those nodes as sighted, so the peer never dials them and admits their dials unsighted; and, in the `ios` profile, serve the doorbell without the payload characteristic, so a phone that reads payloads (A3) files the peer as a stranger and never sights it |
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing, and links a node that advertises only the UUID just long enough to read its payload; `--advertise` also shows the advert |
 | `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window |
 

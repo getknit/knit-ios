@@ -27,6 +27,10 @@
             var readsGattPayloads = false
             /// How those reads are paced.
             var gatt = GattPayloads.Configuration()
+            /// Whether the GATT application serves the payload characteristic beside the doorbell (``GattApplication``).
+            var servesGattPayload = true
+            /// Nodes whose adverts and payloads are never reported as sightings (``BlueZRadio/Configuration/neverSighted``).
+            var neverSighted: Set<NodeId> = []
             /// How long a device goes unheard before the radio asks BlueZ to forget it (`BlueZDevice.isStale`), and
             /// how often it looks. bluetoothd's own default is 30 s; the radio waits longer, since it never forgets
             /// a linked device anyway.
