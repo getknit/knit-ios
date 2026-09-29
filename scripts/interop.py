@@ -1053,9 +1053,14 @@ def android_reads(arguments: argparse.Namespace) -> int:
     the read, or its dial could land first and be admitted unsighted under A1.
 
     In both orders every payload the phone read belongs to a node that advertises no service data: the peer, or an
-    iPhone or Mac in range, never an Android phone. The link must hold, and the run reports the first link's time from
-    the peer's start, MVP item 2's measure. The phone runs a debug build with A3; the first step checks, before the
-    peer starts."""
+    iPhone or Mac in range, never an Android phone. The run reports the first link's time from the peer's start, MVP
+    item 2's measure, and the link must then hold for `--hold` seconds (60). The phone runs a debug build with A3; the
+    first step checks, before the peer starts.
+
+    A phone keeps a payload until a dial to its address fails, and every peer here has hci1's address. So a phone that
+    read an earlier run's peer above it sights each later peer as that one and never reads it, until Knit restarts
+    ("What A3's gate showed", `.agents/context/linux-peer.md`): run `peer-above` last on each phone, and mind the other
+    A3 phones in range, which read the peer too."""
     phone = Phone(arguments.device)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -1067,6 +1072,10 @@ def android_reads(arguments: argparse.Namespace) -> int:
     others = set(heard) - {phone_id}
     flagged = bool(heard.get(phone_id, {}).get("flags", 0) & DIALS_GATT_PEERS)
     below = arguments.order == "peer-below"
+    # Every peer this adapter runs has its address, so the phone must have let the last one go first.
+    if run.step("phone-forgot-old-peers", lambda: _phone_forgets_all_but(phone, set(heard))) is None:
+        print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
+        return run.failed
     peer_id = keygen(phone_id, "phone-dials" if below else "peer-dials", others)
     held = {phone_id} if below and not flagged else set()
     print(
@@ -1107,7 +1116,8 @@ def android_reads(arguments: argparse.Namespace) -> int:
                 run.step("peer-dialed-the-phone", lambda: _who_dialed(phone, peer, peer_id, phone_id, mark, phone_dials=False))
                 run.step("phone-sighted-the-dialer", lambda: _accepted_sighted(phone, peer_id))
                 run.step("phone-never-dialed", lambda: _phone_never_dialed(phone, peer_id))
-            run.step("link-held", lambda: {**_phone_held(phone, peer_id), **_no_link_dropped(peer, {phone_id})})
+            time.sleep(max(0.0, link["at"] + arguments.hold - time.monotonic()))
+            run.step("link-held", lambda: {**_phone_held(phone, peer_id), **_no_link_dropped(peer, {phone_id}), "heldSeconds": arguments.hold})
         run.step("reads-only-uuid-nodes", lambda: _reads_only_uuid_nodes(phone, peer_id, androids(heard)))
         run.step("phone-gatt-counts", lambda: _reads_gatt_payloads(phone))
     finally:
@@ -1115,6 +1125,26 @@ def android_reads(arguments: argparse.Namespace) -> int:
         peer.stop()
     print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
     return run.failed
+
+
+def _phone_forgets_all_but(phone: Phone, heard: set[str], timeout: float = 180) -> dict:
+    """Waits until the phone holds no node in reach that the scan did not hear: a peer of an earlier run, whose sighting
+    lingers 90 s. Every peer on hci1 has that adapter's address, so the phone dials the next one as the last, and one
+    such dial on 2026-09-29 outlived its 12 s watchdog in the Pixel 7's stack, connected when the next peer advertised,
+    and held that link for minutes with no channel, which kept hci1 from advertising at all."""
+    started = time.monotonic()
+    left: set[str] = set()
+
+    def forgot() -> bool:
+        left.clear()
+        left.update({p["nodeId"] for p in phone.state().get("reachable", [])} - heard)
+        return not left
+
+    try:
+        poll(forgot, timeout, every=5)
+    except TimeoutError as error:
+        raise TimeoutError(f"the phone still holds {sorted(left)}") from error
+    return {"seconds": round(time.monotonic() - started, 1)}
 
 
 def _phone_read(phone: Phone, peer_id: str, since: float, timeout: float) -> dict:
@@ -1132,7 +1162,7 @@ def _first_link(peer: Peer, phone: Phone, phone_id: str, since: float, timeout: 
     """MVP item 2: the first link after the peer started, which the item wants within 30 s."""
     line = link_up(peer, phone, phone_id, timeout)
     seconds = round(line["_at"] - since, 1)
-    return {"seconds": seconds, "withinThirtySeconds": seconds <= 30}
+    return {"seconds": seconds, "withinThirtySeconds": seconds <= 30, "at": line["_at"]}
 
 
 def _peer_never_dialed(peer: Peer, phone_id: str, mark: int) -> dict:
@@ -3240,6 +3270,7 @@ def main() -> int:
     reads.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
     reads.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     reads.add_argument("--link-timeout", type=float, default=180, help="seconds for the phone's read and for the link")
+    reads.add_argument("--hold", type=float, default=60, help="seconds the link must hold after it comes up")
     android = commands.add_parser("android-rings")
     android.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     android.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")

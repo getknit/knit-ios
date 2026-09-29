@@ -962,6 +962,35 @@ Item 2's 30 s held for relinks to the phones, and not always for a first link:
 quiet for more than 8 s, and it wakes when a candidate's dwell ends. Neither has been measured on the iPhone yet.
 Neither helps a late first sighting, or a gap over 8 s that restarts the dwell.
 
+## What A3's gate showed
+
+`interop.py android-reads` ran on 2026-09-29 from 14:01 against flag-clear debug builds of knit-next `feat/gatt-peers`
+(`7c16aae5`) on the Pixel 7 and the Pixel 3, with the peer on `hci1`. The runs are in `.build/interop-android-reads/`.
+
+- **The reader and the dial work, on the Pixel 7.** Below the phone, the peer was read 7.1 s after it started, and the
+  phone dialed it at 22.2 s, found its doorbell on that link and rang it, so the dialed link took `CAP_DOORBELL` from
+  the HELLO reply. The peer never dialed, and the link held 60 s: 11 of 11. Above the phone, the read came at 10.1 s,
+  the peer dialed, and the phone logged `bt accepted client … (Admit, sighted=true)`, having never dialed. The first
+  link came at 18.9 s.
+- **A failed first read costs 30 s.** One read failed at `connect`, waited out its retry, and that run's first link
+  took 71 s. The dwell counts from the read's sighting, not the first UUID advert, so a first link takes at least the
+  read, 12 s and the connect.
+- **A phone keeps a payload for good at an address it never dials.** A payload goes only when a dial to its address
+  fails, and a phone never dials a node above it. Every peer here has `hci1`'s public address, so after a run with a
+  peer above a phone, that phone sighted each later peer as the old one, listed it in reach, and never read again.
+  The Pixel 7 and the Pixel 3, which had read the Pixel 7's peers from across the room, both did, until Knit
+  restarts. KnitBlueZ forgets a payload once BlueZ forgets a device unheard for 60 s, and so never meets this; KnitBLE
+  and Android do. In the field it strands a public-address peer that comes back with a new identity. The supervisor has
+  the proposal to forget a quiet address's payload on both.
+- **A dial outlived its watchdog.** The Pixel 7 redialed the departed peer, and its 12 s watchdog gave up, but the
+  stack's connect lived on, brought up a link when the next peer advertised, and held it with no channel for eight
+  minutes. This dongle cannot advertise while connected, so the phone never heard the next peer. The run now waits for
+  the phone to forget the last peer before it starts (`phone-forgot-old-peers`).
+- **A Linux central drops the link at 420 ms.** With the peer as central, after the doorbell lookup the Pixel's stack
+  put back the link's first values, the kernel's 420 ms supervision timeout, and the link dropped 4 s later. The relink
+  kept knit-next #102's 5 s. It is the walk test's 720 ms on a BlueZ central.
+- **The Pixel 3 and the flag build are still to run.**
+
 ## What the walk test showed
 
 On 2026-09-29 from 03:48, the maintainer walked the Pixel 7 away from the iPhone 12 until it had no links left.
