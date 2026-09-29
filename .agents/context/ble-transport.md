@@ -136,7 +136,7 @@ radio.
 - **So the iPhone dials Android, and Android's responder refuses it** unless the iPhone's id sorts higher.
   Companion change A1 accepts a dialer Android never sighted, so every pair links.
 - **With companion change A3, Android sees a foreground iPhone** (knit-next ADR 2026-09.kwq2, on `feat/gatt-peers`
-  at `b7480e85`, ahead of the pin). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
+  at `8a6d1a58`, ahead of the pin). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
   of an advert that lists only the UUID, on `GattPayloads`' rules, sights the iPhone with it, and dials it when its
   own id sorts higher. It reads nothing while one of its dials is in flight, and holds its dials while a read runs.
   Once it sets `FLAG_DIALS_GATT_PEERS`, an iPhone whose id sorts lower waits to be dialed, and Android refuses that

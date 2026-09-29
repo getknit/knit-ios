@@ -59,22 +59,23 @@ Kotlin wins.
       About screen. They are Android's alone.
   - No wire bytes or vectors moved.
 - **Mirrored ahead of the pin: knit-next ADR 2026-09.kwq2,** companion change A3. On 2026-09-29 it is knit-next's
-  `feat/gatt-peers` at `b7480e85`, three commits on `main`'s `82898694`, and not on `main`: `3c0116f1` holds the
-  reader, `7c16aae5` only mends the ADR's status line, and `b7480e85` adds the payload lifetime's two new forget rules
+  `feat/gatt-peers` at `8a6d1a58`, five commits on `main`'s `82898694`, and not on `main`: `3c0116f1` holds the
+  reader, `7c16aae5` only mends the ADR's status line, `b7480e85` adds the payload lifetime's two new forget rules
   after the first device gate (a HELLO naming another node, and 60 000 ms of scan time unheard), which this port
-  mirrors in `GattPayloads`, `LinkManager` and both radios (ADR 2026-09.xzpt, amended 2026-09-29). An Android phone with
-  `BLE_GATT_PEERS` (debug builds; release keeps it dark) adds a scan filter on the `0xFE30` UUID, reads the GATT
-  payload of a node that lists only the UUID (`BleGattPayloadReader.kt`), and sights that node with it. `GattPayloads.kt`
-  ports `GattPayloads.swift`'s rules line for line, plus a 64-address cap on each map. A payload goes when a dial
-  fails before its channel opens, when a HELLO names another node (checked before an accepted dialer's verdict, and
-  on a dial's reply), or after 60 000 ms of presence-scan windows with the address unheard and unlinked; each logs
-  `bt gatt forget <addr> (dial|hello <id>|quiet)`. A HELLO refusal keeps it, and so does a quiet stranger's wait. A dialed link takes its capabilities from the
-  HELLO reply, so A4 rings it (`BluetoothMeshTransport.kt`). `BleAdvertPayload.kt` names `FLAG_DIALS_GATT_PEERS`
-  (`0x02`), and `docs/WIRE_COMPAT.md` says every parser tests only the bits it knows. The flag is not advertised
-  yet: it goes on in its own commit once `interop.py android-reads` passes on the lab phones. Nothing here mirrors
-  code, since the payload, the flag and `weDial` were law in this port first (ADR 2026-09.xzpt). ADR 2026-09.shzv
-  (A1) and 2026-09.dqvb (A4) are amended, and A1 stays whole. Move the pin once it merges, and re-read the files
-  above.
+  mirrors in `GattPayloads`, `LinkManager` and both radios (ADR 2026-09.xzpt, amended 2026-09-29), `454ae983` records
+  the gate in the ADR, and `8a6d1a58` sets the flag. An Android phone with `BLE_GATT_PEERS` (debug builds; release
+  keeps it dark) adds a scan filter on the `0xFE30` UUID, reads the GATT payload of a node that lists only the UUID
+  (`BleGattPayloadReader.kt`), and sights that node with it. `GattPayloads.kt` ports `GattPayloads.swift`'s rules line
+  for line, plus a 64-address cap on each map. A payload goes when a dial fails before its channel opens, when a HELLO
+  names another node (checked before an accepted dialer's verdict, and on a dial's reply), or after 60 000 ms of
+  presence-scan windows with the address unheard and unlinked; each logs `bt gatt forget <addr> (dial|hello
+  <id>|quiet)`. A HELLO refusal keeps it, and so does a quiet stranger's wait. A dialed link takes its capabilities
+  from the HELLO reply, so A4 rings it (`BluetoothMeshTransport.kt`). `BleAdvertPayload.kt` names
+  `FLAG_DIALS_GATT_PEERS` (`0x02`), and `docs/WIRE_COMPAT.md` says every parser tests only the bits it knows.
+  `8a6d1a58` advertises the flag whenever the reader runs, in its own commit, after `interop.py android-reads` passed
+  on the lab phones with it clear. Nothing here mirrors code, since the payload, the flag and `weDial` were law in
+  this port first (ADR 2026-09.xzpt). ADR 2026-09.shzv (A1) and 2026-09.dqvb (A4) are amended, and A1 stays whole.
+  Move the pin once it merges, and re-read the files above.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `82898694`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

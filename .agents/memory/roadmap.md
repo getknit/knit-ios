@@ -245,8 +245,10 @@ explicit direction.** Update this file in the change that ships an item.
   `weDial` were already law here. This side owns the device checks: `interop.py android-reads` is the gate, against
   the Pixel 7 (API 37) and the Pixel 3 (API 31, the pre-33 read callback) with the flag clear and again with it set,
   and then `iphone` in both orders and `iphone-wake` with the Pixel 3. knit-peer gained two test switches for them, `--never-sight` and
-  `--no-gatt-payload`. Still owed: the Android handoff, the gate, the flag, the final runs, and the pin once
-  knit-next merges.
+  `--no-gatt-payload`. The gate passed on 2026-09-29, after the payload lifetime's two new forget rules became
+  shared law (ADR 2026-09.xzpt, amended), and the flag build (`8a6d1a58`) passed `android-reads`, `iphone` in both
+  orders and `iphone-wake` (`.agents/context/linux-peer.md`, "What A3's flag showed"). Still owed: knit-next's merge,
+  and the pin moved to it.
 - **Companion change A4:** Android rings an iPhone's doorbell (ADR 2026-09.khjj) after the frames it writes on the
   iPhone's link, on `LinkManager`'s schedule: a GATT write without response over the link's own connection, once
   service discovery finds the doorbell. Built as knit-next `c3191717` (its ADR 2026-09.dqvb), for a peer whose

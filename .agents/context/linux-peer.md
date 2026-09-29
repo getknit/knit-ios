@@ -1032,6 +1032,40 @@ freshly installed on both phones, and the peer built from this repo's `c7c25d5`:
 - **The stray connection came back once,** after the phone redialed a stopped peer, and was dropped from `hci1`'s
   side. It predates A3 and has an order of its own.
 
+## What A3's flag showed
+
+knit-next `8a6d1a58` sets `FLAG_DIALS_GATT_PEERS` whenever the reader runs. From 16:04 on 2026-09-29 the lab's Pixel 7
+and Pixel 3 ran debug builds of it, and the peer ran this repo's `8d9c62a`. Its scan read each phone's flags byte as
+`0x03`, the side channel and the new bit.
+
+| Run | Steps | First link at |
+| --- | --- | --- |
+| `android-reads`, Pixel 7, peer below | 10 of 11, then 11 of 11 on the rerun | 87.7 s, then 54.4 s |
+| `android-reads`, Pixel 7, peer above | 11 of 11 | 207.9 s |
+| `android-reads`, Pixel 3, peer below | 12 of 12 | 51.2 s |
+| `android-reads`, Pixel 3, peer above | 8 of 11, then 11 of 11 on the rerun | 194.9 s, then 19.5 s |
+| `iphone`, Pixel 3, iPhone below | 19 of 19 | 15.9 s, and 3.3 s after a restart |
+| `iphone`, Pixel 7, iPhone above, moved within a metre | 19 of 19 | 10.5 s, and 13.8 s after a restart |
+| `iphone-wake --sender phone --expect-wakes`, Pixel 3 | 10 of 10 | |
+
+- **The flag works.** Below a flagged phone, the peer waited of its own accord and the phone dialed it, in both runs
+  on each phone. The Pixel 3, above the iPhone, dialed the iPhone at link-up and again after a restart, and the
+  iPhone, above the Pixel 7, dialed it both times.
+- **A link Android dialed wakes the iPhone.** Locked for ten minutes, the iPhone took all ten of the Pixel 3's DMs
+  3.2 to 3.8 s after each was sent, and the Pixel 3 logged ten rings. By Knit's database each DM arrived 0.1 to 0.3 s
+  after it was sent. It is MVP item 9 on a link Android dialed, which only A3 can make.
+- **Two misses were the rig's, and each passed on its rerun.** The Pixel 7's first link to a peer below it dropped
+  three times, each a supervision timeout on the phone and errno 38 on the peer, which is `hci1`'s controller ending
+  the link with a reason the kernel does not map. Each drop followed the phone moving the link to 50 ms with a
+  peripheral latency of 5, and the rerun held through the same move, so the dongle as peripheral copes only sometimes.
+  The Pixel 3 once never read the peer at all while its reader stood idle, then held a connection to `hci1` with no
+  channel; dropped from `hci1`'s side, the rerun read it in 10.2 s.
+- **The Pixel 7 needs to be near the iPhone.** At its usual place the iPhone heard it at −97 dBm, under the −90 dBm
+  floor, and never dialed; within a metre it linked in 10.5 s.
+- **The peer can be slow to dial a phone it may dial.** Above the Pixel 7, the peer's first dial came three minutes
+  after the phone's read let it, while it waited to hear the phone's advert long enough; the peer's log does not name
+  the device behind each advert, so the wait cannot be read closer.
+
 ## What the walk test showed
 
 On 2026-09-29 from 03:48, the maintainer walked the Pixel 7 away from the iPhone 12 until it had no links left.

@@ -1075,8 +1075,12 @@ def android_reads(arguments: argparse.Namespace) -> int:
     others = set(heard) - {phone_id}
     flagged = bool(heard.get(phone_id, {}).get("flags", 0) & DIALS_GATT_PEERS)
     below = arguments.order == "peer-below"
-    # Every peer this adapter runs has its address, so the phone must have let the last one go first.
+    # Every peer this adapter runs has its address, so the phone must have let the last one go first, and the payload
+    # it read there too: one above the phone lasts until the address goes quiet (the open case, ADR 2026-09.xzpt).
     if run.step("phone-forgot-old-peers", lambda: _phone_forgets_all_but(phone, set(heard))) is None:
+        print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
+        return run.failed
+    if run.step("phone-forgot-old-payload", lambda: _address_released(phone, HCI1_ADDRESS, arguments.quiet_timeout)) is None:
         print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
         return run.failed
     peer_id = keygen(phone_id, "phone-dials" if below else "peer-dials", others)
@@ -1252,6 +1256,27 @@ def _phone_forgot(phone: Phone, reason: str, timeout: float, mark: int) -> dict:
 
     lines = poll(forgot, timeout, every=3)
     return {"line": lines[-1], "seconds": round(time.monotonic() - started, 1)}
+
+
+# hci1's public address, which every peer on it advertises from.
+HCI1_ADDRESS = "0A:BC:DE:00:00:A1"
+
+
+def _address_released(phone: Phone, address: str, timeout: float) -> dict:
+    """Waits until the phone holds no GATT payload for `address`: its log shows no read there, or a forget after the
+    last one. Nothing advertises there meanwhile, so a payload from a peer above the phone goes quiet in a minute of
+    the phone's scanning."""
+    started = time.monotonic()
+
+    def released() -> bool:
+        phone.wake()
+        lines = [line for line in _phone_log(phone, "bt gatt ") if f" {address} " in line]
+        held = [i for i, line in enumerate(lines) if f"read {address} →" in line]
+        gone = [i for i, line in enumerate(lines) if f"forget {address} " in line]
+        return not held or (bool(gone) and gone[-1] > held[-1])
+
+    poll(released, timeout, every=5)
+    return {"seconds": round(time.monotonic() - started, 1)}
 
 
 def _phone_forgets_all_but(phone: Phone, heard: set[str], timeout: float = 180) -> dict:
@@ -3398,6 +3423,7 @@ def main() -> int:
     reads.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     reads.add_argument("--link-timeout", type=float, default=180, help="seconds for the phone's read and for the link")
     reads.add_argument("--hold", type=float, default=60, help="seconds the link must hold after it comes up")
+    reads.add_argument("--quiet-timeout", type=float, default=600, help="seconds for the phone to let go of an earlier peer's payload")
     forgets = commands.add_parser("android-forgets")
     forgets.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     forgets.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
