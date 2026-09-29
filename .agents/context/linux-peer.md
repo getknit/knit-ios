@@ -868,3 +868,48 @@ links, and `idevicesyslog` gave each state the radio reported (`ble on`, `off` o
   unsupported`, with the other two refusals, and asserts that all three lines differ (pipeline 821).
 - **The bridge seems to answer one client at a time.** The watcher's poll got no answer while a `status` sent by hand
   was open.
+
+## What both id orders showed
+
+`interop.py iphone` and the new `interop.py iphone-peer` ran MVP items 2 to 6 on the iPhone 12 on 2026-09-29 from
+01:21, with nobody at either phone. Every earlier iPhone run used the Pixel 3, whose id sorts above the iPhone's, so
+only one order had been checked. The Pixel 7's sorts below it. The iPhone heard the Pixel 7 at −96 dBm, under the
+−90 dBm floor, and never dialed it until the phone was moved closer. The runs are in `.build/interop-iphone/` and
+`.build/interop-iphone-peer/`, and the link timings in `.build/interop-link-probe/`.
+
+- **The Pixel 7, iPhone above: 20 of 20.** The pair had never talked. knit-next's bridge reports no request state,
+  so the run reads the Requests screen through uiautomator: the iPhone's first DM was there, and the run tapped
+  Accept. Replies then went both ways and were delivered. After a stop and a start, the link was back in 13.8 s.
+  While the iPhone was stopped, each side wrote the other a post and a DM, and all four arrived 1.6 to 3.0 s after
+  the link.
+- **The Pixel 3, iPhone below: 17 of 17,** the same without the request, which this pair used up on 2026-09-26. The
+  link was back in 16.7 s. The Pixel's offline pair reached the iPhone 0.7 s before that link, through a lab phone
+  that linked first, and the iPhone's reached the Pixel 2.5 s after it.
+- **The peer on a shared `hci0`, in both orders: 18 of 20 each.** Each run minted a fresh peer that refused every
+  node but the iPhone. Names, aliases and safety numbers matched, posts and DMs crossed in under 0.1 s, and the
+  iPhone's first DM arrived as a request. The offline four arrived 0.9 to 2.7 s after the link, which only their
+  own link could carry. Both misses in each run were the stale DM below.
+- **One stale DM kept custody apart.** The iPhone carries a DM the Pixel 3 sent `ux62sq…`, the Mac's peer, at 12:17
+  on 2026-09-28, and the recipient's receipt for it, sent 1.5 s later. The iPhone took the receipt first, before
+  the early-receipt fix, and holds both: it is the DM `iphone-soak` found. A fresh peer back-filled newest first
+  also takes the receipt first, and with the fix it refuses the DM. The fix refuses such a DM on arrival and
+  purges no copy already held, so the iPhone carries this one until it expires, at 12:17 on 2026-09-29. Until
+  then, any custody check against the iPhone misses it.
+
+Item 2's 30 s held against both phones and not always against the peer:
+
+- **Relinks after a start took 13.8 and 16.7 s to the phones, and 16.6, 20.7 and 38.7 s to the peer.** The last was
+  a third `iphone-peer` run, after the fixes below, which passed 19 of 21 with the same two misses; its first link
+  took 29.9 s.
+- **A first link to a fresh peer took 14.7 to 54.7 s.** Of ten, three went past 30 s, in both orders. Every first
+  dial succeeded within 0.7 to 1.6 s, so the time went before the dial.
+- **The iPhone heard the peer's advert late and seldom.** Traced once a second, the iPhone first heard a new peer 3
+  to 22 s after it started, at −48 to −58 dBm. Then it heard it every 3 to 5 s, once not for 10 s.
+- **The dial waits for the next sighting.** `LinkManager` promotes on a sighting, a link event or a deadline, and no
+  deadline marks a dwell running out, so a peer past its 12 s waits for the next advert heard from anyone. A gap
+  over 8 s between sightings started the dwell again. Android's connect loop has the same rule.
+- **Peers on `hci0` share one address.** The iPhone keeps a sighting for 90 s and redials it with backoff, so a peer
+  started sooner is reached by a dial meant for the last identity, and its link time says nothing about item 2. The
+  second `iphone-peer` run started 79 s after the first, so its 36.6 s is left out above. The scenario now waits for
+  the iPhone to forget old peers (`iphone-forgot-old-peers`), and picks the peer's id so that as few phones as its
+  order allows dial it and are refused.

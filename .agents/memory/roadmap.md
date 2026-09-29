@@ -208,10 +208,17 @@ explicit direction.** Update this file in the change that ships an item.
     given back. It also covers onboarding's prompt and a relaunch for item 1. It passed 5 of 5 twice in a row, about
     3.5 minutes of tests in a 6-minute run. The Mac's command line could not make the runner's profile, since it
     finds no account, so Xcode's window made it (ADR 2026-09.zawh, amended).
-  - **Still owed:** items 2 to 7 pass against the Pixel 3 through the bridge, unattended, and item 9's test needs
-    someone to lock and unlock the iPhone (`.agents/context/linux-peer.md`). A rerun of the soak on the fixed
-    harness would show the room check pass; custody should match too once the Pixel runs knit-next's early-receipt
-    fix, which this port now mirrors (below, "A receipt ahead of its DM").
+  - **Both id orders and the peer (items 2 to 6, 2026-09-29):** `interop.py iphone` passed 20 of 20 against the
+    Pixel 7, whose id sorts below the iPhone's, and 17 of 17 against the Pixel 3, above it. The Pixel 7 had never
+    talked to the iPhone, so the run read the iPhone's first DM off its Requests screen and tapped Accept there.
+    `interop.py iphone-peer` ran the same items against a fresh peer on a shared `hci0`, and passed 18 of 20 in each
+    order. Both misses were custody, on one DM the iPhone took before the early-receipt fix (below). Item 6 now runs
+    both ways. The phones linked again in 13.8 and 16.7 s, but against the peer three of ten first links and one of
+    three relinks took 30.5 to 54.7 s: the iPhone hears the peer's BlueZ advert late and seldom, and dials at the
+    first sighting after the 12 s dwell (`.agents/context/linux-peer.md`, "What both id orders showed").
+  - **Still owed:** the soak's rerun (item 11), on the fixed harness with the Pixels on knit-next's early-receipt
+    fix, and not before 12:17 on 2026-09-29, when that DM expires. Item 2's first link to the peer can run past
+    30 s. Items 2 to 8 run unattended through the bridge; item 9's test needs someone to lock and unlock the iPhone.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
@@ -250,7 +257,10 @@ explicit direction.** Update this file in the change that ships an item.
   addressed to that sender (its ADR 2026-09.adpz). `CustodySync` mirrors it (2026-09-28,
   `.agents/context/custody.md`). It merged unchanged as `2efea24a` on knit-next's local `main`, and the pin moved
   there. Still owed: knit-next's push, and an `iphone-soak` rerun with a Pixel build that holds it, whose custody
-  checks should then pass.
+  checks should then pass. The fix refuses such a DM on arrival and purges no copy already held, and the iPhone
+  holds one from 12:17 on 2026-09-28, with its receipt, which every fresh node refuses. Custody checks against the
+  iPhone miss it until it expires, at 12:17 on 2026-09-29 (`.agents/context/linux-peer.md`, "What both id orders
+  showed").
 
 ## Deferred by design
 

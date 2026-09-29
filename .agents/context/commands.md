@@ -67,6 +67,7 @@ python3 scripts/interop.py relay --device <serial>                # MVP item 7's
 python3 scripts/interop.py check … --mac                          # checklist M: the peer on the Mac, on CoreBluetooth (ADR 2026-09.vcdk)
 python3 scripts/interop.py soak … --mac --extras                  # checklist M's hour, the peer on the Mac
 python3 scripts/interop.py iphone --device <serial>               # MVP items 2 to 6, iPhone and phone both driven; Knit open on both
+python3 scripts/interop.py iphone-peer --order iphone-above       # the same against a fresh peer on hci0; iphone-below is the other order
 python3 scripts/interop.py iphone-relay --device <serial>         # MVP item 7: phone, iPhone, then a peer on hci0; Knit open on both
 python3 scripts/interop.py iphone-soak --device <serial> --peer --extras   # MVP item 11 on the iPhone: an hour, the peer on hci0; Auto-Lock off
 python3 scripts/interop.py iphone-wake --device <serial>          # MVP item 9 from the phone: someone locks the iPhone, a DM a minute

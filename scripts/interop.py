@@ -10,6 +10,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py relay   --device SERIAL [--radio-profile ios|android]
     scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline]
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-peer [--order iphone-below|iphone-above] [--skip-offline] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
     scripts/interop.py iphone-reboot [--restart] [--locked 120] [--closed 60] [--skip-relaunch] [--udid UDID]
@@ -19,7 +20,8 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
 
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
-bridge over USB (ADR 2026-09.kwa8); `iphone-relay` runs MVP item 7's line through the iPhone; `iphone-soak` is item
+bridge over USB (ADR 2026-09.kwa8), and the phone's Requests screen for a pair that has never talked; `iphone-peer`
+runs the same items between the iPhone and the peer; `iphone-relay` runs MVP item 7's line through the iPhone; `iphone-soak` is item
 11's hour on the iPhone, with the peer as a third author when asked; `iphone-wake` is item 9's wake test, with someone
 to lock the iPhone and unlock it again; `iphone-reboot` is item 1's relaunch and reboot, with someone to close Knit and
 unlock the iPhone; `iphone-scan` is P8's scan-filter check, with someone to do the same; `bridge`
@@ -32,8 +34,9 @@ scan that finds the nodes to refuse still runs here.
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
-`relay` also runs a second peer on hci0, the maintainer's own adapter, and `iphone-relay` and `iphone-soak --peer` run
-their one peer there; hci0 needs its own go-ahead. The peer runs there with --shared-adapter, so it never drops a link it
+`iphone` also brings Knit forward at the phone's Requests screen and taps Accept there, through uiautomator.
+`relay` also runs a second peer on hci0, the maintainer's own adapter, and `iphone-relay`, `iphone-peer` and
+`iphone-soak --peer` run their one peer there; hci0 needs its own go-ahead. The peer runs there with --shared-adapter, so it never drops a link it
 did not make.
 
 Each step prints one JSON line, {"step": ..., "ok": ..., ...}, and the run ends with a summary line. The exit code
@@ -54,6 +57,7 @@ import subprocess
 import sys
 import threading
 import time
+import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
 
@@ -130,6 +134,31 @@ class Phone:
 
     def send(self, text: str, conversation: str = "nearby") -> dict:
         return self.bridge("SEND", text=text, conv=conversation)
+
+    def open_route(self, route: str) -> None:
+        """Brings Knit to the front at `route`, the deep link a notification's tap takes (`MainActivity.EXTRA_ROUTE`)."""
+        self.shell(f"am start -n {PACKAGE}/.MainActivity --es {PACKAGE}.NOTIF_ROUTE {route}")
+
+    def tagged(self, tag: str) -> tuple[int, int] | None:
+        """The centre of the element on screen that Compose tagged `tag`, or None. Knit's root turns tags into
+        resource-ids, which uiautomator reports bare or under the package (knit-next's debug-bridge.md). A dump can fail
+        while the screen animates, so a failed one is tried again."""
+        for _ in range(3):
+            dump = self.shell("uiautomator dump /sdcard/knit-ui.xml >/dev/null && cat /sdcard/knit-ui.xml", timeout=40)
+            try:
+                root = ET.fromstring(dump[dump.find("<hierarchy") : dump.rfind(">") + 1])
+            except ET.ParseError:
+                time.sleep(1)
+                continue
+            for node in root.iter("node"):
+                if node.get("resource-id") in (tag, f"{PACKAGE}:id/{tag}"):
+                    left, top, right, bottom = map(int, re.findall(r"\d+", node.get("bounds", "")))
+                    return (left + right) // 2, (top + bottom) // 2
+            return None
+        raise RuntimeError("uiautomator dumped no screen")
+
+    def tap(self, point: tuple[int, int]) -> None:
+        self.shell(f"input tap {point[0]} {point[1]}")
 
 
 class Node:
@@ -508,8 +537,12 @@ def check(arguments: argparse.Namespace) -> int:
 
 def iphone(arguments: argparse.Namespace) -> int:
     """MVP items 2 to 6 between the iPhone and an Android phone, both driven through their bridges, with Knit open on
-    both. The first DM between two phones is a message request only once, so a pair that has talked before checks
-    the replies alone. Item 6 stops the iPhone's mesh, which closes every link it has, not only the phone's."""
+    both. Item 2 wants both node id orders, and the iPhone dials in either, so the run names the one this pair has.
+
+    The first DM between two phones is a message request only once. For a pair that has never talked, the run reads
+    the request off the phone's Requests screen, which the bridge does not report, and taps Accept there, so it drives
+    the phone's screen too. A pair that has talked before checks the replies alone. Item 6 stops the iPhone's mesh,
+    which closes every link it has, not only the phone's."""
     phone = Phone(arguments.device)
     ios = IPhone(arguments.udid)
     run = Run()
@@ -518,7 +551,23 @@ def iphone(arguments: argparse.Namespace) -> int:
     state = phone.state()
     phone_id = state["self"]["nodeId"]
     phone_name = state["self"]["name"]
-    print(json.dumps({"run": "iphone", "iphone": ios.node_id, "iphoneName": ios.name, "phone": phone_id, "phoneName": phone_name}))
+    # Android's thread for the iPhone holds nothing yet, so no Accept, verified key or reply of the phone's makes it
+    # accepted (`Conversations.isAccepted`), and the iPhone's first DM is a request.
+    fresh = not phone.state(ios.node_id).get("messages")
+    order = "iphone-above" if ios.node_id > phone_id else "iphone-below"
+    print(
+        json.dumps(
+            {
+                "run": "iphone",
+                "iphone": ios.node_id,
+                "iphoneName": ios.name,
+                "phone": phone_id,
+                "phoneName": phone_name,
+                "order": order,
+                "fresh": fresh,
+            }
+        )
+    )
     try:
         run.step("link", lambda: _ios_linked(ios, phone, phone_id))
         run.step("profile-on-iphone", lambda: _ios_pinned(ios, phone_id, phone_name))
@@ -536,10 +585,18 @@ def iphone(arguments: argparse.Namespace) -> int:
         # Only the phone signs a receipt for a DM to it, so this is Android taking the iPhone's DM and receipting it.
         run.step("dm-iphone-to-phone-delivered", lambda: _delivered(ios, sent, 30))
         run.step("dm-iphone-to-phone-shown", lambda: _timed(lambda: _has(phone.state(ios.node_id), body), 15))
+        if fresh:
+            run.step("dm-iphone-to-phone-is-a-request", lambda: _phone_request(phone, ios.node_id))
+            run.step("phone-accepts", lambda: _phone_accepts(phone, ios.node_id))
         body = f"interop dm from phone {nonce}"
         phone.send(body, conversation=ios.node_id)
         run.step("dm-phone-to-iphone", lambda: _latency(ios.wait(lambda line: _message(line, body), 20)))
         run.step("dm-phone-to-iphone-ticked", lambda: _timed(lambda: _received(phone.state(ios.node_id), body), 30))
+        if fresh:
+            # Item 5's replies flow both ways after Accept; the iPhone's first DM came before it.
+            body = f"interop dm reply from iphone {nonce}"
+            sent = ios.command(cmd="dm", to=phone_id, text=body)
+            run.step("dm-iphone-reply-delivered", lambda: _delivered(ios, sent, 30))
         if not arguments.skip_offline:
             _offline(run, ios, phone, phone_id, nonce)
         run.step("custody-converges", lambda: _converges(ios, phone, 180))
@@ -549,23 +606,37 @@ def iphone(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
-def _offline(run: Run, ios: IPhone, phone: Phone, phone_id: str, nonce: str) -> None:
-    """MVP item 6: a room post and a DM the phone writes while the iPhone's mesh is stopped arrive within 60 s of the
-    next link."""
+def _offline(run: Run, ios: IPhone, other: Phone | Peer, other_id: str, nonce: str) -> None:
+    """MVP item 6 both ways: while the iPhone's mesh is stopped, as if the two were apart, the other side writes the
+    iPhone a room post and a DM, and the iPhone writes the same into its own store. All four arrive within 60 s of
+    the next link."""
     ios.command(cmd="stop")
     room = f"interop offline room {nonce}"
     direct = f"interop offline dm {nonce}"
-    phone.send(room)
-    phone.send(direct, conversation=ios.node_id)
+    if isinstance(other, Phone):
+        other.send(room)
+        other.send(direct, conversation=ios.node_id)
+    else:
+        other.command(cmd="room", text=room)
+        other.command(cmd="dm", to=ios.node_id, text=direct)
+    own_room = f"interop offline room from iphone {nonce}"
+    own_direct = f"interop offline dm from iphone {nonce}"
+    ios.command(cmd="room", text=own_room)
+    ios.command(cmd="dm", to=other_id, text=own_direct)
     time.sleep(5)
     started = time.monotonic()
     ios.command(cmd="start")
-    link = run.step("offline-relinks", lambda: _relinked(ios, phone, phone_id, started))
+    link = run.step("offline-relinks", lambda: _relinked(ios, other, other_id, started))
     if link is None:
         return
     linked_at = started + link["seconds"]
     for name, body in (("offline-room-arrives", room), ("offline-dm-arrives", direct)):
         run.step(name, lambda body=body: _arrives_after(ios, body, linked_at))
+    for name, body, conversation in (
+        ("offline-room-from-iphone-arrives", own_room, "nearby"),
+        ("offline-dm-from-iphone-arrives", own_direct, ios.node_id),
+    ):
+        run.step(name, lambda body=body, conversation=conversation: _arrives_at(other, body, conversation, linked_at))
 
 
 def iphone_wake(arguments: argparse.Namespace) -> int:
@@ -1175,14 +1246,17 @@ def _ios_linked(ios: IPhone, phone: Phone, phone_id: str, timeout: float = 120) 
     return {"seconds": round(time.monotonic() - started, 1)}
 
 
-def _relinked(ios: IPhone, phone: Phone, phone_id: str, since: float, timeout: float = 120) -> dict:
-    """The next link to the phone after `since`, from the iPhone's own link event."""
+def _relinked(ios: IPhone, other: Phone | Peer, other_id: str, since: float, timeout: float = 120) -> dict:
+    """The next link to the other side after `since`, from the iPhone's own link event. A start after a stop has both
+    sides open, and MVP item 2 wants the link within 30 s of that."""
     deadline = time.monotonic() + timeout
     while True:
-        phone.wake()
+        if isinstance(other, Phone):
+            other.wake()
         try:
-            line = ios.wait(lambda line: _link(line, phone_id) and line.get("up") and line["_at"] > since, 15)
-            return {"seconds": round(line["_at"] - since, 1)}
+            line = ios.wait(lambda line: _link(line, other_id) and line.get("up") and line["_at"] > since, 15)
+            seconds = round(line["_at"] - since, 1)
+            return {"seconds": seconds, "withinThirtySeconds": seconds <= 30}
         except TimeoutError:
             if time.monotonic() > deadline:
                 raise
@@ -1194,6 +1268,100 @@ def _arrives_after(ios: IPhone, body: str, linked_at: float) -> dict:
     if after > 60:
         raise RuntimeError(f"arrived {after} s after the link")
     return {"secondsAfterLink": after}
+
+
+def _arrives_at(other: Phone | Peer, body: str, conversation: str, linked_at: float) -> dict:
+    """When `body`, which the iPhone wrote while the two were apart, reached the other side: the peer's own event line,
+    or the first look at the phone's thread that shows it, one a second."""
+    timeout = 60 + max(0, linked_at - time.monotonic())
+    if isinstance(other, Peer):
+        arrived = other.wait(lambda line: _message(line, body), timeout)["_at"]
+    else:
+        poll(lambda: _has(other.state(conversation), body), timeout, every=1)
+        arrived = time.monotonic()
+    after = round(arrived - linked_at, 1)
+    if after > 60:
+        raise RuntimeError(f"arrived {after} s after the link")
+    return {"secondsAfterLink": after}
+
+
+def _peer_window(iphone_id: str, others: set[str], order: str) -> list[str]:
+    """`keygen` bounds for a peer on the given side of the iPhone that as few phones in range dial as that side allows.
+    Phones dial a peer whose id sorts below theirs and are refused, so a peer above the iPhone sorts above every
+    phone, and one below it sorts above the phones below it; the phones above the iPhone still dial that one."""
+    if order == "iphone-below":
+        return ["--above", max(others | {iphone_id})]
+    lower = [node for node in others if node < iphone_id]
+    return ["--below", iphone_id, *(["--above", max(lower)] if lower else [])]
+
+
+def _forgets_all_but(ios: IPhone, keep: set[str], timeout: float = 150) -> dict:
+    """Waits until the iPhone sights nothing outside `keep` that it is not linked to. Every peer on hci0 has that
+    adapter's address, and the iPhone keeps a sighting for 90 s and redials it with backoff, so a peer started sooner
+    is reached by a dial meant for the last one, and item 2's link time means nothing (`.agents/context/linux-peer.md`)."""
+    started = time.monotonic()
+    left: set[str] = set()
+
+    def forgot() -> bool:
+        reply = ios.command(cmd="links")
+        left.clear()
+        left.update({s["peer"] for s in reply["sightings"]} - keep - {link["peer"] for link in reply["links"]})
+        return not left
+
+    try:
+        poll(forgot, timeout, every=5)
+    except TimeoutError as error:
+        raise TimeoutError(f"the iPhone still sights {sorted(left)}") from error
+    return {"seconds": round(time.monotonic() - started, 1)}
+
+
+def _linked_since(node: Node, other: str, since: float, timeout: float) -> dict:
+    """MVP item 2: the first link to `other` after `since`, when both sides were open, which the item wants within 30 s."""
+    line = node.wait(lambda line: _link(line, other) and line["_at"] >= since, timeout)
+    seconds = round(line["_at"] - since, 1)
+    return {"seconds": seconds, "withinThirtySeconds": seconds <= 30}
+
+
+def _phone_request(phone: Phone, node: str) -> dict:
+    """MVP item 5 on Android: the phone lists `node`'s first DM under Message requests. The bridge reports no request
+    state, so this reads the Requests screen."""
+    phone.wake()
+    phone.open_route("requests")
+    poll(lambda: phone.tagged(f"request_row_{node}"), 30, every=2)
+    return {"request": True}
+
+
+def _phone_accepts(phone: Phone, node: str) -> dict:
+    """Taps Accept on `node`'s request, as someone at the phone would, then reads the Requests screen again without it."""
+    accept = phone.tagged(f"request_accept_{node}")
+    if accept is None:
+        raise RuntimeError("no Accept for the iPhone on the phone's screen")
+    phone.tap(accept)
+
+    def gone() -> bool:
+        phone.open_route("requests")
+        return phone.tagged(f"request_row_{node}") is None
+
+    poll(gone, 30, every=2)
+    return {}
+
+
+def _peer_pinned(peer: Peer, ios: IPhone) -> dict:
+    """MVP item 3 on the peer: it knows the iPhone under the iPhone's own name or, with none, its alias."""
+    shown = poll(lambda: next((p for p in peer.command(cmd="peers")["peers"] if p["peer"] == ios.node_id), None), 60)
+    own = ios.command(cmd="status")
+    if shown["displayName"] != own["displayName"]:
+        raise RuntimeError(f"the peer shows {shown['displayName']!r} for the iPhone's {own['displayName']!r}")
+    return {"displayName": shown["displayName"]}
+
+
+def _same_safety_number(ios: IPhone, peer: Peer) -> dict:
+    """MVP item 3: each side shows the same safety number for the pair."""
+    ours = next(p for p in ios.command(cmd="peers")["peers"] if p["peer"] == peer.node_id)["safetyNumber"]
+    theirs = next(p for p in peer.command(cmd="peers")["peers"] if p["peer"] == ios.node_id)["safetyNumber"]
+    if ours != theirs:
+        raise RuntimeError(f"the iPhone shows {ours!r} and the peer {theirs!r}")
+    return {"safetyNumber": ours}
 
 
 def _ios_pinned(ios: IPhone, phone_id: str, phone_name: str) -> dict:
@@ -2003,6 +2171,66 @@ def iphone_relay(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def iphone_peer(arguments: argparse.Namespace) -> int:
+    """MVP items 2 to 6 between the iPhone and knit-peer on a shared hci0, which the spec asks of the peer as well as of
+    an Android phone. `--order` puts the iPhone's node id above or below a fresh peer identity, so the iPhone's first DM
+    is a message request on the peer every run.
+
+    The peer runs the `android` profile, which leaves FLAG_DIALS_GATT_PEERS clear, so the iPhone dials it in both
+    orders and the peer admits it unsighted, as an A1 phone does (ADR 2026-09.6es2). The peer refuses every node but
+    the iPhone, so whatever crosses between the two crossed their own link. It runs on hci0 because the iPhone's writes
+    to hci1 stall after the HELLO (.agents/context/linux-peer.md)."""
+    ios = IPhone(arguments.udid)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    others = others_in_range(ios.node_id)
+    peer_id = _keygen("iphone-peer", *_peer_window(ios.node_id, others, arguments.order))
+    print(json.dumps({"run": "iphone-peer", "iphone": ios.node_id, "peer": peer_id, "order": arguments.order, "refused": sorted(others)}))
+    run.step("iphone-forgot-old-peers", lambda: _forgets_all_but(ios, others))
+    stop = threading.Event()
+    peer = Peer("android", f"knit-peer {nonce}", others, arguments.peer_log, arguments.rssi_floor, "iphone-peer", HCI0)
+    try:
+        started = time.monotonic()
+        peer.start()
+        threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
+        run.step("link", lambda: _linked_since(peer, ios.node_id, started, 180))
+        run.step("profile-on-iphone", lambda: _ios_pinned(ios, peer_id, peer.name))
+        run.step("profile-on-peer", lambda: _peer_pinned(peer, ios))
+        run.step("safety-numbers-match", lambda: _same_safety_number(ios, peer))
+        # The iPhone back-fills the newcomer first, and new frames queue behind that, so posts are timed after it.
+        run.step("custody-converges", lambda: _peers_converge(peer, ios, 300))
+        body = f"interop room from iphone {nonce}"
+        sent = ios.command(cmd="room", text=body)
+        run.step("room-iphone-to-peer", lambda: _latency(peer.wait(lambda line: _message(line, body), 15)))
+        run.step("room-iphone-ticked", lambda: _delivered(ios, sent, 30))
+        body = f"interop room from peer {nonce}"
+        sent = peer.command(cmd="room", text=body)
+        run.step("room-peer-to-iphone", lambda: _latency(ios.wait(lambda line: _message(line, body), 15)))
+        run.step("room-peer-ticked", lambda: _delivered(peer, sent, 30))
+        first = f"interop dm from iphone {nonce}"
+        sent = ios.command(cmd="dm", to=peer_id, text=first)
+        run.step("dm-iphone-to-peer-is-a-request", lambda: _request(peer.wait(lambda line: _message(line, first), 20)))
+        run.step("dm-iphone-to-peer-delivered", lambda: _delivered(ios, sent, 30))
+        peer.command(cmd="accept", conv=ios.node_id)
+        body = f"interop dm from peer {nonce}"
+        sent = peer.command(cmd="dm", to=ios.node_id, text=body)
+        run.step("dm-peer-to-iphone", lambda: _latency(ios.wait(lambda line: _message(line, body), 20)))
+        run.step("dm-peer-to-iphone-delivered", lambda: _delivered(peer, sent, 30))
+        body = f"interop dm reply from iphone {nonce}"
+        sent = ios.command(cmd="dm", to=peer_id, text=body)
+        run.step("dm-iphone-reply-delivered", lambda: _delivered(ios, sent, 30))
+        if not arguments.skip_offline:
+            _offline(run, ios, peer, peer_id, nonce)
+        run.step("custody-converges-again", lambda: _peers_converge(peer, ios, 300))
+    finally:
+        stop.set()
+        peer.stop()
+        ios.stop()
+    print(json.dumps({"summary": "iphone-peer", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
 def iphone_soak(arguments: argparse.Namespace) -> int:
     """MVP item 11 on the iPhone: an hour of room traffic both ways between the iPhone and the Android phone, at
     `--per-minute` posts a minute in all, with Knit open on both. The iPhone refuses every other node, and lets them
@@ -2677,6 +2905,13 @@ def main() -> int:
     wake.add_argument(
         "--expect-wakes", action="store_true", help="the phone runs A4 (knit-next feat/ble-doorbell): every DM must wake Knit, as with --sender peer"
     )
+    ios_peer = commands.add_parser("iphone-peer")
+    ios_peer.add_argument(
+        "--order", default="iphone-below", choices=["iphone-below", "iphone-above"], help="where the iPhone's id sorts against the peer's"
+    )
+    ios_peer.add_argument("--skip-offline", action="store_true", help="leave out MVP item 6, which stops the iPhone's mesh")
+    ios_peer.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    ios_peer.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     ios_soak = commands.add_parser("iphone-soak")
     ios_soak.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak.add_argument("--peer", action="store_true", help="knit-peer on hci0 joins as a third author, linked to the iPhone alone")
@@ -2710,7 +2945,7 @@ def main() -> int:
     android.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     android.add_argument("--converge-timeout", type=float, default=600, help="seconds for the back-fill to converge custody")
     android.add_argument("--arrival-timeout", type=float, default=600, help="seconds for the post and the DM to reach the peer")
-    for sub in (ios, wake, reboot, rings, scan, by_hand, ios_soak, commands.choices["iphone-relay"]):
+    for sub in (ios, wake, reboot, rings, scan, by_hand, ios_peer, ios_soak, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
     if arguments.command == "iphone-wake" and arguments.sender == "phone" and not arguments.device:
@@ -2721,6 +2956,8 @@ def main() -> int:
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
     if arguments.command == "iphone-rings":
         return iphone_rings(arguments)
+    if arguments.command == "iphone-peer":
+        return iphone_peer(arguments)
     if arguments.command == "iphone-soak":
         return iphone_soak(arguments)
     if arguments.command == "android-rings":
