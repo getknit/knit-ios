@@ -220,9 +220,9 @@ explicit direction.** Update this file in the change that ships an item.
 - **Two iPhones both ways:** an iPhone rings only the peers it dialed, so of two iPhones the one with the smaller id
   cannot wake the other. A second GATT connection toward its dialer would let it; nothing needs it before two
   iPhones are on hand.
-- **A receipt ahead of its DM:** on both platforms, a receipt that arrives before the DM it acknowledges purges
-  nothing, so the DM is carried to its expiry and offered at every exchange to neighbours that refuse it
-  (`.agents/context/custody.md`). Back-fill's newest-first order makes it common, and so does the recipient, which
+- **A receipt ahead of its DM** (knit-next #100): on both platforms, a receipt that arrives before the DM it
+  acknowledges purges nothing, so the DM is carried to its expiry and offered at every exchange to neighbours that
+  refuse it (`.agents/context/custody.md`). Back-fill's newest-first order makes it common, and so does the recipient, which
   sends its receipt at once and relays the DM after the jitter. It kept custody from matching in `iphone-soak` on
   2026-09-28. A candidate paired change: keep an acknowledgement for a DM not yet held, for the tombstone's 24 h,
   and apply it if the DM, when it arrives, is addressed to the receipt's sender. Not relaying a DM addressed to
