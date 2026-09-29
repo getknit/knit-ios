@@ -7,6 +7,8 @@ public struct MeshFootprint: Sendable, Equatable {
     public var pendingRelays: Int
     /// DM ids purged by a receipt and tombstoned for a day.
     public var tombstones: Int
+    /// Receipts remembered for a day, for a DM that lands after its own receipt: at most ``SeenSet/defaultCapacity``.
+    public var earlyReceipts: Int
     /// Frames parked until their sender's key arrives.
     public var parked: Int
     /// Room ticks owed to authors who are not linked now.
@@ -25,6 +27,7 @@ public struct MeshFootprint: Sendable, Equatable {
         seen: Int = 0,
         pendingRelays: Int = 0,
         tombstones: Int = 0,
+        earlyReceipts: Int = 0,
         parked: Int = 0,
         owedTicks: Int = 0,
         cachedProfiles: Int = 0,
@@ -35,6 +38,7 @@ public struct MeshFootprint: Sendable, Equatable {
         self.seen = seen
         self.pendingRelays = pendingRelays
         self.tombstones = tombstones
+        self.earlyReceipts = earlyReceipts
         self.parked = parked
         self.owedTicks = owedTicks
         self.cachedProfiles = cachedProfiles

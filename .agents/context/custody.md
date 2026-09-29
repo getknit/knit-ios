@@ -51,13 +51,16 @@ A node carries frames for people who are not in range yet. This is store-and-for
   (byte order).
 - **Early purge:** a cleartext receipt from a DM's recipient removes that DM and tombstones its id for 24 h.
   Sealed receipts purge nothing.
-- **A receipt that arrives before its DM purges nothing,** on both platforms. The purge needs the DM's
-  recipient, which only the DM itself names, so `ForwardSync.onAck` returns when the DM isn't held. The DM
-  that arrives later is carried to its expiry, and every exchange offers it to neighbours that tombstoned it
-  and refuse it. Two things make this order common. Back-fill serves newest-received first, so a receipt goes
-  ahead of an older DM. And a DM's recipient relays it onward like any frame, after the jitter, but sends its
-  receipt at once, so its other neighbours hear the receipt first. In `iphone-soak` on 2026-09-28 each order left
-  one DM behind, and custody never matched (`.agents/context/linux-peer.md`, "What the iPhone's soak showed").
+- **A receipt that arrives before its DM vaccinates the DM on arrival** (knit-next ADR 2026-09.adpz, #100, on
+  its branch `fix/early-receipt-vaccinates` as `2efea24a`, ahead of the pin). The purge needs the DM's recipient, which only the DM names, so every receipt is also remembered as `(ackId,
+  acker)` for the tombstone's 24 h, in a set of at most 4096 (`earlyAcks`). A DM that arrives later, whatever its
+  origin, is refused and tombstoned if its cleartext `recipientId` is that acker, before it is authenticated. The
+  memo is keyed on the acker, so a receipt from anyone else keeps nothing out. It lives in memory, like the
+  tombstones. Two things make this order common. Back-fill serves newest-received first, so a receipt goes ahead
+  of an older DM. And a DM's recipient relays it onward like any frame, after the jitter, but sends its receipt
+  at once, so its other neighbours hear the receipt first. Before the memo, such a DM was carried to its expiry
+  and offered at every exchange to neighbours that refused it: in `iphone-soak` on 2026-09-28 each order left one
+  DM behind, and custody never matched (`.agents/context/linux-peer.md`, "What the iPhone's soak showed").
 
 ## Sync over a link
 
@@ -138,6 +141,9 @@ publish it honestly.
 - **Ids compare by their bytes** (`ExactKey`), never by Swift's `String` equality (ADR 2026-09.jc2x). That
   includes the sender and group buckets and the ids an eviction removes. The SQL store keeps every id as a
   UTF-8 `BLOB`, which SQLite orders exactly as BINARY orders text.
+- **The early-receipt memo** is `CustodySync`'s `earlyReceipts`, counted in the `status` footprint as
+  `earlyReceipts`. knit-next checks it again after the custody write, for a receipt handled on another dispatcher
+  meanwhile; the engine here is synchronous (ADR 2026-09.gq84), so it checks once.
 - **Where the iPhone differs from Android, all of it delivery-side, none of it custody:**
   - a cleartext DM is dropped, not shown;
   - a `blobreq` is ignored rather than asked onward, since the MVP holds no blobs;

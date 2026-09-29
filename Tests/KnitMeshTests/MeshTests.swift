@@ -161,6 +161,7 @@ import Testing
         #expect(footprint.channels == 1)
         #expect(footprint.crossings == 4, "our profile and the key request out, Bob's profile and the post in")
         #expect(footprint.tombstones == 0)
+        #expect(footprint.earlyReceipts == 0)
         #expect(footprint.owedTicks == 0)
         #expect(await rig.mesh.routerCounters.admitted == 2)
     }

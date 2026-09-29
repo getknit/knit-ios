@@ -135,6 +135,23 @@ import Testing
         #expect(fixture.transport.written(.chat).map(\.to) == [carol.nodeId])
     }
 
+    @Test func someoneElsesDMThatLandsAfterItsReceiptIsRelayedButNotCarried() throws {
+        // A back-fill serves Carol's receipt ahead of the older DM, or Carol receipts at once and relays the DM after
+        // the jitter. Carried here, it would outlive every neighbour's copy (knit-next ADR 2026-09.adpz).
+        let fixture = EngineFixture(alice)
+        fixture.link(bob, carol)
+        try fixture.pin(bob)
+        try fixture.pin(carol)
+        fixture.transport.clear()
+        fixture.deliver(try carol.receipt(for: "dm-9", id: "early", sentAt: EngineFixture.start), from: carol)
+        fixture.deliver(try bob.directMessage("For Carol", to: carol, id: "dm-9", sentAt: EngineFixture.start), from: bob)
+        #expect(!fixture.stores.custody.contains("dm-9"), "refused as the purge it missed would have left it")
+        #expect(fixture.stores.custody.contains("early"))
+        #expect(fixture.engine.footprint.tombstones == 1)
+        fixture.advance(150)
+        #expect(fixture.transport.written(.chat).map(\.to) == [carol.nodeId], "and still relayed")
+    }
+
     @Test func aCleartextDMIsNeitherShownNorCarried() throws {
         let fixture = EngineFixture(alice)
         try fixture.pin(bob)

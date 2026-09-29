@@ -15,20 +15,31 @@ public struct CustodySync: Sendable {
     /// Ids purged by a receipt, on the wall clock, so a copy an unvaccinated peer re-serves is not taken again.
     private var tombstones: SeenSet
 
+    /// Every receipt, keyed by the acknowledged id and its acker, for the tombstone's window (`earlyAcks`): the DM
+    /// that lands after its own receipt is refused on arrival rather than carried to its expiry (knit-next ADR
+    /// 2026-09.adpz).
+    private var earlyReceipts: SeenSet
+
     /// Custody bookkeeping with knit-next's tombstone window unless told otherwise.
     public init(tombstoneMilliseconds: Int64 = Self.tombstoneMilliseconds) {
         tombstones = SeenSet(windowMilliseconds: tombstoneMilliseconds)
+        earlyReceipts = SeenSet(windowMilliseconds: tombstoneMilliseconds)
     }
 
     /// The purged ids tombstoned now.
     public var tombstoneCount: Int { tombstones.count }
 
+    /// The receipts remembered for a DM that may land after them, stale ones included until the set's capacity
+    /// evicts them.
+    public var earlyReceiptCount: Int { earlyReceipts.count }
+
     /// Takes a relayed frame into custody (`ForwardSync.onSeen`) if `authenticate` says so, and answers whether it
     /// was stored just now.
     ///
-    /// Only custodial types are carried, never an id already held or tombstoned. The store applies the TTL and the
-    /// quotas, and refuses a frame that is dead on arrival or dated too far ahead. Times are on the wall clock.
-    public func carry(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64, authenticate: () -> Bool) -> Bool {
+    /// Only custodial types are carried, never an id already held or tombstoned, nor a DM whose recipient's receipt
+    /// came first. The store applies the TTL and the quotas, and refuses a frame that is dead on arrival or dated too
+    /// far ahead. Times are on the wall clock.
+    public mutating func carry(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64, authenticate: () -> Bool) -> Bool {
         guard admits(frame, in: store, now: now), authenticate() else {
             return false
         }
@@ -37,7 +48,7 @@ public struct CustodySync: Sendable {
 
     /// Takes a frame of ours into custody (ORIGIN_SELF): trivially authentic, and under the same quotas as
     /// everyone's, so every node keeps the same newest frames.
-    public func carryOwn(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64) -> Bool {
+    public mutating func carryOwn(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64) -> Bool {
         guard admits(frame, in: store, now: now) else {
             return false
         }
@@ -103,8 +114,16 @@ public struct CustodySync: Sendable {
     /// id tombstoned, only when `sender` is that DM's recipient, so a forged receipt cannot evict an undelivered
     /// message. A room or group frame names no recipient, so nothing purges it but its TTL. Answers whether
     /// anything was purged.
+    ///
+    /// Every receipt is remembered with its sender too, for a DM not held yet. Only the DM names its recipient, and
+    /// the router marks the receipt seen, so without the memo a DM that lands after its receipt is carried to its
+    /// expiry here while every neighbour that heard the two the other way round refuses it. Back-fill serves newest
+    /// first, and a recipient sends its receipt at once but relays the DM after the jitter, so that order is common
+    /// (knit-next ADR 2026-09.adpz, #100). A memo that never matches, for a room or group frame or from anyone but
+    /// the recipient, costs one slot in a bounded set.
     @discardableResult
     public mutating func acknowledge(_ ackId: String, from sender: String, in store: some CustodyStore, now: Int64) -> Bool {
+        _ = earlyReceipts.insert(Self.earlyReceiptKey(ackId, sender), now: now)
         guard let recipient = store.recipient(of: ackId), ExactKey(recipient) == ExactKey(sender) else {
             return false
         }
@@ -113,9 +132,29 @@ public struct CustodySync: Sendable {
         return true
     }
 
-    private func admits(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64) -> Bool {
+    /// Whether `frame` may enter custody. A DM whose recipient's receipt came first is refused and tombstoned, as
+    /// the purge it missed would have left it. The memo is keyed on the acker, so a receipt from anyone but the DM's
+    /// own recipient keeps nothing out, the same guard ``acknowledge(_:from:in:now:)`` applies.
+    ///
+    /// knit-next asks a second time after the custody write, for a receipt handled on another dispatcher while the
+    /// row was being written. The engine here is synchronous behind one actor (ADR 2026-09.gq84), so no receipt can
+    /// land between this check and the write.
+    private mutating func admits(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64) -> Bool {
         let id = frame.envelope.id
-        return frame.envelope.type.isCustodial && !tombstones.contains(id, now: now) && !store.contains(id)
+        guard frame.envelope.type.isCustodial, !tombstones.contains(id, now: now), !store.contains(id) else {
+            return false
+        }
+        if let recipient = frame.envelope.recipientId, earlyReceipts.contains(Self.earlyReceiptKey(id, recipient), now: now) {
+            _ = tombstones.insert(id, now: now)
+            return false
+        }
+        return true
+    }
+
+    /// The memo's key, `ackId|acker`, spelled as knit-next spells it (`ForwardSync.earlyAckKey`) so both platforms
+    /// match the same pairs. The set compares it by its bytes (ADR 2026-09.jc2x).
+    private static func earlyReceiptKey(_ ackId: String, _ acker: String) -> String {
+        "\(ackId)|\(acker)"
     }
 
     /// Whether `ackId` was purged by its recipient within the window.

@@ -50,10 +50,11 @@ import Testing
         _ = try await rig.send(#"{"cmd":"room","text":"counted"}"#)
         let status = try await rig.send(#"{"cmd":"status"}"#)
         let footprint = try #require(status["footprint"] as? [String: Any])
-        #expect(
-            footprint.keys.sorted()
-                == ["cachedProfiles", "channels", "crossings", "missingKeys", "owedTicks", "parked", "pendingRelays", "seen", "tombstones"]
-        )
+        let tables = [
+            "cachedProfiles", "channels", "crossings", "earlyReceipts", "missingKeys", "owedTicks", "parked", "pendingRelays", "seen",
+            "tombstones",
+        ]
+        #expect(footprint.keys.sorted() == tables)
         #expect(footprint["seen"] as? Int == (before["seen"] as? Int).map { $0 + 1 }, "our own post is marked seen")
         #expect(footprint["channels"] as? Int == 0)
         let router = try #require(status["router"] as? [String: Any])

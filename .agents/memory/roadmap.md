@@ -196,7 +196,8 @@ explicit direction.** Update this file in the change that ships an item.
     20.5 s after the boot (`.agents/context/linux-peer.md`, "What the iPhone's reboot showed").
   - **Still owed:** items 2 to 7 pass against the Pixel 3 through the bridge, unattended, and item 9's test needs
     someone to lock and unlock the iPhone (`.agents/context/linux-peer.md`). A rerun of the soak on the fixed
-    harness would show the room check pass; custody will not match until that receipt question is settled. Item 1's
+    harness would show the room check pass; custody should match too once the Pixel runs knit-next's early-receipt
+    fix, which this port now mirrors (below, "A receipt ahead of its DM"). Item 1's
     launch before the first unlock needs a passcode on the test iPhone and a rerun of `iphone-reboot`.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
@@ -228,14 +229,14 @@ explicit direction.** Update this file in the change that ships an item.
 - **Two iPhones both ways:** an iPhone rings only the peers it dialed, so of two iPhones the one with the smaller id
   cannot wake the other. A second GATT connection toward its dialer would let it; nothing needs it before two
   iPhones are on hand.
-- **A receipt ahead of its DM** (knit-next #100): on both platforms, a receipt that arrives before the DM it
-  acknowledges purges nothing, so the DM is carried to its expiry and offered at every exchange to neighbours that
-  refuse it (`.agents/context/custody.md`). Back-fill's newest-first order makes it common, and so does the recipient, which
-  sends its receipt at once and relays the DM after the jitter. It kept custody from matching in `iphone-soak` on
-  2026-09-28. A candidate paired change: keep an acknowledgement for a DM not yet held, for the tombstone's 24 h,
-  and apply it if the DM, when it arrives, is addressed to the receipt's sender. Not relaying a DM addressed to
-  ourselves would remove the second source, but the relay may be deliberate: a recipient that stops relaying
-  stands out to anyone watching.
+- **A receipt ahead of its DM** (knit-next #100): a receipt that arrived before the DM it acknowledges purged
+  nothing, on both platforms, so the DM was carried to its expiry and offered at every exchange to neighbours that
+  refused it. Back-fill's newest-first order makes it common, and so does the recipient, which sends its receipt at
+  once and relays the DM after the jitter. It kept custody from matching in `iphone-soak` on 2026-09-28. knit-next
+  now remembers each receipt with its sender for the tombstone's 24 h and refuses the DM on arrival when it is
+  addressed to that sender (its ADR 2026-09.adpz, `2efea24a` on the branch `fix/early-receipt-vaccinates`, not yet on
+  its `main`). `CustodySync` mirrors it (2026-09-28, `.agents/context/custody.md`). Still owed: knit-next's merge, the
+  pin moved past it, and an `iphone-soak` rerun with both builds, whose custody checks should then pass.
 
 ## Deferred by design
 

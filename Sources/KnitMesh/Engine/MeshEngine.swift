@@ -78,6 +78,7 @@ public final class MeshEngine {
             seen: router.seenCount,
             pendingRelays: router.pendingRelayCount,
             tombstones: custody.tombstoneCount,
+            earlyReceipts: custody.earlyReceiptCount,
             parked: pendingInbound.count,
             owedTicks: ackSync.count,
             cachedProfiles: keyExchange.cachedProfileCount,

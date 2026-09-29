@@ -77,6 +77,7 @@ internal enum ControlLines {
             "seen": .int(Int64(footprint.seen)),
             "pendingRelays": .int(Int64(footprint.pendingRelays)),
             "tombstones": .int(Int64(footprint.tombstones)),
+            "earlyReceipts": .int(Int64(footprint.earlyReceipts)),
             "parked": .int(Int64(footprint.parked)),
             "owedTicks": .int(Int64(footprint.owedTicks)),
             "cachedProfiles": .int(Int64(footprint.cachedProfiles)),
