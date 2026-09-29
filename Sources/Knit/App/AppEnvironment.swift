@@ -78,17 +78,19 @@
             #endif
         }
 
-        /// The environment `options` ask for. Throws when the Keychain or the database cannot be read yet, before
-        /// the first unlock since a reboot: the app then waits for protected data rather than making a new identity.
-        static func make(_ options: LaunchOptions) throws -> AppEnvironment {
-            options.seedDemo ? try demo(options) : try live()
+        /// The environment `options` ask for, on a launch that went as `launch` says. Throws when the Keychain or the
+        /// database cannot be read yet, before the first unlock since a reboot: the app then waits for protected data
+        /// rather than making a new identity.
+        static func make(_ options: LaunchOptions, launch: Launch.History) throws -> AppEnvironment {
+            options.seedDemo ? try demo(options) : try live(launch)
         }
 
-        private static func live() throws -> AppEnvironment {
+        private static func live(_ launch: Launch.History) throws -> AppEnvironment {
             let keyStore = KeychainSecretStore()
             let identity = try IdentityKeys.load(from: keyStore).keys
             let log = UnifiedLog(clock: SystemClock())
-            let database = try KnitDatabase.open(in: databaseDirectory()) { error in
+            let directory = try databaseDirectory()
+            let database = try KnitDatabase.open(in: directory) { error in
                 log.log(.warning, "store failed: \(error)")
             }
             let stores = MeshStores(
@@ -98,8 +100,11 @@
                 conversations: SQLConversationStore(database),
                 ownProfile: SQLOwnProfileStore(database)
             )
-            let parts = Parts(identity: identity, stores: stores, radio: BLERadio(log: log), log: log, preferences: DefaultsPreferences())
+            let defaults = DefaultsPreferences()
+            var parts = Parts(identity: identity, stores: stores, radio: BLERadio(log: log), log: log, preferences: defaults)
             #if DEBUG
+                parts.storage = StorageReport(
+                    nodeId: identity.nodeId, keyStore: keyStore, directory: directory, preferences: defaults, launch: launch)
                 return compose(parts) { keys in try keyStore.write(keys.storedForm) }
             #else
                 return compose(parts, replace: nil)
@@ -133,6 +138,10 @@
             let preferences: any AppPreferences
             /// The peers a demo scene shows as linked, which only a demo has.
             var linked: [NodeId] = []
+            #if DEBUG
+                /// What the debug bridge's `storage` reply reads, which only a live launch has.
+                var storage: StorageReport?
+            #endif
         }
 
         private static func compose(_ parts: Parts, replace: IdentityReplacer?) -> AppEnvironment {
@@ -165,7 +174,8 @@
                     bundle: parts.identity.bundle,
                     clock: clock,
                     log: parts.log,
-                    version: "\(environment.about.version) (\(environment.about.build))"
+                    version: "\(environment.about.version) (\(environment.about.build))",
+                    storage: parts.storage
                 )
             #endif
             return environment

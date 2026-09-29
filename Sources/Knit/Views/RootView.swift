@@ -21,7 +21,7 @@
         var body: some View {
             switch launch.stage {
             case .waiting(let reason):
-                WaitingView(reason: reason, retry: launch.begin)
+                WaitingView(reason: reason) { launch.begin(.retry) }
             case .ready(let environment):
                 ReadyView(environment: environment, launch: launch)
             }

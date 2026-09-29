@@ -12,6 +12,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
+    scripts/interop.py iphone-reboot [--restart] [--locked 60] [--skip-relaunch] [--udid UDID]
     scripts/interop.py iphone-rings [--udid UDID]
     scripts/interop.py android-rings --device SERIAL [--converge-timeout 600] [--arrival-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
@@ -20,7 +21,8 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
 bridge over USB (ADR 2026-09.kwa8); `iphone-relay` runs MVP item 7's line through the iPhone; `iphone-soak` is item
 11's hour on the iPhone, with the peer as a third author when asked; `iphone-wake` is item 9's wake test, with someone
-to lock the iPhone and unlock it again; `iphone-scan` is P8's scan-filter check, with someone to do the same; `bridge`
+to lock the iPhone and unlock it again; `iphone-reboot` is item 1's relaunch and reboot, with someone to close Knit and
+unlock the iPhone; `iphone-scan` is P8's scan-filter check, with someone to do the same; `bridge`
 sends that bridge commands by hand and prints what comes back. `iphone-rings` checks the doorbell rings an iPhone
 sends, and `android-rings` those an Android phone sends, with companion change A4.
 
@@ -1223,6 +1225,178 @@ def _timed(check, timeout: float) -> dict:
     started = time.monotonic()
     poll(check, timeout, every=0.5)
     return {"seconds": round(time.monotonic() - started, 1)}
+
+
+PROTECTED_UNTIL_FIRST_UNLOCK = "NSFileProtectionCompleteUntilFirstUserAuthentication"
+
+
+def iphone_reboot(arguments: argparse.Namespace) -> int:
+    """MVP item 1's second half, and the protection class P5 left to the iPhone: the identity survives a relaunch and a
+    reboot. The bridge's `storage` reply says where the launch found the identity and the database. First the run
+    checks the Keychain item's class, the database's protection class and its backup flag. Then someone swipes Knit
+    away and opens it again, and the new process must have the same node id and skip onboarding. Then the iPhone
+    restarts, by `idevicediagnostics` with --restart or by hand, and stays locked for --locked seconds, time for iOS
+    to launch Knit before the first unlock if it will. Then someone unlocks it and opens Knit, and the same holds.
+    The run reports whether Knit launched before that unlock, and what started it: a launch before the unlock waits
+    for protected data rather than making new keys (ADR 2026-09.tkww)."""
+    ios = IPhone(arguments.udid)
+    run = Run()
+    try:
+        ios.start()
+    except TimeoutError:
+        print(json.dumps({"action": "open Knit"}), flush=True)
+        _reopened(ios, arguments.unlock_wait)
+    print(json.dumps({"run": "iphone-reboot", "iphone": ios.node_id, "udid": ios.udid, "locked": arguments.locked}), flush=True)
+    before: dict = {}
+    try:
+        before = run.step("storage", lambda: _storage(ios)) or {}
+        if before:
+            run.step("keychain-after-first-unlock-this-device-only", lambda: _keychain_class(before))
+            run.step("database-protected-until-first-unlock", lambda: _database_class(before))
+            run.step("database-out-of-backups", lambda: _out_of_backups(before))
+            run.step("onboarded", lambda: _onboarded(before))
+    finally:
+        ios.stop()
+    if not before:
+        print(json.dumps({"summary": "iphone-reboot", "steps": run.steps, "failed": run.failed}))
+        return run.failed
+    if not arguments.skip_relaunch:
+        print(json.dumps({"action": "swipe Knit away in the app switcher, then open it again"}), flush=True)
+        relaunched = run.step("knit-relaunched", lambda: _relaunched(ios, before, arguments.unlock_wait))
+        if relaunched is not None:
+            run.step("relaunch-keeps-identity", lambda: _kept(before, relaunched["storage"], rebooted=False))
+    if arguments.restart:
+        run.step("restart-asked", lambda: _restart(ios.udid))
+    else:
+        print(json.dumps({"action": "restart the iPhone, and leave it locked until asked"}), flush=True)
+    restarted = run.step("iphone-restarted", lambda: _usb_restart(ios.udid, arguments.unlock_wait))
+    if restarted is not None:
+        print(json.dumps({"action": f"leave the iPhone locked for {arguments.locked:.0f} s"}), flush=True)
+        time.sleep(arguments.locked)
+        print(json.dumps({"action": "unlock the iPhone and open Knit"}), flush=True)
+        opened = run.step("knit-opened", lambda: _reopened(ios, arguments.unlock_wait))
+        if opened is not None:
+            try:
+                after = _storage(ios)
+                run.step("reboot-keeps-identity", lambda: _kept(before, after, rebooted=True))
+                run.step("database-protected-after-reboot", lambda: _database_class(after))
+                run.step("launch-after-reboot", lambda: _launch_after_reboot(after, restarted["back"], opened["wall"]))
+                run.step("mesh-running", lambda: _timed(lambda: ios.command(cmd="status")["running"], 30))
+            finally:
+                ios.stop()
+    print(json.dumps({"summary": "iphone-reboot", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _storage(ios: IPhone) -> dict:
+    reply = ios.command(cmd="storage")
+    if not reply.get("ok"):
+        raise RuntimeError(f"the bridge refused storage: {reply.get('error')}, or this build predates it")
+    return {key: value for key, value in reply.items() if key not in ("_at", "tag", "reply", "ok")}
+
+
+def _keychain_class(storage: dict) -> dict:
+    keychain = storage["keychain"]
+    if not keychain.get("readable") or not keychain.get("afterFirstUnlockThisDeviceOnly"):
+        raise RuntimeError(f"the identity's Keychain item: {keychain}")
+    return {"accessible": keychain["accessible"]}
+
+
+def _database_class(storage: dict) -> dict:
+    protection = storage["database"]["protection"]
+    missing = {"directory", "knit.sqlite"} - protection.keys()
+    wrong = {name: value for name, value in protection.items() if value != PROTECTED_UNTIL_FIRST_UNLOCK}
+    if missing or wrong:
+        raise RuntimeError(f"missing {sorted(missing)}, other classes {wrong}")
+    return {"files": sorted(protection)}
+
+
+def _out_of_backups(storage: dict) -> dict:
+    if storage["database"]["excludedFromBackup"] is not True:
+        raise RuntimeError(f"the database directory's backup flag is {storage['database']['excludedFromBackup']}")
+    return {}
+
+
+def _onboarded(storage: dict) -> dict:
+    if storage["onboarded"] is not True:
+        raise RuntimeError("the launch does not remember onboarding, so it shows onboarding again")
+    return {}
+
+
+def _relaunched(ios: IPhone, before: dict, timeout: float) -> dict:
+    """Asks the bridge afresh every few seconds until a Knit process other than the one `before` came from answers.
+    A connection open when Knit closes never hears it: iproxy keeps its end open."""
+    started = time.monotonic()
+    while True:
+        try:
+            ios.start()
+            storage = _storage(ios)
+            if storage["launch"]["startedAt"] != before["launch"]["startedAt"]:
+                return {"seconds": round(time.monotonic() - started, 1), "storage": storage}
+        except (TimeoutError, OSError):
+            pass
+        finally:
+            ios.stop()
+        if time.monotonic() - started > timeout:
+            raise TimeoutError("no new Knit process answered: Knit was not closed and opened again")
+        time.sleep(2)
+
+
+def _kept(before: dict, after: dict, rebooted: bool) -> dict:
+    """The launch after is a new process, after a reboot when asked, with the identity and onboarding of the one
+    before."""
+    problems = []
+    if after["nodeId"] != before["nodeId"]:
+        problems.append(f"node id {before['nodeId']} became {after['nodeId']}")
+    if after["launch"]["startedAt"] <= before["launch"]["startedAt"]:
+        problems.append("the same process answered: Knit was not closed")
+    booted = (after["bootedAt"] or 0) > (before["bootedAt"] or 0) + 1000
+    if booted != rebooted:
+        problems.append("the iPhone restarted" if booted else "the iPhone did not restart")
+    if not after["keychain"].get("readable"):
+        problems.append(f"the keys did not read: {after['keychain']}")
+    if after["onboarded"] is not True:
+        problems.append("onboarding is not remembered, so it shows again")
+    if problems:
+        raise RuntimeError("; ".join(problems))
+    return {"nodeId": after["nodeId"], "readyBy": after["launch"]["readyBy"]}
+
+
+def _restart(udid: str) -> dict:
+    subprocess.run(["idevicediagnostics", "restart", "-u", udid], capture_output=True, text=True, timeout=30, check=True)
+    return {}
+
+
+def _usb_restart(udid: str, timeout: float) -> dict:
+    """Waits for the iPhone to leave usbmuxd's list and come back, as it does across a restart."""
+    started = time.monotonic()
+
+    def listed() -> bool:
+        result = subprocess.run(["idevice_id", "-l"], capture_output=True, text=True, timeout=10, check=False)
+        return udid in result.stdout.split()
+
+    poll(lambda: not listed(), timeout, every=1)
+    gone = time.monotonic()
+    poll(listed, timeout, every=1)
+    return {"goneAfter": round(gone - started, 1), "backAfter": round(time.monotonic() - gone, 1), "back": time.time()}
+
+
+def _launch_after_reboot(storage: dict, back: float, opened: float) -> dict:
+    """How Knit came up after the reboot. A launch made before the first unlock waited for protected data; one that
+    needed Retry left someone looking at the waiting screen with the phone unlocked."""
+    launch = storage["launch"]
+    before_unlock = launch["waited"] is not None
+    detail = {
+        "launchedBeforeUnlock": before_unlock,
+        "waited": launch["waited"],
+        "readyBy": launch["readyBy"],
+        "launchedAfterBoot": round((launch["startedAt"] - storage["bootedAt"]) / 1000, 1),
+        "launchedAfterUsb": round(launch["startedAt"] / 1000 - back, 1),
+        "readyBeforeOpened": round(opened - launch["readyAt"] / 1000, 1),
+    }
+    if launch["readyBy"] == "retry":
+        raise RuntimeError(f"Knit started only from Retry: {detail}")
+    return detail
 
 
 def bridge(arguments: argparse.Namespace) -> int:
@@ -2506,6 +2680,11 @@ def main() -> int:
     ios_soak.add_argument("--extras", action="store_true", help="the phone also reacts, types, DMs and posts photos; a peer DMs")
     ios_soak.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
     ios_soak.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
+    reboot = commands.add_parser("iphone-reboot")
+    reboot.add_argument("--restart", action="store_true", help="restart the iPhone with idevicediagnostics rather than by hand")
+    reboot.add_argument("--locked", type=float, default=60, help="how long the iPhone stays locked after it restarts, in seconds")
+    reboot.add_argument("--skip-relaunch", action="store_true", help="leave out closing Knit and opening it again")
+    reboot.add_argument("--unlock-wait", type=float, default=1800, help="how long to wait for each thing someone does")
     by_hand = commands.add_parser("bridge")
     by_hand.add_argument("--watch", type=float, default=0, help="print the bridge's events for this many seconds")
     by_hand.add_argument("commands", nargs="*", help='commands as JSON, such as \'{"cmd":"status"}\'')
@@ -2525,13 +2704,13 @@ def main() -> int:
     android.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     android.add_argument("--converge-timeout", type=float, default=600, help="seconds for the back-fill to converge custody")
     android.add_argument("--arrival-timeout", type=float, default=600, help="seconds for the post and the DM to reach the peer")
-    for sub in (ios, wake, rings, scan, by_hand, ios_soak, commands.choices["iphone-relay"]):
+    for sub in (ios, wake, reboot, rings, scan, by_hand, ios_soak, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
     if arguments.command == "iphone-wake" and arguments.sender == "phone" and not arguments.device:
         parser.error("--sender phone needs --device")
-    if arguments.command in ("iphone", "iphone-wake", "bridge"):
-        return {"iphone": iphone, "iphone-wake": iphone_wake, "bridge": bridge}[arguments.command](arguments)
+    if arguments.command in ("iphone", "iphone-wake", "iphone-reboot", "bridge"):
+        return {"iphone": iphone, "iphone-wake": iphone_wake, "iphone-reboot": iphone_reboot, "bridge": bridge}[arguments.command](arguments)
     if not PEER.exists():
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
     if arguments.command == "iphone-rings":

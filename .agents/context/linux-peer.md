@@ -806,3 +806,27 @@ the iPhone's.
     post of the peer's from before the last sweep, at 15:41, was gone. The run now has the phone DM the peer before the
     hour, which makes the peer someone the phone talks to.
   - **`extras` asked for FILE records,** which the phone decides whether to send. The run now reports them instead.
+
+## What the iPhone's reboot showed
+
+`interop.py iphone-reboot --restart` ran MVP item 1's second half on the iPhone 12 on 2026-09-28. It reads the
+debug bridge's `storage` reply, which says where the launch found the identity and the database, and how the
+launch went.
+
+- **Storage:** the Keychain item is `cku` (`…AfterFirstUnlockThisDeviceOnly`). The database's directory,
+  `knit.sqlite`, `-wal` and `-shm` are all `NSFileProtectionCompleteUntilFirstUserAuthentication`, and the directory
+  is out of backups. That settles the protection class P5 left for the iPhone.
+- **Relaunch:** passes. Swiping Knit away in the app switcher did not close it, twice: the same process answered
+  afterwards. Why is not known. `devicectl device process launch --terminate-existing` did close it, and the new process
+  had the same node id, read its keys and skipped onboarding. The script's relaunch step asks for the swipe and
+  waits up to `--unlock-wait` for a new process; a devicectl relaunch satisfies it too.
+- **Reboot:** passes. `idevicediagnostics restart` took the phone off USB 10 s later, and it was back 36 s after
+  that. Unlocked and opened, Knit had the same node id, remembered onboarding, read its keys, kept the protection
+  class, and ran the mesh.
+- **iOS relaunched Knit on its own** 20.5 s after the boot, before the phone was back on USB, and before anyone
+  touched it. Bluetooth state restoration is the likely cause, though the run cannot tell it from app prewarming.
+- **Not shown: a launch before the first unlock.** The phone has no passcode (`ideviceinfo -k PasswordProtected` is
+  `false`), so it counts as unlocked from boot and Data Protection holds nothing back. The early launch read the
+  Keychain at once. On a phone with a passcode, that same launch finds the Keychain locked and waits. It starts
+  when protected data arrives, when Knit comes to the front, or from Retry, and the `storage` reply's `launch`
+  names which. To see it, set a passcode and run `iphone-reboot --restart --skip-relaunch`.

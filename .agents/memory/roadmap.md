@@ -105,7 +105,8 @@ explicit direction.** Update this file in the change that ships an item.
     coverage is 99 %. The SQL stores are not wired into anything yet: the app composes them in P6.
   - **The backup flag holds on the Mac:** `theDirectoryIsExcludedFromBackups` checks it on Darwin, and passed in
     `test:macos` (pipeline 813, 2026-09-28).
-  - **Still owed:** the protection class on the iPhone (P8).
+  - **The protection class holds on the iPhone:** the database's directory and files are all
+    `completeUntilFirstUserAuthentication` (`interop.py iphone-reboot`, 2026-09-28).
 - **P6, the app (`KnitAppCore`, `Knit`, `KnitBLE`):** begun on 2026-09-26.
   - **`KnitAppCore`:** one `AppSession` over the mesh, and a view model for every MVP screen: onboarding, the
     chat list and its status line, a thread with its composer, message requests, both profiles, Settings,
@@ -187,9 +188,16 @@ explicit direction.** Update this file in the change that ships an item.
     both platforms leave (below, "A receipt ahead of its DM"). The Pixel's own room retention trimmed the peer's
     posts, which the run now avoids, and a check asked for FILE records the phone did not send
     (`.agents/context/linux-peer.md`, "What the iPhone's soak showed").
+  - **Identity (item 1, 2026-09-28):** the identity survives a relaunch and a reboot. `scripts/interop.py
+    iphone-reboot` reads a new bridge reply, `storage`, for the node id, the Keychain item's class, the database's
+    protection class, and how the launch went. Knit now also starts when it comes to the front while it still waits
+    for the first unlock, in case iOS suspended a launch from before the unlock by the time protected data arrived.
+    The test phone has no passcode, so the launch before the first unlock never ran, though iOS relaunched Knit
+    20.5 s after the boot (`.agents/context/linux-peer.md`, "What the iPhone's reboot showed").
   - **Still owed:** items 2 to 7 pass against the Pixel 3 through the bridge, unattended, and item 9's test needs
     someone to lock and unlock the iPhone (`.agents/context/linux-peer.md`). A rerun of the soak on the fixed
-    harness would show the room check pass; custody will not match until that receipt question is settled.
+    harness would show the room check pass; custody will not match until that receipt question is settled. Item 1's
+    launch before the first unlock needs a passcode on the test iPhone and a rerun of `iphone-reboot`.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).

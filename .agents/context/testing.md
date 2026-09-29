@@ -45,13 +45,18 @@ ladder, not the first.
    `test:ios:simulator`), each through `performAccessibilityAudit`, once at the default text size and once at the
    largest, where it keeps a screenshot of every screen. `AuditPolicy` names what the audit may report without
    failing and why (ADR 2026-09.jcdx); everything else fails the gate. The sources live in `Tests/KnitUITests/`,
-   which SwiftPM ignores and XcodeGen builds. Checklist M runs `knit-peer` on the Mac, on KnitBLE's CoreBluetooth
+   which SwiftPM ignores and XcodeGen builds. A run that fails with no test run, the runner "killed before
+   establishing connection" within a second, is a Simulator left booted too long: `xcrun simctl shutdown <id>`
+   on the Mac and run it again (2026-09-28). Checklist M runs `knit-peer` on the Mac, on KnitBLE's CoreBluetooth
    radio, with `interop.py check --mac` and `soak --mac` (ADR 2026-09.vcdk).
 10. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`. `scripts/interop.py iphone` drives the
     iPhone through a debug build's USB bridge and an Android phone through knit-next's, for items 2 to 6
     (ADR 2026-09.kwa8). `iphone-relay` adds a peer on `hci0` beyond the iPhone for item 7, `iphone-wake`
     runs item 9's wake test, with someone to lock and unlock the iPhone, and `iphone-scan` runs the scan-filter
-    check, with the same help. `iphone-rings` and `android-rings` check the doorbell's rings each way.
+    check, with the same help. `iphone-reboot` runs item 1's relaunch and reboot through the bridge's `storage`
+    reply, which also reports the Keychain item's class and the database's protection class and backup flag, with
+    someone to close Knit and unlock the iPhone. `iphone-rings` and `android-rings` check the doorbell's rings each
+    way.
 
 ## Coverage
 

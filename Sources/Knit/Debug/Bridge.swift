@@ -12,15 +12,17 @@
     /// connected (``BridgeListener``), so a script drives and checks this phone as it does the Linux peer
     /// (ADR 2026-09.kwa8). Commands go through the session, so they show on screen as taps would. Replies go to the
     /// connection that asked, and events to every connection. The bridge answers `scan-filter` itself, since only
-    /// the iPhone's radio has a scan probe (``ScanProbeCommand``). Each `status` carries `memoryAvailableKb`, how much
-    /// more Knit may take before iOS ends it, so a soak can see its memory grow.
+    /// the iPhone's radio has a scan probe (``ScanProbeCommand``), and `storage`, since only the app keeps its identity
+    /// in the Keychain and its database under Data Protection (``StorageCommand``). Each `status` carries
+    /// `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its memory grow.
     @MainActor
     internal final class Bridge {
         nonisolated private static let bytesPerKilobyte = 1024
 
         private let listener: BridgeListener
 
-        /// A bridge to `mesh`, driven through `session`, which it also taps for events, and to `radio`'s scan probe.
+        /// A bridge to `mesh`, driven through `session`, which it also taps for events, to `radio`'s scan probe, and to
+        /// `storage`, which a demo has none of.
         init(
             session: AppSession,
             mesh: Mesh,
@@ -28,7 +30,8 @@
             bundle: PublicKeyBundle,
             clock: any MeshClock,
             log: any KnitLog,
-            version: String
+            version: String,
+            storage: StorageReport?
         ) {
             let control = MeshControl(
                 bundle: bundle,
@@ -45,6 +48,9 @@
             } answer: { line in
                 if let probe = ScanProbeCommand.parse(line) {
                     return (await probe.answer(radio), false)
+                }
+                if let ask = StorageCommand.parse(line) {
+                    return (await ask.answer(storage), false)
                 }
                 let reply = await control.handle(line)
                 return (reply.line, reply.quits)

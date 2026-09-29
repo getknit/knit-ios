@@ -30,12 +30,12 @@
 
         func application(_: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
             UNUserNotificationCenter.current().delegate = self
-            launch.begin()
+            launch.begin(.launch)
             return true
         }
 
         func applicationProtectedDataDidBecomeAvailable(_: UIApplication) {
-            launch.begin()
+            launch.begin(.protectedData)
         }
 
         nonisolated func userNotificationCenter(

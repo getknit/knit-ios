@@ -52,6 +52,29 @@
             }
         }
 
+        #if DEBUG
+            /// The class the item is kept under, as `kSecAttrAccessible` spells it, and whether it is the one
+            /// ``write(_:)`` sets; nil when there is no item. The debug bridge's `storage` reply reports it.
+            func accessibility() throws(SecretStoreError) -> (value: String, isAfterFirstUnlockThisDeviceOnly: Bool)? {
+                var query = Self.item
+                query[kSecReturnAttributes as String] = true
+                query[kSecMatchLimit as String] = kSecMatchLimitOne
+                var result: CFTypeRef?
+                let status = SecItemCopyMatching(query as CFDictionary, &result)
+                switch status {
+                case errSecSuccess:
+                    guard let value = (result as? [String: Any])?[kSecAttrAccessible as String] as? String else {
+                        throw .unavailable("the Keychain answered without the item's class")
+                    }
+                    return (value, value == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+                case errSecItemNotFound:
+                    return nil
+                default:
+                    throw .unavailable(Self.describe(status))
+                }
+            }
+        #endif
+
         /// The attributes that name the item.
         private static var item: [String: Any] {
             [
