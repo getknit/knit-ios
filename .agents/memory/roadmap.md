@@ -243,8 +243,8 @@ explicit direction.** Update this file in the change that ships an item.
   dialed link's capabilities from the HELLO reply, so A4 rings it. Then it sets `FLAG_DIALS_GATT_PEERS`, and an
   iPhone below it waits to be dialed. Nothing in `KnitWire`, `KnitMesh` or `KnitBLE` moves: the payload, the flag and
   `weDial` were already law here. This side owns the device checks: `interop.py android-reads` is the gate, against
-  the Pixel 7 and the Moto G with the flag clear and again with it set, and then `iphone` in both orders and
-  `iphone-wake` with the Pixel 3. knit-peer gained two test switches for them, `--never-sight` and
+  the Pixel 7 (API 37) and the Pixel 3 (API 31, the pre-33 read callback) with the flag clear and again with it set,
+  and then `iphone` in both orders and `iphone-wake` with the Pixel 3. knit-peer gained two test switches for them, `--never-sight` and
   `--no-gatt-payload`. Still owed: the Android handoff, the gate, the flag, the final runs, and the pin once
   knit-next merges.
 - **Companion change A4:** Android rings an iPhone's doorbell (ADR 2026-09.khjj) after the frames it writes on the
