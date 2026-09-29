@@ -18,7 +18,7 @@ explicit direction.** Update this file in the change that ships an item.
   v1 DM seal and open, the safety number, aliases and the device tag are in, with the RFC vectors and every
   knit-next golden. Line coverage is 97 %. A2's keyed vectors pass, the safety number among them, and
   knit-next verifies and opens the frames this port emits. Done: A2 merged, and the vectors are pinned to
-  knit-next `2efea24a` (2026-09-28; nothing they hold moved since `1f3befcd`).
+  knit-next `82898694` (2026-09-29; nothing they hold moved since `1f3befcd`).
 - **P3, the mesh engine (`KnitMesh`, `KnitStore`):** done on 2026-09-25, pending the maintainer's review.
   - **Link layer:** the `LinkManager` behind a `Radio` protocol, with A1's admission rules (ADR 2026-09.6es2).
   - **Router and custody:** flooding and custody under Android's quotas, with the rules in one `CustodyRules`
@@ -62,17 +62,17 @@ explicit direction.** Update this file in the change that ships an item.
     2026-09.g64k) keeps the signed frame each pin came from and sends a sender's key ahead of their backlog. This
     port mirrors it in schema v2, `KeyExchange` and `CustodySync`. Against the Pixel 3 on that build,
     `android-rings` now converges custody first, and it passed 10 of 10 with all 796 live ids held in 501 s
-    (`.agents/context/linux-peer.md`, "What the carrier's kept keys showed"). The fix is on knit-next's local
-    `main` as `06f2040e` (2026-09-27), matching the mirror, and the pin moved past it on 2026-09-28. Still owed:
-    knit-next's push.
+    (`.agents/context/linux-peer.md`, "What the carrier's kept keys showed"). The fix merged as knit-next
+    `06f2040e` (2026-09-27), matching the mirror. It is on knit-next's `origin/main`, and the pin moved past it on
+    2026-09-28.
   - **Digests queue behind a back-fill (2026-09-27):** a post the Pixel 3 sent once custody matched took 6.5
     minutes to reach the peer on `hci1`. It was not lost. It waited behind about ten 20 KB digests the Pixel
     had queued during the 9-minute back-fill, since both platforms then queued a digest every 60 s whatever
     was already queued (`.agents/context/linux-peer.md`, "Why the frames were late"). Both now keep at most
     one digest waiting per link (knit-next's ADR 2026-09.tjfb, this port's ADR 2026-09.3ch7), which took the
-    Pixel's post from 393 s to 133 s. knit-next's side is on its local `main` as `11b91371` (2026-09-27), and
-    the pin moved past it on 2026-09-28. Still owed: knit-next's push. Open: what the socket already holds, which
-    the slot cannot reach; shallow paced writes or a smaller digest record would close it.
+    Pixel's post from 393 s to 133 s. knit-next's side merged as `11b91371` (2026-09-27), is on its
+    `origin/main`, and the pin moved past it on 2026-09-28. Open: what the socket already holds, which the slot
+    cannot reach; shallow paced writes or a smaller digest record would close it.
   - **The relay line (2026-09-26):** rehearsed with a second peer on `hci0`, shared (`--shared-adapter`), on the
     maintainer's go-ahead. `interop.py relay` passed 16 of 16: posts and DMs crossed peer A both ways, and the three
     custody sets converged (`.agents/context/linux-peer.md`, "What the relay line showed").
@@ -253,8 +253,10 @@ explicit direction.** Update this file in the change that ships an item.
   capabilities from its HELLO reply rather than its advert.
 - **An iPhone's links run on a 720 ms supervision timeout** (knit-next #102): iOS sets it as the central, and Android's
   stack puts it back after the doorbell lookup briefly raises it to 5 s. One dropped at about 10 m in the walk test
-  (`.agents/context/linux-peer.md`, "What the walk test showed"). The fix is on Android's side: ask for a longer
-  timeout once the lookup is done. A walk with Wi-Fi Aware off on the Pixels would then compare the ranges.
+  (`.agents/context/linux-peer.md`, "What the walk test showed"). The fix is on Android's side: knit-next `82898694`
+  (2026-09-29, in the pin) looks the doorbell up at link-up and asks for `CONNECTION_PRIORITY_BALANCED`, whose timeout
+  is 5 s. Still owed: knit-next's push, and the walk again with Wi-Fi Aware off on the Pixels, checking that the snoop
+  shows the 5 s update after `bt doorbell found` and none back to 720 ms, and comparing the ranges.
 - **Two iPhones both ways:** an iPhone rings only the peers it dialed, so of two iPhones the one with the smaller id
   cannot wake the other. A second GATT connection toward its dialer would let it; nothing needs it before two
   iPhones are on hand.
@@ -264,8 +266,8 @@ explicit direction.** Update this file in the change that ships an item.
   once and relays the DM after the jitter. It kept custody from matching in `iphone-soak` on 2026-09-28. knit-next
   now remembers each receipt with its sender for the tombstone's 24 h and refuses the DM on arrival when it is
   addressed to that sender (its ADR 2026-09.adpz). `CustodySync` mirrors it (2026-09-28,
-  `.agents/context/custody.md`). It merged unchanged as `2efea24a` on knit-next's local `main`, and the pin moved
-  there. Still owed: knit-next's push, and an `iphone-soak` rerun with a Pixel build that holds it, whose custody
+  `.agents/context/custody.md`). It merged unchanged as `2efea24a`, now on knit-next's `origin/main`, and the pin
+  moved past it. Still owed: an `iphone-soak` rerun with a Pixel build that holds it, whose custody
   checks should then pass. The fix refuses such a DM on arrival and purges no copy already held, and the iPhone
   holds one from 12:17 on 2026-09-28, with its receipt, which every fresh node refuses. Custody checks against the
   iPhone miss it until it expires, at 12:17 on 2026-09-29 (`.agents/context/linux-peer.md`, "What both id orders

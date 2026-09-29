@@ -18,7 +18,11 @@ Companion change A4 (knit-next `c3191717`, its ADR 2026-09.dqvb, in the pin) mak
 GATT client toward one kind of peer: one whose HELLO carries `CAP_DOORBELL` (`0x1000`), which says the peer serves
 the doorbell. On a link it accepted from such a peer, Android attaches a GATT client to that link's own connection
 (`connectGatt` on a device it is already connected to does not dial). It discovers the `0xFE30` service and finds
-the doorbell, `f34c056b-5830-4243-a888-01f92f49e446`, provided it takes a write without response. Then it rings it
+the doorbell, `f34c056b-5830-4243-a888-01f92f49e446`, provided it takes a write without response. Since `82898694`
+(knit-next #102, an amendment to ADR 2026-09.dqvb) that lookup runs at link-up rather than at the first ring, and each
+lookup that finds the doorbell asks for `CONNECTION_PRIORITY_BALANCED`: an iPhone that dialed is the central and runs
+the link at a 720 ms supervision timeout, which the stack's own update during discovery raises to 5 s and then puts
+back. BALANCED carries 5 s (30–50 ms, no latency), and iOS grants it. Then it rings the doorbell
 after the frames it writes, with a 1-byte write without response, at most once every 5 s plus once after a burst.
 `typing`, `blobreq` and `keyreq` frames never ring; nor do digests, FILE records or the HELLO. It never writes with
 a response, never serves GATT itself, and never sets the bit. A link it dialed takes its capabilities from the

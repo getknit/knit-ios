@@ -9,8 +9,8 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`. The port started from HEAD `02051b64`, five test-only commits
   later, on 2026-09-25.
-- **The pin is `2efea24a`,** knit-next's local `main` on 2026-09-28, one commit ahead of its `origin/main`
-  (`df762e71`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds it.
+- **The pin is `82898694`,** knit-next's local `main` on 2026-09-29, four commits ahead of its `origin/main`
+  (`06dd410d`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds it.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
     never opens). Of what the files below say, only the BLE responder moved.
@@ -34,7 +34,7 @@ Kotlin wins.
       owed ticks only over a link, has nothing to mirror. The rest of it is LoRa.
     - The Wear OS prototype (`34d07dbb` to `033c1edf`, ADR 2026-09.wetm) serves a bonded watch its own GATT
       service outside the mesh (`ble-transport.md`). `08aab191` adds knit-next's paired-change rules.
-  - **Since then:**
+  - **Up to `2efea24a`** (the previous pin):
     - `2efea24a` (ADR 2026-09.adpz, #100) remembers each receipt with its sender, so a DM that lands after its own
       receipt is refused on arrival. It merged unchanged from the branch commit `CustodySync` mirrors
       (`custody.md`).
@@ -46,9 +46,20 @@ Kotlin wins.
       landed, so mirror knit-next's fix when it comes. #97 (DataStore) and #98 are Android's alone.
     - `e4b46a00` (the profile photo editor), `c4de3eac` (the relay indicator for a DM without the ratchet) and
       `df762e71` (CI) touch nothing this port has.
+  - **Since then:**
+    - `82898694` (#102, an amendment to ADR 2026-09.dqvb) looks the doorbell up at link-up rather than at the first
+      ring, and each lookup that finds it asks for `CONNECTION_PRIORITY_BALANCED`. An iPhone that dialed is the
+      central and runs the link at a 720 ms supervision timeout; BALANCED carries 5 s, and iOS grants it. Nothing
+      on the wire moves, and this port has nothing to mirror: CoreBluetooth gives a central no say in the link's
+      parameters (`ble-transport.md`).
+    - `3a912ce3` (ADR 2026-09.adgd, #23) adds Remove contact. It clears only local signals and sends nothing, and
+      a commons member is accepted on first sighting only. This port keeps the accepted set (`ConversationStore`) but has
+      no contacts list, removal or commons; mirror the rule when Contacts lands.
+    - `06dd410d` (closes #97) and `bc25507c` move DataStore, and `9449fd15` shows the git SHA in debug builds'
+      About screen. They are Android's alone.
   - No wire bytes or vectors moved.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `2efea24a`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `82898694`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 
