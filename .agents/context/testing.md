@@ -45,10 +45,11 @@ ladder, not the first.
    `test:ios:simulator`), each through `performAccessibilityAudit`, once at the default text size and once at the
    largest, where it keeps a screenshot of every screen. `AuditPolicy` names what the audit may report without
    failing and why (ADR 2026-09.jcdx); everything else fails the gate. The sources live in `Tests/KnitUITests/`,
-   which SwiftPM ignores and XcodeGen builds. A run that fails with no test run, the runner "killed before
-   establishing connection" within a second, is a Simulator left booted too long: `xcrun simctl shutdown <id>`
-   on the Mac and run it again (2026-09-28). Checklist M runs `knit-peer` on the Mac, on KnitBLE's CoreBluetooth
-   radio, with `interop.py check --mac` and `soak --mac` (ADR 2026-09.vcdk).
+   which SwiftPM ignores and XcodeGen builds. CI runs them in a Simulator named "Knit CI", and a run over ssh in
+   "Knit local", each made on first use. They used to share one: on 2026-09-28 a local run started while CI's was
+   going, its test runner was killed "before establishing connection", and two of CI's tests failed. Checklist M
+   runs `knit-peer` on the Mac, on KnitBLE's CoreBluetooth radio, with `interop.py check --mac` and `soak --mac`
+   (ADR 2026-09.vcdk).
 10. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`. `scripts/interop.py iphone` drives the
     iPhone through a debug build's USB bridge and an Android phone through knit-next's, for items 2 to 6
     (ADR 2026-09.kwa8). `iphone-relay` adds a peer on `hci0` beyond the iPhone for item 7, `iphone-wake`

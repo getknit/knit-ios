@@ -203,14 +203,32 @@ gate_xcode() {
 
 # The UI tests and the accessibility audit, in the Simulator (MVP item 12): every MVP screen on -seedDemo's stores,
 # each through performAccessibilityAudit. The Simulator build signs to run locally, which needs no Keychain, so this
-# runs over ssh too. KNIT_SIMULATOR picks the device; the result bundle keeps each failing audit's screenshot.
+# runs over ssh too. The result bundle keeps each failing audit's screenshot.
+#
+# CI and a run over ssh each get a Simulator of their own, "Knit CI" and "Knit local", or the one KNIT_SIMULATOR
+# names. When they shared one, a local run started during CI's lost its test runner at once, and two of CI's tests
+# failed (2026-09-28).
 gate_uitest() {
 	step "xcodebuild test (UI tests and the accessibility audit, in the Simulator)"
 	xcode_project uitest
+	local simulator=${KNIT_SIMULATOR:-}
+	if [ -z "$simulator" ]; then
+		simulator="Knit local"
+		[ -n "${CI:-}" ] && simulator="Knit CI"
+		simulator_named "$simulator"
+	fi
 	local results=.build-xcode/uitest.xcresult
 	rm -rf "$results"
-	xcodebuild "${xcode_build[@]}" -destination "platform=iOS Simulator,name=${KNIT_SIMULATOR:-iPhone 18 Pro}" \
+	xcodebuild "${xcode_build[@]}" -destination "platform=iOS Simulator,name=$simulator" \
 		-resultBundlePath "$results" -collect-test-diagnostics never test | "${xcode_pretty[@]}"
+}
+
+# Makes a Simulator named $1 unless one exists: an iPhone 18 Pro, the model the audit was set on (ADR 2026-09.jcdx),
+# on the newest iOS runtime.
+simulator_named() {
+	if ! xcrun simctl list devices available | grep -qF -- "    $1 ("; then
+		xcrun simctl create "$1" "iPhone 18 Pro" >/dev/null
+	fi
 }
 
 # The signed iPhone build (ADR 2026-09.zawh). Signing needs the login Keychain, which only the desktop session has
