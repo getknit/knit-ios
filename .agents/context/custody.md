@@ -51,8 +51,8 @@ A node carries frames for people who are not in range yet. This is store-and-for
   (byte order).
 - **Early purge:** a cleartext receipt from a DM's recipient removes that DM and tombstones its id for 24 h.
   Sealed receipts purge nothing.
-- **A receipt that arrives before its DM vaccinates the DM on arrival** (knit-next ADR 2026-09.adpz, #100, on
-  its branch `fix/early-receipt-vaccinates` as `2efea24a`, ahead of the pin). The purge needs the DM's recipient, which only the DM names, so every receipt is also remembered as `(ackId,
+- **A receipt that arrives before its DM vaccinates the DM on arrival** (knit-next ADR 2026-09.adpz, #100). The
+  purge needs the DM's recipient, which only the DM names, so every receipt is also remembered as `(ackId,
   acker)` for the tombstone's 24 h, in a set of at most 4096 (`earlyAcks`). A DM that arrives later, whatever its
   origin, is refused and tombstoned if its cleartext `recipientId` is that acker, before it is authenticated. The
   memo is keyed on the acker, so a receipt from anyone else keeps nothing out. It lives in memory, like the

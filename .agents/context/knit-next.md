@@ -9,8 +9,8 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`. The port started from HEAD `02051b64`, five test-only commits
   later, on 2026-09-25.
-- **The pin is `033c1edf`,** knit-next's local `main` on 2026-09-28, six commits ahead of its `origin/main`
-  (`4f9aa75a`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds it.
+- **The pin is `2efea24a`,** knit-next's local `main` on 2026-09-28, one commit ahead of its `origin/main`
+  (`df762e71`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds it.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
     never opens). Of what the files below say, only the BLE responder moved.
@@ -18,7 +18,7 @@ Kotlin wins.
     backlog per sender, merged unchanged from the branch commit `CustodySync` and `PendingInbound` mirror;
     `cfa4a627` adds a debug-only link cap, the bridge's `BLECAP` (release still runs 6 links); and `e8b98398`
     keeps spool copies out of overhear suppression, and there is no spool here.
-  - **Since then:**
+  - **Up to `033c1edf`** (the previous pin):
     - `c3191717` is A4 (ADR 2026-09.dqvb): Android rings the doorbell of a peer whose HELLO carries
       `CAP_DOORBELL`. `DoorbellPolicy.kt` holds the UUIDs, the 5 s interval and the three upkeep types that
       `LinkManager+Doorbell` matches.
@@ -34,9 +34,21 @@ Kotlin wins.
       owed ticks only over a link, has nothing to mirror. The rest of it is LoRa.
     - The Wear OS prototype (`34d07dbb` to `033c1edf`, ADR 2026-09.wetm) serves a bonded watch its own GATT
       service outside the mesh (`ble-transport.md`). `08aab191` adds knit-next's paired-change rules.
+  - **Since then:**
+    - `2efea24a` (ADR 2026-09.adpz, #100) remembers each receipt with its sender, so a DM that lands after its own
+      receipt is refused on arrival. It merged unchanged from the branch commit `CustodySync` mirrors
+      (`custody.md`).
+    - `3000c537` (#98) puts Android's peer-row reads and writes in one transaction, because its avatar writer
+      runs beside the profile writer. This port keeps no avatars and runs one engine thread, so nothing moves.
+    - `ea38c08b` fixes mesh-lab races and adds `MeshManager.linksActedOn`, a test hook. It parks three repros.
+      #96 is a room tick sent over a link that is gone by the time it is written: it is dropped rather than owed
+      again. `AckSync` has the same shape, since `owe` trusts `isLinked` and nothing hears whether the write
+      landed, so mirror knit-next's fix when it comes. #97 (DataStore) and #98 are Android's alone.
+    - `e4b46a00` (the profile photo editor), `c4de3eac` (the relay indicator for a DM without the ratchet) and
+      `df762e71` (CI) touch nothing this port has.
   - No wire bytes or vectors moved.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `033c1edf`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `2efea24a`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 

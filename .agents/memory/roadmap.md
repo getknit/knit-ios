@@ -18,7 +18,7 @@ explicit direction.** Update this file in the change that ships an item.
   v1 DM seal and open, the safety number, aliases and the device tag are in, with the RFC vectors and every
   knit-next golden. Line coverage is 97 %. A2's keyed vectors pass, the safety number among them, and
   knit-next verifies and opens the frames this port emits. Done: A2 merged, and the vectors are pinned to
-  knit-next `033c1edf` (2026-09-28; nothing they hold moved since `1f3befcd`).
+  knit-next `2efea24a` (2026-09-28; nothing they hold moved since `1f3befcd`).
 - **P3, the mesh engine (`KnitMesh`, `KnitStore`):** done on 2026-09-25, pending the maintainer's review.
   - **Link layer:** the `LinkManager` behind a `Radio` protocol, with A1's admission rules (ADR 2026-09.6es2).
   - **Router and custody:** flooding and custody under Android's quotas, with the rules in one `CustodyRules`
@@ -234,9 +234,10 @@ explicit direction.** Update this file in the change that ships an item.
   refused it. Back-fill's newest-first order makes it common, and so does the recipient, which sends its receipt at
   once and relays the DM after the jitter. It kept custody from matching in `iphone-soak` on 2026-09-28. knit-next
   now remembers each receipt with its sender for the tombstone's 24 h and refuses the DM on arrival when it is
-  addressed to that sender (its ADR 2026-09.adpz, `2efea24a` on the branch `fix/early-receipt-vaccinates`, not yet on
-  its `main`). `CustodySync` mirrors it (2026-09-28, `.agents/context/custody.md`). Still owed: knit-next's merge, the
-  pin moved past it, and an `iphone-soak` rerun with both builds, whose custody checks should then pass.
+  addressed to that sender (its ADR 2026-09.adpz). `CustodySync` mirrors it (2026-09-28,
+  `.agents/context/custody.md`). It merged unchanged as `2efea24a` on knit-next's local `main`, and the pin moved
+  there. Still owed: knit-next's push, and an `iphone-soak` rerun with a Pixel build that holds it, whose custody
+  checks should then pass.
 
 ## Deferred by design
 
