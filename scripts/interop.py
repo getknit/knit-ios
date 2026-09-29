@@ -15,7 +15,8 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
     scripts/interop.py iphone-reboot [--restart] [--locked 120] [--closed 60] [--skip-relaunch] [--udid UDID]
     scripts/interop.py iphone-rings [--udid UDID]
-    scripts/interop.py android-rings --device SERIAL [--converge-timeout 600] [--arrival-timeout 600]
+    scripts/interop.py android-reads --device SERIAL [--order peer-below|peer-above] [--link-timeout 180]
+    scripts/interop.py android-rings --device SERIAL [--link dialed|accepted] [--converge-timeout 600] [--arrival-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
     scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
 
@@ -26,7 +27,8 @@ runs the same items between the iPhone and the peer; `iphone-relay` runs MVP ite
 to lock the iPhone and unlock it again; `iphone-reboot` is item 1's relaunch and reboot, with someone to close Knit and
 unlock the iPhone; `iphone-scan` is P8's scan-filter check, with someone to do the same; `bridge`
 sends that bridge commands by hand and prints what comes back. `iphone-rings` checks the doorbell rings an iPhone
-sends, and `android-rings` those an Android phone sends, with companion change A4.
+sends, and `android-rings` those an Android phone sends, with companion change A4. `android-reads` is companion change
+A3's device gate: an Android phone reads the peer's GATT payload and dials it, or is dialed, by the id order.
 
 `--mac` runs the peer on the Mac Mini instead of hci1, on CoreBluetooth, the iPhone's own radio: checklist M (ADR
 2026-09.vcdk). It always runs the `ios` profile, in the Mac's desktop session through `scripts/mac-peer.sh`, and the
@@ -232,8 +234,14 @@ class Peer(Node):
         instance: str = INSTANCE,
         adapter: list[str] | None = None,
         log_path: Path | None = None,
+        never_sight: set[str] | None = None,
+        gatt_payload: bool = True,
     ) -> None:
         super().__init__()
+        # knit-peer's test switches: nodes it never takes as sighted, so it never dials them and admits their dials
+        # unsighted; and, in the `ios` profile, a doorbell served without the payload, so an A3 phone never sights it.
+        self.never_sight = never_sight or set()
+        self.gatt_payload = gatt_payload
         self.instance = instance
         self.profile = profile
         self.name = name
@@ -248,6 +256,10 @@ class Peer(Node):
         arguments = ["--instance", self.instance, "--radio-profile", self.profile, "--name", self.name, "--log", self.log_level]
         if self.rssi_floor is not None:
             arguments += ["--rssi-floor", str(self.rssi_floor)]
+        if self.never_sight:
+            arguments += ["--never-sight", ",".join(sorted(self.never_sight))]
+        if not self.gatt_payload:
+            arguments.append("--no-gatt-payload")
         if ON_MAC:
             # The adapter and the MTU knobs are BlueZ's; CoreBluetooth has one radio and picks its own MTU.
             command = on_mac("run", arguments)
@@ -264,6 +276,23 @@ class Peer(Node):
         self.node_id = ready["nodeId"]
         for node in sorted(self.refuse):
             self.command(cmd="deny-link", peer=node)
+
+    def log_mark(self) -> int:
+        """Where the peer's log file ends now, for `log_since`."""
+        return self.log_path.stat().st_size if self.log_path.exists() else 0
+
+    def log_since(self, mark: int) -> list[str]:
+        """The messages the peer logged after `mark`."""
+        with open(self.log_path, encoding="utf-8") as log:
+            log.seek(mark)
+            lines = log.read().splitlines()
+        messages = []
+        for line in lines:
+            try:
+                messages.append(json.loads(line).get("message", ""))
+            except json.JSONDecodeError:
+                continue
+        return messages
 
     def _read(self) -> None:
         assert self.process and self.process.stdout
@@ -416,11 +445,30 @@ def poll(check, timeout: float, every: float = 2):
         time.sleep(every)
 
 
-def others_in_range(phone_id: str, seconds: int = 20) -> set[str]:
-    """Every Knit node a quiet scan hears, bar the phone under test."""
+def in_range(seconds: int = 20) -> dict[str, dict]:
+    """Every Knit node a quiet scan hears, by node id, with what it advertised: its flags, and the low byte of its
+    capabilities, `ff` from Android and `9` from an iPhone or an `ios` peer."""
     result = subprocess.run([str(PEER), "scan", "--seconds", str(seconds)], capture_output=True, text=True, check=True)
     summary = json.loads(result.stdout.strip().splitlines()[-1])
-    return {node["peer"] for node in summary["nodes"]} - {phone_id}
+    return {node["peer"]: node for node in summary["nodes"]}
+
+
+def others_in_range(phone_id: str, seconds: int = 20) -> set[str]:
+    """Every Knit node a quiet scan hears, bar the phone under test."""
+    return set(in_range(seconds)) - {phone_id}
+
+
+# FLAG_DIALS_GATT_PEERS, bit 1 of the advert's flags byte: the node reads GATT payloads, so it can find a node that
+# advertises only the 0xFE30 UUID, and such a node waits for it to dial (ADR 2026-09.xzpt).
+DIALS_GATT_PEERS = 0x02
+# The low byte of the capabilities this port advertises (0x9), as the scan spells it; Android's builds send 0xFF.
+IOS_ADVERT_CAPABILITIES = "9"
+
+
+def androids(heard: dict[str, dict]) -> set[str]:
+    """The nodes a scan heard that advertise as Android does. The scan does not say where a payload came from, so
+    this goes by the capabilities' low byte, which only this port's nodes send as 0x9."""
+    return {node for node, entry in heard.items() if entry.get("capabilities") != IOS_ADVERT_CAPABILITIES}
 
 
 def on_mac(verb: str, arguments: list[str]) -> list[str]:
@@ -537,7 +585,11 @@ def check(arguments: argparse.Namespace) -> int:
 
 def iphone(arguments: argparse.Namespace) -> int:
     """MVP items 2 to 6 between the iPhone and an Android phone, both driven through their bridges, with Knit open on
-    both. Item 2 wants both node id orders, and the iPhone dials in either, so the run names the one this pair has.
+    both. Item 2 wants both node id orders, so the run names the one this pair has. The iPhone dials a phone above it.
+    A phone below it with companion change A3 sets FLAG_DIALS_GATT_PEERS, reads the iPhone's GATT payload and dials
+    the iPhone, which waits for it; one without A3 cannot see the iPhone, which dials it and is admitted unsighted (A1).
+    The run checks which side dialed each link against the phone's flag, from the phone's log, and the relink after
+    item 6's stop and start is the first-link time for the order.
 
     The first DM between two phones is a message request only once. For a pair that has never talked, the run reads
     the request off the phone's Requests screen, which the bridge does not report, and taps Accept there, so it drives
@@ -568,8 +620,10 @@ def iphone(arguments: argparse.Namespace) -> int:
             }
         )
     )
+    phone.shell("logcat -c")
     try:
         run.step("link", lambda: _ios_linked(ios, phone, phone_id))
+        run.step("dialer", lambda: _dialed_by(phone, ios, phone_id, order))
         run.step("profile-on-iphone", lambda: _ios_pinned(ios, phone_id, phone_name))
         run.step("profile-on-phone", lambda: _phone_pinned(phone, ios))
         body = f"interop room from iphone {nonce}"
@@ -598,12 +652,31 @@ def iphone(arguments: argparse.Namespace) -> int:
             sent = ios.command(cmd="dm", to=phone_id, text=body)
             run.step("dm-iphone-reply-delivered", lambda: _delivered(ios, sent, 30))
         if not arguments.skip_offline:
+            phone.shell("logcat -c")
             _offline(run, ios, phone, phone_id, nonce)
+            run.step("relink-dialer", lambda: _dialed_by(phone, ios, phone_id, order))
         run.step("custody-converges", lambda: _converges(ios, phone, 180))
     finally:
         ios.stop()
     print(json.dumps({"summary": "iphone", "steps": run.steps, "failed": run.failed}))
     return run.failed
+
+
+def _dialed_by(phone: Phone, ios: IPhone, phone_id: str, order: str) -> dict:
+    """Which side dialed the last link between the phone and the iPhone, from the phone's log since it was last cleared:
+    `bt connect ok` is a dial of the phone's own, and `bt accepted client` one it took. The phone dials only when the
+    iPhone sorts below it and the phone's advert, as the iPhone sights it, sets FLAG_DIALS_GATT_PEERS."""
+    flags = next((s["flags"] for s in ios.command(cmd="links")["sightings"] if s["peer"] == phone_id), None)
+    expected = "phone" if order == "iphone-below" and flags is not None and flags & DIALS_GATT_PEERS else "iphone"
+    lines = _phone_log(phone, ios.node_id)
+    ends = [line for line in lines if line.startswith((f"bt connect ok {ios.node_id}", f"bt accepted client {ios.node_id} "))]
+    if not ends:
+        # A link already up when the run began left nothing in the cleared log.
+        return {"dialer": None, "expected": expected, "phoneFlags": flags}
+    dialer = "phone" if ends[-1].startswith("bt connect ok") else "iphone"
+    if dialer != expected:
+        raise RuntimeError(f"the {dialer} dialed; with the phone's flags at {flags} the {expected} should have: {ends[-2:]}")
+    return {"dialer": dialer, "phoneFlags": flags}
 
 
 def _offline(run: Run, ios: IPhone, other: Phone | Peer, other_id: str, nonce: str) -> None:
@@ -865,33 +938,64 @@ def _positive(status: dict, key: str) -> int:
 def android_rings(arguments: argparse.Namespace) -> int:
     """Companion change A4, the mirror of `iphone-rings`: Android rings the doorbell of a peer whose HELLO asks for it
     (`CAP_DOORBELL`, knit-next ADR 2026-09.dqvb). knit-peer runs on hci1 in the `ios` profile, which serves a doorbell
-    and says so in its HELLO. The phone never sights it, so the peer dials the phone, and Android rings only a link it
-    accepted. The phone looks the doorbell up over that link and rings it after its link-up frames. Then it posts and
-    DMs through its debug bridge, each after a spell with no ring, and each must ring the peer within seconds. Android
-    rings as it queues a frame, so the ring comes even while the frame waits in the link's queue; each frame must then
-    arrive within `--arrival-timeout` of its send. Before the rings, the back-fill must drain: custody converges, but
-    for frames from senders the phone pinned before it kept their signed profiles (knit-next ADR 2026-09.g64k,
-    database v16). The phone must run a debug build with A4 (knit-next `c3191717` or later); the first step checks,
-    before the peer starts."""
+    and says so in its HELLO. The phone looks the doorbell up over the link and rings it after its link-up frames. Then
+    it posts and DMs through its debug bridge, each after a spell with no ring, and each must ring the peer within
+    seconds. Android rings as it queues a frame, so the ring comes even while the frame waits in the link's queue; each
+    frame must then arrive within `--arrival-timeout` of its send. Before the rings, the back-fill must drain: custody
+    converges, but for frames from senders the phone pinned before it kept their signed profiles (knit-next ADR
+    2026-09.g64k, database v16). The phone must run a debug build with A4 (knit-next `c3191717` or later); the first
+    step checks, before the peer starts.
+
+    `--link` picks whose link it is. `dialed`, the default, needs companion change A3: the peer's id sorts below the
+    phone's, the phone reads its GATT payload and dials it, and takes its capabilities from the peer's HELLO reply, so
+    this is a link Android dialed. Once the phone sets FLAG_DIALS_GATT_PEERS the peer waits for that dial of its own
+    accord. A phone that reads payloads with the flag still clear would be dialed by the peer too, and the peer would
+    refuse the phone's dial as one it makes itself, so then the peer never sights the phone (`--never-sight`).
+    `accepted` is the link Android rang before A3: the peer serves its doorbell without the payload
+    (`--no-gatt-payload`), so the phone never sights it, and its id sorts above the phone's, so it dials the phone
+    whatever the phone's flag."""
     phone = Phone(arguments.device)
     run = Run()
     nonce = secrets.token_hex(3)
     state = phone.state()
     phone_id = state["self"]["nodeId"]
     served_before = state.get("metrics", {}).get("keysServed", 0)
-    if run.step("phone-build-rings", lambda: _rings_doorbells(phone)) is None:
+    checked = run.step("phone-build-rings", lambda: _rings_doorbells(phone))
+    dialed = arguments.link == "dialed"
+    if checked is not None and dialed:
+        checked = run.step("phone-build-reads-gatt", lambda: _reads_gatt_payloads(phone))
+    if checked is None:
         print(json.dumps({"summary": "android-rings", "steps": run.steps, "failed": run.failed}))
         return run.failed
-    others = others_in_range(phone_id)
-    # Below the phone, as `refusal` has it: only A1's rule admits an unsighted dialer whose id sorts lower.
-    peer_id = keygen(phone_id, "phone-dials", others)
-    print(json.dumps({"run": "android-rings", "phone": phone_id, "peer": peer_id, "refused": sorted(others)}))
-    peer = Peer("ios", f"knit-peer rings {nonce}", others, arguments.peer_log, arguments.rssi_floor)
+    heard = in_range()
+    others = set(heard) - {phone_id}
+    flagged = bool(heard.get(phone_id, {}).get("flags", 0) & DIALS_GATT_PEERS)
+    # Below the phone, it is the phone's to dial; above it, the peer's.
+    peer_id = keygen(phone_id, "phone-dials" if dialed else "peer-dials", others)
+    held = {phone_id} if dialed and not flagged else set()
+    print(
+        json.dumps(
+            {
+                "run": "android-rings",
+                "link": arguments.link,
+                "phone": phone_id,
+                "phoneFlagged": flagged,
+                "peer": peer_id,
+                "neverSighted": sorted(held),
+                "refused": sorted(others),
+            }
+        )
+    )
+    phone.shell("logcat -c")
+    peer = Peer("ios", f"knit-peer rings {nonce}", others, arguments.peer_log, arguments.rssi_floor, never_sight=held, gatt_payload=dialed)
+    mark = peer.log_mark()
     stop = threading.Event()
     try:
         peer.start()
         threading.Thread(target=_keep_to, args=(peer, {phone_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
-        if run.step("peer-dials-the-phone", lambda: link_up(peer, phone, phone_id) and {}) is not None:
+        linked = "phone-dials-the-peer" if dialed else "peer-dials-the-phone"
+        up = run.step(linked, lambda: link_up(peer, phone, phone_id) and _who_dialed(phone, peer, peer_id, phone_id, mark, dialed))
+        if up is not None:
             run.step("phone-found-the-doorbell", lambda: _doorbell_found(phone, peer_id, 60))
             run.step("link-up-rang", lambda: _rung(peer, 1, 60))
             # The back-fill drains now that the phone sends each sender's key ahead of their backlog (knit-next ADR
@@ -916,6 +1020,154 @@ def android_rings(arguments: argparse.Namespace) -> int:
         peer.stop()
     print(json.dumps({"summary": "android-rings", "steps": run.steps, "failed": run.failed}))
     return run.failed
+
+
+def _who_dialed(phone: Phone, peer: Peer, peer_id: str, phone_id: str, mark: int, phone_dials: bool) -> dict:
+    """The link up is the one the right side dialed: the phone logs `bt connect ok` for a dial of its own and `bt accepted
+    client` for one it took, and the peer logs `link dialing` for each dial it makes. Android dials only a peer whose id
+    sorts below its own, and accepts a sighted dialer only from above."""
+    dials = [m for m in peer.log_since(mark) if m.startswith(f"link dialing {phone_id} ")]
+    connected = _phone_log(phone, f"bt connect ok {peer_id}")
+    accepted = _phone_log(phone, f"bt accepted client {peer_id} ")
+    detail = {"peerDials": len(dials), "phoneConnected": len(connected), "phoneAccepted": accepted[-1:]}
+    if phone_dials and (dials or not connected):
+        raise RuntimeError(f"not the phone's dial: {detail}")
+    if not phone_dials and not accepted:
+        raise RuntimeError(f"the phone never accepted the peer: {detail}")
+    return detail
+
+
+def android_reads(arguments: argparse.Namespace) -> int:
+    """Companion change A3's device gate: Android finds a node that advertises only the `0xFE30` UUID, as an iPhone
+    does, by reading its GATT payload, and dials it when its own id sorts higher (knit-next `feat/gatt-peers`).
+    knit-peer runs on hci1 in the `ios` profile, which serves the payload and the doorbell, against one phone.
+
+    `--order peer-below`: the phone reads the payload, dials the peer and finds its doorbell on that link, which rings
+    for the link-up frames, so the dialed link took `CAP_DOORBELL` from the peer's HELLO reply. The peer must not dial
+    the phone. Once the phone sets FLAG_DIALS_GATT_PEERS it waits of its own accord, and the run checks it did. Before
+    then it would dial the phone, and refuse the phone's dial as one it makes itself, so the peer never sights the
+    phone (`--never-sight`): it holds its dials, and admits the phone's as it admits an iPhone's.
+
+    `--order peer-above`: the phone reads the payload and never dials; the peer dials, and the phone accepts it as a
+    dialer it sighted, which only the read can have given it.
+
+    In both orders every payload the phone read belongs to a node that advertises no service data: the peer, or an
+    iPhone or Mac in range, never an Android phone. The link must hold, and the run reports the first link's time from
+    the peer's start, MVP item 2's measure. The phone runs a debug build with A3; the first step checks, before the
+    peer starts."""
+    phone = Phone(arguments.device)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    phone_id = phone.state()["self"]["nodeId"]
+    if run.step("phone-build-reads-gatt", lambda: _reads_gatt_payloads(phone)) is None:
+        print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
+        return run.failed
+    heard = in_range()
+    others = set(heard) - {phone_id}
+    flagged = bool(heard.get(phone_id, {}).get("flags", 0) & DIALS_GATT_PEERS)
+    below = arguments.order == "peer-below"
+    peer_id = keygen(phone_id, "phone-dials" if below else "peer-dials", others)
+    held = {phone_id} if below and not flagged else set()
+    print(
+        json.dumps(
+            {
+                "run": "android-reads",
+                "order": arguments.order,
+                "phone": phone_id,
+                "phoneFlagged": flagged,
+                "peer": peer_id,
+                "neverSighted": sorted(held),
+                "refused": sorted(others),
+            }
+        )
+    )
+    phone.shell("logcat -c")
+    peer = Peer("ios", f"knit-peer reads {nonce}", others, arguments.peer_log, arguments.rssi_floor, never_sight=held)
+    mark = peer.log_mark()
+    stop = threading.Event()
+    try:
+        started = time.monotonic()
+        peer.start()
+        threading.Thread(target=_keep_to, args=(peer, {phone_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
+        run.step("phone-read-the-peer", lambda: _phone_read(phone, peer_id, started, arguments.link_timeout))
+        link = run.step("link", lambda: _first_link(peer, phone, phone_id, started, arguments.link_timeout))
+        if link is not None:
+            if below:
+                run.step("phone-dialed-the-peer", lambda: _who_dialed(phone, peer, peer_id, phone_id, mark, phone_dials=True))
+                run.step("phone-found-the-doorbell", lambda: _doorbell_found(phone, peer_id, 60))
+                run.step("link-up-rang", lambda: _rung(peer, 1, 60))
+                name = "peer-waited-of-its-own-accord" if flagged else "peer-held-its-dials"
+                run.step(name, lambda: _peer_never_dialed(peer, phone_id, mark))
+            else:
+                run.step("peer-dialed-the-phone", lambda: _who_dialed(phone, peer, peer_id, phone_id, mark, phone_dials=False))
+                run.step("phone-sighted-the-dialer", lambda: _accepted_sighted(phone, peer_id))
+                run.step("phone-never-dialed", lambda: _phone_never_dialed(phone, peer_id))
+            run.step("link-held", lambda: {**_phone_held(phone, peer_id), **_no_link_dropped(peer, {phone_id})})
+        run.step("reads-only-uuid-nodes", lambda: _reads_only_uuid_nodes(phone, peer_id, androids(heard)))
+        run.step("phone-gatt-counts", lambda: _reads_gatt_payloads(phone))
+    finally:
+        stop.set()
+        peer.stop()
+    print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _phone_read(phone: Phone, peer_id: str, since: float, timeout: float) -> dict:
+    """The phone logged a read of the peer's payload, and how long after the peer started it first showed."""
+
+    def read() -> list | None:
+        phone.wake()
+        return [address for address, node in _gatt_reads(phone) if node == peer_id] or None
+
+    addresses = poll(read, timeout, every=3)
+    return {"secondsAfterStart": round(time.monotonic() - since, 1), "address": addresses[0], "reads": len(addresses)}
+
+
+def _first_link(peer: Peer, phone: Phone, phone_id: str, since: float, timeout: float) -> dict:
+    """MVP item 2: the first link after the peer started, which the item wants within 30 s."""
+    line = link_up(peer, phone, phone_id, timeout)
+    seconds = round(line["_at"] - since, 1)
+    return {"seconds": seconds, "withinThirtySeconds": seconds <= 30}
+
+
+def _peer_never_dialed(peer: Peer, phone_id: str, mark: int) -> dict:
+    dials = [m for m in peer.log_since(mark) if m.startswith(f"link dialing {phone_id} ")]
+    if dials:
+        raise RuntimeError(f"the peer dialed the phone {len(dials)} times: {dials[:2]}")
+    return {}
+
+
+def _accepted_sighted(phone: Phone, peer_id: str) -> dict:
+    """The phone admitted the peer as a dialer it had sighted: its only sighting of the peer is the read."""
+    accepted = _phone_log(phone, f"bt accepted client {peer_id} ")
+    if not accepted or "sighted=true" not in accepted[-1]:
+        raise RuntimeError(f"the phone did not accept the peer as sighted: {accepted[-2:]}")
+    return {"accepted": accepted[-1]}
+
+
+def _phone_never_dialed(phone: Phone, peer_id: str) -> dict:
+    dials = _phone_log(phone, f"bt initiating to {peer_id} ")
+    if dials:
+        raise RuntimeError(f"the phone dialed the peer: {dials[:2]}")
+    return {}
+
+
+def _reads_only_uuid_nodes(phone: Phone, peer_id: str, service_data: set[str]) -> dict:
+    """Every payload the phone read over GATT belongs to a node without service data: never an Android phone, whose
+    advert it takes as the sighting."""
+    reads = _gatt_reads(phone)
+    wrong = sorted({node for _, node in reads if node in service_data})
+    if wrong:
+        raise RuntimeError(f"the phone read the payload of Android phones {wrong}")
+    if not any(node == peer_id for _, node in reads):
+        raise RuntimeError("the phone never read the peer")
+    unread = _phone_log(phone, "bt gatt read ")
+    return {
+        "reads": len(reads),
+        "nodes": sorted({node for _, node in reads}),
+        "failed": sum(" failed (" in line for line in unread),
+        "strangers": sum(" stranger (" in line for line in unread),
+    }
 
 
 def _rings_for(
@@ -964,9 +1216,41 @@ def _frames_arrived(peer: Peer, bodies: dict[str, str], sent_at: dict[str, float
 
 
 def _phone_log(phone: Phone, needle: str) -> list[str]:
-    """The messages of the phone's Bluetooth transport log lines that contain `needle`."""
+    """The messages of the phone's Bluetooth transport log lines that contain `needle`, A3's GATT reads among them."""
     log = phone.shell("logcat -d -s BluetoothMeshTransport:*", timeout=60)
     return [line.split(": ", 1)[-1] for line in log.splitlines() if needle in line]
+
+
+def _reads_gatt_payloads(phone: Phone) -> dict:
+    """The phone runs an A3 build: its debug build's `bt state` line counts the GATT payloads it holds and the reads it
+    has made. The line of a build that predates A3 has neither."""
+    try:
+        lines = poll(lambda: _phone_log(phone, "bt state "), 75, every=5)
+    except TimeoutError as error:
+        raise RuntimeError("the phone logged no bt state line in 75 s: is Knit running, and a debug build?") from error
+    counts = _gatt_counts(lines[-1])
+    if counts is None:
+        raise RuntimeError("the phone's build predates A3: install a debug build of knit-next feat/gatt-peers")
+    return counts
+
+
+def _gatt_counts(line: str) -> dict | None:
+    payloads = re.search(r"gattPayloads=(\d+)", line)
+    reads = re.search(r"gattReads=(\d+)", line)
+    if not payloads or not reads:
+        return None
+    return {"gattPayloads": int(payloads.group(1)), "gattReads": int(reads.group(1))}
+
+
+def _gatt_reads(phone: Phone) -> list[tuple[str, str]]:
+    """Each GATT payload the phone read, as the address and the node id its `bt gatt read <address> → <node> (psm …)`
+    line names, oldest first. A read that failed or found a stranger names no node."""
+    reads = []
+    for line in _phone_log(phone, "bt gatt read "):
+        match = re.search(r"bt gatt read (\S+) → ([a-z2-7]{26})", line)
+        if match:
+            reads.append((match.group(1), match.group(2)))
+    return reads
 
 
 def _rings_doorbells(phone: Phone) -> dict:
@@ -1597,9 +1881,11 @@ def bridge(arguments: argparse.Namespace) -> int:
 
 
 def refusal(arguments: argparse.Namespace) -> int:
-    """Checklist L's third group: with the `ios` profile Android 2.7 cannot see the peer, so the peer dials, and
-    Android's responder closes a dialer whose id sorts below its own (`BluetoothMeshTransport.kt:754`). The link
-    never comes up; companion change A1 is what lets it."""
+    """Checklist L's third group, against Android 2.7 only: with the `ios` profile 2.7 cannot see the peer, so the peer
+    dials, and Android's responder closes a dialer whose id sorts below its own (`BluetoothMeshTransport.kt:754`). The
+    link never comes up; companion change A1 is what lets it. Every A1 build admits the unsighted dialer this expects
+    to be refused, and an A3 build reads the peer's payload and dials it, so against either it fails by design: run it
+    only against a 2.7 build."""
     phone = Phone(arguments.device)
     run = Run()
     phone_id = phone.state()["self"]["nodeId"]
@@ -1643,23 +1929,28 @@ def replace(arguments: argparse.Namespace) -> int:
     2. **The replacement.** The first process links again, then freezes: the kernel keeps its channel up, so the
         phone's link stays open but goes quiet, as it does when a peer's end dies first. Once that link is 30 s
         old the second process dials. The phone replaces the old link (logged `Replace, sighted=false`) and keeps
-        the new one: the old link's end must not take it down, and nothing else may drop it meanwhile."""
+        the new one: the old link's end must not take it down, and nothing else may drop it meanwhile.
+
+    Both processes serve the doorbell without the payload (`--no-gatt-payload`), so a phone with companion change A3
+    files the peer as a stranger and never sights it, and A1's unsighted rules are the ones under test. Their id sorts
+    above the phone's: below a phone that sets FLAG_DIALS_GATT_PEERS the peer would wait for a dial that never comes.
+    A1 replaces an unsighted dialer's stale link whatever the order (`BleAdmissionPolicy.decide`)."""
     phone = Phone(arguments.device)
     run = Run()
     nonce = secrets.token_hex(3)
     phone_id = phone.state()["self"]["nodeId"]
     others = others_in_range(phone_id)
-    peer_id = keygen(phone_id, arguments.order, others)
+    peer_id = keygen(phone_id, "peer-dials", others)
     print(json.dumps({"run": "replace", "phone": phone_id, "peer": peer_id, "refused": sorted(others)}))
     state = Path.home() / ".local" / "state" / "knit-peer"
     name = f"knit-peer {nonce}"
     # Both processes refuse the phone until both are up, so neither one's start releases the other's link. The
     # second copies the first's state once the first has published its profile, so the two publish the same
     # profile frame; different stamps under one identity would be a clone, and custody would never converge.
-    first = Peer("ios", name, others | {phone_id}, arguments.peer_log, arguments.rssi_floor)
+    first = Peer("ios", name, others | {phone_id}, arguments.peer_log, arguments.rssi_floor, gatt_payload=False)
     first.start()
     shutil.copytree(state / INSTANCE, state / f"{INSTANCE}-b", dirs_exist_ok=True)
-    second = Peer("ios", name, others | {phone_id}, arguments.peer_log, arguments.rssi_floor, instance=f"{INSTANCE}-b")
+    second = Peer("ios", name, others | {phone_id}, arguments.peer_log, arguments.rssi_floor, instance=f"{INSTANCE}-b", gatt_payload=False)
     second.start()
     phone.shell("logcat -c")
     try:
@@ -1671,7 +1962,7 @@ def replace(arguments: argparse.Namespace) -> int:
         first.stop()
         time.sleep(5)
         phone.shell("logcat -c")
-        first = Peer("ios", name, others | {phone_id}, arguments.peer_log, arguments.rssi_floor)
+        first = Peer("ios", name, others | {phone_id}, arguments.peer_log, arguments.rssi_floor, gatt_payload=False)
         first.start()
         first.command(cmd="allow-link", peer=phone_id)
         run.step("first-link", lambda: link_up(first, phone, phone_id) and {})
@@ -2878,8 +3169,7 @@ def main() -> int:
         # Android's -90 dBm floor and may never dial it. A looser floor is a development aid, not law: nothing in
         # checklist L may pass only because of it.
         sub.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
-    for name in ("check", "replace"):
-        commands.choices[name].add_argument("--order", default="phone-dials", choices=["phone-dials", "peer-dials"])
+    commands.choices["check"].add_argument("--order", default="phone-dials", choices=["phone-dials", "peer-dials"])
     commands.choices["check"].add_argument("--blank-name", action="store_true", help="run the peer with no name, so each side shows the alias")
     commands.choices["check"].add_argument("--expect-avatar", action="store_true", help="the phone has a photo: check its FILE records")
     commands.choices["refusal"].add_argument("--seconds", type=float, default=120, help="how long to watch the dials fail")
@@ -2939,12 +3229,24 @@ def main() -> int:
     scan.add_argument("--first", default="android", choices=["android", "ios"], help="which peer starts first once the iPhone is locked")
     scan.add_argument("--lock-wait", type=float, default=900, help="how long to wait for someone to lock the iPhone")
     scan.add_argument("--unlock-wait", type=float, default=1800, help="how long to wait for someone to open Knit again")
+    reads = commands.add_parser("android-reads")
+    reads.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    reads.add_argument("--order", default="peer-below", choices=["peer-below", "peer-above"], help="where the peer's id sorts against the phone's")
+    reads.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    reads.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
+    reads.add_argument("--link-timeout", type=float, default=180, help="seconds for the phone's read and for the link")
     android = commands.add_parser("android-rings")
     android.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     android.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
     android.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     android.add_argument("--converge-timeout", type=float, default=600, help="seconds for the back-fill to converge custody")
     android.add_argument("--arrival-timeout", type=float, default=600, help="seconds for the post and the DM to reach the peer")
+    android.add_argument(
+        "--link",
+        default="dialed",
+        choices=["dialed", "accepted"],
+        help="a link the phone dialed after reading the peer's payload (A3), or one it accepted from a peer it never sights",
+    )
     for sub in (ios, wake, reboot, rings, scan, by_hand, ios_peer, ios_soak, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
@@ -2962,6 +3264,8 @@ def main() -> int:
         return iphone_soak(arguments)
     if arguments.command == "android-rings":
         return android_rings(arguments)
+    if arguments.command == "android-reads":
+        return android_reads(arguments)
     if arguments.command == "iphone-scan":
         return iphone_scan(arguments)
     global RECEIVE_MTU, SEND_MTU  # noqa: PLW0603 - two knobs, read by Peer.start

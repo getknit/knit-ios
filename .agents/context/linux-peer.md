@@ -116,8 +116,9 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 
 `scripts/interop.py` runs checklist L against one phone through knit-next's debug bridge: `check` in either
 dial order (`--blank-name` for alias parity, `--expect-avatar` for FILE records, `--radio-profile ios` for the
-A1 group), `refusal` for the `ios` profile against Android 2.7, `replace` for A1's stale-link rule, `soak`,
-`relay`, and `android-rings` for companion change A4. It needs the session's go-ahead for the phone
+A1 group), `refusal` for the `ios` profile against Android 2.7 only (every A1 build admits the dialer it expects
+refused), `replace` for A1's stale-link rule, `soak`, `relay`, `android-rings` for companion change A4, and
+`android-reads`, companion change A3's device gate. It needs the session's go-ahead for the phone
 (`.agents/rules/devices.md`). It keeps the run on that phone:
 
 - **Before the peer starts**, it scans and picks a node id that no other phone in range dials.
@@ -140,8 +141,17 @@ which is companion change A4 (knit-next `c3191717`, its ADR 2026-09.dqvb). The p
 has it, and the first step checks that before the peer starts. A debug build logs a `bt state`
 line every minute, and only an A4 build's counts `doorbells=` and `rings=`, so a line without them ends the run.
 The peer then runs on `hci1` in the `ios` profile. Its GATT application serves a doorbell that counts rings
-(`status.rung`), and its HELLO carries `CAP_DOORBELL`. Its id sorts below the phone's, and the phone never sights
-it, so the peer dials the phone, and Android rings only a link it accepted. The run checks five things in turn:
+(`status.rung`), and its HELLO carries `CAP_DOORBELL`. `--link` picks whose link it is:
+
+- **`dialed`**, the default, needs A3 too, and a `bt state` line with `gattPayloads=` shows it. The peer's id sorts
+  below the phone's, so the phone reads its payload and dials it, and the ring tests a link Android dialed, whose
+  capabilities came from the peer's HELLO reply. A phone with the flag set is waited for; one with it clear would be
+  dialed by the peer as well, so then the peer runs with `--never-sight` for the phone.
+- **`accepted`** is the link A4 rang before A3. The peer serves its doorbell without the payload
+  (`--no-gatt-payload`), so an A3 phone takes it for a stranger and never sights it, and its id sorts above the
+  phone's, so it dials the phone whatever the phone's flag.
+
+The run checks five things in turn:
 
 1. The phone logs `bt doorbell found <peer>` and rings the peer for its link-up frames.
 2. The back-fill drains, and custody converges within `--converge-timeout` (600 s). A phone with knit-next's ADR
@@ -158,6 +168,22 @@ it, so the peer dials the phone, and Android rings only a link it accepted. The 
 Last, the post and the DM must each reach the peer within `--arrival-timeout` (600 s) of being sent, and the step
 reports how long each took. On `hci1` that can be minutes, behind the digests the phone queued during the back-fill
 ("Why the frames were late").
+
+`android-reads` is companion change A3's device gate (knit-next `feat/gatt-peers`, its ADR 2026-09.kwq2). The phone
+runs an A3 debug build, whose `bt state` line counts `gattPayloads=` and `gattReads=`; the first step checks it. The
+peer runs on `hci1` in the `ios` profile, serving its payload and its doorbell, and `--order` puts its id on one side
+of the phone's:
+
+- **`peer-below`:** the phone logs `bt gatt read <address> → <peer>`, dials the peer (`bt connect ok`), finds its
+  doorbell on that link and rings it for the link-up frames. The peer must never dial the phone. A phone with
+  `FLAG_DIALS_GATT_PEERS` set is waited for of the peer's own accord, and the run checks that it was. With the flag
+  clear the peer would sight the phone, dial it, and refuse the phone's dial as one it makes itself, so the peer then
+  runs with `--never-sight` for the phone: it holds its dials and admits the phone's unsighted.
+- **`peer-above`:** the phone reads the payload and never logs `bt initiating to <peer>`; the peer dials, and the
+  phone logs `bt accepted client <peer> (Admit, sighted=true)`, a sighting only the read can have given it.
+
+In both orders every `bt gatt read` names a node without service data, never an Android phone the scan heard, and the
+link must hold. The run reports the first link's time from the peer's start, MVP item 2's measure.
 
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
 needs no go-ahead for a phone. The peer takes a node id above every phone's and dials them all, since this adapter
@@ -757,8 +783,9 @@ Bluetooth once, at the Mac, on 2026-09-28.
     delivered and ticked, and the back-fill in 37 s;
   - with its id above, blank-named, 14 of 14: the same, plus alias parity (each side's alias the other shows) and
     the phone's three avatar FILE records discarded with the link kept.
-- **The Mac always dials.** Android finds an `ios`-profile peer only with A3, so in both id orders the Mac's
-  central dials the phone, and A1 admits it unsighted. That is the same shape as the iPhone's links.
+- **The Mac always dialed.** Android before A3 cannot find an `ios`-profile peer, so in both id orders the Mac's
+  central dialed the phone, and A1 admitted it unsighted. That was the same shape as the iPhone's links. An A3 phone
+  with the flag set reads the Mac's payload, dials it when the Mac sorts below it, and the Mac waits.
 - **`interop.py soak --mac --extras`, one hour against the Pixel 3** (12:19 to 13:24), passed 11 of 12. The link
   held all hour with no ending on either side, and the Mac's memory stayed at 12.5 MB. All 505 of the phone's
   posts arrived, 504 within 5 s (median 1.6 s), and all 506 of the Mac's were ticked (median 1.1 s). The extras

@@ -59,8 +59,8 @@ knit-peer run --radio-profile android --name "knit-peer"          # JSON lines o
 python3 scripts/interop.py check --device <adb serial> --order phone-dials   # checklist L, with the go-ahead
 python3 scripts/interop.py check … --blank-name --expect-avatar   # alias parity; FILE records from a phone with a photo
 python3 scripts/interop.py check … --radio-profile ios            # the ios group, against an A1 build
-python3 scripts/interop.py refusal --device <adb serial>          # the ios profile against Android 2.7
-python3 scripts/interop.py replace --device <adb serial>          # A1's stale-link replacement
+python3 scripts/interop.py refusal --device <adb serial>          # the ios profile against Android 2.7 only
+python3 scripts/interop.py replace --device <adb serial>          # A1's stale-link replacement, with a peer the phone never sights
 python3 scripts/interop.py check … --send-mtu 8192                # SDUs above the default 247, to test a phone
 python3 scripts/interop.py soak --device <serial> --extras        # MVP item 11's hour, both ways, with the go-ahead
 python3 scripts/interop.py relay --device <serial>                # MVP item 7's line; a second peer on hci0, its go-ahead too
@@ -75,7 +75,8 @@ python3 scripts/interop.py iphone-wake --device <serial> --expect-wakes   # the 
 python3 scripts/interop.py iphone-wake --sender peer              # the same from a peer on hci0, which rings the iPhone's doorbell
 python3 scripts/interop.py iphone-reboot --restart                # MVP item 1: the identity survives closing Knit and a reboot; someone unlocks
 python3 scripts/interop.py iphone-rings                           # the iPhone rings a peer's doorbell (hci1, ios profile); Knit open
-python3 scripts/interop.py android-rings --device <serial>        # A4: custody converges, then an Android phone rings the peer's doorbell (hci1, ios profile)
+python3 scripts/interop.py android-rings --device <serial>        # A4: custody converges, then an Android phone rings the peer's doorbell (hci1, ios profile; --link dialed|accepted)
+python3 scripts/interop.py android-reads --device <serial> --order peer-below|peer-above   # A3's gate: the phone reads the peer's GATT payload, and dials it or is dialed
 python3 scripts/interop.py iphone-scan --first ios --away-window 150   # P8's scan-filter check: peers on hci0 and hci1; someone locks the iPhone
 python3 scripts/interop.py bridge '{"cmd":"status"}' --watch 60   # the iPhone's bridge by hand: replies, then events
 python3 scripts/soak.py run [--hours 10]                          # a night against every phone in range; drives none

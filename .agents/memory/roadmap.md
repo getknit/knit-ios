@@ -237,7 +237,16 @@ explicit direction.** Update this file in the change that ships an item.
   first (`.agents/context/crypto.md`).
 - **Contacts:** QR verification in person, and contact links at a distance (`docs/CONTACT_CARD.md` in
   knit-next).
-- **Companion change A3** (knit-next #101): Android finds and dials iPhones.
+- **Companion change A3** (knit-next #101): Android finds and dials iPhones. It is the paired change `gatt-peers`, on
+  `feat/gatt-peers` in both repos (knit-next ADR 2026-09.kwq2). Android reads the GATT payload of a node that
+  advertises only the `0xFE30` UUID, on `GattPayloads`' rules, dials it when its own id sorts higher, and takes a
+  dialed link's capabilities from the HELLO reply, so A4 rings it. Then it sets `FLAG_DIALS_GATT_PEERS`, and an
+  iPhone below it waits to be dialed. Nothing in `KnitWire`, `KnitMesh` or `KnitBLE` moves: the payload, the flag and
+  `weDial` were already law here. This side owns the device checks: `interop.py android-reads` is the gate, against
+  the Pixel 7 and the Moto G with the flag clear and again with it set, and then `iphone` in both orders and
+  `iphone-wake` with the Pixel 3. knit-peer gained two test switches for them, `--never-sight` and
+  `--no-gatt-payload`. Still owed: the Android handoff, the gate, the flag, the final runs, and the pin once
+  knit-next merges.
 - **Companion change A4:** Android rings an iPhone's doorbell (ADR 2026-09.khjj) after the frames it writes on the
   iPhone's link, on `LinkManager`'s schedule: a GATT write without response over the link's own connection, once
   service discovery finds the doorbell. Built as knit-next `c3191717` (its ADR 2026-09.dqvb), for a peer whose
@@ -288,6 +297,10 @@ explicit direction.** Update this file in the change that ships an item.
   GPL exception is already in place.
 - **Background discovery:** a locked iPhone's scan filtered on `0xFE30` finds Android phones and other Knit peers,
   in 30 to 120 s, but wakes Knit for every match (P8's scan-filter check, `.agents/context/linux-peer.md`). It
-  needs a design that bounds the wakes, such as filtering only while Knit has too few links.
+  needs a design that bounds the wakes, such as filtering only while Knit has too few links. It will also meet a
+  limit A3 leaves: an Android phone that sets `FLAG_DIALS_GATT_PEERS` cannot see a backgrounded iPhone, whose UUID
+  sits in Apple's overflow area, so a backgrounded iPhone whose id sorts below the phone's waits for a dial that
+  cannot come. Today that costs nothing, since a backgrounded iPhone's unfiltered scan finds no new peers either.
+  Once background discovery lands, `weDial` must ignore a service-data peer's flag while Knit is in the background.
 - **Never on iOS:** Wi-Fi Aware, the BLE side channel, spool relays and commons, LoRa, and Wi-Fi Direct.
   These are ADR-recorded scope decisions, not a backlog.
