@@ -38,6 +38,7 @@ growing an explanation, that explanation belongs in the ADR.
 | a string a person reads, `Copy`, `App/Info.plist`'s usage strings, or a view's text | [ADR 2026-09.ycza](../memory/decisions/2026-09-ycza-user-facing-copy-lives-in.md) |
 | `check.sh periphery`, a `verify:periphery` job, a `periphery:ignore`, or a Periphery finding | [ADR 2026-09.xgtz](../memory/decisions/2026-09-xgtz-periphery-blocks-on-the-mac.md) |
 | a view's colors, `Palette`, `KnitUITests`, `AuditPolicy`, `scripts/check.sh uitest`, or an accessibility audit finding | [ADR 2026-09.jcdx](../memory/decisions/2026-09-jcdx-the-accessibility-audit-blocks.md) |
+| `KnitDeviceTests`, the `KnitDevice` scheme, `scripts/check.sh devicetest`, `SystemApps`, or an id that names a state | [ADR 2026-09.63em](../memory/decisions/2026-09-63em-device-ui-tests-run-by.md) |
 
 ## Where they live
 

@@ -26,17 +26,6 @@ final class KnitUITests: XCTestCase {
         }
     }
 
-    /// A screen or control that never appeared, which ends the test.
-    private struct Missing: Error, CustomStringConvertible {
-        let what: String
-
-        var description: String { "\(what) never appeared" }
-    }
-
-    /// How long a screen gets to appear. A cold Simulator takes seconds for the first launch.
-    private static let appears: TimeInterval = 20
-    /// How many swipes a control lower down a screen gets to come into view.
-    private static let swipes = 8
     /// How often, and how many times, a moving element's frame is read until it holds still.
     private static let frameInterval: TimeInterval = 0.25
     private static let frameReads = 20
@@ -85,32 +74,32 @@ final class KnitUITests: XCTestCase {
     private func walkOnboarding() throws {
         let app = launch("-demoOnboarding")
         try audit(app, AccessibilityID.onboardingWelcome)
-        try reveal(app, AccessibilityID.onboardingNext).tap()
+        try app.reveal(AccessibilityID.onboardingNext).tap()
 
         try audit(app, AccessibilityID.onboardingNamePage)
-        let name = try appear(app, AccessibilityID.onboardingName)
+        let name = try app.appear(AccessibilityID.onboardingName)
         name.tap()
         name.typeText("Robin")
-        try reveal(app, AccessibilityID.onboardingNext).tap()
+        try app.reveal(AccessibilityID.onboardingNext).tap()
 
         try audit(app, AccessibilityID.onboardingPermissions)
-        app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Bluetooth")).firstMatch.tap()
-        try reveal(app, AccessibilityID.onboardingStart).tap()
-        try appear(app, AccessibilityID.chatListStatus)
+        try app.reveal(AccessibilityID.onboardingAllowBluetooth).tap()
+        try app.reveal(AccessibilityID.onboardingStart).tap()
+        try app.appear(AccessibilityID.chatListStatus)
         app.terminate()
     }
 
     private func walkRoom() throws {
         let app = launch()
         try audit(app, AccessibilityID.chatListStatus)
-        try reveal(app, AccessibilityID.chatRow("nearby")).tap()
+        try app.reveal(AccessibilityID.chatRow("nearby")).tap()
 
         try audit(app, AccessibilityID.chatThread)
-        let input = try appear(app, AccessibilityID.chatInput)
+        let input = try app.appear(AccessibilityID.chatInput)
         input.tap()
         input.typeText("Anyone near the stage?")
-        try appear(app, AccessibilityID.chatSend).tap()
-        try appear(app.staticTexts["Anyone near the stage?"], "the post")
+        try app.appear(AccessibilityID.chatSend).tap()
+        try app.staticTexts["Anyone near the stage?"].appear("the post")
         app.terminate()
     }
 
@@ -119,59 +108,59 @@ final class KnitUITests: XCTestCase {
         let direct = app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH %@ AND identifier != %@", "contact_", AccessibilityID.chatRow("nearby"))
         )
-        try reveal(app, direct.firstMatch, "a direct thread").tap()
+        try app.reveal(direct.firstMatch, "a direct thread").tap()
         try audit(app, AccessibilityID.chatThread)
 
-        try appear(app, AccessibilityID.chatVerified).tap()
-        settle(try appear(app.buttons["Done"], "the encryption sheet"))
+        try app.appear(AccessibilityID.chatVerified).tap()
+        settle(try app.buttons["Done"].appear("the encryption sheet"))
         audit(app, screen: "the encryption sheet")
         app.buttons["Done"].tap()
 
-        try appear(app, AccessibilityID.chatProfile).tap()
+        try app.appear(AccessibilityID.chatProfile).tap()
         try audit(app, AccessibilityID.profileDetailsScreen)
-        try reveal(app, AccessibilityID.profileDetailsMessage).tap()
-        try appear(app, AccessibilityID.chatThread)
+        try app.reveal(AccessibilityID.profileDetailsMessage).tap()
+        try app.appear(AccessibilityID.chatThread)
         app.terminate()
     }
 
     private func walkRequests() throws {
         let app = launch()
-        try reveal(app, AccessibilityID.chatListRequests).tap()
+        try app.reveal(AccessibilityID.chatListRequests).tap()
         let row = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "request_row_")).firstMatch
-        try appear(row, "a request")
+        try row.appear("a request")
         audit(app, screen: "the requests")
 
         row.tap()
         try audit(app, AccessibilityID.chatThread)
-        back(app)
+        app.back()
 
         let accept = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "request_accept_")).firstMatch
-        try reveal(app, accept, "Accept").tap()
-        XCTAssert(accept.waitForNonExistence(timeout: Self.appears), "the request stays after Accept")
+        try app.reveal(accept, "Accept").tap()
+        XCTAssert(accept.waitForNonExistence(timeout: Walking.appears), "the request stays after Accept")
         app.terminate()
     }
 
     private func walkSettings() throws {
         let app = launch()
-        try appear(app, AccessibilityID.chatListSettings).tap()
+        try app.appear(AccessibilityID.chatListSettings).tap()
         try audit(app, AccessibilityID.settingsScreen)
 
-        try reveal(app, AccessibilityID.settingsProfileRow).tap()
+        try app.reveal(AccessibilityID.settingsProfileRow).tap()
         try audit(app, AccessibilityID.profileScreen)
-        back(app)
-        try reveal(app, AccessibilityID.settingsAbout).tap()
+        app.back()
+        try app.reveal(AccessibilityID.settingsAbout).tap()
         try audit(app, AccessibilityID.aboutScreen)
-        back(app)
-        try reveal(app, AccessibilityID.settingsDiagnostics).tap()
+        app.back()
+        try app.reveal(AccessibilityID.settingsDiagnostics).tap()
         try audit(app, AccessibilityID.diagnosticsScreen)
-        back(app)
+        app.back()
 
-        let mesh = try reveal(app, AccessibilityID.settingsMesh)
+        let mesh = try app.reveal(AccessibilityID.settingsMesh)
         let running = mesh.label
         mesh.tap()
         let turned = app.buttons.matching(NSPredicate(format: "label != %@ AND identifier == %@", running, AccessibilityID.settingsMesh))
-        try appear(turned.firstMatch, "Start, once stopped")
-        back(app)
+        try turned.firstMatch.appear("Start, once stopped")
+        app.back()
         try audit(app, AccessibilityID.chatListStatus)
         app.terminate()
     }
@@ -181,7 +170,7 @@ final class KnitUITests: XCTestCase {
         for state in ["off", "unauthorized", "unsupported"] {
             let app = launch("-demoRadio", state)
             try audit(app, AccessibilityID.chatListStatus)
-            lines.insert(try appear(app.descendants(matching: .any)[AccessibilityID.chatListStatus].staticTexts.firstMatch, state).label)
+            lines.insert(try app.element(AccessibilityID.chatListStatus).staticTexts.firstMatch.appear(state).label)
             app.terminate()
         }
         XCTAssertEqual(lines.count, 3, "\(lines)")
@@ -197,38 +186,6 @@ final class KnitUITests: XCTestCase {
         app.launchArguments = ["-seedDemo"] + arguments + size.arguments
         app.launch()
         return app
-    }
-
-    @discardableResult
-    private func appear(_ app: XCUIApplication, _ identifier: String) throws -> XCUIElement {
-        try appear(app.descendants(matching: .any)[identifier].firstMatch, identifier)
-    }
-
-    @discardableResult
-    private func appear(_ element: XCUIElement, _ what: String) throws -> XCUIElement {
-        guard element.waitForExistence(timeout: Self.appears) else {
-            throw Missing(what: what)
-        }
-        return element
-    }
-
-    /// A control that may sit below the fold, as most do at the largest sizes: swiped into view before it is tapped.
-    @discardableResult
-    private func reveal(_ app: XCUIApplication, _ identifier: String) throws -> XCUIElement {
-        try reveal(app, app.descendants(matching: .any)[identifier].firstMatch, identifier)
-    }
-
-    @discardableResult
-    private func reveal(_ app: XCUIApplication, _ element: XCUIElement, _ what: String) throws -> XCUIElement {
-        try appear(app.windows.firstMatch, "the window")
-        // Down the screen first, then back up it: the control may be either side of where the screen was left.
-        for _ in 0..<Self.swipes where !(element.exists && element.isHittable) {
-            app.swipeUp()
-        }
-        for _ in 0..<Self.swipes where !(element.exists && element.isHittable) {
-            app.swipeDown()
-        }
-        return try appear(element, what)
     }
 
     /// Waits for `element` to stop moving. A sheet audited mid-slide is measured against the dimmed screen behind it;
@@ -247,7 +204,7 @@ final class KnitUITests: XCTestCase {
 
     /// Waits for the screen that holds `identifier`, then audits everything on it.
     private func audit(_ app: XCUIApplication, _ identifier: String) throws {
-        try appear(app, identifier)
+        try app.appear(identifier)
         audit(app, screen: identifier)
     }
 
@@ -290,10 +247,6 @@ final class KnitUITests: XCTestCase {
             add(shot)
         }
         XCTAssert(issues.isEmpty, "\(screen) (\(size)), \(issues.count) issues:\n" + issues.joined(separator: "\n"))
-    }
-
-    private func back(_ app: XCUIApplication) {
-        app.navigationBars.buttons.element(boundBy: 0).tap()
     }
 }
 

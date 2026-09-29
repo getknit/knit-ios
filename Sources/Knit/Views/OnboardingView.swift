@@ -205,7 +205,8 @@
                         title: Copy.Onboarding.bluetoothTitle,
                         detail: Copy.Onboarding.bluetoothBody,
                         optional: false,
-                        state: PermissionRow.State(model.bluetooth)
+                        state: PermissionRow.State(model.bluetooth),
+                        allowIdentifier: AccessibilityID.onboardingAllowBluetooth
                     ) {
                         Task { await model.allowBluetooth() }
                     }
@@ -213,7 +214,8 @@
                         title: Copy.Onboarding.notificationsTitle,
                         detail: Copy.Onboarding.notificationsBody,
                         optional: true,
-                        state: PermissionRow.State(model.notifications)
+                        state: PermissionRow.State(model.notifications),
+                        allowIdentifier: AccessibilityID.onboardingAllowNotifications
                     ) {
                         Task { await model.allowNotifications() }
                     }
@@ -296,6 +298,8 @@
         let detail: String
         let optional: Bool
         let state: State
+        /// The Allow button's identifier.
+        let allowIdentifier: String
         let allow: () -> Void
 
         var body: some View {
@@ -326,6 +330,7 @@
                 Button(Copy.Onboarding.allow, action: allow)
                     .buttonStyle(.bordered)
                     .accessibilityLabel(Copy.Onboarding.allowLabel(title))
+                    .accessibilityIdentifier(allowIdentifier)
             case .waiting:
                 ProgressView()
             case .allowed:

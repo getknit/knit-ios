@@ -188,6 +188,17 @@ import Testing
         #expect(AccessibilityID.chatInput == "chat_input" && AccessibilityID.chatSend == "chat_send")
     }
 
+    /// The ids only the iPhone has, which the device tests read: the status line's state and its buttons, and
+    /// onboarding's Allow buttons.
+    @Test func theStatusLinesIdentifierNamesItsState() {
+        #expect(AccessibilityID.chatListStatus(.bluetoothOff) == "chat_list_status_bluetooth_off")
+        #expect(AccessibilityID.chatListStatus(.notAllowed) == "chat_list_status_not_allowed")
+        #expect(Set(AccessibilityID.StatusState.allCases.map(AccessibilityID.chatListStatus)).count == 7)
+        #expect(AccessibilityID.chatListStatusStart == "chat_list_status_start")
+        #expect(AccessibilityID.chatListStatusSettings == "chat_list_status_settings")
+        #expect(AccessibilityID.onboardingAllowBluetooth == "onboarding_allow_bluetooth")
+    }
+
     @Test func everyStatusHasItsWords() {
         #expect(
             [DeliveryStatus.waitingForKey, .sent, .delivered].map(\.label) == [

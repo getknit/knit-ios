@@ -202,6 +202,12 @@ explicit direction.** Update this file in the change that ships an item.
     showed its own line, and the refusal's Settings button opened Knit's page. iOS ends Knit's process when the
     permission is taken away and again when it is given back. The unsupported device's line is checked in
     `test:ios:simulator` (`.agents/context/linux-peer.md`, "What the iPhone's status line showed").
+  - **Device UI tests (2026-09-29):** `KnitDeviceTests` runs XCUITest on the iPhone from the Mac (`scripts/check.sh
+    devicetest`, ADR 2026-09.63em), with Knit launched live and the Settings app and SpringBoard driven beside it. It
+    checks item 10 without anyone at the phone: Stop and Start, Bluetooth off and on, and the permission refused and
+    given back. It also covers onboarding's prompt and a relaunch for item 1. It passed 5 of 5 twice in a row, about
+    3.5 minutes of tests in a 6-minute run. The Mac's command line could not make the runner's profile, since it
+    finds no account, so Xcode's window made it (ADR 2026-09.zawh, amended).
   - **Still owed:** items 2 to 7 pass against the Pixel 3 through the bridge, unattended, and item 9's test needs
     someone to lock and unlock the iPhone (`.agents/context/linux-peer.md`). A rerun of the soak on the fixed
     harness would show the room check pass; custody should match too once the Pixel runs knit-next's early-receipt

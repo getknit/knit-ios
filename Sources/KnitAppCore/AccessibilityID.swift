@@ -1,5 +1,5 @@
 /// The identifiers UI tests find views by. Each is Android's test tag for the same view, so one checklist drives both
-/// apps (`testTag` in knit-next's `ui/`).
+/// apps (`testTag` in knit-next's `ui/`). The few Android has no tag for say so; the iPhone's device tests read them.
 public enum AccessibilityID {
     /// The onboarding flow.
     public static let onboardingScreen = "screen_onboarding"
@@ -15,9 +15,23 @@ public enum AccessibilityID {
     public static let onboardingNext = "onboarding_next"
     /// The button that finishes onboarding.
     public static let onboardingStart = "onboarding_start"
+    /// The permissions page's Allow for Bluetooth. Android has no tag here.
+    public static let onboardingAllowBluetooth = "onboarding_allow_bluetooth"
+    /// The permissions page's Allow for notifications. Android has no tag here.
+    public static let onboardingAllowNotifications = "onboarding_allow_notifications"
 
     /// The chat list's status line: how many peers are linked, or why none can be.
     public static let chatListStatus = "chat_list_status"
+    /// The status line's words, `chat_list_status_<state>`: the identifier names the state, so a test reads it without
+    /// reading the words. Android has no tag here, nor for the line's two buttons below.
+    public static func chatListStatus(_ state: StatusState) -> String {
+        "chat_list_status_\(state.rawValue)"
+    }
+
+    /// The status line's Start, offered while the mesh is stopped.
+    public static let chatListStatusStart = "chat_list_status_start"
+    /// The status line's way to Knit's page in the Settings app, offered while Bluetooth is refused.
+    public static let chatListStatusSettings = "chat_list_status_settings"
     /// The chat list's way to Settings.
     public static let chatListSettings = "chat_list_settings"
     /// The chat list's way to the message requests.
@@ -102,4 +116,23 @@ public enum AccessibilityID {
     public static let aboutVersion = "about_version"
     /// Diagnostics.
     public static let diagnosticsScreen = "screen_diagnostics"
+
+    /// What the chat list's status line says, as ``chatListStatus(_:)`` names it. Kept here rather than taken from
+    /// `ConnectionStatus`, because the UI test bundles compile this file without the rest of KnitAppCore.
+    public enum StatusState: String, CaseIterable, Sendable {
+        /// Running, with peers linked.
+        case linked = "linked"
+        /// Running, with no peer linked yet.
+        case looking = "looking"
+        /// Running, before the radio has said anything.
+        case starting = "starting"
+        /// Stopped in Settings.
+        case stopped = "stopped"
+        /// Bluetooth is switched off.
+        case bluetoothOff = "bluetooth_off"
+        /// Knit may not use Bluetooth.
+        case notAllowed = "not_allowed"
+        /// No Bluetooth LE here.
+        case unsupported = "unsupported"
+    }
 }

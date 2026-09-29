@@ -3,7 +3,7 @@
 #
 #     scripts/check.sh fast        # format, lint, build, unit tests (the pre-push hook)
 #     scripts/check.sh all         # every gate that runs on Linux
-#     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama xcode uitest device
+#     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama xcode uitest device devicetest
 #
 # Each build variant (coverage, TSan, ASan, analyze) gets its own --scratch-path, so switching between them never
 # rebuilds the plain debug tree. `.agents/context/commands.md` explains when to run which.
@@ -165,7 +165,8 @@ xcode_resolved=App/Knit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Packa
 xcode_app=.build-xcode/Build/Products/Debug-iphoneos/Knit.app
 # Xcode indexes while it builds; Periphery reads this store for the app's own code.
 xcode_index=.build-xcode/Index.noindex/DataStore
-xcode_build=(-project App/Knit.xcodeproj -scheme Knit -configuration Debug -derivedDataPath .build-xcode
+# Each gate names its scheme: Knit for the app and the Simulator's UI tests, KnitDevice for the iPhone's device tests.
+xcode_build=(-project App/Knit.xcodeproj -configuration Debug -derivedDataPath .build-xcode
 	-jobs "$swift_jobs" -disableAutomaticPackageResolution)
 
 # What every iPhone build must hold: the committed pins, App/Info.plist's version keys, and KnitBLE's delegates.
@@ -196,9 +197,13 @@ gate_xcode() {
 	xcode_project xcode
 	local destination
 	for destination in 'generic/platform=iOS' 'generic/platform=iOS Simulator'; do
-		xcodebuild "${xcode_build[@]}" -destination "$destination" CODE_SIGNING_ALLOWED=NO build | "${xcode_pretty[@]}"
+		xcodebuild "${xcode_build[@]}" -scheme Knit -destination "$destination" CODE_SIGNING_ALLOWED=NO build |
+			"${xcode_pretty[@]}"
 	done
 	check_xcode_app
+	# The device tests compile here too, unsigned, so a change that breaks them fails in CI rather than at the phone.
+	xcodebuild "${xcode_build[@]}" -scheme KnitDevice -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO \
+		build-for-testing | "${xcode_pretty[@]}"
 }
 
 # The UI tests and the accessibility audit, in the Simulator (MVP item 12): every MVP screen on -seedDemo's stores,
@@ -219,7 +224,7 @@ gate_uitest() {
 	fi
 	local results=.build-xcode/uitest.xcresult
 	rm -rf "$results"
-	xcodebuild "${xcode_build[@]}" -destination "platform=iOS Simulator,name=$simulator" \
+	xcodebuild "${xcode_build[@]}" -scheme Knit -destination "platform=iOS Simulator,name=$simulator" \
 		-resultBundlePath "$results" -collect-test-diagnostics never test | "${xcode_pretty[@]}"
 }
 
@@ -237,17 +242,12 @@ simulator_named() {
 gate_device() {
 	step "xcodebuild App/Knit.xcodeproj (iPhone, signed in the desktop session)"
 	xcode_project device
-	local team=()
-	if [ -n "${KNIT_DEVELOPMENT_TEAM:-}" ]; then
-		team=("DEVELOPMENT_TEAM=$KNIT_DEVELOPMENT_TEAM")
-	elif ! grep -qs '^DEVELOPMENT_TEAM *= *[A-Z0-9]' App/Local.xcconfig; then
-		echo "no signing team: set KNIT_DEVELOPMENT_TEAM, or DEVELOPMENT_TEAM in App/Local.xcconfig" >&2
-		return 1
-	fi
+	local team
+	signing_team
 	# An incremental build that fetches a new profile copies it into the app without signing again, which leaves a
 	# broken seal (2026-09-28). The objects stay cached, so linking, copying and signing a fresh bundle is cheap.
 	rm -rf "$xcode_app"
-	scripts/mac-desktop.sh xcodebuild "${xcode_build[@]}" -destination 'generic/platform=iOS' \
+	scripts/mac-desktop.sh xcodebuild "${xcode_build[@]}" -scheme Knit -destination 'generic/platform=iOS' \
 		-allowProvisioningUpdates "${team[@]}" build | "${xcode_pretty[@]}"
 	check_xcode_app
 	codesign --verify --strict --deep "$xcode_app"
@@ -263,6 +263,74 @@ PY
 	rm -f "$xcode_app.profile.plist"
 }
 
+# The signing team, into the caller's `team`: the build setting for $KNIT_DEVELOPMENT_TEAM, or nothing when
+# App/Local.xcconfig names one, which the project reads itself.
+signing_team() {
+	team=()
+	if [ -n "${KNIT_DEVELOPMENT_TEAM:-}" ]; then
+		team=("DEVELOPMENT_TEAM=$KNIT_DEVELOPMENT_TEAM")
+	elif ! grep -qs '^DEVELOPMENT_TEAM *= *[A-Z0-9]' App/Local.xcconfig; then
+		echo "no signing team: set KNIT_DEVELOPMENT_TEAM, or DEVELOPMENT_TEAM in App/Local.xcconfig" >&2
+		return 1
+	fi
+}
+
+# The iPhone's device tests (KnitDeviceTests): Knit launched live on the phone, on the real radio and permission, with
+# the Settings app and SpringBoard driven beside it. Driving the phone needs the maintainer's go-ahead every session
+# (.agents/rules/devices.md), so no CI job runs this. The phone is $KNIT_DEVICE, or else the one iPhone the Mac sees
+# connected. It stays unlocked for the run, with Auto-Lock off and Settings > Developer > Enable UI Automation on.
+# $KNIT_DEVICE_TESTS narrows the run, as in KnitDeviceTests/RadioTests/testBluetoothOffAndOn. Signing, and the
+# runner's profile, come from the desktop session, as gate_device's do.
+gate_devicetest() {
+	step "xcodebuild test on the iPhone (KnitDeviceTests, signed in the desktop session)"
+	xcode_project devicetest
+	local team
+	signing_team
+	local udid=${KNIT_DEVICE:-}
+	if [ -z "$udid" ]; then
+		udid=$(connected_iphone)
+	fi
+	local only=()
+	if [ -n "${KNIT_DEVICE_TESTS:-}" ]; then
+		only=("-only-testing:$KNIT_DEVICE_TESTS")
+	fi
+	local results=.build-xcode/devicetest.xcresult status=0
+	# A fresh bundle for the same broken-seal reason as gate_device's.
+	rm -rf "$xcode_app" "$results"
+	scripts/mac-desktop.sh xcodebuild "${xcode_build[@]}" -scheme KnitDevice -destination "platform=iOS,id=$udid" \
+		-allowProvisioningUpdates "${team[@]}" "${only[@]}" -resultBundlePath "$results" test | "${xcode_pretty[@]}" ||
+		status=$?
+	# XCTest ends the apps it launched as the run finishes, which left Knit closed and the mesh down (2026-09-29).
+	# Open it again, pass or fail, so the phone runs as interop.py expects.
+	if ! xcrun devicectl device process launch --device "$udid" app.getknit.knit.dev >/dev/null; then
+		echo "could not open Knit again on $udid: open it on the phone" >&2
+	fi
+	return "$status"
+}
+
+# The UDID of the one physical iPhone the Mac sees connected; none, or more than one, fails and names what it saw.
+connected_iphone() {
+	local list status=0
+	list=$(mktemp)
+	xcrun devicectl list devices --json-output "$list" >/dev/null
+	python3 - "$list" <<'PY' || status=$?
+import json, sys
+devices = json.load(open(sys.argv[1]))["result"]["devices"]
+phones = [
+	d for d in devices
+	if d["hardwareProperties"].get("reality") == "physical"
+	and d["hardwareProperties"].get("deviceType") == "iPhone"
+	and d["connectionProperties"].get("tunnelState") == "connected"
+]
+if len(phones) != 1:
+	names = [f"{d['deviceProperties'].get('name')} ({d['hardwareProperties'].get('udid')})" for d in phones]
+	sys.exit(f"want one connected iPhone, the Mac sees {len(phones)}: {names}; set KNIT_DEVICE to its UDID")
+print(phones[0]["hardwareProperties"]["udid"])
+PY
+	rm -f "$list"
+	return "$status"
+}
+
 run() {
 	for gate in "$@"; do
 		"gate_$gate"
@@ -272,9 +340,9 @@ run() {
 case "${1:-fast}" in
 fast) run format lint build test ;;
 all) run format lint adr build test coverage tsan asan analyze lintorama ;;
-format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | xcode | uitest | device) run "$@" ;;
+format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | xcode | uitest | device | devicetest) run "$@" ;;
 *)
-	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device]" >&2
+	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest]" >&2
 	exit 2
 	;;
 esac

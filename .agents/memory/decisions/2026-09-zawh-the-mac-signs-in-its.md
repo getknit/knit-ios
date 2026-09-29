@@ -29,6 +29,12 @@ seal, and prints when the profile expires. ssh and CI take the same path: `build
 the `macos` runner, only in `knit/knit-ios`. The alternative, a separate signing keychain unlocked by a script,
 keeps a keychain password on disk and still cannot renew profiles.
 
+**Amended 2026-09-29:** late on 2026-09-28, `xcodebuild` found no account over ssh or in the desktop session
+("No Accounts"), though Xcode's window held one with the Personal Team. It could still sign with a profile it
+already had, but not make one. The device tests' runner, a new App ID, got its profile from Xcode's window (ADR
+2026-09.63em). Until the command line sees the account again, a profile the gate cannot find, a new App ID's or an
+expired one's, comes from the window too. The `.dev` profile expires on 2026-10-05.
+
 **Consequences / limits:**
 
 - **Anyone who runs commands as `maintainer` on the Mac can sign as the team.** That covers an ssh login, and a

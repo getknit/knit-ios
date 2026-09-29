@@ -220,13 +220,23 @@ and never sleeps.
     it. `-allowProvisioningUpdates` renews the 7-day profile there too: with the cached one moved aside, it
     fetched a new one from Apple (2026-09-28). CI's `build:ios:signed` takes the same path, with the team in
     `KNIT_DEVELOPMENT_TEAM`.
+  - **The command line lost the account (2026-09-28, late).** `xcodebuild` reported "No Accounts" over ssh and in
+    the desktop session alike, while Xcode's window listed the account with the Personal Team, and Xcode's
+    `DVTDeveloperAccountManagerAppleIDLists` preference was empty. It signs with profiles it already has but
+    makes none. A new App ID's profile, or one that expired, comes from Xcode's window: open the mirror's
+    `App/Knit.xcodeproj`, pick the scheme and the iPhone, and build (Product → Build For → Testing for the device
+    tests). The `.dev` profile expires on 2026-10-05.
   - **Anyone running as `maintainer` can sign as the team,** a `macos` job from any project included. The job's
     rule keeps forks out; an account of its own for the runner is the real fix.
   - **The `.dev` id keeps `app.getknit.knit` unclaimed.** Apple gives a bundle id to the first team that
     registers it, and the free team registers every id it signs, so it signs only the `.dev` one.
   - **One Knit per phone.** Two installs would both advertise the GATT payload and scan, and a peer would see
     two nodes on one iPhone, as with Android, which has no debug package for that reason.
-  - **Free provisioning** limits a team to three installed apps, each for 7 days.
+  - **Free provisioning** limits a team to three installed apps, each for 7 days. The iPhone holds two: Knit and
+    the device tests' runner, `app.getknit.knit.devicetests.xctrunner` (ADR 2026-09.63em).
+  - **The device tests need the phone ready:** Settings → Developer → Enable UI Automation on, the phone unlocked,
+    and Auto-Lock off for the run. With a passcode set, the first run waits on the phone for the passcode before
+    iOS enables automation mode, and times out if nobody enters it.
   - **Installing from the Mac (2026-09-28):** `check.sh device` builds the signed app, and `devicectl device
     install app` then `devicectl device process launch` put it on the iPhone 12, over the network connection.
     The iPhone holds the `.dev` build alone now; xtool's was already gone. The debug bridge answers `interop.py`

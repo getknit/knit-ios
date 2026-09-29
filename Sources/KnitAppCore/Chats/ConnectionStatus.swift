@@ -70,4 +70,22 @@ public enum ConnectionStatus: Sendable, Equatable {
     public var offersSettings: Bool {
         self == .notAllowed
     }
+
+    /// The state the line's identifier names (``AccessibilityID/chatListStatus(_:)``), which the device tests wait on.
+    public var accessibilityState: AccessibilityID.StatusState {
+        switch self {
+        case .linked(let count):
+            count == 0 ? .looking : .linked
+        case .starting:
+            .starting
+        case .stopped:
+            .stopped
+        case .bluetoothOff:
+            .bluetoothOff
+        case .notAllowed:
+            .notAllowed
+        case .unsupported:
+            .unsupported
+        }
+    }
 }

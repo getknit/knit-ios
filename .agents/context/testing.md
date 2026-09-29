@@ -57,7 +57,11 @@ ladder, not the first.
     check, with the same help. `iphone-reboot` runs item 1's relaunch and reboot through the bridge's `storage`
     reply, which also reports the Keychain item's class and the database's protection class and backup flag, with
     someone to close Knit and unlock the iPhone. `iphone-rings` and `android-rings` check the doorbell's rings each
-    way.
+    way. `KnitDeviceTests` (`scripts/check.sh devicetest`, ADR 2026-09.63em) runs XCUITest on the iPhone from the
+    Mac, with Knit launched live and the Settings app and SpringBoard driven beside it: Stop and Start, Bluetooth
+    off and on, the permission refused and allowed again, onboarding's prompt, and a relaunch. It reads the status
+    line's state from its identifier, never its words, and each test puts Bluetooth, the permission and the mesh
+    back as it ends. Its sources live in `Tests/KnitDeviceTests/`, which only the `KnitDevice` scheme builds.
 
 ## Coverage
 

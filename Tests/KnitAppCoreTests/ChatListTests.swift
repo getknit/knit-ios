@@ -152,4 +152,11 @@ import Testing
         #expect(all.filter(\.isWarning) == [.stopped, .bluetoothOff, .notAllowed, .unsupported])
         #expect(Set(all.map(\.line)).count == all.count)
     }
+
+    /// The device tests wait on the state the line's identifier names, so every state has its own, and a mesh with no
+    /// peer yet is still looking.
+    @Test func eachLineNamesItsOwnStateForTheDeviceTests() {
+        let all: [ConnectionStatus] = [.linked(2), .linked(0), .starting, .stopped, .bluetoothOff, .notAllowed, .unsupported]
+        #expect(all.map(\.accessibilityState) == AccessibilityID.StatusState.allCases)
+    }
 }

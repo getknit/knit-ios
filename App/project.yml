@@ -67,6 +67,26 @@ targets:
         GENERATE_INFOPLIST_FILE: true
         PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.uitests
         TARGETED_DEVICE_FAMILY: "1,2"
+  # The iPhone's device tests (`scripts/check.sh devicetest`): Knit launched live, on the real radio and permission,
+  # with the Settings app and SpringBoard driven beside it. Only the KnitDevice scheme runs them, never the Simulator.
+  KnitDeviceTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ../Tests/KnitDeviceTests
+      - path: ../Tests/KnitUITests/Walking.swift
+      - path: ../Sources/KnitAppCore/AccessibilityID.swift
+    dependencies:
+      - target: KnitApp
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.devicetests
+        TARGETED_DEVICE_FAMILY: "1,2"
+        # Its runner, app.getknit.knit.devicetests.xctrunner, installs on the phone, so it signs as the app does and
+        # -allowProvisioningUpdates makes its profile.
+        CODE_SIGN_STYLE: Automatic
 schemes:
   Knit:
     build:
@@ -91,3 +111,12 @@ schemes:
         "-demoRadio unsupported": false
     archive:
       config: Release
+  KnitDevice:
+    build:
+      targets:
+        KnitApp: all
+        KnitDeviceTests: [test]
+    test:
+      config: Debug
+      targets:
+        - KnitDeviceTests

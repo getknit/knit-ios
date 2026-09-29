@@ -44,6 +44,7 @@ Apple's developer disk image.
   suspended Knit answers nothing. iOS shuts Knit's sockets when it suspends it and tells the listener nothing,
   so a connection open across a suspension is lost, and the app makes a new listener at every foreground.
 - **It checks the mesh and the store, not the screens.** What the UI shows is left to XCUITest on the Mac.
+  (Amended 2026-09-29: `check.sh devicetest` now runs XCUITest on the iPhone itself, ADR 2026-09.63em.)
 - **Guards.** `MeshControlTests` covers the session path, `stop`, `start` and the event lines. `PeerNodeTests`
   covers the protocol through the peer. `SessionTests`' `theTapHearsEveryEventAfterTheSession` covers the tap.
   The listener itself has no test until the Mac, and is checked on the iPhone.

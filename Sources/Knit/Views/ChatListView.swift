@@ -77,13 +77,16 @@
                     Image(systemName: symbol)
                         .foregroundStyle(status.isWarning ? Palette.warning : Palette.accent)
                 }
+                .accessibilityIdentifier(AccessibilityID.chatListStatus(status.accessibilityState))
                 if status.offersStart {
                     Button(Copy.Status.start, action: start)
                         .buttonStyle(.bordered)
+                        .accessibilityIdentifier(AccessibilityID.chatListStatusStart)
                 }
                 if status.offersSettings {
                     OpenSettingsButton()
                         .buttonStyle(.bordered)
+                        .accessibilityIdentifier(AccessibilityID.chatListStatusSettings)
                 }
                 if case .linked = status {
                     Text(Copy.Status.boundary)
