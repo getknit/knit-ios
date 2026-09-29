@@ -14,6 +14,7 @@
         case writeDigest(ChannelID, [UInt8])
         case close(ChannelID)
         case ring(ChannelID)
+        case heardHello(ChannelID, NodeId)
         case shutdown
     }
 

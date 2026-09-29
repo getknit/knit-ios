@@ -143,6 +143,9 @@
             if let advert = BLEAdvert.payload(advertisementData) {
                 emit(.sighted(RadioSighting(address: address, advert: advert, rssi: strength)))
             } else if BLEAdvert.listsService(advertisementData) {
+                // A payload whose address went quiet goes before this advert can be sighted with it (rule 3).
+                forgetQuietPayloads()
+                gatt.heard(address, now: clock.monotonicMilliseconds())
                 if let advert = gatt.payload(of: address) {
                     emit(.sighted(RadioSighting(address: address, advert: advert, rssi: strength)))
                 } else {
@@ -198,6 +201,25 @@
         }
 
         // MARK: Reading a GATT payload
+
+        /// The HELLO on `channel` named `node`: a payload read at its far end for another node goes, since a new node
+        /// took that address (the paired change `gatt-peers`' payload lifetime, rule 2).
+        func heardHello(_ node: NodeId, on channel: ChannelID) {
+            guard let uuid = peers[channel], gatt.helloNamed(node, at: RadioAddress(uuid.uuidString)) else {
+                return
+            }
+            log.log(.info, "ble forgetting the GATT payload of \(uuid): its HELLO named \(node)")
+        }
+
+        /// Forgets the payloads of the addresses unheard for a minute of scanning, bar those a link, a dial or the
+        /// read holds (rule 3).
+        func forgetQuietPayloads() {
+            let held = Set(peers.values).union(dials.values.map(\.peripheral)).union([gattTarget].compactMap(\.self))
+            let linked = Set(held.map { RadioAddress($0.uuidString) })
+            for address in gatt.forgetQuiet(now: clock.monotonicMilliseconds(), linked: linked) {
+                log.log(.info, "ble forgetting the GATT payload of \(address.rawValue): quiet for a minute of scanning")
+            }
+        }
 
         /// Connects a UUID-only peer to read its payload, when ``GattPayloads`` says one is due. The read's deadline
         /// ends it whatever happens, and the connection goes once it is over unless a dial came to use it.

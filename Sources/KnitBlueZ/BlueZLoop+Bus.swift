@@ -254,6 +254,7 @@
             // sighting at least every 8 s, and a filtered scan would report each device once.
             let filter = DBusValue.properties([("Transport", .string("le")), ("DuplicateData", .boolean(true))])
             scanning = true
+            gatt.scanStarted(now: now)
             adapterCall("SetDiscoveryFilter", interface: BlueZ.adapterInterface, [filter], now: now)
             adapterCall("StartDiscovery", interface: BlueZ.adapterInterface, [], now: now)
         }
@@ -263,6 +264,7 @@
                 return
             }
             scanning = false
+            gatt.scanStopped(now: now)
             adapterCall("StopDiscovery", interface: BlueZ.adapterInterface, [], now: now)
         }
 
@@ -284,6 +286,7 @@
         /// Asks BlueZ to forget the devices it has not heard for a while (`BlueZDevice.isStale`), bar any a channel or a
         /// GATT read still uses. BlueZ answers with `InterfacesRemoved`, which drops each from ``devices``.
         func forgetQuietDevices(now: Int64) {
+            forgetQuietPayloads(now: now)
             let quiet = devices.values
                 .filter { $0.isStale(now: now, quietMilliseconds: configuration.forgetQuietDevicesMilliseconds) && !linkInUse($0.path) }
                 .map(\.path)

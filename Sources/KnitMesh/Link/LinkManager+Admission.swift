@@ -155,6 +155,11 @@ extension LinkManager {
 
     func handleHello(_ record: LinkRecord, on id: ChannelID, role: Role, now: Int64) -> [Event] {
         let hello = record.tag == .hello ? Hello(payload: record.payload) : nil
+        // Whatever becomes of the link, the node at that address said who it is, which may retire a payload the radio
+        // read for another (the payload lifetime's rule 2).
+        if let named = hello.flatMap({ NodeId($0.nodeId) }) {
+            radio.heardHello(from: named, on: id)
+        }
         switch role {
         case .dialer(let expected):
             // The link's identity is what the peer says over the socket, and it must be the peer we dialed.

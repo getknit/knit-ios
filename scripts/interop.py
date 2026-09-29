@@ -16,6 +16,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-reboot [--restart] [--locked 120] [--closed 60] [--skip-relaunch] [--udid UDID]
     scripts/interop.py iphone-rings [--udid UDID]
     scripts/interop.py android-reads --device SERIAL [--order peer-below|peer-above] [--link-timeout 180]
+    scripts/interop.py android-forgets --device SERIAL [--link-timeout 180] [--quiet-timeout 600]
     scripts/interop.py android-rings --device SERIAL [--link dialed|accepted] [--converge-timeout 600] [--arrival-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
     scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
@@ -49,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import secrets
 import shlex
@@ -64,7 +66,8 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PEER = ROOT / ".build" / "out" / "Products" / "Debug-linux-x86_64" / "knit-peer"
+# KNIT_PEER runs another build of the peer, such as one from a commit whose checks passed.
+PEER = Path(os.environ.get("KNIT_PEER") or ROOT / ".build" / "out" / "Products" / "Debug-linux-x86_64" / "knit-peer")
 PACKAGE = "app.getknit.knit"
 INSTANCE = "interop"
 # The maintainer's own adapter, for `relay` only, shared with the devices already on it (.agents/rules/devices.md).
@@ -1057,10 +1060,10 @@ def android_reads(arguments: argparse.Namespace) -> int:
     item 2's measure, and the link must then hold for `--hold` seconds (60). The phone runs a debug build with A3; the
     first step checks, before the peer starts.
 
-    A phone keeps a payload until a dial to its address fails, and every peer here has hci1's address. So a phone that
-    read an earlier run's peer above it sights each later peer as that one and never reads it, until Knit restarts
-    ("What A3's gate showed", `.agents/context/linux-peer.md`): run `peer-above` last on each phone, and mind the other
-    A3 phones in range, which read the peer too."""
+    Every peer here has hci1's address, so a phone that read an earlier run's peer holds that payload until one of the
+    payload lifetime's rules forgets it: a failed dial, a HELLO naming another node, or a minute of scanning with the
+    address quiet (ADR 2026-09.xzpt). A build without those rules sights each later peer as the old one, until Knit
+    restarts ("What A3's gate showed", `.agents/context/linux-peer.md`). `android-forgets` stages each rule."""
     phone = Phone(arguments.device)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -1125,6 +1128,118 @@ def android_reads(arguments: argparse.Namespace) -> int:
         peer.stop()
     print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
     return run.failed
+
+
+def android_forgets(arguments: argparse.Namespace) -> int:
+    """The payload lifetime's three forget rules on an Android phone (ADR 2026-09.xzpt, amended 2026-09-29; knit-next
+    ADR 2026-09.kwq2), each seen once through the phone's `bt gatt forget <address> (dial|hello <node>|quiet)` line.
+    Every knit-peer on hci1 has the adapter's one public address, so each restart under a new identity is a node taking
+    a reused address. The stages run in order on one phone, each from a fresh identity:
+
+    1. **dial:** a peer below the phone is read and dialed, then stops. The phone dials the address again, the dial
+       fails before a channel opens, and the payload goes.
+    2. **quiet:** a peer above the phone is read, then stops, and nothing advertises there for over a minute of the
+       phone's scanning. The payload goes, `quiet`.
+    3. **hello, accepted:** a peer above the phone is read, then stops, and a new identity above the phone starts at
+       once and dials in. The phone still sights the old payload at the address, and the dialer's HELLO names another
+       node, so the payload goes, `hello <new id>`.
+    4. **hello, dialed:** a peer below the phone is read and dialed, then stops, and a new identity below the phone starts
+       at once on the same PSM. The phone dials the old payload's node there, the reply names another node, and the
+       payload goes, `hello <new id>`.
+
+    A peer below a phone whose flag is clear never sights it (`--never-sight`), as in `android-reads`."""
+    phone = Phone(arguments.device)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    phone_id = phone.state()["self"]["nodeId"]
+    if run.step("phone-build-reads-gatt", lambda: _reads_gatt_payloads(phone)) is None:
+        print(json.dumps({"summary": "android-forgets", "steps": run.steps, "failed": run.failed}))
+        return run.failed
+    heard = in_range()
+    others = set(heard) - {phone_id}
+    flagged = bool(heard.get(phone_id, {}).get("flags", 0) & DIALS_GATT_PEERS)
+    print(json.dumps({"run": "android-forgets", "phone": phone_id, "phoneFlagged": flagged, "refused": sorted(others)}))
+    if run.step("phone-forgot-old-peers", lambda: _phone_forgets_all_but(phone, set(heard))) is None:
+        print(json.dumps({"summary": "android-forgets", "steps": run.steps, "failed": run.failed}))
+        return run.failed
+    phone.shell("logcat -c")
+
+    def peer(order: str, tag: str) -> Peer:
+        below = order == "phone-dials"
+        keygen(phone_id, order, others)
+        held = {phone_id} if below and not flagged else set()
+        started = Peer("ios", f"knit-peer forgets {tag} {nonce}", others, arguments.peer_log, arguments.rssi_floor, never_sight=held)
+        started.start()
+        return started
+
+    current: Peer | None = None
+    try:
+        # 1. dial
+        current = peer("phone-dials", "dial")
+        run.step("dial-read-and-linked", lambda: _read_and_linked(phone, current, phone_id, arguments.link_timeout))
+        current.stop()
+        run.step("dial-forgets", lambda: _phone_forgot(phone, "(dial)", arguments.link_timeout))
+        # The watchdog gave the dial up, but the stack's own connect may run on, and on 2026-09-29 one caught the next
+        # peer's advert and held hci1 with no channel for minutes: let it lapse before another peer advertises.
+        run.step("dial-lapsed", lambda: _hci1_idle_after(30))
+        # 2. quiet
+        current = peer("peer-dials", "quiet")
+        current.command(cmd="deny-link", peer=phone_id)
+        run.step("quiet-read", lambda: _phone_read(phone, current.node_id, time.monotonic(), arguments.link_timeout))
+        current.stop()
+        run.step("quiet-forgets", lambda: _phone_forgot(phone, "(quiet)", arguments.quiet_timeout))
+        # 3. hello on a link the phone accepted
+        current = peer("peer-dials", "hello-accepted-old")
+        current.command(cmd="deny-link", peer=phone_id)
+        run.step("hello-accepted-read", lambda: _phone_read(phone, current.node_id, time.monotonic(), arguments.link_timeout))
+        current.stop()
+        current = peer("peer-dials", "hello-accepted-new")
+        newcomer = current.node_id
+        run.step("hello-accepted-forgets", lambda: _phone_forgot(phone, f"(hello {newcomer})", arguments.link_timeout))
+        current.stop()
+        # 4. hello in the reply to the phone's own dial
+        current = peer("phone-dials", "hello-dialed-old")
+        run.step("hello-dialed-read-and-linked", lambda: _read_and_linked(phone, current, phone_id, arguments.link_timeout))
+        current.stop()
+        current = peer("phone-dials", "hello-dialed-new")
+        newcomer = current.node_id
+        run.step("hello-dialed-forgets", lambda: _phone_forgot(phone, f"(hello {newcomer})", arguments.link_timeout))
+    finally:
+        if current:
+            current.stop()
+    run.step("forgets-logged", lambda: {"lines": _phone_log(phone, "bt gatt forget ")})
+    print(json.dumps({"summary": "android-forgets", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _hci1_idle_after(seconds: float) -> dict:
+    """Waits `seconds`, then reports any connection hci1 still holds with no peer running, which only a phone's stray
+    connect can have made."""
+    time.sleep(seconds)
+    listing = subprocess.run(["hcitool", "-i", "hci1", "con"], capture_output=True, text=True, check=False).stdout
+    held = [line.strip() for line in listing.splitlines()[1:] if line.strip()]
+    if held:
+        raise RuntimeError(f"hci1 still holds {held}")
+    return {}
+
+
+def _read_and_linked(phone: Phone, peer: Peer, phone_id: str, timeout: float) -> dict:
+    """The phone read the peer's payload and the two linked."""
+    read = _phone_read(phone, peer.node_id, time.monotonic(), timeout)
+    link_up(peer, phone, phone_id, timeout)
+    return read
+
+
+def _phone_forgot(phone: Phone, reason: str, timeout: float) -> dict:
+    """The phone logged `bt gatt forget <address> <reason>`, and how long after the call it showed."""
+    started = time.monotonic()
+
+    def forgot() -> list[str] | None:
+        phone.wake()
+        return [line for line in _phone_log(phone, "bt gatt forget ") if line.endswith(reason)] or None
+
+    lines = poll(forgot, timeout, every=3)
+    return {"line": lines[-1], "seconds": round(time.monotonic() - started, 1)}
 
 
 def _phone_forgets_all_but(phone: Phone, heard: set[str], timeout: float = 180) -> dict:
@@ -3271,6 +3386,12 @@ def main() -> int:
     reads.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     reads.add_argument("--link-timeout", type=float, default=180, help="seconds for the phone's read and for the link")
     reads.add_argument("--hold", type=float, default=60, help="seconds the link must hold after it comes up")
+    forgets = commands.add_parser("android-forgets")
+    forgets.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    forgets.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    forgets.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
+    forgets.add_argument("--link-timeout", type=float, default=180, help="seconds for each read, link and HELLO forget")
+    forgets.add_argument("--quiet-timeout", type=float, default=600, help="seconds for the quiet forget, which counts scan time only")
     android = commands.add_parser("android-rings")
     android.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     android.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
@@ -3302,6 +3423,8 @@ def main() -> int:
         return android_rings(arguments)
     if arguments.command == "android-reads":
         return android_reads(arguments)
+    if arguments.command == "android-forgets":
+        return android_forgets(arguments)
     if arguments.command == "iphone-scan":
         return iphone_scan(arguments)
     global RECEIVE_MTU, SEND_MTU  # noqa: PLW0603 - two knobs, read by Peer.start

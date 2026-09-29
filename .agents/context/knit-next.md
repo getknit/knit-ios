@@ -59,12 +59,16 @@ Kotlin wins.
       About screen. They are Android's alone.
   - No wire bytes or vectors moved.
 - **Mirrored ahead of the pin: knit-next ADR 2026-09.kwq2,** companion change A3. On 2026-09-29 it is knit-next's
-  `feat/gatt-peers` at `7c16aae5`, two commits on `main`'s `82898694`, and not on `main`: `3c0116f1` holds the
-  code, and `7c16aae5` only mends the ADR's status line. An Android phone with
+  `feat/gatt-peers` at `b7480e85`, three commits on `main`'s `82898694`, and not on `main`: `3c0116f1` holds the
+  reader, `7c16aae5` only mends the ADR's status line, and `b7480e85` adds the payload lifetime's two new forget rules
+  after the first device gate (a HELLO naming another node, and 60 000 ms of scan time unheard), which this port
+  mirrors in `GattPayloads`, `LinkManager` and both radios (ADR 2026-09.xzpt, amended 2026-09-29). An Android phone with
   `BLE_GATT_PEERS` (debug builds; release keeps it dark) adds a scan filter on the `0xFE30` UUID, reads the GATT
   payload of a node that lists only the UUID (`BleGattPayloadReader.kt`), and sights that node with it. `GattPayloads.kt`
-  ports `GattPayloads.swift`'s rules line for line, plus a 64-address cap on each map. A dial that fails before its
-  channel opens forgets the payload, and a HELLO refusal does not. A dialed link takes its capabilities from the
+  ports `GattPayloads.swift`'s rules line for line, plus a 64-address cap on each map. A payload goes when a dial
+  fails before its channel opens, when a HELLO names another node (checked before an accepted dialer's verdict, and
+  on a dial's reply), or after 60 000 ms of presence-scan windows with the address unheard and unlinked; each logs
+  `bt gatt forget <addr> (dial|hello <id>|quiet)`. A HELLO refusal keeps it, and so does a quiet stranger's wait. A dialed link takes its capabilities from the
   HELLO reply, so A4 rings it (`BluetoothMeshTransport.kt`). `BleAdvertPayload.kt` names `FLAG_DIALS_GATT_PEERS`
   (`0x02`), and `docs/WIRE_COMPAT.md` says every parser tests only the bits it knows. The flag is not advertised
   yet: it goes on in its own commit once `interop.py android-reads` passes on the lab phones. Nothing here mirrors

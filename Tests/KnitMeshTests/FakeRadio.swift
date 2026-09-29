@@ -19,6 +19,7 @@ final class FakeRadio: Radio {
         case wroteDigest(ChannelID, [UInt8])
         case closed(ChannelID)
         case rang(ChannelID)
+        case heardHello(NodeId, ChannelID)
     }
 
     private struct State {
@@ -29,6 +30,7 @@ final class FakeRadio: Radio {
         var writes: [ChannelID: [[UInt8]]] = [:]
         var closed: [ChannelID] = []
         var rings: [ChannelID] = []
+        var hellos: [HeardHello] = []
         var nextChannel: UInt64 = 1
     }
 
@@ -62,6 +64,14 @@ final class FakeRadio: Radio {
     var closed: [ChannelID] { state.withLock { $0.closed } }
     /// Every ring, in order, by channel.
     var rings: [ChannelID] { state.withLock { $0.rings } }
+    /// Every HELLO the link manager said it read, in order.
+    var hellos: [HeardHello] { state.withLock { $0.hellos } }
+
+    /// A HELLO the link manager reported (``Radio/heardHello(from:on:)``).
+    struct HeardHello: Equatable {
+        var node: NodeId
+        var channel: ChannelID
+    }
 
     /// Reports `event`, as the radio would.
     func emit(_ event: RadioEvent) {
@@ -111,6 +121,11 @@ final class FakeRadio: Radio {
     func ring(_ channel: ChannelID) {
         state.withLock { $0.rings.append(channel) }
         recorder.yield(.rang(channel))
+    }
+
+    func heardHello(from node: NodeId, on channel: ChannelID) {
+        state.withLock { $0.hellos.append(HeardHello(node: node, channel: channel)) }
+        recorder.yield(.heardHello(node, channel))
     }
 
     /// The size of each write on `channel`.

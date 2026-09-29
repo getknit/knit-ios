@@ -136,7 +136,7 @@ radio.
 - **So the iPhone dials Android, and Android's responder refuses it** unless the iPhone's id sorts higher.
   Companion change A1 accepts a dialer Android never sighted, so every pair links.
 - **With companion change A3, Android sees a foreground iPhone** (knit-next ADR 2026-09.kwq2, on `feat/gatt-peers`
-  at `7c16aae5`, ahead of the pin). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
+  at `b7480e85`, ahead of the pin). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
   of an advert that lists only the UUID, on `GattPayloads`' rules, sights the iPhone with it, and dials it when its
   own id sorts higher. It reads nothing while one of its dials is in flight, and holds its dials while a read runs.
   Once it sets `FLAG_DIALS_GATT_PEERS`, an iPhone whose id sorts lower waits to be dialed, and Android refuses that
@@ -183,8 +183,10 @@ The advert sets `FLAG_DIALS_GATT_PEERS` only when the radio reads the GATT paylo
 (`Radio.dialsGattPeers`), since a peer that trusts the flag waits to be dialed. A node that cannot advertise
 service data serves that payload as a read-only characteristic, `848eedcd-a2e3-4fb2-86f9-e2c80821a497`, in a
 primary `0xFE30` service, with the digest cue zeroed (ADR 2026-09.xzpt). A radio that reads those payloads
-paces itself by `GattPayloads`: one peer at a time, each read once until a dial to it fails, a failed read
-tried again after 30 s, and a device that serves no payload left alone for ten minutes.
+paces itself by `GattPayloads`: one peer at a time, a failed read tried again after 30 s, and a device that serves
+no payload left alone for ten minutes. A payload serves the address's adverts until a dial there fails before its
+channel opens, a HELLO there names another node, or the address goes unheard for a minute of scanning while nothing
+links it. Those three rules are shared law with A3 (ADR 2026-09.xzpt, amended 2026-09-29).
 
 The HELLO adds `CAP_DOORBELL` (`0x1000`) to this build's `0x9`, reading `1009`, only when the radio serves the
 doorbell (`Radio.servesDoorbell`): `KnitBLE`, and knit-peer's `ios` profile. The `android` profile, like Android,

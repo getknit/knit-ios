@@ -21,6 +21,11 @@
         /// peer is sighted once it ends.
         func gattPayload(of device: BlueZDevice, now: Int64) -> AdvertPayload? {
             let address = RadioAddress(device.path)
+            if device.servesPayloadOverGatt {
+                // A payload whose address went quiet goes before this advert can be sighted with it (rule 3).
+                forgetQuietPayloads(now: now)
+                gatt.heard(address, now: now)
+            }
             if let payload = gatt.payload(of: address) {
                 return payload
             }
@@ -88,6 +93,27 @@
                 log.log(.info, "bluez will read the GATT payload of \(Self.deviceName(path)) again")
             }
             gatt.forget(address)
+        }
+
+        /// The HELLO on channel `id` named `node`: a payload read at the channel's device for another node goes, since
+        /// a new node took the address (the payload lifetime's rule 2), and the next advert there reads it afresh.
+        func gattHeardHello(_ node: NodeId, on id: ChannelID) {
+            guard let path = channels[id]?.devicePath, gatt.helloNamed(node, at: RadioAddress(path)) else {
+                return
+            }
+            log.log(.info, "bluez forgetting the GATT payload of \(Self.deviceName(path)): its HELLO named \(node)")
+        }
+
+        /// Forgets the payloads of the addresses unheard for a minute of scanning, bar those a channel or a read holds
+        /// (the payload lifetime's rule 3).
+        func forgetQuietPayloads(now: Int64) {
+            var linked = Set(channels.values.compactMap(\.devicePath).map(RadioAddress.init))
+            if let reading = gatt.current?.address {
+                linked.insert(reading)
+            }
+            for address in gatt.forgetQuiet(now: now, linked: linked) {
+                log.log(.info, "bluez forgetting the GATT payload of \(Self.deviceName(address.rawValue)): quiet for a minute of scanning")
+            }
         }
 
         /// The last part of a device's object path, `dev_4A_00_00_00_00_EF`, for logs.

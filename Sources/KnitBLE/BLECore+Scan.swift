@@ -12,6 +12,7 @@
         /// quiet (P8's scan-filter check, `.agents/context/ble-transport.md`).
         func scan(with central: CBCentralManager) {
             central.scanForPeripherals(withServices: scanFilter, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+            gatt.scanStarted(now: clock.monotonicMilliseconds())
             log.log(.info, "ble scanning")
         }
 

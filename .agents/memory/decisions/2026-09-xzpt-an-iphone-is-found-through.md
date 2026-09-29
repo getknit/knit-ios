@@ -66,6 +66,28 @@ to that phone waiting.
 iPhone (ADR 2026-09.khjj). The payload characteristic is unchanged, and a reader that looks it up by UUID skips the
 doorbell.
 
+**Amended 2026-09-29, after companion change A3's first device gate:** a payload no longer lasts until a dial fails,
+and nothing else. On `hci1`, every knit-peer has the adapter's one public address. A phone that had read a peer whose
+id sorted above its own never dialed it, so its payload never went. Each later peer at that address was then sighted
+as the old one and never read, on both the Pixel 7 and the Pixel 3, until Knit restarted. The maintainer made three
+rules shared law with knit-next (its ADR 2026-09.kwq2). A radio forgets an address's payload, and any wait, when:
+
+1. a dial to it fails before its channel opens, as before;
+2. a HELLO on a link to it names another node, whether the HELLO of a peer that dialed us or the reply to our own
+   dial (`Radio.heardHello`, which `LinkManager` calls for every HELLO it reads). A refusal carries no HELLO, and
+   keeps the payload;
+3. it holds a payload and goes unheard (no advert, and no read or link) for 60 000 ms of scanning while no link, dial
+   or read holds it. Only time the scan runs counts, since a stopped scan hears nothing. A stranger keeps its ten
+   minutes. `GattPayloads` keeps the constant and the scan clock, and both radios check at
+   each UUID-only advert, before that advert can be sighted with a stale payload. KnitBlueZ also sweeps every 30 s, and
+   keeps forgetting a device BlueZ forgets.
+
+One case stays open: a node that changes identity at an address that never goes quiet, where the old node sorts above
+a flagged phone and the new one below it. Nobody dials, so it lasts until the address rotates or goes quiet.
+`GattPayloadsTests` (the rules and the clock), `LinkAdmissionTests`' two HELLO tests and `BlueZGattLifetimeTests`
+guard it. The CoreBluetooth radio keys an accepted link by its central's identifier, which is taken to be the one the
+same device has as a peripheral; nothing on hardware has checked that yet.
+
 **Consequences / limits:**
 
 - **Cross-platform law.** The UUID is law once A3 ships. Change it only together with knit-next.

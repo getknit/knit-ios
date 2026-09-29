@@ -126,6 +126,12 @@ public protocol Radio: AnyObject, Sendable {
     /// an open link does not, and a write to the doorbell does (ADR router: `.agents/memory/decisions.md`). A radio
     /// that cannot ring, or a peer without a doorbell, does nothing.
     func ring(_ channel: ChannelID)
+
+    /// The HELLO on `channel` named `node`: the dialer's on a channel we accepted, or the reply on one we dialed. A
+    /// radio that read a GATT payload for the address at the channel's other end forgets it when it names another
+    /// node, since a new node took that address (``GattPayloads/helloNamed(_:at:)``). A refusal carries no HELLO, so
+    /// it never comes here.
+    func heardHello(from node: NodeId, on channel: ChannelID)
 }
 
 extension Radio {
@@ -137,5 +143,10 @@ extension Radio {
     /// Rings nothing: a radio that cannot reach a doorbell.
     public func ring(_: ChannelID) {
         // A radio that can ring implements this; the rest leave the peer to wake at its next foreground.
+    }
+
+    /// Keeps nothing: a radio that reads no GATT payloads has none to forget.
+    public func heardHello(from _: NodeId, on _: ChannelID) {
+        // A radio that reads GATT payloads implements this.
     }
 }

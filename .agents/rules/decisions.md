@@ -31,7 +31,7 @@ growing an explanation, that explanation belongs in the ADR.
 | `KnitBlueZ`, `knit-peer`, `scripts/interop.py`, or anything that touches `hci1` | [ADR 2026-09.5ftc](../memory/decisions/2026-09-5ftc-a-headless-linux-peer-on.md) |
 | `knit-peer` on a Mac, `PeerRadioHost`, `scripts/mac-peer.sh`, `mac-desktop.sh --stdio`, or `interop.py --mac` | [ADR 2026-09.vcdk](../memory/decisions/2026-09-vcdk-the-mac-peer-is-knit.md) |
 | `KnitControl`, the control protocol, the app's debug bridge (`Sources/Knit/Debug/`), or `AppSession.eventTap` | [ADR 2026-09.kwa8](../memory/decisions/2026-09-kwa8-a-debug-build-takes-knit.md) |
-| the GATT payload, its UUIDs, `FLAG_DIALS_GATT_PEERS`, `Radio.dialsGattPeers`, `GattPayloads`, or `KnitBLE` | [ADR 2026-09.xzpt](../memory/decisions/2026-09-xzpt-an-iphone-is-found-through.md) |
+| the GATT payload, its UUIDs, `FLAG_DIALS_GATT_PEERS`, `Radio.dialsGattPeers`, `Radio.heardHello`, `GattPayloads`, or `KnitBLE` | [ADR 2026-09.xzpt](../memory/decisions/2026-09-xzpt-an-iphone-is-found-through.md) |
 | `LinkOutbox`, `Radio.writeDigest`, or how a radio queues what it writes | [ADR 2026-09.3ch7](../memory/decisions/2026-09-3ch7-a-link-holds-at-most.md) |
 | the doorbell, `Radio.ring`, `Radio.servesDoorbell`, `CAP_DOORBELL`, `LinkManager+Doorbell`, or what wakes a suspended iPhone | [ADR 2026-09.khjj](../memory/decisions/2026-09-khjj-a-peer-wakes-a-suspended.md) |
 | the Keychain identity, `KeychainSecretStore`, or what onboarding publishes | [ADR 2026-09.tkww](../memory/decisions/2026-09-tkww-a-reinstall-keeps-the-keychain.md) |

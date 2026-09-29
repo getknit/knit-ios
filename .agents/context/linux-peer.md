@@ -66,9 +66,11 @@ meets Android.
   runs out of time ends. `Connect` also makes a device permanent, and BlueZ stores it under
   `/var/lib/bluetooth/`, unless its address is private. Phones' addresses are, so reading an iPhone leaves
   nothing behind; reading another Linux peer, on a public address, leaves its entry under hci1.
-- **The pacing** is `GattPayloads`' in `KnitMesh`: one device at a time, 12 s for each read, and a device read
-  once until a dial to it fails. A failed read waits 30 s, and a device that serves no payload waits ten
-  minutes. The log says `bluez read <node id> on PSM <psm> from dev_… over GATT`, or why a read failed.
+- **The pacing** is `GattPayloads`' in `KnitMesh`: one device at a time, 12 s for each read. A failed read waits
+  30 s, and a device that serves no payload waits ten minutes. A payload lasts until a dial to the device fails, a
+  HELLO there names another node, or the device goes unheard for a minute of scanning while nothing links it (ADR
+  2026-09.xzpt, amended 2026-09-29), and BlueZ forgetting the device drops it too. The log says `bluez read <node id>
+  on PSM <psm> from dev_… over GATT`, or why a read failed, and `bluez forgetting the GATT payload of dev_…` with why.
 - **Not yet seen on the air.** The fake BlueZ's GATT servers are the only ones this reader has met. Nothing in
   range serves the payload until the Mac (P7) or the iPhone (P8). A read makes hci1 a central for a second or
   two, and whether this controller keeps advertising meanwhile is unmeasured.
@@ -185,6 +187,15 @@ of the phone's:
 
 In both orders every `bt gatt read` names a node without service data, never an Android phone the scan heard, and the
 link must hold. The run reports the first link's time from the peer's start, MVP item 2's measure.
+
+`android-forgets` shows each of the payload lifetime's forget rules firing once on the phone, through its `bt gatt
+forget <address> (dial|hello <node>|quiet)` lines (ADR 2026-09.xzpt, amended 2026-09-29). Every peer on `hci1` has the
+adapter's address, so each new identity is a node taking a reused address. In order: a peer below the phone is read,
+linked and stopped, and the phone's redial fails (`dial`); the run then waits 30 s for the stack's own connect to
+lapse. A peer above the phone is read and stopped, and nothing advertises for a minute of the phone's scanning
+(`quiet`, which on a floored scan can take minutes). A peer above is read and stopped, and a new identity above it
+dials in at once (`hello`, on a link the phone accepted). A peer below is read, linked and stopped, and a new identity
+below it answers the phone's redial on the same PSM (`hello`, in the reply to the phone's dial).
 
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
 needs no go-ahead for a phone. The peer takes a node id above every phone's and dials them all, since this adapter
@@ -980,8 +991,9 @@ Neither helps a late first sighting, or a gap over 8 s that restarts the dwell.
   peer above a phone, that phone sighted each later peer as the old one, listed it in reach, and never read again.
   The Pixel 7 and the Pixel 3, which had read the Pixel 7's peers from across the room, both did, until Knit
   restarts. KnitBlueZ forgets a payload once BlueZ forgets a device unheard for 60 s, and so never meets this; KnitBLE
-  and Android do. In the field it strands a public-address peer that comes back with a new identity. The supervisor has
-  the proposal to forget a quiet address's payload on both.
+  and Android did. In the field it strands a public-address peer that comes back with a new identity. The maintainer
+  made three forget rules shared law for both sides (ADR 2026-09.xzpt, amended 2026-09-29): a failed dial, a HELLO
+  naming another node, and a minute of scanning without a sighting.
 - **A dial outlived its watchdog.** The Pixel 7 redialed the departed peer, and its 12 s watchdog gave up, but the
   stack's connect lived on, brought up a link when the next peer advertised, and held it with no channel for eight
   minutes. This dongle cannot advertise while connected, so the phone never heard the next peer. The run now waits for

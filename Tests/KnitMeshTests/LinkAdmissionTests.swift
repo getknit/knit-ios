@@ -44,6 +44,39 @@ import Testing
         #expect(rig.radio.closed == [ChannelID(100), ChannelID(101)])
     }
 
+    // MARK: Telling the radio who spoke (the payload lifetime's rule 2)
+
+    @Test func everyHelloReadIsReportedToTheRadioWhateverTheVerdict() {
+        let rig = LinkRig(local: high)
+        _ = rig.accept(low, on: ChannelID(100))
+        // Sighted and below us: refused, but it still said who it is at that address.
+        _ = rig.handle(.sighted(LinkRig.sighting(middle, rssi: -60)))
+        _ = rig.accept(middle, on: ChannelID(101))
+        #expect(rig.radio.closed == [ChannelID(101)])
+        #expect(
+            rig.radio.hellos == [
+                FakeRadio.HeardHello(node: low, channel: ChannelID(100)), FakeRadio.HeardHello(node: middle, channel: ChannelID(101)),
+            ])
+    }
+
+    @Test func aReplyNamingAnotherNodeIsReportedAndARefusalIsNot() throws {
+        let rig = LinkRig(local: high)
+        rig.sightToPromotion(low, flags: 0)
+        let first = try #require(rig.radio.dials.last?.channel)
+        _ = rig.handle(.connected(first))
+        // The address's new node replies: the dial fails, and the radio hears who answered.
+        _ = rig.handle(.received(first, LinkRig.helloRecord(middle)))
+        #expect(rig.radio.closed == [first])
+        #expect(rig.radio.hellos == [FakeRadio.HeardHello(node: middle, channel: first)])
+        // A responder that closes without a reply says nothing.
+        _ = rig.handle(.accepted(ChannelID(200)))
+        _ = rig.handle(.closed(ChannelID(200)))
+        let garbage = LinkRecord(.hello, payload: Array("not-an-id|1|fff".utf8)).encoded ?? []
+        _ = rig.handle(.accepted(ChannelID(201)))
+        _ = rig.handle(.received(ChannelID(201), garbage))
+        #expect(rig.radio.hellos.count == 1)
+    }
+
     @Test func aFirstRecordThatIsNotAHelloIsRefused() {
         let rig = LinkRig(local: high)
         _ = rig.handle(.accepted(ChannelID(100)))

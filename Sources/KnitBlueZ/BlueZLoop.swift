@@ -223,6 +223,8 @@
                 closeChannel(id)
             case .ring(let id):
                 ring(id, now: now)
+            case .heardHello(let id, let node):
+                gattHeardHello(node, on: id)
             case .shutdown:
                 shutdown(now: now)
             }

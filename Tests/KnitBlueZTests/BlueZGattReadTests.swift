@@ -1,6 +1,7 @@
 #if os(Linux)
     @testable import KnitBlueZ
     import KnitMesh
+    import KnitTestSupport
     import KnitWire
     import Testing
 
@@ -328,6 +329,52 @@
             #expect(rig.fake.disconnected.isEmpty, "the channel still uses the link")
             remote.hangUp()
             rig.settle { rig.fake.disconnected == [LoopRig.peerPath] }
+        }
+    }
+
+    /// How long a payload a read found serves the device's adverts (the paired change `gatt-peers`' payload lifetime):
+    /// until a HELLO there names another node, or the device goes quiet for a minute of scanning.
+    @Suite(.timeLimit(.minutes(1))) struct BlueZGattLifetimeTests {
+        private static func readPeer(_ rig: LoopRig) throws {
+            rig.start()
+            rig.fake.remoteGatt[LoopRig.peerPath] = FakeBlueZ.RemoteGatt(value: LoopRig.advert().gattValue)
+            try rig.fake.add(device: LoopRig.peerPath, LoopRig.uuidOnlyDevice())
+            rig.settle { GattRig.sightings(rig).count == 1 }
+            rig.settle("the read's link was never dropped") { rig.fake.disconnected == [LoopRig.peerPath] }
+        }
+
+        @Test func aHelloNamingAnotherNodeForgetsThePayloadAndTheNextAdvertReadsAgain() throws {
+            let rig = try GattRig.reading(acceptedPeer: try LoopRig.target())
+            try Self.readPeer(rig)
+            let remote = try RemoteEnd.dial(rig.sockets)
+            rig.settle { rig.lastAccepted != nil }
+            let id = try #require(rig.lastAccepted)
+            rig.post(.heardHello(id, LoopRig.advert().nodeId))
+            rig.turn()
+            #expect(rig.loop.gatt.payload(of: GattRig.peer) == LoopRig.gattAdvert(), "the same node keeps it")
+            rig.post(.heardHello(id, fixtureNodeId(9)))
+            rig.settle { rig.loop.gatt.payload(of: GattRig.peer) == nil }
+            #expect(rig.log.all.contains { $0.contains("its HELLO named \(fixtureNodeId(9))") })
+            remote.hangUp()
+            rig.settle("never read again") {
+                _ = try? GattRig.strength(-61, on: rig)
+                return rig.fake.connectRequests.count == 2
+            }
+        }
+
+        @Test func aDeviceQuietForTheScanMinuteIsReadAgainWhenItReturns() throws {
+            let quick = GattPayloads.Configuration(
+                readTimeoutMilliseconds: 5000, retryMilliseconds: 60_000, strangerRetryMilliseconds: 60_000, quietMilliseconds: 300)
+            let rig = try GattRig.reading(quick)
+            try Self.readPeer(rig)
+            try GattRig.strength(-60, on: rig)
+            rig.turn()
+            #expect(rig.fake.connectRequests.count == 1, "heard within the minute: the payload serves")
+            let quietUntil = Monotonic.milliseconds() + 400
+            rig.settle { Monotonic.milliseconds() >= quietUntil }
+            try GattRig.strength(-62, on: rig)
+            rig.settle("never read again") { rig.fake.connectRequests.count == 2 }
+            #expect(rig.log.all.contains { $0.contains("quiet for a minute of scanning") })
         }
     }
 #endif

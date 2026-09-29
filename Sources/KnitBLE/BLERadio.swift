@@ -76,6 +76,10 @@
         public func ring(_ channel: ChannelID) {
             core.onQueue { $0.ring(channel) }
         }
+
+        public func heardHello(from node: NodeId, on channel: ChannelID) {
+            core.onQueue { $0.heardHello(node, on: channel) }
+        }
     }
 
     /// The radio's state and CoreBluetooth's delegates, all on ``queue``.
@@ -119,6 +123,10 @@
         var links: [ChannelID: L2CAPLink] = [:]
         /// The peripheral a dialed link runs to; an accepted link has none of ours.
         var owners: [ChannelID: UUID] = [:]
+        /// The device at the far end of every link, dialed or accepted: the address a GATT payload of it is kept
+        /// under. An accepted link's is its central's identifier, which CoreBluetooth gives the same device in both
+        /// roles.
+        var peers: [ChannelID: UUID] = [:]
         var doorbells = Doorbells()
         var gatt = GattPayloads()
         var gattTarget: UUID?
@@ -165,6 +173,7 @@
         func stop() {
             running = false
             central?.stopScan()
+            gatt.scanStopped(now: clock.monotonicMilliseconds())
             for peripheral in peripherals.values where peripheral.state != .disconnected {
                 central?.cancelPeripheralConnection(peripheral)
             }
@@ -218,6 +227,7 @@
             reported = state
             log.log(.info, "ble \(state)")
             if state != .on {
+                gatt.scanStopped(now: clock.monotonicMilliseconds())
                 forgetLinks()
                 psm = nil
                 publishing = false
@@ -234,6 +244,7 @@
             }
             links.removeAll()
             owners.removeAll()
+            peers.removeAll()
             dials.removeAll()
             doorbells = Doorbells()
             gatt.cancel()
@@ -314,75 +325,6 @@
                 return
             }
             link.writeDigest(record)
-        }
-
-        func close(_ channel: ChannelID) {
-            if let dial = dials.removeValue(forKey: channel) {
-                releaseIfIdle(dial.peripheral)
-            }
-            guard let link = links.removeValue(forKey: channel) else {
-                return
-            }
-            link.close()
-            emit(.closed(channel))
-            if let owner = owners.removeValue(forKey: channel) {
-                releaseIfIdle(owner)
-            }
-        }
-
-        /// Starts a link over an open channel, dialed or accepted, once its opening is reported.
-        func adopt(_ channel: CBL2CAPChannel, as id: ChannelID, owner: UUID?) {
-            let link = L2CAPLink(
-                id: id,
-                channel: channel,
-                thread: streams,
-                log: log,
-                received: { [emit] bytes in emit(.received(id, bytes)) },
-                ended: { [weak self] in self?.onQueue { $0.ended(id) } }
-            )
-            links[id] = link
-            owners[id] = owner
-            link.open()
-        }
-
-        /// The far side closed a link, or it failed.
-        func ended(_ id: ChannelID) {
-            guard links.removeValue(forKey: id) != nil else {
-                return
-            }
-            emit(.closed(id))
-            if let owner = owners.removeValue(forKey: id) {
-                releaseIfIdle(owner)
-            }
-        }
-
-        /// Whether a dial, a link or the GATT read in progress uses the connection to `uuid`.
-        func inUse(_ uuid: UUID) -> Bool {
-            gattTarget == uuid || dials.values.contains { $0.peripheral == uuid } || owners.values.contains(uuid)
-        }
-
-        /// Drops the connection to `uuid` once nothing uses it, so the controller is free for the next.
-        func releaseIfIdle(_ uuid: UUID) {
-            guard !inUse(uuid), let peripheral = peripherals[uuid], peripheral.state != .disconnected else {
-                return
-            }
-            central?.cancelPeripheralConnection(peripheral)
-        }
-
-        /// Every dial waiting on `uuid` failed; a payload read over GATT may name a PSM it no longer listens on, so
-        /// it is read again (``GattPayloads``). A connection that ends with no dial waiting keeps the payload: the
-        /// radio ends its own after every read, and forgetting it then meant reading the same peer every few
-        /// seconds (the iPhone 12, 2026-09-26).
-        func failDials(on uuid: UUID) {
-            var failed = false
-            for (channel, dial) in dials where dial.peripheral == uuid {
-                dials[channel] = nil
-                emit(.dialFailed(channel))
-                failed = true
-            }
-            if failed {
-                gatt.forget(RadioAddress(uuid.uuidString))
-            }
         }
     }
 
