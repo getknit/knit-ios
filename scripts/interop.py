@@ -1136,16 +1136,16 @@ def android_forgets(arguments: argparse.Namespace) -> int:
     Every knit-peer on hci1 has the adapter's one public address, so each restart under a new identity is a node taking
     a reused address. The stages run in order on one phone, each from a fresh identity:
 
-    1. **dial:** a peer below the phone is read and dialed, then stops. The phone dials the address again, the dial
-       fails before a channel opens, and the payload goes.
-    2. **quiet:** a peer above the phone is read, then stops, and nothing advertises there for over a minute of the
-       phone's scanning. The payload goes, `quiet`.
-    3. **hello, accepted:** a peer above the phone is read, then stops, and a new identity above the phone starts at
-       once and dials in. The phone still sights the old payload at the address, and the dialer's HELLO names another
-       node, so the payload goes, `hello <new id>`.
+    1. **quiet:** a peer above the phone is read, then stops, and nothing advertises there for over a minute of the
+        phone's scanning. The payload goes, `quiet`.
+    2. **hello, accepted:** a peer above the phone is read, then stops, and a new identity above the phone starts at
+        once and dials in. The phone still sights the old payload at the address, and the dialer's HELLO names another
+        node, so the payload goes, `hello <new id>`. Its own payload is then left to go quiet.
+    3. **dial:** a peer below the phone is read and dialed, then stops. The phone dials the address again, the dial
+        fails before a channel opens, and the payload goes.
     4. **hello, dialed:** a peer below the phone is read and dialed, then stops, and a new identity below the phone starts
-       at once on the same PSM. The phone dials the old payload's node there, the reply names another node, and the
-       payload goes, `hello <new id>`.
+        at once on the same PSM. The phone dials the old payload's node there, the reply names another node, and the
+        payload goes, `hello <new id>`.
 
     A peer below a phone whose flag is clear never sights it (`--never-sight`), as in `android-reads`."""
     phone = Phone(arguments.device)
@@ -1173,37 +1173,48 @@ def android_forgets(arguments: argparse.Namespace) -> int:
         return started
 
     current: Peer | None = None
+    stages = arguments.stages.split(",")
     try:
-        # 1. dial
-        current = peer("phone-dials", "dial")
-        run.step("dial-read-and-linked", lambda: _read_and_linked(phone, current, phone_id, arguments.link_timeout))
-        current.stop()
-        run.step("dial-forgets", lambda: _phone_forgot(phone, "(dial)", arguments.link_timeout))
-        # The watchdog gave the dial up, but the stack's own connect may run on, and on 2026-09-29 one caught the next
-        # peer's advert and held hci1 with no channel for minutes: let it lapse before another peer advertises.
-        run.step("dial-lapsed", lambda: _hci1_idle_after(30))
-        # 2. quiet
-        current = peer("peer-dials", "quiet")
-        current.command(cmd="deny-link", peer=phone_id)
-        run.step("quiet-read", lambda: _phone_read(phone, current.node_id, time.monotonic(), arguments.link_timeout))
-        current.stop()
-        run.step("quiet-forgets", lambda: _phone_forgot(phone, "(quiet)", arguments.quiet_timeout))
-        # 3. hello on a link the phone accepted
-        current = peer("peer-dials", "hello-accepted-old")
-        current.command(cmd="deny-link", peer=phone_id)
-        run.step("hello-accepted-read", lambda: _phone_read(phone, current.node_id, time.monotonic(), arguments.link_timeout))
-        current.stop()
-        current = peer("peer-dials", "hello-accepted-new")
-        newcomer = current.node_id
-        run.step("hello-accepted-forgets", lambda: _phone_forgot(phone, f"(hello {newcomer})", arguments.link_timeout))
-        current.stop()
-        # 4. hello in the reply to the phone's own dial
-        current = peer("phone-dials", "hello-dialed-old")
-        run.step("hello-dialed-read-and-linked", lambda: _read_and_linked(phone, current, phone_id, arguments.link_timeout))
-        current.stop()
-        current = peer("phone-dials", "hello-dialed-new")
-        newcomer = current.node_id
-        run.step("hello-dialed-forgets", lambda: _phone_forgot(phone, f"(hello {newcomer})", arguments.link_timeout))
+        # The stages run so that a peer below the phone never follows a payload of one above it without a quiet forget
+        # between: nothing forgets that one while the address stays busy (the open case, ADR 2026-09.xzpt).
+        if "quiet" in stages:
+            current = peer("peer-dials", "quiet")
+            current.command(cmd="deny-link", peer=phone_id)
+            run.step("quiet-read", lambda: _phone_read(phone, current.node_id, time.monotonic(), arguments.link_timeout))
+            mark = len(_phone_log(phone, "bt gatt forget "))
+            current.stop()
+            run.step("quiet-forgets", lambda: _phone_forgot(phone, "(quiet)", arguments.quiet_timeout, mark))
+        if "hello-accepted" in stages:
+            current = peer("peer-dials", "hello-accepted-old")
+            current.command(cmd="deny-link", peer=phone_id)
+            run.step("hello-accepted-read", lambda: _phone_read(phone, current.node_id, time.monotonic(), arguments.link_timeout))
+            current.stop()
+            mark = len(_phone_log(phone, "bt gatt forget "))
+            current = peer("peer-dials", "hello-accepted-new")
+            newcomer = current.node_id
+            run.step("hello-accepted-forgets", lambda: _phone_forgot(phone, f"(hello {newcomer})", arguments.link_timeout, mark))
+            # The newcomer's payload is read once its link ends; let it go quiet before a peer below the phone.
+            mark = len(_phone_log(phone, "bt gatt forget "))
+            current.stop()
+            if "dial" in stages or "hello-dialed" in stages:
+                run.step("hello-accepted-clears", lambda: _phone_forgot(phone, "", arguments.quiet_timeout, mark))
+        if "dial" in stages:
+            current = peer("phone-dials", "dial")
+            run.step("dial-read-and-linked", lambda: _read_and_linked(phone, current, phone_id, arguments.link_timeout))
+            mark = len(_phone_log(phone, "bt gatt forget "))
+            current.stop()
+            run.step("dial-forgets", lambda: _phone_forgot(phone, "(dial)", arguments.link_timeout, mark))
+            # The watchdog gave the dial up, but the stack's own connect may run on, and on 2026-09-29 one caught the
+            # next peer's advert and held hci1 with no channel for minutes: let it lapse before another peer advertises.
+            run.step("dial-lapsed", lambda: _hci1_idle_after(30))
+        if "hello-dialed" in stages:
+            current = peer("phone-dials", "hello-dialed-old")
+            run.step("hello-dialed-read-and-linked", lambda: _read_and_linked(phone, current, phone_id, arguments.link_timeout))
+            current.stop()
+            mark = len(_phone_log(phone, "bt gatt forget "))
+            current = peer("phone-dials", "hello-dialed-new")
+            newcomer = current.node_id
+            run.step("hello-dialed-forgets", lambda: _phone_forgot(phone, f"(hello {newcomer})", arguments.link_timeout, mark))
     finally:
         if current:
             current.stop()
@@ -1230,13 +1241,14 @@ def _read_and_linked(phone: Phone, peer: Peer, phone_id: str, timeout: float) ->
     return read
 
 
-def _phone_forgot(phone: Phone, reason: str, timeout: float) -> dict:
-    """The phone logged `bt gatt forget <address> <reason>`, and how long after the call it showed."""
+def _phone_forgot(phone: Phone, reason: str, timeout: float, mark: int) -> dict:
+    """The phone logged `bt gatt forget <address> <reason>` after the first `mark` forget lines, and how long after the
+    call it showed. An empty `reason` takes any forget."""
     started = time.monotonic()
 
     def forgot() -> list[str] | None:
         phone.wake()
-        return [line for line in _phone_log(phone, "bt gatt forget ") if line.endswith(reason)] or None
+        return [line for line in _phone_log(phone, "bt gatt forget ")[mark:] if line.endswith(reason)] or None
 
     lines = poll(forgot, timeout, every=3)
     return {"line": lines[-1], "seconds": round(time.monotonic() - started, 1)}
@@ -3392,6 +3404,9 @@ def main() -> int:
     forgets.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     forgets.add_argument("--link-timeout", type=float, default=180, help="seconds for each read, link and HELLO forget")
     forgets.add_argument("--quiet-timeout", type=float, default=600, help="seconds for the quiet forget, which counts scan time only")
+    forgets.add_argument(
+        "--stages", default="quiet,hello-accepted,dial,hello-dialed", help="which forget stages to run, comma-separated, in their fixed order"
+    )
     android = commands.add_parser("android-rings")
     android.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     android.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")

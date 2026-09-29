@@ -1001,7 +1001,36 @@ Neither helps a late first sighting, or a gap over 8 s that restarts the dwell.
 - **A Linux central drops the link at 420 ms.** With the peer as central, after the doorbell lookup the Pixel's stack
   put back the link's first values, the kernel's 420 ms supervision timeout, and the link dropped 4 s later. The relink
   kept knit-next #102's 5 s. It is the walk test's 720 ms on a BlueZ central.
-- **The Pixel 3 and the flag build are still to run.**
+
+The gate ran again from 15:05 on knit-next `b7480e85`, still flag clear, with the payload lifetime's three forget rules,
+freshly installed on both phones, and the peer built from this repo's `c7c25d5`:
+
+| Phone | Order | Steps | Read at | First link at |
+| --- | --- | --- | --- | --- |
+| Pixel 7 (API 37) | peer below | 10 of 11 | 57.7 s | 73.2 s |
+| Pixel 7 | peer above | 10 of 10 | 37.1 s | 43.1 s |
+| Pixel 3 (API 31, the pre-33 read callback) | peer below | 11 of 11 | 13.2 s | 40.5 s |
+| Pixel 3 | peer above | 10 of 10 | 98.8 s | 104.8 s |
+
+- **Both phones read, dial and are dialed as A3 says.** Below the phone, it dialed, found the doorbell and rang it,
+  and the peer never dialed. Above, the phone admitted the peer as a dialer it had sighted and never dialed. Every
+  read named the peer, never an Android phone.
+- **First reads fail often, and each costs 30 s.** Three of the four runs began with a failed read (`timeout@discover`
+  twice, `connect` once), and the Pixel 3's second read failed too. That, not the dial, is where the long first links
+  went.
+- **The Pixel 7's one miss was the peer's own.** 58.8 s into the hold, the peer's channel read failed with errno 38,
+  and the phone saw the link end at its 5 s supervision timeout. The same hold passed in every other run.
+- **The Pixel 3 showed the 420 ms put-back again,** for half a second before knit-next #102's 5 s came back, and the
+  link held.
+- **Each forget rule fired, on the Pixel 7** (`android-forgets`): `quiet` at 15:22:20, once the address of a payload
+  above the phone went unheard; `hello` on a link the phone accepted at 15:28:44, the dialer then admitted unsighted;
+  `hello` in the reply to the phone's own dial at 15:29:58, the dial failing as HANDSHAKE; and `dial` at 15:40:12, a
+  redial to the stopped peer that timed out.
+- **The open case happened on the rig.** The first `android-forgets` began with a payload above the phone at `hci1`'s
+  address, and its peer below the phone kept the address busy, so nothing forgot the payload and the phone never read
+  the peer. The scenario now orders its stages so that a peer above the phone goes quiet before one below it starts.
+- **The stray connection came back once,** after the phone redialed a stopped peer, and was dropped from `hci1`'s
+  side. It predates A3 and has an order of its own.
 
 ## What the walk test showed
 
