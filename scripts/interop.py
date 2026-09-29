@@ -11,6 +11,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline]
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
     scripts/interop.py iphone-peer [--order iphone-below|iphone-above] [--skip-offline] [--udid UDID]
+    scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
     scripts/interop.py iphone-reboot [--restart] [--locked 120] [--closed 60] [--skip-relaunch] [--udid UDID]
@@ -451,7 +452,11 @@ def poll(check, timeout: float, every: float = 2):
 def in_range(seconds: int = 20) -> dict[str, dict]:
     """Every Knit node a quiet scan hears, by node id, with what it advertised: its flags, and the low byte of its
     capabilities, `ff` from Android and `9` from an iPhone or an `ios` peer."""
-    result = subprocess.run([str(PEER), "scan", "--seconds", str(seconds)], capture_output=True, text=True, check=True)
+    result = subprocess.run([str(PEER), "scan", "--seconds", str(seconds), "--log", "debug"], capture_output=True, text=True, check=True)
+    # The scan links any node BlueZ lists with the UUID and no service data to read its payload, so what it did is kept:
+    # a link it left up keeps hci1 from advertising (`android-reads`' `hci1-idle`).
+    with open(ROOT / ".build" / "interop-scan.log", "a", encoding="utf-8") as log:
+        log.write(result.stderr)
     summary = json.loads(result.stdout.strip().splitlines()[-1])
     return {node["peer"]: node for node in summary["nodes"]}
 
@@ -1101,6 +1106,11 @@ def android_reads(arguments: argparse.Namespace) -> int:
     phone.shell("logcat -c")
     # Above the phone, the peer holds its dial until the phone has read it (`allow-link` below).
     refused = others if below else others | {phone_id}
+    # This dongle cannot advertise while anything holds a link to it. On 2026-09-29 the Pixel 3 never heard a peer
+    # started while one was up, left by the scan's read or a phone's stray connect: it must be gone first.
+    if run.step("hci1-idle", lambda: _hci1_idle_after(3)) is None:
+        print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
+        return run.failed
     peer = Peer("ios", f"knit-peer reads {nonce}", refused, arguments.peer_log, arguments.rssi_floor, never_sight=held)
     mark = peer.log_mark()
     stop = threading.Event()
@@ -1225,6 +1235,115 @@ def android_forgets(arguments: argparse.Namespace) -> int:
     run.step("forgets-logged", lambda: {"lines": _phone_log(phone, "bt gatt forget ")})
     print(json.dumps({"summary": "android-forgets", "steps": run.steps, "failed": run.failed}))
     return run.failed
+
+
+def iphone_forgets(arguments: argparse.Namespace) -> int:
+    """The payload lifetime's forget rules on the iPhone's own radio, KnitBLE (ADR 2026-09.xzpt, amended 2026-09-29),
+    each seen through Knit's log: `ble forgetting the GATT payload of <identifier>: its HELLO named <node>` or `: quiet
+    for a minute of scanning`. knit-peer runs on hci1 in the `ios` profile, so the iPhone finds it by reading its GATT
+    payload, and every peer there has the adapter's address: each new identity is a node taking a reused address. The
+    iPhone's writes to hci1 stall after the HELLO, which is all these rules need. In order, so that no stage meets the
+    open case (a payload above the iPhone at an address a peer below it keeps busy):
+
+    1. **dialed:** a peer below the iPhone is read and dialed, then stops, and a new identity below it starts at once
+        on the same PSM. The iPhone dials the old node there, the reply names the new one, and the payload goes.
+    2. **quiet:** a peer above the iPhone is read, then stops, and nothing advertises there for a minute of the
+        iPhone's scanning.
+    3. **accepted:** a peer above the iPhone is read, then stops, and a new identity above it dials in. The iPhone keys
+        an accepted link by its central's identifier and the payload by the peripheral's, so the payload goes only if
+        CoreBluetooth gives hci1 the same identifier in both roles, which nothing had checked on hardware.
+
+    Knit must be open on the iPhone, a debug build with the rules, and it stays open throughout."""
+    ios = IPhone(arguments.udid)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    others = others_in_range(ios.node_id)
+    folder = ROOT / ".build" / "interop-iphone-forgets"
+    folder.mkdir(parents=True, exist_ok=True)
+    log_path = folder / f"{time.strftime('%Y%m%d-%H%M%S')}-iphone.log"
+    log = IPhoneLog(ios.udid, log_path)
+    stages = arguments.stages.split(",")
+    print(json.dumps({"run": "iphone-forgets", "iphone": ios.node_id, "stages": stages, "log": str(log_path), "refused": sorted(others)}))
+    current: Peer | None = None
+
+    def peer(side: str, tag: str) -> Peer:
+        _keygen("iphone-forgets", *_peer_window(ios.node_id, others, side))
+        started = Peer("ios", f"knit-peer forgets {tag} {nonce}", others, arguments.peer_log, arguments.rssi_floor, "iphone-forgets")
+        started.start()
+        return started
+
+    try:
+        run.step("hci1-idle", lambda: _hci1_idle_after(3))
+        if "dialed" in stages:
+            current = peer("iphone-above", "dialed-old")
+            read = run.step("dialed-read", lambda: _ios_read(log_path, current.node_id, arguments.link_timeout))
+            run.step("dialed-linked", lambda: _linked_since(current, ios.node_id, 0, arguments.link_timeout))
+            current.stop()
+            current = peer("iphone-above", "dialed-new")
+            newcomer = current.node_id
+            if read:
+                run.step("dialed-forgets", lambda: _ios_forgot(log_path, read["identifier"], f"its HELLO named {newcomer}", arguments.link_timeout))
+            current.stop()
+            run.step("dialed-lapsed", lambda: _hci1_idle_after(30))
+        if "quiet" in stages:
+            current = peer("iphone-below", "quiet")
+            current.command(cmd="deny-link", peer=ios.node_id)
+            read = run.step("quiet-read", lambda: _ios_read(log_path, current.node_id, arguments.link_timeout))
+            current.stop()
+            if read:
+                run.step("quiet-forgets", lambda: _ios_forgot(log_path, read["identifier"], "quiet for a minute", arguments.quiet_timeout))
+        if "accepted" in stages:
+            current = peer("iphone-below", "accepted-old")
+            current.command(cmd="deny-link", peer=ios.node_id)
+            read = run.step("accepted-read", lambda: _ios_read(log_path, current.node_id, arguments.link_timeout))
+            current.stop()
+            current = peer("iphone-below", "accepted-new")
+            newcomer = current.node_id
+            run.step("accepted-linked", lambda: _linked_since(current, ios.node_id, 0, arguments.link_timeout))
+            if read:
+                run.step("accepted-forgets", lambda: _ios_forgot(log_path, read["identifier"], f"its HELLO named {newcomer}", arguments.link_timeout))
+    finally:
+        if current:
+            current.stop()
+        log.stop()
+        ios.stop()
+    lines = [e["message"] for e in IPhoneLog.entries(log_path) if "GATT payload" in e["message"] or " over GATT" in e["message"]]
+    print(json.dumps({"iphoneGattLines": lines[-20:]}))
+    print(json.dumps({"summary": "iphone-forgets", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _ios_read(log_path: Path, node: str, timeout: float) -> dict:
+    """The iPhone logged `ble read <node> on PSM <psm> from <identifier> over GATT`, and the identifier it keys it by."""
+    started = time.monotonic()
+    pattern = re.compile(rf"ble read {node} on PSM (\d+) from (\S+) over GATT")
+
+    def read() -> dict | None:
+        for entry in IPhoneLog.entries(log_path):
+            match = pattern.search(entry["message"])
+            if match:
+                return {"psm": int(match.group(1)), "identifier": match.group(2)}
+        return None
+
+    found = poll(read, timeout, every=2)
+    return {**found, "seconds": round(time.monotonic() - started, 1)}
+
+
+def _ios_forgot(log_path: Path, identifier: str, reason: str, timeout: float) -> dict:
+    """The iPhone logged `ble forgetting the GATT payload of <identifier>: <reason…>`."""
+    started = time.monotonic()
+    needle = f"ble forgetting the GATT payload of {identifier}: {reason}"
+
+    def forgot() -> str | None:
+        return next((e["message"] for e in IPhoneLog.entries(log_path) if e["message"].startswith(needle)), None)
+
+    try:
+        line = poll(forgot, timeout, every=2)
+    except TimeoutError:
+        others = [e["message"] for e in IPhoneLog.entries(log_path) if "ble forgetting the GATT payload" in e["message"]]
+        raise RuntimeError(f"no forget of {identifier} ({reason}); forgets logged: {others[-4:]}") from None
+    return {"line": line, "seconds": round(time.monotonic() - started, 1)}
 
 
 def _hci1_idle_after(seconds: float) -> dict:
@@ -3433,6 +3552,12 @@ def main() -> int:
     forgets.add_argument(
         "--stages", default="quiet,hello-accepted,dial,hello-dialed", help="which forget stages to run, comma-separated, in their fixed order"
     )
+    ios_forgets = commands.add_parser("iphone-forgets")
+    ios_forgets.add_argument("--stages", default="dialed,quiet,accepted", help="which stages to run, comma-separated, in their fixed order")
+    ios_forgets.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    ios_forgets.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
+    ios_forgets.add_argument("--link-timeout", type=float, default=180, help="seconds for each read, link and HELLO forget")
+    ios_forgets.add_argument("--quiet-timeout", type=float, default=300, help="seconds for the quiet forget")
     android = commands.add_parser("android-rings")
     android.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     android.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
@@ -3445,7 +3570,7 @@ def main() -> int:
         choices=["dialed", "accepted"],
         help="a link the phone dialed after reading the peer's payload (A3), or one it accepted from a peer it never sights",
     )
-    for sub in (ios, wake, reboot, rings, scan, by_hand, ios_peer, ios_soak, commands.choices["iphone-relay"]):
+    for sub in (ios, wake, reboot, rings, scan, by_hand, ios_peer, ios_soak, ios_forgets, commands.choices["iphone-relay"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
     if arguments.command == "iphone-wake" and arguments.sender == "phone" and not arguments.device:
@@ -3458,6 +3583,8 @@ def main() -> int:
         return iphone_rings(arguments)
     if arguments.command == "iphone-peer":
         return iphone_peer(arguments)
+    if arguments.command == "iphone-forgets":
+        return iphone_forgets(arguments)
     if arguments.command == "iphone-soak":
         return iphone_soak(arguments)
     if arguments.command == "android-rings":
