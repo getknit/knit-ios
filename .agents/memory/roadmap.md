@@ -217,8 +217,10 @@ explicit direction.** Update this file in the change that ships an item.
     three relinks took 30.5 to 54.7 s: the iPhone hears the peer's BlueZ advert late and seldom, and dials at the
     first sighting after the 12 s dwell (`.agents/context/linux-peer.md`, "What both id orders showed").
   - **Still owed:** the soak's rerun (item 11), on the fixed harness with the Pixels on knit-next's early-receipt
-    fix, and not before 12:17 on 2026-09-29, when that DM expires. Item 2's first link to the peer can run past
-    30 s. Items 2 to 8 run unattended through the bridge; item 9's test needs someone to lock and unlock the iPhone.
+    fix, and not before 12:17 on 2026-09-29, when that DM expires. Item 2's first link can run past 30 s, against
+    a phone too: three of five to the Pixel 7 did, from gaps between sightings that restart the dwell, and from
+    backoff built by dialing a phone that has left, a rule both platforms share (`.agents/context/linux-peer.md`).
+    Items 2 to 8 run unattended through the bridge; item 9's test needs someone to lock and unlock the iPhone.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).

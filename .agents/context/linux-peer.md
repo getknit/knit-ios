@@ -896,7 +896,7 @@ only one order had been checked. The Pixel 7's sorts below it. The iPhone heard 
   purges no copy already held, so the iPhone carries this one until it expires, at 12:17 on 2026-09-29. Until
   then, any custody check against the iPhone misses it.
 
-Item 2's 30 s held against both phones and not always against the peer:
+Item 2's 30 s held for relinks to the phones, and not always for a first link:
 
 - **Relinks after a start took 13.8 and 16.7 s to the phones, and 16.6, 20.7 and 38.7 s to the peer.** The last was
   a third `iphone-peer` run, after the fixes below, which passed 19 of 21 with the same two misses; its first link
@@ -905,6 +905,21 @@ Item 2's 30 s held against both phones and not always against the peer:
   dial succeeded within 0.7 to 1.6 s, so the time went before the dial.
 - **The iPhone heard the peer's advert late and seldom.** Traced once a second, the iPhone first heard a new peer 3
   to 22 s after it started, at −48 to −58 dBm. Then it heard it every 3 to 5 s, once not for 10 s.
+- **The advert's interval sets both delays.** With `hci0`'s interval set to 100 ms through debugfs, by hand and as
+  root, the iPhone heard each of six fresh peers within 2 s and never went more than 1.7 s without one, and every
+  first link came in 13.1 to 16.1 s, three in each order. Before, the peer advertised at the kernel's default, which
+  could not be read without root. Android advertises about once a second (`INTERVAL_HIGH`, `BleAdvertiser.kt`), so a
+  phone's first link should fall between the two.
+- **Against the Pixel 7, two of five first links came within 30 s.** Its mesh was paused through the bridge until
+  the iPhone forgot it, then resumed, five times, at −77 to −87 dBm: the links took 102.4, 28.2, 23.2, 37.2 and 73.3
+  s. The iPhone first heard it 2 to 10 s after each resume, then with gaps of up to 15 s, which restarted the dwell
+  in three of the five (`.build/interop-link-probe/*-phone`).
+- **The iPhone dials a phone that has left.** The dwell counts from the first sighting until a later one shows a
+  gap, so a departed phone stays promotable for the 90 s its sighting lingers. After each pause the iPhone dialed
+  the silent Pixel two or three times, each dial timing out after 12 s, and its backoff reached 80 s. That held one
+  dial until 72 s, 19 s after the dwell was met, and another until 98 s, after the first dial to the resumed phone
+  also timed out, for a reason the log does not show. knit-next's `BlePresenceTracker` and `PromotionPolicy` have
+  the same rule.
 - **The dial waits for the next sighting.** `LinkManager` promotes on a sighting, a link event or a deadline, and no
   deadline marks a dwell running out, so a peer past its 12 s waits for the next advert heard from anyone. A gap
   over 8 s between sightings started the dwell again. Android's connect loop has the same rule.
