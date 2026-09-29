@@ -847,3 +847,24 @@ launch went.
   than making new keys when the store is locked (`IdentityTests`). The `Launch` stages after it are not: waiting,
   then starting from protected data, the foreground or Retry. If iOS ever launches Knit before the first unlock,
   the `storage` reply's `launch` records which one started it.
+
+## What the iPhone's status line showed
+
+MVP item 10 ran by hand on the iPhone 12 on 2026-09-28, 22:36 to 22:49, with three lab phones in range. Someone read
+each line off the screen. The debug bridge's `status`, polled about every 5 s, gave the mesh's running state and its
+links, and `idevicesyslog` gave each state the radio reported (`ble on`, `off` or `unauthorized`). Every check passed.
+
+- **The count:** the line read "Connected to 3 nearby devices" while the bridge reported 3 links.
+- **Stop and Start in Settings:** Stop mesh took the links to 0, and the chat list showed the stopped line with its
+  Start button. After Start mesh the first link was back in 12 s and all three in 16 s.
+- **Bluetooth off,** switched in the Settings app: the radio reported `off`, the line said Bluetooth is off, and the
+  mesh stayed marked running with no links. Switched back on, two links were back in 25 s and the third in 46 s,
+  in the same process.
+- **Bluetooth not allowed,** switched off for Knit in Privacy & Security: iOS ended Knit's process. Opened again, the
+  radio reported `unauthorized`, and the line asked for Bluetooth with a Settings button that opened Knit's page
+  there. Allowing it on that page ended the process too. The next launch reported `on` and had all three links back
+  in 21 s.
+- **The unsupported device** is not on hand, so `test:ios:simulator` checks its line through `-seedDemo -demoRadio
+  unsupported`, with the other two refusals, and asserts that all three lines differ (pipeline 821).
+- **The bridge seems to answer one client at a time.** The watcher's poll got no answer while a `status` sent by hand
+  was open.

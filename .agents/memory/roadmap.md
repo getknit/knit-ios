@@ -196,6 +196,12 @@ explicit direction.** Update this file in the change that ships an item.
     passcode it had, 20.5 s after the boot. It launched Knit in the background 8.4 s after the unlock, and that launch
     read its keys at once. The launch that waits for the first unlock has still not run on a phone, and its stages
     have no test (`.agents/context/linux-peer.md`, "What the iPhone's reboot showed"). Item 1 passes.
+  - **Status (item 10, 2026-09-28):** passes on the iPhone 12, checked by hand against the bridge's `status` and the
+    radio states in the iPhone's log. The line counted the links the bridge reported, and Stop mesh and Start mesh in
+    Settings stopped the mesh and brought all three links back in 16 s. Bluetooth off and Bluetooth refused each
+    showed its own line, and the refusal's Settings button opened Knit's page. iOS ends Knit's process when the
+    permission is taken away and again when it is given back. The unsupported device's line is checked in
+    `test:ios:simulator` (`.agents/context/linux-peer.md`, "What the iPhone's status line showed").
   - **Still owed:** items 2 to 7 pass against the Pixel 3 through the bridge, unattended, and item 9's test needs
     someone to lock and unlock the iPhone (`.agents/context/linux-peer.md`). A rerun of the soak on the fixed
     harness would show the room check pass; custody should match too once the Pixel runs knit-next's early-receipt
