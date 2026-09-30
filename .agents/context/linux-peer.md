@@ -1121,3 +1121,39 @@ decodes the snoop.
   stayed in touch through Wi-Fi Aware discovery, which the Diagnostics screen shows as a link. knit-next's bridge
   lists peers in reach as `reachable`, not links, so the Pixels' `bt state` lines in logcat are the record of their
   links.
+
+## What the put-back race showed
+
+On 2026-09-30 from 00:05 the Pixel 7 and the Pixel 3 ran debug builds of knit-next `ed9446bf`
+(`fix/balanced-put-back-race`), which asks for BALANCED again when the stack puts a central's first timeout back
+after the doorbell lookup (knit-next #102, ADR 2026-09.dqvb amended). `interop.py` read each link's
+`bt conn params` lines from the phone's log and judged the last one after `bt doorbell found`, which must say
+`timeout=5000ms`. `--links 10` brought each link down and up again until ten had found the doorbell. Each link
+held 60 s before it was judged. The runs and a raw logcat stream of each are in `.build/interop-balanced/`.
+
+| Central | Phone | Steps | Links at 5 s | Put-backs re-asked |
+| --- | --- | --- | --- | --- |
+| The iPhone 12 | Pixel 7 | 51 of 51 | 10 of 10 | 720 ms on all 10 |
+| knit-peer on `hci0`, shared | Pixel 7 | 48 of 48 | 10 of 10 | 420 ms on 2 |
+| knit-peer on `hci0`, shared | Pixel 3 | 36 of 39 | 10 of 10 | 420 ms on 5, one of them twice |
+
+- **Every link ended at 5 s.** No link logged a timeout under 5 s after its last re-ask, and the settle timer never
+  fired: each put-back came within half a second of the ask, and the callback answered it.
+- **An iPhone puts 720 ms back every time; BlueZ only sometimes.** On each of the iPhone's links, 720 ms landed
+  about 0.2 s after the phone asked for BALANCED. BlueZ's 420 ms landed on 2 of the Pixel 7's links and 5 of the Pixel 3's.
+- **A failed update can use up a re-ask.** On the Pixel 3's fifth link, the first re-ask was answered by a report
+  of 420 ms with status 42 (`0x2A`, a transaction collision): the update had failed and the link had kept its
+  timeout. The fix counted that as another put-back and spent its second and last re-ask on it. BALANCED then came
+  through, but a put-back after it would have found nothing left to answer it. The Android worker has the report.
+- **Three lookups found no doorbell.** Three of the Pixel 7's link-ups against the peer logged
+  `bt doorbell lookup failed … (discover)`, a 10 s discovery timeout, so the phone never asked for BALANCED. They
+  were not counted, and each held its 60 s.
+- **The Pixel 7 settles at a peripheral latency of 5, the Pixel 3 at none.** The last line was 45 ms either way,
+  with either central, so the latency is the Pixel 7's own request.
+- **The peer ran on `hci0`.** `hci1` is now the ATS2851, which takes no incoming connection, so a phone cannot read
+  a peer there. `android-reads --hci0` runs the peer and its scan on the maintainer's adapter, shared, with the
+  go-ahead. The scan's reads of the iPhone dropped twice there, so `--known` names an iPhone to take as heard.
+- **The Pixel 3 read nothing while it dozed.** Behind the keyguard it never read the peer in 180 s, and admitted its
+  first dial unsighted under A1, which failed A3's three read checks. It read the peer before the later links.
+- **The iPhone could not be the Pixel 3's central.** The Pixel 3's node id sorts above the iPhone's, so the Pixel 3
+  dials it. The maintainer dropped that run rather than change an identity.
