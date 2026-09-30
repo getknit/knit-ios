@@ -674,16 +674,15 @@ def iphone(arguments: argparse.Namespace) -> int:
             body = f"interop dm reply from iphone {nonce}"
             sent = ios.command(cmd="dm", to=phone_id, text=body)
             run.step("dm-iphone-reply-delivered", lambda: _delivered(ios, sent, 30))
-        if above:
-            run.step("link-balanced", lambda: _balanced(phone, ios.node_id, tally, fresh=False))
+        balanced = not above or run.step("link-balanced", lambda: _balanced(phone, ios.node_id, tally, fresh=False)) is not None
         if not arguments.skip_offline:
             phone.shell("logcat -c")
             _offline(run, ios, phone, phone_id, nonce)
             run.step("relink-dialer", lambda: _dialed_by(phone, ios, phone_id, order))
-            if above:
-                run.step("relink-balanced", lambda: _balanced(phone, ios.node_id, tally))
+            if above and balanced:
+                balanced = run.step("relink-balanced", lambda: _balanced(phone, ios.node_id, tally)) is not None
         run.step("custody-converges", lambda: _converges(ios, phone, 180))
-        if above:
+        if above and balanced:
             _relinks(run, ios, phone, phone_id, arguments.links, arguments.hold, 180, tally)
     finally:
         ios.stop()
@@ -1165,8 +1164,8 @@ def android_reads(arguments: argparse.Namespace) -> int:
                 run.step("phone-never-dialed", lambda: _phone_never_dialed(phone, peer_id))
             time.sleep(max(0.0, link["at"] + arguments.hold - time.monotonic()))
             run.step("link-held", lambda: {**_phone_held(phone, peer_id), **_no_link_dropped(peer, {phone_id}), "heldSeconds": arguments.hold})
-            if not below:
-                run.step("link-balanced", lambda: _balanced(phone, peer_id, tally))
+            if not below and run.step("link-balanced", lambda: _balanced(phone, peer_id, tally)) is None:
+                link = None
         run.step("reads-only-uuid-nodes", lambda: _reads_only_uuid_nodes(phone, peer_id, androids(heard)))
         run.step("phone-gatt-counts", lambda: _reads_gatt_payloads(phone))
         if link is not None and not below:
@@ -1749,7 +1748,8 @@ def _relinks(run: Run, central: Node, phone: Phone, phone_id: str, want: int, ho
     """More link-ups with the phone, each dialed by `central` (knit-peer or the iPhone) and checked by `_balanced`,
     until `want` links whose lookup found the doorbell are in `tally`, or twice that many link-ups have come. Each
     time the central refuses the phone, which closes the link, and once the phone has logged it down and the
-    connection has had time to go, lets it link again. Each link must hold for `hold` seconds."""
+    connection has had time to go, lets it link again. Each link must hold for `hold` seconds, and the first that
+    fails ends the loop."""
     node = central.node_id
     attempt = 1
     while _counted(tally) < want and attempt < 2 * want:
@@ -1770,7 +1770,9 @@ def _relinks(run: Run, central: Node, phone: Phone, phone_id: str, want: int, ho
         if link is None:
             return
         time.sleep(max(0.0, link["at"] + hold - time.monotonic()))
-        run.step(f"{label}-balanced", lambda: {**_balanced(phone, node, tally), **_phone_held(phone, node), "heldSeconds": hold})
+        # The first link that fails stops the run, so its logs are fresh when someone looks.
+        if run.step(f"{label}-balanced", lambda: {**_balanced(phone, node, tally), **_phone_held(phone, node), "heldSeconds": hold}) is None:
+            return
     if _counted(tally) < want:
         run.step("links-counted", lambda: _fail(f"{_counted(tally)} of {want} links found the doorbell in {attempt} link-ups"))
 
