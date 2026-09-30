@@ -682,6 +682,9 @@ def iphone(arguments: argparse.Namespace) -> int:
             _offline(run, ios, phone, phone_id, nonce)
             run.step("relink-dialer", lambda: _dialed_by(phone, ios, phone_id, order))
             if above and balanced:
+                # The doorbell lookup and the put-back come seconds after the link: judge it once it has held.
+                ups = ios.lines(lambda line: _link(line, phone_id))
+                time.sleep(max(0.0, ups[-1]["_at"] + arguments.hold - time.monotonic()) if ups else 0.0)
                 balanced = run.step("relink-balanced", lambda: _balanced(phone, ios.node_id, tally)) is not None
         run.step("custody-converges", lambda: _converges(ios, phone, 180))
         if above and balanced:
@@ -3699,7 +3702,7 @@ def main() -> int:
     ios.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios.add_argument("--skip-offline", action="store_true", help="leave out MVP item 6, which stops the iPhone's mesh")
     ios.add_argument("--links", type=int, default=1, help="link-ups to check at the 5 s timeout, the iPhone above the phone (#102)")
-    ios.add_argument("--hold", type=float, default=60, help="seconds each extra link must hold, with --links")
+    ios.add_argument("--hold", type=float, default=60, help="seconds the relink and each extra link must hold before they are judged")
     wake = commands.add_parser("iphone-wake")
     wake.add_argument("--sender", default="phone", choices=["phone", "peer"], help="who DMs the locked iPhone: the phone, or knit-peer on hci0")
     wake.add_argument("--device", help="the adb serial of a phone the maintainer approved for this session; needed with --sender phone")
