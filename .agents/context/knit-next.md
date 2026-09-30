@@ -9,7 +9,7 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`. The port started from HEAD `02051b64`, five test-only commits
   later, on 2026-09-25.
-- **The pin is `82898694`,** knit-next's local `main` on 2026-09-29, four commits ahead of its `origin/main`
+- **The pin is `f3f9cb9d`,** knit-next's local `main` on 2026-09-29 once A3 merged, ahead of its `origin/main`
   (`06dd410d`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds it.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
@@ -46,7 +46,7 @@ Kotlin wins.
       landed, so mirror knit-next's fix when it comes. #97 (DataStore) and #98 are Android's alone.
     - `e4b46a00` (the profile photo editor), `c4de3eac` (the relay indicator for a DM without the ratchet) and
       `df762e71` (CI) touch nothing this port has.
-  - **Since then:**
+  - **Up to `82898694`** (the previous pin):
     - `82898694` (#102, an amendment to ADR 2026-09.dqvb) looks the doorbell up at link-up rather than at the first
       ring, and each lookup that finds it asks for `CONNECTION_PRIORITY_BALANCED`. An iPhone that dialed is the
       central and runs the link at a 720 ms supervision timeout; BALANCED carries 5 s, and iOS grants it. Nothing
@@ -57,27 +57,27 @@ Kotlin wins.
       no contacts list, removal or commons; mirror the rule when Contacts lands.
     - `06dd410d` (closes #97) and `bc25507c` move DataStore, and `9449fd15` shows the git SHA in debug builds'
       About screen. They are Android's alone.
+  - **Since then:**
+    - A3 (knit-next #101, ADR 2026-09.kwq2), rebased onto `0983824b` and merged unchanged from the branch this port
+      mirrored ahead of the pin: `0c3aa685` holds the reader, `45569aa7` mends the ADR's status line, `4bf4226b` adds
+      the payload lifetime's two new forget rules after the first device gate, `c5ff044a` records the gate,
+      `8d7ab437` sets the flag, and `f3f9cb9d` records the iPhone checks. An Android phone with `BLE_GATT_PEERS`
+      (debug builds; release keeps it dark) adds a scan filter on the `0xFE30` UUID, reads the GATT payload of a node
+      that lists only the UUID (`BleGattPayloadReader.kt`), and sights that node with it. `GattPayloads.kt` ports
+      `GattPayloads.swift`'s rules line for line, plus a 64-address cap on each map. A payload goes when a dial fails
+      before its channel opens, when a HELLO names another node (checked before an accepted dialer's verdict, and on
+      a dial's reply), or after 60 000 ms of presence-scan windows with the address unheard and unlinked; each logs
+      `bt gatt forget <addr> (dial|hello <id>|quiet)`. A HELLO refusal keeps it, and so does a quiet stranger's wait.
+      A dialed link takes its capabilities from the HELLO reply, so A4 rings it (`BluetoothMeshTransport.kt`).
+      `BleAdvertPayload.kt` names `FLAG_DIALS_GATT_PEERS` (`0x02`), advertised whenever the reader runs, and
+      `docs/WIRE_COMPAT.md` says every parser tests only the bits it knows. The payload, the flag and `weDial` were law
+      in this port first; the forget rules are mirrored in `GattPayloads`, `LinkManager` and both radios (ADR
+      2026-09.xzpt, amended 2026-09-29). ADR 2026-09.shzv (A1) and 2026-09.dqvb (A4) are amended, and A1 stays whole.
+    - `0983824b` lets a user clear the Nearby room's messages like any chat's. It clears them locally, sends
+      nothing and leaves custody alone, so this port has nothing to mirror.
   - No wire bytes or vectors moved.
-- **Mirrored ahead of the pin: knit-next ADR 2026-09.kwq2,** companion change A3. On 2026-09-29 it is knit-next's
-  `feat/gatt-peers` at `8a6d1a58`, five commits on `main`'s `82898694`, and not on `main`: `3c0116f1` holds the
-  reader, `7c16aae5` only mends the ADR's status line, `b7480e85` adds the payload lifetime's two new forget rules
-  after the first device gate (a HELLO naming another node, and 60 000 ms of scan time unheard), which this port
-  mirrors in `GattPayloads`, `LinkManager` and both radios (ADR 2026-09.xzpt, amended 2026-09-29), `454ae983` records
-  the gate in the ADR, and `8a6d1a58` sets the flag. An Android phone with `BLE_GATT_PEERS` (debug builds; release
-  keeps it dark) adds a scan filter on the `0xFE30` UUID, reads the GATT payload of a node that lists only the UUID
-  (`BleGattPayloadReader.kt`), and sights that node with it. `GattPayloads.kt` ports `GattPayloads.swift`'s rules line
-  for line, plus a 64-address cap on each map. A payload goes when a dial fails before its channel opens, when a HELLO
-  names another node (checked before an accepted dialer's verdict, and on a dial's reply), or after 60 000 ms of
-  presence-scan windows with the address unheard and unlinked; each logs `bt gatt forget <addr> (dial|hello
-  <id>|quiet)`. A HELLO refusal keeps it, and so does a quiet stranger's wait. A dialed link takes its capabilities
-  from the HELLO reply, so A4 rings it (`BluetoothMeshTransport.kt`). `BleAdvertPayload.kt` names
-  `FLAG_DIALS_GATT_PEERS` (`0x02`), and `docs/WIRE_COMPAT.md` says every parser tests only the bits it knows.
-  `8a6d1a58` advertises the flag whenever the reader runs, in its own commit, after `interop.py android-reads` passed
-  on the lab phones with it clear. Nothing here mirrors code, since the payload, the flag and `weDial` were law in
-  this port first (ADR 2026-09.xzpt). ADR 2026-09.shzv (A1) and 2026-09.dqvb (A4) are amended, and A1 stays whole.
-  Move the pin once it merges, and re-read the files above.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `82898694`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `f3f9cb9d`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 
@@ -121,12 +121,11 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
 - **A2** (merged as `0c0756f6` and `1f3befcd`): the golden vectors moved into JSON in `vectors/` that
   `GoldenVectorTest` reads, joined by keyed vectors (fixed identities, signed frames, a sealed v1 DM, the
   safety number, advert, HELLO, DIGEST and FNV hex) and a test that checks the fixtures this repo emits.
-- **A3** (knit-next #101, ADR 2026-09.kwq2, on `feat/gatt-peers`, mirrored ahead of the pin above): Android finds
-  and dials iPhones: it reads the `0xFE30` GATT payload from an advert that carries no service data, and sets
-  `FLAG_DIALS_GATT_PEERS`. Its own advert needs no UUID list, since an
-  iPhone's scan filtered on `0xFE30` matches the service data, locked or not (P8's scan-filter check,
-  `.agents/context/linux-peer.md`). A dialed iPhone's capabilities must then come from its HELLO reply, or A4
-  never rings it.
+- **A3** (knit-next #101, ADR 2026-09.kwq2, merged and in the pin at `f3f9cb9d`): Android finds and dials iPhones:
+  it reads the `0xFE30` GATT payload from an advert that carries no service data, and sets `FLAG_DIALS_GATT_PEERS`.
+  Its own advert needs no UUID list, since an iPhone's scan filtered on `0xFE30` matches the service data, locked or
+  not (P8's scan-filter check, `.agents/context/linux-peer.md`). A dialed iPhone's capabilities must then come from
+  its HELLO reply, or A4 never rings it.
 - **A4** (`c3191717`, knit-next ADR 2026-09.dqvb, in the pin): Android rings the GATT
   doorbell of a peer whose HELLO carries `CAP_DOORBELL` (`0x1000`), after the frames it writes on a link it
   accepted, on this port's schedule and with the same three upkeep types left out (ADR 2026-09.khjj). It never

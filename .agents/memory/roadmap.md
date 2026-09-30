@@ -18,7 +18,7 @@ explicit direction.** Update this file in the change that ships an item.
   v1 DM seal and open, the safety number, aliases and the device tag are in, with the RFC vectors and every
   knit-next golden. Line coverage is 97 %. A2's keyed vectors pass, the safety number among them, and
   knit-next verifies and opens the frames this port emits. Done: A2 merged, and the vectors are pinned to
-  knit-next `82898694` (2026-09-29; nothing they hold moved since `1f3befcd`).
+  knit-next `f3f9cb9d` (2026-09-29; nothing they hold moved since `1f3befcd`).
 - **P3, the mesh engine (`KnitMesh`, `KnitStore`):** done on 2026-09-25, pending the maintainer's review.
   - **Link layer:** the `LinkManager` behind a `Radio` protocol, with A1's admission rules (ADR 2026-09.6es2).
   - **Router and custody:** flooding and custody under Android's quotas, with the rules in one `CustodyRules`
@@ -247,8 +247,8 @@ explicit direction.** Update this file in the change that ships an item.
   and then `iphone` in both orders and `iphone-wake` with the Pixel 3. knit-peer gained two test switches for them, `--never-sight` and
   `--no-gatt-payload`. The gate passed on 2026-09-29, after the payload lifetime's two new forget rules became
   shared law (ADR 2026-09.xzpt, amended), and the flag build (`8a6d1a58`) passed `android-reads`, `iphone` in both
-  orders and `iphone-wake` (`.agents/context/linux-peer.md`, "What A3's flag showed"). Still owed: knit-next's merge,
-  and the pin moved to it.
+  orders and `iphone-wake` (`.agents/context/linux-peer.md`, "What A3's flag showed"). knit-next merged it as
+  `f3f9cb9d`, which is the pin. Done.
 - **Companion change A4:** Android rings an iPhone's doorbell (ADR 2026-09.khjj) after the frames it writes on the
   iPhone's link, on `LinkManager`'s schedule: a GATT write without response over the link's own connection, once
   service discovery finds the doorbell. Built as knit-next `c3191717` (its ADR 2026-09.dqvb), for a peer whose

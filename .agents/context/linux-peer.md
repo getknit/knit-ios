@@ -171,7 +171,7 @@ Last, the post and the DM must each reach the peer within `--arrival-timeout` (6
 reports how long each took. On `hci1` that can be minutes, behind the digests the phone queued during the back-fill
 ("Why the frames were late").
 
-`android-reads` is companion change A3's device gate (knit-next `feat/gatt-peers`, its ADR 2026-09.kwq2). The phone
+`android-reads` is companion change A3's device gate (knit-next ADR 2026-09.kwq2, merged in `f3f9cb9d`). The phone
 runs an A3 debug build, whose `bt state` line counts `gattPayloads=` and `gattReads=`; the first step checks it. The
 peer runs on `hci1` in the `ios` profile, serving its payload and its doorbell, and `--order` puts its id on one side
 of the phone's:
@@ -1059,7 +1059,14 @@ and Pixel 3 ran debug builds of it, and the peer ran this repo's `8d9c62a`. Its 
   the link with a reason the kernel does not map. Each drop followed the phone moving the link to 50 ms with a
   peripheral latency of 5, and the rerun held through the same move, so the dongle as peripheral copes only sometimes.
   The Pixel 3 once never read the peer at all while its reader stood idle, then held a connection to `hci1` with no
-  channel; dropped from `hci1`'s side, the rerun read it in 10.2 s.
+  channel; dropped from `hci1`'s side, the rerun read it in 10.2 s. Its scanner history settled why: every 12 s
+  window from 16:22 to 16:24 returned the three Android phones and never `hci1`, because `hci1` was not advertising.
+  From 16:21:24, a second before the peer started, `hci1` held a central's connection to the Pixel 3's GATT server,
+  and this dongle stops advertising while it holds any. The only thing on `hci1` then was `interop.py`'s pre-run
+  `knit-peer scan`, which links any device BlueZ lists with the `0xFE30` UUID and no service data to read its
+  payload, and BlueZ folds a phone's service-data UUID into that list. Its log was not kept, so the read is likely,
+  not shown. `interop.py` now keeps the scan's log (`.build/interop-scan.log`), and `android-reads` checks that
+  `hci1` holds no connection before its peer starts (`hci1-idle`).
 - **The Pixel 7 needs to be near the iPhone.** At its usual place the iPhone heard it at −97 dBm, under the −90 dBm
   floor, and never dialed; within a metre it linked in 10.5 s.
 - **The peer can be slow to dial a phone it may dial.** Above the Pixel 7, the peer's first dial came three minutes

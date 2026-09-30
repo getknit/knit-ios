@@ -3,10 +3,11 @@
 How knit-next's `mesh/bluetooth/` and `mesh/link/` behave at the pinned commit, and what that means for an
 iPhone. The iPhone's own design decisions are ADRs; this file is the Android ground they stand on.
 
-## GATT on the mesh plane: only a doorbell
+## GATT on the mesh plane: a payload and a doorbell
 
-On the mesh plane Android serves no GATT, and reads none but a peer's doorbell (below): no services,
-characteristics, notifications or MTU exchange. Each phone is both roles at once:
+On the mesh plane Android serves no GATT, and reads only two things a peer serves: the GATT payload of a node that
+advertises only the `0xFE30` UUID, with companion change A3 (below), and a peer's doorbell (below). No notifications
+and no MTU request of its own. Each phone is both roles at once:
 
 - **Peripheral:** a connectable advert and an L2CAP server (`listenUsingInsecureL2capChannel`).
 - **Central:** a scanner and an L2CAP client (`createInsecureL2capChannel(psm)`).
@@ -25,9 +26,9 @@ the link at a 720 ms supervision timeout, which the stack's own update during di
 back. BALANCED carries 5 s (30–50 ms, no latency), and iOS grants it. Then it rings the doorbell
 after the frames it writes, with a 1-byte write without response, at most once every 5 s plus once after a burst.
 `typing`, `blobreq` and `keyreq` frames never ring; nor do digests, FILE records or the HELLO. It never writes with
-a response, never serves GATT itself, and never sets the bit. At the pin a link it dialed takes its capabilities
-from the advert's low byte, which cannot show the bit, so it rings only links it accepted. A3 (knit-next
-`feat/gatt-peers`, ahead of the pin, below) takes them from the HELLO reply instead, so it rings a dialed iPhone too.
+a response, never serves GATT itself, and never sets the bit. Before A3 a link it dialed took its capabilities from
+the advert's low byte, which cannot show the bit, so it rang only links it accepted. A3 (below) takes them from the
+HELLO reply instead, so it rings a dialed iPhone too.
 
 Off the mesh plane, a build with `WEAR_STATUS` on (every debug build; release keeps it dark) serves a bonded Wear OS
 watch one encrypted, read-only characteristic in a service of its own, `6b1f0a3e-5d2c-4f0e-9a57-3c8e2d41b7a0`
@@ -50,7 +51,7 @@ There is no local name, no UUID list and no scan response, which is 31 bytes on 
 | 1 | 16 | node id as raw bytes (the 26-character base32 id, decoded) |
 | 17 | 4 | digest cue: the low 32 bits of the custody FNV fold, big-endian; nothing on BLE reads it |
 | 21 | 2 | L2CAP PSM, big-endian, assigned by the stack when the server opens |
-| 23 | 1 | BLE-local flags: bit 0 is `FLAG_SIDE_CHANNEL`, always 0 in release builds; bits 1–7 are reserved |
+| 23 | 1 | BLE-local flags: bit 0 is `FLAG_SIDE_CHANNEL`, always 0 in release builds; bit 1 is `FLAG_DIALS_GATT_PEERS`, set while the GATT reader runs (debug builds, with A3); bits 2–7 are reserved |
 
 A payload shorter than 23 bytes is dropped, exactly 23 reads the flags as 0, and anything past 24 is
 ignored. There is no version byte: the UUID implies the version. `0xFE30` sits in the SIG member block and
@@ -130,13 +131,13 @@ radio.
 
 ## What this means for an iPhone
 
-- **iOS cannot advertise service data**, only a local name and service UUIDs. At the pin, Android's scanner filter
-  requires service data, so Android never sees an iPhone. The iPhone can read Android's service data, so it
+- **iOS cannot advertise service data**, only a local name and service UUIDs. Before A3, Android's scanner filter
+  required service data, so Android never saw an iPhone. The iPhone can read Android's service data, so it
   sees Android.
 - **So the iPhone dials Android, and Android's responder refuses it** unless the iPhone's id sorts higher.
   Companion change A1 accepts a dialer Android never sighted, so every pair links.
-- **With companion change A3, Android sees a foreground iPhone** (knit-next ADR 2026-09.kwq2, on `feat/gatt-peers`
-  at `8a6d1a58`, ahead of the pin). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
+- **With companion change A3, Android sees a foreground iPhone** (knit-next ADR 2026-09.kwq2, merged in the pin; its debug builds
+  only, since `BLE_GATT_PEERS` keeps it dark in release). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
   of an advert that lists only the UUID, on `GattPayloads`' rules, sights the iPhone with it, and dials it when its
   own id sorts higher. It reads nothing while one of its dials is in flight, and holds its dials while a read runs.
   Once it sets `FLAG_DIALS_GATT_PEERS`, an iPhone whose id sorts lower waits to be dialed, and Android refuses that
