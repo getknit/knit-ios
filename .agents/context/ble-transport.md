@@ -105,6 +105,16 @@ after the HELLO belong to the frame loop, and Android may send frames right afte
 Node ids compare as Kotlin strings, which for `[a-z2-7]` is ASCII order: the digits `2`–`7` sort before
 `a`–`z`. Compare the 26-character strings, never the raw 16 bytes.
 
+Two rules have moved that check since `02051b64`. A1 (knit-next ADR 2026-09.shzv) put it in
+`BleAdmissionPolicy`, which admits a dialer it never sighted, whatever the order, and refuses a sighted one
+below it. #103 (knit-next ADR 2026-09.XXXX) lets a phone dial upward when it is alone. An Android phone with
+no BLE link, which has had none for `LONELY_AGGRESSIVE_WINDOW_MS` (180 000 ms, counted from the later of the
+transport's start and its last link going down), may dial a peer it sights above it. It picks the strongest,
+on an ordinary dial's filters and backoff, one dial at a time, and logs `bt lonely dial` first. A responder
+that has sighted it refuses, and the phone counts a `HANDSHAKE` failure. One that has not, like a screen-off
+phone, admits it. This port's `admit()` already gives both verdicts (ADR 2026-09.6es2), so nothing here
+mirrors #103.
+
 ### After link-up
 
 Android runs these at link-up, then every 60 s for each linked neighbour (`MeshManager.kt:2230`):
@@ -149,6 +159,10 @@ radio.
   Once it sets `FLAG_DIALS_GATT_PEERS`, an iPhone whose id sorts lower waits to be dialed, and Android refuses that
   iPhone's own dial as a sighted dialer below it. It still cannot see a backgrounded iPhone, whose UUID sits in the
   overflow area, and admits one unsighted under A1 when it dials.
+- **A lonely Android phone may dial an iPhone above it** (#103), but only one it sights, so a foreground iPhone
+  whose payload it read. That iPhone has sighted the phone's advert, so it refuses the dial and dials the phone
+  itself. An iPhone below a flagged phone gets no such rule, and still waits for the phone to dial
+  (`.agents/memory/roadmap.md`).
 - **Backgrounded iPhones are not rediscovered.** An iOS app in the background loses its local name, and its
   service UUID moves to an overflow area that only an iOS scan for that UUID sees. Open L2CAP links survive
   backgrounding with the `bluetooth-central` and `bluetooth-peripheral` modes.

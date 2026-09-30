@@ -480,6 +480,9 @@ def others_in_range(phone_id: str, seconds: int = 20) -> set[str]:
 DIALS_GATT_PEERS = 0x02
 # The low byte of the capabilities this port advertises (0x9), as the scan spells it; Android's builds send 0xFF.
 IOS_ADVERT_CAPABILITIES = "9"
+# knit-next #103: a phone that has held no BLE link for three minutes may dial a peer it sights above it, and logs this
+# line, naming the peer, before that dial's `bt initiating to`. The peer admits it only if it never sighted the phone.
+LONELY_DIAL = "bt lonely dial "
 
 
 def androids(heard: dict[str, dict]) -> set[str]:
@@ -704,18 +707,31 @@ def iphone(arguments: argparse.Namespace) -> int:
 def _dialed_by(phone: Phone, ios: IPhone, phone_id: str, order: str) -> dict:
     """Which side dialed the last link between the phone and the iPhone, from the phone's log since it was last cleared:
     `bt connect ok` is a dial of the phone's own, and `bt accepted client` one it took. The phone dials only when the
-    iPhone sorts below it and the phone's advert, as the iPhone sights it, sets FLAG_DIALS_GATT_PEERS."""
+    iPhone sorts below it and the phone's advert, as the iPhone sights it, sets FLAG_DIALS_GATT_PEERS, or when it has
+    held no link for three minutes and the iPhone sorts above it (knit-next #103). Such a lonely dial is reported, as
+    is the link it opened, and only a dial the rules don't allow fails the step. The iPhone refuses a lonely phone it
+    has sighted, so those dials end `HANDSHAKE` and the iPhone dials."""
     flags = next((s["flags"] for s in ios.command(cmd="links")["sightings"] if s["peer"] == phone_id), None)
     expected = "phone" if order == "iphone-below" and flags is not None and flags & DIALS_GATT_PEERS else "iphone"
-    lines = _phone_log(phone, ios.node_id)
+    lines = _phone_lines(phone)
+    detail: dict = {"phoneFlags": flags}
+    if expected == "iphone":
+        dials = _phone_dials(lines, ios.node_id)
+        stray = [dial for dial in dials if not dial["lonely"]]
+        if stray or (dials and order == "iphone-below"):
+            raise RuntimeError(f"the phone dialed the iPhone, which the {expected} should have dialed: {(stray or dials)[:2]}")
+        if dials:
+            detail["lonelyDials"] = dials
     ends = [line for line in lines if line.startswith((f"bt connect ok {ios.node_id}", f"bt accepted client {ios.node_id} "))]
     if not ends:
         # A link already up when the run began left nothing in the cleared log.
-        return {"dialer": None, "expected": expected, "phoneFlags": flags}
+        return {"dialer": None, "expected": expected, **detail}
     dialer = "phone" if ends[-1].startswith("bt connect ok") else "iphone"
     if dialer != expected:
+        if detail.get("lonelyDials", [{}])[-1].get("outcome") == "linked":
+            return {"dialer": dialer, "outcome": "lonely dial", **detail}
         raise RuntimeError(f"the {dialer} dialed; with the phone's flags at {flags} the {expected} should have: {ends[-2:]}")
-    return {"dialer": dialer, "phoneFlags": flags}
+    return {"dialer": dialer, **detail}
 
 
 def _offline(run: Run, ios: IPhone, other: Phone | Peer, other_id: str, nonce: str) -> None:
@@ -1087,9 +1103,10 @@ def android_reads(arguments: argparse.Namespace) -> int:
     then it would dial the phone, and refuse the phone's dial as one it makes itself, so the peer never sights the
     phone (`--never-sight`): it holds its dials, and admits the phone's as it admits an iPhone's.
 
-    `--order peer-above`: the phone reads the payload and never dials; the peer dials, and the phone accepts it as a
-    dialer it sighted, which only the read can have given it. The peer refuses the phone until the phone has logged
-    the read, or its dial could land first and be admitted unsighted under A1. The peer is then the link's central, so
+    `--order peer-above`: the phone reads the payload and never dials, unless it has held no link for three minutes
+    (knit-next #103), and those lonely dials are reported; the peer dials, and the phone accepts it as a dialer it
+    sighted, which only the read can have given it. The peer refuses the phone until the phone has logged the read,
+    or its dial could land first and be admitted unsighted under A1. The peer is then the link's central, so
     each link must end at knit-next #102's 5 s supervision timeout, not BlueZ's 420 ms put back after the doorbell
     lookup (`link-balanced`). `--links N` brings the link down and up again until N links have found the doorbell,
     each dialed by the peer, held for `--hold` seconds and checked the same way, and the summary lists every link's
@@ -1176,7 +1193,7 @@ def android_reads(arguments: argparse.Namespace) -> int:
             else:
                 run.step("peer-dialed-the-phone", lambda: _who_dialed(phone, peer, peer_id, phone_id, mark, phone_dials=False))
                 run.step("phone-sighted-the-dialer", lambda: _accepted_sighted(phone, peer_id))
-                run.step("phone-never-dialed", lambda: _phone_never_dialed(phone, peer_id))
+                run.step("phone-never-dialed", lambda: _phone_never_dialed(phone, peer_id, hci1=not arguments.hci0))
             time.sleep(max(0.0, link["at"] + arguments.hold - time.monotonic()))
             run.step("link-held", lambda: {**_phone_held(phone, peer_id), **_no_link_dropped(peer, {phone_id}), "heldSeconds": arguments.hold})
             if not below and run.step("link-balanced", lambda: _balanced(phone, peer_id, tally)) is None:
@@ -1523,11 +1540,38 @@ def _accepted_sighted(phone: Phone, peer_id: str) -> dict:
     return {"accepted": accepted[-1]}
 
 
-def _phone_never_dialed(phone: Phone, peer_id: str) -> dict:
-    dials = _phone_log(phone, f"bt initiating to {peer_id} ")
-    if dials:
-        raise RuntimeError(f"the phone dialed the peer: {dials[:2]}")
-    return {}
+def _phone_never_dialed(phone: Phone, peer_id: str, hci1: bool) -> dict:
+    """The phone, below the peer, never dialed it but for knit-next #103's lonely dials, which are reported. The peer
+    refuses a lonely phone it has sighted, and on hci1 none of them can connect: the ATS2851 takes no incoming LE
+    connection."""
+    dials = _phone_dials(_phone_lines(phone), peer_id)
+    stray = [dial for dial in dials if not dial["lonely"]]
+    if stray:
+        raise RuntimeError(f"the phone dialed the peer with no lonely line first: {stray[:2]}")
+    if not dials:
+        return {}
+    return {"outcome": "lonely dial", "lonelyDials": dials, **({"adapter": "hci1, which takes no incoming connection"} if hci1 else {})}
+
+
+def _phone_dials(lines: list[str], node: str) -> list[dict]:
+    """The phone's dials of `node` in its transport log, in order: whether a lonely line naming `node` came just before
+    it (knit-next #103), and how it ended, `linked` at `bt connect ok`, the reason at `bt connect <id> failed`, or
+    `open` while it has done neither."""
+    dials: list[dict] = []
+    lonely = False
+    for line in lines:
+        if line.startswith(LONELY_DIAL):
+            lonely = node in line
+        elif line.startswith("bt initiating to "):
+            if line.startswith(f"bt initiating to {node} "):
+                dials.append({"lonely": lonely, "outcome": "open"})
+            lonely = False
+        elif dials and dials[-1]["outcome"] == "open":
+            if line.startswith(f"bt connect ok {node} "):
+                dials[-1]["outcome"] = "linked"
+            elif failed := re.match(rf"bt connect {node} failed reason=(\w+)", line):
+                dials[-1]["outcome"] = failed.group(1)
+    return dials
 
 
 def _reads_only_uuid_nodes(phone: Phone, peer_id: str, service_data: set[str]) -> dict:
@@ -1595,8 +1639,13 @@ def _frames_arrived(peer: Peer, bodies: dict[str, str], sent_at: dict[str, float
 
 def _phone_log(phone: Phone, needle: str) -> list[str]:
     """The messages of the phone's Bluetooth transport log lines that contain `needle`, A3's GATT reads among them."""
+    return [line for line in _phone_lines(phone) if needle in line]
+
+
+def _phone_lines(phone: Phone) -> list[str]:
+    """The messages of every Bluetooth transport log line the phone holds, in order."""
     log = phone.shell("logcat -d -s BluetoothMeshTransport:*", timeout=60)
-    return [line.split(": ", 1)[-1] for line in log.splitlines() if needle in line]
+    return [line.split(": ", 1)[-1] for line in log.splitlines() if ": " in line]
 
 
 def _reads_gatt_payloads(phone: Phone) -> dict:

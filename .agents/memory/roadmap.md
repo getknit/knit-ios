@@ -307,5 +307,7 @@ explicit direction.** Update this file in the change that ships an item.
   sits in Apple's overflow area, so a backgrounded iPhone whose id sorts below the phone's waits for a dial that
   cannot come. Today that costs nothing, since a backgrounded iPhone's unfiltered scan finds no new peers either.
   Once background discovery lands, `weDial` must ignore a service-data peer's flag while Knit is in the background.
+- **An iPhone below a flagged Android phone waits for its dial,** the iPhone's twin of knit-next #103, and stays open
+  as a later Track A item: #103 lets only a lonely Android phone dial a peer above it.
 - **Never on iOS:** Wi-Fi Aware, the BLE side channel, spool relays and commons, LoRa, and Wi-Fi Direct.
   These are ADR-recorded scope decisions, not a backlog.
