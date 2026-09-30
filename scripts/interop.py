@@ -480,8 +480,9 @@ def others_in_range(phone_id: str, seconds: int = 20) -> set[str]:
 DIALS_GATT_PEERS = 0x02
 # The low byte of the capabilities this port advertises (0x9), as the scan spells it; Android's builds send 0xFF.
 IOS_ADVERT_CAPABILITIES = "9"
-# knit-next #103: a phone that has held no BLE link for three minutes may dial a peer it sights above it, and logs this
-# line, naming the peer, before that dial's `bt initiating to`. The peer admits it only if it never sighted the phone.
+# knit-next #103 (its ADR 2026-09.hj4a): a phone that has held no BLE link for three minutes may dial a peer it sights
+# above it, and logs `bt lonely dial <id> (alone=<ms>ms rssi=<dBm> dwell=<ms>ms)` just before that dial's `bt initiating
+# to`. The peer admits it only if it never sighted the phone.
 LONELY_DIAL = "bt lonely dial "
 
 

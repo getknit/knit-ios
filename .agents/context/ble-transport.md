@@ -107,7 +107,7 @@ Node ids compare as Kotlin strings, which for `[a-z2-7]` is ASCII order: the dig
 
 Two rules have moved that check since `02051b64`. A1 (knit-next ADR 2026-09.shzv) put it in
 `BleAdmissionPolicy`, which admits a dialer it never sighted, whatever the order, and refuses a sighted one
-below it. #103 (knit-next ADR 2026-09.XXXX) lets a phone dial upward when it is alone. An Android phone with
+below it. #103 (knit-next ADR 2026-09.hj4a) lets a phone dial upward when it is alone. An Android phone with
 no BLE link, which has had none for `LONELY_AGGRESSIVE_WINDOW_MS` (180 000 ms, counted from the later of the
 transport's start and its last link going down), may dial a peer it sights above it. It picks the strongest,
 on an ordinary dial's filters and backoff, one dial at a time, and logs `bt lonely dial` first. A responder
