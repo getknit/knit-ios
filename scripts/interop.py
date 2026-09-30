@@ -1670,7 +1670,8 @@ PRIORITY_AGAIN = re.compile(r"bt doorbell priority (\S+) again \((.*)\) requeste
 
 def _conn_params(phone: Phone, node: str) -> list[dict]:
     """The phone's links from `node` since its log was last cleared, each opened by its `bt accepted client` line,
-    with every `bt conn params` line logged for it and each time the fix asked for BALANCED again. Lines before the first accept belong to a link already up, and
+    with when its doorbell lookup found the doorbell, which is when the phone asks for BALANCED, every `bt conn params`
+    line logged for it and each time the fix asked for BALANCED again. Lines before the first accept belong to a link already up, and
     open a link whose `acceptedAt` is None."""
     log = phone.shell("logcat -d -v time -s BluetoothMeshTransport:*", timeout=60)
     links: list[dict] = []
@@ -1679,16 +1680,18 @@ def _conn_params(phone: Phone, node: str) -> list[dict]:
         # `-v time` opens each line with "MM-DD HH:MM:SS.mmm".
         at = line[6:18]
         if message.startswith(f"bt accepted client {node} "):
-            links.append({"acceptedAt": at, "params": [], "again": [], "downAt": None})
+            links.append({"acceptedAt": at, "foundAt": None, "params": [], "again": [], "downAt": None})
+        elif message.startswith(f"bt doorbell found {node} ") and links:
+            links[-1]["foundAt"] = at
         elif (again := PRIORITY_AGAIN.search(message)) and again.group(1) == node:
             if not links:
-                links.append({"acceptedAt": None, "params": [], "again": [], "downAt": None})
+                links.append({"acceptedAt": None, "foundAt": None, "params": [], "again": [], "downAt": None})
             links[-1]["again"].append({"at": at, "why": again.group(2), "requested": again.group(3) == "true"})
         elif f"link down: {node}" in message and links:
             links[-1]["downAt"] = at
         elif (params := CONN_PARAMS.match(message)) and params.group(1) == node:
             if not links:
-                links.append({"acceptedAt": None, "params": [], "again": [], "downAt": None})
+                links.append({"acceptedAt": None, "foundAt": None, "params": [], "again": [], "downAt": None})
             interval, latency, timeout = (int(value) for value in params.group(2, 3, 4))
             links[-1]["params"].append({"at": at, "intervalUs": interval, "latency": latency, "timeoutMs": timeout})
     return links
@@ -1713,6 +1716,7 @@ def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True) ->
         report.append(
             {
                 "acceptedAt": link["acceptedAt"],
+                "foundAt": link["foundAt"],
                 "updates": len(link["params"]),
                 "timeouts": [params["timeoutMs"] for params in link["params"]],
                 "last": last,
