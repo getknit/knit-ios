@@ -1124,8 +1124,8 @@ decodes the snoop.
 
 ## What the put-back race showed
 
-On 2026-09-30 from 00:05 the Pixel 7 and the Pixel 3 ran debug builds of knit-next `ed9446bf`
-(`fix/balanced-put-back-race`), which asks for BALANCED again when the stack puts a central's first timeout back
+On 2026-09-30 from 00:05 the Pixel 7 and the Pixel 3 ran debug builds of knit-next `ed9446bf`, merged as
+`3e566b1f`, which asks for BALANCED again when the stack puts a central's first timeout back
 after the doorbell lookup (knit-next #102, ADR 2026-09.dqvb amended). `interop.py` read each link's
 `bt conn params` lines from the phone's log and judged the last one after `bt doorbell found`, which must say
 `timeout=5000ms`. `--links 10` brought each link down and up again until ten had found the doorbell. Each link
@@ -1140,14 +1140,16 @@ held 60 s before it was judged. The runs and a raw logcat stream of each are in 
 - **Every link ended at 5 s.** No link logged a timeout under 5 s after its last re-ask, and the settle timer never
   fired: each put-back came within half a second of the ask, and the callback answered it.
 - **An iPhone puts 720 ms back every time; BlueZ only sometimes.** On each of the iPhone's links, 720 ms landed
-  about 0.2 s after the phone asked for BALANCED. BlueZ's 420 ms landed on 2 of the Pixel 7's links and 5 of the Pixel 3's.
+  about 0.2 s after the phone asked for BALANCED. BlueZ's 420 ms landed on 2 of the Pixel 7's links and 5 of the
+  Pixel 3's.
 - **A failed update can use up a re-ask.** The Pixel 3 logged status 42 (`0x2A`, a transaction collision) on 5 of
   its 10 links: a report of an update that failed, carrying the parameters the link kept. On four it came just after
   a 5 s report, a second request colliding with the first, and changed nothing. On the fifth link the first
-  re-ask was answered by 420 ms with status 42: the update had failed and the link had kept its timeout. The fix counted that as another put-back and spent its second and last re-ask on it. BALANCED then came
-  through, but a put-back after it would have found nothing left to answer it. knit-next `24bac000` spends no
-  re-ask on a report whose status is not 0, and no longer reads its timeout. The phones here ran `ed9446bf`, before
-  that change.
+  re-ask was answered by 420 ms with status 42: the update had failed and the link had kept its timeout. The fix
+  counted that as another put-back and spent its second and last re-ask on it. BALANCED then came through, but a
+  put-back after it would have found nothing left to answer it. knit-next `fe2eeed6` (built as `24bac000`) spends
+  no re-ask on a report whose status is not 0, and no longer reads its timeout. The phones here ran `ed9446bf`,
+  before that change.
 - **Three lookups found no doorbell.** Three of the Pixel 7's link-ups against the peer logged
   `bt doorbell lookup failed … (discover)`, a 10 s discovery timeout, so the phone never asked for BALANCED. They
   were not counted, and each held its 60 s.
@@ -1161,8 +1163,9 @@ held 60 s before it was judged. The runs and a raw logcat stream of each are in 
 - **The iPhone could not be the Pixel 3's central.** The Pixel 3's node id sorts above the iPhone's, so the Pixel 3
   dials it. The maintainer dropped that run rather than change an identity.
 
-The maintainer then had the Pixel 3 run again on knit-next `24bac000`, which spends no re-ask on a failed update
-(from 02:00, the same scenario on `hci0`, `.build/interop-balanced/20260930-0200-pixel3-peer-above-hci0-24bac000/`):
+The maintainer then had the Pixel 3 run again on knit-next `24bac000`, merged as `fe2eeed6`, which spends no
+re-ask on a failed update (from 02:00, the same scenario on `hci0`,
+`.build/interop-balanced/20260930-0200-pixel3-peer-above-hci0-24bac000/`):
 
 - **45 of 45 steps, 10 of 10 links at 5 s.** BlueZ's 420 ms came back on 3 of them, and one re-ask answered each.
   No report in the whole run carried a status other than 0, so the collisions of the first run did not recur.

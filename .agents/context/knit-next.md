@@ -9,8 +9,9 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`. The port started from HEAD `02051b64`, five test-only commits
   later, on 2026-09-25.
-- **The pin is `f3f9cb9d`,** knit-next's local `main` on 2026-09-29 once A3 merged, ahead of its `origin/main`
-  (`06dd410d`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds it.
+- **The pin is `b0fc4721`,** knit-next's local `main` on 2026-09-30 once the put-back race's fix merged, ahead of
+  its `origin/main` (`cb295894`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds
+  it.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
     never opens). Of what the files below say, only the BLE responder moved.
@@ -57,7 +58,7 @@ Kotlin wins.
       no contacts list, removal or commons; mirror the rule when Contacts lands.
     - `06dd410d` (closes #97) and `bc25507c` move DataStore, and `9449fd15` shows the git SHA in debug builds'
       About screen. They are Android's alone.
-  - **Since then:**
+  - **Up to `f3f9cb9d`** (the previous pin):
     - A3 (knit-next #101, ADR 2026-09.kwq2), rebased onto `0983824b` and merged unchanged from the branch this port
       mirrored ahead of the pin: `0c3aa685` holds the reader, `45569aa7` mends the ADR's status line, `4bf4226b` adds
       the payload lifetime's two new forget rules after the first device gate, `c5ff044a` records the gate,
@@ -75,9 +76,20 @@ Kotlin wins.
       2026-09.xzpt, amended 2026-09-29). ADR 2026-09.shzv (A1) and 2026-09.dqvb (A4) are amended, and A1 stays whole.
     - `0983824b` lets a user clear the Nearby room's messages like any chat's. It clears them locally, sends
       nothing and leaves custody alone, so this port has nothing to mirror.
+  - **Since then:**
+    - The put-back race (#102, a further amendment to ADR 2026-09.dqvb), rebased and merged unchanged from the
+      branch the device runs used: `3e566b1f` (built as `ed9446bf`) asks for BALANCED again when a report shows a
+      timeout under 5 s after the lookup's ask, at once or 2 s later, at most twice a lookup, and logs
+      `bt doorbell priority <id> again (put-back <ms>ms|settle)`. `fe2eeed6` (built as `24bac000`) spends no re-ask
+      on a report whose status is not 0. `8d3c5551` and `b0fc4721` record the runs. Nothing on the wire moves, and
+      this port only checks it (`interop.py android-reads --links`, `iphone --links`; "What the put-back race
+      showed", `linux-peer.md`).
+    - `0b9d19ea` labels an animated image "GIF", from its frames, read locally after the blob lands and stored on
+      the message (database v17). It adds no wire field, so this port has nothing to mirror.
+    - `2d059df6` moves Android's dependencies, `cb295894` its CI, and `e40135f2` and `3031fe60` its tests.
   - No wire bytes or vectors moved.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `f3f9cb9d`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `b0fc4721`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 

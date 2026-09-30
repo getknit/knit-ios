@@ -24,10 +24,10 @@ the doorbell, `f34c056b-5830-4243-a888-01f92f49e446`, provided it takes a write 
 lookup that finds the doorbell asks for `CONNECTION_PRIORITY_BALANCED`: an iPhone that dialed is the central and runs
 the link at a 720 ms supervision timeout, which the stack's own update during discovery raises to 5 s and then puts
 back. BALANCED carries 5 s (30–50 ms, no latency), and iOS grants it. The put-back can land after that grant and
-win, and a BlueZ central's 420 ms comes back the same way. Since knit-next `ed9446bf` (`fix/balanced-put-back-race`,
-a further amendment to ADR 2026-09.dqvb, not yet in the pin) the client asks again at once when a report shows a
-timeout under 5 s, and again 2 s after its ask unless a report since has shown 5 s, at most twice a lookup. A
-report with a failed status spends no re-ask (`24bac000`). Each re-ask logs `bt doorbell priority <id> again
+win, and a BlueZ central's 420 ms comes back the same way. Since knit-next `3e566b1f` (built as `ed9446bf`, a
+further amendment to ADR 2026-09.dqvb, in the pin) the client asks again at once when a report shows a timeout under
+5 s, and again 2 s after its ask unless a report since has shown 5 s, at most twice a lookup. A report with a failed
+status spends no re-ask (`fe2eeed6`, built as `24bac000`). Each re-ask logs `bt doorbell priority <id> again
 (put-back <ms>ms|settle)`. On the Pixel 7 the iPhone's 720 ms came back on every link, and the first re-ask brought
 each back to 5 s ("What the put-back race showed", `linux-peer.md`). Then it rings the doorbell after the frames
 it writes, with a 1-byte write without response, at most once every 5 s plus once after a burst. `typing`, `blobreq`

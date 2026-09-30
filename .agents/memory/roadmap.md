@@ -18,7 +18,7 @@ explicit direction.** Update this file in the change that ships an item.
   v1 DM seal and open, the safety number, aliases and the device tag are in, with the RFC vectors and every
   knit-next golden. Line coverage is 97 %. A2's keyed vectors pass, the safety number among them, and
   knit-next verifies and opens the frames this port emits. Done: A2 merged, and the vectors are pinned to
-  knit-next `f3f9cb9d` (2026-09-29; nothing they hold moved since `1f3befcd`).
+  knit-next `b0fc4721` (2026-09-30; nothing they hold moved since `1f3befcd`).
 - **P3, the mesh engine (`KnitMesh`, `KnitStore`):** done on 2026-09-25, pending the maintainer's review.
   - **Link layer:** the `LinkManager` behind a `Radio` protocol, with A1's admission rules (ADR 2026-09.6es2).
   - **Router and custody:** flooding and custody under Android's quotas, with the rules in one `CustodyRules`
@@ -266,8 +266,11 @@ explicit direction.** Update this file in the change that ships an item.
   stack puts it back after the doorbell lookup briefly raises it to 5 s. One dropped at about 10 m in the walk test
   (`.agents/context/linux-peer.md`, "What the walk test showed"). The fix is on Android's side: knit-next `82898694`
   (2026-09-29, in the pin) looks the doorbell up at link-up and asks for `CONNECTION_PRIORITY_BALANCED`, whose timeout
-  is 5 s. Still owed: knit-next's push, and the walk again with Wi-Fi Aware off on the Pixels, checking that the snoop
-  shows the 5 s update after `bt doorbell found` and none back to 720 ms, and comparing the ranges.
+  is 5 s. The stack's put-back could land after that ask and win, 720 ms from an iPhone and 420 ms from BlueZ, so
+  `3e566b1f` and `fe2eeed6` (2026-09-30, in the pin) ask again, and every link in forty ended at 5 s
+  (`.agents/context/linux-peer.md`, "What the put-back race showed"). Still owed: knit-next's push, and the walk
+  again with Wi-Fi Aware off on the Pixels, checking that the snoop shows the 5 s update after `bt doorbell found`
+  and none back to 720 ms, and comparing the ranges.
 - **Two iPhones both ways:** an iPhone rings only the peers it dialed, so of two iPhones the one with the smaller id
   cannot wake the other. A second GATT connection toward its dialer would let it; nothing needs it before two
   iPhones are on hand.
