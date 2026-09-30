@@ -16,7 +16,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
     scripts/interop.py iphone-reboot [--restart] [--locked 120] [--closed 60] [--skip-relaunch] [--udid UDID]
     scripts/interop.py iphone-rings [--udid UDID]
-    scripts/interop.py android-reads --device SERIAL [--order peer-below|peer-above] [--link-timeout 180] [--links N]
+    scripts/interop.py android-reads --device SERIAL [--order peer-below|peer-above] [--link-timeout 180] [--links N] [--hci0]
     scripts/interop.py android-forgets --device SERIAL [--link-timeout 180] [--quiet-timeout 600]
     scripts/interop.py android-rings --device SERIAL [--link dialed|accepted] [--converge-timeout 600] [--arrival-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
@@ -72,7 +72,8 @@ PEER = Path(os.environ.get("KNIT_PEER") or ROOT / ".build" / "out" / "Products" 
 PACKAGE = "app.getknit.knit"
 INSTANCE = "interop"
 # The maintainer's own adapter, for `relay` only, shared with the devices already on it (.agents/rules/devices.md).
-HCI0 = ["--adapter", "hci0", "--adapter-address", "A0:00:00:00:00:01", "--shared-adapter"]
+HCI0_ADDRESS = "A0:00:00:00:00:01"
+HCI0 = ["--adapter", "hci0", "--adapter-address", HCI0_ADDRESS, "--shared-adapter"]
 # The Mac that runs the peer with --mac, and its mirror of this tree (scripts/mac.sh).
 MAC_HOST = "mac.example"
 MAC_MIRROR = "source/knit-ios-mirror"
@@ -453,10 +454,11 @@ def poll(check, timeout: float, every: float = 2):
         time.sleep(every)
 
 
-def in_range(seconds: int = 20) -> dict[str, dict]:
+def in_range(seconds: int = 20, adapter: list[str] | None = None) -> dict[str, dict]:
     """Every Knit node a quiet scan hears, by node id, with what it advertised: its flags, and the low byte of its
-    capabilities, `ff` from Android and `9` from an iPhone or an `ios` peer."""
-    result = subprocess.run([str(PEER), "scan", "--seconds", str(seconds), "--log", "debug"], capture_output=True, text=True, check=True)
+    capabilities, `ff` from Android and `9` from an iPhone or an `ios` peer. `adapter` scans elsewhere than hci1."""
+    command = [str(PEER), "scan", "--seconds", str(seconds), "--log", "debug", *(adapter or [])]
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
     # The scan links any node BlueZ lists with the UUID and no service data to read its payload, so what it did is kept:
     # a link it left up keeps hci1 from advertising (`android-reads`' `hci1-idle`).
     with open(ROOT / ".build" / "interop-scan.log", "a", encoding="utf-8") as log:
@@ -1085,7 +1087,8 @@ def android_reads(arguments: argparse.Namespace) -> int:
     each link must end at knit-next #102's 5 s supervision timeout, not BlueZ's 420 ms put back after the doorbell
     lookup (`link-balanced`). `--links N` brings the link down and up again until N links have found the doorbell,
     each dialed by the peer, held for `--hold` seconds and checked the same way, and the summary lists every link's
-    last timeout.
+    last timeout. `--hci0` runs the peer and its scan on the maintainer's adapter, shared, which needs its own
+    go-ahead: the ATS2851 now on hci1 takes no incoming connection, so a phone cannot read a peer there.
 
     In both orders every payload the phone read belongs to a node that advertises no service data: the peer, or an
     iPhone or Mac in range, never an Android phone. The run reports the first link's time from the peer's start, MVP
@@ -1103,7 +1106,8 @@ def android_reads(arguments: argparse.Namespace) -> int:
     if run.step("phone-build-reads-gatt", lambda: _reads_gatt_payloads(phone)) is None:
         print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
         return run.failed
-    heard = in_range()
+    adapter = HCI0 if arguments.hci0 else None
+    heard = in_range(adapter=adapter)
     others = set(heard) - {phone_id}
     flagged = bool(heard.get(phone_id, {}).get("flags", 0) & DIALS_GATT_PEERS)
     below = arguments.order == "peer-below"
@@ -1112,7 +1116,8 @@ def android_reads(arguments: argparse.Namespace) -> int:
     if run.step("phone-forgot-old-peers", lambda: _phone_forgets_all_but(phone, set(heard))) is None:
         print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
         return run.failed
-    if run.step("phone-forgot-old-payload", lambda: _address_released(phone, HCI1_ADDRESS, arguments.quiet_timeout)) is None:
+    address = HCI0_ADDRESS if arguments.hci0 else HCI1_ADDRESS
+    if run.step("phone-forgot-old-payload", lambda: _address_released(phone, address, arguments.quiet_timeout)) is None:
         print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
         return run.failed
     peer_id = keygen(phone_id, "phone-dials" if below else "peer-dials", others)
@@ -1135,10 +1140,11 @@ def android_reads(arguments: argparse.Namespace) -> int:
     refused = others if below else others | {phone_id}
     # This dongle cannot advertise while anything holds a link to it. On 2026-09-29 the Pixel 3 never heard a peer
     # started while one was up, left by the scan's read or a phone's stray connect: it must be gone first.
-    if run.step("hci1-idle", lambda: _hci1_idle_after(3)) is None:
+    # hci0 holds the maintainer's own links, so only hci1 can be checked for a stray one.
+    if not arguments.hci0 and run.step("hci1-idle", lambda: _hci1_idle_after(3)) is None:
         print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
         return run.failed
-    peer = Peer("ios", f"knit-peer reads {nonce}", refused, arguments.peer_log, arguments.rssi_floor, never_sight=held)
+    peer = Peer("ios", f"knit-peer reads {nonce}", refused, arguments.peer_log, arguments.rssi_floor, adapter=adapter, never_sight=held)
     mark = peer.log_mark()
     stop = threading.Event()
     link = None
@@ -3747,6 +3753,7 @@ def main() -> int:
     reads.add_argument("--link-timeout", type=float, default=180, help="seconds for the phone's read and for the link")
     reads.add_argument("--hold", type=float, default=60, help="seconds the link must hold after it comes up")
     reads.add_argument("--quiet-timeout", type=float, default=600, help="seconds for the phone to let go of an earlier peer's payload")
+    reads.add_argument("--hci0", action="store_true", help="run the peer and its scan on hci0, shared, which needs its own go-ahead")
     reads.add_argument("--links", type=int, default=1, help="link-ups to check at the 5 s timeout, with --order peer-above (#102)")
     forgets = commands.add_parser("android-forgets")
     forgets.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
