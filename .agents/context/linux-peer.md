@@ -1160,3 +1160,14 @@ held 60 s before it was judged. The runs and a raw logcat stream of each are in 
   first dial unsighted under A1, which failed A3's three read checks. It read the peer before the later links.
 - **The iPhone could not be the Pixel 3's central.** The Pixel 3's node id sorts above the iPhone's, so the Pixel 3
   dials it. The maintainer dropped that run rather than change an identity.
+
+The maintainer then had the Pixel 3 run again on knit-next `24bac000`, which spends no re-ask on a failed update
+(from 02:00, the same scenario on `hci0`, `.build/interop-balanced/20260930-0200-pixel3-peer-above-hci0-24bac000/`):
+
+- **45 of 45 steps, 10 of 10 links at 5 s.** BlueZ's 420 ms came back on 3 of them, and one re-ask answered each.
+  No report in the whole run carried a status other than 0, so the collisions of the first run did not recur.
+- **The Pixel 3 was awake,** and read the peer 6.7 s after it started and linked at 17.5 s, where the first run's
+  dozing phone never read it.
+- **Two lookups found no doorbell.** One logged `bt doorbell absent`: discovery finished without the doorbell, on a
+  peer that serves it. The other's discovery timed out, and that link stayed at 420 ms, though it held its 60 s.
+  Neither was counted.
