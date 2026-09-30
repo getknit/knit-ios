@@ -611,8 +611,8 @@ def iphone(arguments: argparse.Namespace) -> int:
     With the iPhone above the phone, the iPhone is each link's central, so each must end at knit-next #102's 5 s
     supervision timeout, not iOS's 720 ms put back after the doorbell lookup (`link-balanced`, `relink-balanced`). A
     link already up when the run began left its lines before the log was cleared, and passes unseen. `--links N`
-    then brings the link down and up again until N have come up, each dialed by the iPhone, held for `--hold` seconds
-    and checked the same way, and the summary lists every link's last timeout."""
+    then brings the link down and up again until N links have found the doorbell, each dialed by the iPhone, held
+    for `--hold` seconds and checked the same way, and the summary lists every link's last timeout."""
     phone = Phone(arguments.device)
     ios = IPhone(arguments.udid)
     run = Run()
@@ -684,8 +684,7 @@ def iphone(arguments: argparse.Namespace) -> int:
                 run.step("relink-balanced", lambda: _balanced(phone, ios.node_id, tally))
         run.step("custody-converges", lambda: _converges(ios, phone, 180))
         if above:
-            done = 1 if arguments.skip_offline else 2
-            _relinks(run, ios, phone, phone_id, arguments.links - done, arguments.hold, 180, tally)
+            _relinks(run, ios, phone, phone_id, arguments.links, arguments.hold, 180, tally)
     finally:
         ios.stop()
     summary = {"summary": "iphone", "steps": run.steps, "failed": run.failed}
@@ -1085,8 +1084,9 @@ def android_reads(arguments: argparse.Namespace) -> int:
     dialer it sighted, which only the read can have given it. The peer refuses the phone until the phone has logged
     the read, or its dial could land first and be admitted unsighted under A1. The peer is then the link's central, so
     each link must end at knit-next #102's 5 s supervision timeout, not BlueZ's 420 ms put back after the doorbell
-    lookup (`link-balanced`). `--links N` brings the link down and up again until N have come up, each dialed by the
-    peer, held for `--hold` seconds and checked the same way, and the summary lists every link's last timeout.
+    lookup (`link-balanced`). `--links N` brings the link down and up again until N links have found the doorbell,
+    each dialed by the peer, held for `--hold` seconds and checked the same way, and the summary lists every link's
+    last timeout.
 
     In both orders every payload the phone read belongs to a node that advertises no service data: the peer, or an
     iPhone or Mac in range, never an Android phone. The run reports the first link's time from the peer's start, MVP
@@ -1170,7 +1170,7 @@ def android_reads(arguments: argparse.Namespace) -> int:
         run.step("reads-only-uuid-nodes", lambda: _reads_only_uuid_nodes(phone, peer_id, androids(heard)))
         run.step("phone-gatt-counts", lambda: _reads_gatt_payloads(phone))
         if link is not None and not below:
-            _relinks(run, peer, phone, phone_id, arguments.links - 1, arguments.hold, arguments.link_timeout, tally)
+            _relinks(run, peer, phone, phone_id, arguments.links, arguments.hold, arguments.link_timeout, tally)
     finally:
         stop.set()
         peer.stop()
@@ -1669,40 +1669,47 @@ PRIORITY_AGAIN = re.compile(r"bt doorbell priority (\S+) again \((.*)\) requeste
 
 
 def _conn_params(phone: Phone, node: str) -> list[dict]:
-    """The phone's links from `node` since its log was last cleared, each opened by its `bt accepted client` line,
-    with when its doorbell lookup found the doorbell, which is when the phone asks for BALANCED, every `bt conn params`
-    line logged for it and each time the fix asked for BALANCED again. Lines before the first accept belong to a link already up, and
-    open a link whose `acceptedAt` is None."""
+    """The phone's links from `node` since its log was last cleared, each opened by its `bt accepted client` line: when
+    its doorbell lookup found the doorbell, which is when the phone asks for BALANCED, every `bt conn params` line
+    logged for it, how many of those came before the find, and each time the fix asked for BALANCED again. Lines
+    before the first accept belong to a link already up, and open a link whose `acceptedAt` is None."""
     log = phone.shell("logcat -d -v time -s BluetoothMeshTransport:*", timeout=60)
     links: list[dict] = []
+
+    def current() -> dict:
+        if not links:
+            links.append({"acceptedAt": None, "foundAt": None, "beforeFound": 0, "params": [], "again": [], "downAt": None})
+        return links[-1]
+
     for line in log.splitlines():
         message = line.split(": ", 1)[-1]
         # `-v time` opens each line with "MM-DD HH:MM:SS.mmm".
         at = line[6:18]
         if message.startswith(f"bt accepted client {node} "):
-            links.append({"acceptedAt": at, "foundAt": None, "params": [], "again": [], "downAt": None})
-        elif message.startswith(f"bt doorbell found {node} ") and links:
-            links[-1]["foundAt"] = at
+            links.append({"acceptedAt": at, "foundAt": None, "beforeFound": 0, "params": [], "again": [], "downAt": None})
+        elif message.startswith(f"bt doorbell found {node} "):
+            link = current()
+            link["foundAt"] = at
+            link["beforeFound"] = len(link["params"])
         elif (again := PRIORITY_AGAIN.search(message)) and again.group(1) == node:
-            if not links:
-                links.append({"acceptedAt": None, "foundAt": None, "params": [], "again": [], "downAt": None})
-            links[-1]["again"].append({"at": at, "why": again.group(2), "requested": again.group(3) == "true"})
+            current()["again"].append({"at": at, "why": again.group(2), "requested": again.group(3) == "true"})
         elif f"link down: {node}" in message and links:
             links[-1]["downAt"] = at
         elif (params := CONN_PARAMS.match(message)) and params.group(1) == node:
-            if not links:
-                links.append({"acceptedAt": None, "foundAt": None, "params": [], "again": [], "downAt": None})
             interval, latency, timeout = (int(value) for value in params.group(2, 3, 4))
-            links[-1]["params"].append({"at": at, "intervalUs": interval, "latency": latency, "timeoutMs": timeout})
+            current()["params"].append({"at": at, "intervalUs": interval, "latency": latency, "timeoutMs": timeout})
     return links
 
 
 def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True) -> dict:
-    """knit-next #102: every link the phone accepted from `node` since its log was cleared ends at BALANCED's 5 s
-    supervision timeout. The last `bt conn params` line a link logs, for as long as it lives, must say
-    `timeout=5000ms`: a central's first values put back after it, 720 ms from an iPhone or 420 ms from BlueZ, fail
-    it. Each link's last line goes into `tally`, for the run's summary. With `fresh`, a link must have come up since
-    the clear; without, one already up when the log was cleared, which left no lines, passes unseen."""
+    """knit-next #102: every link the phone accepted from `node` since its log was cleared, whose doorbell lookup found
+    the doorbell, ends at BALANCED's 5 s supervision timeout. The last `bt conn params` line the link logs after
+    `bt doorbell found`, for as long as it lives, must say `timeout=5000ms`: a central's first values put back after
+    the ask, 720 ms from an iPhone or 420 ms from BlueZ, fail it, and so does a link with no line after the find. A
+    link whose lookup never found the doorbell never asked for BALANCED, so it is reported, and neither passes nor
+    fails nor counts toward `--links`. Each link goes into `tally`, for the run's summary. With `fresh`, a link must
+    have come up since the clear; without, one already up when the log was cleared, which left no lines, passes
+    unseen."""
     links = _conn_params(phone, node)
     if fresh:
         links = [link for link in links if link["acceptedAt"]]
@@ -1712,32 +1719,42 @@ def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True) ->
         return {"links": [], "predatesTheLog": True}
     report = []
     for link in links:
-        last = link["params"][-1] if link["params"] else None
+        after = link["params"][link["beforeFound"] :] if link["foundAt"] else []
         report.append(
             {
                 "acceptedAt": link["acceptedAt"],
+                "doorbellFound": link["foundAt"] is not None,
                 "foundAt": link["foundAt"],
-                "updates": len(link["params"]),
                 "timeouts": [params["timeoutMs"] for params in link["params"]],
-                "last": last,
+                "updatesAfterFound": len(after),
+                "last": after[-1] if after else None,
                 "again": link["again"],
                 "downAt": link["downAt"],
             }
         )
     tally.extend(report)
-    short = [link for link in report if link["last"] is None or link["last"]["timeoutMs"] < BALANCED_TIMEOUT_MS]
+    found = [link for link in report if link["doorbellFound"]]
+    short = [link for link in found if link["last"] is None or link["last"]["timeoutMs"] < BALANCED_TIMEOUT_MS]
     if short:
-        raise RuntimeError(f"{len(short)} of {len(report)} links did not end at {BALANCED_TIMEOUT_MS} ms: {json.dumps(report)}")
-    return {"links": report}
+        raise RuntimeError(f"{len(short)} of {len(found)} links did not end at {BALANCED_TIMEOUT_MS} ms: {json.dumps(report)}")
+    return {"links": report, "counted": len(found), "noDoorbell": len(report) - len(found)}
 
 
-def _relinks(run: Run, central: Node, phone: Phone, phone_id: str, count: int, hold: float, timeout: float, tally: list[dict]) -> None:
-    """`count` more link-ups with the phone, each dialed by `central` (knit-peer or the iPhone) and checked by
-    `_balanced`. Each time the central refuses the phone, which closes the link, and once the phone has logged it
-    down and the connection has had time to go, lets it link again. Each link must hold for `hold` seconds."""
+def _counted(tally: list[dict]) -> int:
+    """The links in `tally` that count toward `--links`: those whose lookup found the doorbell."""
+    return sum(1 for link in tally if link["doorbellFound"])
+
+
+def _relinks(run: Run, central: Node, phone: Phone, phone_id: str, want: int, hold: float, timeout: float, tally: list[dict]) -> None:
+    """More link-ups with the phone, each dialed by `central` (knit-peer or the iPhone) and checked by `_balanced`,
+    until `want` links whose lookup found the doorbell are in `tally`, or twice that many link-ups have come. Each
+    time the central refuses the phone, which closes the link, and once the phone has logged it down and the
+    connection has had time to go, lets it link again. Each link must hold for `hold` seconds."""
     node = central.node_id
-    for index in range(count):
-        label = f"relink-{index + 2}"
+    attempt = 1
+    while _counted(tally) < want and attempt < 2 * want:
+        attempt += 1
+        label = f"relink-{attempt}"
         phone.shell("logcat -c")
         central.command(cmd="deny-link", peer=phone_id)
         down = run.step(f"{label}-down", lambda: {"lines": len(poll(lambda: _phone_log(phone, f"link down: {node}"), 60, every=2))})
@@ -1754,6 +1771,8 @@ def _relinks(run: Run, central: Node, phone: Phone, phone_id: str, count: int, h
             return
         time.sleep(max(0.0, link["at"] + hold - time.monotonic()))
         run.step(f"{label}-balanced", lambda: {**_balanced(phone, node, tally), **_phone_held(phone, node), "heldSeconds": hold})
+    if _counted(tally) < want:
+        run.step("links-counted", lambda: _fail(f"{_counted(tally)} of {want} links found the doorbell in {attempt} link-ups"))
 
 
 def _link_after(central: Node, phone: Phone, phone_id: str, since: float, timeout: float) -> dict:
@@ -1770,10 +1789,14 @@ def _link_after(central: Node, phone: Phone, phone_id: str, since: float, timeou
 
 
 def _last_timeouts(tally: list[dict]) -> list[dict]:
-    """Each link's last supervision timeout, in ms, for a run's summary line, with why the phone asked for BALANCED
-    again on it, which shows whether the callback or the settle timer put it right."""
+    """Each link's last supervision timeout after its doorbell was found, in ms, for a run's summary line, with why
+    the phone asked for BALANCED again on it, which shows whether the callback or the settle timer put it right."""
     return [
-        {"lastTimeoutMs": link["last"]["timeoutMs"] if link["last"] else None, "again": [again["why"] for again in link["again"]]}
+        {
+            "doorbellFound": link["doorbellFound"],
+            "lastTimeoutMs": link["last"]["timeoutMs"] if link["last"] else None,
+            "again": [again["why"] for again in link["again"]],
+        }
         for link in tally
     ]
 
