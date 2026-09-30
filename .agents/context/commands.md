@@ -67,6 +67,7 @@ python3 scripts/interop.py relay --device <serial>                # MVP item 7's
 python3 scripts/interop.py check … --mac                          # checklist M: the peer on the Mac, on CoreBluetooth (ADR 2026-09.vcdk)
 python3 scripts/interop.py soak … --mac --extras                  # checklist M's hour, the peer on the Mac
 python3 scripts/interop.py iphone --device <serial>               # MVP items 2 to 6, iPhone and phone both driven; Knit open on both
+python3 scripts/interop.py iphone --device <serial> --links 10    # the same, then links up to ten, each ending at the 5 s timeout; the iPhone above the phone
 python3 scripts/interop.py iphone-peer --order iphone-above       # the same against a fresh peer on hci0; iphone-below is the other order
 python3 scripts/interop.py iphone-relay --device <serial>         # MVP item 7: phone, iPhone, then a peer on hci0; Knit open on both
 python3 scripts/interop.py iphone-soak --device <serial> --peer --extras   # MVP item 11 on the iPhone: an hour, the peer on hci0; Auto-Lock off
@@ -77,6 +78,7 @@ python3 scripts/interop.py iphone-reboot --restart                # MVP item 1: 
 python3 scripts/interop.py iphone-rings                           # the iPhone rings a peer's doorbell (hci1, ios profile); Knit open
 python3 scripts/interop.py android-rings --device <serial>        # A4: custody converges, then an Android phone rings the peer's doorbell (hci1, ios profile; --link dialed|accepted)
 python3 scripts/interop.py android-reads --device <serial> --order peer-below|peer-above   # A3's gate: the phone reads the peer's GATT payload, and dials it or is dialed
+python3 scripts/interop.py android-reads --device <serial> --order peer-above --links 10  # #102: ten links the peer dials, each ending at the 5 s timeout
 python3 scripts/interop.py android-forgets --device <serial>     # A3's gate: each forget rule of the payload lifetime fires once on the phone
 python3 scripts/interop.py iphone-forgets --hci0                 # each forget rule fires once on the iPhone (hci0 needs its go-ahead)
 python3 scripts/interop.py iphone-scan --first ios --away-window 150   # P8's scan-filter check: peers on hci0 and hci1; someone locks the iPhone
