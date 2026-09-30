@@ -1111,6 +1111,9 @@ def android_reads(arguments: argparse.Namespace) -> int:
         return run.failed
     adapter = HCI0 if arguments.hci0 else None
     heard = in_range(adapter=adapter)
+    # An iPhone the scan could not read, as its reads on hci0 can drop, is still no earlier run's peer, and advertises
+    # as this port's nodes do.
+    heard.update({node: {"capabilities": IOS_ADVERT_CAPABILITIES} for node in arguments.known.split(",") if node and node not in heard})
     others = set(heard) - {phone_id}
     flagged = bool(heard.get(phone_id, {}).get("flags", 0) & DIALS_GATT_PEERS)
     below = arguments.order == "peer-below"
@@ -3756,6 +3759,7 @@ def main() -> int:
     reads.add_argument("--link-timeout", type=float, default=180, help="seconds for the phone's read and for the link")
     reads.add_argument("--hold", type=float, default=60, help="seconds the link must hold after it comes up")
     reads.add_argument("--quiet-timeout", type=float, default=600, help="seconds for the phone to let go of an earlier peer's payload")
+    reads.add_argument("--known", default="", help="iPhones in range the scan may fail to read, by node id, taken as heard and refused; comma-separated")
     reads.add_argument("--hci0", action="store_true", help="run the peer and its scan on hci0, shared, which needs its own go-ahead")
     reads.add_argument("--links", type=int, default=1, help="link-ups to check at the 5 s timeout, with --order peer-above (#102)")
     forgets = commands.add_parser("android-forgets")
