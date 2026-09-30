@@ -6,16 +6,24 @@ the rules for the radios and phones it touches.
 
 ## The adapter
 
-- **`hci1` is an Edimax BT-8500** (USB `7392:c611`, Realtek RTL8761BU), public address `0A:BC:DE:00:00:A1`,
-  named "linux-host #2". It has the central and peripheral roles, `LEAdvertisingManager1` with 4 advertising
-  instances, and `GattManager1`. Its controller has 27-byte LE buffers, so the kernel offers a channel an MPS
-  of 23, the least the spec allows. Android copes with that; an iPhone does not ("What the iPhone showed").
+- **`hci1` is an Actions ATS2851** (USB `10d7:b012`), a Bluetooth 5.3 dongle at public address
+  `F0:0D:00:00:00:02`, named "linux-host #2". BlueZ gives it the central and peripheral roles,
+  `LEAdvertisingManager1` with 5 advertising instances, and `GattManager1`. Its controller has 251-byte LE
+  buffers and data length extension, so the kernel offers a channel an MPS of 247, and it has the 2M and Coded
+  PHYs. It advertises in the legacy format only, which holds Knit's advert. It takes no incoming LE connection,
+  so the peer on it only ever dials ("What the ATS2851 showed").
+- **The Edimax BT-8500 was `hci1` until 2026-09-29** (USB `7392:c611`, Realtek RTL8761BU), at
+  `0A:BC:DE:00:00:A1`. Its controller has 27-byte LE buffers, so the kernel offered an MPS of 23, the least the
+  spec allows. Android copes with that; an iPhone does not ("What the iPhone showed"). It takes incoming
+  connections, but cannot advertise while it holds one. Every section below dated before 2026-09-29 evening was
+  measured on it. When it is plugged in, `--adapter-address 0A:BC:DE:00:00:A1` runs the peer there.
 - **`hci0` is the maintainer's**, an Intel controller (Bluetooth 5.4) at `A0:00:00:00:00:01` that holds the
   maintainer's own devices. The peer checks that its adapter has the expected address before it does anything,
   and binds every socket to that address, so nothing it does lands on another adapter. It runs on `hci0` only
-  as a shared adapter, with a go-ahead: for the relay line's second peer, and for every iPhone run.
-- **knit-next's emulator script passes the same dongle through** to an Android emulator; the two cannot use it
-  at once.
+  as a shared adapter, with a go-ahead: for the relay line's second peer, and for runs where a phone dials the
+  peer or reads its payload.
+- **knit-next's emulator script passes the Edimax through** to an Android emulator, picking it by USB id, so the
+  emulator and a peer on the ATS2851 can run at once.
 
 ## What spike (e) showed
 
@@ -95,7 +103,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing, and links a node that advertises only the UUID just long enough to read its payload; `--advertise` also shows the advert |
 | `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window |
 
-- **Every command checks the adapter first.** `--adapter` defaults to `hci1` and `--adapter-address` to the Edimax's
+- **Every command checks the adapter first.** `--adapter` defaults to `hci1` and `--adapter-address` to the ATS2851's
   address. An adapter with another address stops the peer before anything opens.
 - **`hci0` is refused by name** unless `--shared-adapter` is given, with its address
   (`--adapter hci0 --adapter-address A0:00:00:00:00:01 --shared-adapter`). A shared adapter keeps the links other
@@ -1121,6 +1129,47 @@ decodes the snoop.
   stayed in touch through Wi-Fi Aware discovery, which the Diagnostics screen shows as a link. knit-next's bridge
   lists peers in reach as `reachable`, not links, so the Pixels' `bt state` lines in logcat are the record of their
   links.
+
+## What the ATS2851 showed
+
+On 2026-09-29 from 20:40, with the Actions ATS2851 as `hci1`, knit-peer ran in both profiles against the lab
+phones, the iPhone 12 and the Mac's peer. Nobody drove a phone. `btmon -i hci1` ran from 21:17. The captures and
+logs are in `.build/interop-ats2851/`.
+
+- **The controller's answers can be read without root.** Setting `Adapter1.Powered` off and on reruns the kernel's
+  init, and an unprivileged raw HCI socket on the adapter sees each Command Complete, though not the commands or
+  the LE Meta events. The controller has LE buffers of 251 bytes × 6, a maximum and default data length of 251
+  bytes (2,120 µs) both ways, and every LE state. Its features include LL privacy and the 2M and Coded PHYs, but
+  not extended advertising.
+- **The iPhone's writes flow.** In the `ios` profile, with an id above the iPhone's, the peer read the iPhone's
+  payload in 6.4 s, dialed it, and was linked 18.9 s after it started, writing SDUs of up to 247 bytes. The iPhone
+  then sent 232 KB in 94 SDUs, 89 of them 2,570 bytes, 206 KB of it in the first 8.3 s. The peer's custody went
+  from 0 to 395 within 10 s, and the link held for the run's 3 minutes. On the Edimax those writes stalled after
+  the HELLO.
+- **The peer dials Android and advertises while linked.** It dialed hzwy, whose custody converged in about 70 s,
+  and re-registered its advert 19 times during the back-fill as the digest cue moved, each time without error.
+  Its dials to a phone at −87 dBm timed out twice.
+- **It takes no incoming LE connection.** No Android phone dialed the peer's `android` advert in five runs. The
+  Mac's peer heard it at −39 to −50 dBm and dialed it about a dozen times, and every dial ran out its 12 s
+  watchdog. btmon showed no LE Connection Complete, though the kernel unmasks that event. The advert is ADV_IND from the public
+  address every 1.28 s, and takes connect requests from anyone.
+- **Scanning is not the cause.** The dials failed the same with the discovery scan at 100% duty (the kernel's
+  11.25 ms window every 11.25 ms), at 50% (30 ms every 60 ms) and at 0.4% (11.25 ms every 2.56 s). They failed
+  with no scan at all, too, from an advert registered alone with nothing else running on the adapter.
+- **It answers no scan request either.** nRF Connect on the Pixel 9 listed the address without the name that
+  advert's scan response carries, and its Connect did nothing, with nothing in btmon. The controller sends its
+  adverts but ignores every reply to them.
+- **Classic works both ways.** The Pixel 9 paired with it over BR/EDR: a Connect Request, Secure Simple Pairing
+  and a stored link key. Only the peripheral side of LE fails.
+- **`btmgmt --index N <command>` acts on `hci0`.** In BlueZ 5.72 a one-shot command runs inside
+  `bt_shell_attach()`, before `main()` applies `--index`, and commands such as `set-sysconfig` and
+  `read-sysconfig` then fall back to index 0. One such `set-sysconfig` meant for `hci1` changed `hci0`'s discovery
+  scan. Interactively the index applies first: `sudo btmgmt --index 1 --timeout 10` with `select hci1` fed before
+  anything else, and the prompt shows `[hci1]`.
+- **Read that way, `hci1` keeps the kernel's defaults:** the discovery scan at `0x0012` over `0x0012` (types
+  `0x0011` and `0x0012`) and a supervision timeout of `0x002a`, 420 ms (type `0x001a`). That timeout is what
+  `hci1-supervision.sh` raises through debugfs, and `set-sysconfig -v 001a:2:f401` in the same session sets it
+  to 5 s without debugfs.
 
 ## What the put-back race showed
 

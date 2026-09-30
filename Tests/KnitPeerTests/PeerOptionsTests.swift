@@ -18,7 +18,7 @@ import Testing
     @Test func runIsTheDefaultOnHci1WithTheRadiosOwnProfile() throws {
         let options = try run([])
         #expect(options.adapter == "hci1")
-        #expect(options.adapterAddress == "0A:BC:DE:00:00:A1")
+        #expect(options.adapterAddress == "F0:0D:00:00:00:02")
         #expect(options.radioProfile == nil, "the radio's own")
         #expect(options.stateDirectory == "/home/tester/.local/state/knit-peer/default")
         #expect(options.name == nil)

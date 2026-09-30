@@ -6,18 +6,18 @@
 #     sudo scripts/hci1-supervision.sh              # set it now
 #     scripts/hci1-supervision.sh --udev-rule       # print a udev rule that sets it on every plug-in
 #
-# It touches only the adapter with the Edimax's address, whatever index the kernel gave it: never hci0.
+# It touches only the adapter with the ATS2851's address, whatever index the kernel gave it: never hci0.
 
 set -eu
 
-expected=0a:bc:de:00:00:a1
+expected=f0:0d:00:00:00:02
 # Units of 10 ms.
 timeout=500
 
 if [ "${1:-}" = "--udev-rule" ]; then
 	script=$(readlink -f "$0")
-	# The Edimax BT-8500's USB ids; the script still checks the address before it writes anything.
-	printf 'ACTION=="add", SUBSYSTEM=="bluetooth", ENV{DEVTYPE}=="host", ATTRS{idVendor}=="7392", ATTRS{idProduct}=="c611", RUN+="%s %%k"\n' "$script"
+	# The Actions ATS2851's USB ids; the script still checks the address before it writes anything.
+	printf 'ACTION=="add", SUBSYSTEM=="bluetooth", ENV{DEVTYPE}=="host", ATTRS{idVendor}=="10d7", ATTRS{idProduct}=="b012", RUN+="%s %%k"\n' "$script"
 	exit 0
 fi
 
@@ -45,7 +45,7 @@ done
 # `identity` starts with the adapter's public address.
 address=$(cut -d' ' -f1 < "$dir/identity" | tr 'A-F' 'a-f')
 if [ "$address" != "$expected" ]; then
-	echo "refusing $adapter: its address is $address, not the Edimax's $expected" >&2
+	echo "refusing $adapter: its address is $address, not the ATS2851's $expected" >&2
 	exit 1
 fi
 echo "$timeout" > "$file"

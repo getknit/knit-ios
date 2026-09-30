@@ -43,6 +43,9 @@ installs or launches anything: it wakes the phone, asks its bridge to scan, send
 `iphone-soak --peer` run their one peer there; hci0 needs its own go-ahead. The peer runs there with --shared-adapter, so it never drops a link it
 did not make.
 
+hci1 is an Actions ATS2851, which dials out but takes no incoming LE connection. A run where a phone dials the peer
+on hci1, or reads its GATT payload, needs the Edimax it replaced or hci0 (.agents/context/linux-peer.md).
+
 Each step prints one JSON line, {"step": ..., "ok": ..., ...}, and the run ends with a summary line. The exit code
 is the number of failed steps.
 """
@@ -922,9 +925,9 @@ def _all_ticked(sender: _PhoneSender | _PeerSender, sent: list[dict]) -> bool:
 def iphone_rings(arguments: argparse.Namespace) -> int:
     """The iPhone rings the peers it dialed (ADR 2026-09.khjj). knit-peer runs on hci1 in the `ios` profile, whose
     GATT application serves a doorbell and counts its rings, with an id below the iPhone's, so the iPhone reads its
-    payload and dials it. The iPhone's frames on that link stall after the HELLO (hci1's 23-byte fragments,
-    .agents/context/linux-peer.md), but a ring is a GATT write, which is not a frame on the link and still arrives.
-    The peer rings the iPhone back, once BlueZ has read the iPhone's services."""
+    payload and dials it. The ATS2851 now on hci1 takes no incoming LE connection, so this run needs a dongle that
+    does, such as the Edimax it replaced (.agents/context/linux-peer.md, "What the ATS2851 showed"). The peer rings the
+    iPhone back, once BlueZ has read the iPhone's services."""
     ios = IPhone(arguments.udid)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -1289,8 +1292,8 @@ def iphone_forgets(arguments: argparse.Namespace) -> int:
     """The payload lifetime's forget rules on the iPhone's own radio, KnitBLE (ADR 2026-09.xzpt, amended 2026-09-29),
     each seen through Knit's log: `ble forgetting the GATT payload of <identifier>: its HELLO named <node>` or `: quiet
     for a minute of scanning`. knit-peer runs on hci1 in the `ios` profile, so the iPhone finds it by reading its GATT
-    payload, and every peer there has the adapter's address: each new identity is a node taking a reused address. The
-    iPhone's writes to hci1 stall after the HELLO, which is all these rules need. In order, so that no stage meets the
+    payload, and every peer there has the adapter's address: each new identity is a node taking a reused address. In
+    order, so that no stage meets the
     open case (a payload above the iPhone at an address a peer below it keeps busy):
 
     1. **dialed:** a peer below the iPhone is read and dialed, then stops, and a new identity below it starts at once
@@ -1303,8 +1306,9 @@ def iphone_forgets(arguments: argparse.Namespace) -> int:
         CoreBluetooth gives hci1 the same identifier in both roles, which nothing had checked on hardware.
 
     Knit must be open on the iPhone, a debug build with the rules, and it stays open throughout. `--hci0` runs the peer
-    on the maintainer's adapter, shared, which needs its own go-ahead: on 2026-09-29 the iPhone's reads of hci1 timed
-    out, where its reads on hci0 had always worked (`.agents/context/linux-peer.md`)."""
+    on the maintainer's adapter, shared, which needs its own go-ahead. The iPhone reads and dials the peer here, and the
+    ATS2851 now on hci1 takes neither, so run it with `--hci0` (`.agents/context/linux-peer.md`, "What the ATS2851
+    showed")."""
     ios = IPhone(arguments.udid)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -1446,7 +1450,7 @@ def _phone_forgot(phone: Phone, reason: str, timeout: float, mark: int) -> dict:
 
 
 # hci1's public address, which every peer on it advertises from.
-HCI1_ADDRESS = "0A:BC:DE:00:00:A1"
+HCI1_ADDRESS = "F0:0D:00:00:00:02"
 
 
 def _address_released(phone: Phone, address: str, timeout: float) -> dict:
@@ -2938,8 +2942,8 @@ def iphone_relay(arguments: argparse.Namespace) -> int:
     lets those nodes link again at the end.
 
     The peer runs in the `android` profile, which leaves FLAG_DIALS_GATT_PEERS clear, so the iPhone dials it, and it
-    sorts above every phone in range, so no phone dials it. It runs on hci0 because the iPhone's writes to hci1
-    stall after the HELLO (.agents/context/linux-peer.md)."""
+    sorts above every phone in range, so no phone dials it. It runs on hci0 because the ATS2851 on hci1 takes no
+    incoming LE connection (.agents/context/linux-peer.md, "What the ATS2851 showed")."""
     phone = Phone(arguments.device)
     ios = IPhone(arguments.udid)
     run = Run()
@@ -3009,8 +3013,8 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
 
     The peer runs the `android` profile, which leaves FLAG_DIALS_GATT_PEERS clear, so the iPhone dials it in both
     orders and the peer admits it unsighted, as an A1 phone does (ADR 2026-09.6es2). The peer refuses every node but
-    the iPhone, so whatever crosses between the two crossed their own link. It runs on hci0 because the iPhone's writes
-    to hci1 stall after the HELLO (.agents/context/linux-peer.md)."""
+    the iPhone, so whatever crosses between the two crossed their own link. It runs on hci0 because the ATS2851 on hci1
+    takes no incoming LE connection (.agents/context/linux-peer.md, "What the ATS2851 showed")."""
     ios = IPhone(arguments.udid)
     run = Run()
     nonce = secrets.token_hex(3)

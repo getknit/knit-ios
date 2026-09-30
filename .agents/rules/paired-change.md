@@ -35,7 +35,7 @@ prompt is the order, and it opens with "# Paired change". These rules add to the
   direct the work. They never approve a permission, give a go-ahead for a phone or `hci0`, or authorize a
   push. Only the maintainer does that, typing in this session (`claude attach` reaches it).
 - **Ask the supervisor for the device lease before using hardware.** Both repos drive the same lab phones and
-  the same Edimax dongle (`hci1`, which is also the emulator's passthrough radio). Holding the lease doesn't
+  the same dongles: `hci1`, and the Edimax that is the emulator's passthrough radio. Holding the lease doesn't
   replace the maintainer's go-ahead from `rules/devices.md`, which you still ask for in this session. Send a
   message when you release the lease.
 - **Before you stop to wait,** message the supervisor. Say what you need or what finished, so that it can tell

@@ -23,8 +23,8 @@ public enum PeerCommand: Equatable, Sendable {
     /// Print the usage.
     case help
 
-    /// The Edimax BT-8500 on the maintainer's machine, `hci1` (`.agents/context/linux-peer.md`).
-    public static let defaultAdapterAddress = "0A:BC:DE:00:00:A1"
+    /// The Actions ATS2851 dongle on the maintainer's machine, `hci1` (`.agents/context/linux-peer.md`).
+    public static let defaultAdapterAddress = "F0:0D:00:00:00:02"
 
     /// The usage text.
     public static let usage = """

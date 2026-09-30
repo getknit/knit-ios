@@ -91,3 +91,21 @@ need two adapters, one session at a time (`.agents/rules/devices.md`). Two rules
 
 The alternatives were pairing the iPhone with the rig, which would test an encrypted link that no phone uses,
 and a dongle with larger LE buffers, which this machine does not have.
+
+**Amended 2026-09-29, for the ATS2851:** the maintainer replaced the Edimax on `hci1` with an Actions ATS2851
+(`F0:0D:00:00:00:02`), and it is `knit-peer`'s default adapter (`--adapter-address`) for now
+(`.agents/context/linux-peer.md`, "What the ATS2851 showed").
+
+- **The iPhone's writes flow on `hci1`.** Its controller has 251-byte LE buffers, so the kernel offers an MPS of
+  247, and on a link the peer dialed the iPhone back-filled 206 KB in 8.3 s. It also advertises while linked, which
+  the RTL8761BU could not.
+- **It takes no incoming LE connection.** The controller answers neither a connect request nor a scan request,
+  whatever the scan duty, so the peer on `hci1` only dials. A run where a phone dials the peer or reads its GATT
+  payload needs `hci0`, under the go-ahead and the shared-adapter rules above, or the Edimax plugged back in and
+  named with `--adapter-address 0A:BC:DE:00:00:A1`. The iPhone runs keep the peer on `hci0` as before.
+- **Its settings go through `btmgmt`, interactively.** A one-shot `btmgmt --index 1 <command>` acts on `hci0`
+  (BlueZ 5.72), so the root tools for `hci1` run as `.agents/rules/devices.md` says. `hci1-supervision.sh` now
+  checks for the ATS2851's address.
+
+The guard for the default is `PeerOptionsTests`' `runIsTheDefaultOnHci1WithTheRadiosOwnProfile`. The alternative
+was keeping the Edimax, which leaves the iPhone's writes stalled on `hci1`.
