@@ -1663,11 +1663,14 @@ def _phone_held(phone: Phone, node: str) -> dict:
 BALANCED_TIMEOUT_MS = 5000
 # The line the phone's doorbell client logs each time the link's parameters change (knit-next `BleDoorbell`).
 CONN_PARAMS = re.compile(r"bt conn params (\S+) interval=(\d+)us latency=(\d+) timeout=(\d+)ms")
+# The fix's line when the doorbell client asks for BALANCED again: `bt doorbell priority <id> again (<why>)
+# requested=<bool>`, `why` being `put-back <ms>ms` from the callback or `settle` from the timer.
+PRIORITY_AGAIN = re.compile(r"bt doorbell priority (\S+) again \((.*)\) requested=(\w+)")
 
 
 def _conn_params(phone: Phone, node: str) -> list[dict]:
     """The phone's links from `node` since its log was last cleared, each opened by its `bt accepted client` line,
-    with every `bt conn params` line logged for it. Lines before the first accept belong to a link already up, and
+    with every `bt conn params` line logged for it and each time the fix asked for BALANCED again. Lines before the first accept belong to a link already up, and
     open a link whose `acceptedAt` is None."""
     log = phone.shell("logcat -d -v time -s BluetoothMeshTransport:*", timeout=60)
     links: list[dict] = []
@@ -1676,12 +1679,16 @@ def _conn_params(phone: Phone, node: str) -> list[dict]:
         # `-v time` opens each line with "MM-DD HH:MM:SS.mmm".
         at = line[6:18]
         if message.startswith(f"bt accepted client {node} "):
-            links.append({"acceptedAt": at, "params": [], "downAt": None})
+            links.append({"acceptedAt": at, "params": [], "again": [], "downAt": None})
+        elif (again := PRIORITY_AGAIN.search(message)) and again.group(1) == node:
+            if not links:
+                links.append({"acceptedAt": None, "params": [], "again": [], "downAt": None})
+            links[-1]["again"].append({"at": at, "why": again.group(2), "requested": again.group(3) == "true"})
         elif f"link down: {node}" in message and links:
             links[-1]["downAt"] = at
         elif (params := CONN_PARAMS.match(message)) and params.group(1) == node:
             if not links:
-                links.append({"acceptedAt": None, "params": [], "downAt": None})
+                links.append({"acceptedAt": None, "params": [], "again": [], "downAt": None})
             interval, latency, timeout = (int(value) for value in params.group(2, 3, 4))
             links[-1]["params"].append({"at": at, "intervalUs": interval, "latency": latency, "timeoutMs": timeout})
     return links
@@ -1709,6 +1716,7 @@ def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True) ->
                 "updates": len(link["params"]),
                 "timeouts": [params["timeoutMs"] for params in link["params"]],
                 "last": last,
+                "again": link["again"],
                 "downAt": link["downAt"],
             }
         )
@@ -1757,9 +1765,13 @@ def _link_after(central: Node, phone: Phone, phone_id: str, since: float, timeou
                 raise
 
 
-def _last_timeouts(tally: list[dict]) -> list[int | None]:
-    """Each link's last supervision timeout, in ms, for a run's summary line."""
-    return [link["last"]["timeoutMs"] if link["last"] else None for link in tally]
+def _last_timeouts(tally: list[dict]) -> list[dict]:
+    """Each link's last supervision timeout, in ms, for a run's summary line, with why the phone asked for BALANCED
+    again on it, which shows whether the callback or the settle timer put it right."""
+    return [
+        {"lastTimeoutMs": link["last"]["timeoutMs"] if link["last"] else None, "again": [again["why"] for again in link["again"]]}
+        for link in tally
+    ]
 
 
 def iphone_scan(arguments: argparse.Namespace) -> int:
