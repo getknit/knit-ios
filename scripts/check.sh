@@ -126,7 +126,13 @@ gate_adr() {
 
 gate_lintorama() {
 	step "lintorama (markdown, YAML, shell, editorconfig)"
-	docker run --rm -v "$root":/code zaventh/lintorama:7
+	# A worktree's .git is a file naming the main checkout's Git dir, so mount that at its host path too. Only when
+	# git names one: docker would otherwise create an empty, root-owned directory there.
+	local gitdir mounts=()
+	if gitdir=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+		mounts=(-v "$gitdir":"$gitdir")
+	fi
+	docker run --rm -v "$root":/code "${mounts[@]}" zaventh/lintorama:7
 }
 
 # Only the Objective-C runtime calls these, so only Package.swift's -ObjC keeps them in the app. Without the
