@@ -87,6 +87,15 @@ Kotlin wins.
     - `0b9d19ea` labels an animated image "GIF", from its frames, read locally after the blob lands and stored on
       the message (database v17). It adds no wire field, so this port has nothing to mirror.
     - `2d059df6` moves Android's dependencies, `cb295894` its CI, and `e40135f2` and `3031fe60` its tests.
+  - **Mirrored ahead of the pin:** #103 (knit-next ADR 2026-09.hj4a), `b6336ddf` on `fix/lonely-smaller-id-dials`,
+    from `b0fc4721`. An Android phone that has held no BLE link for 180 000 ms, counted from the later of the
+    transport's start and its last link going down (`noLinkSince`), dials the strongest peer it sights above it,
+    on an ordinary dial's filters and backoff, one at a time (`LonelyDialPolicy.kt`). It logs
+    `bt lonely dial <id> (alone=<ms>ms rssi=<dBm> dwell=<ms>ms)` just before that dial's `bt initiating to`, and
+    its debug `bt state` line gains `alone=<ms>ms`. A responder that sighted the phone refuses it, which the phone
+    counts as a `HANDSHAKE` failure, and a failed dial to a peer it already holds a link to bumps no backoff. This
+    port's `admit()` already gives Android's verdict (ADR 2026-09.6es2), so no Swift mirrors it, and only the
+    harness moves: `interop.py`'s `_dialed_by` and `phone-never-dialed` report a lonely dial rather than fail it.
   - No wire bytes or vectors moved.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `b0fc4721`.

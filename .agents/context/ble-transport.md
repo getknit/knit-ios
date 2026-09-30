@@ -159,9 +159,9 @@ radio.
   Once it sets `FLAG_DIALS_GATT_PEERS`, an iPhone whose id sorts lower waits to be dialed, and Android refuses that
   iPhone's own dial as a sighted dialer below it. It still cannot see a backgrounded iPhone, whose UUID sits in the
   overflow area, and admits one unsighted under A1 when it dials.
-- **A lonely Android phone may dial an iPhone above it** (#103), but only one it sights, so a foreground iPhone
-  whose payload it read. That iPhone has sighted the phone's advert, so it refuses the dial and dials the phone
-  itself. An iPhone below a flagged phone gets no such rule, and still waits for the phone to dial
+- **A lonely Android phone may dial an iPhone above it** (#103), but it must sight the iPhone first, which means a
+  foreground iPhone whose payload it has read. That iPhone has sighted the phone's advert too, so it refuses the
+  dial and dials the phone itself. An iPhone below a flagged phone gets no such rule, and still waits for the phone to dial
   (`.agents/memory/roadmap.md`).
 - **Backgrounded iPhones are not rediscovered.** An iOS app in the background loses its local name, and its
   service UUID moves to an overflow area that only an iOS scan for that UUID sees. Open L2CAP links survive
