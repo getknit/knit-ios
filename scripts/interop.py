@@ -240,12 +240,14 @@ class Peer(Node):
         log_path: Path | None = None,
         never_sight: set[str] | None = None,
         gatt_payload: bool = True,
+        gatt_reads: bool = True,
     ) -> None:
         super().__init__()
         # knit-peer's test switches: nodes it never takes as sighted, so it never dials them and admits their dials
         # unsighted; and, in the `ios` profile, a doorbell served without the payload, so an A3 phone never sights it.
         self.never_sight = never_sight or set()
         self.gatt_payload = gatt_payload
+        self.gatt_reads = gatt_reads
         self.instance = instance
         self.profile = profile
         self.name = name
@@ -264,6 +266,8 @@ class Peer(Node):
             arguments += ["--never-sight", ",".join(sorted(self.never_sight))]
         if not self.gatt_payload:
             arguments.append("--no-gatt-payload")
+        if not self.gatt_reads:
+            arguments.append("--no-gatt-reads")
         if ON_MAC:
             # The adapter and the MTU knobs are BlueZ's; CoreBluetooth has one radio and picks its own MTU.
             command = on_mac("run", arguments)
@@ -1253,7 +1257,9 @@ def iphone_forgets(arguments: argparse.Namespace) -> int:
         an accepted link by its central's identifier and the payload by the peripheral's, so the payload goes only if
         CoreBluetooth gives hci1 the same identifier in both roles, which nothing had checked on hardware.
 
-    Knit must be open on the iPhone, a debug build with the rules, and it stays open throughout."""
+    Knit must be open on the iPhone, a debug build with the rules, and it stays open throughout. `--hci0` runs the peer
+    on the maintainer's adapter, shared, which needs its own go-ahead: on 2026-09-29 the iPhone's reads of hci1 timed
+    out, where its reads on hci0 had always worked (`.agents/context/linux-peer.md`)."""
     ios = IPhone(arguments.udid)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -1267,40 +1273,53 @@ def iphone_forgets(arguments: argparse.Namespace) -> int:
     print(json.dumps({"run": "iphone-forgets", "iphone": ios.node_id, "stages": stages, "log": str(log_path), "refused": sorted(others)}))
     current: Peer | None = None
 
-    def peer(side: str, tag: str) -> Peer:
+    def peer(side: str, tag: str, reads: bool = True) -> Peer:
+        # A peer the iPhone only has to read reads nothing itself: its connection to read the iPhone, made as the
+        # iPhone read it, made the iPhone file it as a stranger for ten minutes (2026-09-29).
         _keygen("iphone-forgets", *_peer_window(ios.node_id, others, side))
-        started = Peer("ios", f"knit-peer forgets {tag} {nonce}", others, arguments.peer_log, arguments.rssi_floor, "iphone-forgets")
+        adapter = HCI0 if arguments.hci0 else None
+        started = Peer(
+            "ios", f"knit-peer forgets {tag} {nonce}", others, arguments.peer_log, arguments.rssi_floor, "iphone-forgets", adapter, gatt_reads=reads
+        )
+        began[started] = time.monotonic()
         started.start()
         return started
 
+    began: dict[Peer, float] = {}
+
+    def lapse() -> dict:
+        # hci0 holds the maintainer's own links, so only hci1 can be checked for a stray one.
+        return _hci1_idle_after(30) if not arguments.hci0 else (time.sleep(30) or {})
+
     try:
-        run.step("hci1-idle", lambda: _hci1_idle_after(3))
+        if not arguments.hci0:
+            run.step("hci1-idle", lambda: _hci1_idle_after(3))
         if "dialed" in stages:
             current = peer("iphone-above", "dialed-old")
             read = run.step("dialed-read", lambda: _ios_read(log_path, current.node_id, arguments.link_timeout))
-            run.step("dialed-linked", lambda: _linked_since(current, ios.node_id, 0, arguments.link_timeout))
+            run.step("dialed-linked", lambda: _linked_since(current, ios.node_id, began[current], arguments.link_timeout))
             current.stop()
             current = peer("iphone-above", "dialed-new")
             newcomer = current.node_id
             if read:
                 run.step("dialed-forgets", lambda: _ios_forgot(log_path, read["identifier"], f"its HELLO named {newcomer}", arguments.link_timeout))
             current.stop()
-            run.step("dialed-lapsed", lambda: _hci1_idle_after(30))
+            run.step("dialed-lapsed", lapse)
         if "quiet" in stages:
-            current = peer("iphone-below", "quiet")
+            current = peer("iphone-below", "quiet", reads=False)
             current.command(cmd="deny-link", peer=ios.node_id)
             read = run.step("quiet-read", lambda: _ios_read(log_path, current.node_id, arguments.link_timeout))
             current.stop()
             if read:
                 run.step("quiet-forgets", lambda: _ios_forgot(log_path, read["identifier"], "quiet for a minute", arguments.quiet_timeout))
         if "accepted" in stages:
-            current = peer("iphone-below", "accepted-old")
+            current = peer("iphone-below", "accepted-old", reads=False)
             current.command(cmd="deny-link", peer=ios.node_id)
             read = run.step("accepted-read", lambda: _ios_read(log_path, current.node_id, arguments.link_timeout))
             current.stop()
             current = peer("iphone-below", "accepted-new")
             newcomer = current.node_id
-            run.step("accepted-linked", lambda: _linked_since(current, ios.node_id, 0, arguments.link_timeout))
+            run.step("accepted-linked", lambda: _linked_since(current, ios.node_id, began[current], arguments.link_timeout))
             if read:
                 run.step("accepted-forgets", lambda: _ios_forgot(log_path, read["identifier"], f"its HELLO named {newcomer}", arguments.link_timeout))
     finally:
@@ -3558,6 +3577,7 @@ def main() -> int:
     ios_forgets.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     ios_forgets.add_argument("--link-timeout", type=float, default=180, help="seconds for each read, link and HELLO forget")
     ios_forgets.add_argument("--quiet-timeout", type=float, default=300, help="seconds for the quiet forget")
+    ios_forgets.add_argument("--hci0", action="store_true", help="run the peer on hci0, shared, which needs its own go-ahead")
     android = commands.add_parser("android-rings")
     android.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     android.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")

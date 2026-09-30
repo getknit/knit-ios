@@ -7,7 +7,7 @@ public import KnitWire
 /// knit-peer [run] [--adapter hci1] [--adapter-address AA:BB:CC:DD:EE:FF] [--shared-adapter]
 ///           [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
 ///           [--log debug|info|warning|off] [--rssi-floor DBM] [--never-sight NODE_ID[,NODE_ID…]]
-///           [--no-gatt-payload]
+///           [--no-gatt-payload] [--no-gatt-reads]
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
 /// knit-peer scan [--adapter hci1] [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
 ///                [--advertise android|ios] [--instance NAME | --state DIR]
@@ -32,7 +32,7 @@ public enum PeerCommand: Equatable, Sendable {
             knit-peer [run] [--adapter hci1] [--adapter-address ADDRESS] [--shared-adapter]
                 [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
                 [--log debug|info|warning|off] [--rssi-floor DBM] [--receive-mtu BYTES] [--send-mtu BYTES]
-                [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload]
+                [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload] [--no-gatt-reads]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
             knit-peer scan [--adapter hci1] [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
@@ -50,7 +50,7 @@ public enum PeerCommand: Equatable, Sendable {
         if verb != nil {
             rest.removeFirst()
         }
-        var flags = try Flags(parsing: rest, switches: ["--shared-adapter", "--no-gatt-payload"])
+        var flags = try Flags(parsing: rest, switches: ["--shared-adapter", "--no-gatt-payload", "--no-gatt-reads"])
         switch verb {
         case nil, "run":
             let options = try RunOptions(flags: &flags, environment: environment)
@@ -111,6 +111,11 @@ public struct RunOptions: Equatable, Sendable {
     /// `0xFE30` service, so a phone that reads payloads files the peer as a stranger and never sights it: a test
     /// switch for A1's paths, which need a dialer the phone never sighted.
     public var servesGattPayload = true
+    /// Whether the `ios` profile reads the GATT payloads of UUID-only peers, as an iPhone does. `--no-gatt-reads`
+    /// turns the reader off, and with it the advert's `FLAG_DIALS_GATT_PEERS`: a test switch for a peer an iPhone must
+    /// read without the peer connecting to the iPhone at the same moment, which on 2026-09-29 made the iPhone file
+    /// the peer as a stranger for ten minutes.
+    public var readsGattPayloads = true
 
     static let profiles = ["android", "ios"]
     static let logLevels = ["debug", "info", "warning", "off"]
@@ -140,6 +145,7 @@ public struct RunOptions: Equatable, Sendable {
             neverSighted = Set(nodes.compactMap(\.self))
         }
         servesGattPayload = !flags.take(switch: "--no-gatt-payload")
+        readsGattPayloads = !flags.take(switch: "--no-gatt-reads")
     }
 
     private static func mtu(_ text: String?, flag: String) throws(UsageError) -> Int? {

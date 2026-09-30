@@ -66,6 +66,8 @@ import Testing
         let options = try run([])
         #expect(options.neverSighted.isEmpty)
         #expect(options.servesGattPayload)
+        #expect(options.readsGattPayloads)
+        #expect(try !run(["--no-gatt-reads"]).readsGattPayloads)
         let low = fixtureNodeId(8)
         let high = fixtureNodeId(9)
         let asked = try run(["--never-sight", "\(low.string),\(high.string)", "--no-gatt-payload", "--radio-profile", "ios"])

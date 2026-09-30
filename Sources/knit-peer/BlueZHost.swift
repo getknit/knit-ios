@@ -29,6 +29,10 @@
             var configuration = BlueZRadio.Configuration(adapter: selection, profile: chosen, log: log)
             configuration.servesGattPayload = options.servesGattPayload
             configuration.neverSighted = options.neverSighted
+            if !options.readsGattPayloads {
+                configuration.readsGattPayloads = false
+                log.log(.info, "reading no GATT payloads, and leaving FLAG_DIALS_GATT_PEERS clear, a test switch")
+            }
             if !options.neverSighted.isEmpty {
                 log.log(.info, "never sighting \(options.neverSighted.map(\.string).sorted().joined(separator: ", ")), a test switch")
             }
