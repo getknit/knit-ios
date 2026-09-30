@@ -1251,8 +1251,9 @@ def iphone_forgets(arguments: argparse.Namespace) -> int:
 
     1. **dialed:** a peer below the iPhone is read and dialed, then stops, and a new identity below it starts at once
         on the same PSM. The iPhone dials the old node there, the reply names the new one, and the payload goes.
-    2. **quiet:** a peer above the iPhone is read, then stops, and nothing advertises there for a minute of the
-        iPhone's scanning.
+    2. **quiet:** a peer above the iPhone is read, then stops, and nothing advertises there for over a minute of the
+        iPhone's scanning. KnitBLE checks for quiet at each UUID-only advert, before that advert can be sighted with
+        the payload, so the forget shows when the next peer there first advertises.
     3. **accepted:** a peer above the iPhone is read, then stops, and a new identity above it dials in. The iPhone keys
         an accepted link by its central's identifier and the payload by the peripheral's, so the payload goes only if
         CoreBluetooth gives hci1 the same identifier in both roles, which nothing had checked on hardware.
@@ -1310,8 +1311,12 @@ def iphone_forgets(arguments: argparse.Namespace) -> int:
             current.command(cmd="deny-link", peer=ios.node_id)
             read = run.step("quiet-read", lambda: _ios_read(log_path, current.node_id, arguments.link_timeout))
             current.stop()
+            time.sleep(75)
+            current = peer("iphone-below", "quiet-next", reads=False)
+            current.command(cmd="deny-link", peer=ios.node_id)
             if read:
-                run.step("quiet-forgets", lambda: _ios_forgot(log_path, read["identifier"], "quiet for a minute", arguments.quiet_timeout))
+                run.step("quiet-forgets", lambda: _ios_forgot(log_path, read["identifier"], "quiet for a minute", arguments.link_timeout))
+            current.stop()
         if "accepted" in stages:
             current = peer("iphone-below", "accepted-old", reads=False)
             current.command(cmd="deny-link", peer=ios.node_id)

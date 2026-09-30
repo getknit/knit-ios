@@ -1073,6 +1073,32 @@ and Pixel 3 ran debug builds of it, and the peer ran this repo's `8d9c62a`. Its 
   after the phone's read let it, while it waited to hear the phone's advert long enough; the peer's log does not name
   the device behind each advert, so the wait cannot be read closer.
 
+## What the iPhone's forget rules showed
+
+On 2026-09-29 from 16:50 the iPhone 12 ran a debug build of this repo's `c8aae9d`, whose KnitBLE carries the payload
+lifetime's forget rules (ADR 2026-09.xzpt, amended 2026-09-29), installed from the Mac with `devicectl`.
+`interop.py iphone-forgets` staged each rule with knit-peer in the `ios` profile, restarted under new identities at
+one public address. Its runs and the iPhone's logs are in `.build/interop-iphone-forgets/`.
+
+- **Every rule fired on the iPhone, on `hci0`:** `its HELLO named …` in the reply to the iPhone's own dial (17:16:09),
+  `quiet for a minute of scanning` (17:30:47, and again at 17:32 on the corrected stage), and `its HELLO named …` from a
+  new identity that dialed in (17:31:08).
+- **The iPhone keys a link it accepted as it keys the device it read.** That last forget named the identifier its read
+  had used, `E40C48A0-…`, so CoreBluetooth gives a peer the same identifier as a central and as a peripheral, which
+  `heardHello` assumes for an accepted link. It had not been checked on hardware before.
+- **KnitBLE's quiet forget comes at the next advert.** KnitBLE checks for quiet at each UUID-only advert, before that
+  advert can be sighted with the payload, so the forget is logged when the address next advertises, not when the
+  minute ends. The payload is never used stale. Android and KnitBlueZ sweep on a timer as well.
+- **`hci1` could not be read at all.** Each of the iPhone's reads of it gave up after 12 s, as the iPhone's writes to
+  it stall, so the rules run on `hci0`.
+- **A read that meets the peer's own read can cost ten minutes.** Twice, the iPhone began reading a new peer while that
+  peer was connected to read the iPhone. The read ended with no line in Knit's log, since KnitBLE logs neither a
+  failed nor a stranger outcome, and the iPhone read nothing for the next ten minutes, a stranger's wait. Where the
+  peer's read had just ended, the iPhone's read succeeded. knit-peer's `--no-gatt-reads` keeps a peer from reading, so
+  the stages the iPhone only has to read run clear of it. Both are follow-ups: a log line for each outcome of a read,
+  as Android's `bt gatt read … failed|stranger (<phase>)` gives, and why an overlapping read is filed as a stranger.
+- **The Moto G linked the last peer once,** since this scenario refuses only the nodes its first scan heard.
+
 ## What the walk test showed
 
 On 2026-09-29 from 03:48, the maintainer walked the Pixel 7 away from the iPhone 12 until it had no links left.

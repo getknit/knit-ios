@@ -78,6 +78,7 @@ python3 scripts/interop.py iphone-rings                           # the iPhone r
 python3 scripts/interop.py android-rings --device <serial>        # A4: custody converges, then an Android phone rings the peer's doorbell (hci1, ios profile; --link dialed|accepted)
 python3 scripts/interop.py android-reads --device <serial> --order peer-below|peer-above   # A3's gate: the phone reads the peer's GATT payload, and dials it or is dialed
 python3 scripts/interop.py android-forgets --device <serial>     # A3's gate: each forget rule of the payload lifetime fires once on the phone
+python3 scripts/interop.py iphone-forgets --hci0                 # each forget rule fires once on the iPhone (hci0 needs its go-ahead)
 python3 scripts/interop.py iphone-scan --first ios --away-window 150   # P8's scan-filter check: peers on hci0 and hci1; someone locks the iPhone
 python3 scripts/interop.py bridge '{"cmd":"status"}' --watch 60   # the iPhone's bridge by hand: replies, then events
 python3 scripts/soak.py run [--hours 10]                          # a night against every phone in range; drives none

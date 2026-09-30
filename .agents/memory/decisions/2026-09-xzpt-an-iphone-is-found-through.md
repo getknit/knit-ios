@@ -85,8 +85,11 @@ rules shared law with knit-next (its ADR 2026-09.kwq2). A radio forgets an addre
 One case stays open: a node that changes identity at an address that never goes quiet, where the old node sorts above
 a flagged phone and the new one below it. Nobody dials, so it lasts until the address rotates or goes quiet.
 `GattPayloadsTests` (the rules and the clock), `LinkAdmissionTests`' two HELLO tests and `BlueZGattLifetimeTests`
-guard it. The CoreBluetooth radio keys an accepted link by its central's identifier, which is taken to be the one the
-same device has as a peripheral; nothing on hardware has checked that yet.
+guard it. The CoreBluetooth radio keys an accepted link by its central's identifier, taking it to be the one the same device
+has as a peripheral. On 2026-09-29 the iPhone 12 bore that out: a new identity that dialed in at a reused address
+forgot the payload read under the same identifier (`interop.py iphone-forgets`, `.agents/context/linux-peer.md`).
+KnitBLE checks for quiet only at the next UUID-only advert, so its forget is logged then; the payload is never used
+stale.
 
 **Consequences / limits:**
 
