@@ -1144,7 +1144,9 @@ held 60 s before it was judged. The runs and a raw logcat stream of each are in 
 - **A failed update can use up a re-ask.** On the Pixel 3's fifth link, the first re-ask was answered by a report
   of 420 ms with status 42 (`0x2A`, a transaction collision): the update had failed and the link had kept its
   timeout. The fix counted that as another put-back and spent its second and last re-ask on it. BALANCED then came
-  through, but a put-back after it would have found nothing left to answer it. The Android worker has the report.
+  through, but a put-back after it would have found nothing left to answer it. knit-next `24bac000` spends no
+  re-ask on a report whose status is not 0, and no longer reads its timeout. The phones here ran `ed9446bf`, before
+  that change.
 - **Three lookups found no doorbell.** Three of the Pixel 7's link-ups against the peer logged
   `bt doorbell lookup failed … (discover)`, a 10 s discovery timeout, so the phone never asked for BALANCED. They
   were not counted, and each held its 60 s.
