@@ -1673,7 +1673,7 @@ def _phone_held(phone: Phone, node: str) -> dict:
 # doorbell, and which every link the phone accepted must end at, whoever the central is.
 BALANCED_TIMEOUT_MS = 5000
 # The line the phone's doorbell client logs each time the link's parameters change (knit-next `BleDoorbell`).
-CONN_PARAMS = re.compile(r"bt conn params (\S+) interval=(\d+)us latency=(\d+) timeout=(\d+)ms")
+CONN_PARAMS = re.compile(r"bt conn params (\S+) interval=(\d+)us latency=(\d+) timeout=(\d+)ms(?: status=(\d+))?")
 # The fix's line when the doorbell client asks for BALANCED again: `bt doorbell priority <id> again (<why>)
 # requested=<bool>`, `why` being `put-back <ms>ms` from the callback or `settle` from the timer.
 PRIORITY_AGAIN = re.compile(r"bt doorbell priority (\S+) again \((.*)\) requested=(\w+)")
@@ -1689,7 +1689,7 @@ def _conn_params(phone: Phone, node: str) -> list[dict]:
 
     def current() -> dict:
         if not links:
-            links.append({"acceptedAt": None, "foundAt": None, "beforeFound": 0, "params": [], "again": [], "downAt": None})
+            links.append({"acceptedAt": None, "foundAt": None, "beforeFound": 0, "params": [], "again": [], "events": [], "downAt": None})
         return links[-1]
 
     for line in log.splitlines():
@@ -1697,18 +1697,21 @@ def _conn_params(phone: Phone, node: str) -> list[dict]:
         # `-v time` opens each line with "MM-DD HH:MM:SS.mmm".
         at = line[6:18]
         if message.startswith(f"bt accepted client {node} "):
-            links.append({"acceptedAt": at, "foundAt": None, "beforeFound": 0, "params": [], "again": [], "downAt": None})
+            links.append({"acceptedAt": at, "foundAt": None, "beforeFound": 0, "params": [], "again": [], "events": [], "downAt": None})
         elif message.startswith(f"bt doorbell found {node} "):
             link = current()
             link["foundAt"] = at
             link["beforeFound"] = len(link["params"])
         elif (again := PRIORITY_AGAIN.search(message)) and again.group(1) == node:
             current()["again"].append({"at": at, "why": again.group(2), "requested": again.group(3) == "true"})
+            current()["events"].append({"at": at, "again": again.group(2)})
         elif f"link down: {node}" in message and links:
             links[-1]["downAt"] = at
         elif (params := CONN_PARAMS.match(message)) and params.group(1) == node:
             interval, latency, timeout = (int(value) for value in params.group(2, 3, 4))
-            current()["params"].append({"at": at, "intervalUs": interval, "latency": latency, "timeoutMs": timeout})
+            status = int(params.group(5) or 0)
+            current()["params"].append({"at": at, "intervalUs": interval, "latency": latency, "timeoutMs": timeout, "status": status})
+            current()["events"].append({"at": at, "params": timeout, "status": status})
     return links
 
 
@@ -1740,6 +1743,7 @@ def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True) ->
                 "updatesAfterFound": len(after),
                 "last": after[-1] if after else None,
                 "again": link["again"],
+                "failedUpdates": _failed_updates(link["events"]),
                 "downAt": link["downAt"],
             }
         )
@@ -1749,6 +1753,21 @@ def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True) ->
     if short:
         raise RuntimeError(f"{len(short)} of {len(found)} links did not end at {BALANCED_TIMEOUT_MS} ms: {json.dumps(report)}")
     return {"links": report, "counted": len(found), "noDoorbell": len(report) - len(found)}
+
+
+def _failed_updates(events: list[dict]) -> list[dict]:
+    """Each `bt conn params` report with a status other than 0, a parameter update that failed, with the parameter
+    reports and re-asks that followed it up to the next successful report, which show what the fix did about it."""
+    failed = []
+    for index, event in enumerate(events):
+        if event.get("status"):
+            after = []
+            for later in events[index + 1 :]:
+                after.append(later)
+                if "params" in later and not later["status"]:
+                    break
+            failed.append({"at": event["at"], "timeoutMs": event["params"], "status": event["status"], "then": after})
+    return failed
 
 
 def _counted(tally: list[dict]) -> int:
@@ -1810,6 +1829,7 @@ def _last_timeouts(tally: list[dict]) -> list[dict]:
             "doorbellFound": link["doorbellFound"],
             "lastTimeoutMs": link["last"]["timeoutMs"] if link["last"] else None,
             "again": [again["why"] for again in link["again"]],
+            "failedUpdates": [f"{failed['timeoutMs']}ms status={failed['status']}" for failed in link["failedUpdates"]],
         }
         for link in tally
     ]

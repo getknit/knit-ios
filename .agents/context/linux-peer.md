@@ -1141,9 +1141,10 @@ held 60 s before it was judged. The runs and a raw logcat stream of each are in 
   fired: each put-back came within half a second of the ask, and the callback answered it.
 - **An iPhone puts 720 ms back every time; BlueZ only sometimes.** On each of the iPhone's links, 720 ms landed
   about 0.2 s after the phone asked for BALANCED. BlueZ's 420 ms landed on 2 of the Pixel 7's links and 5 of the Pixel 3's.
-- **A failed update can use up a re-ask.** On the Pixel 3's fifth link, the first re-ask was answered by a report
-  of 420 ms with status 42 (`0x2A`, a transaction collision): the update had failed and the link had kept its
-  timeout. The fix counted that as another put-back and spent its second and last re-ask on it. BALANCED then came
+- **A failed update can use up a re-ask.** The Pixel 3 logged status 42 (`0x2A`, a transaction collision) on 5 of
+  its 10 links: a report of an update that failed, carrying the parameters the link kept. On four it came just after
+  a 5 s report, a second request colliding with the first, and changed nothing. On the fifth link the first
+  re-ask was answered by 420 ms with status 42: the update had failed and the link had kept its timeout. The fix counted that as another put-back and spent its second and last re-ask on it. BALANCED then came
   through, but a put-back after it would have found nothing left to answer it. knit-next `24bac000` spends no
   re-ask on a report whose status is not 0, and no longer reads its timeout. The phones here ran `ed9446bf`, before
   that change.
