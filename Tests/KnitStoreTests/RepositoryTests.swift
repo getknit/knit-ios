@@ -4,8 +4,8 @@ import KnitTestSupport
 import KnitWire
 import Testing
 
-/// Every implementation of the peer, message, conversation and own-profile stores. Each runs the whole
-/// ``RepositoryTests`` suite.
+/// Every implementation of the peer, message, conversation, group and own-profile stores. Each runs the whole
+/// ``RepositoryTests`` and ``GroupStoreTests`` suites.
 enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
     case memory
     case sql
@@ -15,6 +15,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
         var peers: any PeerStore
         var messages: any MessageStore
         var conversations: any ConversationStore
+        var groups: any GroupStore
         var ownProfile: any OwnProfileStore
     }
 
@@ -34,6 +35,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
                 peers: MemoryPeerStore(),
                 messages: MemoryMessageStore(),
                 conversations: MemoryConversationStore(),
+                groups: MemoryGroupStore(),
                 ownProfile: MemoryOwnProfileStore()
             )
         case .sql:
@@ -42,6 +44,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
                 peers: SQLPeerStore(database),
                 messages: SQLMessageStore(database),
                 conversations: SQLConversationStore(database),
+                groups: SQLGroupStore(database),
                 ownProfile: SQLOwnProfileStore(database)
             )
         }
@@ -233,6 +236,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
         #expect(Conversations.id(sender: bob, recipient: nil, me: alice) == Conversations.nearby)
         #expect(Conversations.id(sender: alice, recipient: bob, me: alice) == bob.string)
         #expect(Conversations.id(sender: bob, recipient: alice, me: alice) == bob.string)
+        #expect(Conversations.id(sender: bob, recipient: nil, group: "g-1", me: alice) == "g-1", "a group's thread is its id")
     }
 
     @Test func aConversationIsAcceptedByTheRoomAnAcceptAVerifyOrAReply() {

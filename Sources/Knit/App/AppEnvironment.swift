@@ -98,6 +98,7 @@
                 peers: SQLPeerStore(database),
                 messages: SQLMessageStore(database),
                 conversations: SQLConversationStore(database),
+                groups: SQLGroupStore(database),
                 ownProfile: SQLOwnProfileStore(database)
             )
             let defaults = DefaultsPreferences()

@@ -68,6 +68,13 @@ deletes a proof either. The first door that deletes pins must delete their proof
 `v2KeepsEveryPinAndStartsItsProofsEmpty` migrates a v1 pin, and `RepositoryTests`'
 `theNewestProofOfKeyIsKeptWhateverTheArrivalOrder` runs over both stores.
 
+**Amended 2026-09-30, schema v3:** groups (ADR 2026-09.n393). `messages` gains `kind`, so a group thread can hold
+status lines, and every older row reads as an ordinary message. `groups` holds a row for each group, and
+`group_members` holds its roster in order, with each member's leave and rejoin clocks. knit-next keeps those clocks
+in status lines instead. Adding a column rewrites the stored `CREATE TABLE` text, so the v3 pin was taken from a
+run. `SchemaTests`' `v3KeepsEveryMessageAsAnOrdinaryOneAndStartsWithNoGroups` migrates a v2 row, and
+`GroupStoreTests` runs over both stores.
+
 **Consequences / limits:**
 
 - **A new string column is a `BLOB` bound through `StoredText`, in a `STRICT` table.** A query that binds a

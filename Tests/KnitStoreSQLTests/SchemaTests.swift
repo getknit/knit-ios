@@ -14,7 +14,7 @@ import Testing
 /// is already here: a phone that ran that migration keeps the schema it left.
 @Suite struct SchemaTests {
     /// The migrations every earlier build has run, in order.
-    private static let frozen = ["v1", "v2"]
+    private static let frozen = ["v1", "v2", "v3"]
 
     @Test func migrationsOnlyEverGrowAtTheEnd() {
         let identifiers = Schema.migrations.map(\.identifier)
@@ -51,7 +51,11 @@ import Testing
                     """
             ).map { (name: $0["name"] as String, strict: $0["strict"] as Bool) }
         }
-        #expect(tables.map(\.name) == ["accepted_conversations", "forward_store", "messages", "own_profile", "peer_profiles", "peers"])
+        #expect(
+            tables.map(\.name) == [
+                "accepted_conversations", "forward_store", "group_members", "groups", "messages", "own_profile", "peer_profiles",
+                "peers",
+            ])
         let loose = tables.filter { !$0.strict }.map(\.name)
         #expect(loose.isEmpty, "not STRICT: \(loose)")
     }
@@ -75,6 +79,27 @@ import Testing
         #expect(peers.peer(bob)?.name == "Bob")
         #expect(peers.peer(bob)?.verified == true)
         #expect(peers.profileFrame(of: bob) == nil)
+    }
+
+    @Test func v3KeepsEveryMessageAsAnOrdinaryOneAndStartsWithNoGroups() throws {
+        // Every row stored before groups is a message, not a status line (ADR 2026-09.n393).
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v2")
+        let bob = fixtureNodeId(2)
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO messages (id, senderId, conversationId, body, sentAt, delivered, pendingKey)
+                    VALUES (?, ?, ?, ?, 3, 0, 0)
+                    """,
+                arguments: [StoredText.bytes("m1"), StoredText.bytes(bob.string), StoredText.bytes("nearby"), StoredText.bytes("hi")]
+            )
+        }
+        let database = try KnitDatabase(writer: queue, failures: recordFailure)
+        let messages = SQLMessageStore(database)
+        #expect(messages.message("m1")?.kind == .message)
+        #expect(messages.threadHeads().map(\.id) == ["m1"])
+        #expect(SQLGroupStore(database).groups().isEmpty)
     }
 
     @Test func grdbCutsABoundStringAtItsFirstNul() throws {
@@ -105,6 +130,7 @@ enum SchemaPins {
     static let after: [(identifier: String, schema: String)] = [
         ("v1", v1),
         ("v2", v2),
+        ("v3", v3),
     ]
 
     /// Every table, index and trigger this app made, sorted, with the statement SQLite keeps for it. GRDB's own

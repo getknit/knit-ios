@@ -19,6 +19,7 @@ internal enum Schema {
     static let migrations: [(identifier: String, statements: [String])] = [
         ("v1", v1),
         ("v2", v2),
+        ("v3", v3),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -103,6 +104,37 @@ internal enum Schema {
             sentAt INTEGER NOT NULL
         ) STRICT
         """
+    ]
+
+    /// Schema v3: groups (ADR 2026-09.n393). A message row gains its kind, so a group thread can hold status lines;
+    /// every row already stored is an ordinary message. A group's members are rows of their own, in roster order, each
+    /// with the leave and rejoin clocks that guard it (`groups` in knit-next's database, which keeps the clocks in
+    /// status lines instead).
+    private static let v3 = [
+        "ALTER TABLE messages ADD COLUMN kind INTEGER NOT NULL DEFAULT 0",
+        """
+        CREATE TABLE groups (
+            groupId BLOB NOT NULL PRIMARY KEY,
+            name BLOB NOT NULL,
+            createdBy BLOB NOT NULL,
+            createdAt INTEGER NOT NULL,
+            nameUpdatedAt INTEGER NOT NULL,
+            hasLeft INTEGER NOT NULL,
+            photoHash BLOB,
+            photoUpdatedAt INTEGER
+        ) STRICT
+        """,
+        """
+        CREATE TABLE group_members (
+            groupId BLOB NOT NULL,
+            nodeId BLOB NOT NULL,
+            position INTEGER NOT NULL,
+            departed INTEGER NOT NULL,
+            leftAt INTEGER,
+            rejoinedAt INTEGER,
+            PRIMARY KEY (groupId, nodeId)
+        ) STRICT
+        """,
     ]
 
     /// The migrator that brings any database this build knows up to date.

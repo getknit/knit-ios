@@ -105,6 +105,7 @@ import Foundation
                 peers: MemoryPeerStore(),
                 messages: MemoryMessageStore(),
                 conversations: MemoryConversationStore(),
+                groups: MemoryGroupStore(),
                 ownProfile: state.profileStore()
             )
             return PeerNode(

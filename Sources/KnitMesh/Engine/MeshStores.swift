@@ -10,6 +10,8 @@ public struct MeshStores: Sendable {
     public var messages: any MessageStore
     /// The accepted conversations.
     public var conversations: any ConversationStore
+    /// The groups we are in, or left.
+    public var groups: any GroupStore
     /// This node's own profile and its clocks.
     public var ownProfile: any OwnProfileStore
 
@@ -19,12 +21,14 @@ public struct MeshStores: Sendable {
         peers: any PeerStore,
         messages: any MessageStore,
         conversations: any ConversationStore,
+        groups: any GroupStore,
         ownProfile: any OwnProfileStore
     ) {
         self.custody = custody
         self.peers = peers
         self.messages = messages
         self.conversations = conversations
+        self.groups = groups
         self.ownProfile = ownProfile
     }
 
@@ -35,6 +39,7 @@ public struct MeshStores: Sendable {
             peers: MemoryPeerStore(),
             messages: MemoryMessageStore(),
             conversations: MemoryConversationStore(),
+            groups: MemoryGroupStore(),
             ownProfile: MemoryOwnProfileStore(ownProfile)
         )
     }
