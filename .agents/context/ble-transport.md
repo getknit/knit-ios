@@ -209,7 +209,7 @@ no payload left alone for ten minutes. A payload serves the address's adverts un
 channel opens, a HELLO there names another node, or the address goes unheard for a minute of scanning while nothing
 links it. Those three rules are shared law with A3 (ADR 2026-09.xzpt, amended 2026-09-29).
 
-The HELLO adds `CAP_DOORBELL` (`0x1000`) to this build's `0x9`, reading `1009`, only when the radio serves the
+The HELLO adds `CAP_DOORBELL` (`0x1000`) to this build's `0xB`, reading `100b`, only when the radio serves the
 doorbell (`Radio.servesDoorbell`): `KnitBLE`, and knit-peer's `ios` profile. The `android` profile, like Android,
 serves no GATT and never sends it. The link manager rings after every frame it writes except `typing`, `blobreq`
 and `keyreq`, as Android does, so both platforms wake an iPhone equally often (ADR 2026-09.khjj).

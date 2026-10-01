@@ -57,15 +57,32 @@ public struct VectorFrame: Codable, Sendable, Equatable {
     public let sender: String
     /// A DM's recipient, by name.
     public let recipient: String?
+    /// A group frame's group id (ADR 2026-09.n393).
+    public let groupId: String?
+    /// A group frame's founding members, by name.
+    public let members: [String]?
+    /// A rename's new name.
+    public let name: String?
     /// The text a reader should see.
     public let body: String?
     /// The encoded `WireEnvelope`, as hex.
     public let wire: String
 
     /// Makes a frame entry.
-    public init(sender: String, recipient: String? = nil, body: String? = nil, wire: String) {
+    public init(
+        sender: String,
+        recipient: String? = nil,
+        groupId: String? = nil,
+        members: [String]? = nil,
+        name: String? = nil,
+        body: String? = nil,
+        wire: String
+    ) {
         self.sender = sender
         self.recipient = recipient
+        self.groupId = groupId
+        self.members = members
+        self.name = name
         self.body = body
         self.wire = wire
     }

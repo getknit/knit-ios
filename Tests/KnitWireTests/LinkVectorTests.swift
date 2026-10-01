@@ -10,8 +10,10 @@ import Testing
     @Test func theHelloRecordMatchesKnitNext() throws {
         let hello = Hello(payload: Array(link.hello.payload.utf8))
         #expect(hello.version == WireProtocol.version)
-        #expect(hello.capabilities == .local)
-        let ours = Hello(nodeId: hello.nodeId)
+        // The vector keeps the capabilities this port had when it was made (`KeyedVectorTest.CAPABILITIES`), which
+        // groups moved on from (ADR 2026-09.n393), so its bytes never move.
+        #expect(hello.capabilities == Capabilities(rawValue: 0x9))
+        let ours = Hello(nodeId: hello.nodeId, capabilities: hello.capabilities)
         #expect(ours.payload == Array(link.hello.payload.utf8))
         let record = try #require(LinkRecord(.hello, payload: ours.payload).encoded)
         #expect(Hex.encode(record) == link.hello.record)

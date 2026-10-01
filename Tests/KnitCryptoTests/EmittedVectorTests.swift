@@ -4,9 +4,9 @@ import KnitWire
 import Testing
 
 /// What this port emits for knit-next to check (`ios-emitted-v1.json`): Carol's identity from fixed keys, her
-/// signed profile and room post, a v1 DM she seals to knit-next's Bob, and their safety number. knit-next's
-/// `IosEmittedVectorTest` verifies each signature with Tink, re-encodes each frame with kotlinx, and opens the
-/// DM as Bob.
+/// signed profile and room post, a v1 DM she seals to knit-next's Bob, their safety number, and her group frames
+/// (``EmittedGroupFrames``). knit-next's `IosEmittedVectorTest` verifies each signature with Tink, re-encodes each
+/// frame with kotlinx, and opens the DM as Bob.
 ///
 /// `KNIT_WRITE_VECTORS=1` rewrites the file, keeping every committed frame that is still current, so a rewrite
 /// moves only what changed; `scripts/sync-vectors.py --export` copies it into knit-next. A normal run checks
@@ -20,8 +20,9 @@ import Testing
     private static let dmSentAt = publishedAt + 2000
     private static let about =
         "Frames the iOS port emits: Carol's identity from fixed keys, her signed profile and room post, a v1 DM she "
-        + "seals to Bob from keyed-v1.json, and their safety number. Written by knit-ios with KNIT_WRITE_VECTORS=1; "
-        + "IosEmittedVectorTest checks it. See vectors/README.md."
+        + "seals to Bob from keyed-v1.json, their safety number, and a group she makes with Alice and Bob: a v1 group "
+        + "message, her rename and her leave. Written by knit-ios with KNIT_WRITE_VECTORS=1; IosEmittedVectorTest "
+        + "checks it. See vectors/README.md."
 
     private let roomBody = "Hello from Swift"
     private let dmBody = "Hi Bob, from Swift"
@@ -32,7 +33,12 @@ import Testing
 
     /// Bob from knit-next's keyed vectors, private keys included, so this port can open what Carol seals to him.
     private func bob() throws -> IdentityKeys {
-        let entry = try #require(KeyedVectors.file.identities["bob"])
+        try keyed("bob")
+    }
+
+    /// One of knit-next's keyed identities, private keys included.
+    private func keyed(_ name: String) throws -> IdentityKeys {
+        let entry = try #require(KeyedVectors.file.identities[name])
         return try #require(IdentityKeys(signingSeed: hexBytes(entry.signingSeed), agreementScalar: hexBytes(entry.agreementScalar)))
     }
 
@@ -158,9 +164,67 @@ import Testing
                 "carolProfile": VectorFrame(sender: "carol", wire: profileWire),
                 "carolRoomPost": VectorFrame(sender: "carol", body: roomBody, wire: roomPostWire),
                 "carolDmToBob": VectorFrame(sender: "carol", recipient: "bob", body: dmBody, wire: dmWire),
-            ]
+            ].merging(try groupFrames(committed, carol: carol, bob: bob)) { first, _ in first }
         )
         try VectorFile.write(vectors, to: EmittedVectors.fileName)
+    }
+
+    /// Carol's group frames, each kept while it is still current.
+    private func groupFrames(_ committed: [String: VectorFrame], carol: IdentityKeys, bob: IdentityKeys) throws -> [String: VectorFrame] {
+        let alice = try keyed("alice")
+        let groups = EmittedGroupFrames.self
+        let groupId = groups.roster(alice: alice, bob: bob, carol: carol).id
+        let rename = groups.rename(carol: carol, alice: alice, bob: bob)
+        let leave = groups.leave(carol: carol, alice: alice, bob: bob)
+        let chatWire =
+            try currentWire(committed["carolGroupChat"]) { groups.isCurrentChat($0, carol: carol, alice: alice, bob: bob) }
+            ?? wire(try #require(try groups.chat(carol: carol, alice: alice, bob: bob)), signedBy: carol)
+        let renameWire =
+            try currentWire(committed["carolGroupRename"]) { isCurrent($0, expected: rename, from: carol) }
+            ?? wire(rename, signedBy: carol)
+        let leaveWire =
+            try currentWire(committed["carolGroupLeave"]) { isCurrent($0, expected: leave, from: carol) }
+            ?? wire(leave, signedBy: carol)
+        let members = groups.memberNames
+        return [
+            "carolGroupChat": VectorFrame(sender: "carol", groupId: groupId, members: members, body: groups.body, wire: chatWire),
+            "carolGroupRename": VectorFrame(sender: "carol", groupId: groupId, members: members, name: groups.name, wire: renameWire),
+            "carolGroupLeave": VectorFrame(sender: "carol", groupId: groupId, members: members, wire: leaveWire),
+        ]
+    }
+
+    @Test(.disabled(if: VectorFile.writing))
+    func theCommittedGroupFramesAreCurrent() throws {
+        let committed = try #require(EmittedVectors.committed, "run the tests with KNIT_WRITE_VECTORS=1 to write the file")
+        let carol = try carol()
+        let alice = try keyed("alice")
+        let bob = try bob()
+        let groups = EmittedGroupFrames.self
+        let stale = "is not what this build sends; regenerate with KNIT_WRITE_VECTORS=1, then sync-vectors.py --export"
+        let chat = try #require(committed.frames["carolGroupChat"])
+        #expect(groups.isCurrentChat(chat.wire, carol: carol, alice: alice, bob: bob), "carolGroupChat \(stale)")
+        #expect(chat.groupId == GroupId.derive([alice, bob, carol].map(\.nodeId.string)) && chat.members == groups.memberNames)
+        let rename = try #require(committed.frames["carolGroupRename"])
+        #expect(
+            isCurrent(rename.wire, expected: groups.rename(carol: carol, alice: alice, bob: bob), from: carol), "carolGroupRename \(stale)")
+        #expect(rename.name == groups.name)
+        let leave = try #require(committed.frames["carolGroupLeave"])
+        #expect(
+            isCurrent(leave.wire, expected: groups.leave(carol: carol, alice: alice, bob: bob), from: carol), "carolGroupLeave \(stale)")
+    }
+
+    /// The group message's currency check must be able to fail, as the DM's must.
+    @Test func theGroupCheckTellsACurrentMessageFromAStaleOne() throws {
+        let carol = try carol()
+        let alice = try keyed("alice")
+        let bob = try bob()
+        let groups = EmittedGroupFrames.self
+        let current = try wire(try #require(try groups.chat(carol: carol, alice: alice, bob: bob)), signedBy: carol)
+        #expect(groups.isCurrentChat(current, carol: carol, alice: alice, bob: bob))
+        #expect(!groups.isCurrentChat(current, carol: carol, alice: bob, bob: alice), "another roster order is another group")
+        #expect(!groups.isCurrentChat("zz", carol: carol, alice: alice, bob: bob))
+        let dm = try wire(dmFrame(of: carol, to: bob), signedBy: carol)
+        #expect(!groups.isCurrentChat(dm, carol: carol, alice: alice, bob: bob))
     }
 
     @Test(.disabled(if: VectorFile.writing))

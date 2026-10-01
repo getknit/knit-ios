@@ -32,10 +32,10 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     /// radio that serves one (`Radio.servesDoorbell`): it is above the advert's 8 bits, and never in the profile.
     public static let doorbell: Self = 0x1000
 
-    /// What this build advertises: end-to-end DMs (v1) and store-and-forward, `0x9`. Never the ratchet
-    /// until it ships, or Android would seal DMs we cannot open. Never ``doorbell`` either: that is the radio's to
-    /// claim, in the HELLO alone.
-    public static let local: Self = [.endToEnd, .storeForward]
+    /// What this build advertises: end-to-end DMs, groups (both v1) and store-and-forward, `0xB` (ADR 2026-09.n393).
+    /// Never the ratchet until it ships, or Android would seal DMs and groups we cannot open. Never ``doorbell``
+    /// either: that is the radio's to claim, in the HELLO alone.
+    public static let local: Self = [.endToEnd, .groups, .storeForward]
 
     /// The bit field, a Kotlin `Long`.
     public let rawValue: Int64
@@ -51,7 +51,7 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     }
 
     /// The bits in lowercase hexadecimal with no leading zeros, as the HELLO carries them
-    /// (Kotlin's `Long.toString(16)`): `fff` for Android, `9` for us.
+    /// (Kotlin's `Long.toString(16)`): `fff` for Android, `b` for us.
     public var hex: String { String(rawValue, radix: Self.hexRadix) }
 
     private static let hexRadix = 16

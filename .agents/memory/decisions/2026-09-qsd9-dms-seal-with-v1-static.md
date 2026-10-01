@@ -29,3 +29,8 @@ ratchet is the next milestone and comes before any public build (`.agents/memory
 adding keyed vectors to knit-next. `LinkTests` pins the advertised capabilities to `0x9`, and
 `MessageCryptoTests` covers the v1 seal and open, including the low-order keys Tink refuses and swift-crypto
 would not.
+
+**Amended 2026-09-30:** groups (ADR 2026-09.n393) add `CAP_GROUPS`, so the advertised capabilities are `0xB`,
+still without `CAP_RATCHET`. Groups seal with v1 as DMs do, and Android seals v1 back to any group with an iPhone in
+it. `LinkTests` pins `0xB`. The keyed vectors keep the `0x9` they were made with, and `KeyedVectorTests` and
+`LinkVectorTests` pin that value as the vectors' own.

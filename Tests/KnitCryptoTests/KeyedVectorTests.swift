@@ -56,7 +56,8 @@ import Testing
         #expect(profile.encoded == relay.payload)
         #expect(profile.pubKey == alice.bundle.encoded)
         #expect(profile.deviceTag == DeviceTag.derive("vector-device-alice"))
-        #expect(profile.capabilities == Capabilities.local.rawValue)
+        // The vector's own capabilities, from before groups (`KeyedVectorTest.CAPABILITIES`, ADR 2026-09.n393).
+        #expect(profile.capabilities == 0x9)
     }
 
     @Test func alicesRoomPostCarriesItsBody() throws {

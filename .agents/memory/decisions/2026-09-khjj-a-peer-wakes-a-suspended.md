@@ -85,3 +85,7 @@ third link held for the whole run (`.agents/context/linux-peer.md`, "What A4 sho
   `scripts/check.sh ios`, which fails if the app lacks `peripheralManager:didReceiveWriteRequests:`.
   `interop.py iphone-wake --sender peer` checks the whole path on hardware, and `interop.py iphone-rings` checks
   the iPhone's rings.
+
+**Amended 2026-09-30:** with groups (ADR 2026-09.n393) this build's capabilities are `0xB`, so a HELLO from a radio
+that serves the doorbell reads `100b`, and one from any other radio reads `b`. A build from before groups still reads
+`1009`, and every parser takes both. `LinkTests`' `theDoorbellBitIsPinnedAndNeverOurs` checks both.
