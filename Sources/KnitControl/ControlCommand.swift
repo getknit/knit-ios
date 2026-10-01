@@ -26,7 +26,7 @@ public enum ControlCommand: Equatable, Sendable {
     /// `{"cmd":"digest"}`: the live custody ids and their fingerprint, to check convergence.
     case digest
     /// `{"cmd":"custody"}`: every live frame in custody, with its type, sender, recipient, group and sent time, to
-    /// say why two custody sets differ.
+    /// say why two custody sets differ, and for a sealed chat who its keys are wrapped to.
     case custody
     /// `{"cmd":"messages","conv":"nearby","limit":20}`: a thread's newest messages and their ticks.
     case messages(String, limit: Int)

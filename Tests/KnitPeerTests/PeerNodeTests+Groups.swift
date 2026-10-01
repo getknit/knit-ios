@@ -25,6 +25,11 @@ extension PeerNodeTests {
         #expect(sent["pendingKey"] as? Bool == false)
         rig.deliverToFar()
         #expect(rig.farEngine.stores.messages.messages(in: groupId).contains { $0.body == "hi pair" })
+        let frames = try #require(try await rig.send(#"{"cmd":"custody"}"#)["frames"] as? [[String: Any]])
+        let ours = try #require(frames.first { $0["id"] as? String == sent["id"] as? String })
+        #expect(ours["group"] as? String == groupId)
+        #expect(ours["wrappedTo"] as? [String] == [rig.far.nodeId.string], "sealed to the other member, never to us")
+        #expect(frames.allSatisfy { $0["type"] as? String == "chat" || $0["wrappedTo"] == nil }, "only a chat is sealed")
 
         rig.farEngine.sendGroupMessage("hi back", to: groupId)
         rig.deliverFromFar()

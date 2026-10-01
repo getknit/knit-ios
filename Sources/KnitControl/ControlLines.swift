@@ -55,16 +55,21 @@ internal enum ControlLines {
         ]
     }
 
-    /// A carried frame's addressing, for the `custody` reply.
+    /// A carried frame's addressing, for the `custody` reply. A sealed chat also names who its keys are wrapped to,
+    /// which is who can open it: for a group message, the members its sender held keys for.
     static func describe(_ envelope: RelayEnvelope) -> JSONValue {
-        .object([
+        var fields: [String: JSONValue] = [
             "id": .string(envelope.id),
             "type": .string(envelope.type.rawValue),
             "from": .string(envelope.senderId),
             "to": .text(envelope.recipientId),
             "group": .text(envelope.group?.id),
             "sentAt": .int(envelope.sentAt),
-        ])
+        ]
+        if envelope.type == .chat, let enc = (try? ChatContent(decoding: envelope.payload))?.enc {
+            fields["wrappedTo"] = .array(enc.keys.map { .string($0.to) })
+        }
+        return .object(fields)
     }
 
     /// A `link` event for each peer that came up or went down between `before` and `after`.
