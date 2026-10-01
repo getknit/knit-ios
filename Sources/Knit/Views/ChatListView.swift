@@ -221,7 +221,7 @@
 
         private var symbol: String {
             switch status {
-            case .waitingForKey:
+            case .waitingForKey, .waitingForMembersKeys:
                 "clock"
             case .sent:
                 "checkmark"

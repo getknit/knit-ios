@@ -65,7 +65,7 @@ extension Copy {
                 : NSLocalizedString(
                     "diagnostics.drop.roster-refused",
                     bundle: .main,
-                    value: "Dropped: group roster refused",
+                    value: "Dropped: group member list refused",
                     comment: "A drop counter: a group message whose member list fails the checks"
                 )
         }

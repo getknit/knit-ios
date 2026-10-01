@@ -158,7 +158,50 @@ import Testing
             Copy.Diagnostics.link(version: 3, capabilities: "9"),
             Copy.Diagnostics.clockAhead(seconds: 5),
             Copy.Diagnostics.clockBehind(seconds: 5),
+        ] + Self.groupStrings
+    }
+
+    private static var groupStrings: [String] {
+        [
+            Copy.Groups.unnamed,
+            Copy.Groups.names(["Sam", "Priya", "Theo"]) ?? "",
+            Copy.Groups.memberCount(1),
+            Copy.Groups.memberCount(3),
+            Copy.Groups.newGroup,
+            Copy.Groups.pickerExplanation,
+            Copy.Groups.pickerEmpty,
+            Copy.Groups.full(8),
+            Copy.Groups.create,
+            Copy.Groups.info,
+            Copy.Groups.members,
+            Copy.Groups.rename,
+            Copy.Groups.nameLabel,
+            Copy.Groups.renameAction,
+            Copy.Groups.leave,
+            Copy.Groups.leaveTitle,
+            Copy.Groups.leaveBody,
+            Copy.Groups.leaveAction,
+            Copy.Groups.encryptionBody,
+            Copy.Groups.nobodyLeft,
+            Copy.Groups.waitingForKeys,
+            Copy.Groups.requestTitle("Sam"),
+            Copy.Groups.requestBody,
+            Copy.Groups.created(by: "Sam"),
+            Copy.Groups.createdByYou,
+            Copy.Groups.left("Sam"),
+            Copy.Groups.rejoined("Sam"),
+            Copy.Groups.renamed(by: "Sam", to: "Hikers"),
         ]
+    }
+
+    /// An unnamed group's title joins its members' names as Android's `joinNames` does.
+    @Test func anUnnamedGroupsTitleJoinsItsMembersNames() {
+        #expect(Copy.Groups.names([]) == nil)
+        #expect(Copy.Groups.names(["Sam"]) == "Sam")
+        #expect(Copy.Groups.names(["Sam", "Priya"]) == "Sam & Priya")
+        #expect(Copy.Groups.names(["Dani", "Sam", "Priya", "Theo"]) == "Dani, Sam, Priya & Theo")
+        #expect(Copy.Groups.memberCount(1) == "1 member" && Copy.Groups.memberCount(3) == "3 members")
+        #expect(Copy.Groups.full(8).contains("8"))
     }
 
     @Test func everyStringIsCleanProseOnOneLine() {

@@ -15,37 +15,63 @@ public struct ChatMessage: Sendable, Equatable, Identifiable {
     public var isMine: Bool
     /// Who wrote it.
     public var author: NodeId
-    /// The author's label, over someone else's message in the room; `nil` in a DM, where the title says who.
+    /// The author's label, over someone else's message in the room or a group; `nil` in a DM, where the title says who.
     public var authorLabel: String?
     /// How far it got, when it is ours.
     public var status: DeliveryStatus?
+    /// A status line's words, which the thread shows in place of a bubble; `nil` for a message.
+    public var notice: String?
+}
+
+/// What a thread is.
+public enum ThreadKind: Sendable, Equatable {
+    /// The Nearby room.
+    case room
+    /// A DM.
+    case direct
+    /// A group.
+    case group
 }
 
 /// A thread, as one value.
 public struct ChatState: Sendable, Equatable {
-    /// The room's name, or the peer's label.
+    /// The room's name, the peer's label, or the group's title.
     public var title: String
-    /// The DM's peer, or `nil` for the room.
+    /// What the thread is.
+    public var kind: ThreadKind
+    /// The DM's peer, or `nil` for the room and a group.
     public var peer: NodeId?
-    /// The messages in reading order.
+    /// The messages and status lines in reading order.
     public var messages: [ChatMessage]
-    /// Whether this DM is a stranger's message request, which waits for Accept.
+    /// Whether this DM or group is a stranger's message request, which waits for Accept.
     public var isRequest: Bool
+    /// What a request's bar says.
+    public var requestTitle: String
+    /// What accepting the request does.
+    public var requestBody: String
     /// Whether the DM's peer is linked now.
     public var isLinked: Bool
     /// Whether the DM's peer is verified.
     public var isVerified: Bool
+    /// How many people a group holds, us included; `nil` outside a group.
+    public var memberCount: Int?
+    /// Whether everyone else has left the group, so nothing can be sent.
+    public var nobodyElse: Bool
+    /// Whether the group is still ours: `false` once we left it, or for one we never held.
+    public var exists: Bool
 
     /// Whether this is the room.
-    public var isRoom: Bool { peer == nil }
+    public var isRoom: Bool { kind == .room }
+    /// Whether this is a group.
+    public var isGroup: Bool { kind == .group }
 }
 
-/// A thread's view model: its messages, the composer, and a request's Accept.
+/// A thread's view model: its messages and status lines, the composer, and a request's Accept.
 @preconcurrency
 @MainActor
 @Observable
 public final class ChatModel {
-    /// The thread: `nearby`, or the peer's node id.
+    /// The thread: `nearby`, the peer's node id, or the group's id.
     public let conversationId: String
     @ObservationIgnored private let session: AppSession
     @ObservationIgnored private var cache = Cached<Int, ChatState>()
@@ -68,9 +94,9 @@ public final class ChatModel {
         Composer.remaining(text)
     }
 
-    /// Whether Send has anything to send.
+    /// Whether Send has anything to send, to anyone.
     public var canSend: Bool {
-        Composer.body(of: text) != nil
+        Composer.body(of: text) != nil && !state.nobodyElse
     }
 
     /// The thread, rebuilt only when something changed.
@@ -107,26 +133,55 @@ public final class ChatModel {
     private func build() -> ChatState {
         let me = session.identity.nodeId
         let directory = session.directory
+        let threads = session.threads()
         let peer = NodeId(conversationId)
-        let messages = session.stores.messages.messages(in: conversationId).map { message in
-            let isMine = message.senderId == me
+        let group = threads.group(conversationId)
+        let kind: ThreadKind = Conversations.isGroup(conversationId) ? .group : peer == nil ? .room : .direct
+        let messages = session.stores.messages.messages(in: conversationId).compactMap { message in
+            chatMessage(message, kind: kind, me: me, directory: directory)
+        }
+        let members = group?.members ?? []
+        var built = ChatState(
+            title: peer.map { directory.label(for: $0).text } ?? Copy.ChatList.nearby,
+            kind: kind,
+            peer: peer,
+            messages: messages,
+            isRequest: peer != nil && !messages.isEmpty && threads.isRequest(conversationId),
+            requestTitle: Copy.Chat.requestTitle(peer.map { directory.label(for: $0).text } ?? ""),
+            requestBody: Copy.Chat.requestBody,
+            isLinked: false,
+            isVerified: peer.map(directory.verified.contains) ?? false,
+            memberCount: nil,
+            nobodyElse: false,
+            exists: kind != .group || group != nil
+        )
+        if let group {
+            built.title = GroupNaming.title(of: group, me: me, directory: directory)
+            built.isRequest = threads.isRequest(conversationId)
+            built.requestTitle = Copy.Groups.requestTitle(GroupNaming.starter(of: group, me: me, directory: directory))
+            built.requestBody = Copy.Groups.requestBody
+            built.memberCount = members.count
+            built.nobodyElse = !members.contains { ExactKey($0) != ExactKey(me.string) }
+        }
+        return built
+    }
+
+    /// One row of the thread: a message, or a status line this build has words for.
+    private func chatMessage(_ message: MessageRecord, kind: ThreadKind, me: NodeId, directory: Directory) -> ChatMessage? {
+        let isMine = message.senderId == me
+        guard message.kind.isNotice else {
             return ChatMessage(
                 id: message.id,
                 body: message.body,
                 sentAt: message.sentAt,
                 isMine: isMine,
                 author: message.senderId,
-                authorLabel: peer == nil && !isMine ? directory.label(for: message.senderId).text : nil,
+                authorLabel: kind != .direct && !isMine ? directory.label(for: message.senderId).text : nil,
                 status: isMine ? DeliveryStatus(message) : nil
             )
         }
-        return ChatState(
-            title: peer.map { directory.label(for: $0).text } ?? Copy.ChatList.nearby,
-            peer: peer,
-            messages: messages,
-            isRequest: peer != nil && !messages.isEmpty && session.threads().isRequest(conversationId),
-            isLinked: false,
-            isVerified: peer.map(directory.verified.contains) ?? false
-        )
+        return GroupNaming.notice(message, me: me, directory: directory).map { words in
+            ChatMessage(id: message.id, body: "", sentAt: message.sentAt, isMine: false, author: message.senderId, notice: words)
+        }
     }
 }

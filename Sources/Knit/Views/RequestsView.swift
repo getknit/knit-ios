@@ -26,7 +26,7 @@
                                 VStack(alignment: .leading, spacing: Layout.hairline) {
                                     Text(row.title)
                                         .font(.headline)
-                                    Text(row.preview)
+                                    Text(row.preview ?? Copy.ChatList.noMessages)
                                         .font(.subheadline)
                                         .foregroundStyle(Palette.secondaryText)
                                         .lineLimit(typeSize.isAccessibilitySize ? nil : Layout.previewLines)

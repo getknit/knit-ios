@@ -4,8 +4,8 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// delivered, and nobody linked. The default.
     case edgeCases = "edge-cases"
     /// A day on the trail for store screenshots and social posts, with three peers linked. After knit-next's hiking
-    /// theme (`DemoScenarios.kt`), less what the iPhone does not do yet: groups, reactions, photos, voice notes,
-    /// LoRa and Internet relays.
+    /// theme (`DemoScenarios.kt`), less what the iPhone does not do yet: reactions, photos, voice notes, LoRa and
+    /// Internet relays.
     case marketing = "marketing"
 
     /// Who and what the scene seeds.
@@ -63,11 +63,23 @@ internal struct DemoCast {
     struct Line {
         let id: String
         let from: Slot
-        /// `nil` for a room post.
+        /// `nil` for a room post or a group message.
         let to: Slot?
         let body: String
         var delivered = false
         var then = Pause.minutes
+        /// Whether it is a message in the scene's group.
+        var inGroup = false
+    }
+
+    /// The scene's group: its members besides us, in pick order, and who started it.
+    struct Group {
+        let members: [Slot]
+        let createdBy: Slot
+        /// Its name, or `nil` for one titled after its members.
+        var name: String?
+        /// Members who left, a moment after it started.
+        var departed: [Slot] = []
     }
 
     /// Our own profile, or `nil` to leave it unset.
@@ -78,6 +90,8 @@ internal struct DemoCast {
     let accepted: [Slot]
     /// The peers shown as linked.
     let linked: [Slot]
+    /// The scene's group, if it has one.
+    var group: Group?
 
     /// Two peers share a name, to show a discriminated label; the stranger has none, to show an alias.
     static let edgeCases = Self(
@@ -92,13 +106,16 @@ internal struct DemoCast {
             Line(id: "room-2", from: .otherSam, to: nil, body: "Same here. Knit is the only thing working."),
             Line(id: "room-3", from: .me, to: nil, body: "Meet at the food trucks at 6?", delivered: true),
             Line(id: "room-4", from: .priya, to: nil, body: "On my way."),
+            Line(id: "group-1", from: .priya, to: nil, body: "Who's bringing the tent?", inGroup: true),
+            Line(id: "group-2", from: .me, to: nil, body: "I've got it.", inGroup: true),
             Line(id: "dm-1", from: .me, to: .sam, body: "Which gate are you at?", delivered: true),
             Line(id: "dm-2", from: .sam, to: .me, body: "North gate, by the big tent."),
             Line(id: "dm-3", from: .me, to: .sam, body: "Be there in 10."),
             Line(id: "request-1", from: .stranger, to: .me, body: "Hi! Are you the one with the blue tent?"),
         ],
         accepted: [.sam],
-        linked: []
+        linked: [],
+        group: Group(members: [.sam, .priya, .otherSam], createdBy: .priya, departed: [.otherSam])
     )
 
     /// Every name is set and distinct, every message of ours delivered, and three peers are linked, as in knit-next's
@@ -141,6 +158,9 @@ internal struct DemoCast {
             Line(id: "room-4", from: .sam, to: nil, body: "Trail's clear up top, Maya 🎉 Come join us!"),
             Line(id: "room-5", from: .dani, to: nil, body: "Saved you a spot by the fire 🔥", then: .moment),
             Line(id: "room-6", from: .me, to: nil, body: "On my way, give me 20.", delivered: true),
+            Line(id: "group-1", from: .dani, to: nil, body: "Sunrise hike tomorrow? Trailhead at 5 🌅", then: .moment, inGroup: true),
+            Line(id: "group-2", from: .theo, to: nil, body: "Count me in.", then: .moment, inGroup: true),
+            Line(id: "group-3", from: .me, to: nil, body: "I'll bring the stove.", delivered: true, inGroup: true),
             Line(
                 id: "request-river-1",
                 from: .river,
@@ -162,6 +182,7 @@ internal struct DemoCast {
             Line(id: "dm-sam-3", from: .sam, to: .me, body: "Oh, and I found your water bottle 💧"),
         ],
         accepted: [.dani, .sam],
-        linked: [.sam, .dani, .priya]
+        linked: [.sam, .dani, .priya],
+        group: Group(members: [.dani, .sam, .theo], createdBy: .me, name: "Summit crew")
     )
 }

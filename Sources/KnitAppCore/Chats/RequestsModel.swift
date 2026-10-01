@@ -2,15 +2,17 @@ import KnitStore
 import KnitWire
 public import Observation
 
-/// One message request: a stranger's DM thread.
+/// One message request: a stranger's DM thread, or a group nobody we know has written in.
 public struct RequestRow: Sendable, Equatable, Identifiable {
-    /// The thread's conversation id, the stranger's node id.
+    /// The thread's conversation id: the stranger's node id, or the group's id.
     public var id: String
-    /// The stranger's label.
+    /// The stranger's label, or the group's title.
     public var title: String
-    /// Their newest message, on one line.
-    public var preview: String
-    /// When it was sent, by their clock.
+    /// Whether this is a group.
+    public var isGroup: Bool
+    /// The newest message, on one line, or `nil` for a group of nothing but status lines.
+    public var preview: String?
+    /// When it was sent, by its author's clock, or when the group was made.
     public var lastMessageAt: Int64
 }
 
@@ -33,15 +35,18 @@ public final class RequestsModel {
         cache.value(for: session.revision) {
             let directory = session.directory
             let me = session.identity.nodeId
-            return session.threads().requests.compactMap { head in
-                NodeId(head.conversationId).map { peer in
-                    RequestRow(
-                        id: head.conversationId,
-                        title: directory.label(for: peer).text,
-                        preview: ChatListAssembler.preview(head, inRoom: false, directory: directory, me: me),
-                        lastMessageAt: head.sentAt
-                    )
+            return session.threads().requests.map { request in
+                let preview = request.head.map { head in
+                    ChatListAssembler.preview(head, namingSpeaker: request.group != nil, directory: directory, me: me)
                 }
+                let title = request.group.map { GroupNaming.title(of: $0, me: me, directory: directory) }
+                return RequestRow(
+                    id: request.id,
+                    title: title ?? directory.labels.label(for: request.id).text,
+                    isGroup: request.group != nil,
+                    preview: preview,
+                    lastMessageAt: request.lastActivity
+                )
             }
         }
     }

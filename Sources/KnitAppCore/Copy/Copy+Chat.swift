@@ -174,7 +174,7 @@ extension Copy {
         }
     }
 
-    /// Message requests: DMs from people the user has not chatted with.
+    /// Message requests: DMs from people the user has not chatted with, and groups nobody they know has written in.
     public enum Requests {
         /// The screen's title.
         public static var title: String {
@@ -186,7 +186,10 @@ extension Copy {
             NSLocalizedString(
                 "requests.explanation",
                 bundle: .main,
-                value: "Messages from people you haven't chatted with wait here. Accept one to move it to your chats.",
+                value: """
+                    Messages from people you haven't chatted with, and groups they add you to, wait here. Accept one to move it to \
+                    your chats.
+                    """,
                 comment: "Requests: what the screen holds"
             )
         }

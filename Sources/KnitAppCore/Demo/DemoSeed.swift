@@ -122,17 +122,23 @@ public enum DemoSeed {
                 )
             )
         }
+        let groupId = cast.group.map { group in GroupId.derive((group.members + [.me]).compactMap { nodeIds[$0]?.string }) }
         var sentAt = now
+        var groupStart = now
         for line in cast.lines.reversed() {
             sentAt -= line.then.rawValue
             let sender = nodeIds[line.from, default: me]
             let recipient = line.to.map { nodeIds[$0, default: me] }
+            let group = line.inGroup ? groupId : nil
+            if group != nil {
+                groupStart = sentAt
+            }
             stores.messages.save(
                 MessageRecord(
                     id: line.id,
                     senderId: sender,
                     recipientId: recipient,
-                    conversationId: Conversations.id(sender: sender, recipient: recipient, me: me),
+                    conversationId: Conversations.id(sender: sender, recipient: recipient, group: group, me: me),
                     body: line.body,
                     sentAt: sentAt,
                     arrivedAt: sender == me ? nil : sentAt,
@@ -140,8 +146,42 @@ public enum DemoSeed {
                 )
             )
         }
+        if let group = cast.group, let groupId {
+            seed(group, id: groupId, startedAt: groupStart - DemoCast.Pause.minutes.rawValue, people: nodeIds, in: stores)
+        }
         for peer in cast.accepted.compactMap({ nodeIds[$0] }) {
             stores.conversations.accept(peer.string)
+        }
+    }
+
+    /// The scene's group, started at `startedAt`, with its created line and a line for each member who left.
+    private static func seed(
+        _ group: DemoCast.Group, id: String, startedAt: Int64, people nodeIds: [DemoCast.Slot: NodeId], in stores: MeshStores
+    ) {
+        let leftAt = startedAt + DemoCast.Pause.moment.rawValue
+        let roster = (group.members + [.me]).compactMap { slot in
+            nodeIds[slot].map { id in
+                GroupMember(
+                    nodeId: id.string, departed: group.departed.contains(slot), leftAt: group.departed.contains(slot) ? leftAt : nil)
+            }
+        }
+        // `.me` is always cast, so every creator a scene names has an id.
+        guard let creator = nodeIds[group.createdBy] else {
+            return
+        }
+        stores.groups.save(
+            GroupRecord(
+                id: id,
+                name: group.name ?? "",
+                createdBy: creator.string,
+                createdAt: startedAt,
+                nameUpdatedAt: group.name == nil ? 0 : startedAt,
+                roster: roster
+            )
+        )
+        stores.messages.save(StatusNotices.groupCreated(id, by: creator, at: startedAt))
+        for member in group.departed.compactMap({ nodeIds[$0] }) {
+            stores.messages.save(StatusNotices.memberLeft(id, member: member, at: leftAt))
         }
     }
 

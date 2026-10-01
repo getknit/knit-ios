@@ -196,11 +196,13 @@ public final class AppSession {
         guard let notifier else {
             return
         }
+        let threads = threads()
         let context = NotificationPolicy.Context(
             me: identity.nodeId,
             visibleConversation: isActive ? visible : nil,
             directory: directory,
-            pendingRequests: isRequest ? threads().requests.count : 0
+            pendingRequests: isRequest ? threads.requests.count : 0,
+            groupTitle: threads.group(message.conversationId).map { GroupNaming.title(of: $0, me: identity.nodeId, directory: directory) }
         )
         let notification = NotificationPolicy.notification(for: message, isRequest: isRequest, in: context)
         if let notification {

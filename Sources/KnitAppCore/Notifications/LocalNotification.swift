@@ -54,13 +54,16 @@ public enum NotificationPolicy {
         public var directory: Directory
         /// How many requests wait, this one included.
         public var pendingRequests: Int
+        /// The title of the group the message came in, or `nil` outside a group.
+        public var groupTitle: String?
 
         /// Bundles the context.
-        public init(me: NodeId, visibleConversation: String?, directory: Directory, pendingRequests: Int) {
+        public init(me: NodeId, visibleConversation: String?, directory: Directory, pendingRequests: Int, groupTitle: String? = nil) {
             self.me = me
             self.visibleConversation = visibleConversation
             self.directory = directory
             self.pendingRequests = pendingRequests
+            self.groupTitle = groupTitle
         }
     }
 
@@ -83,12 +86,14 @@ public enum NotificationPolicy {
         }
         let sender = context.directory.label(for: message.senderId).text
         let isRoom = message.conversationId == Conversations.nearby
+        // A group's notification is titled for the group and names its speaker, as the room's does.
+        let shared = isRoom ? Copy.Notifications.nearbyTitle : context.groupTitle
         return LocalNotification(
             id: message.conversationId,
             threadId: message.conversationId,
             conversationId: message.conversationId,
-            title: isRoom ? Copy.Notifications.nearbyTitle : sender,
-            body: isRoom ? Copy.Notifications.roomBody(sender: sender, body: message.body) : message.body
+            title: shared ?? sender,
+            body: shared == nil ? message.body : Copy.Notifications.roomBody(sender: sender, body: message.body)
         )
     }
 }

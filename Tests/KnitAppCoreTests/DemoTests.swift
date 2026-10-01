@@ -57,11 +57,16 @@ import Testing
         )
         let session = AppSession(identity: OwnIdentity(bundle: identity.bundle), stores: stores, mesh: mesh)
         let list = ChatListModel(session: session).state
-        #expect(list.rows.count == 2)
+        #expect(list.rows.count == 3)
         #expect(list.requestCount == 1)
         #expect(list.rows[0].preview?.hasPrefix("Priya: ") == true)
         #expect(list.rows[1].title.hasPrefix("Sam ("), "two Sams, told apart")
         #expect(list.rows[1].isVerified)
+        #expect(
+            list.rows[2].isGroup && list.rows[2].preview?.hasPrefix(Copy.Common.you) == true, "an unnamed group, titled for its members")
+        let group = try #require(stores.groups.groups().first)
+        #expect(group.departed.count == 1, "one Sam left")
+        #expect(stores.messages.messages(in: group.id).map(\.kind) == [.groupCreated, .memberLeft, .message, .message])
         let listening = Task { await session.listen() }
         await session.start()
         while session.radioState == nil {
@@ -87,9 +92,9 @@ import Testing
         #expect(linked.count == 3)
         let (session, mesh) = Self.session(stores, identity: identity, radio: .on, linked: linked)
         let list = ChatListModel(session: session)
-        #expect(list.state.rows.map(\.title) == ["Nearby", "Sam Rivera", "Dani Cho"])
+        #expect(list.state.rows.map(\.title) == ["Nearby", "Sam Rivera", "Summit crew", "Dani Cho"])
         #expect(list.state.requestCount == 1)
-        #expect(list.state.rows[2].isVerified)
+        #expect(list.state.rows[3].isVerified)
         #expect(list.state.rows.dropFirst().allSatisfy { $0.lastStatus == .delivered || $0.lastStatus == nil })
         let listening = Task { await session.listen() }
         await session.start()
@@ -97,7 +102,7 @@ import Testing
             await Task.yield()
         }
         #expect(list.status == .linked(3))
-        let everyDMLinked = list.state.rows.dropFirst().allSatisfy(\.isLinked)
+        let everyDMLinked = list.state.rows.dropFirst().filter { !$0.isGroup }.allSatisfy(\.isLinked)
         #expect(everyDMLinked)
         #expect(await session.diagnostics().neighbors.map(\.nodeId) == linked)
         await session.stop()
