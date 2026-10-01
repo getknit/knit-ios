@@ -188,19 +188,23 @@ final class RecordingTransport: MeshTransport {
 }
 
 /// A clock the test moves by hand. A sleeper wakes when the clock passes its deadline, or throws when its task is
-/// cancelled.
+/// cancelled. A test that moves the clock while the mesh is still working reads a different time from one moment to
+/// the next, so it awaits ``parked(until:)`` first.
 final class ManualClock: MeshClock {
     private struct State {
         var wall: Int64
         var monotonic: Int64
         var sleepers: [Int: (deadline: Int64, wake: CheckedContinuation<Void, any Error>)] = [:]
-        /// Tokens cancelled before their sleeper was registered.
+        /// Tests awaiting a sleeper for a deadline.
+        var watchers: [Int: (deadline: Int64, wake: CheckedContinuation<Void, Never>)] = [:]
+        /// Tokens cancelled before their sleeper or watcher was registered.
         var cancelled: Set<Int> = []
         var nextToken = 0
     }
 
     private enum Registration {
-        case wait
+        /// Parked, waking the tests that awaited this deadline.
+        case wait([CheckedContinuation<Void, Never>])
         case wake
         case cancel
     }
@@ -251,11 +255,17 @@ final class ManualClock: MeshClock {
                         return .wake
                     }
                     state.sleepers[token] = (deadline, continuation)
-                    return .wait
+                    let watching = state.watchers.filter { $0.value.deadline == deadline }
+                    for watcher in watching.keys {
+                        state.watchers[watcher] = nil
+                    }
+                    return .wait(watching.values.map(\.wake))
                 }
                 switch registration {
-                case .wait:
-                    break
+                case .wait(let watchers):
+                    for watcher in watchers {
+                        watcher.resume()
+                    }
                 case .wake:
                     continuation.resume()
                 case .cancel:
@@ -271,6 +281,38 @@ final class ManualClock: MeshClock {
                 return sleeper.wake
             }
             sleeper?.resume(throwing: CancellationError())
+        }
+    }
+
+    /// Returns once a sleeper waits for `deadline`: the mesh has finished the work that set its timer, and moving the
+    /// clock now cannot land between its reads. Returns early when the test is cancelled, to fail on what follows.
+    func parked(until deadline: Int64) async {
+        let token = state.withLock { state in
+            defer { state.nextToken += 1 }
+            return state.nextToken
+        }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                let parked = state.withLock { state in
+                    if state.cancelled.remove(token) != nil || state.sleepers.values.contains(where: { $0.deadline == deadline }) {
+                        return true
+                    }
+                    state.watchers[token] = (deadline, continuation)
+                    return false
+                }
+                if parked {
+                    continuation.resume()
+                }
+            }
+        } onCancel: {
+            let watcher = state.withLock { state in
+                guard let watcher = state.watchers.removeValue(forKey: token) else {
+                    state.cancelled.insert(token)
+                    return nil as CheckedContinuation<Void, Never>?
+                }
+                return watcher.wake
+            }
+            watcher?.resume()
         }
     }
 

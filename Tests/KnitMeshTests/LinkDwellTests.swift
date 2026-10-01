@@ -96,6 +96,9 @@ import Testing
         await mesh.process(.sighted(sighting))
         #expect(radio.dials.isEmpty)
         var activity = radio.activity.makeAsyncIterator()
+        // The advert's timer, due at 2.5 s, may still be firing. Moved past 13 s under it, the clock would end the dwell
+        // between the link manager's advance and its next deadline, and no timer would be set for it.
+        await clock.parked(until: 13_000)
         clock.advance(7000)
         var dialed: RadioAddress?
         while dialed == nil, let next = await activity.next() {
