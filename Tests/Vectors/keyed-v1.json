@@ -2,7 +2,7 @@
   "source": {
     "repository": "knit-next",
     "path": "vectors/keyed-v1.json",
-    "commit": "b0fc4721a1ca868a220450d6733dbc50780465c3",
+    "commit": "a87d22553dadf72288d71c89ebc4f43dfc2a696c",
     "uncommitted": false,
     "sha256": "ff4911ef7aeb1afdad3dc32ede7ac48c184273a7199718ce2ac33e6155bd0c54"
   },

@@ -9,9 +9,8 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`. The port started from HEAD `02051b64`, five test-only commits
   later, on 2026-09-25.
-- **The pin is `b0fc4721`,** knit-next's local `main` on 2026-09-30 once the put-back race's fix merged, ahead of
-  its `origin/main` (`cb295894`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds
-  it.
+- **The pin is `a87d2255`,** knit-next's local `main` on 2026-09-30 once #103 merged, ahead of its `origin/main`
+  (`b0fc4721`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds it.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
     never opens). Of what the files below say, only the BLE responder moved.
@@ -76,7 +75,7 @@ Kotlin wins.
       2026-09.xzpt, amended 2026-09-29). ADR 2026-09.shzv (A1) and 2026-09.dqvb (A4) are amended, and A1 stays whole.
     - `0983824b` lets a user clear the Nearby room's messages like any chat's. It clears them locally, sends
       nothing and leaves custody alone, so this port has nothing to mirror.
-  - **Since then:**
+  - **Up to `b0fc4721`** (the previous pin):
     - The put-back race (#102, a further amendment to ADR 2026-09.dqvb), rebased and merged unchanged from the
       branch the device runs used: `3e566b1f` (built as `ed9446bf`) asks for BALANCED again when a report shows a
       timeout under 5 s after the lookup's ask, at once or 2 s later, at most twice a lookup, and logs
@@ -87,20 +86,27 @@ Kotlin wins.
     - `0b9d19ea` labels an animated image "GIF", from its frames, read locally after the blob lands and stored on
       the message (database v17). It adds no wire field, so this port has nothing to mirror.
     - `2d059df6` moves Android's dependencies, `cb295894` its CI, and `e40135f2` and `3031fe60` its tests.
-  - **Mirrored ahead of the pin:** #103 (knit-next ADR 2026-09.hj4a), `f4d43637` on `fix/lonely-smaller-id-dials`,
-    from `b0fc4721`: `b6336ddf` is the change, and `f4d43637` records its device trial in the ADR. An Android phone that has held no BLE link for 180 000 ms, counted from the later of the
-    transport's start and its last link going down (`noLinkSince`), dials the strongest peer it sights above it,
-    on an ordinary dial's filters and backoff, one at a time (`LonelyDialPolicy.kt`). It logs
-    `bt lonely dial <id> (alone=<ms>ms rssi=<dBm> dwell=<ms>ms)` just before that dial's `bt initiating to`, and
-    its debug `bt state` line gains `alone=<ms>ms`. A responder that sighted the phone refuses it, which the phone
-    counts as a `HANDSHAKE` failure, and a failed dial to a peer it already holds a link to bumps no backoff. This
-    port's `admit()` already gives Android's verdict (ADR 2026-09.6es2), so no Swift mirrors it, and only the
-    harness moves: `interop.py`'s `_dialed_by` and `phone-never-dialed` report a lonely dial rather than fail it.
-    Run offline over that trial's logs (the lonely Pixel 8's two lonely dials, both linked, and four runs without
-    one), they report both dials, pass the other runs, and fail each dial once its lonely line is deleted.
+  - **Since then:**
+    - #103 (knit-next ADR 2026-09.hj4a), rebased onto `c1b7c19c` and merged unchanged from the branch this port
+      mirrored ahead of the pin (`b6336ddf`, `f4d43637`, `8258350a`): `36f04b8d` is the change, `11505341` records
+      its device trial in the ADR, and `a87d2255` words its changelog line. An Android phone that has held no BLE
+      link for 180 000 ms, counted from the later of the transport's start and its last link going down
+      (`noLinkSince`), dials the strongest peer it sights above it, on an ordinary dial's filters and backoff, one at
+      a time (`LonelyDialPolicy.kt`). It logs `bt lonely dial <id> (alone=<ms>ms rssi=<dBm> dwell=<ms>ms)` just
+      before that dial's `bt initiating to`, and its debug `bt state` line gains `alone=<ms>ms`. A responder that
+      sighted the phone refuses it, which the phone counts as a `HANDSHAKE` failure, and a failed dial to a peer it
+      already holds a link to bumps no backoff. This port's `admit()` already gives Android's verdict (ADR
+      2026-09.6es2), so no Swift mirrors it, and only the harness moves: `interop.py`'s `_dialed_by` and
+      `phone-never-dialed` report a lonely dial rather than fail it. Run offline over that trial's logs (the lonely
+      Pixel 8's two lonely dials, both linked, and four runs without one), they report both dials, pass the other
+      runs, and fail each dial once its lonely line is deleted.
+    - `cbbb1e0c` (knit-next ADR 2026-09.hp88, #67) awaits an absent Meshtastic board with `autoConnect` after three
+      dials. It is LoRa alone, which this port does not carry, so there is nothing to mirror.
+    - `c1b7c19c` settles a stuck attachment's spinner to a still hourglass after 30 s, and `adad2d41` enables a
+      Claude plugin. Both are Android's alone.
   - No wire bytes or vectors moved.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `b0fc4721`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `a87d2255`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 
