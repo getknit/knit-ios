@@ -243,11 +243,12 @@ explicit direction.** Update this file in the change that ships an item.
     `groupleave`. It also expects `0xB` in Carol's profile. The change must be additive: `digestIds` keeps its three
     ids, and Alice's profile, HELLO and advert keep `0x9`. This side exports `ios-emitted-v1.json` into the
     Android worktree before the merge, and the Android worker commits it.
-  - **A6 (two Android group fixes):** both should come back to Android as one paired change.
+  - **A6 (two Android group fixes, knit-next #107 and #108):** both should come back to Android as one paired
+    change.
     - A stranger who sets `createdBy` to our node id makes the `created` row count as ours (`MessageDao.kt:294`),
-      so their group skips the request inbox.
-    - Android keeps a group's old photo hash at the new clock until the bytes land (`InboundPipeline.kt:2334`),
-      so its own frames can revert a newer photo meanwhile.
+      so their group skips the request inbox (#107).
+    - Android keeps a group's old photo hash at the new clock until the bytes land
+      (`InboundPipeline.kt:2334`), so its own frames can switch members who show a newer photo back (#108).
 
     This port already avoids both.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR

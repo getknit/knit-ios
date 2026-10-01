@@ -171,7 +171,9 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
     verifies Carol's `groupupdate` and `groupleave`, and expects `0xB` in Carol's profile.
   - **Additive only.** `digestIds` keeps its three ids, so the DIGEST, its fold and the advert stay put. Alice's
     profile, HELLO and advert keep `0x9`.
-- **A6** (planned, ADR 2026-09.n393): two Android group fixes this port already makes.
+- **A6** (filed 2026-09-30 as knit-next #107 and #108, ADR 2026-09.n393): two Android group fixes this port
+  already makes.
   - A forged `createdBy` naming the recipient counts the `created` row as theirs (`MessageDao.kt:294`), so a
-    stranger's group skips the request inbox.
-  - The old photo hash rides at the new clock until the bytes land (`InboundPipeline.kt:2334`).
+    stranger's group skips the request inbox (#107).
+  - The old photo hash rides at the new clock until the bytes land (`InboundPipeline.kt:2334`), and an equal
+    clock goes to the incoming photo, so those frames switch members who show the new photo back (#108).
