@@ -1,13 +1,22 @@
-/// A group's roster, carried in the clear on a group frame (`GroupInfo` in knit-next's `Wire.kt`).
+/// A group's roster, carried in the clear on every group `chat` and `groupupdate` (`GroupInfo` in knit-next's
+/// `Wire.kt`, ADR 2026-09.n393).
 ///
-/// The MVP has no groups; it decodes rosters so it can carry and relay group frames for others, and so the
-/// custody rule that serves a group frame only to its members can run.
+/// A sender rebuilds it from its own row for every frame, so a frame always says what its sender holds: the effective
+/// members, the members who left, the name and the photo. Custody also reads it, to serve a group frame only to its
+/// members.
 public struct GroupInfo: CBORRepresentable, Equatable {
+    /// What every group id starts with (`GROUP_ID_PREFIX`). A base32 node id never has a hyphen, so no group id can
+    /// be mistaken for one, or for the `nearby` room.
+    public static let idPrefix = "g-"
+    /// At most this many founding members, the creator included (`GroupInfo.MAX_MEMBERS`, `Wire.kt:382`).
+    public static let maxMembers = 8
+
     /// The group id, `g-` plus 24 hex characters: the hash of the member set.
     public var id: String
     /// The group's name, if set.
     public var name: String?
-    /// The members' node ids.
+    /// The effective members: the founding set less those who left, in roster order. The id hashes these together
+    /// with ``departed``.
     public var members: [String]
     /// The founder's node id.
     public var createdBy: String

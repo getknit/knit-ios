@@ -52,6 +52,16 @@ import Testing
         #expect(MessageCrypto.open(decoded, header: header, as: bob)?.replyTo == reply)
     }
 
+    /// `groupMessageDecryptsForEveryMember`: a group message's thread is the group id, and each member opens it.
+    @Test func aGroupMessageOpensForEveryMember() throws {
+        let header = MessageCrypto.header(id: "g1", senderId: alice.nodeId.string, sentAt: 5, thread: "g-team")
+        let envelope = try seal("hi team", header: header, to: bob, carol)
+        #expect(MessageCrypto.open(envelope, header: header, as: bob)?.body == "hi team")
+        #expect(MessageCrypto.open(envelope, header: header, as: carol)?.body == "hi team")
+        let otherGroup = MessageCrypto.header(id: "g1", senderId: alice.nodeId.string, sentAt: 5, thread: "g-other")
+        #expect(MessageCrypto.open(envelope, header: otherGroup, as: bob) == nil)
+    }
+
     @Test func everyRecipientOpensAndNobodyElseDoes() throws {
         let header = MessageCrypto.header(id: "g1", senderId: alice.nodeId.string, sentAt: 5, thread: "g-team")
         let envelope = try seal("hi team", header: header, to: bob, carol)

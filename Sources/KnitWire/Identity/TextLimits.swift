@@ -57,6 +57,22 @@ public enum TextLimits {
         return String(output)
     }
 
+    /// The name a rename sends (`GroupDetailsViewModel.kt:158-159`): normalized to one line and cut to ``groupName``
+    /// units, or `nil` when that leaves nothing, since a group name is never cleared.
+    public static func outgoingGroupName(_ text: String) -> String? {
+        let name = truncated(normalizeSingleLine(text), toUTF16: groupName)
+        return isBlank(name) ? nil : name
+    }
+
+    /// The name a group frame carries, as a receiver takes it (`InboundPipeline.kt:2042`): `nil` when absent or blank,
+    /// which never clears a name, and otherwise cut to ``groupName`` units without normalizing.
+    public static func incomingGroupName(_ text: String?) -> String? {
+        guard let text, !isBlank(text) else {
+            return nil
+        }
+        return truncated(text, toUTF16: groupName)
+    }
+
     /// knit-next's `isValidReactionEmoji`: not blank, and within ``reaction`` UTF-16 code units.
     public static func isValidReaction(_ emoji: String) -> Bool {
         !isBlank(emoji) && emoji.utf16.count <= reaction

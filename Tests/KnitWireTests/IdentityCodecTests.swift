@@ -168,6 +168,30 @@ import Testing
         #expect(!TextLimits.isValidReaction(""))
         #expect(!TextLimits.isValidReaction(String(repeating: "👍", count: 17)))
     }
+
+    /// `GroupDetailsViewModel.rename`: one line, at most 32 units, and never blank.
+    @Test func aRenameIsNormalizedCutAndNeverBlank() {
+        #expect(TextLimits.outgoingGroupName("  Hiking\t\tclub ") == "Hiking club")
+        #expect(TextLimits.outgoingGroupName(String(repeating: "a", count: 40)) == String(repeating: "a", count: 32))
+        #expect(TextLimits.outgoingGroupName(" \t ") == nil)
+        #expect(TextLimits.outgoingGroupName("") == nil)
+    }
+
+    /// `InboundPipeline.reconcileGroup`: a received name is only cut, and a blank one is no name at all.
+    @Test func aReceivedNameIsCutButNotNormalized() {
+        #expect(TextLimits.incomingGroupName("Hiking  club") == "Hiking  club")
+        #expect(TextLimits.incomingGroupName(String(repeating: "b", count: 33)) == String(repeating: "b", count: 32))
+        #expect(TextLimits.incomingGroupName("   ") == nil)
+        #expect(TextLimits.incomingGroupName(nil) == nil)
+    }
+}
+
+@Suite struct GroupInfoTests {
+    /// `GroupInfo.MAX_MEMBERS` and `GROUP_ID_PREFIX`, which every platform must share.
+    @Test func theRosterCapAndIdPrefixAreKnitNexts() {
+        #expect(GroupInfo.maxMembers == 8)
+        #expect(GroupInfo.idPrefix == "g-")
+    }
 }
 
 /// A deterministic generator for tests: it counts.
