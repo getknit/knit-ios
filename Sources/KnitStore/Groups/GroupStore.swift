@@ -79,16 +79,16 @@ public struct GroupRecord: Sendable, Equatable {
     public var departed: [String] { roster.filter(\.departed).map(\.nodeId) }
 
     /// The roster as our frames carry it (`GroupEntity.toGroupInfo`, `GroupEntity.kt:63-73`): the name only when
-    /// set, and the members who left only when there are any.
+    /// set, the photo's clock only when past zero, and the members who left only when there are any.
     public var info: GroupInfo {
         let gone = departed
         return GroupInfo(
             id: id,
-            name: name.isEmpty ? nil : name,
+            name: TextLimits.isBlank(name) ? nil : name,
             members: members,
             createdBy: createdBy,
             photoHash: photoHash,
-            photoUpdatedAt: photoUpdatedAt,
+            photoUpdatedAt: photoUpdatedAt.flatMap { $0 > 0 ? $0 : nil },
             departed: gone.isEmpty ? nil : gone
         )
     }

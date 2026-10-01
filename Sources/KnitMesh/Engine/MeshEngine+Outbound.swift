@@ -21,7 +21,7 @@ extension MeshEngine {
             sentAt: clock.wallMilliseconds()
         )
         stores.messages.save(record)
-        originate(chatEnvelope(id: record.id, sentAt: record.sentAt, recipient: nil, content: ChatContent(body: body)))
+        originate(chatEnvelope(id: record.id, sentAt: record.sentAt, recipient: nil, group: nil, content: ChatContent(body: body)))
         return record
     }
 
@@ -47,7 +47,7 @@ extension MeshEngine {
         )
         stores.messages.save(record)
         if let sealed {
-            originate(chatEnvelope(id: id, sentAt: sentAt, recipient: recipient, content: ChatContent(enc: sealed)))
+            originate(chatEnvelope(id: id, sentAt: sentAt, recipient: recipient, group: nil, content: ChatContent(enc: sealed)))
         }
         return record
     }
@@ -63,13 +63,14 @@ extension MeshEngine {
         return TextLimits.isBlank(body) ? nil : body
     }
 
-    func chatEnvelope(id: String, sentAt: Int64, recipient: NodeId?, content: ChatContent) -> RelayEnvelope {
+    func chatEnvelope(id: String, sentAt: Int64, recipient: NodeId?, group: GroupInfo?, content: ChatContent) -> RelayEnvelope {
         RelayEnvelope(
             type: .chat,
             id: id,
             senderId: nodeId.string,
             sentAt: sentAt,
             recipientId: recipient?.string,
+            group: group,
             payload: content.encoded
         )
     }
@@ -84,16 +85,19 @@ extension MeshEngine {
         return try? MessageCrypto.seal(MessageContent(body: body).encoded, header: header, to: [recipient: bundle])
     }
 
-    /// Our DMs to `recipient` that waited for its key, sealed and flooded under their original id and clock now that
-    /// the key has pinned (`MeshManager.flushPendingFor`).
+    /// Our messages that waited for `recipient`'s key, sealed and flooded under their original id and clock now that
+    /// the key has pinned (`MeshManager.flushPendingFor`): DMs to them, and group messages in groups they are in.
     func flushPending(to recipient: NodeId) {
         for message in stores.messages.pendingKey(to: recipient) {
             if let sealed = seal(message.body, id: message.id, sentAt: message.sentAt, to: recipient) {
-                originate(chatEnvelope(id: message.id, sentAt: message.sentAt, recipient: recipient, content: ChatContent(enc: sealed)))
+                originate(
+                    chatEnvelope(
+                        id: message.id, sentAt: message.sentAt, recipient: recipient, group: nil, content: ChatContent(enc: sealed)))
                 stores.messages.clearPendingKey(message.id)
                 events.append(.sent(messageId: message.id))
             }
         }
+        flushPendingGroups(for: recipient)
     }
 
     // MARK: Origination
@@ -124,7 +128,7 @@ extension MeshEngine {
     // MARK: Receipts
 
     /// Acknowledges a message delivered to us (`InboundPipeline.acknowledge`): a DM earns a receipt that floods
-    /// and is carried, a room post a tick owed to its author.
+    /// and is carried, a room post or a group message a tick owed to its author.
     func acknowledge(_ envelope: RelayEnvelope, sender: NodeId) {
         if envelope.recipientId == nil {
             tickRoomPost(envelope.id, author: sender)

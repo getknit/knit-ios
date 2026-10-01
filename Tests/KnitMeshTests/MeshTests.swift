@@ -5,18 +5,18 @@ import Testing
 
 /// The actor that runs the engine and the link manager on a radio.
 @Suite(.timeLimit(.minutes(1))) struct MeshTests {
-    private let alice = TestPeer(seed: 1)
-    private let bob = TestPeer(seed: 2)
-    private let channel = ChannelID(50)
+    let alice = TestPeer(seed: 1)
+    let bob = TestPeer(seed: 2)
+    let channel = ChannelID(50)
 
-    private struct Rig {
+    struct Rig {
         let mesh: Mesh
         let radio: FakeRadio
         let clock: ManualClock
         let stores: MeshStores
     }
 
-    private func rig() -> Rig {
+    func rig() -> Rig {
         let radio = FakeRadio(advertisesServiceData: false)
         let clock = ManualClock(wall: EngineFixture.start, monotonic: 1000)
         let stores = MeshStores.inMemory()
@@ -32,12 +32,12 @@ import Testing
         return Rig(mesh: mesh, radio: radio, clock: clock, stores: stores)
     }
 
-    private func hello(_ peer: TestPeer) -> [UInt8] {
+    func hello(_ peer: TestPeer) -> [UInt8] {
         LinkRecord(.hello, payload: Hello(nodeId: peer.nodeId.string, capabilities: 0xFFF).payload).encoded ?? []
     }
 
     /// Links `bob` as a dialer we never sighted.
-    private func linkBob(_ rig: Rig) async {
+    func linkBob(_ rig: Rig) async {
         await rig.mesh.process(.accepted(channel))
         await rig.mesh.process(.received(channel, hello(bob)))
     }

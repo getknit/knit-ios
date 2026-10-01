@@ -118,6 +118,26 @@ import Testing
         #expect(try await rig.report(.radioChanged(.off)).first?["state"] as? String == "off")
         #expect(try await rig.report(.peerUpdated(fixtureNodeId(4))).isEmpty, "a peer never pinned has no profile to show")
     }
+
+    @Test func aGroupChangeNamesTheGroupAsHeld() async throws {
+        let rig = ControlRig()
+        let member = fixtureNodeId(4).string
+        let group = GroupRecord(
+            id: "g-1",
+            name: "Hikers",
+            createdBy: member,
+            createdAt: 1,
+            roster: [GroupMember(nodeId: member), GroupMember(nodeId: "gone", departed: true, leftAt: 2)]
+        )
+        rig.stores.groups.save(group)
+        let line = try #require(try await rig.report(.groupChanged("g-1")).first)
+        #expect(line["event"] as? String == "group")
+        #expect(line["name"] as? String == "Hikers")
+        #expect(line["members"] as? [String] == [member])
+        #expect(line["departed"] as? [String] == ["gone"])
+        #expect(line["left"] as? Bool == false)
+        #expect(try await rig.report(.groupChanged("g-unknown")).isEmpty, "a group not held has nothing to show")
+    }
 }
 
 /// A control surface over a real ``Mesh`` on a radio that goes nowhere.

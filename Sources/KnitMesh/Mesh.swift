@@ -149,6 +149,34 @@ public actor Mesh {
         engine.accept(conversationId)
     }
 
+    /// Makes a group with `others`, or opens the one they already share (``MeshEngine/createGroup(with:)``).
+    @discardableResult
+    public func createGroup(with others: [NodeId]) -> GroupRecord? {
+        defer { publish() }
+        return engine.createGroup(with: others)
+    }
+
+    /// Sends a message to a group (``MeshEngine/sendGroupMessage(_:to:)``).
+    @discardableResult
+    public func sendGroupMessage(_ text: String, to groupId: String) -> MessageRecord? {
+        defer { settle() }
+        return engine.sendGroupMessage(text, to: groupId)
+    }
+
+    /// Renames a group and floods the change (``MeshEngine/renameGroup(_:to:)``).
+    @discardableResult
+    public func renameGroup(_ groupId: String, to name: String) -> GroupRecord? {
+        defer { settle() }
+        return engine.renameGroup(groupId, to: name)
+    }
+
+    /// Leaves a group, telling its members (``MeshEngine/leaveGroup(_:)``).
+    @discardableResult
+    public func leaveGroup(_ groupId: String) -> Bool {
+        defer { settle() }
+        return engine.leaveGroup(groupId)
+    }
+
     /// Changes our profile and floods it.
     public func updateProfile(name: String, status: String, openToChat: Bool) {
         engine.updateProfile(name: name, status: status, openToChat: openToChat)

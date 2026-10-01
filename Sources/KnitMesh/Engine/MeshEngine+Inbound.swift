@@ -33,9 +33,13 @@ extension MeshEngine {
             handleReceipt(envelope)
         case .keyRequest:
             handleKeyRequest(envelope, from: frame.from)
+        case .groupUpdate:
+            handleGroupUpdate(envelope)
+        case .groupLeave:
+            handleGroupLeave(envelope)
         default:
-            // Reactions, typing cues, blob requests, group frames and types this build has never heard of are
-            // carried and relayed where custodial, and shown nowhere.
+            // Reactions, typing cues, blob requests and types this build has never heard of are carried and relayed
+            // where custodial, and shown nowhere.
             break
         }
     }
@@ -103,10 +107,15 @@ extension MeshEngine {
         return envelope.isRoomPost || chat.enc != nil
     }
 
-    /// A chat frame (`InboundPipeline.handleChat` and `decryptAndDeliver`): a room post, or a DM addressed to us.
-    /// Someone else's DM, and every group frame, is only relayed.
+    /// A chat frame (`InboundPipeline.handleChat` and `decryptAndDeliver`): a room post, a DM addressed to us, or a
+    /// group message (``handleGroupChat(_:group:sender:)``). Someone else's DM is only relayed.
     func handleChat(_ envelope: RelayEnvelope) {
-        guard envelope.group == nil, let sender = NodeId(envelope.senderId) else {
+        guard let sender = NodeId(envelope.senderId) else {
+            return
+        }
+        // A group message names no recipient, so it is told apart before the DM check would take it for the room.
+        if let group = envelope.group {
+            handleGroupChat(envelope, group: group, sender: sender)
             return
         }
         let recipient = envelope.recipientId.flatMap(NodeId.init)
@@ -179,19 +188,21 @@ extension MeshEngine {
         acknowledge(envelope, sender: sender)
     }
 
-    /// Whether a conversation is accepted rather than a message request (`InboundPipeline.isAccepted`).
+    /// Whether a conversation is accepted rather than a message request (`InboundPipeline.isAccepted`). A group is
+    /// also accepted once someone we know writes in it.
     func isAccepted(_ conversation: String) -> Bool {
         Conversations.isAccepted(
             conversation,
             accepted: stores.conversations.acceptedConversations(),
             verified: stores.peers.verifiedNodeIds(),
-            authored: stores.messages.conversations(authoredBy: nodeId)
+            authored: stores.messages.conversations(authoredBy: nodeId),
+            groupSenders: Conversations.isGroup(conversation) ? stores.messages.senders(in: conversation) : []
         )
     }
 
     /// A delivery receipt (`InboundPipeline.handleReceipt`). It flips ✓✓ on one of our messages only if it is a room
-    /// post, or the receipt comes from the DM's recipient: the forged-ack guard. The custody purge applies the same
-    /// guard on its own.
+    /// post or a group message, which any signed member's tick flips, or the receipt comes from the DM's recipient:
+    /// the forged-ack guard. The custody purge applies the same guard on its own.
     func handleReceipt(_ envelope: RelayEnvelope) {
         guard let receipt = try? ReceiptContent(decoding: envelope.payload) else {
             drop(.undecodable, envelope)
@@ -205,10 +216,10 @@ extension MeshEngine {
         }
     }
 
-    /// Whether `ackId` is one of our messages that `sender` may acknowledge: any room post of ours, or a DM of
-    /// ours addressed to `sender`.
+    /// Whether `ackId` is one of our messages that `sender` may acknowledge: any room post or group message of ours,
+    /// or a DM of ours addressed to `sender`. A status line is no message, so nothing ticks one.
     func isOurs(_ ackId: String, acknowledgedBy sender: String) -> Bool {
-        guard let message = stores.messages.message(ackId), message.senderId == nodeId else {
+        guard let message = stores.messages.message(ackId), message.senderId == nodeId, message.kind == .message else {
             return false
         }
         return message.recipientId == nil || message.recipientId == NodeId(sender)

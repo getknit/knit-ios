@@ -103,7 +103,8 @@ public final class MeshEngine {
     }
 
     /// Starts the node (`MeshManager.seedOwnProfileCustody`): republishes our profile if its stamp is stale, puts it
-    /// in custody, sweeps what expired while we were down, and starts the timers. Idempotent.
+    /// in custody, sweeps what expired while we were down, delivers group chats custody holds and our threads lack,
+    /// and starts the timers. Idempotent.
     public func start() {
         guard !isStarted else {
             return
@@ -111,6 +112,7 @@ public final class MeshEngine {
         republishIfStale()
         _ = ownProfile()
         sweep()
+        replayCustodiedGroupChats()
         let now = clock.monotonicMilliseconds()
         timers = Timers(
             reoffer: now + configuration.reofferMilliseconds,

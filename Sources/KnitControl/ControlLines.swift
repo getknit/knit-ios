@@ -42,6 +42,18 @@ internal enum ControlLines {
         ]
     }
 
+    /// A group as this node holds it: its name, the members still in it and those who left, in roster order.
+    static func fields(of group: GroupRecord) -> [String: JSONValue] {
+        [
+            "id": .string(group.id),
+            "name": .string(group.name),
+            "createdBy": .string(group.createdBy),
+            "members": .array(group.members.map(JSONValue.string)),
+            "departed": .array(group.departed.map(JSONValue.string)),
+            "left": .bool(group.hasLeft),
+        ]
+    }
+
     /// A carried frame's addressing, for the `custody` reply.
     static func describe(_ envelope: RelayEnvelope) -> JSONValue {
         .object([

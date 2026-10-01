@@ -124,6 +124,13 @@ public actor MeshControl {
             return ControlLines.linkChanges(from: linked, to: neighbors)
         case .radioChanged(let state):
             return [JSONValue.object(["event": "radio", "state": .string("\(state)")]).line]
+        case .groupChanged(let id):
+            guard let group = stores.groups.group(id) else {
+                return []
+            }
+            var fields = ControlLines.fields(of: group)
+            fields["event"] = "group"
+            return [JSONValue.object(fields).line]
         }
     }
 

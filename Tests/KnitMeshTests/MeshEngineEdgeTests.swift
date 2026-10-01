@@ -50,30 +50,6 @@ import Testing
         #expect(fixture.engine.dropped.isEmpty, "unsigned by design, so not a drop")
     }
 
-    @Test func aGroupMessageIsCarriedAndRelayedButNeverDelivered() throws {
-        let fixture = EngineFixture(alice)
-        fixture.link(bob, carol)
-        try fixture.pin(bob)
-        fixture.transport.clear()
-        _ = fixture.engine.drainEvents()
-        let sealed = EncEnvelope(nonce: Array(repeating: 1, count: 12), ct: Array(repeating: 2, count: 32), keys: [])
-        let members = [bob.nodeId.string, alice.nodeId.string]
-        let group = GroupInfo(id: "g-0123456789abcdef01234567", members: members, createdBy: bob.nodeId.string)
-        let envelope = RelayEnvelope(
-            type: .chat,
-            id: "group-1",
-            senderId: bob.nodeId.string,
-            sentAt: EngineFixture.start,
-            group: group,
-            payload: ChatContent(enc: sealed).encoded
-        )
-        fixture.deliver(try bob.signed(envelope), from: bob)
-        #expect(received(fixture.engine.drainEvents()).isEmpty)
-        #expect(fixture.stores.custody.contains("group-1"))
-        fixture.advance(150)
-        #expect(fixture.transport.written(.chat).map(\.to) == [carol.nodeId])
-    }
-
     @Test func aSealedRoomPostCannotBeOpened() throws {
         let fixture = EngineFixture(alice)
         try fixture.pin(bob)

@@ -3,13 +3,15 @@ public import KnitWire
 
 /// Something the mesh did that the app should know about.
 public enum MeshEvent: Sendable, Equatable {
-    /// A message reached us for the first time. `isRequest` when it came in a DM the user has not accepted: it is
-    /// stored, and not notified.
+    /// A message reached us for the first time. `isRequest` when it came in a DM or group the user has not accepted:
+    /// it is stored, and not notified.
     case received(MessageRecord, isRequest: Bool)
     /// A receipt came back for one of our messages: ✓✓.
     case delivered(messageId: String)
-    /// One of our DMs that waited for its recipient's key was sealed and sent: ✓.
+    /// One of our messages that waited for a key was sealed and sent: ✓.
     case sent(messageId: String)
+    /// A group changed: we made, renamed or left it, or a frame changed its roster, its name or its status lines.
+    case groupChanged(String)
     /// A peer's profile pinned or changed.
     case peerUpdated(NodeId)
     /// The live links changed.
@@ -35,6 +37,11 @@ public enum DropReason: Sendable, Hashable, CaseIterable {
     case cannotOpen
     /// A DM with no encryption. Android never sends one, so it is not shown as one.
     case cleartextDirect
+    /// A group message with no encryption. Android never sends one either.
+    case cleartextGroup
+    /// A group frame naming us whose roster fails the pin, the id's hash or the sender rules
+    /// (`GROUP_ROSTER_REFUSED`).
+    case rosterRefused
     /// A profile trying to change a pinned key.
     case pinChangeRefused
 }

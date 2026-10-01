@@ -48,7 +48,26 @@ extension Copy {
                     value: "Dropped: key change refused",
                     comment: "A drop counter"
                 )
+            case .cleartextGroup, .rosterRefused:
+                groupReason(reason)
             }
+        }
+
+        /// The labels for the drops only groups have.
+        private static func groupReason(_ reason: DropReason) -> String {
+            reason == .cleartextGroup
+                ? NSLocalizedString(
+                    "diagnostics.drop.cleartext-group",
+                    bundle: .main,
+                    value: "Dropped: unencrypted group message",
+                    comment: "A drop counter"
+                )
+                : NSLocalizedString(
+                    "diagnostics.drop.roster-refused",
+                    bundle: .main,
+                    value: "Dropped: group roster refused",
+                    comment: "A drop counter: a group message whose member list fails the checks"
+                )
         }
     }
 
