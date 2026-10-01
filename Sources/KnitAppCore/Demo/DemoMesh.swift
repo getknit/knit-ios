@@ -107,6 +107,26 @@ public final class DemoMesh: MeshService {
         await mesh.accept(conversationId)
     }
 
+    /// Makes a group, whose first message will wait in custody.
+    public func createGroup(with others: [NodeId]) async -> GroupRecord? {
+        await mesh.createGroup(with: others)
+    }
+
+    /// Sends a group message, which waits in custody.
+    public func sendGroupMessage(_ text: String, to groupId: String) async -> MessageRecord? {
+        await mesh.sendGroupMessage(text, to: groupId)
+    }
+
+    /// Renames a group.
+    public func renameGroup(_ groupId: String, to name: String) async -> GroupRecord? {
+        await mesh.renameGroup(groupId, to: name)
+    }
+
+    /// Leaves a group.
+    public func leaveGroup(_ groupId: String) async -> Bool {
+        await mesh.leaveGroup(groupId)
+    }
+
     /// Changes our profile.
     public func updateProfile(name: String, status: String, openToChat: Bool) async {
         await mesh.updateProfile(name: name, status: status, openToChat: openToChat)

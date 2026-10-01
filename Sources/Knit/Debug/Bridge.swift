@@ -100,5 +100,21 @@
         func updateProfile(name: String, status: String, openToChat: Bool) async {
             await session.updateProfile(name: name, status: status, openToChat: openToChat)
         }
+
+        func createGroup(with others: [NodeId]) async -> GroupRecord? {
+            await session.createGroup(with: others)
+        }
+
+        func sendGroupMessage(_ text: String, to groupId: String) async -> MessageRecord? {
+            await session.send(text, in: groupId)
+        }
+
+        func renameGroup(_ groupId: String, to name: String) async -> GroupRecord? {
+            await session.renameGroup(groupId, to: name)
+        }
+
+        func leaveGroup(_ groupId: String) async -> Bool {
+            await session.leaveGroup(groupId)
+        }
     }
 #endif

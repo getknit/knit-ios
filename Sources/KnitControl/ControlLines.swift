@@ -39,6 +39,7 @@ internal enum ControlLines {
             "arrivedAt": record.arrivedAt.map(JSONValue.int) ?? .null,
             "delivered": .bool(record.delivered),
             "pendingKey": .bool(record.pendingKey),
+            "kind": .int(Int64(record.kind.rawValue)),
         ]
     }
 

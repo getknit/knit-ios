@@ -28,6 +28,11 @@ import Testing
             (#"{"cmd":"allow-link","peer":"\#(peer)"}"#, .allowLink(peer)),
             (#"{"cmd":"messages","conv":"nearby"}"#, .messages("nearby", limit: 20)),
             (#"{"cmd":"messages","conv":"nearby","limit":0}"#, .messages("nearby", limit: 1)),
+            (#"{"cmd":"group-create","members":["\#(peer)"]}"#, .group(.create([peer]))),
+            (#"{"cmd":"group-send","conv":"g-1","text":"hi"}"#, .group(.send("g-1", text: "hi"))),
+            (#"{"cmd":"group-rename","conv":"g-1","name":"Pair"}"#, .group(.rename("g-1", name: "Pair"))),
+            (#"{"cmd":"group-leave","conv":"g-1"}"#, .group(.leave("g-1"))),
+            (#"{"cmd":"groups"}"#, .group(.list)),
         ]
         for (line, command) in cases {
             #expect(try ControlRequest.parse(line).get() == ControlRequest(command: command, tag: nil), "\(line)")
@@ -46,6 +51,12 @@ import Testing
             (#"{"cmd":"accept"}"#, .missing("conv")),
             (#"{"cmd":"deny-link"}"#, .missing("peer")),
             (#"{"cmd":"messages"}"#, .missing("conv")),
+            (#"{"cmd":"group-create"}"#, .missing("members")),
+            (#"{"cmd":"group-create","members":["NOPE"]}"#, .invalidNodeId("NOPE")),
+            (#"{"cmd":"group-send","conv":"g-1"}"#, .missing("text")),
+            (#"{"cmd":"group-send","text":"hi"}"#, .missing("conv")),
+            (#"{"cmd":"group-rename","conv":"g-1"}"#, .missing("name")),
+            (#"{"cmd":"group-leave"}"#, .missing("conv")),
         ]
         for (line, error) in cases {
             #expect(throws: error) { try ControlRequest.parse(line).get() }
@@ -63,12 +74,13 @@ import Testing
             ControlCommand.status, .peers, .links, .room(""), .directMessage(to: peer, text: ""), .accept(""),
             .name(nil, status: nil, openToChat: nil),
             .denyLink(peer), .allowLink(peer), .digest, .custody, .messages("", limit: 1), .stop, .start, .quit,
+            .group(.create([])), .group(.send("", text: "")), .group(.rename("", name: "")), .group(.leave("")), .group(.list),
         ]
         .map(\.name)
         #expect(
             names == [
                 "status", "peers", "links", "room", "dm", "accept", "name", "deny-link", "allow-link", "digest", "custody",
-                "messages", "stop", "start", "quit",
+                "messages", "stop", "start", "quit", "group-create", "group-send", "group-rename", "group-leave", "groups",
             ])
     }
 

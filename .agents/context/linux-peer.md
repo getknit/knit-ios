@@ -118,10 +118,17 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   safety numbers), `links` (links and sightings), `room` (`text`),
   `dm` (`to`, `text`), `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `deny-link` and
   `allow-link` (`peer`), `digest` (live custody ids and their fingerprint), `custody` (every live frame),
-  `messages` (`conv`, `limit`), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the
+  `messages` (`conv`, `limit`; each message carries its `kind`, 0 for a message and Android's notice codes for a
+  status line), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the
   peer exits; the app's bridge only closes the connection).
+- **Group commands** (ADR 2026-09.n393):
+  - `group-create` (`members`, the others' node ids) makes a group, or opens the one they already share. Nothing
+    is sent until its first message.
+  - `group-send` (`conv`, `text`), `group-rename` (`conv`, `name`) and `group-leave` (`conv`) act on a group.
+  - `groups` lists every group held, left ones included. `status` counts them.
 - **Events** are `ready` (with `radioProfile`, and `host` and `version` from the app), `link` (`up` true or false), `profile`, `message` (with `request` for a stranger's
-  first DM), `sent`, `delivered` and `radio` (`state`: `on`, `off`, `unauthorized` or `unsupported`).
+  first DM or group), `sent`, `delivered`, `radio` (`state`: `on`, `off`, `unauthorized` or `unsupported`) and
+  `group` (`id`, `name`, `members`, `departed` and `left`, whenever a group changes).
 - **Log lines** carry `ms`, the wall-clock time, so they line up with a phone's logcat.
 
 `scripts/interop.py` runs checklist L against one phone through knit-next's debug bridge: `check` in either

@@ -171,13 +171,19 @@ import Testing
         await mesh.accept("c1")
         await mesh.updateProfile(name: "Maya", status: "", openToChat: true)
         await mesh.setVerified(sam.nodeId, true)
+        let group = await mesh.createGroup(with: [sam.nodeId])
+        let id = group?.id ?? ""
+        #expect(await mesh.sendGroupMessage("all", to: id) != nil)
+        #expect(await mesh.renameGroup(id, to: "Pair")?.name == "Pair")
+        #expect(await mesh.leaveGroup(id))
         let expected = FakeMesh.Calls(
             starts: 1,
             room: ["hi"],
             direct: ["\(sam.nodeId): hey"],
             accepted: ["c1"],
             verified: ["\(sam.nodeId): true"],
-            profiles: ["Maya||true"]
+            profiles: ["Maya||true"],
+            groups: ["create \(sam.nodeId)", "send \(id): all", "rename \(id): Pair", "leave \(id)"]
         )
         #expect(fake.calls == expected)
         var events = mesh.events.makeAsyncIterator()

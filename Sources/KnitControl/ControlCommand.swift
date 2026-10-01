@@ -30,6 +30,8 @@ public enum ControlCommand: Equatable, Sendable {
     case custody
     /// `{"cmd":"messages","conv":"nearby","limit":20}`: a thread's newest messages and their ticks.
     case messages(String, limit: Int)
+    /// One of the group commands.
+    case group(GroupCommand)
     /// `{"cmd":"stop"}`: stop the mesh, closing every link, as Settings' Stop does.
     case stop
     /// `{"cmd":"start"}`: start it again.
@@ -64,12 +66,45 @@ public enum ControlCommand: Equatable, Sendable {
             "custody"
         case .messages:
             "messages"
+        case .group(let command):
+            command.name
         case .stop:
             "stop"
         case .start:
             "start"
         case .quit:
             "quit"
+        }
+    }
+}
+
+/// A control command about groups (ADR 2026-09.n393).
+public enum GroupCommand: Equatable, Sendable {
+    /// `{"cmd":"group-create","members":["<node id>",…]}`: a group of those people and us, or the one they already
+    /// share. Nothing is sent until its first message.
+    case create([NodeId])
+    /// `{"cmd":"group-send","conv":"<group id>","text":"…"}`: a message to a group.
+    case send(String, text: String)
+    /// `{"cmd":"group-rename","conv":"<group id>","name":"…"}`: rename a group, and tell its members.
+    case rename(String, name: String)
+    /// `{"cmd":"group-leave","conv":"<group id>"}`: leave a group, and tell its members.
+    case leave(String)
+    /// `{"cmd":"groups"}`: every group held, left ones included.
+    case list
+
+    /// The name a reply carries back.
+    public var name: String {
+        switch self {
+        case .create:
+            "group-create"
+        case .send:
+            "group-send"
+        case .rename:
+            "group-rename"
+        case .leave:
+            "group-leave"
+        case .list:
+            "groups"
         }
     }
 }
@@ -100,6 +135,7 @@ public struct ControlRequest: Equatable, Sendable {
         var status: String?
         var openToChat: Bool? // swiftlint:disable:this discouraged_optional_boolean
         var limit: Int?
+        var members: [String]?
         var tag: String?
     }
 
@@ -144,8 +180,39 @@ public struct ControlRequest: Equatable, Sendable {
         case "messages":
             required(raw.conv, "conv").map { .messages($0, limit: max(1, raw.limit ?? defaultLimit)) }
         default:
+            groupCommand(from: raw).map(ControlCommand.group)
+        }
+    }
+
+    private static func groupCommand(from raw: Raw) -> Result<GroupCommand, ControlError> {
+        switch raw.cmd {
+        case "group-create":
+            members(raw.members).map(GroupCommand.create)
+        case "group-send":
+            required(raw.conv, "conv").flatMap { conv in required(raw.text, "text").map { .send(conv, text: $0) } }
+        case "group-rename":
+            required(raw.conv, "conv").flatMap { conv in required(raw.name, "name").map { .rename(conv, name: $0) } }
+        case "group-leave":
+            required(raw.conv, "conv").map(GroupCommand.leave)
+        case "groups":
+            .success(.list)
+        default:
             .failure(.unknownCommand(raw.cmd))
         }
+    }
+
+    private static func members(_ values: [String]?) -> Result<[NodeId], ControlError> {
+        guard let values else {
+            return .failure(.missing("members"))
+        }
+        var members: [NodeId] = []
+        for value in values {
+            guard let member = NodeId(value) else {
+                return .failure(.invalidNodeId(value))
+            }
+            members.append(member)
+        }
+        return .success(members)
     }
 
     private static func required(_ value: String?, _ field: String) -> Result<String, ControlError> {

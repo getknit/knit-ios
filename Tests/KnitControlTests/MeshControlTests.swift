@@ -45,6 +45,43 @@ import Testing
         #expect(room["ok"] as? Bool == false)
         let direct = try await rig.send(#"{"cmd":"dm","to":"\#(fixtureNodeId(4))","text":"psst"}"#)
         #expect(direct["ok"] as? Bool == false)
+        let lines = [
+            #"{"cmd":"group-create","members":[]}"#,
+            #"{"cmd":"group-send","conv":"g-1","text":"hi"}"#,
+            #"{"cmd":"group-rename","conv":"g-1","name":"x"}"#,
+            #"{"cmd":"group-leave","conv":"g-1"}"#,
+        ]
+        for line in lines {
+            let reply = try await rig.send(line)
+            #expect(reply["ok"] as? Bool == false, "\(line)")
+            #expect((reply["error"] as? String)?.isEmpty == false)
+        }
+    }
+
+    @Test func groupCommandsGoThroughTheActionsGiven() async throws {
+        let actions = RecordingActions(me: fixtureNodeId(1))
+        let rig = ControlRig(actions: actions)
+        let peer = fixtureNodeId(4)
+        let made = try await rig.send(#"{"cmd":"group-create","members":["\#(peer)"]}"#)
+        #expect(made["id"] as? String == "g-1" && made["reply"] as? String == "group-create")
+        let sent = try await rig.send(#"{"cmd":"group-send","conv":"g-1","text":"hi"}"#)
+        #expect(sent["id"] as? String == "group-hi" && sent["pendingKey"] as? Bool == false)
+        let renamed = try await rig.send(#"{"cmd":"group-rename","conv":"g-1","name":"Pair"}"#)
+        #expect(renamed["name"] as? String == "Pair")
+        let left = try await rig.send(#"{"cmd":"group-leave","conv":"g-1"}"#)
+        #expect(left["conv"] as? String == "g-1")
+        #expect(actions.calls == ["group-create \(peer)", "group-send g-1 hi", "group-rename g-1 Pair", "group-leave g-1"])
+    }
+
+    @Test func groupsListsEveryGroupHeldAndStatusCountsThem() async throws {
+        let rig = ControlRig()
+        let me = rig.keys.nodeId.string
+        rig.stores.groups.save(GroupRecord(id: "g-2", name: "Two", createdBy: me, createdAt: 1, roster: [GroupMember(nodeId: me)]))
+        rig.stores.groups.save(GroupRecord(id: "g-1", createdBy: me, createdAt: 1, hasLeft: true, roster: [GroupMember(nodeId: me)]))
+        let listed = try #require(try await rig.send(#"{"cmd":"groups"}"#)["groups"] as? [[String: Any]])
+        #expect(listed.map { $0["id"] as? String } == ["g-1", "g-2"])
+        #expect(listed.map { $0["left"] as? Bool } == [true, false])
+        #expect(try await rig.send(#"{"cmd":"status"}"#)["groups"] as? Int == 2)
     }
 
     @Test func stopAndStartSayWhetherTheMeshRuns() async throws {
@@ -226,6 +263,31 @@ private final class RecordingActions: ControlActions {
 
     func updateProfile(name: String, status: String, openToChat: Bool) {
         record("profile \(name) \(status) \(openToChat)")
+    }
+
+    func createGroup(with others: [NodeId]) -> GroupRecord? {
+        record("group-create \(others.map(\.string).joined(separator: ","))")
+        return refuses ? nil : group(named: "")
+    }
+
+    func sendGroupMessage(_ text: String, to groupId: String) -> MessageRecord? {
+        record("group-send \(groupId) \(text)")
+        return refuses
+            ? nil : MessageRecord(id: "group-\(text)", senderId: me, recipientId: nil, conversationId: groupId, body: text, sentAt: 1)
+    }
+
+    func renameGroup(_ groupId: String, to name: String) -> GroupRecord? {
+        record("group-rename \(groupId) \(name)")
+        return refuses ? nil : group(named: name)
+    }
+
+    func leaveGroup(_ groupId: String) -> Bool {
+        record("group-leave \(groupId)")
+        return !refuses
+    }
+
+    private func group(named name: String) -> GroupRecord {
+        GroupRecord(id: "g-1", name: name, createdBy: me.string, createdAt: 1, roster: [GroupMember(nodeId: me.string)])
     }
 
     private func record(_ call: String) {

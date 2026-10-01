@@ -104,8 +104,8 @@ public final class AppSession {
 
     // MARK: Actions
 
-    /// Sends `text` in a thread: the room, or a DM to the node id the thread is named for. Answers what was stored,
-    /// or `nil` when there is nothing to send.
+    /// Sends `text` in a thread: the room, a group, or a DM to the node id the thread is named for. Answers what was
+    /// stored, or `nil` when there is nothing to send.
     @discardableResult
     public func send(_ text: String, in conversationId: String) async -> MessageRecord? {
         guard let body = Composer.body(of: text) else {
@@ -114,6 +114,8 @@ public final class AppSession {
         let sent: MessageRecord?
         if conversationId == Conversations.nearby {
             sent = await mesh.postToRoom(body)
+        } else if Conversations.isGroup(conversationId) {
+            sent = await mesh.sendGroupMessage(body, to: conversationId)
         } else if let recipient = NodeId(conversationId), recipient != identity.nodeId {
             sent = await mesh.sendDirectMessage(body, to: recipient)
         } else {
@@ -121,6 +123,32 @@ public final class AppSession {
         }
         revision += 1
         return sent
+    }
+
+    /// Makes a group with `others`, or opens the one they already share. Answers it, or `nil` for a pick the mesh
+    /// refuses.
+    @discardableResult
+    public func createGroup(with others: [NodeId]) async -> GroupRecord? {
+        let group = await mesh.createGroup(with: others)
+        revision += 1
+        return group
+    }
+
+    /// Renames a group, and tells its members. Answers it, or `nil` for a blank name or a group we are not in.
+    @discardableResult
+    public func renameGroup(_ groupId: String, to name: String) async -> GroupRecord? {
+        let group = await mesh.renameGroup(groupId, to: name)
+        revision += 1
+        return group
+    }
+
+    /// Leaves a group: its members hear of it, and its thread and notifications go. Answers whether we were in it.
+    @discardableResult
+    public func leaveGroup(_ groupId: String) async -> Bool {
+        let left = await mesh.leaveGroup(groupId)
+        revision += 1
+        await notifier?.withdraw(threadId: groupId)
+        return left
     }
 
     /// Accepts a message request, and takes back the requests notification once none waits.

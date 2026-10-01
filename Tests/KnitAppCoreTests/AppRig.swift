@@ -47,6 +47,7 @@ final class FakeMesh: MeshService {
         var accepted: [String] = []
         var verified: [String] = []
         var profiles: [String] = []
+        var groups: [String] = []
     }
 
     let nodeId: NodeId
@@ -126,6 +127,49 @@ final class FakeMesh: MeshService {
         stores.ownProfile.save(own)
     }
 
+    func createGroup(with others: [NodeId]) -> GroupRecord? {
+        state.withLock { $0.calls.groups.append("create \(others.map(\.string).joined(separator: ","))") }
+        guard !others.isEmpty else {
+            return nil
+        }
+        let members = (others + [nodeId]).map(\.string)
+        let group = GroupRecord(
+            id: GroupId.derive(members), createdBy: nodeId.string, createdAt: clock, roster: members.map { GroupMember(nodeId: $0) })
+        stores.groups.save(group)
+        stores.messages.save(StatusNotices.groupCreated(group.id, by: nodeId, at: clock))
+        return group
+    }
+
+    func sendGroupMessage(_ text: String, to groupId: String) -> MessageRecord? {
+        state.withLock { $0.calls.groups.append("send \(groupId): \(text)") }
+        guard stores.groups.group(groupId)?.hasLeft == false else {
+            return nil
+        }
+        return store(text, to: nil, in: groupId)
+    }
+
+    func renameGroup(_ groupId: String, to name: String) -> GroupRecord? {
+        state.withLock { $0.calls.groups.append("rename \(groupId): \(name)") }
+        guard var group = stores.groups.group(groupId), let normalized = TextLimits.outgoingGroupName(name) else {
+            return nil
+        }
+        group.name = normalized
+        group.nameUpdatedAt = clock
+        stores.groups.save(group)
+        return group
+    }
+
+    func leaveGroup(_ groupId: String) -> Bool {
+        state.withLock { $0.calls.groups.append("leave \(groupId)") }
+        guard var group = stores.groups.group(groupId), !group.hasLeft else {
+            return false
+        }
+        stores.messages.deleteMessages(in: groupId)
+        group.hasLeft = true
+        stores.groups.save(group)
+        return true
+    }
+
     func setVerified(_ peer: NodeId, _ verified: Bool) {
         state.withLock { $0.calls.verified.append("\(peer): \(verified)") }
         if var record = stores.peers.peer(peer) {
@@ -134,7 +178,7 @@ final class FakeMesh: MeshService {
         }
     }
 
-    private func store(_ text: String, to recipient: NodeId?) -> MessageRecord {
+    private func store(_ text: String, to recipient: NodeId?, in group: String? = nil) -> MessageRecord {
         let index = state.withLock { state in
             defer { state.next += 1 }
             return state.next
@@ -143,7 +187,7 @@ final class FakeMesh: MeshService {
             id: "sent-\(index)",
             senderId: nodeId,
             recipientId: recipient,
-            conversationId: Conversations.id(sender: nodeId, recipient: recipient, me: nodeId),
+            conversationId: Conversations.id(sender: nodeId, recipient: recipient, group: group, me: nodeId),
             body: text,
             sentAt: clock + Int64(index),
             pendingKey: recipient.map { stores.peers.peer($0) == nil } ?? false

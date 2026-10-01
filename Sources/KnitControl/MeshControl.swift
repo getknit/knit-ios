@@ -18,6 +18,14 @@ public protocol ControlActions: Sendable {
     func accept(_ conversationId: String) async
     /// Changes our profile and floods it.
     func updateProfile(name: String, status: String, openToChat: Bool) async
+    /// Makes a group with `others`, or opens the one they already share.
+    func createGroup(with others: [NodeId]) async -> GroupRecord?
+    /// Sends a message to a group.
+    func sendGroupMessage(_ text: String, to groupId: String) async -> MessageRecord?
+    /// Renames a group and floods the change.
+    func renameGroup(_ groupId: String, to name: String) async -> GroupRecord?
+    /// Leaves a group, telling its members.
+    func leaveGroup(_ groupId: String) async -> Bool
 }
 
 extension Mesh: ControlActions {}
@@ -26,7 +34,7 @@ extension Mesh: ControlActions {}
 /// on standard input and output, and a debug build of the app speaks over USB.
 ///
 /// Replies carry `"reply"` with the command's name, `"ok"`, and the caller's `"tag"`; events carry `"event"`
-/// (`ready`, `link`, `profile`, `message`, `sent`, `delivered` and `radio`).
+/// (`ready`, `link`, `profile`, `message`, `sent`, `delivered`, `radio` and `group`).
 public actor MeshControl {
     /// One reply line, and whether the caller asked to quit.
     public struct Reply: Equatable, Sendable {
@@ -173,6 +181,8 @@ public actor MeshControl {
         case .messages(let conversation, let limit):
             let messages = stores.messages.messages(in: conversation).suffix(limit)
             return .success(["conv": .string(conversation), "messages": .array(messages.map { .object(ControlLines.fields(of: $0)) })])
+        case .group(let command):
+            return await answer(command)
         case .stop:
             await actions.stop()
             return .success(["running": .bool(await mesh.isRunning)])
@@ -181,6 +191,33 @@ public actor MeshControl {
             return .success(["running": .bool(await mesh.isRunning)])
         case .quit:
             return .success([:])
+        }
+    }
+
+    private func answer(_ command: GroupCommand) async -> Result<[String: JSONValue], ControlError> {
+        switch command {
+        case .create(let members):
+            guard let group = await actions.createGroup(with: members) else {
+                return .failure(.refused("a group takes one to seven others"))
+            }
+            return .success(ControlLines.fields(of: group))
+        case .send(let conversation, let text):
+            guard let record = await actions.sendGroupMessage(text, to: conversation) else {
+                return .failure(.refused("a blank message, or one to a group we are not in or nobody else is left in, is not sent"))
+            }
+            return .success(["id": .string(record.id), "pendingKey": .bool(record.pendingKey)])
+        case .rename(let conversation, let name):
+            guard let group = await actions.renameGroup(conversation, to: name) else {
+                return .failure(.refused("a blank name, or a group we are not in, is not renamed"))
+            }
+            return .success(ControlLines.fields(of: group))
+        case .leave(let conversation):
+            guard await actions.leaveGroup(conversation) else {
+                return .failure(.refused("not in that group"))
+            }
+            return .success(["conv": .string(conversation)])
+        case .list:
+            return .success(["groups": .array(stores.groups.groups().map { .object(ControlLines.fields(of: $0)) })])
         }
     }
 
@@ -219,6 +256,7 @@ public actor MeshControl {
             "links": .int(Int64(await mesh.neighbors.count)),
             "sighted": .int(Int64(await mesh.sightings.count)),
             "peers": .int(Int64(stores.peers.allPeers().count)),
+            "groups": .int(Int64(stores.groups.groups().count)),
             "custody": .int(Int64(stores.custody.liveIds(now: clock.wallMilliseconds()).count)),
             "dropped": .object(Dictionary(dropped) { first, _ in first }),
             "fileRecords": .int(Int64(await mesh.discardedFileRecords)),

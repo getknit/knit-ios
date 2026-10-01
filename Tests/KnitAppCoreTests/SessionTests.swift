@@ -70,6 +70,28 @@ import Testing
         #expect(rig.mesh.calls.direct == ["\(AppRig.sam.nodeId): Hi Sam"])
     }
 
+    @Test func aGroupsThreadSendsToTheGroup() async throws {
+        let rig = AppRig()
+        let group = try #require(await rig.session.createGroup(with: [AppRig.sam.nodeId, AppRig.priya.nodeId]))
+        let sent = try #require(await rig.session.send("Hi all", in: group.id))
+        #expect(sent.conversationId == group.id && sent.recipientId == nil)
+        #expect(rig.mesh.calls.groups.last == "send \(group.id): Hi all")
+        #expect(rig.mesh.calls.direct.isEmpty)
+    }
+
+    @Test func aGroupIsMadeRenamedAndLeftThroughTheMesh() async throws {
+        let rig = AppRig()
+        let revision = rig.session.revision
+        #expect(await rig.session.createGroup(with: []) == nil)
+        let group = try #require(await rig.session.createGroup(with: [AppRig.sam.nodeId]))
+        #expect(await rig.session.renameGroup(group.id, to: "Pair")?.name == "Pair")
+        #expect(await rig.session.leaveGroup(group.id))
+        #expect(!(await rig.session.leaveGroup(group.id)), "already left")
+        #expect(rig.session.revision == revision + 5, "every change moves the revision")
+        #expect(rig.notifier.withdrawn.contains(group.id), "leaving takes its notifications back")
+        #expect(rig.stores.groups.group(group.id)?.hasLeft == true)
+    }
+
     @Test func nothingIsSentWhereThereIsNothingToSendOrNobodyToSendTo() async {
         let rig = AppRig()
         let revision = rig.session.revision
