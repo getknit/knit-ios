@@ -18,6 +18,9 @@ that meets someone later hands over what it was carrying for them.
 - **Direct messages are end-to-end encrypted.** The phones that carry a direct message cannot read it. The
   first release uses Knit's static-key scheme, which has no forward secrecy; the epoch ratchet that Knit
   for Android already runs comes next.
+- **Group chats are end-to-end encrypted too.** Start one with up to seven people you've chatted with or
+  verified. Only its members can read its messages. The group's name and member list travel unencrypted, and
+  group messages, like direct ones, have no forward secrecy yet.
 - **The Nearby room is open to everyone in range.** Posts are signed, so nobody can post as you, but they
   are not encrypted.
 - **It meshes with Android.** An iPhone speaks the same protocol as Knit for Android and relays for Android

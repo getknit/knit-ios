@@ -121,6 +121,7 @@ All paths are under `app/src/main/java/app/getknit/knit/` unless they start with
 | The CBOR envelope and every payload type | `mesh/protocol/Wire.kt`, `Protocol.kt`, `FrameId.kt`, `CanonicalText.kt` |
 | Keys, node ids, DM sealing, safety numbers, aliases | `mesh/crypto/PublicKeyBundle.kt`, `MessageCrypto.kt`, `SafetyNumber.kt`, `identity/NodeId.kt`, `Alias.kt`, `AliasWords.kt` |
 | Flooding, dedup, custody, sync, receipts, key recovery | `mesh/MeshRouter.kt`, `SeenSet.kt`, `ForwardSync.kt`, `data/forward/ForwardRepository.kt`, `mesh/InboundPipeline.kt`, `MeshManager.kt`, `AckSync.kt`, `KeyExchange.kt`, `PendingInbound.kt`, `IngressBudget.kt` |
+| Groups: ids, rosters, rename, leave and status lines | `data/message/Conversations.kt` (`groupIdFor`), `GroupNaming.kt`, `StatusNotices.kt`, `data/GroupRepository.kt`, `data/group/GroupEntity.kt`, `mesh/InboundPipeline.kt` (`reconcileGroup`, `rejoinBy`, `vetRoster`, `handleGroupLeave`), `MeshManager.kt`, `ui/contacts/ContactUniverse.kt`, `ui/group/`; `docs/GROUP_FORWARD_SECRECY.md` for v1 against v2 |
 | Byte-exact fixtures | `vectors/` (`wire-v1.json`, `keyed-v1.json`, `ios-emitted-v1.json`; `vectors/README.md`), checked by `mesh/protocol/GoldenVectorTest`, `KeyedVectorTest` and `IosEmittedVectorTest`; also `NodeIdTest.kt` and `AliasTest.kt` |
 | The additive-change rules | `docs/WIRE_COMPAT.md`, `docs/NEXT_WIRE_BREAK.md` |
 

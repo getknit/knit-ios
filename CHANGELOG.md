@@ -27,6 +27,9 @@ document:
 - Knit stays readable at the largest text sizes, and its text and buttons meet the contrast WCAG AA sets for
   normal text. Chats, message requests and onboarding rearrange as the text grows, so names and buttons keep
   their room.
+- You can start a group with up to seven people you've chatted with or verified, rename it or leave it, and
+  take part in groups started on Android phones. Group messages that reached your iPhone in the day before you
+  update show up in their chats.
 
 ## About this file
 

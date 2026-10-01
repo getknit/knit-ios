@@ -127,7 +127,9 @@ From `docs/WIRE_COMPAT.md`:
 Adding a custodial type is a flag day, not an additive change. Breaking changes wait in knit-next's
 `docs/NEXT_WIRE_BREAK.md` so one future break carries them all.
 
-## What the MVP sends and understands
+## What this build sends and understands
+
+Groups joined the MVP's frames on 2026-09-30 (ADR 2026-09.n393).
 
 | Frame | We send | We receive |
 | --- | --- | --- |
@@ -135,11 +137,15 @@ Adding a custodial type is a flag day, not an additive change. Breaking changes 
 | `chat` DM, `enc.v = 1` | yes | yes, always |
 | `chat` DM, `enc.v = 2` or `3` | no (`CAP_RATCHET` stays off) | carry and relay; cannot open |
 | `chat` room post (no recipient, no group) | yes, signed and cleartext | yes |
+| `chat` group message, `enc.v = 1`, roster in `group` | yes, wrapped to each keyed member | yes, after the roster rules (`GroupRoster`) |
+| `chat` group message, `enc.v = 2` (the group ratchet) | no (`CAP_RATCHET` stays off) | carry and relay; cannot open |
+| `groupupdate`, empty payload, roster in `group` | on rename | yes: name and roster |
+| `groupleave`, `GroupLeaveContent`, no `group` | on leave | yes: the sender departs |
 | `receipt`, `relay = true`, `sentAt` set | our DM acks | yes: ✓✓ on our DMs |
-| `receipt`, `relay = false`, no `sentAt` | room ticks over the link | yes: Android's room ticks to us |
+| `receipt`, `relay = false`, no `sentAt` | room and group ticks over the link | yes: Android's room and group ticks to us |
 | `keyreq` (`relay = false`, signed) | when a sender's key is missing | answer with cached signed profiles |
 | `blobreq` (unsigned) | no | ignore; we publish no avatar |
-| `reaction`, `typing`, group frames, `commons`, unknown types | no | carry and relay where custodial; never crash |
+| `reaction`, `typing`, `commons`, unknown types | no | carry and relay where custodial; never crash |
 
 ## Golden vectors
 

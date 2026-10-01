@@ -9,8 +9,9 @@ Rules for any text a person reads.
   descriptions.
 - **Legal text goes through neither:** `COPYING`, `DCO`, `APP-STORE-EXCEPTION.md`. It changes only on
   purpose, with a lawyer's read for the exception.
-- **Scope every security claim to what it covers.** Direct messages are end-to-end encrypted. The Nearby
-  room is open to everyone in range. v1 DMs have no forward secrecy yet.
+- **Scope every security claim to what it covers.** Direct and group messages are end-to-end encrypted. A
+  group's name and member list are not, and neither are its delivery ticks. The Nearby room is open to
+  everyone in range. v1 DMs and groups have no forward secrecy yet.
 - **Name the boundary once, and plainly.** The iPhone finds new people while Knit is open. In the background
   its links stay up, but a suspended Knit reads them only when a phone wakes it (ADR 2026-09.khjj), so say
   that some phones' messages wait until Knit is next open. Never say open links "keep working".

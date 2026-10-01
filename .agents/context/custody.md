@@ -86,8 +86,10 @@ publish it honestly.
 
 - **Our DM receipt:** type `receipt`, `sentAt = now`, no `recipientId`, `relay = true`, custodied. It is sent
   on every delivery, repeats included.
-- **Room ticks:** `relay = false`, no `sentAt`, a fresh id each attempt, never custodied, sent only over a
-  live link. Android sends them to a non-ratchet author for up to 24 h, one per link-up.
+- **Room and group ticks:** `relay = false`, no `sentAt`, a fresh id each attempt, never custodied, sent
+  only over a live link. Android sends them to a non-ratchet author for up to 24 h, one per link-up. It moves
+  a group tick into custody only for an author who can open a sealed one, which no iPhone can yet
+  (`AckSync.kt`).
 - **The forged-ack guard:** apply an ack only if the acknowledged message is a room or group message, or if
   the receipt comes from that DM's recipient. At most 128 ids per receipt.
 - **There are no read receipts on the wire.** Delivery is the last state a sender sees.
@@ -133,7 +135,7 @@ publish it honestly.
 
 - **Where it lives:** the router is `KnitMesh/Router/Router.swift`, and the custody rules are
   `KnitStore/Custody/CustodyRules.swift`, which every store applies. `KnitMesh/Custody/CustodySync.swift`
-  decides what to carry and serve, `KnitMesh/Receipts/AckSync.swift` owes the room ticks, and
+  decides what to carry and serve, `KnitMesh/Receipts/AckSync.swift` owes the room and group ticks, and
   `KnitMesh/Recovery/` holds key requests and parked frames (ADR 2026-09.p6nb).
 - **Two stores apply them:** `MemoryCustodyStore` for the Linux peer and the tests, and `SQLCustodyStore`
   (`KnitStoreSQL`) for the app. Both run `CustodyRules` over their live rows and the same `CustodyStoreTests`
@@ -145,7 +147,10 @@ publish it honestly.
   `earlyReceipts`. knit-next checks it again after the custody write, for a receipt handled on another dispatcher
   meanwhile; the engine here is synchronous (ADR 2026-09.gq84), so it checks once.
 - **Where the iPhone differs from Android, all of it delivery-side, none of it custody:**
-  - a cleartext DM is dropped, not shown;
+  - a cleartext DM or group message is dropped, not shown;
   - a `blobreq` is ignored rather than asked onward, since the MVP holds no blobs;
-  - group frames are carried and relayed, never shown;
-  - every receipt and room tick is cleartext, because this build cannot seal one.
+  - every receipt and tick, room or group, is cleartext, because this build cannot seal one.
+- **Group messages carried before groups showed** are delivered at start-up: the engine replays each live
+  group `chat` in custody that has no message row, oldest first, as Android's `replayCustodiedGroupFrames`
+  does (`MeshEngine+Groups.swift`, ADR 2026-09.n393). One already delivered is skipped, so it is not ticked
+  again.

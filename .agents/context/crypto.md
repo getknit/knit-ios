@@ -77,6 +77,40 @@ EncEnvelope { nonce: iv, ct, keys: [{ to: recipientId, wk }] }   (v omitted; key
 
 v1 has no forward secrecy: the same static keys open every message a peer ever sent us.
 
+## v1 group sealing and the group id
+
+A v1 group message is sealed the way a DM is, to several people at once (`MeshManager.kt:1159-1179`).
+Android seals a group's message with v1 unless every other member's profile carries `CAP_RATCHET` and a
+prekey, so every group with an iPhone in it is v1 (ADR 2026-09.n393).
+
+```text
+header = UTF-8("{id}|{senderId}|{sentAt}|{groupId}")
+keys   = one wk per member of the effective roster with a pinned bundle, the sender excepted; sorted by `to`
+```
+
+- **The frame** is a `chat` with `relay = true`, no `recipientId`, the roster in the cleartext `group`, and
+  `ChatContent{enc}` (`MeshManager.kt:1933-1952`). The body key, the nonce and the wraps work as a DM's do.
+- **A member whose key the sender lacks is skipped.** The iPhone also sends a `keyreq` for them. When no
+  member has a key yet, the message waits as `pendingKey`, as a DM does; Android stores it as sent and
+  never sends it.
+- **The sender wraps nothing to itself,** so after a wipe it cannot open its own group messages again.
+- **The group id** names the founding set: the members and the departed, the creator among them
+  (`Conversations.kt:161`, `groupIdFor`).
+
+  ```text
+  canonical = sortedDistinct(members + departed).joined(",")
+  groupId   = "g-" + lowercase_hex( SHA-256( UTF-8("knit-group-id-v1:" + canonical) )[0..<12] )
+  ```
+
+  Kotlin's `toSortedSet()` sorts in Java `String` order, by UTF-16 code unit, and drops exact duplicates.
+  Swift's `String` order and `==` both differ (ADR 2026-09.jc2x), so `GroupId.derive` compares `utf16`.
+- **Goldens,** computed in Python from the Kotlin until A5 puts them in `keyed-v1.json`: `[alice, bob,
+  carol]` gives `g-0fcb434512afea55af84f0a5`, and `[a, b]` gives `g-0aaf7d9b49f9210774ddcf1d`.
+  `[U+FF61, U+1F600]` gives `g-54465e508ab811be30a4eb91`, where scalar order would give
+  `g-786c8e7cddfe4cc9ea05e679`.
+- **The name and the roster are not sealed.** Relays read both, and a group message's ticks travel in the
+  clear, as a room post's do.
+
 ## Safety number
 
 ```text
@@ -104,9 +138,10 @@ A blank display name shows an alias. With `d = SHA-256(UTF-8("knit-alias-v2:" + 
 
 ## Text limits
 
-Limits count UTF-16 code units (`TextLimits.kt`): display name 32, status 100, message 2000, reaction 32. A
-name is normalized by trimming and collapsing runs of Java `\s` (ASCII whitespace) to one space before it
-is cut. Swift must count `utf16`, not `Character`s.
+Limits count UTF-16 code units (`TextLimits.kt`): display name 32, group name 32, status 100, message 2000,
+reaction 32. A name is normalized by trimming and collapsing runs of Java `\s` (ASCII whitespace) to one
+space before it is cut. A group name that arrives is only cut, and a blank one never clears the name held.
+Swift must count `utf16`, not `Character`s.
 
 ## The Swift port (`KnitCrypto`)
 
@@ -116,6 +151,7 @@ is cut. Swift must count `utf16`, not `Character`s.
 | `NodeId.derive` | `NodeId(deriving:)`, an extension on the `KnitWire` type |
 | `IdentityKeyStore` | `IdentityKeys` plus a `SecretStore` (a file for the peer; the Keychain in P6) |
 | `MessageCrypto` | `MessageCrypto.header`, `.seal`, `.open`; `IdentityKeys.signature(for:)` |
+| `Conversations.groupIdFor` | `GroupId.derive(_:)` |
 | `SafetyNumber`, `Alias`, `DeviceTag` | the same names |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
