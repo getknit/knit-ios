@@ -23,6 +23,7 @@ growing an explanation, that explanation belongs in the ADR.
 | signing, `scripts/mac-desktop.sh`, `scripts/check.sh device`, `build:ios:signed`, or `App/Local.xcconfig` | [ADR 2026-09.zawh](../memory/decisions/2026-09-zawh-the-mac-signs-in-its.md) |
 | a lock, `KnitSync`, `Mutex`, or a TSan report | [ADR 2026-09.ahrr](../memory/decisions/2026-09-ahrr-locks-are-pthread-mutexes.md) |
 | DM sealing, `EncEnvelope` versions, or the capability bits `CAP_RATCHET` and `CAP_CRYPTO_V3` | [ADR 2026-09.qsd9](../memory/decisions/2026-09-qsd9-dms-seal-with-v1-static.md) |
+| group frames, `GroupRoster`, `GroupStore`, status notices, or `CAP_GROUPS` | [ADR 2026-09.n393](../memory/decisions/2026-09-n393-groups-seal-with-v1-per.md) |
 | who dials whom, HELLO admission, link teardown, or a `Radio` adapter | [ADR 2026-09.6es2](../memory/decisions/2026-09-6es2-one-linkmanager-owns-dialing-and.md) |
 | the router, custody rules or quotas, the digest exchange, or receipts | [ADR 2026-09.p6nb](../memory/decisions/2026-09-p6nb-the-iphone-relays-and-carries.md) |
 | `KnitStoreSQL`, the schema or a migration, a SQL store, or where the database file lives | [ADR 2026-09.nyya](../memory/decisions/2026-09-nyya-the-store-is-grdb-on.md) |

@@ -45,3 +45,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-09.xgtz](decisions/2026-09-xgtz-periphery-blocks-on-the-mac.md) | Periphery blocks on the Mac and on Linux | tooling, ci, testing |
 | [2026-09.zawh](decisions/2026-09-zawh-the-mac-signs-in-its.md) | The Mac signs in its desktop session, reached through a launchd job | toolchain, build, ci, signing |
 | [2026-09.63em](decisions/2026-09-63em-device-ui-tests-run-by.md) | device UI tests run by hand from the Mac | testing, app |
+| [2026-09.n393](decisions/2026-09-n393-groups-seal-with-v1-per.md) | Groups seal with v1 per-member wraps until the ratchet lands | crypto, groups, interop |

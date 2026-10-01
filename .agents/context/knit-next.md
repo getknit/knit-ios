@@ -159,3 +159,18 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
   doorbell of a peer whose HELLO carries `CAP_DOORBELL` (`0x1000`), after the frames it writes on a link it
   accepted, on this port's schedule and with the same three upkeep types left out (ADR 2026-09.khjj). It never
   claims the bit itself. `.agents/context/ble-transport.md` has the details.
+- **A5** (planned, a paired change iOS leads, ADR 2026-09.n393): keyed v1 group vectors.
+  - **`keyed-v1.json`** gains:
+    - a third identity, `dave`, from seeds 7 and 8;
+    - `groupIds`, `{members, id}` known answers for `Conversations.groupIdFor`, including unsorted and duplicate
+      input;
+    - Alice's v1 group chat to Bob and Dave (frame id seed 23), which `KeyedVectorTest` opens as each of them;
+    - her rename `groupupdate` (seed 24) and her `groupleave` (seed 25).
+  - **`IosEmittedVectorTest`** opens Carol's iOS-sealed group chat as Alice and Bob, derives its id from the roster,
+    verifies Carol's `groupupdate` and `groupleave`, and expects `0xB` in Carol's profile.
+  - **Additive only.** `digestIds` keeps its three ids, so the DIGEST, its fold and the advert stay put. Alice's
+    profile, HELLO and advert keep `0x9`.
+- **A6** (planned, ADR 2026-09.n393): two Android group fixes this port already makes.
+  - A forged `createdBy` naming the recipient counts the `created` row as theirs (`MessageDao.kt:294`), so a
+    stranger's group skips the request inbox.
+  - The old photo hash rides at the new clock until the bytes land (`InboundPipeline.kt:2334`).

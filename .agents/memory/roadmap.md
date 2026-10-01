@@ -224,6 +224,32 @@ explicit direction.** Update this file in the change that ships an item.
     probe is owed again on a build that has them. The 8 s gap reset is unchanged, and knit-next could take both
     rules later as a paired change. Items 2 to 8 run unattended through the bridge; item 9's test needs someone to
     lock and unlock the iPhone.
+- **Groups (v1), begun 2026-09-30** on `feat/groups`, at the maintainer's direction (ADR 2026-09.n393). This is
+  core parity with Android, sealed with v1 and so without forward secrecy:
+  - create a group of 2 to 7 contacts;
+  - group threads, with Android's status lines;
+  - group info, with members, rename and leave;
+  - group requests and notifications.
+
+  Out of scope: photos, per-member delivery counts, and Delete chat. Capabilities become `0xB` once the screens
+  ship. Two companion changes in knit-next go with it:
+  - **A5 (keyed group vectors):** a paired change that iOS leads. knit-next's `keyed-v1.json` gains:
+    - a third identity, `dave`, from seeds 7 and 8;
+    - `groupIds` known answers;
+    - Alice's v1 group chat to Bob and Dave (frame id seed 23);
+    - her `groupupdate` (seed 24) and her `groupleave` (seed 25).
+
+    Its `IosEmittedVectorTest` opens Carol's iOS group chat as Alice and Bob, and verifies Carol's `groupupdate` and
+    `groupleave`. It also expects `0xB` in Carol's profile. The change must be additive: `digestIds` keeps its three
+    ids, and Alice's profile, HELLO and advert keep `0x9`. This side exports `ios-emitted-v1.json` into the
+    Android worktree before the merge, and the Android worker commits it.
+  - **A6 (two Android group fixes):** both should come back to Android as one paired change.
+    - A stranger who sets `createdBy` to our node id makes the `created` row count as ours (`MessageDao.kt:294`),
+      so their group skips the request inbox.
+    - Android keeps a group's old photo hash at the new clock until the bytes land (`InboundPipeline.kt:2334`),
+      so its own frames can revert a newer photo meanwhile.
+
+    This port already avoids both.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
@@ -295,7 +321,8 @@ explicit direction.** Update this file in the change that ships an item.
   deterministically from a seed (ADR 2026-09.gq84).
 
 - **Message features:** avatars, attachments, reactions, replies, mentions and typing indicators.
-- **Groups,** with group keys and roster rules.
+- **Groups with forward secrecy** (knit-next's group ratchet), which comes with the DM ratchet. v1 groups are in
+  flight above.
 - **Search, drafts and backups.**
 - **Moderation, block and report.** App Store rule 1.2 requires them before a store build.
 - **App Store readiness:** the privacy manifest, the export-compliance answers and the review notes. The
