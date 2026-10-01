@@ -70,6 +70,8 @@ python3 scripts/interop.py iphone --device <serial>               # MVP items 2 
 python3 scripts/interop.py iphone --device <serial> --links 10    # the same, then links up to ten, each ending at the 5 s timeout; the iPhone above the phone
 python3 scripts/interop.py iphone-peer --order iphone-above       # the same against a fresh peer on hci0; iphone-below is the other order
 python3 scripts/interop.py iphone-relay --device <serial>         # MVP item 7: phone, iPhone, then a peer on hci0; Knit open on both
+python3 scripts/interop.py iphone-group --device <serial>         # v1 groups along that line, the peer as the third member (ADR 2026-09.n393)
+python3 scripts/interop.py group --device <serial>                # v1 groups between two peers and the phone, which needs two links free
 python3 scripts/interop.py iphone-soak --device <serial> --peer --extras   # MVP item 11 on the iPhone: an hour, the peer on hci0; Auto-Lock off
 python3 scripts/interop.py iphone-wake --device <serial>          # MVP item 9 from the phone: someone locks the iPhone, a DM a minute
 python3 scripts/interop.py iphone-wake --device <serial> --expect-wakes   # the same from an A4 build, which must ring and wake Knit for every DM

@@ -112,15 +112,15 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 - **State** lives in `~/.local/state/knit-peer/<instance>/`: `identity` (0600) and `profile.json`, which keeps the
   profile version and publish stamp across restarts. Custody, peers and messages live in memory.
 - **Control lines** are JSON objects with a `cmd`, and an optional `tag` that the reply echoes. `KnitControl`
-  holds the protocol, and a debug build of the app speaks it too, over USB (ADR 2026-09.kwa8):
-  `status` (with `fileRecords`, the FILE records discarded so far; `footprint`, the size of each table the mesh
-  keeps in memory; and `router`, what the router has admitted, relayed and refused), `peers` (names, aliases and
-  safety numbers), `links` (links and sightings), `room` (`text`),
-  `dm` (`to`, `text`), `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `deny-link` and
-  `allow-link` (`peer`), `digest` (live custody ids and their fingerprint), `custody` (every live frame),
-  `messages` (`conv`, `limit`; each message carries its `kind`, 0 for a message and Android's notice codes for a
-  status line), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the
-  peer exits; the app's bridge only closes the connection).
+  holds the protocol, and a debug build of the app speaks it too, over USB (ADR 2026-09.kwa8): `status` (with
+  `fileRecords`, the FILE records discarded so far; `footprint`, the size of each table the mesh keeps in
+  memory; and `router`, what the router has admitted, relayed and refused), `peers` (names, aliases and safety
+  numbers), `links` (links and sightings), `room` (`text`), `dm` (`to`, `text`), `accept` (`conv`), `name`
+  (`name`, `status`, `openToChat`), `deny-link` and `allow-link` (`peer`), `digest` (live custody ids and
+  their fingerprint), `custody` (every live frame, and who a sealed chat is wrapped to), `messages` (`conv`,
+  `limit`; each message carries its `kind`, 0 for a message and Android's notice codes for a status line),
+  `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the peer exits; the app's bridge
+  only closes the connection).
 - **Group commands** (ADR 2026-09.n393):
   - `group-create` (`members`, the others' node ids) makes a group, or opens the one they already share. Nothing
     is sent until its first message.
@@ -1230,3 +1230,45 @@ re-ask on a failed update (from 02:00, the same scenario on `hci0`,
 - **Two lookups found no doorbell.** One logged `bt doorbell absent`: discovery finished without the doorbell, on a
   peer that serves it. The other's discovery timed out, and that link stayed at 420 ms, though it held its 60 s.
   Neither was counted.
+
+## What the group runs showed
+
+Six runs on 2026-09-30, from 20:55 to 22:20, against the Pixel 3 (Knit 2.7.0, a debug build installed at 15:17
+that day), with the iPhone 12 and knit-peer both built from this port's groups branch (ADR 2026-09.n393). The
+Pixel 7 was not on adb, so a peer was each run's third member. The logs are in
+`.build/interop-group/20260930/`.
+
+- **`iphone-group` passed all 36 steps** on its second run. The first stopped before any step, because
+  `keygen` wants a bound. The line was `iphone-relay`'s: the Pixel, then the iPhone, then the peer on `hci0`,
+  shared.
+  - **Arrival:** the Pixel's group reached the iPhone in 2.1 s and the peer, through the iPhone, in 2.3 s. The
+    Pixel was a stranger to the peer, which held the group as a message request. The iPhone had written to the
+    Pixel before, so it held the group as a chat.
+  - **Sealing:** the iPhone's reply was wrapped to the Pixel and the peer, and both showed it. The reply and
+    the Pixel's first message were both ticked.
+  - **Rename:** the Pixel wrote its rename line, with the new name, 0.7 s after the iPhone renamed the group,
+    and the peer took the name.
+  - **A member nobody holds a key for is skipped.** The iPhone's group of itself, the Pixel and an identity
+    nothing runs was wrapped to the Pixel alone, and the Pixel showed it. Once the Pixel had left, the
+    iPhone's next message there waited for a key, sealed to nobody.
+  - **Leave:** the peer's leave reached the iPhone and the Pixel within a second. The iPhone's roster then had
+    the peer departed, and its next message was wrapped to the Pixel alone and never reached the peer.
+  - **Rejoin:** the iPhone left the group and made it again under the same id. The Pixel showed its leave, its
+    rejoin and its message, each within a second.
+  - **Custody:** the iPhone and the Pixel matched at 164 frames, the run's group included, and the peer and
+    the iPhone at 159, group frames left out.
+- **`group`, two peers and the Pixel with no iPhone, never linked its second peer.** A run in which Android
+  carries a group between two peers is still owed.
+  - On `relay`'s line, A on `hci1` linked B on `hci0` in 15.4 s, but all eight of A's dials to the Pixel ran
+    out the 12 s watchdog.
+  - With A on `hci0`, A linked the Pixel at once and passed every step between the two of them: the request on
+    A, the reply and its ticks, the rename line, the keyless member skipped, the Pixel's leave, and A's leave
+    and rejoin. B's ten dials to A from `hci1` timed out, so each step that needed B failed.
+  - In a star around the Pixel, every one of B's dials from `hci1` timed out: thirteen while the Pixel held
+    five links, and five more once the iPhone had let go of it. The Pixel's cap is the shipped six, and its
+    log shows no connection from `hci1`, though it shows A's from `hci0`. On this rig the ATS2851 does not
+    link the Pixel 3.
+- **What the runs read.** `interop.py` takes who a sealed chat is wrapped to from the `custody` reply's
+  `wrappedTo`. It leaves group frames out of the custody comparison on both sides, bar the group the run made,
+  which the hub and the Pixel both carry: a group frame is served only to the members it lists
+  (`ForwardSync.onDigest`), and a node may carry one it was never served.

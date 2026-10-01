@@ -8,8 +8,10 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py replace --device SERIAL
     scripts/interop.py soak    --device SERIAL [--minutes 60] [--per-minute 20] [--extras] [--mac]
     scripts/interop.py relay   --device SERIAL [--radio-profile ios|android]
+    scripts/interop.py group   --device SERIAL [--radio-profile android|ios]
     scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline] [--links N] [--hold 60]
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-group --device SERIAL [--udid UDID]
     scripts/interop.py iphone-peer [--order iphone-below|iphone-above] [--skip-offline] [--udid UDID]
     scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
@@ -24,13 +26,15 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
 
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
 bridge over USB (ADR 2026-09.kwa8), and the phone's Requests screen for a pair that has never talked; `iphone-peer`
-runs the same items between the iPhone and the peer; `iphone-relay` runs MVP item 7's line through the iPhone; `iphone-soak` is item
-11's hour on the iPhone, with the peer as a third author when asked; `iphone-wake` is item 9's wake test, with someone
-to lock the iPhone and unlock it again; `iphone-reboot` is item 1's relaunch and reboot, with someone to close Knit and
-unlock the iPhone; `iphone-scan` is P8's scan-filter check, with someone to do the same; `bridge`
-sends that bridge commands by hand and prints what comes back. `iphone-rings` checks the doorbell rings an iPhone
-sends, and `android-rings` those an Android phone sends, with companion change A4. `android-reads` is companion change
-A3's device gate: an Android phone reads the peer's GATT payload and dials it, or is dialed, by the id order.
+runs the same items between the iPhone and the peer; `iphone-relay` runs MVP item 7's line through the iPhone, and
+`iphone-group` v1 groups along that line, the peer as the third member (`group` runs them with two peers and no
+iPhone, ADR 2026-09.n393); `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
+`iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `iphone-reboot` is item 1's
+relaunch and reboot, with someone to close Knit and unlock the iPhone; `iphone-scan` is P8's scan-filter check, with
+someone to do the same; `bridge` sends that bridge commands by hand and prints what comes back. `iphone-rings` checks
+the doorbell rings an iPhone sends, and `android-rings` those an Android phone sends, with companion change A4.
+`android-reads` is companion change A3's device gate: an Android phone reads the peer's GATT payload and dials it, or
+is dialed, by the id order.
 
 `--mac` runs the peer on the Mac Mini instead of hci1, on CoreBluetooth, the iPhone's own radio: checklist M (ADR
 2026-09.vcdk). It always runs the `ios` profile, in the Mac's desktop session through `scripts/mac-peer.sh`, and the
@@ -39,8 +43,8 @@ scan that finds the nodes to refuse still runs here.
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
 `iphone` also brings Knit forward at the phone's Requests screen and taps Accept there, through uiautomator.
-`relay` also runs a second peer on hci0, the maintainer's own adapter, and `iphone-relay`, `iphone-peer` and
-`iphone-soak --peer` run their one peer there; hci0 needs its own go-ahead. The peer runs there with --shared-adapter, so it never drops a link it
+`relay` and `group` also run a second peer on hci0, the maintainer's own adapter, and `iphone-relay`, `iphone-group`,
+`iphone-peer` and `iphone-soak --peer` run their one peer there; hci0 needs its own go-ahead. The peer runs there with --shared-adapter, so it never drops a link it
 did not make.
 
 hci1 is an Actions ATS2851, which dials out but takes no incoming LE connection. A run where a phone dials the peer
@@ -53,6 +57,7 @@ is the number of failed steps.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -144,6 +149,20 @@ class Phone:
 
     def send(self, text: str, conversation: str = "nearby") -> dict:
         return self.bridge("SEND", text=text, conv=conversation)
+
+    def make_group(self, members: list[str]) -> str:
+        """A group of `members` and the phone, made as Android's picker makes one: nothing is sent until its first
+        message (`MKGROUP`, knit-next's debug-bridge.md). Returns its id, which the same people always derive."""
+        reply = self.bridge("MKGROUP", members=",".join(members))
+        if reply.get("status") != "ok":
+            raise RuntimeError(f"MKGROUP refused: {reply}")
+        return reply["groupId"]
+
+    def leave_group(self, group: str) -> None:
+        """Group details' Leave: the signed `groupleave` goes out, then the local tombstone (`LEAVE`)."""
+        reply = self.bridge("LEAVE", conv=group)
+        if reply.get("status") != "ok":
+            raise RuntimeError(f"LEAVE refused: {reply}")
 
     def open_route(self, route: str) -> None:
         """Brings Knit to the front at `route`, the deep link a notification's tap takes (`MainActivity.EXTRA_ROUTE`)."""
@@ -3059,6 +3078,312 @@ def iphone_relay(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def iphone_group(arguments: argparse.Namespace) -> int:
+    """v1 groups between the iPhone and an Android phone, with knit-peer on hci0 as a third member (ADR 2026-09.n393).
+    The line is `iphone-relay`'s: the phone, then the iPhone, then the peer, which refuses the phone, so whatever the
+    phone and the peer say to each other in a group crossed the iPhone. `_group_walk` has the steps.
+
+    The peer runs the `android` profile and sorts above every phone in range, so the iPhone dials it and no phone
+    does. It runs on hci0 because the ATS2851 on hci1 takes no incoming LE connection."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    stop = threading.Event()
+    kept_off: set[str] = set()
+    peer: Peer | None = None
+    ios.start()
+    try:
+        phone_id = phone.state()["self"]["nodeId"]
+        others = others_in_range(phone_id) - {ios.node_id}
+        peer_id = _keygen("iphone-group", "--above", max(others | {phone_id}))
+        ghost = _ghost("iphone-group-ghost")
+        known = _knows(ios, phone_id)
+        print(
+            json.dumps(
+                {
+                    "run": "iphone-group",
+                    "phone": phone_id,
+                    "iphone": ios.node_id,
+                    "peer": peer_id,
+                    "ghost": ghost,
+                    "phoneKnown": known,
+                    "refused": sorted(others),
+                }
+            )
+        )
+        threading.Thread(target=_keep_to, args=(ios, {phone_id, peer_id}, kept_off, stop, "iphone"), daemon=True).start()
+        peer = Peer(
+            "android", f"knit-peer group {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-group", HCI0
+        )
+        peer.start()
+        threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
+        run.step("link-iphone-phone", lambda: _ios_linked(ios, phone, phone_id))
+        run.step("link-iphone-peer", lambda: _timed(lambda: peer.lines(lambda line: _link(line, ios.node_id)), 180))
+        _keys_cross(run, phone, phone_id, peer)
+        run.step("custody-iphone-phone", lambda: _converges(ios, phone, 900))
+        run.step("custody-peer-iphone", lambda: _peers_converge(peer, ios, 300, frozenset()))
+        # The iPhone's view of the phone decides whether the phone's group is a request there; a False may be an Accept
+        # the control lines cannot show, so it takes either answer and reports which.
+        trio = _group_walk(run, ios, phone, phone_id, peer, ghost, nonce, False if known else None)
+        run.step("custody-iphone-phone-again", lambda: _converges(ios, phone, 300, frozenset({trio})))
+        run.step("custody-peer-iphone-again", lambda: _peers_converge(peer, ios, 300, frozenset()))
+        run.step("peer-linked-only-the-iphone", lambda: _linked_only(peer, {ios.node_id}))
+    finally:
+        stop.set()
+        if peer:
+            peer.stop()
+        for node in sorted(kept_off):
+            try:
+                ios.command(cmd="allow-link", peer=node)
+            except (TimeoutError, OSError):
+                pass
+        ios.stop()
+    print(json.dumps({"summary": "iphone-group", "steps": run.steps, "failed": run.failed, "keptOff": len(kept_off)}))
+    return run.failed
+
+
+def group(arguments: argparse.Namespace) -> int:
+    """v1 groups between knit-peer and an Android phone (ADR 2026-09.n393), with the phone in the middle: peer A on
+    hci0, shared, and peer B on hci1 each link the phone and refuse each other, so whatever A and B say to each other
+    in a group crossed the phone. A does what the iPhone does in `iphone-group`, and `_group_walk` has the steps. Both
+    sort above every phone in range, so each dials the phone and no phone dials either. The phone needs a link free
+    for each, and hci1 has to reach it: on 2026-09-30 the ATS2851 linked no Pixel 3 (.agents/context/linux-peer.md,
+    "What the group runs showed")."""
+    phone = Phone(arguments.device)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    phone_id = phone.state()["self"]["nodeId"]
+    others = others_in_range(phone_id)
+    top = max(others | {phone_id})
+    a_id = _keygen("group-a", "--above", top)
+    b_id = _keygen("group-b", "--above", top)
+    ghost = _ghost("group-ghost")
+    print(json.dumps({"run": "group", "phone": phone_id, "a": a_id, "b": b_id, "ghost": ghost, "refused": sorted(others)}))
+    a = Peer(arguments.radio_profile, f"knit-peer A {nonce}", others | {b_id}, arguments.peer_log, arguments.rssi_floor, "group-a", HCI0)
+    b = Peer("android", f"knit-peer B {nonce}", others | {a_id}, arguments.peer_log, arguments.rssi_floor, "group-b")
+    stop = threading.Event()
+    try:
+        a.start()
+        b.start()
+        threading.Thread(target=_keep_to, args=(a, {phone_id}, set(a.refuse), stop, a.instance), daemon=True).start()
+        threading.Thread(target=_keep_to, args=(b, {phone_id}, set(b.refuse), stop, b.instance), daemon=True).start()
+        run.step("link-a-phone", lambda: link_up(a, phone, phone_id) and {})
+        run.step("link-b-phone", lambda: link_up(b, phone, phone_id) and {})
+        _keys_cross(run, phone, phone_id, b)
+        # A seals to B, and B checks A's signature, with keys that crossed the phone.
+        run.step("b-profile-reaches-a", lambda: {"name": a.wait(lambda line: line.get("event") == "profile" and line.get("peer") == b_id, 240)["displayName"]})
+        run.step("a-profile-reaches-b", lambda: {"name": b.wait(lambda line: line.get("event") == "profile" and line.get("peer") == a_id, 240)["displayName"]})
+        run.step("custody-a-phone", lambda: _converges(a, phone, 900))
+        run.step("custody-b-phone", lambda: _converges(b, phone, 900))
+        # A is a fresh identity, so the phone is a stranger to it and its group is a request there.
+        trio = _group_walk(run, a, phone, phone_id, b, ghost, nonce, True)
+        run.step("custody-a-phone-again", lambda: _converges(a, phone, 300, frozenset({trio})))
+        run.step("custody-b-phone-again", lambda: _converges(b, phone, 300))
+        run.step("a-never-linked-b", lambda: _never_linked(a, b_id))
+    finally:
+        stop.set()
+        a.stop()
+        b.stop()
+    print(json.dumps({"summary": "group", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _keys_cross(run: Run, phone: Phone, phone_id: str, far: Node) -> None:
+    """The phone and `far`, the group's third member, pin each other's keys: Android seals a group message only to
+    members whose key it holds, and skips the rest without a word (`MeshManager.kt:1159-1179`)."""
+    run.step(
+        "phone-profile-reaches-far-end",
+        lambda: {"name": far.wait(lambda line: line.get("event") == "profile" and line.get("peer") == phone_id, 240)["displayName"]},
+    )
+    run.step("far-end-profile-reaches-phone", lambda: _timed(lambda: _phone_holds_profile(phone, far.node_id), 240))
+
+
+def _group_walk(run: Run, hub: Node, phone: Phone, phone_id: str, far: Node, ghost: str, nonce: str, hub_request: bool | None) -> str:
+    """The group steps `iphone-group` and `group` share (ADR 2026-09.n393). `hub` acts as the iPhone does in
+    `iphone-group`, and the phone and `far` are the group's other members. `ghost` is an identity nothing runs, so no
+    member holds its key. `hub_request` is whether the phone's group should reach the hub as a message request, None
+    for either. Returns the id of the group of all three, whose frames the hub and the phone both carry.
+
+    1. The phone makes a group of all three and writes in it. `far`, to which the phone is a stranger, holds it as a
+    request.
+    2. The hub accepts it and replies. The phone and `far` show the reply, which is sealed to both, and the reply and
+    the phone's first message are ticked.
+    3. The hub renames the group. The phone shows the new name in its rename line, and `far` holds it.
+    4. The hub makes a group of itself, the phone and `ghost`, and writes in it. The message is sealed to the phone
+    alone, since nobody holds the ghost's key, and the phone shows it.
+    5. The phone leaves that group: the hub shows it, and its next message there waits, sealed to nobody. Then `far`
+    leaves the first group: the hub and the phone show it, the hub's roster has `far` departed, and its next message
+    there is sealed to the phone alone and never reaches `far`.
+    6. The hub leaves the first group and makes it again: the phone shows the hub's leave, then its rejoin, then its
+    message."""
+    hub_id, far_id = hub.node_id, far.node_id
+    # 1
+    trio = phone.make_group([hub_id, far_id])
+    run.step("group-id-agrees", lambda: _same_id(trio, [phone_id, hub_id, far_id]))
+    first = f"interop group from phone {nonce}"
+    _phone_sends(phone, first, trio)
+    run.step("phone-group-on-hub", lambda: _group_request(hub.wait(lambda line: _message(line, first), 60), hub_request))
+    run.step("phone-group-on-far-end-is-a-request", lambda: _group_request(far.wait(lambda line: _message(line, first), 90), True))
+    run.step("hub-roster-is-the-phones", lambda: _roster(hub, trio, [hub_id, far_id, phone_id]))
+    # 2
+    hub.command(cmd="accept", conv=trio)
+    reply = f"interop group reply {nonce}"
+    sent = hub.command(cmd="group-send", conv=trio, text=reply)
+    run.step("reply-on-phone", lambda: _timed(lambda: _has(phone.state(trio), reply), 30))
+    run.step("reply-on-far-end", lambda: _latency(far.wait(lambda line: _message(line, reply), 60)))
+    run.step("reply-sealed-to-both", lambda: _sealed_to(hub, sent["id"], {phone_id, far_id}))
+    run.step("reply-ticked", lambda: _delivered(hub, sent, 60))
+    run.step("phone-message-ticked", lambda: _timed(lambda: _received(phone.state(trio), first), 60))
+    # 3
+    name = f"Interop {nonce}"
+    hub.command(cmd="group-rename", conv=trio, name=name)
+    run.step("rename-on-phone", lambda: _timed(lambda: _phone_row(phone, trio, f"grename:{trio}:", name), 60))
+    run.step("rename-on-far-end", lambda: _timed(lambda: _group_of(far, trio)["name"] == name, 60))
+    # 4
+    duo = hub.command(cmd="group-create", members=[phone_id, ghost])["id"]
+    run.step("hub-group-id-agrees", lambda: _same_id(duo, [hub_id, phone_id, ghost]))
+    body = f"interop hub group {nonce}"
+    sent = hub.command(cmd="group-send", conv=duo, text=body)
+    run.step("hub-group-sealed-to-phone-alone", lambda: _sealed_to(hub, sent["id"], {phone_id}))
+    run.step("hub-group-on-phone", lambda: _timed(lambda: _has(phone.state(duo), body), 60))
+    run.step("hub-group-ticked", lambda: _delivered(hub, sent, 60))
+    # 5
+    phone.leave_group(duo)
+    run.step("phone-leave-on-hub", lambda: _timed(lambda: _node_row(hub, duo, MEMBER_LEFT, f"leave:{duo}:{phone_id}"), 60))
+    waits = hub.command(cmd="group-send", conv=duo, text=f"interop hub group after the phone left {nonce}")
+    run.step("hub-group-waits-for-a-key", lambda: _waits(waits))
+    far.command(cmd="group-leave", conv=trio)
+    run.step("far-leave-on-hub", lambda: _timed(lambda: _node_row(hub, trio, MEMBER_LEFT, f"leave:{trio}:{far_id}"), 60))
+    run.step("far-leave-on-phone", lambda: _timed(lambda: _phone_row(phone, trio, f"leave:{trio}:{far_id}"), 60))
+    run.step("hub-roster-without-far-end", lambda: _roster(hub, trio, [hub_id, phone_id], departed=[far_id]))
+    body = f"interop group after a leave {nonce}"
+    sent = hub.command(cmd="group-send", conv=trio, text=body)
+    run.step("after-leave-sealed-to-phone-alone", lambda: _sealed_to(hub, sent["id"], {phone_id}))
+    run.step("after-leave-on-phone", lambda: _timed(lambda: _has(phone.state(trio), body), 60))
+    run.step("after-leave-not-on-far-end", lambda: _left_out(far, body, 20))
+    # 6
+    hub.command(cmd="group-leave", conv=trio)
+    run.step("hub-leave-on-phone", lambda: _timed(lambda: _phone_row(phone, trio, f"leave:{trio}:{hub_id}"), 60))
+    again = hub.command(cmd="group-create", members=[phone_id, far_id])["id"]
+    run.step("hub-makes-the-same-group", lambda: _same_id(again, [phone_id, hub_id, far_id]))
+    body = f"interop group after a rejoin {nonce}"
+    hub.command(cmd="group-send", conv=trio, text=body)
+    run.step("rejoin-on-phone", lambda: _timed(lambda: _phone_row(phone, trio, f"rejoin:{trio}:{hub_id}"), 60))
+    run.step("rejoin-message-on-phone", lambda: _timed(lambda: _has(phone.state(trio), body), 60))
+    return trio
+
+
+# The `kind` of a member's leave in a `messages` reply: Android's notice code (MessageEntity.KIND_MEMBER_LEFT).
+MEMBER_LEFT = 1
+# The largest canonical node id, which every other sorts below.
+LAST_NODE_ID = "z" * 25 + "y"
+
+
+def _ghost(instance: str) -> str:
+    """An identity nothing ever runs, for a group member nobody holds a key for. keygen wants a bound, and any id will
+    do."""
+    return _keygen(instance, "--below", LAST_NODE_ID)
+
+
+def _knows(node: Node, other: str) -> bool:
+    """Whether `node` has written to `other` or verified it, either of which makes `other` a known sender there, so a
+    group `other` writes in is a chat rather than a request (`Conversations.isAccepted`). An Accept leaves nothing the
+    control lines show, so False may still be a known sender."""
+    wrote = any(m.get("from") == node.node_id for m in node.command(cmd="messages", conv=other, limit=500)["messages"])
+    return wrote or any(p["peer"] == other and p.get("verified") for p in node.command(cmd="peers")["peers"])
+
+
+def _group_id(members: list[str]) -> str:
+    """knit-next's `Conversations.groupIdFor`. Node ids are ASCII, so Python's sort is Java's here."""
+    canonical = ",".join(sorted(set(members)))
+    return "g-" + hashlib.sha256(f"knit-group-id-v1:{canonical}".encode()).hexdigest()[:24]
+
+
+def _same_id(group: str, members: list[str]) -> dict:
+    expected = _group_id(members)
+    if group != expected:
+        raise RuntimeError(f"{group}, where its members derive {expected}")
+    return {"group": group}
+
+
+def _phone_sends(phone: Phone, body: str, conversation: str) -> None:
+    reply = phone.send(body, conversation=conversation)
+    if reply.get("status") != "ok":
+        raise RuntimeError(f"the phone did not send to {conversation}: {reply}")
+
+
+def _phone_holds_profile(phone: Phone, node: str) -> dict | None:
+    """Whether the phone carries `node`'s profile, which it pins as it takes it."""
+    rows = phone.bridge("STORE", limit=5000).get("rows", [])
+    return {"profile": True} if any(row.get("type") == "profile" and row.get("sender") == node for row in rows) else None
+
+
+def _group_request(line: dict, expected: bool | None) -> dict:
+    """A group message's arrival, as a message request or not; `expected` None takes either and says which."""
+    request = bool(line.get("request"))
+    if expected is not None and request != expected:
+        raise RuntimeError(f"arrived {'as' if request else 'not as'} a message request")
+    return {**_latency(line), "request": request}
+
+
+def _group_of(node: Node, group: str) -> dict:
+    held = next((entry for entry in node.command(cmd="groups")["groups"] if entry["id"] == group), None)
+    if held is None:
+        raise RuntimeError(f"no group {group}")
+    return held
+
+
+def _roster(node: Node, group: str, members: list[str], departed: list[str] | None = None) -> dict:
+    """The node holds `group` with `members` in roster order, and `departed` when given."""
+    held = _group_of(node, group)
+    if held["members"] != members or (departed is not None and held["departed"] != departed):
+        raise RuntimeError(f"holds {held['members']}, departed {held['departed']}")
+    return {"members": len(members)}
+
+
+def _sealed_to(node: Node, message_id: str, expected: set[str]) -> dict:
+    """The sealed chat `message_id`, as the node carries it, is wrapped to `expected` and to nobody else."""
+    frame = next((frame for frame in node.command(cmd="custody")["frames"] if frame["id"] == message_id), None)
+    if frame is None or "wrappedTo" not in frame:
+        raise RuntimeError(f"carries no sealed frame {message_id}")
+    wrapped = set(frame["wrappedTo"])
+    if wrapped != expected:
+        raise RuntimeError(f"wrapped to {sorted(wrapped)}, not {sorted(expected)}")
+    return {"wrappedTo": len(wrapped)}
+
+
+def _waits(reply: dict) -> dict:
+    """A group message that no member can open yet waits for a key, unsent (ADR 2026-09.n393)."""
+    if not reply.get("ok") or not reply.get("pendingKey"):
+        raise RuntimeError(f"not waiting: {reply}")
+    return {}
+
+
+def _phone_row(phone: Phone, conversation: str, prefix: str, body: str | None = None) -> dict | None:
+    """The phone's row in `conversation` whose id starts with `prefix`, and whose body is `body` when given. STATE
+    reports no row kind, but a status line's id names its event (`leave:`, `rejoin:`, `grename:`, knit-next's
+    StatusNotices.kt), and a rename's body is the new name."""
+    for message in phone.state(conversation, limit=50).get("messages", []):
+        if message.get("id", "").startswith(prefix) and (body is None or message.get("body") == body):
+            return {"row": message["id"]}
+    return None
+
+
+def _node_row(node: Node, conversation: str, kind: int, row_id: str) -> dict | None:
+    """The node's status line `row_id`, of `kind`, from its `messages` reply."""
+    rows = node.command(cmd="messages", conv=conversation, limit=50)["messages"]
+    return {"row": row_id} if any(row.get("kind") == kind and row.get("id") == row_id for row in rows) else None
+
+
+def _left_out(node: Node, body: str, seconds: float) -> dict:
+    """`body` never reaches the node within `seconds`: it left the group, so it drops the group's frames unopened."""
+    time.sleep(seconds)
+    if node.lines(lambda line: _message(line, body)):
+        raise RuntimeError("took a message for a group it left")
+    return {}
+
+
 def iphone_peer(arguments: argparse.Namespace) -> int:
     """MVP items 2 to 6 between the iPhone and knit-peer on a shared hci0, which the spec asks of the peer as well as of
     an Android phone. `--order` puts the iPhone's node id above or below a fresh peer identity, so the iPhone's first DM
@@ -3620,10 +3945,16 @@ def _link(line: dict, node: str) -> bool:
     return line.get("event") == "link" and line.get("peer") == node and bool(line.get("up"))
 
 
-def _peers_converge(first: Node, second: Node, timeout: float) -> dict:
+def _peers_converge(first: Node, second: Node, timeout: float, groups: frozenset[str] | None = None) -> dict:
+    """Whether two nodes carry the same live frames. With `groups`, group frames are left out on both sides bar those
+    of `groups`, as in `_converged`."""
+
+    def kept(frame: dict) -> bool:
+        return groups is None or not frame.get("group") or frame["group"] in groups
+
     def same() -> dict | None:
-        ours = {frame["id"]: frame for frame in first.command(cmd="custody")["frames"]}
-        theirs = {frame["id"]: frame for frame in second.command(cmd="custody")["frames"]}
+        ours = {frame["id"]: frame for frame in first.command(cmd="custody")["frames"] if kept(frame)}
+        theirs = {frame["id"]: frame for frame in second.command(cmd="custody")["frames"] if kept(frame)}
         LAST_CUSTODY_DIFFERENCE.clear()
         LAST_CUSTODY_DIFFERENCE.update(
             onlyFirst=[_brief(ours[i]) for i in sorted(ours.keys() - theirs.keys())[:5]],
@@ -3698,19 +4029,21 @@ def _file_records(peer: Peer) -> dict | None:
 LAST_CUSTODY_DIFFERENCE: dict = {}
 
 
-def _converged(peer: Node, phone: Phone) -> dict | None:
-    """Whether the peer's live custody ids are the phone's. The phone serves a group frame only to the group's members
-    (`ForwardSync.onDigest`), and the peer is in no group, so the phone's group frames are left out."""
-    ours = set(peer.command(cmd="digest")["ids"])
+def _converged(peer: Node, phone: Phone, groups: frozenset[str] = frozenset()) -> dict | None:
+    """Whether the node's live custody ids are the phone's. Each side serves a group frame only to the members the
+    frame lists (`ForwardSync.onDigest`), and either may carry one it was never served, so group frames are left out
+    on both sides, bar those of `groups`, which the caller knows the two must both carry."""
+    frames = peer.command(cmd="custody")["frames"]
+    ours = {frame["id"] for frame in frames if not frame.get("group") or frame["group"] in groups}
     store = phone.bridge("STORE", limit=5000)
     expired = set(store.get("expiredIds", []))
-    groups = {row["id"] for row in store.get("rows", []) if row.get("group")}
-    theirs = set(store.get("allIds", [])) - expired - groups
+    left_out = {row["id"] for row in store.get("rows", []) if row.get("group") and row["group"] not in groups}
+    theirs = set(store.get("allIds", [])) - expired - left_out
     if ours == theirs:
-        return {"ids": len(ours), "groupFramesLeftOut": len(groups)}
+        return {"ids": len(ours), "groupFramesLeftOut": len(left_out)}
     # Kept for the report when the poll gives up: what each side holds that the other does not.
     rows = {row["id"]: row for row in store.get("rows", [])}
-    frames = {frame["id"]: frame for frame in peer.command(cmd="custody")["frames"]}
+    frames = {frame["id"]: frame for frame in frames}
     LAST_CUSTODY_DIFFERENCE.clear()
     LAST_CUSTODY_DIFFERENCE.update(
         onlyPeer=[_brief(frames.get(i, {"id": i})) for i in sorted(ours - theirs)[:5]],
@@ -3726,9 +4059,9 @@ def _brief(frame: dict) -> dict:
     return {key: value[:6] if key in ("from", "sender", "to", "recipient") and value else value for key, value in frame.items() if key in keep}
 
 
-def _converges(peer: Node, phone: Phone, timeout: float) -> dict:
+def _converges(peer: Node, phone: Phone, timeout: float, groups: frozenset[str] = frozenset()) -> dict:
     try:
-        return poll(lambda: _converged(peer, phone), timeout, every=10)
+        return poll(lambda: _converged(peer, phone, groups), timeout, every=10)
     except TimeoutError as error:
         raise TimeoutError(f"custody still differs: {LAST_CUSTODY_DIFFERENCE}") from error
 
@@ -3757,7 +4090,7 @@ def _all(expected: set[str], seen: set[str]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("check", "refusal", "replace", "soak", "relay", "iphone-relay"):
+    for name in ("check", "refusal", "replace", "soak", "relay", "iphone-relay", "group", "iphone-group"):
         sub = commands.add_parser(name)
         sub.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
         sub.add_argument("--radio-profile", default="android", choices=["android", "ios"])
@@ -3867,7 +4200,7 @@ def main() -> int:
         choices=["dialed", "accepted"],
         help="a link the phone dialed after reading the peer's payload (A3), or one it accepted from a peer it never sights",
     )
-    for sub in (ios, wake, reboot, rings, scan, by_hand, ios_peer, ios_soak, ios_forgets, commands.choices["iphone-relay"]):
+    for sub in (ios, wake, reboot, rings, scan, by_hand, ios_peer, ios_soak, ios_forgets, commands.choices["iphone-relay"], commands.choices["iphone-group"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
     arguments = parser.parse_args()
     if arguments.command == "iphone-wake" and arguments.sender == "phone" and not arguments.device:
@@ -3908,7 +4241,16 @@ def main() -> int:
     if arguments.command == "relay" and "--radio-profile" not in sys.argv:
         # Peer A stands in for the iPhone, which Android finds only by its GATT payload.
         arguments.radio_profile = "ios"
-    scenarios = {"check": check, "refusal": refusal, "replace": replace, "soak": soak, "relay": relay, "iphone-relay": iphone_relay}
+    scenarios = {
+        "check": check,
+        "refusal": refusal,
+        "replace": replace,
+        "soak": soak,
+        "relay": relay,
+        "iphone-relay": iphone_relay,
+        "group": group,
+        "iphone-group": iphone_group,
+    }
     return scenarios[arguments.command](arguments)
 
 
