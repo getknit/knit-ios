@@ -2,10 +2,11 @@
     import KnitAppCore
     import SwiftUI
 
-    /// A thread: the room or a DM, its messages, a request's Accept, and the composer.
+    /// A thread: the room, a DM or a group, its messages and status lines, a request's Accept, and the composer.
     internal struct ChatView: View {
         @State private var model: ChatModel
         @State private var showsEncryption = false
+        @Environment(\.dismiss) private var dismiss
 
         init(conversationId: String, session: AppSession) {
             _model = State(initialValue: ChatModel(conversationId: conversationId, session: session))
@@ -16,7 +17,9 @@
             MessageList(state: state)
                 .safeAreaInset(edge: .bottom) {
                     if state.isRequest {
-                        RequestBar(title: state.title) { Task { await model.accept() } }
+                        RequestBar(title: state.requestTitle, explanation: state.requestBody) { Task { await model.accept() } }
+                    } else if state.nobodyElse {
+                        NobodyLeftBar()
                     } else {
                         ComposerBar(model: model)
                     }
@@ -37,10 +40,29 @@
                             }
                             .accessibilityIdentifier(AccessibilityID.chatProfile)
                         }
+                    } else if state.isGroup {
+                        ToolbarItemGroup(placement: .topBarTrailing) {
+                            Button {
+                                showsEncryption = true
+                            } label: {
+                                Label(Copy.Chat.encrypted, systemImage: "lock.fill")
+                            }
+                            .accessibilityIdentifier(AccessibilityID.chatEncryption)
+                            NavigationLink(value: Route.groupInfo(model.conversationId)) {
+                                Label(Copy.Groups.info, systemImage: "info.circle")
+                            }
+                            .accessibilityIdentifier(AccessibilityID.chatGroupInfo)
+                        }
                     }
                 }
                 .sheet(isPresented: $showsEncryption) {
-                    EncryptionSheet(name: state.title)
+                    EncryptionSheet(text: state.isGroup ? Copy.Groups.encryptionBody : Copy.Chat.encryptionBody(state.title))
+                }
+                // A group we left is gone: its thread closes, however the leave came.
+                .onChange(of: state.exists) { _, exists in
+                    if !exists {
+                        dismiss()
+                    }
                 }
                 .task { await model.appear() }
                 .onDisappear(perform: model.disappear)
@@ -57,8 +79,14 @@
                     LazyVStack(spacing: Layout.small) {
                         ThreadHeader(state: state)
                         ForEach(state.messages) { message in
-                            MessageBubble(message: message)
-                                .id(message.id)
+                            if let notice = message.notice {
+                                StatusLineRow(text: notice)
+                                    .id(message.id)
+                                    .accessibilityIdentifier(AccessibilityID.chatNotice(message.id))
+                            } else {
+                                MessageBubble(message: message)
+                                    .id(message.id)
+                            }
                         }
                     }
                     .padding()
@@ -75,7 +103,7 @@
         }
     }
 
-    /// The room's notice, a DM's reach, and what an empty thread holds.
+    /// The room's notice, a group's size, a DM's reach, and what an empty thread holds.
     private struct ThreadHeader: View {
         let state: ChatState
 
@@ -85,6 +113,10 @@
                 if state.messages.isEmpty {
                     Notice(symbol: "hand.wave", text: Copy.Chat.roomEmpty)
                 }
+            } else if let count = state.memberCount {
+                Text(Copy.Groups.memberCount(count))
+                    .font(.footnote)
+                    .foregroundStyle(Palette.secondaryText)
             } else {
                 Text(state.isLinked ? Copy.Chat.inRange : Copy.Chat.outOfRange)
                     .font(.footnote)
@@ -93,6 +125,20 @@
                     Notice(symbol: "lock", text: Copy.Chat.directEmpty(state.title))
                 }
             }
+        }
+    }
+
+    /// A group's status line: an event, such as a member leaving, centered between the messages.
+    private struct StatusLineRow: View {
+        let text: String
+
+        var body: some View {
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(Palette.secondaryText)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Layout.tight)
         }
     }
 
@@ -203,13 +249,14 @@
     /// A stranger's thread: Accept instead of the composer.
     private struct RequestBar: View {
         let title: String
+        let explanation: String
         let accept: () -> Void
 
         var body: some View {
             VStack(spacing: Layout.small) {
-                Text(Copy.Chat.requestTitle(title))
+                Text(title)
                     .font(.headline)
-                Text(Copy.Chat.requestBody)
+                Text(explanation)
                     .font(.subheadline)
                     .foregroundStyle(Palette.secondaryText)
                     .multilineTextAlignment(.center)
@@ -223,15 +270,28 @@
         }
     }
 
-    /// What DM encryption covers, and the limit v1 has.
+    /// The composer's place once everyone else has left a group.
+    private struct NobodyLeftBar: View {
+        var body: some View {
+            Text(Copy.Groups.nobodyLeft)
+                .font(.subheadline)
+                .foregroundStyle(Palette.secondaryText)
+                .multilineTextAlignment(.center)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(.background.secondary)
+        }
+    }
+
+    /// What a DM's or a group's encryption covers, and the limit v1 has.
     private struct EncryptionSheet: View {
-        let name: String
+        let text: String
         @Environment(\.dismiss) private var dismiss
 
         var body: some View {
             NavigationStack {
                 ScrollView {
-                    Text(Copy.Chat.encryptionBody(name))
+                    Text(text)
                         .padding()
                 }
                 .navigationTitle(Copy.Chat.encrypted)

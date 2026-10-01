@@ -3,7 +3,7 @@
     import KnitStore
     import SwiftUI
 
-    /// The chat list: the status line, the first-run card, the room, the DMs and the requests entry.
+    /// The chat list: the status line, the first-run card, the room, the DMs and groups, and the requests entry.
     internal struct ChatListView: View {
         @State private var model: ChatListModel
 
@@ -37,7 +37,11 @@
             }
             .navigationTitle(Copy.ChatList.title)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    NavigationLink(value: Route.newGroup) {
+                        Label(Copy.Groups.newGroup, systemImage: "person.badge.plus")
+                    }
+                    .accessibilityIdentifier(AccessibilityID.chatListNewGroup)
                     NavigationLink(value: Route.settings) {
                         Label(Copy.ChatList.settings, systemImage: "gearshape")
                     }
@@ -149,7 +153,7 @@
             HStack(spacing: Layout.medium) {
                 // At the accessibility sizes the glyph would take a third of the row from the title, which says the same.
                 if !typeSize.isAccessibilitySize {
-                    Image(systemName: row.isRoom ? "person.3.fill" : "person.crop.circle.fill")
+                    Image(systemName: row.isRoom ? "person.3.fill" : row.isGroup ? "person.2.fill" : "person.crop.circle.fill")
                         .font(.title)
                         .foregroundStyle(row.isRoom ? Palette.accent : Palette.secondaryText)
                         .frame(width: Layout.glyphColumn)

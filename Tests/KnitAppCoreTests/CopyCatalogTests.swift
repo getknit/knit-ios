@@ -231,6 +231,19 @@ import Testing
         #expect(AccessibilityID.chatInput == "chat_input" && AccessibilityID.chatSend == "chat_send")
     }
 
+    /// The group screens' identifiers: Android's tags where it has them (`chat_group_settings`, `group_rename`,
+    /// `group_leave`, `group_member_<id>`), and the iPhone's own otherwise.
+    @Test func theGroupScreensIdentifiersAreAndroidsWhereItHasThem() {
+        #expect(AccessibilityID.chatGroupInfo == "chat_group_settings")
+        #expect(AccessibilityID.groupRename == "group_rename" && AccessibilityID.groupLeave == "group_leave")
+        #expect(AccessibilityID.groupMember("abc") == "group_member_abc")
+        #expect(AccessibilityID.newGroupMember("abc") == "new_group_member_abc")
+        #expect(AccessibilityID.chatNotice("created:g-1") == "chat_notice_created:g-1")
+        #expect(AccessibilityID.newGroupCreate == "contacts_start_chat" && AccessibilityID.newGroupScreen == "screen_new_group")
+        #expect(AccessibilityID.groupInfoScreen == "screen_group_details" && AccessibilityID.chatListNewGroup == "chat_list_new_group")
+        #expect(AccessibilityID.chatEncryption == "chat_encryption")
+    }
+
     /// The ids only the iPhone has, which the device tests read: the status line's state and its buttons, and
     /// onboarding's Allow buttons.
     @Test func theStatusLinesIdentifierNamesItsState() {

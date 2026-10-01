@@ -7,6 +7,8 @@
     internal enum Route: Hashable {
         case chat(String)
         case requests
+        case newGroup
+        case groupInfo(String)
         case peer(NodeId)
         case profile
         case settings
@@ -113,6 +115,12 @@
                 ChatView(conversationId: conversationId, session: environment.session)
             case .requests:
                 RequestsView(session: environment.session)
+            case .newGroup:
+                // The picker gives way to the new group's thread, as Android drops it from the back stack.
+                NewGroupView(session: environment.session) { groupId in path = [.chat(groupId)] }
+            case .groupInfo(let groupId):
+                // Leaving closes the group's screens and comes back to the chat list.
+                GroupInfoView(groupId: groupId, session: environment.session) { path = [] }
             case .peer(let nodeId):
                 PeerProfileView(nodeId: nodeId, session: environment.session)
             case .profile:

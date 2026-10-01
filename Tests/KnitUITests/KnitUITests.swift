@@ -48,6 +48,14 @@ final class KnitUITests: XCTestCase {
         try walkRequests()
     }
 
+    func testAGroupThreadLeadsToItsInfoAndItsEncryption() throws {
+        try walkGroup()
+    }
+
+    func testANewGroupIsPickedAndStarted() throws {
+        try walkNewGroup()
+    }
+
     func testSettingsReachEveryPageAndStopTheMesh() throws {
         try walkSettings()
     }
@@ -65,6 +73,8 @@ final class KnitUITests: XCTestCase {
         try walkRoom()
         try walkDirect()
         try walkRequests()
+        try walkGroup()
+        try walkNewGroup()
         try walkSettings()
         try walkRadioStates()
     }
@@ -106,7 +116,12 @@ final class KnitUITests: XCTestCase {
     private func walkDirect() throws {
         let app = launch()
         let direct = app.buttons.matching(
-            NSPredicate(format: "identifier BEGINSWITH %@ AND identifier != %@", "contact_", AccessibilityID.chatRow("nearby"))
+            NSPredicate(
+                format: "identifier BEGINSWITH %@ AND identifier != %@ AND NOT identifier BEGINSWITH %@",
+                "contact_",
+                AccessibilityID.chatRow("nearby"),
+                AccessibilityID.chatRow("g-")
+            )
         )
         try app.reveal(direct.firstMatch, "a direct thread").tap()
         try audit(app, AccessibilityID.chatThread)
@@ -137,6 +152,41 @@ final class KnitUITests: XCTestCase {
         let accept = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "request_accept_")).firstMatch
         try app.reveal(accept, "Accept").tap()
         XCTAssert(accept.waitForNonExistence(timeout: Walking.appears), "the request stays after Accept")
+        app.terminate()
+    }
+
+    private func walkGroup() throws {
+        let app = launch()
+        let group = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.chatRow("g-")))
+        try app.reveal(group.firstMatch, "a group").tap()
+        try audit(app, AccessibilityID.chatThread)
+
+        try app.appear(AccessibilityID.chatEncryption).tap()
+        settle(try app.buttons["Done"].appear("the encryption sheet"))
+        audit(app, screen: "the group's encryption sheet")
+        app.buttons["Done"].tap()
+
+        try app.appear(AccessibilityID.chatGroupInfo).tap()
+        try audit(app, AccessibilityID.groupInfoScreen)
+        try app.reveal(AccessibilityID.groupRename).tap()
+        settle(try app.textFields.firstMatch.appear("the rename sheet"))
+        audit(app, screen: "the rename sheet")
+        app.buttons["Cancel"].tap()
+        // Leave sits below the fold at the largest sizes, where the list has not built it yet.
+        try app.reveal(AccessibilityID.groupLeave)
+        app.terminate()
+    }
+
+    private func walkNewGroup() throws {
+        let app = launch()
+        try app.appear(AccessibilityID.chatListNewGroup).tap()
+        try audit(app, AccessibilityID.newGroupScreen)
+        let people = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.newGroupMember("")))
+        try app.reveal(people.element(boundBy: 0), "someone to pick").tap()
+        try app.reveal(people.element(boundBy: 1), "someone else to pick").tap()
+        try app.appear(AccessibilityID.newGroupCreate).tap()
+        try app.appear(AccessibilityID.chatThread)
+        try app.appear(AccessibilityID.chatGroupInfo)
         app.terminate()
     }
 

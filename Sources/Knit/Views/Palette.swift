@@ -18,7 +18,8 @@
         static let positive = dynamic(Swatch.positive)
         /// Something the radio cannot do.
         static let warning = dynamic(Swatch.warning)
-        /// Over a limit.
+        /// Over a limit, and the label of an action that removes something: the system's red reads about 3.6:1 on a
+        /// grouped cell in light.
         static let critical = dynamic(Swatch.critical)
 
         /// Each color's sRGB value in light mode and in dark, as `0xRRGGBB`.

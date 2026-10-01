@@ -57,6 +57,37 @@ public enum AccessibilityID {
     public static let chatVerified = "chat_verified_shield"
     /// A DM's way to the other person's profile.
     public static let chatProfile = "chat_profile"
+    /// A thread's encryption sheet, for a group, whose lock is not a verified DM's shield. Android has no tag here.
+    public static let chatEncryption = "chat_encryption"
+    /// A group thread's way to group info (Android's overflow "Settings").
+    public static let chatGroupInfo = "chat_group_settings"
+    /// A status line in a thread, `chat_notice_<row id>`. Android has no tag here.
+    public static func chatNotice(_ id: String) -> String {
+        "chat_notice_\(id)"
+    }
+
+    /// The chat list's way to start a group. Android's picker opens from its "New message" button instead.
+    public static let chatListNewGroup = "chat_list_new_group"
+    /// The new-group picker.
+    public static let newGroupScreen = "screen_new_group"
+    /// One person in the picker, `new_group_member_<node id>`. Android has no tag here.
+    public static func newGroupMember(_ nodeId: String) -> String {
+        "new_group_member_\(nodeId)"
+    }
+
+    /// The picker's Start group (Android's "Start chat" check).
+    public static let newGroupCreate = "contacts_start_chat"
+
+    /// Group info.
+    public static let groupInfoScreen = "screen_group_details"
+    /// Group info's Rename group.
+    public static let groupRename = "group_rename"
+    /// Group info's Leave group.
+    public static let groupLeave = "group_leave"
+    /// A member in group info, `group_member_<node id>`.
+    public static func groupMember(_ nodeId: String) -> String {
+        "group_member_\(nodeId)"
+    }
 
     /// A request's row, `request_row_<conversation id>`.
     public static func requestRow(_ conversationId: String) -> String {
