@@ -24,7 +24,7 @@
         private let radio: BLERadio?
         private var listening: Task<Void, Never>?
         #if DEBUG
-            /// The debug bridge, which a computer reaches over USB.
+            /// The debug bridge, which a computer reaches over USB, or over Wi-Fi on a network pinned over USB.
             private var bridge: Bridge?
         #endif
 

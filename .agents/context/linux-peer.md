@@ -112,15 +112,15 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 - **State** lives in `~/.local/state/knit-peer/<instance>/`: `identity` (0600) and `profile.json`, which keeps the
   profile version and publish stamp across restarts. Custody, peers and messages live in memory.
 - **Control lines** are JSON objects with a `cmd`, and an optional `tag` that the reply echoes. `KnitControl`
-  holds the protocol, and a debug build of the app speaks it too, over USB (ADR 2026-09.kwa8): `status` (with
-  `fileRecords`, the FILE records discarded so far; `footprint`, the size of each table the mesh keeps in
-  memory; and `router`, what the router has admitted, relayed and refused), `peers` (names, aliases and safety
-  numbers), `links` (links and sightings), `room` (`text`), `dm` (`to`, `text`), `accept` (`conv`), `name`
-  (`name`, `status`, `openToChat`), `deny-link` and `allow-link` (`peer`), `digest` (live custody ids and
-  their fingerprint), `custody` (every live frame, and who a sealed chat is wrapped to), `messages` (`conv`,
-  `limit`; each message carries its `kind`, 0 for a message and Android's notice codes for a status line),
-  `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the peer exits; the app's bridge
-  only closes the connection).
+  holds the protocol, and a debug build of the app speaks it too, over USB or Wi-Fi (ADR 2026-09.kwa8,
+  ADR 2026-10.dz8d): `status` (with `fileRecords`, the FILE records discarded so far; `footprint`, the size of
+  each table the mesh keeps in memory; and `router`, what the router has admitted, relayed and refused),
+  `peers` (names, aliases and safety numbers), `links` (links and sightings), `room` (`text`), `dm` (`to`,
+  `text`), `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `deny-link` and `allow-link` (`peer`),
+  `digest` (live custody ids and their fingerprint), `custody` (every live frame, and who a sealed chat is
+  wrapped to), `messages` (`conv`, `limit`; each message carries its `kind`, 0 for a message and Android's
+  notice codes for a status line), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit`
+  (the peer exits; the app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):
   - `group-create` (`members`, the others' node ids) makes a group, or opens the one they already share. Nothing
     is sent until its first message.

@@ -1,7 +1,7 @@
 import Foundation
 public import KnitWire
 
-/// One control command, from one JSON line: on `knit-peer`'s standard input, or over USB to a debug build of the app
+/// One control command, from one JSON line: on `knit-peer`'s standard input, or to a debug build of the app's bridge
 /// (`.agents/context/linux-peer.md` lists them with examples).
 public enum ControlCommand: Equatable, Sendable {
     /// `{"cmd":"status"}`: this node, its name and its counts.

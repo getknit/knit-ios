@@ -245,7 +245,8 @@ and never sleeps.
     makes, identifier `app.getknit.knit-peer` under team `<team id>` (ADR 2026-09.vcdk). A new signing
     certificate asks again. From ssh, CoreBluetooth reports it unauthorized whatever the grant.
   - **The phone's log:** `idevicesyslog` finds the iPhone only over USB, not while it is connected over the
-    network. Console.app at the Mac reads it either way.
+    network. Console.app at the Mac reads it either way. The bridge itself also answers over Wi-Fi, on a
+    network pinned over USB (ADR 2026-10.dz8d).
 - **What does not pass yet:**
   - **`check.sh analyze`** runs in 26 minutes, and SourceKit gets through `KnitAppCore` without crashing.
     It fails on seven findings that only macOS sees. swift-crypto's `Crypto` re-exports CryptoKit on Apple

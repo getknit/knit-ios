@@ -27,8 +27,8 @@ public final class AppSession {
     public private(set) var revision = 0
     /// Whether the app is in front, which the app keeps current from its scene phase.
     public var isActive = true
-    /// Hears every mesh event once the session has handled it: a debug build's bridge reports them over USB. The mesh
-    /// has one stream of events, and the session is its consumer.
+    /// Hears every mesh event once the session has handled it: a debug build's bridge reports them to every connection.
+    /// The mesh has one stream of events, and the session is its consumer.
     @ObservationIgnored public var eventTap: (@Sendable (MeshEvent) -> Void)?
 
     @ObservationIgnored private let mesh: any MeshService

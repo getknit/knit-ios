@@ -1,4 +1,5 @@
 #if os(iOS) && DEBUG
+    import Foundation
     import KnitAppCore
     import KnitBLE
     import KnitControl
@@ -8,11 +9,12 @@
     import KnitWire
     import os
 
-    /// A debug build's bridge: `knit-peer`'s control protocol (``MeshControl``) served over USB to every computer
-    /// connected (``BridgeListener``), so a script drives and checks this phone as it does the Linux peer
-    /// (ADR 2026-09.kwa8). Commands go through the session, so they show on screen as taps would. Replies go to the
-    /// connection that asked, and events to every connection. The bridge answers `scan-filter` itself, since only
-    /// the iPhone's radio has a scan probe (``ScanProbeCommand``), and `storage`, since only the app keeps its identity
+    /// A debug build's bridge: `knit-peer`'s control protocol (``MeshControl``) served to every computer connected
+    /// (``BridgeListener``), over USB and, on a network pinned over USB, over Wi-Fi (``WiFiGate``), so a script drives
+    /// and checks this phone as it does the Linux peer (ADR 2026-09.kwa8). Commands go through the session, so they
+    /// show on screen as taps would. Replies go to the connection that asked, and events to every connection. The
+    /// bridge answers `wifi`, `wifi-pin` and `wifi-unpin` itself (``WiFiCommand``); `scan-filter`, since only the
+    /// iPhone's radio has a scan probe (``ScanProbeCommand``); and `storage`, since only the app keeps its identity
     /// in the Keychain and its database under Data Protection (``StorageCommand``). Each `status` carries
     /// `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its memory grow.
     @MainActor
@@ -20,6 +22,7 @@
         nonisolated private static let bytesPerKilobyte = 1024
 
         private let listener: BridgeListener
+        private let wifi: WiFiGate
 
         /// A bridge to `mesh`, driven through `session`, which it also taps for events, to `radio`'s scan probe, and to
         /// `storage`, which a demo has none of.
@@ -43,9 +46,13 @@
             ) {
                 ["memoryAvailableKb": .int(Int64(os_proc_available_memory() / Self.bytesPerKilobyte))]
             }
+            let gate = WiFiGate(log: log, defaults: .standard)
             let channel = BridgeListener(log: log) {
                 control.ready
-            } answer: { line in
+            } answer: { line, origin in
+                if let command = WiFiCommand.parse(line) {
+                    return (await gate.answer(command, from: origin), false)
+                }
                 if let probe = ScanProbeCommand.parse(line) {
                     return (await probe.answer(radio), false)
                 }
@@ -64,12 +71,15 @@
                     }
                 }
             }
+            gate.attach(channel)
             listener = channel
+            wifi = gate
         }
 
-        /// Listens, unless it already does; called at launch and at every foreground.
+        /// Listens anew, and on Wi-Fi too if the phone is on a pinned network; called at launch and at every foreground.
         func start() {
             listener.start()
+            wifi.refresh()
         }
     }
 

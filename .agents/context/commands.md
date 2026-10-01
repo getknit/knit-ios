@@ -85,6 +85,8 @@ python3 scripts/interop.py android-forgets --device <serial>     # A3's gate: ea
 python3 scripts/interop.py iphone-forgets --hci0                 # each forget rule fires once on the iPhone (hci0 needs its go-ahead)
 python3 scripts/interop.py iphone-scan --first ios --away-window 150   # P8's scan-filter check: peers on hci0 and hci1; someone locks the iPhone
 python3 scripts/interop.py bridge '{"cmd":"status"}' --watch 60   # the iPhone's bridge by hand: replies, then events
+python3 scripts/interop.py bridge '{"cmd":"wifi-pin"}'           # over USB: let the bridge listen on Wi-Fi on this network
+python3 scripts/interop.py bridge --host <phone-ip> '{"cmd":"wifi"}'   # over Wi-Fi: the network, its pin, the listener
 python3 scripts/soak.py run [--hours 10]                          # a night against every phone in range; drives none
 python3 scripts/soak.py status | report [--json] | stop           # the latest run (.build/soak/current)
 sudo scripts/hci1-supervision.sh                                  # hci1's supervision timeout to 5 s, until a replug
@@ -129,6 +131,13 @@ xcrun devicectl device process launch --device <id> app.getknit.knit.dev   # lau
 A debug build answers `knit-peer`'s control lines on the phone's loopback, port 5648 (ADR 2026-09.kwa8), while
 Knit is open. `scripts/interop.py` starts `iproxy` itself; run it by hand only to reach the bridge from something
 else, with one JSON command per line.
+
+On a network pinned over USB, the bridge also listens on the phone's Wi-Fi address, port 5648 (ADR 2026-10.dz8d).
+`wifi-pin` over USB pins the network the phone is on, `wifi` reports the network, the pins and where the bridge
+listens, and `wifi-unpin` (with `"all":true` for every network) undoes a pin. Every iPhone command in
+`interop.py` then takes `--host <phone-ip>`, or `KNIT_IPHONE_HOST`; `--host ''` forces USB. The log, crash reports
+and restarts still need the cable. Keep the phone on 5 GHz Wi-Fi for runs that time the BLE link, since 2.4 GHz
+Wi-Fi shares the phone's radio with Bluetooth.
 
 The debug log carries link events, not messages; the bridge's `messages`, `peers` and `digest` answer what the
 store holds. When Knit is not running, copy

@@ -157,9 +157,9 @@ explicit direction.** Update this file in the change that ships an item.
     scanned; the debug log went unrelayed; a back-fill posted a notification per message; a GATT payload was
     read again every few seconds; a relaunch's restored connections were cancelled before the central was
     powered on, which CoreBluetooth refused, and a dial to a phone they held hung until Stop and Start.
-  - **The debug bridge (ADR 2026-09.kwa8):** a debug build answers `knit-peer`'s control protocol over USB, so
-    `scripts/interop.py iphone` runs items 2 to 6 against an Android phone with no one at the iPhone, once Knit
-    is open on it.
+  - **The debug bridge (ADR 2026-09.kwa8):** a debug build answers `knit-peer`'s control protocol over USB, and
+    over Wi-Fi on a pinned network (ADR 2026-10.dz8d), so `scripts/interop.py iphone` runs items 2 to 6 against
+    an Android phone with no one at the iPhone, once Knit is open on it.
   - **The rig for iPhone runs:** the Linux peer on a shared `hci0`, since `hci1`'s 23-byte fragments stall the
     iPhone, and bluetoothd without its battery plugin, which asked the iPhone to pair.
   - **Relay (item 7):** passes through the iPhone. `scripts/interop.py iphone-relay` ran the line twice, with

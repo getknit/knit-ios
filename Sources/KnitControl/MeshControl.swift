@@ -31,7 +31,7 @@ public protocol ControlActions: Sendable {
 extension Mesh: ControlActions {}
 
 /// Answers control lines for one node, and turns what its mesh did into event lines: the protocol `knit-peer` speaks
-/// on standard input and output, and a debug build of the app speaks over USB.
+/// on standard input and output, and a debug build of the app speaks over its bridge.
 ///
 /// Replies carry `"reply"` with the command's name, `"ok"`, and the caller's `"tag"`; events carry `"event"`
 /// (`ready`, `link`, `profile`, `message`, `sent`, `delivered`, `radio` and `group`).

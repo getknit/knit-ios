@@ -39,7 +39,8 @@ Apple's developer disk image.
 **Consequences / limits:**
 
 - **The listener exists only in a debug build** (`#if DEBUG`), and only on loopback, so only a computer on the
-  USB cable reaches it. Using it counts as driving the phone (`.agents/rules/devices.md`).
+  USB cable reaches it. Using it counts as driving the phone (`.agents/rules/devices.md`). (Amended 2026-10-01:
+  on a network pinned over USB it also listens on Wi-Fi, ADR 2026-10.dz8d.)
 - **Knit has to be running.** Nothing here opens it: someone opens Knit after each install or crash. A
   suspended Knit answers nothing. iOS shuts Knit's sockets when it suspends it and tells the listener nothing,
   so a connection open across a suspension is lost, and the app makes a new listener at every foreground.

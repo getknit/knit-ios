@@ -22,10 +22,10 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py android-forgets --device SERIAL [--link-timeout 180] [--quiet-timeout 600]
     scripts/interop.py android-rings --device SERIAL [--link dialed|accepted] [--converge-timeout 600] [--arrival-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
-    scripts/interop.py bridge  [--udid UDID] [--watch SECONDS] [COMMAND_JSON ...]
+    scripts/interop.py bridge  [--udid UDID | --host ADDRESS] [--watch SECONDS] [COMMAND_JSON ...]
 
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
-bridge over USB (ADR 2026-09.kwa8), and the phone's Requests screen for a pair that has never talked; `iphone-peer`
+bridge (ADR 2026-09.kwa8), and the phone's Requests screen for a pair that has never talked; `iphone-peer`
 runs the same items between the iPhone and the peer; `iphone-relay` runs MVP item 7's line through the iPhone, and
 `iphone-group` v1 groups along that line, the peer as the third member (`group` runs them with two peers and no
 iPhone, ADR 2026-09.n393); `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
@@ -39,6 +39,11 @@ is dialed, by the id order.
 `--mac` runs the peer on the Mac Mini instead of hci1, on CoreBluetooth, the iPhone's own radio: checklist M (ADR
 2026-09.vcdk). It always runs the `ios` profile, in the Mac's desktop session through `scripts/mac-peer.sh`, and the
 scan that finds the nodes to refuse still runs here.
+
+Every iPhone command reaches the bridge over USB through iproxy, or over Wi-Fi with `--host ADDRESS` (or
+KNIT_IPHONE_HOST; `--host ''` forces USB) once the phone's network is pinned over USB with
+`bridge '{"cmd":"wifi-pin"}'` (ADR 2026-10.dz8d). Steps that use usbmuxd still need the cable: the iPhone's log, its
+crash reports and a restart.
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
@@ -351,16 +356,18 @@ class Peer(Node):
 
 
 class IPhone(Node):
-    """Knit on an iPhone over USB: a debug build's bridge (ADR 2026-09.kwa8), reached through `iproxy`. It speaks
-    knit-peer's protocol, so a run drives it as it drives the peer. Knit has to be open on the phone, since nothing
-    here can launch it, and `stop` closes the connection and leaves Knit and its mesh running."""
+    """Knit on an iPhone: a debug build's bridge (ADR 2026-09.kwa8), reached over USB through `iproxy`, or over Wi-Fi
+    at `host` on a network pinned over USB (ADR 2026-10.dz8d). It speaks knit-peer's protocol, so a run drives it as it
+    drives the peer. Knit has to be open on the phone, since nothing here can launch it, and `stop` closes the
+    connection and leaves Knit and its mesh running."""
 
     label = "the iPhone's bridge"
     DEVICE_PORT = 5648
 
-    def __init__(self, udid: str | None = None) -> None:
+    def __init__(self, udid: str | None = None, host: str | None = None) -> None:
         super().__init__()
-        self.udid = udid or first_usb_iphone()
+        self._udid = udid
+        self.host = host or None
         self.proxy: subprocess.Popen[bytes] | None = None
         self.socket: socket.socket | None = None
         self.name = ""
@@ -368,19 +375,41 @@ class IPhone(Node):
         self.lost: float | None = None
         self.stopping = False
 
+    @property
+    def udid(self) -> str:
+        """The iPhone's UDID, found on USB when a step first needs it, so a run over Wi-Fi needs the cable only for the
+        steps that use usbmuxd."""
+        if self._udid is None:
+            try:
+                self._udid = first_usb_iphone()
+            except RuntimeError as error:
+                if self.host:
+                    raise RuntimeError("this step needs the iPhone on USB too: only the bridge goes over Wi-Fi") from error
+                raise
+        return self._udid
+
     def start(self) -> None:
         self.lost = None
         self.stopping = False
-        port = free_port()
-        self.proxy = subprocess.Popen(
-            ["iproxy", f"{port}:{self.DEVICE_PORT}", "-u", self.udid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
+        if self.host:
+            address = (self.host, self.DEVICE_PORT)
+        else:
+            port = free_port()
+            self.proxy = subprocess.Popen(
+                ["iproxy", f"{port}:{self.DEVICE_PORT}", "-u", self.udid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            address = ("127.0.0.1", port)
         deadline = time.monotonic() + 10
         while self.socket is None:
             try:
-                self.socket = socket.create_connection(("127.0.0.1", port), timeout=5)
-            except OSError:
+                self.socket = socket.create_connection(address, timeout=5)
+            except OSError as error:
                 if time.monotonic() > deadline:
+                    if self.host:
+                        raise ConnectionError(
+                            f"nothing answers at {self.host}:{self.DEVICE_PORT}: open Knit, a debug build, on a network "
+                            """pinned over USB (bridge '{"cmd":"wifi-pin"}')"""
+                        ) from error
                     raise
                 time.sleep(0.2)
         self.socket.settimeout(None)
@@ -645,7 +674,7 @@ def iphone(arguments: argparse.Namespace) -> int:
     then brings the link down and up again until N links have found the doorbell, each dialed by the iPhone, held
     for `--hold` seconds and checked the same way, and the summary lists every link's last timeout."""
     phone = Phone(arguments.device)
-    ios = IPhone(arguments.udid)
+    ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
     ios.start()
@@ -803,7 +832,7 @@ def iphone_wake(arguments: argparse.Namespace) -> int:
     `feat/ble-doorbell`) rings the iPhone's doorbell too, and with `--expect-wakes` every DM must wake Knit, as with
     the peer, and the phone must have logged its rings. Without it the phone's DMs are only counted, for a build that
     predates A4, and the check is item 9's fallback: each arrives within 60 s of Knit opening."""
-    ios = IPhone(arguments.udid)
+    ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
     try:
@@ -967,7 +996,7 @@ def iphone_rings(arguments: argparse.Namespace) -> int:
     payload and dials it. The ATS2851 now on hci1 takes no incoming LE connection, so this run needs a dongle that
     does, such as the Edimax it replaced (.agents/context/linux-peer.md, "What the ATS2851 showed"). The peer rings the
     iPhone back, once BlueZ has read the iPhone's services."""
-    ios = IPhone(arguments.udid)
+    ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
     try:
@@ -1349,7 +1378,7 @@ def iphone_forgets(arguments: argparse.Namespace) -> int:
     on the maintainer's adapter, shared, which needs its own go-ahead. The iPhone reads and dials the peer here, and the
     ATS2851 now on hci1 takes neither, so run it with `--hci0` (`.agents/context/linux-peer.md`, "What the ATS2851
     showed")."""
-    ios = IPhone(arguments.udid)
+    ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
     ios.start()
@@ -1924,7 +1953,7 @@ def iphone_scan(arguments: argparse.Namespace) -> int:
     and someone opens Knit again. A match that came after its peer started and before anyone was asked to unlock is one
     the locked iPhone's scan delivered, waking Knit to take it; one that came as the screen woke does not count. The
     Android phones in range show what real Android adverts match."""
-    ios = IPhone(arguments.udid)
+    ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
     try:
@@ -2308,7 +2337,7 @@ def iphone_reboot(arguments: argparse.Namespace) -> int:
     closed for --closed seconds, time for protected data to start a launch waiting in the background, then opens Knit,
     and the same holds. The run reports whether Knit launched before that unlock, and what started it: a launch before
     the unlock waits for protected data rather than making new keys (ADR 2026-09.tkww)."""
-    ios = IPhone(arguments.udid)
+    ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     try:
         ios.start()
@@ -2393,7 +2422,7 @@ def _onboarded(storage: dict) -> dict:
 
 def _relaunched(ios: IPhone, before: dict, timeout: float) -> dict:
     """Asks the bridge afresh every few seconds until a Knit process other than the one `before` came from answers.
-    A connection open when Knit closes never hears it: iproxy keeps its end open."""
+    Over USB, a connection open when Knit closes never hears it: iproxy keeps its end open."""
     started = time.monotonic()
     while True:
         try:
@@ -2474,7 +2503,7 @@ def _launch_after_reboot(storage: dict, back: float, opened: float) -> dict:
 
 def bridge(arguments: argparse.Namespace) -> int:
     """Sends each command to the iPhone's bridge and prints its reply, then prints its events for --watch seconds."""
-    ios = IPhone(arguments.udid)
+    ios = IPhone(arguments.udid, arguments.host)
     ios.start()
     try:
         print(json.dumps({"ready": ios.node_id, "name": ios.name}), flush=True)
@@ -3017,7 +3046,7 @@ def iphone_relay(arguments: argparse.Namespace) -> int:
     sorts above every phone in range, so no phone dials it. It runs on hci0 because the ATS2851 on hci1 takes no
     incoming LE connection (.agents/context/linux-peer.md, "What the ATS2851 showed")."""
     phone = Phone(arguments.device)
-    ios = IPhone(arguments.udid)
+    ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
     ios.start()
@@ -3086,7 +3115,7 @@ def iphone_group(arguments: argparse.Namespace) -> int:
     The peer runs the `android` profile and sorts above every phone in range, so the iPhone dials it and no phone
     does. It runs on hci0 because the ATS2851 on hci1 takes no incoming LE connection."""
     phone = Phone(arguments.device)
-    ios = IPhone(arguments.udid)
+    ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
     stop = threading.Event()
@@ -3393,7 +3422,7 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
     orders and the peer admits it unsighted, as an A1 phone does (ADR 2026-09.6es2). The peer refuses every node but
     the iPhone, so whatever crosses between the two crossed their own link. It runs on hci0 because the ATS2851 on hci1
     takes no incoming LE connection (.agents/context/linux-peer.md, "What the ATS2851 showed")."""
-    ios = IPhone(arguments.udid)
+    ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
     ios.start()
@@ -3464,7 +3493,7 @@ def iphone_soak(arguments: argparse.Namespace) -> int:
     ended. Knit must stay in front for the hour, so the iPhone's Auto-Lock should be Never. Everything lands in
     `.build/interop-iphone-soak/<start>/`: the iPhone's log, the peer's, `samples.jsonl` and `summary.json`."""
     phone = Phone(arguments.device)
-    ios = IPhone(arguments.udid)
+    ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
     started_wall = time.time()
@@ -4202,6 +4231,11 @@ def main() -> int:
     )
     for sub in (ios, wake, reboot, rings, scan, by_hand, ios_peer, ios_soak, ios_forgets, commands.choices["iphone-relay"], commands.choices["iphone-group"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
+        sub.add_argument(
+            "--host",
+            default=os.environ.get("KNIT_IPHONE_HOST"),
+            help="the iPhone's Wi-Fi address, to reach its bridge over Wi-Fi once its network is pinned (default KNIT_IPHONE_HOST)",
+        )
     arguments = parser.parse_args()
     if arguments.command == "iphone-wake" and arguments.sender == "phone" and not arguments.device:
         parser.error("--sender phone needs --device")

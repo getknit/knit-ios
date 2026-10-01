@@ -51,7 +51,7 @@ ladder, not the first.
    runs `knit-peer` on the Mac, on KnitBLE's CoreBluetooth radio, with `interop.py check --mac` and `soak --mac`
    (ADR 2026-09.vcdk).
 10. **The iPhone (P8).** The MVP checklist in `.agents/specs/mvp.md`. `scripts/interop.py iphone` drives the
-    iPhone through a debug build's USB bridge and an Android phone through knit-next's, for items 2 to 6
+    iPhone through a debug build's bridge, over USB or Wi-Fi, and an Android phone through knit-next's, for items 2 to 6
     (ADR 2026-09.kwa8). `iphone-relay` adds a peer on `hci0` beyond the iPhone for item 7, `iphone-wake`
     runs item 9's wake test, with someone to lock and unlock the iPhone, and `iphone-scan` runs the scan-filter
     check, with the same help. `iphone-reboot` runs item 1's relaunch and reboot through the bridge's `storage`

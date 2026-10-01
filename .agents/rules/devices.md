@@ -12,7 +12,8 @@
   `btmgmt --index 1 <command>` runs before the index applies, so it lands on `hci0` (`linux-peer.md`, "What the
   ATS2851 showed").
 - **Ask before driving a physical phone, every session.** That covers installing, launching, adb broadcasts,
-  the iPhone's USB bridge (`interop.py iphone` and `bridge`) and UI automation, on Android or iPhone. A go-ahead does not carry over to a new task or conversation.
+  the iPhone's bridge over USB or Wi-Fi (`interop.py iphone` and `bridge`, pinning included) and UI automation,
+  on Android or iPhone. A go-ahead does not carry over to a new task or conversation.
 - **An emulator is fair game.** knit-next's `scripts/emulator-ble-mesh.sh` gives an Android emulator a real
   radio by passing the Edimax BT-8500 dongle through, which it finds by USB id. The Edimax was `hci1` until
   2026-09-29 and is unplugged; plug it back in for the emulator, which can then run beside the peer.
