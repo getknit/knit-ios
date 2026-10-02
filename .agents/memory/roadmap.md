@@ -228,8 +228,10 @@ explicit direction.** Update this file in the change that ships an item.
     missing adverts the ATS2851 heard. With the Pixel's Meshtastic radio off, 5 of 8 came within 30 s
     (`.agents/context/linux-peer.md`, "What the raw scan showed"). On 2026-10-02, with knit-next's fix for #112 on the
     Pixel and the silence limit raised to 12 s (ADR 2026-09.6es2, amended 2026-10-02), 7 of 8 came within 30 s, still
-    with the Meshtastic radio off ("What the 12 s limit showed"). The run with it on is still owed. The 8 s gap reset
-    is unchanged, and knit-next could take both rules later as a paired change. Items 2 to 8 run unattended through
+    with the Meshtastic radio off ("What the 12 s limit showed"). With it on, and knit-next's receiver fix, 6 of 8 came
+    within 30 s, and with the Pixel's Coded mode off, as a shipped build has it, both misses were the iPhone's 8 s gap
+    reset ("What the Meshtastic radio showed"). Raising that reset to 12 s is the next step for item 2; replayed, it
+    gives 7 or 8 of 8. knit-next could take the rules later as a paired change. Items 2 to 8 run unattended through
     the bridge; item 9's test needs someone to lock and unlock the iPhone.
 - **Groups (v1), begun 2026-09-30** on `feat/groups`, at the maintainer's direction (ADR 2026-09.n393). This is
   core parity with Android, sealed with v1 and so without forward secrecy:
@@ -270,8 +272,11 @@ explicit direction.** Update this file in the change that ships an item.
   bonded Meshtastic radio set it off at every resume on the Pixel 7, and Android's own A3 read of the iPhone set it off
   once. MVP item 2 waits on it in part; nothing in this port changes for it. knit-next's fix (`c6218c68`, on
   `fix/presence-advert-reassert`, its ADR 2026-10.9utz) enables the set again after every connection. On the Pixel 7
-  on 2026-10-02 the longest silence a passive scan heard fell from 43.5 s to 19.6 s, then 11.1 s. The run with the
-  Meshtastic radio on, and the merge, are still owed.
+  on 2026-10-02 the longest silence a passive scan heard fell from 43.5 s to 19.6 s, then 11.1 s. With the Meshtastic
+  radio on, the fix never re-enabled the set, because its connection receiver was not exported. `288fc0ea` fixed
+  that, and with the Coded mode off the Pixel's stack then refused no enable at all. Both commits are on knit-next's
+  `main`, and knit-next recorded the runs in its ADR 2026-10.9utz (`.agents/context/linux-peer.md`, "What the
+  Meshtastic radio showed"). Done on Android's side.
 
 ## Next, after the MVP
 

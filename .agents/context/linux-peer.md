@@ -1380,4 +1380,44 @@ after it. The data is in `.build/interop-link-probe/20261002-0035-phone/` and `2
   ended within 12 s of its last advert (ADR 2026-09.6es2, amended 2026-10-02). It timed out at 22.3 s, and no other
   dial followed. Dial to link took 1.4 to 5.5 s in both runs.
 - **knit-next's bar for #112 holds with the Meshtastic radio off:** 7 of 8 within 30 s, and no silence near 30 s. The
-  run with `Meshtastic_1230` bonded and on is still owed.
+  runs with `Meshtastic_1230` on follow ("What the Meshtastic radio showed").
+
+## What the Meshtastic radio showed
+
+The same probe ran three more times on 2026-10-02 with `Meshtastic_1230` enabled on the Pixel 7, the iPhone on the 12 s
+limit, and the raw scan beside it. The data is in `.build/interop-link-probe/20261002-0138-phone/`, `-0221-phone/`
+and `-0238-phone/`.
+
+| Run | Pixel build | Within 30 s | Median | Longest silence | Refusals |
+| --- | --- | --- | --- | --- | --- |
+| 01:38 | #112's fix (`c6218c68`) | 3 of 8 | 35.1 s | 22.1 s | 16 |
+| 02:21 | the receiver fix (`288fc0ea`) | 6 of 8 | 21.2 s | 14.5 s | 21 |
+| 02:38 | `288fc0ea`, Coded mode off | 6 of 8 | 22.2 s | 7.2 s | 0 |
+
+The silence is the longest the ATS2851 heard nothing from the Pixel while its mesh ran. The refusals are the
+`CONNECTION_REJECTED_LIMITED_RESOURCES` lines in the Pixel's log. Before #112's fix, on 2026-10-01 at 22:48, the same
+case linked 2 of 8 within 30 s, with a median of 64.3 s.
+
+- **At 01:38 the fix never re-enabled the advert after the radio connected.** At every resume the radio connected at a
+  15 ms interval 1.7 to 2.1 s in, and the stack refused the presence enable within 0.02 s. The fix's first enable came
+  at 11.6 to 11.7 s, its 10 s retry, so for about 10 s the ATS2851 heard nothing. Android Auto logged each
+  `ACL_CONNECTED` within 0.08 s, but Knit's receiver never fired: it was registered `RECEIVER_NOT_EXPORTED`, and on
+  Android 17 the Bluetooth app sends `ACL_*` from its own uid, not from `system_server`. knit-next exported it in
+  `288fc0ea`, with a `bt acl edge` log line.
+- **At 02:21 the receiver fired,** about 0.5 s after each connection, and the presence set was enabled again 2.5 s
+  later, at 4.8 to 5.2 s. Each resume still began with a refusal as the radio connected, 8 in all, which took the
+  presence set down with the experimental Coded one. Seven more followed the transport's enables of the Coded set
+  (`coded advertising enable=true status=4`), and the presence set's own enables were never refused. In samples 2
+  and 8 the presence enable reported success and the ATS2851 still heard nothing until the 10 s retry, about 15 s in. knit-next counts that a cost of the Coded experiment (its ADR 2026-10.yvn6), which a
+  shipped build does not have. The other misses were the iPhone's.
+- **At 02:38, with the Coded mode off,** the Pixel's stack refused nothing and the ATS2851 never went more than 7.2 s
+  without hearing it. Both misses were the iPhone's 8 s gap reset. In sample 2 its gaps of 12.0, 9.9 and 8.9 s each
+  restarted the dwell, and it linked at 48.4 s. In sample 6 one gap of 11.1 s made 31.0 s. The ATS2851 heard the Pixel
+  2 to 8 times inside each of those gaps.
+- **A 12 s gap reset is the next lever.** Replayed through the iPhone's sightings, it links 7 of 8 at 02:21 and 8 of 8
+  at 02:38, but one sample in each sits on a sighting exactly 12.0 s after the last, so the replay flatters it by about
+  one.
+- **The dial to a paused phone came in 6 of the day's 32 pauses on the 12 s limit,** 8.3 to 10.6 s after the pause,
+  once each, and every one timed out with no dial after it (ADR 2026-09.6es2, amended 2026-10-02).
+- **Android's side is done.** knit-next recorded these runs in its ADR 2026-10.9utz, and both fixes are on its `main`.
+  The Pixel's Coded mode is back on `auto`.

@@ -53,9 +53,10 @@ last, restarted it. Replayed through the iPhone's own sightings, a 12 s limit li
 29.0 s (`.agents/context/linux-peer.md`, "What the 12 s limit showed").
 
 - **A phone that leaves gets one dial at most.** When a link drops, its peer backs off for 8 to 12 s. If that ends
-  within 12 s of the phone's last advert, the iPhone dials it once. The 8 s limit never allowed that dial. It came in 1
-  of the rerun's 8 pauses, 9.7 s in. The dial times out after 12 s, and when the doubled backoff ends the phone has
-  been quiet for 30 s or more, so the 2026-09-29 run's two or three dials per pause do not come back.
+  within 12 s of the phone's last advert, the iPhone dials it once. The 8 s limit never allowed that dial. It came in 6
+  of the day's 32 pauses on the 12 s limit, 8.3 to 10.6 s in ("What the Meshtastic radio showed"). The dial times out
+  after 12 s, and when the doubled backoff ends the phone has been quiet for 30 s or more, so the 2026-09-29 run's two
+  or three dials per pause do not come back. None did that day.
 - **The wake now always fires.** With the limit no shorter than the dwell, every running dwell ends heard recently
   enough. A peer heard once is dialed 12 s later, unless an advert more than 8 s after it restarted the dwell.
 - **A fast failure can be retried once more.** A dial that fails within a few seconds leaves the peer heard within
