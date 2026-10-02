@@ -44,6 +44,29 @@ have been heard within those 8 s. Promotion ran only when something happened, so
 waited for the next one, 3 to 10 s at a phone's rate. Nothing on the air changes. Making this a paired change first
 would leave item 2 waiting on Android, which cannot find an iPhone until A3. `LinkDwellTests` pins both rules.
 
+**Amended 2026-10-02, for gaps of 8 to 12 s:** the silence limit is 12 s, not 8 (`heardWithinMilliseconds`). On
+2026-10-02 the Pixel 7 probe, with knit-next's fix for #112, linked within 30 s in 4 of 8 samples. In three of the
+four slow ones a passive scan on the ATS2851 heard the phone with no gap over 7.3 s, while the iPhone went 8.3 to
+14.8 s between sightings. A dwell that ended in such a gap got no wake, and the next advert, more than 8 s after the
+last, restarted it. Replayed through the iPhone's own sightings, a 12 s limit links 6 of those 8 within 30 s, and 7 of
+2026-10-01's 8. Rerun with it the same morning, the probe linked 7 of 8 within 30 s, with a median of 23.5 s against
+29.0 s (`.agents/context/linux-peer.md`, "What the 12 s limit showed").
+
+- **A phone that leaves gets one dial at most.** When a link drops, its peer backs off for 8 to 12 s. If that ends
+  within 12 s of the phone's last advert, the iPhone dials it once. The 8 s limit never allowed that dial. It came in 1
+  of the rerun's 8 pauses, 9.7 s in. The dial times out after 12 s, and when the doubled backoff ends the phone has
+  been quiet for 30 s or more, so the 2026-09-29 run's two or three dials per pause do not come back.
+- **The wake now always fires.** With the limit no shorter than the dwell, every running dwell ends heard recently
+  enough. A peer heard once is dialed 12 s later, unless an advert more than 8 s after it restarted the dwell.
+- **A fast failure can be retried once more.** A dial that fails within a few seconds leaves the peer heard within
+  12 s when an 8 to 12 s backoff ends, and the iPhone dials it again.
+- **The gap reset stays Android's 8 s.** Raising it to 12 s as well gives 7 of 8 and 8 of 8 in the same replays, but
+  the iPhone would then count presence differently from the phone it talks to. That is the next step if this one is
+  not enough.
+
+`LinkDwellTests`' `aPeerHeardOnceIsDialedWhenItsDwellEnds` and `aPhoneThatLeftIsNotDialedAgainAfterItsDialTimesOut`
+pin the change, and `noWakeForAPeerThatWillBeQuietTooLongWhenItsDwellEnds` now runs with an 8 s limit.
+
 **Consequences / limits:** the admission rule differs from Android 2.7 in three ways (unsighted dialers,
 stale-link replacement, −90 dBm), and A1 is what brings Android level. An Android build without A1 still refuses
 the iPhone's dial whenever the iPhone's id sorts lower. The HELLO is unauthenticated, so a device that

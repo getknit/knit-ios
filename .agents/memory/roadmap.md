@@ -216,17 +216,21 @@ explicit direction.** Update this file in the change that ships an item.
     both ways. The phones linked again in 13.8 and 16.7 s, but against the peer three of ten first links and one of
     three relinks took 30.5 to 54.7 s: the iPhone hears the peer's BlueZ advert late and seldom, and dials at the
     first sighting after the 12 s dwell (`.agents/context/linux-peer.md`, "What both id orders showed").
-  - **Still owed:** the soak's rerun (item 11), on the fixed harness with the Pixels on knit-next's early-receipt
-    fix, and not before 12:17 on 2026-09-29, when that DM expires. Item 2's first link can run past 30 s, against
-    a phone too: three of five to the Pixel 7 did, from gaps between sightings that restart the dwell, and from
-    backoff built by dialing a phone that has left (`.agents/context/linux-peer.md`). `LinkManager` now dials when
-    a dwell ends and never dials a peer quiet for more than 8 s (ADR 2026-09.6es2, amended 2026-09-29). Both held on
-    2026-10-01, but the Pixel 7 probe still passed only four of eight: every slow link came from gaps over 8 s in
-    hearing the phone, which restart the dwell, and one dial probably went to a late wake
-    (`.agents/context/linux-peer.md`, "What the dwell fixes showed"). Still to learn is whether the gaps are the
-    Pixel's advertising or the iPhone's scan, which takes a raw scan as root on the ATS2851. The 8 s gap reset is
-    unchanged, and knit-next could take both rules later as a paired change. Items 2 to 8 run unattended through the
-    bridge; item 9's test needs someone to lock and unlock the iPhone.
+  - **Still owed:** the soak's rerun (item 11), on the fixed harness with the Pixels on knit-next's early-receipt fix,
+    and not before 12:17 on 2026-09-29, when that DM expires. Item 2's first link can run past 30 s, against a phone
+    too: three of five to the Pixel 7 did, from gaps between sightings that restart the dwell, and from backoff built by
+    dialing a phone that has left (`.agents/context/linux-peer.md`). `LinkManager` now dials when a dwell ends and never
+    dials a peer quiet for more than 8 s (ADR 2026-09.6es2, amended 2026-09-29). Both held on 2026-10-01, but the Pixel
+    7 probe still passed only four of eight: every slow link came from gaps over 8 s in hearing the phone, which restart
+    the dwell, and one dial probably went to a late wake (`.agents/context/linux-peer.md`, "What the dwell fixes
+    showed"). A raw scan on the ATS2851 split those gaps between the phones. Most were the Pixel's: its stack drops the
+    presence advert when a 15 ms link opens just as the advert comes up (knit-next #112). The rest were the iPhone
+    missing adverts the ATS2851 heard. With the Pixel's Meshtastic radio off, 5 of 8 came within 30 s
+    (`.agents/context/linux-peer.md`, "What the raw scan showed"). On 2026-10-02, with knit-next's fix for #112 on the
+    Pixel and the silence limit raised to 12 s (ADR 2026-09.6es2, amended 2026-10-02), 7 of 8 came within 30 s, still
+    with the Meshtastic radio off ("What the 12 s limit showed"). The run with it on is still owed. The 8 s gap reset
+    is unchanged, and knit-next could take both rules later as a paired change. Items 2 to 8 run unattended through
+    the bridge; item 9's test needs someone to lock and unlock the iPhone.
 - **Groups (v1), begun 2026-09-30** on `feat/groups`, at the maintainer's direction (ADR 2026-09.n393). This is
   core parity with Android, sealed with v1 and so without forward secrecy:
   - create a group of 2 to 7 contacts;
@@ -259,6 +263,15 @@ explicit direction.** Update this file in the change that ships an item.
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
   Done.
 - **Companion change A2 in knit-next:** merged on 2026-09-25 as `0c0756f6` and `1f3befcd`. Done.
+- **The Pixel's presence advert drops out** (knit-next #112, filed 2026-10-01): when a link at a 15 ms interval opens
+  just as Android's presence set comes up, its stack refuses to enable the set
+  (`CONNECTION_REJECTED_LIMITED_RESOURCES`). `BleAdvertiser` does not override `onAdvertisingEnabled`, so it never
+  brings the set back, and the advert stays off for 10 to 60 s while an iPhone can neither find nor dial the phone. A
+  bonded Meshtastic radio set it off at every resume on the Pixel 7, and Android's own A3 read of the iPhone set it off
+  once. MVP item 2 waits on it in part; nothing in this port changes for it. knit-next's fix (`c6218c68`, on
+  `fix/presence-advert-reassert`, its ADR 2026-10.9utz) enables the set again after every connection. On the Pixel 7
+  on 2026-10-02 the longest silence a passive scan heard fell from 43.5 s to 19.6 s, then 11.1 s. The run with the
+  Meshtastic radio on, and the merge, are still owed.
 
 ## Next, after the MVP
 

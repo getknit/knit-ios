@@ -52,9 +52,9 @@ import Testing
         #expect(decision.promote == ids([3]), "only the close peer that stayed promotes")
     }
 
-    @Test func aPeerQuietForMoreThanEightSecondsIsSkipped() {
-        // This port's rule, not Android's (ADR 2026-09.6es2, amended 2026-09-29).
-        let decision = decide([candidate(1, rssi: -50, quiet: 8001), candidate(2, rssi: -60, quiet: 8000)])
+    @Test func aPeerQuietForMoreThanTwelveSecondsIsSkipped() {
+        // This port's rule, not Android's (ADR 2026-09.6es2, amended 2026-09-29 and 2026-10-02).
+        let decision = decide([candidate(1, rssi: -50, quiet: 12_001), candidate(2, rssi: -60, quiet: 12_000)])
         #expect(decision.promote == ids([2]))
     }
 
@@ -67,8 +67,10 @@ import Testing
         func wait(_ candidate: PresenceTracker.Snapshot, backoff: Set<Int> = []) -> Int64? {
             PromotionPolicy.untilDwellEnds(candidates: [candidate], backoff: Set(backoff.map(fixtureNodeId)), configuration: configuration)
         }
-        #expect(wait(candidate(1, rssi: -50, dwell: 4000)) == 8000, "8 s quiet by then still counts as heard")
-        #expect(wait(candidate(1, rssi: -50, dwell: 4000, quiet: 1)) == nil, "too quiet by then")
+        #expect(wait(candidate(1, rssi: -50, dwell: 4000, quiet: 4000)) == 8000, "12 s quiet by then still counts as heard")
+        let shorter = PromotionPolicy.Configuration(heardWithinMilliseconds: 8000)
+        let quiet = [candidate(1, rssi: -50, dwell: 4000, quiet: 1)]
+        #expect(PromotionPolicy.untilDwellEnds(candidates: quiet, backoff: [], configuration: shorter) == nil, "too quiet by then for 8 s")
         #expect(wait(candidate(1, rssi: -85, dwell: 4000)) == nil, "below the floor")
         #expect(wait(candidate(1, rssi: -50, dwell: 4000), backoff: [1]) == nil, "backing off, which wakes the caller itself")
         #expect(wait(candidate(1, rssi: -50, dwell: 12_000)) == nil, "already past its dwell")

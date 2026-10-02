@@ -992,7 +992,8 @@ Item 2's 30 s held for relinks to the phones, and not always for a first link:
 
 `LinkManager` has since taken fixes for two of these (ADR 2026-09.6es2, amended 2026-09-29): it never dials a peer
 quiet for more than 8 s, and it wakes when a candidate's dwell ends. Both held on the iPhone on 2026-10-01 ("What the
-dwell fixes showed"). Neither helps a late first sighting, or a gap over 8 s that restarts the dwell.
+dwell fixes showed"). Neither helps a late first sighting, or a gap over 8 s that restarts the dwell. The 8 s limit
+became 12 s on 2026-10-02 (amended that day), so a dwell that ends in a gap of 8 to 12 s still wakes and dials.
 
 ## What A3's gate showed
 
@@ -1314,3 +1315,69 @@ times, at −68 to −84 dBm. The samples, the iPhone's log and the probe are in
   maintainer's adapter. A 15 s trial scan ran there before the swap was found, and the speaker and keyboard stayed
   connected. Since then, knit-peer, the scripts and the root tools find each adapter by its address (ADR 2026-09.5ftc,
   amended 2026-10-01).
+
+## What the raw scan showed
+
+The Pixel 7 probe ran twice more on 2026-10-01, with the ATS2851 as a second receiver beside the iPhone. Through
+`scripts/knit-hci.sh`, `hcitool lescan --passive --duplicates` kept its controller scanning with the duplicate filter
+off, and `btmon -w` wrote every report to a btsnoop file. The ATS2851 and the iPhone both hear only legacy adverts on
+the 1M PHY, which from the Pixel means Knit's presence set (`presenceParams`: legacy, connectable, about once a
+second). The probe now also prints each pause's and resume's wall time, so the capture lines up with the iPhone's
+sightings, and the Pixel's logcat was saved after each run. The Pixel 7 ran the same knit-next debug build as at
+21:02. The data is in `.build/interop-link-probe/20261001-2248-phone/` and `20261001-2314-phone/`, and knit-next #112
+has the Android write-up.
+
+- **At 22:48, 2 of 8 first links came within 30 s:** 14.2 and 28.2 s, then 40.2, 59.3, 69.3, 78.4, 81.4 and 109.5 s.
+  From resume to dial the ATS2851 heard the Pixel 0.07 to 0.39 times a second, against about once a second when
+  idle, and its silences matched the iPhone's, 33, 60 and 45 s in three samples, so the Pixel was not advertising.
+- **The Pixel's log shows why.** At every resume, within about 2 s, a bonded device at `…12:31` connected at a 15 ms
+  interval (`conn_interval=12`). Knit logs it as `KnitWear: bonded central connected`, and the Pixel's Fitbit log
+  names it `Meshtastic_1230`. In the same instant the stack refused an advertising enable with
+  `CONNECTION_REJECTED_LIMITED_RESOURCES(0x0d)`, after Knit had already logged `advertising`. Knit's `BleAdvertiser`
+  does not override `onAdvertisingEnabled`, so nothing brought the presence set back, and it returned on its own 10
+  to 60 s later.
+- **With `Meshtastic_1230` disabled, at 23:14, 5 of 8 came within 30 s:** 14.2, 16.2, 19.2, 20.2 and 22.1 s, then
+  30.2, 48.3 and 74.4 s. In the samples without a refusal the ATS2851 heard the Pixel 0.36 to 0.58 times a second.
+- **One miss was the Pixel's again.** 0.1 s after its adverts came up, the Pixel opened its A3 read of the iPhone's
+  GATT payload, a link at `conn_interval=12`, and 0.2 s later the stack refused an enable as before. Neither receiver
+  heard the presence set until 43.5 s after the resume, and the iPhone linked at 74.4 s.
+- **The other two misses were the iPhone's.** The ATS2851 had no gap over 8 s there, and heard 6, then 2 and 9 adverts
+  inside the iPhone's gaps of 11.3, 9.0 and 22.7 s. Replayed with a 12 s gap reset and silence limit, those two link
+  at 18.8 and 16.6 s. The replay cannot rescue the Pixel's miss, since with its presence advert down a dial has
+  nothing to connect to.
+- **Item 2 against this Pixel waits on both phones.** knit-next #112 asks Android to notice a refused enable and bring
+  the presence set back. On this side the iPhone misses adverts the ATS2851 hears, and the 12 s limit, an amendment
+  to ADR 2026-09.6es2, is the candidate, still undecided.
+- **The capture's tools.** `btmon`'s text output aborted with `buffer overflow detected` under both `-t` and `-T`
+  (BlueZ 5.72), so the capture went to a btsnoop file with `-w` and was decoded in Python. `lescan` ran on the
+  ATS2851, where no other scan was running.
+
+## What the 12 s limit showed
+
+The Pixel 7 probe ran twice on 2026-10-02, with the Pixel on knit-next's fix for #112 (`c6218c68` on
+`fix/presence-advert-reassert`, knit-next's ADR 2026-10.9utz) and `Meshtastic_1230` still disabled, and the same raw
+scan beside it. The bridge went over Wi-Fi (`KNIT_IPHONE_HOST`). The probe keeps the iPhone's log only when the phone
+is on USB too; it was, so the dials are timed. The Pixel's logcat was recorded through each run instead of dumped
+after it. The data is in `.build/interop-link-probe/20261002-0035-phone/` and `20261002-0116-phone/`.
+
+- **With the #112 fix and the 8 s limit, at 00:35, 4 of 8 first links came within 30 s:** 17.9, 18.0, 26.1 and 26.7
+  s, then 31.3, 34.9, 41.6 and 118.2 s, a median of 29.0 s.
+- **The Pixel's advert stayed up.** The longest silence the ATS2851 heard while the Pixel's mesh ran was 19.6 s,
+  against 43.5 s the night before, and only one sample had a silence over 8 s. The stack refused four enables, all on
+  the path that never reaches the app, so the fix's `bt advert refused` and `bt advert enabled again` lines never
+  appeared, and only a scanner shows the recovery. One refusal, after the A3 read 48 s into sample 3, still left 19.6 s
+  with nothing heard, through re-enables at 51.3 and 52.8 s that reported no error.
+- **The misses were the iPhone's.** In three of the four the ATS2851 never went more than 7.3 s without hearing the
+  Pixel, while the iPhone went 8.3 to 14.8 s between sightings, through 1 to 6 adverts the ATS2851 heard. A dwell that
+  ended in such a gap got no wake, and the next advert restarted it. The iPhone caught 46 % of what the ATS2851 heard,
+  against 48 % over USB the night before, so the Wi-Fi bridge did not cost it adverts.
+- **With the 12 s limit, at 01:16, 7 of 8 came within 30 s:** 15.5, 16.5, 17.6, 22.7, 24.3, 26.8 and 29.8 s, then
+  41.8 s, a median of 23.5 s. The longest silence the ATS2851 heard was 11.1 s.
+- **The one miss was a 26.8 s gap in what the iPhone heard,** from 0.3 to 27.1 s after the resume, while the ATS2851
+  heard the Pixel 10 times. The dwell restarted at 27.1 s, and the timer dialed when it ended at 39.1 s, 6.7 s after
+  the last sighting. No gap reset under 27 s would have kept that dwell running.
+- **One dial went to the paused Pixel,** 9.7 s after the pause in sample 2, when the backoff from the dropped link
+  ended within 12 s of its last advert (ADR 2026-09.6es2, amended 2026-10-02). It timed out at 22.3 s, and no other
+  dial followed. Dial to link took 1.4 to 5.5 s in both runs.
+- **knit-next's bar for #112 holds with the Meshtastic radio off:** 7 of 8 within 30 s, and no silence near 30 s. The
+  run with `Meshtastic_1230` bonded and on is still owed.

@@ -52,15 +52,17 @@ public enum PromotionPolicy {
         /// times out doubles its backoff. Knit for Android has no such limit.
         public var heardWithinMilliseconds: Int64
 
-        /// knit-next's values unless told otherwise: 12 s, −90 dBm, 6 links, 8 dB and 20 s. The 8 s silence limit is
-        /// this port's, and matches the presence gap reset, past which the peer's next advert restarts its dwell.
+        /// knit-next's values unless told otherwise: 12 s, −90 dBm, 6 links, 8 dB and 20 s. The 12 s silence limit is
+        /// this port's. It was 8 s, the presence gap reset, until 2026-10-02: an iPhone hears a phone's adverts with
+        /// gaps of 8 to 12 s, and a dwell that ended in one waited for an advert that then restarted it. A dial to a
+        /// phone that left times out after 12 s, so its backoff still ends with the phone quiet for longer than this.
         public init(
             dwellMilliseconds: Int64 = 12_000,
             rssiFloor: Double = -90,
             maxLinks: Int = 6,
             rssiHysteresis: Double = 8,
             minimumHoldMilliseconds: Int64 = 20_000,
-            heardWithinMilliseconds: Int64 = 8000
+            heardWithinMilliseconds: Int64 = 12_000
         ) {
             self.dwellMilliseconds = dwellMilliseconds
             self.rssiFloor = rssiFloor
@@ -111,6 +113,10 @@ public enum PromotionPolicy {
     /// iPhone hears a peer that advertises about once a second with gaps of several seconds, so it dialed up to 10 s
     /// after the dwell had ended. A caller that wakes this long from now dials on time. A peer whose dwell ends with
     /// no free slot is past the point afterwards and answers nothing, so the caller never wakes in a loop.
+    ///
+    /// While the silence limit is no shorter than the dwell, as it is by default, every running dwell ends heard
+    /// recently enough: a peer heard once is dialed when its dwell ends, unless an advert more than the gap reset
+    /// later restarted it.
     public static func untilDwellEnds(
         candidates: [PresenceTracker.Snapshot],
         backoff: Set<NodeId>,

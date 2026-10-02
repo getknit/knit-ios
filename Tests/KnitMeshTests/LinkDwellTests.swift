@@ -3,13 +3,14 @@ import KnitStore
 import KnitWire
 import Testing
 
-/// When a peer is dialed, in this port's two rules beside Android's (ADR 2026-09.6es2, amended 2026-09-29): the link
-/// layer wakes when a peer's dwell ends between its adverts, and never dials a peer quiet for more than 8 s.
+/// When a peer is dialed, in this port's two rules beside Android's (ADR 2026-09.6es2, amended 2026-09-29 and
+/// 2026-10-02): the link layer wakes when a peer's dwell ends between its adverts, and never dials a peer quiet for more
+/// than 12 s.
 @Suite struct LinkDwellTests {
     private let low = LinkRig.low
     private let high = LinkRig.high
 
-    @Test func aPeerNotHeardForEightSecondsIsNotDialedAgain() throws {
+    @Test func aPeerNotHeardForTwelveSecondsIsNotDialedAgain() throws {
         // The Pixel 7 probe on 2026-09-29: a phone that had left was dialed two or three times while its sighting
         // lingered, and each timeout doubled its backoff, up to 80 s.
         let rig = LinkRig(local: high)
@@ -19,6 +20,18 @@ import Testing
         #expect(rig.radio.dials.count == 1, "its backoff has run out, but it has been quiet since the dial")
         _ = rig.handle(.sighted(LinkRig.sighting(low)))
         #expect(rig.radio.dials.count == 1, "back after a gap over 8 s, it starts a new dwell")
+    }
+
+    @Test func aPhoneThatLeftIsNotDialedAgainAfterItsDialTimesOut() {
+        // The dial's 12 s timeout and then its backoff both pass in silence, so the phone is quiet for longer than the
+        // 12 s limit when the backoff ends, whatever the jitter.
+        let rig = LinkRig(local: high)
+        rig.sightToPromotion(low)
+        _ = rig.advance(12_000)
+        #expect(rig.radio.dials.count == 1)
+        #expect(rig.links.nextDeadline != nil, "backing off")
+        _ = rig.advance(12_001)
+        #expect(rig.radio.dials.count == 1, "its backoff has run out, 24 s after it was last heard")
     }
 
     @Test func aPeerIsDialedWhenItsDwellEndsBetweenItsAdverts() {
@@ -32,8 +45,23 @@ import Testing
         #expect(rig.radio.dials.map(\.address) == [RadioAddress("addr-\(low)")], "on the timer, with no advert then")
     }
 
-    @Test func noWakeForAPeerThatWillBeQuietTooLongWhenItsDwellEnds() {
+    @Test func aPeerHeardOnceIsDialedWhenItsDwellEnds() {
+        // The Pixel 7 probe on 2026-10-02: the iPhone heard the phone with gaps of 8 to 12 s, and under an 8 s limit a
+        // dwell that ended in one waited for the next advert, which then restarted it.
         let rig = LinkRig(local: high)
+        let start = rig.clock.monotonicMilliseconds()
+        _ = rig.handle(.sighted(LinkRig.sighting(low)))
+        #expect(rig.links.nextDeadline == start + 12_000, "12 s quiet by then still counts as heard")
+        _ = rig.advance(11_999)
+        #expect(rig.radio.dials.isEmpty)
+        _ = rig.advance(1)
+        #expect(rig.radio.dials.map(\.address) == [RadioAddress("addr-\(low)")])
+    }
+
+    @Test func noWakeForAPeerThatWillBeQuietTooLongWhenItsDwellEnds() {
+        // Only a silence limit shorter than the dwell can end one with the peer too quiet, as the 8 s limit did.
+        let promotion = PromotionPolicy.Configuration(heardWithinMilliseconds: 8000)
+        let rig = LinkRig(local: high, configuration: LinkManager.Configuration(promotion: promotion))
         let start = rig.clock.monotonicMilliseconds()
         _ = rig.handle(.sighted(LinkRig.sighting(low)))
         #expect(rig.links.nextDeadline == nil, "heard once, it would be 12 s quiet by then")
