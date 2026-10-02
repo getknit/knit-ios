@@ -7,7 +7,6 @@
     internal enum Route: Hashable {
         case chat(String)
         case requests
-        case newGroup
         case groupInfo(String)
         case peer(NodeId)
         case profile
@@ -88,20 +87,32 @@
         let environment: AppEnvironment
         let launch: Launch
         @State private var path: [Route] = []
+        /// Whether New message is up.
+        @State private var composing = false
 
         var body: some View {
             NavigationStack(path: $path) {
-                ChatListView(session: environment.session)
+                ChatListView(session: environment.session) { composing = true }
                     .navigationDestination(for: Route.self, destination: destination)
             }
+            .sheet(isPresented: $composing) {
+                // The sheet goes and the thread is under it, as Android drops its picker from the back stack.
+                NewMessageView(session: environment.session) { conversationId in
+                    composing = false
+                    path = [.chat(conversationId)]
+                }
+            }
+            // A notification's thread would open under the sheet, so the sheet goes first.
             .onChange(of: launch.requestedConversation, initial: true) { _, conversation in
                 if let conversation {
+                    composing = false
                     path = [.chat(conversation)]
                     launch.requestedConversation = nil
                 }
             }
             .onChange(of: launch.requestedRequests, initial: true) { _, requested in
                 if requested {
+                    composing = false
                     path = [.requests]
                     launch.requestedRequests = false
                 }
@@ -115,9 +126,6 @@
                 ChatView(conversationId: conversationId, session: environment.session)
             case .requests:
                 RequestsView(session: environment.session)
-            case .newGroup:
-                // The picker gives way to the new group's thread, as Android drops it from the back stack.
-                NewGroupView(session: environment.session) { groupId in path = [.chat(groupId)] }
             case .groupInfo(let groupId):
                 // Leaving closes the group's screens and comes back to the chat list.
                 GroupInfoView(groupId: groupId, session: environment.session) { path = [] }

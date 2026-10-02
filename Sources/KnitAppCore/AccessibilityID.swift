@@ -66,17 +66,18 @@ public enum AccessibilityID {
         "chat_notice_\(id)"
     }
 
-    /// The chat list's way to start a group. Android's picker opens from its "New message" button instead.
-    public static let chatListNewGroup = "chat_list_new_group"
-    /// The new-group picker.
-    public static let newGroupScreen = "screen_new_group"
-    /// One person in the picker, `new_group_member_<node id>`. Android has no tag here.
-    public static func newGroupMember(_ nodeId: String) -> String {
-        "new_group_member_\(nodeId)"
+    /// The chat list's New message, Android's floating button.
+    public static let chatListNewMessage = "chatlist_fab"
+    /// The New message picker. Android has no tag here.
+    public static let newMessageScreen = "screen_new_message"
+    /// One person in the picker, `new_message_contact_<node id>`. Android tags them `contact_<node id>`, which here is
+    /// already a chat row's, and a DM's row carries the same node id.
+    public static func newMessageContact(_ nodeId: String) -> String {
+        "new_message_contact_\(nodeId)"
     }
 
-    /// The picker's Start group (Android's "Start chat" check).
-    public static let newGroupCreate = "contacts_start_chat"
+    /// The picker's Start chat (Android's "Start chat" check).
+    public static let newMessageStart = "contacts_start_chat"
 
     /// Group info.
     public static let groupInfoScreen = "screen_group_details"

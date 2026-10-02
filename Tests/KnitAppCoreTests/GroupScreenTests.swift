@@ -5,8 +5,8 @@ import Testing
 
 @testable import KnitAppCore
 
-/// The group screens' models: the thread, group info and the new-group picker (`ChatViewModel`,
-/// `GroupDetailsViewModel` and `ContactsViewModel` in knit-next), and a group's notification, ADR 2026-09.n393.
+/// The group screens' models: the thread and group info (`ChatViewModel` and `GroupDetailsViewModel` in knit-next),
+/// and a group's notification, ADR 2026-09.n393. New message, which starts groups, is `NewMessageTests`.
 @MainActor
 @Suite struct GroupScreenTests {
     private let sam = AppRig.sam
@@ -118,43 +118,6 @@ import Testing
         await model.leave()
         #expect(rig.mesh.calls.groups == ["leave \(group.id)"])
         #expect(!model.state.exists && model.state.members.isEmpty)
-    }
-
-    // MARK: The picker
-
-    @Test func thePickerOffersThePeopleWeKnowAndNeverUs() async {
-        let rig = AppRig()
-        await rig.pin(sam, name: "Sam")
-        await rig.pin(priya, name: "Priya", verified: true)
-        rig.stores.conversations.accept(sam.nodeId.string)
-        await rig.receive("Hey", from: sam.nodeId, to: rig.me)
-        await rig.receive("Who's this?", from: stranger.nodeId, to: rig.me)
-        let picker = NewGroupModel(session: rig.session)
-        #expect(picker.candidates.map(\.id) == [priya.nodeId, sam.nodeId], "a stranger's request lends nobody")
-        let theirs = await rig.group([stranger, sam], createdBy: sam)
-        await rig.receive("Hi", from: sam.nodeId, in: theirs)
-        rig.stores.conversations.accept(theirs.id)
-        await rig.session.handle(.groupChanged(theirs.id))
-        #expect(picker.candidates.map(\.id).contains(stranger.nodeId), "an accepted group's members join in")
-        #expect(!picker.candidates.map(\.id).contains(rig.me))
-    }
-
-    @Test func thePickerTakesTwoToSevenAndSaysWhenItIsFull() async throws {
-        let rig = AppRig()
-        let people = (10..<18).map { Person(seed: $0) }
-        let picker = NewGroupModel(session: rig.session)
-        #expect(await picker.create() == nil)
-        picker.toggle(people[0].nodeId)
-        #expect(!picker.canCreate, "one other is a DM")
-        for person in people.dropFirst() {
-            picker.toggle(person.nodeId)
-        }
-        #expect(picker.picked.count == NewGroupModel.maxOthers && picker.isFull)
-        #expect(!picker.isPicked(people[7].nodeId))
-        picker.toggle(people[0].nodeId)
-        #expect(!picker.isFull && !picker.isPicked(people[0].nodeId))
-        let id = try #require(await picker.create())
-        #expect(rig.stores.groups.group(id)?.members.first == people[1].nodeId.string, "the roster keeps the pick order")
     }
 
     // MARK: Notifications

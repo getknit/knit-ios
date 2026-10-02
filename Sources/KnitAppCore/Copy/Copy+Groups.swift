@@ -1,8 +1,8 @@
 import Foundation
 
 extension Copy {
-    /// Groups: their names, their status lines, group info and the new-group picker (ADR 2026-09.n393). Android's
-    /// `strings.xml` is the starting point (`group_*`, `chat_group_*`, `chat_notice_*` and `contacts_*`).
+    /// Groups: their names, their status lines and group info (ADR 2026-09.n393). Android's `strings.xml` is the
+    /// starting point (`group_*`, `chat_group_*` and `chat_notice_*`).
     public enum Groups {
         /// The title of a group with no name and nobody else in it.
         public static var unnamed: String {
@@ -55,49 +55,6 @@ extension Copy {
                     comment: "A group's size; %lld is how many people are in it, the user included"
                 )
             )
-        }
-
-        /// The chat list's button that starts a group, and the picker's title.
-        public static var newGroup: String {
-            NSLocalizedString("groups.new", bundle: .main, value: "New group", comment: "Button and screen title: start a group")
-        }
-
-        /// What the picker is for.
-        public static var pickerExplanation: String {
-            NSLocalizedString(
-                "groups.picker.explanation",
-                bundle: .main,
-                value: "Start a group with 2 to 7 people you've chatted with or verified.",
-                comment: "New group: who can be picked, and how many"
-            )
-        }
-
-        /// Nobody to pick yet.
-        public static var pickerEmpty: String {
-            NSLocalizedString(
-                "groups.picker.empty",
-                bundle: .main,
-                value: "People you've chatted with or verified appear here.",
-                comment: "New group: nobody can be picked yet"
-            )
-        }
-
-        /// A pick past the cap of `count` people, us included.
-        public static func full(_ count: Int) -> String {
-            format(
-                NSLocalizedString(
-                    "groups.picker.full",
-                    bundle: .main,
-                    value: "A group can hold up to %lld people, including you.",
-                    comment: "New group: the cap was reached; %lld is the most people a group holds, the user included"
-                ),
-                count
-            )
-        }
-
-        /// The picker's button that makes the group.
-        public static var create: String {
-            NSLocalizedString("groups.picker.create", bundle: .main, value: "Start group", comment: "New group: the button that makes it")
         }
 
         /// Group info's title, and the thread's button that opens it.

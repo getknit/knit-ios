@@ -222,4 +222,66 @@ extension Copy {
             )
         }
     }
+
+    /// New message: pick one person for a DM, or 2 to 7 for a group. Android's `contacts_*` strings are the starting
+    /// point.
+    public enum NewMessage {
+        /// The chat list's button that opens the picker, and the picker's title.
+        public static var title: String {
+            NSLocalizedString(
+                "new-message.title", bundle: .main, value: "New message", comment: "Button and screen title: start a chat or a group")
+        }
+
+        /// What the picker is for, and who is in it.
+        public static var explanation: String {
+            NSLocalizedString(
+                "new-message.explanation",
+                bundle: .main,
+                value: """
+                    Pick one person for a direct message, or 2 to 7 people for a group. The list shows everyone you've chatted \
+                    with or verified.
+                    """,
+                comment: "New message: what one pick and several picks do, and who can be picked"
+            )
+        }
+
+        /// Nobody to pick yet: the heading.
+        public static var emptyTitle: String {
+            NSLocalizedString(
+                "new-message.empty.title",
+                bundle: .main,
+                value: "No one to message yet",
+                comment: "New message: the heading when nobody can be picked yet"
+            )
+        }
+
+        /// Nobody to pick yet: who appears, and how to meet them.
+        public static var emptyBody: String {
+            NSLocalizedString(
+                "new-message.empty.body",
+                bundle: .main,
+                value: "People you've chatted with or verified show up here. To meet someone, say hello in Nearby.",
+                comment: "New message: who appears in the list, and where to meet people"
+            )
+        }
+
+        /// A pick past the cap of `count` people, us included.
+        public static func full(_ count: Int) -> String {
+            format(
+                NSLocalizedString(
+                    "new-message.full",
+                    bundle: .main,
+                    value: "A group can hold up to %lld people, including you.",
+                    comment: "New message: the group cap was reached; %lld is the most people a group holds, the user included"
+                ),
+                count
+            )
+        }
+
+        /// The button that opens the DM or starts the group.
+        public static var start: String {
+            NSLocalizedString(
+                "new-message.start", bundle: .main, value: "Start chat", comment: "New message: the button that opens the chat or group")
+        }
+    }
 }

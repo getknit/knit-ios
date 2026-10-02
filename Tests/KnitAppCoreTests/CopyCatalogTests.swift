@@ -158,7 +158,7 @@ import Testing
             Copy.Diagnostics.link(version: 3, capabilities: "9"),
             Copy.Diagnostics.clockAhead(seconds: 5),
             Copy.Diagnostics.clockBehind(seconds: 5),
-        ] + Self.groupStrings
+        ] + Self.groupStrings + Self.newMessageStrings
     }
 
     private static var groupStrings: [String] {
@@ -167,11 +167,6 @@ import Testing
             Copy.Groups.names(["Sam", "Priya", "Theo"]) ?? "",
             Copy.Groups.memberCount(1),
             Copy.Groups.memberCount(3),
-            Copy.Groups.newGroup,
-            Copy.Groups.pickerExplanation,
-            Copy.Groups.pickerEmpty,
-            Copy.Groups.full(8),
-            Copy.Groups.create,
             Copy.Groups.info,
             Copy.Groups.members,
             Copy.Groups.rename,
@@ -194,6 +189,17 @@ import Testing
         ]
     }
 
+    private static var newMessageStrings: [String] {
+        [
+            Copy.NewMessage.title,
+            Copy.NewMessage.explanation,
+            Copy.NewMessage.emptyTitle,
+            Copy.NewMessage.emptyBody,
+            Copy.NewMessage.full(8),
+            Copy.NewMessage.start,
+        ]
+    }
+
     /// An unnamed group's title joins its members' names as Android's `joinNames` does.
     @Test func anUnnamedGroupsTitleJoinsItsMembersNames() {
         #expect(Copy.Groups.names([]) == nil)
@@ -201,7 +207,7 @@ import Testing
         #expect(Copy.Groups.names(["Sam", "Priya"]) == "Sam & Priya")
         #expect(Copy.Groups.names(["Dani", "Sam", "Priya", "Theo"]) == "Dani, Sam, Priya & Theo")
         #expect(Copy.Groups.memberCount(1) == "1 member" && Copy.Groups.memberCount(3) == "3 members")
-        #expect(Copy.Groups.full(8).contains("8"))
+        #expect(Copy.NewMessage.full(8).contains("8"))
     }
 
     @Test func everyStringIsCleanProseOnOneLine() {
@@ -237,11 +243,18 @@ import Testing
         #expect(AccessibilityID.chatGroupInfo == "chat_group_settings")
         #expect(AccessibilityID.groupRename == "group_rename" && AccessibilityID.groupLeave == "group_leave")
         #expect(AccessibilityID.groupMember("abc") == "group_member_abc")
-        #expect(AccessibilityID.newGroupMember("abc") == "new_group_member_abc")
         #expect(AccessibilityID.chatNotice("created:g-1") == "chat_notice_created:g-1")
-        #expect(AccessibilityID.newGroupCreate == "contacts_start_chat" && AccessibilityID.newGroupScreen == "screen_new_group")
-        #expect(AccessibilityID.groupInfoScreen == "screen_group_details" && AccessibilityID.chatListNewGroup == "chat_list_new_group")
+        #expect(AccessibilityID.groupInfoScreen == "screen_group_details")
         #expect(AccessibilityID.chatEncryption == "chat_encryption")
+    }
+
+    /// New message's identifiers: Android's tags for its button (`chatlist_fab`) and its check (`contacts_start_chat`),
+    /// and the iPhone's own for the screen and its people, whose Android tag a chat row already has.
+    @Test func newMessagesIdentifiersAreAndroidsWhereTheyCanBe() {
+        #expect(AccessibilityID.chatListNewMessage == "chatlist_fab" && AccessibilityID.newMessageStart == "contacts_start_chat")
+        #expect(AccessibilityID.newMessageScreen == "screen_new_message")
+        #expect(AccessibilityID.newMessageContact("abc") == "new_message_contact_abc")
+        #expect(AccessibilityID.newMessageContact("abc") != AccessibilityID.chatRow("abc"))
     }
 
     /// The ids only the iPhone has, which the device tests read: the status line's state and its buttons, and

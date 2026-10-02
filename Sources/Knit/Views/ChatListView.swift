@@ -6,9 +6,12 @@
     /// The chat list: the status line, the first-run card, the room, the DMs and groups, and the requests entry.
     internal struct ChatListView: View {
         @State private var model: ChatListModel
+        private let newMessage: () -> Void
 
-        init(session: AppSession) {
+        /// The list over `session`, whose compose button calls `newMessage`.
+        init(session: AppSession, newMessage: @escaping () -> Void) {
             _model = State(initialValue: ChatListModel(session: session))
+            self.newMessage = newMessage
         }
 
         var body: some View {
@@ -37,15 +40,16 @@
             }
             .navigationTitle(Copy.ChatList.title)
             .toolbar {
+                // Compose at the trailing edge, where Messages and Mail keep it.
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    NavigationLink(value: Route.newGroup) {
-                        Label(Copy.Groups.newGroup, systemImage: "person.badge.plus")
-                    }
-                    .accessibilityIdentifier(AccessibilityID.chatListNewGroup)
                     NavigationLink(value: Route.settings) {
                         Label(Copy.ChatList.settings, systemImage: "gearshape")
                     }
                     .accessibilityIdentifier(AccessibilityID.chatListSettings)
+                    Button(action: newMessage) {
+                        Label(Copy.NewMessage.title, systemImage: "square.and.pencil")
+                    }
+                    .accessibilityIdentifier(AccessibilityID.chatListNewMessage)
                 }
             }
         }

@@ -52,7 +52,11 @@ final class KnitUITests: XCTestCase {
         try walkGroup()
     }
 
-    func testANewGroupIsPickedAndStarted() throws {
+    func testNewMessageOpensADirectThreadForOnePerson() throws {
+        try walkNewMessage()
+    }
+
+    func testNewMessageStartsAGroupForTwo() throws {
         try walkNewGroup()
     }
 
@@ -74,6 +78,7 @@ final class KnitUITests: XCTestCase {
         try walkDirect()
         try walkRequests()
         try walkGroup()
+        try walkNewMessage()
         try walkNewGroup()
         try walkSettings()
         try walkRadioStates()
@@ -174,19 +179,6 @@ final class KnitUITests: XCTestCase {
         app.buttons["Cancel"].tap()
         // Leave sits below the fold at the largest sizes, where the list has not built it yet.
         try app.reveal(AccessibilityID.groupLeave)
-        app.terminate()
-    }
-
-    private func walkNewGroup() throws {
-        let app = launch()
-        try app.appear(AccessibilityID.chatListNewGroup).tap()
-        try audit(app, AccessibilityID.newGroupScreen)
-        let people = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.newGroupMember("")))
-        try app.reveal(people.element(boundBy: 0), "someone to pick").tap()
-        try app.reveal(people.element(boundBy: 1), "someone else to pick").tap()
-        try app.appear(AccessibilityID.newGroupCreate).tap()
-        try app.appear(AccessibilityID.chatThread)
-        try app.appear(AccessibilityID.chatGroupInfo)
         app.terminate()
     }
 
@@ -297,6 +289,49 @@ final class KnitUITests: XCTestCase {
             add(shot)
         }
         XCTAssert(issues.isEmpty, "\(screen) (\(size)), \(issues.count) issues:\n" + issues.joined(separator: "\n"))
+    }
+}
+
+// MARK: New message
+
+// The New message walks, apart from the rest only to keep the class under SwiftLint's body length. An extension in the
+// same file reaches the class's private helpers.
+extension KnitUITests {
+    /// New message's sheet, audited; Cancel closes it, and one pick opens that person's DM.
+    private func walkNewMessage() throws {
+        let app = launch()
+        try app.appear(AccessibilityID.chatListNewMessage).tap()
+        settle(try app.appear(AccessibilityID.newMessageScreen))
+        audit(app, screen: AccessibilityID.newMessageScreen)
+        app.buttons["Cancel"].tap()
+        XCTAssert(app.element(AccessibilityID.newMessageScreen).waitForNonExistence(timeout: Walking.appears), "Cancel left the sheet up")
+
+        try app.appear(AccessibilityID.chatListNewMessage).tap()
+        try pick(1, in: app)
+        try app.appear(AccessibilityID.newMessageStart).tap()
+        try app.appear(AccessibilityID.chatThread)
+        try app.appear(AccessibilityID.chatProfile)
+        app.terminate()
+    }
+
+    /// Two picks in New message start a group, and its thread opens.
+    private func walkNewGroup() throws {
+        let app = launch()
+        try app.appear(AccessibilityID.chatListNewMessage).tap()
+        try pick(2, in: app)
+        try app.appear(AccessibilityID.newMessageStart).tap()
+        try app.appear(AccessibilityID.chatThread)
+        try app.appear(AccessibilityID.chatGroupInfo)
+        app.terminate()
+    }
+
+    /// Picks the first `count` people in New message. They sit at the top of the sheet, so nothing swipes: a swipe
+    /// down there would close it.
+    private func pick(_ count: Int, in app: XCUIApplication) throws {
+        let people = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.newMessageContact("")))
+        for index in 0..<count {
+            try people.element(boundBy: index).appear("person \(index + 1) to pick").tap()
+        }
     }
 }
 
