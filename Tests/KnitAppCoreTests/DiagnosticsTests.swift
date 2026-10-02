@@ -41,8 +41,24 @@ import Testing
         #expect(state.sighted.map(\.title) == ["Priya"], "a linked peer is listed once, under its link")
         #expect(state.sighted.first?.detail == "-72 dBm, 3 s ago")
         #expect(state.known.map(\.id) == [AppRig.stranger.nodeId])
+        #expect(state.knownCount == 1)
         #expect(state.counters.map(\.count) == [3, 2])
         #expect(state.counters.last?.id == Copy.Drops.reason(.badSignature))
+    }
+
+    @Test func onlyTheNewestPeersOutOfRangeAreListed() async {
+        let rig = AppRig()
+        let people = (10..<17).map { Person(seed: $0) }
+        for (index, person) in people.enumerated() {
+            var record = person.record(name: "Peer \(index)")
+            record.updatedAt = Int64(index)
+            rig.stores.peers.upsert(record)
+            await rig.session.handle(.peerUpdated(person.nodeId))
+        }
+        let mesh = MeshDiagnostics(neighbors: [Neighbor(nodeId: people[6].nodeId)])
+        let state = DiagnosticsModel.state(mesh, directory: rig.session.directory, stores: rig.stores, radio: .on, running: true)
+        #expect(state.knownCount == 6, "the linked peer is not out of range")
+        #expect(state.known.map(\.title) == ["Peer 5", "Peer 4", "Peer 3", "Peer 2", "Peer 1"])
     }
 
     @Test func aPeersClockIsJudgedByItsFastestArrival() async {

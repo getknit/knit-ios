@@ -154,6 +154,7 @@ import Testing
             Copy.Diagnostics.linked(1),
             Copy.Diagnostics.sighted(1),
             Copy.Diagnostics.known(1),
+            Copy.Diagnostics.knownNewest(5),
             Copy.Diagnostics.sighting(rssi: -60, secondsAgo: 2),
             Copy.Diagnostics.link(version: 3, capabilities: "9"),
             Copy.Diagnostics.clockAhead(seconds: 5),

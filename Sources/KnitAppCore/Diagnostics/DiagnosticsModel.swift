@@ -49,6 +49,9 @@ public struct DiagnosticsPeer: Sendable, Equatable, Identifiable {
 
 /// Diagnostics, as one value.
 public struct DiagnosticsState: Sendable, Equatable {
+    /// The most out-of-range pinned peers listed.
+    public static let knownShown = 5
+
     /// The radio's state in a word.
     public var radio: String
     /// Whether the mesh runs.
@@ -57,8 +60,11 @@ public struct DiagnosticsState: Sendable, Equatable {
     public var linked: [DiagnosticsPeer]
     /// The peers sighted but not linked.
     public var sighted: [DiagnosticsPeer]
-    /// The pinned peers neither linked nor sighted.
+    /// The pinned peers neither linked nor sighted, newest profile first, at most ``knownShown`` of them: testing
+    /// pins dozens, and a long list buries the counters below it.
     public var known: [DiagnosticsPeer]
+    /// How many pinned peers are neither linked nor sighted, listed or not.
+    public var knownCount: Int
     /// The counters worth a row: file records discarded, then each drop reason seen.
     public var counters: [Counter]
 
@@ -181,9 +187,10 @@ public final class DiagnosticsModel {
                 clock: clock(sighting.nodeId)
             )
         }
-        let known = directory.peers.values
+        let outOfRange = directory.peers.values
             .filter { !linkedIds.contains($0.nodeId) && !sightedIds.contains($0.nodeId) }
-            .sorted { $0.nodeId < $1.nodeId }
+            .sorted { ($0.updatedAt, $1.nodeId) > ($1.updatedAt, $0.nodeId) }
+        let known = outOfRange.prefix(DiagnosticsState.knownShown)
             .map { peer in
                 DiagnosticsPeer(
                     id: peer.nodeId, title: directory.label(for: peer.nodeId).text, detail: peer.nodeId.string, clock: clock(peer.nodeId))
@@ -197,6 +204,7 @@ public final class DiagnosticsModel {
             linked: linked,
             sighted: sighted,
             known: known,
+            knownCount: outOfRange.count,
             counters: [DiagnosticsState.Counter(id: Copy.Diagnostics.discardedFiles, count: mesh.discardedFileRecords)] + drops
         )
     }

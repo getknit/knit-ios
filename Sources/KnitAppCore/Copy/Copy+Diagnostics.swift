@@ -124,6 +124,19 @@ extension Copy {
             )
         }
 
+        /// Only the newest of the pinned peers out of range are listed.
+        public static func knownNewest(_ count: Int) -> String {
+            format(
+                NSLocalizedString(
+                    "diagnostics.known.newest",
+                    bundle: .main,
+                    value: "Showing the %lld with the newest profiles.",
+                    comment: "Diagnostics: under a capped list of pinned peers; how many are listed"
+                ),
+                count
+            )
+        }
+
         /// A sighting's signal and age: "-67 dBm, 3 s ago".
         public static func sighting(rssi: Int, secondsAgo: Int) -> String {
             format(

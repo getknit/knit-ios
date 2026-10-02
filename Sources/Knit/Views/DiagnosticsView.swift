@@ -31,7 +31,12 @@
                     PeerSection(
                         title: Copy.Diagnostics.sighted(state.sighted.count), peers: state.sighted, none: Copy.Diagnostics.noneSighted)
                     if !state.known.isEmpty {
-                        PeerSection(title: Copy.Diagnostics.known(state.known.count), peers: state.known, none: nil)
+                        PeerSection(
+                            title: Copy.Diagnostics.known(state.knownCount),
+                            peers: state.known,
+                            none: nil,
+                            note: state.knownCount > state.known.count ? Copy.Diagnostics.knownNewest(state.known.count) : nil
+                        )
                     }
                     CounterSection(counters: state.counters)
                 }
@@ -69,11 +74,12 @@
         }
     }
 
-    /// A list of peers, each opening its profile.
+    /// A list of peers, each opening its profile, with a note under it when the list leaves some out.
     private struct PeerSection: View {
         let title: String
         let peers: [DiagnosticsPeer]
         let none: String?
+        var note: String?
 
         var body: some View {
             Section {
@@ -99,6 +105,10 @@
                 }
             } header: {
                 SectionNote(title)
+            } footer: {
+                if let note {
+                    SectionNote(note)
+                }
             }
         }
     }
