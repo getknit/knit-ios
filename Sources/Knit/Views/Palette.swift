@@ -21,6 +21,9 @@
         /// Over a limit, and the label of an action that removes something: the system's red reads about 3.6:1 on a
         /// grouped cell in light.
         static let critical = dynamic(Swatch.critical)
+        /// A verify code's paper: white in dark mode too, because the code is drawn black on white, and many readers, zxing
+        /// among them, read no inverted code (ADR 2026-10.65xx).
+        static let codePaper = Color(uiColor: rgb(Swatch.codePaper))
 
         /// Each color's sRGB value in light mode and in dark, as `0xRRGGBB`.
         private enum Swatch {
@@ -30,6 +33,7 @@
             static let positive = (light: 0x1A7F37, dark: 0x3FB950)
             static let warning = (light: 0xB25000, dark: 0xFFA94D)
             static let critical = (light: 0xC4271C, dark: 0xFF6961)
+            static let codePaper = 0xFFFFFF
         }
 
         private static let channelMax: CGFloat = 255

@@ -283,8 +283,14 @@ explicit direction.** Update this file in the change that ships an item.
 - **DM forward secrecy:** the v2/v3 epoch ratchet, with `CAP_RATCHET`, `CAP_CRYPTO_V3` and `CAP_INLINE_ACK`,
   and sealed receipts, reactions and profile updates. It comes before any public build. Keyed vectors come
   first (`.agents/context/crypto.md`).
-- **Contacts:** QR verification in person, and contact links at a distance (`docs/CONTACT_CARD.md` in
-  knit-next).
+- **Contacts:** contact links at a distance (`docs/CONTACT_CARD.md` in knit-next), and Android's Add contact,
+  which pins a key from a scanned code. QR verification in person is in on a peer's profile (ADR 2026-10.65xx):
+  the profile shows our code and scans theirs, and compares only, as Android's profile does. It passes in the
+  Simulator. On the iPhone 12 on 2026-10-02, with Bluetooth off for an Android trial, `CameraTests` passed: the camera
+  is asked for only at Scan their code, a refusal shows its own state, and an allow starts the scanner. The code the
+  iPhone drew decoded to its 150-byte `knit-id`, and its id derives from its bundle, Android's `parseLegacy` check.
+  The same day, by hand, the iPhone scanned the Pixel's code and the Pixel scanned the iPhone's, and both scans
+  worked. Done; Add contact and contact links remain.
 - **Companion change A3** (knit-next #101): Android finds and dials iPhones. It is the paired change `gatt-peers`, on
   `feat/gatt-peers` in both repos (knit-next ADR 2026-09.kwq2). Android reads the GATT payload of a node that
   advertises only the `0xFE30` UUID, on `GattPayloads`' rules, dials it when its own id sorts higher, and takes a

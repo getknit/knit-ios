@@ -238,6 +238,50 @@ final class FakePermission: NotificationPermission {
     }
 }
 
+/// A camera that answers what it is told to, and counts what it was asked.
+final class FakeCamera: CameraAccess {
+    private struct State {
+        var answer: CameraAuthorization
+        var requests = 0
+    }
+
+    private let state: Lock<State>
+    private let scans: Bool
+    private let onRequest: CameraAuthorization
+
+    init(scans: Bool = true, current: CameraAuthorization = .notDetermined, onRequest: CameraAuthorization = .allowed) {
+        state = Lock(State(answer: current))
+        self.scans = scans
+        self.onRequest = onRequest
+    }
+
+    /// How many times it was asked.
+    var requests: Int { state.withLock { $0.requests } }
+
+    /// The user changes the answer in the Settings app.
+    func change(to answer: CameraAuthorization) {
+        state.withLock { $0.answer = answer }
+    }
+
+    func canScan() -> Bool {
+        scans
+    }
+
+    func authorization() -> CameraAuthorization {
+        state.withLock { $0.answer }
+    }
+
+    func request() -> CameraAuthorization {
+        state.withLock { state in
+            state.requests += 1
+            if state.answer == .notDetermined {
+                state.answer = onRequest
+            }
+            return state.answer
+        }
+    }
+}
+
 /// A session over a fake mesh and in-memory stores, with our own identity and three people to talk to.
 @MainActor
 struct AppRig {

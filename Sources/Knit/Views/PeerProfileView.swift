@@ -3,13 +3,21 @@
     import KnitWire
     import SwiftUI
 
-    /// Another person's profile: who they are, their safety number, and Message (MVP items 3 and 5).
+    /// Another person's profile: who they are, their safety number and our code for them to scan, and Message (MVP
+    /// items 3 and 5, ADR 2026-10.65xx).
     internal struct PeerProfileView: View {
         @State private var model: PeerProfileModel
+        @State private var scanning = false
+        /// What the scan found, until its sheet has gone.
+        @State private var pending: VerifyScanOutcome?
+        /// What the scan found, while the alert says so.
+        @State private var outcome: VerifyScanOutcome?
         @Environment(\.dynamicTypeSize) private var typeSize
+        private let camera: any CameraAccess
 
-        init(nodeId: NodeId, session: AppSession) {
+        init(nodeId: NodeId, session: AppSession, camera: any CameraAccess) {
             _model = State(initialValue: PeerProfileModel(nodeId: nodeId, session: session))
+            self.camera = camera
         }
 
         var body: some View {
@@ -36,14 +44,38 @@
                         .accessibilityIdentifier(AccessibilityID.profileDetailsNodeId)
                 }
                 if !model.isSelf {
-                    EncryptionSection(state: state) { verified in
-                        Task { await model.setVerified(verified) }
-                    }
+                    EncryptionSection(
+                        state: state,
+                        scan: { scanning = true },
+                        setVerified: { verified in Task { await model.setVerified(verified) } }
+                    )
                 }
             }
             .navigationTitle(state.title)
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier(AccessibilityID.profileDetailsScreen)
+            // The alert waits for the sheet to go: SwiftUI drops one presented while another is dismissing.
+            .sheet(isPresented: $scanning, onDismiss: revealOutcome) {
+                CodeScannerSheet(camera: camera) { text in
+                    Task {
+                        pending = await model.scanned(text)
+                        scanning = false
+                    }
+                }
+            }
+            .alert(outcome.map { Copy.Profile.scanOutcome($0, name: state.title) } ?? "", isPresented: showsOutcome) {
+                Button(Copy.Common.done, role: .cancel) { outcome = nil }
+            }
+        }
+
+        private var showsOutcome: Binding<Bool> {
+            Binding(get: { outcome != nil }, set: { if !$0 { outcome = nil } })
+        }
+
+        /// The scan's result, once its sheet has gone.
+        private func revealOutcome() {
+            outcome = pending
+            pending = nil
         }
     }
 
@@ -88,10 +120,13 @@
         }
     }
 
-    /// The safety number both phones should show, and the user's verdict on it.
+    /// The safety number both phones should show, our code for them to scan, the way to scan theirs, and the user's
+    /// verdict.
     private struct EncryptionSection: View {
         let state: PeerProfileState
+        let scan: () -> Void
         let setVerified: (Bool) -> Void
+        @Environment(\.dynamicTypeSize) private var typeSize
 
         var body: some View {
             Section {
@@ -103,6 +138,16 @@
                 .accessibilityIdentifier(AccessibilityID.profileDetailsVerified)
                 if let number = state.safetyNumber {
                     SafetyNumberView(lines: number, name: state.title)
+                    OwnCodeView(code: state.ownCode, name: state.title)
+                    Button(action: scan) {
+                        // At the accessibility sizes the glyph left the words too little room, as on Message.
+                        if typeSize.isAccessibilitySize {
+                            Text(Copy.Profile.scan)
+                        } else {
+                            Label(Copy.Profile.scan, systemImage: "qrcode.viewfinder")
+                        }
+                    }
+                    .accessibilityIdentifier(AccessibilityID.profileDetailsScan)
                     Button(state.isVerified ? Copy.Profile.clearVerification : Copy.Profile.markVerified) {
                         setVerified(!state.isVerified)
                     }
@@ -113,6 +158,27 @@
             } header: {
                 SectionNote(Copy.Profile.encryptionSection)
             }
+        }
+    }
+
+    /// Our own verify code, for the other person to scan, with whom it is for.
+    private struct OwnCodeView: View {
+        let code: String
+        let name: String
+
+        var body: some View {
+            VStack(spacing: Layout.small) {
+                QRCodeView(text: code)
+                Text(Copy.Profile.codeCaption(name))
+                    .font(.footnote)
+                    .foregroundStyle(Palette.secondaryText)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Layout.small)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isImage)
+            .accessibilityIdentifier(AccessibilityID.profileDetailsCode)
         }
     }
 

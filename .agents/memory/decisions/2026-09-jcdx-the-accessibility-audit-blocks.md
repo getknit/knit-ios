@@ -47,11 +47,16 @@ runner as `test:ios:simulator`.
   - anything in or under a navigation bar;
   - contrast of an element not wholly on screen;
   - contrast that the element's own screenshot passes, darkest pixel against lightest, at 4.5:1;
-  - clipping of static text and text fields.
+  - clipping of static text, buttons and text fields.
 
 The alternative a reader reaches for first is to accept every audit finding as a defect. That is the rule for
 what the app draws, but no change to the app clears these findings. The other is to audit only contrast and
 labels, which would have missed the real layout and material defects the full audit found.
+
+**Amended 2026-10-02, for buttons (ADR 2026-10.65xx):** the scan walk was the first to audit a form scrolled to its
+last rows, and the clipping check flagged the profile's Clear verification button at the default size. At the
+largest size its label wraps onto two lines and reads whole, the same false report the check makes of wrapped text,
+so a button's clipping is exempt too. The walks had flagged no other button, so the exemption clears nothing else.
 
 **Consequences / limits:**
 

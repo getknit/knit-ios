@@ -52,6 +52,11 @@ final class KnitUITests: XCTestCase {
         try walkGroup()
     }
 
+    /// The profile's own code and its scanner, in every state the Simulator can show (ADR 2026-10.65xx).
+    func testAProfileShowsItsCodeAndScansInEveryState() throws {
+        try walkScan()
+    }
+
     func testNewMessageOpensADirectThreadForOnePerson() throws {
         try walkNewMessage()
     }
@@ -80,6 +85,7 @@ final class KnitUITests: XCTestCase {
         try walkGroup()
         try walkNewMessage()
         try walkNewGroup()
+        try walkScan()
         try walkSettings()
         try walkRadioStates()
     }
@@ -120,15 +126,7 @@ final class KnitUITests: XCTestCase {
 
     private func walkDirect() throws {
         let app = launch()
-        let direct = app.buttons.matching(
-            NSPredicate(
-                format: "identifier BEGINSWITH %@ AND identifier != %@ AND NOT identifier BEGINSWITH %@",
-                "contact_",
-                AccessibilityID.chatRow("nearby"),
-                AccessibilityID.chatRow("g-")
-            )
-        )
-        try app.reveal(direct.firstMatch, "a direct thread").tap()
+        try openDirect(in: app)
         try audit(app, AccessibilityID.chatThread)
 
         try app.appear(AccessibilityID.chatVerified).tap()
@@ -220,7 +218,24 @@ final class KnitUITests: XCTestCase {
 
     // MARK: Helpers
 
+    /// Opens the first direct thread in the chat list: Sam's, whose key the demo pinned.
+    private func openDirect(in app: XCUIApplication) throws {
+        let direct = app.buttons.matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@ AND identifier != %@ AND NOT identifier BEGINSWITH %@",
+                "contact_",
+                AccessibilityID.chatRow("nearby"),
+                AccessibilityID.chatRow("g-")
+            )
+        )
+        try app.reveal(direct.firstMatch, "a direct thread").tap()
+    }
+
     private func launch(_ arguments: String...) -> XCUIApplication {
+        launch(arguments)
+    }
+
+    private func launch(_ arguments: [String]) -> XCUIApplication {
         // An audit finding fails the test and the walk goes on, so one run lists every screen's; a screen that never
         // appears throws ``Missing`` instead.
         continueAfterFailure = true
@@ -331,6 +346,51 @@ extension KnitUITests {
         let people = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.newMessageContact("")))
         for index in 0..<count {
             try people.element(boundBy: index).appear("person \(index + 1) to pick").tap()
+        }
+    }
+}
+
+// MARK: Codes
+
+// The verify code's walk, apart from the rest for the same reason as New message's.
+extension KnitUITests {
+    /// The profile's code, audited, then its scanner in each state the Simulator can show: it has no scanner, and
+    /// `-demoCamera` stands in for a refused camera and for one that fails to start. Cancel says nothing.
+    private func walkScan() throws {
+        let cameras: [(arguments: [String], state: AccessibilityID.ScanState)] = [
+            ([], .unsupported),
+            (["-demoCamera", "denied"], .notAllowed),
+            (["-demoCamera", "allowed"], .unavailable),
+        ]
+        for (index, camera) in cameras.enumerated() {
+            let app = launch(camera.arguments)
+            try openDirect(in: app)
+            try app.appear(AccessibilityID.chatProfile).tap()
+            try app.appear(AccessibilityID.profileDetailsScreen)
+            // Scan their code sits under the code, so revealing it brings the whole code on screen; revealing the code
+            // itself stops once its top is, and the rest reads black below the screen's edge.
+            try app.reveal(AccessibilityID.profileDetailsScan)
+            if index == 0 {
+                // A form scrolled by a swipe is still moving as the swipe returns, and the audit would read it blank.
+                let code = app.element(AccessibilityID.profileDetailsCode)
+                settle(code)
+                let shot = XCTAttachment(screenshot: code.screenshot())
+                shot.name = "the profile's code (\(size))"
+                shot.lifetime = .keepAlways
+                add(shot)
+                audit(app, screen: AccessibilityID.profileDetailsCode)
+            }
+            // Again: the audit resizes the text in place, which leaves the form scrolled away from the button.
+            try app.reveal(AccessibilityID.profileDetailsScan).tap()
+            settle(try app.appear(AccessibilityID.scanScreen))
+            try audit(app, AccessibilityID.scanState(camera.state))
+            if camera.state == .notAllowed {
+                try app.buttons["Open Settings"].appear("the refusal's way to Settings")
+            }
+            app.buttons["Cancel"].tap()
+            XCTAssert(app.element(AccessibilityID.scanScreen).waitForNonExistence(timeout: Walking.appears), "Cancel left the scanner up")
+            XCTAssertFalse(app.alerts.firstMatch.exists, "a scan that read nothing says nothing")
+            app.terminate()
         }
     }
 }

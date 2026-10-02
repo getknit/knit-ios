@@ -47,6 +47,83 @@ import Testing
         #expect(rig.mesh.calls.verified == ["\(AppRig.sam.nodeId): true", "\(AppRig.sam.nodeId): false"])
     }
 
+    // MARK: Scanning their code (ADR 2026-10.65xx)
+
+    @Test func theProfileShowsOurOwnCodeForThemToScan() {
+        let rig = AppRig()
+        let state = PeerProfileModel(nodeId: AppRig.sam.nodeId, session: rig.session).state
+        #expect(state.ownCode == VerifyPayload.encode(AppRig.me.bundle))
+    }
+
+    @Test func theirCodeVerifiesThem() async {
+        let rig = AppRig()
+        await rig.pin(AppRig.sam, name: "Sam")
+        let model = PeerProfileModel(nodeId: AppRig.sam.nodeId, session: rig.session)
+        #expect(await model.scanned(VerifyPayload.encode(AppRig.sam.bundle)) == .match)
+        #expect(model.state.isVerified)
+        #expect(rig.mesh.calls.verified == ["\(AppRig.sam.nodeId): true"])
+    }
+
+    @Test func someoneElsesCodeIsAMismatchAndVerifiesNoOne() async {
+        let rig = AppRig()
+        await rig.pin(AppRig.sam, name: "Sam")
+        await rig.pin(AppRig.priya, name: "Priya")
+        let model = PeerProfileModel(nodeId: AppRig.sam.nodeId, session: rig.session)
+        #expect(await model.scanned(VerifyPayload.encode(AppRig.priya.bundle)) == .mismatch)
+        #expect(!model.state.isVerified)
+        #expect(rig.mesh.calls.verified.isEmpty)
+    }
+
+    @Test func aMismatchLeavesAnEarlierVerificationAlone() async {
+        let rig = AppRig()
+        await rig.pin(AppRig.sam, name: "Sam", verified: true)
+        let model = PeerProfileModel(nodeId: AppRig.sam.nodeId, session: rig.session)
+        #expect(await model.scanned(VerifyPayload.encode(AppRig.priya.bundle)) == .mismatch)
+        #expect(model.state.isVerified)
+        #expect(rig.mesh.calls.verified.isEmpty)
+    }
+
+    /// Android's profile scan compares only, so a code for someone whose key has not pinned verifies nothing, even
+    /// their own.
+    @Test func anUnpinnedPersonsOwnCodeIsAMismatch() async {
+        let rig = AppRig()
+        let model = PeerProfileModel(nodeId: AppRig.stranger.nodeId, session: rig.session)
+        #expect(await model.scanned(VerifyPayload.encode(AppRig.stranger.bundle)) == .mismatch)
+        #expect(rig.mesh.calls.verified.isEmpty)
+    }
+
+    @Test func ourOwnCodeSaysSo() async {
+        let rig = AppRig()
+        await rig.pin(AppRig.sam, name: "Sam")
+        let model = PeerProfileModel(nodeId: AppRig.sam.nodeId, session: rig.session)
+        #expect(await model.scanned(VerifyPayload.encode(AppRig.me.bundle)) == .ownCode)
+        #expect(rig.mesh.calls.verified.isEmpty)
+    }
+
+    @Test(arguments: [
+        "https://getknit.app/c#omRib2R5",
+        "hello",
+        "",
+        " knit-id:v1:x:y",
+    ])
+    func whatIsNotAKnitCodeSaysSo(text: String) async {
+        let rig = AppRig()
+        await rig.pin(AppRig.sam, name: "Sam")
+        let model = PeerProfileModel(nodeId: AppRig.sam.nodeId, session: rig.session)
+        #expect(await model.scanned(text) == .notACode)
+        #expect(rig.mesh.calls.verified.isEmpty)
+    }
+
+    /// A code whose id is Sam's but whose bundle is Priya's: no key could have made it, so it is not a code at all.
+    @Test func aCodeNoKeyCouldHaveMadeIsNotACode() async {
+        let rig = AppRig()
+        await rig.pin(AppRig.sam, name: "Sam")
+        let model = PeerProfileModel(nodeId: AppRig.sam.nodeId, session: rig.session)
+        let forged = VerifyPayload.prefix + AppRig.sam.nodeId.string + ":" + AppRig.priya.bundle.encoded
+        #expect(await model.scanned(forged) == .notACode)
+        #expect(!model.state.isVerified)
+    }
+
     @Test func presenceFollowsTheLinks() async {
         let rig = AppRig()
         let model = PeerProfileModel(nodeId: AppRig.sam.nodeId, session: rig.session)

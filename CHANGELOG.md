@@ -30,6 +30,9 @@ document:
 - Tap New message to write to someone you've chatted with or verified, or pick up to seven of them to start a
   group you can rename or leave. Groups started on Android phones work too, and group messages that reached
   your iPhone in the day before you update show up in their chats.
+- A person's profile now shows your code, and Scan their code reads theirs with the camera, so you can verify
+  someone without reading forty digits aloud. It works with Android phones too, and Knit asks for the camera
+  the first time you scan.
 
 ## About this file
 

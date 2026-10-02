@@ -10,13 +10,13 @@ code that builds and tests on Linux, or a thin radio adapter for one platform. T
 | --- | --- | --- | --- |
 | `KnitSync` | all | `Lock`, the lock every target uses in place of `Synchronization.Mutex` (ADR 2026-09.ahrr) | P6 |
 | `KnitWire` | all | CBOR (kotlinx profile), wire types, registries, link records, HELLO/DIGEST, advert, NodeId/FrameId/FrameKey, UTF-16 limits, FNV fold | P1 |
-| `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM and group seal/open, group ids, safety number, alias words, identities minted inside a node id window | P2 |
+| `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM and group seal/open, group ids, safety number, the verify code, alias words, identities minted inside a node id window | P2 |
 | `KnitStore` | all | repository protocols and in-memory stores (messages and their status lines, groups and their rosters among them), and the custody rules every store applies | P3 |
 | `KnitStoreSQL` | all | the `KnitStore` protocols on SQLite through GRDB: the frozen schema, its migrations and the SQL stores | P5 |
 | `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol, router, SeenSet, custody, sync, receipts, key recovery, profiles, conversations, groups and their roster rules, policies, the system clock | P3 |
 | `KnitAppCore` | all | one `AppSession` over the mesh, the `@Observable` view models each screen reads, collision-aware labels, the notification policy, the copy catalog (ADR 2026-09.ycza), and `-seedDemo`'s scenes, radio and shown links | P6 |
 | `KnitBLE` | Apple | the CoreBluetooth `Radio`: central and GATT reads, peripheral with the GATT payload, L2CAP streams on one thread, restoration | P6 |
-| `Knit` | iOS | the SwiftUI screens, `@main` and the app delegate, the Keychain store, notifications, the unified log, the composition root, and a debug build's bridge, over USB and on a pinned Wi-Fi network (ADR 2026-09.kwa8, ADR 2026-10.dz8d) | P6 |
+| `Knit` | iOS | the SwiftUI screens, `@main` and the app delegate, the Keychain store, notifications, the unified log, the verify code's QR image and scanner (ADR 2026-10.65xx), the composition root, and a debug build's bridge, over USB and on a pinned Wi-Fi network (ADR 2026-09.kwa8, ADR 2026-10.dz8d) | P6 |
 | `KnitBlueZ`, `CDBus`, `CBluetoothShim` | Linux | the BlueZ `Radio`: one `poll` thread over a libdbus connection and LE CoC sockets; advert, scan, and serving and reading the GATT payload | P4 |
 | `KnitControl` | all | the JSON-lines control protocol: commands, replies and event lines over a `Mesh` (`MeshControl`), spoken by `knit-peer` and a debug build of the app (ADR 2026-09.kwa8); the bridge's Wi-Fi pins and commands (`RouterPin`, `WiFiCommand`, ADR 2026-10.dz8d) | P8 |
 | `KnitPeer` | all | the peer's logic: options, its state directory, keygen and the scan report | P4 |
@@ -42,6 +42,7 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
   | SwiftUI and UIKit | `Knit` |
   | Security (the Keychain) | `Knit`'s `KeychainSecretStore` |
   | Network | `Knit`'s `BridgeListener` and `WiFiGate`, in a debug build |
+  | AVFoundation, Vision, VisionKit and CoreImage | `Knit`'s `Codes/`, which draws and scans verify codes |
   | GRDB | `KnitStoreSQL` |
   | CDBus and the socket shim | `KnitBlueZ`, and `KnitBlueZTests`, which hosts a fake BlueZ |
   | CryptoKit | nowhere: import swift-crypto's `Crypto`, which is CryptoKit on Apple platforms |

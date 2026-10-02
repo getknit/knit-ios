@@ -10,6 +10,8 @@
 	<string>1</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Knit uses Bluetooth to find people nearby and pass messages from phone to phone, so you can chat without internet or cell service.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Knit uses the camera to scan the code on someone's phone and check that no one is intercepting your direct messages with them.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

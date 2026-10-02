@@ -109,6 +109,8 @@ schemes:
         "-demoRadio off": false
         "-demoRadio unauthorized": false
         "-demoRadio unsupported": false
+        "-demoCamera denied": false
+        "-demoCamera allowed": false
     archive:
       config: Release
   KnitDevice:

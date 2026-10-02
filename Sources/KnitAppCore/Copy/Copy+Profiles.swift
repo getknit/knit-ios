@@ -148,7 +148,7 @@ extension Copy {
                     "profile.safety-number.caption",
                     bundle: .main,
                     value: """
-                        Compare this number with %@ in person. If both phones show the same number, no one is intercepting your direct \
+                        Compare this number with %@ in person, or scan their code. A match means no one is intercepting your direct \
                         messages.
                         """,
                     comment: "Profile: how to use the safety number; %@ is the person's name"
@@ -175,6 +175,64 @@ extension Copy {
                 value: "Clear verification",
                 comment: "Profile: clears the verification"
             )
+        }
+
+        /// The caption under our own code, which the other person scans.
+        public static func codeCaption(_ name: String) -> String {
+            format(
+                NSLocalizedString(
+                    "profile.code.caption",
+                    bundle: .main,
+                    value: "Let %@ scan this code to verify you.",
+                    comment: "Profile: under the user's own verify code; %@ is the other person's name"
+                ),
+                name
+            )
+        }
+
+        /// The button that opens the scanner.
+        public static var scan: String {
+            NSLocalizedString("profile.scan", bundle: .main, value: "Scan their code", comment: "Profile: opens the camera to scan a code")
+        }
+
+        /// What a scan found, said once the scanner closes.
+        public static func scanOutcome(_ outcome: VerifyScanOutcome, name: String) -> String {
+            switch outcome {
+            case .match:
+                format(
+                    NSLocalizedString(
+                        "profile.scan.match",
+                        bundle: .main,
+                        value: "The keys match. %@ is now verified.",
+                        comment: "Profile: a scanned code matched; %@ is the person's name"
+                    ),
+                    name
+                )
+            case .mismatch:
+                format(
+                    NSLocalizedString(
+                        "profile.scan.mismatch",
+                        bundle: .main,
+                        value: "That code doesn't match the key Knit has for %@. Make sure you're scanning their phone.",
+                        comment: "Profile: a scanned code is someone else's or a different key; %@ is the person's name"
+                    ),
+                    name
+                )
+            case .ownCode:
+                NSLocalizedString(
+                    "profile.scan.own-code",
+                    bundle: .main,
+                    value: "That's your own code. Scan the one on their phone.",
+                    comment: "Profile: the user scanned their own code"
+                )
+            case .notACode:
+                NSLocalizedString(
+                    "profile.scan.not-a-code",
+                    bundle: .main,
+                    value: "That isn't a Knit code.",
+                    comment: "Profile: the scanned QR code is not a Knit code"
+                )
+            }
         }
     }
 }

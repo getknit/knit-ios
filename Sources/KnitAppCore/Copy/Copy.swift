@@ -75,6 +75,19 @@ extension Copy {
                 comment: "The system's Bluetooth permission prompt"
             )
         }
+
+        /// `NSCameraUsageDescription`: why Knit asks for the camera.
+        public static var cameraUsage: String {
+            NSLocalizedString(
+                "system.camera-usage",
+                bundle: .main,
+                value: """
+                    Knit uses the camera to scan the code on someone's phone and check that no one is intercepting your direct \
+                    messages with them.
+                    """,
+                comment: "The system's camera permission prompt"
+            )
+        }
     }
 }
 

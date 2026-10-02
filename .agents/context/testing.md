@@ -43,8 +43,9 @@ ladder, not the first.
    both ways a link ends. CoreBluetooth's own delegates need a radio, so the Mac's run and the iPhone's cover
    them. `KnitUITests` walks every MVP screen in the Simulator on `-seedDemo` (`scripts/check.sh uitest`,
    `test:ios:simulator`), each through `performAccessibilityAudit`, once at the default text size and once at the
-   largest, where it keeps a screenshot of every screen. `AuditPolicy` names what the audit may report without
-   failing and why (ADR 2026-09.jcdx); everything else fails the gate. The sources live in `Tests/KnitUITests/`,
+   largest, where it keeps a screenshot of every screen. The Simulator has no scanner, so the scan walk reaches the
+   scanner's refused and failed states through `-demoCamera` (ADR 2026-10.65xx). `AuditPolicy` names what the audit
+   may report without failing and why (ADR 2026-09.jcdx); everything else fails the gate. The sources live in `Tests/KnitUITests/`,
    which SwiftPM ignores and XcodeGen builds. CI runs them in a Simulator named "Knit CI", and a run over ssh in
    "Knit local", each made on first use. They used to share one: on 2026-09-28 a local run started while CI's was
    going, its test runner was killed "before establishing connection", and two of CI's tests failed. Checklist M
@@ -59,7 +60,8 @@ ladder, not the first.
     someone to close Knit and unlock the iPhone. `iphone-rings` and `android-rings` check the doorbell's rings each
     way, and `android-reads` checks that an Android phone reads the peer's GATT payload (A3). `KnitDeviceTests` (`scripts/check.sh devicetest`, ADR 2026-09.63em) runs XCUITest on the iPhone from the
     Mac, with Knit launched live and the Settings app and SpringBoard driven beside it: Stop and Start, Bluetooth
-    off and on, the permission refused and allowed again, onboarding's prompt, and a relaunch. It reads the status
+    off and on, the permission refused and allowed again, onboarding's prompt, a relaunch, and the camera prompt at a
+    profile's Scan their code (`CameraTests`, which needs no radio and leaves Bluetooth as it found it). It reads the status
     line's state from its identifier, never its words, and each test puts Bluetooth, the permission and the mesh
     back as it ends. Its sources live in `Tests/KnitDeviceTests/`, which only the `KnitDevice` scheme builds.
 

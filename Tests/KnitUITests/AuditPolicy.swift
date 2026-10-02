@@ -12,10 +12,11 @@ import XCTest
 /// - Contrast that the element's own pixels pass: the audit fails the newest message of a thread at the largest
 ///   size, black on light gray, whatever the view does. Its screenshot is measured instead, darkest pixel against
 ///   lightest, which is the text against what it sits on, and it must reach WCAG's 4.5:1.
-/// - Clipping of text and fields: the check calls wrapped text clipped (the status line it flags reads whole at the
-///   largest size), and a one-line field scrolls rather than loses its text. No view limits its lines but the chat
-///   list's preview, and the largest-size walk's screenshots show the rest. Text combined into one element, which
-///   the report names no element for, is text all the same.
+/// - Clipping of text, buttons and fields: the check calls wrapped text clipped (the status line it flags reads whole at
+///   the largest size), a button's label wraps the same way (Clear verification, flagged at the default size, reads
+///   whole on two lines at the largest), and a one-line field scrolls rather than loses its text. No view limits its
+///   lines but the chat list's preview, and the largest-size walk's screenshots show the rest. Text combined into one
+///   element, which the report names no element for, is text all the same.
 @MainActor
 enum AuditPolicy {
     /// Whether `issue` is one of the reports above. `bars` are the navigation bars' frames, `window` the screen's.
@@ -31,7 +32,7 @@ enum AuditPolicy {
         case .contrast:
             return !element.isEnabled || !window.contains(frame) || measuredContrast(of: element) >= minimumContrast
         case .textClipped:
-            return [.staticText, .textField].contains(element.elementType)
+            return [.staticText, .button, .textField].contains(element.elementType)
         default:
             return false
         }

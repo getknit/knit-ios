@@ -47,3 +47,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-09.63em](decisions/2026-09-63em-device-ui-tests-run-by.md) | device UI tests run by hand from the Mac | testing, app |
 | [2026-09.n393](decisions/2026-09-n393-groups-seal-with-v1-per.md) | Groups seal with v1 per-member wraps until the ratchet lands | crypto, groups, interop |
 | [2026-10.dz8d](decisions/2026-10-dz8d-a-debug-build-s-bridge.md) | a debug build's bridge also listens on Wi-Fi, on a router pinned over USB | interop, testing, app |
+| [2026-10.65xx](decisions/2026-10-65xx-a-peer-s-profile-verifies.md) | a peer's profile verifies them by scanning their knit-id code, and never pins from it | app, crypto, security |

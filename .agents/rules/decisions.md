@@ -37,6 +37,7 @@ growing an explanation, that explanation belongs in the ADR.
 | `LinkOutbox`, `Radio.writeDigest`, or how a radio queues what it writes | [ADR 2026-09.3ch7](../memory/decisions/2026-09-3ch7-a-link-holds-at-most.md) |
 | the doorbell, `Radio.ring`, `Radio.servesDoorbell`, `CAP_DOORBELL`, `LinkManager+Doorbell`, or what wakes a suspended iPhone | [ADR 2026-09.khjj](../memory/decisions/2026-09-khjj-a-peer-wakes-a-suspended.md) |
 | the Keychain identity, `KeychainSecretStore`, or what onboarding publishes | [ADR 2026-09.tkww](../memory/decisions/2026-09-tkww-a-reinstall-keeps-the-keychain.md) |
+| `VerifyPayload`, a scanned code, `CodeScannerModel`, `CameraAccess`, `Sources/Knit/Codes/`, `-demoCamera`, or Add contact | [ADR 2026-10.65xx](../memory/decisions/2026-10-65xx-a-peer-s-profile-verifies.md) |
 | a string a person reads, `Copy`, `App/Info.plist`'s usage strings, or a view's text | [ADR 2026-09.ycza](../memory/decisions/2026-09-ycza-user-facing-copy-lives-in.md) |
 | `check.sh periphery`, a `verify:periphery` job, a `periphery:ignore`, or a Periphery finding | [ADR 2026-09.xgtz](../memory/decisions/2026-09-xgtz-periphery-blocks-on-the-mac.md) |
 | a view's colors, `Palette`, `KnitUITests`, `AuditPolicy`, `scripts/check.sh uitest`, or an accessibility audit finding | [ADR 2026-09.jcdx](../memory/decisions/2026-09-jcdx-the-accessibility-audit-blocks.md) |

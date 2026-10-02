@@ -159,7 +159,19 @@ import Testing
             Copy.Diagnostics.link(version: 3, capabilities: "9"),
             Copy.Diagnostics.clockAhead(seconds: 5),
             Copy.Diagnostics.clockBehind(seconds: 5),
-        ] + Self.groupStrings + Self.newMessageStrings
+        ] + Self.groupStrings + Self.newMessageStrings + Self.verifyStrings
+    }
+
+    private static var verifyStrings: [String] {
+        [
+            Copy.Profile.codeCaption("Sam"),
+            Copy.Profile.scan,
+            Copy.Scan.hint,
+            Copy.Scan.denied,
+            Copy.Scan.unsupported,
+            Copy.Scan.unavailable,
+            Copy.System.cameraUsage,
+        ] + VerifyScanOutcome.allCases.map { Copy.Profile.scanOutcome($0, name: "Sam") }
     }
 
     private static var groupStrings: [String] {
@@ -267,6 +279,16 @@ import Testing
         #expect(AccessibilityID.chatListStatusStart == "chat_list_status_start")
         #expect(AccessibilityID.chatListStatusSettings == "chat_list_status_settings")
         #expect(AccessibilityID.onboardingAllowBluetooth == "onboarding_allow_bluetooth")
+    }
+
+    /// The verify code's identifiers: Android's tag for the scanner (`screen_scan`), and the iPhone's own for the
+    /// profile's code and button and the scanner's state, which the device tests read.
+    @Test func theScannersIdentifiersNameItsState() {
+        #expect(AccessibilityID.scanScreen == "screen_scan")
+        #expect(AccessibilityID.scanState(.notAllowed) == "scan_state_not_allowed")
+        #expect(Set(AccessibilityID.ScanState.allCases.map(AccessibilityID.scanState)).count == 5)
+        #expect(AccessibilityID.profileDetailsCode == "profile_details_code")
+        #expect(AccessibilityID.profileDetailsScan == "profile_details_scan")
     }
 
     @Test func everyStatusHasItsWords() {

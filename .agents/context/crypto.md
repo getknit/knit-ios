@@ -122,6 +122,21 @@ The separator is a raw NUL byte inside the Kotlin string literal at `SafetyNumbe
 nothing in most editors, and `SafetyNumberTest` pins only the format, so the A2 golden is the only check
 that catches a port that gets it wrong.
 
+## Verify code
+
+```text
+code = "knit-id:v1:" + nodeId + ":" + bundle      // VerifyPayload.kt; always 150 ASCII bytes
+```
+
+Each phone draws its own code as a QR code (zxing, error correction L) on a peer's profile, and the peer
+scans it there. The node id ends at the first `:` after the prefix, and the bundle is the rest, since
+standard base64 has no `:`. Android's profile compares a scanned code with the pinned bundle's text and
+writes nothing unless both match (`ProfileDetailsViewModel.kt:397-411`). Its Add contact path pins a key
+from a scan, and this port does not have it yet (ADR 2026-10.65xx). Android's scanner also reads a signed
+contact card (`docs/CONTACT_CARD.md`), which no phone draws as a QR code, and which this port reads as no
+code at all. knit-next pins no vector for the code: `VerifyPayloadTests` checks keyed-v1 Alice's, computed
+from the format.
+
 ## Alias
 
 A blank display name shows an alias. With `d = SHA-256(UTF-8("knit-alias-v2:" + nodeId))`, token t is
@@ -153,6 +168,7 @@ Swift must count `utf16`, not `Character`s.
 | `MessageCrypto` | `MessageCrypto.header`, `.seal`, `.open`; `IdentityKeys.signature(for:)` |
 | `Conversations.groupIdFor` | `GroupId.derive(_:)` |
 | `SafetyNumber`, `Alias`, `DeviceTag` | the same names |
+| `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
   ratchet's prekeys will join it as a third key. `IdentityKeys.load(from:)` makes a new identity only when

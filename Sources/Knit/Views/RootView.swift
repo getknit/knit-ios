@@ -130,7 +130,7 @@
                 // Leaving closes the group's screens and comes back to the chat list.
                 GroupInfoView(groupId: groupId, session: environment.session) { path = [] }
             case .peer(let nodeId):
-                PeerProfileView(nodeId: nodeId, session: environment.session)
+                PeerProfileView(nodeId: nodeId, session: environment.session, camera: environment.camera)
             case .profile:
                 OwnProfileView(session: environment.session)
             case .settings:

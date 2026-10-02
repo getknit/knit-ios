@@ -155,6 +155,9 @@ Launch arguments, set in the scheme on the Mac (P7):
 - `-demoRadio on|off|unauthorized|unsupported` (with `-seedDemo`) is the state that radio reports, which is how
   the status line's messages are checked, the unsupported device's among them (MVP item 10).
 - `-demoOnboarding` (with `-seedDemo`) starts at onboarding, as a first run does. The UI tests walk it.
+- `-demoCamera denied|allowed` (with `-seedDemo`) gives the profile's scanner a camera that answers one thing. The
+  Simulator has no scanner, so this is how the UI tests reach the refused state and the one where the camera fails
+  to start (ADR 2026-10.65xx). Without it the Simulator shows the state for a device that cannot scan.
 - `-demoScene edge-cases|marketing` (with `-seedDemo`) picks what is seeded. `edge-cases`, the default, is the
   cast above: two people with one name, one with none, and nobody linked. `marketing` is for store screenshots
   and social posts, after knit-next's hiking theme: seven named people, a room, two DMs and a request, with

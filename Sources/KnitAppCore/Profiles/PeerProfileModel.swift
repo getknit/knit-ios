@@ -22,9 +22,25 @@ public struct PeerProfileState: Sendable, Equatable {
     public var safetyNumber: [String]?
     /// Whether the user compared safety numbers and marked them verified.
     public var isVerified: Bool
+    /// Our own verify code, for them to scan (`VerifyPayload`).
+    public var ownCode: String
 
     /// The DM thread with them.
     public var conversationId: String { nodeId.string }
+}
+
+/// What scanning a code on someone's profile found (ADR 2026-10.65xx). Android answers MATCH or MISMATCH
+/// (`ProfileDetailsViewModel.onScanned`); iOS also names our own code and a QR code that is not a Knit code, which
+/// changes only what the user reads.
+public enum VerifyScanOutcome: Sendable, Equatable, CaseIterable {
+    /// Their code carries the key pinned for them, so they are now verified.
+    case match
+    /// A valid code, but someone else's, or a key other than the one pinned.
+    case mismatch
+    /// Our own code.
+    case ownCode
+    /// Not a Knit code, or one no key could have made.
+    case notACode
 }
 
 /// Another person's profile's view model: who they are, whether their key is verified, and the way to message
@@ -62,6 +78,25 @@ public final class PeerProfileModel {
         await session.setVerified(nodeId, verified)
     }
 
+    /// Compares a scanned code with the key pinned for this person, and marks them verified on an exact match
+    /// (`ProfileDetailsViewModel.kt:397-411`). It never pins a key, and a mismatch never clears an earlier
+    /// verification.
+    public func scanned(_ text: String) async -> VerifyScanOutcome {
+        guard let code = VerifyPayload.parse(text), let scanned = code.certifiedNodeId else {
+            return .notACode
+        }
+        if scanned == session.identity.nodeId {
+            return .ownCode
+        }
+        // The pinned text, compared by its bytes, as Kotlin compares it (ADR 2026-09.jc2x).
+        guard scanned == nodeId, let pinned = session.directory.peers[nodeId]?.publicKey, code.bundle.utf8.elementsEqual(pinned.utf8)
+        else {
+            return .mismatch
+        }
+        await session.setVerified(nodeId, true)
+        return .match
+    }
+
     private func build() -> PeerProfileState {
         let directory = session.directory
         let peer = directory.peers[nodeId]
@@ -75,7 +110,8 @@ public final class PeerProfileModel {
             openToChat: peer?.openToChat ?? false,
             isLinked: false,
             safetyNumber: theirs.map { Self.lines(SafetyNumber.compute(mine: session.identity.bundle, theirs: $0)) },
-            isVerified: peer?.verified ?? false
+            isVerified: peer?.verified ?? false,
+            ownCode: VerifyPayload.encode(session.identity.bundle)
         )
     }
 

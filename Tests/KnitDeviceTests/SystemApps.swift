@@ -1,7 +1,7 @@
 import XCTest
 
 /// The two system apps the device tests drive beside Knit: the Settings app, for Bluetooth and Knit's own permission,
-/// and SpringBoard, which asks for that permission. Apple's words live here and nowhere else, because they move
+/// and SpringBoard, which asks for that permission and the camera's. Apple's words live here and nowhere else, because they move
 /// between iOS versions; when a step here fails, the app's element tree is attached, which names the new ones.
 @MainActor
 struct SystemApps {
@@ -47,11 +47,21 @@ struct SystemApps {
         }
     }
 
+    /// Answers the system's question whether Knit may use the camera. Its buttons were Bluetooth's words when this was
+    /// written, unchecked on a phone (ADR 2026-10.65xx); a failure here attaches the ones it has.
+    func answerCameraPrompt(allow: Bool) throws {
+        try explained(springboard, "SpringBoard") {
+            let alert = springboard.alerts.firstMatch
+            try alert.appear("the camera prompt")
+            try alert.buttons[allow ? Words.allow : Words.dontAllow].appear(allow ? "Allow" : "Don't Allow").tap()
+        }
+    }
+
     /// Throws if a system prompt is up before `step`, which should be the one to ask. XCTest answers an alert that
     /// blocks a tap by itself, so a prompt that came early would otherwise pass unseen.
     func noPrompt(before step: String) throws {
         if springboard.alerts.firstMatch.waitForExistence(timeout: Self.promptWait) {
-            throw Mismatch(what: "the Bluetooth prompt", expected: "only after \(step)", found: "up before it")
+            throw Mismatch(what: "a system prompt", expected: "only after \(step)", found: "up before it")
         }
     }
 

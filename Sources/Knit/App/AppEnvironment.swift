@@ -17,6 +17,8 @@
         let session: AppSession
         let preferences: any AppPreferences
         let notifier: LocalNotifier
+        /// The camera a profile's scanner reaches: the phone's, or a demo's that answers what `-demoCamera` says.
+        let camera: any CameraAccess
         let about: AboutInfo
         /// Stores a minted test identity for the next launch, in a debug build.
         let replaceIdentity: IdentityReplacer?
@@ -33,12 +35,14 @@
             radio: BLERadio?,
             preferences: any AppPreferences,
             notifier: LocalNotifier,
+            camera: any CameraAccess,
             replaceIdentity: IdentityReplacer?
         ) {
             self.session = session
             self.radio = radio
             self.preferences = preferences
             self.notifier = notifier
+            self.camera = camera
             self.replaceIdentity = replaceIdentity
             let info = Bundle.main.infoDictionary ?? [:]
             about = AboutInfo(
@@ -125,7 +129,8 @@
                 radio: DemoRadio(state: options.demoRadio),
                 log: UnifiedLog(clock: clock),
                 preferences: MemoryPreferences(hasOnboarded: !options.demoOnboarding),
-                linked: DemoSeed.linked(in: options.demoScene)
+                linked: DemoSeed.linked(in: options.demoScene),
+                camera: options.demoCamera.map(DemoCamera.init)
             )
             return compose(parts, replace: nil)
         }
@@ -139,6 +144,8 @@
             let preferences: any AppPreferences
             /// The peers a demo scene shows as linked, which only a demo has.
             var linked: [NodeId] = []
+            /// A demo's camera, under `-demoCamera`; otherwise the phone's.
+            var camera: (any CameraAccess)?
             #if DEBUG
                 /// What the debug bridge's `storage` reply reads, which only a live launch has.
                 var storage: StorageReport?
@@ -165,6 +172,7 @@
                 radio: parts.radio as? BLERadio,
                 preferences: parts.preferences,
                 notifier: alerts,
+                camera: parts.camera ?? DeviceCamera(),
                 replaceIdentity: replace
             )
             #if DEBUG

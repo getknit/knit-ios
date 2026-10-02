@@ -112,6 +112,17 @@ public enum AccessibilityID {
     public static let profileDetailsPresence = "profile_details_presence"
     /// Its verification row.
     public static let profileDetailsVerified = "profile_details_verified"
+    /// Our own verify code, for them to scan. Android has no tag here.
+    public static let profileDetailsCode = "profile_details_code"
+    /// The button that opens the scanner. Android has no tag here.
+    public static let profileDetailsScan = "profile_details_scan"
+
+    /// The scanner, as Android tags it.
+    public static let scanScreen = "screen_scan"
+    /// The scanner's state, `scan_state_<state>`, which the device tests read. Android has no tag here.
+    public static func scanState(_ state: ScanState) -> String {
+        "scan_state_\(state.rawValue)"
+    }
 
     /// The own profile.
     public static let profileScreen = "screen_profile"
@@ -166,5 +177,19 @@ public enum AccessibilityID {
         case notAllowed = "not_allowed"
         /// No Bluetooth LE here.
         case unsupported = "unsupported"
+    }
+
+    /// What the scanner shows, as ``scanState(_:)`` names it. Kept here for the same reason as ``StatusState``.
+    public enum ScanState: String, CaseIterable, Sendable {
+        /// Asking whether it can scan.
+        case checking = "checking"
+        /// The camera is up.
+        case scanning = "scanning"
+        /// Knit may not use the camera, named as the status line names a Bluetooth refusal.
+        case notAllowed = "not_allowed"
+        /// This device cannot scan.
+        case unsupported = "unsupported"
+        /// The camera failed to start.
+        case unavailable = "unavailable"
     }
 }

@@ -29,5 +29,9 @@
         static let previewLines = 2
         /// How far the composer grows before it scrolls.
         static let composerLines = 1...6
+        /// A verify code's side, as Android shows it (200 dp).
+        static let codeSide: CGFloat = 200
+        /// The white margin around a verify code, which a scanner needs to find its edge.
+        static let codeQuietZone: CGFloat = 12
     }
 #endif

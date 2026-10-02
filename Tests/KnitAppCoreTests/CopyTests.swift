@@ -85,6 +85,12 @@ import Testing
         #expect(plist["NSBluetoothAlwaysUsageDescription"] as? String == Copy.System.bluetoothUsage)
     }
 
+    @Test func infoPlistAsksForTheCameraInTheCatalogsWords() throws {
+        let data = try Data(contentsOf: Self.root.appendingPathComponent("App/Info.plist"))
+        let plist = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        #expect(plist["NSCameraUsageDescription"] as? String == Copy.System.cameraUsage)
+    }
+
     @Test func aboutListsWhatTheNoticesFileShips() throws {
         let notices = try Self.text("THIRD-PARTY-NOTICES.md")
         let shipped = try #require(notices.components(separatedBy: "## Shipped in the app").last?.components(separatedBy: "\n## ").first)
@@ -117,6 +123,9 @@ import Testing
         #expect(Copy.Onboarding.nameBody(alias: "OptimallyArtfulFox").contains("OptimallyArtfulFox"))
         #expect(Copy.Chat.encryptionBody("Sam").hasPrefix("Only you and Sam"))
         #expect(Copy.Profile.safetyNumberCaption("Sam").contains("Sam"))
+        #expect(Copy.Profile.codeCaption("Sam") == "Let Sam scan this code to verify you.")
+        #expect(Copy.Profile.scanOutcome(.match, name: "Sam") == "The keys match. Sam is now verified.")
+        #expect(Copy.Profile.scanOutcome(.mismatch, name: "Sam").contains("Sam"))
         #expect(Copy.TestIdentity.minted("abc").contains("abc"))
         #expect(Copy.Onboarding.allowLabel("Bluetooth") == "Allow, Bluetooth")
     }
@@ -125,6 +134,13 @@ import Testing
         #expect(!Copy.Chat.encryptionBody("Sam").contains("\n"))
         #expect(!Copy.About.security.contains("\n"))
         #expect(!Copy.System.bluetoothUsage.contains("  "))
+        #expect(!Copy.System.cameraUsage.contains("\n") && !Copy.System.cameraUsage.contains("  "))
+        #expect(!Copy.Profile.safetyNumberCaption("Sam").contains("\n"))
+    }
+
+    @Test func everyScanOutcomeHasItsOwnWords() {
+        let outcomes = VerifyScanOutcome.allCases.map { Copy.Profile.scanOutcome($0, name: "Sam") }
+        #expect(Set(outcomes).count == VerifyScanOutcome.allCases.count)
     }
 
     @Test func everyRadioStateAndDropReasonHasWords() {

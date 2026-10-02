@@ -5,7 +5,8 @@ public import KnitWire
 
 /// How the app was launched: `-seedDemo`, the radio state the demo reports (`-demoRadio off`), so a screen can be
 /// checked in a state no real phone here is in, the unsupported device's among them (MVP item 10), the scene it
-/// seeds (`-demoScene marketing`), and whether it starts at onboarding (`-demoOnboarding`).
+/// seeds (`-demoScene marketing`), whether it starts at onboarding (`-demoOnboarding`), and what the camera answers
+/// (`-demoCamera denied`).
 public struct LaunchOptions: Sendable, Equatable {
     /// Whether to run the demo: seeded stores in memory, a radio that goes nowhere, and a fixed identity.
     public var seedDemo = false
@@ -15,6 +16,9 @@ public struct LaunchOptions: Sendable, Equatable {
     public var demoScene = DemoScene.edgeCases
     /// Whether the demo starts at onboarding, as a first run does, rather than at the chat list. The UI tests walk it.
     public var demoOnboarding = false
+    /// What the demo's camera answers, or `nil` for the device's own: the Simulator has no scanner, so the UI tests reach
+    /// the refused and failed states only through this.
+    public var demoCamera: DemoCamera.Answer?
 
     /// The options in `arguments`, the process's own. Anything unknown is left for the system.
     public init(arguments: [String]) {
@@ -26,11 +30,16 @@ public struct LaunchOptions: Sendable, Equatable {
             demoScene = DemoScene(rawValue: arguments[flag + 1]) ?? .edgeCases
         }
         demoOnboarding = arguments.contains("-demoOnboarding")
+        if let flag = arguments.firstIndex(of: "-demoCamera"), arguments.indices.contains(flag + 1) {
+            demoCamera = Self.cameraAnswers[arguments[flag + 1]]
+        }
     }
 
     private static let radioStates: [String: RadioState] = [
         "on": .on, "off": .off, "unauthorized": .unauthorized, "unsupported": .unsupported,
     ]
+
+    private static let cameraAnswers: [String: DemoCamera.Answer] = ["denied": .denied, "allowed": .allowed]
 }
 
 /// A radio that reports one state and goes nowhere: `-seedDemo`'s transport. It never sights, dials or accepts, so

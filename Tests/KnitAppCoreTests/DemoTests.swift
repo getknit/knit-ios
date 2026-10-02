@@ -27,6 +27,21 @@ import Testing
         #expect(LaunchOptions(arguments: ["-seedDemo", "-demoOnboarding"]).demoOnboarding)
     }
 
+    @Test func theLaunchOptionsReadTheDemosCamera() {
+        #expect(LaunchOptions(arguments: ["-seedDemo"]).demoCamera == nil, "the device's own camera")
+        #expect(LaunchOptions(arguments: ["-seedDemo", "-demoCamera", "denied"]).demoCamera == .denied)
+        #expect(LaunchOptions(arguments: ["-seedDemo", "-demoCamera", "allowed"]).demoCamera == .allowed)
+        #expect(LaunchOptions(arguments: ["-seedDemo", "-demoCamera", "sideways"]).demoCamera == nil)
+        #expect(LaunchOptions(arguments: ["-seedDemo", "-demoCamera"]).demoCamera == nil, "a flag with no value")
+    }
+
+    @Test(arguments: DemoCamera.Answer.allCases)
+    func theDemosCameraScansAndAnswersWhatItWasTold(answer: DemoCamera.Answer) async {
+        let model = CodeScannerModel(camera: DemoCamera(answer))
+        await model.prepare()
+        #expect(model.phase == (answer == .allowed ? .scanning : .denied))
+    }
+
     @Test(arguments: DemoScene.allCases)
     func theSeedIsTheSameEveryLaunch(scene: DemoScene) throws {
         let first = try #require(DemoSeed.identity)

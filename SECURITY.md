@@ -40,7 +40,7 @@ reports:
   has not seen yet is skipped for that message. Knit for iPhone then asks for their key, so a later message
   can reach them.
 - **Keys are trusted on first sight.** Someone relaying a substituted key before your first contact with a
-  person is detectable by comparing safety numbers, not prevented.
+  person is detectable by comparing safety numbers or scanning each other's code, not prevented.
 
 Anything beyond these is in scope and welcome: key handling and storage, the crypto envelope, signature
 verification, the CBOR and link-record parsers, and memory safety in the radio code.

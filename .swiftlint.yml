@@ -119,6 +119,12 @@ custom_rules:
     excluded: 'Sources/Knit/Debug/'
     message: Only the app's debug bridge imports Network; Knit meshes over Bluetooth alone (ADR 2026-09.zwdp).
     severity: error
+  seam_codes:
+    name: The camera and QR frameworks stay in the app's Codes
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+(AVFoundation|Vision|VisionKit|CoreImage)\b'
+    excluded: 'Sources/Knit/Codes/'
+    message: Only the app's Codes directory draws and scans verify codes (ADR 2026-10.65xx); the scan's logic lives in KnitAppCore.
+    severity: error
   seam_grdb:
     name: GRDB stays in KnitStoreSQL
     regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+GRDB\b'
