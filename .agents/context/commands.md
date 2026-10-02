@@ -89,9 +89,11 @@ python3 scripts/interop.py bridge '{"cmd":"wifi-pin"}'           # over USB: let
 python3 scripts/interop.py bridge --host <phone-ip> '{"cmd":"wifi"}'   # over Wi-Fi: the network, its pin, the listener
 python3 scripts/soak.py run [--hours 10]                          # a night against every phone in range; drives none
 python3 scripts/soak.py status | report [--json] | stop           # the latest run (.build/soak/current)
-sudo scripts/hci1-supervision.sh                                  # hci1's supervision timeout to 5 s, until a replug
+sudo scripts/hci1-supervision.sh                                  # the ATS2851's supervision timeout to 5 s, until a replug
 sudo scripts/bluetoothd-no-battery.sh [--undo]                    # bluetoothd without its battery plugin, for iPhone runs
 scripts/hci1-supervision.sh --udev-rule                           # a udev rule that sets it on every plug-in
+scripts/knit-hci.sh name                                          # the ATS2851's hciN this boot; adapters go by address
+sudo knit-hci btmon -w capture.btsnoop                            # root tools on the ATS2851 alone (devices.md); also hcitool, btmgmt
 ```
 
 `scripts/mac-peer.sh` runs on the Mac, and `interop.py --mac` calls it over ssh. `build` builds knit-peer and signs

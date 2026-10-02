@@ -4,12 +4,12 @@ public import KnitWire
 /// What `knit-peer` was asked to do, from its arguments.
 ///
 /// ```text
-/// knit-peer [run] [--adapter hci1] [--adapter-address AA:BB:CC:DD:EE:FF] [--shared-adapter]
+/// knit-peer [run] [--adapter-address AA:BB:CC:DD:EE:FF] [--shared-adapter]
 ///           [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
 ///           [--log debug|info|warning|off] [--rssi-floor DBM] [--never-sight NODE_ID[,NODE_ID…]]
 ///           [--no-gatt-payload] [--no-gatt-reads]
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
-/// knit-peer scan [--adapter hci1] [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
+/// knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
 ///                [--advertise android|ios] [--instance NAME | --state DIR]
 /// knit-peer help
 /// ```
@@ -23,23 +23,24 @@ public enum PeerCommand: Equatable, Sendable {
     /// Print the usage.
     case help
 
-    /// The Actions ATS2851 dongle on the maintainer's machine, `hci1` (`.agents/context/linux-peer.md`).
+    /// The Actions ATS2851 dongle on the maintainer's machine, whatever `hciN` it is (`.agents/context/linux-peer.md`).
     public static let defaultAdapterAddress = "F0:0D:00:00:00:02"
 
     /// The usage text.
     public static let usage = """
         usage:
-            knit-peer [run] [--adapter hci1] [--adapter-address ADDRESS] [--shared-adapter]
+            knit-peer [run] [--adapter-address ADDRESS] [--shared-adapter]
                 [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
                 [--log debug|info|warning|off] [--rssi-floor DBM] [--receive-mtu BYTES] [--send-mtu BYTES]
                 [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload] [--no-gatt-reads]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
-            knit-peer scan [--adapter hci1] [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
+            knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
 
-        A headless Knit node on a Bluetooth adapter of its own. Commands arrive as JSON lines on standard input,
-        and replies and events leave as JSON lines on standard output. hci0 is refused unless --shared-adapter
-        says other devices use it too; the peer then leaves every link it did not make alone.
+        A headless Knit node on a Bluetooth adapter of its own, found by its address (the ATS2851's unless
+        --adapter-address names another), whatever hciN the kernel made it. Commands arrive as JSON lines on standard
+        input, and replies and events leave as JSON lines on standard output. The maintainer's adapter is refused
+        unless --shared-adapter says other devices use it too; the peer then leaves every link it did not make alone.
         """
 
     /// Parses the arguments after the program name. `environment` supplies `HOME` and `XDG_STATE_HOME` for the
@@ -75,11 +76,9 @@ public enum PeerCommand: Equatable, Sendable {
 
 /// How to run the node.
 public struct RunOptions: Equatable, Sendable {
-    /// The adapter's name.
-    public var adapter = "hci1"
-    /// The address the adapter must have.
+    /// The address of the adapter to run on.
     public var adapterAddress = PeerCommand.defaultAdapterAddress
-    /// Whether other devices use the adapter too, which `hci0` needs (`AdapterSelection.shared`).
+    /// Whether other devices use the adapter too, which the maintainer's needs (`AdapterSelection.shared`).
     public var sharedAdapter = false
     /// `android` or `ios`, or `nil` for the radio's own: `android` on BlueZ, and `ios` on a Mac, whose CoreBluetooth
     /// advertises as an iPhone does.
@@ -122,7 +121,6 @@ public struct RunOptions: Equatable, Sendable {
 
     init(flags: inout Flags, environment: [String: String]) throws(UsageError) {
         stateDirectory = try StateDirectory.resolve(flags: &flags, environment: environment)
-        adapter = flags.take("--adapter") ?? adapter
         adapterAddress = flags.take("--adapter-address") ?? adapterAddress
         sharedAdapter = flags.take(switch: "--shared-adapter")
         radioProfile = try flags.take("--radio-profile", oneOf: Self.profiles)
@@ -170,11 +168,9 @@ public struct RunOptions: Equatable, Sendable {
 /// above every phone in range (`keygen --above`) checks the advert without linking to anyone. A node that advertises
 /// only the `0xFE30` UUID, as an iPhone does, is linked just long enough to read its payload over GATT.
 public struct ScanOptions: Equatable, Sendable {
-    /// The adapter's name.
-    public var adapter = "hci1"
-    /// The address the adapter must have.
+    /// The address of the adapter to scan on.
     public var adapterAddress = PeerCommand.defaultAdapterAddress
-    /// Whether other devices use the adapter too, which `hci0` needs (`AdapterSelection.shared`).
+    /// Whether other devices use the adapter too, which the maintainer's needs (`AdapterSelection.shared`).
     public var sharedAdapter = false
     /// How long to listen.
     public var seconds = 20
@@ -190,7 +186,6 @@ public struct ScanOptions: Equatable, Sendable {
     init(flags: inout Flags, environment: [String: String]) throws(UsageError) {
         stateDirectory = try StateDirectory.resolve(flags: &flags, environment: environment)
         logLevel = try flags.take("--log", oneOf: ["debug", "info", "warning"]) ?? logLevel
-        adapter = flags.take("--adapter") ?? adapter
         adapterAddress = flags.take("--adapter-address") ?? adapterAddress
         sharedAdapter = flags.take(switch: "--shared-adapter")
         advertise = try flags.take("--advertise", oneOf: RunOptions.profiles)

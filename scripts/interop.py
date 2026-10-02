@@ -55,6 +55,9 @@ did not make.
 hci1 is an Actions ATS2851, which dials out but takes no incoming LE connection. A run where a phone dials the peer
 on hci1, or reads its GATT payload, needs the Edimax it replaced or hci0 (.agents/context/linux-peer.md).
 
+Here hci1 names the ATS2851 (F0:0D:00:00:00:02) and hci0 the maintainer's adapter (A0:00:00:00:00:01), the indices
+they had until a reboot on 2026-10-01 swapped them. Everything here finds them by address (ADR 2026-09.5ftc).
+
 Each step prints one JSON line, {"step": ..., "ok": ..., ...}, and the run ends with a summary line. The exit code
 is the number of failed steps.
 """
@@ -84,9 +87,9 @@ ROOT = Path(__file__).resolve().parent.parent
 PEER = Path(os.environ.get("KNIT_PEER") or ROOT / ".build" / "out" / "Products" / "Debug-linux-x86_64" / "knit-peer")
 PACKAGE = "app.getknit.knit"
 INSTANCE = "interop"
-# The maintainer's own adapter, for `relay` only, shared with the devices already on it (.agents/rules/devices.md).
+# The maintainer's own adapter, shared with the devices already on it (.agents/rules/devices.md).
 HCI0_ADDRESS = "A0:00:00:00:00:01"
-HCI0 = ["--adapter", "hci0", "--adapter-address", HCI0_ADDRESS, "--shared-adapter"]
+HCI0 = ["--adapter-address", HCI0_ADDRESS, "--shared-adapter"]
 # The Mac that runs the peer with --mac, and its mirror of this tree (scripts/mac.sh).
 MAC_HOST = "mac.example"
 MAC_MIRROR = "source/knit-ios-mirror"
@@ -1487,11 +1490,22 @@ def _ios_forgot(log_path: Path, identifier: str, reason: str, timeout: float) ->
     return {"line": line, "seconds": round(time.monotonic() - started, 1)}
 
 
+def adapter_name(address: str) -> str:
+    """The `hciN` the kernel gave the adapter with `address` this boot. An index is only the order the adapters' driver
+    bound them in, which follows USB ports and replugs, so the scripts name adapters by address (ADR 2026-09.5ftc)."""
+    listing = subprocess.run(["hcitool", "dev"], capture_output=True, text=True, check=False).stdout
+    for line in listing.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) == 2 and fields[1].upper() == address.upper():
+            return fields[0]
+    raise RuntimeError(f"no adapter has the address {address}")
+
+
 def _hci1_idle_after(seconds: float) -> dict:
     """Waits `seconds`, then reports any connection hci1 still holds with no peer running, which only a phone's stray
     connect can have made."""
     time.sleep(seconds)
-    listing = subprocess.run(["hcitool", "-i", "hci1", "con"], capture_output=True, text=True, check=False).stdout
+    listing = subprocess.run(["hcitool", "-i", adapter_name(HCI1_ADDRESS), "con"], capture_output=True, text=True, check=False).stdout
     held = [line.strip() for line in listing.splitlines()[1:] if line.strip()]
     if held:
         raise RuntimeError(f"hci1 still holds {held}")
@@ -1518,7 +1532,7 @@ def _phone_forgot(phone: Phone, reason: str, timeout: float, mark: int) -> dict:
     return {"line": lines[-1], "seconds": round(time.monotonic() - started, 1)}
 
 
-# hci1's public address, which every peer on it advertises from.
+# The ATS2851's public address, which every peer on it advertises from.
 HCI1_ADDRESS = "F0:0D:00:00:00:02"
 
 

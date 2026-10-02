@@ -7,7 +7,7 @@
     /// channel is insecure, and no root.
     ///
     /// Every socket binds to the adapter's address before it listens or dials, so the kernel can use no other
-    /// adapter. That is what keeps the peer on the adapter it was given, and off `hci0` unless that is the one.
+    /// adapter. That is what keeps the peer on the adapter it was given, and off the maintainer's unless that is the one.
     public struct L2CAPSockets: SocketProvider {
         /// What each channel offers to receive in one SDU, by default: the largest an LE channel allows, so
         /// Android's 8 KiB writes arrive whole. The radio reads 64 KiB at a time, which holds one.

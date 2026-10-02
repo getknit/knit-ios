@@ -8,7 +8,8 @@
     /// This platform's peer radio.
     internal typealias PeerHost = BlueZHost
 
-    /// The Linux peer's radio: BlueZ on one adapter, `hci1` unless told otherwise, and never `hci0` alone.
+    /// The Linux peer's radio: BlueZ on one adapter, found by its address, the ATS2851 unless told otherwise, and never
+    /// the maintainer's adapter unshared.
     internal struct BlueZHost: PeerRadioHost {
         let radio: any Radio
         let profile: String
@@ -18,7 +19,7 @@
         init(_ options: RunOptions, log: any KnitLog) throws(PeerHostError) {
             let selection: AdapterSelection
             do {
-                selection = try Self.checkedAdapter(options.adapter, options.adapterAddress, shared: options.sharedAdapter, log: log)
+                selection = try Self.checkedAdapter(options.adapterAddress, shared: options.sharedAdapter, log: log)
             } catch {
                 throw .adapter(error)
             }
@@ -66,7 +67,7 @@
                 threshold: JSONLinesLog.level(named: options.logLevel) ?? .info, clock: SystemClock(), write: Lines.error.write)
             let selection: AdapterSelection
             do {
-                selection = try checkedAdapter(options.adapter, options.adapterAddress, shared: options.sharedAdapter, log: log)
+                selection = try checkedAdapter(options.adapterAddress, shared: options.sharedAdapter, log: log)
             } catch {
                 KnitPeerMain.fail("refusing to start: \(error)")
             }
@@ -111,9 +112,9 @@
             Lines.output.write(report.summary)
         }
 
-        private static func checkedAdapter(_ name: String, _ address: String, shared: Bool, log: any KnitLog) throws -> AdapterSelection {
-            let selection = try AdapterSelection(name: name, expectedAddress: address, shared: shared)
-            let status = try AdapterProbe.check(selection)
+        private static func checkedAdapter(_ address: String, shared: Bool, log: any KnitLog) throws -> AdapterSelection {
+            let status = try AdapterProbe.select(address: address, shared: shared)
+            let selection = status.adapter
             let use = shared ? ", shared" : ""
             log.log(.info, "adapter \(selection.name) is \(selection.address)\(use), \(status.powered ? "powered" : "not powered")")
             return selection

@@ -15,10 +15,9 @@ import Testing
         return options
     }
 
-    @Test func runIsTheDefaultOnHci1WithTheRadiosOwnProfile() throws {
+    @Test func runIsTheDefaultOnTheATS2851WithTheRadiosOwnProfile() throws {
         let options = try run([])
-        #expect(options.adapter == "hci1")
-        #expect(options.adapterAddress == "F0:0D:00:00:00:02")
+        #expect(options.adapterAddress == "F0:0D:00:00:00:02", "by address, whatever hciN it is")
         #expect(options.radioProfile == nil, "the radio's own")
         #expect(options.stateDirectory == "/home/tester/.local/state/knit-peer/default")
         #expect(options.name == nil)
@@ -28,10 +27,15 @@ import Testing
         #expect(try run(["run"]) == options)
     }
 
+    /// An index names whichever adapter the kernel bound in that place this boot, so no flag takes one.
+    @Test func noFlagNamesAnAdapterByItsIndex() {
+        #expect(throws: UsageError.unknownFlag("--adapter")) { try run(["--adapter", "hci1"]) }
+        #expect(throws: UsageError.unknownFlag("--adapter")) { try PeerCommand.parse(["scan", "--adapter", "hci1"], environment: home) }
+    }
+
     @Test func aSharedAdapterIsASwitchForRunAndScanOnly() throws {
-        let options = try run(["--adapter", "hci0", "--shared-adapter", "--adapter-address", "A0:00:00:00:00:01"])
+        let options = try run(["--shared-adapter", "--adapter-address", "A0:00:00:00:00:01"])
         #expect(options.sharedAdapter)
-        #expect(options.adapter == "hci0")
         guard case .scan(let scan) = try PeerCommand.parse(["scan", "--shared-adapter", "--seconds", "5"], environment: home) else {
             Issue.record("not a scan")
             return
@@ -48,10 +52,9 @@ import Testing
 
     @Test func everyRunFlagIsRead() throws {
         let options = try run([
-            "run", "--adapter", "hci2", "--adapter-address", "00:11:22:33:44:55", "--radio-profile", "ios", "--instance", "b",
+            "run", "--adapter-address", "00:11:22:33:44:55", "--radio-profile", "ios", "--instance", "b",
             "--name", "Peer B", "--log", "off", "--rssi-floor", "-100", "--receive-mtu", "247", "--send-mtu", "512",
         ])
-        #expect(options.adapter == "hci2")
         #expect(options.adapterAddress == "00:11:22:33:44:55")
         #expect(options.radioProfile == "ios")
         #expect(options.stateDirectory == "/home/tester/.local/state/knit-peer/b")
@@ -178,17 +181,17 @@ import Testing
         }
         #expect(quiet.seconds == 20)
         #expect(quiet.advertise == nil)
-        #expect(quiet.adapter == "hci1")
+        #expect(quiet.adapterAddress == PeerCommand.defaultAdapterAddress)
         guard
             case .scan(let loud) = try PeerCommand.parse(
-                ["scan", "--seconds", "5", "--advertise", "ios", "--adapter", "hci3"], environment: home)
+                ["scan", "--seconds", "5", "--advertise", "ios", "--adapter-address", "0A:BC:DE:00:00:A1"], environment: home)
         else {
             Issue.record("not scan")
             return
         }
         #expect(loud.seconds == 5)
         #expect(loud.advertise == "ios")
-        #expect(loud.adapter == "hci3")
+        #expect(loud.adapterAddress == "0A:BC:DE:00:00:A1")
         for bad in ["0", "3601", "soon"] {
             #expect(throws: UsageError.invalid(flag: "--seconds", value: bad)) {
                 try PeerCommand.parse(["scan", "--seconds", bad], environment: home)

@@ -13,13 +13,14 @@
     /// The probe `knit-peer` runs first, and the socket calls where they fail.
     @Suite(.timeLimit(.minutes(1))) struct BlueZEdgeTests {
         /// Probes on a thread of its own: the probe blocks, and the fake must keep answering on this one.
-        private func probe(_ fake: FakeBlueZ, expecting address: String) throws -> Result<AdapterProbe.Status, AdapterProbe.Failure> {
-            let selection = try AdapterSelection(name: "hci1", expectedAddress: address)
+        private func probe(
+            _ fake: FakeBlueZ, for address: String, shared: Bool = false
+        ) throws -> Result<AdapterProbe.Status, AdapterProbe.Failure> {
             let handoff = Handoff()
             let bus = fake.address
             let thread = Thread {
                 let outcome = Result { () throws(AdapterProbe.Failure) in
-                    try AdapterProbe.check(selection, on: .peer(bus), waiting: 2000)
+                    try AdapterProbe.select(address: address, shared: shared, on: .peer(bus), waiting: 2000)
                 }
                 handoff.result.withLock { $0 = outcome }
             }
@@ -33,30 +34,51 @@
 
         @Test func theProbeFindsThePoweredAdapter() throws {
             let fake = try FakeBlueZ()
-            #expect(try probe(fake, expecting: FakeBlueZ.adapterAddress).get() == AdapterProbe.Status(powered: true))
+            let status = try probe(fake, for: FakeBlueZ.adapterAddress).get()
+            #expect(
+                status
+                    == AdapterProbe.Status(
+                        adapter: try AdapterSelection(name: "hci1", expectedAddress: FakeBlueZ.adapterAddress), powered: true))
         }
 
-        @Test func theProbeRefusesAnAdapterWithAnotherAddress() throws {
+        /// The fake's other adapter is `hci0`: found by its address, it is taken under that name.
+        @Test func theProbeFindsAnAdapterUnderWhateverNameItHas() throws {
             let fake = try FakeBlueZ()
-            guard case .failure(.refused(.wrongAddress)) = try probe(fake, expecting: "00:11:22:33:44:55") else {
+            #expect(try probe(fake, for: "AA:AA:AA:AA:AA:AA").get().adapter.name == "hci0")
+        }
+
+        @Test func theProbeRefusesAnAddressNoAdapterHas() throws {
+            let fake = try FakeBlueZ()
+            guard case .failure(.refused(.absent("00:11:22:33:44:55"))) = try probe(fake, for: "00:11:22:33:44:55") else {
                 Issue.record("expected a refusal")
                 return
             }
         }
 
+        @Test func theProbeRefusesTheMaintainersAdapterBeforeAskingBlueZ() throws {
+            let fake = try FakeBlueZ()
+            fake.adapterAddress = "A0:00:00:00:00:01"
+            guard case .failure(.refused(.reservedAdapter)) = try probe(fake, for: "A0:00:00:00:00:01") else {
+                Issue.record("expected a refusal")
+                return
+            }
+            #expect(fake.calls.isEmpty, "BlueZ was never asked")
+            #expect(try probe(fake, for: "A0:00:00:00:00:01", shared: true).get().adapter.shared)
+        }
+
         @Test func theProbeSaysWhenBlueZDoesNotAnswer() throws {
             let fake = try FakeBlueZ()
             fake.refusesInventory = true
-            guard case .failure(.bluez) = try probe(fake, expecting: FakeBlueZ.adapterAddress) else {
+            guard case .failure(.bluez) = try probe(fake, for: FakeBlueZ.adapterAddress) else {
                 Issue.record("expected BlueZ to be missing")
                 return
             }
         }
 
-        @Test func theProbeSaysWhenThereIsNoBus() throws {
-            let selection = try AdapterSelection(name: "hci1", expectedAddress: FakeBlueZ.adapterAddress)
+        @Test func theProbeSaysWhenThereIsNoBus() {
             #expect(throws: AdapterProbe.Failure.self) {
-                try AdapterProbe.check(selection, on: .peer("unix:path=/nonexistent/knit"), waiting: 100)
+                try AdapterProbe.select(
+                    address: FakeBlueZ.adapterAddress, shared: false, on: .peer("unix:path=/nonexistent/knit"), waiting: 100)
             }
         }
 

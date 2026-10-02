@@ -7,7 +7,8 @@
 #     sudo scripts/bluetoothd-no-battery.sh          # install the override and restart bluetoothd
 #     sudo scripts/bluetoothd-no-battery.sh --undo   # remove it and restart bluetoothd
 #
-# It is one systemd drop-in for the whole daemon, so hci0's devices lose their battery levels while it is in place.
+# It is one systemd drop-in for the whole daemon, so the maintainer's adapter's devices lose their battery levels
+# while it is in place.
 
 set -eu
 

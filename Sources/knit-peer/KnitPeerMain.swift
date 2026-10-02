@@ -13,8 +13,9 @@ import Foundation
         import Glibc
     #endif
 
-    /// `knit-peer`: a headless Knit node. On Linux its radio is a BlueZ adapter that is never `hci0`
-    /// (`.agents/context/linux-peer.md`); on a Mac it is CoreBluetooth, the iPhone's own radio (``PeerHost``).
+    /// `knit-peer`: a headless Knit node. On Linux its radio is a BlueZ adapter found by its address, never the
+    /// maintainer's unshared (`.agents/context/linux-peer.md`); on a Mac it is CoreBluetooth, the iPhone's own radio
+    /// (``PeerHost``).
     @main
     internal enum KnitPeerMain {
         // The @main attribute calls it, which `swiftlint analyze` does not see.

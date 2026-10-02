@@ -24,6 +24,12 @@ the rules for the radios and phones it touches.
   peer or reads its payload.
 - **knit-next's emulator script passes the Edimax through** to an Android emulator, picking it by USB id, so the
   emulator and a peer on the ATS2851 can run at once.
+- **Adapters go by address.** The kernel numbers adapters in the order `btusb` binds them. At every boot port 3-7, the
+  ATS2851's, enumerates about a second before port 3-14, the Intel's internal one, so the ATS2851 boots as `hci0`. It
+  was `hci1` until 2026-10-01 only because it went in after boot. These notes keep `hci1` for the ATS2851 and `hci0`
+  for the maintainer's adapter, and every section dated before 2026-10-01 measured them under those indices.
+  knit-peer, `interop.py`, `hci1-supervision.sh` and `scripts/knit-hci.sh` find them by address (ADR 2026-09.5ftc,
+  amended 2026-10-01).
 
 ## What spike (e) showed
 
@@ -1306,4 +1312,5 @@ times, at −68 to −84 dBm. The samples, the iPhone's log and the probe are in
   adapter was `hci1`, with their speaker and keyboard on it. knit-peer picks its adapter by address and was
   unaffected. The sudoers lines for `btmon`, `btmgmt` and `hcitool` name `hci1`, though, so they reached the
   maintainer's adapter. A 15 s trial scan ran there before the swap was found, and the speaker and keyboard stayed
-  connected.
+  connected. Since then, knit-peer, the scripts and the root tools find each adapter by its address (ADR 2026-09.5ftc,
+  amended 2026-10-01).

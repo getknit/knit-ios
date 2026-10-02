@@ -4,7 +4,7 @@
     public import KnitWire
 
     /// The BlueZ ``Radio`` for the headless Linux peer: an advert through `LEAdvertisingManager1`, a scan through
-    /// `Adapter1`, and LE credit-based L2CAP sockets, all on one adapter, never `hci0` unless it is shared
+    /// `Adapter1`, and LE credit-based L2CAP sockets, all on one adapter, never the maintainer's unless it is shared
     /// (`.agents/context/linux-peer.md`). It decides nothing: who links to whom is the ``LinkManager``'s.
     ///
     /// Everything runs on the radio's own thread, in a ``BlueZLoop``; these methods only post to it. The thread

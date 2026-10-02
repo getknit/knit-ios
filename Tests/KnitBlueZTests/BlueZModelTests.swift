@@ -8,19 +8,53 @@ import Testing
 @Suite struct BlueZModelTests {
     // MARK: The adapter
 
-    @Test func hci0IsRefusedWhateverItsAddress() {
+    /// The maintainer's adapter is refused by its address, whatever index the kernel gave it this boot.
+    @Test(arguments: ["hci0", "hci1"])
+    func theMaintainersAdapterIsRefusedUnderAnyName(_ name: String) {
         #expect(throws: AdapterSelection.Refusal.reservedAdapter) {
-            try AdapterSelection(name: "hci0", expectedAddress: "0A:BC:DE:00:00:A1")
+            try AdapterSelection(name: name, expectedAddress: "a0:00:00:00:00:01")
         }
     }
 
-    @Test func hci0IsTakenOnlyAsSharedAndStillByItsAddress() throws {
-        let selection = try AdapterSelection(name: "hci0", expectedAddress: "A0:00:00:00:00:01", shared: true)
+    @Test func theMaintainersAdapterIsTakenOnlyAsSharedAndStillByItsAddress() throws {
+        let selection = try AdapterSelection(name: "hci1", expectedAddress: "A0:00:00:00:00:01", shared: true)
         #expect(selection.shared)
-        #expect(selection.path == "/org/bluez/hci0")
+        #expect(selection.path == "/org/bluez/hci1")
         try selection.check(reportedAddress: "A0:00:00:00:00:01")
-        #expect(throws: AdapterSelection.Refusal.self) { try selection.check(reportedAddress: "0A:BC:DE:00:00:A1") }
-        #expect(try !AdapterSelection(name: "hci1", expectedAddress: "0A:BC:DE:00:00:A1").shared)
+        #expect(throws: AdapterSelection.Refusal.self) { try selection.check(reportedAddress: "F0:0D:00:00:00:02") }
+        #expect(try !AdapterSelection(name: "hci1", expectedAddress: "F0:0D:00:00:00:02").shared)
+    }
+
+    /// A reboot on 2026-10-01 made the ATS2851 `hci0`, which is no reason to refuse it.
+    @Test func hci0IsTakenLikeAnyOtherName() throws {
+        let selection = try AdapterSelection(name: "hci0", expectedAddress: "F0:0D:00:00:00:02")
+        #expect(selection.path == "/org/bluez/hci0")
+        #expect(!selection.shared)
+    }
+
+    /// `GetManagedObjects`' answer on 2026-10-01: the ATS2851 at `hci0`, the maintainer's adapter at `hci1`, and a
+    /// device of the ATS2851's that, being no adapter, never matches.
+    private let swapped: [(path: String, interfaces: [(name: String, properties: DBusValue)])] = [
+        ("/org/bluez", [(name: "org.bluez.AgentManager1", properties: .properties([]))]),
+        ("/org/bluez/hci0", [(name: BlueZ.adapterInterface, properties: .properties([("Address", .string("F0:0D:00:00:00:02"))]))]),
+        (
+            "/org/bluez/hci0/dev_00_11_22_33_44_55",
+            [(name: BlueZ.deviceInterface, properties: .properties([("Address", .string("00:11:22:33:44:55"))]))]
+        ),
+        ("/org/bluez/hci1", [(name: BlueZ.adapterInterface, properties: .properties([("Address", .string("A0:00:00:00:00:01"))]))]),
+    ]
+
+    @Test func anAdapterIsFoundByItsAddressUnderWhateverNameItHas() throws {
+        let dongle = try AdapterSelection.find("f0:0d:00:00:00:02", shared: false, among: swapped)
+        #expect(dongle == (try AdapterSelection(name: "hci0", expectedAddress: "F0:0D:00:00:00:02")))
+        #expect(throws: AdapterSelection.Refusal.reservedAdapter) {
+            try AdapterSelection.find("A0:00:00:00:00:01", shared: false, among: swapped)
+        }
+        #expect(try AdapterSelection.find("A0:00:00:00:00:01", shared: true, among: swapped).name == "hci1")
+        #expect(throws: AdapterSelection.Refusal.absent("00:11:22:33:44:55"), "a device is no adapter") {
+            try AdapterSelection.find("00:11:22:33:44:55", shared: false, among: swapped)
+        }
+        #expect(throws: AdapterSelection.Refusal.notAnAddress("hci0")) { try AdapterSelection.find("hci0", shared: false, among: swapped) }
     }
 
     @Test(arguments: ["", "hci", "hci1a", "HCI1", "wlan0", "hci-1", "/org/bluez/hci1"])

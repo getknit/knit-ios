@@ -40,48 +40,73 @@ public struct BluetoothAddress: Hashable, Sendable, CustomStringConvertible {
     }
 }
 
-/// Which adapter the peer may use, and the address it must have. `hci0` is the maintainer's own adapter, with live
-/// connections, so it is refused by name unless the selection is shared, which the maintainer allows one session at
-/// a time. The chosen adapter must have the address it was expected to have, in case the dongles were enumerated in
-/// another order (`.agents/rules/devices.md`).
+/// Which adapter the peer may use, and the address it must have. An adapter is chosen by its address, since its name is
+/// only the order its driver bound it in: a reboot on 2026-10-01 made the ATS2851 `hci0` and the maintainer's adapter
+/// `hci1` (ADR 2026-09.5ftc, amended 2026-10-01). The maintainer's adapter has live connections, so it is refused unless
+/// the selection is shared, which the maintainer allows one session at a time (`.agents/rules/devices.md`).
 public struct AdapterSelection: Equatable, Sendable {
     /// Why an adapter was refused.
     public enum Refusal: Error, Equatable, Sendable {
         /// Not an `hciN` name.
         case notAnAdapterName(String)
-        /// `hci0`, which is used only when shared.
+        /// The maintainer's adapter, which is used only when shared.
         case reservedAdapter
         /// Not a Bluetooth address.
         case notAnAddress(String)
-        /// The adapter is not there.
+        /// No adapter has the address, or the named one is gone.
         case absent(String)
         /// The adapter is there with another address.
         case wrongAddress(adapter: String, expected: BluetoothAddress, found: String)
     }
 
-    /// The adapter's name, `hci1`.
+    /// The maintainer's own adapter, an Intel controller holding their speaker and keyboard.
+    static let maintainersAdapter = "A0:00:00:00:00:01"
+
+    /// The adapter's name this boot, `hci1`.
     public let name: String
     /// The address it must have.
     public let address: BluetoothAddress
     /// Whether other devices use the adapter too. The peer then leaves alone every link it did not make.
     public let shared: Bool
 
-    /// Selects `name`, which must have `expectedAddress`. Refuses anything that is not `hciN`, and `hci0` unless
-    /// `shared`.
+    /// Selects `name`, which must have `expectedAddress`. Refuses anything that is not `hciN`, and the maintainer's
+    /// adapter unless `shared`.
     public init(name: String, expectedAddress: String, shared: Bool = false) throws(Refusal) {
         let digits = name.utf8.dropFirst("hci".utf8.count)
         guard name.hasPrefix("hci"), !digits.isEmpty, digits.allSatisfy({ (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }) else {
             throw .notAnAdapterName(name)
         }
-        guard name != "hci0" || shared else {
+        self.name = name
+        address = try Self.admit(expectedAddress, shared: shared)
+        self.shared = shared
+    }
+
+    /// Parses `text`, and refuses the maintainer's adapter unless `shared`.
+    static func admit(_ text: String, shared: Bool) throws(Refusal) -> BluetoothAddress {
+        guard let parsed = BluetoothAddress(text) else {
+            throw .notAnAddress(text)
+        }
+        guard parsed.description != maintainersAdapter || shared else {
             throw .reservedAdapter
         }
-        guard let parsed = BluetoothAddress(expectedAddress) else {
-            throw .notAnAddress(expectedAddress)
+        return parsed
+    }
+
+    /// Selects whichever adapter BlueZ lists with `address`, under the name the kernel gave it this boot, from the
+    /// objects of a `GetManagedObjects` answer.
+    static func find(
+        _ address: String, shared: Bool, among objects: [(path: String, interfaces: [(name: String, properties: DBusValue)])]
+    ) throws(Refusal) -> Self {
+        let wanted = try admit(address, shared: shared)
+        let root = "/org/bluez/"
+        let match = objects.first { object in
+            let adapter = object.interfaces.first { $0.name == BlueZ.adapterInterface }
+            return object.path.hasPrefix(root) && adapter?.properties["Address"]?.text.flatMap(BluetoothAddress.init) == wanted
         }
-        self.name = name
-        address = parsed
-        self.shared = shared
+        guard let match else {
+            throw .absent(wanted.description)
+        }
+        return try Self(name: String(match.path.dropFirst(root.count)), expectedAddress: address, shared: shared)
     }
 
     /// The adapter's BlueZ object path, `/org/bluez/hci1`.

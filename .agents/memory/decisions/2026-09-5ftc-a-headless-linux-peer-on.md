@@ -109,3 +109,29 @@ and a dongle with larger LE buffers, which this machine does not have.
 
 The guard for the default is `PeerOptionsTests`' `runIsTheDefaultOnHci1WithTheRadiosOwnProfile`. The alternative
 was keeping the Edimax, which leaves the iPhone's writes stalled on `hci1`.
+
+**Amended 2026-10-01, for adapters by address:** a reboot that day made the ATS2851 `hci0` and the maintainer's adapter
+`hci1`. The kernel numbers adapters in the order `btusb` binds them, and `btusb`, a module loaded late in boot, binds
+them in USB enumeration order. At every boot port 3-7, the ATS2851's, comes about a second before port 3-14, the
+Intel's internal one. The ATS2851 had been `hci1` only because it was plugged in after boot. knit-peer then refused it
+as `hci0` unshared, and the sudoers lines for `btmon`, `btmgmt` and `hcitool` reached the maintainer's adapter.
+
+- **knit-peer takes an address, not a name.** `--adapter` is gone. `AdapterProbe.select` finds the adapter BlueZ lists
+  with `--adapter-address`, under whatever `hciN` it has, and the peer exits when no adapter has it. The rule that kept
+  the peer off `hci0` now keeps it off the maintainer's address (`AdapterSelection.maintainersAdapter`) unless shared,
+  and the probe checks it before asking BlueZ anything.
+- **The scripts and the root tools go by address too.** `interop.py` passes addresses alone, and finds an index through
+  `hcitool dev` where it must name one. `hci1-supervision.sh` finds the ATS2851 by its address. Root goes through
+  `scripts/knit-hci.sh`, installed root-owned in `/usr/local/sbin`, which runs `btmon`, `hcitool` or `btmgmt` on the
+  ATS2851 alone. sudoers grants it in place of the three lines that named `hci1`.
+- **Limits.** The radio watches the path it started on. A replug that renumbers its adapter mid-run leaves the radio off
+  until the peer restarts, and another adapter at that path fails the address check. The notes keep `hci1` and `hci0`
+  as names for the ATS2851 and the maintainer's adapter. The alternative was forcing the boot order, holding the dongle
+  unauthorized until the Intel binds. That races `btusb`'s load, and its robust form changes USB authorization for
+  every external device.
+- **Guards.** `BlueZModelTests`' `theMaintainersAdapterIsRefusedUnderAnyName`,
+  `theMaintainersAdapterIsTakenOnlyAsSharedAndStillByItsAddress`, `hci0IsTakenLikeAnyOtherName` and
+  `anAdapterIsFoundByItsAddressUnderWhateverNameItHas`, `BlueZEdgeTests`' probe cases, and `PeerOptionsTests`'
+  `noFlagNamesAnAdapterByItsIndex`. They replace `hci0IsRefusedWhateverItsAddress` and
+  `hci0IsTakenOnlyAsSharedAndStillByItsAddress`, and `runIsTheDefaultOnHci1WithTheRadiosOwnProfile` is now
+  `runIsTheDefaultOnTheATS2851WithTheRadiosOwnProfile`.

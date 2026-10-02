@@ -21,7 +21,7 @@ internal protocol PeerRadioHost: Sendable {
 
 /// Why a peer's radio cannot start as asked.
 internal enum PeerHostError: Error, CustomStringConvertible {
-    /// The adapter is missing, is not the one named, or is `hci0` unshared.
+    /// No adapter has the address, or it is the maintainer's and not shared.
     case adapter(any Error)
     /// An option this platform's radio cannot honour.
     case unsupported(String)

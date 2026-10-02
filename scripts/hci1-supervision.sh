@@ -1,12 +1,13 @@
 #!/bin/sh
-# Raises the LE supervision timeout of the connections hci1 dials to 5 s, Android's own, from the kernel's
+# Raises the LE supervision timeout of the connections the ATS2851 dials to 5 s, Android's own, from the kernel's
 # 420 ms (.agents/context/linux-peer.md, "What P4 found"). Needs root, and lasts until the dongle is replugged
 # or the machine reboots:
 #
 #     sudo scripts/hci1-supervision.sh              # set it now
 #     scripts/hci1-supervision.sh --udev-rule       # print a udev rule that sets it on every plug-in
 #
-# It touches only the adapter with the ATS2851's address, whatever index the kernel gave it: never hci0.
+# It touches only the adapter with the ATS2851's address, whatever index the kernel gave it (hci1 until a reboot
+# on 2026-10-01 made it hci0), and never the maintainer's adapter.
 
 set -eu
 
@@ -26,24 +27,39 @@ if [ "$(id -u)" != 0 ]; then
 	exit 1
 fi
 
-adapter=${1:-hci1}
+# `identity` starts with an adapter's public address.
+address_of() {
+	cut -d' ' -f1 < "/sys/kernel/debug/bluetooth/$1/identity" 2>/dev/null | tr 'A-F' 'a-f'
+}
+
+# udev names the adapter it saw; by hand, the ATS2851 is found by its address.
+adapter=${1:-}
+if [ -z "$adapter" ]; then
+	for dir in /sys/kernel/debug/bluetooth/hci*; do
+		name=${dir##*/}
+		if [ "$(address_of "$name")" = "$expected" ]; then
+			adapter=$name
+		fi
+	done
+	if [ -z "$adapter" ]; then
+		echo "no adapter has the ATS2851's address $expected" >&2
+		exit 1
+	fi
+fi
 case $adapter in
-	hci0) echo "refusing hci0: it is the maintainer's adapter" >&2; exit 1 ;;
 	hci[0-9]*) ;;
 	*) echo "not an adapter: $adapter" >&2; exit 1 ;;
 esac
 
 # The kernel adds these files once the adapter is set up, which can be a moment after udev hears of it.
-dir=/sys/kernel/debug/bluetooth/$adapter
-file=$dir/supervision_timeout
+file=/sys/kernel/debug/bluetooth/$adapter/supervision_timeout
 tries=0
 while [ ! -e "$file" ] && [ "$tries" -lt 30 ]; do
 	sleep 0.5
 	tries=$((tries + 1))
 done
 
-# `identity` starts with the adapter's public address.
-address=$(cut -d' ' -f1 < "$dir/identity" | tr 'A-F' 'a-f')
+address=$(address_of "$adapter")
 if [ "$address" != "$expected" ]; then
 	echo "refusing $adapter: its address is $address, not the ATS2851's $expected" >&2
 	exit 1

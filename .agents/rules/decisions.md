@@ -29,7 +29,7 @@ growing an explanation, that explanation belongs in the ADR.
 | `KnitStoreSQL`, the schema or a migration, a SQL store, or where the database file lives | [ADR 2026-09.nyya](../memory/decisions/2026-09-nyya-the-store-is-grdb-on.md) |
 | a set, map or column keyed by a frame id, a frame key or an unparsed sender id | [ADR 2026-09.jc2x](../memory/decisions/2026-09-jc2x-wire-ids-compare-by-their.md) |
 | a timer, a `Task`, the `Mesh` actor, or how the engine reads time | [ADR 2026-09.gq84](../memory/decisions/2026-09-gq84-the-mesh-engine-is-a.md) |
-| `KnitBlueZ`, `knit-peer`, `scripts/interop.py`, or anything that touches `hci1` | [ADR 2026-09.5ftc](../memory/decisions/2026-09-5ftc-a-headless-linux-peer-on.md) |
+| `KnitBlueZ`, `knit-peer`, `scripts/interop.py`, `scripts/knit-hci.sh`, or anything that touches a Bluetooth adapter here | [ADR 2026-09.5ftc](../memory/decisions/2026-09-5ftc-a-headless-linux-peer-on.md) |
 | `knit-peer` on a Mac, `PeerRadioHost`, `scripts/mac-peer.sh`, `mac-desktop.sh --stdio`, or `interop.py --mac` | [ADR 2026-09.vcdk](../memory/decisions/2026-09-vcdk-the-mac-peer-is-knit.md) |
 | `KnitControl`, the control protocol, the app's debug bridge (`Sources/Knit/Debug/`), or `AppSession.eventTap` | [ADR 2026-09.kwa8](../memory/decisions/2026-09-kwa8-a-debug-build-takes-knit.md) |
 | the bridge over Wi-Fi: `WiFiGate`, `RouterPin`, `WiFiCommand`, or `interop.py --host` | [ADR 2026-10.dz8d](../memory/decisions/2026-10-dz8d-a-debug-build-s-bridge.md) |
