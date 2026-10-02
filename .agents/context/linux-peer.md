@@ -985,8 +985,8 @@ Item 2's 30 s held for relinks to the phones, and not always for a first link:
   order allows dial it and are refused.
 
 `LinkManager` has since taken fixes for two of these (ADR 2026-09.6es2, amended 2026-09-29): it never dials a peer
-quiet for more than 8 s, and it wakes when a candidate's dwell ends. Neither has been measured on the iPhone yet.
-Neither helps a late first sighting, or a gap over 8 s that restarts the dwell.
+quiet for more than 8 s, and it wakes when a candidate's dwell ends. Both held on the iPhone on 2026-10-01 ("What the
+dwell fixes showed"). Neither helps a late first sighting, or a gap over 8 s that restarts the dwell.
 
 ## What A3's gate showed
 
@@ -1272,3 +1272,38 @@ Pixel 7 was not on adb, so a peer was each run's third member. The logs are in
   `wrappedTo`. It leaves group frames out of the custody comparison on both sides, bar the group the run made,
   which the hub and the Pixel both carry: a group frame is served only to the members it lists
   (`ForwardSync.onDigest`), and a node may carry one it was never served.
+
+## What the dwell fixes showed
+
+On 2026-10-01 from 21:02 the Pixel 7 probe of 2026-09-29 ran again, on an iPhone build with both of `LinkManager`'s
+fixes (ADR 2026-09.6es2, amended 2026-09-29). The iPhone 12 ran a debug build from that day, and the Pixel 7 a
+knit-next debug build installed that afternoon. The method was unchanged: the Pixel's mesh was paused through its
+bridge until the iPhone forgot it, then resumed, and the iPhone's sighting was read once a second. It ran eight
+times, at −68 to −84 dBm. The samples, the iPhone's log and the probe are in
+`.build/interop-link-probe/20261001-2102-phone/`.
+
+- **Four of eight first links came within 30 s:** 14.2, 15.2, 16.2 and 23.2 s, then 46.3, 48.3, 50.3 and 79.3 s.
+  On 2026-09-29 two of five had.
+- **Both fixes held.** The iPhone never dialed the paused Pixel. Before, it dialed it two or three times a pause,
+  and its backoff reached 80 s. Each link came from a single dial, 1.4 to 4.3 s before the link was up, and none
+  timed out. When the dwell ran unbroken, the dial went out within 0.5 s of its end.
+- **The slow links came from gaps in hearing the phone.** The iPhone heard the Pixel every 2 to 7 s, though Android
+  advertises about once a second. In the four slow samples it went 9 to 36 s without hearing it, up to three times
+  in a row, and each gap over 8 s restarted the dwell. Two first sightings came late, 10.1 and 16.2 s after the
+  resume.
+- **One dial probably went to a late wake.** In the 79.3 s sample the dwell ended 7.86 s after the last sighting,
+  inside the 8 s limit, and no dial went out. The next sighting came 9.3 s after the last and restarted the dwell.
+  `Mesh` sleeps until a dwell's end through `Task.sleep` with no tolerance, which Darwin may run late, and a wake
+  140 ms late finds the peer quiet too long. The log does not record wake times, so the cause is inferred.
+- **A 12 s limit would have linked all eight.** Replayed on the recorded sightings with the gap reset and the
+  silence limit both at 12 s, every sample links in 13.8 to 29.3 s, assuming wakes on time. The 8 s gap reset is
+  Android's too (`BlePresenceTracker`).
+- **A scan through bluetoothd cannot say whose gaps they are.** With `DuplicateData`, the ATS2851 reported the
+  Pixel 7 once in 20 s at −63 dBm, since the kernel's scan filters duplicate adverts. Telling the Pixel's
+  advertising from the iPhone's hearing takes a raw scan with that filter off (`hcitool lescan --duplicates`)
+  under `btmon`, both as root on the ATS2851.
+- **The kernel had swapped the adapters' numbers.** That evening the ATS2851 was `hci0`, and the maintainer's Intel
+  adapter was `hci1`, with their speaker and keyboard on it. knit-peer picks its adapter by address and was
+  unaffected. The sudoers lines for `btmon`, `btmgmt` and `hcitool` name `hci1`, though, so they reached the
+  maintainer's adapter. A 15 s trial scan ran there before the swap was found, and the speaker and keyboard stayed
+  connected.

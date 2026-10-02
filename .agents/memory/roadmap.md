@@ -220,10 +220,13 @@ explicit direction.** Update this file in the change that ships an item.
     fix, and not before 12:17 on 2026-09-29, when that DM expires. Item 2's first link can run past 30 s, against
     a phone too: three of five to the Pixel 7 did, from gaps between sightings that restart the dwell, and from
     backoff built by dialing a phone that has left (`.agents/context/linux-peer.md`). `LinkManager` now dials when
-    a dwell ends and never dials a peer quiet for more than 8 s (ADR 2026-09.6es2, amended 2026-09-29); the Pixel 7
-    probe is owed again on a build that has them. The 8 s gap reset is unchanged, and knit-next could take both
-    rules later as a paired change. Items 2 to 8 run unattended through the bridge; item 9's test needs someone to
-    lock and unlock the iPhone.
+    a dwell ends and never dials a peer quiet for more than 8 s (ADR 2026-09.6es2, amended 2026-09-29). Both held on
+    2026-10-01, but the Pixel 7 probe still passed only four of eight: every slow link came from gaps over 8 s in
+    hearing the phone, which restart the dwell, and one dial probably went to a late wake
+    (`.agents/context/linux-peer.md`, "What the dwell fixes showed"). Still to learn is whether the gaps are the
+    Pixel's advertising or the iPhone's scan, which takes a raw scan as root on the ATS2851. The 8 s gap reset is
+    unchanged, and knit-next could take both rules later as a paired change. Items 2 to 8 run unattended through the
+    bridge; item 9's test needs someone to lock and unlock the iPhone.
 - **Groups (v1), begun 2026-09-30** on `feat/groups`, at the maintainer's direction (ADR 2026-09.n393). This is
   core parity with Android, sealed with v1 and so without forward secrecy:
   - create a group of 2 to 7 contacts;
