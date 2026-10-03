@@ -185,13 +185,9 @@
 
         var body: some View {
             HStack(spacing: Layout.medium) {
-                // At the accessibility sizes the glyph would take a third of the row from the title, which says the same.
+                // At the accessibility sizes the face would take a third of the row from the title, which says who.
                 if !typeSize.isAccessibilitySize {
-                    Image(systemName: row.isRoom ? "person.3.fill" : row.isGroup ? "person.2.fill" : "person.crop.circle.fill")
-                        .font(.title)
-                        .foregroundStyle(row.isRoom ? Palette.accent : Palette.secondaryText)
-                        .frame(width: Layout.glyphColumn)
-                        .accessibilityHidden(true)
+                    AvatarView(face: row.face, size: Layout.faceList)
                 }
                 VStack(alignment: .leading, spacing: Layout.hairline) {
                     RowTitle(row: row)

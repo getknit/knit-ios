@@ -276,7 +276,17 @@ explicit direction.** Update this file in the change that ships an item.
       phone, 37 s after the change.
     - On `interop.py iphone-relay`'s line, with the peer on hci0, the iPhone is the one node between the two ends,
       and serves each the other's photo: all 21 steps pass with `--expect-avatar --peer-avatar`.
-  - **Phase 2:** profile photos in the app: a face for every person, the photo picker and the cropper.
+  - **Phase 2:** profile photos in the app (ADR 2026-10.sepc). Code done on 2026-10-03: a face for every person at
+    Android's sizes, the photo picker, the cropper and the viewer. Every Linux gate passes, sanitizers included, and
+    so do the Mac build and all 13 Simulator walks, the new photo walk at both text sizes among them. Checked the same
+    day on the iPhone 12 against the Pixel 3:
+    - The iPhone draws the photos of the Pixel 3 and two other people, and their group as both photos side by side.
+    - The profile codec, run on the Mac over a GPS-tagged picture, makes a 256-pixel JPEG that keeps only its color
+      space and pixel size. Published from the iPhone, it reached the Pixel 3 in 210 ms and shows there.
+    - Still owed: `KnitDeviceTests`' `PhotoTests`, which chooses, crops and saves a photo on the iPhone itself. Its run
+      timed out enabling automation mode, as a first run does until someone enters the passcode on the phone (ADR
+      2026-09.63em).
+    - Not ported: Android's "changed their photo" line in a DM thread, and its rename line. A later change ports both.
   - **Phase 3:** photos in chats both ways, in Nearby, DMs and groups. DMs and groups seal them with
     `AttachmentCrypto`.
   - **Phase 4:** group photos shown but never set, and carried frames' photos pulled within Android's 128 MiB.

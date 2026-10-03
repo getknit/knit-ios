@@ -23,6 +23,8 @@ public struct ChatRow: Sendable, Equatable, Identifiable {
     public var isLinked: Bool
     /// Whether a DM's peer is verified.
     public var isVerified: Bool
+    /// The thread's face: the room's, the peer's, or the group's.
+    public var face = Face.room
 }
 
 /// The chat list, as one value.
@@ -70,7 +72,8 @@ public enum ChatListAssembler {
             lastMessageAt: head?.sentAt ?? group.createdAt,
             lastStatus: head.flatMap { $0.senderId == me ? DeliveryStatus($0) : nil },
             isLinked: false,
-            isVerified: false
+            isVerified: false,
+            face: directory.face(of: group)
         )
     }
 
@@ -84,7 +87,8 @@ public enum ChatListAssembler {
             lastMessageAt: head?.sentAt,
             lastStatus: head.flatMap { $0.senderId == me ? DeliveryStatus($0) : nil },
             isLinked: peer.map(linked.contains) ?? false,
-            isVerified: peer.map(directory.verified.contains) ?? false
+            isVerified: peer.map(directory.verified.contains) ?? false,
+            face: peer.map(directory.face(for:)) ?? .room
         )
     }
 

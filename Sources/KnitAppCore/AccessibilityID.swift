@@ -120,6 +120,8 @@ public enum AccessibilityID {
     public static let profileDetailsCode = "profile_details_code"
     /// The button that opens the scanner. Android has no tag here.
     public static let profileDetailsScan = "profile_details_scan"
+    /// Their photo, which opens the viewer. Android has no tag here, nor for the photo controls and screens below.
+    public static let profileDetailsPhoto = "profile_details_photo"
 
     /// The scanner, as Android tags it.
     public static let scanScreen = "screen_scan"
@@ -142,6 +144,17 @@ public enum AccessibilityID {
     public static let profileAlias = "profile_alias"
     /// Its save button.
     public static let profileSave = "profile_save"
+    /// Its Choose photo, or Change photo.
+    public static let profileChoosePhoto = "profile_choose_photo"
+    /// Its Remove photo.
+    public static let profileRemovePhoto = "profile_remove_photo"
+
+    /// The photo cropper.
+    public static let photoCropScreen = "screen_photo_crop"
+    /// The cropper's Choose.
+    public static let photoCropChoose = "photo_crop_choose"
+    /// The photo viewer.
+    public static let photoViewerScreen = "screen_photo_viewer"
 
     /// Settings.
     public static let settingsScreen = "screen_settings"

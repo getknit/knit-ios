@@ -27,6 +27,9 @@
                 .navigationTitle(state.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        ThreadTitle(title: state.title, face: state.face)
+                    }
                     if let peer = state.peer {
                         ToolbarItemGroup(placement: .topBarTrailing) {
                             Button {
@@ -66,6 +69,23 @@
                 }
                 .task { await model.appear() }
                 .onDisappear(perform: model.disappear)
+        }
+    }
+
+    /// The thread's face beside its title. The face is decorative, so the title reads as the title alone.
+    private struct ThreadTitle: View {
+        let title: String
+        let face: Face
+
+        var body: some View {
+            HStack(spacing: Layout.small) {
+                AvatarView(face: face, size: Layout.faceTitle)
+                Text(title)
+                    .font(.headline)
+                    .lineLimit(1)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
         }
     }
 
@@ -157,15 +177,24 @@
         }
     }
 
-    /// One message: ours on the right with its tick, theirs on the left, with the author named in the room. The
-    /// author's name opens their profile, which is how a DM starts (MVP item 5).
+    /// One message: ours on the right with its tick, theirs on the left, with the author's face and name in the room and
+    /// a group. The author's face and name open their profile, which is how a DM starts (MVP item 5).
     private struct MessageBubble: View {
         let message: ChatMessage
+        @Environment(\.dynamicTypeSize) private var typeSize
 
         var body: some View {
-            HStack {
+            HStack(alignment: .bottom, spacing: Layout.small) {
                 if message.isMine {
                     Spacer(minLength: Layout.bubbleInset)
+                }
+                // At the accessibility sizes the face would take the bubble's room; the name above it says who.
+                if let face = message.authorFace, !typeSize.isAccessibilitySize {
+                    NavigationLink(value: Route.peer(message.author)) {
+                        AvatarView(face: face, size: Layout.faceBubble)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHidden(true)
                 }
                 VStack(alignment: message.isMine ? .trailing : .leading, spacing: Layout.hairline) {
                     if let author = message.authorLabel {

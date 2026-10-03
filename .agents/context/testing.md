@@ -20,7 +20,8 @@ ladder, not the first.
    frames signed by fixed `TestPeer` keys, and moves the clock itself to fire timers. `MeshTests` drives the
    `Mesh` actor the same way and awaits the fake radio's activity stream. Nothing sleeps.
 4. **The app's logic, without a screen.** `KnitAppCoreTests` drives `AppSession` and every view model
-   through a `FakeMesh` that writes to in-memory stores as the engine would, and reads every catalog string.
+   through a `FakeMesh` that writes to in-memory stores as the engine would, and reads every catalog string. A fake
+   `ImageCodec` stands in for ImageIO, so choosing, cropping and saving a profile photo run there too.
    `DemoTests` runs the real `Mesh` on `-seedDemo`'s radio, in each scene. The SwiftUI views, the Keychain store and
    `KnitBLE` compile only on Apple platforms: `scripts/check.sh xcode` builds them for iOS, `test:macos` runs
    `KnitBLETests`, and `test:ios:simulator` walks the screens (P7).
@@ -44,7 +45,9 @@ ladder, not the first.
    them. `KnitUITests` walks every MVP screen in the Simulator on `-seedDemo` (`scripts/check.sh uitest`,
    `test:ios:simulator`), each through `performAccessibilityAudit`, once at the default text size and once at the
    largest, where it keeps a screenshot of every screen. The Simulator has no scanner, so the scan walk reaches the
-   scanner's refused and failed states through `-demoCamera` (ADR 2026-10.65xx). `AuditPolicy` names what the audit
+   scanner's refused and failed states through `-demoCamera` (ADR 2026-10.65xx). The system's photo picker runs
+   outside Knit, so the photo walk picks a painted picture through `-demoPhoto`, on the `marketing` scene, whose
+   people wear painted photos (ADR 2026-10.sepc). `AuditPolicy` names what the audit
    may report without failing and why (ADR 2026-09.jcdx); everything else fails the gate. The sources live in `Tests/KnitUITests/`,
    which SwiftPM ignores and XcodeGen builds. CI runs them in a Simulator named "Knit CI", and a run over ssh in
    "Knit local", each made on first use. They used to share one: on 2026-09-28 a local run started while CI's was
@@ -61,9 +64,11 @@ ladder, not the first.
     way, and `android-reads` checks that an Android phone reads the peer's GATT payload (A3). `KnitDeviceTests` (`scripts/check.sh devicetest`, ADR 2026-09.63em) runs XCUITest on the iPhone from the
     Mac, with Knit launched live and the Settings app and SpringBoard driven beside it: Stop and Start, Bluetooth
     off and on, the permission refused and allowed again, onboarding's prompt, a relaunch, and the camera prompt at a
-    profile's Scan their code (`CameraTests`, which needs no radio and leaves Bluetooth as it found it). It reads the status
+    profile's Scan their code (`CameraTests`, which needs no radio and leaves Bluetooth as it found it). `PhotoTests`
+    chooses, crops and saves our profile photo, a painted one under `-demoPhoto`, which a debug build honours live too,
+    and leaves it set for a look at the lab's phones (ADR 2026-10.sepc). It reads the status
     line's state from its identifier, never its words, and each test puts Bluetooth, the permission and the mesh
-    back as it ends. Its sources live in `Tests/KnitDeviceTests/`, which only the `KnitDevice` scheme builds.
+    back as it ends, `PhotoTests`' photo apart. Its sources live in `Tests/KnitDeviceTests/`, which only the `KnitDevice` scheme builds.
 
 ## Coverage
 

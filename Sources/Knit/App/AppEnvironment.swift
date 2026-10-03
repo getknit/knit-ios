@@ -19,6 +19,13 @@
         let notifier: LocalNotifier
         /// The camera a profile's scanner reaches: the phone's, or a demo's that answers what `-demoCamera` says.
         let camera: any CameraAccess
+        /// The photos faces draw, decoded from the blob store.
+        let photos: BlobImageCache
+        /// Where a picked profile photo is decoded and cropped.
+        let codec: any ImageCodec = DeviceImageCodec()
+        /// What Choose photo picks under `-demoPhoto`: a painted picture, since the system's picker is out of a UI test's
+        /// reach. `nil` opens the photo library.
+        let demoPhoto: Data?
         let about: AboutInfo
         /// Stores a minted test identity for the next launch, in a debug build.
         let replaceIdentity: IdentityReplacer?
@@ -43,6 +50,7 @@
             preferences: any AppPreferences,
             notifier: LocalNotifier,
             camera: any CameraAccess,
+            demoPhoto: Data?,
             replaceIdentity: IdentityReplacer?
         ) {
             self.session = session
@@ -51,7 +59,9 @@
             self.preferences = preferences
             self.notifier = notifier
             self.camera = camera
+            self.demoPhoto = demoPhoto
             self.replaceIdentity = replaceIdentity
+            photos = BlobImageCache(session: session)
             let info = Bundle.main.infoDictionary ?? [:]
             about = AboutInfo(
                 version: info["CFBundleShortVersionString"] as? String ?? "",
@@ -109,10 +119,10 @@
         /// database cannot be read yet, before the first unlock since a reboot: the app then waits for protected data
         /// rather than making a new identity.
         static func make(_ options: LaunchOptions, launch: Launch.History) throws -> AppEnvironment {
-            options.seedDemo ? try demo(options) : try live(launch)
+            options.seedDemo ? try demo(options) : try live(launch, options: options)
         }
 
-        private static func live(_ launch: Launch.History) throws -> AppEnvironment {
+        private static func live(_ launch: Launch.History, options: LaunchOptions) throws -> AppEnvironment {
             let keyStore = KeychainSecretStore()
             let identity = try IdentityKeys.load(from: keyStore).keys
             let log = UnifiedLog(clock: SystemClock())
@@ -135,6 +145,8 @@
             #if DEBUG
                 parts.storage = StorageReport(
                     nodeId: identity.nodeId, keyStore: keyStore, directory: directory, preferences: defaults, launch: launch)
+                // The device tests pick a painted photo too: the system's picker is out of their reach.
+                parts.demoPhoto = options.demoPhoto ? DemoPortraits.pickedPhoto() : nil
                 return compose(parts) { keys in try keyStore.write(keys.storedForm) }
             #else
                 return compose(parts, replace: nil)
@@ -147,7 +159,8 @@
             }
             let clock = SystemClock()
             let stores = MeshStores.inMemory()
-            DemoSeed.populate(stores, me: identity.nodeId, now: clock.wallMilliseconds(), scene: options.demoScene)
+            DemoSeed.populate(
+                stores, me: identity.nodeId, now: clock.wallMilliseconds(), scene: options.demoScene, paint: DemoPortraits.profilePhoto)
             let parts = Parts(
                 identity: identity,
                 stores: stores,
@@ -155,7 +168,8 @@
                 log: UnifiedLog(clock: clock),
                 preferences: MemoryPreferences(hasOnboarded: !options.demoOnboarding),
                 linked: DemoSeed.linked(in: options.demoScene),
-                camera: options.demoCamera.map(DemoCamera.init)
+                camera: options.demoCamera.map(DemoCamera.init),
+                demoPhoto: options.demoPhoto ? DemoPortraits.pickedPhoto() : nil
             )
             return compose(parts, replace: nil)
         }
@@ -171,6 +185,8 @@
             var linked: [NodeId] = []
             /// A demo's camera, under `-demoCamera`; otherwise the phone's.
             var camera: (any CameraAccess)?
+            /// The picture Choose photo picks, under `-demoPhoto`.
+            var demoPhoto: Data?
             #if DEBUG
                 /// What the debug bridge's `storage` reply reads, which only a live launch has.
                 var storage: StorageReport?
@@ -199,6 +215,7 @@
                 preferences: parts.preferences,
                 notifier: alerts,
                 camera: parts.camera ?? DeviceCamera(),
+                demoPhoto: parts.demoPhoto,
                 replaceIdentity: replace
             )
             #if DEBUG

@@ -74,11 +74,14 @@
         }
 
         var body: some View {
-            if onboarding.isFinished {
-                MainView(environment: environment, launch: launch)
-            } else {
-                OnboardingView(model: onboarding)
+            Group {
+                if onboarding.isFinished {
+                    MainView(environment: environment, launch: launch)
+                } else {
+                    OnboardingView(model: onboarding)
+                }
             }
+            .environment(environment.photos)
         }
     }
 
@@ -132,7 +135,7 @@
             case .peer(let nodeId):
                 PeerProfileView(nodeId: nodeId, session: environment.session, camera: environment.camera)
             case .profile:
-                OwnProfileView(session: environment.session)
+                OwnProfileView(session: environment.session, codec: environment.codec, demoPhoto: environment.demoPhoto)
             case .settings:
                 SettingsView(session: environment.session, permission: environment.notifier, about: environment.about)
             case .about:

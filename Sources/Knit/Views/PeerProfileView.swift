@@ -12,6 +12,8 @@
         @State private var pending: VerifyScanOutcome?
         /// What the scan found, while the alert says so.
         @State private var outcome: VerifyScanOutcome?
+        /// Whether their photo is open full screen.
+        @State private var viewing = false
         @Environment(\.dynamicTypeSize) private var typeSize
         private let camera: any CameraAccess
 
@@ -24,7 +26,7 @@
             let state = model.state
             Form {
                 Section {
-                    PeerHeader(state: state)
+                    PeerHeader(state: state) { viewing = true }
                     if !model.isSelf {
                         NavigationLink(value: Route.chat(state.conversationId)) {
                             // At the accessibility sizes the glyph left the word too little room, and it broke.
@@ -66,6 +68,11 @@
             .alert(outcome.map { Copy.Profile.scanOutcome($0, name: state.title) } ?? "", isPresented: showsOutcome) {
                 Button(Copy.Common.done, role: .cancel) { outcome = nil }
             }
+            .fullScreenCover(isPresented: $viewing) {
+                if let photo = state.face.photo {
+                    PhotoViewer(photo: photo, title: state.title)
+                }
+            }
         }
 
         private var showsOutcome: Binding<Bool> {
@@ -79,12 +86,17 @@
         }
     }
 
-    /// The name, whether they are in range, and what they say about themselves.
+    /// Their face, their name, whether they are in range, and what they say about themselves. A photo opens full
+    /// screen.
     private struct PeerHeader: View {
         let state: PeerProfileState
+        let viewPhoto: () -> Void
 
         var body: some View {
             VStack(alignment: .leading, spacing: Layout.tight) {
+                HeaderFace(face: state.face, viewPhoto: viewPhoto)
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, Layout.small)
                 Text(state.title)
                     .font(.title2.bold())
                 Label(
@@ -102,6 +114,25 @@
                         .font(.subheadline)
                         .foregroundStyle(.tint)
                 }
+            }
+        }
+    }
+
+    /// A profile's face, which opens their photo full screen when they have one.
+    private struct HeaderFace: View {
+        let face: Face
+        let viewPhoto: () -> Void
+
+        var body: some View {
+            if face.photo != nil {
+                Button(action: viewPhoto) {
+                    AvatarView(face: face, size: Layout.faceProfile)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Copy.Profile.viewPhoto)
+                .accessibilityIdentifier(AccessibilityID.profileDetailsPhoto)
+            } else {
+                AvatarView(face: face, size: Layout.faceProfile)
             }
         }
     }

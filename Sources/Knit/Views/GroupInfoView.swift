@@ -19,13 +19,7 @@
             let state = model.state
             Form {
                 Section {
-                    VStack(alignment: .leading, spacing: Layout.tight) {
-                        Text(state.title)
-                            .font(.title2.bold())
-                        Text(Copy.Groups.memberCount(state.memberCount))
-                            .font(.subheadline)
-                            .foregroundStyle(Palette.secondaryText)
-                    }
+                    GroupHeader(state: state)
                 }
                 Section {
                     ForEach(state.members) { member in
@@ -70,7 +64,25 @@
         }
     }
 
-    /// One member: their name, whether they are verified and in range, and the way to their profile.
+    /// The group's face, its title and how many are in it.
+    private struct GroupHeader: View {
+        let state: GroupInfoState
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: Layout.tight) {
+                AvatarView(face: state.face, size: Layout.faceProfile)
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, Layout.small)
+                Text(state.title)
+                    .font(.title2.bold())
+                Text(Copy.Groups.memberCount(state.memberCount))
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.secondaryText)
+            }
+        }
+    }
+
+    /// One member: their face and name, whether they are verified and in range, and the way to their profile.
     private struct MemberRow: View {
         let member: GroupMemberRow
 
@@ -87,9 +99,15 @@
 
     private struct MemberLabel: View {
         let member: GroupMemberRow
+        @Environment(\.dynamicTypeSize) private var typeSize
 
         var body: some View {
             HStack(spacing: Layout.small) {
+                // At the accessibility sizes the face would squeeze the name, which says who.
+                if !typeSize.isAccessibilitySize {
+                    AvatarView(face: member.face, size: Layout.faceRow)
+                        .padding(.trailing, Layout.tight)
+                }
                 Text(member.label)
                 if member.isVerified {
                     Image(systemName: "checkmark.seal.fill")

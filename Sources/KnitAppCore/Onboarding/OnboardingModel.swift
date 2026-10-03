@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitMesh
 import KnitStore
 import KnitWire
@@ -62,6 +63,14 @@ public final class OnboardingModel {
     /// The alias people see while the name is blank.
     public var alias: String {
         session.identity.alias
+    }
+
+    /// The face peers will draw for this phone, as the name page previews it: the initial of the name as typed, or of
+    /// the alias while it is blank, on the tint our node id wears (`NamePage` in knit-next).
+    public var face: Face {
+        let nodeId = session.identity.nodeId.string
+        let shown = Alias.displayName(stored: Composer.singleLine(nameText, limit: TextLimits.displayName), nodeId: nodeId)
+        return .person(nodeId, name: shown, photo: nil)
     }
 
     /// Whether the name page's button skips rather than continues.

@@ -162,7 +162,22 @@ import Testing
             Copy.Diagnostics.link(version: 3, capabilities: "9"),
             Copy.Diagnostics.clockAhead(seconds: 5),
             Copy.Diagnostics.clockBehind(seconds: 5),
-        ] + Self.groupStrings + Self.newMessageStrings + Self.verifyStrings
+        ] + Self.groupStrings + Self.newMessageStrings + Self.verifyStrings + Self.photoStrings
+    }
+
+    private static var photoStrings: [String] {
+        [
+            Copy.Profile.choosePhoto,
+            Copy.Profile.changePhoto,
+            Copy.Profile.removePhoto,
+            Copy.Profile.photoFooter,
+            Copy.Profile.viewPhoto,
+            Copy.Photo.cropHint,
+            Copy.Photo.cropChoose,
+            Copy.Photo.zoom,
+            Copy.Photo.unreadable,
+            Copy.Photo.profilePhoto,
+        ]
     }
 
     private static var verifyStrings: [String] {

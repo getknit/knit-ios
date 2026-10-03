@@ -142,7 +142,13 @@
                         .onSubmit(model.next)
                         .accessibilityIdentifier(AccessibilityID.onboardingName)
                 } header: {
-                    PageHeading(text: Copy.Onboarding.nameTitle)
+                    VStack(spacing: Layout.large) {
+                        // What peers will draw for this phone: the initial of the name as typed, or of the alias, on the
+                        // tint our node id wears. The heading carries the meaning.
+                        AvatarView(face: model.face, size: Layout.faceProfile)
+                            .frame(maxWidth: .infinity)
+                        PageHeading(text: Copy.Onboarding.nameTitle)
+                    }
                 } footer: {
                     SectionNote(Copy.Onboarding.nameBody(alias: model.alias))
                 }

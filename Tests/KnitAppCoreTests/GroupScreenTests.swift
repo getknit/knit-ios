@@ -73,6 +73,7 @@ import Testing
         #expect(model.state.exists)
         await rig.session.leaveGroup(group.id)
         #expect(!model.state.exists)
+        #expect(model.state.face == .group(group.id, photo: nil, members: []), "a group's glyph until the screen closes")
         #expect(ChatModel(conversationId: Conversations.nearby, session: rig.session).state.exists)
     }
 

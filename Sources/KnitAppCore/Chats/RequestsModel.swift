@@ -14,6 +14,8 @@ public struct RequestRow: Sendable, Equatable, Identifiable {
     public var preview: String?
     /// When it was sent, by its author's clock, or when the group was made.
     public var lastMessageAt: Int64
+    /// The stranger's face, or the group's.
+    public var face: Face
 }
 
 /// The message requests' view model (`MessageRequestsViewModel` in knit-next, with Accept only: block and delete
@@ -45,7 +47,8 @@ public final class RequestsModel {
                     title: title ?? directory.labels.label(for: request.id).text,
                     isGroup: request.group != nil,
                     preview: preview,
-                    lastMessageAt: request.lastActivity
+                    lastMessageAt: request.lastActivity,
+                    face: request.group.map(directory.face(of:)) ?? directory.face(forMember: request.id)
                 )
             }
         }

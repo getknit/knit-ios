@@ -23,14 +23,7 @@
                         let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading)) : AnyLayout(HStackLayout())
                         layout {
                             NavigationLink(value: Route.chat(row.id)) {
-                                VStack(alignment: .leading, spacing: Layout.hairline) {
-                                    Text(row.title)
-                                        .font(.headline)
-                                    Text(row.preview ?? Copy.ChatList.noMessages)
-                                        .font(.subheadline)
-                                        .foregroundStyle(Palette.secondaryText)
-                                        .lineLimit(typeSize.isAccessibilitySize ? nil : Layout.previewLines)
-                                }
+                                RequestLabel(row: row)
                             }
                             .accessibilityIdentifier(AccessibilityID.requestRow(row.id))
                             Button(Copy.Requests.accept) {
@@ -45,6 +38,29 @@
                 }
             }
             .navigationTitle(Copy.Requests.title)
+        }
+    }
+
+    /// A request's face, title and newest message.
+    private struct RequestLabel: View {
+        let row: RequestRow
+        @Environment(\.dynamicTypeSize) private var typeSize
+
+        var body: some View {
+            HStack(spacing: Layout.medium) {
+                // At the accessibility sizes the face would squeeze the request; its title says who.
+                if !typeSize.isAccessibilitySize {
+                    AvatarView(face: row.face, size: Layout.faceRequest)
+                }
+                VStack(alignment: .leading, spacing: Layout.hairline) {
+                    Text(row.title)
+                        .font(.headline)
+                    Text(row.preview ?? Copy.ChatList.noMessages)
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.secondaryText)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : Layout.previewLines)
+                }
+            }
         }
     }
 #endif

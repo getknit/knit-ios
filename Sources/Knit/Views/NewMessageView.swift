@@ -79,16 +79,21 @@
         }
     }
 
-    /// One person: whether they are picked, their name, and whether they are verified and in range.
+    /// One person: whether they are picked, their face and name, and whether they are verified and in range.
     private struct ContactRow: View {
         let contact: Contact
         let isPicked: Bool
+        @Environment(\.dynamicTypeSize) private var typeSize
 
         var body: some View {
             HStack(spacing: Layout.medium) {
                 Image(systemName: isPicked ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isPicked ? AnyShapeStyle(.tint) : AnyShapeStyle(Palette.secondaryText))
                     .accessibilityHidden(true)
+                // At the accessibility sizes the face would squeeze the name, which says who.
+                if !typeSize.isAccessibilitySize {
+                    AvatarView(face: contact.face, size: Layout.faceRow)
+                }
                 // `Color.primary`, not the hierarchical `.primary`, which the row's button resolves to its tint.
                 Text(contact.label)
                     .foregroundStyle(Color.primary)

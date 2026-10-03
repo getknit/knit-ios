@@ -1,4 +1,5 @@
 #if os(iOS)
+    import KnitAppCore
     import SwiftUI
     import UIKit
 
@@ -25,6 +26,23 @@
         /// among them, read no inverted code (ADR 2026-10.65xx).
         static let codePaper = Color(uiColor: rgb(Swatch.codePaper))
 
+        /// The room's face: the accent's glyph on a pale wash of it.
+        static let roomTint = (container: dynamic(Swatch.roomContainer), onContainer: accent)
+
+        /// The disc and the initial of a face without a photo, by its slot (``AvatarTint/slot(for:)``), in light and dark.
+        static func avatarTint(_ slot: Int) -> (container: Color, onContainer: Color) {
+            avatarTints[min(max(slot, 0), avatarTints.count - 1)]
+        }
+
+        /// ``AvatarTint``'s two palettes, slot by slot. An identity's color never follows anything else on the phone,
+        /// so a person is the same hue on every phone that knows them (ADR 2026-09.j8c7 in knit-next).
+        private static let avatarTints = zip(AvatarTint.light, AvatarTint.dark).map { light, dark in
+            (
+                container: dynamic((light: light.container, dark: dark.container)),
+                onContainer: dynamic((light: light.onContainer, dark: dark.onContainer))
+            )
+        }
+
         /// Each color's sRGB value in light mode and in dark, as `0xRRGGBB`.
         private enum Swatch {
             static let accent = (light: 0x0A5CC7, dark: 0x5AA0FF)
@@ -34,6 +52,7 @@
             static let warning = (light: 0xB25000, dark: 0xFFA94D)
             static let critical = (light: 0xC4271C, dark: 0xFF6961)
             static let codePaper = 0xFFFFFF
+            static let roomContainer = (light: 0xDCE8F8, dark: 0x1E2A3A)
         }
 
         private static let channelMax: CGFloat = 255

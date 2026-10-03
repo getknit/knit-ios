@@ -18,6 +18,8 @@ public struct GroupMemberRow: Sendable, Equatable, Identifiable {
     public var isLinked: Bool
     /// Whether the user verified them.
     public var isVerified: Bool
+    /// Their face, ours included.
+    public var face: Face
 }
 
 /// Group info, as one value.
@@ -30,6 +32,8 @@ public struct GroupInfoState: Sendable, Equatable {
     public var members: [GroupMemberRow]
     /// Whether the group is still ours: `false` once we left it, when its screens close.
     public var exists: Bool
+    /// The group's face.
+    public var face: Face
 }
 
 /// Group info's view model: the members, renaming and leaving (`GroupDetailsViewModel` in knit-next, less the photo).
@@ -91,7 +95,8 @@ public final class GroupInfoModel {
         let me = session.identity.nodeId
         let directory = session.directory
         guard let group = session.threads().group(groupId) else {
-            return GroupInfoState(title: Copy.Groups.unnamed, memberCount: 0, members: [], exists: false)
+            return GroupInfoState(
+                title: Copy.Groups.unnamed, memberCount: 0, members: [], exists: false, face: .group(groupId, photo: nil, members: []))
         }
         let rows = group.members.map { id in
             let isMe = ExactKey(id) == ExactKey(me.string)
@@ -102,7 +107,8 @@ public final class GroupInfoModel {
                 isMe: isMe,
                 peer: peer,
                 isLinked: peer.map(linked.contains) ?? false,
-                isVerified: peer.map(directory.verified.contains) ?? false
+                isVerified: peer.map(directory.verified.contains) ?? false,
+                face: directory.face(forMember: id)
             )
         }
         let ordered = rows.sorted { first, second in
@@ -119,7 +125,8 @@ public final class GroupInfoModel {
             title: GroupNaming.title(of: group, me: me, directory: directory),
             memberCount: rows.count,
             members: ordered,
-            exists: true
+            exists: true,
+            face: directory.face(of: group)
         )
     }
 }

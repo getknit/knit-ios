@@ -125,6 +125,12 @@ custom_rules:
     excluded: 'Sources/Knit/Codes/'
     message: Only the app's Codes directory draws and scans verify codes (ADR 2026-10.65xx); the scan's logic lives in KnitAppCore.
     severity: error
+  seam_images:
+    name: The photo frameworks stay in the app's Images
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+(PhotosUI|ImageIO|UniformTypeIdentifiers|CoreTransferable)\b'
+    excluded: 'Sources/Knit/Images/'
+    message: Only the app's Images directory picks, decodes and encodes photos; what a face shows is decided in KnitAppCore.
+    severity: error
   seam_grdb:
     name: GRDB stays in KnitStoreSQL
     regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+GRDB\b'

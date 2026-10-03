@@ -35,5 +35,21 @@
         static let codeSide: CGFloat = 200
         /// The white margin around a verify code, which a scanner needs to find its edge.
         static let codeQuietZone: CGFloat = 12
+
+        // A face's side on each surface, as Android sizes it.
+        /// A chat list row's.
+        static let faceList: CGFloat = 52
+        /// A thread's, beside its title.
+        static let faceTitle: CGFloat = 36
+        /// An author's, beside their message.
+        static let faceBubble: CGFloat = 40
+        /// A request's.
+        static let faceRequest: CGFloat = 44
+        /// A group member's, and a contact's in New message.
+        static let faceRow: CGFloat = 48
+        /// Settings' profile row's.
+        static let faceSettings: CGFloat = 56
+        /// A profile's, ours and anyone's.
+        static let faceProfile: CGFloat = 96
     }
 #endif

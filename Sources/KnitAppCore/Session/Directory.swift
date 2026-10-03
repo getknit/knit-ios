@@ -27,12 +27,18 @@ public struct Directory: Sendable {
     public let verified: Set<NodeId>
     /// The collision-aware labels.
     public let labels: PeerLabelIndex
+    /// Our own node id.
+    public let me: NodeId
+    /// Our own photo, or `nil` for none.
+    public let myPhoto: BlobHash?
 
-    /// The directory over `peers` and our own id and name.
-    public init(peers: [PeerRecord], me: NodeId, myName: String) {
+    /// The directory over `peers` and our own id, name and photo.
+    public init(peers: [PeerRecord], me: NodeId, myName: String, myPhoto: BlobHash? = nil) {
         self.peers = Dictionary(peers.map { ($0.nodeId, $0) }) { first, _ in first }
         verified = Set(peers.filter(\.verified).map(\.nodeId))
         labels = PeerLabelIndex(peers: peers.map { ($0.nodeId.string, $0.name) }, me: (me.string, myName))
+        self.me = me
+        self.myPhoto = myPhoto
     }
 
     /// The label for `nodeId`: a pinned peer's name, our own, or the alias of someone not pinned yet.

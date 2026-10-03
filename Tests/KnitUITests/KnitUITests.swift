@@ -62,6 +62,11 @@ final class KnitUITests: XCTestCase {
         try walkScan()
     }
 
+    /// Our photo in the profile, the cropper, and someone's photo full screen, on the scene whose people wear photos.
+    func testTheProfilePhotoCropsAndAPeersPhotoOpensFullScreen() throws {
+        try walkPhotos()
+    }
+
     func testNewMessageOpensADirectThreadForOnePerson() throws {
         try walkNewMessage()
     }
@@ -92,6 +97,7 @@ final class KnitUITests: XCTestCase {
         try walkNewMessage()
         try walkNewGroup()
         try walkScan()
+        try walkPhotos()
         try walkSettings()
         try walkRadioStates()
     }
@@ -228,11 +234,14 @@ final class KnitUITests: XCTestCase {
         }
         XCTAssertEqual(lines.count, 3, "\(lines)")
     }
+}
 
-    // MARK: Helpers
+// MARK: Launching and auditing
 
+// Out of the class, where SwiftLint asks every member to be private, so the walks in other files can launch and audit.
+extension KnitUITests {
     /// Opens the first direct thread in the chat list: Sam's, whose key the demo pinned.
-    private func openDirect(in app: XCUIApplication) throws {
+    func openDirect(in app: XCUIApplication) throws {
         let direct = app.buttons.matching(
             NSPredicate(
                 format: "identifier BEGINSWITH %@ AND identifier != %@ AND NOT identifier BEGINSWITH %@",
@@ -243,12 +252,7 @@ final class KnitUITests: XCTestCase {
         )
         try app.reveal(direct.firstMatch, "a direct thread").tap()
     }
-}
 
-// MARK: Launching and auditing
-
-// Out of the class, where SwiftLint asks every member to be private, so the walks in other files can launch and audit.
-extension KnitUITests {
     func launch(_ arguments: String...) -> XCUIApplication {
         launch(arguments)
     }

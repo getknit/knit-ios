@@ -41,6 +41,7 @@ growing an explanation, that explanation belongs in the ADR.
 | what photos the iPhone shows, sends or carries, a group photo, screening, or `CAP_FILES` | [ADR 2026-10.nh55](../memory/decisions/2026-10-nh55-profile-photos-and-photos-in.md) |
 | FILE records, `FileIntake`, `LinkManager+Files`, `Radio.writeFileRecord`, or how a file streams on a link | [ADR 2026-10.h6zz](../memory/decisions/2026-10-h6zz-file-records-cross-a-link.md) |
 | `blobreq`, `BlobExchange`, `MeshEngine+Blobs`, a `BlobStore`, our photo's push, or how a peer's photo is adopted | [ADR 2026-10.ym9y](../memory/decisions/2026-10-ym9y-the-iphone-asks-for.md) |
+| a face, `Face`, `AvatarTint`, `AvatarView`, `Sources/Knit/Images/`, the profile photo's picker or cropper, or `-demoPhoto` | [ADR 2026-10.sepc](../memory/decisions/2026-10-sepc-a-face-is-a-person.md) |
 | `VerifyPayload`, a scanned code, `CodeScannerModel`, `CameraAccess`, `Sources/Knit/Codes/`, `-demoCamera`, or Add contact | [ADR 2026-10.65xx](../memory/decisions/2026-10-65xx-a-peer-s-profile-verifies.md) |
 | a string a person reads, `Copy`, `App/Info.plist`'s usage strings, or a view's text | [ADR 2026-09.ycza](../memory/decisions/2026-09-ycza-user-facing-copy-lives-in.md) |
 | `check.sh periphery`, a `verify:periphery` job, a `periphery:ignore`, or a Periphery finding | [ADR 2026-09.xgtz](../memory/decisions/2026-09-xgtz-periphery-blocks-on-the-mac.md) |

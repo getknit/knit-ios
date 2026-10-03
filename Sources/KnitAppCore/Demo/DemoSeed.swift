@@ -5,8 +5,8 @@ public import KnitWire
 
 /// How the app was launched: `-seedDemo`, the radio state the demo reports (`-demoRadio off`), so a screen can be
 /// checked in a state no real phone here is in, the unsupported device's among them (MVP item 10), the scene it
-/// seeds (`-demoScene marketing`), whether it starts at onboarding (`-demoOnboarding`), and what the camera answers
-/// (`-demoCamera denied`).
+/// seeds (`-demoScene marketing`), whether it starts at onboarding (`-demoOnboarding`), what the camera answers
+/// (`-demoCamera denied`), and whether Choose photo picks a painted picture (`-demoPhoto`).
 public struct LaunchOptions: Sendable, Equatable {
     /// Whether to run the demo: seeded stores in memory, a radio that goes nowhere, and a fixed identity.
     public var seedDemo = false
@@ -19,6 +19,9 @@ public struct LaunchOptions: Sendable, Equatable {
     /// What the demo's camera answers, or `nil` for the device's own: the Simulator has no scanner, so the UI tests reach
     /// the refused and failed states only through this.
     public var demoCamera: DemoCamera.Answer?
+    /// Whether Choose photo hands the cropper a painted picture rather than opening the photo library, in the demo and in
+    /// a debug build's live launch: the system's picker runs outside Knit, out of a UI test's reach.
+    public var demoPhoto = false
 
     /// The options in `arguments`, the process's own. Anything unknown is left for the system.
     public init(arguments: [String]) {
@@ -33,6 +36,7 @@ public struct LaunchOptions: Sendable, Equatable {
         if let flag = arguments.firstIndex(of: "-demoCamera"), arguments.indices.contains(flag + 1) {
             demoCamera = Self.cameraAnswers[arguments[flag + 1]]
         }
+        demoPhoto = arguments.contains("-demoPhoto")
     }
 
     private static let radioStates: [String: RadioState] = [
@@ -109,27 +113,21 @@ public enum DemoSeed {
     /// How long before `now` the demo's peers last changed their profiles.
     private static let profileAge: Int64 = 180_000
 
-    /// Fills `stores` with `scene`, as of `now` on the wall clock, from `me`'s side.
-    public static func populate(_ stores: MeshStores, me: NodeId, now: Int64, scene: DemoScene) {
+    /// Fills `stores` with `scene`, as of `now` on the wall clock, from `me`'s side. Whoever the scene gives a profile
+    /// photo gets the picture `paint` makes of their ``DemoPortrait``: the app paints them, and a test hands in bytes of
+    /// its own.
+    public static func populate(
+        _ stores: MeshStores, me: NodeId, now: Int64, scene: DemoScene, paint: (DemoPortrait) -> [UInt8]? = { _ in nil }
+    ) {
         let cast = scene.cast
         if let own = cast.me {
-            stores.ownProfile.save(OwnProfile(name: own.name, status: own.status, openToChat: true, version: now, publishedAt: now))
+            let photo = own.portrait.flatMap { keep(paint($0), in: stores, at: now) }
+            stores.ownProfile.save(
+                OwnProfile(name: own.name, status: own.status, openToChat: true, version: now, publishedAt: now, avatarHash: photo))
         }
         var nodeIds = [DemoCast.Slot.me: me]
-        for (person, bundle) in cast.people.compactMap({ person in keys(person.slot).map { (person, $0.bundle) } }) {
-            nodeIds[person.slot] = bundle.nodeId
-            stores.peers.upsert(
-                PeerRecord(
-                    nodeId: bundle.nodeId,
-                    name: person.name,
-                    status: person.status,
-                    publicKey: bundle.encoded,
-                    capabilities: Capabilities.local.rawValue,
-                    updatedAt: now - profileAge,
-                    verified: person.verified,
-                    openToChat: person.openToChat
-                )
-            )
+        for person in cast.people {
+            nodeIds[person.slot] = pin(person, in: stores, at: now, paint: paint)
         }
         let groupId = cast.group.map { group in GroupId.derive((group.members + [.me]).compactMap { nodeIds[$0]?.string }) }
         var sentAt = now
@@ -191,6 +189,37 @@ public enum DemoSeed {
         stores.messages.save(StatusNotices.groupCreated(id, by: creator, at: startedAt))
         for member in group.departed.compactMap({ nodeIds[$0] }) {
             stores.messages.save(StatusNotices.memberLeft(id, member: member, at: leftAt))
+        }
+    }
+
+    /// Pins `person` as of `now`, wearing the photo `paint` makes of their portrait, and answers their node id.
+    private static func pin(_ person: DemoCast.Person, in stores: MeshStores, at now: Int64, paint: (DemoPortrait) -> [UInt8]?) -> NodeId? {
+        keys(person.slot).map { keys in
+            let photo = person.portrait.flatMap { keep(paint($0), in: stores, at: now) }
+            stores.peers.upsert(
+                PeerRecord(
+                    nodeId: keys.nodeId,
+                    name: person.name,
+                    status: person.status,
+                    publicKey: keys.bundle.encoded,
+                    capabilities: Capabilities.local.rawValue,
+                    updatedAt: now - profileAge,
+                    verified: person.verified,
+                    openToChat: person.openToChat,
+                    avatarHash: photo,
+                    advertisedAvatarHash: photo
+                )
+            )
+            return keys.nodeId
+        }
+    }
+
+    /// Keeps a painted photo in the blob store, as the engine keeps one it adopted, and answers its hash.
+    private static func keep(_ jpeg: [UInt8]?, in stores: MeshStores, at now: Int64) -> BlobHash? {
+        jpeg.map { jpeg in
+            let hash = BlobHash(of: jpeg)
+            stores.blobs.insert(jpeg, hash: hash, mime: "image/jpeg", storedAt: now)
+            return hash
         }
     }
 

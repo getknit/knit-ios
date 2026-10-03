@@ -14,6 +14,8 @@ public struct Contact: Sendable, Equatable, Identifiable {
     public var isLinked: Bool
     /// Whether the user verified them.
     public var isVerified: Bool
+    /// Their face.
+    public var face: Face
 }
 
 /// New message's view model (`ContactsViewModel` and `ContactUniverse` in knit-next): pick one of the people we know
@@ -114,7 +116,8 @@ public final class NewMessageModel {
                 id: peer,
                 label: directory.label(for: peer).text,
                 isLinked: linked.contains(peer),
-                isVerified: directory.verified.contains(peer)
+                isVerified: directory.verified.contains(peer),
+                face: directory.face(for: peer)
             )
         }
         return found.sorted { first, second in

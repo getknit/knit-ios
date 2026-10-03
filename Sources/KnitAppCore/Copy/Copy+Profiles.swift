@@ -18,6 +18,47 @@ extension Copy {
             )
         }
 
+        /// The button that picks a photo, while there is none.
+        public static var choosePhoto: String {
+            NSLocalizedString("profile.photo.choose", bundle: .main, value: "Choose photo", comment: "Own profile: picks a profile photo")
+        }
+
+        /// The button that picks another photo.
+        public static var changePhoto: String {
+            NSLocalizedString(
+                "profile.photo.change",
+                bundle: .main,
+                value: "Change photo",
+                comment: "Own profile: picks a new profile photo in place of the one set"
+            )
+        }
+
+        /// The button that removes the photo.
+        public static var removePhoto: String {
+            NSLocalizedString(
+                "profile.photo.remove", bundle: .main, value: "Remove photo", comment: "Own profile: removes the profile photo")
+        }
+
+        /// Who sees the photo.
+        public static var photoFooter: String {
+            NSLocalizedString(
+                "profile.photo.footer",
+                bundle: .main,
+                value: "People nearby see your photo, like your name.",
+                comment: "Own profile: a profile photo is as public as the name"
+            )
+        }
+
+        /// What tapping someone's photo does, for VoiceOver.
+        public static var viewPhoto: String {
+            NSLocalizedString(
+                "profile.photo.view",
+                bundle: .main,
+                value: "View photo",
+                comment: "Profile: VoiceOver's name for the person's photo, which opens it full screen"
+            )
+        }
+
         /// The section of what belongs to this device.
         public static var deviceSection: String {
             NSLocalizedString(

@@ -145,6 +145,23 @@ import Testing
         #expect(try rig.object(rig.control.ready)["memoryKb"] == nil, "ready carries the details alone")
     }
 
+    /// A sampled field the host also passes as a detail is the sampled one: it is read now, and the detail at start.
+    @Test func aSampleReplacesADetailOfTheSameName() async throws {
+        let rig = ControlRig { ["host": "sampled"] }
+        #expect(try await rig.send(#"{"cmd":"status"}"#)["host"] as? String == "sampled")
+        #expect(try rig.object(rig.control.ready)["host"] as? String == "test")
+    }
+
+    @Test func peersComeInNodeIdOrder() async throws {
+        let rig = ControlRig()
+        let ids = [fixtureNodeId(9), fixtureNodeId(8)]
+        for id in ids {
+            rig.stores.peers.upsert(PeerRecord(nodeId: id, name: "", status: "", publicKey: "", updatedAt: 1))
+        }
+        let peers = try #require(try await rig.send(#"{"cmd":"peers"}"#)["peers"] as? [[String: Any]])
+        #expect(peers.compactMap { $0["peer"] as? String } == ids.sorted().map(\.string))
+    }
+
     @Test func linkEventsNameOnlyThePeersThatChanged() async throws {
         let rig = ControlRig()
         let first = Neighbor(nodeId: fixtureNodeId(4))

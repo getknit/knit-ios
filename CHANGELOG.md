@@ -39,6 +39,9 @@ document:
 - Photos and profile pictures now pass through an iPhone on their way across the mesh. A phone that asks for
   one gets the iPhone's copy, or the iPhone fetches it first, so the picture reaches people its sender never
   meets.
+- Chats, profiles and groups now show each person's photo, or their initial on a color that's the same on
+  every phone, Android included. Set your own photo in your profile, and tap anyone's photo to see it full
+  size. People nearby see your photo, just like your name.
 
 ## About this file
 

@@ -21,6 +21,9 @@ public struct ChatMessage: Sendable, Equatable, Identifiable {
     public var status: DeliveryStatus?
     /// A status line's words, which the thread shows in place of a bubble; `nil` for a message.
     public var notice: String?
+    /// The author's face, beside someone else's message in the room or a group; `nil` in a DM, for our own messages,
+    /// and for a status line.
+    public var authorFace: Face?
 }
 
 /// What a thread is.
@@ -59,6 +62,8 @@ public struct ChatState: Sendable, Equatable {
     public var nobodyElse: Bool
     /// Whether the group is still ours: `false` once we left it, or for one we never held.
     public var exists: Bool
+    /// The thread's face, beside its title: the room's, the peer's, or the group's.
+    public var face = Face.room
 
     /// Whether this is the room.
     public var isRoom: Bool { kind == .room }
@@ -153,9 +158,11 @@ public final class ChatModel {
             isVerified: peer.map(directory.verified.contains) ?? false,
             memberCount: nil,
             nobodyElse: false,
-            exists: kind != .group || group != nil
+            exists: kind != .group || group != nil,
+            face: peer.map(directory.face(for:)) ?? (kind == .group ? .group(conversationId, photo: nil, members: []) : .room)
         )
         if let group {
+            built.face = directory.face(of: group)
             built.title = GroupNaming.title(of: group, me: me, directory: directory)
             built.isRequest = threads.isRequest(conversationId)
             built.requestTitle = Copy.Groups.requestTitle(GroupNaming.starter(of: group, me: me, directory: directory))
@@ -170,14 +177,16 @@ public final class ChatModel {
     private func chatMessage(_ message: MessageRecord, kind: ThreadKind, me: NodeId, directory: Directory) -> ChatMessage? {
         let isMine = message.senderId == me
         guard message.kind.isNotice else {
+            let named = kind != .direct && !isMine
             return ChatMessage(
                 id: message.id,
                 body: message.body,
                 sentAt: message.sentAt,
                 isMine: isMine,
                 author: message.senderId,
-                authorLabel: kind != .direct && !isMine ? directory.label(for: message.senderId).text : nil,
-                status: isMine ? DeliveryStatus(message) : nil
+                authorLabel: named ? directory.label(for: message.senderId).text : nil,
+                status: isMine ? DeliveryStatus(message) : nil,
+                authorFace: named ? directory.face(for: message.senderId) : nil
             )
         }
         return GroupNaming.notice(message, me: me, directory: directory).map { words in

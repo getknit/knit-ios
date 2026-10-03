@@ -49,8 +49,15 @@ public final class AppSession {
     public var directory: Directory {
         let now = revision
         return cachedDirectory.value(for: now) {
-            Directory(peers: stores.peers.allPeers(), me: identity.nodeId, myName: stores.ownProfile.load().name)
+            let own = stores.ownProfile.load()
+            return Directory(peers: stores.peers.allPeers(), me: identity.nodeId, myName: own.name, myPhoto: own.avatarHash)
         }
+    }
+
+    /// The bytes of a photo the blob store holds, or `nil`. It reads the disk, so the app calls it off the main actor,
+    /// as it decodes the photo.
+    nonisolated public func photo(_ hash: BlobHash) -> [UInt8]? {
+        stores.blobs.bytes(of: hash)
     }
 
     /// The threads, and which are requests, as of the current revision.

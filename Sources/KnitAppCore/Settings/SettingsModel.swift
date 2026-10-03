@@ -69,6 +69,11 @@ public final class SettingsModel {
         session.directory.label(for: session.identity.nodeId).text
     }
 
+    /// The profile row's face: our own.
+    public var profileFace: Face {
+        session.directory.face(for: session.identity.nodeId)
+    }
+
     /// Stops a running mesh, or starts a stopped one.
     public func toggleMesh() async {
         if session.isRunning {

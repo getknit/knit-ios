@@ -141,6 +141,22 @@ import Testing
         #expect(sightings.first?["psm"] as? Int == 0x80)
     }
 
+    /// A frame the engine reads and refuses is counted, and status says why: here a blob request with no hash in it.
+    @Test func statusCountsWhatTheEngineDropped() async throws {
+        let rig = PeerRig()
+        await rig.node.start(name: nil)
+        try await rig.link()
+        let request = RelayEnvelope(type: .blobRequest, id: "garbled", senderId: rig.far.nodeId.string, payload: [0xFF])
+        rig.radio.emit(.received(PeerRig.channel, record(.frame, WireEnvelope(relay: false, sig: [], signed: request.encoded).encoded)))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        var dropped: [String: Any] = [:]
+        while dropped.isEmpty, ContinuousClock.now < deadline {
+            dropped = try await rig.send(#"{"cmd":"status"}"#)["dropped"] as? [String: Any] ?? [:]
+            await Task.yield()
+        }
+        #expect(dropped["undecodable"] as? Int == 1)
+    }
+
     @Test func aFarPeersProfilePostsAndDMsReachTheNodeAndOurDMIsDelivered() async throws {
         let rig = PeerRig()
         await rig.node.start(name: "Near")

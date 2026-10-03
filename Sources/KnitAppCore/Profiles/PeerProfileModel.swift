@@ -24,6 +24,8 @@ public struct PeerProfileState: Sendable, Equatable {
     public var isVerified: Bool
     /// Our own verify code, for them to scan (`VerifyPayload`).
     public var ownCode: String
+    /// Their face: their photo, or their initial on their tint.
+    public var face: Face
 
     /// The DM thread with them.
     public var conversationId: String { nodeId.string }
@@ -111,7 +113,8 @@ public final class PeerProfileModel {
             isLinked: false,
             safetyNumber: theirs.map { Self.lines(SafetyNumber.compute(mine: session.identity.bundle, theirs: $0)) },
             isVerified: peer?.verified ?? false,
-            ownCode: VerifyPayload.encode(session.identity.bundle)
+            ownCode: VerifyPayload.encode(session.identity.bundle),
+            face: directory.face(for: nodeId)
         )
     }
 

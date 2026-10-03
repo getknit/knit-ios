@@ -1,11 +1,25 @@
+/// A picture the demo gives someone as their profile photo. The app paints it, so no photograph ships in the app.
+public enum DemoPortrait: Sendable, CaseIterable {
+    /// Snow on a peak under a clear sky.
+    case summit
+    /// A low sun over hills.
+    case sunset
+    /// Pines under a pale sky.
+    case forest
+    /// Mountains over still water.
+    case lake
+    /// A fire under the stars.
+    case campfire
+}
+
 /// Which cast `-seedDemo` seeds, as `-demoScene` names it.
 public enum DemoScene: String, Sendable, CaseIterable {
     /// The states a screen must handle: two peers with one name, a stranger with none, a message still waiting to be
     /// delivered, and nobody linked. The default.
     case edgeCases = "edge-cases"
-    /// A day on the trail for store screenshots and social posts, with three peers linked. After knit-next's hiking
-    /// theme (`DemoScenarios.kt`), less what the iPhone does not do yet: reactions, photos, voice notes, LoRa and
-    /// Internet relays.
+    /// A day on the trail for store screenshots and social posts, with three peers linked, and most people wearing a
+    /// profile photo. After knit-next's hiking theme (`DemoScenarios.kt`), less what the iPhone does not do yet:
+    /// reactions, photos in chats, voice notes, LoRa and Internet relays.
     case marketing = "marketing"
 
     /// Who and what the scene seeds.
@@ -40,6 +54,7 @@ internal struct DemoCast {
     struct Own {
         let name: String
         let status: String
+        var portrait: DemoPortrait?
     }
 
     /// A pinned peer.
@@ -49,6 +64,7 @@ internal struct DemoCast {
         let status: String
         var verified = false
         var openToChat = false
+        var portrait: DemoPortrait?
     }
 
     /// How long passed after a line, before the next one or now.
@@ -121,14 +137,14 @@ internal struct DemoCast {
     /// Every name is set and distinct, every message of ours delivered, and three peers are linked, as in knit-next's
     /// store screenshots. Theo is over the ridge, out of range: his posts came relayed.
     static let marketing = Self(
-        me: Own(name: "Maya Okonkwo", status: "On the trail 🥾"),
+        me: Own(name: "Maya Okonkwo", status: "On the trail 🥾", portrait: .campfire),
         people: [
-            Person(slot: .sam, name: "Sam Rivera", status: "Trail mix enthusiast", openToChat: true),
-            Person(slot: .dani, name: "Dani Cho", status: "Summit or bust", verified: true, openToChat: true),
+            Person(slot: .sam, name: "Sam Rivera", status: "Trail mix enthusiast", openToChat: true, portrait: .lake),
+            Person(slot: .dani, name: "Dani Cho", status: "Summit or bust", verified: true, openToChat: true, portrait: .summit),
             Person(slot: .theo, name: "Theo Blake", status: "Mostly lost"),
-            Person(slot: .priya, name: "Priya N.", status: "Golden hour chaser 🌅"),
+            Person(slot: .priya, name: "Priya N.", status: "Golden hour chaser 🌅", portrait: .sunset),
             Person(slot: .jonas, name: "Jonas W.", status: "Will hike for coffee"),
-            Person(slot: .lena, name: "Lena F.", status: "Map nerd"),
+            Person(slot: .lena, name: "Lena F.", status: "Map nerd", portrait: .forest),
             Person(slot: .river, name: "River Salas", status: "Just got here"),
         ],
         lines: [

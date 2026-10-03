@@ -15,7 +15,7 @@
             Form {
                 Section {
                     NavigationLink(value: Route.profile) {
-                        Label(model.profileTitle, systemImage: "person.crop.circle")
+                        ProfileRow(title: model.profileTitle, face: model.profileFace)
                     }
                     .accessibilityIdentifier(AccessibilityID.settingsProfileRow)
                 }
@@ -42,6 +42,24 @@
                 }
             }
             .accessibilityIdentifier(AccessibilityID.settingsScreen)
+        }
+    }
+
+    /// Our face and our name, the way into our profile.
+    private struct ProfileRow: View {
+        let title: String
+        let face: Face
+        @Environment(\.dynamicTypeSize) private var typeSize
+
+        var body: some View {
+            HStack(spacing: Layout.medium) {
+                // At the accessibility sizes the face would squeeze the name, which says who.
+                if !typeSize.isAccessibilitySize {
+                    AvatarView(face: face, size: Layout.faceSettings)
+                }
+                Text(title)
+                    .font(.headline)
+            }
         }
     }
 
