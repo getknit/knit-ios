@@ -32,6 +32,10 @@ public enum AccessibilityID {
     public static let chatListStatusStart = "chat_list_status_start"
     /// The status line's way to Knit's page in the Settings app, offered while Bluetooth is refused.
     public static let chatListStatusSettings = "chat_list_status_settings"
+    /// The status line's info button, offered while the mesh runs, which shows the radio's boundary.
+    public static let chatListStatusAbout = "chat_list_status_about"
+    /// The note that button shows under the line.
+    public static let chatListBoundary = "chat_list_boundary"
     /// The chat list's way to Settings.
     public static let chatListSettings = "chat_list_settings"
     /// The chat list's way to the message requests.

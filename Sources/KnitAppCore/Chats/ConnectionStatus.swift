@@ -71,6 +71,11 @@ public enum ConnectionStatus: Sendable, Equatable {
         self == .notAllowed
     }
 
+    /// Whether the line offers the radio's boundary behind an info button: only a running mesh, where it is news.
+    public var offersBoundary: Bool {
+        if case .linked = self { true } else { false }
+    }
+
     /// The state the line's identifier names (``AccessibilityID/chatListStatus(_:)``), which the device tests wait on.
     public var accessibilityState: AccessibilityID.StatusState {
         switch self {

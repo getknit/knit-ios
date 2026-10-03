@@ -76,16 +76,29 @@
     private struct StatusLine: View {
         let status: ConnectionStatus
         let start: () -> Void
+        @State private var showsBoundary = false
 
         var body: some View {
             VStack(alignment: .leading, spacing: Layout.small) {
-                Label {
-                    Text(status.line)
-                } icon: {
-                    Image(systemName: symbol)
-                        .foregroundStyle(status.isWarning ? Palette.warning : Palette.accent)
+                HStack(alignment: .firstTextBaseline) {
+                    Label {
+                        Text(status.line)
+                    } icon: {
+                        Image(systemName: symbol)
+                            .foregroundStyle(status.isWarning ? Palette.warning : Palette.accent)
+                    }
+                    .accessibilityIdentifier(AccessibilityID.chatListStatus(status.accessibilityState))
+                    if status.offersBoundary {
+                        Spacer()
+                        BoundaryButton(isShowing: $showsBoundary)
+                    }
                 }
-                .accessibilityIdentifier(AccessibilityID.chatListStatus(status.accessibilityState))
+                if status.offersBoundary, showsBoundary {
+                    Text(Copy.Status.boundary)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.secondaryText)
+                        .accessibilityIdentifier(AccessibilityID.chatListBoundary)
+                }
                 if status.offersStart {
                     Button(Copy.Status.start, action: start)
                         .buttonStyle(.bordered)
@@ -95,11 +108,6 @@
                     OpenSettingsButton()
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier(AccessibilityID.chatListStatusSettings)
-                }
-                if case .linked = status {
-                    Text(Copy.Status.boundary)
-                        .font(.footnote)
-                        .foregroundStyle(Palette.secondaryText)
                 }
             }
             .accessibilityElement(children: .contain)
@@ -116,6 +124,28 @@
             case .bluetoothOff, .notAllowed, .unsupported:
                 "exclamationmark.triangle"
             }
+        }
+    }
+
+    /// The status line's info button, which shows the radio's boundary under the line and hides it again. The boundary
+    /// needs reading once, not every time the list opens. It is no popover: anchored in a list row, one opens as a
+    /// sheet on the iPhone whatever its compact adaptation asks.
+    private struct BoundaryButton: View {
+        @Binding var isShowing: Bool
+
+        var body: some View {
+            Button {
+                withAnimation { isShowing.toggle() }
+            } label: {
+                Label(Copy.Status.boundaryButton, systemImage: isShowing ? "info.circle.fill" : "info.circle")
+                    .labelStyle(.iconOnly)
+                    .frame(minWidth: Layout.hitTarget, minHeight: Layout.hitTarget)
+                    .contentShape(Rectangle())
+            }
+            // Borderless, so only the glyph takes the tap and not the whole row.
+            .buttonStyle(.borderless)
+            .accessibilityAddTraits(isShowing ? .isSelected : [])
+            .accessibilityIdentifier(AccessibilityID.chatListStatusAbout)
         }
     }
 

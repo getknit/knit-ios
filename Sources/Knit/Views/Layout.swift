@@ -25,6 +25,8 @@
         static let bubbleInset: CGFloat = 48
         /// Our own bubbles' tint.
         static let ownBubbleOpacity = 0.2
+        /// The smallest side of a control's hit area, as Apple's guidelines and the accessibility audit want it.
+        static let hitTarget: CGFloat = 44
         /// A preview's lines in a list.
         static let previewLines = 2
         /// How far the composer grows before it scrolls.

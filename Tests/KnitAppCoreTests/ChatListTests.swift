@@ -145,10 +145,11 @@ import Testing
         #expect(ConnectionStatus(radio: radio, isRunning: running, linked: linked) == expected)
     }
 
-    @Test func onlyAStoppedMeshOffersStartAndOnlyARefusalOffersSettings() {
+    @Test func onlyAStoppedMeshOffersStartOnlyARefusalOffersSettingsAndOnlyARunningOneExplains() {
         let all: [ConnectionStatus] = [.linked(1), .starting, .stopped, .bluetoothOff, .notAllowed, .unsupported]
         #expect(all.filter(\.offersStart) == [.stopped])
         #expect(all.filter(\.offersSettings) == [.notAllowed])
+        #expect(all.filter(\.offersBoundary) == [.linked(1)])
         #expect(all.filter(\.isWarning) == [.stopped, .bluetoothOff, .notAllowed, .unsupported])
         #expect(Set(all.map(\.line)).count == all.count)
     }

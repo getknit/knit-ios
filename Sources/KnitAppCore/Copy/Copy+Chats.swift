@@ -105,6 +105,16 @@ extension Copy {
                 comment: "Where the app says once that new people are found only while it is open, and what reaches it in the background"
             )
         }
+
+        /// The button beside a running status line that shows ``boundary``.
+        public static var boundaryButton: String {
+            NSLocalizedString(
+                "status.boundary-button",
+                bundle: .main,
+                value: "How Knit connects",
+                comment: "Chat list status: the info button that shows where Knit finds people and what reaches it in the background"
+            )
+        }
     }
 
     /// The list of chats.

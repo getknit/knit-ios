@@ -40,6 +40,11 @@ final class KnitUITests: XCTestCase {
         try walkRoom()
     }
 
+    /// The radio's boundary waits behind the status line's info button, which shows it under the line.
+    func testTheStatusLineShowsTheBoundaryOnRequest() throws {
+        try walkBoundary()
+    }
+
     func testADirectThreadLeadsToTheProfileAndItsEncryption() throws {
         try walkDirect()
     }
@@ -80,6 +85,7 @@ final class KnitUITests: XCTestCase {
         size = .largest
         try walkOnboarding()
         try walkRoom()
+        try walkBoundary()
         try walkDirect()
         try walkRequests()
         try walkGroup()
@@ -121,6 +127,13 @@ final class KnitUITests: XCTestCase {
         input.typeText("Anyone near the stage?")
         try app.appear(AccessibilityID.chatSend).tap()
         try app.staticTexts["Anyone near the stage?"].appear("the post")
+        app.terminate()
+    }
+
+    private func walkBoundary() throws {
+        let app = launch()
+        try app.reveal(AccessibilityID.chatListStatusAbout).tap()
+        try audit(app, AccessibilityID.chatListBoundary)
         app.terminate()
     }
 
@@ -230,12 +243,17 @@ final class KnitUITests: XCTestCase {
         )
         try app.reveal(direct.firstMatch, "a direct thread").tap()
     }
+}
 
-    private func launch(_ arguments: String...) -> XCUIApplication {
+// MARK: Launching and auditing
+
+// Out of the class, where SwiftLint asks every member to be private, so the walks in other files can launch and audit.
+extension KnitUITests {
+    func launch(_ arguments: String...) -> XCUIApplication {
         launch(arguments)
     }
 
-    private func launch(_ arguments: [String]) -> XCUIApplication {
+    func launch(_ arguments: [String]) -> XCUIApplication {
         // An audit finding fails the test and the walk goes on, so one run lists every screen's; a screen that never
         // appears throws ``Missing`` instead.
         continueAfterFailure = true
@@ -247,7 +265,7 @@ final class KnitUITests: XCTestCase {
 
     /// Waits for `element` to stop moving. A sheet audited mid-slide is measured against the dimmed screen behind it;
     /// XCUITest has no event for the end of an animation, so this reads the frame until two reads agree.
-    private func settle(_ element: XCUIElement) {
+    func settle(_ element: XCUIElement) {
         var last = CGRect.null
         for _ in 0..<Self.frameReads {
             let frame = element.frame
@@ -267,7 +285,7 @@ final class KnitUITests: XCTestCase {
 
     /// Audits what is on screen, and fails once with every issue found and the element it is about. The largest-size
     /// walk keeps a screenshot of every screen; a failing one keeps its own at either size.
-    private func audit(_ app: XCUIApplication, screen: String) {
+    func audit(_ app: XCUIApplication, screen: String) {
         // A thread scrolls to its newest message as it opens, which at the largest sizes outlasts its appearing.
         if let last = app.scrollViews.firstMatch.staticTexts.allElementsBoundByIndex.last {
             settle(last)
@@ -304,49 +322,6 @@ final class KnitUITests: XCTestCase {
             add(shot)
         }
         XCTAssert(issues.isEmpty, "\(screen) (\(size)), \(issues.count) issues:\n" + issues.joined(separator: "\n"))
-    }
-}
-
-// MARK: New message
-
-// The New message walks, apart from the rest only to keep the class under SwiftLint's body length. An extension in the
-// same file reaches the class's private helpers.
-extension KnitUITests {
-    /// New message's sheet, audited; Cancel closes it, and one pick opens that person's DM.
-    private func walkNewMessage() throws {
-        let app = launch()
-        try app.appear(AccessibilityID.chatListNewMessage).tap()
-        settle(try app.appear(AccessibilityID.newMessageScreen))
-        audit(app, screen: AccessibilityID.newMessageScreen)
-        app.buttons["Cancel"].tap()
-        XCTAssert(app.element(AccessibilityID.newMessageScreen).waitForNonExistence(timeout: Walking.appears), "Cancel left the sheet up")
-
-        try app.appear(AccessibilityID.chatListNewMessage).tap()
-        try pick(1, in: app)
-        try app.appear(AccessibilityID.newMessageStart).tap()
-        try app.appear(AccessibilityID.chatThread)
-        try app.appear(AccessibilityID.chatProfile)
-        app.terminate()
-    }
-
-    /// Two picks in New message start a group, and its thread opens.
-    private func walkNewGroup() throws {
-        let app = launch()
-        try app.appear(AccessibilityID.chatListNewMessage).tap()
-        try pick(2, in: app)
-        try app.appear(AccessibilityID.newMessageStart).tap()
-        try app.appear(AccessibilityID.chatThread)
-        try app.appear(AccessibilityID.chatGroupInfo)
-        app.terminate()
-    }
-
-    /// Picks the first `count` people in New message. They sit at the top of the sheet, so nothing swipes: a swipe
-    /// down there would close it.
-    private func pick(_ count: Int, in app: XCUIApplication) throws {
-        let people = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.newMessageContact("")))
-        for index in 0..<count {
-            try people.element(boundBy: index).appear("person \(index + 1) to pick").tap()
-        }
     }
 }
 

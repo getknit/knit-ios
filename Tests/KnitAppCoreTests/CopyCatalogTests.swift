@@ -36,6 +36,7 @@ import Testing
             Copy.Status.stopped,
             Copy.Status.start,
             Copy.Status.boundary,
+            Copy.Status.boundaryButton,
             Copy.ChatList.title,
             Copy.ChatList.nearby,
             Copy.ChatList.noMessages,
@@ -278,6 +279,7 @@ import Testing
         #expect(Set(AccessibilityID.StatusState.allCases.map(AccessibilityID.chatListStatus)).count == 7)
         #expect(AccessibilityID.chatListStatusStart == "chat_list_status_start")
         #expect(AccessibilityID.chatListStatusSettings == "chat_list_status_settings")
+        #expect(AccessibilityID.chatListStatusAbout == "chat_list_status_about")
         #expect(AccessibilityID.onboardingAllowBluetooth == "onboarding_allow_bluetooth")
     }
 
