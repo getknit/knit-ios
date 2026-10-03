@@ -6,9 +6,10 @@
     /// The demo's photos, painted rather than shipped: a sky, a few shapes, and a JPEG of them, encoded as a profile
     /// photo or a chat's photo is. Coordinates are fractions of the picture, from its bottom left corner.
     internal enum DemoPortraits {
-        /// The picture `-demoPhoto` hands the cropper and the composer: wider than tall, so the cropper has somewhere to
-        /// pan.
-        private static let pick = (width: 1600, height: 1200)
+        /// The picture `-demoPhoto` hands the cropper and the composer: taller than wide, as a phone held upright takes it.
+        /// The cropper has somewhere to pan, and a photo sent from the composer stands as tall as its bubble lets it, the
+        /// most a photo grows once it decodes.
+        private static let pick = (width: 1200, height: 1600)
         /// A photo a post in the demo carries, at the shape a phone's camera takes.
         private static let snapshot = (width: 960, height: 720)
         /// Each channel's depth.

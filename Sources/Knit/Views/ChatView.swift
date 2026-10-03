@@ -107,35 +107,34 @@
         let state: ChatState
         /// Opens a message's photo full screen.
         let view: (ViewedPhoto) -> Void
+        /// Where the thread rests: at its bottom edge, below the newest message's padding. A position on the edge stays on
+        /// it as a row grows, where one scrolled to the newest message's id did not: a photo holds a spinner's place until
+        /// it decodes, then stands up to a hundred points taller, which left its stamp and tick under the composer.
+        @State private var position = ScrollPosition(edge: .bottom)
 
         var body: some View {
-            ScrollViewReader { reader in
-                ScrollView {
-                    LazyVStack(spacing: Layout.small) {
-                        ThreadHeader(state: state)
-                        ForEach(state.messages) { message in
-                            if let notice = message.notice {
-                                StatusLineRow(text: notice)
-                                    .id(message.id)
-                                    .accessibilityIdentifier(AccessibilityID.chatNotice(message.id))
-                            } else {
-                                MessageBubble(message: message) { attachment in
-                                    view(.chat(attachment, sender: sender(of: message)))
-                                }
-                                .id(message.id)
+            ScrollView {
+                LazyVStack(spacing: Layout.small) {
+                    ThreadHeader(state: state)
+                    ForEach(state.messages) { message in
+                        if let notice = message.notice {
+                            StatusLineRow(text: notice)
+                                .accessibilityIdentifier(AccessibilityID.chatNotice(message.id))
+                        } else {
+                            MessageBubble(message: message) { attachment in
+                                view(.chat(attachment, sender: sender(of: message)))
                             }
                         }
                     }
-                    .padding()
                 }
-                .defaultScrollAnchor(.bottom)
-                .scrollDismissesKeyboard(.interactively)
-                .accessibilityIdentifier(AccessibilityID.chatThread)
-                .onChange(of: state.messages.last?.id) { _, last in
-                    if let last {
-                        reader.scrollTo(last, anchor: .bottom)
-                    }
-                }
+                .padding()
+            }
+            .scrollPosition($position)
+            .defaultScrollAnchor(.bottom)
+            .scrollDismissesKeyboard(.interactively)
+            .accessibilityIdentifier(AccessibilityID.chatThread)
+            .onChange(of: state.messages.last?.id) {
+                position.scrollTo(edge: .bottom)
             }
         }
 

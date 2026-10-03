@@ -96,4 +96,7 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
     checks, and the sweep.
   - `ChatPhotoTests` and `CopyTests` for the app's state, the lines, and the plist's words.
   - `MeshControlPhotoTests` for the control lines, and `KnitUITests`' photo walk for the composer, the bubble and the
-    viewer at both text sizes.
+    viewer at both text sizes. The walk's picked picture stands upright, so the photo it sends grows a hundred points
+    as it decodes, and the walk checks that the thread follows it down, its stamp above the composer. The thread rests
+    on its bottom edge (`ScrollPosition`), which a growing row keeps it on; scrolled to the newest message's id, it
+    left the stamp under the composer.

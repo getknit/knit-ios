@@ -39,9 +39,10 @@ extension KnitUITests {
 
     /// Photos in a thread, on the marketing scene, whose post by the fire carries one: the room with its photos, Add
     /// photo, which picks a painted picture under `-demoPhoto`, the photo the composer holds, the post that sends it, and
-    /// that photo full screen with its Save. The walk opens our own photo, the newest message: at the largest sizes a
-    /// post further up scrolls in and out of the list's reach as the walk swipes. Save itself stays untapped, since the
-    /// system would ask to add to Photos.
+    /// that photo full screen with its Save. The picked picture stands upright, so our photo grows the most it can once it
+    /// decodes, and the walk checks that the thread kept its stamp in view. The walk opens our own photo, the newest
+    /// message: at the largest sizes a post further up scrolls in and out of the list's reach as the walk swipes. Save
+    /// itself stays untapped, since the system would ask to add to Photos.
     func walkChatPhotos() throws {
         let app = launch("-demoScene", "marketing", "-demoPhoto")
         try app.reveal(AccessibilityID.chatRow("nearby")).tap()
@@ -62,6 +63,10 @@ extension KnitUITests {
         try ours.appear("our photo")
         // The photo reads as such once it has decoded; until then its place holds a spinner, which a tap does nothing to.
         wait(for: ours, until: "label CONTAINS 'Photo'")
+        // The decoded photo stands a hundred points taller than the spinner did, and the thread follows it down: its stamp
+        // and tick end above the composer, where they used to end under it.
+        let composer = try app.appear(AccessibilityID.chatInput)
+        XCTAssertLessThanOrEqual(ours.frame.maxY, composer.frame.minY, "our photo's stamp sat under the composer")
         // A message reads as one element, so the tap goes where its photo is: above its stamp.
         ours.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
         settle(try app.appear(AccessibilityID.photoViewerScreen))
