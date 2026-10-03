@@ -1421,3 +1421,35 @@ case linked 2 of 8 within 30 s, with a median of 64.3 s.
   once each, and every one timed out with no dial after it (ADR 2026-09.6es2, amended 2026-10-02).
 - **Android's side is done.** knit-next recorded these runs in its ADR 2026-10.9utz, and both fixes are on its `main`.
   The Pixel's Coded mode is back on `auto`.
+
+## What background seeking showed
+
+`interop.py iphone-seek` ran four times on 2026-10-02 against the iPhone 12, locked each time, with the lab phones in
+range refused (ADR 2026-10.mueg). Knit's log and runningboardd's came over USB (`.build/iphone-seek/`).
+
+- **A link the far side dialed ended unheard.** On the first build, an `ios` peer on the ATS2851 dialed the iPhone,
+  and knit-peer was killed once Knit was suspended. Knit logged nothing more until it was opened four minutes later,
+  when `ble ch4 ended`, `link down`, `link seeking on` and `link seeking off (front)` all came within 70 ms. An L2CAP
+  stream's end waits in a suspended process like its data, so Knit never knew to seek.
+- **A watched connection wakes Knit for that end.** The next build connects the far side of every accepted link as a
+  peripheral too (`attach`, in `BLECore+Links.swift`), which CoreBluetooth did 0.5 s after the channel opened, under
+  the identifier the iPhone had read the peer's payload from. With hci1 powered off under a locked iPhone,
+  bluetoothd took an assertion on Knit (`requestedReason:Bluetooth`) in the same second, and Knit logged `link down`
+  and `link seeking on` 0.3 s after the power went. Knit was not run without the watch against a powered-off adapter,
+  so whether the channel's end alone would have woken it there is not known.
+- **The budget held.** Seeking with four refused phones in range, Knit spent its eight wakes in 2 minutes, one every
+  10 to 28 s, and ran about 100 s of those 130, as P8's check found. Then it logged `link seeking off (budget spent
+  after 8 wakes)`, went back to the unfiltered scan, and runningboardd did not resume it again in the 23 minutes
+  before the iPhone was unlocked.
+- **Reinstalling Knit on the Pixel 9 no longer strands the iPhone.** With the Pixel's link to the locked iPhone up,
+  the run force-stopped Knit on the Pixel and opened it 5 s later. The iPhone heard the link end 4.8 s after the stop,
+  sought, and on its third wake dialed the Pixel itself, though the Pixel's id sorts above it, 28 s after the drop.
+  The Pixel admitted it unsighted (`bt accepted client … sighted=false`), the link came up 36 s after the drop, and a
+  DM from the Pixel rang the iPhone and was delivered 2.5 s after it was sent, all before anyone touched the iPhone.
+- **A link the iPhone dialed ends audibly when Android's app dies.** On that relinked link, a second force-stop
+  reached Knit 4.5 s later. Android drops the connection once its app holds none of it, and the iPhone's own
+  connection ends in `didDisconnectPeripheral`. A far side whose stack keeps the connection after its app has gone,
+  such as BlueZ with a GATT client of its own, was not tried; the iPhone holds no hci0 link here.
+- **The tooling had two traps.** `knit-hci` finds the ATS2851 in `hcitool dev`, which lists only adapters that are up,
+  so it cannot power it back on; `iphone-seek` powers it through BlueZ's D-Bus by address instead. And `btmgmt`
+  quits when its input ends, before it sends the command, so a command piped to it needs the input held open.

@@ -109,6 +109,19 @@ import Testing
         #expect(status["host"] as? String == "test")
         #expect(status["nodeId"] as? String == rig.keys.nodeId.string)
         #expect(status["memoryKb"] == nil, "a host that samples nothing adds nothing")
+        #expect(status["seeking"] as? Bool == false, "a peer at the front never seeks")
+        #expect(status["seekWakes"] as? Int == 0)
+        #expect(status["seekSpells"] as? Int == 0)
+    }
+
+    @Test func statusSaysWhenTheLinksSeek() async throws {
+        // A radio that cannot seek, like this one, still has the link manager's word for it.
+        let rig = ControlRig()
+        await rig.mesh.start()
+        await rig.mesh.setInBackground(true)
+        let status = try await rig.send(#"{"cmd":"status"}"#)
+        #expect(status["seeking"] as? Bool == true, "in the background with no link")
+        #expect(status["seekSpells"] as? Int == 1)
     }
 
     @Test func statusReadsTheSampleEachTime() async throws {
@@ -181,6 +194,7 @@ import Testing
 private struct ControlRig {
     let keys: IdentityKeys
     let stores = MeshStores.inMemory()
+    let mesh: Mesh
     let control: MeshControl
 
     init(actions: (any ControlActions)? = nil, sample: (@Sendable () -> [String: JSONValue])? = nil) {
@@ -189,7 +203,7 @@ private struct ControlRig {
         }
         keys = made
         let clock = StillClock()
-        let mesh = Mesh(
+        mesh = Mesh(
             identity: made,
             deviceTag: nil,
             stores: stores,

@@ -18,65 +18,6 @@ public import KnitWire
 /// The manager is synchronous. It reads its clock, writes through its ``Radio``, and reports what the mesh
 /// needs as ``Event``s from ``handle(_:)`` and ``advance()``.
 public final class LinkManager: MeshTransport {
-    /// The link layer's tunables.
-    public struct Configuration: Sendable {
-        /// How long a HELLO may take, each way (`ACCEPT_HELLO_TIMEOUT_MS`).
-        public var helloTimeoutMilliseconds: Int64
-        /// How long a dial may take to open (`CONNECT_TIMEOUT_MS`).
-        public var connectTimeoutMilliseconds: Int64
-        /// How long a custody change waits before it re-advertises, so a burst costs one advert
-        /// (`CUE_READVERTISE_DEBOUNCE_MS`).
-        public var advertDebounceMilliseconds: Int64
-        /// The largest single write: Android caps its own at 8 KiB.
-        public var maxWriteBytes: Int
-        /// What a link scores for eviction while its peer has not once been sighted since the link came up (every
-        /// inbound iPhone): the promotion floor, as A1 has it, not −127.
-        public var unsightedLinkRssi: Double
-        /// What a link scores once its peer, sighted during the link, has left presence: shed first, as on Android.
-        public var absentLinkRssi: Double
-        /// How old a held link must be before a second dial from the same unsighted peer may replace it
-        /// (A1's `REPLACE_MIN_HOLD_MS`). The HELLO is unauthenticated, so this bounds how often a device that
-        /// claims the peer's id can cut its link.
-        public var replaceMinHoldMilliseconds: Int64
-        /// How often a link's doorbell rings, at most, while frames go out on it. A ring wakes a suspended iPhone for
-        /// about 9 s (iOS 27), so ringing at most every 5 s, and once more after the last frame of a burst, has every
-        /// frame read within about 5 s of reaching the link. 0 never rings.
-        public var ringIntervalMilliseconds: Int64
-        /// Whom to link.
-        public var promotion: PromotionPolicy.Configuration
-        /// How long to wait after failures.
-        public var backoff: ConnectBackoff.Configuration
-        /// How sightings smooth and linger.
-        public var presence: PresenceTracker.Configuration
-
-        /// knit-next's values unless told otherwise.
-        public init(
-            helloTimeoutMilliseconds: Int64 = 5000,
-            connectTimeoutMilliseconds: Int64 = 12_000,
-            advertDebounceMilliseconds: Int64 = 1500,
-            maxWriteBytes: Int = 8192,
-            unsightedLinkRssi: Double = -90,
-            absentLinkRssi: Double = -127,
-            replaceMinHoldMilliseconds: Int64 = 30_000,
-            ringIntervalMilliseconds: Int64 = 5000,
-            promotion: PromotionPolicy.Configuration = PromotionPolicy.Configuration(),
-            backoff: ConnectBackoff.Configuration = ConnectBackoff.Configuration(),
-            presence: PresenceTracker.Configuration = PresenceTracker.Configuration()
-        ) {
-            self.helloTimeoutMilliseconds = helloTimeoutMilliseconds
-            self.connectTimeoutMilliseconds = connectTimeoutMilliseconds
-            self.advertDebounceMilliseconds = advertDebounceMilliseconds
-            self.maxWriteBytes = maxWriteBytes
-            self.unsightedLinkRssi = unsightedLinkRssi
-            self.absentLinkRssi = absentLinkRssi
-            self.replaceMinHoldMilliseconds = replaceMinHoldMilliseconds
-            self.ringIntervalMilliseconds = ringIntervalMilliseconds
-            self.promotion = promotion
-            self.backoff = backoff
-            self.presence = presence
-        }
-    }
-
     /// What the mesh needs to hear from the links.
     public enum Event: Sendable, Equatable {
         /// A link came up and its HELLO checked out.
@@ -122,6 +63,8 @@ public final class LinkManager: MeshTransport {
         var trace = LinkTrace()
         /// When the dial or HELLO times out.
         var deadline: Int64?
+        /// Whether that deadline was put off once already, having passed while iOS had the app suspended.
+        var putOff = false
     }
 
     struct Backoff {
@@ -159,6 +102,10 @@ public final class LinkManager: MeshTransport {
     var digestCue: UInt32 = 0
     var advertised: AdvertPayload?
     var advertDue: Int64?
+    /// Whether the app is in the background, where iOS may suspend it (``setInBackground(_:)``).
+    var inBackground = false
+    /// The wakes the current spell of seeking has spent.
+    var spell = SeekSpell()
 
     /// The live channel to `peer`, if linked.
     func liveChannel(to peer: NodeId) -> ChannelID? {
@@ -179,6 +126,12 @@ public final class LinkManager: MeshTransport {
     public internal(set) var rings = 0
     /// Rings of this node's own doorbell.
     public internal(set) var ringsHeard = 0
+    /// Whether the radio is seeking peers (``Radio/seekPeers(_:)``): in the background, with no link and wakes left.
+    public internal(set) var isSeeking = false
+    /// Wakes spent seeking, since the manager was made.
+    public internal(set) var seekWakes = 0
+    /// Times seeking began, since the manager was made.
+    public internal(set) var seekSpells = 0
 
     /// Channels open or opening.
     public var channelCount: Int { channels.count }
@@ -249,6 +202,8 @@ public final class LinkManager: MeshTransport {
         }
         running = true
         radio.start()
+        // Nothing is linked at a start, so the promotion that seeking runs has no link to evict.
+        _ = reconsiderSeeking(now: clock.monotonicMilliseconds())
     }
 
     /// Closes every link and stops the radio. Answers the links that went down.
@@ -259,7 +214,7 @@ public final class LinkManager: MeshTransport {
         let events = forgetEverything()
         running = false
         radio.stop()
-        return events
+        return events + reconsiderSeeking(now: clock.monotonicMilliseconds())
     }
 
     /// Custody changed; re-advertise its digest cue once the burst settles.
@@ -293,10 +248,19 @@ public final class LinkManager: MeshTransport {
     /// Handles what the radio reported, and answers what the mesh needs to know.
     public func handle(_ event: RadioEvent) -> [Event] {
         let now = clock.monotonicMilliseconds()
+        return respond(to: event, now: now) + reconsiderSeeking(now: now)
+    }
+
+    private func respond(to event: RadioEvent, now: Int64) -> [Event] {
         switch event {
         case .state(let state):
             log.log(.info, "link radio \(state)")
-            return state == .on ? [] : forgetEverything()
+            guard state == .on else {
+                return forgetEverything()
+            }
+            // Bluetooth coming back on is a fresh start, for the wakes too.
+            spell = SeekSpell()
+            return []
         case .listening(let psm):
             self.psm = psm
             advertiseNow()
@@ -309,6 +273,9 @@ public final class LinkManager: MeshTransport {
             addresses[sighting.advert.nodeId] = sighting.address
             for index in liveLinks.indices where liveLinks[index].neighbor.nodeId == sighting.advert.nodeId {
                 liveLinks[index].sighted = true
+            }
+            if isSeeking {
+                countSeekWake(now: now)
             }
             return promote(now: now)
         case .connected(let id):
@@ -336,6 +303,9 @@ public final class LinkManager: MeshTransport {
         var events: [Event] = []
         let expired = channels.filter { $0.value.deadline.map { now >= $0 } ?? false }.map(\.key).sorted(by: Self.inOrder)
         for id in expired {
+            if putOffLateDeadline(of: id, now: now) {
+                continue
+            }
             let dialed = channels[id]?.role != .responder
             log.log(.info, "link \(id) timed out")
             events += retire(id, backingOff: dialed, now: now)
@@ -345,6 +315,6 @@ public final class LinkManager: MeshTransport {
             advertiseNow()
         }
         ringDue(now: now)
-        return events + promote(now: now)
+        return events + promote(now: now) + reconsiderSeeking(now: now)
     }
 }

@@ -7,21 +7,26 @@
     // MARK: Scanning
 
     extension BLECore {
-        /// Every advert, every time. A scan filtered on `0xFE30` would match the same peers, Android's service data
-        /// included, but it runs on once Knit leaves the front and wakes Knit for every match, where this one goes
-        /// quiet (P8's scan-filter check, `.agents/context/ble-transport.md`).
+        /// Every advert, every time, unless the link manager seeks peers. A scan filtered on `0xFE30` matches the same
+        /// peers, Android's service data included, but it runs on once Knit leaves the front and wakes Knit for every
+        /// match, where this one goes quiet (P8's scan-filter check, `.agents/context/ble-transport.md`). So the radio
+        /// filters only while seeking, which the link manager bounds (ADR 2026-10.mueg).
         func scan(with central: CBCentralManager) {
-            central.scanForPeripherals(withServices: scanFilter, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+            let filter = wantedScan
+            let services = filter == .knitOnly ? [Self.serviceUUID] : nil
+            central.scanForPeripherals(withServices: services, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+            scanning = filter
             gatt.scanStarted(now: clock.monotonicMilliseconds())
-            log.log(.info, "ble scanning")
+            log.log(.info, filter == .knitOnly ? "ble scanning for 0xFE30 alone" : "ble scanning")
         }
 
-        /// The services a scan asks for: none, so every advert, unless a debug build's scan probe runs (``ScanProbe``).
-        var scanFilter: [CBUUID]? {
+        /// What a scan should ask for: the `0xFE30` UUID alone while seeking, or while a debug build's scan probe runs
+        /// (``ScanProbe``), and every advert otherwise.
+        var wantedScan: ScanFilter {
             #if DEBUG
-                probe.isOn ? [Self.serviceUUID] : nil
+                seeking || probe.isOn ? .knitOnly : .everyAdvert
             #else
-                nil
+                seeking ? .knitOnly : .everyAdvert
             #endif
         }
 
@@ -32,6 +37,16 @@
             }
             central.stopScan()
             scan(with: central)
+        }
+
+        /// The link manager starts or stops seeking peers (``Radio/seekPeers(_:)``): the scan starts again only if its
+        /// filter changes. While the radio is off or stopped the request waits, and ``resume()`` scans on it.
+        func seek(_ on: Bool) {
+            seeking = on
+            guard let scanning, scanning != wantedScan else {
+                return
+            }
+            rescan()
         }
     }
 

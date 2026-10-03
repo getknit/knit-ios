@@ -22,6 +22,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py android-forgets --device SERIAL [--link-timeout 180] [--quiet-timeout 600]
     scripts/interop.py android-rings --device SERIAL [--link dialed|accepted] [--converge-timeout 600] [--arrival-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
+    scripts/interop.py iphone-seek --far hci1|hci0|phone [--device SERIAL] [--mode drop|relink|budget] [--drop kill|radio-off]
     scripts/interop.py bridge  [--udid UDID | --host ADDRESS] [--watch SECONDS] [COMMAND_JSON ...]
 
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
@@ -31,7 +32,8 @@ runs the same items between the iPhone and the peer; `iphone-relay` runs MVP ite
 iPhone, ADR 2026-09.n393); `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
 `iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `iphone-reboot` is item 1's
 relaunch and reboot, with someone to close Knit and unlock the iPhone; `iphone-scan` is P8's scan-filter check, with
-someone to do the same; `bridge` sends that bridge commands by hand and prints what comes back. `iphone-rings` checks
+someone to do the same; `iphone-seek` checks that a locked iPhone with no link finds a peer within its wake budget
+(ADR 2026-10.mueg), with someone to do the same; `bridge` sends that bridge commands by hand and prints what comes back. `iphone-rings` checks
 the doorbell rings an iPhone sends, and `android-rings` those an Android phone sends, with companion change A4.
 `android-reads` is companion change A3's device gate: an Android phone reads the peer's GATT payload and dials it, or
 is dialed, by the id order.
@@ -2178,6 +2180,315 @@ def _ios_still_linked(ios: IPhone, phone_id: str) -> dict:
     return {}
 
 
+def iphone_seek(arguments: argparse.Namespace) -> int:
+    """ADR 2026-10.mueg: a locked iPhone with no link seeks peers, with a scan for the 0xFE30 UUID that resumes Knit at
+    each match, and spends at most eight wakes a spell. Someone locks the iPhone and later unlocks it. The iPhone refuses
+    every node in range but the far side: knit-peer on an adapter, or the Android phone.
+
+    `--mode drop` asks the question under the rest: does a suspended Knit hear a link drop at all? The far side drops
+    the link, its process killed or (`--drop radio-off`) hci1 powered off, and the run reads Knit's log for its
+    `link down` and counts runningboardd's lines on Knit. Knit hears a link it dialed end through a CoreBluetooth
+    delegate, which resumes it, and a link the far side dialed may end unheard. hci1 dials the iPhone (an `ios` peer
+    above it), hci0 is dialed by it (an `android` peer), and the phone follows its build and the ids. `--mode relink`
+    restarts the far side on the same identity, as reinstalling Knit does: Knit must find it and link while still locked,
+    then take a DM the far side rings for. `--mode budget` locks the iPhone with no link beside a far side it cannot
+    link, one that refuses it on hci0 or one it cannot dial on hci1, and the wakes it spends must stop at the budget.
+    Steps that measure rather than check are findings, and never fail."""
+    ios = IPhone(arguments.udid, arguments.host)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    try:
+        ios.start()
+    except TimeoutError:
+        print(json.dumps({"action": "open Knit"}), flush=True)
+        _reopened(ios, arguments.lock_wait)
+    others = others_in_range(ios.node_id) - {ios.node_id}
+    far = _SeekPhone(arguments, ios) if arguments.far == "phone" else _SeekPeer(arguments, ios, others, nonce)
+    refused = sorted(others - {far.node_id})
+    for node in refused:
+        ios.command(cmd="deny-link", peer=node)
+    out = ROOT / ".build" / "iphone-seek"
+    out.mkdir(parents=True, exist_ok=True)
+    knit = IPhoneLog(ios.udid, out / f"knit-{nonce}.log")
+    board = RunningBoardLog(ios.udid, out / f"runningboard-{nonce}.log")
+    before = ios.command(cmd="status")
+    header = {"run": "iphone-seek", "mode": arguments.mode, "far": arguments.far, "drop": arguments.drop, "iphone": ios.node_id}
+    print(json.dumps({**header, "farSide": far.node_id, "refused": refused, "logs": str(out)}), flush=True)
+    try:
+        if arguments.mode != "budget":
+            run.step("link", far.link)
+        try:
+            print(json.dumps({"action": "lock the iPhone"}), flush=True)
+            run.step("iphone-suspended", lambda: _suspended(ios, arguments.lock_wait))
+        finally:
+            ios.stop()
+        dropped = time.time()
+        mark = board.mark()
+        if arguments.mode == "budget":
+            time.sleep(60 * arguments.minutes)
+        else:
+            if arguments.mode == "relink":
+                far.restart()
+            else:
+                far.drop(arguments.drop)
+            run.step("knit-heard-the-drop", lambda: _knit_heard(knit, f"link down {far.node_id}", dropped, 60))
+            if arguments.mode == "relink":
+                run.step(
+                    "relinked-while-locked",
+                    lambda: {**far.relinked(arguments.relink_wait), "afterDrop": round(time.time() - dropped, 1)},
+                )
+                run.step("dm-delivered-while-locked", lambda: far.dm_delivered(f"interop seek {nonce}", 90))
+        run.step("seeking", lambda: _seeking(knit, dropped))
+        run.step("knit-resumed", lambda: board.resumes(mark))
+        print(json.dumps({"action": "unlock the iPhone and open Knit"}), flush=True)
+        opened = run.step("knit-opened", lambda: _reopened(ios, arguments.unlock_wait))
+        if opened is not None:
+            after = ios.command(cmd="status")
+            run.step("counters", lambda: _seek_counters(arguments.mode, before, after))
+    finally:
+        far.stop()
+        knit.stop()
+        board.stop()
+        if ios.socket:
+            for node in refused:
+                ios.command(cmd="allow-link", peer=node)
+        ios.stop()
+    print(json.dumps({"summary": "iphone-seek", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+class _SeekPeer:
+    """knit-peer as the far side of `iphone-seek`. On hci1, the ATS2851, which takes no incoming LE connection, it runs
+    the `ios` profile above the iPhone and dials it, so the iPhone holds the link as a peripheral; in `--mode budget` it
+    runs the `android` profile instead, which the iPhone dials and never reaches. On hci0, shared, it runs the `android`
+    profile, which the iPhone dials; in `--mode budget` it refuses the iPhone."""
+
+    def __init__(self, arguments: argparse.Namespace, ios: IPhone, others: set[str], nonce: str) -> None:
+        if arguments.far == "hci1" and arguments.mode == "relink":
+            sys.exit("the iPhone cannot dial hci1, so it cannot relink there: use --far hci0 or --far phone")
+        if arguments.far == "hci0" and arguments.drop == "radio-off":
+            sys.exit("--drop radio-off powers off hci1 alone: hci0 is the maintainer's, and keeps its power")
+        profile = "ios" if arguments.far == "hci1" and arguments.mode == "drop" else "android"
+        instance = f"iphone-seek-{arguments.far}"
+        self.ios_id = ios.node_id
+        # An `ios` peer dials the iPhone, so it sorts above it; the iPhone dials an `android` one whatever the order.
+        self.node_id = _keygen(instance, "--above", max(others | {ios.node_id}))
+        refuse = set(others) | ({ios.node_id} if arguments.mode == "budget" and arguments.far == "hci0" else set())
+        adapter = HCI0 if arguments.far == "hci0" else []
+        self.peer = Peer(profile, f"knit-peer seek {nonce}", refuse, arguments.peer_log, arguments.rssi_floor, instance, adapter)
+        self.peer.start()
+        self.powered_off = False
+
+    def link(self) -> dict:
+        return _timed(lambda: self.peer.lines(lambda line: _link(line, self.ios_id)), 180)
+
+    def drop(self, how: str) -> None:
+        if how == "radio-off":
+            _ats2851_power(on=False)
+            self.powered_off = True
+            self.peer.wait(lambda line: line.get("event") == "radio" and line.get("state") == "off", 15)
+        else:
+            self.kill()
+
+    def kill(self) -> None:
+        """Ends knit-peer at once, as a crash or an uninstall does: no quit, so nothing closes the link first."""
+        if self.peer.process and self.peer.process.poll() is None:
+            self.peer.process.kill()
+            self.peer.process.wait(timeout=10)
+        self.peer.process = None
+        with self.peer.arrived:
+            self.peer.seen.clear()
+
+    def restart(self) -> None:
+        """Ends knit-peer at once and starts it again on the same identity, as reinstalling Knit on a phone does."""
+        self.kill()
+        time.sleep(5)
+        self.peer.start()
+
+    def relinked(self, timeout: float) -> dict:
+        return _timed(lambda: self.peer.lines(lambda line: _link(line, self.ios_id)), timeout)
+
+    def dm_delivered(self, body: str, timeout: float) -> dict:
+        frame = self.peer.command(cmd="dm", to=self.ios_id, text=body)["id"]
+        return _timed(lambda: self.peer.lines(lambda line: line.get("event") == "delivered" and line.get("id") == frame), timeout)
+
+    def stop(self) -> None:
+        if self.powered_off:
+            _ats2851_power(on=True)
+        self.peer.stop()
+
+
+def _ats2851_power(on: bool) -> None:
+    """Powers the ATS2851 on or off through BlueZ, found by its address. Not through knit-hci: it finds the adapter in
+    `hcitool dev`, which lists only adapters that are up, so it cannot power one back on."""
+    for index in range(8):
+        path = f"/org/bluez/hci{index}"
+        address = subprocess.run(
+            ["busctl", "get-property", "org.bluez", path, "org.bluez.Adapter1", "Address"], capture_output=True, text=True, check=False
+        ).stdout.strip()
+        if address == f's "{HCI1_ADDRESS}"':
+            power = ["busctl", "set-property", "org.bluez", path, "org.bluez.Adapter1", "Powered", "b", "true" if on else "false"]
+            subprocess.run(power, check=True)
+            return
+    raise RuntimeError(f"BlueZ has no adapter at {HCI1_ADDRESS}")
+
+
+class _SeekPhone:
+    """The Android phone as the far side of `iphone-seek`, through knit-next's debug bridge. Whether it dials the
+    iPhone or the iPhone dials it follows from their ids and its build, since A3 reads the iPhone's payload. `drop`
+    force-stops Knit, as reinstalling it does, and `restart` opens it again."""
+
+    def __init__(self, arguments: argparse.Namespace, ios: IPhone) -> None:
+        if arguments.mode == "budget":
+            sys.exit("--mode budget needs a far side the iPhone cannot link: use --far hci1 or --far hci0")
+        if arguments.drop == "radio-off":
+            sys.exit("--drop radio-off powers off hci1 alone: use --far hci1")
+        self.phone = Phone(arguments.device)
+        self.ios_id = ios.node_id
+        self.node_id = self.phone.state()["self"]["nodeId"]
+        self.stopped = False
+
+    def link(self) -> dict:
+        return _timed(self._linked, 180)
+
+    def _linked(self) -> bool:
+        try:
+            reachable = self.phone.state().get("reachable", [])
+        except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError):
+            return False
+        return any(peer["nodeId"] == self.ios_id for peer in reachable)
+
+    def drop(self, _how: str) -> None:
+        self.phone.shell(f"am force-stop {PACKAGE}")
+        self.stopped = True
+
+    def restart(self) -> None:
+        self.drop("kill")
+        time.sleep(5)
+        self.phone.shell(f"am start -n {PACKAGE}/.MainActivity")
+        self.stopped = False
+
+    def relinked(self, timeout: float) -> dict:
+        return _timed(self._linked, timeout)
+
+    def dm_delivered(self, body: str, timeout: float) -> dict:
+        self.phone.wake()
+        self.phone.send(body, conversation=self.ios_id)
+
+        def ticked() -> bool:
+            try:
+                messages = self.phone.state(self.ios_id, limit=20).get("messages", [])
+            except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError):
+                return False
+            return any(message["body"] == body and message.get("received") for message in messages)
+
+        return _timed(ticked, timeout)
+
+    def stop(self) -> None:
+        if self.stopped:
+            self.phone.shell(f"am start -n {PACKAGE}/.MainActivity")
+
+
+class RunningBoardLog:
+    """runningboardd's lines about Knit from the iPhone's unified log, kept as they come. bluetoothd takes an assertion on
+    Knit to deliver it each Bluetooth event, a ring, a disconnect or a scan's match, and runningboardd resumes it for
+    about 10 s (`.agents/context/linux-peer.md`, P8's scan-filter check). The raw lines stay in the file, since the
+    wording varies across iOS releases."""
+
+    def __init__(self, udid: str, path: Path) -> None:
+        self.path = path
+        self.file = open(path, "a", encoding="utf-8")  # noqa: SIM115 - lives with the process
+        self.process = subprocess.Popen(
+            # Line-buffered: runningboardd says little, and a block-buffered file would hold a run's lines past its end.
+            ["stdbuf", "-oL", "idevicesyslog", "-u", udid, "-p", "runningboardd", "-m", "getknit", "--no-colors"],
+            stdout=self.file,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+        )
+
+    def mark(self) -> int:
+        """Where the file ends now, for `resumes`."""
+        self.file.flush()
+        return self.path.stat().st_size
+
+    def resumes(self, mark: int) -> dict:
+        """A finding: since `mark`, the assertions bluetoothd took on Knit, each a resume for a Bluetooth event, when
+        they came, and how long Knit ran in all before runningboardd suspended it again."""
+        self.file.flush()
+        with open(self.path, encoding="utf-8", errors="replace") as log:
+            log.seek(mark)
+            lines = log.read().splitlines()
+        woken = [line.split()[2] for line in lines if "Acquiring assertion" in line and "com.apple.bluetoothd" in line]
+        changes = [(line.split()[2], "Resuming task" in line) for line in lines if "Resuming task" in line or "Suspending task" in line]
+        running, started = 0, None
+        for at, resumed in changes:
+            seconds = _clock_seconds(at)
+            if resumed and started is None:
+                started = seconds
+            elif not resumed and started is not None:
+                running += (seconds - started) % 86400
+                started = None
+        return {"bluetoothdAssertions": len(woken), "at": woken[:20], "secondsRunning": running}
+
+    def stop(self) -> None:
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+        self.file.close()
+
+
+def _clock_seconds(at: str) -> int:
+    """Seconds into the day of a syslog `HH:MM:SS`."""
+    hours, minutes, seconds = (int(part) for part in at.split(":"))
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def _knit_heard(knit: IPhoneLog, needle: str, since: float, timeout: float) -> dict:
+    """A finding: whether Knit logged `needle` within `timeout` of `since`, the iPhone locked all the while, and when."""
+    deadline = time.monotonic() + timeout
+    while True:
+        knit.file.flush()
+        for entry in IPhoneLog.entries(knit.path):
+            if needle in entry["message"] and entry.get("ms", 0) / 1000 >= since - 1:
+                return {"heard": True, "after": round(entry["ms"] / 1000 - since, 1)}
+        if time.monotonic() > deadline:
+            return {"heard": False}
+        time.sleep(2)
+
+
+def _seeking(knit: IPhoneLog, since: float) -> dict:
+    """A finding: what Knit's link manager said of seeking since `since`, and how many wakes it counted."""
+    knit.file.flush()
+    prefixes = ("link seeking", "link seek wake", "link in the background", "link at the front")
+    said = [
+        entry["message"]
+        for entry in IPhoneLog.entries(knit.path)
+        if entry.get("ms", 0) / 1000 >= since - 1 and entry["message"].startswith(prefixes)
+    ]
+    return {"wakes": sum(1 for line in said if line.startswith("link seek wake")), "said": said[:40]}
+
+
+def _seek_counters(mode: str, before: dict, after: dict, budget: int = 8) -> dict:
+    """What Knit counted while locked, from its status before and after: it stopped seeking at the front, a relink held,
+    and a budget run spent no more wakes than the budget."""
+    detail = {
+        "spells": after.get("seekSpells", 0) - before.get("seekSpells", 0),
+        "wakes": after.get("seekWakes", 0) - before.get("seekWakes", 0),
+        "seeking": after.get("seeking"),
+        "links": after.get("links"),
+    }
+    if after.get("seeking"):
+        raise RuntimeError(f"Knit is at the front and still seeking: {detail}")
+    if mode == "relink" and after.get("links", 0) < 1:
+        raise RuntimeError(f"the relink did not hold: {detail}")
+    if mode == "budget" and detail["wakes"] > budget:
+        raise RuntimeError(f"seeking spent more than its {budget} wakes: {detail}")
+    return detail
+
+
 def _ios_linked(ios: IPhone, phone: Phone, phone_id: str, timeout: float = 120) -> dict:
     started = time.monotonic()
 
@@ -4204,6 +4515,17 @@ def main() -> int:
     scan.add_argument("--first", default="android", choices=["android", "ios"], help="which peer starts first once the iPhone is locked")
     scan.add_argument("--lock-wait", type=float, default=900, help="how long to wait for someone to lock the iPhone")
     scan.add_argument("--unlock-wait", type=float, default=1800, help="how long to wait for someone to open Knit again")
+    seek = commands.add_parser("iphone-seek")
+    seek.add_argument("--far", required=True, choices=["hci1", "hci0", "phone"], help="the far side: knit-peer on an adapter, or the phone")
+    seek.add_argument("--device", help="the adb serial of a phone the maintainer approved for this session; needed with --far phone")
+    seek.add_argument("--mode", default="drop", choices=["drop", "relink", "budget"], help="what happens once the iPhone is locked")
+    seek.add_argument("--drop", default="kill", choices=["kill", "radio-off"], help="how --mode drop ends the link; radio-off is hci1's")
+    seek.add_argument("--minutes", type=float, default=10, help="how long --mode budget keeps the iPhone locked")
+    seek.add_argument("--relink-wait", type=float, default=300, help="how long --mode relink waits for the link while locked")
+    seek.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    seek.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
+    seek.add_argument("--lock-wait", type=float, default=900, help="how long to wait for someone to lock the iPhone")
+    seek.add_argument("--unlock-wait", type=float, default=1800, help="how long to wait for someone to open Knit again")
     reads = commands.add_parser("android-reads")
     reads.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     reads.add_argument("--order", default="peer-below", choices=["peer-below", "peer-above"], help="where the peer's id sorts against the phone's")
@@ -4243,7 +4565,7 @@ def main() -> int:
         choices=["dialed", "accepted"],
         help="a link the phone dialed after reading the peer's payload (A3), or one it accepted from a peer it never sights",
     )
-    for sub in (ios, wake, reboot, rings, scan, by_hand, ios_peer, ios_soak, ios_forgets, commands.choices["iphone-relay"], commands.choices["iphone-group"]):
+    for sub in (ios, wake, reboot, rings, scan, seek, by_hand, ios_peer, ios_soak, ios_forgets, commands.choices["iphone-relay"], commands.choices["iphone-group"]):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
         sub.add_argument(
             "--host",
@@ -4253,6 +4575,8 @@ def main() -> int:
     arguments = parser.parse_args()
     if arguments.command == "iphone-wake" and arguments.sender == "phone" and not arguments.device:
         parser.error("--sender phone needs --device")
+    if arguments.command == "iphone-seek" and arguments.far == "phone" and not arguments.device:
+        parser.error("--far phone needs --device")
     if arguments.command == "android-reads" and arguments.links > 1 and arguments.order != "peer-above":
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
     if arguments.command in ("iphone", "iphone-wake", "iphone-reboot", "bridge"):
@@ -4275,6 +4599,8 @@ def main() -> int:
         return android_forgets(arguments)
     if arguments.command == "iphone-scan":
         return iphone_scan(arguments)
+    if arguments.command == "iphone-seek":
+        return iphone_seek(arguments)
     global RECEIVE_MTU, SEND_MTU  # noqa: PLW0603 - two knobs, read by Peer.start
     RECEIVE_MTU = arguments.receive_mtu
     SEND_MTU = arguments.send_mtu

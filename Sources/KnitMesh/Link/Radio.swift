@@ -132,6 +132,12 @@ public protocol Radio: AnyObject, Sendable {
     /// node, since a new node took that address (``GattPayloads/helloNamed(_:at:)``). A refusal carries no HELLO, so
     /// it never comes here.
     func heardHello(from node: NodeId, on channel: ChannelID)
+
+    /// Whether to seek peers while the app is in the background, where iOS may suspend it: scan for the `0xFE30` UUID
+    /// alone, which iOS keeps running there and which resumes the app at each match, instead of a scan for every advert,
+    /// which iOS silences there. The link manager asks while it holds no link and has wakes left to spend
+    /// (ADR 2026-10.mueg). A radio whose app is never suspended does nothing.
+    func seekPeers(_ seeking: Bool)
 }
 
 extension Radio {
@@ -148,5 +154,10 @@ extension Radio {
     /// Keeps nothing: a radio that reads no GATT payloads has none to forget.
     public func heardHello(from _: NodeId, on _: ChannelID) {
         // A radio that reads GATT payloads implements this.
+    }
+
+    /// Seeks nothing: a radio whose app iOS never suspends hears every advert anyway.
+    public func seekPeers(_: Bool) {
+        // KnitBLE implements this; BlueZ and the test radios run in processes nothing suspends.
     }
 }

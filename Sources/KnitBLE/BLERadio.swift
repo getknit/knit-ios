@@ -80,12 +80,24 @@
         public func heardHello(from node: NodeId, on channel: ChannelID) {
             core.onQueue { $0.heardHello(node, on: channel) }
         }
+
+        public func seekPeers(_ seeking: Bool) {
+            core.onQueue { $0.seek(seeking) }
+        }
     }
 
     /// The radio's state and CoreBluetooth's delegates, all on ``queue``.
     internal final class BLECore: NSObject, @unchecked Sendable {
         // @unchecked: every mutable member is read and written on `queue` only, which is also the queue CoreBluetooth
         // calls the delegates on. `nextChannel` is the exception, and is atomic.
+
+        /// What a scan asks for.
+        enum ScanFilter {
+            /// Every advert: iOS reports nothing of it while Knit is in the background.
+            case everyAdvert
+            /// The `0xFE30` UUID alone, which iOS keeps scanning for in the background, resuming Knit at each match.
+            case knitOnly
+        }
 
         struct Dial {
             let peripheral: UUID
@@ -102,6 +114,8 @@
         static let managerCount = 2
         /// CoreBluetooth's RSSI when it has no reading.
         static let noReading = 127
+        /// How long the connection a GATT payload was read over stays up for a dial that may follow the read.
+        static let readReleaseGraceMilliseconds = 2000
 
         let queue = DispatchQueue(label: "app.getknit.knit.ble")
         let emit: @Sendable (RadioEvent) -> Void
@@ -127,11 +141,19 @@
         /// under. An accepted link's is its central's identifier, which CoreBluetooth gives the same device in both
         /// roles.
         var peers: [ChannelID: UUID] = [:]
+        /// The device at the far end of each accepted link, connected as a peripheral as well, so that the end of the
+        /// link's connection reaches `didDisconnectPeripheral` (``attach(_:to:)``).
+        var attached: [ChannelID: UUID] = [:]
         var doorbells = Doorbells()
         var gatt = GattPayloads()
         var gattTarget: UUID?
         var gattReads = 0
         var publishing = false
+        /// Whether the link manager seeks peers, so the scan asks for the `0xFE30` UUID alone (``seek(_:)``).
+        var seeking = false
+        /// What the scan this process started asks for, or `nil` before it starts one. A relaunch to restore Bluetooth
+        /// may find iOS still running the last process's scan, with whatever filter it had.
+        var scanning: ScanFilter?
         var psm: UInt16?
         var wantedValue: [UInt8]?
         var servedValue: [UInt8]?
@@ -173,6 +195,7 @@
         func stop() {
             running = false
             central?.stopScan()
+            scanning = nil
             gatt.scanStopped(now: clock.monotonicMilliseconds())
             for peripheral in peripherals.values where peripheral.state != .disconnected {
                 central?.cancelPeripheralConnection(peripheral)
@@ -197,6 +220,10 @@
                 return
             }
             if !central.isScanning {
+                scan(with: central)
+            } else if scanning != wantedScan {
+                // A scan iOS restored, or one asked for before the radio went off: its filter may not be the one wanted.
+                central.stopScan()
                 scan(with: central)
             }
             if psm == nil, !publishing {
@@ -228,6 +255,7 @@
             log.log(.info, "ble \(state)")
             if state != .on {
                 gatt.scanStopped(now: clock.monotonicMilliseconds())
+                scanning = nil
                 forgetLinks()
                 psm = nil
                 publishing = false
@@ -245,6 +273,7 @@
             links.removeAll()
             owners.removeAll()
             peers.removeAll()
+            attached.removeAll()
             dials.removeAll()
             doorbells = Doorbells()
             gatt.cancel()

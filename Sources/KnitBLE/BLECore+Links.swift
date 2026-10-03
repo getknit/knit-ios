@@ -16,10 +16,7 @@
             }
             link.close()
             emit(.closed(channel))
-            peers[channel] = nil
-            if let owner = owners.removeValue(forKey: channel) {
-                releaseIfIdle(owner)
-            }
+            forgetConnection(of: channel)
         }
 
         /// Starts a link over an open channel, dialed or accepted, once its opening is reported.
@@ -44,15 +41,61 @@
                 return
             }
             emit(.closed(id))
+            forgetConnection(of: id)
+        }
+
+        /// Lets go of the connection under a link that is over, dialed or attached.
+        private func forgetConnection(of id: ChannelID) {
             peers[id] = nil
             if let owner = owners.removeValue(forKey: id) {
                 releaseIfIdle(owner)
+            }
+            if let device = attached.removeValue(forKey: id) {
+                releaseIfIdle(device)
+            }
+        }
+
+        /// Connects to the device at the far end of an accepted link as a peripheral too, which CoreBluetooth does over
+        /// the link the device already holds. The end of that connection reaches `didDisconnectPeripheral`, a delegate
+        /// event that resumes a suspended Knit. Without it, the end of a link the far side dialed reaches Knit only
+        /// through the channel's streams, which wait until Knit next runs: on 2026-10-02 a link that ended while the
+        /// iPhone was locked went unheard for four minutes, until Knit was opened, so Knit never knew to seek peers
+        /// (`interop.py iphone-seek --mode drop`, ADR 2026-10.mueg). CoreBluetooth gives a device one identifier in
+        /// both roles.
+        func attach(_ id: ChannelID, to device: UUID) {
+            guard let central, let peripheral = peripherals[device] ?? central.retrievePeripherals(withIdentifiers: [device]).first else {
+                log.log(.info, "ble cannot watch \(id)'s connection: CoreBluetooth knows no peripheral \(device)")
+                return
+            }
+            peripherals[device] = peripheral
+            attached[id] = device
+            peripheral.delegate = self
+            log.log(.info, "ble watching \(id)'s connection to \(device), \(Self.describe(peripheral.state))")
+            if peripheral.state == .disconnected {
+                central.connect(peripheral)
+            }
+        }
+
+        /// A peripheral's state, for the log.
+        static func describe(_ state: CBPeripheralState) -> String {
+            switch state {
+            case .connected:
+                "connected"
+            case .connecting:
+                "connecting"
+            case .disconnecting:
+                "disconnecting"
+            case .disconnected:
+                "disconnected"
+            @unknown default:
+                "state \(state.rawValue)"
             }
         }
 
         /// Whether a dial, a link or the GATT read in progress uses the connection to `uuid`.
         func inUse(_ uuid: UUID) -> Bool {
             gattTarget == uuid || dials.values.contains { $0.peripheral == uuid } || owners.values.contains(uuid)
+                || attached.values.contains(uuid)
         }
 
         /// Drops the connection to `uuid` once nothing uses it, so the controller is free for the next.

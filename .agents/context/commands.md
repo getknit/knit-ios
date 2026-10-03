@@ -84,6 +84,9 @@ python3 scripts/interop.py android-reads --device <serial> --order peer-above --
 python3 scripts/interop.py android-forgets --device <serial>     # A3's gate: each forget rule of the payload lifetime fires once on the phone
 python3 scripts/interop.py iphone-forgets --hci0                 # each forget rule fires once on the iPhone (hci0 needs its go-ahead)
 python3 scripts/interop.py iphone-scan --first ios --away-window 150   # P8's scan-filter check: peers on hci0 and hci1; someone locks the iPhone
+python3 scripts/interop.py iphone-seek --far hci1 --mode drop [--drop radio-off]   # does a locked Knit hear a link a peer dialed end? someone locks the iPhone
+python3 scripts/interop.py iphone-seek --far hci0|phone --mode relink [--device <serial>]   # the far side restarts; Knit relinks while locked (go-ahead)
+python3 scripts/interop.py iphone-seek --far hci1 --mode budget --minutes 10   # no link, a peer it cannot dial: seeking stops at eight wakes
 python3 scripts/interop.py bridge '{"cmd":"status"}' --watch 60   # the iPhone's bridge by hand: replies, then events
 python3 scripts/interop.py bridge '{"cmd":"wifi-pin"}'           # over USB: let the bridge listen on Wi-Fi on this network
 python3 scripts/interop.py bridge --host <phone-ip> '{"cmd":"wifi"}'   # over Wi-Fi: the network, its pin, the listener

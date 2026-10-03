@@ -18,6 +18,8 @@
             }
             .onChange(of: scenePhase) { _, phase in
                 delegate.launch.setActive(phase == .active)
+                // Inactive, under Control Center or an alert, is still on screen: only the background seeks peers.
+                delegate.launch.setInBackground(phase == .background)
             }
         }
     }

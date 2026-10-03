@@ -24,6 +24,12 @@
         let replaceIdentity: IdentityReplacer?
         /// The CoreBluetooth radio, which a demo has none of.
         private let radio: BLERadio?
+        /// The mesh, which hears whether Knit is in the background so that its links seek peers there
+        /// (ADR 2026-10.mueg).
+        private let mesh: Mesh
+        /// Knit going to the background and coming back, in order: one task hands each to the mesh, so a quick toggle
+        /// cannot overtake the one before it.
+        private let phases = AsyncStream<Bool>.makeStream()
         private var listening: Task<Void, Never>?
         #if DEBUG
             /// The debug bridge, which a computer reaches over USB, or over Wi-Fi on a network pinned over USB.
@@ -32,6 +38,7 @@
 
         private init(
             session: AppSession,
+            mesh: Mesh,
             radio: BLERadio?,
             preferences: any AppPreferences,
             notifier: LocalNotifier,
@@ -39,6 +46,7 @@
             replaceIdentity: IdentityReplacer?
         ) {
             self.session = session
+            self.mesh = mesh
             self.radio = radio
             self.preferences = preferences
             self.notifier = notifier
@@ -59,6 +67,15 @@
             }
             let running = session
             listening = Task { await running.listen() }
+            let node = mesh
+            let changes = phases.stream
+            Task {
+                for await background in changes {
+                    await node.setInBackground(background)
+                }
+            }
+            // A relaunch to restore Bluetooth runs in the background, with no scene to say so.
+            setInBackground(UIApplication.shared.applicationState == .background)
             #if DEBUG
                 bridge?.start()
             #endif
@@ -73,6 +90,12 @@
             #if DEBUG
                 bridge?.start()
             #endif
+        }
+
+        /// Knit went to the background, where iOS may suspend it, or came back. Control Center or an alert over Knit is
+        /// neither: Knit is still on screen, and Android still finds it.
+        func setInBackground(_ background: Bool) {
+            phases.continuation.yield(background)
         }
 
         /// Knit left the front. Only a debug build's scan probe wants to know.
@@ -169,6 +192,7 @@
                 identity: OwnIdentity(bundle: parts.identity.bundle), stores: parts.stores, mesh: service, notifier: alerts)
             let environment = AppEnvironment(
                 session: app,
+                mesh: node,
                 radio: parts.radio as? BLERadio,
                 preferences: parts.preferences,
                 notifier: alerts,

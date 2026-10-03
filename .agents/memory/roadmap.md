@@ -355,14 +355,15 @@ explicit direction.** Update this file in the change that ships an item.
 - **Moderation, block and report.** App Store rule 1.2 requires them before a store build.
 - **App Store readiness:** the privacy manifest, the export-compliance answers and the review notes. The
   GPL exception is already in place.
-- **Background discovery:** a locked iPhone's scan filtered on `0xFE30` finds Android phones and other Knit peers,
-  in 30 to 120 s, but wakes Knit for every match (P8's scan-filter check, `.agents/context/linux-peer.md`). It
-  needs a design that bounds the wakes, such as filtering only while Knit has too few links. It will also meet a
-  limit A3 leaves: an Android phone that sets `FLAG_DIALS_GATT_PEERS` cannot see a backgrounded iPhone, whose UUID
-  sits in Apple's overflow area, so a backgrounded iPhone whose id sorts below the phone's waits for a dial that
-  cannot come. Today that costs nothing, since a backgrounded iPhone's unfiltered scan finds no new peers either.
-  Once background discovery lands, `weDial` must ignore a service-data peer's flag while Knit is in the background.
+- **Background discovery, the rest of it:** a locked iPhone with no link now seeks peers, scanning for `0xFE30`
+  alone and dialing what it finds, whatever the order, within eight wakes a spell (ADR 2026-10.mueg). Three things
+  stay open. Discovery while it holds links: near five phones the filtered scan kept Knit running three quarters of
+  the time (P8's scan-filter check, `.agents/context/linux-peer.md`). Seeking again once the budget is spent,
+  perhaps from `BGAppRefreshTask`. And a far side that keeps its connection after its app dies: the iPhone then never
+  hears the link end while suspended (Android drops it; BlueZ with a GATT client of its own is untried), and a fix
+  that needs the far side's help becomes a Track A item.
 - **An iPhone below a flagged Android phone waits for its dial,** the iPhone's twin of knit-next #103, and stays open
-  as a later Track A item: #103 lets only a lonely Android phone dial a peer above it.
+  as a later Track A item: #103 lets only a lonely Android phone dial a peer above it. In the background a lonely
+  iPhone dials it anyway (ADR 2026-10.mueg).
 - **Never on iOS:** Wi-Fi Aware, the BLE side channel, spool relays and commons, LoRa, and Wi-Fi Direct.
   These are ADR-recorded scope decisions, not a backlog.

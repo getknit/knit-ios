@@ -20,6 +20,7 @@ final class FakeRadio: Radio {
         case closed(ChannelID)
         case rang(ChannelID)
         case heardHello(NodeId, ChannelID)
+        case sought(Bool)
     }
 
     private struct State {
@@ -31,6 +32,7 @@ final class FakeRadio: Radio {
         var closed: [ChannelID] = []
         var rings: [ChannelID] = []
         var hellos: [HeardHello] = []
+        var seeks: [Bool] = []
         var nextChannel: UInt64 = 1
     }
 
@@ -66,6 +68,8 @@ final class FakeRadio: Radio {
     var rings: [ChannelID] { state.withLock { $0.rings } }
     /// Every HELLO the link manager said it read, in order.
     var hellos: [HeardHello] { state.withLock { $0.hellos } }
+    /// Every change of seeking asked, in order.
+    var seeks: [Bool] { state.withLock { $0.seeks } }
 
     /// A HELLO the link manager reported (``Radio/heardHello(from:on:)``).
     struct HeardHello: Equatable {
@@ -126,6 +130,11 @@ final class FakeRadio: Radio {
     func heardHello(from node: NodeId, on channel: ChannelID) {
         state.withLock { $0.hellos.append(HeardHello(node: node, channel: channel)) }
         recorder.yield(.heardHello(node, channel))
+    }
+
+    func seekPeers(_ seeking: Bool) {
+        state.withLock { $0.seeks.append(seeking) }
+        recorder.yield(.sought(seeking))
     }
 
     /// The size of each write on `channel`.

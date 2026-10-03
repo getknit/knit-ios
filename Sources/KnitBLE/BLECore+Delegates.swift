@@ -119,6 +119,7 @@
             let id = newChannel()
             emit(.accepted(id))
             adopt(channel, as: id, owner: nil)
+            attach(id, to: channel.peer.identifier)
         }
     }
 
@@ -156,6 +157,9 @@
 
         func centralManager(_: CBCentralManager, didConnect peripheral: CBPeripheral) {
             peripheral.delegate = self
+            for (channel, device) in attached where device == peripheral.identifier {
+                log.log(.info, "ble watching \(channel)'s connection to \(device), connected")
+            }
             openPending(on: peripheral)
             if gattTarget == peripheral.identifier {
                 peripheral.discoverServices([Self.serviceUUID])
@@ -164,6 +168,10 @@
 
         func centralManager(_: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: (any Error)?) {
             log.log(.info, "ble could not connect \(peripheral.identifier): \(error.map { "\($0)" } ?? "no reason")")
+            // The link may still be up on its channel; only its end goes unwatched.
+            for (channel, device) in attached where device == peripheral.identifier {
+                attached[channel] = nil
+            }
             failDials(on: peripheral.identifier)
             finishGattRead(peripheral.identifier, .failed)
         }
@@ -173,8 +181,11 @@
             doorbells.forget(uuid)
             failDials(on: uuid)
             finishGattRead(uuid, .failed)
-            for (channel, owner) in owners where owner == uuid {
-                // Says why a link on a peer we dialed ended; `interop.py iphone-soak` reads it.
+            // Dialed links and accepted ones alike. Says why a link ended; `interop.py iphone-soak` reads it.
+            let under =
+                owners.filter { $0.value == uuid }.keys.sorted { $0.rawValue < $1.rawValue }
+                + attached.filter { $0.value == uuid }.keys.sorted { $0.rawValue < $1.rawValue }
+            for channel in under {
                 log.log(.info, "ble \(channel) lost its connection: \(error.map { "\($0)" } ?? "no reason")")
                 ended(channel)
             }
@@ -291,9 +302,15 @@
                 return
             }
             log.log(.info, "ble read \(advert.nodeId) on PSM \(advert.psm) from \(uuid) over GATT")
-            finishGattRead(uuid, .read(advert))
             let strength = strengths[uuid] ?? Int(LinkManager.Configuration().unsightedLinkRssi)
             emit(.sighted(RadioSighting(address: RadioAddress(uuid.uuidString), advert: advert, rssi: strength)))
+            gatt.finish(RadioAddress(uuid.uuidString), .read(advert), now: clock.monotonicMilliseconds())
+            gattTarget = nil
+            // A seeking link manager dials on this sighting, and its dial reaches this queue a moment from now. Dropped
+            // now, the connection's end would fail that dial (``failDials(on:)``), so it waits to see if one comes.
+            queue.asyncAfter(deadline: .now() + .milliseconds(Self.readReleaseGraceMilliseconds)) { [weak self] in
+                self?.releaseIfIdle(uuid)
+            }
         }
 
         /// Records how the read of `uuid` ended, and drops its connection unless something else uses it.

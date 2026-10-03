@@ -21,6 +21,7 @@ struct LinkRig {
         advertisesServiceData: Bool = true,
         dialsGattPeers: Bool = true,
         servesDoorbell: Bool = false,
+        background: Bool = false,
         configuration: LinkManager.Configuration = LinkManager.Configuration()
     ) {
         radio = FakeRadio(advertisesServiceData: advertisesServiceData, dialsGattPeers: dialsGattPeers, servesDoorbell: servesDoorbell)
@@ -34,6 +35,9 @@ struct LinkRig {
             log: log
         )
         links.start()
+        if background {
+            _ = links.setInBackground(true)
+        }
     }
 
     func handle(_ event: RadioEvent) -> [LinkManager.Event] {

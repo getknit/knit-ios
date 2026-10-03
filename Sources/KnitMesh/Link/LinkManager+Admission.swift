@@ -32,7 +32,7 @@ extension LinkManager {
             candidates: candidates(snapshots, busy: occupied),
             links: links,
             backoff: backingOff(now: now),
-            configuration: configuration.promotion
+            configuration: promotionConfiguration
         )
         var events: [Event] = []
         for node in decision.evict {
@@ -55,7 +55,7 @@ extension LinkManager {
         let wait = PromotionPolicy.untilDwellEnds(
             candidates: candidates(snapshots, busy: busy),
             backoff: backingOff(now: now),
-            configuration: configuration.promotion
+            configuration: promotionConfiguration
         )
         return wait.map { now + $0 }
     }
@@ -65,10 +65,13 @@ extension LinkManager {
         Set(liveLinks.map(\.neighbor.nodeId)).union(dialing.keys)
     }
 
-    /// The sighted peers promotion may pick: ours to dial, not `busy`, and not refused.
+    /// The sighted peers promotion may pick: ours to dial, or any while seeking (``dialsWhateverTheOrder``), not `busy`,
+    /// and not refused.
     func candidates(_ snapshots: [PresenceTracker.Snapshot], busy: Set<NodeId>) -> [PresenceTracker.Snapshot] {
-        snapshots.filter { snapshot in
-            weDial(snapshot.nodeId, flags: snapshot.advert.flags) && !busy.contains(snapshot.nodeId) && !refused.contains(snapshot.nodeId)
+        let anyOrder = dialsWhateverTheOrder
+        return snapshots.filter { snapshot in
+            (anyOrder || weDial(snapshot.nodeId, flags: snapshot.advert.flags)) && !busy.contains(snapshot.nodeId)
+                && !refused.contains(snapshot.nodeId)
         }
     }
 
@@ -96,6 +99,7 @@ extension LinkManager {
         writeHello(on: id)
         channels[id]?.stage = .awaitingHello
         channels[id]?.deadline = now + configuration.helloTimeoutMilliseconds
+        channels[id]?.putOff = false
     }
 
     // MARK: Refusals
@@ -107,13 +111,14 @@ extension LinkManager {
         refused.insert(peer)
         let now = clock.monotonicMilliseconds()
         let theirs = channels.filter { $0.value.stage == .live(peer) || $0.value.role == .dialer(peer) }
-        return theirs.keys.sorted(by: Self.inOrder).flatMap { retire($0, backingOff: false, now: now) }
+        return theirs.keys.sorted(by: Self.inOrder).flatMap { retire($0, backingOff: false, now: now) } + reconsiderSeeking(now: now)
     }
 
     /// Lets `peer` link again, and dials it now if the promotion rules say so.
     public func permit(_ peer: NodeId) -> [Event] {
         refused.remove(peer)
-        return promote(now: clock.monotonicMilliseconds())
+        let now = clock.monotonicMilliseconds()
+        return promote(now: now) + reconsiderSeeking(now: now)
     }
 
     // MARK: Records

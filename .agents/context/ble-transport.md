@@ -163,15 +163,18 @@ radio.
   foreground iPhone whose payload it has read. That iPhone has sighted the phone's advert too, so it refuses the
   dial and dials the phone itself. An iPhone below a flagged phone gets no such rule, and still waits for the phone to dial
   (`.agents/memory/roadmap.md`).
-- **Backgrounded iPhones are not rediscovered.** An iOS app in the background loses its local name, and its
-  service UUID moves to an overflow area that only an iOS scan for that UUID sees. Open L2CAP links survive
-  backgrounding with the `bluetooth-central` and `bluetooth-peripheral` modes.
+- **No one rediscovers a backgrounded iPhone.** An iOS app in the background loses its local name, and its
+  service UUID moves to an overflow area that only an iOS scan for that UUID sees: not Android, not BlueZ, and not
+  an iPhone at the front, which scans for every advert. Open L2CAP links survive backgrounding with the
+  `bluetooth-central` and `bluetooth-peripheral` modes.
 - **A locked iPhone can find peers, at a price.** iOS scans in the background only for named services. A scan
   filtered on `0xFE30` matches Android's advert, which carries the UUID only as service data, and a UUID list too
   (P8's scan-filter check, `.agents/context/linux-peer.md`). Locked, it found each new peer 30 to 120 s after the
   peer appeared, and each match woke Knit for about 10 s. Among five Android phones Knit ran three quarters of
   the time, where the unfiltered scan, which goes quiet in the background, let it sleep for 14 minutes. So Knit
-  scans unfiltered, and background discovery waits for a design that bounds the wakes.
+  scans unfiltered, and filters only while it seeks: in the background, with no link, and at most eight wakes a
+  spell (ADR 2026-10.mueg). Seeking dials a peer on its first sighting and whatever the order, since the peer that
+  the order picks cannot see the iPhone.
 - **A suspended app gets nothing on its links, until a peer rings.** Data arriving on an L2CAP channel does not
   wake a suspended Knit. It waits on the link, and arrives when Knit next comes to the front. A link held through
   14 minutes locked, and ten DMs arrived within a second of Knit opening (MVP item 9's wake test,
@@ -214,11 +217,13 @@ doorbell (`Radio.servesDoorbell`): `KnitBLE`, and knit-peer's `ios` profile. The
 serves no GATT and never sends it. The link manager rings after every frame it writes except `typing`, `blobreq`
 and `keyreq`, as Android does, so both platforms wake an iPhone equally often (ADR 2026-09.khjj).
 
-`KnitBLE` is the iPhone's radio. Its central scans every advert with duplicates while Knit is open, takes
+`KnitBLE` is the iPhone's radio. Its central scans every advert with duplicates, or the `0xFE30` UUID alone while
+the link manager seeks (`Radio.seekPeers`, ADR 2026-10.mueg), takes
 Android's `0xFE30` service data as a sighting, and reads the GATT payload of a peer that lists only the UUID,
 in its service list or its overflow area. A dial connects the peripheral and opens an L2CAP channel on the
 advertised PSM. Its peripheral publishes an insecure channel, serves the payload and advertises the UUID
-alone. Each channel's streams run on one run-loop thread, read in 64 KiB gulps and written 8 KiB at a time.
+alone, and connects the far side of each channel it accepts as a peripheral too, so that a suspended Knit hears that
+link end through `didDisconnectPeripheral` (ADR 2026-10.mueg). Each channel's streams run on one run-loop thread, read in 64 KiB gulps and written 8 KiB at a time.
 The managers carry restoration identifiers. A restored connection is dropped, since its channels did not
 survive, but only once the central is powered on: CoreBluetooth refuses the command earlier, and a connection
 left up kept every dial to that phone waiting. It first ran on an iPhone 12 on 2026-09-26

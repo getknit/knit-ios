@@ -262,6 +262,9 @@ public actor MeshControl {
             "fileRecords": .int(Int64(await mesh.discardedFileRecords)),
             "rings": .int(Int64(await mesh.rings)),
             "rung": .int(Int64(await mesh.ringsHeard)),
+            "seeking": .bool(await mesh.isSeeking),
+            "seekWakes": .int(Int64(await mesh.seekWakes)),
+            "seekSpells": .int(Int64(await mesh.seekSpells)),
             "footprint": ControlLines.describe(await mesh.footprint),
             "router": ControlLines.describe(await mesh.routerCounters),
         ]) { _, own in own }

@@ -79,6 +79,15 @@
             }
         }
 
+        /// Knit went to the background, where iOS may suspend it, or came back. A launch still waiting reads the state
+        /// itself once it is ready.
+        func setInBackground(_ background: Bool) {
+            guard case .ready(let environment) = stage else {
+                return
+            }
+            environment.setInBackground(background)
+        }
+
         /// The app came to the front or left it. At the front the phone is unlocked, so a launch still waiting starts
         /// then: iOS may have suspended a launch it made before the first unlock by the time protected data arrived.
         func setActive(_ active: Bool) {

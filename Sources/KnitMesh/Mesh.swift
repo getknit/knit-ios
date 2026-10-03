@@ -201,6 +201,13 @@ public actor Mesh {
         settle()
     }
 
+    /// Whether the app is in the background, where iOS may suspend it, so the links seek peers while none is up
+    /// (``LinkManager/setInBackground(_:)``). Kept while stopped, for the next start.
+    public func setInBackground(_ background: Bool) {
+        apply(links.setInBackground(background))
+        settle()
+    }
+
     /// The peers linked now.
     public var neighbors: [Neighbor] { links.neighbors }
 
@@ -216,6 +223,12 @@ public actor Mesh {
     public var rings: Int { links.rings }
     /// Rings of this node's own doorbell (``LinkManager/ringsHeard``).
     public var ringsHeard: Int { links.ringsHeard }
+    /// Whether the radio is seeking peers (``LinkManager/isSeeking``).
+    public var isSeeking: Bool { links.isSeeking }
+    /// Wakes spent seeking (``LinkManager/seekWakes``).
+    public var seekWakes: Int { links.seekWakes }
+    /// Times seeking began (``LinkManager/seekSpells``).
+    public var seekSpells: Int { links.seekSpells }
 
     /// What the router has done so far.
     public var routerCounters: Router.Counters { engine.routerCounters }

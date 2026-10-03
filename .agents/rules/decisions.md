@@ -36,6 +36,7 @@ growing an explanation, that explanation belongs in the ADR.
 | the GATT payload, its UUIDs, `FLAG_DIALS_GATT_PEERS`, `Radio.dialsGattPeers`, `Radio.heardHello`, `GattPayloads`, or `KnitBLE` | [ADR 2026-09.xzpt](../memory/decisions/2026-09-xzpt-an-iphone-is-found-through.md) |
 | `LinkOutbox`, `Radio.writeDigest`, or how a radio queues what it writes | [ADR 2026-09.3ch7](../memory/decisions/2026-09-3ch7-a-link-holds-at-most.md) |
 | the doorbell, `Radio.ring`, `Radio.servesDoorbell`, `CAP_DOORBELL`, `LinkManager+Doorbell`, or what wakes a suspended iPhone | [ADR 2026-09.khjj](../memory/decisions/2026-09-khjj-a-peer-wakes-a-suspended.md) |
+| seeking peers in the background, `Radio.seekPeers`, `LinkManager+Seeking`, the wake budget, the scan's filter, or `interop.py iphone-seek` | [ADR 2026-10.mueg](../memory/decisions/2026-10-mueg-a-lonely-iphone-in-the.md) |
 | the Keychain identity, `KeychainSecretStore`, or what onboarding publishes | [ADR 2026-09.tkww](../memory/decisions/2026-09-tkww-a-reinstall-keeps-the-keychain.md) |
 | `VerifyPayload`, a scanned code, `CodeScannerModel`, `CameraAccess`, `Sources/Knit/Codes/`, `-demoCamera`, or Add contact | [ADR 2026-10.65xx](../memory/decisions/2026-10-65xx-a-peer-s-profile-verifies.md) |
 | a string a person reads, `Copy`, `App/Info.plist`'s usage strings, or a view's text | [ADR 2026-09.ycza](../memory/decisions/2026-09-ycza-user-facing-copy-lives-in.md) |

@@ -13,8 +13,10 @@ Rules for any text a person reads.
   group's name and member list are not, and neither are its delivery ticks. The Nearby room is open to
   everyone in range. v1 DMs and groups have no forward secrecy yet.
 - **Name the boundary once, and plainly.** The iPhone finds new people while Knit is open. In the background
-  its links stay up, but a suspended Knit reads them only when a phone wakes it (ADR 2026-09.khjj), so say
-  that some phones' messages wait until Knit is next open. Never say open links "keep working".
+  it looks for people only once it has lost its last link, and stops after a few tries that lead nowhere (ADR
+  2026-10.mueg). Its links stay up there, but a suspended Knit reads them only when a phone wakes it (ADR
+  2026-09.khjj), so say that some phones' messages wait until Knit is next open. Never say open links "keep
+  working".
 - **UI strings live in one catalog** (`Copy`, in `Sources/KnitAppCore/Copy/`), never inline in a view (ADR
   2026-09.ycza). Android's `strings.xml` is the starting point, adapted to what the iPhone does: Bluetooth
   only, no Wi-Fi Aware. `App/Info.plist`'s usage strings keep a copy that `CopyTests` holds equal.

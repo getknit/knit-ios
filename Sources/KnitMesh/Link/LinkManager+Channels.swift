@@ -17,6 +17,10 @@ extension LinkManager {
         switch channel.stage {
         case .live(let linked):
             peer = linked
+            if let link = liveLinks.first(where: { $0.channel == id }), now - link.since >= configuration.seekSpellResetMilliseconds {
+                // A link that held gives the next spell of seeking every wake; one that flapped leaves the count as it was.
+                spell = SeekSpell()
+            }
             liveLinks.removeAll { $0.channel == id }
             events.append(.down(linked))
             log.log(.info, "link down \(linked) on \(id)")
