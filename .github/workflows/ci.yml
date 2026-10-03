@@ -1,0 +1,106 @@
+name: CI
+
+# Pull request CI for github.com/getknit/knit-ios. It runs the Linux gates of the maintainer's .gitlab-ci.yml that
+# need no runner of the maintainer's own: format, lint, build, unit tests, coverage floors, the ADR router and
+# lintorama. Each job calls the same scripts/check.sh gate, so `scripts/check.sh fast` predicts most of it. The
+# sanitizers, fuzzing, analyze, Periphery and every Apple job run on GitLab only (.agents/context/toolchain.md).
+#
+# Keep the image digest and the SwiftLint pins in step with .gitlab-ci.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SWIFTLINT_VERSION: "0.65.1"
+  SWIFTLINT_SHA256_AMD64: "caeed6f4a679c35539ffaf124f6c4ab4a8416917f7d8796279dc52b74026059d"
+  # A hosted runner has four CPUs and nothing else to share them with.
+  SWIFT_JOBS: "4"
+  KNIT_NICE: "0"
+
+jobs:
+  swift:
+    name: Format, lint, build and test
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.4-noble@sha256:64bab762bc73a3fda6d9ebc559258bd6d7660c10a705bb25ecacad2f99d066f9
+    steps:
+      - name: Install system packages
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            libdbus-1-dev libsqlite3-dev pkg-config python3 unzip curl ca-certificates >/dev/null
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Trust the checkout
+        # The container runs as root over a workspace the runner's user owns, which git refuses without this.
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install SwiftLint
+        run: |
+          url="https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/swiftlint_linux_amd64.zip"
+          curl -fsSL -o /tmp/swiftlint.zip "$url"
+          echo "$SWIFTLINT_SHA256_AMD64  /tmp/swiftlint.zip" | sha256sum -c -
+          unzip -q -o -d /usr/local/bin /tmp/swiftlint.zip swiftlint
+      - uses: actions/cache@v6
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: swiftpm-${{ hashFiles('Package.resolved') }}
+      - name: Format, lint, build and test
+        run: scripts/check.sh format lint build test
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: .build/xunit-swift-testing.xml
+          if-no-files-found: ignore
+
+  coverage:
+    name: Coverage floors
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.4-noble@sha256:64bab762bc73a3fda6d9ebc559258bd6d7660c10a705bb25ecacad2f99d066f9
+    steps:
+      - name: Install system packages
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends libdbus-1-dev libsqlite3-dev pkg-config python3 ca-certificates >/dev/null
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Tests with coverage, against scripts/coverage-floors.json
+        run: scripts/check.sh coverage
+
+  adr-index:
+    name: ADR router is in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check .agents/memory/decisions.md
+        run: python3 scripts/adr.py index --check
+
+  lintorama:
+    name: Markdown, YAML, shell and editorconfig
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: lintorama
+        run: docker run --rm -v "$GITHUB_WORKSPACE":/code zaventh/lintorama:7

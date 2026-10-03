@@ -1,0 +1,33 @@
+name: DCO
+
+# Every non-merge commit in a pull request needs a Signed-off-by trailer from its author or committer, certifying
+# the Developer Certificate of Origin (./DCO). It runs scripts/dco-check.sh, the same check as GitLab's `lint:dco`.
+#
+# `pull_request`, not `pull_request_target`: the check needs no secret, so a fork's code never sees a token that
+# can write.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dco-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify sign-off
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check every commit's sign-off
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: scripts/dco-check.sh "$BASE" "$HEAD"

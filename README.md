@@ -43,6 +43,7 @@ builds on a Mac with Xcode, from a project that [XcodeGen](https://github.com/yo
 You need Swift 6.4 (`.swift-version`), plus `libdbus-1-dev` and `pkg-config` on Linux.
 
 ```sh
+git clone https://github.com/getknit/knit-ios.git && cd knit-ios
 git config core.hooksPath .githooks   # sign-off, lint and ADR checks on every commit
 scripts/check.sh fast                 # format, lint, build and unit tests
 scripts/check.sh all                  # every gate that runs on Linux, sanitizers included

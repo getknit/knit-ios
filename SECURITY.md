@@ -5,8 +5,10 @@ as-is, with no warranty and no guaranteed response time ([`CONTRIBUTING.md`](CON
 
 ## Reporting a vulnerability
 
-Please don't open a public issue or merge request for a vulnerability. Disclosure before a fix exists puts
-people at risk. Email **dev@getknit.app** instead, with:
+Please don't open a public issue or pull request for a vulnerability. Disclosure before a fix exists puts
+people at risk. Report it privately instead, through GitHub's [private vulnerability reporting][report] (the
+Report a vulnerability button on the repository's Security tab) or by email to **dev@getknit.app**.
+Include:
 
 - what the issue is, and what it lets an attacker do;
 - the steps to reproduce it, or a proof of concept;
@@ -14,6 +16,8 @@ people at risk. Email **dev@getknit.app** instead, with:
 
 Please allow reasonable time for a fix before disclosing publicly. This is a hobby project with no
 acknowledgement or remediation deadline, but every genuine report is read.
+
+[report]: https://github.com/getknit/knit-ios/security/advisories/new
 
 ## Known limits
 

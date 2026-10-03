@@ -1,0 +1,90 @@
+name: Bug report
+description: Report a defect in Knit for iOS.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please search the existing issues first.
+
+        - Knit for iOS is a best-effort hobby project, released as-is. Issues are welcome, but they may not be
+          triaged, answered or fixed on any timeline (`CONTRIBUTING.md`).
+        - Don't report a security vulnerability here. `SECURITY.md` explains how to report one privately.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong, in a sentence or two.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, in order. Mesh behavior usually needs two or more phones.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: What you saw, including any error text.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Knit for iOS version or commit
+      description: The version in Settings → About, or the commit you built from.
+    validations:
+      required: true
+  - type: textarea
+    id: devices
+    attributes:
+      label: Phones involved
+      description: >-
+        Every phone involved, with its OS version and Knit version, for example "iPhone 12, iOS 18.6, Knit
+        0.1.0" and "Pixel 7, Android 15, Knit 2.7.0".
+    validations:
+      required: true
+  - type: dropdown
+    id: state
+    attributes:
+      label: Where Knit was on the iPhone
+      description: iOS treats an app in the background differently, so this often matters.
+      options:
+        - Open, on screen
+        - In the background
+        - In the background, with the phone locked
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: >-
+        Screenshots, Settings → Diagnostics, or the phone's log from Console.app on a Mac. Remove anything you
+        don't want public, such as names and messages.
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+        - label: I understand Knit for iOS is a best-effort hobby project with no support guarantee.
+          required: true

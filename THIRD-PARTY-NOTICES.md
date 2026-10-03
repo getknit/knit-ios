@@ -33,3 +33,13 @@ SwiftPM resolves these while building the packages above, and none of their code
 | Periphery | [peripheryapp/periphery](https://github.com/peripheryapp/periphery) | MIT |
 | XcodeGen | [yonaskolb/XcodeGen](https://github.com/yonaskolb/XcodeGen) | MIT |
 | lintorama | [zaventh/lintorama](https://github.com/zaventh/lintorama) | MIT |
+
+## Agent skills in the repository (not distributed)
+
+These are instructions for coding agents, kept under `.agents/skills/` with each license beside it. None of them
+reaches the app.
+
+| Skill | Project | License |
+| --- | --- | --- |
+| `dotagents-standard` | [zaventh/dotagents-standard-skill](https://github.com/zaventh/dotagents-standard-skill) | MIT |
+| `humanizer` | [blader/humanizer](https://github.com/blader/humanizer), as ported in [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) | MIT |

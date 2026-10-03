@@ -1,7 +1,7 @@
 # knit-next, the source of truth
 
-Knit for Android lives in `~/source/knit-next` on the maintainer's machine (origin
-`source.jeffmixon.com/knit/knit-next`, public mirror `github.com/getknit/knit`). Everything this repo
+Knit for Android lives in `~/source/knit-next` on the maintainer's machine, and publicly at
+[`github.com/getknit/knit`](https://github.com/getknit/knit). Everything this repo
 puts on the air has to match what that code does, byte for byte. When a doc and the Kotlin disagree, the
 Kotlin wins.
 

@@ -1,0 +1,19 @@
+# The issue chooser. Blank issues are off, so reports come through the bug and feature forms; questions go to
+# Discussions through the link below.
+# https://docs.github.com/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (privately)
+    url: https://github.com/getknit/knit-ios/security/advisories/new
+    about: >-
+      Don't open a public issue for a security bug. Report it privately here, or by email as SECURITY.md
+      describes.
+  - name: Questions and discussion
+    url: https://github.com/getknit/knit-ios/discussions
+    about: Questions, ideas and anything that isn't a bug or a concrete feature request.
+  - name: Knit for Android
+    url: https://github.com/getknit/knit/issues
+    about: A problem that shows up only on Android phones belongs in Knit for Android's tracker.
+  - name: Contributing guide and support expectations
+    url: https://github.com/getknit/knit-ios/blob/main/CONTRIBUTING.md
+    about: Knit for iOS is a best-effort hobby project, released as-is. Please read this before filing.

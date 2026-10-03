@@ -11,7 +11,7 @@ product:
 document:
   updated: 2026-09-25T00:00:00Z
   coverage: complete
-  canonical: https://source.jeffmixon.com/knit/knit-ios/-/blob/main/CHANGELOG.md
+  canonical: https://github.com/getknit/knit-ios/blob/main/CHANGELOG.md
   locale: en
 ---
 

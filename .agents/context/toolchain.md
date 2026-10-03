@@ -22,7 +22,7 @@ exact interval, then update this file in the same change.
 ## The iPhone app
 
 - **Built on the Mac only** (ADR 2026-09.fkqb). Xcode builds the project `App/project.yml` generates (ADR
-  2026-09.de8f), and "The Mac Mini" below has the setup. xtool, which built the app on Linux until 2026-09-28,
+  2026-09.de8f), and "The Mac" below has the setup. xtool, which built the app on Linux until 2026-09-28,
   is retired, and nothing on Linux compiles `Knit` or `KnitBLE` for iOS.
 - **Static archives:** the app links each package target as a static archive, and the linker keeps only the
   members something names. A file that only the Objective-C runtime calls into, like KnitBLE's CoreBluetooth
@@ -79,91 +79,30 @@ exact interval, then update this file in the same change.
   than opening a looser schema. CI's Swift image installs `libsqlite3-dev` in `.swift`'s `before_script`.
 - **Not needed:** `libbluetooth-dev`. `CBluetoothShim` writes out the few socket definitions itself.
 
-## CI runners
+## CI
 
-- **linux-host, the Linux instance runner,** takes the untagged jobs in the `swift:6.4-noble` image (pinned by
-  digest in `.gitlab-ci.yml`). It is the `gitlab-runner` Docker container on the maintainer's machine,
-  configured in `~/.gitlab-runner/config.toml`: two jobs at once, each capped at 8 GB and 8 cores, so CI never
-  takes the whole desktop. Leave that directory to it.
-- **`service`, instance runner 4,** also takes untagged jobs, in Docker. It is slower than linux-host: pipeline
-  808's `test:coverage` took 643 s there, against about 250 s on linux-host (2026-09-28). A test that waits on a
-  thread needs a deadline with room for that, as `LoopRig.settleMilliseconds` has.
-- **The `knit-local` runner** takes the four heavy jobs, `test:tsan`, `test:asan`, `verify:fuzz` and
-  `verify:analyze` (ADR 2026-09.fkqb), and `verify:periphery:linux`, since Periphery is built from source
-  there. Analyze needs more than linux-host's 8 GB:
-  SourceKit keeps every file's compiler instance until the run ends, and linux-host's cap killed it at 8.35 GB.
-  Until the runner is registered these jobs wait for it, and no pipeline finishes.
-  - **What it is:** project runner 7 on `knit/knit-ios`, tag `knit-local`, locked to the project, not
-    taking untagged jobs. It is the apt package's system service with the shell executor, so jobs run as
-    `maintainer`, in a login shell whose `~/.profile` puts swiftly and SwiftLint on the `PATH`. Its builds and cache live in `~/.local/share/knit-local-runner`.
-  - **One job at a time** (`concurrent = 1` in `/etc/gitlab-runner/config.toml`), reniced by the `.local`
-    template: a shell job cannot be capped the way linux-host's containers are.
-  - **Creating it:** tags live on the server, because a `glrt-` token refuses `--tag-list`, so the runner
-    is created through the API first:
+- **GitLab runs the gating pipeline,** `.gitlab-ci.yml`, on the maintainer's own runners. The light Linux jobs
+  run in the `swift:6.4-noble` image (pinned by digest), on amd64 and arm64 alike. The heavy ones (`test:tsan`,
+  `test:asan`, `verify:fuzz`, `verify:analyze` and `verify:periphery:linux`) run on a shell runner with no
+  memory cap (ADR 2026-09.fkqb), and every Apple job runs on the Mac below. Runner setup is in the
+  maintainer's private notes.
+- **GitHub Actions checks pull requests** (`.github/workflows/`): the DCO sign-off, then format, lint, build,
+  tests and coverage in the same `swift:6.4-noble` image, plus the ADR router and lintorama. Those jobs need no
+  Mac, phone or Bluetooth adapter. The sanitizers, fuzzing, analyze, Periphery and the iPhone build run on
+  GitLab only.
+- **Runners differ in speed.** `test:coverage` took 643 s on the slowest Linux runner and about 250 s on the
+  fastest (2026-09-28). A test that waits on a thread needs a deadline with room for that, as
+  `LoopRig.settleMilliseconds` has.
+- **`verify:analyze` needs more than 8 GB on Linux.** SourceKit keeps every file's compiler instance until the
+  run ends, and an 8 GB cap killed it at 8.35 GB.
+- **Architectures:** `swift:6.4-noble`, `python:3.13-alpine`, `alpine/git` and `zaventh/lintorama:7` all
+  publish arm64 images. The line total can differ from amd64 by a line or so (10827 against 10826 of 11114),
+  which the whole-percent floors absorb.
 
-    ```sh
-    glab api --hostname source.jeffmixon.com --method POST user/runners -f runner_type=project_type \
-      -F project_id=<id> -f description=knit-local -f tag_list=knit-local -F run_untagged=false -F locked=true
-    ```
+## The Mac
 
-  - **Registering it** with the returned token, as root, because the service reads `/etc/gitlab-runner`:
-
-    ```sh
-    sudo gitlab-runner uninstall
-    sudo gitlab-runner install --user maintainer --working-directory /home/maintainer/.local/share/knit-local-runner
-    sudo gitlab-runner register --non-interactive --url https://source.jeffmixon.com --token "$TOKEN" \
-      --executor shell --description knit-local \
-      --builds-dir /home/maintainer/.local/share/knit-local-runner/builds \
-      --cache-dir /home/maintainer/.local/share/knit-local-runner/cache
-    sudo sed -i 's/^concurrent = .*/concurrent = 1/' /etc/gitlab-runner/config.toml
-    sudo systemctl daemon-reload && sudo systemctl restart gitlab-runner
-    ```
-
-    `gitlab-runner install` rewrites the unit but leaves the old process running, which is why the restart
-    is there.
-  - **A shell runner runs pipeline code as `maintainer`,** with full access to that home directory. Keep it a
-    project runner, and move it to an account of its own before anyone else can push to knit-ios.
-- **`mac-runner`, the Mac's runner,** is instance runner 9 with the tag `macos`, and it takes no untagged
-  jobs: any project's `macos` jobs run there, and nothing else does. `build:ios:xcode`, `build:ios:signed`,
-  `test:macos`, `test:ios:simulator` and `verify:periphery` carry the tag.
-  - **What it is:** gitlab-runner's shell executor (bash) as `maintainer`, in a LaunchAgent in the desktop
-    session, because the Simulator needs one. It takes one job at a time (`limit = 1` in
-    `~/.gitlab-runner/config.toml`), and its builds and cache live in `~/.local/share/gitlab-runner`.
-  - **Recreating it:** the same two steps as `knit-local`, with `runner_type=instance_type`,
-    `tag_list=macos` and `run_untagged=false`. Register it without `sudo`, which makes it a LaunchAgent, then
-    `gitlab-runner install --working-directory ~/.local/share/gitlab-runner` and `gitlab-runner start`.
-  - **Every project's jobs run as `maintainer`,** whose home holds the glab token. Give it an account of its own
-    before a project that someone else can push to uses the tag.
-- **`mac-docker-runner`, the Mac's Linux runner,** is instance runner 11 (2026-09-28). It takes any project's
-  untagged jobs, beside linux-host and service, and carries the tags `docker` and `arm64` for a job that wants it.
-  Its jobs run in containers inside the VM, not as `maintainer`, and without `privileged`. A job from another
-  project that needs more than 4 GB and the swap can hold is killed here, so give such a job a tag this
-  runner lacks.
-  - **What it is:** gitlab-runner's Docker executor in the same process as `mac-runner`, running jobs in
-    Colima's VM (`host = unix:///Users/maintainer/.colima/default/docker.sock`). The process takes two jobs at once
-    (`concurrent = 2`), one per runner (`limit = 1` each), so an Xcode job never waits behind a Linux one. Jobs
-    get `SWIFT_JOBS=4`, one compiler per VM CPU.
-  - **Sized to leave the Mac for iOS work:** the VM keeps 4 CPUs and 4 GB, because it holds on to memory it
-    has used and the Mac has 16 GB. It has 4 GB of swap for the rare peak, set up by a `provision` script in
-    `~/.colima/default/colima.yaml` that runs at every VM start.
-  - **Measured in the VM** (2026-09-28, image `swift:6.4-noble` on arm64): `check.sh build` in 61 s at a
-    2.2 GB peak, `test` in 5 s, and `coverage` in 100 s at 3.6 GB. Without swap, SwiftPM's own coverage export
-    was killed at that peak. The same build took 627 s on `service` and about 90 s on linux-host.
-  - **Architectures:** `swift:6.4-noble`, `python:3.13-alpine`, `alpine/git` and `zaventh/lintorama:7` all
-    publish arm64 images. The line total can differ from amd64 by a line or so (10827 against 10826 of 11114),
-    which the whole-percent floors absorb.
-  - **Recreating it:** create it through the API with `runner_type=instance_type`, `tag_list=docker,arm64` and
-    `run_untagged=true`, then register it without `sudo`:
-    `gitlab-runner register --executor docker --docker-image alpine:3.22 --docker-host
-    unix:///Users/maintainer/.colima/default/docker.sock --env SWIFT_JOBS=4 --limit 1`, passing the token on
-    standard input rather than the command line. A runner's type cannot change: `gitlab-runner unregister`
-    removes only its manager, so delete the old runner through the API too (`DELETE runners/<id>`).
-
-## The Mac Mini
-
-`mac.example`, set up on 2026-09-27: an M6 Mac Mini with 12 cores and 16 GB on macOS 27.0, reached as
-`maintainer` over ssh with passwordless `sudo`. It logs in to the desktop by itself, restarts after a power cut,
-and never sleeps.
+An M6 Mac Mini with 12 cores and 16 GB on macOS 27.0, set up on 2026-09-27, builds and tests the iPhone app. It
+logs in to the desktop by itself, because the Simulator and signing need a desktop session.
 
 - **Xcode 27.0 (`27A266a`)** is the selected developer
   directory. The iOS 27.0 Simulator runtime came with it, and developer mode is on. Its Swift is 6.4
@@ -171,29 +110,14 @@ and never sleeps.
   no swiftly.
 - **Homebrew has the rest:** SwiftLint 0.65.1 and Periphery 3.8.0 (the pinned versions); XcodeGen 2.46.0;
   bash 5 and Python 3.14, because macOS ships bash 3.2 and Python 3.9; xcbeautify, xcodes, libimobiledevice and
-  ideviceinstaller; rsync 3, because macOS ships openrsync; glab, gh and gitlab-runner; GnuPG and
-  pinentry-mac; Colima, the docker CLI and docker-credential-helper. `~/.zshenv` and `~/.bash_profile` put
-  Homebrew on the `PATH` for every shell, login or not.
+  ideviceinstaller; rsync 3, because macOS ships openrsync. Put Homebrew on the `PATH` for every shell, login or
+  not, in `~/.zshenv` and `~/.bash_profile`.
 - **Docker runs in Colima,** a `vz` VM with Rosetta, 4 CPUs, 4 GB and 4 GB of swap, started at login. It runs
-  lintorama here and the `mac-docker-runner` runner's jobs. `zaventh/lintorama:7` now publishes an arm64 image,
-  so it runs without Rosetta.
-- **The checkouts** are `~/source/knit-ios`, with the hooks on, and `~/source/knit-next`. Git reaches GitLab
-  through `glab auth git-credential`.
-- **`~/source/knit-ios-mirror` belongs to `scripts/mac.sh`,** which drives the Mac from linux-host. Each sync
-  overwrites it with linux-host's working tree, so do real work at the Mac in `~/source/knit-ios`. The script
-  calls `/opt/homebrew/bin/rsync` by path: openrsync speaks protocol 29 and gets the filter rules wrong.
-- **linux-host reaches the Mac through one shared connection.** The `Host mac.example` block in linux-host's
-  `~/.ssh/config` keeps a master connection open for 20 minutes (`ControlMaster`, `ControlPersist`), so
-  each later command takes about 30 ms. `scripts/mac.sh` passes the same options, so it works without
-  the block.
-- **Signing:** the maintainer's GPG key is imported, and git signs every commit and tag with it. A LaunchAgent
-  (`org.gnupg.gpg-agent`) starts `gpg-agent` in the desktop session at login, so `pinentry-mac` can show its
-  dialog and read the passphrase from the Keychain even when the first `gpg` call comes over ssh. The
-  passphrase is asked once: tick "Save in Keychain" at the Mac, or unlock over ssh with
-  `gpg --pinentry-mode loopback`, which lasts until the agent restarts.
-- **The login Keychain is locked to ssh sessions.** `docker login` stores through
-  `docker-credential-osxkeychain` (`credsStore` in `~/.docker/config.json`), so run it at the Mac's desktop;
-  the CI runner shares that session. glab keeps its token in its config file for the same reason.
+  lintorama there. `zaventh/lintorama:7` publishes an arm64 image, so it runs without Rosetta.
+- **`scripts/mac.sh` drives the Mac from Linux** (`.agents/context/commands.md`). It owns
+  `~/source/knit-ios-mirror` on the Mac and overwrites it with the local working tree at each sync, so do real
+  work at the Mac in a checkout of its own. It calls `/opt/homebrew/bin/rsync` by path: openrsync speaks
+  protocol 29 and gets the filter rules wrong.
 - **What passes there** (2026-09-27, at `b03c841`): `check.sh fast`, in three minutes. `xcodebuild build
   -scheme Knit` builds every target of the package for `generic/platform=iOS` and for the Simulator,
   unsigned, with no Xcode project.
@@ -208,11 +132,11 @@ and never sleeps.
     file and fails if the pins drift.
   - **The debug dylib:** a Debug build keeps the app's code in `Knit.debug.dylib`, where the gate looks for
     KnitBLE's delegate methods.
-- **Signing on the Mac:** Xcode is signed in to the free Personal Team `<team id>`, and its first run on the
-  iPhone (2026-09-27) made an Apple Development certificate and a profile for `app.getknit.knit.dev`. Set up
-  once at the desk: Xcode, Settings, Accounts, the Apple ID; the iPhone plugged in and trusted, then set to
-  "Connect via network" in Devices so it can go back to this machine's USB. `App/Local.xcconfig` (git
-  ignores it) holds `DEVELOPMENT_TEAM = <team id>`.
+- **Signing on the Mac:** Xcode is signed in to a free Personal Team, and its first run on the iPhone
+  (2026-09-27) made an Apple Development certificate and a profile for `app.getknit.knit.dev`. Set up once at
+  the desk: Xcode, Settings, Accounts, the Apple ID; the iPhone plugged in and trusted, then set to "Connect via
+  network" in Devices so it can go back to its usual machine's USB. `App/Local.xcconfig` (git ignores it) holds
+  `DEVELOPMENT_TEAM = <team id>`.
   - **Signing runs in the desktop session** (ADR 2026-09.zawh). Over ssh, `codesign` fails with
     `errSecInternalComponent`, even after "Always Allow" on the key and under `sudo launchctl asuser`: the
     login Keychain stays locked to an ssh session. `scripts/mac-desktop.sh` runs a command as a one-shot
@@ -225,9 +149,7 @@ and never sleeps.
     `DVTDeveloperAccountManagerAppleIDLists` preference was empty. It signs with profiles it already has but
     makes none. A new App ID's profile, or one that expired, comes from Xcode's window: open the mirror's
     `App/Knit.xcodeproj`, pick the scheme and the iPhone, and build (Product → Build For → Testing for the device
-    tests). The `.dev` profile expires on 2026-10-05.
-  - **Anyone running as `maintainer` can sign as the team,** a `macos` job from any project included. The job's
-    rule keeps forks out; an account of its own for the runner is the real fix.
+    tests).
   - **The `.dev` id keeps `app.getknit.knit` unclaimed.** Apple gives a bundle id to the first team that
     registers it, and the free team registers every id it signs, so it signs only the `.dev` one.
   - **One Knit per phone.** Two installs would both advertise the GATT payload and scan, and a peer would see
@@ -240,9 +162,9 @@ and never sleeps.
   - **Installing from the Mac (2026-09-28):** `check.sh device` builds the signed app, and `devicectl device
     install app` then `devicectl device process launch` put it on the iPhone 12, over the network connection.
     The iPhone holds the `.dev` build alone now; xtool's was already gone. The debug bridge answers `interop.py`
-    from linux-host over USB as before, since it never named a bundle id; only `ifuse` does.
+    from the Linux machine over USB as before, since it never named a bundle id; only `ifuse` does.
   - **Bluetooth for `knit-peer`:** allowed at the Mac on 2026-09-28 for the signature `scripts/mac-peer.sh`
-    makes, identifier `app.getknit.knit-peer` under team `<team id>` (ADR 2026-09.vcdk). A new signing
+    makes, identifier `app.getknit.knit-peer` under the same team (ADR 2026-09.vcdk). A new signing
     certificate asks again. From ssh, CoreBluetooth reports it unauthorized whatever the grant.
   - **The phone's log:** `idevicesyslog` finds the iPhone only over USB, not while it is connected over the
     network. Console.app at the Mac reads it either way. The bridge itself also answers over Wi-Fi, on a

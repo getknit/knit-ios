@@ -1,0 +1,59 @@
+name: Feature request
+description: Propose a feature or a change to Knit for iOS.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Please search the existing issues first.
+
+        Knit for iOS is a best-effort hobby project. Proposals are welcome, but they may not be accepted, and
+        some scope is deferred on purpose (`.agents/memory/roadmap.md`). Anything that changes what goes on the
+        air has to change in Knit for Android too.
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Problem or motivation
+      description: What you want to do that Knit for iOS doesn't support today.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What you'd like to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed, and why you prefer this one.
+  - type: checkboxes
+    id: mesh-impact
+    attributes:
+      label: Scope
+      description: >-
+        Some parts have to match Knit for Android byte for byte (`.agents/rules/interop.md`). Check any that
+        apply.
+      options:
+        - label: Changes the wire format
+        - label: Changes how phones carry and forward messages
+        - label: Changes end-to-end encryption
+        - label: Needs Knit for Android to change too
+        - label: None of these, or not sure
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, links or anything else that helps.
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: I read the support expectations and understand that some scope is deferred on purpose.
+          required: true

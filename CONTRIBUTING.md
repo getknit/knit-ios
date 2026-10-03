@@ -9,14 +9,14 @@ Knit for iOS is released as-is under the [GNU GPL v3.0-or-later](COPYING), with 
 [App Store exception](APP-STORE-EXCEPTION.md). It is developed on a best-effort, hobby basis, with no
 support, warranty or response-time guarantee. That is the GPL's "no warranty" clause, stated plainly:
 
-- Issues and merge requests are welcome, but they may not be triaged, answered or accepted.
+- Issues and pull requests are welcome, but they may not be triaged, answered or accepted.
 - There is no commitment to fix bugs or review contributions on any timeline.
 - Don't depend on Knit where failure matters. It is experimental software driving radios.
 
 ## Ground rules
 
 - **Follow the [Code of Conduct](CODE_OF_CONDUCT.md).** Harassment and abuse are not welcome in issues,
-  merge requests or discussions.
+  pull requests or discussions.
 - **License.** By contributing, you agree that your contribution is licensed under GPL-3.0-or-later
   together with the App Store exception, the same terms as the project. Contribute only code you have the
   right to license that way.
@@ -51,12 +51,17 @@ That setting replaces `.git/hooks` entirely, and `--no-verify` skips the hooks f
 
 ## Where to submit
 
-Development happens at `source.jeffmixon.com/knit/knit-ios`; a public mirror will follow. Keep each merge
-request to one change, with a clear description of what changed and why. The template asks for the rest.
-CI checks every commit's DCO sign-off. If it fails, `git rebase --signoff <target branch>` and a force-push
-fix the whole branch at once.
+Open issues and pull requests at <https://github.com/getknit/knit-ios>. The issue forms and the pull request
+template ask for what a report or a change needs. Keep each pull request to one change, with a clear
+description of what changed and why.
+
+GitHub Actions checks every pull request: each commit's DCO sign-off, then format, lint, build, unit tests,
+coverage, the ADR router and the documentation linters. If the sign-off check fails,
+`git rebase --signoff origin/main` and a force-push fix the whole branch at once. The sanitizers, fuzzing,
+analysis and the iPhone build need the maintainer's own runners, a Mac among them, so the maintainer runs them
+before a change merges.
 
 ## Security
 
-Don't report security vulnerabilities in public issues or merge requests. [`SECURITY.md`](SECURITY.md)
+Don't report security vulnerabilities in public issues or pull requests. [`SECURITY.md`](SECURITY.md)
 explains how to report them privately.

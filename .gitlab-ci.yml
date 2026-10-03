@@ -10,7 +10,7 @@
 #   - `macos`, the Mac Mini's shell runner, for the Apple jobs: `build:ios:xcode` (ADR 2026-09.de8f), the signed
 #     `build:ios:signed` (ADR 2026-09.zawh), `test:macos`, `test:ios:simulator` (ADR 2026-09.jcdx) and
 #     `verify:periphery`. Every iPhone build happens there.
-# `.agents/context/toolchain.md` has the runner setup.
+# The maintainer's private notes have the runner setup; `.agents/context/toolchain.md` has what a contributor needs.
 
 workflow:
   rules:
@@ -61,14 +61,13 @@ variables:
 
 .local:
   # A shell job on the maintainer's desktop has no container limits. The runner takes one job at a time
-  # (`concurrent = 1`, .agents/context/toolchain.md), and check.sh and fuzz.sh cap their own parallelism and
-  # priority.
+  # (`concurrent = 1`), and check.sh and fuzz.sh cap their own parallelism and priority.
   tags:
     - knit-local
 
 .mac:
   # The Mac Mini's shell runner, one job at a time and shared with every project's `macos` jobs. Its jobs run as
-  # maintainer with Xcode, XcodeGen and xcbeautify on the PATH (.agents/context/toolchain.md).
+  # the maintainer's account with Xcode, XcodeGen and xcbeautify on the PATH (.agents/context/toolchain.md).
   tags:
     - macos
 
