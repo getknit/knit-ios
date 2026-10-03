@@ -6,7 +6,8 @@ public import KnitWire
 /// How the app was launched: `-seedDemo`, the radio state the demo reports (`-demoRadio off`), so a screen can be
 /// checked in a state no real phone here is in, the unsupported device's among them (MVP item 10), the scene it
 /// seeds (`-demoScene marketing`), whether it starts at onboarding (`-demoOnboarding`), what the camera answers
-/// (`-demoCamera denied`), and whether Choose photo picks a painted picture (`-demoPhoto`).
+/// (`-demoCamera denied`), whether Choose photo picks a painted picture (`-demoPhoto`), and whether the demo posts a
+/// notification to tap (`-demoNotification`).
 public struct LaunchOptions: Sendable, Equatable {
     /// Whether to run the demo: seeded stores in memory, a radio that goes nowhere, and a fixed identity.
     public var seedDemo = false
@@ -22,6 +23,9 @@ public struct LaunchOptions: Sendable, Equatable {
     /// Whether Choose photo hands the cropper a painted picture rather than opening the photo library, in the demo and in
     /// a debug build's live launch: the system's picker runs outside Knit, out of a UI test's reach.
     public var demoPhoto = false
+    /// Whether the demo asks to notify as it launches, then posts the room's notification each time Knit goes to the
+    /// background: the demo's radio brings no messages, so a UI test would have no notification to tap.
+    public var demoNotification = false
 
     /// The options in `arguments`, the process's own. Anything unknown is left for the system.
     public init(arguments: [String]) {
@@ -37,6 +41,7 @@ public struct LaunchOptions: Sendable, Equatable {
             demoCamera = Self.cameraAnswers[arguments[flag + 1]]
         }
         demoPhoto = arguments.contains("-demoPhoto")
+        demoNotification = arguments.contains("-demoNotification")
     }
 
     private static let radioStates: [String: RadioState] = [
@@ -108,6 +113,17 @@ public enum DemoSeed {
     /// The peers `scene` shows as linked, which only ``DemoMesh`` makes true: the demo's radio links nobody.
     public static func linked(in scene: DemoScene) -> [NodeId] {
         scene.cast.linked.compactMap { keys($0)?.nodeId }
+    }
+
+    /// The notification the room's newest post by someone else makes, which `-demoNotification` posts, or `nil` when
+    /// nobody else has posted there.
+    public static func notification(in stores: MeshStores, me: NodeId) -> LocalNotification? {
+        let own = stores.ownProfile.load()
+        let directory = Directory(peers: stores.peers.allPeers(), me: me, myName: own.name, myPhoto: own.avatarHash)
+        let context = NotificationPolicy.Context(me: me, visibleConversation: nil, directory: directory, pendingRequests: 0)
+        return stores.messages.messages(in: Conversations.nearby).last { $0.senderId != me }.flatMap { post in
+            NotificationPolicy.notification(for: post, isRequest: false, in: context)
+        }
     }
 
     /// How long before `now` the demo's peers last changed their profiles.

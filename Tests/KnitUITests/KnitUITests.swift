@@ -80,6 +80,11 @@ final class KnitUITests: XCTestCase {
         try walkNewGroup()
     }
 
+    /// A notification tapped while Knit is in the background opens its thread.
+    func testATappedNotificationOpensItsThread() throws {
+        try walkNotification()
+    }
+
     func testSettingsReachEveryPageAndStopTheMesh() throws {
         try walkSettings()
     }

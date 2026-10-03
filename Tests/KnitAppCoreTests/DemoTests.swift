@@ -35,6 +35,24 @@ import Testing
         #expect(LaunchOptions(arguments: ["-seedDemo", "-demoCamera"]).demoCamera == nil, "a flag with no value")
     }
 
+    @Test func theLaunchOptionsReadTheDemosNotification() {
+        #expect(!LaunchOptions(arguments: ["-seedDemo"]).demoNotification)
+        #expect(LaunchOptions(arguments: ["-seedDemo", "-demoNotification"]).demoNotification)
+    }
+
+    /// What `-demoNotification` posts, and the UI test taps to open the room: what the room's newest post by someone else
+    /// makes.
+    @Test func theDemosNotificationIsTheRoomsNewestPostBySomeoneElse() throws {
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        #expect(DemoSeed.notification(in: stores, me: identity.nodeId) == nil, "an empty room")
+        DemoSeed.populate(stores, me: identity.nodeId, now: 1_000_000, scene: .edgeCases)
+        let notification = try #require(DemoSeed.notification(in: stores, me: identity.nodeId))
+        #expect(notification.conversationId == Conversations.nearby)
+        #expect(notification.title == Copy.Notifications.nearbyTitle)
+        #expect(notification.body == Copy.Notifications.roomBody(sender: "Priya", body: "On my way."))
+    }
+
     @Test(arguments: DemoCamera.Answer.allCases)
     func theDemosCameraScansAndAnswersWhatItWasTold(answer: DemoCamera.Answer) async {
         let model = CodeScannerModel(camera: DemoCamera(answer))

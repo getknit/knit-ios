@@ -48,7 +48,10 @@ ladder, not the first.
    largest, where it keeps a screenshot of every screen. The Simulator has no scanner, so the scan walk reaches the
    scanner's refused and failed states through `-demoCamera` (ADR 2026-10.65xx). The system's photo picker runs
    outside Knit, so the photo walks pick a painted picture through `-demoPhoto`, on the `marketing` scene, whose
-   people wear painted photos and whose post by the fire carries one (ADR 2026-10.sepc, ADR 2026-10.6cas). `AuditPolicy` names what the audit
+   people wear painted photos and whose post by the fire carries one (ADR 2026-10.sepc, ADR 2026-10.6cas). Nothing
+   reaches the demo's radio, so the notification walk has `-demoNotification` post the room's notification as Knit
+   goes to the background, then taps its banner on the home screen. The tap reaches Knit in the background, as one
+   on the lock screen does, which is where Knit used to abort. `AuditPolicy` names what the audit
    may report without failing and why (ADR 2026-09.jcdx); everything else fails the gate. The sources live in `Tests/KnitUITests/`,
    which SwiftPM ignores and XcodeGen builds. CI runs them in a Simulator named "Knit CI", and a run over ssh in
    "Knit local", each made on first use. They used to share one: on 2026-09-28 a local run started while CI's was

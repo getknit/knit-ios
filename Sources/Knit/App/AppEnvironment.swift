@@ -26,6 +26,9 @@
         /// What Choose photo picks under `-demoPhoto`: a painted picture, since the system's picker is out of a UI test's
         /// reach. `nil` opens the photo library.
         let demoPhoto: Data?
+        /// What `-demoNotification` posts each time Knit goes to the background, since nothing reaches the demo that
+        /// would: a UI test taps it to open its thread.
+        private let demoNotification: LocalNotification?
         let about: AboutInfo
         /// Stores a minted test identity for the next launch, in a debug build.
         let replaceIdentity: IdentityReplacer?
@@ -51,6 +54,7 @@
             notifier: LocalNotifier,
             camera: any CameraAccess,
             demoPhoto: Data?,
+            demoNotification: LocalNotification?,
             replaceIdentity: IdentityReplacer?
         ) {
             self.session = session
@@ -60,6 +64,7 @@
             self.notifier = notifier
             self.camera = camera
             self.demoPhoto = demoPhoto
+            self.demoNotification = demoNotification
             self.replaceIdentity = replaceIdentity
             photos = BlobImageCache(session: session)
             let info = Bundle.main.infoDictionary ?? [:]
@@ -70,7 +75,8 @@
         }
 
         /// Starts listening to the mesh, and starts the mesh itself once onboarding is behind us. A first run starts
-        /// it from onboarding's Bluetooth step instead, which is what makes the system ask.
+        /// it from onboarding's Bluetooth step instead, which is what makes the system ask. Under `-demoNotification`
+        /// it asks to notify.
         func run() {
             guard listening == nil else {
                 return
@@ -85,12 +91,20 @@
                 }
             }
             // A relaunch to restore Bluetooth runs in the background, with no scene to say so.
-            setInBackground(UIApplication.shared.applicationState == .background)
+            phases.continuation.yield(UIApplication.shared.applicationState == .background)
             #if DEBUG
                 bridge?.start()
             #endif
             if preferences.hasOnboarded {
                 Task { await running.start() }
+            }
+            if let demoNotification {
+                let alerts = notifier
+                Task {
+                    // One left from an earlier run would make the next one quiet, with no banner to tap.
+                    await alerts.withdraw(threadId: demoNotification.threadId)
+                    _ = await alerts.request()
+                }
             }
         }
 
@@ -103,9 +117,13 @@
         }
 
         /// Knit went to the background, where iOS may suspend it, or came back. Control Center or an alert over Knit is
-        /// neither: Knit is still on screen, and Android still finds it.
+        /// neither: Knit is still on screen, and Android still finds it. Going posts `-demoNotification`'s notification.
         func setInBackground(_ background: Bool) {
             phases.continuation.yield(background)
+            if background, let demoNotification {
+                let alerts = notifier
+                Task { await alerts.post(demoNotification) }
+            }
         }
 
         /// Knit left the front. Only a debug build's scan probe wants to know.
@@ -175,7 +193,8 @@
                 preferences: MemoryPreferences(hasOnboarded: !options.demoOnboarding),
                 linked: DemoSeed.linked(in: options.demoScene),
                 camera: options.demoCamera.map(DemoCamera.init),
-                demoPhoto: options.demoPhoto ? DemoPortraits.pickedPhoto() : nil
+                demoPhoto: options.demoPhoto ? DemoPortraits.pickedPhoto() : nil,
+                notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
             )
             return compose(parts, replace: nil)
         }
@@ -193,6 +212,8 @@
             var camera: (any CameraAccess)?
             /// The picture Choose photo picks, under `-demoPhoto`.
             var demoPhoto: Data?
+            /// What the demo posts as Knit goes to the background, under `-demoNotification`.
+            var notification: LocalNotification?
             #if DEBUG
                 /// What the debug bridge's `storage` reply reads, which only a live launch has.
                 var storage: StorageReport?
@@ -222,6 +243,7 @@
                 notifier: alerts,
                 camera: parts.camera ?? DeviceCamera(),
                 demoPhoto: parts.demoPhoto,
+                demoNotification: parts.notification,
                 replaceIdentity: replace
             )
             #if DEBUG

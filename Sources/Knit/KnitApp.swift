@@ -51,11 +51,20 @@
             completion(passive ? [.list] : [.banner, .list, .sound])
         }
 
-        nonisolated func userNotificationCenter(_: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        nonisolated func userNotificationCenter(
+            _: UNUserNotificationCenter,
+            didReceive response: UNNotificationResponse,
+            // swiftlint:disable:next unneeded_escaping - UserNotifications declares the handler escaping
+            withCompletionHandler completion: @escaping () -> Void
+        ) {
             let conversation = response.notification.request.content.userInfo[LocalNotifier.conversationKey] as? String
-            await MainActor.run {
+            // UIKit hands a tap over on the main thread, and asserts that its handler is called there too. The async form
+            // of this method called it from the cooperative pool, and the assertion aborted Knit whenever a tap reached it
+            // in the background, as one on the lock screen does (2026-10-03).
+            MainActor.assumeIsolated {
                 launch.open(conversation: conversation)
             }
+            completion()
         }
     }
 #endif

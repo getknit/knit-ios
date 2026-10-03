@@ -164,6 +164,9 @@ Launch arguments, set in the scheme on the Mac (P7):
 - `-demoCamera denied|allowed` (with `-seedDemo`) gives the profile's scanner a camera that answers one thing. The
   Simulator has no scanner, so this is how the UI tests reach the refused state and the one where the camera fails
   to start (ADR 2026-10.65xx). Without it the Simulator shows the state for a device that cannot scan.
+- `-demoNotification` (with `-seedDemo`) asks to notify at launch, then posts the room's notification each time
+  Knit goes to the background. Nothing reaches the demo's radio, so this is how the UI tests get a notification to
+  tap.
 - `-demoScene edge-cases|marketing` (with `-seedDemo`) picks what is seeded. `edge-cases`, the default, is the
   cast above: two people with one name, one with none, and nobody linked. `marketing` is for store screenshots
   and social posts, after knit-next's hiking theme: seven named people, a room, two DMs and a request, with
