@@ -297,7 +297,7 @@ extension KnitUITests {
         let window = app.windows.firstMatch.frame
         do {
             try app.performAccessibilityAudit(for: .all.subtracting(.dynamicType)) { issue in
-                if AuditPolicy.exempt(issue, bars: bars, window: window) {
+                if AuditPolicy.exempt(issue, in: app, bars: bars, window: window) {
                     return true
                 }
                 let element =

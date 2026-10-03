@@ -7,7 +7,9 @@ import XCTest
 /// - Contrast on a control that is off: WCAG 1.4.3 exempts inactive components, Save with nothing to save among them.
 /// - Anything in or under a navigation bar, a sheet's included: content scrolled beneath one is read through its
 ///   glass, as are its glass buttons (Done reads 6:1 in its own screenshot), and its text is capped by the system,
-///   which shows it whole in the Large Content Viewer.
+///   which shows it whole in the Large Content Viewer. The glass runs up from the bar to the top of the screen, under
+///   the status bar too. Text scrolled wholly into that strip is a blur the audit cannot name an element for, so a
+///   contrast report with no element is exempt while content text lies under the glass.
 /// - Contrast of anything not wholly on screen: the part off it is read as black.
 /// - Contrast that the element's own pixels pass: the audit fails the newest message of a thread at the largest
 ///   size, black on light gray, whatever the view does. Its screenshot is measured instead, darkest pixel against
@@ -19,13 +21,22 @@ import XCTest
 ///   element, which the report names no element for, is text all the same.
 @MainActor
 enum AuditPolicy {
-    /// Whether `issue` is one of the reports above. `bars` are the navigation bars' frames, `window` the screen's.
-    static func exempt(_ issue: XCUIAccessibilityAuditIssue, bars: [CGRect], window: CGRect) -> Bool {
+    /// Whether `issue`, found in `app`, is one of the reports above. `bars` are the navigation bars' frames, `window`
+    /// the screen's.
+    static func exempt(_ issue: XCUIAccessibilityAuditIssue, in app: XCUIApplication, bars: [CGRect], window: CGRect) -> Bool {
+        let glass = bars.map { CGRect(x: $0.minX, y: window.minY, width: $0.width, height: $0.maxY - window.minY) }
         guard let element = issue.element else {
-            return issue.auditType == .textClipped
+            switch issue.auditType {
+            case .textClipped:
+                return true
+            case .contrast:
+                return textUnderGlass(in: app, bars: bars, glass: glass)
+            default:
+                return false
+            }
         }
         let frame = element.frame
-        if bars.contains(where: { $0.intersects(frame) }) {
+        if glass.contains(where: { $0.intersects(frame) }) {
             return true
         }
         switch issue.auditType {
@@ -35,6 +46,17 @@ enum AuditPolicy {
             return [.staticText, .button, .textField].contains(element.elementType)
         default:
             return false
+        }
+    }
+
+    /// Whether any content text shows only under the glass: some of it in the strip above a bar, none of it below the
+    /// bar. A bar's own title and back button sit wholly in the bar, so they never count.
+    private static func textUnderGlass(in app: XCUIApplication, bars: [CGRect], glass: [CGRect]) -> Bool {
+        app.staticTexts.allElementsBoundByIndex.contains { text in
+            let frame = text.frame
+            return zip(bars, glass).contains { bar, glass in
+                frame.minY < bar.minY && glass.intersects(frame) && frame.maxY <= glass.maxY
+            }
         }
     }
 

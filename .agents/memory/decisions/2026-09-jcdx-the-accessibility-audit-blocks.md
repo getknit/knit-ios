@@ -58,6 +58,14 @@ last rows, and the clipping check flagged the profile's Clear verification butto
 largest size its label wraps onto two lines and reads whole, the same false report the check makes of wrapped text,
 so a button's clipping is exempt too. The walks had flagged no other button, so the exemption clears nothing else.
 
+**Amended 2026-10-02, for the status bar:** the code walk failed about two runs in three, `main` included, with a
+contrast report that named no element. Revealing Scan their code swipes the form, and where the swipe stops varies.
+When it left the Alias row wholly in the strip between the window's top and the navigation bar, the bar's glass blurred
+the row to a gray ghost. The audit measured the ghost, and it could not name an element under the status bar. That
+strip is the same glass the bar exemption covers, so the exemption now runs from the top of the window to the bar's
+bottom edge. A contrast report with no element is exempt only while some content text sits wholly under that glass,
+with part of it above the bar. On any other screen such a report still fails.
+
 **Consequences / limits:**
 
 - **The pixel measurement trusts extremes.** It passes an element whose darkest and lightest pixels contrast
