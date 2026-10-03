@@ -14,7 +14,7 @@ import Testing
 /// is already here: a phone that ran that migration keeps the schema it left.
 @Suite struct SchemaTests {
     /// The migrations every earlier build has run, in order.
-    private static let frozen = ["v1", "v2", "v3"]
+    private static let frozen = ["v1", "v2", "v3", "v4"]
 
     @Test func migrationsOnlyEverGrowAtTheEnd() {
         let identifiers = Schema.migrations.map(\.identifier)
@@ -53,8 +53,8 @@ import Testing
         }
         #expect(
             tables.map(\.name) == [
-                "accepted_conversations", "forward_store", "group_members", "groups", "messages", "own_profile", "peer_profiles",
-                "peers",
+                "accepted_conversations", "blobs", "forward_store", "group_members", "groups", "messages", "own_profile",
+                "peer_profiles", "peers",
             ])
         let loose = tables.filter { !$0.strict }.map(\.name)
         #expect(loose.isEmpty, "not STRICT: \(loose)")
@@ -102,6 +102,34 @@ import Testing
         #expect(SQLGroupStore(database).groups().isEmpty)
     }
 
+    @Test func v4KeepsEveryPeerAndOurProfileWithNoPhotoAndHoldsNoBlobs() throws {
+        // Nobody had a photo before v4 (ADR 2026-10.nh55).
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v3")
+        let bob = fixtureNodeId(2)
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO peers (nodeId, name, status, publicKey, updatedAt, verified, openToChat)
+                    VALUES (?, ?, ?, ?, 7, 0, 1)
+                    """,
+                arguments: [StoredText.bytes(bob.string), StoredText.bytes("Bob"), StoredText.bytes(""), StoredText.bytes("key")]
+            )
+            try db.execute(
+                sql: "INSERT INTO own_profile (slot, name, status, openToChat, version, publishedAt) VALUES (0, ?, ?, 0, 5, 6)",
+                arguments: [StoredText.bytes("Me"), StoredText.bytes("")]
+            )
+        }
+        let database = try KnitDatabase(writer: queue, failures: recordFailure)
+        let peer = SQLPeerStore(database).peer(bob)
+        #expect(peer?.name == "Bob" && peer?.openToChat == true)
+        #expect(peer?.avatarHash == nil && peer?.advertisedAvatarHash == nil)
+        let own = SQLOwnProfileStore(database).load()
+        #expect(own == OwnProfile(name: "Me", version: 5, publishedAt: 6))
+        let blobs = try database.writer.read { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM blobs") }
+        #expect(blobs == 0)
+    }
+
     @Test func grdbCutsABoundStringAtItsFirstNul() throws {
         // Why every string is a BLOB (StoredText). If GRDB ever binds a String's whole length, TEXT columns become
         // possible, though v1 stays as it is.
@@ -131,6 +159,7 @@ enum SchemaPins {
         ("v1", v1),
         ("v2", v2),
         ("v3", v3),
+        ("v4", v4),
     ]
 
     /// Every table, index and trigger this app made, sorted, with the statement SQLite keeps for it. GRDB's own

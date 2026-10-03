@@ -206,14 +206,19 @@ extension Copy {
             NSLocalizedString("diagnostics.counters", bundle: .main, value: "Counters", comment: "Diagnostics: the counters' section")
         }
 
-        /// FILE records thrown away: avatars and attachments, which the MVP does not show.
-        public static var discardedFiles: String {
-            NSLocalizedString(
-                "diagnostics.discarded-files",
-                bundle: .main,
-                value: "File records discarded",
-                comment: "Diagnostics: a counter"
-            )
+        /// Whole files that arrived over the links: photos, ours to show or carried for others.
+        public static var filesReceived: String {
+            NSLocalizedString("diagnostics.files-received", bundle: .main, value: "Files received", comment: "Diagnostics: a counter")
+        }
+
+        /// Files dropped as they streamed in: unwanted, malformed, too large, or cut off.
+        public static var filesRefused: String {
+            NSLocalizedString("diagnostics.files-refused", bundle: .main, value: "Files not kept", comment: "Diagnostics: a counter")
+        }
+
+        /// Files that went out over the links whole.
+        public static var filesSent: String {
+            NSLocalizedString("diagnostics.files-sent", bundle: .main, value: "Files sent", comment: "Diagnostics: a counter")
         }
     }
 }

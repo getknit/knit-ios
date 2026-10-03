@@ -47,6 +47,7 @@ final class FakeMesh: MeshService {
         var accepted: [String] = []
         var verified: [String] = []
         var profiles: [String] = []
+        var avatars: [BlobHash?] = []
         var groups: [String] = []
     }
 
@@ -124,6 +125,18 @@ final class FakeMesh: MeshService {
         own.name = name
         own.status = status
         own.openToChat = openToChat
+        stores.ownProfile.save(own)
+    }
+
+    /// Keeps the photo and names it in our profile, as the engine does.
+    func setAvatar(_ jpeg: [UInt8]?) {
+        let hash = jpeg.map { BlobHash(of: $0) }
+        state.withLock { $0.calls.avatars.append(hash) }
+        if let jpeg, let hash {
+            stores.blobs.insert(jpeg, hash: hash, mime: "image/jpeg", storedAt: 0)
+        }
+        var own = stores.ownProfile.load()
+        own.avatarHash = hash
         stores.ownProfile.save(own)
     }
 

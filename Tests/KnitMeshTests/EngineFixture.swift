@@ -89,10 +89,17 @@ struct TestPeer: Equatable {
         return TestFrame(wire: WireEnvelope(relay: relay, sig: try keys.signature(for: signed), signed: signed), envelope: envelope)
     }
 
-    func profile(name: String = "Peer", version: Int64? = nil, publishedAt: Int64, relay: Bool = true) throws -> TestFrame {
+    func profile(
+        name: String = "Peer",
+        version: Int64? = nil,
+        publishedAt: Int64,
+        relay: Bool = true,
+        avatarHash: String? = nil
+    ) throws -> TestFrame {
         let content = ProfileContent(
             name: name,
             status: "",
+            avatarHash: avatarHash,
             pubKey: keys.bundle.encoded,
             protoVersion: WireProtocol.version,
             capabilities: 0xFFF,
@@ -163,6 +170,14 @@ final class RecordingTransport: MeshTransport {
     var neighbors: [Neighbor] = []
     private(set) var written: [Written] = []
     private(set) var digests: [(ids: [String], to: NodeId)] = []
+    /// Every file streamed, in order. A file to a peer that is not a neighbour goes nowhere, as on a link.
+    private(set) var files: [SentFile] = []
+    /// The attachments the engine last said to keep.
+    private(set) var accepted: Set<BlobHash> = []
+    /// What a link would say is streaming in, as a test sets it.
+    var arrivingFileKeys: Set<BlobHash> = []
+    /// The files a link would say are still on their way, by hash and peer, as a test sets them.
+    var inFlight: [(hash: BlobHash, to: NodeId)] = []
 
     func send(_ wire: WireEnvelope, to peer: NodeId?) {
         guard let envelope = try? RelayEnvelope(decoding: wire.signed) else {
@@ -175,10 +190,27 @@ final class RecordingTransport: MeshTransport {
         digests.append((ids, peer))
     }
 
+    func sendFile(_ file: OutboundFile, to peer: NodeId) -> Bool {
+        guard isLinked(peer) else {
+            return false
+        }
+        files.append(SentFile(kind: file.kind, hash: file.hash, mime: file.mime, bytes: file.read(0, file.size) ?? [], to: peer))
+        return true
+    }
+
+    func isFileInFlight(_ hash: BlobHash, to peer: NodeId) -> Bool {
+        inFlight.contains { $0.hash == hash && $0.to == peer }
+    }
+
+    func acceptFiles(_ keys: Set<BlobHash>) {
+        accepted = keys
+    }
+
     /// Forgets what was written so far.
     func clear() {
         written.removeAll()
         digests.removeAll()
+        files.removeAll()
     }
 
     /// The writes of one frame type.

@@ -43,6 +43,25 @@ struct LinkDoorbellTests {
         #expect(rig.radio.rings == [id, id])
     }
 
+    /// Android never rings for a file (`BluetoothMeshTransport.sendFile`), and neither does this port, so a photo
+    /// streaming to a locked iPhone wakes it no more often than its frames do (ADR 2026-09.khjj, ADR 2026-10.nh55).
+    @Test func fileRecordsDoNotRing() throws {
+        let rig = LinkRig(local: LinkRig.high)
+        _ = try rig.link(LinkRig.low)
+        let file: [UInt8] = Array(repeating: 7, count: 40 * 1024)
+        let hash = try #require(BlobHash(String(repeating: "a", count: 64)))
+        let outbound = OutboundFile(kind: .avatar, hash: hash, mime: "image/jpeg", size: file.count) { offset, count in
+            Array(file[offset..<min(file.count, offset + count)])
+        }
+        #expect(rig.links.sendFile(outbound, to: LinkRig.low))
+        // One chunk a deadline, as the timer would fire them.
+        for _ in 0..<20 {
+            _ = rig.advance(600)
+        }
+        #expect(rig.links.filesSent == 1)
+        #expect(rig.radio.rings.isEmpty)
+    }
+
     @Test func digestsDoNotRing() throws {
         let rig = LinkRig(local: LinkRig.high)
         _ = try rig.link(LinkRig.low)

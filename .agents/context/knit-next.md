@@ -7,10 +7,10 @@ Kotlin wins.
 
 ## The pinned reference
 
-- Release `v2.7.0` is commit `7e73e891`. The port started from HEAD `02051b64`, five test-only commits
-  later, on 2026-09-25.
-- **The pin is `a87d2255`,** knit-next's local `main` on 2026-09-30 once #103 merged, ahead of its `origin/main`
-  (`b0fc4721`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds it.
+- Release `v2.7.0` is commit `7e73e891`, and `v2.8.0` is `45e09f19`. The port started from HEAD `02051b64`, five
+  test-only commits after `v2.7.0`, on 2026-09-25.
+- **The pin is `00357abd`,** knit-next's local `main` on 2026-10-03. It is two commits ahead of `origin/main`
+  (`025321b6`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds it.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
     never opens). Of what the files below say, only the BLE responder moved.
@@ -86,7 +86,7 @@ Kotlin wins.
     - `0b9d19ea` labels an animated image "GIF", from its frames, read locally after the blob lands and stored on
       the message (database v17). It adds no wire field, so this port has nothing to mirror.
     - `2d059df6` moves Android's dependencies, `cb295894` its CI, and `e40135f2` and `3031fe60` its tests.
-  - **Since then:**
+  - **Up to `a87d2255`** (the previous pin):
     - #103 (knit-next ADR 2026-09.hj4a), rebased onto `c1b7c19c` and merged unchanged from the branch this port
       mirrored ahead of the pin (`b6336ddf`, `f4d43637`, `8258350a`): `36f04b8d` is the change, `11505341` records
       its device trial in the ADR, and `a87d2255` words its changelog line. An Android phone that has held no BLE
@@ -104,9 +104,48 @@ Kotlin wins.
       dials. It is LoRa alone, which this port does not carry, so there is nothing to mirror.
     - `c1b7c19c` settles a stuck attachment's spinner to a still hourglass after 30 s, and `adad2d41` enables a
       Claude plugin. Both are Android's alone.
+  - **Since then** (39 commits, release `v2.8.0` among them):
+    - **A6, both halves** (knit-next #107 and #108):
+      - `cb8bc4b5`: a stranger's group can no longer name the recipient as its creator to skip the request inbox.
+        This port never allowed that.
+      - `f46770a9` (knit-next ADR 2026-09.nxcq): a group photo's decided hash is stored and advertised at once, and
+        the shown hash waits for the bytes (database v18). A tie goes to the incoming photo only when nothing is
+        held (`photoWins`). This port already stored the decided hash at once, and now mirrors the tie
+        (`GroupRoster`).
+    - **The file pace follows the link's PHY** (`00357abd`, #114). `FramedLink` reads a `PaceConfig` before each
+      chunk (`CodedPhyPolicy`, `TransferPacePolicy`):
+      - 28 KiB/s in 16 KiB chunks on 1M and 2M;
+      - 1 KiB/s in 2 KiB chunks on Coded.
+
+      Chunk size is the sender's choice, so nothing on the wire moves (`ble-transport.md`).
+    - **The Coded PHY experiment** (knit-next ADR 2026-10.yvn6; `3e775bcb`, `1cc17dca`, `12618cc7`, `e08806c9`,
+      `1b0610be`, and `5cc511cd` for #113). It adds:
+      - a second, extended presence set on Coded;
+      - dials to a peer's Coded address;
+      - a GATT client that steps a link between PHYs.
+
+      It is dark in release (`BLE_CODED_PHY`) and touches only peers heard on Coded, which an iPhone never is.
+      Nothing to mirror.
+    - **Relinking** (`17dc62ea`, knit-next ADRs 2026-10.ryak and 2026-10.pj9w; `5e9f267d`, ADR 2026-09.w3xk):
+      - the presence advert runs at full power;
+      - the connect loop wakes when a candidate's dwell ends, and its waits run on the elapsed clock;
+      - after its last link drops, a phone hunts at the 12 s scan gap for three minutes.
+
+      The floors did not move, so a never-sighted link, which is often an iPhone's, is shed at the budget a little
+      more often (`ble-transport.md`). `LinkManager` already wakes at a dwell's end.
+    - **The presence advert re-asserted** (`c6218c68`, `288fc0ea`, `2b736ef7`; knit-next #112, its ADR 2026-10.9utz):
+      recorded in the roadmap.
+    - **Reachable indirectly** (`e2cbaf0b`, knit-next ADR 2026-10.fw8g): a fourth reach tier, for authors heard only
+      through relays and read from signed frames. It is Android's UI alone.
+    - **Nothing to mirror:**
+      - `937cf785` answers a ratchet intro that opened before its prekey pinned, and this port carries no ratchet.
+      - `f4491d44` never wipes the database or mints an identity when the keystore refuses, which
+        `IdentityKeys.load` already refuses to do (`crypto.md`).
+      - The rest is Android's alone: backup, storage, the 2.8.0 release, the Wear OS docs, a debug Wi-Fi Aware switch,
+        CI, lint and screenshot tests.
   - No wire bytes or vectors moved.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `a87d2255`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `00357abd`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 
@@ -172,9 +211,18 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
     verifies Carol's `groupupdate` and `groupleave`, and expects `0xB` in Carol's profile.
   - **Additive only.** `digestIds` keeps its three ids, so the DIGEST, its fold and the advert stay put. Alice's
     profile, HELLO and advert keep `0x9`.
-- **A6** (filed 2026-09-30 as knit-next #107 and #108, ADR 2026-09.n393): two Android group fixes this port
-  already makes.
-  - A forged `createdBy` naming the recipient counts the `created` row as theirs (`MessageDao.kt:294`), so a
-    stranger's group skips the request inbox (#107).
-  - The old photo hash rides at the new clock until the bytes land (`InboundPipeline.kt:2334`), and an equal
-    clock goes to the incoming photo, so those frames switch members who show the new photo back (#108).
+- **A6** (filed 2026-09-30 as knit-next #107 and #108, ADR 2026-09.n393): two Android group fixes. Android fixed
+  both as `cb8bc4b5` and `f46770a9`, and both are in the pin. Done.
+  - A forged `createdBy` naming the recipient counted the `created` row as theirs (`MessageDao.kt:294`), so a
+    stranger's group skipped the request inbox (#107). This port never did.
+  - The old photo hash rode at the new clock until the bytes landed (`InboundPipeline.kt:2334`), and an equal
+    clock went to the incoming photo, so those frames switched members who showed the new photo back (#108).
+  - Android's fix stores the decided hash at once, shows the new photo once its bytes land, and gives a tie to the
+    incoming photo only when nothing is held (`photoWins`, knit-next ADR 2026-09.nxcq). This port already stored the
+    hash at once, and its tie now follows `photoWins` (knit-ios#1).
+- **A7** (planned; a paired change iOS leads, ADR 2026-10.nh55): shared blob vectors.
+  - **Vectors:** `keyed-v1.json` gains the FILE_HEADER bytes for both kinds and a whole FILE trio, a `blobreq`
+    frame, and a known answer for a sealed photo.
+  - **The test:** `IosEmittedVectorTest` decodes an iOS header and opens an iOS-sealed photo.
+  - **The bridge:** `state` could name each reachable peer's `avatarHash`, so `interop.py` can see a photo land.
+  - **Additive only:** `0xB` stays.

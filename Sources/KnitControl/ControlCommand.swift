@@ -19,6 +19,10 @@ public enum ControlCommand: Equatable, Sendable {
     /// `{"cmd":"name","name":"…","status":"…","openToChat":true}`: change our profile; what is left out stays, so
     /// an absent `openToChat` is not a false one.
     case name(String?, status: String?, openToChat: Bool?) // swiftlint:disable:this discouraged_optional_boolean
+    /// `{"cmd":"avatar","jpeg":"<base64>"}`, `{"cmd":"avatar","path":"<file>"}` or `{"cmd":"avatar","clear":true}`:
+    /// set our profile photo, a JPEG, or clear it, and flood the profile that names it (ADR 2026-10.nh55). A path is
+    /// read where the command is answered, so it suits `knit-peer`; base64 suits the app's bridge.
+    case avatar(AvatarSource)
     /// `{"cmd":"deny-link","peer":"<node id>"}`: refuse links with a peer, both ways.
     case denyLink(NodeId)
     /// `{"cmd":"allow-link","peer":"<node id>"}`: let it link again.
@@ -56,6 +60,8 @@ public enum ControlCommand: Equatable, Sendable {
             "accept"
         case .name:
             "name"
+        case .avatar:
+            "avatar"
         case .denyLink:
             "deny-link"
         case .allowLink:
@@ -76,6 +82,16 @@ public enum ControlCommand: Equatable, Sendable {
             "quit"
         }
     }
+}
+
+/// Where an `avatar` command's photo comes from.
+public enum AvatarSource: Equatable, Sendable {
+    /// The JPEG itself, sent as base64.
+    case bytes([UInt8])
+    /// A JPEG file, read where the command is answered.
+    case file(String)
+    /// No photo: clear ours.
+    case clear
 }
 
 /// A control command about groups (ADR 2026-09.n393).
@@ -136,6 +152,9 @@ public struct ControlRequest: Equatable, Sendable {
         var openToChat: Bool? // swiftlint:disable:this discouraged_optional_boolean
         var limit: Int?
         var members: [String]?
+        var jpeg: String?
+        var path: String?
+        var clear: Bool? // swiftlint:disable:this discouraged_optional_boolean
         var tag: String?
     }
 
@@ -173,6 +192,8 @@ public struct ControlRequest: Equatable, Sendable {
             required(raw.conv ?? raw.peer, "conv").map(ControlCommand.accept)
         case "name":
             .success(.name(raw.name, status: raw.status, openToChat: raw.openToChat))
+        case "avatar":
+            avatarSource(raw).map(ControlCommand.avatar)
         case "deny-link":
             nodeId(raw.peer, "peer").map(ControlCommand.denyLink)
         case "allow-link":
@@ -199,6 +220,16 @@ public struct ControlRequest: Equatable, Sendable {
         default:
             .failure(.unknownCommand(raw.cmd))
         }
+    }
+
+    private static func avatarSource(_ raw: Raw) -> Result<AvatarSource, ControlError> {
+        if raw.clear == true {
+            return .success(.clear)
+        }
+        if let jpeg = raw.jpeg {
+            return Base64.decode(jpeg).map { .success(.bytes($0)) } ?? .failure(.invalid("jpeg"))
+        }
+        return required(raw.path, "jpeg").map(AvatarSource.file)
     }
 
     private static func members(_ values: [String]?) -> Result<[NodeId], ControlError> {
@@ -234,6 +265,8 @@ public enum ControlError: Error, Equatable, Sendable {
     case missing(String)
     /// Not a canonical node id.
     case invalidNodeId(String)
+    /// A field that does not read as what it must be.
+    case invalid(String)
     /// The mesh would not do it.
     case refused(String)
 
@@ -248,6 +281,8 @@ public enum ControlError: Error, Equatable, Sendable {
             "missing \(field)"
         case .invalidNodeId(let text):
             "not a node id: \(text)"
+        case .invalid(let field):
+            "not a valid \(field)"
         case .refused(let reason):
             reason
         }

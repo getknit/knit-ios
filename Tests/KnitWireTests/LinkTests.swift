@@ -1,3 +1,4 @@
+import Foundation
 import KnitWire
 import Testing
 
@@ -149,10 +150,48 @@ import Testing
     }
 
     @Test func fileHeadersParseAndGarbageIsRejected() {
-        let header = Array(#"{"kind":"AVATAR","key":"00ff","mime":"image/jpeg","later":1}"#.utf8)
-        #expect(LinkJSON.fileHeader(from: header) == FileHeader(kind: "AVATAR", key: "00ff", mime: "image/jpeg"))
+        let header = Array(#"{"later":1,"mime":"image/jpeg","key":"00ff","kind":"AVATAR"}"#.utf8)
+        #expect(LinkJSON.fileHeader(from: header) == FileHeader(kind: .avatar, key: "00ff", mime: "image/jpeg"))
         #expect(LinkJSON.fileHeader(from: Array(#"{"kind":"AVATAR"}"#.utf8)) == nil)
+        #expect(LinkJSON.fileHeader(from: Array(#"{"kind":"AVATAR","key":1,"mime":"x"}"#.utf8)) == nil)
         #expect(LinkJSON.fileHeader(from: Array("not json".utf8)) == nil)
+    }
+
+    /// `FileKind`'s tokens are frozen (`FramedLinkTest.fileKindWireTokensAreFrozen`), and any other token, a
+    /// lowercase one included, is an attachment (`entries.firstOrNull { it.wire == token } ?: ATTACHMENT`).
+    @Test func fileKindsReadAsAndroidReadsThem() {
+        #expect(FileHeader.Kind.avatar.rawValue == "AVATAR")
+        #expect(FileHeader.Kind.attachment.rawValue == "ATTACHMENT")
+        #expect(FileHeader.Kind(wire: "AVATAR") == .avatar)
+        #expect(FileHeader.Kind(wire: "ATTACHMENT") == .attachment)
+        #expect(FileHeader.Kind(wire: "avatar") == .attachment)
+        #expect(FileHeader.Kind(wire: "VOICE") == .attachment)
+        #expect(FileHeader.Kind(wire: "") == .attachment)
+    }
+
+    /// kotlinx writes `FileHeaderWire` compact, in declaration order (`LinkFraming.encodeFileHeader`); no Kotlin test
+    /// pins the bytes, so these follow its `Json` settings and escape table until companion change A7 shares a vector.
+    @Test func fileHeaderBytesArePinned() throws {
+        let empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        let attachment = LinkRecord(
+            .fileHeader, payload: LinkJSON.fileHeaderPayload(FileHeader(kind: .attachment, key: empty, mime: "image/jpeg")))
+        #expect(String(bytes: attachment.payload, encoding: .utf8) == #"{"kind":"ATTACHMENT","key":"\#(empty)","mime":"image/jpeg"}"#)
+        #expect(attachment.payload.count == 114)
+        #expect(attachment.encoded.map { Hex.encode(Array($0.prefix(5))) } == "0200000072")
+        let avatar = LinkJSON.fileHeaderPayload(FileHeader(kind: .avatar, key: empty, mime: "image/jpeg"))
+        #expect(String(bytes: avatar, encoding: .utf8) == #"{"kind":"AVATAR","key":"\#(empty)","mime":"image/jpeg"}"#)
+        let roundTrip = try #require(LinkJSON.fileHeader(from: avatar))
+        #expect(roundTrip == FileHeader(kind: .avatar, key: empty, mime: "image/jpeg"))
+    }
+
+    /// kotlinx's `ESCAPE_STRINGS`: the quote, the backslash, five short forms, and `\u00xx` in lowercase for the rest of
+    /// the control characters. Everything else, `/` and non-ASCII included, is written as it is.
+    @Test func jsonStringsAreEscapedAsKotlinxEscapesThem() {
+        let awkward = "q\"b\\s\n\r\t\u{8}\u{C}\u{1}\u{1F}/é"
+        let payload = LinkJSON.fileHeaderPayload(FileHeader(kind: .attachment, key: "k", mime: awkward))
+        #expect(String(bytes: payload, encoding: .utf8) == #"{"kind":"ATTACHMENT","key":"k","mime":"q\"b\\s\n\r\t\b\f\u0001\u001f/é"}"#)
+        #expect(LinkJSON.fileHeader(from: payload)?.mime == awkward)
+        #expect(LinkJSON.digestIds(from: LinkJSON.digestPayload(ids: [awkward])) == [awkward])
     }
 
     @Test func advertBytesArePinned() throws {

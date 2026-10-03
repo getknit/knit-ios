@@ -37,9 +37,11 @@ extension MeshEngine {
             handleGroupUpdate(envelope)
         case .groupLeave:
             handleGroupLeave(envelope)
+        case .blobRequest:
+            handleBlobRequest(frame)
         default:
-            // Reactions, typing cues, blob requests and types this build has never heard of are carried and relayed
-            // where custodial, and shown nowhere.
+            // Reactions, typing cues and types this build has never heard of are carried and relayed where custodial,
+            // and shown nowhere.
             break
         }
     }
@@ -50,7 +52,8 @@ extension MeshEngine {
     func verify(_ frame: InboundFrame) -> Bool {
         let envelope = frame.envelope
         if envelope.type == .blobRequest {
-            // Unsigned by design, and this build answers none.
+            // Unsigned by design (`MeshManager.verifyInbound`): nothing in it is trusted but its hash, and only to look
+            // up what we hold.
             return true
         }
         guard let bundle = verifierBundle(for: envelope) else {

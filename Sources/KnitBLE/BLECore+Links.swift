@@ -27,7 +27,8 @@
                 thread: streams,
                 log: log,
                 received: { [emit] bytes in emit(.received(id, bytes)) },
-                ended: { [weak self] in self?.onQueue { $0.ended(id) } }
+                ended: { [weak self] in self?.onQueue { $0.ended(id) } },
+                wroteFileRecord: { [emit] in emit(.wroteFileRecord(id)) }
             )
             links[id] = link
             owners[id] = owner

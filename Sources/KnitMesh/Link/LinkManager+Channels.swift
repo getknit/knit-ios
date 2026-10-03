@@ -12,6 +12,9 @@ extension LinkManager {
         radio.close(id)
         crossings.forget(link: id)
         doorbells[id] = nil
+        // A file cut off mid-stream is dropped either way; the next re-ask fetches it whole (`FramedLink.kt:183-190`).
+        intakes[id] = nil
+        feeds[id] = nil
         var events: [Event] = []
         var peer: NodeId?
         switch channel.stage {

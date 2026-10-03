@@ -2,6 +2,7 @@ import Foundation
 public import KnitCrypto
 public import KnitStore
 import KnitSync
+import KnitWire
 
 /// A peer's state directory: its identity in `identity` (mode 0600, in a 0700 directory) and its own profile in
 /// `profile.json`, including the version and publish stamp. Keeping those two across restarts matters: Android keeps
@@ -27,19 +28,23 @@ public struct PeerState: Sendable {
         try IdentityKeys.load(from: identity)
     }
 
-    /// Keeps `keys` as this peer's identity, and forgets the old identity's profile clocks with it.
+    /// Keeps `keys` as this peer's identity, and forgets the old identity's profile clocks with it. The name and the
+    /// photo stay, the photo still kept in `avatar.jpg`.
     public func replaceIdentity(with keys: IdentityKeys) throws(SecretStoreError) {
         try identity.write(keys.storedForm)
         let profile = profileStore()
-        var fresh = OwnProfile()
-        fresh.name = profile.load().name
-        profile.save(fresh)
+        let old = profile.load()
+        profile.save(OwnProfile(name: old.name, avatarHash: old.avatarHash))
     }
 
     /// The own profile, kept in `profile.json`.
     public func profileStore() -> FileOwnProfileStore {
         FileOwnProfileStore(path: directory + "/profile.json")
     }
+
+    /// Our own photo, kept in `avatar.jpg` beside the profile that names it, since the peer's blobs live in memory and
+    /// it must still serve the hash `profile.json` advertises after a restart (ADR 2026-10.nh55).
+    public var avatarPath: String { directory + "/avatar.jpg" }
 }
 
 /// An ``OwnProfileStore`` in one JSON file, rewritten atomically on every save. A file that is missing or does not
@@ -51,6 +56,8 @@ public final class FileOwnProfileStore: OwnProfileStore {
         var openToChat: Bool
         var version: Int64
         var publishedAt: Int64
+        /// Absent in a file from before photos, which reads as none.
+        var avatarHash: String?
     }
 
     private static let fileMode = 0o600
@@ -68,7 +75,12 @@ public final class FileOwnProfileStore: OwnProfileStore {
         let stored = FileManager.default.contents(atPath: path).flatMap { try? JSONDecoder().decode(Stored.self, from: $0) }
         let profile = stored.map { saved in
             OwnProfile(
-                name: saved.name, status: saved.status, openToChat: saved.openToChat, version: saved.version, publishedAt: saved.publishedAt
+                name: saved.name,
+                status: saved.status,
+                openToChat: saved.openToChat,
+                version: saved.version,
+                publishedAt: saved.publishedAt,
+                avatarHash: saved.avatarHash.flatMap(BlobHash.init)
             )
         }
         cached = Lock(profile ?? OwnProfile())
@@ -85,7 +97,8 @@ public final class FileOwnProfileStore: OwnProfileStore {
             status: profile.status,
             openToChat: profile.openToChat,
             version: profile.version,
-            publishedAt: profile.publishedAt
+            publishedAt: profile.publishedAt,
+            avatarHash: profile.avatarHash?.string
         )
         do {
             let encoder = JSONEncoder()

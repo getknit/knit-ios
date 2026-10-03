@@ -37,8 +37,8 @@
     }
 
     /// One L2CAP channel's two streams, read as one byte stream in 64 KiB gulps and written in order. Everything
-    /// here runs on the ``StreamThread``; the radio reaches it only through ``write(_:)``, ``writeDigest(_:)`` and
-    /// ``close()``.
+    /// here runs on the ``StreamThread``; the radio reaches it only through ``write(_:)``, ``writeDigest(_:)``,
+    /// ``writeFileRecord(_:)`` and ``close()``.
     ///
     /// The channel object is held for the link's whole life: CoreBluetooth closes a channel whose last reference goes.
     /// The link reads and writes only its streams, so tests run it over a bound stream pair instead.
@@ -59,6 +59,7 @@
         private let log: any KnitLog
         private let received: @Sendable ([UInt8]) -> Void
         private let ended: @Sendable () -> Void
+        private let wroteFileRecord: @Sendable () -> Void
         private var outbox = LinkOutbox()
         private var isOpen = false
         private var isClosed = false
@@ -66,14 +67,15 @@
         private var isWaiting = false
 
         /// A link over `channel`'s streams. `received` hears every read; `ended` hears once that the far side closed it
-        /// or it failed, and never after ``close()``.
+        /// or it failed, and never after ``close()``; `wroteFileRecord` hears each FILE record's last byte go out.
         convenience init(
             id: ChannelID,
             channel: CBL2CAPChannel,
             thread: StreamThread,
             log: any KnitLog,
             received: @escaping @Sendable ([UInt8]) -> Void,
-            ended: @escaping @Sendable () -> Void
+            ended: @escaping @Sendable () -> Void,
+            wroteFileRecord: @escaping @Sendable () -> Void
         ) {
             self.init(
                 id: id,
@@ -83,7 +85,8 @@
                 thread: thread,
                 log: log,
                 received: received,
-                ended: ended
+                ended: ended,
+                wroteFileRecord: wroteFileRecord
             )
         }
 
@@ -96,7 +99,8 @@
             thread: StreamThread,
             log: any KnitLog,
             received: @escaping @Sendable ([UInt8]) -> Void,
-            ended: @escaping @Sendable () -> Void
+            ended: @escaping @Sendable () -> Void,
+            wroteFileRecord: @escaping @Sendable () -> Void
         ) {
             self.id = id
             self.input = input
@@ -106,6 +110,7 @@
             self.log = log
             self.received = received
             self.ended = ended
+            self.wroteFileRecord = wroteFileRecord
         }
 
         /// Opens both streams on the stream thread.
@@ -130,6 +135,18 @@
                     return
                 }
                 outbox.append(bytes)
+                drain()
+            }
+        }
+
+        /// Writes a FILE record after everything written before, and reports its last byte out
+        /// (``LinkOutbox/appendFileRecord(_:)``).
+        func writeFileRecord(_ record: [UInt8]) {
+            thread.perform { [self] in
+                guard !isClosed else {
+                    return
+                }
+                outbox.appendFileRecord(record)
                 drain()
             }
         }
@@ -201,8 +218,11 @@
                     log.log(.debug, "ble \(id) write of \(chunk.count) returned \(count)")
                     break
                 }
-                outbox.wrote(count)
+                let finishedFileRecord = outbox.wrote(count)
                 log.log(.debug, "ble \(id) wrote \(count), \(outbox.queuedBytes) waiting")
+                if finishedFileRecord {
+                    wroteFileRecord()
+                }
             }
             if outbox.isEmpty {
                 isWaiting = false

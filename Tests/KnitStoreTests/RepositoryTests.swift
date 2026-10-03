@@ -90,6 +90,8 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
     @Test(arguments: kinds)
     func aPeerKeepsEveryFieldAndAnUpsertReplacesThem(kind: RepositoryKind) throws {
         let store = try kind.make().peers
+        let shown = try #require(BlobHash(String(repeating: "a", count: 64)))
+        let advertised = try #require(BlobHash(String(repeating: "b", count: 64)))
         let full = PeerRecord(
             nodeId: bob,
             name: "Bob",
@@ -100,7 +102,9 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
             capabilities: 0x9,
             updatedAt: 7,
             verified: true,
-            openToChat: true
+            openToChat: true,
+            avatarHash: shown,
+            advertisedAvatarHash: advertised
         )
         store.upsert(full)
         #expect(store.peer(bob) == full)
@@ -272,6 +276,22 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
         #expect(store.load() == saved)
         store.save(OwnProfile(name: "Al", version: 8, publishedAt: 10))
         #expect(store.load() == OwnProfile(name: "Al", version: 8, publishedAt: 10), "one profile, replaced")
+    }
+
+    /// `INSERT OR REPLACE` nulls every column its list leaves out, so a store that forgot the photo's column would drop
+    /// our photo at the 12-hour republish, which moves only the publish stamp (ADR 2026-10.nh55).
+    @Test(arguments: kinds)
+    func ourPhotoSurvivesARepublish(kind: RepositoryKind) throws {
+        let store = try kind.make().ownProfile
+        let photo = try #require(BlobHash(String(repeating: "c", count: 64)))
+        var profile = OwnProfile(name: "Alice", version: 7, publishedAt: 9, avatarHash: photo)
+        store.save(profile)
+        profile.publishedAt = 43_200_009
+        store.save(profile)
+        #expect(store.load().avatarHash == photo)
+        profile.avatarHash = nil
+        store.save(profile)
+        #expect(store.load().avatarHash == nil, "removing the photo clears it")
     }
 
     @Test func theMemoryOwnProfileStoreStartsFromWhatItIsGiven() {

@@ -38,6 +38,9 @@ growing an explanation, that explanation belongs in the ADR.
 | the doorbell, `Radio.ring`, `Radio.servesDoorbell`, `CAP_DOORBELL`, `LinkManager+Doorbell`, or what wakes a suspended iPhone | [ADR 2026-09.khjj](../memory/decisions/2026-09-khjj-a-peer-wakes-a-suspended.md) |
 | seeking peers in the background, `Radio.seekPeers`, `LinkManager+Seeking`, the wake budget, the scan's filter, or `interop.py iphone-seek` | [ADR 2026-10.mueg](../memory/decisions/2026-10-mueg-a-lonely-iphone-in-the.md) |
 | the Keychain identity, `KeychainSecretStore`, or what onboarding publishes | [ADR 2026-09.tkww](../memory/decisions/2026-09-tkww-a-reinstall-keeps-the-keychain.md) |
+| what photos the iPhone shows, sends or carries, a group photo, screening, or `CAP_FILES` | [ADR 2026-10.nh55](../memory/decisions/2026-10-nh55-profile-photos-and-photos-in.md) |
+| FILE records, `FileIntake`, `LinkManager+Files`, `Radio.writeFileRecord`, or how a file streams on a link | [ADR 2026-10.h6zz](../memory/decisions/2026-10-h6zz-file-records-cross-a-link.md) |
+| `blobreq`, `BlobExchange`, `MeshEngine+Blobs`, a `BlobStore`, our photo's push, or how a peer's photo is adopted | [ADR 2026-10.ym9y](../memory/decisions/2026-10-ym9y-the-iphone-asks-for.md) |
 | `VerifyPayload`, a scanned code, `CodeScannerModel`, `CameraAccess`, `Sources/Knit/Codes/`, `-demoCamera`, or Add contact | [ADR 2026-10.65xx](../memory/decisions/2026-10-65xx-a-peer-s-profile-verifies.md) |
 | a string a person reads, `Copy`, `App/Info.plist`'s usage strings, or a view's text | [ADR 2026-09.ycza](../memory/decisions/2026-09-ycza-user-facing-copy-lives-in.md) |
 | `check.sh periphery`, a `verify:periphery` job, a `periphery:ignore`, or a Periphery finding | [ADR 2026-09.xgtz](../memory/decisions/2026-09-xgtz-periphery-blocks-on-the-mac.md) |

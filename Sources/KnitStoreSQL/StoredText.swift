@@ -54,6 +54,19 @@ extension Row {
     func optionalNodeId(_ column: String) throws -> NodeId? {
         try decode(Data?.self, forColumn: column) == nil ? nil : try nodeId(column)
     }
+
+    /// The blob hash in `column`. It throws when the bytes are not one, as ``nodeId(_:)`` does.
+    func blobHash(_ column: String) throws -> BlobHash {
+        guard let hash = BlobHash(try text(column)) else {
+            throw StoredValueError(column: column)
+        }
+        return hash
+    }
+
+    /// The blob hash in `column`, or `nil` for `NULL`.
+    func optionalBlobHash(_ column: String) throws -> BlobHash? {
+        try decode(Data?.self, forColumn: column) == nil ? nil : try blobHash(column)
+    }
 }
 
 /// A stored value that does not read back as what its column holds: a damaged file, since every write goes

@@ -28,6 +28,10 @@ public final class LinkManager: MeshTransport {
         case frame(InboundFrame)
         /// A custody digest arrived.
         case digest([String], from: NodeId)
+        /// A whole file arrived, its hash not yet checked.
+        case file(InboundFile)
+        /// A file we streamed left the radio whole, its END included (``sendFile(_:to:)``).
+        case fileSent(BlobHash, to: NodeId)
     }
 
     enum Role: Equatable {
@@ -97,6 +101,15 @@ public final class LinkManager: MeshTransport {
     var addresses: [NodeId: RadioAddress] = [:]
     var backoffs: [NodeId: Backoff] = [:]
     var doorbells: [ChannelID: Doorbell] = [:]
+    /// Each live link's incoming file, kept apart from ``channels`` so that reading a channel never copies a file's
+    /// bytes.
+    var intakes: [ChannelID: FileIntake] = [:]
+    /// Each live link's outgoing files: the one streaming and those waiting behind it.
+    var feeds: [ChannelID: FileFeed] = [:]
+    /// The attachments the engine wants kept when they stream in (``acceptFiles(_:)``).
+    var acceptedFileKeys: Set<BlobHash> = []
+    /// Files that finished streaming outside ``handle(_:)`` and ``advance()``, handed over by the next of either.
+    var finishedFiles: [Event] = []
     var crossings = LinkCrossings<ChannelID>()
     var psm: UInt16?
     var digestCue: UInt32 = 0
@@ -119,8 +132,12 @@ public final class LinkManager: MeshTransport {
 
     /// Frames dropped because they did not decode; the link stays up, as on Android.
     public internal(set) var undecodableFrames = 0
-    /// FILE records discarded as they streamed by (avatars and attachments are out of the MVP).
-    public internal(set) var discardedFileRecords = 0
+    /// Whole files that arrived, their hashes not yet checked.
+    public internal(set) var filesReceived = 0
+    /// Files dropped as they streamed in: unwanted, malformed, too large, or cut off by another header.
+    public internal(set) var filesRefused = 0
+    /// Files that left the radio whole.
+    public internal(set) var filesSent = 0
     /// Rings asked of the radio, on every link since the manager was made. A radio that cannot ring, or a peer with no
     /// doorbell, makes nothing of one.
     public internal(set) var rings = 0
@@ -239,7 +256,8 @@ public final class LinkManager: MeshTransport {
         let now = clock.monotonicMilliseconds()
         let backoffDue = backoffs.values.map(\.nextAt).filter { $0 > now }.min()
         let ringDue = doorbells.values.compactMap(\.due).min()
-        let due = [advertDue, backoffDue, ringDue, dwellDue(now: now)].compactMap(\.self)
+        let fileDue = finishedFiles.isEmpty ? feeds.values.compactMap(\.due).min() : now
+        let due = [advertDue, backoffDue, ringDue, dwellDue(now: now), fileDue].compactMap(\.self)
         return (channels.values.compactMap(\.deadline) + due).min()
     }
 
@@ -248,7 +266,7 @@ public final class LinkManager: MeshTransport {
     /// Handles what the radio reported, and answers what the mesh needs to know.
     public func handle(_ event: RadioEvent) -> [Event] {
         let now = clock.monotonicMilliseconds()
-        return respond(to: event, now: now) + reconsiderSeeking(now: now)
+        return respond(to: event, now: now) + reconsiderSeeking(now: now) + takeFinishedFiles()
     }
 
     private func respond(to event: RadioEvent, now: Int64) -> [Event] {
@@ -293,6 +311,8 @@ public final class LinkManager: MeshTransport {
         case .rung:
             ringsHeard += 1
             return []
+        case .wroteFileRecord(let id):
+            return fileRecordWritten(on: id, now: now)
         }
     }
 
@@ -315,6 +335,7 @@ public final class LinkManager: MeshTransport {
             advertiseNow()
         }
         ringDue(now: now)
+        events += feedDueFiles(now: now)
         return events + promote(now: now) + reconsiderSeeking(now: now)
     }
 }

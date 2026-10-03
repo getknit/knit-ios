@@ -219,6 +219,8 @@
                 enqueue(bytes, on: id)
             case .writeDigest(let id, let record):
                 enqueueDigest(record, on: id)
+            case .writeFileRecord(let id, let record):
+                enqueueFileRecord(record, on: id)
             case .close(let id):
                 closeChannel(id)
             case .ring(let id):

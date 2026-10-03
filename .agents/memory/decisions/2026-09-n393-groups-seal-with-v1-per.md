@@ -89,3 +89,15 @@ Left out, and why:
   - `SchemaTests`, for v3;
   - `LinkTests`, which pins `0xB`;
   - A5's vectors, once they land.
+
+**Amended 2026-10-03, when group photos came into scope (ADR 2026-10.nh55):** both A6 fixes are now on knit-next's
+`main`: `cb8bc4b5`, and `f46770a9` with its ADR 2026-09.nxcq.
+
+- **How Android now handles a photo.** It stores the decided hash at once, as this port already did, and shows the
+  new photo only once its bytes land.
+- **Ties.** A tie now goes to the incoming photo only while nothing is held (`photoWins`, `InboundPipeline.kt:2378`).
+  Here a tie used to go to the frame; it now follows `photoWins` (`GroupRoster.photoWins`, knit-ios#1).
+  `GroupRosterTests.aTieKeepsTheHeldPhotoAndTakesOneOnlyWhenNoneIsHeld` pins it.
+- **Photos are in scope.** The iPhone will fetch and show a group's photo, but never set one.
+- **The `createdBy` rule stays this port's own.** It also checks that the creator is a founding member, which Android
+  does not.

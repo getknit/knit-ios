@@ -9,11 +9,19 @@ extension MeshEngine {
     /// order profiles by, moves to `max(now, version + 1)`, and the publish stamp to a fresh one, so the frame has a
     /// new id that no seen set or custody check can swallow.
     public func updateProfile(name: String, status: String, openToChat: Bool) {
+        publishEdit { own in
+            own.name = name
+            own.status = status
+            own.openToChat = openToChat
+        }
+    }
+
+    /// Applies `change` to what we publish as an edit, and floods the result: the version moves to
+    /// `max(now, version + 1)` and the publish stamp to a fresh one.
+    func publishEdit(_ change: (inout OwnProfile) -> Void) {
         let now = clock.wallMilliseconds()
         var own = stores.ownProfile.load()
-        own.name = name
-        own.status = status
-        own.openToChat = openToChat
+        change(&own)
         own.version = max(now, own.version + 1)
         own.publishedAt = max(now, own.publishedAt + 1)
         stores.ownProfile.save(own)
@@ -62,6 +70,7 @@ extension MeshEngine {
         let content = ProfileContent(
             name: TextLimits.truncated(TextLimits.normalizeSingleLine(own.name), toUTF16: TextLimits.displayName),
             status: TextLimits.truncated(TextLimits.normalizeSingleLine(own.status), toUTF16: TextLimits.status),
+            avatarHash: own.avatarHash?.string,
             pubKey: identity.bundle.encoded,
             deviceTag: deviceTag,
             protoVersion: WireProtocol.version,
@@ -88,6 +97,20 @@ extension MeshEngine {
     }
 
     // MARK: Their profiles
+
+    /// The photo a newer profile leaves a peer with (`storeProfileRow` and `resolveAvatarHash`,
+    /// `InboundPipeline.kt:3186-3207` and `:3302-3326`): the hash it advertises, and the photo shown, which follows that
+    /// hash once its bytes are held and otherwise stays as it was. A profile with no photo clears both. A hash that is
+    /// not one can never be fetched, so the photo shown stays, as on Android, where its bytes are never local.
+    func photoFrom(_ content: ProfileContent, existing: PeerRecord?) -> (advertised: BlobHash?, shown: BlobHash?) {
+        guard let text = content.avatarHash else {
+            return (nil, nil)
+        }
+        guard let hash = BlobHash(text) else {
+            return (nil, existing?.avatarHash)
+        }
+        return (hash, stores.blobs.contains(hash) ? hash : existing?.avatarHash)
+    }
 
     /// Marks a pinned peer verified, or not, once the user has compared safety numbers (`PeerRepository.setVerified`).
     /// A verified peer's DMs are never a message request. A peer that has not pinned has no key to verify.
@@ -123,6 +146,7 @@ extension MeshEngine {
                 return
             }
         }
+        let photo = photoFrom(content, existing: existing)
         let record = PeerRecord(
             nodeId: sender,
             // Our own limits bound what we send, not what a peer does.
@@ -134,11 +158,21 @@ extension MeshEngine {
             capabilities: content.capabilities ?? existing?.capabilities,
             updatedAt: max(existing?.updatedAt ?? version, version),
             verified: existing?.verified ?? false,
-            openToChat: content.openToChat
+            openToChat: content.openToChat,
+            avatarHash: photo.shown,
+            advertisedAvatarHash: photo.advertised
         )
         stores.peers.upsert(record)
         if record != existing {
             events.append(.peerUpdated(sender))
+        }
+        // A linked peer pushes its own photo right behind its profile, so only someone else's is asked for now; a push
+        // that never came is asked for at the next re-offer.
+        if let advertised = photo.advertised, photo.shown != advertised, !transport.isLinked(sender) {
+            wantBlob(advertised)
+        }
+        if let replaced = existing?.avatarHash, replaced != photo.shown {
+            releaseBlob(replaced)
         }
         flushPending(to: sender)
         // Keep the frame the key pinned from beside the pin, so this node can prove the key to a newcomer after a

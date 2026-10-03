@@ -132,6 +132,10 @@ public final class DemoMesh: MeshService {
         await mesh.updateProfile(name: name, status: status, openToChat: openToChat)
     }
 
+    public func setAvatar(_ jpeg: [UInt8]?) async {
+        await mesh.setAvatar(jpeg)
+    }
+
     /// Marks a pinned peer verified, or not.
     public func setVerified(_ peer: NodeId, _ verified: Bool) async {
         await mesh.setVerified(peer, verified)

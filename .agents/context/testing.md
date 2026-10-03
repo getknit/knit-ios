@@ -86,9 +86,10 @@ ladder, not the first.
 - **Malformed input never traps.** A parser test feeds truncated, oversized and wrong-typed input and
   expects an error, never a crash. The fuzzers enforce the same thing at scale.
 - **Never `sleep` in a test to wait for something.** Await the event, or drive the injected clock.
-- **Store contracts run against every implementation.** `CustodyStoreTests` and `RepositoryTests` take a
-  store kind (`memory`, `sql`) as their argument, so a new store joins by adding a case, and passes by
-  keeping the rules the memory store keeps. `KnitStoreSQLTests` covers only what the SQL stores add: the
+- **Store contracts run against every implementation.** `CustodyStoreTests`, `RepositoryTests` and `BlobStoreTests`
+  take a store kind (`memory`, `sql`) as their argument, so a new store joins by adding a case, and passes by
+  keeping the rules the memory store keeps. The SQL blob store keeps its bytes in files, so its kind runs in a
+  temporary directory of its own. `KnitStoreSQLTests` covers only what the SQL stores add: the
   schema pins, the file and its reopening, and how failures are reported (ADR 2026-09.nyya).
 - **Shared fixtures live in `KnitTestSupport`** (`Tests/KnitTestSupport/`): the golden vectors and
   knit-next's `bytes(n, seed)`. It is a plain target, not a product, so the app never links it.

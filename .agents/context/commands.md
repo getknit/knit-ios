@@ -57,19 +57,22 @@ knit-peer scan --seconds 20                                       # the Knit nod
 knit-peer keygen --above <node id> [--below <node id>]            # an identity for one dial order
 knit-peer run --radio-profile android --name "knit-peer"          # JSON lines on stdin and stdout
 python3 scripts/interop.py check --device <adb serial> --order phone-dials   # checklist L, with the go-ahead
-python3 scripts/interop.py check … --blank-name --expect-avatar   # alias parity; FILE records from a phone with a photo
+python3 scripts/interop.py check … --blank-name --expect-avatar   # alias parity; the phone's photo, pushed and adopted
+python3 scripts/interop.py check … --peer-avatar <jpeg>           # the peer's photo, pushed to the phone
 python3 scripts/interop.py check … --radio-profile ios            # the ios group, against an A1 build
 python3 scripts/interop.py refusal --device <adb serial>          # the ios profile against Android 2.7 only
 python3 scripts/interop.py replace --device <adb serial>          # A1's stale-link replacement, with a peer the phone never sights
 python3 scripts/interop.py check … --send-mtu 8192                # SDUs above the default 247, to test a phone
 python3 scripts/interop.py soak --device <serial> --extras        # MVP item 11's hour, both ways, with the go-ahead
 python3 scripts/interop.py relay --device <serial>                # MVP item 7's line; a second peer on hci0, its go-ahead too
+python3 scripts/interop.py relay … --expect-avatar --peer-avatar <jpeg>   # photos pulled through the middle peer
 python3 scripts/interop.py check … --mac                          # checklist M: the peer on the Mac, on CoreBluetooth (ADR 2026-09.vcdk)
 python3 scripts/interop.py soak … --mac --extras                  # checklist M's hour, the peer on the Mac
 python3 scripts/interop.py iphone --device <serial>               # MVP items 2 to 6, iPhone and phone both driven; Knit open on both
 python3 scripts/interop.py iphone --device <serial> --links 10    # the same, then links up to ten, each ending at the 5 s timeout; the iPhone above the phone
 python3 scripts/interop.py iphone-peer --order iphone-above       # the same against a fresh peer on hci0; iphone-below is the other order
 python3 scripts/interop.py iphone-relay --device <serial>         # MVP item 7: phone, iPhone, then a peer on hci0; Knit open on both
+python3 scripts/interop.py iphone-relay … --expect-avatar --peer-avatar <jpeg>   # each end's photo, served by the iPhone between them
 python3 scripts/interop.py iphone-group --device <serial>         # v1 groups along that line, the peer as the third member (ADR 2026-09.n393)
 python3 scripts/interop.py group --device <serial>                # v1 groups between two peers and the phone, which needs two links free
 python3 scripts/interop.py iphone-soak --device <serial> --peer --extras   # MVP item 11 on the iPhone: an hour, the peer on hci0; Auto-Lock off

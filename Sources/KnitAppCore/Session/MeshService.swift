@@ -38,6 +38,9 @@ public protocol MeshService: AnyObject, Sendable {
     func leaveGroup(_ groupId: String) async -> Bool
     /// Changes our profile and floods it.
     func updateProfile(name: String, status: String, openToChat: Bool) async
+    /// Sets our photo, a JPEG, or clears it with `nil`, floods the profile that names it, and pushes it to every
+    /// neighbour.
+    func setAvatar(_ jpeg: [UInt8]?) async
     /// Marks a pinned peer verified, or not.
     func setVerified(_ peer: NodeId, _ verified: Bool) async
 }
@@ -50,26 +53,26 @@ public struct MeshDiagnostics: Sendable, Equatable {
     public var sightings: [PresenceTracker.Snapshot]
     /// Why frames were dropped so far.
     public var dropped: [DropReason: Int]
-    /// FILE records discarded so far.
-    public var discardedFileRecords: Int
+    /// What the links did with FILE records so far.
+    public var files: FileCounts
 
     /// Bundles the counters.
     public init(
         neighbors: [Neighbor] = [],
         sightings: [PresenceTracker.Snapshot] = [],
         dropped: [DropReason: Int] = [:],
-        discardedFileRecords: Int = 0
+        files: FileCounts = FileCounts()
     ) {
         self.neighbors = neighbors
         self.sightings = sightings
         self.dropped = dropped
-        self.discardedFileRecords = discardedFileRecords
+        self.files = files
     }
 }
 
 extension Mesh: MeshService {
     /// The counters and the radio view, read together.
     public var diagnostics: MeshDiagnostics {
-        MeshDiagnostics(neighbors: neighbors, sightings: sightings, dropped: dropped, discardedFileRecords: discardedFileRecords)
+        MeshDiagnostics(neighbors: neighbors, sightings: sightings, dropped: dropped, files: files)
     }
 }

@@ -21,10 +21,16 @@ struct LinkRig {
         advertisesServiceData: Bool = true,
         dialsGattPeers: Bool = true,
         servesDoorbell: Bool = false,
+        reportsFileWrites: Bool = false,
         background: Bool = false,
         configuration: LinkManager.Configuration = LinkManager.Configuration()
     ) {
-        radio = FakeRadio(advertisesServiceData: advertisesServiceData, dialsGattPeers: dialsGattPeers, servesDoorbell: servesDoorbell)
+        radio = FakeRadio(
+            advertisesServiceData: advertisesServiceData,
+            dialsGattPeers: dialsGattPeers,
+            servesDoorbell: servesDoorbell,
+            reportsFileWrites: reportsFileWrites
+        )
         clock = ManualClock(wall: 1_756_200_000_000, monotonic: 1000)
         links = LinkManager(
             localId: local,

@@ -126,7 +126,9 @@
                 messages: SQLMessageStore(database),
                 conversations: SQLConversationStore(database),
                 groups: SQLGroupStore(database),
-                ownProfile: SQLOwnProfileStore(database)
+                ownProfile: SQLOwnProfileStore(database),
+                blobs: try SQLBlobStore(
+                    database, directory: directory.appending(path: SQLBlobStore.directoryName, directoryHint: .isDirectory))
             )
             let defaults = DefaultsPreferences()
             var parts = Parts(identity: identity, stores: stores, radio: BLERadio(log: log), log: log, preferences: defaults)

@@ -117,6 +117,13 @@
             mailbox.post(.writeDigest(channel, record))
         }
 
+        /// The loop reports each FILE record's last byte out of the channel's queue, so a file never fills it.
+        public var reportsFileWrites: Bool { true }
+
+        public func writeFileRecord(_ record: [UInt8], to channel: ChannelID) {
+            mailbox.post(.writeFileRecord(channel, record))
+        }
+
         public func close(_ channel: ChannelID) {
             mailbox.post(.close(channel))
         }

@@ -4,7 +4,8 @@ import KnitStore
 import KnitWire
 import Testing
 
-/// Frames the MVP carries and relays but never shows, frames it cannot open, and the edges of its profile cache.
+/// Frames this build carries and relays but never shows, frames it cannot open, and the edges of its profile cache.
+/// Blob requests have suites of their own (`MeshEngineBlobTests`).
 @Suite struct MeshEngineEdgeTests {
     private let alice = TestPeer(seed: 1)
     private let bob = TestPeer(seed: 2)
@@ -35,19 +36,6 @@ import Testing
         #expect(fixture.stores.custody.contains("react-1"))
         #expect(fixture.engine.drainEvents().isEmpty)
         #expect(fixture.engine.dropped.isEmpty)
-    }
-
-    @Test func aBlobRequestIsNeitherCarriedNorAnswered() {
-        let fixture = EngineFixture(alice)
-        fixture.link(bob)
-        fixture.transport.clear()
-        let payload = BlobRequestContent(hash: "ab").encoded
-        let request = RelayEnvelope(type: .blobRequest, id: "blob-1", senderId: bob.nodeId.string, payload: payload)
-        let unsigned = WireEnvelope(relay: false, sig: [], signed: request.encoded)
-        fixture.engine.receive(InboundFrame(wire: unsigned, envelope: request, from: bob.nodeId))
-        #expect(!fixture.stores.custody.contains("blob-1"))
-        #expect(fixture.transport.written.isEmpty)
-        #expect(fixture.engine.dropped.isEmpty, "unsigned by design, so not a drop")
     }
 
     @Test func aSealedRoomPostCannotBeOpened() throws {

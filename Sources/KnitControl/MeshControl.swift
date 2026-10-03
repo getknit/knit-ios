@@ -1,3 +1,4 @@
+import Foundation
 public import KnitCrypto
 public import KnitMesh
 public import KnitStore
@@ -18,6 +19,8 @@ public protocol ControlActions: Sendable {
     func accept(_ conversationId: String) async
     /// Changes our profile and floods it.
     func updateProfile(name: String, status: String, openToChat: Bool) async
+    /// Sets our photo, a JPEG, or clears it with `nil`, and floods the profile that names it.
+    func setAvatar(_ jpeg: [UInt8]?) async
     /// Makes a group with `others`, or opens the one they already share.
     func createGroup(with others: [NodeId]) async -> GroupRecord?
     /// Sends a message to a group.
@@ -53,11 +56,14 @@ public actor MeshControl {
     private let clock: any MeshClock
     private let details: [String: JSONValue]
     private let sample: (@Sendable () -> [String: JSONValue])?
+    private let keepAvatar: (@Sendable ([UInt8]?) -> Void)?
     private var linked: [Neighbor] = []
 
     /// A control surface for `mesh`, whose keys are `bundle`. It changes the node through `actions`, the mesh itself
     /// when there are none. `details` join the `ready` event and the `status` reply, to say what kind of node answers.
     /// `sample`, read at each `status`, joins it too, for what only the host can measure, such as its memory.
+    /// `keepAvatar` hears each photo an `avatar` command sets, so a host whose blobs live in memory can keep its own
+    /// across a restart.
     @preconcurrency
     public init(
         bundle: PublicKeyBundle,
@@ -66,7 +72,8 @@ public actor MeshControl {
         stores: MeshStores,
         clock: any MeshClock,
         details: [String: JSONValue] = [:],
-        sample: (@Sendable () -> [String: JSONValue])? = nil
+        sample: (@Sendable () -> [String: JSONValue])? = nil,
+        keepAvatar: (@Sendable ([UInt8]?) -> Void)? = nil
     ) {
         self.bundle = bundle
         nodeId = bundle.nodeId
@@ -76,6 +83,7 @@ public actor MeshControl {
         self.clock = clock
         self.details = details
         self.sample = sample
+        self.keepAvatar = keepAvatar
     }
 
     /// The `ready` event: who answers, with the `details`.
@@ -166,12 +174,10 @@ public actor MeshControl {
             return .success(["conv": .string(conversation)])
         case .name(let name, let status, let openToChat):
             return .success(await rename(name, status: status, openToChat: openToChat))
-        case .denyLink(let peer):
-            await mesh.refuseLinks(with: peer)
-            return .success(["peer": .string(peer.string)])
-        case .allowLink(let peer):
-            await mesh.permitLinks(with: peer)
-            return .success(["peer": .string(peer.string)])
+        case .avatar(let source):
+            return await setAvatar(from: source)
+        case .denyLink(let peer), .allowLink(let peer):
+            return .success(await setLinks(with: peer, allowed: command == .allowLink(peer)))
         case .digest:
             return .success(digest())
         case .custody:
@@ -221,6 +227,50 @@ public actor MeshControl {
         }
     }
 
+    private func status() async -> [String: JSONValue] {
+        let own = stores.ownProfile.load()
+        let dropped = await mesh.dropped.map { (String(describing: $0.key), JSONValue.int(Int64($0.value))) }
+        var fields = details
+        fields.merge(sample?() ?? [:]) { _, sampled in sampled }
+        fields.merge([
+            "nodeId": .string(nodeId.string),
+            "name": .string(own.name),
+            "displayName": .string(Alias.displayName(stored: own.name, nodeId: nodeId.string)),
+            "alias": .string(Alias.alias(for: nodeId.string)),
+            "status": .string(own.status),
+            "avatarHash": .text(own.avatarHash?.string),
+            "running": .bool(await mesh.isRunning),
+            "links": .int(Int64(await mesh.neighbors.count)),
+            "sighted": .int(Int64(await mesh.sightings.count)),
+            "peers": .int(Int64(stores.peers.allPeers().count)),
+            "groups": .int(Int64(stores.groups.groups().count)),
+            "custody": .int(Int64(stores.custody.liveIds(now: clock.wallMilliseconds()).count)),
+            "dropped": .object(Dictionary(dropped) { first, _ in first }),
+            "files": ControlLines.describe(await mesh.files),
+            "rings": .int(Int64(await mesh.rings)),
+            "rung": .int(Int64(await mesh.ringsHeard)),
+            "seeking": .bool(await mesh.isSeeking),
+            "seekWakes": .int(Int64(await mesh.seekWakes)),
+            "seekSpells": .int(Int64(await mesh.seekSpells)),
+            "footprint": ControlLines.describe(await mesh.footprint),
+            "router": ControlLines.describe(await mesh.routerCounters),
+        ]) { _, own in own }
+        return fields
+    }
+}
+
+/// The answers that read or change one thing each, kept apart from the actor's body.
+extension MeshControl {
+    /// Refuses or permits links with `peer`, as `deny-link` and `allow-link` ask.
+    private func setLinks(with peer: NodeId, allowed: Bool) async -> [String: JSONValue] {
+        if allowed {
+            await mesh.permitLinks(with: peer)
+        } else {
+            await mesh.refuseLinks(with: peer)
+        }
+        return ["peer": .string(peer.string)]
+    }
+
     /// Changes what is given of our profile and keeps the rest: an absent `openToChat` is not a false one.
     private func rename(
         _ name: String?,
@@ -233,42 +283,31 @@ public actor MeshControl {
         return ["name": .string(profile.name), "status": .string(profile.status), "openToChat": .bool(profile.openToChat)]
     }
 
+    /// Sets our photo from where the command says, and answers its hash, or `null` once cleared.
+    private func setAvatar(from source: AvatarSource) async -> Result<[String: JSONValue], ControlError> {
+        let jpeg: [UInt8]?
+        switch source {
+        case .bytes(let bytes):
+            jpeg = bytes
+        case .file(let path):
+            guard let data = FileManager.default.contents(atPath: path) else {
+                return .failure(.refused("cannot read \(path)"))
+            }
+            jpeg = [UInt8](data)
+        case .clear:
+            jpeg = nil
+        }
+        await actions.setAvatar(jpeg)
+        keepAvatar?(jpeg)
+        return .success(["avatarHash": .text(stores.ownProfile.load().avatarHash?.string)])
+    }
+
     /// The live custody ids and their fingerprint, to compare with another node's.
     private func digest() -> [String: JSONValue] {
         let now = clock.wallMilliseconds()
         let ids = stores.custody.liveIds(now: now).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
         let fingerprint = Hex.encode(withUnsafeBytes(of: stores.custody.fingerprint(now: now).bigEndian, Array.init))
         return ["ids": .array(ids.map(JSONValue.string)), "count": .int(Int64(ids.count)), "fingerprint": .string(fingerprint)]
-    }
-
-    private func status() async -> [String: JSONValue] {
-        let own = stores.ownProfile.load()
-        let dropped = await mesh.dropped.map { (String(describing: $0.key), JSONValue.int(Int64($0.value))) }
-        var fields = details
-        fields.merge(sample?() ?? [:]) { _, sampled in sampled }
-        fields.merge([
-            "nodeId": .string(nodeId.string),
-            "name": .string(own.name),
-            "displayName": .string(Alias.displayName(stored: own.name, nodeId: nodeId.string)),
-            "alias": .string(Alias.alias(for: nodeId.string)),
-            "status": .string(own.status),
-            "running": .bool(await mesh.isRunning),
-            "links": .int(Int64(await mesh.neighbors.count)),
-            "sighted": .int(Int64(await mesh.sightings.count)),
-            "peers": .int(Int64(stores.peers.allPeers().count)),
-            "groups": .int(Int64(stores.groups.groups().count)),
-            "custody": .int(Int64(stores.custody.liveIds(now: clock.wallMilliseconds()).count)),
-            "dropped": .object(Dictionary(dropped) { first, _ in first }),
-            "fileRecords": .int(Int64(await mesh.discardedFileRecords)),
-            "rings": .int(Int64(await mesh.rings)),
-            "rung": .int(Int64(await mesh.ringsHeard)),
-            "seeking": .bool(await mesh.isSeeking),
-            "seekWakes": .int(Int64(await mesh.seekWakes)),
-            "seekSpells": .int(Int64(await mesh.seekSpells)),
-            "footprint": ControlLines.describe(await mesh.footprint),
-            "router": ControlLines.describe(await mesh.routerCounters),
-        ]) { _, own in own }
-        return fields
     }
 
     private func links() async -> [String: JSONValue] {

@@ -14,6 +14,8 @@ public struct MeshStores: Sendable {
     public var groups: any GroupStore
     /// This node's own profile and its clocks.
     public var ownProfile: any OwnProfileStore
+    /// The photos held: ours, other people's, and the ones carried for others.
+    public var blobs: any BlobStore
 
     /// Bundles the repositories.
     public init(
@@ -22,7 +24,8 @@ public struct MeshStores: Sendable {
         messages: any MessageStore,
         conversations: any ConversationStore,
         groups: any GroupStore,
-        ownProfile: any OwnProfileStore
+        ownProfile: any OwnProfileStore,
+        blobs: any BlobStore
     ) {
         self.custody = custody
         self.peers = peers
@@ -30,6 +33,7 @@ public struct MeshStores: Sendable {
         self.conversations = conversations
         self.groups = groups
         self.ownProfile = ownProfile
+        self.blobs = blobs
     }
 
     /// Fresh in-memory repositories, for the Linux peer and the tests.
@@ -40,7 +44,8 @@ public struct MeshStores: Sendable {
             messages: MemoryMessageStore(),
             conversations: MemoryConversationStore(),
             groups: MemoryGroupStore(),
-            ownProfile: MemoryOwnProfileStore(ownProfile)
+            ownProfile: MemoryOwnProfileStore(ownProfile),
+            blobs: MemoryBlobStore()
         )
     }
 }

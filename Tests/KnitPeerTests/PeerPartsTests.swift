@@ -40,14 +40,15 @@ import Testing
         #expect(again == OwnProfile(name: "Peer", status: "here", openToChat: true, version: 5, publishedAt: 6))
     }
 
-    @Test func aNewIdentityStartsItsProfileClocksOverButKeepsTheName() throws {
+    @Test func aNewIdentityStartsItsProfileClocksOverButKeepsTheNameAndPhoto() throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(atPath: directory) }
         let state = PeerState(directory: directory)
-        state.profileStore().save(OwnProfile(name: "Peer", status: "x", openToChat: true, version: 9, publishedAt: 9))
+        let photo = BlobHash(of: Array("a photo".utf8))
+        state.profileStore().save(OwnProfile(name: "Peer", status: "x", openToChat: true, version: 9, publishedAt: 9, avatarHash: photo))
         try state.replaceIdentity(with: identity(5))
         #expect(try state.loadIdentity().keys.nodeId == identity(5).nodeId)
-        #expect(state.profileStore().load() == OwnProfile(name: "Peer"))
+        #expect(state.profileStore().load() == OwnProfile(name: "Peer", avatarHash: photo), "the name and the photo stay")
     }
 
     @Test func anUnreadableProfileIsAFreshOne() throws {

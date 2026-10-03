@@ -183,6 +183,13 @@ public actor Mesh {
         settle()
     }
 
+    /// Sets our photo, a JPEG, or clears it with `nil`, floods the profile that names it, and pushes it to every
+    /// neighbour (``MeshEngine/setAvatar(_:)``).
+    public func setAvatar(_ jpeg: [UInt8]?) {
+        engine.setAvatar(jpeg)
+        settle()
+    }
+
     /// Marks a pinned peer verified, or not (``MeshEngine/setVerified(_:_:)``).
     public func setVerified(_ peer: NodeId, _ verified: Bool) {
         engine.setVerified(peer, verified)
@@ -217,8 +224,10 @@ public actor Mesh {
     /// Why frames were dropped so far.
     public var dropped: [DropReason: Int] { engine.dropped }
 
-    /// FILE records discarded so far, avatars and attachments alike.
-    public var discardedFileRecords: Int { links.discardedFileRecords }
+    /// What the links did with FILE records so far.
+    public var files: FileCounts {
+        FileCounts(received: links.filesReceived, refused: links.filesRefused + engine.filesRejected, sent: links.filesSent)
+    }
     /// Doorbells rung on peers' links, to wake a suspended iPhone (``LinkManager/rings``).
     public var rings: Int { links.rings }
     /// Rings of this node's own doorbell (``LinkManager/ringsHeard``).
@@ -238,6 +247,8 @@ public actor Mesh {
         var tables = engine.footprint
         tables.channels = links.channelCount
         tables.crossings = links.crossingCount
+        tables.arrivingFiles = links.arrivingFileKeys.count
+        tables.queuedFiles = links.queuedFileCount
         return tables
     }
 
@@ -254,6 +265,10 @@ public actor Mesh {
                 engine.receive(frame)
             case .digest(let ids, let from):
                 engine.receiveDigest(ids, from: from)
+            case .file(let file):
+                engine.receiveFile(file)
+            case .fileSent(let hash, let peer):
+                engine.fileSent(hash, to: peer)
             }
         }
     }

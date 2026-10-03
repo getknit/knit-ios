@@ -31,5 +31,27 @@
             #expect(Array(received.suffix(5)) == [0xD2, 0xD2, 9, 9, 9])
             #expect(rig.log.all.contains { $0.contains("replaced the one waiting") })
         }
+
+        @Test func aFileRecordIsReportedOnceItsLastByteLeavesTheQueue() throws {
+            // The link manager feeds a file's next chunk on this report, so a file never fills the queue ahead of the
+            // frames written after it (ADR 2026-10.nh55).
+            let rig = try LoopRig(limit: 60_000)
+            rig.start()
+            let remote = try RemoteEnd.dial(rig.sockets)
+            rig.settle { rig.lastAccepted != nil }
+            let id = try #require(rig.lastAccepted)
+            let chunk = [UInt8](repeating: 3, count: 20_000)
+            rig.post(.writeFileRecord(id, chunk))
+            rig.post(.write(id, [9]))
+            var received: [UInt8] = []
+            rig.settle("never drained") {
+                while let sdu = remote.receive(timeoutMilliseconds: 0) {
+                    received += sdu
+                }
+                return received.count >= chunk.count + 1
+            }
+            #expect(received == chunk + [9])
+            #expect(rig.events.filter { $0 == .wroteFileRecord(id) }.count == 1, "one report for one record, none for the frame")
+        }
     }
 #endif

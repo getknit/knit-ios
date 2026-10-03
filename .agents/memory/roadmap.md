@@ -252,14 +252,45 @@ explicit direction.** Update this file in the change that ships an item.
     `groupleave`. It also expects `0xB` in Carol's profile. The change must be additive: `digestIds` keeps its three
     ids, and Alice's profile, HELLO and advert keep `0x9`. This side exports `ios-emitted-v1.json` into the
     Android worktree before the merge, and the Android worker commits it.
-  - **A6 (two Android group fixes, knit-next #107 and #108):** both should come back to Android as one paired
-    change.
-    - A stranger who sets `createdBy` to our node id makes the `created` row count as ours (`MessageDao.kt:294`),
-      so their group skips the request inbox (#107).
-    - Android keeps a group's old photo hash at the new clock until the bytes land
-      (`InboundPipeline.kt:2334`), so its own frames can switch members who show a newer photo back (#108).
+  - **A6 (two Android group fixes, knit-next #107 and #108):**
+    - A stranger who set `createdBy` to our node id made the `created` row count as ours (`MessageDao.kt:294`),
+      so their group skipped the request inbox (#107).
+    - Android kept a group's old photo hash at the new clock until the bytes landed (`InboundPipeline.kt:2334`),
+      so its own frames could switch members who showed a newer photo back (#108).
 
-    This port already avoids both.
+    This port already avoided both. Android fixed both on its `main` without a paired change: `cb8bc4b5`, and
+    `f46770a9` with its ADR 2026-09.nxcq. Both are in the pin since 2026-10-03. The one difference left, a tie that
+    went to the incoming photo, now follows Android's `photoWins` (knit-ios#1, ADR 2026-09.n393, amended). Done.
+- **Profile photos and photos in chats, begun 2026-10-03** on `feat/blobs`, at the maintainer's direction (ADR
+  2026-10.nh55). This is parity with Android's photos and its blob exchange:
+  - **Step 0:** the pin moved to `00357abd`, and the group photo's tie follows `photoWins`. Done.
+  - **Phase 1:** FILE records both ways, `blobreq` asked and answered, and our own photo published and pushed, with
+    no UI yet. Code done on 2026-10-03: every Linux gate passes, sanitizers and ten minutes of fuzzing included, and
+    so do the Mac build and tests. Checked the same day between the iPhone 12 and the Pixel 3 on Android 2.8.0, with
+    the lab's other phones in range:
+    - `interop.py iphone` passes all 22 steps on the new build.
+    - The iPhone's photo, set over its bridge, reaches the Pixel 3 whole (13,109 B in 1.2 s) and shows there, and
+      clearing it clears it there.
+    - The iPhone shows the photo of every peer that advertises one, and every blob on its disk hashes to its name.
+    - With the Pixel 3's link refused, the iPhone pulls the Pixel 3's new photo with `blobreq` through another
+      phone, 37 s after the change.
+    - On `interop.py iphone-relay`'s line, with the peer on hci0, the iPhone is the one node between the two ends,
+      and serves each the other's photo: all 21 steps pass with `--expect-avatar --peer-avatar`.
+  - **Phase 2:** profile photos in the app: a face for every person, the photo picker and the cropper.
+  - **Phase 3:** photos in chats both ways, in Nearby, DMs and groups. DMs and groups seal them with
+    `AttachmentCrypto`.
+  - **Phase 4:** group photos shown but never set, and carried frames' photos pulled within Android's 128 MiB.
+
+  Out of scope: files, voice notes, link previews, direct transfer, screening, and setting a group photo.
+  Capabilities stay `0xB`. One companion change goes with it:
+  - **A7 (shared blob vectors):** a paired change that iOS leads. knit-next's `keyed-v1.json` gains:
+    - the FILE_HEADER bytes for an AVATAR and an ATTACHMENT, and a whole FILE trio;
+    - a `blobreq` frame;
+    - a known answer for a sealed photo.
+
+    Its `IosEmittedVectorTest` decodes an iOS header and opens an iOS-sealed photo. The change is additive, and
+    `0xB` stays. The same change could give the debug bridge's `state` each reachable peer's `avatarHash`: until it
+    does, `interop.py check --peer-avatar` sees our photo leave whole, and the phone's screen shows whether it landed.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
@@ -348,7 +379,8 @@ explicit direction.** Update this file in the change that ships an item.
   unit tests, coverage and both sanitizers. Because the engine is synchronous, a later lab could run
   deterministically from a seed (ADR 2026-09.gq84).
 
-- **Message features:** avatars, attachments, reactions, replies, mentions and typing indicators.
+- **Message features:** files and voice notes, reactions, replies, mentions and typing indicators. Profile photos
+  and photos in chats are in flight (ADR 2026-10.nh55).
 - **Groups with forward secrecy** (knit-next's group ratchet), which comes with the DM ratchet. v1 groups are in
   flight above.
 - **Search, drafts and backups.**

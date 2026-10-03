@@ -1,5 +1,6 @@
 import GRDB
 public import KnitStore
+import KnitWire
 
 /// The ``OwnProfileStore`` on SQLite: the one row of `own_profile`.
 ///
@@ -18,7 +19,7 @@ public final class SQLOwnProfileStore: OwnProfileStore {
             guard
                 let row = try Row.fetchOne(
                     db,
-                    sql: "SELECT name, status, openToChat, version, publishedAt FROM own_profile WHERE slot = 0"
+                    sql: "SELECT name, status, openToChat, version, publishedAt, avatarHash FROM own_profile WHERE slot = 0"
                 )
             else {
                 return OwnProfile()
@@ -28,21 +29,24 @@ public final class SQLOwnProfileStore: OwnProfileStore {
                 status: try row.text("status"),
                 openToChat: try row.decode(Bool.self, forColumn: "openToChat"),
                 version: try row.decode(Int64.self, forColumn: "version"),
-                publishedAt: try row.decode(Int64.self, forColumn: "publishedAt")
+                publishedAt: try row.decode(Int64.self, forColumn: "publishedAt"),
+                avatarHash: try row.optionalBlobHash("avatarHash")
             )
         }
     }
 
+    /// Writes the whole row. `INSERT OR REPLACE` nulls any column it does not name, so every column is named here,
+    /// the photo's included: a republish that left it out would drop our photo.
     public func save(_ profile: OwnProfile) {
         database.write(or: ()) { db in
             try db.execute(
                 sql: """
-                    INSERT OR REPLACE INTO own_profile (slot, name, status, openToChat, version, publishedAt)
-                    VALUES (0, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO own_profile (slot, name, status, openToChat, version, publishedAt, avatarHash)
+                    VALUES (0, ?, ?, ?, ?, ?, ?)
                     """,
                 arguments: [
                     StoredText.bytes(profile.name), StoredText.bytes(profile.status), profile.openToChat, profile.version,
-                    profile.publishedAt,
+                    profile.publishedAt, StoredText.bytes(profile.avatarHash?.string),
                 ]
             )
         }

@@ -172,6 +172,12 @@ public final class AppSession {
         revision += 1
     }
 
+    /// Sets our photo, a JPEG, or clears it with `nil`, and floods the profile that names it.
+    public func setAvatar(_ jpeg: [UInt8]?) async {
+        await mesh.setAvatar(jpeg)
+        revision += 1
+    }
+
     /// What Diagnostics shows now.
     public func diagnostics() async -> MeshDiagnostics {
         await mesh.diagnostics

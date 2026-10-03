@@ -1,4 +1,5 @@
 import KnitSync
+public import KnitWire
 
 /// What this node publishes about itself, and the two clocks that make a published profile propagate
 /// (`SettingsStore.profileVersion` and `profilePublishedAt` in knit-next).
@@ -15,14 +16,24 @@ public struct OwnProfile: Sendable, Equatable {
     /// The publish stamp: the profile frame's `sentAt` and the tail of its id, `profile-<nodeId>-<stamp>`. It
     /// moves on every edit and every 12-hour republish, which keeps the frame inside custody's 24-hour window.
     public var publishedAt: Int64
+    /// Our profile photo, whose bytes the blob store holds (`SettingsStore.ownAvatarHash`), or `nil` for none.
+    public var avatarHash: BlobHash?
 
     /// A profile; the defaults are a fresh identity's, nothing set and nothing published.
-    public init(name: String = "", status: String = "", openToChat: Bool = false, version: Int64 = 0, publishedAt: Int64 = 0) {
+    public init(
+        name: String = "",
+        status: String = "",
+        openToChat: Bool = false,
+        version: Int64 = 0,
+        publishedAt: Int64 = 0,
+        avatarHash: BlobHash? = nil
+    ) {
         self.name = name
         self.status = status
         self.openToChat = openToChat
         self.version = version
         self.publishedAt = publishedAt
+        self.avatarHash = avatarHash
     }
 }
 

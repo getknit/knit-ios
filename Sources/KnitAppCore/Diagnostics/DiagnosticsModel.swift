@@ -205,7 +205,11 @@ public final class DiagnosticsModel {
             sighted: sighted,
             known: known,
             knownCount: outOfRange.count,
-            counters: [DiagnosticsState.Counter(id: Copy.Diagnostics.discardedFiles, count: mesh.discardedFileRecords)] + drops
+            counters: [
+                DiagnosticsState.Counter(id: Copy.Diagnostics.filesReceived, count: mesh.files.received),
+                DiagnosticsState.Counter(id: Copy.Diagnostics.filesRefused, count: mesh.files.refused),
+                DiagnosticsState.Counter(id: Copy.Diagnostics.filesSent, count: mesh.files.sent),
+            ] + drops
         )
     }
 }

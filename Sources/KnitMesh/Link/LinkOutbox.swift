@@ -9,21 +9,31 @@
 ///
 /// The slot only reaches as far as this queue: bytes already handed to the socket or the stream are the operating
 /// system's, and go out as they were (`.agents/context/custody.md`).
+///
+/// A FILE record is marked too, so the radio can say when its last byte has left (``wrote(_:)``). The link manager
+/// feeds a file one chunk at a time on that signal, and frames queued meanwhile go out between the chunks, as
+/// Android's writer interleaves them (`FramedLink.drainFramesInto`, ADR 2026-10.nh55).
 public struct LinkOutbox: Sendable {
     private enum Entry: Sendable {
         case bytes([UInt8])
         /// A digest none of whose bytes are written yet, so a newer one can still take its place.
         case digest([UInt8])
+        /// A FILE record, whose last byte leaving the radio reports.
+        case file([UInt8])
 
         var payload: [UInt8] {
             switch self {
-            case .bytes(let bytes), .digest(let bytes):
+            case .bytes(let bytes), .digest(let bytes), .file(let bytes):
                 bytes
             }
         }
 
         var isDigest: Bool {
             if case .digest = self { true } else { false }
+        }
+
+        var isFile: Bool {
+            if case .file = self { true } else { false }
         }
     }
 
@@ -51,6 +61,16 @@ public struct LinkOutbox: Sendable {
         }
         entries.append(.bytes(bytes))
         queuedBytes += bytes.count
+    }
+
+    /// Queues a whole encoded FILE record behind everything queued before; ``wrote(_:)`` says when its last byte is
+    /// out.
+    public mutating func appendFileRecord(_ record: [UInt8]) {
+        guard !record.isEmpty else {
+            return
+        }
+        entries.append(.file(record))
+        queuedBytes += record.count
     }
 
     /// Queues a whole encoded DIGEST record, or puts it in the place of the one still waiting. Answers whether it
@@ -83,20 +103,27 @@ public struct LinkOutbox: Sendable {
         return head[written..<min(head.count, written + max(1, limit))]
     }
 
-    /// Records that the first `count` bytes ``next(atMost:)`` answered were written. The first byte written from a
-    /// waiting digest fixes it, so a digest offered after that queues behind it.
-    public mutating func wrote(_ count: Int) {
-        guard count > 0, let head = entries.first?.payload else {
-            return
+    /// Records that the first `count` bytes ``next(atMost:)`` answered were written, and answers whether they finished
+    /// a FILE record, which the radio then reports. The first byte written from a waiting digest fixes it, so a
+    /// digest offered after that queues behind it.
+    @discardableResult
+    public mutating func wrote(_ count: Int) -> Bool {
+        guard count > 0, let head = entries.first else {
+            return false
         }
-        entries[0] = .bytes(head)
-        let taken = min(count, head.count - written)
+        let payload = head.payload
+        if head.isDigest {
+            entries[0] = .bytes(payload)
+        }
+        let taken = min(count, payload.count - written)
         written += taken
         queuedBytes -= taken
-        if written == head.count {
-            entries.removeFirst()
-            written = 0
+        guard written == payload.count else {
+            return false
         }
+        entries.removeFirst()
+        written = 0
+        return head.isFile
     }
 
     /// Drops everything waiting.

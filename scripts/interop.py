@@ -3,14 +3,14 @@
 driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .agents/context/linux-peer.md).
 
     scripts/interop.py check   --device SERIAL [--order phone-dials|peer-dials] [--radio-profile android|ios]
-                                [--blank-name] [--expect-avatar] [--mac]
+                                [--blank-name] [--expect-avatar] [--peer-avatar JPEG] [--mac]
     scripts/interop.py refusal --device SERIAL [--seconds 120]
     scripts/interop.py replace --device SERIAL
     scripts/interop.py soak    --device SERIAL [--minutes 60] [--per-minute 20] [--extras] [--mac]
-    scripts/interop.py relay   --device SERIAL [--radio-profile ios|android]
+    scripts/interop.py relay   --device SERIAL [--radio-profile ios|android] [--expect-avatar] [--peer-avatar JPEG]
     scripts/interop.py group   --device SERIAL [--radio-profile android|ios]
     scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline] [--links N] [--hold 60]
-    scripts/interop.py iphone-relay --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-relay --device SERIAL [--udid UDID] [--expect-avatar] [--peer-avatar JPEG]
     scripts/interop.py iphone-group --device SERIAL [--udid UDID]
     scripts/interop.py iphone-peer [--order iphone-below|iphone-above] [--skip-offline] [--udid UDID]
     scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
@@ -67,6 +67,7 @@ is the number of failed steps.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -599,6 +600,9 @@ def check(arguments: argparse.Namespace) -> int:
     peer = Peer(arguments.radio_profile, name, others, arguments.peer_log, arguments.rssi_floor)
     peer.start()
     try:
+        if arguments.peer_avatar:
+            jpeg = base64.b64encode(_unique_jpeg(arguments.peer_avatar, nonce)).decode()
+            run.step("photo-set", lambda: {"avatarHash": peer.command(cmd="avatar", jpeg=jpeg)["avatarHash"]})
         run.step("link", lambda: link_up(peer, phone, phone_id) and {})
         run.step(
             "profile-on-peer",
@@ -617,9 +621,14 @@ def check(arguments: argparse.Namespace) -> int:
         run.step("custody-converges", lambda: _converges(peer, phone, 180))
         # The aliases as this port computes them, to hold against what the phone's own screens show.
         run.step("aliases", lambda: _aliases(peer, phone_id))
-        # A phone with a photo pushes it as FILE records at link-up; the peer discards them and keeps the link.
+        # A phone with a photo pushes it as FILE records right behind its profile, and the peer shows it once it is the
+        # photo that profile names (ADR 2026-10.ym9y).
         if arguments.expect_avatar:
-            run.step("file-records-discarded", lambda: poll(lambda: _file_records(peer), 60))
+            run.step("photo-adopted", lambda: poll(lambda: _photo(peer, phone_id), 60))
+        # Our photo goes to the phone right behind our profile. Android's bridge does not say which photo it shows, so
+        # the peer's count of files out whole stands in, and the phone's screen is the rest of the check.
+        if arguments.peer_avatar:
+            run.step("photo-pushed", lambda: poll(lambda: _files_sent(peer), 60))
         body = f"interop room from peer {nonce}"
         peer.command(cmd="room", text=body)
         run.step("room-peer-to-phone", lambda: poll(lambda: _has(phone.state("nearby"), body), 15) and {})
@@ -3225,7 +3234,7 @@ class SoakTraffic:
             "photosHeard": len(self.photo_bodies & heard),
             "phoneDmsHeard": len(self.phone_dms & heard),
             "peerDmsDelivered": len([i for i in self.peer_dms if i in delivered]),
-            "fileRecords": status.get("fileRecords"),
+            "files": status.get("files"),
             "router": status.get("router"),
         }
         problems = []
@@ -3255,7 +3264,7 @@ def _stage_image(phone: Phone) -> str:
 
 def _sample(peer: Peer, elapsed: int) -> dict:
     status = peer.command(cmd="status")
-    sample = {"t": elapsed, **{key: status.get(key) for key in ("links", "custody", "dropped", "fileRecords", "footprint", "router")}}
+    sample = {"t": elapsed, **{key: status.get(key) for key in ("links", "custody", "dropped", "files", "footprint", "router")}}
     if peer.process:
         for line in Path(f"/proc/{peer.process.pid}/status").read_text(encoding="utf-8").splitlines():
             key, _, value = line.partition(":")
@@ -3326,9 +3335,20 @@ def relay(arguments: argparse.Namespace) -> int:
     threading.Thread(target=_keep_to, args=(b, {a_id}, set(b.refuse), stop, b.instance), daemon=True).start()
     threading.Thread(target=_keep_to, args=(a, {phone_id, b_id}, set(a.refuse), stop, a.instance), daemon=True).start()
     try:
+        if arguments.peer_avatar:
+            jpeg = base64.b64encode(_unique_jpeg(arguments.peer_avatar, nonce)).decode()
+            run.step("photo-set-b", lambda: {"avatarHash": b.command(cmd="avatar", jpeg=jpeg)["avatarHash"]})
         run.step("link-a-b", lambda: a.wait(lambda line: _link(line, b_id), 180) and b.wait(lambda line: _link(line, a_id), 10) and {})
         run.step("link-a-phone", lambda: link_up(a, phone, phone_id) and {})
         run.step("phone-profile-reaches-b", lambda: {"name": b.wait(lambda line: line.get("event") == "profile" and line.get("peer") == phone_id, 240)["displayName"]})
+        # B never links the phone, so it asks A for the photo the phone's profile names. A serves the copy the phone
+        # pushed it, or fetches one first and serves B's next ask, a minute on (ADR 2026-10.ym9y).
+        if arguments.expect_avatar:
+            run.step("photo-pulled-to-b", lambda: poll(lambda: _photo(b, phone_id), 240))
+        # The phone asks A for B's photo the same way. A has no photo of its own, so its count of files out whole is
+        # its serves; Android's bridge does not say which photo it shows, and the phone's screen is the rest.
+        if arguments.peer_avatar:
+            run.step("photo-served-by-a", lambda: poll(lambda: _files_sent(a), 240))
         # The phone back-fills a newcomer at under a frame a second while it serves its other links, and its own new
         # frames queue behind that, so the room and DM steps wait for it.
         run.step("custody-a-phone", lambda: _converges(a, phone, 900))
@@ -3379,16 +3399,22 @@ def iphone_relay(arguments: argparse.Namespace) -> int:
     others = others_in_range(phone_id) - {ios.node_id}
     peer_id = _keygen("iphone-relay", "--above", max(others | {phone_id}))
     print(json.dumps({"run": "iphone-relay", "phone": phone_id, "iphone": ios.node_id, "peer": peer_id, "refused": sorted(others)}))
-    before = ios.command(cmd="status")["router"]
+    status = ios.command(cmd="status")
+    before, sent_before = status["router"], status["files"]["sent"]
     stop = threading.Event()
     kept_off: set[str] = set()
     threading.Thread(target=_keep_to, args=(ios, {phone_id, peer_id}, kept_off, stop, "iphone"), daemon=True).start()
     peer = Peer(
         arguments.radio_profile, f"knit-peer relay {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-relay", HCI0
     )
+    peer_photo = ""
     try:
         peer.start()
         threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
+        if arguments.peer_avatar:
+            jpeg = _unique_jpeg(arguments.peer_avatar, nonce)
+            peer_photo = hashlib.sha256(jpeg).hexdigest()
+            run.step("photo-set", lambda: {"avatarHash": peer.command(cmd="avatar", jpeg=base64.b64encode(jpeg).decode())["avatarHash"]})
         run.step("link-iphone-phone", lambda: _ios_linked(ios, phone, phone_id))
         run.step("link-iphone-peer", lambda: _timed(lambda: peer.lines(lambda line: _link(line, ios.node_id)), 180))
         run.step(
@@ -3398,6 +3424,15 @@ def iphone_relay(arguments: argparse.Namespace) -> int:
         # The phone and the iPhone back-fill the newcomer, and new frames queue behind that, as in `relay`.
         run.step("custody-iphone-phone", lambda: _converges(ios, phone, 900))
         run.step("custody-peer-iphone", lambda: _peers_converge(peer, ios, 300))
+        # Neither end links the other, and the iPhone refuses every other node, so a photo crosses only as the
+        # iPhone's serve: each end wants the other's photo and asks its neighbours, and the iPhone holds the copy
+        # the photo's owner pushed it (ADR 2026-10.ym9y). Android pulls only a photo whose owner it does not link.
+        if arguments.expect_avatar:
+            run.step("phone-photo-pulled-to-peer", lambda: poll(lambda: _photo(peer, phone_id), 240))
+        if arguments.peer_avatar:
+            run.step("peer-photo-served-to-phone", lambda: poll(lambda: _phone_got_file(phone, peer_photo, ios.node_id), 240))
+        if arguments.expect_avatar or arguments.peer_avatar:
+            run.step("iphone-served", lambda: _ios_served(ios, sent_before))
         body = f"interop iphone relay room from phone {nonce}"
         phone.send(body)
         run.step("room-phone-to-peer", lambda: _latency(peer.wait(lambda line: _message(line, body), 30)))
@@ -3810,7 +3845,7 @@ def iphone_soak(arguments: argparse.Namespace) -> int:
     in its back-fill. With `--extras` the phone also reacts to the iPhone's posts, sends it typing cues, trades DMs
     with it and posts photos, and a peer trades DMs with the iPhone too. A photo's caption always crosses the link,
     but Android sends its FILE records only now and then (three in the peer's whole hour, the same photo each time),
-    so `fileRecords` is reported, not required.
+    so the `files` counts are reported, not required.
 
     It passes with the bridge open throughout and no crash or jetsam report for Knit, no link the iPhone or the peer
     ended, every post arriving and ticked, custody and the SeenSet under their caps, memory flat through the second
@@ -4099,7 +4134,7 @@ class IPhoneSoakTraffic:
             "photosHeard": len(self.photo_bodies & heard),
             "phoneDmsHeard": len(self.phone_dms & heard),
             "iphoneDmsDelivered": len([i for i in self.sent_dms["iphone"] if i in ios_delivered]),
-            "fileRecords": status.get("fileRecords"),
+            "files": status.get("files"),
             "dropped": status.get("dropped"),
         }
         problems = []
@@ -4148,7 +4183,7 @@ def _ios_sample(ios: IPhone, peer: Peer | None, elapsed: int) -> dict:
     sample: dict = {"t": elapsed}
     try:
         status = ios.command(cmd="status", timeout=20)
-        keys = ("links", "custody", "dropped", "fileRecords", "footprint", "router", "memoryAvailableKb")
+        keys = ("links", "custody", "dropped", "files", "footprint", "router", "memoryAvailableKb")
         sample["iphone"] = {"t": elapsed, **{key: status.get(key) for key in keys}}
     except (TimeoutError, OSError) as error:
         sample["iphone"] = None
@@ -4374,10 +4409,46 @@ def _aliases(peer: Peer, phone_id: str) -> dict:
     return {"peerDisplayName": own["displayName"], "peerAlias": own["alias"], "phoneAlias": phone["alias"]}
 
 
-def _file_records(peer: Peer) -> dict | None:
-    status = peer.command(cmd="status")
-    count = status.get("fileRecords", 0)
-    return {"fileRecords": count, "links": status["links"]} if count and status["links"] else None
+def _photo(peer: Peer, phone_id: str) -> dict | None:
+    """The phone's photo as the peer shows it: held, and the one the phone's signed profile names."""
+    phone = next((p for p in peer.command(cmd="peers")["peers"] if p["peer"] == phone_id), None)
+    if phone is None or not phone.get("avatarHash"):
+        return None
+    return {"avatarHash": phone["avatarHash"], "files": peer.command(cmd="status").get("files")}
+
+
+def _unique_jpeg(path: str, nonce: str) -> bytes:
+    """The JPEG at `path` with the run's nonce in a comment segment after its start marker: the same picture under a
+    hash no node holds yet, so every run moves the photo afresh."""
+    data = Path(path).read_bytes()
+    if data[:2] != b"\xff\xd8":
+        raise SystemExit(f"{path} is not a JPEG")
+    text = f"knit interop {nonce}".encode()
+    return data[:2] + b"\xff\xfe" + (len(text) + 2).to_bytes(2, "big") + text + data[2:]
+
+
+def _phone_got_file(phone: Phone, key: str, sender: str) -> dict | None:
+    """The phone's log line for a whole file `sender` streamed it (`rx KIND/key NB in Tms ← sender`), once there is one."""
+    for line in _phone_lines(phone):
+        match = re.match(rf"rx (\w+)/{key} (\d+)B in (\d+)ms ← {sender}", line)
+        if match:
+            return {"kind": match[1], "bytes": int(match[2]), "ms": int(match[3])}
+    return None
+
+
+def _ios_served(ios: IPhone, sent_before: int) -> dict:
+    """The files the iPhone sent whole during the run. With no photo of its own it pushes nothing, so each is a serve."""
+    status = ios.command(cmd="status")
+    sent = status["files"]["sent"] - sent_before
+    if sent < 1:
+        raise RuntimeError(f"the iPhone sent no file: {status['files']}")
+    return {"filesSent": sent, "ownPhoto": status.get("avatarHash"), "files": status["files"]}
+
+
+def _files_sent(peer: Peer) -> dict | None:
+    """The peer's files out whole, once there is one: its photo pushed at link-up, or a blob it served."""
+    files = peer.command(cmd="status").get("files") or {}
+    return files if files.get("sent") else None
 
 
 LAST_CUSTODY_DIFFERENCE: dict = {}
@@ -4455,7 +4526,12 @@ def main() -> int:
         sub.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     commands.choices["check"].add_argument("--order", default="phone-dials", choices=["phone-dials", "peer-dials"])
     commands.choices["check"].add_argument("--blank-name", action="store_true", help="run the peer with no name, so each side shows the alias")
-    commands.choices["check"].add_argument("--expect-avatar", action="store_true", help="the phone has a photo: check its FILE records")
+    commands.choices["check"].add_argument("--expect-avatar", action="store_true", help="the phone has a photo: check the peer shows it")
+    commands.choices["check"].add_argument("--peer-avatar", default="", help="a JPEG the peer takes as its photo and pushes to the phone")
+    commands.choices["iphone-relay"].add_argument("--expect-avatar", action="store_true", help="the phone has a photo: check the peer pulls it through the iPhone")
+    commands.choices["iphone-relay"].add_argument("--peer-avatar", default="", help="a JPEG the peer takes as its photo, for the phone to pull through the iPhone")
+    commands.choices["relay"].add_argument("--expect-avatar", action="store_true", help="the phone has a photo: check B pulls it through A")
+    commands.choices["relay"].add_argument("--peer-avatar", default="", help="a JPEG B takes as its photo, for the phone to pull through A")
     commands.choices["refusal"].add_argument("--seconds", type=float, default=120, help="how long to watch the dials fail")
     commands.choices["soak"].add_argument("--minutes", type=float, default=60)
     commands.choices["soak"].add_argument("--per-minute", type=float, default=20, help="posts a minute, both sides together")

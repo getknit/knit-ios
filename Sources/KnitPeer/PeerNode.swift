@@ -1,3 +1,4 @@
+import Foundation
 import KnitControl
 public import KnitCrypto
 public import KnitMesh
@@ -13,6 +14,7 @@ public actor PeerNode {
     private let stores: MeshStores
     private let control: MeshControl
     private let output: @Sendable (String) -> Void
+    private let avatarPath: String?
     private var forwarding: Task<Void, Never>?
 
     /// A node for `identity` on `radio`. Nothing runs until ``start(name:)``.
@@ -26,11 +28,13 @@ public actor PeerNode {
         random: some RandomNumberGenerator & Sendable,
         linkConfiguration: LinkManager.Configuration = LinkManager.Configuration(),
         log: any KnitLog,
+        avatarPath: String? = nil,
         output: @escaping @Sendable (String) -> Void
     ) {
         nodeId = identity.nodeId
         self.stores = stores
         self.output = output
+        self.avatarPath = avatarPath
         mesh = Mesh(
             identity: identity,
             deviceTag: nil,
@@ -46,8 +50,29 @@ public actor PeerNode {
             mesh: mesh,
             stores: stores,
             clock: clock,
-            details: ["radioProfile": .string(radioProfile)]
+            details: ["radioProfile": .string(radioProfile)],
+            keepAvatar: avatarPath.map { path in { @Sendable jpeg in Self.keep(jpeg, at: path) } }
         )
+    }
+
+    /// Writes our photo to `path`, or removes it once cleared.
+    private static func keep(_ jpeg: [UInt8]?, at path: String) {
+        if let jpeg {
+            _ = FileManager.default.createFile(atPath: path, contents: Data(jpeg))
+        } else {
+            try? FileManager.default.removeItem(atPath: path)
+        }
+    }
+
+    /// Puts our photo back in the blob store, which lives in memory, when the profile still names the one kept at
+    /// ``avatarPath``.
+    private func restoreAvatar() {
+        guard let avatarPath, let hash = stores.ownProfile.load().avatarHash, !stores.blobs.contains(hash),
+            let data = FileManager.default.contents(atPath: avatarPath), BlobHash(of: [UInt8](data)) == hash
+        else {
+            return
+        }
+        stores.blobs.insert([UInt8](data), hash: hash, mime: "image/jpeg", storedAt: 0)
     }
 
     /// Starts the mesh, publishes `name` if it is new, and reports `ready`.
@@ -65,6 +90,7 @@ public actor PeerNode {
                 }
             }
         }
+        restoreAvatar()
         await mesh.start()
         let own = stores.ownProfile.load()
         if let name, name != own.name {

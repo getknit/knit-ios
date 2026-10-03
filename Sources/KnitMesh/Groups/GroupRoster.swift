@@ -55,11 +55,11 @@ internal struct GroupRoster {
             photoUpdatedAt: existing?.photoUpdatedAt,
             roster: Self.roster(members: members, departed: departed, existing: existing)
         )
-        // The photo has its own clock (`groupPhotoDecision`, :2318-2339). Android keeps the old hash at the new clock
-        // until the bytes land; this port never fetches them, so it takes the new hash at once (ADR 2026-09.n393).
+        // The photo has its own clock (`groupPhotoDecision`, `InboundPipeline.kt:2343-2373`). The decided hash is taken at
+        // once and goes out on every frame we send, as on Android since knit-next ADR 2026-09.nxcq, where the photo
+        // shown waits for its bytes.
         let photoClock = min(info.photoUpdatedAt ?? 0, maxClock)
-        let photoChanges = info.photoHash.map { ExactKey($0) != existing?.photoHash.map(ExactKey.init) } ?? false
-        if photoChanges, photoClock >= existing?.photoUpdatedAt ?? 0 {
+        if Self.photoWins(info.photoHash, at: photoClock, over: existing?.photoHash, at: existing?.photoUpdatedAt ?? 0) {
             record.photoHash = info.photoHash
             record.photoUpdatedAt = photoClock
         }
@@ -74,6 +74,17 @@ internal struct GroupRoster {
             notices.append(StatusNotices.memberRejoined(info.id, member: sender, at: sentAt))
         }
         return .accepted(record, notices: notices)
+    }
+
+    /// Whether `incoming` at `clock` replaces the decided photo `held` at `heldClock` (`photoWins`,
+    /// `InboundPipeline.kt:2378-2387`): a different photo on a later clock, or on an equal clock only while nothing is
+    /// held. A tie never moves a held photo, so a member who still shows the old photo, re-asserting it at the new
+    /// clock, cannot switch the group back (knit-next #108).
+    static func photoWins(_ incoming: String?, at clock: Int64, over held: String?, at heldClock: Int64) -> Bool {
+        guard let incoming, held.map({ ExactKey($0) != ExactKey(incoming) }) ?? true else {
+            return false
+        }
+        return clock > heldClock || (held == nil && clock >= heldClock)
     }
 
     /// The group after `leaver`'s signed `groupleave` stamped `leftAt`, and its status line, or `nil` when it

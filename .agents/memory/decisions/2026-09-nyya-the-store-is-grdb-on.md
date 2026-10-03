@@ -95,3 +95,11 @@ run. `SchemaTests`' `v3KeepsEveryMessageAsAnOrdinaryOneAndStartsWithNoGroups` mi
   and the protection class needs a check on the iPhone (P8).
 - **The Linux peer still keeps its stores in memory.** Pointing it at a database file is a small change, and
   it would let an interop run exercise this store over the air.
+
+**Amended 2026-10-03, for photos (ADR 2026-10.nh55):** schema v4 adds a `blobs` table that only indexes the blobs
+held. The bytes live in files named by their hash, in `Blobs/` inside the database's directory, which gives them its
+protection class and backup exclusion (`SQLBlobStore`). Bytes kept inside SQLite would leave the file at its high-water
+mark for good: 128 MiB of carried photos would stay 128 MiB, since only a VACUUM gives the space back, and a VACUUM
+cannot run inside a migration. A blob's file is written whole before its row. The sweep when the store opens removes a
+file no row names and a row whose file is gone. `SQLBlobStoreTests` pins that, and `RepositoryTests` pins that a
+republish keeps our photo's column.

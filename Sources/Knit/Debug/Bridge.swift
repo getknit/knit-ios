@@ -111,6 +111,10 @@
             await session.updateProfile(name: name, status: status, openToChat: openToChat)
         }
 
+        func setAvatar(_ jpeg: [UInt8]?) async {
+            await session.setAvatar(jpeg)
+        }
+
         func createGroup(with others: [NodeId]) async -> GroupRecord? {
             await session.createGroup(with: others)
         }

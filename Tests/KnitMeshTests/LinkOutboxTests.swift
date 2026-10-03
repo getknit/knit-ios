@@ -99,4 +99,35 @@ import Testing
         #expect(!replaced)
         #expect(outbox.isEmpty)
     }
+
+    // MARK: FILE records
+
+    @Test func aFileRecordIsReportedOnceItsLastByteIsOutAndNotBefore() {
+        // The link manager feeds the next chunk on this report (ADR 2026-10.nh55).
+        var outbox = LinkOutbox()
+        outbox.appendFileRecord([1, 2, 3, 4, 5])
+        outbox.append(live)
+        var reports: [Bool] = []
+        while let next = outbox.next(atMost: 2) {
+            reports.append(outbox.wrote(next.count))
+        }
+        #expect(reports == [false, false, true, false, false], "five bytes in twos, then the frame's three")
+        #expect(outbox.queuedBytes == 0)
+    }
+
+    @Test func aFileRecordKeepsItsPlaceAndADigestQueuesBehindIt() {
+        var outbox = LinkOutbox()
+        outbox.appendFileRecord([9, 9])
+        let replaced = outbox.offerDigest([0xD1])
+        #expect(!replaced)
+        #expect(drain(&outbox) == [[9, 9], [0xD1]])
+    }
+
+    @Test func anEmptyFileRecordQueuesNothing() {
+        var outbox = LinkOutbox()
+        outbox.appendFileRecord([])
+        #expect(outbox.isEmpty)
+        let reported = outbox.wrote(1)
+        #expect(!reported)
+    }
 }

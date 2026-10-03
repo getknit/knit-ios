@@ -69,6 +69,13 @@
             core.onQueue { $0.writeDigest(record, to: channel) }
         }
 
+        /// Each link reports a FILE record's last byte out of its queue, so a file never fills it.
+        public var reportsFileWrites: Bool { true }
+
+        public func writeFileRecord(_ record: [UInt8], to channel: ChannelID) {
+            core.onQueue { $0.writeFileRecord(record, to: channel) }
+        }
+
         public func close(_ channel: ChannelID) {
             core.onQueue { $0.close(channel) }
         }
@@ -354,6 +361,14 @@
                 return
             }
             link.writeDigest(record)
+        }
+
+        func writeFileRecord(_ record: [UInt8], to channel: ChannelID) {
+            guard let link = links[channel] else {
+                log.log(.debug, "ble dropped a file record of \(record.count) bytes for \(channel), which has no link")
+                return
+            }
+            link.writeFileRecord(record)
         }
     }
 

@@ -17,6 +17,7 @@ final class FakeRadio: Radio {
         case dialed(Dial)
         case wrote(ChannelID, [UInt8])
         case wroteDigest(ChannelID, [UInt8])
+        case wroteFileRecord(ChannelID, [UInt8])
         case closed(ChannelID)
         case rang(ChannelID)
         case heardHello(NodeId, ChannelID)
@@ -39,6 +40,7 @@ final class FakeRadio: Radio {
     let advertisesServiceData: Bool
     let dialsGattPeers: Bool
     let servesDoorbell: Bool
+    let reportsFileWrites: Bool
     let events: AsyncStream<RadioEvent>
     /// Everything asked of the radio, in order.
     let activity: AsyncStream<Activity>
@@ -46,10 +48,11 @@ final class FakeRadio: Radio {
     private let recorder: AsyncStream<Activity>.Continuation
     private let state = Lock(State())
 
-    init(advertisesServiceData: Bool, dialsGattPeers: Bool = true, servesDoorbell: Bool = false) {
+    init(advertisesServiceData: Bool, dialsGattPeers: Bool = true, servesDoorbell: Bool = false, reportsFileWrites: Bool = false) {
         self.advertisesServiceData = advertisesServiceData
         self.dialsGattPeers = dialsGattPeers
         self.servesDoorbell = servesDoorbell
+        self.reportsFileWrites = reportsFileWrites
         (events, emitter) = AsyncStream<RadioEvent>.makeStream()
         (activity, recorder) = AsyncStream<Activity>.makeStream()
     }
@@ -115,6 +118,13 @@ final class FakeRadio: Radio {
     func writeDigest(_ record: [UInt8], to channel: ChannelID) {
         state.withLock { $0.writes[channel, default: []].append(record) }
         recorder.yield(.wroteDigest(channel, record))
+    }
+
+    /// Records the FILE record as one write. A test that made the radio report writes reports each one out itself,
+    /// with ``emit(_:)``.
+    func writeFileRecord(_ record: [UInt8], to channel: ChannelID) {
+        state.withLock { $0.writes[channel, default: []].append(record) }
+        recorder.yield(.wroteFileRecord(channel, record))
     }
 
     func close(_ channel: ChannelID) {

@@ -148,7 +148,8 @@ publish it honestly.
   meanwhile; the engine here is synchronous (ADR 2026-09.gq84), so it checks once.
 - **Where the iPhone differs from Android, all of it delivery-side, none of it custody:**
   - a cleartext DM or group message is dropped, not shown;
-  - a `blobreq` is ignored rather than asked onward, since the MVP holds no blobs;
+  - a `blobreq` is never flooded, even one marked `relay = true`, where Android would flood it; it is answered or
+    asked onward as Android's `BlobExchange` does (ADR 2026-10.ym9y);
   - every receipt and tick, room or group, is cleartext, because this build cannot seal one.
 - **Group messages carried before groups showed** are delivered at start-up: the engine replays each live
   group `chat` in custody that has no message row, oldest first, as Android's `replayCustodiedGroupFrames`

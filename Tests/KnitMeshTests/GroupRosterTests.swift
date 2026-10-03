@@ -190,8 +190,9 @@ import Testing
             return try accepted(reconcile(frame, from: bob, existing: pinned)).0
         }
         let newer = try photo("new", clock: 200)
-        #expect(newer.photoHash == "new" && newer.photoUpdatedAt == 200, "Android waits for the bytes; this port never fetches them")
+        #expect(newer.photoHash == "new" && newer.photoUpdatedAt == 200, "the decided photo is taken before its bytes land")
         #expect(try photo("stale", clock: 99).photoHash == "old")
+        #expect(try photo("old", clock: 400).photoUpdatedAt == 100, "the held photo again does not move its clock")
         #expect(try photo(nil, clock: 300).photoHash == "old", "no photo on a frame never clears one")
         var distant = info([bob, alice])
         distant.id = pinned.id
@@ -199,6 +200,25 @@ import Testing
         distant.photoUpdatedAt = .max
         let clamped = GroupRoster(me: alice, maxClock: 500).reconcile(distant, from: bob, at: 100, existing: pinned)
         #expect(try accepted(clamped).0.photoUpdatedAt == 500, "a far-future photo clock is bounded")
+    }
+
+    /// `photoWins` (`InboundPipeline.kt:2378`, knit-next ADR 2026-09.nxcq): a member still showing the old photo
+    /// re-asserts it at the new clock, so a tie that went to the frame switched the group back (#108).
+    @Test func aTieKeepsTheHeldPhotoAndTakesOneOnlyWhenNoneIsHeld() throws {
+        var pinned = held([bob, alice])
+        pinned.photoHash = "old"
+        pinned.photoUpdatedAt = 100
+        var tied = info([bob, alice])
+        tied.id = pinned.id
+        tied.photoHash = "tied"
+        tied.photoUpdatedAt = 100
+        #expect(try accepted(reconcile(tied, from: bob, existing: pinned)).0.photoHash == "old")
+        var unstamped = info([bob, alice])
+        unstamped.photoHash = "first"
+        let bare = held([bob, alice])
+        unstamped.id = bare.id
+        #expect(try accepted(reconcile(unstamped, from: bob, existing: bare)).0.photoHash == "first", "nothing held: a tie takes")
+        #expect(GroupRoster.photoWins(nil, at: 900, over: nil, at: 0) == false, "no photo on a frame takes nothing")
     }
 
     // MARK: Leaving and coming back

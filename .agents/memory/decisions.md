@@ -49,3 +49,6 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.dz8d](decisions/2026-10-dz8d-a-debug-build-s-bridge.md) | a debug build's bridge also listens on Wi-Fi, on a router pinned over USB | interop, testing, app |
 | [2026-10.65xx](decisions/2026-10-65xx-a-peer-s-profile-verifies.md) | a peer's profile verifies them by scanning their knit-id code, and never pins from it | app, crypto, security |
 | [2026-10.mueg](decisions/2026-10-mueg-a-lonely-iphone-in-the.md) | a lonely iPhone in the background seeks peers within a wake budget | ble, transport, interop |
+| [2026-10.h6zz](decisions/2026-10-h6zz-file-records-cross-a-link.md) | FILE records cross a link one chunk at a time, each behind the radio's report of the last | ble, transport, interop |
+| [2026-10.nh55](decisions/2026-10-nh55-profile-photos-and-photos-in.md) | Profile photos and photos in chats come to the iPhone, carried as Android carries them | scope, blobs, interop |
+| [2026-10.ym9y](decisions/2026-10-ym9y-the-iphone-asks-for.md) | The iPhone asks for, serves and carries blobs as Android's BlobExchange does | mesh, blobs, interop |

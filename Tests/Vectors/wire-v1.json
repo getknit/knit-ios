@@ -2,7 +2,7 @@
   "source": {
     "repository": "knit-next",
     "path": "vectors/wire-v1.json",
-    "commit": "a87d22553dadf72288d71c89ebc4f43dfc2a696c",
+    "commit": "00357abd4cb61ba3119a0a6a8fe32ecb2bf9ef20",
     "uncommitted": false,
     "sha256": "9b6c4f8935dc34c695eab83ad4426d8c3b3ea9abd71da926af2a3fde614236d8"
   },

@@ -77,6 +77,17 @@ final class PeerRadio: Radio {
         state.withLock { $0.closed.append(channel) }
     }
 
+    /// Every record written on `channel`, parsed back.
+    func records(on channel: ChannelID) -> [LinkRecord] {
+        var reader = LinkRecordReader()
+        reader.append(state.withLock { $0.writes[channel, default: []] })
+        var records: [LinkRecord] = []
+        while let record = try? reader.next() {
+            records.append(record)
+        }
+        return records
+    }
+
     /// The frames written on `channel`, decoded.
     func frames(on channel: ChannelID) -> [WireEnvelope] {
         var reader = LinkRecordReader()
@@ -110,6 +121,21 @@ final class CapturingTransport: MeshTransport {
         // The peer under test learns nothing from the far side's digest here.
     }
 
+    func sendFile(_: OutboundFile, to _: NodeId) -> Bool {
+        // The far side here takes frames only.
+        false
+    }
+
+    func isFileInFlight(_: BlobHash, to _: NodeId) -> Bool {
+        false
+    }
+
+    var arrivingFileKeys: Set<BlobHash> { [] }
+
+    func acceptFiles(_: Set<BlobHash>) {
+        // Nothing streams in here.
+    }
+
     /// Everything sent since the last call.
     func take() -> [WireEnvelope] {
         defer { sent.removeAll() }
@@ -136,10 +162,16 @@ final class LineCollector: Sendable {
     /// Waits, yielding, until a line matches, for at most five seconds. A count of turns is no budget: under
     /// coverage instrumentation on a busy machine, five thousand of them ran out before the node wrote its line.
     func first(where match: ([String: Any]) -> Bool) async -> [String: Any]? {
+        await nth(1, where: match)
+    }
+
+    /// Waits as ``first(where:)`` does, until `count` lines match, and answers the last of them.
+    func nth(_ count: Int, where match: ([String: Any]) -> Bool) async -> [String: Any]? {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while ContinuousClock.now < deadline {
-            if let line = objects.first(where: match) {
-                return line
+            let matching = objects.filter(match)
+            if matching.count >= count {
+                return matching[count - 1]
             }
             await Task.yield()
         }
@@ -178,20 +210,28 @@ struct PeerRig {
     let far = identity(2)
     let radio = PeerRadio()
     let lines = LineCollector()
-    let stores = MeshStores.inMemory()
+    let stores: MeshStores
     let node: PeerNode
     let farTransport: CapturingTransport
     let farEngine: MeshEngine
 
-    init() {
+    /// A peer on fresh stores in memory, its own profile in `ownProfile` when given, keeping its photo at `avatarPath`
+    /// when given: a restart is a second rig on the same two.
+    init(ownProfile: (any OwnProfileStore)? = nil, avatarPath: String? = nil) {
+        var made = MeshStores.inMemory()
+        if let ownProfile {
+            made.ownProfile = ownProfile
+        }
+        stores = made
         node = PeerNode(
             identity: keys,
-            stores: stores,
+            stores: made,
             radio: radio,
             radioProfile: "android",
             clock: StillClock(),
             random: CountingGenerator(),
             log: SilentLog(),
+            avatarPath: avatarPath,
             output: lines.write
         )
         farTransport = CapturingTransport(peer: keys.nodeId)
@@ -215,11 +255,18 @@ struct PeerRig {
         return try #require(reply)
     }
 
-    /// Links the far node as a dialer we never sighted, and waits for the link event.
-    func link() async throws {
+    /// Links the far node as a dialer we never sighted, and waits for the link event: the `count`th, for a link
+    /// made again.
+    func link(count: Int = 1) async throws {
         radio.emit(.accepted(Self.channel))
         radio.emit(.received(Self.channel, record(.hello, Hello(nodeId: far.nodeId.string, capabilities: 0xFFF).payload)))
-        _ = try #require(await lines.first { $0["event"] as? String == "link" && $0["up"] as? Bool == true })
+        _ = try #require(await lines.nth(count) { $0["event"] as? String == "link" && $0["up"] as? Bool == true })
+    }
+
+    /// A whole file as the far peer would stream it: its header, one chunk and its END.
+    func fileRecords(_ kind: FileHeader.Kind, _ bytes: [UInt8]) -> [UInt8] {
+        record(.fileHeader, LinkJSON.fileHeaderPayload(FileHeader(kind: kind, key: BlobHash(of: bytes).string, mime: "image/jpeg")))
+            + record(.fileChunk, bytes) + record(.fileEnd, [])
     }
 
     /// Hands every frame the far engine sent to the node, as if over the link.

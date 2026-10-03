@@ -40,7 +40,7 @@ import Testing
         #expect(status["displayName"] as? String == Alias.alias(for: rig.keys.nodeId.string), "no name, so the alias")
         #expect(status["links"] as? Int == 0)
         #expect(status["custody"] as? Int == 1, "our own profile")
-        #expect(status["fileRecords"] as? Int == 0)
+        #expect(status["files"] as? [String: Int] == ["received": 0, "refused": 0, "sent": 0])
     }
 
     @Test func statusCountsWhatTheMeshHoldsInMemory() async throws {
@@ -51,8 +51,9 @@ import Testing
         let status = try await rig.send(#"{"cmd":"status"}"#)
         let footprint = try #require(status["footprint"] as? [String: Any])
         let tables = [
-            "cachedProfiles", "channels", "crossings", "earlyReceipts", "missingKeys", "owedTicks", "parked", "pendingRelays", "seen",
-            "tombstones",
+            "arrivingFiles", "cachedProfiles", "channels", "crossings", "earlyReceipts", "missingKeys", "owedTicks", "parked",
+            "pendingRelays",
+            "queuedFiles", "seen", "servedBlobs", "tombstones", "wantedBlobs",
         ]
         #expect(footprint.keys.sorted() == tables)
         #expect(footprint["seen"] as? Int == (before["seen"] as? Int).map { $0 + 1 }, "our own post is marked seen")

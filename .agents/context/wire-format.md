@@ -129,11 +129,11 @@ Adding a custodial type is a flag day, not an additive change. Breaking changes 
 
 ## What this build sends and understands
 
-Groups joined the MVP's frames on 2026-09-30 (ADR 2026-09.n393).
+Groups joined the MVP's frames on 2026-09-30 (ADR 2026-09.n393), and profile photos on 2026-10-03 (ADR 2026-10.nh55).
 
 | Frame | We send | We receive |
 | --- | --- | --- |
-| `profile` | on every new link, on edit, and at least every 12 h | pin, verify, carry |
+| `profile` | on every new link, on edit, and at least every 12 h; `avatarHash` names our photo | pin, verify, carry; the photo shows once its bytes are held |
 | `chat` DM, `enc.v = 1` | yes | yes, always |
 | `chat` DM, `enc.v = 2` or `3` | no (`CAP_RATCHET` stays off) | carry and relay; cannot open |
 | `chat` room post (no recipient, no group) | yes, signed and cleartext | yes |
@@ -144,8 +144,15 @@ Groups joined the MVP's frames on 2026-09-30 (ADR 2026-09.n393).
 | `receipt`, `relay = true`, `sentAt` set | our DM acks | yes: ✓✓ on our DMs |
 | `receipt`, `relay = false`, no `sentAt` | room and group ticks over the link | yes: Android's room and group ticks to us |
 | `keyreq` (`relay = false`, signed) | when a sender's key is missing | answer with cached signed profiles |
-| `blobreq` (unsigned) | no | ignore; we publish no avatar |
+| `blobreq` (unsigned, `relay = false`, `sentAt` 0) | for each blob wanted: to every neighbour, at link-up and every 60 s | serve it if held, as FILE records of kind ATTACHMENT; otherwise want it; never flood it (ADR 2026-10.ym9y) |
 | `reaction`, `typing`, `commons`, unknown types | no | carry and relay where custodial; never crash |
+
+FILE records, which are not frames, go both ways too:
+
+- **Out:** our photo as kind AVATAR at each new link, and any blob we serve as kind ATTACHMENT, a chunk at a time
+  behind the radio's report (ADR 2026-10.h6zz).
+- **In:** a peer's own AVATAR push, kept when it is the photo its signed profile names. An ATTACHMENT is kept when it is
+  a blob this node wants and its bytes match its hash (ADR 2026-10.ym9y).
 
 ## Golden vectors
 

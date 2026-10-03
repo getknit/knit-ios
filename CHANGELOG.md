@@ -36,6 +36,9 @@ document:
 - When your iPhone loses its last connection with Knit in the background, it now finds nearby phones and
   reconnects on its own instead of waiting for you to open the app. If the phones it finds won't connect, it
   stops after a few tries until Knit is next open.
+- Photos and profile pictures now pass through an iPhone on their way across the mesh. A phone that asks for
+  one gets the iPhone's copy, or the iPhone fetches it first, so the picture reaches people its sender never
+  meets.
 
 ## About this file
 

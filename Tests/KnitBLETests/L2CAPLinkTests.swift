@@ -49,6 +49,22 @@
             #expect(rig.log.all.contains { $0.contains("digest of 3 bytes replaced the one waiting") })
         }
 
+        /// Each FILE record's last byte out of the queue is reported once, which feeds a file's next chunk; a frame's
+        /// bytes report nothing (ADR 2026-10.nh55).
+        @Test func aFileRecordIsReportedOnceItsLastByteIsOut() async throws {
+            let rig = try LinkRig(bufferSize: 1024, farReads: false)
+            let chunk = [UInt8](repeating: 0xCC, count: 4096)
+            rig.link.writeFileRecord(chunk)
+            rig.link.write([0xEE])
+            await rig.settled()
+            #expect(rig.fileWrites.times == 0, "still queued behind a far end that is not reading")
+            rig.far.startReading()
+            #expect(try await rig.far.read(chunk.count + 1) == chunk + [0xEE])
+            try await rig.fileWrites.wait()
+            await rig.settled()
+            #expect(rig.fileWrites.times == 1)
+        }
+
         @Test func theFarEndClosingEndsTheLinkOnce() async throws {
             let rig = try LinkRig()
             rig.far.close()
@@ -90,6 +106,8 @@
         let log: CapturingLog
         let received: Bytes
         let ends: Ends
+        /// Each FILE record the link reported out.
+        let fileWrites: Ends
         let link: L2CAPLink
         let far: FarEnd
         private let thread: StreamThread
@@ -104,10 +122,12 @@
             far = FarEnd(input: try #require(farInput), output: try #require(farOutput), reads: farReads)
             let sink = Bytes()
             let endings = Ends()
+            let reports = Ends()
             let lines = CapturingLog()
             let streams = StreamThread()
             received = sink
             ends = endings
+            fileWrites = reports
             log = lines
             thread = streams
             link = L2CAPLink(
@@ -118,7 +138,8 @@
                 thread: streams,
                 log: lines,
                 received: { sink.append($0) },
-                ended: { endings.record() }
+                ended: { endings.record() },
+                wroteFileRecord: { reports.record() }
             )
             if opens {
                 link.open()

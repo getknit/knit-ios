@@ -76,3 +76,8 @@ so the most it can do is cut a link. The radio adapters must stay thin: a rule a
 a rule the other radio does not have. `LinkManagerTests`, `LinkAdmissionTests` and `LinkEdgeTests` pin each rule, including
 `anUnsightedLinkedPeerDialingAgainReplacesItsStaleLink` for the teardown bug,
 `aLinkYoungerThanThirtySecondsIsNeverReplaced` and `aLinkWhosePeerWasSightedThenLostIsShedFirst`.
+
+**Amended 2026-10-03, when photos came in (ADR 2026-10.nh55):** FILE records are no longer discarded as they stream
+by. `LinkManager` takes each link's files in through a `FileIntake`, under Android's receiving rules, and streams files
+out one chunk at a time behind the radio's report of the last (ADR 2026-10.h6zz). The radios still decide nothing:
+they queue a whole FILE record and report its last byte out. `LinkFileTests` replaces the discard test.

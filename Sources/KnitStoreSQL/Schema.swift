@@ -20,6 +20,7 @@ internal enum Schema {
         ("v1", v1),
         ("v2", v2),
         ("v3", v3),
+        ("v4", v4),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -135,6 +136,23 @@ internal enum Schema {
             PRIMARY KEY (groupId, nodeId)
         ) STRICT
         """,
+    ]
+
+    /// Schema v4: photos (ADR 2026-10.nh55). `blobs` indexes the blobs held, whose bytes live in files beside the
+    /// database (``SQLBlobStore``). A peer gains the photo shown and the one its newest profile names, and our own
+    /// profile gains its photo. Every row already stored has none.
+    private static let v4 = [
+        """
+        CREATE TABLE blobs (
+            hash BLOB NOT NULL PRIMARY KEY,
+            mime BLOB NOT NULL,
+            size INTEGER NOT NULL,
+            storedAt INTEGER NOT NULL
+        ) STRICT
+        """,
+        "ALTER TABLE peers ADD COLUMN avatarHash BLOB",
+        "ALTER TABLE peers ADD COLUMN advertisedAvatarHash BLOB",
+        "ALTER TABLE own_profile ADD COLUMN avatarHash BLOB",
     ]
 
     /// The migrator that brings any database this build knows up to date.

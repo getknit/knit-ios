@@ -37,6 +37,18 @@ extension LinkManager {
         /// How much longer a dial or HELLO may take when its deadline passed while iOS had the app suspended: on resume,
         /// the timer and what the radio reported meanwhile reach the link manager in no fixed order.
         public var lateDeadlineGraceMilliseconds: Int64
+        /// The most bytes one FILE_CHUNK carries: Android's `FILE_CHUNK_BYTES` (`LinkFraming.kt:85`).
+        public var fileChunkBytes: Int
+        /// How fast a file streams, at most: Android's `BLE_PACE_BYTES_PER_SEC` on a 1M or 2M link
+        /// (`CodedPhyPolicy.kt:226`). Each chunk waits its own share of a second after the last, so a resumed app never
+        /// bursts to catch up. 0 does not pace.
+        public var filePaceBytesPerSecond: Int
+        /// The most of a peer's own AVATAR push to keep. Android's photos are 256-pixel JPEGs of a few tens of KiB and
+        /// it caps none but the 8 MiB file (ADR 2026-10.nh55), so this only stops a peer filling memory with a "photo".
+        public var maxAvatarFileBytes: Int
+        /// The most bytes of partial files kept at once across every link, so six links each streaming 8 MiB cannot
+        /// hold 48 MiB in a suspended app.
+        public var maxBufferedFileBytes: Int
         /// Whom to link.
         public var promotion: PromotionPolicy.Configuration
         /// How long to wait after failures.
@@ -58,6 +70,10 @@ extension LinkManager {
             seekWakeMilliseconds: Int64 = 10_000,
             seekSpellResetMilliseconds: Int64 = 30_000,
             lateDeadlineGraceMilliseconds: Int64 = 3000,
+            fileChunkBytes: Int = 16_384,
+            filePaceBytesPerSecond: Int = 28_672,
+            maxAvatarFileBytes: Int = 1_048_576,
+            maxBufferedFileBytes: Int = 16_777_216,
             promotion: PromotionPolicy.Configuration = PromotionPolicy.Configuration(),
             backoff: ConnectBackoff.Configuration = ConnectBackoff.Configuration(),
             presence: PresenceTracker.Configuration = PresenceTracker.Configuration()
@@ -74,6 +90,10 @@ extension LinkManager {
             self.seekWakeMilliseconds = seekWakeMilliseconds
             self.seekSpellResetMilliseconds = seekSpellResetMilliseconds
             self.lateDeadlineGraceMilliseconds = lateDeadlineGraceMilliseconds
+            self.fileChunkBytes = fileChunkBytes
+            self.filePaceBytesPerSecond = filePaceBytesPerSecond
+            self.maxAvatarFileBytes = maxAvatarFileBytes
+            self.maxBufferedFileBytes = maxBufferedFileBytes
             self.promotion = promotion
             self.backoff = backoff
             self.presence = presence

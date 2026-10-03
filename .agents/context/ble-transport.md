@@ -43,7 +43,10 @@ reach it. Neither is in `0xFE30` or on the mesh wire, and Knit ignores both.
 
 ## The advert
 
-Legacy advertising (`ADV_IND`, connectable and scannable), about one second apart, medium power, 1M PHY.
+Legacy advertising (`ADV_IND`, connectable and scannable), about one second apart, 1M PHY, at full power
+(`TX_POWER_HIGH`) since knit-next ADR 2026-10.ryak; it was medium until then. A debug build running the Coded PHY
+experiment (knit-next ADR 2026-10.yvn6, dark in release) also airs a second, extended set on the Coded PHY with
+the same payload. An iPhone cannot hear that set, and nothing here reads it.
 There is no local name, no UUID list and no scan response, which is 31 bytes on air:
 
 ```text
@@ -73,7 +76,7 @@ bytes. The tags:
 | --- | --- | --- |
 | 1 | `FRAME` | CBOR `WireEnvelope` (`wire-format.md`) |
 | 2 | `FILE_HEADER` | UTF-8 JSON `{"kind":"AVATAR"\|"ATTACHMENT","key":"<64 lowercase hex>","mime":"…"}` |
-| 3 | `FILE_CHUNK` | raw bytes, 16 KiB from Android; a file over 8 MiB + 64 KiB is aborted |
+| 3 | `FILE_CHUNK` | raw bytes, at most 16 KiB from Android (2 KiB on a Coded link); a file over 8 MiB + 64 KiB is aborted |
 | 4 | `FILE_END` | empty |
 | 5 | `KEEPALIVE` | empty; Android never sends one and ignores it on receipt |
 | 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|fff`; the caps may carry `CAP_DOORBELL` (`0x1000`), which no advert can |
@@ -84,8 +87,12 @@ bytes. The tags:
 - A `FRAME` that does not decode is counted and skipped, and the link stays up. Frames and digests may
   interleave with file chunks.
 - Only one file streams each way at a time. A new `FILE_HEADER` discards a partial file.
-- Android caps each socket write at `min(maxTransmitPacketSize, 8192)` bytes and paces files to 28 KiB/s.
-  Keep our writes at 8 KiB or less.
+- Android caps each socket write at `min(maxTransmitPacketSize, 8192)` bytes. Keep our writes at 8 KiB or less.
+- Android paces files by the link's PHY, read again before every chunk (`CodedPhyPolicy.pace`, #114):
+  - 28 KiB/s in 16 KiB chunks on 1M and 2M;
+  - 1 KiB/s in 2 KiB chunks on Coded.
+
+  The pace is the sender's own choice, and a receiver takes a chunk of any length.
 
 ### The handshake
 
@@ -139,11 +146,19 @@ radio.
 - **Promotion** (`PromotionPolicy`): smoothed RSSI of at least −90 dBm and 12 s of dwell, strongest first.
   At most 6 links. Overflow sheds the weakest link that is at least 20 s old. At the budget, the weakest
   link is replaced only by a candidate 8 dB stronger. A link from a peer never sighted scores −127
-  (`ABSENT_LINK_RSSI`), so it is shed first.
+  (`ABSENT_LINK_RSSI`), so it is shed first. Since A1 such a link scores −90, the floor. Since knit-next ADR
+  2026-10.ryak the presence advert runs at full power and the floor has not moved, so a sighted link reads 8 dB
+  stronger at the same spot than before. At the budget, an unsighted link, which an iPhone's often is, is now shed
+  ahead of a sighted one more often. The connect loop also wakes when a candidate's dwell ends, between scan
+  windows (knit-next ADR 2026-10.pj9w), as `LinkManager` already did.
 - **Backoff** (`ConnectBackoffPolicy`): 10 s × 2^(streak − 1), capped at 180 s, ±20 % jitter. A link that
   ends at EOF also bumps the streak, and success resets it.
-- **Connect:** a 12 s watchdog around each dial (`CONNECT_TIMEOUT_MS`). No MTU request, no PHY preference,
-  no bonding.
+- **Connect:** a 12 s watchdog around each dial (`CONNECT_TIMEOUT_MS`). No MTU request and no bonding.
+  - The Coded experiment (debug builds only) works only with a peer it hears on Coded. It dials that peer's Coded
+    address with a 25 s watchdog, and switches the link's PHY over GATT. An iPhone is never heard on Coded, so its
+    links stay on 1M.
+  - After its last link drops, a phone searches at the 12 s scan gap for three minutes before relaxing (knit-next
+    ADR 2026-09.w3xk).
 
 ## What this means for an iPhone
 
@@ -216,6 +231,17 @@ The HELLO adds `CAP_DOORBELL` (`0x1000`) to this build's `0xB`, reading `100b`, 
 doorbell (`Radio.servesDoorbell`): `KnitBLE`, and knit-peer's `ios` profile. The `android` profile, like Android,
 serves no GATT and never sends it. The link manager rings after every frame it writes except `typing`, `blobreq`
 and `keyreq`, as Android does, so both platforms wake an iPhone equally often (ADR 2026-09.khjj).
+
+Files cross a link as Android's do (ADR 2026-10.h6zz).
+
+- **Out:** a header, 16 KiB chunks paced at 28 KiB/s, then an END, one file per link at a time.
+  - Each chunk waits until the radio reports the last one out of its `LinkOutbox` (`RadioEvent.wroteFileRecord`), so
+    frames go out between chunks.
+  - Our photo goes as kind AVATAR right behind our profile at each link-up. Anything served goes as kind ATTACHMENT.
+- **In:** each link's records pass through a `FileIntake` under Android's receiving rules.
+  - A peer's own AVATAR push is kept up to 1 MiB, and an ATTACHMENT only when the engine asked for its hash.
+  - Partial files on all links together stay under 16 MiB.
+  - FILE records never ring a doorbell.
 
 `KnitBLE` is the iPhone's radio. Its central scans every advert with duplicates, or the `0xFE30` UUID alone while
 the link manager seeks (`Radio.seekPeers`, ADR 2026-10.mueg), takes

@@ -26,6 +26,11 @@ public final class MeshEngine {
     var custody = CustodySync()
     var pendingInbound = PendingInbound()
     var keyExchange: KeyExchange
+    var blobExchange = BlobExchange()
+    /// The attachments the links were last told to keep as they stream in (``syncAcceptedFiles()``).
+    var acceptedFiles: Set<BlobHash> = []
+    /// The photo each neighbour has had from us whole, this run (``pushAvatar(to:)``).
+    var avatarPushes: [NodeId: BlobHash] = [:]
     var ackSync = AckSync()
     var events: [MeshEvent] = []
     /// Our profile frame for the current publish stamp, signed once and reused (ADR 2026-09.qztx in knit-next).
@@ -36,6 +41,9 @@ public final class MeshEngine {
     public private(set) var dropped: [DropReason: Int] = [:]
     /// Bumped whenever custody may have changed, so the driver knows to re-read ``digestCue``.
     public private(set) var custodyRevision = 0
+    /// Whole files dropped here: their bytes did not match their hash, a pushed photo was not the one its pusher's
+    /// profile names, or nothing wanted them.
+    public internal(set) var filesRejected = 0
 
     struct Timers {
         var reoffer: Int64
@@ -82,7 +90,9 @@ public final class MeshEngine {
             parked: pendingInbound.count,
             owedTicks: ackSync.count,
             cachedProfiles: keyExchange.cachedProfileCount,
-            missingKeys: keyExchange.missingIds.count
+            missingKeys: keyExchange.missingIds.count,
+            wantedBlobs: blobExchange.wanted.count,
+            servedBlobs: blobExchange.servedCount
         )
     }
 
@@ -113,6 +123,8 @@ public final class MeshEngine {
         _ = ownProfile()
         sweep()
         replayCustodiedGroupChats()
+        sweepUnreferencedBlobs()
+        rewantMissingBlobs(sparing: [])
         let now = clock.monotonicMilliseconds()
         timers = Timers(
             reoffer: now + configuration.reofferMilliseconds,
@@ -129,11 +141,13 @@ public final class MeshEngine {
 
     // MARK: Links
 
-    /// A link to `neighbor` came up (`MeshManager.watchNeighbors`): push our profile, send our digest, ask for the
-    /// keys we lack, and send the ticks we owe it.
+    /// A link to `neighbor` came up (`MeshManager.watchNeighbors`): push our profile and our photo, ask for the blobs
+    /// we lack, send our digest, ask for the keys we lack, and send the ticks we owe it.
     public func linkUp(_ neighbor: Neighbor) {
         let peer = neighbor.nodeId
         pushProfile(to: peer)
+        pushAvatar(to: peer)
+        reaskBlobs(of: [peer], except: rewantMissingBlobs(sparing: Set(neighborIds)))
         transport.sendDigest(stores.custody.liveIds(now: clock.wallMilliseconds()), to: peer)
         askForMissingKeys(to: [peer])
         sendOwedTicks(to: peer)
@@ -154,6 +168,12 @@ public final class MeshEngine {
             return
         }
         deliver(frame)
+        // A blob request is answered, never flooded, whatever its relay flag says. Android floods one marked `relay =
+        // true`, and every node it reached would serve the neighbour that handed it on; no build sends one
+        // (ADR 2026-10.nh55).
+        guard frame.envelope.type != .blobRequest else {
+            return
+        }
         perform(router.relay(frame, neighbors: neighborIds, jitter: drawJitter(), now: now))
     }
 
@@ -198,11 +218,12 @@ public final class MeshEngine {
         timers = due
     }
 
-    /// The 60-second re-offer to every linked neighbour (`MeshManager.reofferToNeighborsPeriodically`): our digest,
-    /// the keys we still lack, and any ticks owed. A Bluetooth link stays up, so this is what reconciles custody
-    /// that drifts after link-up.
+    /// The 60-second re-offer to every linked neighbour (`MeshManager.reofferToNeighborsPeriodically`): the blobs and
+    /// keys we still lack, our digest, and any ticks owed. A Bluetooth link stays up, so this is what reconciles
+    /// custody that drifts after link-up, and what moves a blob one hop nearer.
     func reoffer() {
         let neighbors = neighborIds
+        reaskBlobs(of: neighbors, except: rewantMissingBlobs(sparing: []))
         askForMissingKeys(to: neighbors)
         let ids = stores.custody.liveIds(now: clock.wallMilliseconds())
         for peer in neighbors {
@@ -220,6 +241,9 @@ public final class MeshEngine {
         pendingInbound.sweep(now: now)
         keyExchange.sweep(now: now)
         ackSync.sweep(now: now)
+        if blobExchange.sweep(now: now) > 0 {
+            syncAcceptedFiles()
+        }
     }
 
     /// The 15-minute heal pass (`MeshManager.heal`): re-ask for missing keys, and republish a stale profile.

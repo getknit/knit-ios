@@ -107,7 +107,8 @@ import Foundation
                 messages: MemoryMessageStore(),
                 conversations: MemoryConversationStore(),
                 groups: MemoryGroupStore(),
-                ownProfile: state.profileStore()
+                ownProfile: state.profileStore(),
+                blobs: MemoryBlobStore()
             )
             return PeerNode(
                 identity: identity.keys,
@@ -118,6 +119,7 @@ import Foundation
                 random: SystemRandomNumberGenerator(),
                 linkConfiguration: links,
                 log: log,
+                avatarPath: state.avatarPath,
                 output: Lines.output.write
             )
         }

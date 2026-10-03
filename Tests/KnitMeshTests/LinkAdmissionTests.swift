@@ -158,7 +158,7 @@ import Testing
         #expect(rest == [.frame(InboundFrame(wire: frame, envelope: envelope, from: low)), .digest(["a", "b"], from: low)])
     }
 
-    @Test func fileRecordsAndKeepalivesAreDiscardedAndAnUndecodableFrameIsSkipped() {
+    @Test func anUnreadableFileAKeepaliveAndAnUndecodableFrameLeaveTheLinkUp() {
         let rig = LinkRig(local: high)
         _ = rig.accept(low, on: ChannelID(100))
         let file = [LinkRecord(.fileHeader, payload: Array("{}".utf8)), LinkRecord(.fileChunk, payload: [1, 2, 3]), LinkRecord(.fileEnd)]
@@ -166,7 +166,8 @@ import Testing
         let events = rig.handle(.received(ChannelID(100), noise.compactMap(\.encoded).flatMap(\.self)))
         #expect(events.isEmpty)
         #expect(rig.links.undecodableFrames == 1)
-        #expect(rig.links.discardedFileRecords == 3)
+        #expect(rig.links.filesRefused == 1, "a header that does not decode drops its file (`FramedLink.kt:404-410`)")
+        #expect(rig.links.filesReceived == 0)
         #expect(rig.links.neighbors.count == 1, "the link stays up")
     }
 

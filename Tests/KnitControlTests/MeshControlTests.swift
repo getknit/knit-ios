@@ -30,10 +30,14 @@ import Testing
         #expect(direct["pendingKey"] as? Bool == false)
         _ = try await rig.send(#"{"cmd":"accept","conv":"\#(peer)"}"#)
         _ = try await rig.send(#"{"cmd":"name","name":"Near"}"#)
+        _ = try await rig.send(#"{"cmd":"avatar","jpeg":"AQID"}"#)
+        _ = try await rig.send(#"{"cmd":"avatar","clear":true}"#)
         _ = try await rig.send(#"{"cmd":"stop"}"#)
         _ = try await rig.send(#"{"cmd":"start"}"#)
         #expect(
-            actions.calls == ["room hi", "dm \(peer) psst", "accept \(peer)", "profile Near  false", "stop", "start"],
+            actions.calls == [
+                "room hi", "dm \(peer) psst", "accept \(peer)", "profile Near  false", "avatar 3 bytes", "avatar cleared", "stop", "start",
+            ],
             "the actions heard every change, in order"
         )
         #expect(rig.stores.messages.messages(in: Conversations.nearby).isEmpty, "the mesh itself posted nothing")
@@ -277,6 +281,10 @@ private final class RecordingActions: ControlActions {
 
     func updateProfile(name: String, status: String, openToChat: Bool) {
         record("profile \(name) \(status) \(openToChat)")
+    }
+
+    func setAvatar(_ jpeg: [UInt8]?) {
+        record("avatar \(jpeg.map { "\($0.count) bytes" } ?? "cleared")")
     }
 
     func createGroup(with others: [NodeId]) -> GroupRecord? {

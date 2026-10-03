@@ -27,6 +27,12 @@ public struct PeerRecord: Sendable, Equatable {
     public var verified: Bool
     /// Whether the peer invites DMs from people it has not met.
     public var openToChat: Bool
+    /// The profile photo shown: one whose bytes are held (`PeerEntity.avatarHash`). It follows
+    /// ``advertisedAvatarHash`` once those bytes land, so the photo never blanks while a new one travels.
+    public var avatarHash: BlobHash?
+    /// The photo the newest signed profile names, held or not: the one to fetch while it differs from
+    /// ``avatarHash``. `nil` when that profile names none, or names a hash that is not one.
+    public var advertisedAvatarHash: BlobHash?
 
     /// Makes a record.
     public init(
@@ -39,7 +45,9 @@ public struct PeerRecord: Sendable, Equatable {
         capabilities: Int64? = nil,
         updatedAt: Int64,
         verified: Bool = false,
-        openToChat: Bool = false
+        openToChat: Bool = false,
+        avatarHash: BlobHash? = nil,
+        advertisedAvatarHash: BlobHash? = nil
     ) {
         self.nodeId = nodeId
         self.name = name
@@ -51,6 +59,8 @@ public struct PeerRecord: Sendable, Equatable {
         self.updatedAt = updatedAt
         self.verified = verified
         self.openToChat = openToChat
+        self.avatarHash = avatarHash
+        self.advertisedAvatarHash = advertisedAvatarHash
     }
 }
 

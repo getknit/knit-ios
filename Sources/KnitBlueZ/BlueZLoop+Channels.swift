@@ -119,6 +119,16 @@
             flushWithinBound(id)
         }
 
+        /// Queues a FILE record, whose last byte out this loop reports (``LinkOutbox/appendFileRecord(_:)``).
+        func enqueueFileRecord(_ record: [UInt8], on id: ChannelID) {
+            guard var channel = channels[id] else {
+                return
+            }
+            channel.outbox.appendFileRecord(record)
+            channels[id] = channel
+            flushWithinBound(id)
+        }
+
         /// Closes a channel whose peer stopped reading, and otherwise writes what it can.
         private func flushWithinBound(_ id: ChannelID) {
             guard let channel = channels[id] else {
@@ -137,8 +147,11 @@
             while var channel = channels[id], !channel.connecting, let chunk = channel.outbox.next(atMost: channel.limit) {
                 switch Descriptor.write(channel.descriptor, chunk) {
                 case .wrote(let count):
-                    channel.outbox.wrote(count)
+                    let finishedFileRecord = channel.outbox.wrote(count)
                     channels[id] = channel
+                    if finishedFileRecord {
+                        emit(.wroteFileRecord(id))
+                    }
                 case .wouldBlock:
                     return
                 case .failed(let code):

@@ -17,6 +17,8 @@ internal enum ControlLines {
             "openToChat": .bool(peer.openToChat),
             "verified": .bool(peer.verified),
             "capabilities": .text(peer.capabilities.map { Capabilities(rawValue: $0).hex }),
+            "avatarHash": .text(peer.avatarHash?.string),
+            "advertisedAvatarHash": .text(peer.advertisedAvatarHash?.string),
             "safetyNumber": .string(
                 SafetyNumber.compute(
                     selfNodeId: bundle.nodeId.string,
@@ -102,7 +104,16 @@ internal enum ControlLines {
             "missingKeys": .int(Int64(footprint.missingKeys)),
             "channels": .int(Int64(footprint.channels)),
             "crossings": .int(Int64(footprint.crossings)),
+            "wantedBlobs": .int(Int64(footprint.wantedBlobs)),
+            "servedBlobs": .int(Int64(footprint.servedBlobs)),
+            "arrivingFiles": .int(Int64(footprint.arrivingFiles)),
+            "queuedFiles": .int(Int64(footprint.queuedFiles)),
         ]
+    }
+
+    /// What the links did with FILE records: whole files in, files dropped as they streamed, and files out.
+    static func describe(_ files: FileCounts) -> JSONValue {
+        ["received": .int(Int64(files.received)), "refused": .int(Int64(files.refused)), "sent": .int(Int64(files.sent))]
     }
 
     static func describe(_ counters: Router.Counters) -> JSONValue {

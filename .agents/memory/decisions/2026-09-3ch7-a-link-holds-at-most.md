@@ -46,3 +46,9 @@ it cannot tell whether the last digest has gone out.
 - **Guards.** `LinkOutboxTests` ports `FramedLinkTest`'s digest cases. `BlueZOutboxTests` collapses two
   digests behind a socket that is backed up. `LinkAdmissionTests`'
   `aDigestReachesTheRadioWholeSoItCanReplaceOneStillWaiting` holds `LinkManager` to one whole record.
+
+**Amended 2026-10-03, for files (ADR 2026-10.h6zz):** the outbox holds a third kind of entry, a FILE record
+(`appendFileRecord`). Like bytes it waits its turn, and unlike a digest nothing takes its place. `wrote(_:)` answers
+whether the bytes just written finished one, and the radio reports `RadioEvent.wroteFileRecord` when they did.
+That report is how the link manager keeps at most one chunk of a file in the queue, so frames written meanwhile go
+out between chunks. `LinkOutboxTests` and `BlueZOutboxTests` pin it.

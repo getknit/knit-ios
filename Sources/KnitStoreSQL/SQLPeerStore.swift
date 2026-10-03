@@ -9,8 +9,11 @@ public import KnitWire
 /// in this port deletes a pin yet. A door that does must delete its `peer_profiles` row too, as knit-next's sweeps
 /// do, so the proof never outlives the pin it proves.
 public final class SQLPeerStore: PeerStore {
+    /// Every column of a peer, in the order ``upsert(_:)`` binds them. `INSERT OR REPLACE` writes a whole row, so a
+    /// column missing here would be nulled by every write: the photo hashes are here for that reason.
     private static let columns =
-        "nodeId, name, status, publicKey, deviceTag, protocolVersion, capabilities, updatedAt, verified, openToChat"
+        "nodeId, name, status, publicKey, deviceTag, protocolVersion, capabilities, updatedAt, verified, openToChat, avatarHash, "
+        + "advertisedAvatarHash"
 
     private let database: KnitDatabase
 
@@ -32,11 +35,12 @@ public final class SQLPeerStore: PeerStore {
     public func upsert(_ peer: PeerRecord) {
         database.write(or: ()) { db in
             try db.execute(
-                sql: "INSERT OR REPLACE INTO peers (\(Self.columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                sql: "INSERT OR REPLACE INTO peers (\(Self.columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 arguments: [
                     StoredText.bytes(peer.nodeId.string), StoredText.bytes(peer.name), StoredText.bytes(peer.status),
                     StoredText.bytes(peer.publicKey), StoredText.bytes(peer.deviceTag), peer.protocolVersion, peer.capabilities,
-                    peer.updatedAt, peer.verified, peer.openToChat,
+                    peer.updatedAt, peer.verified, peer.openToChat, StoredText.bytes(peer.avatarHash?.string),
+                    StoredText.bytes(peer.advertisedAvatarHash?.string),
                 ]
             )
         }
@@ -91,7 +95,9 @@ public final class SQLPeerStore: PeerStore {
             capabilities: try row.decode(Int64?.self, forColumn: "capabilities"),
             updatedAt: try row.decode(Int64.self, forColumn: "updatedAt"),
             verified: try row.decode(Bool.self, forColumn: "verified"),
-            openToChat: try row.decode(Bool.self, forColumn: "openToChat")
+            openToChat: try row.decode(Bool.self, forColumn: "openToChat"),
+            avatarHash: try row.optionalBlobHash("avatarHash"),
+            advertisedAvatarHash: try row.optionalBlobHash("advertisedAvatarHash")
         )
     }
 }

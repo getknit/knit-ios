@@ -64,6 +64,11 @@ public final class KnitDatabase: Sendable {
         }
     }
 
+    /// Hands `error` to ``failures``, for a store whose work outside SQLite failed: a blob's file, for one.
+    func report(_ error: any Error) {
+        failures(error)
+    }
+
     /// Runs `value` against a consistent snapshot, or reports the error and answers `fallback`.
     func read<T>(or fallback: T, _ value: (Database) throws -> T) -> T {
         do {

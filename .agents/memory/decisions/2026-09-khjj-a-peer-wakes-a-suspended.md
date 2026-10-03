@@ -89,3 +89,8 @@ third link held for the whole run (`.agents/context/linux-peer.md`, "What A4 sho
 **Amended 2026-09-30:** with groups (ADR 2026-09.n393) this build's capabilities are `0xB`, so a HELLO from a radio
 that serves the doorbell reads `100b`, and one from any other radio reads `b`. A build from before groups still reads
 `1009`, and every parser takes both. `LinkTests`' `theDoorbellBitIsPinnedAndNeverOurs` checks both.
+
+**Amended 2026-10-03, for files (ADR 2026-10.h6zz):** FILE records never ring, as Android's `sendFile` never does.
+A photo streaming to a locked iPhone therefore wakes it no more often than its frames do, and the frames around it
+still ring. `LinkDoorbellTests.fileRecordsDoNotRing` pins it. The device check that a file streaming to a locked
+iPhone does not hold back a DM's ring is owed (ADR 2026-10.nh55's plan, Phase 3).

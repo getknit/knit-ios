@@ -24,6 +24,9 @@ import Testing
             (#"{"cmd":"accept","peer":"\#(peer)"}"#, .accept(peer.string)),
             (#"{"cmd":"name","name":"B"}"#, .name("B", status: nil, openToChat: nil)),
             (#"{"cmd":"name","status":"s","openToChat":true}"#, .name(nil, status: "s", openToChat: true)),
+            (#"{"cmd":"avatar","jpeg":"AQID"}"#, .avatar(.bytes([1, 2, 3]))),
+            (#"{"cmd":"avatar","path":"/tmp/a.jpg"}"#, .avatar(.file("/tmp/a.jpg"))),
+            (#"{"cmd":"avatar","clear":true,"jpeg":"AQID"}"#, .avatar(.clear)),
             (#"{"cmd":"deny-link","peer":"\#(peer)"}"#, .denyLink(peer)),
             (#"{"cmd":"allow-link","peer":"\#(peer)"}"#, .allowLink(peer)),
             (#"{"cmd":"messages","conv":"nearby"}"#, .messages("nearby", limit: 20)),
@@ -40,6 +43,11 @@ import Testing
         #expect(try ControlRequest.parse(#"{"cmd":"status","tag":"t1"}"#).get().tag == "t1")
     }
 
+    @Test func everyErrorSaysWhatWentWrong() {
+        #expect(ControlError.invalid("jpeg").message == "not a valid jpeg")
+        #expect(ControlError.missing("text").message == "missing text")
+    }
+
     @Test func badLinesSayWhy() {
         let cases: [(String, ControlError)] = [
             ("not json", .notJSON),
@@ -49,6 +57,8 @@ import Testing
             (#"{"cmd":"dm","text":"x"}"#, .missing("to")),
             (#"{"cmd":"dm","to":"NOPE","text":"x"}"#, .invalidNodeId("NOPE")),
             (#"{"cmd":"accept"}"#, .missing("conv")),
+            (#"{"cmd":"avatar"}"#, .missing("jpeg")),
+            (#"{"cmd":"avatar","jpeg":"not base64!"}"#, .invalid("jpeg")),
             (#"{"cmd":"deny-link"}"#, .missing("peer")),
             (#"{"cmd":"messages"}"#, .missing("conv")),
             (#"{"cmd":"group-create"}"#, .missing("members")),

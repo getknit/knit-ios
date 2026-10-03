@@ -75,6 +75,9 @@ public enum RadioEvent: Sendable, Equatable {
     case closed(ChannelID)
     /// A peer rang this node's doorbell, which woke the app if iOS had suspended it.
     case rung
+    /// The last byte of the oldest FILE record still queued on a channel left the radio's queue
+    /// (``Radio/writeFileRecord(_:to:)``).
+    case wroteFileRecord(ChannelID)
 }
 
 /// The radio under ``LinkManager``: it advertises, scans, dials, accepts and moves bytes, and decides nothing.
@@ -94,6 +97,12 @@ public protocol Radio: AnyObject, Sendable {
     /// adds `CAP_DOORBELL` only when it does: a peer that trusts the bit opens a GATT client on the link to find
     /// the doorbell, and a node that set it without serving one would cost that peer a lookup on every link.
     var servesDoorbell: Bool { get }
+
+    /// Whether this radio reports each FILE record's last byte leaving its queue
+    /// (``RadioEvent/wroteFileRecord(_:)``). The link manager then holds a file's next chunk until the last one is out,
+    /// so a file never fills the queue ahead of the frames written after it. A radio that does not report is fed at the
+    /// pace alone.
+    var reportsFileWrites: Bool { get }
 
     /// What the radio reports.
     var events: AsyncStream<RadioEvent> { get }
@@ -119,6 +128,11 @@ public protocol Radio: AnyObject, Sendable {
     /// ``LinkOutbox`` with ``LinkOutbox/offerDigest(_:)``, and cuts it into writes of its own size.
     func writeDigest(_ record: [UInt8], to channel: ChannelID)
 
+    /// Writes a whole encoded FILE record on an open channel, after everything written before. A radio that
+    /// ``reportsFileWrites`` queues it in its ``LinkOutbox`` with ``LinkOutbox/appendFileRecord(_:)``, cuts it into
+    /// writes of its own size, and reports ``RadioEvent/wroteFileRecord(_:)`` once its last byte is out.
+    func writeFileRecord(_ record: [UInt8], to channel: ChannelID)
+
     /// Closes a channel.
     func close(_ channel: ChannelID)
 
@@ -141,8 +155,16 @@ public protocol Radio: AnyObject, Sendable {
 }
 
 extension Radio {
+    /// Reports nothing: a radio with no queue of its own, fed at the pace alone.
+    public var reportsFileWrites: Bool { false }
+
     /// Writes the digest like any record: a radio that holds no queue of its own has none to replace it in.
     public func writeDigest(_ record: [UInt8], to channel: ChannelID) {
+        write(record, to: channel)
+    }
+
+    /// Writes the FILE record like any record, and reports nothing.
+    public func writeFileRecord(_ record: [UInt8], to channel: ChannelID) {
         write(record, to: channel)
     }
 

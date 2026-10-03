@@ -107,7 +107,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | `knit-peer run … --rssi-floor -100 --receive-mtu 247 --send-mtu 8192` | development knobs: a promotion floor below Android's −90 dBm, the L2CAP receive MTU (65535 by default), and the largest SDU written (247 by default, never above what the peer offers or 8192) |
 | `knit-peer run … --never-sight NODE_ID[,NODE_ID…] --no-gatt-payload` | test switches, BlueZ only: never report those nodes as sighted, so the peer never dials them and admits their dials unsighted; and, in the `ios` profile, serve the doorbell without the payload characteristic, so a phone that reads payloads (A3) files the peer as a stranger and never sights it |
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing, and links a node that advertises only the UUID just long enough to read its payload; `--advertise` also shows the advert |
-| `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window |
+| `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window, with the old name and photo |
 
 - **Every command checks the adapter first.** `--adapter` defaults to `hci1` and `--adapter-address` to the ATS2851's
   address. An adapter with another address stops the peer before anything opens.
@@ -116,13 +116,16 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   devices hold: at start the peer drops only links on an adapter of its own, and it only ever drops links it made.
   `.agents/rules/devices.md` says when it may be used.
 - **State** lives in `~/.local/state/knit-peer/<instance>/`: `identity` (0600) and `profile.json`, which keeps the
-  profile version and publish stamp across restarts. Custody, peers and messages live in memory.
+  profile version and publish stamp across restarts, and `avatar.jpg`, the peer's own photo, which `profile.json`
+  names. Custody, peers, messages and every other blob live in memory.
 - **Control lines** are JSON objects with a `cmd`, and an optional `tag` that the reply echoes. `KnitControl`
   holds the protocol, and a debug build of the app speaks it too, over USB or Wi-Fi (ADR 2026-09.kwa8,
-  ADR 2026-10.dz8d): `status` (with `fileRecords`, the FILE records discarded so far; `footprint`, the size of
-  each table the mesh keeps in memory; and `router`, what the router has admitted, relayed and refused),
-  `peers` (names, aliases and safety numbers), `links` (links and sightings), `room` (`text`), `dm` (`to`,
-  `text`), `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `deny-link` and `allow-link` (`peer`),
+  ADR 2026-10.dz8d): `status` (with `avatarHash`, our photo; `files`, the FILE records received, refused and sent;
+  `footprint`, the size of each table the mesh keeps in memory, blobs wanted and files queued among them; and
+  `router`, what the router has admitted, relayed and refused), `peers` (names, aliases, safety numbers, and each
+  peer's `avatarHash` shown and `advertisedAvatarHash`), `links` (links and sightings), `room` (`text`), `dm` (`to`,
+  `text`), `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `avatar` (`jpeg` as base64, a `path` the
+  answering side reads, or `clear`; ADR 2026-10.nh55), `deny-link` and `allow-link` (`peer`),
   `digest` (live custody ids and their fingerprint), `custody` (every live frame, and who a sealed chat is
   wrapped to), `messages` (`conv`, `limit`; each message carries its `kind`, 0 for a message and Android's
   notice codes for a status line), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit`
@@ -138,9 +141,10 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 - **Log lines** carry `ms`, the wall-clock time, so they line up with a phone's logcat.
 
 `scripts/interop.py` runs checklist L against one phone through knit-next's debug bridge: `check` in either
-dial order (`--blank-name` for alias parity, `--expect-avatar` for FILE records, `--radio-profile ios` for the
-A1 group), `refusal` for the `ios` profile against Android 2.7 only (every A1 build admits the dialer it expects
-refused), `replace` for A1's stale-link rule, `soak`, `relay`, `android-rings` for companion change A4, and
+dial order (`--blank-name` for alias parity, `--expect-avatar` and `--peer-avatar` for photos both ways,
+`--radio-profile ios` for the A1 group), `refusal` for the `ios` profile against Android 2.7 only (every A1 build
+admits the dialer it expects refused), `replace` for A1's stale-link rule, `soak`, `relay` (the same two photo
+flags pull photos through the middle peer), `android-rings` for companion change A4, and
 `android-reads`, companion change A3's device gate. It needs the session's go-ahead for the phone
 (`.agents/rules/devices.md`). It keeps the run on that phone:
 

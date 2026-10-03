@@ -21,6 +21,14 @@ public struct MeshFootprint: Sendable, Equatable {
     public var channels: Int
     /// The frame ids the open channels have carried.
     public var crossings: Int
+    /// Blobs wanted and not yet held: at most ``BlobExchange/maxWanted``.
+    public var wantedBlobs: Int
+    /// Serves remembered, to hold off a second copy of one blob to one neighbour.
+    public var servedBlobs: Int
+    /// Files streaming in now, one per link at most.
+    public var arrivingFiles: Int
+    /// Files streaming out or waiting to, over every link.
+    public var queuedFiles: Int
 
     /// A footprint of these counts.
     public init(
@@ -33,7 +41,11 @@ public struct MeshFootprint: Sendable, Equatable {
         cachedProfiles: Int = 0,
         missingKeys: Int = 0,
         channels: Int = 0,
-        crossings: Int = 0
+        crossings: Int = 0,
+        wantedBlobs: Int = 0,
+        servedBlobs: Int = 0,
+        arrivingFiles: Int = 0,
+        queuedFiles: Int = 0
     ) {
         self.seen = seen
         self.pendingRelays = pendingRelays
@@ -45,5 +57,9 @@ public struct MeshFootprint: Sendable, Equatable {
         self.missingKeys = missingKeys
         self.channels = channels
         self.crossings = crossings
+        self.wantedBlobs = wantedBlobs
+        self.servedBlobs = servedBlobs
+        self.arrivingFiles = arrivingFiles
+        self.queuedFiles = queuedFiles
     }
 }
