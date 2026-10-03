@@ -23,8 +23,8 @@ public enum PeerCommand: Equatable, Sendable {
     /// Print the usage.
     case help
 
-    /// The Actions ATS2851 dongle on the maintainer's machine, whatever `hciN` it is (`.agents/context/linux-peer.md`).
-    public static let defaultAdapterAddress = "F0:0D:00:00:00:02"
+    /// Dongle A, an nRF52840 running `firmware/knit-hci`, whatever `hciN` it is (`.agents/context/linux-peer.md`).
+    public static let defaultAdapterAddress = "C0:FF:EE:00:00:0A"
 
     /// The usage text.
     public static let usage = """
@@ -37,7 +37,7 @@ public enum PeerCommand: Equatable, Sendable {
             knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
 
-        A headless Knit node on a Bluetooth adapter of its own, found by its address (the ATS2851's unless
+        A headless Knit node on a Bluetooth adapter of its own, found by its address (dongle A's unless
         --adapter-address names another), whatever hciN the kernel made it. Commands arrive as JSON lines on standard
         input, and replies and events leave as JSON lines on standard output. The maintainer's adapter is refused
         unless --shared-adapter says other devices use it too; the peer then leaves every link it did not make alone.

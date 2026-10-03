@@ -1,0 +1,4 @@
+# The USB sample options hci_usb uses, from the Zephyr tree.
+source "samples/subsys/usb/common/Kconfig.sample_usbd"
+
+source "Kconfig.zephyr"

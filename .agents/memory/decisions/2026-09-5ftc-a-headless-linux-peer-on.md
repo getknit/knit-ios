@@ -135,3 +135,31 @@ as `hci0` unshared, and the sudoers lines for `btmon`, `btmgmt` and `hcitool` re
   `noFlagNamesAnAdapterByItsIndex`. They replace `hci0IsRefusedWhateverItsAddress` and
   `hci0IsTakenOnlyAsSharedAndStillByItsAddress`, and `runIsTheDefaultOnHci1WithTheRadiosOwnProfile` is now
   `runIsTheDefaultOnTheATS2851WithTheRadiosOwnProfile`.
+
+**Amended 2026-10-03, for the nRF52840 dongles:** the maintainer bought two Nordic nRF52840 Dongles (PCA10059). Both
+run `firmware/knit-hci`, Zephyr's `hci_usb` sample with Knit's controller settings, built and flashed by
+`scripts/dongle-firmware.sh` (`.agents/context/linux-peer.md`, "The nRF52840 dongles"). Dongle A
+(`C0:FF:EE:00:00:0A`) is `knit-peer`'s default adapter, in place of the ATS2851. Dongle B (`C0:FF:EE:00:00:0B`)
+takes a run's second peer, in place of the maintainer's adapter.
+
+- **The firmware sets what the earlier adapters lacked.** 251-byte LE buffers × 8 and data length extension give
+  an MPS of 247. It holds 8 connections and has 4 advertising sets. Both dongles take incoming LE connections and
+  advertise while linked in either role (`linux-peer.md`, "What the nRF52840 dongles showed").
+- **The firmware gives the controller a public address.** Zephyr's controller otherwise reports none and runs on a
+  static random address, which knit-peer's `BDADDR_LE_PUBLIC` sockets would not route to. Each chip's FICR device
+  address becomes its public address, so knit-peer, the scripts and their address checks need no change. The
+  alternative was teaching `KnitBlueZ`, `AdapterProbe` and the scripts to bind a random identity address, which
+  touches every socket and every check by address.
+- **No run needs the maintainer's adapter.** `interop.py`'s second peer runs on dongle B, unshared. The Intel still
+  needs a go-ahead, and the peer still runs there only with `--shared-adapter`.
+- **The root tools cover the dongles.** `scripts/knit-hci.sh` takes `a`, `b` or `ats2851` and never another address,
+  and `hci1-supervision.sh` sets every Knit adapter it finds. Both must be installed again for sudo and udev to see
+  the change.
+- **Zephyr is pinned to `v4.4-branch` at `f8523a9c66`, not v4.4.2.** v4.4.2's USB HCI class copies each packet to
+  the host into a 64-byte buffer, which 251-byte packets overflow, and the controller stops answering. The branch
+  fixed it in `ea86c1235c`.
+- **Limits.** Reflashing needs someone at the dongle's reset button. The iPhone's writes over a dongle, the relay
+  line on B and six links at once are still to run. Two of three dials in one run took 12 to 14 s to open the
+  channel, so knit-peer's 12 s watchdog cut one short.
+
+The guard for the default is `PeerOptionsTests`' `runIsTheDefaultOnDongleAWithTheRadiosOwnProfile`.

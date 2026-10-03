@@ -99,6 +99,23 @@ exact interval, then update this file in the same change.
   publish arm64 images. The line total can differ from amd64 by a line or so (10827 against 10826 of 11114),
   which the whole-percent floors absorb.
 
+## Dongle firmware
+
+`firmware/knit-hci` is the Bluetooth controller the Linux peer runs on, built for the nRF52840 Dongle
+(`.agents/context/linux-peer.md`, "The nRF52840 dongles"). It builds outside SwiftPM, with its own tools, all
+installed at user level. `scripts/dongle-firmware.sh` checks the Zephyr commit before it builds.
+
+- **Zephyr `v4.4-branch` at `f8523a9c66`**, 208 commits past v4.4.2, in a west workspace at `~/zephyrproject`
+  with west 1.5.0 in its `.venv`. The project filter keeps only `hal_nordic`, `cmsis` and `cmsis_6`. v4.4.2
+  itself wedges the dongles (`ea86c1235c` fixed it on the branch), so move to v4.4.3 once it is tagged rather
+  than back to v4.4.2.
+- **Zephyr SDK 1.0.1**, the version Zephyr 4.4 asks for: the minimal bundle in `~/zephyr-sdk-1.0.1` and only its
+  `arm-zephyr-eabi` GNU toolchain (GCC 14.3.0), both checked against the release's `sha256.sum`, registered with
+  `setup.sh -c`.
+- **nrfutil 8.2.1** in `~/.local/bin`, Nordic's closed-source launcher, with its `nrf5sdk-tools` command 1.1.0
+  for the Open Bootloader's DFU packages. Flashing needs the user in `dialout`, for the bootloader's `ttyACM`
+  port.
+
 ## The Mac
 
 An M6 Mac Mini with 12 cores and 16 GB on macOS 27.0, set up on 2026-09-27, builds and tests the iPhone app. It

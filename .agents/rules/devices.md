@@ -1,22 +1,25 @@
 # Devices and radios
 
-- **Adapters go by address, never by index.** The Linux peer's adapter is the Actions ATS2851 dongle at
-  `F0:0D:00:00:00:02`. The maintainer's own adapter, with live connections, is the Intel at `A0:00:00:00:00:01`. The
-  kernel numbers them in the order `btusb` binds them, which follows USB ports and replugs: the ATS2851 was `hci1`
-  until a reboot on 2026-10-01 made it `hci0`. These rules and the notes still call the ATS2851 `hci1` and the
-  maintainer's adapter `hci0`, as names for the two. knit-peer, `interop.py` and `scripts/knit-hci.sh` find each by
-  its address, and knit-peer exits when no adapter has the address it was given. Before typing an index by hand, ask
-  `scripts/knit-hci.sh name`.
-- **`hci0` needs a go-ahead, every session.** The maintainer allows it for tests that need two adapters, such as
-  the relay line (`interop.py relay`), and for runs where a phone dials the peer or reads its GATT payload, which
-  `hci1` cannot take: it accepts no incoming LE connection. The peer runs there only with `--shared-adapter`,
-  which leaves every link it did not make alone, and nothing else on `hci0` changes: no supervision timeout, no
-  power or pairing changes, no `sudo`.
-- **Root on `hci1` goes through `scripts/knit-hci.sh`,** installed as `/usr/local/sbin/knit-hci`, which sudoers lets
-  run without a password: `sudo knit-hci btmon …`, `sudo knit-hci hcitool …`, and `sudo knit-hci btmgmt` with its
-  commands on standard input, after a `select` the script writes. A one-shot `btmgmt --index N <command>` runs before
-  the index applies and lands on `hci0` (`linux-peer.md`, "What the ATS2851 showed"). Never run those tools as root
-  with an index of your own.
+- **Adapters go by address, never by index.** The Linux peer's adapters are two nRF52840 dongles running
+  `firmware/knit-hci`: dongle A at `C0:FF:EE:00:00:0A`, knit-peer's default, and dongle B at `C0:FF:EE:00:00:0B`, a
+  run's second peer. The maintainer's own adapter, with live connections, is the Intel at `A0:00:00:00:00:01`. The
+  kernel numbers adapters in the order `btusb` binds them, which follows USB ports and replugs. `interop.py` still
+  calls dongle A `hci1` and dongle B `hci0`, as role names. knit-peer, `interop.py` and `scripts/knit-hci.sh` find
+  each by its address, and knit-peer exits when no adapter has the address it was given. Before typing an index by
+  hand, ask `scripts/knit-hci.sh [a|b] name`.
+- **The maintainer's Intel needs a go-ahead, every session.** No run needs it since dongle B took the second peer's
+  place on 2026-10-03. With a go-ahead, the peer runs there only with `--adapter-address A0:00:00:00:00:01
+  --shared-adapter`, which leaves every link it did not make alone, and nothing else on it changes: no supervision
+  timeout, no power or pairing changes, no `sudo`.
+- **Root on Knit's adapters goes through `scripts/knit-hci.sh`,** installed as `/usr/local/sbin/knit-hci`, which
+  sudoers lets run without a password. Its first argument picks dongle `a` (the default), `b` or the retired
+  `ats2851`, and it never selects another address: `sudo knit-hci btmon …`, `sudo knit-hci b hcitool …`, and
+  `sudo knit-hci btmgmt` with its commands on standard input, after a `select` the script writes. A one-shot
+  `btmgmt --index N <command>` runs before the index applies and lands on `hci0` (`linux-peer.md`, "What the
+  ATS2851 showed"). Never run those tools as root with an index of your own.
+- **Flashing a dongle is fair game once it is in its bootloader.** Only the maintainer can put it there, with its
+  reset button (`linux-peer.md`, "The nRF52840 dongles"). A dongle in its bootloader is no adapter, so a run on it
+  waits until it is flashed and back.
 - **Ask before driving a physical phone, every session.** That covers installing, launching, adb broadcasts,
   the iPhone's bridge over USB or Wi-Fi (`interop.py iphone` and `bridge`, pinning included) and UI automation,
   on Android or iPhone. A go-ahead does not carry over to a new task or conversation.

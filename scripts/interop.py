@@ -52,15 +52,15 @@ crash reports and a restart.
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
 `iphone` also brings Knit forward at the phone's Requests screen and taps Accept there, through uiautomator.
-`relay` and `group` also run a second peer on hci0, the maintainer's own adapter, and `iphone-relay`, `iphone-group`,
-`iphone-peer` and `iphone-soak --peer` run their one peer there; hci0 needs its own go-ahead. The peer runs there with --shared-adapter, so it never drops a link it
-did not make.
+`relay` and `group` also run a second peer on hci0, and `iphone-relay`, `iphone-group`, `iphone-peer` and
+`iphone-soak --peer` run their one peer there.
 
-hci1 is an Actions ATS2851, which dials out but takes no incoming LE connection. A run where a phone dials the peer
-on hci1, or reads its GATT payload, needs the Edimax it replaced or hci0 (.agents/context/linux-peer.md).
-
-Here hci1 names the ATS2851 (F0:0D:00:00:00:02) and hci0 the maintainer's adapter (A0:00:00:00:00:01), the indices
-they had until a reboot on 2026-10-01 swapped them. Everything here finds them by address (ADR 2026-09.5ftc).
+hci1 and hci0 here are roles, not the kernel's indices, and everything finds its adapter by address (ADR 2026-09.5ftc).
+Since 2026-10-03 hci1 is dongle A (C0:FF:EE:00:00:0A) and hci0 is dongle B (C0:FF:EE:00:00:0B): two nRF52840s running
+firmware/knit-hci, which take incoming LE connections and advertise while linked (.agents/context/linux-peer.md, "What
+the nRF52840 dongles showed"). Until then hci1 was the ATS2851 (F0:0D:00:00:00:02), which took no incoming LE
+connection, and hci0 the maintainer's own adapter, shared, which needed a go-ahead. Some waits below still work around
+the ATS2851; they cost time on the dongles, nothing more.
 
 Each step prints one JSON line, {"step": ..., "ok": ..., ...}, and the run ends with a summary line. The exit code
 is the number of failed steps.
@@ -93,9 +93,10 @@ ROOT = Path(__file__).resolve().parent.parent
 PEER = Path(os.environ.get("KNIT_PEER") or ROOT / ".build" / "out" / "Products" / "Debug-linux-x86_64" / "knit-peer")
 PACKAGE = "app.getknit.knit"
 INSTANCE = "interop"
-# The maintainer's own adapter, shared with the devices already on it (.agents/rules/devices.md).
-HCI0_ADDRESS = "A0:00:00:00:00:01"
-HCI0 = ["--adapter-address", HCI0_ADDRESS, "--shared-adapter"]
+# Dongle B, the second peer's adapter (.agents/context/linux-peer.md, "The adapter"). It was the maintainer's own
+# adapter, shared, until 2026-10-03.
+HCI0_ADDRESS = "C0:FF:EE:00:00:0B"
+HCI0 = ["--adapter-address", HCI0_ADDRESS]
 # The Mac that runs the peer with --mac, and its mirror of this tree (scripts/mac.sh).
 MAC_HOST = "mac.example"
 MAC_MIRROR = "source/knit-ios-mirror"
@@ -1546,8 +1547,8 @@ def _phone_forgot(phone: Phone, reason: str, timeout: float, mark: int) -> dict:
     return {"line": lines[-1], "seconds": round(time.monotonic() - started, 1)}
 
 
-# The ATS2851's public address, which every peer on it advertises from.
-HCI1_ADDRESS = "F0:0D:00:00:00:02"
+# Dongle A's public address, which every peer on it advertises from. It was the ATS2851's until 2026-10-03.
+HCI1_ADDRESS = "C0:FF:EE:00:00:0A"
 
 
 def _address_released(phone: Phone, address: str, timeout: float) -> dict:

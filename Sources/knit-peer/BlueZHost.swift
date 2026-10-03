@@ -8,7 +8,7 @@
     /// This platform's peer radio.
     internal typealias PeerHost = BlueZHost
 
-    /// The Linux peer's radio: BlueZ on one adapter, found by its address, the ATS2851 unless told otherwise, and never
+    /// The Linux peer's radio: BlueZ on one adapter, found by its address, dongle A unless told otherwise, and never
     /// the maintainer's adapter unshared.
     internal struct BlueZHost: PeerRadioHost {
         let radio: any Radio

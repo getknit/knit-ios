@@ -15,9 +15,9 @@ import Testing
         return options
     }
 
-    @Test func runIsTheDefaultOnTheATS2851WithTheRadiosOwnProfile() throws {
+    @Test func runIsTheDefaultOnDongleAWithTheRadiosOwnProfile() throws {
         let options = try run([])
-        #expect(options.adapterAddress == "F0:0D:00:00:00:02", "by address, whatever hciN it is")
+        #expect(options.adapterAddress == "C0:FF:EE:00:00:0A", "by address, whatever hciN it is")
         #expect(options.radioProfile == nil, "the radio's own")
         #expect(options.stateDirectory == "/home/tester/.local/state/knit-peer/default")
         #expect(options.name == nil)

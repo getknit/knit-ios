@@ -6,30 +6,58 @@ the rules for the radios and phones it touches.
 
 ## The adapter
 
-- **`hci1` is an Actions ATS2851** (USB `10d7:b012`), a Bluetooth 5.3 dongle at public address
-  `F0:0D:00:00:00:02`, named "linux-host #2". BlueZ gives it the central and peripheral roles,
-  `LEAdvertisingManager1` with 5 advertising instances, and `GattManager1`. Its controller has 251-byte LE
-  buffers and data length extension, so the kernel offers a channel an MPS of 247, and it has the 2M and Coded
-  PHYs. It advertises in the legacy format only, which holds Knit's advert. It takes no incoming LE connection,
-  so the peer on it only ever dials ("What the ATS2851 showed").
+- **Dongles A and B are the peer's adapters since 2026-10-03:** two Nordic nRF52840 Dongles (PCA10059) running
+  `firmware/knit-hci`, Zephyr's `hci_usb` sample with Knit's controller settings ("The nRF52840 dongles"). They show
+  up as USB `2fe3:000b`, "Knit nRF52840 HCI".
+  - **Dongle A** is at public address `C0:FF:EE:00:00:0A` (USB serial `<usb serial A>`). It is knit-peer's
+    default adapter, and `interop.py`'s `hci1`.
+  - **Dongle B** is at `C0:FF:EE:00:00:0B` (USB serial `<usb serial B>` in its bootloader). It is the second peer's
+    adapter, `interop.py`'s `hci0`, so no run needs the maintainer's adapter.
+  - **What both have:** 251-byte LE buffers × 8, data length extension, an MPS of 247, 8 connections, 4
+    advertising sets, the 2M and Coded PHYs, and +8 dBm. They take incoming LE connections and advertise while
+    linked in either role ("What the nRF52840 dongles showed").
+- **The ATS2851 was `hci1` from 2026-09-29 to 2026-10-03** (Actions, USB `10d7:b012`), at `F0:0D:00:00:00:02`,
+  named "linux-host #2". It has 251-byte LE buffers and the 2M and Coded PHYs, but legacy advertising only. It takes no
+  incoming LE connection, so a peer on it only ever dials ("What the ATS2851 showed"). It is unplugged;
+  `--adapter-address F0:0D:00:00:00:02` still runs the peer there.
 - **The Edimax BT-8500 was `hci1` until 2026-09-29** (USB `7392:c611`, Realtek RTL8761BU), at
   `0A:BC:DE:00:00:A1`. Its controller has 27-byte LE buffers, so the kernel offered an MPS of 23, the least the
   spec allows. Android copes with that; an iPhone does not ("What the iPhone showed"). It takes incoming
   connections, but cannot advertise while it holds one. Every section below dated before 2026-09-29 evening was
   measured on it. When it is plugged in, `--adapter-address 0A:BC:DE:00:00:A1` runs the peer there.
-- **`hci0` is the maintainer's**, an Intel controller (Bluetooth 5.4) at `A0:00:00:00:00:01` that holds the
-  maintainer's own devices. The peer checks that its adapter has the expected address before it does anything,
-  and binds every socket to that address, so nothing it does lands on another adapter. It runs on `hci0` only
-  as a shared adapter, with a go-ahead: for the relay line's second peer, and for runs where a phone dials the
-  peer or reads its payload.
+- **`hci0` was the maintainer's** in these notes before 2026-10-03: an Intel controller (Bluetooth 5.4) at
+  `A0:00:00:00:00:01` that holds the maintainer's own devices. The peer checks that its adapter has the expected
+  address before it does anything, and binds every socket to that address, so nothing it does lands on another
+  adapter. It runs on the Intel only as a shared adapter, with a go-ahead.
 - **knit-next's emulator script passes the Edimax through** to an Android emulator, picking it by USB id, so the
-  emulator and a peer on the ATS2851 can run at once.
-- **Adapters go by address.** The kernel numbers adapters in the order `btusb` binds them. At every boot port 3-7, the
-  ATS2851's, enumerates about a second before port 3-14, the Intel's internal one, so the ATS2851 boots as `hci0`. It
-  was `hci1` until 2026-10-01 only because it went in after boot. These notes keep `hci1` for the ATS2851 and `hci0`
-  for the maintainer's adapter, and every section dated before 2026-10-01 measured them under those indices.
-  knit-peer, `interop.py`, `hci1-supervision.sh` and `scripts/knit-hci.sh` find them by address (ADR 2026-09.5ftc,
-  amended 2026-10-01).
+  emulator and a peer on a dongle can run at once.
+- **Adapters go by address.** The kernel numbers adapters in the order `btusb` binds them, which follows USB ports and
+  replugs: on 2026-10-03 dongle A was `hci0`, the Intel `hci1` and dongle B `hci2`. Sections dated before 2026-10-01
+  call the ATS2851 or the Edimax `hci1` and the maintainer's adapter `hci0`, the indices they had then. knit-peer,
+  `interop.py`, `hci1-supervision.sh` and `scripts/knit-hci.sh` find adapters by address (ADR 2026-09.5ftc, amended
+  2026-10-01 and 2026-10-03).
+- **bluetoothd makes the newest adapter its default.** With a dongle plugged in after boot, `bluetoothctl` with no
+  `select`, and the desktop's Bluetooth menu, point at the dongle. The maintainer's paired devices stay on the Intel.
+
+## The nRF52840 dongles
+
+The firmware lives in `firmware/knit-hci`, and `scripts/dongle-firmware.sh` builds and flashes it. Its header has the
+one-off setup: a Zephyr workspace in `~/zephyrproject` trimmed to the Nordic modules, the Zephyr SDK's ARM toolchain
+in `~/zephyr-sdk-1.0.1`, and Nordic's `nrfutil` with its `nrf5sdk-tools` command (`.agents/context/toolchain.md`,
+"Dongle firmware").
+
+- **Flashing needs someone at the dongle.** Press its sideways reset button: the red LED fades in and out, and Nordic's
+  Open DFU Bootloader shows up as `1915:521f` with a `ttyACM` port. `scripts/dongle-firmware.sh flash /dev/ttyACMn`
+  then writes the image over USB, with no probe. Its USB serial number is the chip's device address.
+- **The stock sample is too small.** v4.4.2's `hci_usb` builds with 27-byte ACL buffers, one connection and no data
+  length extension, the Edimax's limits. `prj.conf` sets each one.
+- **The address is public.** Zephyr's controller reports `00:00:00:00:00:00` as its public address and runs on a
+  static random one. knit-peer binds every socket as `BDADDR_LE_PUBLIC`, and the kernel routes a socket only to an
+  adapter whose identity address has that type, so `main.c` gives the controller the chip's 48-bit FICR device
+  address as public (`bt_ctlr_set_public_addr`). An HCI Reset clears only the random address.
+- **The board's console is off.** The PCA10059's board files bring USB up at boot for a CDC ACM console, which
+  would clash with the app's own USB device. `CONFIG_BOARD_SERIAL_BACKEND_CDC_ACM=n` turns it off; setting
+  `CDC_ACM_SERIAL_INITIALIZE_AT_BOOT=n` alone does not, since that symbol's prompt is hidden.
 
 ## What spike (e) showed
 
@@ -1484,3 +1512,34 @@ range refused (ADR 2026-10.mueg). Knit's log and runningboardd's came over USB (
 - **The tooling had two traps.** `knit-hci` finds the ATS2851 in `hcitool dev`, which lists only adapters that are up,
   so it cannot power it back on; `iphone-seek` powers it through BlueZ's D-Bus by address instead. And `btmgmt`
   quits when its input ends, before it sends the command, so a command piped to it needs the input held open.
+
+## What the nRF52840 dongles showed
+
+On 2026-10-03 from 13:45, with dongles A and B on Zephyr's `v4.4-branch` at `f8523a9c66`. Nobody drove a phone, and
+the maintainer's adapter was not used. The ATS2851 was unplugged.
+
+- **Zephyr v4.4.2 wedges them.** Its USB HCI class copies every packet to the host into a 64-byte buffer, so the
+  251-byte ACL packets and 255-byte events `prj.conf` asks for overflow it. On the first build, scans worked for a
+  few minutes. Then every LE Set Extended Scan Enable (`0x2042`) and Advertising Enable (`0x2039`) timed out
+  (`-110`), and no event reached the host until a replug. Zephyr fixed it on `v4.4-branch` in `ea86c1235c`
+  (2026-09-04), after v4.4.2. On the branch's head, ten 8 s scans over both dongles, each with GATT payload reads,
+  logged no timeout, and each heard 2 to 4 nodes.
+- **Linux takes them as they are.** BlueZ gives each the public address from the firmware, central and peripheral
+  roles, 4 advertising instances, and 1M, 2M and Coded secondary channels. `hciconfig` shows an ACL MTU of 251:8.
+  knit-peer selected each by address, with no code change.
+- **A peer on one accepts a dial from a peer on the other.** In two runs, a peer on A sorted above a peer on B and
+  dialed it, and B accepted: the incoming LE connection the ATS2851 never took. Each wrote SDUs of up to 247 bytes.
+  DMs crossed in 0.3 to 0.9 s and were ticked, and the link held its 60 s with no drop.
+- **Both advertise while linked.** Sampled every 10 s over the link's minute, each peer kept hearing the other's
+  advert, last heard 0.6 to 7.6 s before.
+- **Android phones dial them.** Lab phones dialed both peers, which refused them as the run asked. The ATS2851
+  never took such a dial.
+- **Dials can be slow.** In the second run two of A's three dials ran out knit-peer's 12 s watchdog: B accepted
+  the channel 11.9 s and 13.9 s after each dial began, while a refused phone was linking to both and B was
+  re-registering its advert. The third connected in 5.1 s, and the first run's link came up 31 s after start. Not
+  yet read in btmon.
+- **The kernel logs some noise.** `ACL packet for unknown connection handle` came at the start or end of a phone's
+  refused link, and one `Opcode 0x2041 failed: -16` (Extended Scan Parameters refused as busy) came when a dial
+  timed out. Neither cost a link.
+- **Still to run:** the iPhone's writes and its second message on a dongle (`interop.py iphone-peer`, which needs a
+  go-ahead), the relay line with B as its second peer, six links held at once, and btmon on a slow dial.
