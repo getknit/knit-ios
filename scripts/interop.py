@@ -3778,14 +3778,14 @@ def _left_out(node: Node, body: str, seconds: float) -> dict:
 
 
 def iphone_peer(arguments: argparse.Namespace) -> int:
-    """MVP items 2 to 6 between the iPhone and knit-peer on a shared hci0, which the spec asks of the peer as well as of
+    """MVP items 2 to 6 between the iPhone and knit-peer on hci0, which the spec asks of the peer as well as of
     an Android phone. `--order` puts the iPhone's node id above or below a fresh peer identity, so the iPhone's first DM
     is a message request on the peer every run.
 
     The peer runs the `android` profile, which leaves FLAG_DIALS_GATT_PEERS clear, so the iPhone dials it in both
     orders and the peer admits it unsighted, as an A1 phone does (ADR 2026-09.6es2). The peer refuses every node but
-    the iPhone, so whatever crosses between the two crossed their own link. It runs on hci0 because the ATS2851 on hci1
-    takes no incoming LE connection (.agents/context/linux-peer.md, "What the ATS2851 showed")."""
+    the iPhone, so whatever crosses between the two crossed their own link. It runs on hci0, dongle B since 2026-10-03,
+    which takes the iPhone's dial (.agents/context/linux-peer.md, "What the nRF52840 dongles showed")."""
     ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -3804,8 +3804,9 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
         run.step("profile-on-iphone", lambda: _ios_pinned(ios, peer_id, peer.name))
         run.step("profile-on-peer", lambda: _peer_pinned(peer, ios))
         run.step("safety-numbers-match", lambda: _same_safety_number(ios, peer))
-        # The iPhone back-fills the newcomer first, and new frames queue behind that, so posts are timed after it.
-        run.step("custody-converges", lambda: _peers_converge(peer, ios, 300))
+        # The iPhone back-fills the newcomer first, and new frames queue behind that, so posts are timed after it. Group
+        # frames are left out: a group frame is served only to its members, and the fresh peer is in no group.
+        run.step("custody-converges", lambda: _peers_converge(peer, ios, 300, frozenset()))
         body = f"interop room from iphone {nonce}"
         sent = ios.command(cmd="room", text=body)
         run.step("room-iphone-to-peer", lambda: _latency(peer.wait(lambda line: _message(line, body), 15)))
@@ -3828,7 +3829,7 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
         run.step("dm-iphone-reply-delivered", lambda: _delivered(ios, sent, 30))
         if not arguments.skip_offline:
             _offline(run, ios, peer, peer_id, nonce)
-        run.step("custody-converges-again", lambda: _peers_converge(peer, ios, 300))
+        run.step("custody-converges-again", lambda: _peers_converge(peer, ios, 300, frozenset()))
     finally:
         stop.set()
         peer.stop()

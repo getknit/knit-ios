@@ -158,8 +158,10 @@ takes a run's second peer, in place of the maintainer's adapter.
 - **Zephyr is pinned to `v4.4-branch` at `f8523a9c66`, not v4.4.2.** v4.4.2's USB HCI class copies each packet to
   the host into a 64-byte buffer, which 251-byte packets overflow, and the controller stops answering. The branch
   fixed it in `ea86c1235c`.
-- **Limits.** Reflashing needs someone at the dongle's reset button. The iPhone's writes over a dongle, the relay
-  line on B and six links at once are still to run. Two of three dials in one run took 12 to 14 s to open the
+- **The iPhone works on a dongle.** It dials dongle B and writes 2,570-byte SDUs from the start, and
+  `interop.py iphone-peer` passed 21 of 21 there on 2026-10-03.
+- **Limits.** Reflashing needs someone at the dongle's reset button. The relay line on B and six links at once are
+  still to run. Two of three dials in one run took 12 to 14 s to open the
   channel, so knit-peer's 12 s watchdog cut one short.
 
 The guard for the default is `PeerOptionsTests`' `runIsTheDefaultOnDongleAWithTheRadiosOwnProfile`.

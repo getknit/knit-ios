@@ -1541,5 +1541,19 @@ the maintainer's adapter was not used. The ATS2851 was unplugged.
 - **The kernel logs some noise.** `ACL packet for unknown connection handle` came at the start or end of a phone's
   refused link, and one `Opcode 0x2041 failed: -16` (Extended Scan Parameters refused as busy) came when a dial
   timed out. Neither cost a link.
-- **Still to run:** the iPhone's writes and its second message on a dongle (`interop.py iphone-peer`, which needs a
-  go-ahead), the relay line with B as its second peer, six links held at once, and btmon on a slow dial.
+- **The iPhone dials them, and its writes flow.** From 14:15 `interop.py iphone-peer` ran the peer on dongle B
+  against the iPhone 12, with the maintainer's go-ahead. The iPhone dialed the dongle each time, and wrote SDUs of
+  2,570 bytes from the start: 297 KB on one link and 265 KB on another, 93 KB of each in the first 10 s. On the
+  Edimax those writes stalled after the HELLO.
+- **The second run passed 21 of 21.** The link came up 29.3 s after the peer started, and custody matched at 466
+  frames in 30 s. Posts and DMs crossed in 0.05 to 2.5 s, and the iPhone's first DM was a request. After the
+  iPhone's offline step the link was back in 21.5 s, and the four offline messages arrived 3.0 to 3.6 s after it.
+  Custody matched again at 488 frames.
+- **The first run missed both custody steps, for a reason unrelated to the dongle.** The iPhone carries 4 frames of
+  one group from earlier group runs, and a group frame is served only to its members, so a fresh peer never gets
+  them. `iphone-peer` now leaves group frames out, as `relay` and `group` do. `iphone-relay` and `iphone-soak` still
+  compare them.
+- **One link dropped.** In the first run, during the second custody wait, BlueZ reported the iPhone's link closed at
+  −48 dBm, with nothing in the kernel log. It was back in 19 s. Who ended it needs btmon.
+- **Still to run:** the relay line with B as its second peer, six links held at once, and btmon on a slow dial and
+  on a drop.
