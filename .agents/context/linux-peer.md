@@ -124,11 +124,14 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   `footprint`, the size of each table the mesh keeps in memory, blobs wanted and files queued among them; and
   `router`, what the router has admitted, relayed and refused), `peers` (names, aliases, safety numbers, and each
   peer's `avatarHash` shown and `advertisedAvatarHash`), `links` (links and sightings), `room` (`text`), `dm` (`to`,
-  `text`), `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `avatar` (`jpeg` as base64, a `path` the
+  `text`); `room`, `dm` and `group-send` also take a `photo` as base64 and its `mime`, `image/jpeg` when absent, and
+  then need no `text`, and their replies name the `attachmentHash` the photo is kept under (ADR 2026-10.6cas),
+  `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `avatar` (`jpeg` as base64, a `path` the
   answering side reads, or `clear`; ADR 2026-10.nh55), `deny-link` and `allow-link` (`peer`),
   `digest` (live custody ids and their fingerprint), `custody` (every live frame, and who a sealed chat is
   wrapped to), `messages` (`conv`, `limit`; each message carries its `kind`, 0 for a message and Android's
-  notice codes for a status line), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit`
+  notice codes for a status line, and a photo's `attachmentHash`, `attachmentMime` and `attachmentHeld`, whether its
+  bytes are here), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit`
   (the peer exits; the app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):
   - `group-create` (`members`, the others' node ids) makes a group, or opens the one they already share. Nothing
@@ -136,8 +139,9 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   - `group-send` (`conv`, `text`), `group-rename` (`conv`, `name`) and `group-leave` (`conv`) act on a group.
   - `groups` lists every group held, left ones included. `status` counts them.
 - **Events** are `ready` (with `radioProfile`, and `host` and `version` from the app), `link` (`up` true or false), `profile`, `message` (with `request` for a stranger's
-  first DM or group), `sent`, `delivered`, `radio` (`state`: `on`, `off`, `unauthorized` or `unsupported`) and
-  `group` (`id`, `name`, `members`, `departed` and `left`, whenever a group changes).
+  first DM or group, and a photo's `attachmentHash` and `attachmentMime`), `sent`, `delivered`, `radio` (`state`:
+  `on`, `off`, `unauthorized` or `unsupported`), `group` (`id`, `name`, `members`, `departed` and `left`, whenever
+  a group changes) and `attachment` (`hash`, once a message's photo has arrived).
 - **Log lines** carry `ms`, the wall-clock time, so they line up with a phone's logcat.
 
 `scripts/interop.py` runs checklist L against one phone through knit-next's debug bridge: `check` in either
@@ -156,6 +160,13 @@ flags pull photos through the middle peer), `android-rings` for companion change
 phone also reacts, types, sends DMs and posts photos, and the peer DMs back. It checks why each link ended, every
 post's arrival and tick, the footprint against the caps, memory through the second half, and custody at the end,
 and writes `.build/interop-soak/<start>/`.
+
+`iphone-photos` sends photos both ways between the iPhone and the phone in Nearby, a DM and a group (ADR
+2026-10.6cas): a fresh picture each way, so no node already holds it. The iPhone sends through its bridge and the
+phone through its debug bridge's `SENDIMG`. The phone's log shows the iPhone's photo come in whole, and the
+iPhone's `messages` shows the phone's photo held. The app's bridge then answers `photos` (`conv`): whether each
+photo in the thread decodes as the thread draws it, a sealed one opened with its key. Android's bridge says nothing
+of the kind, so the run keeps a screenshot of the phone's thread for a person to look at.
 
 `relay` rehearses MVP item 7's line with a second peer on `hci0`, which needs its own go-ahead; `iphone-relay` runs
 the line itself, with the iPhone in the middle ("What the iPhone showed"). The line is the
@@ -1425,6 +1436,22 @@ case linked 2 of 8 within 30 s, with a median of 64.3 s.
   once each, and every one timed out with no dial after it (ADR 2026-09.6es2, amended 2026-10-02).
 - **Android's side is done.** knit-next recorded these runs in its ADR 2026-10.9utz, and both fixes are on its `main`.
   The Pixel's Coded mode is back on `auto`.
+
+## What the photo runs showed
+
+`interop.py iphone-photos` ran on 2026-10-03 between the iPhone 12 and the Pixel 3 on Android 2.8.0, with the lab's
+other phones in range. Its first run passed all 11 steps it had then. The second, with the iPhone's `photos` check
+and the phone's screenshots added, passed all 17:
+
+- **Every photo crossed whole, both ways, in all three threads.** The phone's log timed each of the iPhone's photos,
+  about 40 KB, at 2.6 to 3.7 s on the link. The phone's photos were held on the iPhone 8.6 to 10.1 s after
+  `SENDIMG` answered.
+- **Both sides open what the other sealed.** The iPhone decodes the phone's DM and group photos with the key each
+  message carried. The phone's screen shows the iPhone's, sealed in the DM and the group and in the clear in Nearby,
+  and ticks its own ✓✓ once the iPhone has them.
+- **A camera-sized photo takes as long as the link takes.** A 480,729-byte JPEG, sealed to 480,757 B, crossed the DM
+  in 45.6 s, about 10.5 KB/s. That is the rate the iPhone's profile photo got on the same link in Phase 1 (13,109 B
+  in 1.2 s), well under the 28 KiB/s pace a file is allowed.
 
 ## What background seeking showed
 

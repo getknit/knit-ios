@@ -42,6 +42,9 @@ document:
 - Chats, profiles and groups now show each person's photo, or their initial on a color that's the same on
   every phone, Android included. Set your own photo in your profile, and tap anyone's photo to see it full
   size. People nearby see your photo, just like your name.
+- Send photos in Nearby, direct messages and groups, see the ones Android phones send, and tap any photo to
+  view it full size or save it to Photos. Those sent in direct messages and groups are end-to-end encrypted,
+  while photos in Nearby are public, like everything posted there.
 
 ## About this file
 

@@ -38,8 +38,9 @@ public protocol Notifier: Sendable {
 /// A message notifies once, when it first arrives, and never our own. Each conversation keeps one notification that
 /// shows its newest message, as Android's does, so a room's back-fill of 200 posts is one notification rather than
 /// 200. The thread on screen while the app is in front stays quiet. A stranger's DM is a message request: it never
-/// shows its words or its sender, and every request shares one notification that counts them. Control frames never
-/// arrive here: the engine stores and reports only messages.
+/// shows its words or its sender, and every request shares one notification that counts them. A message with no words
+/// says what it carries, such as "📷 Photo". Control frames never arrive here: the engine stores and reports only
+/// messages.
 public enum NotificationPolicy {
     /// The id and thread of the one notification that counts requests.
     public static let requestsThread = "requests"
@@ -85,6 +86,7 @@ public enum NotificationPolicy {
             return nil
         }
         let sender = context.directory.label(for: message.senderId).text
+        let body = AttachmentKind.line(of: message)
         let isRoom = message.conversationId == Conversations.nearby
         // A group's notification is titled for the group and names its speaker, as the room's does.
         let shared = isRoom ? Copy.Notifications.nearbyTitle : context.groupTitle
@@ -93,7 +95,7 @@ public enum NotificationPolicy {
             threadId: message.conversationId,
             conversationId: message.conversationId,
             title: shared ?? sender,
-            body: shared == nil ? message.body : Copy.Notifications.roomBody(sender: sender, body: message.body)
+            body: shared == nil ? body : Copy.Notifications.roomBody(sender: sender, body: body)
         )
     }
 }

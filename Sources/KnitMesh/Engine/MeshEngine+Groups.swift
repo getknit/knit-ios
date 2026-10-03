@@ -34,31 +34,35 @@ extension MeshEngine {
         return group
     }
 
-    /// Sends `text` to group `groupId` (`MeshManager.sendChat`): sealed to each current member whose key is pinned,
-    /// with the group's roster beside it. Members without a key are skipped, as on Android, and their keys are asked
-    /// for. When nobody's key is pinned the message waits as `pendingKey`, and goes out once one pins, which Android
-    /// never does. Answers the stored message, or `nil` for a blank message, a group we are not in, or one nobody
-    /// else is left in.
+    /// Sends `text` to group `groupId`, with `photo` sealed beside it if one is given (`MeshManager.sendChat`): sealed
+    /// to each current member whose key is pinned, with the group's roster beside it. Members without a key are
+    /// skipped, as on Android, and their keys are asked for. When nobody's key is pinned the message waits as
+    /// `pendingKey`, and goes out once one pins, which Android never does. Answers the stored message, or `nil` for a
+    /// blank message with no photo, a photo too heavy to send, a group we are not in, or one nobody else is left in.
     @discardableResult
-    public func sendGroupMessage(_ text: String, to groupId: String) -> MessageRecord? {
-        guard let group = stores.groups.group(groupId), !group.hasLeft, hasOthers(group), let body = Self.messageBody(text) else {
+    public func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto? = nil) -> MessageRecord? {
+        let sentAt = clock.wallMilliseconds()
+        guard let group = stores.groups.group(groupId), !group.hasLeft, hasOthers(group), let body = Self.messageBody(text, photo: photo),
+            let attachment = sealing(photo, at: sentAt)
+        else {
             return nil
         }
         let id = newFrameId()
-        let sentAt = clock.wallMilliseconds()
-        let sealed = sealGroup(body, id: id, sentAt: sentAt, in: group)
-        let record = MessageRecord(
+        var record = MessageRecord(
             id: id,
             senderId: nodeId,
             recipientId: nil,
             conversationId: group.id,
             body: body,
             sentAt: sentAt,
-            pendingKey: sealed.envelope == nil
+            attachment: attachment
         )
+        let sealed = sealGroup(Self.content(of: record), id: id, sentAt: sentAt, in: group)
+        record.pendingKey = sealed.envelope == nil
         stores.messages.save(record)
         if let envelope = sealed.envelope {
-            originate(chatEnvelope(id: id, sentAt: sentAt, recipient: nil, group: group.info, content: ChatContent(enc: envelope)))
+            originate(
+                chatEnvelope(id: id, sentAt: sentAt, recipient: nil, group: group.info, content: Self.chat(envelope, carrying: record)))
         }
         for member in sealed.unkeyed {
             requestKey(member)
@@ -111,10 +115,12 @@ extension MeshEngine {
         return true
     }
 
-    /// Seals `body` to each current member of `group` but us whose key is pinned (`recipientBundles`,
+    /// Seals `content` to each current member of `group` but us whose key is pinned (`recipientBundles`,
     /// `MeshManager.kt:1933-1952`), under the header whose thread is the group's id. Answers `nil` in place of the
     /// envelope when no member is keyed, and the members skipped for want of a key either way.
-    func sealGroup(_ body: String, id: String, sentAt: Int64, in group: GroupRecord) -> (envelope: EncEnvelope?, unkeyed: [NodeId]) {
+    func sealGroup(_ content: MessageContent, id: String, sentAt: Int64, in group: GroupRecord) -> (
+        envelope: EncEnvelope?, unkeyed: [NodeId]
+    ) {
         var bundles: [NodeId: PublicKeyBundle] = [:]
         var unkeyed: [NodeId] = []
         for member in group.members {
@@ -130,7 +136,7 @@ extension MeshEngine {
             }
         }
         let header = MessageCrypto.header(id: id, senderId: nodeId.string, sentAt: sentAt, thread: group.id)
-        let sealed = try? MessageCrypto.seal(MessageContent(body: body).encoded, header: header, to: bundles)
+        let sealed = try? MessageCrypto.seal(content.encoded, header: header, to: bundles)
         return (sealed, unkeyed)
     }
 
@@ -146,11 +152,17 @@ extension MeshEngine {
         for group in stores.groups.groups() where !group.hasLeft && group.members.contains(where: { ExactKey($0) == key }) {
             for message in stores.messages.pendingKey(in: group.id) {
                 // A key that pins is one we can seal to; only a key no exchange can use would leave it waiting.
-                if let envelope = sealGroup(message.body, id: message.id, sentAt: message.sentAt, in: group).envelope {
+                if let envelope = sealGroup(Self.content(of: message), id: message.id, sentAt: message.sentAt, in: group).envelope {
                     let info = group.info
                     originate(
                         chatEnvelope(
-                            id: message.id, sentAt: message.sentAt, recipient: nil, group: info, content: ChatContent(enc: envelope)))
+                            id: message.id,
+                            sentAt: message.sentAt,
+                            recipient: nil,
+                            group: info,
+                            content: Self.chat(envelope, carrying: message)
+                        )
+                    )
                     stores.messages.clearPendingKey(message.id)
                     events.append(.sent(messageId: message.id))
                 }
@@ -184,7 +196,7 @@ extension MeshEngine {
         guard let content = open(enc, envelope), content.ctl == nil else {
             return
         }
-        deliverChat(envelope, body: content.body, sender: sender, recipient: nil, conversation: info.id)
+        deliverChat(envelope, Self.delivered(content), sender: sender, recipient: nil, conversation: info.id)
     }
 
     /// A standalone roster frame, such as a rename (`handleGroupUpdate`, `:1976-1979`): reconciled, with no message to

@@ -25,6 +25,9 @@
         /// A verify code's paper: white in dark mode too, because the code is drawn black on white, and many readers, zxing
         /// among them, read no inverted code (ADR 2026-10.65xx).
         static let codePaper = Color(uiColor: rgb(Swatch.codePaper))
+        /// The capsule a line sits in over a photo in the viewer, under white text, which reads 14:1 on it whatever the
+        /// photo shows.
+        static let viewerCaption = Color(uiColor: rgb(Swatch.viewerCaption))
 
         /// The room's face: the accent's glyph on a pale wash of it.
         static let roomTint = (container: dynamic(Swatch.roomContainer), onContainer: accent)
@@ -52,6 +55,7 @@
             static let warning = (light: 0xB25000, dark: 0xFFA94D)
             static let critical = (light: 0xC4271C, dark: 0xFF6961)
             static let codePaper = 0xFFFFFF
+            static let viewerCaption = 0x2C2C2E
             static let roomContainer = (light: 0xDCE8F8, dark: 0x1E2A3A)
         }
 

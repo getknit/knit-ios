@@ -15,14 +15,14 @@ Phones in range link up over Bluetooth LE and pass each message from one to the 
 people you were never in range of yourself. There is no server, no account and no phone number. A phone
 that meets someone later hands over what it was carrying for them.
 
-- **Direct messages are end-to-end encrypted.** The phones that carry a direct message cannot read it. The
-  first release uses Knit's static-key scheme, which has no forward secrecy; the epoch ratchet that Knit
-  for Android already runs comes next.
+- **Direct messages are end-to-end encrypted.** The phones that carry a direct message cannot read it or open
+  its photo. The first release uses Knit's static-key scheme, which has no forward secrecy; the epoch ratchet
+  that Knit for Android already runs comes next.
 - **Group chats are end-to-end encrypted too.** Start one with up to seven people you've chatted with or
-  verified. Only its members can read its messages. The group's name and member list travel unencrypted, and
-  group messages, like direct ones, have no forward secrecy yet.
+  verified. Only its members can read its messages and see its photos. The group's name and member list travel
+  unencrypted, and group messages, like direct ones, have no forward secrecy yet.
 - **The Nearby room is open to everyone in range.** Posts are signed, so nobody can post as you, but they
-  are not encrypted.
+  are not encrypted, and neither are the photos posted there.
 - **It meshes with Android.** An iPhone speaks the same protocol as Knit for Android and relays for Android
   phones the way they relay for each other. Knit for Android also meshes over Wi-Fi Aware, LoRa boards and
   internet relays, and an iPhone reaches those parts of the mesh through the Android phones around it.

@@ -287,8 +287,18 @@ explicit direction.** Update this file in the change that ships an item.
       timed out enabling automation mode, as a first run does until someone enters the passcode on the phone (ADR
       2026-09.63em).
     - Not ported: Android's "changed their photo" line in a DM thread, and its rename line. A later change ports both.
-  - **Phase 3:** photos in chats both ways, in Nearby, DMs and groups. DMs and groups seal them with
-    `AttachmentCrypto`.
+  - **Phase 3:** photos in chats both ways, in Nearby, DMs and groups (ADR 2026-10.6cas). Code done on 2026-10-03: DMs
+    and groups seal them with `AttachmentCrypto`, schema v5 keeps what each message carries, and the app picks,
+    holds, sends, shows and saves them. Every Linux gate passes, sanitizers, analyze and Periphery included, and so
+    do the Mac build and all 14 Simulator walks, the new chat-photo walk at both text sizes among them. Checked the
+    same day on the iPhone 12 against the Pixel 3 (`.agents/context/linux-peer.md`, "What the photo runs showed"):
+    - `interop.py iphone-photos` passes all 17 steps: photos cross both ways in all three threads, the iPhone
+      decodes the phone's sealed ones with their keys, and the phone's screen shows the iPhone's.
+    - A 480 KB photo crossed a DM in 45.6 s, the link's own rate of about 10.5 KB/s.
+    - Still owed: `iphone-wake` while a photo streams to the locked iPhone, and `iphone-soak --extras` with the iPhone
+      now keeping the phone's photos.
+    - Out of reach here: the bubbles on the iPhone's own screen, which only a device UI test can open. The Simulator
+      walks draw them, and the bridge's `photos` decodes them on the phone.
   - **Phase 4:** group photos shown but never set, and carried frames' photos pulled within Android's 128 MiB.
 
   Out of scope: files, voice notes, link previews, direct transfer, screening, and setting a group photo.

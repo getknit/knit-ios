@@ -36,6 +36,47 @@ extension KnitUITests {
         XCTAssert(app.element(AccessibilityID.photoViewerScreen).waitForNonExistence(timeout: Walking.appears), "Done left the photo up")
         app.terminate()
     }
+
+    /// Photos in a thread, on the marketing scene, whose post by the fire carries one: the room with its photos, Add
+    /// photo, which picks a painted picture under `-demoPhoto`, the photo the composer holds, the post that sends it, and
+    /// that photo full screen with its Save. The walk opens our own photo, the newest message: at the largest sizes a
+    /// post further up scrolls in and out of the list's reach as the walk swipes. Save itself stays untapped, since the
+    /// system would ask to add to Photos.
+    func walkChatPhotos() throws {
+        let app = launch("-demoScene", "marketing", "-demoPhoto")
+        try app.reveal(AccessibilityID.chatRow("nearby")).tap()
+        try app.appear(AccessibilityID.chatThread)
+        audit(app, screen: AccessibilityID.chatThread)
+
+        try app.appear(AccessibilityID.chatAddPhoto).tap()
+        try app.appear(AccessibilityID.chatStagedPhoto)
+        try app.appear(AccessibilityID.chatRemovePhoto)
+        audit(app, screen: AccessibilityID.chatThread)
+        try app.appear(AccessibilityID.chatSend).tap()
+        XCTAssert(app.element(AccessibilityID.chatStagedPhoto).waitForNonExistence(timeout: Walking.appears), "Send kept the photo")
+        try app.appear(AccessibilityID.chatAddPhoto)
+
+        let fire = AccessibilityID.chatPhoto("room-5")
+        let ours = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier != %@", "chat_photo_", fire)).firstMatch
+        try ours.appear("our photo")
+        // The photo reads as such once it has decoded; until then its place holds a spinner, which a tap does nothing to.
+        wait(for: ours, until: "label CONTAINS 'Photo'")
+        // A message reads as one element, so the tap goes where its photo is: above its stamp.
+        ours.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        settle(try app.appear(AccessibilityID.photoViewerScreen))
+        audit(app, screen: AccessibilityID.photoViewerScreen)
+        wait(for: try app.appear(AccessibilityID.photoViewerSave), until: "isEnabled == true")
+        app.buttons["Done"].tap()
+        XCTAssert(app.element(AccessibilityID.photoViewerScreen).waitForNonExistence(timeout: Walking.appears), "Done left the photo up")
+        app.terminate()
+    }
+
+    /// Waits for `element` to match `predicate`, and fails the walk if it never does.
+    private func wait(for element: XCUIElement, until predicate: String) {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: predicate), object: element)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: Walking.appears), .completed, "\(element) never matched \(predicate)")
+    }
 }
 
 // swiftlint:enable prefer_nimble

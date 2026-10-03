@@ -5,49 +5,57 @@ public import KnitWire
 extension MeshEngine {
     // MARK: Messages we write
 
-    /// Posts `text` to the Nearby room: stored, signed, flooded and carried (`MeshManager.sendChat`). A room post is
-    /// cleartext and signed. Answers the stored message, or `nil` for a blank post.
+    /// Posts `text` to the Nearby room, with `photo` if one is given: stored, signed, flooded and carried
+    /// (`MeshManager.sendChat`). A room post is cleartext and signed, and so is its photo, kept under its own hash for
+    /// anyone who asks. Answers the stored message, or `nil` for a blank post with no photo, or a photo too heavy to
+    /// send.
     @discardableResult
-    public func postToRoom(_ text: String) -> MessageRecord? {
-        guard let body = Self.messageBody(text) else {
+    public func postToRoom(_ text: String, photo: OutgoingPhoto? = nil) -> MessageRecord? {
+        guard let body = Self.messageBody(text, photo: photo) else {
             return nil
         }
+        let sentAt = clock.wallMilliseconds()
+        let attachment = photo.map { keepPhoto($0, at: sentAt) }
         let record = MessageRecord(
             id: newFrameId(),
             senderId: nodeId,
             recipientId: nil,
             conversationId: Conversations.nearby,
             body: body,
-            sentAt: clock.wallMilliseconds()
+            sentAt: sentAt,
+            attachment: attachment
         )
         stores.messages.save(record)
-        originate(chatEnvelope(id: record.id, sentAt: record.sentAt, recipient: nil, group: nil, content: ChatContent(body: body)))
+        let content = ChatContent(body: body, attachmentHash: attachment?.hash.string, attachmentMime: attachment?.mime)
+        originate(chatEnvelope(id: record.id, sentAt: sentAt, recipient: nil, group: nil, content: content))
         return record
     }
 
-    /// Sends `text` to `recipient` as a v1 DM (`MeshManager.sendChat`). With no key pinned for the recipient it is
-    /// stored as pending and sealed once their profile arrives. Answers the stored message, or `nil` for a blank
-    /// message or one to ourselves.
+    /// Sends `text` to `recipient` as a v1 DM, with `photo` sealed beside it if one is given (`MeshManager.sendChat`).
+    /// With no key pinned for the recipient it is stored as pending and sealed once their profile arrives. Answers the
+    /// stored message, or `nil` for a blank message with no photo, a photo too heavy to send, or a message to
+    /// ourselves.
     @discardableResult
-    public func sendDirectMessage(_ text: String, to recipient: NodeId) -> MessageRecord? {
-        guard recipient != nodeId, let body = Self.messageBody(text) else {
+    public func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto? = nil) -> MessageRecord? {
+        let sentAt = clock.wallMilliseconds()
+        guard recipient != nodeId, let body = Self.messageBody(text, photo: photo), let attachment = sealing(photo, at: sentAt) else {
             return nil
         }
         let id = newFrameId()
-        let sentAt = clock.wallMilliseconds()
-        let sealed = seal(body, id: id, sentAt: sentAt, to: recipient)
-        let record = MessageRecord(
+        var record = MessageRecord(
             id: id,
             senderId: nodeId,
             recipientId: recipient,
             conversationId: recipient.string,
             body: body,
             sentAt: sentAt,
-            pendingKey: sealed == nil
+            attachment: attachment
         )
+        let sealed = seal(Self.content(of: record), id: id, sentAt: sentAt, to: recipient)
+        record.pendingKey = sealed == nil
         stores.messages.save(record)
         if let sealed {
-            originate(chatEnvelope(id: id, sentAt: sentAt, recipient: recipient, group: nil, content: ChatContent(enc: sealed)))
+            originate(chatEnvelope(id: id, sentAt: sentAt, recipient: recipient, group: nil, content: Self.chat(sealed, carrying: record)))
         }
         return record
     }
@@ -57,10 +65,65 @@ extension MeshEngine {
         stores.conversations.accept(conversationId)
     }
 
-    /// The body we send: at most 2000 UTF-16 units, and `nil` when blank.
-    static func messageBody(_ text: String) -> String? {
+    /// The body we send: at most 2000 UTF-16 units, and `nil` when blank, unless a photo goes with it, which may go
+    /// with no words at all. A photo heavier than ``OutgoingPhoto/maxBytes`` sends nothing.
+    static func messageBody(_ text: String, photo: OutgoingPhoto?) -> String? {
+        if let photo, photo.bytes.count > OutgoingPhoto.maxBytes {
+            return nil
+        }
         let body = TextLimits.truncated(text, toUTF16: TextLimits.message)
-        return TextLimits.isBlank(body) ? nil : body
+        guard TextLimits.isBlank(body) else {
+            return body
+        }
+        return photo == nil ? nil : ""
+    }
+
+    /// Keeps a room post's photo as it is, under its own hash, and answers what the message carries.
+    func keepPhoto(_ photo: OutgoingPhoto, at now: Int64) -> MessageAttachment {
+        let hash = BlobHash(of: photo.bytes)
+        stores.blobs.insert(photo.bytes, hash: hash, mime: photo.mime, storedAt: now)
+        return MessageAttachment(hash: hash, mime: photo.mime)
+    }
+
+    /// What a DM or a group message carries: nothing without a photo, or `photo` sealed and kept (``sealPhoto(_:at:)``).
+    /// The outer `nil` is a photo that would not seal, which a send's `guard` stops at.
+    func sealing(_ photo: OutgoingPhoto?, at now: Int64) -> MessageAttachment?? {
+        guard let photo else {
+            return .some(nil)
+        }
+        return sealPhoto(photo, at: now).map(Optional.some)
+    }
+
+    /// Seals a DM's or a group message's photo under a fresh key (`MeshManager.sealAttachment`), keeps the ciphertext
+    /// under its own hash, and answers what the message carries: the ciphertext's hash, the type and the key, which
+    /// travel sealed. `nil` only if sealing fails.
+    func sealPhoto(_ photo: OutgoingPhoto, at now: Int64) -> MessageAttachment? {
+        AttachmentCrypto.seal(photo.bytes).map { sealed in
+            let hash = BlobHash(of: sealed.blob)
+            stores.blobs.insert(sealed.blob, hash: hash, mime: photo.mime, storedAt: now)
+            return MessageAttachment(hash: hash, mime: photo.mime, key: Base64.encode(sealed.key))
+        }
+    }
+
+    /// The sealed content of one of our messages: its body, and its attachment's hash, type, key, and a file's name and
+    /// size.
+    static func content(of message: MessageRecord) -> MessageContent {
+        let attachment = message.attachment
+        return MessageContent(
+            body: message.body,
+            attachmentHash: attachment?.hash.string,
+            attachmentMime: attachment?.mime,
+            attachmentKey: attachment?.key,
+            attachmentName: attachment?.name,
+            attachmentSize: attachment?.size
+        )
+    }
+
+    /// The chat frame's content for a sealed message: the envelope, and beside it in the clear only the ciphertext's
+    /// hash, so a carrier blind to the sealed fields can still pull the blob. The type and the key stay sealed
+    /// (`MeshManager.kt:1112-1128`).
+    static func chat(_ sealed: EncEnvelope, carrying message: MessageRecord) -> ChatContent {
+        ChatContent(attachmentHash: message.attachment?.hash.string, enc: sealed)
     }
 
     func chatEnvelope(id: String, sentAt: Int64, recipient: NodeId?, group: GroupInfo?, content: ChatContent) -> RelayEnvelope {
@@ -75,24 +138,30 @@ extension MeshEngine {
         )
     }
 
-    /// Seals `body` to `recipient`'s pinned key, or `nil` when none is pinned. v1 only: our capabilities never
+    /// Seals `content` to `recipient`'s pinned key, or `nil` when none is pinned. v1 only: our capabilities never
     /// promise the ratchet, so Android seals v1 back (ADR 2026-09.qsd9).
-    func seal(_ body: String, id: String, sentAt: Int64, to recipient: NodeId) -> EncEnvelope? {
+    func seal(_ content: MessageContent, id: String, sentAt: Int64, to recipient: NodeId) -> EncEnvelope? {
         guard let peer = stores.peers.peer(recipient), let bundle = PublicKeyBundle(encoded: peer.publicKey) else {
             return nil
         }
         let header = MessageCrypto.header(id: id, senderId: nodeId.string, sentAt: sentAt, thread: recipient.string)
-        return try? MessageCrypto.seal(MessageContent(body: body).encoded, header: header, to: [recipient: bundle])
+        return try? MessageCrypto.seal(content.encoded, header: header, to: [recipient: bundle])
     }
 
     /// Our messages that waited for `recipient`'s key, sealed and flooded under their original id and clock now that
     /// the key has pinned (`MeshManager.flushPendingFor`): DMs to them, and group messages in groups they are in.
     func flushPending(to recipient: NodeId) {
         for message in stores.messages.pendingKey(to: recipient) {
-            if let sealed = seal(message.body, id: message.id, sentAt: message.sentAt, to: recipient) {
+            if let sealed = seal(Self.content(of: message), id: message.id, sentAt: message.sentAt, to: recipient) {
                 originate(
                     chatEnvelope(
-                        id: message.id, sentAt: message.sentAt, recipient: recipient, group: nil, content: ChatContent(enc: sealed)))
+                        id: message.id,
+                        sentAt: message.sentAt,
+                        recipient: recipient,
+                        group: nil,
+                        content: Self.chat(sealed, carrying: message)
+                    )
+                )
                 stores.messages.clearPendingKey(message.id)
                 events.append(.sent(messageId: message.id))
             }

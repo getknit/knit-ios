@@ -127,9 +127,9 @@ custom_rules:
     severity: error
   seam_images:
     name: The photo frameworks stay in the app's Images
-    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+(PhotosUI|ImageIO|UniformTypeIdentifiers|CoreTransferable)\b'
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+(PhotosUI|Photos|ImageIO|UniformTypeIdentifiers|CoreTransferable)\b'
     excluded: 'Sources/Knit/Images/'
-    message: Only the app's Images directory picks, decodes and encodes photos; what a face shows is decided in KnitAppCore.
+    message: Only the app's Images directory picks, decodes, encodes and saves photos; what a face or thread shows is KnitAppCore's.
     severity: error
   seam_grdb:
     name: GRDB stays in KnitStoreSQL

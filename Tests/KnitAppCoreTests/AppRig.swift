@@ -48,6 +48,7 @@ final class FakeMesh: MeshService {
         var verified: [String] = []
         var profiles: [String] = []
         var avatars: [BlobHash?] = []
+        var photos: [BlobHash] = []
         var groups: [String] = []
     }
 
@@ -104,14 +105,14 @@ final class FakeMesh: MeshService {
         }
     }
 
-    func postToRoom(_ text: String) -> MessageRecord? {
+    func postToRoom(_ text: String, photo: OutgoingPhoto?) -> MessageRecord? {
         state.withLock { $0.calls.room.append(text) }
-        return store(text, to: nil)
+        return store(text, to: nil, photo: photo)
     }
 
-    func sendDirectMessage(_ text: String, to recipient: NodeId) -> MessageRecord? {
+    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?) -> MessageRecord? {
         state.withLock { $0.calls.direct.append("\(recipient): \(text)") }
-        return store(text, to: recipient)
+        return store(text, to: recipient, photo: photo)
     }
 
     func accept(_ conversationId: String) {
@@ -153,12 +154,12 @@ final class FakeMesh: MeshService {
         return group
     }
 
-    func sendGroupMessage(_ text: String, to groupId: String) -> MessageRecord? {
+    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?) -> MessageRecord? {
         state.withLock { $0.calls.groups.append("send \(groupId): \(text)") }
         guard stores.groups.group(groupId)?.hasLeft == false else {
             return nil
         }
-        return store(text, to: nil, in: groupId)
+        return store(text, to: nil, in: groupId, photo: photo)
     }
 
     func renameGroup(_ groupId: String, to name: String) -> GroupRecord? {
@@ -191,7 +192,7 @@ final class FakeMesh: MeshService {
         }
     }
 
-    private func store(_ text: String, to recipient: NodeId?, in group: String? = nil) -> MessageRecord {
+    private func store(_ text: String, to recipient: NodeId?, in group: String? = nil, photo: OutgoingPhoto? = nil) -> MessageRecord {
         let index = state.withLock { state in
             defer { state.next += 1 }
             return state.next
@@ -203,10 +204,19 @@ final class FakeMesh: MeshService {
             conversationId: Conversations.id(sender: nodeId, recipient: recipient, group: group, me: nodeId),
             body: text,
             sentAt: clock + Int64(index),
-            pendingKey: recipient.map { stores.peers.peer($0) == nil } ?? false
+            pendingKey: recipient.map { stores.peers.peer($0) == nil } ?? false,
+            attachment: photo.map { keep($0) }
         )
         stores.messages.save(record)
         return record
+    }
+
+    /// Keeps a sent photo under its hash, as the engine keeps a room post's, and names it.
+    private func keep(_ photo: OutgoingPhoto) -> MessageAttachment {
+        let hash = BlobHash(of: photo.bytes)
+        stores.blobs.insert(photo.bytes, hash: hash, mime: photo.mime, storedAt: clock)
+        state.withLock { $0.calls.photos.append(hash) }
+        return MessageAttachment(hash: hash, mime: photo.mime)
     }
 }
 

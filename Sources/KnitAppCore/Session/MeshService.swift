@@ -22,16 +22,16 @@ public protocol MeshService: AnyObject, Sendable {
     func start() async
     /// Stops the radio and closes every link.
     func stop() async
-    /// Posts to the Nearby room.
-    func postToRoom(_ text: String) async -> MessageRecord?
-    /// Sends a DM.
-    func sendDirectMessage(_ text: String, to recipient: NodeId) async -> MessageRecord?
+    /// Posts to the Nearby room, with a photo if one is given.
+    func postToRoom(_ text: String, photo: OutgoingPhoto?) async -> MessageRecord?
+    /// Sends a DM, with a photo if one is given.
+    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?) async -> MessageRecord?
     /// Accepts a message request.
     func accept(_ conversationId: String) async
     /// Makes a group with `others`, or opens the one they already share.
     func createGroup(with others: [NodeId]) async -> GroupRecord?
-    /// Sends a message to a group.
-    func sendGroupMessage(_ text: String, to groupId: String) async -> MessageRecord?
+    /// Sends a message to a group, with a photo if one is given.
+    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?) async -> MessageRecord?
     /// Renames a group and floods the change.
     func renameGroup(_ groupId: String, to name: String) async -> GroupRecord?
     /// Leaves a group, telling its members.

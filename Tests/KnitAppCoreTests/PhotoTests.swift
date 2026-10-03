@@ -26,6 +26,11 @@ struct FakeCodec: ImageCodec {
     func profilePhoto(from image: any PreparedImage, crop: CropRect) -> [UInt8]? {
         crops ? Array("\(image.pixelWidth)x\(image.pixelHeight) \(crop)".utf8) : nil
     }
+
+    /// The picked bytes behind a marker, as a JPEG, so a test can tell what was prepared from what was picked.
+    func chatPhoto(from data: Data) -> OutgoingPhoto? {
+        reads && !data.isEmpty ? OutgoingPhoto(bytes: Array("ready ".utf8) + Array(data), mime: "image/jpeg") : nil
+    }
 }
 
 /// Faces: who wears which photo and initial on every surface that names someone, and the user's own photo, chosen,
@@ -292,6 +297,25 @@ struct FakeCodec: ImageCodec {
         for name in ["Theo Blake", "Jonas W.", "River Salas"] {
             #expect(named[name]?.avatarHash == nil, "\(name) keeps an initial")
         }
+    }
+
+    /// The marketing scene's post by the fire carries a photo, painted by whoever seeds it, as the room carries one: in
+    /// the clear, its bytes held.
+    @Test func theMarketingScenesFirePostCarriesAPaintedPhoto() throws {
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        DemoSeed.populate(stores, me: identity.nodeId, now: 1_000_000, scene: .marketing) { _ in
+            nil
+        } snap: { portrait in
+            Array("snap \(portrait)".utf8)
+        }
+        let carrying = stores.messages.messages(in: Conversations.nearby).filter { $0.attachment != nil }
+        let post = try #require(carrying.first)
+        #expect(carrying.count == 1 && post.body == "Saved you a spot by the fire 🔥")
+        let photo = Array("snap \(DemoPortrait.campfire)".utf8)
+        #expect(post.attachment == MessageAttachment(hash: BlobHash(of: photo), mime: "image/jpeg"))
+        #expect(stores.blobs.bytes(of: BlobHash(of: photo)) == photo)
+        #expect(stores.ownProfile.load().avatarHash == nil, "the profile photos have a painter of their own")
     }
 
     /// Without a painter, or in the edge cases, nobody has a photo.

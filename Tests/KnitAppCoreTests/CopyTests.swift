@@ -91,6 +91,13 @@ import Testing
         #expect(plist["NSCameraUsageDescription"] as? String == Copy.System.cameraUsage)
     }
 
+    @Test func infoPlistAsksToAddToPhotosInTheCatalogsWords() throws {
+        let data = try Data(contentsOf: Self.root.appendingPathComponent("App/Info.plist"))
+        let plist = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        #expect(plist["NSPhotoLibraryAddUsageDescription"] as? String == Copy.System.photoLibraryAddUsage)
+        #expect(plist["NSPhotoLibraryUsageDescription"] == nil, "adding needs no reading: the picker shares only what is picked")
+    }
+
     @Test func aboutListsWhatTheNoticesFileShips() throws {
         let notices = try Self.text("THIRD-PARTY-NOTICES.md")
         let shipped = try #require(notices.components(separatedBy: "## Shipped in the app").last?.components(separatedBy: "\n## ").first)

@@ -14,8 +14,9 @@
     /// and checks this phone as it does the Linux peer (ADR 2026-09.kwa8). Commands go through the session, so they
     /// show on screen as taps would. Replies go to the connection that asked, and events to every connection. The
     /// bridge answers `wifi`, `wifi-pin` and `wifi-unpin` itself (``WiFiCommand``); `scan-filter`, since only the
-    /// iPhone's radio has a scan probe (``ScanProbeCommand``); and `storage`, since only the app keeps its identity
-    /// in the Keychain and its database under Data Protection (``StorageCommand``). Each `status` carries
+    /// iPhone's radio has a scan probe (``ScanProbeCommand``); `storage`, since only the app keeps its identity in the
+    /// Keychain and its database under Data Protection (``StorageCommand``); and `photos`, since only the app decodes
+    /// them (``PhotosCommand``). Each `status` carries
     /// `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its memory grow.
     @MainActor
     internal final class Bridge {
@@ -24,8 +25,8 @@
         private let listener: BridgeListener
         private let wifi: WiFiGate
 
-        /// A bridge to `mesh`, driven through `session`, which it also taps for events, to `radio`'s scan probe, and to
-        /// `storage`, which a demo has none of.
+        /// A bridge to `mesh`, driven through `session`, which it also taps for events, to `radio`'s scan probe, to
+        /// `storage`, which a demo has none of, and to the photos threads draw.
         init(
             session: AppSession,
             mesh: Mesh,
@@ -34,7 +35,8 @@
             clock: any MeshClock,
             log: any KnitLog,
             version: String,
-            storage: StorageReport?
+            storage: StorageReport?,
+            photos: BlobImageCache
         ) {
             let control = MeshControl(
                 bundle: bundle,
@@ -58,6 +60,9 @@
                 }
                 if let ask = StorageCommand.parse(line) {
                     return (await ask.answer(storage), false)
+                }
+                if let ask = PhotosCommand.parse(line) {
+                    return (await ask.answer(session, photos: photos), false)
                 }
                 let reply = await control.handle(line)
                 return (reply.line, reply.quits)
@@ -95,12 +100,12 @@
             await session.stop()
         }
 
-        func postToRoom(_ text: String) async -> MessageRecord? {
-            await session.send(text, in: Conversations.nearby)
+        func postToRoom(_ text: String, photo: OutgoingPhoto?) async -> MessageRecord? {
+            await session.send(text, photo: photo, in: Conversations.nearby)
         }
 
-        func sendDirectMessage(_ text: String, to recipient: NodeId) async -> MessageRecord? {
-            await session.send(text, in: recipient.string)
+        func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?) async -> MessageRecord? {
+            await session.send(text, photo: photo, in: recipient.string)
         }
 
         func accept(_ conversationId: String) async {
@@ -119,8 +124,8 @@
             await session.createGroup(with: others)
         }
 
-        func sendGroupMessage(_ text: String, to groupId: String) async -> MessageRecord? {
-            await session.send(text, in: groupId)
+        func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?) async -> MessageRecord? {
+            await session.send(text, photo: photo, in: groupId)
         }
 
         func renameGroup(_ groupId: String, to name: String) async -> GroupRecord? {

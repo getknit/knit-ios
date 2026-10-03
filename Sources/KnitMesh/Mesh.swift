@@ -130,18 +130,18 @@ public actor Mesh {
 
     // MARK: The app's side
 
-    /// Posts to the Nearby room.
+    /// Posts to the Nearby room, with a photo if one is given.
     @discardableResult
-    public func postToRoom(_ text: String) -> MessageRecord? {
+    public func postToRoom(_ text: String, photo: OutgoingPhoto? = nil) -> MessageRecord? {
         defer { settle() }
-        return engine.postToRoom(text)
+        return engine.postToRoom(text, photo: photo)
     }
 
-    /// Sends a DM.
+    /// Sends a DM, with a photo if one is given.
     @discardableResult
-    public func sendDirectMessage(_ text: String, to recipient: NodeId) -> MessageRecord? {
+    public func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto? = nil) -> MessageRecord? {
         defer { settle() }
-        return engine.sendDirectMessage(text, to: recipient)
+        return engine.sendDirectMessage(text, to: recipient, photo: photo)
     }
 
     /// Accepts a message request.
@@ -156,11 +156,11 @@ public actor Mesh {
         return engine.createGroup(with: others)
     }
 
-    /// Sends a message to a group (``MeshEngine/sendGroupMessage(_:to:)``).
+    /// Sends a message to a group, with a photo if one is given (``MeshEngine/sendGroupMessage(_:to:photo:)``).
     @discardableResult
-    public func sendGroupMessage(_ text: String, to groupId: String) -> MessageRecord? {
+    public func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto? = nil) -> MessageRecord? {
         defer { settle() }
-        return engine.sendGroupMessage(text, to: groupId)
+        return engine.sendGroupMessage(text, to: groupId, photo: photo)
     }
 
     /// Renames a group and floods the change (``MeshEngine/renameGroup(_:to:)``).

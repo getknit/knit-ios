@@ -70,6 +70,26 @@ public enum AccessibilityID {
         "chat_notice_\(id)"
     }
 
+    /// The composer's Add photo, offered while there is nothing to send. Android's send button doubles as it, under
+    /// `chat_send`.
+    public static let chatAddPhoto = "chat_add_photo"
+    /// The photo the composer holds. Android has no tag here, nor for its remove button.
+    public static let chatStagedPhoto = "chat_staged_photo"
+    /// The button that takes it out.
+    public static let chatRemovePhoto = "chat_remove_photo"
+    /// A message that carries a photo, `chat_photo_<message id>`; a tap on its photo opens the viewer. Android has no
+    /// tag here.
+    public static func chatPhoto(_ messageId: String) -> String {
+        "chat_photo_\(messageId)"
+    }
+
+    /// A photo still on its way.
+    public static let chatAttachmentWaiting = "chat_attachment_wait"
+    /// A photo whose bytes are here and do not open.
+    public static let chatAttachmentUnavailable = "chat_attachment_unavailable"
+    /// A voice message or a file, which this build names and cannot open. Android has no tag here.
+    public static let chatAttachmentTile = "chat_attachment_tile"
+
     /// The chat list's New message, Android's floating button.
     public static let chatListNewMessage = "chatlist_fab"
     /// The New message picker. Android has no tag here.
@@ -155,6 +175,10 @@ public enum AccessibilityID {
     public static let photoCropChoose = "photo_crop_choose"
     /// The photo viewer.
     public static let photoViewerScreen = "screen_photo_viewer"
+    /// The viewer's Save, for a chat's photo.
+    public static let photoViewerSave = "photo_viewer_save"
+    /// The line that says how Save went.
+    public static let photoViewerResult = "photo_viewer_result"
 
     /// Settings.
     public static let settingsScreen = "screen_settings"

@@ -42,6 +42,8 @@ internal enum ControlLines {
             "delivered": .bool(record.delivered),
             "pendingKey": .bool(record.pendingKey),
             "kind": .int(Int64(record.kind.rawValue)),
+            "attachmentHash": .text(record.attachment?.hash.string),
+            "attachmentMime": .text(record.attachment?.mime),
         ]
     }
 

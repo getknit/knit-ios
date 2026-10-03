@@ -160,7 +160,13 @@
             let clock = SystemClock()
             let stores = MeshStores.inMemory()
             DemoSeed.populate(
-                stores, me: identity.nodeId, now: clock.wallMilliseconds(), scene: options.demoScene, paint: DemoPortraits.profilePhoto)
+                stores,
+                me: identity.nodeId,
+                now: clock.wallMilliseconds(),
+                scene: options.demoScene,
+                paint: DemoPortraits.profilePhoto,
+                snap: DemoPortraits.chatPhoto
+            )
             let parts = Parts(
                 identity: identity,
                 stores: stores,
@@ -227,7 +233,8 @@
                     clock: clock,
                     log: parts.log,
                     version: "\(environment.about.version) (\(environment.about.build))",
-                    storage: parts.storage
+                    storage: parts.storage,
+                    photos: environment.photos
                 )
             #endif
             return environment

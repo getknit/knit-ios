@@ -19,7 +19,7 @@ extension Copy {
                 NSLocalizedString(
                     "chat.direct.empty",
                     bundle: .main,
-                    value: "Messages between you and %@ are end-to-end encrypted.",
+                    value: "Messages and photos between you and %@ are end-to-end encrypted.",
                     comment: "Chat: an empty DM; %@ is the other person's name"
                 ),
                 name
@@ -31,7 +31,10 @@ extension Copy {
             NSLocalizedString(
                 "chat.room.notice",
                 bundle: .main,
-                value: "Posts here are public. Everyone in range can read them, and phones pass them on to newcomers for up to 6 hours.",
+                value: """
+                    Posts and photos here are public. Everyone in range can see them, and phones pass them on to newcomers for up to 6 \
+                    hours.
+                    """,
                 comment: "Chat: the room's notice; 6 hours is how long phones carry room posts"
             )
         }
@@ -112,9 +115,9 @@ extension Copy {
                     "chat.encryption.body",
                     bundle: .main,
                     value: """
-                        Only you and %@ can read this chat. Messages are sealed before they leave your phone, so the phones that carry \
-                        them can't read them. This version doesn't have forward secrecy yet: anyone who later gets the keys from either \
-                        phone could read messages they recorded earlier.
+                        Only you and %@ can read this chat or see its photos. Messages and photos are sealed before they leave your phone, \
+                        so the phones that carry them can't open them. This version doesn't have forward secrecy yet: anyone who later \
+                        gets the keys from either phone could open what they recorded earlier.
                         """,
                     comment: "Chat: what DM encryption covers; %@ is the other person's name"
                 ),

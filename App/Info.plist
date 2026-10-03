@@ -12,6 +12,8 @@
 	<string>Knit uses Bluetooth to find people nearby and pass messages from phone to phone, so you can chat without internet or cell service.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Knit uses the camera to scan the code on someone's phone and check that no one is intercepting your direct messages with them.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Knit saves a photo from a chat to your library when you tap Save. It can't see your photos.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

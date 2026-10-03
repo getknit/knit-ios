@@ -14,6 +14,8 @@ public enum MeshEvent: Sendable, Equatable {
     case groupChanged(String)
     /// A peer's profile pinned or changed.
     case peerUpdated(NodeId)
+    /// The bytes of a photo a message carries landed, so the message can show it.
+    case attachmentArrived(BlobHash)
     /// The live links changed.
     case neighborsChanged([Neighbor])
     /// The radio's state changed: Bluetooth switched on or off, allowed or refused.

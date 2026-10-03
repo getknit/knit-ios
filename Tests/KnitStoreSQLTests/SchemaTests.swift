@@ -14,7 +14,7 @@ import Testing
 /// is already here: a phone that ran that migration keeps the schema it left.
 @Suite struct SchemaTests {
     /// The migrations every earlier build has run, in order.
-    private static let frozen = ["v1", "v2", "v3", "v4"]
+    private static let frozen = ["v1", "v2", "v3", "v4", "v5"]
 
     @Test func migrationsOnlyEverGrowAtTheEnd() {
         let identifiers = Schema.migrations.map(\.identifier)
@@ -130,6 +130,27 @@ import Testing
         #expect(blobs == 0)
     }
 
+    @Test func v5KeepsEveryMessageCarryingNothing() throws {
+        // No message carried a photo before v5 (ADR 2026-10.nh55).
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v4")
+        let bob = fixtureNodeId(2)
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO messages (id, senderId, conversationId, body, sentAt, delivered, pendingKey, kind)
+                    VALUES (?, ?, ?, ?, 3, 0, 0, 0)
+                    """,
+                arguments: [StoredText.bytes("m1"), StoredText.bytes(bob.string), StoredText.bytes("nearby"), StoredText.bytes("hi")]
+            )
+        }
+        let database = try KnitDatabase(writer: queue, failures: recordFailure)
+        let messages = SQLMessageStore(database)
+        #expect(messages.message("m1")?.body == "hi")
+        #expect(messages.message("m1")?.attachment == nil)
+        #expect(messages.attachmentHashes().isEmpty)
+    }
+
     @Test func grdbCutsABoundStringAtItsFirstNul() throws {
         // Why every string is a BLOB (StoredText). If GRDB ever binds a String's whole length, TEXT columns become
         // possible, though v1 stays as it is.
@@ -160,6 +181,7 @@ enum SchemaPins {
         ("v2", v2),
         ("v3", v3),
         ("v4", v4),
+        ("v5", v5),
     ]
 
     /// Every table, index and trigger this app made, sorted, with the statement SQLite keeps for it. GRDB's own

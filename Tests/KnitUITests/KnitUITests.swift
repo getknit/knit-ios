@@ -67,6 +67,11 @@ final class KnitUITests: XCTestCase {
         try walkPhotos()
     }
 
+    /// A photo in the room opens full screen, and one picked with Add photo is held and sent (ADR 2026-10.6cas).
+    func testAPhotoInAChatOpensFullScreenAndOneIsSent() throws {
+        try walkChatPhotos()
+    }
+
     func testNewMessageOpensADirectThreadForOnePerson() throws {
         try walkNewMessage()
     }
@@ -98,6 +103,7 @@ final class KnitUITests: XCTestCase {
         try walkNewGroup()
         try walkScan()
         try walkPhotos()
+        try walkChatPhotos()
         try walkSettings()
         try walkRadioStates()
     }

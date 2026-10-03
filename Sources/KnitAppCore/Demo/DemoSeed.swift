@@ -114,10 +114,15 @@ public enum DemoSeed {
     private static let profileAge: Int64 = 180_000
 
     /// Fills `stores` with `scene`, as of `now` on the wall clock, from `me`'s side. Whoever the scene gives a profile
-    /// photo gets the picture `paint` makes of their ``DemoPortrait``: the app paints them, and a test hands in bytes of
-    /// its own.
+    /// photo gets the picture `paint` makes of their ``DemoPortrait``, and a post the scene gives a photo carries the
+    /// picture `snap` makes of its own: the app paints them, and a test hands in bytes of its own.
     public static func populate(
-        _ stores: MeshStores, me: NodeId, now: Int64, scene: DemoScene, paint: (DemoPortrait) -> [UInt8]? = { _ in nil }
+        _ stores: MeshStores,
+        me: NodeId,
+        now: Int64,
+        scene: DemoScene,
+        paint: (DemoPortrait) -> [UInt8]? = { _ in nil },
+        snap: (DemoPortrait) -> [UInt8]? = { _ in nil }
     ) {
         let cast = scene.cast
         if let own = cast.me {
@@ -149,7 +154,8 @@ public enum DemoSeed {
                     body: line.body,
                     sentAt: sentAt,
                     arrivedAt: sender == me ? nil : sentAt,
-                    delivered: line.delivered
+                    delivered: line.delivered,
+                    attachment: line.photo.flatMap { photo(snap($0), in: stores, at: sentAt) }
                 )
             )
         }
@@ -212,6 +218,11 @@ public enum DemoSeed {
             )
             return keys.nodeId
         }
+    }
+
+    /// Keeps a post's painted photo in the blob store, as the engine keeps a room post's, and answers what the post carries.
+    private static func photo(_ jpeg: [UInt8]?, in stores: MeshStores, at now: Int64) -> MessageAttachment? {
+        keep(jpeg, in: stores, at: now).map { MessageAttachment(hash: $0, mime: "image/jpeg") }
     }
 
     /// Keeps a painted photo in the blob store, as the engine keeps one it adopted, and answers its hash.

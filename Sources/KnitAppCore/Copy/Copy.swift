@@ -88,6 +88,16 @@ extension Copy {
                 comment: "The system's camera permission prompt"
             )
         }
+
+        /// `NSPhotoLibraryAddUsageDescription`: why Knit asks to add to Photos.
+        public static var photoLibraryAddUsage: String {
+            NSLocalizedString(
+                "system.photo-library-add-usage",
+                bundle: .main,
+                value: "Knit saves a photo from a chat to your library when you tap Save. It can't see your photos.",
+                comment: "The system's prompt to let Knit add to Photos"
+            )
+        }
     }
 }
 

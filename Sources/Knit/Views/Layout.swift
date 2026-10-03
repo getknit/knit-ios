@@ -51,5 +51,21 @@
         static let faceSettings: CGFloat = 56
         /// A profile's, ours and anyone's.
         static let faceProfile: CGFloat = 96
+
+        // A photo in a thread, as Android sizes it (`ATTACHMENT_WIDTH` and the rest in `ChatScreen.kt`).
+        /// A photo's width in its bubble, unless it is too tall for it.
+        static let photoWidth: CGFloat = 220
+        /// The tallest a photo stands in its bubble.
+        static let photoMaxHeight: CGFloat = 260
+        /// The side of the placeholder a photo shows until its bytes are here, or when they do not open.
+        static let photoPlaceholder: CGFloat = 160
+        /// A photo's corner.
+        static let photoCorner: CGFloat = 12
+        /// The side of the photo the composer holds.
+        static let stagedPhoto: CGFloat = 72
+        /// How long a missing photo's spinner turns, in seconds, before it settles to an hourglass
+        /// (`SPINNER_PATIENCE_MS`): an endless spinner keeps the screen drawing every frame for as long as the photo is
+        /// owed.
+        static let photoPatience = 30
     }
 #endif

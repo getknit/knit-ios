@@ -70,7 +70,7 @@
             }
             .fullScreenCover(isPresented: $viewing) {
                 if let photo = state.face.photo {
-                    PhotoViewer(photo: photo, title: state.title)
+                    PhotoViewer(photo: .profile(photo, title: state.title))
                 }
             }
         }

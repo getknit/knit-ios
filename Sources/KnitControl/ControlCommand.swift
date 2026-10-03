@@ -1,4 +1,5 @@
 import Foundation
+public import KnitMesh
 public import KnitWire
 
 /// One control command, from one JSON line: on `knit-peer`'s standard input, or to a debug build of the app's bridge
@@ -10,10 +11,11 @@ public enum ControlCommand: Equatable, Sendable {
     case peers
     /// `{"cmd":"links"}`: the live links and every sighted peer.
     case links
-    /// `{"cmd":"room","text":"…"}`: a Nearby post.
-    case room(String)
+    /// `{"cmd":"room","text":"…"}`: a Nearby post. `"photo":"<base64>"` adds a photo, of type `"mime"`, `image/jpeg`
+    /// when left out, and the text may then be left out too; the same goes for `dm` and `group-send`.
+    case room(String, photo: OutgoingPhoto?)
     /// `{"cmd":"dm","to":"<node id>","text":"…"}`: a DM.
-    case directMessage(to: NodeId, text: String)
+    case directMessage(to: NodeId, text: String, photo: OutgoingPhoto?)
     /// `{"cmd":"accept","conv":"<node id>"}`: accept a message request.
     case accept(String)
     /// `{"cmd":"name","name":"…","status":"…","openToChat":true}`: change our profile; what is left out stays, so
@@ -100,7 +102,7 @@ public enum GroupCommand: Equatable, Sendable {
     /// share. Nothing is sent until its first message.
     case create([NodeId])
     /// `{"cmd":"group-send","conv":"<group id>","text":"…"}`: a message to a group.
-    case send(String, text: String)
+    case send(String, text: String, photo: OutgoingPhoto?)
     /// `{"cmd":"group-rename","conv":"<group id>","name":"…"}`: rename a group, and tell its members.
     case rename(String, name: String)
     /// `{"cmd":"group-leave","conv":"<group id>"}`: leave a group, and tell its members.
@@ -153,6 +155,8 @@ public struct ControlRequest: Equatable, Sendable {
         var limit: Int?
         var members: [String]?
         var jpeg: String?
+        var photo: String?
+        var mime: String?
         var path: String?
         var clear: Bool? // swiftlint:disable:this discouraged_optional_boolean
         var tag: String?
@@ -185,9 +189,9 @@ public struct ControlRequest: Equatable, Sendable {
         case "quit":
             .success(.quit)
         case "room":
-            required(raw.text, "text").map(ControlCommand.room)
+            message(raw).map { .room($0.text, photo: $0.photo) }
         case "dm":
-            required(raw.text, "text").flatMap { text in nodeId(raw.to, "to").map { .directMessage(to: $0, text: text) } }
+            message(raw).flatMap { sent in nodeId(raw.to, "to").map { .directMessage(to: $0, text: sent.text, photo: sent.photo) } }
         case "accept":
             required(raw.conv ?? raw.peer, "conv").map(ControlCommand.accept)
         case "name":
@@ -210,7 +214,7 @@ public struct ControlRequest: Equatable, Sendable {
         case "group-create":
             members(raw.members).map(GroupCommand.create)
         case "group-send":
-            required(raw.conv, "conv").flatMap { conv in required(raw.text, "text").map { .send(conv, text: $0) } }
+            required(raw.conv, "conv").flatMap { conv in message(raw).map { .send(conv, text: $0.text, photo: $0.photo) } }
         case "group-rename":
             required(raw.conv, "conv").flatMap { conv in required(raw.name, "name").map { .rename(conv, name: $0) } }
         case "group-leave":
@@ -221,6 +225,20 @@ public struct ControlRequest: Equatable, Sendable {
             .failure(.unknownCommand(raw.cmd))
         }
     }
+
+    /// A message's text and photo. The text may be left out when there is a photo.
+    private static func message(_ raw: Raw) -> Result<(text: String, photo: OutgoingPhoto?), ControlError> {
+        guard let encoded = raw.photo else {
+            return required(raw.text, "text").map { ($0, nil) }
+        }
+        guard let bytes = Base64.decode(encoded) else {
+            return .failure(.invalid("photo"))
+        }
+        return .success((raw.text ?? "", OutgoingPhoto(bytes: bytes, mime: raw.mime ?? defaultPhotoMime)))
+    }
+
+    /// The type of a photo sent with no `mime`.
+    private static let defaultPhotoMime = "image/jpeg"
 
     private static func avatarSource(_ raw: Raw) -> Result<AvatarSource, ControlError> {
         if raw.clear == true {

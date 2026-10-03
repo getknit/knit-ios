@@ -1,3 +1,5 @@
+public import Foundation
+import KnitCrypto
 import KnitMesh
 import KnitStore
 public import KnitWire
@@ -24,6 +26,8 @@ public struct ChatMessage: Sendable, Equatable, Identifiable {
     /// The author's face, beside someone else's message in the room or a group; `nil` in a DM, for our own messages,
     /// and for a status line.
     public var authorFace: Face?
+    /// What the message carries beside its words, or `nil`.
+    public var attachment: ChatAttachment?
 }
 
 /// What a thread is.
@@ -79,13 +83,19 @@ public final class ChatModel {
     /// The thread: `nearby`, the peer's node id, or the group's id.
     public let conversationId: String
     @ObservationIgnored private let session: AppSession
+    @ObservationIgnored private let codec: (any ImageCodec)?
     @ObservationIgnored private var cache = Cached<Int, ChatState>()
     private var text = ""
+    /// The photo the composer holds, which Send sends with the draft or alone.
+    public private(set) var staged: StagedPhoto?
+    /// Whether the last photo picked could not be read, which the screen says until it is dismissed.
+    public var photoFailed = false
 
-    /// The thread `conversationId` over `session`.
-    public init(conversationId: String, session: AppSession) {
+    /// The thread `conversationId` over `session`, making picked photos ready to send through `codec`.
+    public init(conversationId: String, session: AppSession, codec: (any ImageCodec)? = nil) {
         self.conversationId = conversationId
         self.session = session
+        self.codec = codec
     }
 
     /// What the composer holds, cut at the limit as it is typed.
@@ -101,7 +111,13 @@ public final class ChatModel {
 
     /// Whether Send has anything to send, to anyone.
     public var canSend: Bool {
-        Composer.body(of: text) != nil && !state.nobodyElse
+        (Composer.body(of: text) != nil || staged != nil) && !state.nobodyElse
+    }
+
+    /// Whether the composer's button adds a photo rather than sending: nothing is typed and no photo is held, so there
+    /// is nothing to send (`SendAction.Attach` in knit-next).
+    public var offersPhoto: Bool {
+        Composer.body(of: text) == nil && staged == nil
     }
 
     /// The thread, rebuilt only when something changed.
@@ -112,12 +128,40 @@ public final class ChatModel {
         return reading
     }
 
-    /// Sends the draft, and clears it once the message is stored.
+    /// Sends the draft and the photo held, and clears each once the message is stored, unless it changed meanwhile.
     public func send() async {
         let sending = text
-        if await session.send(sending, in: conversationId) != nil, text == sending {
+        let photo = staged
+        guard await session.send(sending, photo: photo?.photo, in: conversationId) != nil else {
+            return
+        }
+        if text == sending {
             text = ""
         }
+        if staged == photo {
+            staged = nil
+        }
+    }
+
+    /// Makes a picked photo ready to send (`AttachmentStore.ingest`) and holds it in the composer, in place of any held
+    /// before. One the picker could not hand over, or the codec cannot read, says so.
+    public func choosePhoto(_ data: Data?) async {
+        guard let data, let codec, let photo = await codec.chatPhoto(from: data) else {
+            photoFailed = true
+            return
+        }
+        staged = await Self.stage(photo)
+    }
+
+    /// Takes the held photo out of the composer.
+    public func removePhoto() {
+        staged = nil
+    }
+
+    /// `photo` with the hash of its bytes, taken off the main actor, since a GIF may weigh megabytes.
+    @concurrent
+    private static func stage(_ photo: OutgoingPhoto) async -> StagedPhoto {
+        StagedPhoto(photo: photo, hash: BlobHash(of: photo.bytes))
     }
 
     /// Accepts the request this thread is.
@@ -142,8 +186,10 @@ public final class ChatModel {
         let peer = NodeId(conversationId)
         let group = threads.group(conversationId)
         let kind: ThreadKind = Conversations.isGroup(conversationId) ? .group : peer == nil ? .room : .direct
-        let messages = session.stores.messages.messages(in: conversationId).compactMap { message in
-            chatMessage(message, kind: kind, me: me, directory: directory)
+        let stored = session.stores.messages.messages(in: conversationId)
+        let held = session.stores.blobs.held(among: Set(stored.compactMap(\.attachment?.hash)))
+        let messages = stored.compactMap { message in
+            chatMessage(message, kind: kind, me: me, directory: directory, held: held)
         }
         let members = group?.members ?? []
         var built = ChatState(
@@ -174,7 +220,9 @@ public final class ChatModel {
     }
 
     /// One row of the thread: a message, or a status line this build has words for.
-    private func chatMessage(_ message: MessageRecord, kind: ThreadKind, me: NodeId, directory: Directory) -> ChatMessage? {
+    private func chatMessage(
+        _ message: MessageRecord, kind: ThreadKind, me: NodeId, directory: Directory, held: Set<BlobHash>
+    ) -> ChatMessage? {
         let isMine = message.senderId == me
         guard message.kind.isNotice else {
             let named = kind != .direct && !isMine
@@ -186,7 +234,8 @@ public final class ChatModel {
                 author: message.senderId,
                 authorLabel: named ? directory.label(for: message.senderId).text : nil,
                 status: isMine ? DeliveryStatus(message) : nil,
-                authorFace: named ? directory.face(for: message.senderId) : nil
+                authorFace: named ? directory.face(for: message.senderId) : nil,
+                attachment: message.attachment.flatMap { ChatAttachment($0, isHeld: held.contains($0.hash)) }
             )
         }
         return GroupNaming.notice(message, me: me, directory: directory).map { words in

@@ -3,25 +3,33 @@
     import Foundation
     import KnitAppCore
 
-    /// The demo's profile photos, painted rather than shipped: a sky, a few shapes, and a JPEG of them, encoded as a
-    /// profile photo is. Coordinates are fractions of the picture, from its bottom left corner.
+    /// The demo's photos, painted rather than shipped: a sky, a few shapes, and a JPEG of them, encoded as a profile
+    /// photo or a chat's photo is. Coordinates are fractions of the picture, from its bottom left corner.
     internal enum DemoPortraits {
-        /// The picture `-demoPhoto` hands the cropper: wider than tall, so it has somewhere to pan.
+        /// The picture `-demoPhoto` hands the cropper and the composer: wider than tall, so the cropper has somewhere to
+        /// pan.
         private static let pick = (width: 1600, height: 1200)
+        /// A photo a post in the demo carries, at the shape a phone's camera takes.
+        private static let snapshot = (width: 960, height: 720)
         /// Each channel's depth.
         private static let bitsPerComponent = 8
 
         /// `portrait` as a profile photo.
         static func profilePhoto(_ portrait: DemoPortrait) -> [UInt8]? {
-            jpeg(portrait, width: ProfilePhoto.side, height: ProfilePhoto.side)
+            jpeg(portrait, width: ProfilePhoto.side, height: ProfilePhoto.side, quality: ProfilePhoto.quality)
         }
 
-        /// The picture Choose photo picks under `-demoPhoto`.
+        /// `portrait` as a photo a post carries.
+        static func chatPhoto(_ portrait: DemoPortrait) -> [UInt8]? {
+            jpeg(portrait, width: snapshot.width, height: snapshot.height, quality: ChatPhoto.quality)
+        }
+
+        /// The picture Choose photo and Add photo pick under `-demoPhoto`.
         static func pickedPhoto() -> Data? {
-            jpeg(.summit, width: pick.width, height: pick.height).map { Data($0) }
+            jpeg(.summit, width: pick.width, height: pick.height, quality: ProfilePhoto.quality).map { Data($0) }
         }
 
-        private static func jpeg(_ portrait: DemoPortrait, width: Int, height: Int) -> [UInt8]? {
+        private static func jpeg(_ portrait: DemoPortrait, width: Int, height: Int, quality: Double) -> [UInt8]? {
             guard let space = CGColorSpace(name: CGColorSpace.sRGB),
                 let context = CGContext(
                     data: nil,
@@ -36,7 +44,7 @@
                 return nil
             }
             Canvas(context: context, space: space, width: CGFloat(width), height: CGFloat(height)).paint(Scene.of(portrait))
-            return context.makeImage().flatMap { DeviceImageCodec.jpeg($0, quality: ProfilePhoto.quality) }
+            return context.makeImage().flatMap { DeviceImageCodec.jpeg($0, quality: quality) }
         }
     }
 

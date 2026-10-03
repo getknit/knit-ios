@@ -85,11 +85,11 @@ extension MeshEngine {
     }
 
     /// Wants every blob the stores name and the blob store lacks (`rewantMissingBlobs`, knit-next ADR 2026-09.ptv8):
-    /// the photos peers' profiles advertise. The wants are a memo of the stores and never their source, so this runs
-    /// at start, at link-up and at each 60 s re-offer. At link-up a linked peer's own photo is left to its push
-    /// (`sparing`), and asked for at the next re-offer if it never came; Android leaves a lost push lost. Answers the
-    /// blobs it asked every neighbour for, so the re-ask that follows does not ask again: Android does
-    /// (knit-next ADR 2026-09.ptv8, "What it costs").
+    /// the photos peers' profiles advertise, and the photos messages carry. The wants are a memo of the stores and never
+    /// their source, so this runs at start, at link-up and at each 60 s re-offer. At link-up a linked peer's own photo
+    /// is left to its push (`sparing`), and asked for at the next re-offer if it never came; Android leaves a lost push
+    /// lost. Answers the blobs it asked every neighbour for, so the re-ask that follows does not ask again: Android
+    /// does (knit-next ADR 2026-09.ptv8, "What it costs").
     @discardableResult
     func rewantMissingBlobs(sparing: Set<NodeId>) -> Set<BlobHash> {
         var asked: Set<BlobHash> = []
@@ -97,6 +97,10 @@ extension MeshEngine {
             if let advertised = peer.advertisedAvatarHash, !stores.blobs.contains(advertised), wantBlob(advertised) {
                 asked.insert(advertised)
             }
+        }
+        let carried = stores.messages.attachmentHashes()
+        for hash in carried.subtracting(stores.blobs.held(among: carried)) where wantBlob(hash) {
+            asked.insert(hash)
         }
         return asked
     }
@@ -213,6 +217,9 @@ extension MeshEngine {
         blobExchange.forget(file.hash)
         syncAcceptedFiles()
         adoptAvatar(file.hash)
+        if stores.messages.attachmentHashes().contains(file.hash) {
+            events.append(.attachmentArrived(file.hash))
+        }
     }
 
     private func reject(_ file: InboundFile, _ reason: String) {
@@ -236,9 +243,10 @@ extension MeshEngine {
 
     // MARK: Collecting
 
-    /// Every blob something here still names: our photo, and each peer's photo, shown or advertised.
+    /// Every blob something here still names: our photo, each peer's photo, shown or advertised, and every photo a
+    /// message carries.
     func referencedBlobs() -> Set<BlobHash> {
-        var named: Set<BlobHash> = []
+        var named = stores.messages.attachmentHashes()
         if let own = stores.ownProfile.load().avatarHash {
             named.insert(own)
         }

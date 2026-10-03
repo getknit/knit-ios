@@ -93,13 +93,13 @@ public final class DemoMesh: MeshService {
     }
 
     /// Posts to the Nearby room, where nobody hears it.
-    public func postToRoom(_ text: String) async -> MessageRecord? {
-        await mesh.postToRoom(text)
+    public func postToRoom(_ text: String, photo: OutgoingPhoto?) async -> MessageRecord? {
+        await mesh.postToRoom(text, photo: photo)
     }
 
     /// Sends a DM, which waits in custody.
-    public func sendDirectMessage(_ text: String, to recipient: NodeId) async -> MessageRecord? {
-        await mesh.sendDirectMessage(text, to: recipient)
+    public func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?) async -> MessageRecord? {
+        await mesh.sendDirectMessage(text, to: recipient, photo: photo)
     }
 
     /// Accepts a message request.
@@ -113,8 +113,8 @@ public final class DemoMesh: MeshService {
     }
 
     /// Sends a group message, which waits in custody.
-    public func sendGroupMessage(_ text: String, to groupId: String) async -> MessageRecord? {
-        await mesh.sendGroupMessage(text, to: groupId)
+    public func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?) async -> MessageRecord? {
+        await mesh.sendGroupMessage(text, to: groupId, photo: photo)
     }
 
     /// Renames a group.

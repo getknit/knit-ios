@@ -21,6 +21,7 @@ internal enum Schema {
         ("v2", v2),
         ("v3", v3),
         ("v4", v4),
+        ("v5", v5),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -153,6 +154,18 @@ internal enum Schema {
         "ALTER TABLE peers ADD COLUMN avatarHash BLOB",
         "ALTER TABLE peers ADD COLUMN advertisedAvatarHash BLOB",
         "ALTER TABLE own_profile ADD COLUMN avatarHash BLOB",
+    ]
+
+    /// Schema v5: photos in chats (ADR 2026-10.nh55). A message gains what it carries: the blob's hash, its type, the
+    /// key that opens a sealed one, and a file's name and size (`MessageEntity.attachment*`). Every row already stored
+    /// carries nothing.
+    private static let v5 = [
+        "ALTER TABLE messages ADD COLUMN attachmentHash BLOB",
+        "ALTER TABLE messages ADD COLUMN attachmentMime BLOB",
+        "ALTER TABLE messages ADD COLUMN attachmentKey BLOB",
+        "ALTER TABLE messages ADD COLUMN attachmentName BLOB",
+        "ALTER TABLE messages ADD COLUMN attachmentSize INTEGER",
+        "CREATE INDEX messages_attachmentHash ON messages (attachmentHash) WHERE attachmentHash IS NOT NULL",
     ]
 
     /// The migrator that brings any database this build knows up to date.

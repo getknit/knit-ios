@@ -86,6 +86,8 @@ internal struct DemoCast {
         var then = Pause.minutes
         /// Whether it is a message in the scene's group.
         var inGroup = false
+        /// The photo a room post carries, painted by whoever seeds the scene.
+        var photo: DemoPortrait?
     }
 
     /// The scene's group: its members besides us, in pick order, and who started it.
@@ -172,7 +174,7 @@ internal struct DemoCast {
             Line(id: "room-2", from: .priya, to: nil, body: "Yeah, just felt the first drops. Heading back to camp.", then: .moment),
             Line(id: "room-3", from: .me, to: nil, body: "Same here. The east trail's already mud.", delivered: true, then: .quarterHour),
             Line(id: "room-4", from: .sam, to: nil, body: "Trail's clear up top, Maya 🎉 Come join us!"),
-            Line(id: "room-5", from: .dani, to: nil, body: "Saved you a spot by the fire 🔥", then: .moment),
+            Line(id: "room-5", from: .dani, to: nil, body: "Saved you a spot by the fire 🔥", then: .moment, photo: .campfire),
             Line(id: "room-6", from: .me, to: nil, body: "On my way, give me 20.", delivered: true),
             Line(id: "group-1", from: .dani, to: nil, body: "Sunrise hike tomorrow? Trailhead at 5 🌅", then: .moment, inGroup: true),
             Line(id: "group-2", from: .theo, to: nil, body: "Count me in.", then: .moment, inGroup: true),

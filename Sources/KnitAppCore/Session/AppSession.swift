@@ -1,3 +1,4 @@
+import KnitCrypto
 public import KnitMesh
 public import KnitStore
 public import KnitWire
@@ -60,6 +61,17 @@ public final class AppSession {
         stores.blobs.bytes(of: hash)
     }
 
+    /// The bytes of a message's photo, off the main actor like ``photo(_:)``: the blob as it is for the room's, or
+    /// opened in memory with `key` for a DM's or a group's, whose blob is sealed (`AttachmentCrypto`). `nil` while the
+    /// blob is missing, or when the key does not open it.
+    nonisolated public func attachment(_ hash: BlobHash, key: String?) -> [UInt8]? {
+        let blob = stores.blobs.bytes(of: hash)
+        guard let key else {
+            return blob
+        }
+        return blob.flatMap { sealed in Base64.decode(key).flatMap { AttachmentCrypto.open(sealed, key: $0) } }
+    }
+
     /// The threads, and which are requests, as of the current revision.
     public func threads() -> ThreadTable {
         ThreadTable(stores: stores, me: identity.nodeId, verified: directory.verified)
@@ -100,7 +112,7 @@ public final class AppSession {
         case .received(let message, let isRequest):
             revision += 1
             await notify(message, isRequest: isRequest)
-        case .delivered, .sent, .peerUpdated, .groupChanged:
+        case .delivered, .sent, .peerUpdated, .groupChanged, .attachmentArrived:
             revision += 1
         case .neighborsChanged(let linked):
             neighbors = linked
@@ -111,20 +123,20 @@ public final class AppSession {
 
     // MARK: Actions
 
-    /// Sends `text` in a thread: the room, a group, or a DM to the node id the thread is named for. Answers what was
-    /// stored, or `nil` when there is nothing to send.
+    /// Sends `text` in a thread, with `photo` if one is given: the room, a group, or a DM to the node id the thread is
+    /// named for. A photo may go with no words. Answers what was stored, or `nil` when there is nothing to send.
     @discardableResult
-    public func send(_ text: String, in conversationId: String) async -> MessageRecord? {
-        guard let body = Composer.body(of: text) else {
+    public func send(_ text: String, photo: OutgoingPhoto? = nil, in conversationId: String) async -> MessageRecord? {
+        guard let body = Composer.body(of: text) ?? (photo == nil ? nil : "") else {
             return nil
         }
         let sent: MessageRecord?
         if conversationId == Conversations.nearby {
-            sent = await mesh.postToRoom(body)
+            sent = await mesh.postToRoom(body, photo: photo)
         } else if Conversations.isGroup(conversationId) {
-            sent = await mesh.sendGroupMessage(body, to: conversationId)
+            sent = await mesh.sendGroupMessage(body, to: conversationId, photo: photo)
         } else if let recipient = NodeId(conversationId), recipient != identity.nodeId {
-            sent = await mesh.sendDirectMessage(body, to: recipient)
+            sent = await mesh.sendDirectMessage(body, to: recipient, photo: photo)
         } else {
             return nil
         }

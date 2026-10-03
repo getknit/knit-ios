@@ -6,22 +6,27 @@
     internal struct ChatView: View {
         @State private var model: ChatModel
         @State private var showsEncryption = false
+        @State private var viewing: ViewedPhoto?
         @Environment(\.dismiss) private var dismiss
+        /// What Add photo picks under `-demoPhoto`, in place of the photo library.
+        private let demoPhoto: Data?
 
-        init(conversationId: String, session: AppSession) {
-            _model = State(initialValue: ChatModel(conversationId: conversationId, session: session))
+        /// The thread `conversationId` over `session`, making picked photos ready to send through `codec`.
+        init(conversationId: String, session: AppSession, codec: any ImageCodec, demoPhoto: Data?) {
+            _model = State(initialValue: ChatModel(conversationId: conversationId, session: session, codec: codec))
+            self.demoPhoto = demoPhoto
         }
 
         var body: some View {
             let state = model.state
-            MessageList(state: state)
+            MessageList(state: state) { viewing = $0 }
                 .safeAreaInset(edge: .bottom) {
                     if state.isRequest {
                         RequestBar(title: state.requestTitle, explanation: state.requestBody) { Task { await model.accept() } }
                     } else if state.nobodyElse {
                         NobodyLeftBar()
                     } else {
-                        ComposerBar(model: model)
+                        ComposerBar(model: model, demoPhoto: demoPhoto)
                     }
                 }
                 .navigationTitle(state.title)
@@ -61,6 +66,14 @@
                 .sheet(isPresented: $showsEncryption) {
                     EncryptionSheet(text: state.isGroup ? Copy.Groups.encryptionBody : Copy.Chat.encryptionBody(state.title))
                 }
+                .fullScreenCover(item: $viewing) { photo in
+                    PhotoViewer(photo: photo)
+                }
+                .alert(Copy.Photo.unreadable, isPresented: $model.photoFailed) {
+                    Button(Copy.Common.done, role: .cancel) {
+                        // The alert closes itself.
+                    }
+                }
                 // A group we left is gone: its thread closes, however the leave came.
                 .onChange(of: state.exists) { _, exists in
                     if !exists {
@@ -92,6 +105,8 @@
     /// The thread's messages, newest at the bottom, with what the thread says about itself above them.
     private struct MessageList: View {
         let state: ChatState
+        /// Opens a message's photo full screen.
+        let view: (ViewedPhoto) -> Void
 
         var body: some View {
             ScrollViewReader { reader in
@@ -104,8 +119,10 @@
                                     .id(message.id)
                                     .accessibilityIdentifier(AccessibilityID.chatNotice(message.id))
                             } else {
-                                MessageBubble(message: message)
-                                    .id(message.id)
+                                MessageBubble(message: message) { attachment in
+                                    view(.chat(attachment, sender: sender(of: message)))
+                                }
+                                .id(message.id)
                             }
                         }
                     }
@@ -120,6 +137,11 @@
                     }
                 }
             }
+        }
+
+        /// Who sent `message`, as the viewer's bar names them: "You", the author's label, or a DM's peer.
+        private func sender(of message: ChatMessage) -> String {
+            message.isMine ? Copy.Common.you : message.authorLabel ?? state.title
         }
     }
 
@@ -178,9 +200,12 @@
     }
 
     /// One message: ours on the right with its tick, theirs on the left, with the author's face and name in the room and
-    /// a group. The author's face and name open their profile, which is how a DM starts (MVP item 5).
+    /// a group. The author's face and name open their profile, which is how a DM starts (MVP item 5). A photo sits above
+    /// the words, and opens full screen.
     private struct MessageBubble: View {
         let message: ChatMessage
+        /// Opens the message's photo.
+        let open: (ChatAttachment) -> Void
         @Environment(\.dynamicTypeSize) private var typeSize
 
         var body: some View {
@@ -196,27 +221,56 @@
                     .buttonStyle(.plain)
                     .accessibilityHidden(true)
                 }
-                VStack(alignment: message.isMine ? .trailing : .leading, spacing: Layout.hairline) {
-                    if let author = message.authorLabel {
-                        NavigationLink(value: Route.peer(message.author)) {
-                            Text(author)
-                                .font(.caption.bold())
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.tint)
+                BubbleContent(message: message, open: open)
+                if !message.isMine {
+                    Spacer(minLength: Layout.bubbleInset)
+                }
+            }
+            // A message reads as one element. Its photo stays a button for a tap, and VoiceOver opens it by name: the
+            // photo as an element of its own left the author's name its own element too, a hit area too small to audit.
+            .accessibilityElement(children: .combine)
+            .accessibilityActions {
+                if let photo {
+                    Button(Copy.Attachments.viewPhoto) { open(photo) }
+                }
+            }
+            .accessibilityIdentifier(photo.map { _ in AccessibilityID.chatPhoto(message.id) } ?? "")
+        }
+
+        /// The message's photo, which opens full screen, or `nil` when it carries none.
+        private var photo: ChatAttachment? {
+            message.attachment.flatMap { $0.kind == .photo ? $0 : nil }
+        }
+    }
+
+    /// A message's column: the author's name in the room and a group, which opens their profile, its photo, its words,
+    /// and its stamp.
+    private struct BubbleContent: View {
+        let message: ChatMessage
+        let open: (ChatAttachment) -> Void
+
+        var body: some View {
+            VStack(alignment: message.isMine ? .trailing : .leading, spacing: Layout.hairline) {
+                if let author = message.authorLabel {
+                    NavigationLink(value: Route.peer(message.author)) {
+                        Text(author)
+                            .font(.caption.bold())
                     }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
+                }
+                if let attachment = message.attachment {
+                    AttachmentView(attachment: attachment) { open(attachment) }
+                }
+                if !message.body.isEmpty {
                     Text(message.body)
                         .padding(.horizontal, Layout.medium)
                         .padding(.vertical, Layout.small)
                         .background(fill, in: .rect(cornerRadius: Layout.bubbleCorner))
                         .textSelection(.enabled)
-                    Stamp(message: message)
                 }
-                if !message.isMine {
-                    Spacer(minLength: Layout.bubbleInset)
-                }
+                Stamp(message: message)
             }
-            .accessibilityElement(children: .combine)
         }
 
         private var fill: AnyShapeStyle {
@@ -238,40 +292,6 @@
             }
             .font(.caption2)
             .foregroundStyle(Palette.secondaryText)
-        }
-    }
-
-    /// The composer: the field, what is left near the limit, and Send.
-    private struct ComposerBar: View {
-        @Bindable var model: ChatModel
-
-        var body: some View {
-            VStack(alignment: .trailing, spacing: Layout.tight) {
-                if let remaining = model.remaining {
-                    Text(Copy.Chat.remaining(remaining))
-                        .font(.caption)
-                        .foregroundStyle(remaining == 0 ? Palette.critical : Palette.secondaryText)
-                }
-                HStack(alignment: .bottom) {
-                    TextField(Copy.Chat.composerPlaceholder, text: $model.draft, axis: .vertical)
-                        .lineLimit(Layout.composerLines)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityIdentifier(AccessibilityID.chatInput)
-                    Button {
-                        Task { await model.send() }
-                    } label: {
-                        Label(Copy.Chat.send, systemImage: "arrow.up.circle.fill")
-                            .labelStyle(.iconOnly)
-                            .font(.title)
-                    }
-                    .disabled(!model.canSend)
-                    .accessibilityIdentifier(AccessibilityID.chatSend)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, Layout.small)
-            // Opaque, like the request bar: the newest message sits against it, and its material let the thread through.
-            .background(.background.secondary)
         }
     }
 

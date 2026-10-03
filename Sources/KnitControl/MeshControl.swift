@@ -12,9 +12,9 @@ public protocol ControlActions: Sendable {
     /// Stops the radio and closes every link.
     func stop() async
     /// Posts to the Nearby room.
-    func postToRoom(_ text: String) async -> MessageRecord?
+    func postToRoom(_ text: String, photo: OutgoingPhoto?) async -> MessageRecord?
     /// Sends a DM.
-    func sendDirectMessage(_ text: String, to recipient: NodeId) async -> MessageRecord?
+    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?) async -> MessageRecord?
     /// Accepts a message request.
     func accept(_ conversationId: String) async
     /// Changes our profile and floods it.
@@ -24,7 +24,7 @@ public protocol ControlActions: Sendable {
     /// Makes a group with `others`, or opens the one they already share.
     func createGroup(with others: [NodeId]) async -> GroupRecord?
     /// Sends a message to a group.
-    func sendGroupMessage(_ text: String, to groupId: String) async -> MessageRecord?
+    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?) async -> MessageRecord?
     /// Renames a group and floods the change.
     func renameGroup(_ groupId: String, to name: String) async -> GroupRecord?
     /// Leaves a group, telling its members.
@@ -147,6 +147,8 @@ public actor MeshControl {
             var fields = ControlLines.fields(of: group)
             fields["event"] = "group"
             return [JSONValue.object(fields).line]
+        case .attachmentArrived(let hash):
+            return [JSONValue.object(["event": "attachment", "hash": .string(hash.string)]).line]
         }
     }
 
@@ -159,16 +161,16 @@ public actor MeshControl {
             return .success(["peers": .array(peers.map { .object(ControlLines.fields(of: $0, bundle: bundle)) })])
         case .links:
             return .success(await links())
-        case .room(let text):
-            guard let record = await actions.postToRoom(text) else {
-                return .failure(.refused("a blank message is not sent"))
+        case .room(let text, let photo):
+            guard let record = await actions.postToRoom(text, photo: photo) else {
+                return .failure(.refused("a blank message, or a photo past 8 MiB, is not sent"))
             }
-            return .success(["id": .string(record.id)])
-        case .directMessage(let recipient, let text):
-            guard let record = await actions.sendDirectMessage(text, to: recipient) else {
-                return .failure(.refused("a blank message, or one to ourselves, is not sent"))
+            return .success(Self.sent(record))
+        case .directMessage(let recipient, let text, let photo):
+            guard let record = await actions.sendDirectMessage(text, to: recipient, photo: photo) else {
+                return .failure(.refused("a blank message, a photo past 8 MiB, or one to ourselves, is not sent"))
             }
-            return .success(["id": .string(record.id), "pendingKey": .bool(record.pendingKey)])
+            return .success(Self.sent(record))
         case .accept(let conversation):
             await actions.accept(conversation)
             return .success(["conv": .string(conversation)])
@@ -185,8 +187,7 @@ public actor MeshControl {
                 .sorted { $0.envelope.id.utf8.lexicographicallyPrecedes($1.envelope.id.utf8) }
             return .success(["frames": .array(frames.map { ControlLines.describe($0.envelope) })])
         case .messages(let conversation, let limit):
-            let messages = stores.messages.messages(in: conversation).suffix(limit)
-            return .success(["conv": .string(conversation), "messages": .array(messages.map { .object(ControlLines.fields(of: $0)) })])
+            return .success(["conv": .string(conversation), "messages": .array(messages(in: conversation, limit: limit))])
         case .group(let command):
             return await answer(command)
         case .stop:
@@ -200,6 +201,25 @@ public actor MeshControl {
         }
     }
 
+    /// The newest `limit` messages of `conversation` as lines, each with its ticks, and, for one carrying a photo,
+    /// whether the photo's bytes are here, so a run can tell a photo that arrived from one still owed.
+    private func messages(in conversation: String, limit: Int) -> [JSONValue] {
+        let messages = stores.messages.messages(in: conversation).suffix(limit)
+        let held = stores.blobs.held(among: Set(messages.compactMap(\.attachment?.hash)))
+        return messages.map { message in
+            var fields = ControlLines.fields(of: message)
+            if let hash = message.attachment?.hash {
+                fields["attachmentHeld"] = .bool(held.contains(hash))
+            }
+            return JSONValue.object(fields)
+        }
+    }
+
+    /// A sent message's reply: its id, whether it waits for a key, and the blob its photo is kept under.
+    private static func sent(_ record: MessageRecord) -> [String: JSONValue] {
+        ["id": .string(record.id), "pendingKey": .bool(record.pendingKey), "attachmentHash": .text(record.attachment?.hash.string)]
+    }
+
     private func answer(_ command: GroupCommand) async -> Result<[String: JSONValue], ControlError> {
         switch command {
         case .create(let members):
@@ -207,11 +227,12 @@ public actor MeshControl {
                 return .failure(.refused("a group takes one to seven others"))
             }
             return .success(ControlLines.fields(of: group))
-        case .send(let conversation, let text):
-            guard let record = await actions.sendGroupMessage(text, to: conversation) else {
-                return .failure(.refused("a blank message, or one to a group we are not in or nobody else is left in, is not sent"))
+        case .send(let conversation, let text, let photo):
+            guard let record = await actions.sendGroupMessage(text, to: conversation, photo: photo) else {
+                return .failure(
+                    .refused("a blank message, a photo past 8 MiB, or one to a group we are not in or nobody else is left in, is not sent"))
             }
-            return .success(["id": .string(record.id), "pendingKey": .bool(record.pendingKey)])
+            return .success(Self.sent(record))
         case .rename(let conversation, let name):
             guard let group = await actions.renameGroup(conversation, to: name) else {
                 return .failure(.refused("a blank name, or a group we are not in, is not renamed"))

@@ -13,6 +13,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID] [--expect-avatar] [--peer-avatar JPEG]
     scripts/interop.py iphone-group --device SERIAL [--udid UDID]
     scripts/interop.py iphone-peer [--order iphone-below|iphone-above] [--skip-offline] [--udid UDID]
+    scripts/interop.py iphone-photos --device SERIAL [--udid UDID]
     scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
@@ -29,7 +30,8 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
 bridge (ADR 2026-09.kwa8), and the phone's Requests screen for a pair that has never talked; `iphone-peer`
 runs the same items between the iPhone and the peer; `iphone-relay` runs MVP item 7's line through the iPhone, and
 `iphone-group` v1 groups along that line, the peer as the third member (`group` runs them with two peers and no
-iPhone, ADR 2026-09.n393); `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
+iPhone, ADR 2026-09.n393); `iphone-photos` sends photos both ways between the iPhone and the phone, in Nearby, a DM
+and a group (ADR 2026-10.6cas); `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
 `iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `iphone-reboot` is item 1's
 relaunch and reboot, with someone to close Knit and unlock the iPhone; `iphone-scan` is P8's scan-filter check, with
 someone to do the same; `iphone-seek` checks that a locked iPhone with no link finds a peer within its wake budget
@@ -69,6 +71,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import io
 import json
 import os
 import re
@@ -3833,6 +3836,122 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def iphone_photos(arguments: argparse.Namespace) -> int:
+    """Photos in chats both ways between the iPhone and an Android phone, in Nearby, a DM and a group (ADR 2026-10.6cas).
+    The iPhone sends through its bridge and the phone through SENDIMG, each a fresh picture, so no node holds it yet. The
+    phone's log shows the iPhone's photo come in whole from the iPhone, and the bridge's `messages` shows the phone's
+    photo held on the iPhone. A DM's or a group's photo travels sealed, and only its message's key opens it: the screens
+    show whether it opened. The two must already hold each other's keys."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid, arguments.host)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    try:
+        phone_id = phone.state()["self"]["nodeId"]
+        print(json.dumps({"run": "iphone-photos", "phone": phone_id, "iphone": ios.node_id, "nonce": nonce}))
+        run.step("link", lambda: _ios_linked(ios, phone, phone_id))
+        group = ios.command(cmd="group-create", members=[phone_id])["id"]
+        run.step("group-ids-agree", lambda: _agrees(group, phone.make_group([ios.node_id])))
+        for kind, on_ios, on_phone in (("room", "nearby", "nearby"), ("dm", phone_id, ios.node_id), ("group", group, group)):
+            _photos_both_ways(run, ios, phone, kind, (on_ios, on_phone), nonce)
+    finally:
+        ios.stop()
+    print(json.dumps({"summary": "iphone-photos", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _photos_both_ways(run: Run, ios: IPhone, phone: Phone, kind: str, threads: tuple[str, str], nonce: str) -> None:
+    """A photo from the iPhone to the phone, then one back, in the thread the two know as `threads`, the iPhone's id for
+    it first."""
+    on_ios, on_phone = threads
+    body = f"photo from iphone, {kind} {nonce}"
+    sent = _ios_photo(ios, kind, on_ios, body, _noise_jpeg(f"{nonce}-iphone-{kind}"))
+    run.step(f"{kind}-iphone-to-phone", lambda: poll(lambda: _has(phone.state(on_phone), body), 60) and {})
+    run.step(
+        f"{kind}-iphone-photo-on-phone",
+        lambda: poll(lambda: _phone_got_file(phone, sent["attachmentHash"], ios.node_id), 180),
+        hash=sent["attachmentHash"],
+    )
+    back = f"photo from phone, {kind} {nonce}"
+    reply = phone.bridge("SENDIMG", path=_stage_photo(phone, f"{nonce}-phone-{kind}"), text=back, conv=on_phone)
+    held = run.step(f"{kind}-phone-photo-on-iphone", lambda: poll(lambda: _ios_holds(ios, on_ios, back), 180), sent=reply)
+    shown = {sent["attachmentHash"]} | ({held["hash"]} if held else set())
+    run.step(f"{kind}-photos-show-on-iphone", lambda: _ios_shows(ios, on_ios, shown))
+    run.step(f"{kind}-phone-screen", lambda: _phone_screen(phone, on_phone, f"{nonce}-{kind}"))
+
+
+def _ios_shows(ios: IPhone, conversation: str, hashes: set[str]) -> dict:
+    """Whether each photo in `hashes` decodes on the iPhone as its thread draws it, a sealed one opened with its key
+    (the bridge's `photos`)."""
+    photos = {photo["hash"]: photo for photo in ios.command(cmd="photos", conv=conversation)["photos"]}
+    missing = sorted(hash_ for hash_ in hashes if not photos.get(hash_, {}).get("shown"))
+    if missing:
+        raise RuntimeError(f"the iPhone shows none of {missing}: {[photos.get(hash_) for hash_ in missing]}")
+    return {"shown": [{key: photos[hash_][key] for key in ("sealed", "width", "height")} for hash_ in sorted(hashes)]}
+
+
+def _phone_screen(phone: Phone, conversation: str, name: str) -> dict:
+    """The phone's screen on the thread, kept for a person to look at, since Android's bridge does not say whether a
+    photo opened."""
+    phone.wake()
+    # A swipe lock only: the lab's phones have no PIN, and a keyguard would hide the thread.
+    phone.shell("wm dismiss-keyguard")
+    phone.open_route(f"chat/{conversation}")
+    time.sleep(3)
+    path = ROOT / ".build" / "interop-photos" / f"{name}.png"
+    shot = subprocess.run(["adb", "-s", phone.serial, "exec-out", "screencap", "-p"], capture_output=True, check=True, timeout=60)
+    path.write_bytes(shot.stdout)
+    return {"screenshot": str(path.relative_to(ROOT))}
+
+
+def _agrees(ours: str, theirs: str) -> dict:
+    if ours != theirs:
+        raise RuntimeError(f"the iPhone's group is {ours} and the phone's {theirs}")
+    return {"group": ours}
+
+
+def _ios_photo(ios: IPhone, kind: str, conversation: str, body: str, jpeg: bytes) -> dict:
+    """Sends `jpeg` with `body` from the iPhone, as its composer would: to the room, a DM or a group."""
+    photo = base64.b64encode(jpeg).decode()
+    if kind == "room":
+        reply = ios.command(cmd="room", text=body, photo=photo)
+    elif kind == "dm":
+        reply = ios.command(cmd="dm", to=conversation, text=body, photo=photo)
+    else:
+        reply = ios.command(cmd="group-send", conv=conversation, text=body, photo=photo)
+    if not reply.get("attachmentHash") or reply.get("pendingKey"):
+        raise RuntimeError(f"the iPhone did not send its photo: {reply}")
+    return reply
+
+
+def _ios_holds(ios: IPhone, conversation: str, body: str) -> dict | None:
+    """The iPhone's message `body` once its photo's bytes are here."""
+    for message in ios.command(cmd="messages", conv=conversation, limit=50)["messages"]:
+        if message.get("body") == body and message.get("attachmentHeld"):
+            return {"hash": message["attachmentHash"], "mime": message.get("attachmentMime")}
+    return None
+
+
+def _noise_jpeg(seed: str) -> bytes:
+    """A small picture no node holds yet: noise, which no encoder shrinks to anything another run made."""
+    from PIL import Image  # noqa: PLC0415 - only the photo runs need it
+
+    out = io.BytesIO()
+    Image.effect_noise((320, 240), 64 + int(hashlib.sha256(seed.encode()).hexdigest()[:2], 16) % 32).convert("RGB").save(out, "JPEG", quality=70)
+    return out.getvalue()
+
+
+def _stage_photo(phone: Phone, seed: str) -> str:
+    """A fresh picture in the app's own storage, where SENDIMG can read it, as `_stage_image` stages the soak's."""
+    local = ROOT / ".build" / "interop-photos" / f"{seed}.jpg"
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_bytes(_noise_jpeg(seed))
+    subprocess.run(["adb", "-s", phone.serial, "push", str(local), "/data/local/tmp/knit-photo.jpg"], capture_output=True, check=True, timeout=60)
+    phone.shell(f"cat /data/local/tmp/knit-photo.jpg | run-as {PACKAGE} sh -c 'cat > files/knit-photo.jpg'")
+    return f"/data/data/{PACKAGE}/files/knit-photo.jpg"
+
+
 def iphone_soak(arguments: argparse.Namespace) -> int:
     """MVP item 11 on the iPhone: an hour of room traffic both ways between the iPhone and the Android phone, at
     `--per-minute` posts a minute in all, with Knit open on both. The iPhone refuses every other node, and lets them
@@ -4564,6 +4683,8 @@ def main() -> int:
     ios_peer.add_argument("--skip-offline", action="store_true", help="leave out MVP item 6, which stops the iPhone's mesh")
     ios_peer.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
     ios_peer.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
+    ios_photos = commands.add_parser("iphone-photos")
+    ios_photos.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak = commands.add_parser("iphone-soak")
     ios_soak.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak.add_argument("--peer", action="store_true", help="knit-peer on hci0 joins as a third author, linked to the iPhone alone")
@@ -4641,7 +4762,21 @@ def main() -> int:
         choices=["dialed", "accepted"],
         help="a link the phone dialed after reading the peer's payload (A3), or one it accepted from a peer it never sights",
     )
-    for sub in (ios, wake, reboot, rings, scan, seek, by_hand, ios_peer, ios_soak, ios_forgets, commands.choices["iphone-relay"], commands.choices["iphone-group"]):
+    for sub in (
+        ios,
+        wake,
+        reboot,
+        rings,
+        scan,
+        seek,
+        by_hand,
+        ios_peer,
+        ios_photos,
+        ios_soak,
+        ios_forgets,
+        commands.choices["iphone-relay"],
+        commands.choices["iphone-group"],
+    ):
         sub.add_argument("--udid", help="the iPhone's UDID, when more than one is on USB")
         sub.add_argument(
             "--host",
@@ -4655,8 +4790,14 @@ def main() -> int:
         parser.error("--far phone needs --device")
     if arguments.command == "android-reads" and arguments.links > 1 and arguments.order != "peer-above":
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
-    if arguments.command in ("iphone", "iphone-wake", "iphone-reboot", "bridge"):
-        return {"iphone": iphone, "iphone-wake": iphone_wake, "iphone-reboot": iphone_reboot, "bridge": bridge}[arguments.command](arguments)
+    if arguments.command in ("iphone", "iphone-wake", "iphone-reboot", "iphone-photos", "bridge"):
+        return {
+            "iphone": iphone,
+            "iphone-wake": iphone_wake,
+            "iphone-reboot": iphone_reboot,
+            "iphone-photos": iphone_photos,
+            "bridge": bridge,
+        }[arguments.command](arguments)
     if not PEER.exists():
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")
     if arguments.command == "iphone-rings":

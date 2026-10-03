@@ -188,6 +188,9 @@ import Testing
         #expect(try await rig.report(.sent(messageId: "m1")).first?["event"] as? String == "sent")
         #expect(try await rig.report(.radioChanged(.off)).first?["state"] as? String == "off")
         #expect(try await rig.report(.peerUpdated(fixtureNodeId(4))).isEmpty, "a peer never pinned has no profile to show")
+        let hash = BlobHash(of: Array("a photo".utf8))
+        let arrived = try #require(try await rig.report(.attachmentArrived(hash)).first)
+        #expect(arrived["event"] as? String == "attachment" && arrived["hash"] as? String == hash.string)
     }
 
     @Test func aGroupChangeNamesTheGroupAsHeld() async throws {
@@ -212,7 +215,7 @@ import Testing
 }
 
 /// A control surface over a real ``Mesh`` on a radio that goes nowhere.
-private struct ControlRig {
+struct ControlRig {
     let keys: IdentityKeys
     let stores = MeshStores.inMemory()
     let mesh: Mesh
@@ -278,15 +281,15 @@ private final class RecordingActions: ControlActions {
         record("stop")
     }
 
-    func postToRoom(_ text: String) -> MessageRecord? {
-        record("room \(text)")
+    func postToRoom(_ text: String, photo: OutgoingPhoto?) -> MessageRecord? {
+        record("room \(text)\(Self.describe(photo))")
         return refuses
             ? nil
             : MessageRecord(id: "room-\(text)", senderId: me, recipientId: nil, conversationId: Conversations.nearby, body: text, sentAt: 1)
     }
 
-    func sendDirectMessage(_ text: String, to recipient: NodeId) -> MessageRecord? {
-        record("dm \(recipient) \(text)")
+    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?) -> MessageRecord? {
+        record("dm \(recipient) \(text)\(Self.describe(photo))")
         return refuses
             ? nil
             : MessageRecord(id: "dm-\(text)", senderId: me, recipientId: recipient, conversationId: recipient.string, body: text, sentAt: 1)
@@ -309,8 +312,8 @@ private final class RecordingActions: ControlActions {
         return refuses ? nil : group(named: "")
     }
 
-    func sendGroupMessage(_ text: String, to groupId: String) -> MessageRecord? {
-        record("group-send \(groupId) \(text)")
+    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?) -> MessageRecord? {
+        record("group-send \(groupId) \(text)\(Self.describe(photo))")
         return refuses
             ? nil : MessageRecord(id: "group-\(text)", senderId: me, recipientId: nil, conversationId: groupId, body: text, sentAt: 1)
     }
@@ -331,6 +334,11 @@ private final class RecordingActions: ControlActions {
 
     private func record(_ call: String) {
         recorded.withLock { $0.append(call) }
+    }
+
+    /// A photo, as a call names it: nothing when there is none.
+    private static func describe(_ photo: OutgoingPhoto?) -> String {
+        photo.map { " +\($0.bytes.count) bytes \($0.mime)" } ?? ""
     }
 }
 

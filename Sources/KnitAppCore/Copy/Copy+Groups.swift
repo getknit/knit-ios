@@ -120,10 +120,10 @@ extension Copy {
                 "groups.encryption.body",
                 bundle: .main,
                 value: """
-                    Only the group's members can read its messages. Each one is sealed before it leaves your phone, so the phones that \
-                    carry it can't read it. The group's name and member list travel unencrypted, so those phones can see who's in it. \
-                    This version doesn't have forward secrecy yet: anyone who later gets a member's keys could read messages they \
-                    recorded earlier.
+                    Only the group's members can read its messages or see its photos. Messages and photos are sealed before they leave \
+                    your phone, so the phones that carry them can't open them. The group's name and member list travel unencrypted, so \
+                    those phones can see who's in it. This version doesn't have forward secrecy yet: anyone who later gets a member's \
+                    keys could open what they recorded earlier.
                     """,
                 comment: "Chat: what group encryption covers"
             )

@@ -177,7 +177,7 @@ import Testing
             Copy.Photo.zoom,
             Copy.Photo.unreadable,
             Copy.Photo.profilePhoto,
-        ]
+        ] + Self.attachmentStrings
     }
 
     private static var verifyStrings: [String] {
@@ -315,5 +315,34 @@ import Testing
             [DeliveryStatus.waitingForKey, .sent, .delivered].map(\.label) == [
                 Copy.Delivery.waitingForKey, Copy.Delivery.sent, Copy.Delivery.delivered,
             ])
+    }
+}
+
+extension CopyCatalogTests {
+    /// Photos in chats: the lines that name what a message carries, the thread's and the composer's words, and Save.
+    private static var attachmentStrings: [String] {
+        [
+            Copy.Attachments.photoPreview,
+            Copy.Attachments.gifPreview,
+            Copy.Attachments.voicePreview,
+            Copy.Attachments.filePreview("map.pdf"),
+            Copy.Attachments.linkPreview,
+            Copy.Attachments.photo,
+            Copy.Attachments.voiceMessage,
+            Copy.Attachments.file,
+            Copy.Attachments.photoWaiting,
+            Copy.Attachments.photoUnreadable,
+            Copy.Attachments.voiceUnsupported,
+            Copy.Attachments.fileUnsupported,
+            Copy.Attachments.viewPhoto,
+            Copy.Attachments.addPhoto,
+            Copy.Attachments.stagedPhoto,
+            Copy.Attachments.removePhoto,
+            Copy.Attachments.save,
+            Copy.Attachments.saved,
+            Copy.Attachments.saveFailed,
+            Copy.Attachments.saveDenied,
+            Copy.System.photoLibraryAddUsage,
+        ]
     }
 }

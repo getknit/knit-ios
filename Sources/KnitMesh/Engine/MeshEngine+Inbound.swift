@@ -139,7 +139,7 @@ extension MeshEngine {
                 drop(.cleartextDirect, envelope)
                 return
             }
-            deliverChat(envelope, body: chat.body, sender: sender, recipient: nil, conversation: conversation)
+            deliverChat(envelope, Self.delivered(chat), sender: sender, recipient: nil, conversation: conversation)
             return
         }
         // Custody re-serves the same ciphertext routinely; once the row exists, only the receipt is owed.
@@ -151,7 +151,7 @@ extension MeshEngine {
         guard let content = open(enc, envelope), content.ctl == nil else {
             return
         }
-        deliverChat(envelope, body: content.body, sender: sender, recipient: recipient, conversation: conversation)
+        deliverChat(envelope, Self.delivered(content), sender: sender, recipient: recipient, conversation: conversation)
     }
 
     /// Opens a v1 envelope addressed to us (`InboundPipeline.decrypt`). Versions 2 and 3 need the ratchet: they are
@@ -171,8 +171,10 @@ extension MeshEngine {
     }
 
     /// Stores a delivered message and acknowledges it (`InboundPipeline.deliverChat`). A re-served frame leaves the
-    /// row as it was and is not announced again, and the receipt goes out every time.
-    func deliverChat(_ envelope: RelayEnvelope, body: String, sender: NodeId, recipient: NodeId?, conversation: String) {
+    /// row as it was and is not announced again, and the receipt goes out every time. A photo the message carries is
+    /// fetched at once unless its bytes are already here, as they are when they were carried for someone else.
+    func deliverChat(_ envelope: RelayEnvelope, _ delivered: DeliveredChat, sender: NodeId, recipient: NodeId?, conversation: String) {
+        let attachment = delivered.attachment
         let isNew = !stores.messages.contains(envelope.id)
         let record = MessageRecord(
             id: envelope.id,
@@ -180,15 +182,56 @@ extension MeshEngine {
             recipientId: recipient,
             conversationId: conversation,
             // Our own limit bounds what we send, not what a peer floods.
-            body: TextLimits.truncated(body, toUTF16: TextLimits.message),
+            body: TextLimits.truncated(delivered.body, toUTF16: TextLimits.message),
             sentAt: clampFuture(envelope.sentAt),
-            arrivedAt: sender == nodeId ? nil : clock.wallMilliseconds()
+            arrivedAt: sender == nodeId ? nil : clock.wallMilliseconds(),
+            attachment: attachment
         )
         stores.messages.insertIfAbsent(record)
         if isNew, sender != nodeId {
             events.append(.received(record, isRequest: !isAccepted(conversation)))
         }
+        if let attachment {
+            wantBlob(attachment.hash)
+        }
         acknowledge(envelope, sender: sender)
+    }
+
+    /// The longest text an attachment's type, key or file name keeps: a peer's frame bounds nothing on its own.
+    static let attachmentTextLimit = 256
+
+    /// What a room post says and carries, from its cleartext.
+    static func delivered(_ chat: ChatContent) -> DeliveredChat {
+        DeliveredChat(body: chat.body, attachment: attachment(of: chat))
+    }
+
+    /// What a sealed message says and carries, from its opened content.
+    static func delivered(_ content: MessageContent) -> DeliveredChat {
+        DeliveredChat(body: content.body, attachment: attachment(of: content))
+    }
+
+    /// What a room post carries: its photo's hash and type, from the cleartext. A hash that is not 64 lowercase hex
+    /// digits names no blob, so the post carries nothing.
+    static func attachment(of chat: ChatContent) -> MessageAttachment? {
+        chat.attachmentHash.flatMap { BlobHash($0) }.map { MessageAttachment(hash: $0, mime: clipped(chat.attachmentMime)) }
+    }
+
+    /// What a sealed message carries, from its opened content: the ciphertext's hash, the type, the key that opens it,
+    /// and a file's name and size. The cleartext beside the envelope repeats only the hash, and the sealed one wins.
+    static func attachment(of content: MessageContent) -> MessageAttachment? {
+        content.attachmentHash.flatMap { BlobHash($0) }.map { hash in
+            MessageAttachment(
+                hash: hash,
+                mime: clipped(content.attachmentMime),
+                key: clipped(content.attachmentKey),
+                name: clipped(content.attachmentName),
+                size: content.attachmentSize
+            )
+        }
+    }
+
+    private static func clipped(_ text: String?) -> String? {
+        text.map { TextLimits.truncated($0, toUTF16: attachmentTextLimit) }
     }
 
     /// Whether a conversation is accepted rather than a message request (`InboundPipeline.isAccepted`). A group is
@@ -240,4 +283,12 @@ extension MeshEngine {
         }
         sendKeyRequests(for: answer.ask, to: neighborIds)
     }
+}
+
+/// What a message delivered to us says and carries.
+internal struct DeliveredChat {
+    /// Its text.
+    var body: String
+    /// Its photo or file, or `nil`.
+    var attachment: MessageAttachment?
 }

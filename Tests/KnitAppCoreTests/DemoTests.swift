@@ -186,14 +186,14 @@ import Testing
         let shown = [Neighbor(nodeId: sam.nodeId)]
         #expect(mesh.nodeId == fake.nodeId)
         await mesh.start()
-        #expect(await mesh.postToRoom("hi") != nil)
-        #expect(await mesh.sendDirectMessage("hey", to: sam.nodeId) != nil)
+        #expect(await mesh.postToRoom("hi", photo: nil) != nil)
+        #expect(await mesh.sendDirectMessage("hey", to: sam.nodeId, photo: nil) != nil)
         await mesh.accept("c1")
         await mesh.updateProfile(name: "Maya", status: "", openToChat: true)
         await mesh.setVerified(sam.nodeId, true)
         let group = await mesh.createGroup(with: [sam.nodeId])
         let id = group?.id ?? ""
-        #expect(await mesh.sendGroupMessage("all", to: id) != nil)
+        #expect(await mesh.sendGroupMessage("all", to: id, photo: nil) != nil)
         #expect(await mesh.renameGroup(id, to: "Pair")?.name == "Pair")
         #expect(await mesh.leaveGroup(id))
         let expected = FakeMesh.Calls(

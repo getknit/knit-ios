@@ -93,9 +93,10 @@ public enum ChatListAssembler {
     }
 
     /// "Speaker: body" on one line (`speakerLabel` in knit-next). An incoming DM names nobody, since the row's title
-    /// already does; the room and a group name the speaker, and our own messages say "You".
+    /// already does; the room and a group name the speaker, and our own messages say "You". A message with no words
+    /// says what it carries (`messagePreview`).
     static func preview(_ message: MessageRecord, namingSpeaker: Bool, directory: Directory, me: NodeId) -> String {
-        let body = TextLimits.normalizeSingleLine(message.body)
+        let body = TextLimits.normalizeSingleLine(AttachmentKind.line(of: message))
         if message.senderId == me {
             return Copy.ChatList.preview(speaker: Copy.Common.you, body: body)
         }

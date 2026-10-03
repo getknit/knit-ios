@@ -7,8 +7,11 @@ public import KnitWire
 /// A thread reads in `sentAt` order, ties in the order rows were first stored: the table's `seq`, which a save
 /// over an existing row keeps.
 public final class SQLMessageStore: MessageStore {
-    private static let columns = "id, senderId, recipientId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind"
-    private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    private static let columns = """
+        id, senderId, recipientId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind, \
+        attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize
+        """
+    private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
     private let database: KnitDatabase
 
@@ -49,7 +52,9 @@ public final class SQLMessageStore: MessageStore {
                         senderId = excluded.senderId, recipientId = excluded.recipientId,
                         conversationId = excluded.conversationId, body = excluded.body, sentAt = excluded.sentAt,
                         arrivedAt = excluded.arrivedAt, delivered = excluded.delivered, pendingKey = excluded.pendingKey,
-                        kind = excluded.kind
+                        kind = excluded.kind, attachmentHash = excluded.attachmentHash, attachmentMime = excluded.attachmentMime,
+                        attachmentKey = excluded.attachmentKey, attachmentName = excluded.attachmentName,
+                        attachmentSize = excluded.attachmentSize
                     """,
                 arguments: Self.arguments(message)
             )
@@ -148,12 +153,23 @@ public final class SQLMessageStore: MessageStore {
         }
     }
 
+    public func attachmentHashes() -> Set<BlobHash> {
+        database.read(or: []) { db in
+            Set(
+                try Row.fetchAll(db, sql: "SELECT DISTINCT attachmentHash FROM messages WHERE attachmentHash IS NOT NULL")
+                    .map { try $0.blobHash("attachmentHash") }
+            )
+        }
+    }
+
     /// The values for ``insert``, in ``columns`` order.
     private static func arguments(_ message: MessageRecord) -> StatementArguments {
-        [
+        let attachment = message.attachment
+        return [
             StoredText.bytes(message.id), StoredText.bytes(message.senderId.string), StoredText.bytes(message.recipientId?.string),
             StoredText.bytes(message.conversationId), StoredText.bytes(message.body), message.sentAt, message.arrivedAt,
-            message.delivered, message.pendingKey, message.kind.rawValue,
+            message.delivered, message.pendingKey, message.kind.rawValue, StoredText.bytes(attachment?.hash.string),
+            StoredText.bytes(attachment?.mime), StoredText.bytes(attachment?.key), StoredText.bytes(attachment?.name), attachment?.size,
         ]
     }
 
@@ -169,7 +185,21 @@ public final class SQLMessageStore: MessageStore {
             arrivedAt: try row.decode(Int64?.self, forColumn: "arrivedAt"),
             delivered: try row.decode(Bool.self, forColumn: "delivered"),
             pendingKey: try row.decode(Bool.self, forColumn: "pendingKey"),
-            kind: MessageKind(rawValue: try row.decode(Int.self, forColumn: "kind"))
+            kind: MessageKind(rawValue: try row.decode(Int.self, forColumn: "kind")),
+            attachment: try attachment(row)
         )
+    }
+
+    /// What the row carries, or `nil` for nothing.
+    private static func attachment(_ row: Row) throws -> MessageAttachment? {
+        try row.optionalBlobHash("attachmentHash").map { hash in
+            MessageAttachment(
+                hash: hash,
+                mime: try row.optionalText("attachmentMime"),
+                key: try row.optionalText("attachmentKey"),
+                name: try row.optionalText("attachmentName"),
+                size: try row.decode(Int64?.self, forColumn: "attachmentSize")
+            )
+        }
     }
 }

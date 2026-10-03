@@ -111,6 +111,26 @@ keys   = one wk per member of the effective roster with a pinned bundle, the sen
 - **The name and the roster are not sealed.** Relays read both, and a group message's ticks travel in the
   clear, as a room post's do.
 
+## A photo in a DM or a group
+
+A photo is sealed on its own, and the message carries the key (`AttachmentCrypto.kt`, ADR 2026-10.6cas).
+
+```text
+K  = 32 random bytes;  iv = 12 random bytes            a fresh pair for every photo sent
+blob = iv ‖ AES-256-GCM(key K, nonce iv, aad empty, plaintext photo) ‖ tag16
+hash = lowercase hex SHA-256(blob)                       the name the blob is stored, asked for and served by
+MessageContent { body, attachmentHash: hash, attachmentMime, attachmentKey: base64(K) }   sealed as above
+ChatContent { enc, attachmentHash: hash }                the hash alone in the clear, for a carrier to pull
+```
+
+- **Opening** takes the key from the opened message: split off the 12-byte nonce and the 16-byte tag, and
+  open. A wrong key, a bad tag or a blob shorter than 28 bytes opens nothing, as Android answers null.
+- **The same photo sent twice** is two unrelated blobs, since each send draws its own key.
+- **The key and the nonce come from the system's generator,** never the injected one, as a message's do.
+- **A room post's photo is not sealed:** its blob is the photo, and its hash is the photo's.
+- **The goldens:** `AttachmentCryptoTests` pins a blob and its hash at a fixed key and nonce, computed with
+  the port itself and checked against Python's `cryptography`, until A7 adds one to `keyed-v1.json`.
+
 ## Safety number
 
 ```text
@@ -166,6 +186,7 @@ Swift must count `utf16`, not `Character`s.
 | `NodeId.derive` | `NodeId(deriving:)`, an extension on the `KnitWire` type |
 | `IdentityKeyStore` | `IdentityKeys` plus a `SecretStore` (a file for the peer; the Keychain in P6) |
 | `MessageCrypto` | `MessageCrypto.header`, `.seal`, `.open`; `IdentityKeys.signature(for:)` |
+| `AttachmentCrypto` | `AttachmentCrypto.seal(_:)`, `.open(_:key:)`, and `BlobHash(of:)` for the blob's name |
 | `Conversations.groupIdFor` | `GroupId.derive(_:)` |
 | `SafetyNumber`, `Alias`, `DeviceTag` | the same names |
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |

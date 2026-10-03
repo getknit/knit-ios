@@ -37,6 +37,33 @@ public struct MessageKind: RawRepresentable, Hashable, Sendable, ExpressibleByIn
     public var isNotice: Bool { self != .message }
 }
 
+/// What a message carries besides its text (`MessageEntity.attachment*` in knit-next): a photo, or a file or voice
+/// note this build shows only as a label.
+///
+/// A room post's photo is public: its blob is the photo itself. A DM's or a group message's is sealed
+/// (`AttachmentCrypto`): its blob is the ciphertext, and ``key`` opens it, which only the sealed message carried.
+public struct MessageAttachment: Sendable, Equatable {
+    /// The blob's hash: of the photo in the room, of its ciphertext in a DM or a group.
+    public var hash: BlobHash
+    /// The type the sender gave it, `image/jpeg` for most photos; `nil` when it gave none.
+    public var mime: String?
+    /// The base64 key that opens a sealed blob, or `nil` for a room post's.
+    public var key: String?
+    /// A file's name, which only a file carries.
+    public var name: String?
+    /// A file's size in bytes, before sealing, which only a file carries.
+    public var size: Int64?
+
+    /// An attachment.
+    public init(hash: BlobHash, mime: String? = nil, key: String? = nil, name: String? = nil, size: Int64? = nil) {
+        self.hash = hash
+        self.mime = mime
+        self.key = key
+        self.name = name
+        self.size = size
+    }
+}
+
 /// A message in a thread (`MessageEntity` in knit-next, the fields this port reads): ours, one delivered to us, or
 /// a status line about an event (``kind``).
 public struct MessageRecord: Sendable, Equatable {
@@ -63,6 +90,8 @@ public struct MessageRecord: Sendable, Equatable {
     public var pendingKey: Bool
     /// A message, or a status line. For a status line, ``senderId`` is whom the event is about.
     public var kind: MessageKind
+    /// The photo or file it carries, or `nil`.
+    public var attachment: MessageAttachment?
 
     /// Makes a record.
     public init(
@@ -75,7 +104,8 @@ public struct MessageRecord: Sendable, Equatable {
         arrivedAt: Int64? = nil,
         delivered: Bool = false,
         pendingKey: Bool = false,
-        kind: MessageKind = .message
+        kind: MessageKind = .message,
+        attachment: MessageAttachment? = nil
     ) {
         self.id = id
         self.senderId = senderId
@@ -87,6 +117,7 @@ public struct MessageRecord: Sendable, Equatable {
         self.delivered = delivered
         self.pendingKey = pendingKey
         self.kind = kind
+        self.attachment = attachment
     }
 }
 
@@ -137,6 +168,10 @@ public protocol MessageStore: AnyObject, Sendable {
 
     /// Removes every row of `conversationId`, status lines included: what leaving a group does to its thread.
     func deleteMessages(in conversationId: String)
+
+    /// The blobs the messages carry: what keeps a photo from being swept, and what is fetched while its bytes are
+    /// missing (`MessageDao.attachmentHashes`).
+    func attachmentHashes() -> Set<BlobHash>
 }
 
 /// A ``MessageStore`` in memory, keyed by the ids' bytes (``ExactKey``) and safe to share across threads.
@@ -270,5 +305,9 @@ public final class MemoryMessageStore: MessageStore {
         state.withLock { state in
             state.rows = state.rows.filter { ExactKey($0.value.record.conversationId) != thread }
         }
+    }
+
+    public func attachmentHashes() -> Set<BlobHash> {
+        state.withLock { Set($0.rows.values.compactMap(\.record.attachment?.hash)) }
     }
 }

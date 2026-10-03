@@ -126,7 +126,9 @@
         private func destination(_ route: Route) -> some View {
             switch route {
             case .chat(let conversationId):
-                ChatView(conversationId: conversationId, session: environment.session)
+                ChatView(
+                    conversationId: conversationId, session: environment.session, codec: environment.codec, demoPhoto: environment.demoPhoto
+                )
             case .requests:
                 RequestsView(session: environment.session)
             case .groupInfo(let groupId):
