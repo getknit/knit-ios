@@ -69,6 +69,8 @@ targets:
         GENERATE_INFOPLIST_FILE: true
         PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.uitests
         TARGETED_DEVICE_FAMILY: "1"
+        # No App Intents here: the step that extracts their metadata only warns that it found none.
+        LM_SKIP_METADATA_EXTRACTION: true
   # The iPhone's device tests (`scripts/check.sh devicetest`): Knit launched live, on the real radio and permission,
   # with the Settings app and SpringBoard driven beside it. Only the KnitDevice scheme runs them, never the Simulator.
   KnitDeviceTests:
@@ -86,6 +88,7 @@ targets:
         GENERATE_INFOPLIST_FILE: true
         PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.devicetests
         TARGETED_DEVICE_FAMILY: "1"
+        LM_SKIP_METADATA_EXTRACTION: true
         # Its runner, app.getknit.knit.devicetests.xctrunner, installs on the phone, so it signs as the app does and
         # -allowProvisioningUpdates makes its profile.
         CODE_SIGN_STYLE: Automatic

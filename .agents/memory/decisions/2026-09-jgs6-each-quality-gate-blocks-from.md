@@ -31,6 +31,14 @@ The advisory exceptions each have a written reason:
 The Claude Stop hook runs only the no-build linters, because knit-next dropped its build and test hooks
 once each turn cost minutes. Builds and tests run in `pre-push` and CI instead.
 
+**Amended 2026-10-03:** `-warnings-as-errors` reached every Xcode build of the app, yet two warnings in
+`PhotoPickerButton.swift` built anyway, in every configuration. iOS 27 declares `PhotosPicker`'s label closure
+`@Sendable` on an initializer marked `@preconcurrency`, and the compiler does not promote a warning raised against
+such an API. `check.sh build`, `xcode` and `release` now keep the build's output and fail on any compiler warning in
+this repository's files (`no_warnings`), leaving warnings in checked-out dependencies to their owners. Fresh builds of
+every configuration, Debug and Release for the iPhone and the Simulator, the device tests, and SwiftPM on Linux and
+macOS, then had none.
+
 **Consequences / limits:** a new toolchain's warnings stop the build. `KNIT_WARNINGS_AS_ERRORS=0` gets past them
 locally, and CI never sets it. Disabling a lint rule means a line with its reason in `.swiftlint.yml`. The
 guard is `.gitlab-ci.yml` itself: it carries no `allow_failure` beyond the named advisories, and every job

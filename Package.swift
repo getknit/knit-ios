@@ -28,6 +28,15 @@ let pure: [SwiftSetting] = strict + [.strictMemorySafety()]
 
 let crypto: Target.Dependency = .product(name: "Crypto", package: "swift-crypto")
 let grdb: Target.Dependency = .product(name: "GRDB", package: "GRDB.swift")
+// libdbus through pkg-config, for the BlueZ radio: Linux only, where every `import CDBus` sits behind `#if os(Linux)`.
+// Declared on a Mac too, the system library cost every SwiftPM build there two pkg-config warnings.
+#if os(Linux)
+    let dbusLibrary: [Target] = [.systemLibrary(name: "CDBus", pkgConfig: "dbus-1", providers: [.apt(["libdbus-1-dev"])])]
+    let dbus: [Target.Dependency] = ["CDBus"]
+#else
+    let dbusLibrary: [Target] = []
+    let dbus: [Target.Dependency] = []
+#endif
 // knit-peer's Info.plist, linked into its __TEXT segment on a Mac for the Bluetooth usage string.
 let peerInfoPlist = [
     "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", "Sources/knit-peer/Info.plist",
@@ -75,19 +84,8 @@ let package = Package(
         ),
 
         // The headless peer used for interop runs, on BlueZ under Linux and CoreBluetooth on a Mac, and its Linux radio.
-        .systemLibrary(name: "CDBus", pkgConfig: "dbus-1", providers: [.apt(["libdbus-1-dev"])]),
         .target(name: "CBluetoothShim"),
-        .target(
-            name: "KnitBlueZ",
-            dependencies: [
-                "KnitSync",
-                "KnitMesh",
-                "KnitWire",
-                "CBluetoothShim",
-                .target(name: "CDBus", condition: .when(platforms: [.linux])),
-            ],
-            swiftSettings: strict
-        ),
+        .target(name: "KnitBlueZ", dependencies: ["KnitSync", "KnitMesh", "KnitWire", "CBluetoothShim"] + dbus, swiftSettings: strict),
         // The JSON-lines control surface, platform-free: what `knit-peer` answers on standard input, and a debug build
         // of the app over its bridge, with the bridge's Wi-Fi pins.
         .target(name: "KnitControl", dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
@@ -162,15 +160,12 @@ let package = Package(
         // Runs the BlueZ radio against a fake BlueZ on a peer-to-peer bus, and Unix sockets in place of L2CAP.
         .testTarget(
             name: "KnitBlueZTests",
-            dependencies: [
-                "KnitSync",
-                "KnitBlueZ", "KnitMesh", "KnitWire", "KnitTestSupport", .target(name: "CDBus", condition: .when(platforms: [.linux])),
-            ],
+            dependencies: ["KnitSync", "KnitBlueZ", "KnitMesh", "KnitWire", "KnitTestSupport"] + dbus,
             swiftSettings: strict
         ),
         // KnitBLE's stream code over bound stream pairs, on the Mac; an empty target elsewhere, like KnitBLE itself.
         .testTarget(name: "KnitBLETests", dependencies: ["KnitSync", "KnitBLE", "KnitMesh"], swiftSettings: strict),
         .testTarget(name: "RepoConventionTests", dependencies: [crypto], swiftSettings: strict),
-    ]
+    ] + dbusLibrary
 )
 // swiftlint:enable explicit_top_level_acl

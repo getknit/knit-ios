@@ -48,7 +48,23 @@ gate_lint() {
 
 gate_build() {
 	step "swift build (warnings are errors)"
-	swift build "${jobs[@]}" --build-tests --only-use-versions-from-resolved-file
+	mkdir -p .build
+	swift build "${jobs[@]}" --build-tests --only-use-versions-from-resolved-file 2>&1 | tee .build/build.log
+	no_warnings .build/build.log
+}
+
+# Fails when the build that logged $1 warned in this repository's own code. -warnings-as-errors cannot promote a warning
+# about a call into an API marked @preconcurrency: PhotosPicker's @Sendable label warned in every Xcode build and built
+# anyway, until 2026-10-03 (ADR 2026-09.jgs6). Warnings from the packages we depend on, checked out under a .build
+# directory, are theirs to fix.
+no_warnings() {
+	local found
+	found=$(grep -E '^/[^ ]+:[0-9]+:[0-9]+: warning:' "$1" | grep -v -E '/\.build[^/]*/' | sort -u) || true
+	if [ -n "$found" ]; then
+		printf '%s\n' "$found" >&2
+		echo "the build warned in this repository's code: fix the cause" >&2
+		return 1
+	fi
 }
 
 gate_test() {
@@ -242,15 +258,18 @@ PY
 gate_xcode() {
 	step "xcodebuild App/Knit.xcodeproj (iOS and Simulator, unsigned)"
 	xcode_project xcode
-	local destination
+	local destination log=.build-xcode/xcode.log
+	mkdir -p .build-xcode
+	: >"$log"
 	for destination in 'generic/platform=iOS' 'generic/platform=iOS Simulator'; do
 		xcodebuild "${xcode_build[@]}" -scheme Knit -destination "$destination" CODE_SIGNING_ALLOWED=NO build |
-			"${xcode_pretty[@]}"
+			tee -a "$log" | "${xcode_pretty[@]}"
 	done
 	check_xcode_app
 	# The device tests compile here too, unsigned, so a change that breaks them fails in CI rather than at the phone.
 	xcodebuild "${xcode_build[@]}" -scheme KnitDevice -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO \
-		build-for-testing | "${xcode_pretty[@]}"
+		build-for-testing | tee -a "$log" | "${xcode_pretty[@]}"
+	no_warnings "$log"
 }
 
 # The Release build for the iPhone, unsigned, held to what a store build must hold (ADR 2026-10.8cy5). It needs no
@@ -259,8 +278,11 @@ gate_xcode() {
 gate_release() {
 	step "xcodebuild App/Knit.xcodeproj (iPhone, Release, unsigned)"
 	xcode_project release
+	local log=.build-xcode/release.log
+	mkdir -p .build-xcode
 	xcodebuild "${xcode_release[@]}" -scheme Knit -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build |
-		"${xcode_pretty[@]}"
+		tee "$log" | "${xcode_pretty[@]}"
+	no_warnings "$log"
 	check_release_app "$xcode_release_app"
 }
 
