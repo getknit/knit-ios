@@ -123,7 +123,8 @@ build:ios:xcode:
     expire_in: 1 week
 
 build:ios:signed:
-  # Signs with the maintainer's free team in the Mac's desktop session, and renews its 7-day profile as it goes.
+  # Signs with the maintainer's team in the Mac's desktop session. It renews the profile only when CI variables name
+  # an App Store Connect API key (KNIT_ASC_KEY_ID, KNIT_ASC_ISSUER_ID); otherwise it uses the one the Mac has cached.
   # Only this project's pipelines sign: the runner takes every project's `macos` jobs, and a fork's would get the key.
   extends: .mac
   stage: build

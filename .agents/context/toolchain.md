@@ -29,8 +29,10 @@ exact interval, then update this file in the same change.
   delegates, is dropped without a warning; the first install on the iPhone stopped at the Bluetooth grant for
   that reason. The `Knit` target links with `-ObjC`, and `scripts/check.sh xcode` checks the app for the
   delegate methods.
-- **Free provisioning:** an install lasts 7 days, and the phone trusts the developer once under VPN & Device
-  Management. An install waits at Verifying while Knit is open on the phone, until someone swipes it away.
+- **Free provisioning:** on a free Personal Team an install lasts 7 days, and the phone trusts the developer once
+  under VPN & Device Management. The maintainer's team has been a paid one since 2026-10-03, and its development
+  profiles last a year ("Signing on the Mac" below). An install waits at Verifying while Knit is open on the
+  phone, until someone swipes it away.
 
 ## Linters and analyzers
 
@@ -149,8 +151,9 @@ logs in to the desktop by itself, because the Simulator and signing need a deskt
     file and fails if the pins drift.
   - **The debug dylib:** a Debug build keeps the app's code in `Knit.debug.dylib`, where the gate looks for
     KnitBLE's delegate methods.
-- **Signing on the Mac:** Xcode is signed in to a free Personal Team, and its first run on the iPhone
-  (2026-09-27) made an Apple Development certificate and a profile for `app.getknit.knit.dev`. Set up once at
+- **Signing on the Mac:** Xcode is signed in to the maintainer's team, a free Personal Team until it joined the
+  Apple Developer Program on 2026-10-03 under the same team id. Its first run on the iPhone (2026-09-27) made an
+  Apple Development certificate and a profile for `app.getknit.knit.dev`. Set up once at
   the desk: Xcode, Settings, Accounts, the Apple ID; the iPhone plugged in and trusted, then set to "Connect via
   network" in Devices so it can go back to its usual machine's USB. `App/Local.xcconfig` (git ignores it) holds
   `DEVELOPMENT_TEAM = <team id>`.
@@ -158,21 +161,27 @@ logs in to the desktop by itself, because the Simulator and signing need a deskt
     `errSecInternalComponent`, even after "Always Allow" on the key and under `sudo launchctl asuser`: the
     login Keychain stays locked to an ssh session. `scripts/mac-desktop.sh` runs a command as a one-shot
     launchd job in `gui/501`, where the Keychain is open, and `check.sh device` builds the signed app through
-    it. `-allowProvisioningUpdates` renews the 7-day profile there too: with the cached one moved aside, it
+    it. `-allowProvisioningUpdates` renews the profile there too: with the cached one moved aside, it
     fetched a new one from Apple (2026-09-28). CI's `build:ios:signed` takes the same path, with the team in
     `KNIT_DEVELOPMENT_TEAM`.
   - **The command line lost the account (2026-09-28, late).** `xcodebuild` reported "No Accounts" over ssh and in
     the desktop session alike, while Xcode's window listed the account with the Personal Team, and Xcode's
     `DVTDeveloperAccountManagerAppleIDLists` preference was empty. It signs with profiles it already has but
-    makes none. A new App ID's profile, or one that expired, comes from Xcode's window: open the mirror's
-    `App/Knit.xcodeproj`, pick the scheme and the iPhone, and build (Product → Build For → Testing for the device
-    tests).
-  - **The `.dev` id keeps `app.getknit.knit` unclaimed.** Apple gives a bundle id to the first team that
-    registers it, and the free team registers every id it signs, so it signs only the `.dev` one.
+    makes none.
+  - **An App Store Connect API key gets past it.** `check.sh device` and `devicetest` hand `xcodebuild` the key
+    that `KNIT_ASC_KEY_ID` and `KNIT_ASC_ISSUER_ID` name, read from the environment or else `App/Local.xcconfig`,
+    with its `.p8` at `~/.appstoreconnect/private_keys/AuthKey_<key id>.p8` or `KNIT_ASC_KEY_PATH`. With the
+    cached `.dev` profile moved aside, the key fetched a new one from Apple (2026-10-03). Without a key, a new App
+    ID's profile, or one that expired, comes from Xcode's window: open the mirror's `App/Knit.xcodeproj`, pick the
+    scheme and the iPhone, and build (Product → Build For → Testing for the device tests).
+  - **`app.getknit.knit` belongs to the App Store build.** It was registered to the team on 2026-10-03, through the
+    App Store Connect API. Development builds still sign only the `.dev` id, so a development build and a
+    TestFlight build are two apps, each with a Keychain identity of its own.
   - **One Knit per phone.** Two installs would both advertise the GATT payload and scan, and a peer would see
     two nodes on one iPhone, as with Android, which has no debug package for that reason.
-  - **Free provisioning** limits a team to three installed apps, each for 7 days. The iPhone holds two: Knit and
-    the device tests' runner, `app.getknit.knit.devicetests.xctrunner` (ADR 2026-09.63em).
+  - **The `.dev` profile lasts a year** from 2026-10-03, the first under the paid membership. The device tests'
+    profiles are still the free team's 7-day ones, which expire on 2026-10-05 and 2026-10-06; the next
+    `check.sh devicetest` renews them with the key. `check.sh device` prints the profile's expiry.
   - **The device tests need the phone ready:** Settings → Developer → Enable UI Automation on, the phone unlocked,
     and Auto-Lock off for the run. With a passcode set, the first run waits on the phone for the passcode before
     iOS enables automation mode, and times out if nobody enters it.

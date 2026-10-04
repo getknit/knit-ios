@@ -244,17 +244,19 @@ simulator_named() {
 
 # The signed iPhone build (ADR 2026-09.zawh). Signing needs the login Keychain, which only the desktop session has
 # unlocked, so xcodebuild runs there through scripts/mac-desktop.sh, from ssh and CI alike. -allowProvisioningUpdates
-# lets it renew the free team's 7-day profile. The team comes from App/Local.xcconfig or $KNIT_DEVELOPMENT_TEAM.
+# lets it renew the team's profile. The team comes from App/Local.xcconfig or $KNIT_DEVELOPMENT_TEAM, and the App
+# Store Connect API key that renews it without Xcode's account from signing_key.
 gate_device() {
 	step "xcodebuild App/Knit.xcodeproj (iPhone, signed in the desktop session)"
 	xcode_project device
-	local team
+	local team key
 	signing_team
+	signing_key
 	# An incremental build that fetches a new profile copies it into the app without signing again, which leaves a
 	# broken seal (2026-09-28). The objects stay cached, so linking, copying and signing a fresh bundle is cheap.
 	rm -rf "$xcode_app"
 	scripts/mac-desktop.sh xcodebuild "${xcode_build[@]}" -scheme Knit -destination 'generic/platform=iOS' \
-		-allowProvisioningUpdates "${team[@]}" build | "${xcode_pretty[@]}"
+		-allowProvisioningUpdates "${team[@]}" "${key[@]}" build | "${xcode_pretty[@]}"
 	check_xcode_app
 	codesign --verify --strict --deep "$xcode_app"
 	# The profile's end date, so a renewal that stopped working shows here days before installs fail.
@@ -281,17 +283,50 @@ signing_team() {
 	fi
 }
 
+# The App Store Connect API key, into the caller's `key`: xcodebuild's flags for $KNIT_ASC_KEY_ID and
+# $KNIT_ASC_ISSUER_ID, or for the same names in App/Local.xcconfig. With them, -allowProvisioningUpdates makes and
+# renews profiles without an Xcode account, which the command line lost on 2026-09-28 (ADR 2026-09.zawh). The .p8 is
+# $KNIT_ASC_KEY_PATH, or else ~/.appstoreconnect/private_keys/AuthKey_<key id>.p8. With neither name set, the flags
+# stay empty and xcodebuild falls back to Xcode's account.
+signing_key() {
+	key=()
+	local id=${KNIT_ASC_KEY_ID:-} issuer=${KNIT_ASC_ISSUER_ID:-} path
+	[ -n "$id" ] || id=$(local_setting KNIT_ASC_KEY_ID)
+	[ -n "$issuer" ] || issuer=$(local_setting KNIT_ASC_ISSUER_ID)
+	if [ -z "$id$issuer" ]; then
+		echo "no App Store Connect API key: only Xcode's account can make or renew a profile" >&2
+		return 0
+	fi
+	if [ -z "$id" ] || [ -z "$issuer" ]; then
+		echo "an App Store Connect API key needs KNIT_ASC_KEY_ID and KNIT_ASC_ISSUER_ID both" >&2
+		return 1
+	fi
+	path=${KNIT_ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_$id.p8}
+	if [ ! -r "$path" ]; then
+		echo "no App Store Connect API key at $path" >&2
+		return 1
+	fi
+	key=(-authenticationKeyPath "$path" -authenticationKeyID "$id" -authenticationKeyIssuerID "$issuer")
+}
+
+# The value App/Local.xcconfig gives the setting $1, or nothing.
+local_setting() {
+	[ -f App/Local.xcconfig ] || return 0
+	sed -n "s/^$1 *= *\([^ ]*\) *\$/\1/p" App/Local.xcconfig | tail -n 1
+}
+
 # The iPhone's device tests (KnitDeviceTests): Knit launched live on the phone, on the real radio and permission, with
 # the Settings app and SpringBoard driven beside it. Driving the phone needs the maintainer's go-ahead every session
 # (.agents/rules/devices.md), so no CI job runs this. The phone is $KNIT_DEVICE, or else the one iPhone the Mac sees
 # connected. It stays unlocked for the run, with Auto-Lock off and Settings > Developer > Enable UI Automation on.
 # $KNIT_DEVICE_TESTS narrows the run, as in KnitDeviceTests/RadioTests/testBluetoothOffAndOn. Signing, and the
-# runner's profile, come from the desktop session, as gate_device's do.
+# runner's profile, come from the desktop session and the API key, as gate_device's do.
 gate_devicetest() {
 	step "xcodebuild test on the iPhone (KnitDeviceTests, signed in the desktop session)"
 	xcode_project devicetest
-	local team
+	local team key
 	signing_team
+	signing_key
 	local udid=${KNIT_DEVICE:-}
 	if [ -z "$udid" ]; then
 		udid=$(connected_iphone)
@@ -304,7 +339,8 @@ gate_devicetest() {
 	# A fresh bundle for the same broken-seal reason as gate_device's.
 	rm -rf "$xcode_app" "$results"
 	scripts/mac-desktop.sh xcodebuild "${xcode_build[@]}" -scheme KnitDevice -destination "platform=iOS,id=$udid" \
-		-allowProvisioningUpdates "${team[@]}" "${only[@]}" -resultBundlePath "$results" test | "${xcode_pretty[@]}" ||
+		-allowProvisioningUpdates "${team[@]}" "${key[@]}" "${only[@]}" -resultBundlePath "$results" test |
+		"${xcode_pretty[@]}" ||
 		status=$?
 	# XCTest ends the apps it launched as the run finishes, which left Knit closed and the mesh down (2026-09-29).
 	# Open it again, pass or fail, so the phone runs as interop.py expects.

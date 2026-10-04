@@ -35,6 +35,13 @@ already had, but not make one. The device tests' runner, a new App ID, got its p
 2026-09.63em). Until the command line sees the account again, a profile the gate cannot find, a new App ID's or an
 expired one's, comes from the window too. The `.dev` profile expires on 2026-10-05.
 
+**Amended 2026-10-03:** the team joined the Apple Developer Program and kept the id `<team id>`. The
+free-provisioning limit below applies only to profiles made before then, and the last of them expires on
+2026-10-06. The Mac now holds an App Store Connect API key for the team, and `check.sh device` and `devicetest`
+hand it to `xcodebuild` when `KNIT_ASC_KEY_ID` and `KNIT_ASC_ISSUER_ID` name it, from the environment or
+`App/Local.xcconfig`. That gets around "No Accounts": with the cached `.dev` profile moved aside, `check.sh device`
+fetched a new one that lasts a year. Without a key, the gate falls back to Xcode's account and says so.
+
 **Consequences / limits:**
 
 - **Anyone who runs commands as `maintainer` on the Mac can sign as the team.** That covers an ssh login, and a

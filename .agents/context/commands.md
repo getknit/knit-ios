@@ -18,7 +18,7 @@ tree, so switching between them never rebuilds the plain debug tree.
 | `scripts/check.sh adr` / `lintorama` | the ADR router check; markdown, YAML, shell and editorconfig | after touching docs |
 | `scripts/check.sh xcode` | on the Mac: XcodeGen, then `xcodebuild` for the iPhone and the Simulator, unsigned, and the delegate check | after touching `Knit`, `KnitBLE` or `App/`, through `scripts/mac.sh run` |
 | `scripts/check.sh uitest` | on the Mac: `KnitUITests` in the Simulator, every MVP screen through the accessibility audit at the default and the largest text size, into `.build-xcode/uitest.xcresult` | after touching a view, `Palette` or `App/`, through `scripts/mac.sh run` |
-| `scripts/check.sh device` | on the Mac: the signed iPhone build, in the desktop session; renews the profile and prints its expiry | before installing on the iPhone |
+| `scripts/check.sh device` | on the Mac: the signed iPhone build, in the desktop session; renews the profile, with the App Store Connect API key when `KNIT_ASC_KEY_ID` and `KNIT_ASC_ISSUER_ID` name one, and prints its expiry | before installing on the iPhone |
 | `scripts/check.sh devicetest` | on the Mac: `KnitDeviceTests` on the iPhone, signed in the desktop session, into `.build-xcode/devicetest.xcresult`; `KNIT_DEVICE` picks the phone, `KNIT_DEVICE_TESTS` narrows the run | after touching the radio, permissions, onboarding or the status line, with the go-ahead |
 
 ## Other scripts
@@ -125,7 +125,7 @@ arguments:
 
 ```sh
 scripts/mac.sh run scripts/check.sh xcode                         # .build-xcode/Build/Products/Debug-iphoneos/Knit.app, and -iphonesimulator
-scripts/mac.sh run scripts/check.sh device                        # the same app, signed for the iPhone (team in App/Local.xcconfig)
+scripts/mac.sh run scripts/check.sh device                        # the same app, signed for the iPhone (team and API key in App/Local.xcconfig)
 scripts/mac.sh run scripts/mac-desktop.sh <command…>              # any command in the Mac's desktop session, where the Keychain is open
 scripts/mac.sh run scripts/check.sh devicetest                    # the device tests on the iPhone: unlocked, Auto-Lock off, UI Automation on; with the go-ahead
 scripts/mac.sh run env KNIT_DEVICE_TESTS=KnitDeviceTests/RadioTests scripts/check.sh devicetest   # one class, or Class/testName

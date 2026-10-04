@@ -127,7 +127,7 @@ explicit direction.** Update this file in the change that ships an item.
   there, and the `macos` runner is online (`.agents/context/toolchain.md`, "The Mac"). XcodeGen
   generates the app project (ADR 2026-09.de8f), which builds for the iPhone and the Simulator in
   `build:ios:xcode` and runs in the Simulator. The Mac signs in its desktop session through a launchd job, so
-  ssh and CI can sign and renew the free profile (ADR 2026-09.zawh): `check.sh device` and the
+  ssh and CI can sign and renew the profile (ADR 2026-09.zawh): `check.sh device` and the
   `build:ios:signed` job build a signed iPhone app. A Docker runner on the Mac takes untagged Linux jobs on arm64
   beside the amd64 ones (2026-09-28, `toolchain.md`).
   - **Tests (2026-09-28):** `test:macos` runs the whole suite on the Mac, where `KnitBLETests` runs `L2CAPLink`
