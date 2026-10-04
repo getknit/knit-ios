@@ -408,8 +408,10 @@ explicit direction.** Update this file in the change that ships an item.
 - **Search, drafts and backups.**
 - **Moderation and report.** App Store rule 1.2 requires them before a store build. Block is in (ADR 2026-10.5wgg);
   Android has no report either.
-- **App Store readiness:** the privacy manifest, the export-compliance answers and the review notes. The
-  GPL exception is already in place.
+- **App Store readiness:** started on 2026-10-03 at the maintainer's direction. The privacy manifest and the export
+  answer are in, Knit ships for iPhone only (ADR 2026-10.kedu), and `check.sh release`, `archive` and `upload` build,
+  check, sign and upload the store build (ADR 2026-10.8cy5). The review notes, the listing and the export filing
+  remain. The GPL exception is already in place.
 - **Background discovery, the rest of it:** a locked iPhone with no link now seeks peers, scanning for `0xFE30`
   alone and dialing what it finds, whatever the order, within eight wakes a spell (ADR 2026-10.mueg). Three things
   stay open. Discovery while it holds links: near five phones the filtered scan kept Knit running three quarters of

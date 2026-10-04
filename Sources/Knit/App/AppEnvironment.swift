@@ -135,9 +135,14 @@
 
         /// The environment `options` ask for, on a launch that went as `launch` says. Throws when the Keychain or the
         /// database cannot be read yet, before the first unlock since a reboot: the app then waits for protected data
-        /// rather than making a new identity.
+        /// rather than making a new identity. Only a debug build runs the demo.
         static func make(_ options: LaunchOptions, launch: Launch.History) throws -> AppEnvironment {
-            options.seedDemo ? try demo(options) : try live(launch, options: options)
+            #if DEBUG
+                if options.seedDemo {
+                    return try demo(options)
+                }
+            #endif
+            return try live(launch, options: options)
         }
 
         private static func live(_ launch: Launch.History, options: LaunchOptions) throws -> AppEnvironment {
@@ -172,33 +177,38 @@
             #endif
         }
 
-        private static func demo(_ options: LaunchOptions) throws -> AppEnvironment {
-            guard let identity = DemoSeed.identity else {
-                throw SecretStoreError.unavailable("the demo identity")
+        #if DEBUG
+            private static func demo(_ options: LaunchOptions) throws -> AppEnvironment {
+                guard let identity = DemoSeed.identity else {
+                    throw SecretStoreError.unavailable("the demo identity")
+                }
+                let clock = SystemClock()
+                let log = UnifiedLog(clock: clock)
+                // `scripts/check.sh release` fails when a release build holds this line: it would mean the demo ships.
+                log.log(.info, "running the demo on seeded stores in memory")
+                let stores = MeshStores.inMemory()
+                DemoSeed.populate(
+                    stores,
+                    me: identity.nodeId,
+                    now: clock.wallMilliseconds(),
+                    scene: options.demoScene,
+                    paint: DemoPortraits.profilePhoto,
+                    snap: DemoPortraits.chatPhoto
+                )
+                let parts = Parts(
+                    identity: identity,
+                    stores: stores,
+                    radio: DemoRadio(state: options.demoRadio),
+                    log: log,
+                    preferences: MemoryPreferences(hasOnboarded: !options.demoOnboarding),
+                    linked: DemoSeed.linked(in: options.demoScene),
+                    camera: options.demoCamera.map(DemoCamera.init),
+                    demoPhoto: options.demoPhoto ? DemoPortraits.pickedPhoto() : nil,
+                    notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
+                )
+                return compose(parts, replace: nil)
             }
-            let clock = SystemClock()
-            let stores = MeshStores.inMemory()
-            DemoSeed.populate(
-                stores,
-                me: identity.nodeId,
-                now: clock.wallMilliseconds(),
-                scene: options.demoScene,
-                paint: DemoPortraits.profilePhoto,
-                snap: DemoPortraits.chatPhoto
-            )
-            let parts = Parts(
-                identity: identity,
-                stores: stores,
-                radio: DemoRadio(state: options.demoRadio),
-                log: UnifiedLog(clock: clock),
-                preferences: MemoryPreferences(hasOnboarded: !options.demoOnboarding),
-                linked: DemoSeed.linked(in: options.demoScene),
-                camera: options.demoCamera.map(DemoCamera.init),
-                demoPhoto: options.demoPhoto ? DemoPortraits.pickedPhoto() : nil,
-                notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
-            )
-            return compose(parts, replace: nil)
-        }
+        #endif
 
         /// What an environment is made from.
         private struct Parts {

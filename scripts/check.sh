@@ -4,6 +4,7 @@
 #     scripts/check.sh fast        # format, lint, build, unit tests (the pre-push hook)
 #     scripts/check.sh all         # every gate that runs on Linux
 #     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama xcode uitest device devicetest
+#                                  # release archive upload
 #
 # Each build variant (coverage, TSan, ASan, analyze) gets its own --scratch-path, so switching between them never
 # rebuilds the plain debug tree. `.agents/context/commands.md` explains when to run which.
@@ -169,15 +170,22 @@ xcode_project() {
 
 xcode_resolved=App/Knit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 xcode_app=.build-xcode/Build/Products/Debug-iphoneos/Knit.app
+xcode_release_app=.build-xcode/Build/Products/Release-iphoneos/Knit.app
+# The App Store build (ADR 2026-10.8cy5): the archive, and what exporting it leaves here.
+xcode_archive=.build-xcode/Knit.xcarchive
+xcode_export=.build-xcode/export
 # Xcode indexes while it builds; Periphery reads this store for the app's own code.
 xcode_index=.build-xcode/Index.noindex/DataStore
 # Each gate names its scheme: Knit for the app and the Simulator's UI tests, KnitDevice for the iPhone's device tests.
-xcode_build=(-project App/Knit.xcodeproj -configuration Debug -derivedDataPath .build-xcode
-	-jobs "$swift_jobs" -disableAutomaticPackageResolution)
+xcode_common=(-project App/Knit.xcodeproj -derivedDataPath .build-xcode -jobs "$swift_jobs" -disableAutomaticPackageResolution)
+xcode_build=("${xcode_common[@]}" -configuration Debug)
+xcode_release=("${xcode_common[@]}" -configuration Release)
 
-# What every iPhone build must hold: the committed pins, App/Info.plist's version keys, and KnitBLE's delegates.
+# What every iPhone build must hold: the committed pins, App/Info.plist's version keys, and KnitBLE's delegates. The
+# app is $1, or else the Debug build's.
 check_xcode_app() {
-	python3 - "$xcode_resolved" "$xcode_app/Info.plist" <<'PY'
+	local app=${1:-$xcode_app}
+	python3 - "$xcode_resolved" "$app/Info.plist" <<'PY'
 import json, plistlib, sys
 def pins(path):
 	return {p["identity"]: p["state"] for p in json.load(open(path))["pins"]}
@@ -190,11 +198,44 @@ for key in ("CFBundleShortVersionString", "CFBundleVersion"):
 			"update MARKETING_VERSION or CURRENT_PROJECT_VERSION in App/project.yml")
 PY
 	# A Debug build keeps the app's code in Knit.debug.dylib, and Knit is a launcher for it.
-	if [ -f "$xcode_app/Knit.debug.dylib" ]; then
-		check_delegates "$xcode_app/Knit.debug.dylib"
+	if [ -f "$app/Knit.debug.dylib" ]; then
+		check_delegates "$app/Knit.debug.dylib"
 	else
-		check_delegates "$xcode_app/Knit"
+		check_delegates "$app/Knit"
 	fi
+}
+
+# What a store build must hold beyond that (ADR 2026-10.8cy5): no debug-only code, a privacy manifest in the app and in
+# every resource bundle, the export-compliance answer, and the iPhone alone. The app is $1.
+check_release_app() {
+	local app=$1 marker
+	check_xcode_app "$app"
+	# Strings only debug code holds, each long enough to be stored whole rather than inline: the bridge's queue label
+	# (Sources/Knit/Debug/) and the demo's launch line (AppEnvironment.demo). Either one here means a debug path ships.
+	for marker in app.getknit.knit.bridge "running the demo on seeded stores in memory"; do
+		if grep -q -a -F "$marker" "$app/Knit"; then
+			echo "$app/Knit holds debug-only code: it contains \"$marker\"" >&2
+			return 1
+		fi
+	done
+	python3 - "$app" <<'PY'
+import pathlib, plistlib, sys
+app = pathlib.Path(sys.argv[1])
+info = plistlib.load(open(app / "Info.plist", "rb"))
+if info.get("ITSAppUsesNonExemptEncryption") is not True:
+	sys.exit(f"{app}/Info.plist lacks ITSAppUsesNonExemptEncryption = YES: Knit seals messages with its own encryption")
+if info.get("UIDeviceFamily") != [1]:
+	sys.exit(f"{app} is built for device families {info.get('UIDeviceFamily')}, not the iPhone alone (ADR 2026-10.kedu)")
+# GRDB and swift-crypto each bring a manifest in a resource bundle; App/PrivacyInfo.xcprivacy is the app's own.
+for place in [app, *sorted(app.glob("*.bundle"))]:
+	path = place / "PrivacyInfo.xcprivacy"
+	if not path.is_file():
+		sys.exit(f"{place} has no PrivacyInfo.xcprivacy")
+	manifest = plistlib.load(open(path, "rb"))
+	if manifest.get("NSPrivacyTracking") is not False or manifest.get("NSPrivacyTrackingDomains"):
+		sys.exit(f"{path} declares tracking")
+print(f"{app.name}: no debug code; privacy manifests in the app and {len(list(app.glob('*.bundle')))} bundles")
+PY
 }
 
 # The unsigned build any Mac can run: the iPhone and the Simulator, into .build-xcode.
@@ -210,6 +251,17 @@ gate_xcode() {
 	# The device tests compile here too, unsigned, so a change that breaks them fails in CI rather than at the phone.
 	xcodebuild "${xcode_build[@]}" -scheme KnitDevice -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO \
 		build-for-testing | "${xcode_pretty[@]}"
+}
+
+# The Release build for the iPhone, unsigned, held to what a store build must hold (ADR 2026-10.8cy5). It needs no
+# Keychain, so it runs over ssh, and CI runs it on every pipeline: a debug path that stops compiling out shows here
+# rather than at upload.
+gate_release() {
+	step "xcodebuild App/Knit.xcodeproj (iPhone, Release, unsigned)"
+	xcode_project release
+	xcodebuild "${xcode_release[@]}" -scheme Knit -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build |
+		"${xcode_pretty[@]}"
+	check_release_app "$xcode_release_app"
 }
 
 # The UI tests and the accessibility audit, in the Simulator (MVP item 12): every MVP screen on -seedDemo's stores,
@@ -350,6 +402,83 @@ gate_devicetest() {
 	return "$status"
 }
 
+# The App Store build (ADR 2026-10.8cy5): the Knit scheme archived in Release in the desktop session, held to
+# check_release_app, then signed for distribution and exported into .build-xcode/export as an .ipa. Nothing leaves
+# the Mac. With the App Store Connect API key, -allowProvisioningUpdates gets the team's Apple Distribution signing and
+# makes or renews the profiles for app.getknit.knit, as gate_device's builds do for the .dev id.
+gate_archive() {
+	step "xcodebuild archive and export (Release, signed for the App Store in the desktop session)"
+	archive_and_export export
+}
+
+# The same build, uploaded to App Store Connect, where TestFlight picks it up once Apple has processed it. Raise
+# CURRENT_PROJECT_VERSION in App/project.yml and App/Info.plist first: App Store Connect refuses a build number it
+# already has.
+gate_upload() {
+	step "xcodebuild archive and upload to App Store Connect (in the desktop session)"
+	archive_and_export upload
+}
+
+# Archives the app, checks it, then exports it to $1: `export` (an .ipa here) or `upload` (App Store Connect).
+archive_and_export() {
+	local destination=$1 team key
+	xcode_project archive
+	signing_team
+	signing_key
+	local team_id=${KNIT_DEVELOPMENT_TEAM:-$(local_setting DEVELOPMENT_TEAM)}
+	rm -rf "$xcode_archive" "$xcode_export"
+	mkdir -p "$xcode_export"
+	scripts/mac-desktop.sh xcodebuild "${xcode_release[@]}" -scheme Knit -destination 'generic/platform=iOS' \
+		-archivePath "$xcode_archive" -allowProvisioningUpdates "${team[@]}" "${key[@]}" archive | "${xcode_pretty[@]}"
+	check_release_app "$xcode_archive/Products/Applications/Knit.app"
+	# Xcode leaves the build number alone: the one in App/Info.plist is the one App Store Connect sees.
+	python3 - "$destination" "$team_id" >"$xcode_export/ExportOptions.plist" <<'PY'
+import plistlib, sys
+destination, team = sys.argv[1:]
+sys.stdout.buffer.write(plistlib.dumps({
+	"method": "app-store-connect",
+	"destination": destination,
+	"teamID": team,
+	"signingStyle": "automatic",
+	"manageAppVersionAndBuildNumber": False,
+	"uploadSymbols": True,
+}))
+PY
+	# Packaging runs /usr/bin/rsync, macOS's openrsync, which starts its other end as the first `rsync` on the PATH.
+	# Homebrew's rsync 3 refuses openrsync's --extended-attributes, and the export failed with "Copy failed"
+	# (2026-10-03), so the export runs with /usr/bin first.
+	PATH="/usr/bin:$PATH" scripts/mac-desktop.sh xcodebuild -exportArchive -archivePath "$xcode_archive" -exportPath "$xcode_export" \
+		-exportOptionsPlist "$xcode_export/ExportOptions.plist" -allowProvisioningUpdates "${key[@]}" | "${xcode_pretty[@]}"
+	if [ "$destination" = export ]; then
+		check_store_ipa "$xcode_export/Knit.ipa" "$team_id"
+	fi
+}
+
+# The exported .ipa is $1: its app must carry a sound seal and an App Store profile for team $2, which names no devices,
+# and must not be debuggable, which only a development build is.
+check_store_ipa() {
+	local unpacked=$xcode_export/unpacked status=0
+	rm -rf "$unpacked"
+	ditto -x -k "$1" "$unpacked"
+	local app=$unpacked/Payload/Knit.app
+	codesign --verify --strict --deep "$app"
+	codesign -d --entitlements - --xml "$app" 2>/dev/null >"$unpacked/entitlements.plist"
+	security cms -D -i "$app/embedded.mobileprovision" >"$unpacked/profile.plist"
+	python3 - "$unpacked/entitlements.plist" "$unpacked/profile.plist" "$2" <<'PY' || status=$?
+import plistlib, sys
+entitlements, profile = (plistlib.load(open(path, "rb")) for path in sys.argv[1:3])
+if entitlements.get("get-task-allow"):
+	sys.exit("the exported app is debuggable (get-task-allow): it was signed for development, not the App Store")
+if profile.get("ProvisionedDevices") or profile.get("ProvisionsAllDevices"):
+	sys.exit(f"the exported app's profile {profile['Name']!r} is not an App Store profile: it names devices")
+if profile["TeamIdentifier"] != [sys.argv[3]]:
+	sys.exit(f"the exported app is signed for team {profile['TeamIdentifier']}, not {sys.argv[3]}")
+print(f"Knit.ipa: signed for the App Store by team {sys.argv[3]}, profile {profile['Name']!r}")
+PY
+	rm -rf "$unpacked"
+	return "$status"
+}
+
 # The UDID of the one physical iPhone the Mac sees connected; none, or more than one, fails and names what it saw.
 connected_iphone() {
 	local list status=0
@@ -382,9 +511,10 @@ run() {
 case "${1:-fast}" in
 fast) run format lint build test ;;
 all) run format lint adr build test coverage tsan asan analyze lintorama ;;
-format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | xcode | uitest | device | devicetest) run "$@" ;;
+format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | xcode | uitest | device | devicetest | \
+	release | archive | upload) run "$@" ;;
 *)
-	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest]" >&2
+	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest|release|archive|upload]" >&2
 	exit 2
 	;;
 esac

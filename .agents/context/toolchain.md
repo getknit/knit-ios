@@ -177,6 +177,15 @@ logs in to the desktop by itself, because the Simulator and signing need a deskt
   - **`app.getknit.knit` belongs to the App Store build.** It was registered to the team on 2026-10-03, through the
     App Store Connect API. Development builds still sign only the `.dev` id, so a development build and a
     TestFlight build are two apps, each with a Keychain identity of its own.
+  - **The App Store build** (ADR 2026-10.8cy5): `check.sh archive` archives the `Knit` scheme in Release through
+    `mac-desktop.sh`, signed for development as any archive under automatic signing is, and the export signs it again
+    for distribution. On 2026-10-03 the API key's first export made `iOS Team Store Provisioning Profile:
+    app.getknit.knit` and signed with `Apple Distribution: … (<team id>)`. That identity is not in the Mac's
+    Keychain, where `security find-identity` lists only the development one, so it looks cloud-managed: Apple holds
+    the key. `check.sh upload` uploads the same build.
+  - **Exporting needs macOS's rsync first on the `PATH`.** Packaging runs `/usr/bin/rsync`, which starts its other
+    end as the first `rsync` on the `PATH`. Homebrew's rsync 3 refused `--extended-attributes`, and the export failed
+    with "Copy failed" (2026-10-03). `check.sh archive` puts `/usr/bin` first for the export alone.
   - **One Knit per phone.** Two installs would both advertise the GATT payload and scan, and a peer would see
     two nodes on one iPhone, as with Android, which has no debug package for that reason.
   - **The `.dev` profile lasts a year** from 2026-10-03, the first under the paid membership. The device tests'

@@ -8,8 +8,8 @@
 #   - `knit-local`, a runner on the maintainer's machine, for the heavy jobs (sanitizers, fuzzing, analyze) and for
 #     `verify:periphery:linux`, since Periphery is built from source there;
 #   - `macos`, the Mac Mini's shell runner, for the Apple jobs: `build:ios:xcode` (ADR 2026-09.de8f), the signed
-#     `build:ios:signed` (ADR 2026-09.zawh), `test:macos`, `test:ios:simulator` (ADR 2026-09.jcdx) and
-#     `verify:periphery`. Every iPhone build happens there.
+#     `build:ios:signed` (ADR 2026-09.zawh), `build:ios:release` and the manual `release:testflight` (ADR 2026-10.8cy5),
+#     `test:macos`, `test:ios:simulator` (ADR 2026-09.jcdx) and `verify:periphery`. Every iPhone build happens there.
 # The maintainer's private notes have the runner setup; `.agents/context/toolchain.md` has what a contributor needs.
 
 workflow:
@@ -25,6 +25,7 @@ stages:
   - build
   - test
   - verify
+  - release
 
 variables:
   SWIFT_IMAGE: "swift:6.4-noble@sha256:64bab762bc73a3fda6d9ebc559258bd6d7660c10a705bb25ecacad2f99d066f9"
@@ -141,6 +142,17 @@ build:ios:signed:
       - .build-xcode/Build/Products/Debug-iphoneos/Knit.app/
     expire_in: 1 week
 
+build:ios:release:
+  # The Release build, unsigned, held to what a store build must hold: no debug code, the privacy manifests, the export
+  # answer and the iPhone alone (ADR 2026-10.8cy5).
+  extends: .mac
+  stage: build
+  needs: []
+  variables:
+    GIT_CLEAN_FLAGS: -ffdx -e /.build-xcode/
+  script:
+    - scripts/check.sh release
+
 test:linux:
   extends: .swift
   stage: test
@@ -254,3 +266,22 @@ verify:trivy:
     - trivy fs --scanners vuln,secret,misconfig,license --exit-code 0 --format table .
   # Informational, as in knit-next: a finding opens an issue rather than blocking a merge.
   allow_failure: true
+
+release:testflight:
+  # Archives the app, signs it for the App Store and uploads it to App Store Connect for TestFlight (ADR 2026-10.8cy5).
+  # Run by hand, from main or a tag of this project, once every other stage has passed; raise CURRENT_PROJECT_VERSION
+  # in the commit first. The API key comes from the CI variables KNIT_ASC_KEY_ID and KNIT_ASC_ISSUER_ID, and its .p8
+  # from the Mac. allow_failure keeps a pipeline whose upload nobody started from waiting on it: a manual job in
+  # `rules` otherwise blocks the pipeline until someone runs it.
+  extends: .mac
+  stage: release
+  rules:
+    - if: $CI_PROJECT_PATH == "knit/knit-ios" && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_TAG)
+      when: manual
+      allow_failure: true
+  resource_group: app-store-connect
+  variables:
+    GIT_CLEAN_FLAGS: -ffdx -e /.build-xcode/
+    KNIT_DEVELOPMENT_TEAM: <team id>
+  script:
+    - scripts/check.sh upload

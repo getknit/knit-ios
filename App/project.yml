@@ -20,6 +20,10 @@ targets:
     sources:
       - Host
       - Assets.xcassets
+      # The privacy manifest: UserDefaults, and nothing collected or tracked. GRDB and swift-crypto bring their own,
+      # in their resource bundles. `check.sh release` checks every manifest reaches the app.
+      - path: PrivacyInfo.xcprivacy
+        buildPhase: resources
       - path: Info.plist
         buildPhase: none
     dependencies:
@@ -37,11 +41,9 @@ targets:
         # its CFBundleShortVersionString and CFBundleVersion; `check.sh xcode` fails when they differ.
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: "1"
-        TARGETED_DEVICE_FAMILY: "1,2"
+        # iPhone only (ADR 2026-10.kedu). An iPad runs it in iPhone compatibility mode.
+        TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: >-
-          UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
-          UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Package.swift already links Knit with -ObjC for KnitBLE's delegates; this keeps it if that moves.
         OTHER_LDFLAGS: [-ObjC]
@@ -66,7 +68,7 @@ targets:
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: true
         PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.uitests
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
   # The iPhone's device tests (`scripts/check.sh devicetest`): Knit launched live, on the real radio and permission,
   # with the Settings app and SpringBoard driven beside it. Only the KnitDevice scheme runs them, never the Simulator.
   KnitDeviceTests:
@@ -83,7 +85,7 @@ targets:
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: true
         PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.devicetests
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         # Its runner, app.getknit.knit.devicetests.xctrunner, installs on the phone, so it signs as the app does and
         # -allowProvisioningUpdates makes its profile.
         CODE_SIGN_STYLE: Automatic

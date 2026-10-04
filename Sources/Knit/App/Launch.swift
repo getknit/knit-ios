@@ -51,8 +51,18 @@
         /// Whether a tapped notification asked for the message requests.
         var requestedRequests = false
 
-        @ObservationIgnored private let options = LaunchOptions(arguments: ProcessInfo.processInfo.arguments)
+        @ObservationIgnored private let options = LaunchOptions(arguments: Launch.arguments)
         @ObservationIgnored private var history = History(startedAt: SystemClock().wallMilliseconds())
+
+        /// The arguments `-seedDemo` and the `-demo…` flags are read from: the process's own in a debug build, and none in
+        /// a release one, which always runs live (ADR 2026-10.8cy5).
+        nonisolated private static var arguments: [String] {
+            #if DEBUG
+                ProcessInfo.processInfo.arguments
+            #else
+                []
+            #endif
+        }
 
         /// Builds the environment, unless it is already running. Called at launch, and again after a launch before
         /// the first unlock: when protected data becomes available, when Knit comes to the front, or from Retry.

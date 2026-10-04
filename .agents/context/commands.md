@@ -20,6 +20,9 @@ tree, so switching between them never rebuilds the plain debug tree.
 | `scripts/check.sh uitest` | on the Mac: `KnitUITests` in the Simulator, every MVP screen through the accessibility audit at the default and the largest text size, into `.build-xcode/uitest.xcresult` | after touching a view, `Palette` or `App/`, through `scripts/mac.sh run` |
 | `scripts/check.sh device` | on the Mac: the signed iPhone build, in the desktop session; renews the profile, with the App Store Connect API key when `KNIT_ASC_KEY_ID` and `KNIT_ASC_ISSUER_ID` name one, and prints its expiry | before installing on the iPhone |
 | `scripts/check.sh devicetest` | on the Mac: `KnitDeviceTests` on the iPhone, signed in the desktop session, into `.build-xcode/devicetest.xcresult`; `KNIT_DEVICE` picks the phone, `KNIT_DEVICE_TESTS` narrows the run | after touching the radio, permissions, onboarding or the status line, with the go-ahead |
+| `scripts/check.sh release` | on the Mac: the Release build for the iPhone, unsigned, checked for debug-only code, the privacy manifests, the export answer and the iPhone alone (ADR 2026-10.8cy5) | after touching `#if DEBUG`, the demo, `App/` or a dependency, through `scripts/mac.sh run` |
+| `scripts/check.sh archive` | on the Mac: the App Store build, archived and checked as `release` checks, then signed for distribution in the desktop session and exported to `.build-xcode/export/Knit.ipa`; nothing leaves the Mac | before an upload, and after touching signing |
+| `scripts/check.sh upload` | on the Mac: the same archive, uploaded to App Store Connect for TestFlight; raise `CURRENT_PROJECT_VERSION` first | to ship a build, with the go-ahead |
 
 ## Other scripts
 
@@ -136,7 +139,14 @@ scripts/mac.sh run xcrun simctl io booted screenshot .build-xcode/shot.png   # t
 xcrun devicectl list devices                                      # at the Mac, once the iPhone is paired (toolchain.md)
 xcrun devicectl device install app --device <id> .build-xcode/Build/Products/Debug-iphoneos/Knit.app   # after check.sh device, with the go-ahead
 xcrun devicectl device process launch --device <id> app.getknit.knit.dev   # launches Knit, which otherwise waits for someone to open it
+scripts/mac.sh run scripts/check.sh release                       # .build-xcode/Build/Products/Release-iphoneos/Knit.app, unsigned
+scripts/mac.sh run scripts/check.sh archive                       # .build-xcode/Knit.xcarchive and .build-xcode/export/Knit.ipa, for the App Store
+scripts/mac.sh run scripts/check.sh upload                        # the same, to App Store Connect; CI's manual release:testflight runs it from main
 ```
+
+A store build is `app.getknit.knit`, a separate app from the `.dev` build, and only one Knit fits on a phone. It reads
+no launch argument: `-seedDemo` and the flags below work only in a debug build (ADR 2026-10.8cy5). Before an upload,
+raise `CURRENT_PROJECT_VERSION` in `App/project.yml` and `CFBundleVersion` in `App/Info.plist` together.
 
 A debug build answers `knit-peer`'s control lines on the phone's loopback, port 5648 (ADR 2026-09.kwa8), while
 Knit is open. `scripts/interop.py` starts `iproxy` itself; run it by hand only to reach the bridge from something

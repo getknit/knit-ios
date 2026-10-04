@@ -51,7 +51,9 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.mueg](decisions/2026-10-mueg-a-lonely-iphone-in-the.md) | a lonely iPhone in the background seeks peers within a wake budget | ble, transport, interop |
 | [2026-10.5wgg](decisions/2026-10-5wgg-a-block-hides-a-person.md) | A block hides a person and changes nothing the mesh sees | moderation, privacy, custody, ui |
 | [2026-10.6cas](decisions/2026-10-6cas-a-photo-in-a-chat.md) | A photo in a chat is sealed in DMs and groups and public in Nearby | blobs, crypto, app |
+| [2026-10.8cy5](decisions/2026-10-8cy5-a-store-build-is-a.md) | A store build is a Release archive that the Mac checks, signs and uploads | build, signing, ci, store |
 | [2026-10.h6zz](decisions/2026-10-h6zz-file-records-cross-a-link.md) | FILE records cross a link one chunk at a time, each behind the radio's report of the last | ble, transport, interop |
+| [2026-10.kedu](decisions/2026-10-kedu-knit-ships-for-iphone-only.md) | Knit ships for iPhone only | platform, store |
 | [2026-10.nh55](decisions/2026-10-nh55-profile-photos-and-photos-in.md) | Profile photos and photos in chats come to the iPhone, carried as Android carries them | scope, blobs, interop |
 | [2026-10.sepc](decisions/2026-10-sepc-a-face-is-a-person.md) | A face is a person's photo or their node id's tint, and a profile photo is cropped and saved on the phone | app, blobs, ui |
 | [2026-10.ym9y](decisions/2026-10-ym9y-the-iphone-asks-for.md) | The iPhone asks for, serves and carries blobs as Android's BlobExchange does | mesh, blobs, interop |

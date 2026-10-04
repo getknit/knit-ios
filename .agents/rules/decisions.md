@@ -16,6 +16,8 @@ growing an explanation, that explanation belongs in the ADR.
 | `KnitWire`, `KnitCrypto`, `KnitMesh`, golden vectors, or the knit-next pin | [ADR 2026-09.2ved](../memory/decisions/2026-09-2ved-knit-next-s-code-and.md) |
 | the target layout in `Package.swift`, or a `#if canImport` / `#if os` guard | [ADR 2026-09.wde9](../memory/decisions/2026-09-wde9-the-protocol-core-is-platform.md) |
 | the deployment target, the bundle id or `App/Info.plist` | [ADR 2026-09.txqp](../memory/decisions/2026-09-txqp-ios-18-is-the-floor.md) |
+| the device family, `TARGETED_DEVICE_FAMILY`, or anything for the iPad | [ADR 2026-10.kedu](../memory/decisions/2026-10-kedu-knit-ships-for-iphone-only.md) |
+| a release build, `#if DEBUG`, the demo's launch arguments, `App/PrivacyInfo.xcprivacy`, the export-compliance key, `check.sh release`, `archive` or `upload`, or `release:testflight` | [ADR 2026-10.8cy5](../memory/decisions/2026-10-8cy5-a-store-build-is-a.md) |
 | a CI job's `allow_failure`, a disabled lint rule, a compiler setting, or coverage floors | [ADR 2026-09.jgs6](../memory/decisions/2026-09-jgs6-each-quality-gate-blocks-from.md) |
 | `COPYING`, `APP-STORE-EXCEPTION.md`, or how contributions are licensed | [ADR 2026-09.5phg](../memory/decisions/2026-09-5phg-knit-for-ios-is-gpl.md) |
 | where the iPhone app builds, the `knit-local` runner, CI caches or artifacts | [ADR 2026-09.fkqb](../memory/decisions/2026-09-fkqb-the-mac-builds-every-iphone.md) |
