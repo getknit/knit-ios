@@ -3,8 +3,8 @@
     import KnitWire
     import SwiftUI
 
-    /// Another person's profile: who they are, their safety number and our code for them to scan, and Message (MVP
-    /// items 3 and 5, ADR 2026-10.65xx).
+    /// Another person's profile: who they are, their safety number and our code for them to scan, Message, and Block
+    /// (MVP items 3 and 5, ADR 2026-10.65xx, ADR 2026-10.5wgg).
     internal struct PeerProfileView: View {
         @State private var model: PeerProfileModel
         @State private var scanning = false
@@ -14,6 +14,8 @@
         @State private var outcome: VerifyScanOutcome?
         /// Whether their photo is open full screen.
         @State private var viewing = false
+        /// Whether Block is asking first.
+        @State private var confirmsBlock = false
         @Environment(\.dynamicTypeSize) private var typeSize
         private let camera: any CameraAccess
 
@@ -51,6 +53,7 @@
                         scan: { scanning = true },
                         setVerified: { verified in Task { await model.setVerified(verified) } }
                     )
+                    BlockSection(state: state, block: { confirmsBlock = true }, unblock: { Task { await model.setBlocked(false) } })
                 }
             }
             .navigationTitle(state.title)
@@ -67,6 +70,9 @@
             }
             .alert(outcome.map { Copy.Profile.scanOutcome($0, name: state.title) } ?? "", isPresented: showsOutcome) {
                 Button(Copy.Common.done, role: .cancel) { outcome = nil }
+            }
+            .confirmsBlock(of: state.title, isPresented: $confirmsBlock) {
+                Task { await model.setBlocked(true) }
             }
             .fullScreenCover(isPresented: $viewing) {
                 if let photo = state.face.photo {
@@ -113,6 +119,32 @@
                     Label(Copy.Profile.openToChat, systemImage: "bubble.left.and.bubble.right")
                         .font(.subheadline)
                         .foregroundStyle(.tint)
+                }
+                if state.isBlocked {
+                    Label(Copy.Block.badge, systemImage: "hand.raised.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.critical)
+                        .accessibilityIdentifier(AccessibilityID.profileDetailsBlocked)
+                }
+            }
+        }
+    }
+
+    /// Block, which asks first, or Unblock, which does not (ADR 2026-10.5wgg).
+    private struct BlockSection: View {
+        let state: PeerProfileState
+        let block: () -> Void
+        let unblock: () -> Void
+
+        var body: some View {
+            Section {
+                if state.isBlocked {
+                    Button(Copy.Block.unblockPerson(state.title), action: unblock)
+                        .accessibilityIdentifier(AccessibilityID.profileDetailsBlock)
+                } else {
+                    Button(Copy.Block.blockPerson(state.title), role: .destructive, action: block)
+                        .foregroundStyle(Palette.critical)
+                        .accessibilityIdentifier(AccessibilityID.profileDetailsBlock)
                 }
             }
         }

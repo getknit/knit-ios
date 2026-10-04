@@ -48,26 +48,36 @@ extension Copy {
                     value: "Dropped: key change refused",
                     comment: "A drop counter"
                 )
-            case .cleartextGroup, .rosterRefused:
-                groupReason(reason)
+            case .cleartextGroup, .rosterRefused, .blocked:
+                laterReason(reason)
             }
         }
 
-        /// The labels for the drops only groups have.
-        private static func groupReason(_ reason: DropReason) -> String {
-            reason == .cleartextGroup
-                ? NSLocalizedString(
+        /// The labels for the drops groups and blocking brought.
+        private static func laterReason(_ reason: DropReason) -> String {
+            switch reason {
+            case .cleartextGroup:
+                NSLocalizedString(
                     "diagnostics.drop.cleartext-group",
                     bundle: .main,
                     value: "Dropped: unencrypted group message",
                     comment: "A drop counter"
                 )
-                : NSLocalizedString(
+            case .blocked:
+                NSLocalizedString(
+                    "diagnostics.drop.blocked",
+                    bundle: .main,
+                    value: "Dropped: blocked sender",
+                    comment: "A drop counter: frames from someone the user blocked, still passed on for others but not shown"
+                )
+            default:
+                NSLocalizedString(
                     "diagnostics.drop.roster-refused",
                     bundle: .main,
                     value: "Dropped: group member list refused",
                     comment: "A drop counter: a group message whose member list fails the checks"
                 )
+            }
         }
     }
 

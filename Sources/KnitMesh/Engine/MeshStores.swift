@@ -10,6 +10,8 @@ public struct MeshStores: Sendable {
     public var messages: any MessageStore
     /// The accepted conversations.
     public var conversations: any ConversationStore
+    /// The people the user blocked: read on the delivery path only, never by custody or relaying (ADR 2026-10.5wgg).
+    public var blocks: any BlockStore
     /// The groups we are in, or left.
     public var groups: any GroupStore
     /// This node's own profile and its clocks.
@@ -23,6 +25,7 @@ public struct MeshStores: Sendable {
         peers: any PeerStore,
         messages: any MessageStore,
         conversations: any ConversationStore,
+        blocks: any BlockStore,
         groups: any GroupStore,
         ownProfile: any OwnProfileStore,
         blobs: any BlobStore
@@ -31,6 +34,7 @@ public struct MeshStores: Sendable {
         self.peers = peers
         self.messages = messages
         self.conversations = conversations
+        self.blocks = blocks
         self.groups = groups
         self.ownProfile = ownProfile
         self.blobs = blobs
@@ -43,6 +47,7 @@ public struct MeshStores: Sendable {
             peers: MemoryPeerStore(),
             messages: MemoryMessageStore(),
             conversations: MemoryConversationStore(),
+            blocks: MemoryBlockStore(),
             groups: MemoryGroupStore(),
             ownProfile: MemoryOwnProfileStore(ownProfile),
             blobs: MemoryBlobStore()

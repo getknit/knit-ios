@@ -43,6 +43,10 @@ public protocol MeshService: AnyObject, Sendable {
     func setAvatar(_ jpeg: [UInt8]?) async
     /// Marks a pinned peer verified, or not.
     func setVerified(_ peer: NodeId, _ verified: Bool) async
+    /// Blocks a person: nothing they send is shown, and the mesh carries and relays it as before (ADR 2026-10.5wgg).
+    func block(_ peer: NodeId) async
+    /// Unblocks a person.
+    func unblock(_ peer: NodeId) async
 }
 
 /// The mesh's counters and radio view, read in one hop for Diagnostics.

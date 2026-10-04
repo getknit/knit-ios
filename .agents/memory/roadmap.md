@@ -120,7 +120,9 @@ explicit direction.** Update this file in the change that ships an item.
   - **`KnitBLE`:** the CoreBluetooth radio, with GATT reads on `GattPayloads`' rules.
   - **The mesh for the app:** it reports the radio's state, stops and starts again on the same radio, marks a
     peer verified, and stores list each thread's newest message.
-  - **Still owed:** no unread counts yet, and no block, delete or Sign out.
+  - **Block (2026-10-03):** presentation only, as on Android: a blocked person's messages stop at delivery and are
+    still carried, relayed and ticked (ADR 2026-10.5wgg).
+  - **Still owed:** no unread counts yet, and no delete or Sign out.
 - **P7, the Mac:** begun on 2026-09-27. The Mac Mini has Xcode 27.0 and the tools, `check.sh fast` passes
   there, and the `macos` runner is online (`.agents/context/toolchain.md`, "The Mac"). XcodeGen
   generates the app project (ADR 2026-09.de8f), which builds for the iPhone and the Simulator in
@@ -404,7 +406,8 @@ explicit direction.** Update this file in the change that ships an item.
 - **Groups with forward secrecy** (knit-next's group ratchet), which comes with the DM ratchet. v1 groups are in
   flight above.
 - **Search, drafts and backups.**
-- **Moderation, block and report.** App Store rule 1.2 requires them before a store build.
+- **Moderation and report.** App Store rule 1.2 requires them before a store build. Block is in (ADR 2026-10.5wgg);
+  Android has no report either.
 - **App Store readiness:** the privacy manifest, the export-compliance answers and the review notes. The
   GPL exception is already in place.
 - **Background discovery, the rest of it:** a locked iPhone with no link now seeks peers, scanning for `0xFE30`

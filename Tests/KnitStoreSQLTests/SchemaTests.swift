@@ -14,7 +14,7 @@ import Testing
 /// is already here: a phone that ran that migration keeps the schema it left.
 @Suite struct SchemaTests {
     /// The migrations every earlier build has run, in order.
-    private static let frozen = ["v1", "v2", "v3", "v4", "v5"]
+    private static let frozen = ["v1", "v2", "v3", "v4", "v5", "v6"]
 
     @Test func migrationsOnlyEverGrowAtTheEnd() {
         let identifiers = Schema.migrations.map(\.identifier)
@@ -53,7 +53,8 @@ import Testing
         }
         #expect(
             tables.map(\.name) == [
-                "accepted_conversations", "blobs", "forward_store", "group_members", "groups", "messages", "own_profile",
+                "accepted_conversations", "blobs", "blocked_device_tags", "blocked_nodes", "forward_store", "group_members", "groups",
+                "messages", "own_profile",
                 "peer_profiles", "peers",
             ])
         let loose = tables.filter { !$0.strict }.map(\.name)
@@ -151,6 +152,27 @@ import Testing
         #expect(messages.attachmentHashes().isEmpty)
     }
 
+    @Test func v6BlocksNobody() throws {
+        // Nobody was blocked before v6 (ADR 2026-10.5wgg), and every thread keeps its head.
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v5")
+        let bob = fixtureNodeId(2)
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO messages (id, senderId, conversationId, body, sentAt, delivered, pendingKey, kind)
+                    VALUES (?, ?, ?, ?, 3, 0, 0, 0)
+                    """,
+                arguments: [StoredText.bytes("m1"), StoredText.bytes(bob.string), StoredText.bytes("nearby"), StoredText.bytes("hi")]
+            )
+        }
+        let database = try KnitDatabase(writer: queue, failures: recordFailure)
+        let blocks = SQLBlockStore(database)
+        #expect(blocks.blockedNodeIds().isEmpty)
+        #expect(!blocks.isBlocked(deviceTag: "0011223344556677"))
+        #expect(SQLMessageStore(database).threadHeads(excludingSenders: blocks.blockedNodeIds()).map(\.id) == ["m1"])
+    }
+
     @Test func grdbCutsABoundStringAtItsFirstNul() throws {
         // Why every string is a BLOB (StoredText). If GRDB ever binds a String's whole length, TEXT columns become
         // possible, though v1 stays as it is.
@@ -182,6 +204,7 @@ enum SchemaPins {
         ("v3", v3),
         ("v4", v4),
         ("v5", v5),
+        ("v6", v6),
     ]
 
     /// Every table, index and trigger this app made, sorted, with the statement SQLite keeps for it. GRDB's own

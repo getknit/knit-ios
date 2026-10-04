@@ -2,11 +2,14 @@
     import KnitAppCore
     import SwiftUI
 
-    /// A thread: the room, a DM or a group, its messages and status lines, a request's Accept, and the composer.
+    /// A thread: the room, a DM or a group, its messages and status lines, a request's Accept and Block, a blocked DM's
+    /// Unblock, and the composer.
     internal struct ChatView: View {
         @State private var model: ChatModel
         @State private var showsEncryption = false
         @State private var viewing: ViewedPhoto?
+        /// Whether a request's Block is asking first.
+        @State private var confirmsBlock = false
         @Environment(\.dismiss) private var dismiss
         /// What Add photo picks under `-demoPhoto`, in place of the photo library.
         private let demoPhoto: Data?
@@ -22,7 +25,15 @@
             MessageList(state: state) { viewing = $0 }
                 .safeAreaInset(edge: .bottom) {
                     if state.isRequest {
-                        RequestBar(title: state.requestTitle, explanation: state.requestBody) { Task { await model.accept() } }
+                        RequestBar(
+                            title: state.requestTitle,
+                            explanation: state.requestBody,
+                            accept: { Task { await model.accept() } },
+                            // A group's request has nobody to block.
+                            block: state.peer == nil ? nil : { confirmsBlock = true }
+                        )
+                    } else if state.isBlocked {
+                        BlockedBar(name: state.title) { Task { await model.unblock() } }
                     } else if state.nobodyElse {
                         NobodyLeftBar()
                     } else {
@@ -68,6 +79,9 @@
                 }
                 .fullScreenCover(item: $viewing) { photo in
                     PhotoViewer(photo: photo)
+                }
+                .confirmsBlock(of: state.title, isPresented: $confirmsBlock) {
+                    Task { await model.block() }
                 }
                 .alert(Copy.Photo.unreadable, isPresented: $model.photoFailed) {
                     Button(Copy.Common.done, role: .cancel) {
@@ -294,11 +308,12 @@
         }
     }
 
-    /// A stranger's thread: Accept instead of the composer.
+    /// A stranger's thread: Accept instead of the composer, and Block under it for a DM.
     private struct RequestBar: View {
         let title: String
         let explanation: String
         let accept: () -> Void
+        let block: (() -> Void)?
 
         var body: some View {
             VStack(spacing: Layout.small) {
@@ -310,6 +325,11 @@
                     .multilineTextAlignment(.center)
                 Button(Copy.Chat.accept, action: accept)
                     .prominentButton()
+                if let block {
+                    Button(Copy.Block.block, role: .destructive, action: block)
+                        .foregroundStyle(Palette.critical)
+                        .accessibilityIdentifier(AccessibilityID.chatRequestBlock)
+                }
             }
             .padding()
             .frame(maxWidth: .infinity)

@@ -210,10 +210,14 @@ extension MeshEngine {
 
     /// A member's departure (`handleGroupLeave`, `:1989-1995`). The frame is signed by the key its sender derives
     /// from, so a member can only take themselves off the roster. A leave for a group we do not hold yet is lost, as on
-    /// Android.
+    /// Android, and so is a blocked member's, whose place on the roster stays as it was.
     func handleGroupLeave(_ envelope: RelayEnvelope) {
         guard let leave = try? GroupLeaveContent(decoding: envelope.payload) else {
             drop(.undecodable, envelope)
+            return
+        }
+        if let sender = NodeId(envelope.senderId), isBlocked(sender) {
+            drop(.blocked, envelope)
             return
         }
         guard let sender = NodeId(envelope.senderId), let group = stores.groups.group(leave.groupId),
@@ -231,6 +235,10 @@ extension MeshEngine {
     @discardableResult
     func reconcile(_ info: GroupInfo, from sender: NodeId, _ envelope: RelayEnvelope) -> Bool {
         let existing = stores.groups.group(info.id)
+        if isBlockedGroupFrame(info, from: sender, existing: existing) {
+            drop(.blocked, envelope)
+            return false
+        }
         let roster = GroupRoster(me: nodeId, maxClock: clampFuture(.max))
         let verdict = roster.reconcile(info, from: sender, at: clampFuture(envelope.sentAt), existing: existing)
         switch verdict {

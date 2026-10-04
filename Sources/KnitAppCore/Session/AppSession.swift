@@ -51,7 +51,13 @@ public final class AppSession {
         let now = revision
         return cachedDirectory.value(for: now) {
             let own = stores.ownProfile.load()
-            return Directory(peers: stores.peers.allPeers(), me: identity.nodeId, myName: own.name, myPhoto: own.avatarHash)
+            return Directory(
+                peers: stores.peers.allPeers(),
+                blocked: stores.blocks.blockedNodeIds(),
+                me: identity.nodeId,
+                myName: own.name,
+                myPhoto: own.avatarHash
+            )
         }
     }
 
@@ -74,7 +80,8 @@ public final class AppSession {
 
     /// The threads, and which are requests, as of the current revision.
     public func threads() -> ThreadTable {
-        ThreadTable(stores: stores, me: identity.nodeId, verified: directory.verified)
+        let known = directory
+        return ThreadTable(stores: stores, me: identity.nodeId, verified: known.verified, blocked: known.blocked)
     }
 
     // MARK: Running
@@ -182,6 +189,27 @@ public final class AppSession {
     /// Marks a peer verified, or not.
     public func setVerified(_ peer: NodeId, _ verified: Bool) async {
         await mesh.setVerified(peer, verified)
+        revision += 1
+    }
+
+    /// Blocks a person (ADR 2026-10.5wgg): their DM, their requests and what they wrote leave every screen, and the
+    /// notifications of their DM, and of requests once none is left, go. They are not told. Never ourselves.
+    public func block(_ peer: NodeId) async {
+        guard peer != identity.nodeId else {
+            return
+        }
+        await mesh.block(peer)
+        revision += 1
+        await notifier?.withdraw(threadId: peer.string)
+        if threads().requests.isEmpty {
+            await notifier?.withdraw(threadId: NotificationPolicy.requestsThread)
+        }
+    }
+
+    /// Unblocks a person: what they wrote before the block shows again. A DM or room post sent during it never does; a
+    /// group message our custody still holds can, at the next start (ADR 2026-10.5wgg).
+    public func unblock(_ peer: NodeId) async {
+        await mesh.unblock(peer)
         revision += 1
     }
 

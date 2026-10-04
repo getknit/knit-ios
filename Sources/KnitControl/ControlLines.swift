@@ -5,8 +5,9 @@ import KnitWire
 
 /// The JSON shapes of what a reply or an event names: a peer, a message, a carried frame, the mesh's tables.
 internal enum ControlLines {
-    /// A pinned peer, with the name Android would show and the safety number both sides should read. `bundle` is ours.
-    static func fields(of peer: PeerRecord, bundle: PublicKeyBundle) -> [String: JSONValue] {
+    /// A pinned peer, with the name Android would show, the safety number both sides should read, and whether we
+    /// blocked them. `bundle` is ours.
+    static func fields(of peer: PeerRecord, bundle: PublicKeyBundle, blocked: Bool) -> [String: JSONValue] {
         let node = peer.nodeId.string
         return [
             "peer": .string(node),
@@ -16,6 +17,7 @@ internal enum ControlLines {
             "status": .string(peer.status),
             "openToChat": .bool(peer.openToChat),
             "verified": .bool(peer.verified),
+            "blocked": .bool(blocked),
             "capabilities": .text(peer.capabilities.map { Capabilities(rawValue: $0).hex }),
             "avatarHash": .text(peer.avatarHash?.string),
             "advertisedAvatarHash": .text(peer.advertisedAvatarHash?.string),

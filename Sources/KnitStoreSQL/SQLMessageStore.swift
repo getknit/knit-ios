@@ -129,20 +129,27 @@ public final class SQLMessageStore: MessageStore {
         }
     }
 
-    public func threadHeads() -> [MessageRecord] {
+    public func threadHeads(excludingSenders blocked: Set<NodeId>) -> [MessageRecord] {
         // One seek per thread down the (conversationId, sentAt, seq) index, however long the threads grow. A status line
-        // is never a head, so a thread of nothing else has none.
+        // is never a head, so a thread of nothing else has none, and neither has a thread of nothing but what blocked
+        // people wrote. An empty `NOT IN ()` holds for every row.
         let headColumns = Self.columns.split(separator: ", ").map { "m.\($0)" }.joined(separator: ", ")
+        let senders = blocked.sorted().map { StoredText.bytes($0.string) }
+        let excluded = Array(repeating: "?", count: senders.count).joined(separator: ", ")
         return database.read(or: []) { db in
             try Row.fetchAll(
                 db,
                 sql: """
-                    SELECT \(headColumns) FROM (SELECT DISTINCT conversationId AS thread FROM messages WHERE kind = 0) AS t
+                    SELECT \(headColumns) FROM (
+                        SELECT DISTINCT conversationId AS thread FROM messages WHERE kind = 0 AND senderId NOT IN (\(excluded))
+                    ) AS t
                     JOIN messages AS m ON m.seq = (
-                        SELECT seq FROM messages WHERE conversationId = t.thread AND kind = 0 ORDER BY sentAt DESC, seq DESC LIMIT 1
+                        SELECT seq FROM messages WHERE conversationId = t.thread AND kind = 0 AND senderId NOT IN (\(excluded))
+                        ORDER BY sentAt DESC, seq DESC LIMIT 1
                     )
                     ORDER BY m.sentAt DESC, m.seq DESC
-                    """
+                    """,
+                arguments: StatementArguments(senders + senders)
             ).map(Self.record)
         }
     }

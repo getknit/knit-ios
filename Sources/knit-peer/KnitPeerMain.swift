@@ -106,6 +106,7 @@ import Foundation
                 peers: MemoryPeerStore(),
                 messages: MemoryMessageStore(),
                 conversations: MemoryConversationStore(),
+                blocks: MemoryBlockStore(),
                 groups: MemoryGroupStore(),
                 ownProfile: state.profileStore(),
                 blobs: MemoryBlobStore()

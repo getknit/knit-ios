@@ -14,8 +14,8 @@ public enum DemoPortrait: Sendable, CaseIterable {
 
 /// Which cast `-seedDemo` seeds, as `-demoScene` names it.
 public enum DemoScene: String, Sendable, CaseIterable {
-    /// The states a screen must handle: two peers with one name, a stranger with none, a message still waiting to be
-    /// delivered, and nobody linked. The default.
+    /// The states a screen must handle: two peers with one name, a stranger with none, someone blocked, a message still
+    /// waiting to be delivered, and nobody linked. The default.
     case edgeCases = "edge-cases"
     /// A day on the trail for store screenshots and social posts, with three peers linked, and most people wearing a
     /// profile photo. After knit-next's hiking theme (`DemoScenarios.kt`), less what the iPhone does not do yet:
@@ -65,6 +65,8 @@ internal struct DemoCast {
         var verified = false
         var openToChat = false
         var portrait: DemoPortrait?
+        /// Whether the user blocked them (ADR 2026-10.5wgg).
+        var blocked = false
     }
 
     /// How long passed after a line, before the next one or now.
@@ -111,13 +113,15 @@ internal struct DemoCast {
     /// The scene's group, if it has one.
     var group: Group?
 
-    /// Two peers share a name, to show a discriminated label; the stranger has none, to show an alias.
+    /// Two peers share a name, to show a discriminated label; the stranger has none, to show an alias. Jonas is blocked,
+    /// so Settings lists someone and his profile shows the badge.
     static let edgeCases = Self(
         people: [
             Person(slot: .sam, name: "Sam", status: "At the north gate", verified: true),
             Person(slot: .priya, name: "Priya", status: ""),
             Person(slot: .stranger, name: "", status: ""),
             Person(slot: .otherSam, name: "Sam", status: "Lost my group"),
+            Person(slot: .jonas, name: "Jonas", status: "", blocked: true),
         ],
         lines: [
             Line(id: "room-1", from: .sam, to: nil, body: "Is anyone else at the festival without signal?"),

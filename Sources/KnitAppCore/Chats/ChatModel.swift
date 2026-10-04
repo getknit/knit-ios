@@ -68,6 +68,9 @@ public struct ChatState: Sendable, Equatable {
     public var exists: Bool
     /// The thread's face, beside its title: the room's, the peer's, or the group's.
     public var face = Face.room
+    /// Whether the DM's peer is blocked: the thread shows only what we wrote, and Unblock in the composer's place
+    /// (ADR 2026-10.5wgg).
+    public var isBlocked = false
 
     /// Whether this is the room.
     public var isRoom: Bool { kind == .room }
@@ -111,7 +114,8 @@ public final class ChatModel {
 
     /// Whether Send has anything to send, to anyone.
     public var canSend: Bool {
-        (Composer.body(of: text) != nil || staged != nil) && !state.nobodyElse
+        let thread = state
+        return (Composer.body(of: text) != nil || staged != nil) && !thread.nobodyElse && !thread.isBlocked
     }
 
     /// Whether the composer's button adds a photo rather than sending: nothing is typed and no photo is held, so there
@@ -169,6 +173,20 @@ public final class ChatModel {
         await session.accept(conversationId)
     }
 
+    /// Blocks the DM's peer: from a request's bar.
+    public func block() async {
+        if let peer = NodeId(conversationId) {
+            await session.block(peer)
+        }
+    }
+
+    /// Unblocks the DM's peer: from the bar a blocked DM shows.
+    public func unblock() async {
+        if let peer = NodeId(conversationId) {
+            await session.unblock(peer)
+        }
+    }
+
     /// The thread came on screen.
     public func appear() async {
         await session.show(conversationId)
@@ -186,18 +204,21 @@ public final class ChatModel {
         let peer = NodeId(conversationId)
         let group = threads.group(conversationId)
         let kind: ThreadKind = Conversations.isGroup(conversationId) ? .group : peer == nil ? .room : .direct
-        let stored = session.stores.messages.messages(in: conversationId)
+        // What blocked people wrote stays stored and hidden, and shows again once they are unblocked
+        // (`ChatViewModel.kt:780-795`).
+        let stored = session.stores.messages.messages(in: conversationId).filter { !directory.blocked.contains($0.senderId) }
         let held = session.stores.blobs.held(among: Set(stored.compactMap(\.attachment?.hash)))
         let messages = stored.compactMap { message in
             chatMessage(message, kind: kind, me: me, directory: directory, held: held)
         }
         let members = group?.members ?? []
+        let isBlocked = peer.map(directory.blocked.contains) ?? false
         var built = ChatState(
             title: peer.map { directory.label(for: $0).text } ?? Copy.ChatList.nearby,
             kind: kind,
             peer: peer,
             messages: messages,
-            isRequest: peer != nil && !messages.isEmpty && threads.isRequest(conversationId),
+            isRequest: peer != nil && !isBlocked && !messages.isEmpty && threads.isRequest(conversationId),
             requestTitle: Copy.Chat.requestTitle(peer.map { directory.label(for: $0).text } ?? ""),
             requestBody: Copy.Chat.requestBody,
             isLinked: false,
@@ -205,7 +226,8 @@ public final class ChatModel {
             memberCount: nil,
             nobodyElse: false,
             exists: kind != .group || group != nil,
-            face: peer.map(directory.face(for:)) ?? (kind == .group ? .group(conversationId, photo: nil, members: []) : .room)
+            face: peer.map(directory.face(for:)) ?? (kind == .group ? .group(conversationId, photo: nil, members: []) : .room),
+            isBlocked: isBlocked
         )
         if let group {
             built.face = directory.face(of: group)

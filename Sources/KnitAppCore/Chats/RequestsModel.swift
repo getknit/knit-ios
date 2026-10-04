@@ -18,8 +18,8 @@ public struct RequestRow: Sendable, Equatable, Identifiable {
     public var face: Face
 }
 
-/// The message requests' view model (`MessageRequestsViewModel` in knit-next, with Accept only: block and delete
-/// wait for moderation).
+/// The message requests' view model (`MessageRequestsViewModel` in knit-next): Accept, and Block for a stranger's DM.
+/// Delete waits for moderation.
 @preconcurrency
 @MainActor
 @Observable
@@ -57,5 +57,13 @@ public final class RequestsModel {
     /// Accepts a request: its thread moves to the chat list and notifies from now on.
     public func accept(_ conversationId: String) async {
         await session.accept(conversationId)
+    }
+
+    /// Blocks the stranger whose DM this request is (`MessageRequestsViewModel.block`): the request leaves the list,
+    /// and nothing they send shows. A group's request has no one to block.
+    public func block(_ conversationId: String) async {
+        if let peer = NodeId(conversationId) {
+            await session.block(peer)
+        }
     }
 }

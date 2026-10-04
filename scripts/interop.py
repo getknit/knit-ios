@@ -14,6 +14,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-group --device SERIAL [--udid UDID]
     scripts/interop.py iphone-peer [--order iphone-below|iphone-above] [--skip-offline] [--udid UDID]
     scripts/interop.py iphone-photos --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-block --device SERIAL [--udid UDID]
     scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
@@ -31,7 +32,8 @@ bridge (ADR 2026-09.kwa8), and the phone's Requests screen for a pair that has n
 runs the same items between the iPhone and the peer; `iphone-relay` runs MVP item 7's line through the iPhone, and
 `iphone-group` v1 groups along that line, the peer as the third member (`group` runs them with two peers and no
 iPhone, ADR 2026-09.n393); `iphone-photos` sends photos both ways between the iPhone and the phone, in Nearby, a DM
-and a group (ADR 2026-10.6cas); `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
+and a group (ADR 2026-10.6cas); `iphone-block` checks that a block on the iPhone leaves the phone's ✓✓ on its room post
+and its custody converging (ADR 2026-10.5wgg); `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
 `iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `iphone-reboot` is item 1's
 relaunch and reboot, with someone to close Knit and unlock the iPhone; `iphone-scan` is P8's scan-filter check, with
 someone to do the same; `iphone-seek` checks that a locked iPhone with no link finds a peer within its wake budget
@@ -3883,6 +3885,89 @@ def _photos_both_ways(run: Run, ios: IPhone, phone: Phone, kind: str, threads: t
     run.step(f"{kind}-phone-screen", lambda: _phone_screen(phone, on_phone, f"{nonce}-{kind}"))
 
 
+def iphone_block(arguments: argparse.Namespace) -> int:
+    """A block on the iPhone changes nothing the mesh sees (ADR 2026-10.5wgg, after knit-next's ADRs 010 and bts9). The
+    iPhone blocks the phone through its bridge, and the phone posts in Nearby and sends a DM. The phone's post still
+    shows the iPhone's ✓✓ while its DM shows none, the iPhone stores neither and counts both under `blocked`, and the two
+    custody sets still converge. After the unblock, the DM sent before the block is still there and the one sent during
+    it never arrives. The phone must link to the iPhone alone, so that the post's ✓✓ is the iPhone's, and the two must
+    already hold each other's keys."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid, arguments.host)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    try:
+        phone_id = phone.state()["self"]["nodeId"]
+        print(json.dumps({"run": "iphone-block", "phone": phone_id, "iphone": ios.node_id, "nonce": nonce}))
+        run.step("link", lambda: _ios_linked(ios, phone, phone_id))
+        before = f"interop dm before the block {nonce}"
+        phone.send(before, conversation=ios.node_id)
+        run.step("dm-before-the-block", lambda: _latency(ios.wait(lambda line: _message(line, before), 20)))
+        ios.command(cmd="block", peer=phone_id)
+        run.step("blocked", lambda: _ios_blocked(ios, phone_id, True))
+        counted = _ios_dropped_blocked(ios)
+        room = f"interop room while blocked {nonce}"
+        phone.send(room)
+        run.step("room-while-blocked-ticked", lambda: _timed(lambda: _received(phone.state("nearby"), room), 30))
+        during = f"interop dm while blocked {nonce}"
+        phone.send(during, conversation=ios.node_id)
+        run.step("both-counted-blocked", lambda: _timed(lambda: _ios_dropped_blocked(ios) >= counted + 2, 30))
+        run.step("dm-while-blocked-unticked", lambda: _stays_false(lambda: _received(phone.state(ios.node_id), during), 30))
+        run.step("iphone-stores-neither", lambda: _ios_lacks(ios, {"nearby": room, phone_id: during}))
+        run.step("custody-converges-while-blocked", lambda: _converges(ios, phone, 180))
+        ios.command(cmd="unblock", peer=phone_id)
+        run.step("unblocked", lambda: _ios_blocked(ios, phone_id, False))
+        run.step("dm-before-the-block-kept", lambda: _ios_has(ios, phone_id, before))
+        # Past a re-offer, so a peer that would serve the DM again has had its chance.
+        run.step("dm-while-blocked-stays-unseen", lambda: _stays_false(lambda: _ios_has_body(ios, phone_id, during), 90))
+    finally:
+        ios.stop()
+    print(json.dumps({"summary": "iphone-block", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _ios_blocked(ios: IPhone, peer: str, blocked: bool) -> dict:
+    """Whether the iPhone's `peers` says `peer` is blocked, as `blocked` expects."""
+    found = [entry for entry in ios.command(cmd="peers")["peers"] if entry["peer"] == peer]
+    if not found or found[0].get("blocked") != blocked:
+        raise RuntimeError(f"expected blocked {blocked}: {found}")
+    return {}
+
+
+def _ios_dropped_blocked(ios: IPhone) -> int:
+    """How many frames the iPhone stopped at delivery because their sender is blocked."""
+    return int(ios.command(cmd="status")["dropped"].get("blocked", 0))
+
+
+def _ios_has_body(ios: IPhone, conversation: str, body: str) -> bool:
+    return any(message.get("body") == body for message in ios.command(cmd="messages", conv=conversation, limit=50)["messages"])
+
+
+def _ios_has(ios: IPhone, conversation: str, body: str) -> dict:
+    if not _ios_has_body(ios, conversation, body):
+        raise RuntimeError(f"the iPhone lost {body!r}")
+    return {}
+
+
+def _ios_lacks(ios: IPhone, bodies: dict[str, str]) -> dict:
+    """The iPhone stores none of `bodies`, each looked for in the thread it names."""
+    stored = [body for conversation, body in bodies.items() if _ios_has_body(ios, conversation, body)]
+    if stored:
+        raise RuntimeError(f"the iPhone stored {stored}")
+    return {}
+
+
+def _stays_false(check, seconds: float, every: float = 2) -> dict:
+    """Waits out `seconds`, failing the moment `check` holds."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if check():
+            raise RuntimeError(f"it happened within {seconds} s")
+        time.sleep(every)
+    return {"seconds": seconds}
+
+
 def _ios_shows(ios: IPhone, conversation: str, hashes: set[str]) -> dict:
     """Whether each photo in `hashes` decodes on the iPhone as its thread draws it, a sealed one opened with its key
     (the bridge's `photos`)."""
@@ -4687,6 +4772,8 @@ def main() -> int:
     ios_peer.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     ios_photos = commands.add_parser("iphone-photos")
     ios_photos.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios_block = commands.add_parser("iphone-block")
+    ios_block.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak = commands.add_parser("iphone-soak")
     ios_soak.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak.add_argument("--peer", action="store_true", help="knit-peer on hci0 joins as a third author, linked to the iPhone alone")
@@ -4774,6 +4861,7 @@ def main() -> int:
         by_hand,
         ios_peer,
         ios_photos,
+        ios_block,
         ios_soak,
         ios_forgets,
         commands.choices["iphone-relay"],
@@ -4792,12 +4880,13 @@ def main() -> int:
         parser.error("--far phone needs --device")
     if arguments.command == "android-reads" and arguments.links > 1 and arguments.order != "peer-above":
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
-    if arguments.command in ("iphone", "iphone-wake", "iphone-reboot", "iphone-photos", "bridge"):
+    if arguments.command in ("iphone", "iphone-wake", "iphone-reboot", "iphone-photos", "iphone-block", "bridge"):
         return {
             "iphone": iphone,
             "iphone-wake": iphone_wake,
             "iphone-reboot": iphone_reboot,
             "iphone-photos": iphone_photos,
+            "iphone-block": iphone_block,
             "bridge": bridge,
         }[arguments.command](arguments)
     if not PEER.exists():

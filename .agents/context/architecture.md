@@ -11,12 +11,12 @@ code that builds and tests on Linux, or a thin radio adapter for one platform. T
 | `KnitSync` | all | `Lock`, the lock every target uses in place of `Synchronization.Mutex` (ADR 2026-09.ahrr) | P6 |
 | `KnitWire` | all | CBOR (kotlinx profile), wire types, registries, link records, HELLO/DIGEST, advert, NodeId/FrameId/FrameKey, UTF-16 limits, FNV fold | P1 |
 | `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM and group seal/open, a chat photo's seal/open (ADR 2026-10.6cas), group ids, safety number, the verify code, alias words, identities minted inside a node id window | P2 |
-| `KnitStore` | all | repository protocols and in-memory stores (messages and their status lines, groups and their rosters among them, and blobs), and the custody rules every store applies | P3 |
+| `KnitStore` | all | repository protocols and in-memory stores (messages and their status lines, groups and their rosters among them, blobs, and the people blocked), and the custody rules every store applies | P3 |
 | `KnitStoreSQL` | all | the `KnitStore` protocols on SQLite through GRDB: the frozen schema, its migrations and the SQL stores, and the blob store's files beside the database | P5 |
 | `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol and its FILE records both ways, router, SeenSet, custody, sync, receipts, key recovery, blob exchange, profiles and their photos, photos in chats, conversations, groups and their roster rules, policies, the system clock | P3 |
 | `KnitAppCore` | all | one `AppSession` over the mesh, the `@Observable` view models each screen reads, collision-aware labels, faces and the profile photo's crop (ADR 2026-10.sepc), what a message carries and the photo the composer holds (ADR 2026-10.6cas), the notification policy, the copy catalog (ADR 2026-09.ycza), and `-seedDemo`'s scenes, radio and shown links | P6 |
 | `KnitBLE` | Apple | the CoreBluetooth `Radio`: central and GATT reads, peripheral with the GATT payload, L2CAP streams on one thread, restoration | P6 |
-| `Knit` | iOS | the SwiftUI screens, `@main` and the app delegate, the Keychain store, notifications, the unified log, the verify code's QR image and scanner (ADR 2026-10.65xx), faces and the photo picker, cropper and viewer (ADR 2026-10.sepc), photos in threads and the viewer's Save (ADR 2026-10.6cas), the composition root, and a debug build's bridge, over USB and on a pinned Wi-Fi network (ADR 2026-09.kwa8, ADR 2026-10.dz8d) | P6 |
+| `Knit` | iOS | the SwiftUI screens, `@main` and the app delegate, the Keychain store, notifications, the unified log, the verify code's QR image and scanner (ADR 2026-10.65xx), faces and the photo picker, cropper and viewer (ADR 2026-10.sepc), photos in threads and the viewer's Save (ADR 2026-10.6cas), Block and the people blocked (ADR 2026-10.5wgg), the composition root, and a debug build's bridge, over USB and on a pinned Wi-Fi network (ADR 2026-09.kwa8, ADR 2026-10.dz8d) | P6 |
 | `KnitBlueZ`, `CDBus`, `CBluetoothShim` | Linux | the BlueZ `Radio`: one `poll` thread over a libdbus connection and LE CoC sockets; advert, scan, and serving and reading the GATT payload | P4 |
 | `KnitControl` | all | the JSON-lines control protocol: commands, replies and event lines over a `Mesh` (`MeshControl`), spoken by `knit-peer` and a debug build of the app (ADR 2026-09.kwa8); the bridge's Wi-Fi pins and commands (`RouterPin`, `WiFiCommand`, ADR 2026-10.dz8d) | P8 |
 | `KnitPeer` | all | the peer's logic: options, its state directory, keygen and the scan report | P4 |
@@ -78,8 +78,9 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
 - **Database:** GRDB over SQLite, one `knit.sqlite` in a directory of its own, with file protection
   `completeUntilFirstUserAuthentication` (the mesh runs while the phone is locked), excluded from backups
   (ADR 2026-09.nyya).
-- **Schema:** an append-only list of literal SQL migrations; v1 to v5 are frozen, v3 adding groups and the
-  status lines' `kind`, v4 the blob index and the photo hashes, and v5 what a message carries. Every table is `STRICT` and every string is a
+- **Schema:** an append-only list of literal SQL migrations; v1 to v6 are frozen, v3 adding groups and the
+  status lines' `kind`, v4 the blob index and the photo hashes, v5 what a message carries, and v6 the people
+  blocked (ADR 2026-10.5wgg). Every table is `STRICT` and every string is a
   UTF-8 `BLOB`, because GRDB cuts a bound `String` at its first NUL.
 - **Blobs:** photos are files named by their hash in `Blobs/`, inside the database's directory, so they share its
   protection and backup exclusion. The `blobs` table indexes them, and the sweep when the store opens squares the

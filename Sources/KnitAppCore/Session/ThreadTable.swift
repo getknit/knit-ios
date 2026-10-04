@@ -4,7 +4,7 @@ public import KnitWire
 
 /// Every thread at once, as the list screens read it: each thread's newest message, the groups we are in, and which
 /// threads are a stranger's message requests (`ConversationTable` in knit-next). One read per change, never a whole
-/// thread.
+/// thread. What blocked people wrote is left out, and so is a DM with one of them (ADR 2026-10.5wgg).
 public struct ThreadTable: Sendable {
     /// A thread waiting as a request: a stranger's DM, or a group nobody we know has written in.
     public struct Request: Sendable, Equatable {
@@ -19,7 +19,8 @@ public struct ThreadTable: Sendable {
         public var lastActivity: Int64 { head?.sentAt ?? group?.createdAt ?? 0 }
     }
 
-    /// Each thread's newest message, newest thread first.
+    /// Each thread's newest message that nobody blocked wrote, newest thread first, without the DMs of blocked people
+    /// (`ConversationTitles.kt:118-131`).
     public let heads: [MessageRecord]
     /// The groups we are in, never one we left, by the bytes of their ids.
     public let groups: [GroupRecord]
@@ -28,14 +29,19 @@ public struct ThreadTable: Sendable {
     private let verified: Set<NodeId>
     private let senders: [ExactKey: Set<NodeId>]
 
-    /// The table over what `stores` hold, from `me`'s side.
-    public init(stores: MeshStores, me: NodeId, verified: Set<NodeId>) {
-        heads = stores.messages.threadHeads()
+    /// The table over what `stores` hold, from `me`'s side, without what `blocked` people wrote.
+    public init(stores: MeshStores, me: NodeId, verified: Set<NodeId>, blocked: Set<NodeId>) {
+        heads = stores.messages.threadHeads(excludingSenders: blocked).filter { head in
+            NodeId(head.conversationId).map { !blocked.contains($0) } ?? true
+        }
         groups = stores.groups.groups().filter { !$0.hasLeft }
         accepted = stores.conversations.acceptedConversations()
         authored = stores.messages.conversations(authoredBy: me)
         self.verified = verified
-        senders = Dictionary(groups.map { (ExactKey($0.id), stores.messages.senders(in: $0.id)) }) { first, _ in first }
+        // A blocked member's messages never make a group known (`MessageDao.observeGroupSenders`).
+        senders = Dictionary(groups.map { (ExactKey($0.id), stores.messages.senders(in: $0.id).subtracting(blocked)) }) { first, _ in
+            first
+        }
     }
 
     /// The group `id`, if we are in it.

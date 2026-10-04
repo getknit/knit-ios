@@ -26,6 +26,8 @@ public struct PeerProfileState: Sendable, Equatable {
     public var ownCode: String
     /// Their face: their photo, or their initial on their tint.
     public var face: Face
+    /// Whether the user blocked them (ADR 2026-10.5wgg).
+    public var isBlocked: Bool
 
     /// The DM thread with them.
     public var conversationId: String { nodeId.string }
@@ -45,8 +47,8 @@ public enum VerifyScanOutcome: Sendable, Equatable, CaseIterable {
     case notACode
 }
 
-/// Another person's profile's view model: who they are, whether their key is verified, and the way to message
-/// them.
+/// Another person's profile's view model: who they are, whether their key is verified, the way to message them, and
+/// Block.
 @preconcurrency
 @MainActor
 @Observable
@@ -78,6 +80,15 @@ public final class PeerProfileModel {
     /// Marks the person verified, or clears it.
     public func setVerified(_ verified: Bool) async {
         await session.setVerified(nodeId, verified)
+    }
+
+    /// Blocks the person, or unblocks them (`ProfileDetailsViewModel.block` and `unblock`).
+    public func setBlocked(_ blocked: Bool) async {
+        if blocked {
+            await session.block(nodeId)
+        } else {
+            await session.unblock(nodeId)
+        }
     }
 
     /// Compares a scanned code with the key pinned for this person, and marks them verified on an exact match
@@ -114,7 +125,8 @@ public final class PeerProfileModel {
             safetyNumber: theirs.map { Self.lines(SafetyNumber.compute(mine: session.identity.bundle, theirs: $0)) },
             isVerified: peer?.verified ?? false,
             ownCode: VerifyPayload.encode(session.identity.bundle),
-            face: directory.face(for: nodeId)
+            face: directory.face(for: nodeId),
+            isBlocked: directory.blocked.contains(nodeId)
         )
     }
 

@@ -29,6 +29,11 @@ public enum ControlCommand: Equatable, Sendable {
     case denyLink(NodeId)
     /// `{"cmd":"allow-link","peer":"<node id>"}`: let it link again.
     case allowLink(NodeId)
+    /// `{"cmd":"block","peer":"<node id>"}`: block a peer, as their profile's Block does. Their frames are still carried,
+    /// relayed and ticked; only their delivery here stops (ADR 2026-10.5wgg).
+    case block(NodeId)
+    /// `{"cmd":"unblock","peer":"<node id>"}`: unblock them.
+    case unblock(NodeId)
     /// `{"cmd":"digest"}`: the live custody ids and their fingerprint, to check convergence.
     case digest
     /// `{"cmd":"custody"}`: every live frame in custody, with its type, sender, recipient, group and sent time, to
@@ -68,6 +73,10 @@ public enum ControlCommand: Equatable, Sendable {
             "deny-link"
         case .allowLink:
             "allow-link"
+        case .block:
+            "block"
+        case .unblock:
+            "unblock"
         case .digest:
             "digest"
         case .custody:
@@ -202,6 +211,10 @@ public struct ControlRequest: Equatable, Sendable {
             nodeId(raw.peer, "peer").map(ControlCommand.denyLink)
         case "allow-link":
             nodeId(raw.peer, "peer").map(ControlCommand.allowLink)
+        case "block":
+            nodeId(raw.peer, "peer").map(ControlCommand.block)
+        case "unblock":
+            nodeId(raw.peer, "peer").map(ControlCommand.unblock)
         case "messages":
             required(raw.conv, "conv").map { .messages($0, limit: max(1, raw.limit ?? defaultLimit)) }
         default:

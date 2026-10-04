@@ -46,4 +46,7 @@ public enum DropReason: Sendable, Hashable, CaseIterable {
     case rosterRefused
     /// A profile trying to change a pinned key.
     case pinChangeRefused
+    /// A message, a roster change or a departure from someone the user blocked (ADR 2026-10.5wgg). It is still carried
+    /// and relayed; only its delivery stops here.
+    case blocked
 }

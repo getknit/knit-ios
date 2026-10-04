@@ -196,6 +196,17 @@ public actor Mesh {
         publish()
     }
 
+    /// Blocks `peer`: nothing they send is shown, and the mesh carries and relays it as before
+    /// (``MeshEngine/block(_:)``, ADR 2026-10.5wgg).
+    public func block(_ peer: NodeId) {
+        engine.block(peer)
+    }
+
+    /// Unblocks `peer` (``MeshEngine/unblock(_:)``).
+    public func unblock(_ peer: NodeId) {
+        engine.unblock(peer)
+    }
+
     /// Refuses links with `peer`, both ways, until ``permitLinks(with:)`` (``LinkManager/refuse(_:)``).
     public func refuseLinks(with peer: NodeId) {
         apply(links.refuse(peer))

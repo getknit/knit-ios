@@ -39,6 +39,8 @@ import Testing
             (#"{"cmd":"avatar","clear":true,"jpeg":"AQID"}"#, .avatar(.clear)),
             (#"{"cmd":"deny-link","peer":"\#(peer)"}"#, .denyLink(peer)),
             (#"{"cmd":"allow-link","peer":"\#(peer)"}"#, .allowLink(peer)),
+            (#"{"cmd":"block","peer":"\#(peer)"}"#, .block(peer)),
+            (#"{"cmd":"unblock","peer":"\#(peer)"}"#, .unblock(peer)),
             (#"{"cmd":"messages","conv":"nearby"}"#, .messages("nearby", limit: 20)),
             (#"{"cmd":"messages","conv":"nearby","limit":0}"#, .messages("nearby", limit: 1)),
             (#"{"cmd":"group-create","members":["\#(peer)"]}"#, .group(.create([peer]))),
@@ -75,6 +77,8 @@ import Testing
             (#"{"cmd":"avatar"}"#, .missing("jpeg")),
             (#"{"cmd":"avatar","jpeg":"not base64!"}"#, .invalid("jpeg")),
             (#"{"cmd":"deny-link"}"#, .missing("peer")),
+            (#"{"cmd":"block"}"#, .missing("peer")),
+            (#"{"cmd":"unblock","peer":"NOPE"}"#, .invalidNodeId("NOPE")),
             (#"{"cmd":"messages"}"#, .missing("conv")),
             (#"{"cmd":"group-create"}"#, .missing("members")),
             (#"{"cmd":"group-create","members":["NOPE"]}"#, .invalidNodeId("NOPE")),
@@ -98,13 +102,15 @@ import Testing
         let names = [
             ControlCommand.status, .peers, .links, .room("", photo: nil), .directMessage(to: peer, text: "", photo: nil), .accept(""),
             .name(nil, status: nil, openToChat: nil),
-            .denyLink(peer), .allowLink(peer), .digest, .custody, .messages("", limit: 1), .stop, .start, .quit,
+            .denyLink(peer), .allowLink(peer), .block(peer), .unblock(peer), .digest, .custody, .messages("", limit: 1), .stop, .start,
+            .quit,
             .group(.create([])), .group(.send("", text: "", photo: nil)), .group(.rename("", name: "")), .group(.leave("")), .group(.list),
         ]
         .map(\.name)
         #expect(
             names == [
-                "status", "peers", "links", "room", "dm", "accept", "name", "deny-link", "allow-link", "digest", "custody",
+                "status", "peers", "links", "room", "dm", "accept", "name", "deny-link", "allow-link", "block", "unblock", "digest",
+                "custody",
                 "messages", "stop", "start", "quit", "group-create", "group-send", "group-rename", "group-leave", "groups",
             ])
     }

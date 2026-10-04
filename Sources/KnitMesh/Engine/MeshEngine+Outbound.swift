@@ -149,9 +149,11 @@ extension MeshEngine {
     }
 
     /// Our messages that waited for `recipient`'s key, sealed and flooded under their original id and clock now that
-    /// the key has pinned (`MeshManager.flushPendingFor`): DMs to them, and group messages in groups they are in.
+    /// the key has pinned (`MeshManager.flushPendingFor`): DMs to them, and group messages in groups they are in. A DM
+    /// to someone blocked waits on, as on Android, until an unblock and their next profile.
     func flushPending(to recipient: NodeId) {
-        for message in stores.messages.pendingKey(to: recipient) {
+        let waiting = isBlocked(recipient) ? [] : stores.messages.pendingKey(to: recipient)
+        for message in waiting {
             if let sealed = seal(Self.content(of: message), id: message.id, sentAt: message.sentAt, to: recipient) {
                 originate(
                     chatEnvelope(

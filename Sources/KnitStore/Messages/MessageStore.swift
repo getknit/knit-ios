@@ -161,10 +161,11 @@ public protocol MessageStore: AnyObject, Sendable {
     /// A thread's messages in reading order: by `sentAt`, ties in the order they were stored.
     func messages(in conversationId: String) -> [MessageRecord]
 
-    /// The newest message of every thread, newest thread first: what a list row shows for its thread
-    /// (`observeNewestPerConversation` in knit-next). A thread's newest is the last in its reading order, and a
-    /// status line is never one, so a thread of nothing but status lines has no head.
-    func threadHeads() -> [MessageRecord]
+    /// The newest message of every thread, newest thread first, never one `blocked` wrote: what a list row shows for
+    /// its thread (`observeNewestPerConversation` in knit-next). A thread's newest is the last in its reading order, and
+    /// a status line is never one, so a thread of nothing but status lines, or of nothing but what blocked people
+    /// wrote, has no head (`observeDistinctConversations`).
+    func threadHeads(excludingSenders blocked: Set<NodeId>) -> [MessageRecord]
 
     /// Removes every row of `conversationId`, status lines included: what leaving a group does to its thread.
     func deleteMessages(in conversationId: String)
@@ -172,6 +173,13 @@ public protocol MessageStore: AnyObject, Sendable {
     /// The blobs the messages carry: what keeps a photo from being swept, and what is fetched while its bytes are
     /// missing (`MessageDao.attachmentHashes`).
     func attachmentHashes() -> Set<BlobHash>
+}
+
+extension MessageStore {
+    /// The newest message of every thread, newest thread first, whoever wrote it.
+    public func threadHeads() -> [MessageRecord] {
+        threadHeads(excludingSenders: [])
+    }
 }
 
 /// A ``MessageStore`` in memory, keyed by the ids' bytes (``ExactKey``) and safe to share across threads.
@@ -286,10 +294,10 @@ public final class MemoryMessageStore: MessageStore {
         }
     }
 
-    public func threadHeads() -> [MessageRecord] {
+    public func threadHeads(excludingSenders blocked: Set<NodeId>) -> [MessageRecord] {
         state.withLock { state in
             var heads: [ExactKey: Row] = [:]
-            for row in state.rows.values where !row.record.kind.isNotice {
+            for row in state.rows.values where !row.record.kind.isNotice && !blocked.contains(row.record.senderId) {
                 let thread = ExactKey(row.record.conversationId)
                 if let head = heads[thread], State.precedes(row, head) {
                     continue

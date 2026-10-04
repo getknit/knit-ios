@@ -25,6 +25,8 @@ public struct Directory: Sendable {
     public let peers: [NodeId: PeerRecord]
     /// The peers the user verified.
     public let verified: Set<NodeId>
+    /// The people the user blocked, pinned or not (ADR 2026-10.5wgg).
+    public let blocked: Set<NodeId>
     /// The collision-aware labels.
     public let labels: PeerLabelIndex
     /// Our own node id.
@@ -32,10 +34,11 @@ public struct Directory: Sendable {
     /// Our own photo, or `nil` for none.
     public let myPhoto: BlobHash?
 
-    /// The directory over `peers` and our own id, name and photo.
-    public init(peers: [PeerRecord], me: NodeId, myName: String, myPhoto: BlobHash? = nil) {
+    /// The directory over `peers`, the people blocked, and our own id, name and photo.
+    public init(peers: [PeerRecord], blocked: Set<NodeId> = [], me: NodeId, myName: String, myPhoto: BlobHash? = nil) {
         self.peers = Dictionary(peers.map { ($0.nodeId, $0) }) { first, _ in first }
         verified = Set(peers.filter(\.verified).map(\.nodeId))
+        self.blocked = blocked
         labels = PeerLabelIndex(peers: peers.map { ($0.nodeId.string, $0.name) }, me: (me.string, myName))
         self.me = me
         self.myPhoto = myPhoto

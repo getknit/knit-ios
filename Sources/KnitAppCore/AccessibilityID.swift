@@ -124,10 +124,24 @@ public enum AccessibilityID {
         "request_accept_\(conversationId)"
     }
 
+    /// A DM request's Block, `request_block_<conversation id>`. Android blocks from the row's menu, with no tag.
+    public static func requestBlock(_ conversationId: String) -> String {
+        "request_block_\(conversationId)"
+    }
+
+    /// A stranger's thread's Block, under Accept. Android blocks from the thread's menu, with no tag.
+    public static let chatRequestBlock = "chat_request_block"
+    /// A blocked DM's Unblock, in the composer's place. Android has no tag here.
+    public static let chatUnblock = "chat_unblock"
+
     /// Another person's profile.
     public static let profileDetailsScreen = "screen_profile_details"
     /// Its Message button.
     public static let profileDetailsMessage = "profile_details_message"
+    /// The badge on a blocked person's profile.
+    public static let profileDetailsBlocked = "profile_details_blocked"
+    /// Its Block, or Unblock once blocked. Android has no tag here.
+    public static let profileDetailsBlock = "profile_details_block"
     /// Its node id row.
     public static let profileDetailsNodeId = "profile_details_node_id"
     /// Its alias row.
@@ -190,6 +204,19 @@ public enum AccessibilityID {
     public static let settingsAbout = "settings_menu_about"
     /// Settings' way to Diagnostics.
     public static let settingsDiagnostics = "settings_diagnostics"
+    /// Settings' way to the people blocked. Android opens them from the chat list's menu, with no tag.
+    public static let settingsBlocked = "settings_blocked"
+    /// The people blocked.
+    public static let blockedScreen = "screen_blocked_users"
+    /// One blocked person's row, which opens their profile, `blocked_row_<node id>`. Android has no tag here.
+    public static func blockedRow(_ nodeId: String) -> String {
+        "blocked_row_\(nodeId)"
+    }
+
+    /// One blocked person's Unblock, `blocked_unblock_<node id>`. Android has no tag here.
+    public static func blockedUnblock(_ nodeId: String) -> String {
+        "blocked_unblock_\(nodeId)"
+    }
     /// About.
     public static let aboutScreen = "screen_about"
     /// About's licence notice.

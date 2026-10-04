@@ -45,6 +45,9 @@ document:
 - Send photos in Nearby, direct messages and groups, see the ones Android phones send, and tap any photo to
   view it full size or save it to Photos. Those sent in direct messages and groups are end-to-end encrypted,
   while photos in Nearby are public, like everything posted there.
+- Block someone from their profile or a message request, and what they send stops showing on your iPhone,
+  without them being told. Your iPhone still passes their messages on to others, and Settings lists everyone
+  you've blocked so you can unblock them.
 
 ## About this file
 

@@ -89,6 +89,16 @@ final class KnitUITests: XCTestCase {
         try walkSettings()
     }
 
+    /// Blocked people lead to a profile whose Unblock acts at once and whose Block asks first (ADR 2026-10.5wgg).
+    func testTheBlockedPeopleLeadToAProfileThatUnblocksAndBlocksAgain() throws {
+        try walkBlocked()
+    }
+
+    /// A stranger's thread offers Block under Accept, which asks first; Unblock then brings the request back.
+    func testARequestsBlockAsksFirstAndUnblockBringsItBack() throws {
+        try walkRequestBlock()
+    }
+
     /// Bluetooth off, not allowed and unsupported each have their own line (MVP item 10).
     func testEachRadioStateHasItsOwnStatusLine() throws {
         try walkRadioStates()
@@ -110,6 +120,8 @@ final class KnitUITests: XCTestCase {
         try walkPhotos()
         try walkChatPhotos()
         try walkSettings()
+        try walkBlocked()
+        try walkRequestBlock()
         try walkRadioStates()
     }
 

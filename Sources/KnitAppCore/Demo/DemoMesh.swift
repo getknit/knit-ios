@@ -140,4 +140,14 @@ public final class DemoMesh: MeshService {
     public func setVerified(_ peer: NodeId, _ verified: Bool) async {
         await mesh.setVerified(peer, verified)
     }
+
+    /// Blocks a person.
+    public func block(_ peer: NodeId) async {
+        await mesh.block(peer)
+    }
+
+    /// Unblocks a person.
+    public func unblock(_ peer: NodeId) async {
+        await mesh.unblock(peer)
+    }
 }

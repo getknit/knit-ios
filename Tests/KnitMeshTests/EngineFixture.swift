@@ -94,13 +94,15 @@ struct TestPeer: Equatable {
         version: Int64? = nil,
         publishedAt: Int64,
         relay: Bool = true,
-        avatarHash: String? = nil
+        avatarHash: String? = nil,
+        deviceTag: String? = nil
     ) throws -> TestFrame {
         let content = ProfileContent(
             name: name,
             status: "",
             avatarHash: avatarHash,
             pubKey: keys.bundle.encoded,
+            deviceTag: deviceTag,
             protoVersion: WireProtocol.version,
             capabilities: 0xFFF,
             version: version

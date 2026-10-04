@@ -4,8 +4,8 @@ import KnitTestSupport
 import KnitWire
 import Testing
 
-/// Every implementation of the peer, message, conversation, group and own-profile stores. Each runs the whole
-/// ``RepositoryTests`` and ``GroupStoreTests`` suites.
+/// Every implementation of the peer, message, conversation, block, group and own-profile stores. Each runs the whole
+/// ``RepositoryTests``, ``BlockStoreTests`` and ``GroupStoreTests`` suites.
 enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
     case memory
     case sql
@@ -15,6 +15,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
         var peers: any PeerStore
         var messages: any MessageStore
         var conversations: any ConversationStore
+        var blocks: any BlockStore
         var groups: any GroupStore
         var ownProfile: any OwnProfileStore
     }
@@ -35,6 +36,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
                 peers: MemoryPeerStore(),
                 messages: MemoryMessageStore(),
                 conversations: MemoryConversationStore(),
+                blocks: MemoryBlockStore(),
                 groups: MemoryGroupStore(),
                 ownProfile: MemoryOwnProfileStore()
             )
@@ -44,6 +46,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
                 peers: SQLPeerStore(database),
                 messages: SQLMessageStore(database),
                 conversations: SQLConversationStore(database),
+                blocks: SQLBlockStore(database),
                 groups: SQLGroupStore(database),
                 ownProfile: SQLOwnProfileStore(database)
             )
@@ -213,6 +216,21 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
         #expect(store.threadHeads().map(\.id) == ["room-new", "dm-tie", "other"], "a tie goes to the one stored last")
         store.save(message("dm-first", from: bob, to: alice, sentAt: 5, pendingKey: true))
         #expect(store.threadHeads().map(\.id) == ["room-new", "dm-tie", "other"], "a save keeps its place among ties")
+    }
+
+    @Test(arguments: kinds)
+    func aThreadsHeadSkipsWhatBlockedPeopleWrote(kind: RepositoryKind) throws {
+        // `MessageDaoTest`'s `observeNewestPerConversation skips blocked senders` and `observeDistinctConversations
+        // drops a thread where every row is blocked`.
+        let store = try kind.make().messages
+        let carol = fixtureNodeId(3)
+        store.save(message("room-bob", from: bob, to: nil, sentAt: 2))
+        store.save(message("room-carol", from: carol, to: nil, sentAt: 9))
+        store.save(message("dm-carol", from: carol, to: alice, sentAt: 7))
+        #expect(store.threadHeads(excludingSenders: [carol]).map(\.id) == ["room-bob"])
+        #expect(store.threadHeads(excludingSenders: [bob, carol]).isEmpty)
+        #expect(store.threadHeads(excludingSenders: []) == store.threadHeads(), "nobody blocked leaves every head")
+        #expect(store.threadHeads(excludingSenders: [fixtureNodeId(4)]).map(\.id) == ["room-carol", "dm-carol"])
     }
 
     @Test(arguments: kinds)

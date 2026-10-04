@@ -163,7 +163,9 @@ extension MeshEngine {
             advertisedAvatarHash: photo.advertised
         )
         stores.peers.upsert(record)
-        if record != existing {
+        // Before the waiting DMs go out and the parked frames land, so both meet a block that followed new keys. It runs
+        // first, so it runs every time.
+        if continueBlock(of: sender, deviceTag: content.deviceTag) || record != existing {
             events.append(.peerUpdated(sender))
         }
         // A linked peer pushes its own photo right behind its profile, so only someone else's is asked for now; a push

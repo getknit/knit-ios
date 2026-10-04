@@ -153,6 +153,7 @@
                 peers: SQLPeerStore(database),
                 messages: SQLMessageStore(database),
                 conversations: SQLConversationStore(database),
+                blocks: SQLBlockStore(database),
                 groups: SQLGroupStore(database),
                 ownProfile: SQLOwnProfileStore(database),
                 blobs: try SQLBlobStore(

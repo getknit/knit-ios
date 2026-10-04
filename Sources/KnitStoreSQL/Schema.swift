@@ -22,6 +22,7 @@ internal enum Schema {
         ("v3", v3),
         ("v4", v4),
         ("v5", v5),
+        ("v6", v6),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -166,6 +167,13 @@ internal enum Schema {
         "ALTER TABLE messages ADD COLUMN attachmentName BLOB",
         "ALTER TABLE messages ADD COLUMN attachmentSize INTEGER",
         "CREATE INDEX messages_attachmentHash ON messages (attachmentHash) WHERE attachmentHash IS NOT NULL",
+    ]
+
+    /// Schema v6: the people the user blocked (ADR 2026-10.5wgg), by node id, and the device tags their profiles carried
+    /// (`SettingsStore.blockedNodeIds` and `blockedDeviceTags`). A database that predates it blocks nobody.
+    private static let v6 = [
+        "CREATE TABLE blocked_nodes (nodeId BLOB NOT NULL PRIMARY KEY) STRICT",
+        "CREATE TABLE blocked_device_tags (deviceTag BLOB NOT NULL PRIMARY KEY) STRICT",
     ]
 
     /// The migrator that brings any database this build knows up to date.

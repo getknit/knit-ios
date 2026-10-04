@@ -2,9 +2,12 @@
     import KnitAppCore
     import SwiftUI
 
-    /// Message requests: strangers' DMs, each with Accept. A row opens the thread to read it first.
+    /// Message requests: strangers' DMs, each with Accept, and Block a swipe away. A row opens the thread to read it
+    /// first, where Block also waits under Accept.
     internal struct RequestsView: View {
         @State private var model: RequestsModel
+        /// The request whose sender Block is asking about.
+        @State private var blocking: RequestRow?
         @Environment(\.dynamicTypeSize) private var typeSize
 
         init(session: AppSession) {
@@ -32,12 +35,30 @@
                             .buttonStyle(.bordered)
                             .accessibilityIdentifier(AccessibilityID.requestAccept(row.id))
                         }
+                        .swipeActions {
+                            // A group's request has nobody to block. Not a destructive role: the row stays until the
+                            // dialog's Block, which takes it.
+                            if !row.isGroup {
+                                Button(Copy.Block.block) { blocking = row }
+                                    .tint(Palette.critical)
+                                    .accessibilityIdentifier(AccessibilityID.requestBlock(row.id))
+                            }
+                        }
                     }
                 } footer: {
                     SectionNote(Copy.Requests.explanation)
                 }
             }
             .navigationTitle(Copy.Requests.title)
+            .confirmsBlock(of: blocking?.title ?? "", isPresented: confirmsBlock) {
+                if let row = blocking {
+                    Task { await model.block(row.id) }
+                }
+            }
+        }
+
+        private var confirmsBlock: Binding<Bool> {
+            Binding(get: { blocking != nil }, set: { if !$0 { blocking = nil } })
         }
     }
 

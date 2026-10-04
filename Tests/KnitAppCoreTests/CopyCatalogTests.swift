@@ -162,7 +162,7 @@ import Testing
             Copy.Diagnostics.link(version: 3, capabilities: "9"),
             Copy.Diagnostics.clockAhead(seconds: 5),
             Copy.Diagnostics.clockBehind(seconds: 5),
-        ] + Self.groupStrings + Self.newMessageStrings + Self.verifyStrings + Self.photoStrings
+        ] + Self.groupStrings + Self.newMessageStrings + Self.verifyStrings + Self.photoStrings + Self.blockStrings
     }
 
     private static var photoStrings: [String] {
@@ -343,6 +343,26 @@ extension CopyCatalogTests {
             Copy.Attachments.saveFailed,
             Copy.Attachments.saveDenied,
             Copy.System.photoLibraryAddUsage,
+        ]
+    }
+}
+
+extension CopyCatalogTests {
+    /// Blocking's strings (ADR 2026-10.5wgg), apart so the suite stays under the lint's length.
+    static var blockStrings: [String] {
+        [
+            Copy.Block.block,
+            Copy.Block.unblock,
+            Copy.Block.blockPerson("Sam"),
+            Copy.Block.unblockPerson("Sam"),
+            Copy.Block.badge,
+            Copy.Block.confirmTitle("Sam"),
+            Copy.Block.confirmBody,
+            Copy.Block.barTitle("Sam"),
+            Copy.Block.barBody,
+            Copy.Block.listTitle,
+            Copy.Block.empty,
+            Copy.Block.listFooter,
         ]
     }
 }

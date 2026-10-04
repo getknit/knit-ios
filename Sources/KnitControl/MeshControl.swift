@@ -29,6 +29,10 @@ public protocol ControlActions: Sendable {
     func renameGroup(_ groupId: String, to name: String) async -> GroupRecord?
     /// Leaves a group, telling its members.
     func leaveGroup(_ groupId: String) async -> Bool
+    /// Blocks a peer (ADR 2026-10.5wgg).
+    func block(_ peer: NodeId) async
+    /// Unblocks a peer.
+    func unblock(_ peer: NodeId) async
 }
 
 extension Mesh: ControlActions {}
@@ -132,7 +136,8 @@ public actor MeshControl {
             guard let peer = stores.peers.peer(node) else {
                 return []
             }
-            var fields = ControlLines.fields(of: peer, bundle: bundle)
+            // A profile event says when the block followed someone's new keys (`MeshEngine.continueBlock`).
+            var fields = ControlLines.fields(of: peer, bundle: bundle, blocked: stores.blocks.blockedNodeIds().contains(node))
             fields["event"] = "profile"
             return [JSONValue.object(fields).line]
         case .neighborsChanged(let neighbors):
@@ -157,8 +162,7 @@ public actor MeshControl {
         case .status:
             return .success(await status())
         case .peers:
-            let peers = stores.peers.allPeers().sorted { $0.nodeId < $1.nodeId }
-            return .success(["peers": .array(peers.map { .object(ControlLines.fields(of: $0, bundle: bundle)) })])
+            return .success(peers())
         case .links:
             return .success(await links())
         case .room(let text, let photo):
@@ -180,6 +184,8 @@ public actor MeshControl {
             return await setAvatar(from: source)
         case .denyLink(let peer), .allowLink(let peer):
             return .success(await setLinks(with: peer, allowed: command == .allowLink(peer)))
+        case .block(let peer), .unblock(let peer):
+            return .success(await setBlocked(peer, blocked: command == .block(peer)))
         case .digest:
             return .success(digest())
         case .custody:
@@ -283,6 +289,23 @@ public actor MeshControl {
 /// The answers that read or change one thing each, kept apart from the actor's body.
 extension MeshControl {
     /// Refuses or permits links with `peer`, as `deny-link` and `allow-link` ask.
+    /// Every pinned peer, in node id order, each saying whether we blocked them.
+    private func peers() -> [String: JSONValue] {
+        let peers = stores.peers.allPeers().sorted { $0.nodeId < $1.nodeId }
+        let blocked = stores.blocks.blockedNodeIds()
+        return ["peers": .array(peers.map { .object(ControlLines.fields(of: $0, bundle: bundle, blocked: blocked.contains($0.nodeId))) })]
+    }
+
+    /// Blocks `peer` or unblocks them, through the actions, as their profile's button would (ADR 2026-10.5wgg).
+    private func setBlocked(_ peer: NodeId, blocked: Bool) async -> [String: JSONValue] {
+        if blocked {
+            await actions.block(peer)
+        } else {
+            await actions.unblock(peer)
+        }
+        return ["peer": .string(peer.string)]
+    }
+
     private func setLinks(with peer: NodeId, allowed: Bool) async -> [String: JSONValue] {
         if allowed {
             await mesh.permitLinks(with: peer)

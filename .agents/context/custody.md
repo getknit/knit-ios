@@ -37,7 +37,8 @@ A node carries frames for people who are not in range yet. This is store-and-for
 
 - **Entry rule** (`InboundPipeline.kt:236`): `verified && isCustodial && (wire.relay || type == "profile")`.
   A profile served point to point through `keyreq` is custodied. A `relay = false` tick never is. DMs and
-  group chat are carried only when encrypted. The block list is never consulted.
+  group chat are carried only when encrypted. The block list is never consulted: a block stops a frame at
+  delivery only (ADR 2026-10.5wgg, after knit-next's ADR 2026-09.bts9).
 - **Our own frames count too** (ORIGIN_SELF), our profile included, under the same quotas.
 - **An inbound DM to us is custodied,** then purged by our own cleartext receipt (the self-purge).
 - **Expiry:** `sentAt + 24 h`, or 6 h for room *chat*. Room receipts, reactions and profiles keep 24 h.

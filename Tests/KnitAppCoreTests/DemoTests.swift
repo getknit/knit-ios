@@ -72,6 +72,7 @@ import Testing
         #expect(once.peers.allPeers() == again.peers.allPeers())
         #expect(once.messages.threadHeads() == again.messages.threadHeads())
         #expect(once.ownProfile.load() == again.ownProfile.load())
+        #expect(once.blocks.blockedNodeIds() == again.blocks.blockedNodeIds())
     }
 
     @Test func theDemoShowsARoomADMARequestAndTwoSams() async throws {
@@ -92,6 +93,7 @@ import Testing
         let list = ChatListModel(session: session).state
         #expect(list.rows.count == 3)
         #expect(list.requestCount == 1)
+        #expect(BlockedModel(session: session).rows.map(\.title) == ["Jonas"], "someone blocked, for Settings to list")
         #expect(list.rows[0].preview?.hasPrefix("Priya: ") == true)
         #expect(list.rows[1].title.hasPrefix("Sam ("), "two Sams, told apart")
         #expect(list.rows[1].isVerified)
@@ -209,6 +211,8 @@ import Testing
         await mesh.accept("c1")
         await mesh.updateProfile(name: "Maya", status: "", openToChat: true)
         await mesh.setVerified(sam.nodeId, true)
+        await mesh.block(sam.nodeId)
+        await mesh.unblock(sam.nodeId)
         let group = await mesh.createGroup(with: [sam.nodeId])
         let id = group?.id ?? ""
         #expect(await mesh.sendGroupMessage("all", to: id, photo: nil) != nil)
@@ -220,6 +224,7 @@ import Testing
             direct: ["\(sam.nodeId): hey"],
             accepted: ["c1"],
             verified: ["\(sam.nodeId): true"],
+            blocked: ["block \(sam.nodeId)", "unblock \(sam.nodeId)"],
             profiles: ["Maya||true"],
             groups: ["create \(sam.nodeId)", "send \(id): all", "rename \(id): Pair", "leave \(id)"]
         )

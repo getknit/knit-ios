@@ -135,5 +135,13 @@
         func leaveGroup(_ groupId: String) async -> Bool {
             await session.leaveGroup(groupId)
         }
+
+        func block(_ peer: NodeId) async {
+            await session.block(peer)
+        }
+
+        func unblock(_ peer: NodeId) async {
+            await session.unblock(peer)
+        }
     }
 #endif

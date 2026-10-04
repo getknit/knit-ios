@@ -116,6 +116,12 @@ extension MeshEngine {
         guard let sender = NodeId(envelope.senderId) else {
             return
         }
+        // A block stops delivery here and nothing else: the frame was carried above and the router relays it, and a
+        // parked or replayed frame comes through this door too (`InboundPipeline.handleChat:662-676`, ADR 2026-10.5wgg).
+        if isBlocked(sender) {
+            dropBlocked(envelope, sender: sender)
+            return
+        }
         // A group message names no recipient, so it is told apart before the DM check would take it for the room.
         if let group = envelope.group {
             handleGroupChat(envelope, group: group, sender: sender)

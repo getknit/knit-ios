@@ -110,7 +110,8 @@ public final class NewMessageModel {
             people += group.members.compactMap(NodeId.init)
         }
         people += directory.verified
-        var seen: Set<NodeId> = [me]
+        // Blocked people are nobody's contacts (`ContactUniverse.kt:75`), until they are unblocked.
+        var seen: Set<NodeId> = directory.blocked.union([me])
         let found = people.filter { seen.insert($0).inserted }.map { peer in
             Contact(
                 id: peer,

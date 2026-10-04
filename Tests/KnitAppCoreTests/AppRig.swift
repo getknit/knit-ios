@@ -46,6 +46,7 @@ final class FakeMesh: MeshService {
         var direct: [String] = []
         var accepted: [String] = []
         var verified: [String] = []
+        var blocked: [String] = []
         var profiles: [String] = []
         var avatars: [BlobHash?] = []
         var photos: [BlobHash] = []
@@ -190,6 +191,16 @@ final class FakeMesh: MeshService {
             record.verified = verified
             stores.peers.upsert(record)
         }
+    }
+
+    func block(_ peer: NodeId) {
+        state.withLock { $0.calls.blocked.append("block \(peer)") }
+        stores.blocks.block(peer, deviceTag: stores.peers.peer(peer)?.deviceTag)
+    }
+
+    func unblock(_ peer: NodeId) {
+        state.withLock { $0.calls.blocked.append("unblock \(peer)") }
+        stores.blocks.unblock(peer, deviceTag: stores.peers.peer(peer)?.deviceTag)
     }
 
     private func store(_ text: String, to recipient: NodeId?, in group: String? = nil, photo: OutgoingPhoto? = nil) -> MessageRecord {

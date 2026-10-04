@@ -148,7 +148,11 @@ public enum DemoSeed {
         }
         var nodeIds = [DemoCast.Slot.me: me]
         for person in cast.people {
-            nodeIds[person.slot] = pin(person, in: stores, at: now, paint: paint)
+            let pinned = pin(person, in: stores, at: now, paint: paint)
+            nodeIds[person.slot] = pinned
+            if person.blocked, let pinned {
+                stores.blocks.block(pinned, deviceTag: nil)
+            }
         }
         let groupId = cast.group.map { group in GroupId.derive((group.members + [.me]).compactMap { nodeIds[$0]?.string }) }
         var sentAt = now

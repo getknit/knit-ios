@@ -2,7 +2,7 @@
     import KnitAppCore
     import SwiftUI
 
-    /// Settings: the profile row, Stop and Start, notifications, About and Diagnostics (MVP item 10).
+    /// Settings: the profile row, Stop and Start, notifications, the people blocked, About and Diagnostics (MVP item 10).
     internal struct SettingsView: View {
         @State private var model: SettingsModel
         @Environment(\.scenePhase) private var scenePhase
@@ -26,6 +26,10 @@
                     }
                 } footer: {
                     SectionNote(Copy.Settings.notificationsFooter)
+                }
+                Section {
+                    NavigationLink(Copy.Block.listTitle, value: Route.blocked)
+                        .accessibilityIdentifier(AccessibilityID.settingsBlocked)
                 }
                 Section {
                     NavigationLink(Copy.Settings.about, value: Route.about)

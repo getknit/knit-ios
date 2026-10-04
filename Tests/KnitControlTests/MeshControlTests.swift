@@ -328,6 +328,14 @@ private final class RecordingActions: ControlActions {
         return !refuses
     }
 
+    func block(_ peer: NodeId) {
+        record("block \(peer)")
+    }
+
+    func unblock(_ peer: NodeId) {
+        record("unblock \(peer)")
+    }
+
     private func group(named name: String) -> GroupRecord {
         GroupRecord(id: "g-1", name: name, createdBy: me.string, createdAt: 1, roster: [GroupMember(nodeId: me.string)])
     }

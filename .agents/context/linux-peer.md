@@ -150,12 +150,14 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   holds the protocol, and a debug build of the app speaks it too, over USB or Wi-Fi (ADR 2026-09.kwa8,
   ADR 2026-10.dz8d): `status` (with `avatarHash`, our photo; `files`, the FILE records received, refused and sent;
   `footprint`, the size of each table the mesh keeps in memory, blobs wanted and files queued among them; and
-  `router`, what the router has admitted, relayed and refused), `peers` (names, aliases, safety numbers, and each
-  peer's `avatarHash` shown and `advertisedAvatarHash`), `links` (links and sightings), `room` (`text`), `dm` (`to`,
+  `router`, what the router has admitted, relayed and refused), `peers` (names, aliases, safety numbers, each
+  peer's `avatarHash` shown and `advertisedAvatarHash`, and `blocked`), `links` (links and sightings), `room` (`text`), `dm` (`to`,
   `text`); `room`, `dm` and `group-send` also take a `photo` as base64 and its `mime`, `image/jpeg` when absent, and
   then need no `text`, and their replies name the `attachmentHash` the photo is kept under (ADR 2026-10.6cas),
   `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `avatar` (`jpeg` as base64, a `path` the
-  answering side reads, or `clear`; ADR 2026-10.nh55), `deny-link` and `allow-link` (`peer`),
+  answering side reads, or `clear`; ADR 2026-10.nh55), `deny-link` and `allow-link` (`peer`), `block` and
+  `unblock` (`peer`; a blocked peer's frames are still carried, relayed and ticked, and `status`'s `dropped` counts
+  what stopped at delivery under `blocked`, ADR 2026-10.5wgg),
   `digest` (live custody ids and their fingerprint), `custody` (every live frame, and who a sealed chat is
   wrapped to), `messages` (`conv`, `limit`; each message carries its `kind`, 0 for a message and Android's
   notice codes for a status line, and a photo's `attachmentHash`, `attachmentMime` and `attachmentHeld`, whether its

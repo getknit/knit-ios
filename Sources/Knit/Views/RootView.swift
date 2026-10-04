@@ -11,6 +11,7 @@
         case peer(NodeId)
         case profile
         case settings
+        case blocked
         case about
         case diagnostics
     }
@@ -140,6 +141,8 @@
                 OwnProfileView(session: environment.session, codec: environment.codec, demoPhoto: environment.demoPhoto)
             case .settings:
                 SettingsView(session: environment.session, permission: environment.notifier, about: environment.about)
+            case .blocked:
+                BlockedView(session: environment.session)
             case .about:
                 AboutView(about: environment.about)
             case .diagnostics:
