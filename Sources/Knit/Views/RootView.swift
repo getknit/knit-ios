@@ -83,6 +83,7 @@
                 }
             }
             .environment(environment.photos)
+            .environment(environment.screening)
         }
     }
 
@@ -128,7 +129,11 @@
             switch route {
             case .chat(let conversationId):
                 ChatView(
-                    conversationId: conversationId, session: environment.session, codec: environment.codec, demoPhoto: environment.demoPhoto
+                    conversationId: conversationId,
+                    session: environment.session,
+                    codec: environment.codec,
+                    screening: environment.screening,
+                    demoPhoto: environment.demoPhoto
                 )
             case .requests:
                 RequestsView(session: environment.session)

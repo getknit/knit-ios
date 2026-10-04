@@ -22,7 +22,7 @@
                     Text(Copy.About.security)
                 }
                 Section {
-                    ForEach(ThirdPartyNotice.shipped) { notice in
+                    ForEach(ThirdPartyNotice.shipped + ThirdPartyNotice.bundled) { notice in
                         if let url = URL(string: notice.url) {
                             Link(destination: url) {
                                 ValueRow(notice.name, value: notice.license)

@@ -98,13 +98,14 @@ import Testing
         #expect(plist["NSPhotoLibraryUsageDescription"] == nil, "adding needs no reading: the picker shares only what is picked")
     }
 
-    @Test func aboutListsWhatTheNoticesFileShips() throws {
+    @Test(arguments: [("## Shipped in the app", ThirdPartyNotice.shipped), ("## Bundled models", ThirdPartyNotice.bundled)])
+    func aboutListsWhatTheNoticesFileShips(section: String, notices listed: [ThirdPartyNotice]) throws {
         let notices = try Self.text("THIRD-PARTY-NOTICES.md")
-        let shipped = try #require(notices.components(separatedBy: "## Shipped in the app").last?.components(separatedBy: "\n## ").first)
+        let shipped = try #require(notices.components(separatedBy: section).last?.components(separatedBy: "\n## ").first)
         let rows = shipped.split(separator: "\n").filter { $0.hasPrefix("| `") }
         let ids = rows.compactMap { $0.split(separator: "`").dropFirst().first.map(String.init) }
-        #expect(ids.sorted() == ThirdPartyNotice.shipped.map(\.id).sorted())
-        for notice in ThirdPartyNotice.shipped {
+        #expect(ids.sorted() == listed.map(\.id).sorted())
+        for notice in listed {
             let row = rows.first { $0.contains("`\(notice.id)`") }
             #expect(row?.contains(notice.license) == true, "\(notice.id) is \(notice.license) in both")
             #expect(row?.contains(notice.url) == true)

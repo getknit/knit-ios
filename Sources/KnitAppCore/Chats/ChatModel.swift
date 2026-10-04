@@ -87,18 +87,30 @@ public final class ChatModel {
     public let conversationId: String
     @ObservationIgnored private let session: AppSession
     @ObservationIgnored private let codec: (any ImageCodec)?
+    @ObservationIgnored private let screening: PhotoScreening?
     @ObservationIgnored private var cache = Cached<Int, ChatState>()
     private var text = ""
     /// The photo the composer holds, which Send sends with the draft or alone.
     public private(set) var staged: StagedPhoto?
     /// Whether the last photo picked could not be read, which the screen says until it is dismissed.
     public var photoFailed = false
+    /// Whether the last photo picked looked explicit in the room, which refuses it; the screen says so until it is
+    /// dismissed.
+    public var photoRefused = false
+    /// A photo picked in a DM or a group that looked explicit, held out of the composer until the sender says to send it
+    /// anyway or drops it (ADR 2026-10.rpmq).
+    private(set) var explicitPhoto: OutgoingPhoto?
+    /// Whether the screen asks about ``explicitPhoto``. Its answer is ``keepExplicitPhoto()`` or
+    /// ``dropExplicitPhoto()``; dismissing the question changes neither.
+    public var asksAboutExplicitPhoto = false
 
-    /// The thread `conversationId` over `session`, making picked photos ready to send through `codec`.
-    public init(conversationId: String, session: AppSession, codec: (any ImageCodec)? = nil) {
+    /// The thread `conversationId` over `session`, making picked photos ready to send through `codec` and checking them
+    /// with `screening`.
+    public init(conversationId: String, session: AppSession, codec: (any ImageCodec)? = nil, screening: PhotoScreening? = nil) {
         self.conversationId = conversationId
         self.session = session
         self.codec = codec
+        self.screening = screening
     }
 
     /// What the composer holds, cut at the limit as it is typed.
@@ -149,12 +161,38 @@ public final class ChatModel {
 
     /// Makes a picked photo ready to send (`AttachmentStore.ingest`) and holds it in the composer, in place of any held
     /// before. One the picker could not hand over, or the codec cannot read, says so.
+    ///
+    /// The prepared photo is checked whatever the content filter says (`ChatViewModel.stage`). One that looks explicit
+    /// is refused in the room, which floods to everyone in range, and held for a DM or a group until the sender answers.
     public func choosePhoto(_ data: Data?) async {
         guard let data, let codec, let photo = await codec.chatPhoto(from: data) else {
             photoFailed = true
             return
         }
+        guard await screening?.isExplicit(outgoing: photo.bytes) == true else {
+            staged = await Self.stage(photo)
+            return
+        }
+        if state.isRoom {
+            photoRefused = true
+        } else {
+            explicitPhoto = photo
+            asksAboutExplicitPhoto = true
+        }
+    }
+
+    /// Holds the explicit photo in the composer after all: the sender said to send it anyway.
+    public func keepExplicitPhoto() async {
+        guard let photo = explicitPhoto else {
+            return
+        }
+        explicitPhoto = nil
         staged = await Self.stage(photo)
+    }
+
+    /// Drops the explicit photo, which never reached the composer.
+    public func dropExplicitPhoto() {
+        explicitPhoto = nil
     }
 
     /// Takes the held photo out of the composer.

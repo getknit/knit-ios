@@ -26,6 +26,11 @@ targets:
         buildPhase: resources
       - path: Info.plist
         buildPhase: none
+      # The content filter's photo model (ADR 2026-10.rpmq): Xcode compiles it into Knit.app/NSFW.mlmodelc, which
+      # DevicePhotoClassifier loads. One package, not the folder of files it is; `check.sh xcode` checks it lands.
+      - path: Models/NSFW.mlpackage
+        type: file
+        buildPhase: sources
     dependencies:
       - package: Knit
         product: Knit
@@ -47,6 +52,9 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Package.swift already links Knit with -ObjC for KnitBLE's delegates; this keeps it if that moves.
         OTHER_LDFLAGS: [-ObjC]
+        # The model's generated class would land in this C host, out of the package's reach; DevicePhotoClassifier
+        # loads the compiled model by name instead.
+        COREML_CODEGEN_LANGUAGE: None
       configs:
         # ADR 2026-09.txqp: Xcode-signed development builds take the .dev id.
         Debug:
@@ -116,6 +124,7 @@ schemes:
         "-demoRadio unsupported": false
         "-demoCamera denied": false
         "-demoCamera allowed": false
+        "-demoSensitive": false
     archive:
       config: Release
   KnitDevice:

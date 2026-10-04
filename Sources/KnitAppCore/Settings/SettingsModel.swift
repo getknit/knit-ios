@@ -1,8 +1,9 @@
 public import Observation
 
-/// A component that ships inside the app, for About's notices (`THIRD-PARTY-NOTICES.md`, "Shipped in the app").
+/// A component that ships inside the app, for About's notices (`THIRD-PARTY-NOTICES.md`, "Shipped in the app" and
+/// "Bundled models").
 public struct ThirdPartyNotice: Sendable, Equatable, Identifiable {
-    /// The SwiftPM package identity.
+    /// The SwiftPM package identity, or a bundled model's path.
     public var id: String
     /// The project's name.
     public var name: String
@@ -15,6 +16,11 @@ public struct ThirdPartyNotice: Sendable, Equatable, Identifiable {
     public static let shipped = [
         Self(id: "grdb.swift", name: "GRDB.swift", license: "MIT", url: "https://github.com/groue/GRDB.swift"),
         Self(id: "swift-crypto", name: "Swift Crypto", license: "Apache-2.0", url: "https://github.com/apple/swift-crypto"),
+    ]
+
+    /// The models that ship, kept equal to the notices file by the same test.
+    public static let bundled = [
+        Self(id: "App/Models/NSFW.mlpackage", name: "nsfw_model", license: "MIT", url: "https://github.com/GantMan/nsfw_model")
     ]
 }
 

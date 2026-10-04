@@ -10,19 +10,22 @@
         @State private var viewing: ViewedPhoto?
         /// Whether a request's Block is asking first.
         @State private var confirmsBlock = false
+        /// The messages whose hidden photo was tapped to show, while the thread is open (ADR 2026-10.rpmq).
+        @State private var revealed: Set<String> = []
         @Environment(\.dismiss) private var dismiss
         /// What Add photo picks under `-demoPhoto`, in place of the photo library.
         private let demoPhoto: Data?
 
-        /// The thread `conversationId` over `session`, making picked photos ready to send through `codec`.
-        init(conversationId: String, session: AppSession, codec: any ImageCodec, demoPhoto: Data?) {
-            _model = State(initialValue: ChatModel(conversationId: conversationId, session: session, codec: codec))
+        /// The thread `conversationId` over `session`, making picked photos ready to send through `codec` and checking them
+        /// with `screening`.
+        init(conversationId: String, session: AppSession, codec: any ImageCodec, screening: PhotoScreening, demoPhoto: Data?) {
+            _model = State(initialValue: ChatModel(conversationId: conversationId, session: session, codec: codec, screening: screening))
             self.demoPhoto = demoPhoto
         }
 
         var body: some View {
             let state = model.state
-            MessageList(state: state) { viewing = $0 }
+            MessageList(state: state, revealed: revealed, reveal: { revealed.insert($0) }, view: { viewing = $0 })
                 .safeAreaInset(edge: .bottom) {
                     if state.isRequest {
                         RequestBar(
@@ -88,6 +91,7 @@
                         // The alert closes itself.
                     }
                 }
+                .answersExplicitPhotos(of: model)
                 // A group we left is gone: its thread closes, however the leave came.
                 .onChange(of: state.exists) { _, exists in
                     if !exists {
@@ -119,6 +123,10 @@
     /// The thread's messages, newest at the bottom, with what the thread says about itself above them.
     private struct MessageList: View {
         let state: ChatState
+        /// The messages whose hidden photo was tapped to show.
+        let revealed: Set<String>
+        /// Shows a message's hidden photo.
+        let reveal: (String) -> Void
         /// Opens a message's photo full screen.
         let view: (ViewedPhoto) -> Void
         /// Where the thread rests: at its bottom edge, below the newest message's padding. A position on the edge stays on
@@ -135,9 +143,12 @@
                             StatusLineRow(text: notice)
                                 .accessibilityIdentifier(AccessibilityID.chatNotice(message.id))
                         } else {
-                            MessageBubble(message: message) { attachment in
-                                view(.chat(attachment, sender: sender(of: message)))
-                            }
+                            MessageBubble(
+                                message: message,
+                                revealed: revealed.contains(message.id),
+                                reveal: { reveal(message.id) },
+                                open: { view(.chat($0, sender: sender(of: message))) }
+                            )
                         }
                     }
                 }
@@ -214,12 +225,17 @@
 
     /// One message: ours on the right with its tick, theirs on the left, with the author's face and name in the room and
     /// a group. The author's face and name open their profile, which is how a DM starts (MVP item 5). A photo sits above
-    /// the words, and opens full screen.
+    /// the words, and opens full screen, unless the content filter hides it until a tap.
     private struct MessageBubble: View {
         let message: ChatMessage
+        /// Whether the message's hidden photo was tapped to show.
+        let revealed: Bool
+        /// Shows it.
+        let reveal: () -> Void
         /// Opens the message's photo.
         let open: (ChatAttachment) -> Void
         @Environment(\.dynamicTypeSize) private var typeSize
+        @Environment(PhotoScreening.self) private var screening: PhotoScreening?
 
         var body: some View {
             HStack(alignment: .bottom, spacing: Layout.small) {
@@ -234,7 +250,7 @@
                     .buttonStyle(.plain)
                     .accessibilityHidden(true)
                 }
-                BubbleContent(message: message, open: open)
+                BubbleContent(message: message, covered: covered, reveal: reveal, open: open)
                 if !message.isMine {
                     Spacer(minLength: Layout.bubbleInset)
                 }
@@ -244,9 +260,14 @@
             .accessibilityElement(children: .combine)
             .accessibilityActions {
                 if let photo {
-                    Button(Copy.Attachments.viewPhoto) { open(photo) }
+                    if covered {
+                        Button(Copy.Moderation.showPhoto, action: reveal)
+                    } else {
+                        Button(Copy.Attachments.viewPhoto) { open(photo) }
+                    }
                 }
             }
+            .accessibilityValue(covered ? Copy.Moderation.hiddenPhotoValue : "")
             .accessibilityIdentifier(photo.map { _ in AccessibilityID.chatPhoto(message.id) } ?? "")
         }
 
@@ -254,12 +275,20 @@
         private var photo: ChatAttachment? {
             message.attachment.flatMap { $0.kind == .photo ? $0 : nil }
         }
+
+        /// Whether the content filter hides the photo now: screened explicit, someone else's, and not tapped to show.
+        private var covered: Bool {
+            !revealed && photo.map { screening?.isHiding($0, isMine: message.isMine) == true } == true
+        }
     }
 
     /// A message's column: the author's name in the room and a group, which opens their profile, its photo, its words,
     /// and its stamp.
     private struct BubbleContent: View {
         let message: ChatMessage
+        /// Whether the photo hides until a tap.
+        let covered: Bool
+        let reveal: () -> Void
         let open: (ChatAttachment) -> Void
 
         var body: some View {
@@ -273,7 +302,7 @@
                     .foregroundStyle(.tint)
                 }
                 if let attachment = message.attachment {
-                    AttachmentView(attachment: attachment) { open(attachment) }
+                    AttachmentView(attachment: attachment, isMine: message.isMine, covered: covered, reveal: reveal) { open(attachment) }
                 }
                 if !message.body.isEmpty {
                     Text(message.body)
@@ -348,31 +377,6 @@
                 .padding()
                 .frame(maxWidth: .infinity)
                 .background(.background.secondary)
-        }
-    }
-
-    /// What a DM's or a group's encryption covers, and the limit v1 has.
-    private struct EncryptionSheet: View {
-        let text: String
-        @Environment(\.dismiss) private var dismiss
-
-        var body: some View {
-            NavigationStack {
-                ScrollView {
-                    Text(text)
-                        .padding()
-                }
-                .navigationTitle(Copy.Chat.encrypted)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button(Copy.Common.done) { dismiss() }
-                    }
-                }
-            }
-            .presentationDetents([.medium, .large])
-            // Opaque: text over the glass sheet took its contrast from whatever the thread showed behind it.
-            .presentationBackground(.background)
         }
     }
 #endif

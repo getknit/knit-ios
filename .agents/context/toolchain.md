@@ -101,6 +101,20 @@ exact interval, then update this file in the same change.
   publish arm64 images. The line total can differ from amd64 by a line or so (10827 against 10826 of 11114),
   which the whole-percent floors absorb.
 
+## The model pipeline
+
+`tools/models/nsfw/` converts the photo classifier into `App/Models/NSFW.mlpackage` and checks it against
+Android's TFLite (its `README.md` has the steps). It is Python 3.11 through uv, and `uv.lock` pins everything.
+
+- **coremltools 9.0**, the newest release. Its TensorFlow 2 frontend is tested up to **TensorFlow 2.12.0**,
+  which caps **numpy at 1.23.5**. Moving any of the three means rerunning `convert.py --check` and
+  `parity.py --coreml`.
+- **TensorFlow installs on Linux only** (`tensorflow-cpu`, behind a `sys_platform` marker): 2.12 has no wheel for
+  Apple silicon. The Mac's half, `parity.py --coreml`, needs only coremltools and numpy.
+- **The conversion is reproducible.** coremltools writes the same model and weights on every run, and
+  `convert.py` replaces the manifest's random UUIDs with ones derived from each part's path, so `--check` compares
+  bytes.
+
 ## Dongle firmware
 
 `firmware/knit-hci` is the Bluetooth controller the Linux peer runs on, built for the nRF52840 Dongle
@@ -129,7 +143,7 @@ logs in to the desktop by itself, because the Simulator and signing need a deskt
   no swiftly.
 - **Homebrew has the rest:** SwiftLint 0.65.1 and Periphery 3.8.0 (the pinned versions); XcodeGen 2.46.0;
   bash 5 and Python 3.14, because macOS ships bash 3.2 and Python 3.9; xcbeautify, xcodes, libimobiledevice and
-  ideviceinstaller; rsync 3, because macOS ships openrsync. Put Homebrew on the `PATH` for every shell, login or
+  ideviceinstaller; rsync 3, because macOS ships openrsync; uv 0.12, for the model pipeline's parity check. Put Homebrew on the `PATH` for every shell, login or
   not, in `~/.zshenv` and `~/.bash_profile`.
 - **Docker runs in Colima,** a `vz` VM with Rosetta, 4 CPUs, 4 GB and 4 GB of swap, started at login. It runs
   lintorama there. `zaventh/lintorama:7` publishes an arm64 image, so it runs without Rosetta.

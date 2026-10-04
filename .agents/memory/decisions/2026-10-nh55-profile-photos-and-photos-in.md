@@ -66,6 +66,8 @@ Two choices differ from Android's on purpose:
 - **Photos are not screened.** Strangers' profile photos and Nearby photos show as Android shows them with its filter
   off. Screening (`docs/CONTENT_MODERATION.md` in knit-next) comes with moderation, which App Store rule 1.2 requires
   before any store build (`.agents/memory/roadmap.md`).
+  (Amended 2026-10-04: photos from others are screened now, with Android's model and policy, when they are first
+  shown; ADR 2026-10.rpmq.)
 - **What is public:**
   - A profile photo and a Nearby photo are readable by every node in range, like the name and the post.
   - A DM or group photo is sealed under a fresh key that only the sealed message carries. A carrier sees an opaque

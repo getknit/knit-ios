@@ -78,9 +78,13 @@ extension KnitUITests {
     }
 
     /// Waits for `element` to match `predicate`, and fails the walk if it never does.
-    private func wait(for element: XCUIElement, until predicate: String) {
+    func wait(for element: XCUIElement, until predicate: String) {
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: predicate), object: element)
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: Walking.appears), .completed, "\(element) never matched \(predicate)")
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [expectation], timeout: Walking.appears),
+            .completed,
+            "\(element), labelled \(element.label), never matched \(predicate)"
+        )
     }
 }
 

@@ -163,6 +163,7 @@ import Testing
             Copy.Diagnostics.clockAhead(seconds: 5),
             Copy.Diagnostics.clockBehind(seconds: 5),
         ] + Self.groupStrings + Self.newMessageStrings + Self.verifyStrings + Self.photoStrings + Self.blockStrings
+            + Self.moderationStrings
     }
 
     private static var photoStrings: [String] {
@@ -363,6 +364,23 @@ extension CopyCatalogTests {
             Copy.Block.listTitle,
             Copy.Block.empty,
             Copy.Block.listFooter,
+        ]
+    }
+}
+
+extension CopyCatalogTests {
+    /// The content filter's strings (ADR 2026-10.rpmq), apart so the suite stays under the lint's length.
+    static var moderationStrings: [String] {
+        [
+            Copy.Moderation.filter,
+            Copy.Moderation.filterFooter,
+            Copy.Moderation.hiddenPhoto,
+            Copy.Moderation.hiddenPhotoValue,
+            Copy.Moderation.showPhoto,
+            Copy.Moderation.explicitTitle,
+            Copy.Moderation.explicitAsk,
+            Copy.Moderation.sendAnyway,
+            Copy.Moderation.roomRefusal,
         ]
     }
 }

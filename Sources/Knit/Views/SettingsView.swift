@@ -6,6 +6,7 @@
     internal struct SettingsView: View {
         @State private var model: SettingsModel
         @Environment(\.scenePhase) private var scenePhase
+        @Environment(PhotoScreening.self) private var screening: PhotoScreening?
 
         init(session: AppSession, permission: any NotificationPermission, about: AboutInfo) {
             _model = State(initialValue: SettingsModel(session: session, permission: permission, about: about))
@@ -31,6 +32,9 @@
                     NavigationLink(Copy.Block.listTitle, value: Route.blocked)
                         .accessibilityIdentifier(AccessibilityID.settingsBlocked)
                 }
+                if let screening {
+                    ContentFilterSection(screening: screening)
+                }
                 Section {
                     NavigationLink(Copy.Settings.about, value: Route.about)
                         .accessibilityIdentifier(AccessibilityID.settingsAbout)
@@ -46,6 +50,20 @@
                 }
             }
             .accessibilityIdentifier(AccessibilityID.settingsScreen)
+        }
+    }
+
+    /// Content filtering, and what it does (ADR 2026-10.rpmq).
+    private struct ContentFilterSection: View {
+        @Bindable var screening: PhotoScreening
+
+        var body: some View {
+            Section {
+                Toggle(Copy.Moderation.filter, isOn: $screening.filtersContent)
+                    .accessibilityIdentifier(AccessibilityID.settingsContentFiltering)
+            } footer: {
+                SectionNote(Copy.Moderation.filterFooter)
+            }
         }
     }
 

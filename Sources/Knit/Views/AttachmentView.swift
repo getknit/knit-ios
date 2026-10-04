@@ -8,12 +8,18 @@
     /// which opens the viewer, or a voice message or a file, which this build names and cannot open.
     internal struct AttachmentView: View {
         let attachment: ChatAttachment
+        /// Whether we sent it: the content filter never hides our own.
+        let isMine: Bool
+        /// Whether the content filter hides the photo until a tap (ADR 2026-10.rpmq).
+        let covered: Bool
+        /// Shows a hidden photo.
+        let reveal: () -> Void
         let open: () -> Void
 
         var body: some View {
             switch attachment.kind {
             case .photo:
-                MessagePhoto(attachment: attachment, open: open)
+                MessagePhoto(attachment: attachment, isMine: isMine, covered: covered, reveal: reveal, open: open)
             case .voice, .file:
                 AttachmentTile(attachment: attachment)
             case .link:
@@ -25,18 +31,31 @@
 
     /// A message's photo: the picture once its bytes are here, at its own shape; until then a placeholder that says why
     /// it waits; and a line that says so when the bytes do not open, which a wrong key, a damaged blob or a type this
-    /// build cannot read leaves behind.
+    /// build cannot read leaves behind. Someone else's photo is screened before it is drawn, and one the content filter
+    /// hides waits behind a tap (`AttachmentImage` in knit-next).
     private struct MessagePhoto: View {
+        /// What is drawn: the photo, under the filter as it stands, so turning the filter on screens what shows.
+        private struct Drawing: Equatable {
+            var attachment: ChatAttachment
+            var filters: Bool
+        }
+
         let attachment: ChatAttachment
+        let isMine: Bool
+        let covered: Bool
+        let reveal: () -> Void
         let open: () -> Void
         @Environment(BlobImageCache.self) private var photos: BlobImageCache?
+        @Environment(PhotoScreening.self) private var screening: PhotoScreening?
         @Environment(\.displayScale) private var scale
         @State private var image: UIImage?
         @State private var failed = false
 
         var body: some View {
             Group {
-                if let image {
+                if covered {
+                    HiddenPhoto(reveal: reveal)
+                } else if let image {
                     let size = Self.frame(for: image.size)
                     Button(action: open) {
                         Image(uiImage: image)
@@ -61,10 +80,12 @@
                     WaitingPhoto(hash: attachment.hash)
                 }
             }
-            .task(id: attachment) {
+            .task(id: Drawing(attachment: attachment, filters: screening?.filtersContent ?? false)) {
                 guard attachment.isHeld else {
                     return
                 }
+                // Screened first, so an explicit photo is never drawn before the filter has seen it.
+                _ = await screening?.hides(attachment, isMine: isMine)
                 let pixels = Int((Layout.photoWidth * scale).rounded(.up))
                 let decoded = await photos?.attachment(attachment.hash, key: attachment.key, pixels: pixels)
                 image = decoded
@@ -106,6 +127,22 @@
                     stalled = true
                 }
             }
+        }
+    }
+
+    /// A photo the content filter hides, in the place it would take, until a tap shows it (ADR 2026-10.rpmq).
+    private struct HiddenPhoto: View {
+        let reveal: () -> Void
+
+        var body: some View {
+            Button(action: reveal) {
+                PhotoPlaceholder(text: Copy.Moderation.hiddenPhoto) {
+                    Image(systemName: "eye.slash")
+                        .accessibilityHidden(true)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(AccessibilityID.chatAttachmentHidden)
         }
     }
 

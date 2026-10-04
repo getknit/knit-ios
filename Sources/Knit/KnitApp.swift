@@ -40,6 +40,10 @@
             launch.begin(.protectedData)
         }
 
+        func applicationDidReceiveMemoryWarning(_: UIApplication) {
+            launch.memoryRunsLow()
+        }
+
         nonisolated func userNotificationCenter(
             _: UNUserNotificationCenter,
             willPresent notification: UNNotification,

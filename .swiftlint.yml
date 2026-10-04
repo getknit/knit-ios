@@ -131,6 +131,12 @@ custom_rules:
     excluded: 'Sources/Knit/Images/'
     message: Only the app's Images directory picks, decodes, encodes and saves photos; what a face or thread shows is KnitAppCore's.
     severity: error
+  seam_coreml:
+    name: Core ML stays in the app's Moderation
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+CoreML\b'
+    excluded: 'Sources/Knit/Moderation/'
+    message: Only the app's Moderation directory runs the content filter's model (ADR 2026-10.rpmq); the policy is KnitAppCore's.
+    severity: error
   seam_grdb:
     name: GRDB stays in KnitStoreSQL
     regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+GRDB\b'

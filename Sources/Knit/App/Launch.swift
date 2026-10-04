@@ -98,6 +98,13 @@
             environment.setInBackground(background)
         }
 
+        /// iOS warned that memory runs low: the content filter's model lets go, to load again for the next photo.
+        func memoryRunsLow() {
+            if case .ready(let environment) = stage {
+                environment.releaseModel()
+            }
+        }
+
         /// The app came to the front or left it. At the front the phone is unlocked, so a launch still waiting starts
         /// then: iOS may have suspended a launch it made before the first unlock by the time protected data arrived.
         func setActive(_ active: Bool) {

@@ -89,6 +89,12 @@ final class KnitUITests: XCTestCase {
         try walkSettings()
     }
 
+    /// Someone else's explicit photo hides behind a tap and their face behind their initial, an explicit pick asks or is
+    /// refused, and Content filtering off shows everything (ADR 2026-10.rpmq).
+    func testTheContentFilterHidesAsksAndTurnsOff() throws {
+        try walkContentFilter()
+    }
+
     /// Blocked people lead to a profile whose Unblock acts at once and whose Block asks first (ADR 2026-10.5wgg).
     func testTheBlockedPeopleLeadToAProfileThatUnblocksAndBlocksAgain() throws {
         try walkBlocked()
@@ -120,6 +126,7 @@ final class KnitUITests: XCTestCase {
         try walkPhotos()
         try walkChatPhotos()
         try walkSettings()
+        try walkContentFilter()
         try walkBlocked()
         try walkRequestBlock()
         try walkRadioStates()
@@ -222,31 +229,6 @@ final class KnitUITests: XCTestCase {
         app.terminate()
     }
 
-    private func walkSettings() throws {
-        let app = launch()
-        try app.appear(AccessibilityID.chatListSettings).tap()
-        try audit(app, AccessibilityID.settingsScreen)
-
-        try app.reveal(AccessibilityID.settingsProfileRow).tap()
-        try audit(app, AccessibilityID.profileScreen)
-        app.back()
-        try app.reveal(AccessibilityID.settingsAbout).tap()
-        try audit(app, AccessibilityID.aboutScreen)
-        app.back()
-        try app.reveal(AccessibilityID.settingsDiagnostics).tap()
-        try audit(app, AccessibilityID.diagnosticsScreen)
-        app.back()
-
-        let mesh = try app.reveal(AccessibilityID.settingsMesh)
-        let running = mesh.label
-        mesh.tap()
-        let turned = app.buttons.matching(NSPredicate(format: "label != %@ AND identifier == %@", running, AccessibilityID.settingsMesh))
-        try turned.firstMatch.appear("Start, once stopped")
-        app.back()
-        try audit(app, AccessibilityID.chatListStatus)
-        app.terminate()
-    }
-
     private func walkRadioStates() throws {
         var lines: Set<String> = []
         for state in ["off", "unauthorized", "unsupported"] {
@@ -305,7 +287,7 @@ extension KnitUITests {
     }
 
     /// Waits for the screen that holds `identifier`, then audits everything on it.
-    private func audit(_ app: XCUIApplication, _ identifier: String) throws {
+    func audit(_ app: XCUIApplication, _ identifier: String) throws {
         try app.appear(identifier)
         audit(app, screen: identifier)
     }

@@ -40,6 +40,7 @@
 
         let photo: ViewedPhoto
         @Environment(BlobImageCache.self) private var photos: BlobImageCache?
+        @Environment(PhotoScreening.self) private var screening: PhotoScreening?
         @Environment(\.dismiss) private var dismiss
         @State private var image: UIImage?
         @State private var saving = false
@@ -58,7 +59,14 @@
             // A container of its own, so the screen's identifier leaves the photo and Done their own.
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(AccessibilityID.photoViewerScreen)
-            .task(id: photo) { image = await photos?.attachment(photo.hash, key: photo.key, pixels: Self.pixels) }
+            .task(id: photo) {
+                // A profile's photo, the kind Save is not offered for, stays dark when the content filter hides it as a
+                // face. A chat's photo opens only once its bubble has shown it.
+                if !photo.savable, await screening?.hidesFace(photo.hash) == true {
+                    return
+                }
+                image = await photos?.attachment(photo.hash, key: photo.key, pixels: Self.pixels)
+            }
         }
 
         /// Done, and Save for a chat's photo once it shows.

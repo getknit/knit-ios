@@ -6,8 +6,9 @@ public import KnitWire
 /// How the app was launched: `-seedDemo`, the radio state the demo reports (`-demoRadio off`), so a screen can be
 /// checked in a state no real phone here is in, the unsupported device's among them (MVP item 10), the scene it
 /// seeds (`-demoScene marketing`), whether it starts at onboarding (`-demoOnboarding`), what the camera answers
-/// (`-demoCamera denied`), whether Choose photo picks a painted picture (`-demoPhoto`), and whether the demo posts a
-/// notification to tap (`-demoNotification`).
+/// (`-demoCamera denied`), whether Choose photo picks a painted picture (`-demoPhoto`), whether the demo posts a
+/// notification to tap (`-demoNotification`), and whether every photo looks explicit to the content filter
+/// (`-demoSensitive`).
 public struct LaunchOptions: Sendable, Equatable {
     /// Whether to run the demo: seeded stores in memory, a radio that goes nowhere, and a fixed identity.
     public var seedDemo = false
@@ -26,6 +27,9 @@ public struct LaunchOptions: Sendable, Equatable {
     /// Whether the demo asks to notify as it launches, then posts the room's notification each time Knit goes to the
     /// background: the demo's radio brings no messages, so a UI test would have no notification to tap.
     public var demoNotification = false
+    /// Whether the demo's classifier finds every photo explicit, so the UI tests can walk what the content filter hides
+    /// and asks; otherwise it finds none so. No photo in the repository is explicit to test with.
+    public var demoSensitive = false
 
     /// The options in `arguments`, the process's own. Anything unknown is left for the system.
     public init(arguments: [String]) {
@@ -42,6 +46,7 @@ public struct LaunchOptions: Sendable, Equatable {
         }
         demoPhoto = arguments.contains("-demoPhoto")
         demoNotification = arguments.contains("-demoNotification")
+        demoSensitive = arguments.contains("-demoSensitive")
     }
 
     private static let radioStates: [String: RadioState] = [

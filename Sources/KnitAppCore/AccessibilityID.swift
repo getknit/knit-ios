@@ -89,6 +89,8 @@ public enum AccessibilityID {
     public static let chatAttachmentUnavailable = "chat_attachment_unavailable"
     /// A voice message or a file, which this build names and cannot open. Android has no tag here.
     public static let chatAttachmentTile = "chat_attachment_tile"
+    /// A photo the content filter hides until it is tapped (ADR 2026-10.rpmq). Android has no tag here.
+    public static let chatAttachmentHidden = "chat_attachment_hidden"
 
     /// The chat list's New message, Android's floating button.
     public static let chatListNewMessage = "chatlist_fab"
@@ -206,6 +208,8 @@ public enum AccessibilityID {
     public static let settingsDiagnostics = "settings_diagnostics"
     /// Settings' way to the people blocked. Android opens them from the chat list's menu, with no tag.
     public static let settingsBlocked = "settings_blocked"
+    /// Settings' Content filtering toggle, Android's `settings_content_filtering`.
+    public static let settingsContentFiltering = "settings_content_filtering"
     /// The people blocked.
     public static let blockedScreen = "screen_blocked_users"
     /// One blocked person's row, which opens their profile, `blocked_row_<node id>`. Android has no tag here.

@@ -16,6 +16,15 @@ GRDB links the SQLite that ships with iOS and bundles none of its own. On iPhone
 operation to Apple's CryptoKit. Its bundled copies of BoringSSL and XKCP compile only into Linux builds, such as
 the `knit-peer` test tool, which is not distributed.
 
+## Bundled models
+
+| Asset | Project | License |
+| --- | --- | --- |
+| `App/Models/NSFW.mlpackage`, the photo classifier (MobileNetV2, copyright 2020 The nsfw_model Developers) | [GantMan/nsfw_model](https://github.com/GantMan/nsfw_model) | MIT |
+
+The classifier is release 1.2.0's SavedModel converted to Core ML, the same weights Knit for Android bundles as
+`nsfw.tflite`. `tools/models/nsfw/` holds the recipe.
+
 ## Resolved but not shipped
 
 SwiftPM resolves these while building the packages above, and none of their code reaches the app.
@@ -33,6 +42,12 @@ SwiftPM resolves these while building the packages above, and none of their code
 | Periphery | [peripheryapp/periphery](https://github.com/peripheryapp/periphery) | MIT |
 | XcodeGen | [yonaskolb/XcodeGen](https://github.com/yonaskolb/XcodeGen) | MIT |
 | lintorama | [zaventh/lintorama](https://github.com/zaventh/lintorama) | MIT |
+| coremltools | [apple/coremltools](https://github.com/apple/coremltools) | BSD-3-Clause |
+| TensorFlow | [tensorflow/tensorflow](https://github.com/tensorflow/tensorflow) | Apache-2.0 |
+| uv | [astral-sh/uv](https://github.com/astral-sh/uv) | MIT or Apache-2.0 |
+
+coremltools, TensorFlow and their Python dependencies (pinned in `tools/models/nsfw/uv.lock`) convert the photo
+classifier and check it. They never reach the app.
 
 ## Agent skills in the repository (not distributed)
 

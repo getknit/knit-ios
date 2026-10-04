@@ -32,6 +32,11 @@ DerivedData/
 
 scripts/__pycache__/
 
+# The model pipelines' downloads, unpacked sources and Python environments (tools/models/*/README.md).
+/tools/models/*/.cache/
+/tools/models/*/.venv/
+/tools/models/*/__pycache__/
+
 # libFuzzer crash reproducers: scripts/fuzz.sh writes them under Fuzz/Crashes/, a stray run to the cwd.
 /Fuzz/Crashes/
 crash-*

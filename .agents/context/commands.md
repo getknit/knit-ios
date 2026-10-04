@@ -37,6 +37,11 @@ tree, so switching between them never rebuilds the plain debug tree.
   harness against its corpus. CI's budget is 60 s; run 600 before a phase closes.
 - **DCO sign-offs:** `scripts/dco-check.sh <base> <head>` checks a commit range, the same check the CI job
   runs.
+- **The photo model:** `tools/models/nsfw/` converts the content filter's model and checks it (its `README.md`).
+  `uv run python convert.py --check` there proves `App/Models/NSFW.mlpackage` is what the recipe writes, and
+  `scripts/mac.sh run bash -c 'cd tools/models/nsfw && uv run --frozen python parity.py --coreml'` compares it with
+  Android's TFLite. Run both whenever the model or one of its pins moves. In a debug build, the bridge's
+  `{"cmd":"screen","photo":"<base64>"}` returns the iPhone's scores for a photo, and `score.py` returns Android's.
 - **Vectors shared with knit-next:** `python3 scripts/sync-vectors.py` copies `vectors/wire-v1.json` and
   `vectors/keyed-v1.json` into `Tests/Vectors/`, and generates `Sources/KnitCrypto/AliasWords.swift` from
   `AliasWords.kt`. Each copy records the knit-next commit, and whether the source had uncommitted changes.

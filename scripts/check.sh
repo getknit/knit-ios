@@ -197,8 +197,8 @@ xcode_common=(-project App/Knit.xcodeproj -derivedDataPath .build-xcode -jobs "$
 xcode_build=("${xcode_common[@]}" -configuration Debug)
 xcode_release=("${xcode_common[@]}" -configuration Release)
 
-# What every iPhone build must hold: the committed pins, App/Info.plist's version keys, and KnitBLE's delegates. The
-# app is $1, or else the Debug build's.
+# What every iPhone build must hold: the committed pins, App/Info.plist's version keys, KnitBLE's delegates and the photo
+# model. The app is $1, or else the Debug build's.
 check_xcode_app() {
 	local app=${1:-$xcode_app}
 	python3 - "$xcode_resolved" "$app/Info.plist" <<'PY'
@@ -218,6 +218,13 @@ PY
 		check_delegates "$app/Knit.debug.dylib"
 	else
 		check_delegates "$app/Knit"
+	fi
+	# The content filter's photo model, compiled (ADR 2026-10.rpmq). Without it every photo goes through and nothing says
+	# so; its float16 weights come to about 8.6 MB.
+	local weights="$app/NSFW.mlmodelc/weights/weight.bin"
+	if [ ! -f "$weights" ] || [ $(($(wc -c <"$weights"))) -lt 8000000 ]; then
+		echo "$app has no whole NSFW.mlmodelc: the content filter would let every photo through" >&2
+		return 1
 	fi
 }
 

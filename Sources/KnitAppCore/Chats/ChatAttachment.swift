@@ -77,7 +77,7 @@ public struct ChatAttachment: Sendable, Equatable {
 extension ChatAttachment {
     /// `attachment` as shown, with `isHeld` saying whether its bytes are here, or `nil` for a link's card, which shows
     /// nothing the link in the text does not.
-    init?(_ attachment: MessageAttachment, isHeld: Bool) {
+    public init?(_ attachment: MessageAttachment, isHeld: Bool) {
         let kind = AttachmentKind(attachment)
         switch kind {
         case .photo:

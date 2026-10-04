@@ -15,8 +15,9 @@
     /// show on screen as taps would. Replies go to the connection that asked, and events to every connection. The
     /// bridge answers `wifi`, `wifi-pin` and `wifi-unpin` itself (``WiFiCommand``); `scan-filter`, since only the
     /// iPhone's radio has a scan probe (``ScanProbeCommand``); `storage`, since only the app keeps its identity in the
-    /// Keychain and its database under Data Protection (``StorageCommand``); and `photos`, since only the app decodes
-    /// them (``PhotosCommand``). Each `status` carries
+    /// Keychain and its database under Data Protection (``StorageCommand``); `photos`, since only the app decodes them
+    /// (``PhotosCommand``); and `screen`, since only the app runs the content filter's model (``ScreenCommand``). Each
+    /// `status` carries
     /// `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its memory grow.
     @MainActor
     internal final class Bridge {
@@ -26,7 +27,8 @@
         private let wifi: WiFiGate
 
         /// A bridge to `mesh`, driven through `session`, which it also taps for events, to `radio`'s scan probe, to
-        /// `storage`, which a demo has none of, and to the photos threads draw.
+        /// `storage`, which a demo has none of, to the photos threads draw and what `screening` hides of them, and to the
+        /// filter's `classifier`.
         init(
             session: AppSession,
             mesh: Mesh,
@@ -36,7 +38,9 @@
             log: any KnitLog,
             version: String,
             storage: StorageReport?,
-            photos: BlobImageCache
+            photos: BlobImageCache,
+            screening: PhotoScreening,
+            classifier: any PhotoClassifier
         ) {
             let control = MeshControl(
                 bundle: bundle,
@@ -62,7 +66,10 @@
                     return (await ask.answer(storage), false)
                 }
                 if let ask = PhotosCommand.parse(line) {
-                    return (await ask.answer(session, photos: photos), false)
+                    return (await ask.answer(session, photos: photos, screening: screening), false)
+                }
+                if let ask = ScreenCommand.parse(line) {
+                    return (await ask.answer(classifier), false)
                 }
                 let reply = await control.handle(line)
                 return (reply.line, reply.quits)

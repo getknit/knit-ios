@@ -57,3 +57,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.nh55](decisions/2026-10-nh55-profile-photos-and-photos-in.md) | Profile photos and photos in chats come to the iPhone, carried as Android carries them | scope, blobs, interop |
 | [2026-10.sepc](decisions/2026-10-sepc-a-face-is-a-person.md) | A face is a person's photo or their node id's tint, and a profile photo is cropped and saved on the phone | app, blobs, ui |
 | [2026-10.ym9y](decisions/2026-10-ym9y-the-iphone-asks-for.md) | The iPhone asks for, serves and carries blobs as Android's BlobExchange does | mesh, blobs, interop |
+| [2026-10.rpmq](decisions/2026-10-rpmq-photos-from-others-are-screened.md) | Photos from others are screened on the iPhone when first shown, by Android's NSFW model in Core ML | moderation, blobs, app, build |

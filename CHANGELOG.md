@@ -48,6 +48,9 @@ document:
 - Block someone from their profile or a message request, and what they send stops showing on your iPhone,
   without them being told. Your iPhone still passes their messages on to others, and Settings lists everyone
   you've blocked so you can unblock them.
+- Content filtering hides explicit photos from other people until you tap them, and shows an initial in place
+  of an explicit profile picture. Your iPhone checks each photo itself, and Knit asks before you send an
+  explicit one and won't post it in Nearby.
 
 ## About this file
 

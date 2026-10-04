@@ -150,13 +150,14 @@
         }
     }
 
-    /// A profile's face, which opens their photo full screen when they have one.
+    /// A profile's face, which opens their photo full screen when they have one the content filter does not hide.
     private struct HeaderFace: View {
         let face: Face
         let viewPhoto: () -> Void
+        @Environment(PhotoScreening.self) private var screening: PhotoScreening?
 
         var body: some View {
-            if face.photo != nil {
+            if let photo = face.photo, screening?.isHidingFace(photo) != true {
                 Button(action: viewPhoto) {
                     AvatarView(face: face, size: Layout.faceProfile)
                 }

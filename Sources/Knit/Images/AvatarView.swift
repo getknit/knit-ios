@@ -104,14 +104,22 @@
     }
 
     /// `photo`, once it decodes, filling its frame; `placeholder` until then, and in its place when there is none or it
-    /// cannot be drawn: a hash whose bytes went missing draws as no photo at all, as Android's falls back on error.
+    /// cannot be drawn: a hash whose bytes went missing draws as no photo at all, as Android's falls back on error. So
+    /// does someone else's photo that the content filter finds explicit (ADR 2026-10.rpmq), screened before it is drawn.
     private struct PhotoOr<Placeholder: View>: View {
+        /// What is drawn: the photo, under the filter as it stands, so turning the filter on or off redraws the face.
+        private struct Drawing: Equatable {
+            var photo: BlobHash?
+            var filters: Bool
+        }
+
         let photo: BlobHash?
         let width: CGFloat
         let height: CGFloat
         var unsaved: [UInt8]?
         @ViewBuilder let placeholder: Placeholder
         @Environment(BlobImageCache.self) private var photos: BlobImageCache?
+        @Environment(PhotoScreening.self) private var screening: PhotoScreening?
         @Environment(\.displayScale) private var scale
         @State private var shown: (hash: BlobHash, image: UIImage)?
 
@@ -128,8 +136,13 @@
                 }
             }
             .frame(width: width, height: height)
-            .task(id: photo) {
+            .task(id: Drawing(photo: photo, filters: screening?.filtersContent ?? false)) {
                 guard let photo, let photos else {
+                    return
+                }
+                // A photo picked and not yet saved is our own.
+                if unsaved == nil, await screening?.hidesFace(photo) == true {
+                    shown = nil
                     return
                 }
                 let pixels = Int((max(width, height) * scale).rounded(.up))

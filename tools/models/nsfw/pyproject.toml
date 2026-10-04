@@ -1,0 +1,18 @@
+# Converts knit-next's NSFW photo classifier to Core ML and checks the two agree. `README.md` has the steps.
+#
+# TensorFlow runs on Linux only: coremltools 9.0's TensorFlow 2 frontend is tested up to 2.12, which has no wheel for
+# Apple silicon. The Mac's half of the parity check needs coremltools and numpy alone.
+[project]
+name = "knit-nsfw-model"
+version = "1.0.0"
+description = "GantMan nsfw_model MobileNetV2 140/224, converted from its SavedModel to a Core ML ML program."
+requires-python = "==3.11.*"
+dependencies = [
+    "coremltools==9.0",
+    "numpy==1.23.5",
+    "pillow==11.3.0",
+    "tensorflow-cpu==2.12.0; sys_platform == 'linux'",
+]
+
+[tool.uv]
+package = false

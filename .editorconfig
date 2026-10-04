@@ -25,6 +25,15 @@ trim_trailing_whitespace = unset
 indent_style = unset
 indent_size = unset
 
+# Core ML packages are generated, and their model and weights are binary (tools/models/*/convert.py).
+[App/Models/**]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+indent_style = unset
+indent_size = unset
+
 [*.{sh,bash}]
 indent_style = tab
 

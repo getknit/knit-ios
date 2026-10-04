@@ -406,8 +406,9 @@ explicit direction.** Update this file in the change that ships an item.
 - **Groups with forward secrecy** (knit-next's group ratchet), which comes with the DM ratchet. v1 groups are in
   flight above.
 - **Search, drafts and backups.**
-- **Moderation and report.** App Store rule 1.2 requires them before a store build. Block is in (ADR 2026-10.5wgg);
-  Android has no report either.
+- **Moderation and report.** App Store rule 1.2 requires them before a store build. Block is in (ADR 2026-10.5wgg),
+  and so is screening photos from others, with Android's model in Core ML (ADR 2026-10.rpmq). Screening text with
+  Android's Detoxify model comes next. Android has no report either.
 - **App Store readiness:** started on 2026-10-03 at the maintainer's direction. The privacy manifest and the export
   answer are in, Knit ships for iPhone only (ADR 2026-10.kedu), and `check.sh release`, `archive` and `upload` build,
   check, sign and upload the store build (ADR 2026-10.8cy5). The review notes, the listing and the export filing

@@ -23,6 +23,11 @@
         let photos: BlobImageCache
         /// Where a picked profile photo is decoded and cropped.
         let codec: any ImageCodec = DeviceImageCodec()
+        /// The content filter: what a picked photo is checked against, and what someone else's photo or face hides behind
+        /// (ADR 2026-10.rpmq).
+        let screening: PhotoScreening
+        /// The filter's model, which lets go of its memory when Knit leaves the front; a demo's has none to let go.
+        private let model: DevicePhotoClassifier?
         /// What Choose photo picks under `-demoPhoto`: a painted picture, since the system's picker is out of a UI test's
         /// reach. `nil` opens the photo library.
         let demoPhoto: Data?
@@ -53,6 +58,7 @@
             preferences: any AppPreferences,
             notifier: LocalNotifier,
             camera: any CameraAccess,
+            classifier: any PhotoClassifier,
             demoPhoto: Data?,
             demoNotification: LocalNotification?,
             replaceIdentity: IdentityReplacer?
@@ -67,6 +73,8 @@
             self.demoNotification = demoNotification
             self.replaceIdentity = replaceIdentity
             photos = BlobImageCache(session: session)
+            screening = PhotoScreening(classifier: classifier, preferences: preferences, session: session)
+            model = classifier as? DevicePhotoClassifier
             let info = Bundle.main.infoDictionary ?? [:]
             about = AboutInfo(
                 version: info["CFBundleShortVersionString"] as? String ?? "",
@@ -120,9 +128,19 @@
         /// neither: Knit is still on screen, and Android still finds it. Going posts `-demoNotification`'s notification.
         func setInBackground(_ background: Bool) {
             phases.continuation.yield(background)
+            if background {
+                releaseModel()
+            }
             if background, let demoNotification {
                 let alerts = notifier
                 Task { await alerts.post(demoNotification) }
+            }
+        }
+
+        /// Lets the filter's model go: Knit left the front, or memory runs low. The next photo screened loads it again.
+        func releaseModel() {
+            if let model {
+                Task { await model.release() }
             }
         }
 
@@ -165,7 +183,14 @@
                     database, directory: directory.appending(path: SQLBlobStore.directoryName, directoryHint: .isDirectory))
             )
             let defaults = DefaultsPreferences()
-            var parts = Parts(identity: identity, stores: stores, radio: BLERadio(log: log), log: log, preferences: defaults)
+            var parts = Parts(
+                identity: identity,
+                stores: stores,
+                radio: BLERadio(log: log),
+                log: log,
+                preferences: defaults,
+                classifier: DevicePhotoClassifier(log: log)
+            )
             #if DEBUG
                 parts.storage = StorageReport(
                     nodeId: identity.nodeId, keyStore: keyStore, directory: directory, preferences: defaults, launch: launch)
@@ -201,6 +226,7 @@
                     radio: DemoRadio(state: options.demoRadio),
                     log: log,
                     preferences: MemoryPreferences(hasOnboarded: !options.demoOnboarding),
+                    classifier: DemoPhotoClassifier(flagsEverything: options.demoSensitive),
                     linked: DemoSeed.linked(in: options.demoScene),
                     camera: options.demoCamera.map(DemoCamera.init),
                     demoPhoto: options.demoPhoto ? DemoPortraits.pickedPhoto() : nil,
@@ -217,6 +243,8 @@
             let radio: any Radio
             let log: any KnitLog
             let preferences: any AppPreferences
+            /// The content filter's model: the bundled one, or the demo's stand-in under `-seedDemo`.
+            let classifier: any PhotoClassifier
             /// The peers a demo scene shows as linked, which only a demo has.
             var linked: [NodeId] = []
             /// A demo's camera, under `-demoCamera`; otherwise the phone's.
@@ -253,6 +281,7 @@
                 preferences: parts.preferences,
                 notifier: alerts,
                 camera: parts.camera ?? DeviceCamera(),
+                classifier: parts.classifier,
                 demoPhoto: parts.demoPhoto,
                 demoNotification: parts.notification,
                 replaceIdentity: replace
@@ -267,7 +296,9 @@
                     log: parts.log,
                     version: "\(environment.about.version) (\(environment.about.build))",
                     storage: parts.storage,
-                    photos: environment.photos
+                    photos: environment.photos,
+                    screening: environment.screening,
+                    classifier: parts.classifier
                 )
             #endif
             return environment
