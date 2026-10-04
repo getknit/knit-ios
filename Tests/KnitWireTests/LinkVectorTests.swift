@@ -2,8 +2,8 @@ import KnitTestSupport
 import KnitWire
 import Testing
 
-/// knit-next's link vectors (`keyed-v1.json`): the HELLO and DIGEST records, the custody fingerprint and the
-/// advert, which a peer reads before any frame.
+/// knit-next's link vectors (`keyed-v1.json`): the HELLO, DIGEST and FILE_HEADER records, the custody fingerprint
+/// and the advert, which a peer reads before any frame.
 @Suite struct LinkVectorTests {
     private let link = KeyedVectors.file.link
 
@@ -25,6 +25,18 @@ import Testing
         let record = try #require(LinkRecord(.digest, payload: payload).encoded)
         #expect(Hex.encode(record) == link.digest.record)
         #expect(LinkJSON.digestIds(from: payload) == link.digest.ids)
+    }
+
+    /// The header is JSON too, and carries the stream's size so the receiver can draw how far it has got (knit-next
+    /// ADR 2026-10.y9qh).
+    @Test func theFileHeaderRecordMatchesKotlinxByteForByte() throws {
+        let vector = link.fileHeader
+        let header = FileHeader(kind: FileHeader.Kind(wire: vector.kind), key: vector.key, mime: vector.mime, size: vector.size)
+        #expect(header.kind == .attachment)
+        let payload = LinkJSON.fileHeaderPayload(header)
+        let record = try #require(LinkRecord(.fileHeader, payload: payload).encoded)
+        #expect(Hex.encode(record) == vector.record)
+        #expect(LinkJSON.fileHeader(from: payload) == header)
     }
 
     @Test func theFingerprintMatchesKnitNext() {

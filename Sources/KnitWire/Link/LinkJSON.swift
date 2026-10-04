@@ -22,21 +22,31 @@ public enum LinkJSON {
         (try? JSONDecoder().decode(DigestJSON.self, from: Data(payload)))?.ids
     }
 
-    /// A file header's payload, `{"kind":…,"key":…,"mime":…}`, compact and in that order, as kotlinx's `Json` writes
-    /// `FileHeaderWire` (`LinkFraming.encodeFileHeader`, `LinkFraming.kt:144-170`).
+    /// A file header's payload, `{"kind":…,"key":…,"mime":…,"size":…}`, compact and in that order, as kotlinx's `Json`
+    /// writes `FileHeaderWire` (`LinkFraming.encodeFileHeader`, `LinkFraming.kt:150-195`). A header with no size is the
+    /// three keys every build before knit-next ADR 2026-10.y9qh wrote; a sender always fills it.
     public static func fileHeaderPayload(_ header: FileHeader) -> [UInt8] {
-        Array(#"{"kind":"#.utf8) + quoted(header.kind.rawValue) + Array(#","key":"#.utf8) + quoted(header.key)
-            + Array(#","mime":"#.utf8) + quoted(header.mime) + [UInt8(ascii: "}")]
+        var output = Array(#"{"kind":"#.utf8) + quoted(header.kind.rawValue) + Array(#","key":"#.utf8) + quoted(header.key)
+        output += Array(#","mime":"#.utf8) + quoted(header.mime)
+        if let size = header.size {
+            output += Array(#","size":"#.utf8) + Array(String(size).utf8)
+        }
+        output.append(UInt8(ascii: "}"))
+        return output
     }
 
     /// A file header's fields, or `nil` when it is not one (`LinkFraming.decodeFileHeader`): all three keys present as
     /// strings, in any order, with unknown keys ignored. Android drops the file after a header it cannot read and keeps
-    /// the link (`FramedLink.kt:404-410`).
+    /// the link (`FramedLink.kt:404-410`). A size that is not an integer is read as none, so it costs the label and
+    /// never the file.
     public static func fileHeader(from payload: [UInt8]) -> FileHeader? {
-        guard let decoded = try? JSONDecoder().decode(FileHeaderJSON.self, from: Data(payload)) else {
+        let data = Data(payload)
+        guard let decoded = try? JSONDecoder().decode(FileHeaderJSON.self, from: data) else {
             return nil
         }
-        return FileHeader(kind: FileHeader.Kind(wire: decoded.kind), key: decoded.key, mime: decoded.mime)
+        // Decoded apart, as Android falls back to `FileHeaderCore`: a failed header aborts the file behind it.
+        let size = (try? JSONDecoder().decode(FileHeaderSizeJSON.self, from: data))?.size
+        return FileHeader(kind: FileHeader.Kind(wire: decoded.kind), key: decoded.key, mime: decoded.mime, size: size)
     }
 
     /// A JSON string literal, escaped as kotlinx's `Json` escapes one (`ESCAPE_STRINGS` in its `StringOps.kt`): the
@@ -99,12 +109,16 @@ public struct FileHeader: Sendable, Equatable {
     public var key: String
     /// The blob's type.
     public var mime: String
+    /// The length of the stream that follows, as its sender declared it, so the receiver can show how far it has got
+    /// (knit-next ADR 2026-10.y9qh). The sender's claim: a label, never a bound. `nil` from a build before the field.
+    public var size: Int?
 
     /// Makes a header.
-    public init(kind: Kind, key: String, mime: String) {
+    public init(kind: Kind, key: String, mime: String, size: Int? = nil) {
         self.kind = kind
         self.key = key
         self.mime = mime
+        self.size = size
     }
 }
 
@@ -116,4 +130,8 @@ private struct FileHeaderJSON: Decodable {
     let kind: String
     let key: String
     let mime: String
+}
+
+private struct FileHeaderSizeJSON: Decodable {
+    let size: Int?
 }

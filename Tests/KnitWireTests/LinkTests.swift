@@ -169,8 +169,9 @@ import Testing
         #expect(FileHeader.Kind(wire: "") == .attachment)
     }
 
-    /// kotlinx writes `FileHeaderWire` compact, in declaration order (`LinkFraming.encodeFileHeader`); no Kotlin test
-    /// pins the bytes, so these follow its `Json` settings and escape table until companion change A7 shares a vector.
+    /// kotlinx writes `FileHeaderWire` compact, in declaration order (`LinkFraming.encodeFileHeader`). knit-next's
+    /// vector pins an ATTACHMENT with its size (`LinkVectorTests`); these pin the three-key shape a build before the
+    /// size wrote, and an AVATAR, by its `Json` settings and escape table until companion change A7 shares the rest.
     @Test func fileHeaderBytesArePinned() throws {
         let empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         let attachment = LinkRecord(
@@ -182,6 +183,26 @@ import Testing
         #expect(String(bytes: avatar, encoding: .utf8) == #"{"kind":"AVATAR","key":"\#(empty)","mime":"image/jpeg"}"#)
         let roundTrip = try #require(LinkJSON.fileHeader(from: avatar))
         #expect(roundTrip == FileHeader(kind: .avatar, key: empty, mime: "image/jpeg"))
+    }
+
+    /// The size follows the mime, as a bare integer (`FileHeaderWire.size`, knit-next ADR 2026-10.y9qh).
+    @Test func aFileHeaderCarriesTheStreamsSize() {
+        let header = FileHeader(kind: .avatar, key: "k", mime: "image/jpeg", size: 203_807)
+        let payload = LinkJSON.fileHeaderPayload(header)
+        #expect(String(bytes: payload, encoding: .utf8) == #"{"kind":"AVATAR","key":"k","mime":"image/jpeg","size":203807}"#)
+        #expect(LinkJSON.fileHeader(from: payload) == header)
+        let zero = LinkJSON.fileHeaderPayload(FileHeader(kind: .attachment, key: "k", mime: "x", size: 0))
+        #expect(String(bytes: zero, encoding: .utf8) == #"{"kind":"ATTACHMENT","key":"k","mime":"x","size":0}"#)
+    }
+
+    /// A failed header drops the file behind it, so a size that will not decode costs the label and never the file
+    /// (`LinkFramingTest.aSizeThatWillNotDecodeCostsTheLabelNotTheFile`). The fields the receiver routes on still do.
+    @Test func aSizeThatWillNotDecodeCostsTheLabelNotTheFile() {
+        for bad in [#""big""#, "1.5", "99999999999999999999", "{}", "[1]", "null"] {
+            let json = #"{"kind":"ATTACHMENT","key":"k","mime":"image/jpeg","size":\#(bad)}"#
+            #expect(LinkJSON.fileHeader(from: Array(json.utf8)) == FileHeader(kind: .attachment, key: "k", mime: "image/jpeg"), "\(bad)")
+        }
+        #expect(LinkJSON.fileHeader(from: Array(#"{"kind":"ATTACHMENT","key":"k","size":10}"#.utf8)) == nil)
     }
 
     /// kotlinx's `ESCAPE_STRINGS`: the quote, the backslash, five short forms, and `\u00xx` in lowercase for the rest of

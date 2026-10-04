@@ -302,11 +302,16 @@ explicit direction.** Update this file in the change that ships an item.
     - Out of reach here: the bubbles on the iPhone's own screen, which only a device UI test can open. The Simulator
       walks draw them, and the bridge's `photos` decodes them on the phone.
   - **Phase 4:** group photos shown but never set, and carried frames' photos pulled within Android's 128 MiB.
+  - **Android's progress ring** (knit-next ADR 2026-10.y9qh): every header this port writes declares its size since
+    2026-10-04, so an Android phone fills a ring as our photo arrives. Still owed:
+    - the iPhone's own ring for a photo arriving, from the size `FileIntake` already reads;
+    - resuming a cut transfer from the bytes kept (knit-next ADR 2026-10.wtyc, knit-ios #2), which is past the pin.
 
   Out of scope: files, voice notes, link previews, direct transfer, screening, and setting a group photo.
   Capabilities stay `0xB`. One companion change goes with it:
   - **A7 (shared blob vectors):** a paired change that iOS leads. knit-next's `keyed-v1.json` gains:
-    - the FILE_HEADER bytes for an AVATAR and an ATTACHMENT, and a whole FILE trio;
+    - the FILE_HEADER bytes for an AVATAR, and a whole FILE trio (an ATTACHMENT's header, with its size, came with
+      knit-next ADR 2026-10.y9qh);
     - a `blobreq` frame;
     - a known answer for a sealed photo.
 

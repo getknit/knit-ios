@@ -77,9 +77,10 @@ public struct OutboundFile {
         self.read = read
     }
 
-    /// The header this file streams under.
+    /// The header this file streams under. Its size lets the receiver draw how far the file has got, as Android's
+    /// `streamFile` declares it (`FramedLink.kt:332-337`, knit-next ADR 2026-10.y9qh).
     public var header: FileHeader {
-        FileHeader(kind: kind, key: hash.string, mime: mime)
+        FileHeader(kind: kind, key: hash.string, mime: mime, size: size)
     }
 }
 

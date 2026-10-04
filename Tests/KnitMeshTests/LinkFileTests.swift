@@ -137,7 +137,9 @@ import Testing
         #expect(written.map(\.tag) == [.fileHeader, .fileChunk, .fileChunk, .fileChunk, .fileEnd])
         #expect(
             written.first?.payload
-                == LinkJSON.fileHeaderPayload(FileHeader(kind: .attachment, key: BlobHash(of: file).string, mime: "image/jpeg")))
+                == LinkJSON.fileHeaderPayload(
+                    FileHeader(kind: .attachment, key: BlobHash(of: file).string, mime: "image/jpeg", size: file.count)),
+            "the header declares the size, so Android can draw how far the file has got")
         #expect(written.filter { $0.tag == .fileChunk }.map(\.payload.count) == [16_384, 16_384, 8192])
         #expect(written.filter { $0.tag == .fileChunk }.flatMap(\.payload) == file)
         #expect(rig.links.filesSent == 1)

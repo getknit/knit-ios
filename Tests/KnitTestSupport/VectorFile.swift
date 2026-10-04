@@ -102,7 +102,7 @@ public struct VectorSafetyNumber: Codable, Sendable, Equatable {
     }
 }
 
-/// knit-next's link vectors: the HELLO and DIGEST records, the custody fingerprint and an advert.
+/// knit-next's link vectors: the HELLO, DIGEST and FILE_HEADER records, the custody fingerprint and an advert.
 public struct VectorLink: Decodable, Sendable {
     /// A HELLO record and its text payload.
     public struct Hello: Decodable, Sendable {
@@ -128,6 +128,20 @@ public struct VectorLink: Decodable, Sendable {
         public let fold: String
     }
 
+    /// A FILE_HEADER record and its fields.
+    public struct FileHeader: Decodable, Sendable {
+        /// `AVATAR` or `ATTACHMENT`.
+        public let kind: String
+        /// The blob's content hash.
+        public let key: String
+        /// The blob's type.
+        public let mime: String
+        /// The length of the stream that follows.
+        public let size: Int
+        /// The whole record, as hex.
+        public let record: String
+    }
+
     /// A 24-byte advert and its fields.
     public struct Advert: Decodable, Sendable {
         /// The advertised node id.
@@ -150,6 +164,8 @@ public struct VectorLink: Decodable, Sendable {
     public let digest: Digest
     /// The fingerprint.
     public let digestFold: Fold
+    /// A photo's header, as a sender writes it.
+    public let fileHeader: FileHeader
     /// The advert.
     public let advert: Advert
 }

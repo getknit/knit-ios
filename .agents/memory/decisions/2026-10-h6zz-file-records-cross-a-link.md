@@ -73,3 +73,15 @@ nothing waits on it.
   - `LinkOutboxTests` and `BlueZOutboxTests` for the report, and `L2CAPLinkTests` for KnitBLE's report on the Mac.
   - `LinkDoorbellTests.fileRecordsDoNotRing`.
   - `FuzzLinkRecords`, seeded with whole files.
+
+**Amended 2026-10-04, for the header's size (knit-next ADR 2026-10.y9qh):** every header this port writes declares
+`size`, the length of the stream that follows, after `mime`, as Android's `streamFile` has since `e4ff84b3`. An
+Android phone then fills a ring as our photo arrives, where it showed only the bytes in so far. The size is the
+sender's claim: nothing here sizes a buffer, caps a stream or judges a stall by it. `FileIntake` still counts the
+bytes against its own limits. The reader is as lenient as Android's `decodeFileHeader`: a size that is not an integer
+reads as none, and the file still lands. A header with no size is the three keys a build before the field wrote. No capability bit: a reader that predates the key skips it. The iPhone does not yet draw its own ring
+from the size it reads (`.agents/memory/roadmap.md`). Guards:
+
+- `LinkVectorTests.theFileHeaderRecordMatchesKotlinxByteForByte`, against knit-next's `fileHeader` vector;
+- `LinkTests.aSizeThatWillNotDecodeCostsTheLabelNotTheFile`, Android's bad sizes;
+- `LinkFileTests.aFileStreamsAsAHeaderChunksAndAnEndAtTheBlePace`, for the size a served file declares.

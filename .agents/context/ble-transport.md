@@ -75,7 +75,7 @@ bytes. The tags:
 | Tag | Record | Payload |
 | --- | --- | --- |
 | 1 | `FRAME` | CBOR `WireEnvelope` (`wire-format.md`) |
-| 2 | `FILE_HEADER` | UTF-8 JSON `{"kind":"AVATAR"\|"ATTACHMENT","key":"<64 lowercase hex>","mime":"…"}` |
+| 2 | `FILE_HEADER` | UTF-8 JSON `{"kind":"AVATAR"\|"ATTACHMENT","key":"<64 lowercase hex>","mime":"…","size":<bytes>}`; `size` since knit-next ADR 2026-10.y9qh |
 | 3 | `FILE_CHUNK` | raw bytes, at most 16 KiB from Android (2 KiB on a Coded link); a file over 8 MiB + 64 KiB is aborted |
 | 4 | `FILE_END` | empty |
 | 5 | `KEEPALIVE` | empty; Android never sends one and ignores it on receipt |
@@ -87,6 +87,10 @@ bytes. The tags:
 - A `FRAME` that does not decode is counted and skipped, and the link stays up. Frames and digests may
   interleave with file chunks.
 - Only one file streams each way at a time. A new `FILE_HEADER` discards a partial file.
+- A header's `size` is the length of the stream that follows, so the receiver can draw how far the file has got
+  (knit-next ADR 2026-10.y9qh). It is only the sender's claim, so nothing bounds the stream by it. Android takes a
+  total only in 1..8,454,144 and shows the bytes alone outside it. A size that will not decode is read as none and the
+  file still lands, and a header from a build before the field has none. Android and this port always write it.
 - Android caps each socket write at `min(maxTransmitPacketSize, 8192)` bytes. Keep our writes at 8 KiB or less.
 - Android paces files by the link's PHY, read again before every chunk (`CodedPhyPolicy.pace`, #114):
   - 28 KiB/s in 16 KiB chunks on 1M and 2M;

@@ -9,8 +9,10 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`, and `v2.8.0` is `45e09f19`. The port started from HEAD `02051b64`, five
   test-only commits after `v2.7.0`, on 2026-09-25.
-- **The pin is `00357abd`,** knit-next's local `main` on 2026-10-03. It is two commits ahead of `origin/main`
-  (`025321b6`) until the maintainer pushes. `sync-vectors.py --check` needs a checkout that holds it.
+- **The pin is `e4ff84b3`,** on knit-next's `origin/main`, moved on 2026-10-04 for the FILE_HEADER's size alone.
+  knit-next's `main` was at `d6c3be1b` that day, 12 commits on, resuming a cut transfer (knit-next ADR 2026-10.wtyc)
+  among them. None of those has been read here yet. `sync-vectors.py --check` needs a checkout at the pin, since a
+  later one carries vectors this port has not taken.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
     never opens). Of what the files below say, only the BLE responder moved.
@@ -104,7 +106,7 @@ Kotlin wins.
       dials. It is LoRa alone, which this port does not carry, so there is nothing to mirror.
     - `c1b7c19c` settles a stuck attachment's spinner to a still hourglass after 30 s, and `adad2d41` enables a
       Claude plugin. Both are Android's alone.
-  - **Since then** (39 commits, release `v2.8.0` among them):
+  - **Up to `00357abd`** (the previous pin; 39 commits, release `v2.8.0` among them):
     - **A6, both halves** (knit-next #107 and #108):
       - `cb8bc4b5`: a stranger's group can no longer name the recipient as its creator to skip the request inbox.
         This port never allowed that.
@@ -143,9 +145,20 @@ Kotlin wins.
         `IdentityKeys.load` already refuses to do (`crypto.md`).
       - The rest is Android's alone: backup, storage, the 2.8.0 release, the Wear OS docs, a debug Wi-Fi Aware switch,
         CI, lint and screenshot tests.
-  - No wire bytes or vectors moved.
+    - No wire bytes or vectors moved.
+  - **Since then** (two commits):
+    - **The header's size** (`e4ff84b3`, knit-next #115 and its ADR 2026-10.y9qh). A receiver shows how far an
+      incoming attachment has got:
+      - the `FILE_HEADER` gains `size`, the length of the stream that follows;
+      - `keyed-v1.json` gains a `fileHeader` record that pins it, and no other vector moved.
+
+      This port writes the size whenever it serves or pushes a blob, and reads it leniently: a size that will not
+      decode costs the label, never the file (`LinkTests`, `LinkVectorTests`). Android's ring, its `rx` log lines and
+      `arrivingFiles()` carrying a count are its own. The iPhone does not yet show an incoming photo's progress
+      (`.agents/memory/roadmap.md`).
+    - `f6ecf8ac` drops an unused `Unit` from a test.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `00357abd`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e4ff84b3`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 
@@ -221,8 +234,8 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
     incoming photo only when nothing is held (`photoWins`, knit-next ADR 2026-09.nxcq). This port already stored the
     hash at once, and its tie now follows `photoWins` (knit-ios#1).
 - **A7** (planned; a paired change iOS leads, ADR 2026-10.nh55): shared blob vectors.
-  - **Vectors:** `keyed-v1.json` gains the FILE_HEADER bytes for both kinds and a whole FILE trio, a `blobreq`
-    frame, and a known answer for a sealed photo.
+  - **Vectors:** `keyed-v1.json` gains an AVATAR's FILE_HEADER and a whole FILE trio, a `blobreq` frame, and a
+    known answer for a sealed photo. An ATTACHMENT's header, with its size, came with knit-next ADR 2026-10.y9qh.
   - **The test:** `IosEmittedVectorTest` decodes an iOS header and opens an iOS-sealed photo.
   - **The bridge:** `state` could name each reachable peer's `avatarHash`, so `interop.py` can see a photo land.
   - **Additive only:** `0xB` stays.
