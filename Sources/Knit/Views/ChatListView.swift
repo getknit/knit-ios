@@ -233,9 +233,15 @@
                     Spacer()
                 }
                 if let at = row.lastMessageAt {
-                    Text(Date(milliseconds: at), format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
-                        .font(.caption)
-                        .foregroundStyle(Palette.secondaryText)
+                    // Formatted against the clock, not once at render, so the time keeps counting while the list
+                    // stays open. Android's list ticks the same way (ChatListScreen.kt's rememberCurrentTimeMillis).
+                    Text(
+                        .currentDate,
+                        format: Date.AnchoredRelativeFormatStyle(
+                            anchor: Date(milliseconds: at), presentation: .numeric, unitsStyle: .abbreviated)
+                    )
+                    .font(.caption)
+                    .foregroundStyle(Palette.secondaryText)
                 }
             }
         }
