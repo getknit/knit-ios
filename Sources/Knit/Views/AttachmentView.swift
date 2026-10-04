@@ -52,9 +52,12 @@
         @State private var failed = false
 
         var body: some View {
+            // The photo's own shape, once it has decoded or been measured. A spinner or a hidden photo holds it, so a row
+            // built above the screen as the thread scrolls up keeps its height, and nothing below it jumps.
+            let place = photos?.shape(attachment.hash, key: attachment.key).map(Self.frame(for:))
             Group {
                 if covered {
-                    HiddenPhoto(reveal: reveal)
+                    HiddenPhoto(place: place, reveal: reveal)
                 } else if let image {
                     let size = Self.frame(for: image.size)
                     Button(action: open) {
@@ -75,7 +78,7 @@
                 } else if attachment.isHeld {
                     // The bytes are here and decoding: the spinner holds the photo's place for the moment it takes.
                     ProgressView()
-                        .frame(width: Layout.photoWidth, height: Layout.photoPlaceholder)
+                        .frame(width: place?.width ?? Layout.photoWidth, height: place?.height ?? Layout.photoPlaceholder)
                 } else {
                     WaitingPhoto(hash: attachment.hash)
                 }
@@ -130,13 +133,14 @@
         }
     }
 
-    /// A photo the content filter hides, in the place it would take, until a tap shows it (ADR 2026-10.rpmq).
+    /// A photo the content filter hides, in the place it would take once known, until a tap shows it (ADR 2026-10.rpmq).
     private struct HiddenPhoto: View {
+        let place: CGSize?
         let reveal: () -> Void
 
         var body: some View {
             Button(action: reveal) {
-                PhotoPlaceholder(text: Copy.Moderation.hiddenPhoto) {
+                PhotoPlaceholder(text: Copy.Moderation.hiddenPhoto, place: place) {
                     Image(systemName: "eye.slash")
                         .accessibilityHidden(true)
                 }
@@ -146,9 +150,11 @@
         }
     }
 
-    /// The square a photo shows until it can: a glyph, which is decorative, over a line that says why.
+    /// The square a photo shows until it can, or the photo's own shape when that is known: a glyph, which is decorative,
+    /// over a line that says why.
     private struct PhotoPlaceholder<Glyph: View>: View {
         let text: String
+        var place: CGSize?
         @ViewBuilder let glyph: Glyph
 
         var body: some View {
@@ -160,8 +166,8 @@
                     .multilineTextAlignment(.center)
             }
             .padding(Layout.medium)
-            .frame(width: Layout.photoPlaceholder)
-            .frame(minHeight: Layout.photoPlaceholder)
+            .frame(width: place?.width ?? Layout.photoPlaceholder)
+            .frame(minHeight: place?.height ?? Layout.photoPlaceholder)
             .background(.fill.tertiary, in: .rect(cornerRadius: Layout.photoCorner))
             .accessibilityElement(children: .combine)
         }

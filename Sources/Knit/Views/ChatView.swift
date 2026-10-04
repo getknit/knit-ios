@@ -133,6 +133,7 @@
         /// it as a row grows, where one scrolled to the newest message's id did not: a photo holds a spinner's place until
         /// it decodes, then stands up to a hundred points taller, which left its stamp and tick under the composer.
         @State private var position = ScrollPosition(edge: .bottom)
+        @Environment(BlobImageCache.self) private var photos: BlobImageCache?
 
         var body: some View {
             ScrollView {
@@ -160,6 +161,11 @@
             .accessibilityIdentifier(AccessibilityID.chatThread)
             .onChange(of: state.messages.last?.id) {
                 position.scrollTo(edge: .bottom)
+            }
+            // Each photo's shape is read ahead, newest first since the thread opens at its bottom, so a photo scrolled up to
+            // stands at its own height from the start, rather than a spinner's that grows and pushes the thread down.
+            .task(id: state.messages.compactMap(\.attachment)) {
+                await photos?.measure(state.messages.reversed().compactMap(\.attachment))
             }
         }
 

@@ -64,6 +64,10 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
     build can't read.
   - A sealed photo is opened in memory each time it is decoded. Only the decoded image is cached, keyed by the hash,
     the size and the key, so two messages that name one blob with different keys never share a decode.
+    (Amended 2026-10-04: each photo's upright size is kept too, under the same hash and key, and outlives its
+    decoded image. An open thread reads the sizes it lacks from the photos' headers, newest first. A decoding
+    photo's spinner and a hidden photo's box take that size, so a photo scrolled up to keeps its height as it
+    decodes. Before, it grew from the spinner's 160 points and pushed the thread down.)
   - A message stays one element for VoiceOver, and its photo opens with a View photo action. A photo made an element
     of its own left the author's name one too, a hit area the accessibility audit fails.
   - Tapping a photo opens the viewer. Its Save adds the bytes as they were sent to Photos, asking only to add

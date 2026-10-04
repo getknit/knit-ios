@@ -35,6 +35,23 @@
             return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnail)
         }
 
+        /// The size `data` stands at once turned upright, read from its header without decoding it, or `nil` when
+        /// ``thumbnail(_:side:types:pixels:)`` would refuse it.
+        static func uprightSize(_ data: Data, types: Set<String>?, pixels: Int) -> CGSize? {
+            guard let source = source(of: data, types: types, pixels: pixels),
+                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int
+            else {
+                return nil
+            }
+            let orientation = (properties[kCGImagePropertyOrientation] as? UInt32).flatMap(CGImagePropertyOrientation.init)
+            let turned = orientation.map(quarterTurns.contains) ?? false
+            return turned ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
+        }
+
+        /// The orientations that stand an image on its side, so it is upright with its width and height swapped.
+        private static let quarterTurns: Set<CGImagePropertyOrientation> = [.left, .leftMirrored, .right, .rightMirrored]
+
         /// Whether `data` is a GIF declaring at most `pixels` pixels, which a chat sends as it is to keep its frames.
         static func isGIF(_ data: Data, pixels: Int) -> Bool {
             source(of: data, types: [UTType.gif.identifier], pixels: pixels) != nil
