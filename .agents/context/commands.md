@@ -140,7 +140,7 @@ arguments:
 scripts/mac.sh run scripts/check.sh xcode                         # .build-xcode/Build/Products/Debug-iphoneos/Knit.app, and -iphonesimulator
 scripts/mac.sh run scripts/check.sh device                        # the same app, signed for the iPhone (team and API key in App/Local.xcconfig)
 scripts/mac.sh run scripts/mac-desktop.sh <command…>              # any command in the Mac's desktop session, where the Keychain is open
-scripts/mac.sh run scripts/check.sh devicetest                    # the device tests on the iPhone: unlocked, Auto-Lock off, UI Automation on; with the go-ahead
+scripts/mac.sh run scripts/check.sh devicetest                    # the device tests on the iPhone: unlocked, Auto-Lock off, UI Automation on, passcode typed on the phone each run; with the go-ahead
 scripts/mac.sh run env KNIT_DEVICE_TESTS=KnitDeviceTests/RadioTests scripts/check.sh devicetest   # one class, or Class/testName
 scripts/mac.sh run xcrun xcresulttool get test-results summary --path .build-xcode/devicetest.xcresult   # what failed, and why
 scripts/mac.sh run bash -c 'xcrun simctl boot "iPhone 18 Pro"; xcrun simctl install booted .build-xcode/Build/Products/Debug-iphonesimulator/Knit.app'

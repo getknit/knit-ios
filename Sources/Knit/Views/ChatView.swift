@@ -166,6 +166,10 @@
         /// it as a row grows, where one scrolled to the newest message's id did not: a photo holds a spinner's place until
         /// it decodes, then stands up to a hundred points taller, which left its stamp and tick under the composer.
         @State private var position = ScrollPosition(edge: .bottom)
+        /// Whether the thread keeps to its bottom edge: from opening until someone scrolls away, and again once they scroll
+        /// back. The lazy stack guesses the height of rows it has yet to draw, and the edge it opens on moves as it draws
+        /// them; a long room opened short of its newest posts, or past them over empty space.
+        @State private var followsBottom = true
         @Environment(BlobImageCache.self) private var photos: BlobImageCache?
         @Environment(\.calendar) private var calendar
 
@@ -203,13 +207,37 @@
             .scrollDismissesKeyboard(.interactively)
             .accessibilityIdentifier(AccessibilityID.chatThread)
             .onChange(of: state.messages.last?.id) {
+                followsBottom = true
                 position.scrollTo(edge: .bottom)
+            }
+            // The edge moves as rows are drawn, a photo decodes, the composer grows or the keyboard rises.
+            .onScrollGeometryChange(for: CGFloat.self, of: Self.bottomOffset) { _, _ in
+                if followsBottom {
+                    position.scrollTo(edge: .bottom)
+                }
+            }
+            .onScrollPhaseChange { _, phase, context in
+                switch phase {
+                case .tracking, .interacting, .decelerating:
+                    followsBottom = false
+                case .idle:
+                    followsBottom = context.geometry.contentOffset.y >= Self.bottomOffset(context.geometry) - Layout.small
+                case .animating:
+                    break
+                @unknown default:
+                    break
+                }
             }
             // Each photo's shape is read ahead, newest first since the thread opens at its bottom, so a photo scrolled up to
             // stands at its own height from the start, rather than a spinner's that grows and pushes the thread down.
             .task(id: state.messages.compactMap(\.attachment)) {
                 await photos?.measure(state.messages.reversed().compactMap(\.attachment))
             }
+        }
+
+        /// The offset that shows the thread's bottom edge above the composer.
+        private static func bottomOffset(_ geometry: ScrollGeometry) -> CGFloat {
+            geometry.contentSize.height + geometry.contentInsets.bottom - geometry.containerSize.height
         }
 
         /// Who sent `message`, as the viewer's bar names them: "You", the author's label, or a DM's peer.

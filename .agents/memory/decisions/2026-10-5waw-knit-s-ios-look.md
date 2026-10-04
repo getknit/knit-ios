@@ -51,7 +51,8 @@ Two facts constrain this:
   - Text sits on an opaque fill even inside a glass container. Custom glass falls back to opaque on iOS 18 to 25,
     and whenever Reduce Transparency is on.
 - **The layout is Signal's, in one `NavigationStack`.**
-  - On the chat list, your face at the top left opens Settings and compose sits at the top right.
+  - On the chat list, your face at the top left opens Settings and compose sits at the top right, with a small
+    title between them.
   - In a thread, the title opens the profile or group info. Bubbles cluster, with tight corners where they join.
   - Profiles get a centered header.
   - The thread keeps its lock button. That is where Knit departs from Signal, because the button says exactly what

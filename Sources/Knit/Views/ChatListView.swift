@@ -37,6 +37,9 @@
             }
             .listStyle(.plain)
             .navigationTitle(Copy.ChatList.title)
+            // Small, between the face and compose: the screen hardly needs naming, but VoiceOver and the back button
+            // read the title.
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     SettingsButton(face: model.ownFace)

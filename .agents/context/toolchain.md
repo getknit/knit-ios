@@ -216,8 +216,8 @@ logs in to the desktop by itself, because the Simulator and signing need a deskt
     profiles are still the free team's 7-day ones, which expire on 2026-10-05 and 2026-10-06; the next
     `check.sh devicetest` renews them with the key. `check.sh device` prints the profile's expiry.
   - **The device tests need the phone ready:** Settings → Developer → Enable UI Automation on, the phone unlocked,
-    and Auto-Lock off for the run. With a passcode set, the first run waits on the phone for the passcode before
-    iOS enables automation mode, and times out if nobody enters it.
+    and Auto-Lock off for the run. With a passcode set, every run waits on the phone for the passcode before iOS
+    enables automation mode, and times out if nobody enters it in time.
   - **Installing from the Mac (2026-09-28):** `check.sh device` builds the signed app, and `devicectl device
     install app` then `devicectl device process launch` put it on the iPhone 12, over the network connection.
     The iPhone holds the `.dev` build alone now; xtool's was already gone. The debug bridge answers `interop.py`
