@@ -114,7 +114,8 @@
             guard case .ready(let environment) = stage else {
                 return
             }
-            environment.session.isActive = active
+            let session = environment.session
+            Task { await session.setActive(active) }
             if active {
                 environment.foregrounded()
             } else {

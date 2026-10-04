@@ -185,16 +185,32 @@ import Testing
         #expect(rig.notifier.withdrawn == [AppRig.sam.nodeId.string], "what it posted before goes")
         await rig.receive("On screen", from: AppRig.sam.nodeId, to: rig.me)
         #expect(rig.notifier.posted.isEmpty)
-        rig.session.isActive = false
+        await rig.session.setActive(false)
         await rig.receive("Screen locked", from: AppRig.sam.nodeId, to: rig.me)
         #expect(rig.notifier.posted.map(\.body) == ["Screen locked"])
-        rig.session.isActive = true
+        await rig.session.setActive(true)
         rig.session.hide(AppRig.priya.nodeId.string)
         await rig.receive("Still on screen", from: AppRig.sam.nodeId, to: rig.me)
         #expect(rig.notifier.posted.count == 1, "hiding another thread leaves this one on screen")
         rig.session.hide(AppRig.sam.nodeId.string)
         await rig.receive("Gone", from: AppRig.sam.nodeId, to: rig.me)
         #expect(rig.notifier.posted.map(\.body) == ["Screen locked", "Gone"])
+    }
+
+    @Test func comingBackToTheThreadOnScreenTakesBackWhatItPostedMeanwhile() async {
+        let rig = AppRig()
+        let sam = AppRig.sam.nodeId.string
+        rig.stores.conversations.accept(sam)
+        await rig.session.show(sam)
+        await rig.session.setActive(false)
+        await rig.receive("While away", from: AppRig.sam.nodeId, to: rig.me)
+        #expect(rig.notifier.posted.map(\.body) == ["While away"])
+        await rig.session.setActive(true)
+        #expect(rig.notifier.withdrawn == [sam, sam], "read on return, so the next one alerts")
+        rig.session.hide(sam)
+        await rig.session.setActive(false)
+        await rig.session.setActive(true)
+        #expect(rig.notifier.withdrawn == [sam, sam], "with no thread on screen, nothing goes")
     }
 
     @Test func ourOwnMessagesNeverNotify() async {

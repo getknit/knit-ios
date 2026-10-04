@@ -26,8 +26,8 @@ public final class AppSession {
     public private(set) var isRunning = false
     /// Moves whenever messages, peers, conversations or our own profile may have changed.
     public private(set) var revision = 0
-    /// Whether the app is in front, which the app keeps current from its scene phase.
-    public var isActive = true
+    /// Whether the app is in front, which the app keeps current from its scene phase through ``setActive(_:)``.
+    public private(set) var isActive = true
     /// Hears every mesh event once the session has handled it: a debug build's bridge reports them to every connection.
     /// The mesh has one stream of events, and the session is its consumer.
     @ObservationIgnored public var eventTap: (@Sendable (MeshEvent) -> Void)?
@@ -242,6 +242,16 @@ public final class AppSession {
     public func hide(_ conversationId: String) {
         if visible == conversationId {
             visible = nil
+        }
+    }
+
+    /// The app came to the front or left it. Coming back to a thread still on screen takes back what it posted
+    /// meanwhile, as Android's `ON_RESUME` does (`ChatViewModel.onChatForeground`): the user is reading it, and a
+    /// notification left behind would make the thread's next one a quiet replacement.
+    public func setActive(_ active: Bool) async {
+        isActive = active
+        if active, let visible {
+            await notifier?.withdraw(threadId: visible)
         }
     }
 
