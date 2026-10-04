@@ -35,10 +35,17 @@
         }
     }
 
-    /// The composer's button: Send, or Add photo while there is nothing to send.
+    /// The composer's button: Send, or Add photo while there is nothing to send. A send still under way after a moment
+    /// shows a spinner in place of the arrow, chiefly the first in a while, which waits for the text model to load.
     private struct SendButton: View {
+        /// How long a send runs before the spinner shows, in milliseconds, so a quick one does not flash it
+        /// (`SEND_SPINNER_DELAY_MS`).
+        private static let spinnerDelay = 300
+
         let model: ChatModel
         let demoPhoto: Data?
+        /// Whether the send under way has outlasted ``spinnerDelay``.
+        @State private var slow = false
 
         var body: some View {
             if model.offersPhoto {
@@ -52,13 +59,33 @@
                 Button {
                     Task { await model.send() }
                 } label: {
+                    // The arrow keeps its room while the spinner covers it, so the composer does not shift.
                     Label(Copy.Chat.send, systemImage: "arrow.up.circle.fill")
                         .labelStyle(.iconOnly)
                         .font(.title)
+                        .opacity(spinning ? 0 : 1)
+                        .overlay {
+                            if spinning {
+                                ProgressView()
+                            }
+                        }
                 }
                 .disabled(!model.canSend)
+                .accessibilityLabel(spinning ? Copy.Chat.sending : Copy.Chat.send)
                 .accessibilityIdentifier(AccessibilityID.chatSend)
+                .task(id: model.isSending) {
+                    slow = false
+                    guard model.isSending, (try? await Task.sleep(for: .milliseconds(Self.spinnerDelay))) != nil else {
+                        return
+                    }
+                    slow = true
+                }
             }
+        }
+
+        /// Whether the spinner shows: the send is still under way, and has been for a moment.
+        private var spinning: Bool {
+            slow && model.isSending
         }
 
         private func choose(_ data: Data?) {

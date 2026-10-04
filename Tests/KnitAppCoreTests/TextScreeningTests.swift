@@ -27,6 +27,39 @@ actor FakeTextClassifier: TextClassifier {
     }
 }
 
+/// A classifier that holds its first read until ``release()``, as the model does while it loads. It reads nothing, so
+/// every message passes.
+actor HeldTextClassifier: TextClassifier {
+    private var held: CheckedContinuation<Void, Never>?
+    private var watching: [CheckedContinuation<Void, Never>] = []
+    private(set) var asked = 0
+
+    func scores(of _: String) async -> [Float]? {
+        asked += 1
+        if asked == 1 {
+            for watcher in watching {
+                watcher.resume()
+            }
+            watching = []
+            await withCheckedContinuation { held = $0 }
+        }
+        return nil
+    }
+
+    /// Returns once the first read is held.
+    func holding() async {
+        if asked == 0 {
+            await withCheckedContinuation { watching.append($0) }
+        }
+    }
+
+    /// Lets the first read finish.
+    func release() {
+        held?.resume()
+        held = nil
+    }
+}
+
 /// The content filter for words: Android's policy over the classifier's scores, the check before a message is sent, and
 /// screening as a message arrives, which every place that shows its words reads (ADR 2026-10.e4kz).
 @MainActor
@@ -210,7 +243,7 @@ actor FakeTextClassifier: TextClassifier {
         model.draft = Self.threat
         await model.send()
         #expect(model.wordsRefused, "checked whatever the filter says")
-        #expect(model.draft == Self.threat)
+        #expect(model.draft == Self.threat && !model.isSending)
         #expect(rig.mesh.calls.room.isEmpty)
         model.wordsRefused = false
         model.draft = "oh shit"
@@ -231,5 +264,21 @@ actor FakeTextClassifier: TextClassifier {
         await model.send()
         #expect(!model.wordsRefused)
         #expect(rig.mesh.calls.direct == ["\(AppRig.sam.nodeId): oh shit"])
+    }
+
+    @Test func sendIsUnderWayWhileTheWordsAreCheckedAndATapMeanwhileSendsNothingMore() async {
+        let classifier = HeldTextClassifier()
+        let rig = AppRig(screening: TextScreening(classifier: classifier, words: WordFilter(words: [])))
+        let model = ChatModel(conversationId: AppRig.sam.nodeId.string, session: rig.session)
+        model.draft = Self.fine
+        let first = Task { await model.send() }
+        await classifier.holding()
+        #expect(model.isSending)
+        await model.send()
+        #expect(await classifier.asked == 1, "the second tap checks nothing")
+        await classifier.release()
+        await first.value
+        #expect(!model.isSending && model.draft.isEmpty)
+        #expect(rig.mesh.calls.direct == ["\(AppRig.sam.nodeId): \(Self.fine)"], "sent once")
     }
 }

@@ -121,6 +121,10 @@ public final class ChatModel {
     /// Whether the last Send was refused for abusive words, which the screen says until it is dismissed. The draft and
     /// the photo stay in the composer (`ChatViewModel.send`).
     public var wordsRefused = false
+    /// Whether a Send is under way, from the tap until the message is stored or refused (`ChatViewModel.isSending`).
+    /// The words are checked first, and the first check in a while waits for the model to load, so the screen shows it
+    /// working. A tap meanwhile sends nothing more.
+    public private(set) var isSending = false
 
     /// The thread `conversationId` over `session`, making picked photos ready to send through `codec` and checking them
     /// with `screening`.
@@ -167,6 +171,11 @@ public final class ChatModel {
     /// Words that look abusive are not sent, in any thread and whatever the content filter says, which governs only
     /// what we are shown (`MeshManager.sendChat`). The room adds its word list. Words the model could not read go.
     public func send() async {
+        guard !isSending else {
+            return
+        }
+        isSending = true
+        defer { isSending = false }
         let sending = text
         let photo = staged
         if await session.textScreening?.isAbusive(sending, inRoom: state.isRoom) ?? false {

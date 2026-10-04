@@ -15,6 +15,7 @@ import Testing
             Copy.Chat.roomNotice,
             Copy.Chat.composerPlaceholder,
             Copy.Chat.send,
+            Copy.Chat.sending,
             Copy.Chat.profile,
             Copy.Chat.inRange,
             Copy.Chat.outOfRange,

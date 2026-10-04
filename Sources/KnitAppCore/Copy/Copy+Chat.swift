@@ -49,6 +49,16 @@ extension Copy {
             NSLocalizedString("chat.send", bundle: .main, value: "Send", comment: "Chat: the send button")
         }
 
+        /// The send button while a tap on it is still being handled, for VoiceOver: the words are checked, then stored.
+        public static var sending: String {
+            NSLocalizedString(
+                "chat.sending",
+                bundle: .main,
+                value: "Sending…",
+                comment: "Chat: the send button while a message is on its way"
+            )
+        }
+
         /// How much room the message has left, shown as it nears the limit.
         public static func remaining(_ count: Int) -> String {
             Copy.count(

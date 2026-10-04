@@ -76,6 +76,10 @@ everywhere they show, notifications and lists included. That goes further than A
   reads it there.
 - **Sending:** `ChatModel.send` checks the words whatever the toggle says. A refused message stays in the composer
   with its photo, and an alert says why, in the room's words or a DM's.
+  - The first check in a while waits seconds for the model to load. So, as on Android (`ChatViewModel.isSending`),
+    Send is busy from the tap until the message is stored or refused, and a tap meanwhile sends nothing. Before
+    this, a second tap sent the message twice.
+  - A send still going after 0.3 s shows a spinner in place of the arrow, and VoiceOver hears "Sending…".
 - **The app:** `DeviceTextClassifier`, in `Sources/Knit/Moderation/` beside the photo model (`seam_coreml`).
   - It runs on the CPU and the Neural Engine, never the GPU. It loads on the first message, foreground or background.
   - It lets go ten minutes after its last message at the front (Android's `ModelLease`), five seconds after it in
