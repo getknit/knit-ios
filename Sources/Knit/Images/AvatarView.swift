@@ -5,12 +5,14 @@
 
     /// A face in a circle (`Avatar`, `GroupAvatar` and `RoomAvatar` in knit-next): a person's photo, or their initial on
     /// the tint their node id wears; a group's photo, its other members' faces, or a people glyph on its own tint; or the
-    /// room's glyph. Decorative: the name beside it says who, so VoiceOver skips it.
+    /// room's: Knit's mark. Decorative: the name beside it says who, so VoiceOver skips it.
     internal struct AvatarView: View {
         /// The seam between a cluster's cells, in points, at every size (`CLUSTER_GAP`).
         private static let clusterGap: CGFloat = 1.5
         /// A glyph's size as a fraction of the disc.
         private static let glyphFraction: CGFloat = 0.4
+        /// The mark's height as a fraction of the room's disc, as `ic_knit_room` draws it.
+        private static let markFraction: CGFloat = 0.66
 
         let face: Face
         let size: CGFloat
@@ -51,7 +53,12 @@
                     }
                 }
             case .room:
-                Glyph(symbol: "person.3.fill", tint: Palette.roomTint, size: size * Self.glyphFraction)
+                // Knit's mark on the coral disc, as Android's `RoomAvatar` draws `ic_knit_room`.
+                KnitMark()
+                    .fill(Palette.roomTint.onContainer)
+                    .frame(width: size * Self.markFraction, height: size * Self.markFraction)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Palette.roomTint.container)
             }
         }
     }
@@ -131,6 +138,7 @@
                         .scaledToFill()
                         .frame(width: width, height: height)
                         .accessibilityHidden(true)
+                        .accessibilityIgnoresInvertColors()
                 } else {
                     placeholder
                 }

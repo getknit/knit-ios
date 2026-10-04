@@ -20,6 +20,7 @@
             Form {
                 Section {
                     GroupHeader(state: state)
+                        .listRowBackground(Color.clear)
                 }
                 Section {
                     ForEach(state.members) { member in
@@ -64,14 +65,13 @@
         }
     }
 
-    /// The group's face, its title and how many are in it.
+    /// The group's face, its title and how many are in it, centered on the page as Signal heads a group.
     private struct GroupHeader: View {
         let state: GroupInfoState
 
         var body: some View {
-            VStack(alignment: .leading, spacing: Layout.tight) {
+            VStack(spacing: Layout.tight) {
                 AvatarView(face: state.face, size: Layout.faceProfile)
-                    .frame(maxWidth: .infinity)
                     .padding(.bottom, Layout.small)
                 Text(state.title)
                     .font(.title2.bold())
@@ -79,6 +79,8 @@
                     .font(.subheadline)
                     .foregroundStyle(Palette.secondaryText)
             }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
         }
     }
 

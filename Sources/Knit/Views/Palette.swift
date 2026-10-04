@@ -3,34 +3,39 @@
     import SwiftUI
     import UIKit
 
-    /// The app's colors, each at least 4.5:1 against every surface it sits on, in light and dark (WCAG AA for text,
-    /// and what `performAccessibilityAudit` holds MVP screens to). The system's secondary gray reads 2.8 to 3.4:1 on
-    /// grouped backgrounds, and white on the default blue 4.0:1, so neither is used for text. Defined in code rather than
-    /// the asset catalog, which only the Xcode project compiles.
+    /// The app's colors, from KnitAppCore's ``Swatches``, where `SwatchContrastTests` holds each text color to 4.5:1 or more
+    /// against every surface it sits on in light and dark (WCAG AA, and what `performAccessibilityAudit` holds MVP screens
+    /// to), and to 7:1 with Increase Contrast on. The tint is Knit's coral (ADR 2026-10.5waw). The system's secondary gray
+    /// reads 2.8 to 3.4:1 on grouped backgrounds, so it is not used for text. Defined in code rather than the asset
+    /// catalog, which only the Xcode project compiles.
     internal enum Palette {
-        /// The tint: buttons, links, the own bubble. 6.2:1 under white text and 5.1:1 or more as text in light; 5.3:1 or
-        /// more as text on dark surfaces, where a filled button takes ``onAccent`` for its label.
-        static let accent = dynamic(Swatch.accent)
+        /// The tint: buttons, links, a group's author names, the delivered tick.
+        static let accent = dynamic(Swatches.accent)
         /// A label on an ``accent`` fill: white in light, black in dark, where the accent is too light for white.
-        static let onAccent = dynamic(Swatch.onAccent)
-        /// Secondary text: previews, footers, times. 5.3:1 or more in light, 5.1:1 or more in dark.
-        static let secondaryText = dynamic(Swatch.secondaryText)
+        static let onAccent = dynamic(Swatches.onAccent)
+        /// Secondary text: previews, footers, times.
+        static let secondaryText = dynamic(Swatches.secondaryText)
         /// In range, allowed.
-        static let positive = dynamic(Swatch.positive)
+        static let positive = dynamic(Swatches.positive)
         /// Something the radio cannot do.
-        static let warning = dynamic(Swatch.warning)
+        static let warning = dynamic(Swatches.warning)
         /// Over a limit, and the label of an action that removes something: the system's red reads about 3.6:1 on a
         /// grouped cell in light.
-        static let critical = dynamic(Swatch.critical)
-        /// A verify code's paper: white in dark mode too, because the code is drawn black on white, and many readers, zxing
-        /// among them, read no inverted code (ADR 2026-10.65xx).
-        static let codePaper = Color(uiColor: rgb(Swatch.codePaper))
+        static let critical = dynamic(Swatches.critical)
+        /// Our own bubble: solid coral, as Signal fills its own with its blue.
+        static let ownBubble = dynamic(Swatches.ownBubble)
+        /// The words on ``ownBubble``.
+        static let onOwnBubble = dynamic(Swatches.onOwnBubble)
+        /// Someone else's bubble: an opaque gray, so the words on it measure against it and not the thread behind.
+        static let incomingBubble = dynamic(Swatches.incomingBubble)
+        /// A verify code's paper: white in dark mode too (ADR 2026-10.65xx).
+        static let codePaper = Color(uiColor: rgb(Swatches.codePaper))
         /// The capsule a line sits in over a photo in the viewer, under white text, which reads 14:1 on it whatever the
         /// photo shows.
-        static let viewerCaption = Color(uiColor: rgb(Swatch.viewerCaption))
+        static let viewerCaption = Color(uiColor: rgb(Swatches.viewerCaption))
 
-        /// The room's face: the accent's glyph on a pale wash of it.
-        static let roomTint = (container: dynamic(Swatch.roomContainer), onContainer: accent)
+        /// The room's face: Knit's mark on our bubble's coral (`ic_knit_room` in knit-next).
+        static let roomTint = (container: ownBubble, onContainer: onOwnBubble)
 
         /// The disc and the initial of a face without a photo, by its slot (``AvatarTint/slot(for:)``), in light and dark.
         static func avatarTint(_ slot: Int) -> (container: Color, onContainer: Color) {
@@ -41,22 +46,9 @@
         /// so a person is the same hue on every phone that knows them (ADR 2026-09.j8c7 in knit-next).
         private static let avatarTints = zip(AvatarTint.light, AvatarTint.dark).map { light, dark in
             (
-                container: dynamic((light: light.container, dark: dark.container)),
-                onContainer: dynamic((light: light.onContainer, dark: dark.onContainer))
+                container: dynamic(Swatch(light: light.container, dark: dark.container)),
+                onContainer: dynamic(Swatch(light: light.onContainer, dark: dark.onContainer))
             )
-        }
-
-        /// Each color's sRGB value in light mode and in dark, as `0xRRGGBB`.
-        private enum Swatch {
-            static let accent = (light: 0x0A5CC7, dark: 0x5AA0FF)
-            static let onAccent = (light: 0xFFFFFF, dark: 0x000000)
-            static let secondaryText = (light: 0x5E5E63, dark: 0xAEAEB2)
-            static let positive = (light: 0x1A7F37, dark: 0x3FB950)
-            static let warning = (light: 0xB25000, dark: 0xFFA94D)
-            static let critical = (light: 0xC4271C, dark: 0xFF6961)
-            static let codePaper = 0xFFFFFF
-            static let viewerCaption = 0x2C2C2E
-            static let roomContainer = (light: 0xDCE8F8, dark: 0x1E2A3A)
         }
 
         private static let channelMax: CGFloat = 255
@@ -64,10 +56,11 @@
         private static let redShift = 16
         private static let greenShift = 8
 
-        private static func dynamic(_ swatch: (light: Int, dark: Int)) -> Color {
+        /// `swatch` as the screen draws it now: light or dark, with Increase Contrast on or off.
+        private static func dynamic(_ swatch: Swatch) -> Color {
             Color(
                 uiColor: UIColor { traits in
-                    rgb(traits.userInterfaceStyle == .dark ? swatch.dark : swatch.light)
+                    rgb(swatch.value(dark: traits.userInterfaceStyle == .dark, increased: traits.accessibilityContrast == .high))
                 }
             )
         }
@@ -75,13 +68,6 @@
         private static func rgb(_ hex: Int) -> UIColor {
             let channel = { (shift: Int) in CGFloat((hex >> shift) & byte) / channelMax }
             return UIColor(red: channel(redShift), green: channel(greenShift), blue: channel(0), alpha: 1)
-        }
-    }
-
-    extension View {
-        /// A filled, prominent button in the palette's colors: its label stays legible on the accent in dark mode.
-        func prominentButton() -> some View {
-            buttonStyle(.borderedProminent).foregroundStyle(Palette.onAccent)
         }
     }
 
@@ -96,6 +82,27 @@
 
         var body: some View {
             Text(text).foregroundStyle(Palette.secondaryText)
+        }
+    }
+
+    /// A row's words after a glyph, as Signal's settings rows have them (ADR 2026-10.5waw); at the accessibility sizes the
+    /// words alone, which the glyph would squeeze until they broke.
+    internal struct RowLabel: View {
+        let title: String
+        let symbol: String
+        @Environment(\.dynamicTypeSize) private var typeSize
+
+        init(_ title: String, symbol: String) {
+            self.title = title
+            self.symbol = symbol
+        }
+
+        var body: some View {
+            if typeSize.isAccessibilitySize {
+                Text(title)
+            } else {
+                Label(title, systemImage: symbol)
+            }
         }
     }
 

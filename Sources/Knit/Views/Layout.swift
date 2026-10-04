@@ -19,12 +19,31 @@
         static let spacious: CGFloat = 32
         /// The column a row's leading glyph sits in.
         static let glyphColumn: CGFloat = 40
+        /// A card's corners.
+        static let cardCorner: CGFloat = 16
+        /// Knit's mark beside a heading.
+        static let markInline: CGFloat = 22
+        /// Knit's mark heading the welcome page.
+        static let markHero: CGFloat = 96
+        /// The status line's dot, as Android draws it (8 dp).
+        static let statusDot: CGFloat = 8
+        /// A linked peer's dot on their face in the list, and the ring of background around it.
+        static let badge: CGFloat = 14
+        static let badgeRing: CGFloat = 2
         /// A bubble's corners.
-        static let bubbleCorner: CGFloat = 16
+        static let bubbleCorner: CGFloat = 18
+        /// A bubble's corner on its author's side where it joins the next, and at its foot, as Android draws the tail.
+        static let bubbleJoin: CGFloat = 4
+        /// Between the bubbles of one run.
+        static let clusterGap: CGFloat = 2
+        /// A thread's note's corners.
+        static let noteCorner: CGFloat = 12
+        /// The composer's field's corners: a capsule at one line.
+        static let composerCorner: CGFloat = 22
+        /// The composer's glass panel's corners: the field's, plus the panel's padding around it.
+        static let panelCorner: CGFloat = 30
         /// How far a bubble stays from the far edge.
         static let bubbleInset: CGFloat = 48
-        /// Our own bubbles' tint.
-        static let ownBubbleOpacity = 0.2
         /// The smallest side of a control's hit area, as Apple's guidelines and the accessibility audit want it.
         static let hitTarget: CGFloat = 44
         /// A preview's lines in a list.
@@ -37,6 +56,8 @@
         static let codeQuietZone: CGFloat = 12
 
         // A face's side on each surface, as Android sizes it.
+        /// Ours, at the chat list's top left, where it opens Settings.
+        static let faceToolbar: CGFloat = 32
         /// A chat list row's.
         static let faceList: CGFloat = 52
         /// A thread's, beside its title.

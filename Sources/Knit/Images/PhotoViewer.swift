@@ -131,6 +131,7 @@
                         .resizable()
                         .scaledToFit()
                         .accessibilityLabel(label)
+                        .accessibilityIgnoresInvertColors()
                 }
             }
             .overlay(alignment: .bottom) {

@@ -60,12 +60,12 @@ extension KnitUITests {
         try app.reveal(fire(in: app, hidden: true), "the post by the fire, hidden")
         audit(app, screen: AccessibilityID.chatThread)
         // The tap goes where the photo is: under Dani's name, left of the bubble's middle, which her name's link spans.
-        try app.reveal(AccessibilityID.chatPhoto(Self.firePost)).coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.35)).tap()
+        try tapWhenStill(AccessibilityID.chatPhoto(Self.firePost), at: CGVector(dx: 0.3, dy: 0.35), in: app)
         try app.reveal(fire(in: app, hidden: false), "the post by the fire, shown")
 
         // The words hide too. The tap goes left of the bubble's middle, below Priya's name, on the line that stands in.
         try app.reveal(message(Self.newestPost, in: app, hidden: true), "the newest post, hidden")
-        try app.reveal(AccessibilityID.chatMessage(Self.newestPost)).coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.55)).tap()
+        try tapWhenStill(AccessibilityID.chatMessage(Self.newestPost), at: CGVector(dx: 0.2, dy: 0.55), in: app)
         try app.reveal(message(Self.newestPost, in: app, hidden: false), "the newest post, shown")
 
         try app.appear(AccessibilityID.chatAddPhoto).tap()
@@ -123,6 +123,15 @@ extension KnitUITests {
     /// A post that carries words alone, with them hidden or not.
     private func message(_ id: String, in app: XCUIApplication, hidden: Bool) -> XCUIElement {
         hiding(AccessibilityID.chatMessage(id), in: app, hidden: hidden)
+    }
+
+    /// Taps `identifier` at `offset` within it once the thread holds still. A swipe's glide carries the thread on after
+    /// `reveal` finds the element, and a tap on the moving thread lands on whatever slid under it: an author's name, whose
+    /// link opens their profile.
+    private func tapWhenStill(_ identifier: String, at offset: CGVector, in app: XCUIApplication) throws {
+        let element = try app.reveal(identifier)
+        settle(element)
+        element.coordinate(withNormalizedOffset: offset).tap()
     }
 
     /// The element `identifier` names, while its value says the filter hides something of it, or while it does not.

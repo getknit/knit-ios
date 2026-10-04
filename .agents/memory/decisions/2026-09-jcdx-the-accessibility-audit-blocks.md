@@ -66,6 +66,13 @@ strip is the same glass the bar exemption covers, so the exemption now runs from
 bottom edge. A contrast report with no element is exempt only while some content text sits wholly under that glass,
 with part of it above the bar. On any other screen such a report still fails.
 
+**Amended 2026-10-04, for Liquid Glass and dark mode (ADR 2026-10.5waw):** the fix that made bars and sheets under
+text opaque is now a rule: text sits on an opaque fill, and glass is for controls and navigation. A prominent button
+is Liquid Glass from iOS 26, and the composer may sit in a glass container as long as its field stays opaque.
+`testEveryScreenInDarkMode` walks every screen in dark mode at the default size, which lifts the limit below that dark
+mode was designed but never audited. `Palette`'s colors now come from KnitAppCore's `Swatches`, which
+`SwatchContrastTests` measures on Linux, Increase Contrast included.
+
 **Consequences / limits:**
 
 - **The pixel measurement trusts extremes.** It passes an element whose darkest and lightest pixels contrast

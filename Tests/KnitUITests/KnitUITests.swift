@@ -7,8 +7,9 @@ import XCTest
 /// stores and a radio that goes nowhere. XcodeGen builds this target from `App/project.yml`, with
 /// `AccessibilityID.swift` compiled in beside it, so the identifiers have one source; SwiftPM never sees it.
 ///
-/// Each walk runs at the default text size, and again, all in one test, at the largest accessibility size, where a
-/// screenshot of every screen is kept for a person to look over. What the audit may skip, and why, is ``AuditPolicy``.
+/// Each walk runs at the default text size, and again, all in one test, at the largest accessibility size, and again in
+/// dark mode (ADR 2026-10.5waw), where a screenshot of every screen is kept for a person to look over. What the audit may
+/// skip, and why, is ``AuditPolicy``.
 @MainActor
 final class KnitUITests: XCTestCase {
     /// The text size a walk runs at.
@@ -31,6 +32,8 @@ final class KnitUITests: XCTestCase {
     private static let frameReads = 20
 
     private var size = TextSize.standard
+    /// Whether the walk runs in dark mode.
+    private var dark = false
 
     func testOnboardingWalksWelcomeNameAndPermissions() throws {
         try walkOnboarding()
@@ -114,6 +117,20 @@ final class KnitUITests: XCTestCase {
     /// is this.
     func testEveryScreenAtTheLargestTextSize() throws {
         size = .largest
+        try walkEveryScreen()
+    }
+
+    /// Every walk again in dark mode, at the default size: `Palette`'s dark values, which `SwatchContrastTests` measures on
+    /// paper, measured on screen.
+    func testEveryScreenInDarkMode() throws {
+        dark = true
+        try walkEveryScreen()
+    }
+
+    // MARK: Walks
+
+    /// Every walk but the notification's, whose banner is the system's.
+    private func walkEveryScreen() throws {
         try walkOnboarding()
         try walkRoom()
         try walkBoundary()
@@ -131,8 +148,6 @@ final class KnitUITests: XCTestCase {
         try walkRequestBlock()
         try walkRadioStates()
     }
-
-    // MARK: Walks
 
     private func walkOnboarding() throws {
         let app = launch("-demoOnboarding")
@@ -268,6 +283,8 @@ extension KnitUITests {
         continueAfterFailure = true
         let app = XCUIApplication()
         app.launchArguments = ["-seedDemo"] + arguments + size.arguments
+        // Set on every launch, so a dark walk that stopped short leaves no later walk dark.
+        XCUIDevice.shared.appearance = dark ? .dark : .light
         app.launch()
         return app
     }
@@ -301,7 +318,7 @@ extension KnitUITests {
         }
         var issues: [String] = []
         var shots: [XCTAttachment] = []
-        let label = "\(screen) (\(size))"
+        let label = "\(screen) (\(size)\(dark ? ", dark" : ""))"
         let bars = app.navigationBars.allElementsBoundByIndex.map(\.frame)
         let window = app.windows.firstMatch.frame
         do {
@@ -324,13 +341,13 @@ extension KnitUITests {
             issues.append("the audit failed: \(error)")
         }
         shots.forEach(add)
-        if !issues.isEmpty || size == .largest {
+        if !issues.isEmpty || size == .largest || dark {
             let shot = XCTAttachment(screenshot: app.screenshot())
-            shot.name = "\(screen) (\(size))"
+            shot.name = label
             shot.lifetime = .keepAlways
             add(shot)
         }
-        XCTAssert(issues.isEmpty, "\(screen) (\(size)), \(issues.count) issues:\n" + issues.joined(separator: "\n"))
+        XCTAssert(issues.isEmpty, "\(label), \(issues.count) issues:\n" + issues.joined(separator: "\n"))
     }
 }
 

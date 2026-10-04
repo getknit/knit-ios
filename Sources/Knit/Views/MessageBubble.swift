@@ -5,9 +5,12 @@
     /// One message: ours on the right with its tick, theirs on the left, with the author's face and name in the room and
     /// a group. The author's face and name open their profile, which is how a DM starts (MVP item 5). A photo sits above
     /// the words, and opens full screen. The content filter can hide either until a tap: an explicit photo (ADR
-    /// 2026-10.rpmq), and words it flagged or has yet to read (ADR 2026-10.e4kz).
+    /// 2026-10.rpmq), and words it flagged or has yet to read (ADR 2026-10.e4kz). In a run from one author (`place`), the
+    /// name tops the first bubble and the face sits by the last, as Signal clusters them (ADR 2026-10.5waw).
     internal struct MessageBubble: View {
         let message: ChatMessage
+        /// Where it sits in its run.
+        let place: MessagePlace
         /// Whether the message was tapped to show what the filter hid of it.
         let revealed: Bool
         /// Shows it.
@@ -22,15 +25,21 @@
                 if message.isMine {
                     Spacer(minLength: Layout.bubbleInset)
                 }
-                // At the accessibility sizes the face would take the bubble's room; the name above it says who.
+                // At the accessibility sizes the face would take the bubble's room; the name above it says who. Within a run
+                // the face waits for the last bubble, and its column stays.
                 if let face = message.authorFace, !typeSize.isAccessibilitySize {
-                    NavigationLink(value: Route.peer(message.author)) {
-                        AvatarView(face: face, size: Layout.faceBubble)
+                    if place.joinsNext {
+                        Color.clear
+                            .frame(width: Layout.faceBubble)
+                    } else {
+                        NavigationLink(value: Route.peer(message.author)) {
+                            AvatarView(face: face, size: Layout.faceBubble)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHidden(true)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityHidden(true)
                 }
-                BubbleContent(message: message, covered: covered, hidden: hidden, reveal: reveal, open: open)
+                BubbleContent(message: message, place: place, covered: covered, hidden: hidden, reveal: reveal, open: open)
                 if !message.isMine {
                     Spacer(minLength: Layout.bubbleInset)
                 }
@@ -69,9 +78,12 @@
             message.body.isEmpty || (revealed && message.hiddenWords == .flagged) ? nil : message.hiddenWords
         }
 
-        /// What VoiceOver adds after the message: what the filter hides of it.
+        /// What VoiceOver adds after the message: its time and tick when the run's stamp under a later bubble says them,
+        /// and what the filter hides of it.
         private var value: String {
-            [hidden.map { _ in Copy.Moderation.hiddenMessage }, covered ? Copy.Moderation.hiddenPhotoValue : nil]
+            let time = Date(milliseconds: message.sentAt).formatted(date: .omitted, time: .shortened)
+            let stamp = place.showsStamp ? [] : [time, message.status?.label]
+            return (stamp + [hidden.map { _ in Copy.Moderation.hiddenMessage }, covered ? Copy.Moderation.hiddenPhotoValue : nil])
                 .compactMap(\.self)
                 .joined(separator: ", ")
         }
@@ -81,6 +93,7 @@
     /// what stands in for them, and its stamp.
     private struct BubbleContent: View {
         let message: ChatMessage
+        let place: MessagePlace
         /// Whether the photo hides until a tap.
         let covered: Bool
         /// Why the words hide, or `nil` while they show.
@@ -90,7 +103,7 @@
 
         var body: some View {
             VStack(alignment: message.isMine ? .trailing : .leading, spacing: Layout.hairline) {
-                if let author = message.authorLabel {
+                if let author = message.authorLabel, !place.joinsPrevious {
                     NavigationLink(value: Route.peer(message.author)) {
                         Text(author)
                             .font(.caption.bold())
@@ -102,20 +115,40 @@
                     AttachmentView(attachment: attachment, isMine: message.isMine, covered: covered, reveal: reveal) { open(attachment) }
                 }
                 if let hidden {
-                    HiddenWordsView(hidden: hidden, reveal: reveal)
+                    HiddenWordsView(hidden: hidden, shape: shape, reveal: reveal)
                 } else if !message.body.isEmpty {
                     Text(message.body)
+                        .foregroundStyle(message.isMine ? AnyShapeStyle(Palette.onOwnBubble) : AnyShapeStyle(.primary))
                         .padding(.horizontal, Layout.medium)
                         .padding(.vertical, Layout.small)
-                        .background(fill, in: .rect(cornerRadius: Layout.bubbleCorner))
+                        .background(message.isMine ? Palette.ownBubble : Palette.incomingBubble, in: shape)
                         .textSelection(.enabled)
                 }
-                Stamp(message: message)
+                if place.showsStamp {
+                    Stamp(message: message)
+                }
             }
         }
 
-        private var fill: AnyShapeStyle {
-            message.isMine ? AnyShapeStyle(.tint.opacity(Layout.ownBubbleOpacity)) : AnyShapeStyle(.fill.tertiary)
+        /// The bubble's outline: round, but tight on the author's side where it joins the bubble above, and at its foot,
+        /// where Android draws its tail.
+        private var shape: UnevenRoundedRectangle {
+            let top = place.joinsPrevious ? Layout.bubbleJoin : Layout.bubbleCorner
+            return message.isMine
+                ? UnevenRoundedRectangle(
+                    topLeadingRadius: Layout.bubbleCorner,
+                    bottomLeadingRadius: Layout.bubbleCorner,
+                    bottomTrailingRadius: Layout.bubbleJoin,
+                    topTrailingRadius: top,
+                    style: .continuous
+                )
+                : UnevenRoundedRectangle(
+                    topLeadingRadius: top,
+                    bottomLeadingRadius: Layout.bubbleJoin,
+                    bottomTrailingRadius: Layout.bubbleCorner,
+                    topTrailingRadius: Layout.bubbleCorner,
+                    style: .continuous
+                )
         }
     }
 
@@ -124,19 +157,26 @@
     /// the message's value and offers Show message instead.
     private struct HiddenWordsView: View {
         let hidden: HiddenWords
+        let shape: UnevenRoundedRectangle
         let reveal: () -> Void
 
         var body: some View {
             Button(action: reveal) {
-                Label(
-                    hidden == .flagged ? Copy.Moderation.hiddenWords : Copy.Moderation.checkingMessage,
-                    systemImage: hidden == .flagged ? "eye.slash" : "hourglass"
-                )
+                Label {
+                    Text(hidden == .flagged ? Copy.Moderation.hiddenWords : Copy.Moderation.checkingMessage)
+                } icon: {
+                    // The filter reads the words in a moment: Knit's stitches, while it does.
+                    if hidden == .flagged {
+                        Image(systemName: "eye.slash")
+                    } else {
+                        StitchIndicator()
+                    }
+                }
                 .font(.subheadline.italic())
                 .foregroundStyle(Palette.secondaryText)
                 .padding(.horizontal, Layout.medium)
                 .padding(.vertical, Layout.small)
-                .background(.fill.tertiary, in: .rect(cornerRadius: Layout.bubbleCorner))
+                .background(Palette.incomingBubble, in: shape)
             }
             .buttonStyle(.plain)
             .disabled(hidden != .flagged)

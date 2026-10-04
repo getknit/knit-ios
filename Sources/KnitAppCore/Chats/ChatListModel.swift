@@ -154,6 +154,11 @@ public final class ChatListModel {
         }
     }
 
+    /// Our own face, on the button that opens Settings, where Signal puts it (ADR 2026-10.5waw).
+    public var ownFace: Face {
+        session.directory.face(for: session.identity.nodeId)
+    }
+
     /// The status line.
     public var status: ConnectionStatus {
         ConnectionStatus(radio: session.radioState, isRunning: session.isRunning, linked: session.neighbors.count)

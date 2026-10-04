@@ -27,7 +27,7 @@
         var body: some View {
             let state = model.state
             MessageList(state: state, revealed: revealed, reveal: { revealed.insert($0) }, view: { viewing = $0 })
-                .safeAreaInset(edge: .bottom) {
+                .bottomBar {
                     if state.isRequest {
                         RequestBar(
                             title: state.requestTitle,
@@ -48,33 +48,20 @@
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
-                        ThreadTitle(title: state.title, face: state.face)
+                        ThreadTitle(state: state, conversationId: model.conversationId)
                     }
-                    if let peer = state.peer {
-                        ToolbarItemGroup(placement: .topBarTrailing) {
+                    // What is sealed, on the lock: the one place Knit's thread keeps a button Signal's has not, because it
+                    // says exactly what the encryption covers.
+                    if state.peer != nil || state.isGroup {
+                        ToolbarItem(placement: .topBarTrailing) {
                             Button {
                                 showsEncryption = true
                             } label: {
                                 Label(Copy.Chat.encrypted, systemImage: state.isVerified ? "checkmark.shield.fill" : "lock.fill")
                             }
-                            .accessibilityIdentifier(state.isVerified ? AccessibilityID.chatVerified : "")
-                            NavigationLink(value: Route.peer(peer)) {
-                                Label(Copy.Chat.profile, systemImage: "person.crop.circle")
-                            }
-                            .accessibilityIdentifier(AccessibilityID.chatProfile)
-                        }
-                    } else if state.isGroup {
-                        ToolbarItemGroup(placement: .topBarTrailing) {
-                            Button {
-                                showsEncryption = true
-                            } label: {
-                                Label(Copy.Chat.encrypted, systemImage: "lock.fill")
-                            }
-                            .accessibilityIdentifier(AccessibilityID.chatEncryption)
-                            NavigationLink(value: Route.groupInfo(model.conversationId)) {
-                                Label(Copy.Groups.info, systemImage: "info.circle")
-                            }
-                            .accessibilityIdentifier(AccessibilityID.chatGroupInfo)
+                            .accessibilityIdentifier(
+                                state.isGroup ? AccessibilityID.chatEncryption : state.isVerified ? AccessibilityID.chatVerified : ""
+                            )
                         }
                     }
                 }
@@ -111,24 +98,62 @@
         }
     }
 
-    /// The thread's face beside its title. The face is decorative, so the title reads as the title alone.
+    /// The thread's title, as Signal sets it: the face, the name, and a line under it, a DM's reach or a group's size. In a
+    /// DM or a group it opens the profile or the group's info. The face is decorative, so it reads as the title and line.
     private struct ThreadTitle: View {
-        let title: String
-        let face: Face
+        let state: ChatState
+        let conversationId: String
 
         var body: some View {
+            if let peer = state.peer {
+                NavigationLink(value: Route.peer(peer)) { label }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(Copy.Chat.profile)
+                    .accessibilityShowsLargeContentViewer { Text(state.title) }
+                    .accessibilityIdentifier(AccessibilityID.chatProfile)
+            } else if state.isGroup {
+                NavigationLink(value: Route.groupInfo(conversationId)) { label }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(Copy.Groups.info)
+                    .accessibilityShowsLargeContentViewer { Text(state.title) }
+                    .accessibilityIdentifier(AccessibilityID.chatGroupInfo)
+            } else {
+                label
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
+
+        private var label: some View {
             HStack(spacing: Layout.small) {
-                AvatarView(face: face, size: Layout.faceTitle)
-                Text(title)
-                    .font(.headline)
-                    .lineLimit(1)
+                AvatarView(face: state.face, size: Layout.faceTitle)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(state.title)
+                        .font(.headline)
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(1)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(Palette.secondaryText)
+                            .lineLimit(1)
+                    }
+                }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
+        }
+
+        /// A group's size, or whether a DM's peer is in range, in a word; the room has none. The thread says what out of range
+        /// means.
+        private var subtitle: String? {
+            if let count = state.memberCount {
+                return Copy.Groups.memberCount(count)
+            }
+            return state.peer == nil ? nil : state.isLinked ? Copy.Chat.inRange : Copy.Profile.outOfRange
         }
     }
 
-    /// The thread's messages, newest at the bottom, with what the thread says about itself above them.
+    /// The thread's messages, newest at the bottom, with what the thread says about itself above them. Each day starts
+    /// under its date, and a run from one author clusters, as Signal draws it (``MessageClusters``).
     private struct MessageList: View {
         let state: ChatState
         /// The messages tapped to show what the filter hid of them.
@@ -142,23 +167,33 @@
         /// it decodes, then stands up to a hundred points taller, which left its stamp and tick under the composer.
         @State private var position = ScrollPosition(edge: .bottom)
         @Environment(BlobImageCache.self) private var photos: BlobImageCache?
+        @Environment(\.calendar) private var calendar
 
         var body: some View {
             ScrollView {
-                LazyVStack(spacing: Layout.small) {
+                LazyVStack(spacing: 0) {
                     ThreadHeader(state: state)
-                    ForEach(state.messages) { message in
-                        if let notice = message.notice {
-                            StatusLineRow(text: notice)
-                                .accessibilityIdentifier(AccessibilityID.chatNotice(message.id))
-                        } else {
-                            MessageBubble(
-                                message: message,
-                                revealed: revealed.contains(message.id),
-                                reveal: { reveal(message.id) },
-                                open: { view(.chat($0, sender: sender(of: message))) }
-                            )
+                    let places = MessageClusters.places(state.messages, calendar: calendar)
+                    ForEach(Array(zip(state.messages, places)), id: \.0.id) { message, place in
+                        VStack(spacing: Layout.small) {
+                            if place.startsDay {
+                                DaySeparator(sentAt: message.sentAt)
+                            }
+                            if let notice = message.notice {
+                                ThreadNote(text: notice)
+                                    .accessibilityIdentifier(AccessibilityID.chatNotice(message.id))
+                            } else {
+                                MessageBubble(
+                                    message: message,
+                                    place: place,
+                                    revealed: revealed.contains(message.id),
+                                    reveal: { reveal(message.id) },
+                                    open: { view(.chat($0, sender: sender(of: message))) }
+                                )
+                            }
                         }
+                        // Bubbles in a run sit close; runs sit apart.
+                        .padding(.top, place.joinsPrevious ? Layout.clusterGap : Layout.small)
                     }
                 }
                 .padding()
@@ -183,57 +218,67 @@
         }
     }
 
-    /// The room's notice, a group's size, a DM's reach, and what an empty thread holds.
+    /// The room's notice, what an out-of-range DM means, and what an empty thread holds. A group's size is under the title.
     private struct ThreadHeader: View {
         let state: ChatState
 
         var body: some View {
             if state.isRoom {
-                Notice(symbol: "person.3", text: Copy.Chat.roomNotice)
+                ThreadNote(text: Copy.Chat.roomNotice, symbol: "person.3")
                 if state.messages.isEmpty {
-                    Notice(symbol: "hand.wave", text: Copy.Chat.roomEmpty)
+                    ThreadNote(text: Copy.Chat.roomEmpty, symbol: "hand.wave")
                 }
-            } else if let count = state.memberCount {
-                Text(Copy.Groups.memberCount(count))
-                    .font(.footnote)
-                    .foregroundStyle(Palette.secondaryText)
-            } else {
-                Text(state.isLinked ? Copy.Chat.inRange : Copy.Chat.outOfRange)
-                    .font(.footnote)
-                    .foregroundStyle(Palette.secondaryText)
+            } else if state.peer != nil {
+                if !state.isLinked {
+                    ThreadNote(text: Copy.Chat.outOfRange)
+                }
                 if state.messages.isEmpty {
-                    Notice(symbol: "lock", text: Copy.Chat.directEmpty(state.title))
+                    ThreadNote(text: Copy.Chat.directEmpty(state.title), symbol: "lock")
                 }
             }
         }
     }
 
-    /// A group's status line: an event, such as a member leaving, centered between the messages.
-    private struct StatusLineRow: View {
-        let text: String
+    /// The date over a day's first message, as the system words it: Today, Yesterday, or the date.
+    private struct DaySeparator: View {
+        private static let formatter: DateFormatter = {
+            let style = DateFormatter()
+            style.dateStyle = .medium
+            style.timeStyle = .none
+            style.doesRelativeDateFormatting = true
+            return style
+        }()
+
+        let sentAt: Int64
 
         var body: some View {
-            Text(text)
-                .font(.footnote)
-                .foregroundStyle(Palette.secondaryText)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Layout.tight)
+            ThreadNote(text: Self.formatter.string(from: Date(milliseconds: sentAt)))
+                .accessibilityAddTraits(.isHeader)
         }
     }
 
-    /// A line the thread says about itself rather than a message.
-    private struct Notice: View {
-        let symbol: String
+    /// A line the thread says about itself rather than a message: a group's event, the room's notice, a day's date. It sits
+    /// centered on a gray capsule, opaque, so it reads the same over any thread.
+    private struct ThreadNote: View {
         let text: String
+        var symbol: String?
 
         var body: some View {
-            Label(text, systemImage: symbol)
-                .font(.footnote)
-                .foregroundStyle(Palette.secondaryText)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Layout.tight)
+            Group {
+                if let symbol {
+                    Label(text, systemImage: symbol)
+                } else {
+                    Text(text)
+                }
+            }
+            .font(.footnote)
+            .foregroundStyle(Palette.secondaryText)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, Layout.medium)
+            .padding(.vertical, Layout.tight)
+            .background(Palette.incomingBubble, in: .rect(cornerRadius: Layout.noteCorner, style: .continuous))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Layout.tight)
         }
     }
 

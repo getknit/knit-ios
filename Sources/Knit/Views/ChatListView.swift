@@ -3,7 +3,8 @@
     import KnitStore
     import SwiftUI
 
-    /// The chat list: the status line, the first-run card, the room, the DMs and groups, and the requests entry.
+    /// The chat list, laid out as Signal's (ADR 2026-10.5waw): our face at the top left, which opens Settings, and compose at
+    /// the top right; then the status line, the first-run card, the room, the DMs and groups, and the requests entry.
     internal struct ChatListView: View {
         @State private var model: ChatListModel
         private let newMessage: () -> Void
@@ -17,35 +18,31 @@
         var body: some View {
             let state = model.state
             List {
-                Section {
-                    StatusLine(status: model.status) { Task { await model.start() } }
-                        .accessibilityIdentifier(AccessibilityID.chatListStatus)
-                }
+                StatusLine(status: model.status) { Task { await model.start() } }
+                    .accessibilityIdentifier(AccessibilityID.chatListStatus)
+                    .listRowSeparator(.hidden)
                 if state.showsGettingStarted {
-                    Section {
-                        GettingStartedCard()
-                    }
+                    GettingStartedCard()
+                        .listRowSeparator(.hidden)
                 }
-                Section {
-                    ForEach(state.rows) { row in
-                        NavigationLink(value: Route.chat(row.id)) {
-                            ChatRowView(row: row)
-                        }
-                        .accessibilityIdentifier(AccessibilityID.chatRow(row.id))
+                ForEach(state.rows) { row in
+                    NavigationLink(value: Route.chat(row.id)) {
+                        ChatRowView(row: row)
                     }
-                    if state.requestCount > 0 {
-                        RequestsEntry(count: state.requestCount)
-                    }
+                    .accessibilityIdentifier(AccessibilityID.chatRow(row.id))
+                }
+                if state.requestCount > 0 {
+                    RequestsEntry(count: state.requestCount)
                 }
             }
+            .listStyle(.plain)
             .navigationTitle(Copy.ChatList.title)
             .toolbar {
-                // Compose at the trailing edge, where Messages and Mail keep it.
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    NavigationLink(value: Route.settings) {
-                        Label(Copy.ChatList.settings, systemImage: "gearshape")
-                    }
-                    .accessibilityIdentifier(AccessibilityID.chatListSettings)
+                ToolbarItem(placement: .topBarLeading) {
+                    SettingsButton(face: model.ownFace)
+                }
+                // Compose at the trailing edge, where Signal, Messages and Mail keep it.
+                ToolbarItem(placement: .topBarTrailing) {
                     Button(action: newMessage) {
                         Label(Copy.NewMessage.title, systemImage: "square.and.pencil")
                     }
@@ -55,16 +52,50 @@
         }
     }
 
-    /// The way into the message requests, with how many wait.
+    /// Our face, which opens Settings. VoiceOver and the Large Content Viewer name it Settings: the face is decorative. It
+    /// is the link's whole label, since a toolbar shows a label's title where its icon is no image.
+    private struct SettingsButton: View {
+        let face: Face
+
+        var body: some View {
+            NavigationLink(value: Route.settings) {
+                AvatarView(face: face, size: Layout.faceToolbar)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Copy.ChatList.settings)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityShowsLargeContentViewer {
+                Label(Copy.ChatList.settings, systemImage: "gearshape")
+            }
+            .accessibilityIdentifier(AccessibilityID.chatListSettings)
+        }
+    }
+
+    /// The way into the message requests, with how many wait, in a coral count at the trailing edge.
     private struct RequestsEntry: View {
         let count: Int
 
         var body: some View {
             NavigationLink(value: Route.requests) {
-                LabeledContent(Copy.ChatList.requests) {
+                HStack(spacing: Layout.medium) {
+                    Image(systemName: "tray.full")
+                        .font(.title3)
+                        .foregroundStyle(.tint)
+                        .frame(width: Layout.faceList, height: Layout.faceList)
+                        .background(Palette.incomingBubble, in: .circle)
+                        .accessibilityHidden(true)
+                    Text(Copy.ChatList.requests)
+                        .font(.headline)
+                    Spacer()
+                    // The value says how many, in words.
                     Text(count, format: .number)
+                        .font(.subheadline.bold())
                         .monospacedDigit()
-                        .foregroundStyle(Palette.secondaryText)
+                        .foregroundStyle(Palette.onAccent)
+                        .padding(.horizontal, Layout.small)
+                        .padding(.vertical, Layout.hairline)
+                        .background(Palette.accent, in: .capsule)
+                        .accessibilityHidden(true)
                 }
             }
             .accessibilityValue(Copy.ChatList.requestCount(count))
@@ -80,12 +111,12 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: Layout.small) {
-                HStack(alignment: .firstTextBaseline) {
+                HStack(spacing: Layout.small) {
                     Label {
                         Text(status.line)
+                            .font(.subheadline)
                     } icon: {
-                        Image(systemName: symbol)
-                            .foregroundStyle(status.isWarning ? Palette.warning : Palette.accent)
+                        StatusMark(status: status)
                     }
                     .accessibilityIdentifier(AccessibilityID.chatListStatus(status.accessibilityState))
                     if status.offersBoundary {
@@ -101,28 +132,43 @@
                 }
                 if status.offersStart {
                     Button(Copy.Status.start, action: start)
-                        .buttonStyle(.bordered)
+                        .secondaryButton()
                         .accessibilityIdentifier(AccessibilityID.chatListStatusStart)
                 }
                 if status.offersSettings {
                     OpenSettingsButton()
-                        .buttonStyle(.bordered)
+                        .secondaryButton()
                         .accessibilityIdentifier(AccessibilityID.chatListStatusSettings)
                 }
             }
             .accessibilityElement(children: .contain)
         }
+    }
 
-        private var symbol: String {
+    /// The status line's mark, Android's dot (`ConnectionStatus.kt`): green with someone linked, gray with nobody, and in
+    /// the warning color when the mesh cannot run; Knit's stitches while it starts. The words beside it say the same, so
+    /// the color is never the only cue.
+    private struct StatusMark: View {
+        let status: ConnectionStatus
+        @ScaledMetric(relativeTo: .subheadline) private var side = Layout.statusDot
+
+        var body: some View {
+            if case .starting = status {
+                StitchIndicator()
+            } else {
+                Circle()
+                    .fill(color)
+                    .frame(width: side, height: side)
+                    .accessibilityHidden(true)
+            }
+        }
+
+        private var color: Color {
             switch status {
             case .linked(let count):
-                count > 0 ? "dot.radiowaves.left.and.right" : "magnifyingglass"
-            case .starting:
-                "hourglass"
-            case .stopped:
-                "pause.circle"
-            case .bluetoothOff, .notAllowed, .unsupported:
-                "exclamationmark.triangle"
+                count > 0 ? Palette.positive : Palette.secondaryText
+            case .starting, .stopped, .bluetoothOff, .notAllowed, .unsupported:
+                status.isWarning ? Palette.warning : Palette.secondaryText
             }
         }
     }
@@ -162,11 +208,20 @@
         }
     }
 
+    /// The first-run card: Knit's mark, what to do first, and the way into the room, on a gray card.
     private struct GettingStartedCard: View {
+        @ScaledMetric(relativeTo: .headline) private var mark = Layout.markInline
+
         var body: some View {
             VStack(alignment: .leading, spacing: Layout.small) {
-                Text(Copy.ChatList.gettingStartedTitle)
-                    .font(.headline)
+                HStack(spacing: Layout.small) {
+                    KnitMark()
+                        .fill(.tint)
+                        .frame(width: mark, height: mark)
+                        .accessibilityHidden(true)
+                    Text(Copy.ChatList.gettingStartedTitle)
+                        .font(.headline)
+                }
                 Text(Copy.ChatList.gettingStartedBody)
                     .foregroundStyle(Palette.secondaryText)
                 NavigationLink(value: Route.chat(Conversations.nearby)) {
@@ -174,11 +229,14 @@
                 }
                 .prominentButton()
             }
-            .padding(.vertical, Layout.tight)
+            .padding(Layout.large)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.incomingBubble, in: .rect(cornerRadius: Layout.cardCorner))
         }
     }
 
-    /// One thread: one VoiceOver element that reads the title, the preview, the time and the tick.
+    /// One thread, as Signal lists it: the face, the title and the time, and the preview under them. One VoiceOver element
+    /// that reads the title, the preview, the time and the tick, and whether the peer is in range.
     private struct ChatRowView: View {
         let row: ChatRow
         @Environment(\.dynamicTypeSize) private var typeSize
@@ -188,10 +246,15 @@
                 // At the accessibility sizes the face would take a third of the row from the title, which says who.
                 if !typeSize.isAccessibilitySize {
                     AvatarView(face: row.face, size: Layout.faceList)
+                        .overlay(alignment: .bottomTrailing) {
+                            if row.isLinked {
+                                LinkedBadge()
+                            }
+                        }
                 }
                 VStack(alignment: .leading, spacing: Layout.hairline) {
                     RowTitle(row: row)
-                    HStack(spacing: Layout.tight) {
+                    HStack(alignment: .firstTextBaseline, spacing: Layout.tight) {
                         if let status = row.lastStatus {
                             DeliveryTick(status: status)
                         }
@@ -202,7 +265,22 @@
                     }
                 }
             }
+            .padding(.vertical, Layout.tight)
             .accessibilityElement(children: .combine)
+            // The badge is drawn on the face, which VoiceOver skips; at the accessibility sizes the title carries a glyph.
+            .accessibilityValue(row.isLinked && !typeSize.isAccessibilitySize ? Copy.ChatList.inRange : "")
+        }
+    }
+
+    /// A linked peer's dot on their face, ringed in the list's background so it reads on any photo.
+    private struct LinkedBadge: View {
+        var body: some View {
+            Circle()
+                .fill(Palette.positive)
+                .frame(width: Layout.badge, height: Layout.badge)
+                .padding(Layout.badgeRing)
+                .background(.background, in: .circle)
+                .accessibilityHidden(true)
         }
     }
 
@@ -223,7 +301,8 @@
                         .foregroundStyle(.tint)
                         .accessibilityLabel(Copy.Profile.verified)
                 }
-                if row.isLinked {
+                // At the accessibility sizes the face, and its badge, are gone.
+                if row.isLinked, typeSize.isAccessibilitySize {
                     Image(systemName: "dot.radiowaves.left.and.right")
                         .font(.caption)
                         .foregroundStyle(Palette.positive)
@@ -271,12 +350,4 @@
         }
     }
 
-    extension Date {
-        private static let millisecondsPerSecond = 1000.0
-
-        /// A mesh timestamp, in milliseconds since the epoch.
-        init(milliseconds: Int64) {
-            self.init(timeIntervalSince1970: Double(milliseconds) / Self.millisecondsPerSecond)
-        }
-    }
 #endif

@@ -52,6 +52,7 @@
         }
     }
 
+    /// Knit's mark laid stitch by stitch, its name and its tagline, and the three things it does.
     private struct WelcomePage: View {
         let model: OnboardingModel
         @Environment(\.dynamicTypeSize) private var typeSize
@@ -68,9 +69,12 @@
         var body: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Layout.page) {
+                    LayingMark()
+                        .frame(width: Layout.markHero, height: Layout.markHero)
                     VStack(alignment: .leading, spacing: Layout.small) {
                         Text(Copy.Onboarding.welcomeTitle)
                             .font(.largeTitle.bold())
+                            .fontDesign(.rounded)
                         Text(Copy.Onboarding.welcomeTagline)
                             .font(.title3)
                             .foregroundStyle(Palette.secondaryText)
@@ -100,14 +104,19 @@
         let symbol: String
         let title: String
         let detail: String
+        @Environment(\.dynamicTypeSize) private var typeSize
 
         var body: some View {
             HStack(alignment: .top, spacing: Layout.large) {
-                Image(systemName: symbol)
-                    .font(.title2)
-                    .foregroundStyle(.tint)
-                    .frame(width: Layout.glyphColumn)
-                    .accessibilityHidden(true)
+                // At the accessibility sizes the glyph outgrows its circle and squeezes the words, which say it all.
+                if !typeSize.isAccessibilitySize {
+                    Image(systemName: symbol)
+                        .font(.title3)
+                        .foregroundStyle(.tint)
+                        .frame(width: Layout.glyphColumn, height: Layout.glyphColumn)
+                        .background(Palette.incomingBubble, in: .circle)
+                        .accessibilityHidden(true)
+                }
                 VStack(alignment: .leading, spacing: Layout.tight) {
                     Text(title)
                         .font(.headline)
@@ -334,7 +343,7 @@
             switch state {
             case .ask:
                 Button(Copy.Onboarding.allow, action: allow)
-                    .buttonStyle(.bordered)
+                    .secondaryButton()
                     .accessibilityLabel(Copy.Onboarding.allowLabel(title))
                     .accessibilityIdentifier(allowIdentifier)
             case .waiting:

@@ -66,6 +66,7 @@
                             .scaledToFill()
                             .frame(width: size.width, height: size.height)
                             .clipShape(.rect(cornerRadius: Layout.photoCorner))
+                            .accessibilityIgnoresInvertColors()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(attachment.label)
@@ -105,8 +106,8 @@
         }
     }
 
-    /// A photo still on its way: a spinner while its arrival is likely, and an hourglass after ``Layout/photoPatience``
-    /// seconds (`WaitingIndicator.kt`), over the line that says what it waits for.
+    /// A photo still on its way: Knit's stitches while its arrival is likely, and an hourglass after
+    /// ``Layout/photoPatience`` seconds (`WaitingIndicator.kt`), over the line that says what it waits for.
     private struct WaitingPhoto: View {
         let hash: BlobHash
         @State private var stalled = false
@@ -117,7 +118,7 @@
                     Image(systemName: "hourglass")
                         .accessibilityHidden(true)
                 } else {
-                    ProgressView()
+                    StitchIndicator()
                 }
             }
             .accessibilityIdentifier(AccessibilityID.chatAttachmentWaiting)
@@ -168,7 +169,7 @@
             .padding(Layout.medium)
             .frame(width: place?.width ?? Layout.photoPlaceholder)
             .frame(minHeight: place?.height ?? Layout.photoPlaceholder)
-            .background(.fill.tertiary, in: .rect(cornerRadius: Layout.photoCorner))
+            .background(Palette.incomingBubble, in: .rect(cornerRadius: Layout.photoCorner))
             .accessibilityElement(children: .combine)
         }
     }
@@ -191,7 +192,7 @@
             .padding(.horizontal, Layout.medium)
             .padding(.vertical, Layout.small)
             .frame(maxWidth: Layout.photoWidth, alignment: .leading)
-            .background(.fill.tertiary, in: .rect(cornerRadius: Layout.bubbleCorner))
+            .background(Palette.incomingBubble, in: .rect(cornerRadius: Layout.bubbleCorner))
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier(AccessibilityID.chatAttachmentTile)
         }
@@ -212,8 +213,9 @@
                         Image(uiImage: image)
                             .resizable()
                             .scaledToFill()
+                            .accessibilityIgnoresInvertColors()
                     } else {
-                        Color.clear.background(.fill.tertiary)
+                        Palette.incomingBubble
                     }
                 }
                 .frame(width: Layout.stagedPhoto, height: Layout.stagedPhoto)

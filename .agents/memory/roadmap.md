@@ -405,7 +405,8 @@ explicit direction.** Update this file in the change that ships an item.
   and photos in chats are in flight (ADR 2026-10.nh55).
 - **Groups with forward secrecy** (knit-next's group ratchet), which comes with the DM ratchet. v1 groups are in
   flight above.
-- **Search, drafts and backups.**
+- **Search, drafts and backups.** Search has its place already: a `.searchable` on the chat list's stack, which iOS 26
+  puts at the bottom on the iPhone, with Android's sections for results (Chats, People, Messages; ADR 2026-10.5waw).
 - **Moderation and report.** App Store rule 1.2 requires them before a store build. Block is in (ADR 2026-10.5wgg),
   and so is screening photos from others, with Android's model in Core ML (ADR 2026-10.rpmq), and screening messages
   with Android's Detoxify model and word list (ADR 2026-10.e4kz). Report is still open, and Android has none either.

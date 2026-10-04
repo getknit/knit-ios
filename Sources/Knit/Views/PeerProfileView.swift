@@ -16,7 +16,6 @@
         @State private var viewing = false
         /// Whether Block is asking first.
         @State private var confirmsBlock = false
-        @Environment(\.dynamicTypeSize) private var typeSize
         private let camera: any CameraAccess
 
         init(nodeId: NodeId, session: AppSession, camera: any CameraAccess) {
@@ -29,14 +28,12 @@
             Form {
                 Section {
                     PeerHeader(state: state) { viewing = true }
-                    if !model.isSelf {
+                        .listRowBackground(Color.clear)
+                }
+                if !model.isSelf {
+                    Section {
                         NavigationLink(value: Route.chat(state.conversationId)) {
-                            // At the accessibility sizes the glyph left the word too little room, and it broke.
-                            if typeSize.isAccessibilitySize {
-                                Text(Copy.Profile.message)
-                            } else {
-                                Label(Copy.Profile.message, systemImage: "message")
-                            }
+                            RowLabel(Copy.Profile.message, symbol: "message")
                         }
                         .accessibilityIdentifier(AccessibilityID.profileDetailsMessage)
                     }
@@ -71,6 +68,17 @@
             .alert(outcome.map { Copy.Profile.scanOutcome($0, name: state.title) } ?? "", isPresented: showsOutcome) {
                 Button(Copy.Common.done, role: .cancel) { outcome = nil }
             }
+            // A code that matches is felt as well as read; one that does not is the alert's to explain.
+            .sensoryFeedback(trigger: outcome) { _, now in
+                switch now {
+                case .match:
+                    .success
+                case .mismatch:
+                    .error
+                case .ownCode, .notACode, nil:
+                    nil
+                }
+            }
             .confirmsBlock(of: state.title, isPresented: $confirmsBlock) {
                 Task { await model.setBlocked(true) }
             }
@@ -92,16 +100,15 @@
         }
     }
 
-    /// Their face, their name, whether they are in range, and what they say about themselves. A photo opens full
-    /// screen.
+    /// Their face, their name, whether they are in range, and what they say about themselves, centered on the page as
+    /// Signal heads a profile. A photo opens full screen.
     private struct PeerHeader: View {
         let state: PeerProfileState
         let viewPhoto: () -> Void
 
         var body: some View {
-            VStack(alignment: .leading, spacing: Layout.tight) {
+            VStack(spacing: Layout.tight) {
                 HeaderFace(face: state.face, viewPhoto: viewPhoto)
-                    .frame(maxWidth: .infinity)
                     .padding(.bottom, Layout.small)
                 Text(state.title)
                     .font(.title2.bold())
@@ -127,6 +134,8 @@
                         .accessibilityIdentifier(AccessibilityID.profileDetailsBlocked)
                 }
             }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -190,7 +199,6 @@
         let state: PeerProfileState
         let scan: () -> Void
         let setVerified: (Bool) -> Void
-        @Environment(\.dynamicTypeSize) private var typeSize
 
         var body: some View {
             Section {
@@ -204,12 +212,7 @@
                     SafetyNumberView(lines: number, name: state.title)
                     OwnCodeView(code: state.ownCode, name: state.title)
                     Button(action: scan) {
-                        // At the accessibility sizes the glyph left the words too little room, as on Message.
-                        if typeSize.isAccessibilitySize {
-                            Text(Copy.Profile.scan)
-                        } else {
-                            Label(Copy.Profile.scan, systemImage: "qrcode.viewfinder")
-                        }
+                        RowLabel(Copy.Profile.scan, symbol: "qrcode.viewfinder")
                     }
                     .accessibilityIdentifier(AccessibilityID.profileDetailsScan)
                     Button(state.isVerified ? Copy.Profile.clearVerification : Copy.Profile.markVerified) {

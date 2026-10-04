@@ -46,7 +46,7 @@
                             Button(Copy.Block.unblock) {
                                 Task { await model.unblock(row.id) }
                             }
-                            .buttonStyle(.bordered)
+                            .secondaryButton()
                             .accessibilityIdentifier(AccessibilityID.blockedUnblock(row.id.string))
                         }
                     }

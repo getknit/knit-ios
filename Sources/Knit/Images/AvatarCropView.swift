@@ -86,6 +86,7 @@
                     height: CGFloat(source.pixelHeight) * framing.pointsPerPixel
                 )
                 .offset(x: framing.offsetX, y: framing.offsetY)
+                .accessibilityIgnoresInvertColors()
                 .accessibilityElement()
                 .accessibilityLabel(Copy.Photo.zoom)
                 .accessibilityValue(Text(framing.scale, format: .percent.precision(.fractionLength(0))))

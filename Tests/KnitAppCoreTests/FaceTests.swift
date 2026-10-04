@@ -35,7 +35,7 @@ import Testing
         #expect(AvatarTint.light.count == AvatarTint.dark.count, "a slot means the same hue in both modes")
         for (mode, tints) in [("light", AvatarTint.light), ("dark", AvatarTint.dark)] {
             for (slot, tint) in tints.enumerated() {
-                let ratio = Self.contrast(tint.onContainer, tint.container)
+                let ratio = WCAG.contrast(tint.onContainer, tint.container)
                 #expect(ratio >= 4.5, "\(mode) slot \(slot) is \(ratio):1")
             }
         }
@@ -210,23 +210,9 @@ import Testing
         AvatarFraming.crop(source: size, diameter: diameter, scale: scale, offset: offset)
     }
 
-    private static func channels(_ hex: Int) -> [Double] {
-        [16, 8, 0].map { Double((hex >> $0) & 0xFF) / 255 }
-    }
-
-    /// WCAG's contrast ratio, as `ColorSchemeTest.contrastRatio` measures it.
-    private static func contrast(_ first: Int, _ second: Int) -> Double {
-        let luminance = { (hex: Int) -> Double in
-            let linear = channels(hex).map { $0 <= 0.03928 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
-            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
-        }
-        let (high, low) = (max(luminance(first), luminance(second)), min(luminance(first), luminance(second)))
-        return (high + 0.05) / (low + 0.05)
-    }
-
     /// The HSL hue, as `ColorSchemeTest.hueOf` reads it.
     private static func hue(_ hex: Int) -> Double {
-        let rgb = channels(hex)
+        let rgb = WCAG.channels(hex)
         let (high, low) = (rgb.max() ?? 0, rgb.min() ?? 0)
         let spread = high - low
         guard spread > 0 else {

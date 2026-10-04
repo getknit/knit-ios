@@ -55,6 +55,12 @@ document:
   and notifications. Your iPhone checks each message as it arrives, and Knit won't send one that looks abusive
   or post profanity in Nearby.
 
+### Changed
+
+- Knit now wears Knit for Android's coral, groups each person's messages with a date over every day, and puts
+  your picture at the top of Chats as the way into Settings. On iOS 26 and later its buttons and composer use
+  Liquid Glass, and Increase Contrast deepens its text colors.
+
 ## About this file
 
 This heading does not match the release-heading grammar, so a consumer skips it, the same way it skips

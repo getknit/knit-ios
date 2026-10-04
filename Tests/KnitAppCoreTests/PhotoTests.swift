@@ -158,6 +158,7 @@ struct FakeCodec: ImageCodec {
 
         let settings = SettingsModel(session: rig.session, permission: nil, about: AboutInfo(version: "1", build: "1"))
         #expect(settings.profileFace.photo == BlobHash(of: Self.myPhoto))
+        #expect(ChatListModel(session: rig.session).ownFace == settings.profileFace)
     }
 
     /// The name page previews what peers will draw: the initial of the name as typed, or of the alias, on our tint.

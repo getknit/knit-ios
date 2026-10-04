@@ -32,7 +32,7 @@
                             Button(Copy.Requests.accept) {
                                 Task { await model.accept(row.id) }
                             }
-                            .buttonStyle(.bordered)
+                            .secondaryButton()
                             .accessibilityIdentifier(AccessibilityID.requestAccept(row.id))
                         }
                         .swipeActions {

@@ -2,7 +2,8 @@
     import KnitAppCore
     import SwiftUI
 
-    /// Settings: the profile row, Stop and Start, notifications, the people blocked, About and Diagnostics (MVP item 10).
+    /// Settings: the profile row, Stop and Start, notifications, the people blocked, About and Diagnostics (MVP item 10),
+    /// each row after a glyph, as Signal lists its settings (ADR 2026-10.5waw).
     internal struct SettingsView: View {
         @State private var model: SettingsModel
         @Environment(\.scenePhase) private var scenePhase
@@ -21,26 +22,17 @@
                     .accessibilityIdentifier(AccessibilityID.settingsProfileRow)
                 }
                 MeshSection(isRunning: model.isRunning) { Task { await model.toggleMesh() } }
+                NotificationSection(authorization: model.notifications) { Task { await model.requestNotifications() } }
                 Section {
-                    LabeledContent(Copy.Settings.notifications) {
-                        NotificationControl(authorization: model.notifications) { Task { await model.requestNotifications() } }
+                    NavigationLink(value: Route.blocked) {
+                        RowLabel(Copy.Block.listTitle, symbol: "hand.raised")
                     }
-                } footer: {
-                    SectionNote(Copy.Settings.notificationsFooter)
-                }
-                Section {
-                    NavigationLink(Copy.Block.listTitle, value: Route.blocked)
-                        .accessibilityIdentifier(AccessibilityID.settingsBlocked)
+                    .accessibilityIdentifier(AccessibilityID.settingsBlocked)
                 }
                 if let screening {
                     ContentFilterSection(screening: screening)
                 }
-                Section {
-                    NavigationLink(Copy.Settings.about, value: Route.about)
-                        .accessibilityIdentifier(AccessibilityID.settingsAbout)
-                    NavigationLink(Copy.Settings.diagnostics, value: Route.diagnostics)
-                        .accessibilityIdentifier(AccessibilityID.settingsDiagnostics)
-                }
+                AboutSection()
             }
             .navigationTitle(Copy.Settings.title)
             .task { await model.refresh() }
@@ -53,14 +45,50 @@
         }
     }
 
+    /// Whether notifications are on, and what they say.
+    private struct NotificationSection: View {
+        let authorization: NotificationAuthorization
+        let ask: () -> Void
+
+        var body: some View {
+            Section {
+                LabeledContent {
+                    NotificationControl(authorization: authorization, ask: ask)
+                } label: {
+                    RowLabel(Copy.Settings.notifications, symbol: "bell")
+                }
+            } footer: {
+                SectionNote(Copy.Settings.notificationsFooter)
+            }
+        }
+    }
+
+    /// About and Diagnostics.
+    private struct AboutSection: View {
+        var body: some View {
+            Section {
+                NavigationLink(value: Route.about) {
+                    RowLabel(Copy.Settings.about, symbol: "info.circle")
+                }
+                .accessibilityIdentifier(AccessibilityID.settingsAbout)
+                NavigationLink(value: Route.diagnostics) {
+                    RowLabel(Copy.Settings.diagnostics, symbol: "stethoscope")
+                }
+                .accessibilityIdentifier(AccessibilityID.settingsDiagnostics)
+            }
+        }
+    }
+
     /// Content filtering, and what it does (ADR 2026-10.rpmq).
     private struct ContentFilterSection: View {
         @Bindable var screening: PhotoScreening
 
         var body: some View {
             Section {
-                Toggle(Copy.Moderation.filter, isOn: $screening.filtersContent)
-                    .accessibilityIdentifier(AccessibilityID.settingsContentFiltering)
+                Toggle(isOn: $screening.filtersContent) {
+                    RowLabel(Copy.Moderation.filter, symbol: "eye.slash")
+                }
+                .accessibilityIdentifier(AccessibilityID.settingsContentFiltering)
             } footer: {
                 SectionNote(Copy.Moderation.filterFooter)
             }
@@ -92,8 +120,10 @@
 
         var body: some View {
             Section {
-                Button(isRunning ? Copy.Settings.stop : Copy.Settings.start, action: toggle)
-                    .accessibilityIdentifier(AccessibilityID.settingsMesh)
+                Button(action: toggle) {
+                    RowLabel(isRunning ? Copy.Settings.stop : Copy.Settings.start, symbol: isRunning ? "pause.circle" : "play.circle")
+                }
+                .accessibilityIdentifier(AccessibilityID.settingsMesh)
             } header: {
                 SectionNote(Copy.Settings.meshSection)
             } footer: {
@@ -114,7 +144,9 @@
         var body: some View {
             switch authorization {
             case .allowed:
+                // In the palette's gray: `LabeledContent`'s own reads about 3.4:1 on a grouped cell.
                 Text(Copy.Settings.notificationsOn)
+                    .foregroundStyle(Palette.secondaryText)
             case .notDetermined:
                 Button(Copy.Settings.notificationsAsk, action: ask)
             case .denied:

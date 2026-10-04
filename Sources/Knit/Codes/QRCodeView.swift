@@ -24,6 +24,8 @@
             .frame(width: Layout.codeSide, height: Layout.codeSide)
             .padding(Layout.codeQuietZone)
             .background(Palette.codePaper)
+            // Black on white under Smart Invert too, as in dark mode: many readers read no inverted code.
+            .accessibilityIgnoresInvertColors()
             .task(id: text) { image = Self.render(text) }
         }
 

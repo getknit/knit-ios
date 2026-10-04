@@ -4,7 +4,8 @@
     import SwiftUI
 
     /// The composer: the photo it holds, the field, what is left near the limit, and Send, or Add photo while there is
-    /// nothing to send (`SendAction` in knit-next).
+    /// nothing to send (`SendAction` in knit-next). From iOS 26 it sits in a glass panel (``SwiftUI/View/glassPanel()``),
+    /// with the field and the count on opaque fills of their own.
     internal struct ComposerBar: View {
         @Bindable var model: ChatModel
         let demoPhoto: Data?
@@ -19,26 +20,68 @@
                     Text(Copy.Chat.remaining(remaining))
                         .font(.caption)
                         .foregroundStyle(remaining == 0 ? Palette.critical : Palette.secondaryText)
+                        .padding(.horizontal, Layout.small)
+                        // The screen's own color, opaque: the background style turns translucent inside the glass.
+                        .background(Color(uiColor: .systemBackground), in: .capsule)
                 }
-                HStack(alignment: .bottom) {
-                    TextField(Copy.Chat.composerPlaceholder, text: $model.draft, axis: .vertical)
-                        .lineLimit(Layout.composerLines)
-                        .textFieldStyle(.roundedBorder)
+                HStack(alignment: .bottom, spacing: Layout.small) {
+                    ComposerField(draft: $model.draft)
+                        .padding(.horizontal, Layout.medium)
+                        .padding(.vertical, Layout.small)
+                        .frame(minHeight: Layout.hitTarget)
+                        .background(Palette.incomingBubble, in: .rect(cornerRadius: Layout.composerCorner, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: Layout.composerCorner, style: .continuous)
+                                .strokeBorder(.separator)
+                        }
                         .accessibilityIdentifier(AccessibilityID.chatInput)
                     SendButton(model: model, demoPhoto: demoPhoto)
+                        .frame(minWidth: Layout.hitTarget, minHeight: Layout.hitTarget)
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, Layout.small)
-            // Opaque, like the request bar: the newest message sits against it, and its material let the thread through.
-            .background(.background.secondary)
+            .padding(Layout.small)
+            .glassPanel()
+        }
+    }
+
+    /// The composer's field, a line tall until the words need more, then growing a line at a time to
+    /// ``Layout/composerLines``' last. On iOS 27 a multiline field draws three lines tall, empty or not, under any range of
+    /// limits; a whole-number limit under three holds it to one or two. So its limit is the words' own count of lines,
+    /// read off a hidden copy set in the same font and width.
+    private struct ComposerField: View {
+        @Binding var draft: String
+        /// The words' height, and one line's, as the hidden copies measure them.
+        @State private var height: CGFloat = 0
+        @State private var line: CGFloat = 0
+
+        var body: some View {
+            TextField(Copy.Chat.composerPlaceholder, text: $draft, axis: .vertical)
+                .lineLimit(lines)
+                .background(alignment: .topLeading) {
+                    ZStack(alignment: .topLeading) {
+                        // A last line break opens a line the text alone does not measure.
+                        Text(verbatim: draft.hasSuffix("\n") || draft.isEmpty ? draft + " " : draft)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .onGeometryChange(for: CGFloat.self, of: \.size.height) { height = $0 }
+                        Text(verbatim: " ")
+                            .onGeometryChange(for: CGFloat.self, of: \.size.height) { line = $0 }
+                    }
+                    .hidden()
+                    .accessibilityHidden(true)
+                }
+        }
+
+        /// How many lines the words take, from one to the composer's most.
+        private var lines: Int {
+            let measured = line > 0 ? Int((height / line).rounded()) : 1
+            return min(max(measured, Layout.composerLines.lowerBound), Layout.composerLines.upperBound)
         }
     }
 
     /// The composer's button: Send, or Add photo while there is nothing to send. A send still under way after a moment
-    /// shows a spinner in place of the arrow, chiefly the first in a while, which waits for the text model to load.
+    /// shows Knit's stitches in place of the arrow, chiefly the first in a while, which waits for the text model to load.
     private struct SendButton: View {
-        /// How long a send runs before the spinner shows, in milliseconds, so a quick one does not flash it
+        /// How long a send runs before the stitches show, in milliseconds, so a quick one does not flash them
         /// (`SEND_SPINNER_DELAY_MS`).
         private static let spinnerDelay = 300
 
@@ -59,18 +102,19 @@
                 Button {
                     Task { await model.send() }
                 } label: {
-                    // The arrow keeps its room while the spinner covers it, so the composer does not shift.
+                    // The arrow keeps its room while the stitches cover it, so the composer does not shift.
                     Label(Copy.Chat.send, systemImage: "arrow.up.circle.fill")
                         .labelStyle(.iconOnly)
                         .font(.title)
                         .opacity(spinning ? 0 : 1)
                         .overlay {
                             if spinning {
-                                ProgressView()
+                                StitchIndicator()
                             }
                         }
                 }
                 .disabled(!model.canSend)
+                .sensoryFeedback(.impact(weight: .light), trigger: model.isSending) { was, now in !was && now }
                 .accessibilityLabel(spinning ? Copy.Chat.sending : Copy.Chat.send)
                 .accessibilityIdentifier(AccessibilityID.chatSend)
                 .task(id: model.isSending) {
@@ -83,7 +127,7 @@
             }
         }
 
-        /// Whether the spinner shows: the send is still under way, and has been for a moment.
+        /// Whether the stitches show: the send is still under way, and has been for a moment.
         private var spinning: Bool {
             slow && model.isSending
         }
