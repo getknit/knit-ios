@@ -31,6 +31,15 @@ targets:
       - path: Models/NSFW.mlpackage
         type: file
         buildPhase: sources
+      # Its text model (ADR 2026-10.e4kz), compiled into Knit.app/Toxicity.mlmodelc for DeviceTextClassifier, with
+      # Android's tokenizer beside it and the Nearby room's word list, both copied as they are.
+      - path: Models/Toxicity.mlpackage
+        type: file
+        buildPhase: sources
+      - path: Models/ToxicityTokenizer.json
+        buildPhase: resources
+      - path: Models/Profanity.txt
+        buildPhase: resources
     dependencies:
       - package: Knit
         product: Knit

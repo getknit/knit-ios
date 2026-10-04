@@ -42,6 +42,11 @@ tree, so switching between them never rebuilds the plain debug tree.
   `scripts/mac.sh run bash -c 'cd tools/models/nsfw && uv run --frozen python parity.py --coreml'` compares it with
   Android's TFLite. Run both whenever the model or one of its pins moves. In a debug build, the bridge's
   `{"cmd":"screen","photo":"<base64>"}` returns the iPhone's scores for a photo, and `score.py` returns Android's.
+- **The text model:** `tools/models/toxicity/` does the same for the message classifier (its `README.md`), against
+  Detoxify's checkpoint: `uv run python convert.py --check` there, and
+  `scripts/mac.sh run bash -c 'cd tools/models/toxicity && uv run --frozen python parity.py --coreml'`. After a change
+  to the tokenizer's Swift, `uv run python tokens.py` rewrites the ids `SentencePieceTokenizerTests` reads. The bridge's
+  `{"cmd":"screen-text","text":"…"}` returns the iPhone's scores for a message, and `score.py "…"` the checkpoint's.
 - **Vectors shared with knit-next:** `python3 scripts/sync-vectors.py` copies `vectors/wire-v1.json` and
   `vectors/keyed-v1.json` into `Tests/Vectors/`, and generates `Sources/KnitCrypto/AliasWords.swift` from
   `AliasWords.kt`. Each copy records the knit-next commit, and whether the source had uncommitted changes.

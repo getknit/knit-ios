@@ -9,9 +9,9 @@ public import KnitWire
 public final class SQLMessageStore: MessageStore {
     private static let columns = """
         id, senderId, recipientId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind, \
-        attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize
+        attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, moderation
         """
-    private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
     private let database: KnitDatabase
 
@@ -54,7 +54,7 @@ public final class SQLMessageStore: MessageStore {
                         arrivedAt = excluded.arrivedAt, delivered = excluded.delivered, pendingKey = excluded.pendingKey,
                         kind = excluded.kind, attachmentHash = excluded.attachmentHash, attachmentMime = excluded.attachmentMime,
                         attachmentKey = excluded.attachmentKey, attachmentName = excluded.attachmentName,
-                        attachmentSize = excluded.attachmentSize
+                        attachmentSize = excluded.attachmentSize, moderation = excluded.moderation
                     """,
                 arguments: Self.arguments(message)
             )
@@ -169,6 +169,27 @@ public final class SQLMessageStore: MessageStore {
         }
     }
 
+    @discardableResult
+    public func setModeration(_ id: String, to moderation: MessageModeration) -> Bool {
+        database.write(or: false) { db in
+            try db.execute(
+                sql: "UPDATE messages SET moderation = ? WHERE id = ? AND moderation != ?",
+                arguments: [moderation.rawValue, StoredText.bytes(id), moderation.rawValue]
+            )
+            return db.changesCount > 0
+        }
+    }
+
+    public func waitingForModeration() -> [MessageRecord] {
+        database.read(or: []) { db in
+            // The code is written into the SQL, not bound: SQLite uses a partial index only for a term it can see
+            // matches the index's own, and `messages_waiting` is `WHERE moderation = 2`.
+            let waiting = MessageModeration.waiting.rawValue
+            return try Row.fetchAll(db, sql: "SELECT \(Self.columns) FROM messages WHERE moderation = \(waiting) ORDER BY seq")
+                .map(Self.record)
+        }
+    }
+
     /// The values for ``insert``, in ``columns`` order.
     private static func arguments(_ message: MessageRecord) -> StatementArguments {
         let attachment = message.attachment
@@ -177,6 +198,7 @@ public final class SQLMessageStore: MessageStore {
             StoredText.bytes(message.conversationId), StoredText.bytes(message.body), message.sentAt, message.arrivedAt,
             message.delivered, message.pendingKey, message.kind.rawValue, StoredText.bytes(attachment?.hash.string),
             StoredText.bytes(attachment?.mime), StoredText.bytes(attachment?.key), StoredText.bytes(attachment?.name), attachment?.size,
+            message.moderation.rawValue,
         ]
     }
 
@@ -193,7 +215,8 @@ public final class SQLMessageStore: MessageStore {
             delivered: try row.decode(Bool.self, forColumn: "delivered"),
             pendingKey: try row.decode(Bool.self, forColumn: "pendingKey"),
             kind: MessageKind(rawValue: try row.decode(Int.self, forColumn: "kind")),
-            attachment: try attachment(row)
+            attachment: try attachment(row),
+            moderation: MessageModeration(rawValue: try row.decode(Int.self, forColumn: "moderation"))
         )
     }
 

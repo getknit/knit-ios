@@ -11,6 +11,10 @@ extension KnitUITests {
     private static let quiet: TimeInterval = 3
     /// The marketing scene's post by the fire, Dani's, which carries a photo.
     private static let firePost = "room-5"
+    /// The room's newest post, Priya's, which carries words alone.
+    private static let newestPost = "room-9"
+    /// What the walk tries to post, which the demo's classifier finds abusive like everything else.
+    private static let refusedWords = "Heading up now"
 
     /// Settings: the profile, About and Diagnostics, each audited, and Stop, which leaves the chat list saying so.
     func walkSettings() throws {
@@ -38,11 +42,14 @@ extension KnitUITests {
         app.terminate()
     }
 
-    /// The content filter (ADR 2026-10.rpmq) on the marketing scene under `-demoSensitive`, where the demo's classifier
-    /// finds every photo explicit, and `-demoPhoto`, under which Add photo picks a painted picture:
+    /// The content filter (ADR 2026-10.rpmq, ADR 2026-10.e4kz) on the marketing scene under `-demoSensitive`, where the
+    /// demo's classifiers find every photo explicit and every message abusive, and `-demoPhoto`, under which Add photo
+    /// picks a painted picture:
     ///
     /// - the room's post by the fire hides its photo behind a tap, and a tap shows it;
-    /// - a photo picked for the room is refused, and one picked for Sam's DM asks before it goes in the composer;
+    /// - the room's newest post hides its words behind a tap, and a tap shows them;
+    /// - a photo picked for the room is refused, and so are words sent there, which stay in the composer;
+    /// - a photo picked for Sam's DM asks before it goes in the composer;
     /// - Sam's face shows his initial, so his profile offers no photo to open;
     /// - Content filtering off shows the post by the fire at once.
     func walkContentFilter() throws {
@@ -56,10 +63,23 @@ extension KnitUITests {
         try app.reveal(AccessibilityID.chatPhoto(Self.firePost)).coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.35)).tap()
         try app.reveal(fire(in: app, hidden: false), "the post by the fire, shown")
 
+        // The words hide too. The tap goes left of the bubble's middle, below Priya's name, on the line that stands in.
+        try app.reveal(message(Self.newestPost, in: app, hidden: true), "the newest post, hidden")
+        try app.reveal(AccessibilityID.chatMessage(Self.newestPost)).coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.55)).tap()
+        try app.reveal(message(Self.newestPost, in: app, hidden: false), "the newest post, shown")
+
         try app.appear(AccessibilityID.chatAddPhoto).tap()
         try app.alerts.firstMatch.appear("the room's refusal")
         app.alerts.buttons["Done"].tap()
         XCTAssertFalse(app.element(AccessibilityID.chatStagedPhoto).exists, "the room held an explicit photo")
+        let input = try app.appear(AccessibilityID.chatInput)
+        input.tap()
+        input.typeText(Self.refusedWords)
+        try app.appear(AccessibilityID.chatSend).tap()
+        try app.alerts.firstMatch.appear("the room's refusal of words")
+        app.alerts.buttons["Done"].tap()
+        XCTAssertEqual(input.value as? String, Self.refusedWords, "the refused words left the composer")
+        XCTAssertFalse(app.staticTexts[Self.refusedWords].exists, "the refused words were posted")
         app.back()
 
         try openDirect(in: app)
@@ -97,8 +117,18 @@ extension KnitUITests {
     /// The room's post by the fire, with its photo hidden or not. A query rather than an element, so asking about a post
     /// out of the list's reach answers that it is not there rather than failing the walk.
     private func fire(in app: XCUIApplication, hidden: Bool) -> XCUIElement {
+        hiding(AccessibilityID.chatPhoto(Self.firePost), in: app, hidden: hidden)
+    }
+
+    /// A post that carries words alone, with them hidden or not.
+    private func message(_ id: String, in app: XCUIApplication, hidden: Bool) -> XCUIElement {
+        hiding(AccessibilityID.chatMessage(id), in: app, hidden: hidden)
+    }
+
+    /// The element `identifier` names, while its value says the filter hides something of it, or while it does not.
+    private func hiding(_ identifier: String, in app: XCUIApplication, hidden: Bool) -> XCUIElement {
         let format = hidden ? "identifier == %@ AND value CONTAINS 'hidden'" : "identifier == %@ AND NOT (value CONTAINS 'hidden')"
-        return app.descendants(matching: .any).matching(NSPredicate(format: format, AccessibilityID.chatPhoto(Self.firePost))).firstMatch
+        return app.descendants(matching: .any).matching(NSPredicate(format: format, identifier)).firstMatch
     }
 }
 

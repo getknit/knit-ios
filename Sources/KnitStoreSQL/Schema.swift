@@ -23,6 +23,7 @@ internal enum Schema {
         ("v4", v4),
         ("v5", v5),
         ("v6", v6),
+        ("v7", v7),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -174,6 +175,14 @@ internal enum Schema {
     private static let v6 = [
         "CREATE TABLE blocked_nodes (nodeId BLOB NOT NULL PRIMARY KEY) STRICT",
         "CREATE TABLE blocked_device_tags (deviceTag BLOB NOT NULL PRIMARY KEY) STRICT",
+    ]
+
+    /// Schema v7: what the content filter made of a message's words (ADR 2026-10.e4kz), knit-next's
+    /// `MessageEntity.moderation` with one code of this port's own, 2 for a message not yet screened. Every row already
+    /// stored reads 0, shown as it always was. The partial index keeps a launch's look for unscreened rows to those rows.
+    private static let v7 = [
+        "ALTER TABLE messages ADD COLUMN moderation INTEGER NOT NULL DEFAULT 0",
+        "CREATE INDEX messages_waiting ON messages (seq) WHERE moderation = 2",
     ]
 
     /// The migrator that brings any database this build knows up to date.

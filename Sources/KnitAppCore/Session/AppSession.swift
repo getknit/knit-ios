@@ -31,19 +31,42 @@ public final class AppSession {
     /// Hears every mesh event once the session has handled it: a debug build's bridge reports them to every connection.
     /// The mesh has one stream of events, and the session is its consumer.
     @ObservationIgnored public var eventTap: (@Sendable (MeshEvent) -> Void)?
+    /// Whether someone else's abusive words and explicit photos hide: the Content filtering toggle, on until it is turned
+    /// off (ADR 2026-10.rpmq, ADR 2026-10.e4kz). It governs only what we are shown; what we send is checked either way,
+    /// and every message is screened as it arrives, so turning it back on hides what came while it was off.
+    public var filtersContent: Bool {
+        didSet {
+            preferences.filtersContent = filtersContent
+            revision += 1
+        }
+    }
+    /// What a message's words are checked with, sent or received; `nil` checks nothing.
+    @ObservationIgnored public let textScreening: TextScreening?
 
     @ObservationIgnored private let mesh: any MeshService
     @ObservationIgnored private let notifier: (any Notifier)?
+    @ObservationIgnored private let preferences: any AppPreferences
     @ObservationIgnored private var visible: String?
     @ObservationIgnored private var listening = false
     @ObservationIgnored private var cachedDirectory = Cached<Int, Directory>()
 
-    /// A session over `mesh` and the stores it writes, posting notifications through `notifier`.
-    public init(identity: OwnIdentity, stores: MeshStores, mesh: any MeshService, notifier: (any Notifier)? = nil) {
+    /// A session over `mesh` and the stores it writes, posting notifications through `notifier`, screening words with
+    /// `textScreening`, and keeping the content filter's toggle in `preferences`.
+    public init(
+        identity: OwnIdentity,
+        stores: MeshStores,
+        mesh: any MeshService,
+        notifier: (any Notifier)? = nil,
+        textScreening: TextScreening? = nil,
+        preferences: any AppPreferences = MemoryPreferences()
+    ) {
         self.identity = identity
         self.stores = stores
         self.mesh = mesh
         self.notifier = notifier
+        self.textScreening = textScreening
+        self.preferences = preferences
+        filtersContent = preferences.filtersContent
     }
 
     /// Everyone this device knows, labelled, as of the current revision.
@@ -94,6 +117,7 @@ public final class AppSession {
         listening = true
         radioState = await mesh.radioState
         isRunning = await mesh.isRunning
+        await screenWaiting()
         for await event in mesh.events {
             await handle(event)
             eventTap?(event)
@@ -113,10 +137,14 @@ public final class AppSession {
     }
 
     /// One thing the mesh did. A notification it calls for is posted before the next event is heard, so they keep
-    /// their order.
+    /// their order. Someone else's words are screened first, so neither the thread nor the notification shows them
+    /// before the content filter has.
     func handle(_ event: MeshEvent) async {
         switch event {
-        case .received(let message, let isRequest):
+        case .received(var message, let isRequest):
+            if message.moderation == .waiting {
+                message.moderation = await screen(message)
+            }
             revision += 1
             await notify(message, isRequest: isRequest)
         case .delivered, .sent, .peerUpdated, .groupChanged, .attachmentArrived:
@@ -255,6 +283,33 @@ public final class AppSession {
         }
     }
 
+    // MARK: Screening
+
+    /// Screens what the engine stored and the app never got to: a launch that follows one stopped mid-screen, or events
+    /// heard by nobody. In the order they were stored, before the first event is heard.
+    func screenWaiting() async {
+        let waiting = stores.messages.waitingForModeration()
+        for message in waiting {
+            _ = await screen(message)
+        }
+        if !waiting.isEmpty {
+            revision += 1
+        }
+    }
+
+    /// What the content filter makes of `message`'s words, stored on its row (`InboundPipeline.inboundModeration`).
+    /// Words the filter could not read are let through, as Android lets them through: `clear`, for good.
+    private func screen(_ message: MessageRecord) async -> MessageModeration {
+        if let stored = stores.messages.message(message.id)?.moderation, stored != .waiting {
+            return stored
+        }
+        let inRoom = message.conversationId == Conversations.nearby
+        let flagged = await textScreening?.isAbusive(message.body, inRoom: inRoom) ?? false
+        let verdict: MessageModeration = flagged ? .flagged : .clear
+        stores.messages.setModeration(message.id, to: verdict)
+        return verdict
+    }
+
     private func notify(_ message: MessageRecord, isRequest: Bool) async {
         guard let notifier else {
             return
@@ -265,7 +320,8 @@ public final class AppSession {
             visibleConversation: isActive ? visible : nil,
             directory: directory,
             pendingRequests: isRequest ? threads.requests.count : 0,
-            groupTitle: threads.group(message.conversationId).map { GroupNaming.title(of: $0, me: identity.nodeId, directory: directory) }
+            groupTitle: threads.group(message.conversationId).map { GroupNaming.title(of: $0, me: identity.nodeId, directory: directory) },
+            filtersContent: filtersContent
         )
         let notification = NotificationPolicy.notification(for: message, isRequest: isRequest, in: context)
         if let notification {

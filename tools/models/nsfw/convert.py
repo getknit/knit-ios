@@ -8,8 +8,9 @@ The input is `image`, `[1, 224, 224, 3]` float32 RGB divided by 255, the same te
 `NsfwImageModerator.toInputBuffer` fills. The output is `scores`, `[1, 5]` softmax probabilities in `CLASSES` order.
 Weights and arithmetic are float16, which the Neural Engine runs; `parity.py` measures what that costs.
 
-coremltools names a package's parts with random UUIDs, so the manifest is rewritten with ids derived from each part's
-path. The rest of its output is already the same on every run, which is what lets `--check` compare bytes.
+coremltools names a package's parts with random UUIDs, stamps the day it converted, and writes maps in no set order.
+So the manifest's ids are derived from each part's path, the date is dropped, and the spec is written again in key
+order. That is what lets `--check` compare bytes.
 """
 
 from __future__ import annotations
@@ -84,7 +85,18 @@ def write(package: Path) -> None:
         shutil.rmtree(package)
     package.parent.mkdir(parents=True, exist_ok=True)
     model.save(str(package))
+    stable_spec(package / "Data" / "com.apple.CoreML" / "model.mlmodel")
     stable_manifest(package / "Manifest.json")
+
+
+def stable_spec(path: Path) -> None:
+    """The spec at `path` without the day it was converted, its maps written in key order."""
+    from coremltools.proto import Model_pb2
+
+    spec = Model_pb2.Model()
+    spec.ParseFromString(path.read_bytes())
+    del spec.description.metadata.userDefined["com.github.apple.coremltools.conversion_date"]
+    path.write_bytes(spec.SerializeToString(deterministic=True))
 
 
 def stable_manifest(manifest: Path) -> None:

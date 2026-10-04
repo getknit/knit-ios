@@ -20,7 +20,15 @@ public struct ThirdPartyNotice: Sendable, Equatable, Identifiable {
 
     /// The models that ship, kept equal to the notices file by the same test.
     public static let bundled = [
-        Self(id: "App/Models/NSFW.mlpackage", name: "nsfw_model", license: "MIT", url: "https://github.com/GantMan/nsfw_model")
+        Self(id: "App/Models/NSFW.mlpackage", name: "nsfw_model", license: "MIT", url: "https://github.com/GantMan/nsfw_model"),
+        Self(id: "App/Models/Toxicity.mlpackage", name: "Detoxify", license: "Apache-2.0", url: "https://github.com/unitaryai/detoxify"),
+        Self(
+            id: "App/Models/ToxicityTokenizer.json",
+            name: "ALBERT base v2",
+            license: "Apache-2.0",
+            url: "https://huggingface.co/albert/albert-base-v2"
+        ),
+        Self(id: "App/Models/Profanity.txt", name: "profanity-list", license: "MIT", url: "https://github.com/dsojevic/profanity-list"),
     ]
 }
 

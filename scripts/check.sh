@@ -226,6 +226,20 @@ PY
 		echo "$app has no whole NSFW.mlmodelc: the content filter would let every photo through" >&2
 		return 1
 	fi
+	# Its text model, tokenizer and word list (ADR 2026-10.e4kz). The float16 weights come to about 23 MB, and the tokenizer
+	# and the list are Android's files, byte for byte.
+	weights="$app/Toxicity.mlmodelc/weights/weight.bin"
+	if [ ! -f "$weights" ] || [ $(($(wc -c <"$weights"))) -lt 20000000 ]; then
+		echo "$app has no whole Toxicity.mlmodelc: the content filter would let every message through" >&2
+		return 1
+	fi
+	local file
+	for file in ToxicityTokenizer.json Profanity.txt; do
+		if ! cmp -s "$app/$file" "App/Models/$file"; then
+			echo "$app/$file is missing or is not App/Models/$file: the content filter would screen messages without it" >&2
+			return 1
+		fi
+	done
 }
 
 # What a store build must hold beyond that (ADR 2026-10.8cy5): no debug-only code, a privacy manifest in the app and in

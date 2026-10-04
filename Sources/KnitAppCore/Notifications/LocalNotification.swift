@@ -39,8 +39,8 @@ public protocol Notifier: Sendable {
 /// shows its newest message, as Android's does, so a room's back-fill of 200 posts is one notification rather than
 /// 200. The thread on screen while the app is in front stays quiet. A stranger's DM is a message request: it never
 /// shows its words or its sender, and every request shares one notification that counts them. A message with no words
-/// says what it carries, such as "📷 Photo". Control frames never arrive here: the engine stores and reports only
-/// messages.
+/// says what it carries, such as "📷 Photo", and one whose words the content filter hides says only that (ADR
+/// 2026-10.e4kz). Control frames never arrive here: the engine stores and reports only messages.
 public enum NotificationPolicy {
     /// The id and thread of the one notification that counts requests.
     public static let requestsThread = "requests"
@@ -57,14 +57,20 @@ public enum NotificationPolicy {
         public var pendingRequests: Int
         /// The title of the group the message came in, or `nil` outside a group.
         public var groupTitle: String?
+        /// Whether the content filter is on, so words it flagged stay out of the notification.
+        public var filtersContent: Bool
 
         /// Bundles the context.
-        public init(me: NodeId, visibleConversation: String?, directory: Directory, pendingRequests: Int, groupTitle: String? = nil) {
+        public init(
+            me: NodeId, visibleConversation: String?, directory: Directory, pendingRequests: Int, groupTitle: String? = nil,
+            filtersContent: Bool = true
+        ) {
             self.me = me
             self.visibleConversation = visibleConversation
             self.directory = directory
             self.pendingRequests = pendingRequests
             self.groupTitle = groupTitle
+            self.filtersContent = filtersContent
         }
     }
 
@@ -86,7 +92,7 @@ public enum NotificationPolicy {
             return nil
         }
         let sender = context.directory.label(for: message.senderId).text
-        let body = AttachmentKind.line(of: message)
+        let body = AttachmentKind.line(of: message, hiding: message.hidesWords(filtering: context.filtersContent, me: context.me))
         let isRoom = message.conversationId == Conversations.nearby
         // A group's notification is titled for the group and names its speaker, as the room's does.
         let shared = isRoom ? Copy.Notifications.nearbyTitle : context.groupTitle

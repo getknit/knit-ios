@@ -103,3 +103,10 @@ mark for good: 128 MiB of carried photos would stay 128 MiB, since only a VACUUM
 cannot run inside a migration. A blob's file is written whole before its row. The sweep when the store opens removes a
 file no row names and a row whose file is gone. `SQLBlobStoreTests` pins that, and `RepositoryTests` pins that a
 republish keeps our photo's column.
+
+**Amended 2026-10-04, for the content filter (ADR 2026-10.e4kz):** schema v7 adds `messages.moderation`, what the filter
+made of a message's words: 0 clear, 1 flagged (knit-next's codes) and 2 waiting, this port's own, for a message the
+engine stored and the app has yet to screen. A partial index on `seq` where it is 2 serves the launch's sweep; the code
+is written into that query, since SQLite uses a partial index only for a term it can see matches. Every row stored
+before v7 reads as clear. `SchemaTests.v7ShowsEveryMessageAsItWas` migrates a v6 row, and `MessageModerationTests`
+runs over both stores.

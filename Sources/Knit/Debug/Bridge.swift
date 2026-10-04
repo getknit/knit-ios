@@ -28,7 +28,7 @@
 
         /// A bridge to `mesh`, driven through `session`, which it also taps for events, to `radio`'s scan probe, to
         /// `storage`, which a demo has none of, to the photos threads draw and what `screening` hides of them, and to the
-        /// filter's `classifier`.
+        /// filter's `classifier` and `textClassifier`.
         init(
             session: AppSession,
             mesh: Mesh,
@@ -40,7 +40,8 @@
             storage: StorageReport?,
             photos: BlobImageCache,
             screening: PhotoScreening,
-            classifier: any PhotoClassifier
+            classifier: any PhotoClassifier,
+            textClassifier: any TextClassifier
         ) {
             let control = MeshControl(
                 bundle: bundle,
@@ -70,6 +71,9 @@
                 }
                 if let ask = ScreenCommand.parse(line) {
                     return (await ask.answer(classifier), false)
+                }
+                if let ask = ScreenTextCommand.parse(line) {
+                    return (await ask.answer(textClassifier), false)
                 }
                 let reply = await control.handle(line)
                 return (reply.line, reply.quits)

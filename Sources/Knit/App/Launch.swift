@@ -98,7 +98,7 @@
             environment.setInBackground(background)
         }
 
-        /// iOS warned that memory runs low: the content filter's model lets go, to load again for the next photo.
+        /// iOS warned that memory runs low: the content filter's models let go, to load again for the next photo or message.
         func memoryRunsLow() {
             if case .ready(let environment) = stage {
                 environment.releaseModel()

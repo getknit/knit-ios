@@ -1,0 +1,27 @@
+# Converts knit-next's Detoxify text classifier to Core ML and checks the two agree. `README.md` has the steps.
+#
+# PyTorch, transformers and LiteRT run on Linux only, where the model is rebuilt, converted and scored. The Mac's half
+# of the parity check needs coremltools and numpy alone. coremltools 9.0 is tested with PyTorch up to 2.7.
+[project]
+name = "knit-toxicity-model"
+version = "1.0.0"
+description = "Detoxify unbiased-small (ALBERT base v2), converted from its PyTorch checkpoint to a Core ML ML program."
+requires-python = "==3.11.*"
+dependencies = [
+    "coremltools==9.0",
+    "numpy==2.2.6",
+    "torch==2.7.0; sys_platform == 'linux'",
+    "transformers==4.57.6; sys_platform == 'linux'",
+    "ai-edge-litert==2.1.5; sys_platform == 'linux'",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

@@ -37,8 +37,8 @@ actor FakeClassifier: PhotoClassifier {
 
     private func filter(_ rig: AppRig, _ table: [[UInt8]: [Float]], filters: Bool = true) -> (PhotoScreening, FakeClassifier) {
         let classifier = FakeClassifier(table)
-        let preferences = MemoryPreferences(filtersContent: filters)
-        return (PhotoScreening(classifier: classifier, preferences: preferences, session: rig.session), classifier)
+        rig.session.filtersContent = filters
+        return (PhotoScreening(classifier: classifier, session: rig.session), classifier)
     }
 
     /// Someone else's photo in the room, its bytes held.
@@ -72,7 +72,7 @@ actor FakeClassifier: PhotoClassifier {
         #expect(await screening.isExplicit(outgoing: Self.prepared))
         #expect(await classifier.asked == 2, "each pick is asked afresh")
         #expect(await !screening.isExplicit(outgoing: Self.sunset), "a photo the model cannot read goes")
-        let blind = PhotoScreening(classifier: nil, preferences: MemoryPreferences(), session: rig.session)
+        let blind = PhotoScreening(classifier: nil, session: rig.session)
         #expect(await !blind.isExplicit(outgoing: Self.prepared), "with no model, nothing is held back")
     }
 
@@ -188,7 +188,7 @@ actor FakeClassifier: PhotoClassifier {
     /// With no model nothing hides, and nothing is read.
     @Test func noModelHidesNothing() async {
         let rig = AppRig()
-        let screening = PhotoScreening(classifier: nil, preferences: MemoryPreferences(), session: rig.session)
+        let screening = PhotoScreening(classifier: nil, session: rig.session)
         #expect(await !screening.hides(roomPhoto(Self.sunset, in: rig), isMine: false))
         #expect(await !screening.hidesFace(BlobHash(of: Self.sunset)))
     }
@@ -216,16 +216,19 @@ actor FakeClassifier: PhotoClassifier {
 
     // MARK: The toggle
 
-    /// Content filtering is on until it is turned off, and stays as it was left.
+    /// Content filtering is on until it is turned off, and stays as it was left. Photos and messages share the one
+    /// toggle, which the session keeps (ADR 2026-10.e4kz).
     @Test func theFilterIsOnUntilTurnedOffAndRemembered() {
-        let rig = AppRig()
         let preferences = MemoryPreferences()
         #expect(preferences.filtersContent)
-        let screening = PhotoScreening(classifier: nil, preferences: preferences, session: rig.session)
+        let rig = AppRig(preferences: preferences)
+        let screening = PhotoScreening(classifier: nil, session: rig.session)
         #expect(screening.filtersContent)
+        let revision = rig.session.revision
         screening.filtersContent = false
-        #expect(!preferences.filtersContent)
-        #expect(!PhotoScreening(classifier: nil, preferences: preferences, session: rig.session).filtersContent)
+        #expect(!preferences.filtersContent && !rig.session.filtersContent)
+        #expect(rig.session.revision > revision, "every list and thread rebuilds under the new setting")
+        #expect(!AppRig(preferences: preferences).session.filtersContent)
     }
 
     // MARK: The demo

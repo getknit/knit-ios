@@ -51,6 +51,9 @@ document:
 - Content filtering hides explicit photos from other people until you tap them, and shows an initial in place
   of an explicit profile picture. Your iPhone checks each photo itself, and Knit asks before you send an
   explicit one and won't post it in Nearby.
+- Content filtering also hides abusive messages from other people until you tap them, in chats, the chat list
+  and notifications. Your iPhone checks each message as it arrives, and Knit won't send one that looks abusive
+  or post profanity in Nearby.
 
 ## About this file
 

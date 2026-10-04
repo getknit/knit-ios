@@ -90,7 +90,8 @@ second runtime, for a byte-identical file that the parity check makes unnecessar
   - A semi-transparent pixel is darkened rather than un-premultiplied. Photos rarely have one.
 - **What it is not:**
   - It covers photos only. Text waits for the Detoxify milestone, and voice notes and files are not screened, as on
-    Android.
+    Android. (Amended 2026-10-04: ADR 2026-10.e4kz screens words, as they arrive and stored on their rows, and the
+    toggle moved to `AppSession`, one for photos and words.)
   - It is no CSAM detection.
   - It can miss a photo or hide a fine one. The Settings footer says so.
   - Sender-side checks are good citizenship, since a modified client skips them. Hiding on the recipient's phone is

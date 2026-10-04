@@ -37,6 +37,35 @@ public struct MessageKind: RawRepresentable, Hashable, Sendable, ExpressibleByIn
     public var isNotice: Bool { self != .message }
 }
 
+/// What the content filter made of a message's words (`MessageEntity.moderation`, ADR 2026-10.e4kz): clear, flagged, or
+/// not yet asked.
+///
+/// The first two codes are knit-next's, and none leaves this phone. Android classifies a message before it stores it,
+/// so it never needs ``waiting``; here the engine stores someone else's message first, and the app screens it before it
+/// shows or notifies it. A code this build does not know reads as ``clear``, as an unknown kind reads as a notice.
+public struct MessageModeration: RawRepresentable, Hashable, Sendable, ExpressibleByIntegerLiteral {
+    /// The words passed, or were never screened: our own, a status line, a message stored before v7, or one the model
+    /// could not score (`MODERATION_NONE`).
+    public static let clear: Self = 0
+    /// The on-device text filter flagged the words (`MODERATION_TEXT_FLAGGED`).
+    public static let flagged: Self = 1
+    /// Someone else's words, stored and not yet screened. Nothing shows them while the filter is on.
+    public static let waiting: Self = 2
+
+    /// The stored code.
+    public let rawValue: Int
+
+    /// Wraps a stored code, known or not.
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+
+    /// A code written out, for the registry above.
+    public init(integerLiteral value: Int) {
+        self.init(rawValue: value)
+    }
+}
+
 /// What a message carries besides its text (`MessageEntity.attachment*` in knit-next): a photo, or a file or voice
 /// note this build shows only as a label.
 ///
@@ -92,6 +121,8 @@ public struct MessageRecord: Sendable, Equatable {
     public var kind: MessageKind
     /// The photo or file it carries, or `nil`.
     public var attachment: MessageAttachment?
+    /// What the content filter made of its words.
+    public var moderation: MessageModeration
 
     /// Makes a record.
     public init(
@@ -105,7 +136,8 @@ public struct MessageRecord: Sendable, Equatable {
         delivered: Bool = false,
         pendingKey: Bool = false,
         kind: MessageKind = .message,
-        attachment: MessageAttachment? = nil
+        attachment: MessageAttachment? = nil,
+        moderation: MessageModeration = .clear
     ) {
         self.id = id
         self.senderId = senderId
@@ -118,6 +150,7 @@ public struct MessageRecord: Sendable, Equatable {
         self.pendingKey = pendingKey
         self.kind = kind
         self.attachment = attachment
+        self.moderation = moderation
     }
 }
 
@@ -173,6 +206,14 @@ public protocol MessageStore: AnyObject, Sendable {
     /// The blobs the messages carry: what keeps a photo from being swept, and what is fetched while its bytes are
     /// missing (`MessageDao.attachmentHashes`).
     func attachmentHashes() -> Set<BlobHash>
+
+    /// Records what the content filter made of message `id`'s words, and answers whether that changed anything.
+    @discardableResult
+    func setModeration(_ id: String, to moderation: MessageModeration) -> Bool
+
+    /// The messages still ``MessageModeration/waiting`` to be screened, in the order they were stored: what a launch
+    /// screens when the app stopped before it could.
+    func waitingForModeration() -> [MessageRecord]
 }
 
 extension MessageStore {
@@ -317,5 +358,23 @@ public final class MemoryMessageStore: MessageStore {
 
     public func attachmentHashes() -> Set<BlobHash> {
         state.withLock { Set($0.rows.values.compactMap(\.record.attachment?.hash)) }
+    }
+
+    @discardableResult
+    public func setModeration(_ id: String, to moderation: MessageModeration) -> Bool {
+        state.withLock { state in
+            let key = ExactKey(id)
+            guard let row = state.rows[key], row.record.moderation != moderation else {
+                return false
+            }
+            state.rows[key]?.record.moderation = moderation
+            return true
+        }
+    }
+
+    public func waitingForModeration() -> [MessageRecord] {
+        state.withLock { state in
+            state.rows.values.filter { $0.record.moderation == .waiting }.sorted { $0.order < $1.order }.map(\.record)
+        }
     }
 }

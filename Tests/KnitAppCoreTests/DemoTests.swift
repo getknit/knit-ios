@@ -149,6 +149,39 @@ import Testing
         listening.cancel()
     }
 
+    /// The demo's words wait for the content filter as the engine's do, and the session screens them as it starts
+    /// listening: under `-demoSensitive` every one from someone else hides, and otherwise none does (ADR 2026-10.e4kz).
+    @Test(arguments: [true, false])
+    func theDemoScreensItsWordsAsItStartsListening(sensitive: Bool) async throws {
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        DemoSeed.populate(stores, me: identity.nodeId, now: 100_000_000, scene: .marketing)
+        let room = stores.messages.messages(in: Conversations.nearby)
+        #expect(room.allSatisfy { $0.moderation == ($0.senderId == identity.nodeId ? .clear : .waiting) })
+        let node = Mesh(
+            identity: identity,
+            deviceTag: nil,
+            stores: stores,
+            radio: DemoRadio(state: .on),
+            clock: DemoClock(),
+            random: SystemRandomNumberGenerator()
+        )
+        let screening = TextScreening(classifier: DemoTextClassifier(flagsEverything: sensitive), words: WordFilter(words: []))
+        let session = AppSession(
+            identity: OwnIdentity(bundle: identity.bundle),
+            stores: stores,
+            mesh: DemoMesh(node, linked: []),
+            textScreening: screening
+        )
+        let listening = Task { await session.listen() }
+        while !stores.messages.waitingForModeration().isEmpty {
+            await Task.yield()
+        }
+        let theirs = stores.messages.messages(in: Conversations.nearby).filter { $0.senderId != identity.nodeId }
+        #expect(!theirs.isEmpty && theirs.allSatisfy { $0.moderation == (sensitive ? .flagged : .clear) })
+        listening.cancel()
+    }
+
     @Test func aRadioThatCannotRunShowsNobodyLinked() async throws {
         let identity = try #require(DemoSeed.identity)
         let stores = MeshStores.inMemory()

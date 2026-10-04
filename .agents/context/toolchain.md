@@ -111,9 +111,19 @@ Android's TFLite (its `README.md` has the steps). It is Python 3.11 through uv, 
   `parity.py --coreml`.
 - **TensorFlow installs on Linux only** (`tensorflow-cpu`, behind a `sys_platform` marker): 2.12 has no wheel for
   Apple silicon. The Mac's half, `parity.py --coreml`, needs only coremltools and numpy.
-- **The conversion is reproducible.** coremltools writes the same model and weights on every run, and
-  `convert.py` replaces the manifest's random UUIDs with ones derived from each part's path, so `--check` compares
-  bytes.
+- **The conversion is reproducible.** coremltools writes the same weights on every run. `convert.py` replaces the
+  manifest's random UUIDs with ones derived from each part's path, drops the conversion date from the spec, and
+  writes the spec's maps in key order, so `--check` compares bytes.
+
+`tools/models/toxicity/` does the same for the message classifier (ADR 2026-10.e4kz), from Detoxify's PyTorch
+checkpoint, also Python 3.11 through uv with its own `uv.lock`.
+
+- **coremltools 9.0, torch 2.7.0 and transformers 4.57.6.** coremltools 9.0 is tested with PyTorch up to 2.7.0; a
+  newer one converts with a warning, and 2.7.1 wrote a different spec. Moving any of the three means rerunning
+  `convert.py --check` and `parity.py --coreml`.
+- **torch, transformers and ai-edge-litert install on Linux only,** torch from PyTorch's CPU index. The Mac's half,
+  `parity.py --coreml`, needs only coremltools and numpy (2.2.6 here; the photo pipeline keeps 1.23.5 for TensorFlow).
+  `ai-edge-litert` 2.1.5, the version detoxify-mobile validates with, runs Android's TFLite for comparison.
 
 ## Dongle firmware
 

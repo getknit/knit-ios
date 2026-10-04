@@ -83,6 +83,12 @@ public enum AccessibilityID {
         "chat_photo_\(messageId)"
     }
 
+    /// A message that carries no photo, `chat_message_<message id>`, whose value says when the content filter hides its
+    /// words (ADR 2026-10.e4kz). Android has no tag here.
+    public static func chatMessage(_ messageId: String) -> String {
+        "chat_message_\(messageId)"
+    }
+
     /// A photo still on its way.
     public static let chatAttachmentWaiting = "chat_attachment_wait"
     /// A photo whose bytes are here and do not open.

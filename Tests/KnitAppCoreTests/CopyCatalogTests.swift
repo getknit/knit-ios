@@ -369,7 +369,8 @@ extension CopyCatalogTests {
 }
 
 extension CopyCatalogTests {
-    /// The content filter's strings (ADR 2026-10.rpmq), apart so the suite stays under the lint's length.
+    /// The content filter's strings (ADR 2026-10.rpmq, ADR 2026-10.e4kz), apart so the suite stays under the lint's
+    /// length.
     static var moderationStrings: [String] {
         [
             Copy.Moderation.filter,
@@ -381,6 +382,13 @@ extension CopyCatalogTests {
             Copy.Moderation.explicitAsk,
             Copy.Moderation.sendAnyway,
             Copy.Moderation.roomRefusal,
+            Copy.Moderation.hiddenWords,
+            Copy.Moderation.hiddenMessage,
+            Copy.Moderation.showMessage,
+            Copy.Moderation.checkingMessage,
+            Copy.Moderation.wordsRefusedTitle,
+            Copy.Moderation.wordsRefused,
+            Copy.Moderation.wordsRefusedInRoom,
         ]
     }
 }

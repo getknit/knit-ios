@@ -179,19 +179,25 @@ extension MeshEngine {
     /// Stores a delivered message and acknowledges it (`InboundPipeline.deliverChat`). A re-served frame leaves the
     /// row as it was and is not announced again, and the receipt goes out every time. A photo the message carries is
     /// fetched at once unless its bytes are already here, as they are when they were carried for someone else.
+    ///
+    /// Someone else's words are stored waiting for the content filter (ADR 2026-10.e4kz). Android classifies them
+    /// before the row is written (`InboundPipeline.inboundModeration`); here the app screens them as it hears the
+    /// event, off this actor, and nothing shows them until it has.
     func deliverChat(_ envelope: RelayEnvelope, _ delivered: DeliveredChat, sender: NodeId, recipient: NodeId?, conversation: String) {
         let attachment = delivered.attachment
         let isNew = !stores.messages.contains(envelope.id)
+        // Our own limit bounds what we send, not what a peer floods.
+        let body = TextLimits.truncated(delivered.body, toUTF16: TextLimits.message)
         let record = MessageRecord(
             id: envelope.id,
             senderId: sender,
             recipientId: recipient,
             conversationId: conversation,
-            // Our own limit bounds what we send, not what a peer floods.
-            body: TextLimits.truncated(delivered.body, toUTF16: TextLimits.message),
+            body: body,
             sentAt: clampFuture(envelope.sentAt),
             arrivedAt: sender == nodeId ? nil : clock.wallMilliseconds(),
-            attachment: attachment
+            attachment: attachment,
+            moderation: sender == nodeId || TextLimits.isBlank(body) ? .clear : .waiting
         )
         stores.messages.insertIfAbsent(record)
         if isNew, sender != nodeId {

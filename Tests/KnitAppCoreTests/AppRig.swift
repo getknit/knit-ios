@@ -328,17 +328,27 @@ struct AppRig {
     let mesh: FakeMesh
     let notifier: RecordingNotifier
     let session: AppSession
+    let preferences: MemoryPreferences
 
-    init(radio: RadioState? = nil) {
+    init(radio: RadioState? = nil, screening: TextScreening? = nil, preferences: MemoryPreferences = MemoryPreferences()) {
         stores = MeshStores.inMemory()
         mesh = FakeMesh(nodeId: Self.me.nodeId, stores: stores, radio: radio)
         notifier = RecordingNotifier()
-        session = AppSession(identity: OwnIdentity(bundle: Self.me.bundle), stores: stores, mesh: mesh, notifier: notifier)
+        self.preferences = preferences
+        session = AppSession(
+            identity: OwnIdentity(bundle: Self.me.bundle),
+            stores: stores,
+            mesh: mesh,
+            notifier: notifier,
+            textScreening: screening,
+            preferences: preferences
+        )
     }
 
     var me: NodeId { Self.me.nodeId }
 
-    /// Stores a message from `sender` to `recipient` (the room when `nil`), as the engine would on arrival.
+    /// Stores a message from `sender` to `recipient` (the room when `nil`), as the engine would on arrival: someone else's
+    /// words wait for the content filter.
     @discardableResult
     func receive(
         _ body: String,
@@ -355,7 +365,8 @@ struct AppRig {
             conversationId: Conversations.id(sender: sender, recipient: recipient, me: me),
             body: body,
             sentAt: sentAt,
-            arrivedAt: arrivedAt
+            arrivedAt: arrivedAt,
+            moderation: sender == me || TextLimits.isBlank(body) ? .clear : .waiting
         )
         stores.messages.save(record)
         let isRequest = session.threads().isRequest(record.conversationId)

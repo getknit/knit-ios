@@ -26,8 +26,10 @@
         /// The content filter: what a picked photo is checked against, and what someone else's photo or face hides behind
         /// (ADR 2026-10.rpmq).
         let screening: PhotoScreening
-        /// The filter's model, which lets go of its memory when Knit leaves the front; a demo's has none to let go.
+        /// The filter's photo model, which lets go of its memory when Knit leaves the front; a demo's has none to let go.
         private let model: DevicePhotoClassifier?
+        /// The filter's text model, which lets go soon after its last message in the background; a demo's has none.
+        private let textModel: DeviceTextClassifier?
         /// What Choose photo picks under `-demoPhoto`: a painted picture, since the system's picker is out of a UI test's
         /// reach. `nil` opens the photo library.
         let demoPhoto: Data?
@@ -59,6 +61,7 @@
             notifier: LocalNotifier,
             camera: any CameraAccess,
             classifier: any PhotoClassifier,
+            textClassifier: any TextClassifier,
             demoPhoto: Data?,
             demoNotification: LocalNotification?,
             replaceIdentity: IdentityReplacer?
@@ -73,8 +76,9 @@
             self.demoNotification = demoNotification
             self.replaceIdentity = replaceIdentity
             photos = BlobImageCache(session: session)
-            screening = PhotoScreening(classifier: classifier, preferences: preferences, session: session)
+            screening = PhotoScreening(classifier: classifier, session: session)
             model = classifier as? DevicePhotoClassifier
+            textModel = textClassifier as? DeviceTextClassifier
             let info = Bundle.main.infoDictionary ?? [:]
             about = AboutInfo(
                 version: info["CFBundleShortVersionString"] as? String ?? "",
@@ -124,26 +128,6 @@
             #endif
         }
 
-        /// Knit went to the background, where iOS may suspend it, or came back. Control Center or an alert over Knit is
-        /// neither: Knit is still on screen, and Android still finds it. Going posts `-demoNotification`'s notification.
-        func setInBackground(_ background: Bool) {
-            phases.continuation.yield(background)
-            if background {
-                releaseModel()
-            }
-            if background, let demoNotification {
-                let alerts = notifier
-                Task { await alerts.post(demoNotification) }
-            }
-        }
-
-        /// Lets the filter's model go: Knit left the front, or memory runs low. The next photo screened loads it again.
-        func releaseModel() {
-            if let model {
-                Task { await model.release() }
-            }
-        }
-
         /// Knit left the front. Only a debug build's scan probe wants to know.
         func backgrounded() {
             #if DEBUG
@@ -189,7 +173,8 @@
                 radio: BLERadio(log: log),
                 log: log,
                 preferences: defaults,
-                classifier: DevicePhotoClassifier(log: log)
+                classifier: DevicePhotoClassifier(log: log),
+                textClassifier: DeviceTextClassifier(log: log)
             )
             #if DEBUG
                 parts.storage = StorageReport(
@@ -227,6 +212,7 @@
                     log: log,
                     preferences: MemoryPreferences(hasOnboarded: !options.demoOnboarding),
                     classifier: DemoPhotoClassifier(flagsEverything: options.demoSensitive),
+                    textClassifier: DemoTextClassifier(flagsEverything: options.demoSensitive),
                     linked: DemoSeed.linked(in: options.demoScene),
                     camera: options.demoCamera.map(DemoCamera.init),
                     demoPhoto: options.demoPhoto ? DemoPortraits.pickedPhoto() : nil,
@@ -243,8 +229,9 @@
             let radio: any Radio
             let log: any KnitLog
             let preferences: any AppPreferences
-            /// The content filter's model: the bundled one, or the demo's stand-in under `-seedDemo`.
+            /// The content filter's models: the bundled ones, or the demo's stand-ins under `-seedDemo`.
             let classifier: any PhotoClassifier
+            let textClassifier: any TextClassifier
             /// The peers a demo scene shows as linked, which only a demo has.
             var linked: [NodeId] = []
             /// A demo's camera, under `-demoCamera`; otherwise the phone's.
@@ -273,7 +260,13 @@
             let alerts = LocalNotifier()
             let service: any MeshService = parts.linked.isEmpty ? node : DemoMesh(node, linked: parts.linked)
             let app = AppSession(
-                identity: OwnIdentity(bundle: parts.identity.bundle), stores: parts.stores, mesh: service, notifier: alerts)
+                identity: OwnIdentity(bundle: parts.identity.bundle),
+                stores: parts.stores,
+                mesh: service,
+                notifier: alerts,
+                textScreening: TextScreening(classifier: parts.textClassifier, words: wordList(log: parts.log)),
+                preferences: parts.preferences
+            )
             let environment = AppEnvironment(
                 session: app,
                 mesh: node,
@@ -282,6 +275,7 @@
                 notifier: alerts,
                 camera: parts.camera ?? DeviceCamera(),
                 classifier: parts.classifier,
+                textClassifier: parts.textClassifier,
                 demoPhoto: parts.demoPhoto,
                 demoNotification: parts.notification,
                 replaceIdentity: replace
@@ -298,10 +292,52 @@
                     storage: parts.storage,
                     photos: environment.photos,
                     screening: environment.screening,
-                    classifier: parts.classifier
+                    classifier: parts.classifier,
+                    textClassifier: parts.textClassifier
                 )
             #endif
             return environment
+        }
+    }
+
+    // Apart from the class only to keep its body inside the lint's length.
+    extension AppEnvironment {
+        /// Knit went to the background, where iOS may suspend it, or came back. Control Center or an alert over Knit is
+        /// neither: Knit is still on screen, and Android still finds it. Going posts `-demoNotification`'s notification.
+        func setInBackground(_ background: Bool) {
+            phases.continuation.yield(background)
+            if background, let model {
+                Task { await model.release() }
+            }
+            if let textModel {
+                Task { await textModel.setInBackground(background) }
+            }
+            if background, let demoNotification {
+                let alerts = notifier
+                Task { await alerts.post(demoNotification) }
+            }
+        }
+
+        /// Lets the filter's models go: memory runs low. The next photo or message screened loads its model again.
+        func releaseModel() {
+            if let model {
+                Task { await model.release() }
+            }
+            if let textModel {
+                Task { await textModel.release() }
+            }
+        }
+
+        /// The Nearby room's word list, bundled as `Profanity.txt` (knit-next's `profanity_en.txt`). Without it the room
+        /// screens with the model alone, and says so.
+        private static func wordList(log: any KnitLog) -> WordFilter {
+            guard let url = Bundle.main.url(forResource: "Profanity", withExtension: "txt"),
+                let text = try? String(contentsOf: url, encoding: .utf8)
+            else {
+                log.log(.warning, "text filter: Profanity.txt is not in the app, so Nearby is screened by the model alone")
+                return WordFilter(words: [])
+            }
+            return WordFilter(list: text)
         }
 
         /// The database's own directory, under Application Support, which is backed up unless told otherwise; the

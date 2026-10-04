@@ -208,7 +208,8 @@ public actor MeshControl {
     }
 
     /// The newest `limit` messages of `conversation` as lines, each with its ticks, and, for one carrying a photo,
-    /// whether the photo's bytes are here, so a run can tell a photo that arrived from one still owed.
+    /// whether the photo's bytes are here, so a run can tell a photo that arrived from one still owed. A message the
+    /// content filter flagged, or has yet to screen, says so in `moderation` (ADR 2026-10.e4kz).
     private func messages(in conversation: String, limit: Int) -> [JSONValue] {
         let messages = stores.messages.messages(in: conversation).suffix(limit)
         let held = stores.blobs.held(among: Set(messages.compactMap(\.attachment?.hash)))
@@ -216,6 +217,11 @@ public actor MeshControl {
             var fields = ControlLines.fields(of: message)
             if let hash = message.attachment?.hash {
                 fields["attachmentHeld"] = .bool(held.contains(hash))
+            }
+            if message.moderation == .flagged {
+                fields["moderation"] = "flagged"
+            } else if message.moderation == .waiting {
+                fields["moderation"] = "waiting"
             }
             return JSONValue.object(fields)
         }

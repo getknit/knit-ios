@@ -37,9 +37,10 @@ public final class RequestsModel {
         cache.value(for: session.revision) {
             let directory = session.directory
             let me = session.identity.nodeId
+            let reader = ChatListAssembler.Reader(directory: directory, me: me, filtering: session.filtersContent)
             return session.threads().requests.map { request in
                 let preview = request.head.map { head in
-                    ChatListAssembler.preview(head, namingSpeaker: request.group != nil, directory: directory, me: me)
+                    ChatListAssembler.preview(head, namingSpeaker: request.group != nil, reader: reader)
                 }
                 let title = request.group.map { GroupNaming.title(of: $0, me: me, directory: directory) }
                 return RequestRow(

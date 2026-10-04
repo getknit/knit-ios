@@ -28,6 +28,21 @@ public struct ChatMessage: Sendable, Equatable, Identifiable {
     public var authorFace: Face?
     /// What the message carries beside its words, or `nil`.
     public var attachment: ChatAttachment?
+    /// Why the content filter keeps its words out of sight, or `nil` while they show (ADR 2026-10.e4kz).
+    public var hiddenWords: HiddenWords?
+}
+
+/// Why a thread keeps someone else's words out of sight while the content filter is on.
+public enum HiddenWords: Sendable, Equatable {
+    /// The filter flagged them, and a tap shows them.
+    case flagged
+    /// The filter has not read them yet, which takes a moment after they land; they show, or stay hidden, once it has.
+    case unscreened
+
+    /// Why words the filter `moderation` describes are hidden, given that they are.
+    init(_ moderation: MessageModeration) {
+        self = moderation == .flagged ? .flagged : .unscreened
+    }
 }
 
 /// What a thread is.
@@ -103,6 +118,9 @@ public final class ChatModel {
     /// Whether the screen asks about ``explicitPhoto``. Its answer is ``keepExplicitPhoto()`` or
     /// ``dropExplicitPhoto()``; dismissing the question changes neither.
     public var asksAboutExplicitPhoto = false
+    /// Whether the last Send was refused for abusive words, which the screen says until it is dismissed. The draft and
+    /// the photo stay in the composer (`ChatViewModel.send`).
+    public var wordsRefused = false
 
     /// The thread `conversationId` over `session`, making picked photos ready to send through `codec` and checking them
     /// with `screening`.
@@ -145,9 +163,16 @@ public final class ChatModel {
     }
 
     /// Sends the draft and the photo held, and clears each once the message is stored, unless it changed meanwhile.
+    ///
+    /// Words that look abusive are not sent, in any thread and whatever the content filter says, which governs only
+    /// what we are shown (`MeshManager.sendChat`). The room adds its word list. Words the model could not read go.
     public func send() async {
         let sending = text
         let photo = staged
+        if await session.textScreening?.isAbusive(sending, inRoom: state.isRoom) ?? false {
+            wordsRefused = true
+            return
+        }
         guard await session.send(sending, photo: photo?.photo, in: conversationId) != nil else {
             return
         }
@@ -246,8 +271,9 @@ public final class ChatModel {
         // (`ChatViewModel.kt:780-795`).
         let stored = session.stores.messages.messages(in: conversationId).filter { !directory.blocked.contains($0.senderId) }
         let held = session.stores.blobs.held(among: Set(stored.compactMap(\.attachment?.hash)))
+        let filtering = session.filtersContent
         let messages = stored.compactMap { message in
-            chatMessage(message, kind: kind, me: me, directory: directory, held: held)
+            chatMessage(message, kind: kind, directory: directory, held: held, filtering: filtering)
         }
         let members = group?.members ?? []
         let isBlocked = peer.map(directory.blocked.contains) ?? false
@@ -281,8 +307,9 @@ public final class ChatModel {
 
     /// One row of the thread: a message, or a status line this build has words for.
     private func chatMessage(
-        _ message: MessageRecord, kind: ThreadKind, me: NodeId, directory: Directory, held: Set<BlobHash>
+        _ message: MessageRecord, kind: ThreadKind, directory: Directory, held: Set<BlobHash>, filtering: Bool
     ) -> ChatMessage? {
+        let me = session.identity.nodeId
         let isMine = message.senderId == me
         guard message.kind.isNotice else {
             let named = kind != .direct && !isMine
@@ -295,7 +322,8 @@ public final class ChatModel {
                 authorLabel: named ? directory.label(for: message.senderId).text : nil,
                 status: isMine ? DeliveryStatus(message) : nil,
                 authorFace: named ? directory.face(for: message.senderId) : nil,
-                attachment: message.attachment.flatMap { ChatAttachment($0, isHeld: held.contains($0.hash)) }
+                attachment: message.attachment.flatMap { ChatAttachment($0, isHeld: held.contains($0.hash)) },
+                hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message.moderation) : nil
             )
         }
         return GroupNaming.notice(message, me: me, directory: directory).map { words in

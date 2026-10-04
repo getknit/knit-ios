@@ -160,8 +160,9 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   what stopped at delivery under `blocked`, ADR 2026-10.5wgg),
   `digest` (live custody ids and their fingerprint), `custody` (every live frame, and who a sealed chat is
   wrapped to), `messages` (`conv`, `limit`; each message carries its `kind`, 0 for a message and Android's
-  notice codes for a status line, and a photo's `attachmentHash`, `attachmentMime` and `attachmentHeld`, whether its
-  bytes are here), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit`
+  notice codes for a status line, a photo's `attachmentHash`, `attachmentMime` and `attachmentHeld`, whether its
+  bytes are here, and `moderation`, `flagged` or `waiting`, when the content filter flagged it or has yet to screen
+  it, ADR 2026-10.e4kz), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit`
   (the peer exits; the app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):
   - `group-create` (`members`, the others' node ids) makes a group, or opens the one they already share. Nothing

@@ -50,12 +50,24 @@ public enum AttachmentKind: Sendable, Equatable {
         }
     }
 
-    /// The line a list or a notification shows for `message`: its words, or, when it has none, what it carries.
-    static func line(of message: MessageRecord) -> String {
+    /// The line a list or a notification shows for `message`: its words, or, when it has none, what it carries. When
+    /// `hiding`, the content filter's word for them stands in their place.
+    static func line(of message: MessageRecord, hiding: Bool) -> String {
+        if hiding {
+            return Copy.Moderation.hiddenMessage
+        }
         guard TextLimits.isBlank(message.body), let attachment = message.attachment else {
             return message.body
         }
         return preview(of: attachment)
+    }
+}
+
+extension MessageRecord {
+    /// Whether the content filter hides these words from `me` (ADR 2026-10.e4kz): it is on, someone else wrote them, and
+    /// it flagged them or has yet to screen them. Nothing shows someone else's words before the filter has read them.
+    func hidesWords(filtering: Bool, me: NodeId) -> Bool {
+        filtering && senderId != me && (moderation == .flagged || moderation == .waiting)
     }
 }
 

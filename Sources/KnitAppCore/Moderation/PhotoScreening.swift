@@ -19,29 +19,25 @@ public final class PhotoScreening {
         var key: String?
     }
 
-    /// Whether someone else's explicit photos and faces hide: the Content filtering toggle, on unless turned off.
-    /// What is sent is checked either way.
+    /// Whether someone else's explicit photos and faces hide: the Content filtering toggle, on unless turned off, which
+    /// the session keeps since it hides messages too (ADR 2026-10.e4kz). What is sent is checked either way.
     public var filtersContent: Bool {
-        didSet {
-            preferences.filtersContent = filtersContent
-        }
+        get { session.filtersContent }
+        set { session.filtersContent = newValue }
     }
 
     @ObservationIgnored private let classifier: (any PhotoClassifier)?
-    @ObservationIgnored private let preferences: any AppPreferences
     @ObservationIgnored private let session: AppSession
     /// What each photo screened so far looked like. Views read it through ``isHiding(_:isMine:)`` and
     /// ``isHidingFace(_:)``, so a verdict that lands redraws them.
     private var verdicts: [Screened: Bool] = [:]
     @ObservationIgnored private var screening: [Screened: Task<[Float]?, Never>] = [:]
 
-    /// The filter over `session`'s photos, scoring them with `classifier` (none screens nothing) and keeping the
-    /// toggle in `preferences`.
-    public init(classifier: (any PhotoClassifier)?, preferences: any AppPreferences, session: AppSession) {
+    /// The filter over `session`'s photos, scoring them with `classifier` (none screens nothing), under the session's
+    /// toggle.
+    public init(classifier: (any PhotoClassifier)?, session: AppSession) {
         self.classifier = classifier
-        self.preferences = preferences
         self.session = session
-        filtersContent = preferences.filtersContent
     }
 
     /// Whether `bytes`, a photo about to be sent, look explicit. It is asked whatever the toggle says, which governs

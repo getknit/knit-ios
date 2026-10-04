@@ -40,52 +40,65 @@ public struct ChatListState: Sendable, Equatable {
 /// Folds the thread table into the chat list's rows (`ChatListAssembler.kt` in knit-next). Pure over its inputs, so
 /// the rules are tested without a view.
 public enum ChatListAssembler {
-    /// The list for `threads`, from `me`'s side, with `linked` peers linked now.
-    public static func state(threads: ThreadTable, directory: Directory, me: NodeId, linked: Set<NodeId>) -> ChatListState {
+    /// What every row reads besides its thread: who is who, whose side the list is from, and whether the content filter
+    /// hides flagged words in a line (ADR 2026-10.e4kz).
+    struct Reader {
+        let directory: Directory
+        let me: NodeId
+        let filtering: Bool
+    }
+
+    /// The list for `threads`, from `me`'s side, with `linked` peers linked now, its lines hiding what the content filter
+    /// hides while `filtering`.
+    public static func state(
+        threads: ThreadTable, directory: Directory, me: NodeId, linked: Set<NodeId>, filtering: Bool
+    ) -> ChatListState {
+        let reader = Reader(directory: directory, me: me, filtering: filtering)
         let room = threads.heads.first { $0.conversationId == Conversations.nearby }
         var rows: [ChatRow] = []
         for head in threads.heads where NodeId(head.conversationId) != nil && !threads.isRequest(head.conversationId) {
-            rows.append(row(head.conversationId, head: head, directory: directory, me: me, linked: linked))
+            rows.append(row(head.conversationId, head: head, linked: linked, reader: reader))
         }
         // Group rows come from the groups we hold rather than from messages, so a group shows before its first one.
         for group in threads.groups where !threads.isRequest(group.id) {
             let head = threads.heads.first { ExactKey($0.conversationId) == ExactKey(group.id) }
-            rows.append(row(group, head: head, directory: directory, me: me))
+            rows.append(row(group, head: head, reader: reader))
         }
         // Newest first, a tie keeping the order above. A thread named for nothing this build knows is left out.
         let ordered = rows.enumerated()
             .sorted { ($1.element.lastMessageAt ?? 0, $0.offset) < ($0.element.lastMessageAt ?? 0, $1.offset) }
             .map(\.element)
         let requests = threads.requests.count
-        let all = [row(Conversations.nearby, head: room, directory: directory, me: me, linked: linked)] + ordered
+        let all = [row(Conversations.nearby, head: room, linked: linked, reader: reader)] + ordered
         return ChatListState(rows: all, requestCount: requests, showsGettingStarted: all.count == 1 && room == nil && requests == 0)
     }
 
     /// A group's row: its title, and its newest message with its speaker.
-    static func row(_ group: GroupRecord, head: MessageRecord?, directory: Directory, me: NodeId) -> ChatRow {
+    static func row(_ group: GroupRecord, head: MessageRecord?, reader: Reader) -> ChatRow {
         ChatRow(
             id: group.id,
-            title: GroupNaming.title(of: group, me: me, directory: directory),
+            title: GroupNaming.title(of: group, me: reader.me, directory: reader.directory),
             isRoom: false,
             isGroup: true,
-            preview: head.map { preview($0, namingSpeaker: true, directory: directory, me: me) },
+            preview: head.map { preview($0, namingSpeaker: true, reader: reader) },
             lastMessageAt: head?.sentAt ?? group.createdAt,
-            lastStatus: head.flatMap { $0.senderId == me ? DeliveryStatus($0) : nil },
+            lastStatus: head.flatMap { $0.senderId == reader.me ? DeliveryStatus($0) : nil },
             isLinked: false,
             isVerified: false,
-            face: directory.face(of: group)
+            face: reader.directory.face(of: group)
         )
     }
 
-    static func row(_ id: String, head: MessageRecord?, directory: Directory, me: NodeId, linked: Set<NodeId>) -> ChatRow {
+    static func row(_ id: String, head: MessageRecord?, linked: Set<NodeId>, reader: Reader) -> ChatRow {
         let peer = NodeId(id)
+        let directory = reader.directory
         return ChatRow(
             id: id,
             title: peer.map { directory.label(for: $0).text } ?? Copy.ChatList.nearby,
             isRoom: peer == nil,
-            preview: head.map { preview($0, namingSpeaker: peer == nil, directory: directory, me: me) },
+            preview: head.map { preview($0, namingSpeaker: peer == nil, reader: reader) },
             lastMessageAt: head?.sentAt,
-            lastStatus: head.flatMap { $0.senderId == me ? DeliveryStatus($0) : nil },
+            lastStatus: head.flatMap { $0.senderId == reader.me ? DeliveryStatus($0) : nil },
             isLinked: peer.map(linked.contains) ?? false,
             isVerified: peer.map(directory.verified.contains) ?? false,
             face: peer.map(directory.face(for:)) ?? .room
@@ -94,16 +107,17 @@ public enum ChatListAssembler {
 
     /// "Speaker: body" on one line (`speakerLabel` in knit-next). An incoming DM names nobody, since the row's title
     /// already does; the room and a group name the speaker, and our own messages say "You". A message with no words
-    /// says what it carries (`messagePreview`).
-    static func preview(_ message: MessageRecord, namingSpeaker: Bool, directory: Directory, me: NodeId) -> String {
-        let body = TextLimits.normalizeSingleLine(AttachmentKind.line(of: message))
-        if message.senderId == me {
+    /// says what it carries (`messagePreview`), and words the content filter hides say only that.
+    static func preview(_ message: MessageRecord, namingSpeaker: Bool, reader: Reader) -> String {
+        let hiding = message.hidesWords(filtering: reader.filtering, me: reader.me)
+        let body = TextLimits.normalizeSingleLine(AttachmentKind.line(of: message, hiding: hiding))
+        if message.senderId == reader.me {
             return Copy.ChatList.preview(speaker: Copy.Common.you, body: body)
         }
         guard namingSpeaker else {
             return body
         }
-        return Copy.ChatList.preview(speaker: directory.label(for: message.senderId).text, body: body)
+        return Copy.ChatList.preview(speaker: reader.directory.label(for: message.senderId).text, body: body)
     }
 }
 
@@ -130,7 +144,13 @@ public final class ChatListModel {
         let linked = Set(session.neighbors.map(\.nodeId))
         let key = ListKey(revision: session.revision, linked: linked)
         return cache.value(for: key) {
-            ChatListAssembler.state(threads: session.threads(), directory: session.directory, me: session.identity.nodeId, linked: linked)
+            ChatListAssembler.state(
+                threads: session.threads(),
+                directory: session.directory,
+                me: session.identity.nodeId,
+                linked: linked,
+                filtering: session.filtersContent
+            )
         }
     }
 

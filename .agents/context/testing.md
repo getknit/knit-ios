@@ -23,8 +23,10 @@ ladder, not the first.
    through a `FakeMesh` that writes to in-memory stores as the engine would, and reads every catalog string. A fake
    `ImageCodec` stands in for ImageIO, so choosing, cropping and saving a profile photo run there too, and so do
    picking, holding and sending a photo in a chat (`ChatPhotoTests`). A fake `PhotoClassifier` stands in for Core
-   ML, so the content filter's policy, what it hides and what a pick asks run there as well (`PhotoScreeningTests`);
-   the model's own scores are checked against Android's by `tools/models/nsfw/parity.py` on the Mac.
+   ML, so the content filter's policy, what it hides and what a pick asks run there as well (`PhotoScreeningTests`),
+   and so do the words' tokenizer, word list, screening on arrival and refusal on send (`SentencePieceTokenizerTests`,
+   `WordFilterTests`, `TextScreeningTests`). The models' own scores are checked on the Mac, against Android's TFLite by
+   `tools/models/nsfw/parity.py` and against Detoxify's checkpoint by `tools/models/toxicity/parity.py`.
    `DemoTests` runs the real `Mesh` on `-seedDemo`'s radio, in each scene. The SwiftUI views, the Keychain store and
    `KnitBLE` compile only on Apple platforms: `scripts/check.sh xcode` builds them for iOS, `test:macos` runs
    `KnitBLETests`, and `test:ios:simulator` walks the screens (P7).
