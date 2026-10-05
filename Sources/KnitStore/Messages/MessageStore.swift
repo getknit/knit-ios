@@ -200,16 +200,16 @@ public protocol MessageStore: AnyObject, Sendable {
     /// wrote, has no head (`observeDistinctConversations`).
     func threadHeads(excludingSenders blocked: Set<NodeId>) -> [MessageRecord]
 
-    /// Removes the message `id` at `now` and answers what it was, or `nil` when nothing is held under that id. An
-    /// ordinary message's id is remembered until ``DeletedMessages/expiry(sentAt:deletedAt:limits:)``, so a carrier
-    /// that re-serves its frame cannot bring it back (ADR 2026-10.u7cq). A status line's is not: its id is our own,
-    /// and a later change to the group must be able to write it again.
+    /// Removes the message `id` at `now`, with its reactions, and answers what it was, or `nil` when nothing is held
+    /// under that id. An ordinary message's id is remembered until ``DeletedMessages/expiry(sentAt:deletedAt:limits:)``,
+    /// so a carrier that re-serves its frame cannot bring it back (ADR 2026-10.u7cq). A status line's is not: its id is
+    /// our own, and a later change to the group must be able to write it again.
     @discardableResult
     func deleteMessage(_ id: String, at now: Int64) -> MessageRecord?
 
-    /// Removes every row of `conversationId` at `now`, status lines included, remembering each ordinary message's id as
-    /// ``deleteMessage(_:at:)`` does, and answers what it removed: what deleting a chat and leaving a group do to its
-    /// thread.
+    /// Removes every row of `conversationId` at `now`, status lines and reactions included, remembering each ordinary
+    /// message's id as ``deleteMessage(_:at:)`` does, and answers what it removed: what deleting a chat and leaving a
+    /// group do to its thread.
     @discardableResult
     func deleteMessages(in conversationId: String, at now: Int64) -> [MessageRecord]
 
@@ -234,6 +234,25 @@ public protocol MessageStore: AnyObject, Sendable {
     /// The messages still ``MessageModeration/waiting`` to be screened, in the order they were stored: what a launch
     /// screens when the app stopped before it could.
     func waitingForModeration() -> [MessageRecord]
+
+    /// Stores `reaction` unless the one held for its message and reactor is as new or newer, or its message is
+    /// remembered as deleted, and answers whether it did (`ReactionRepository.apply`). Strictly newer wins and a tie
+    /// keeps what is held, so out-of-order adds, replacements and retractions converge, and a re-served frame changes
+    /// nothing. Android reads, then writes, in one transaction; here the check and the write are one statement.
+    @discardableResult
+    func applyReaction(_ reaction: ReactionRecord) -> Bool
+
+    /// The reaction `reactor` holds on message `messageId`, a retraction included, or `nil` when they never reacted.
+    func reaction(on messageId: String, by reactor: NodeId) -> ReactionRecord?
+
+    /// The reactions standing on the ordinary messages of `conversationId` held now, oldest first, ties by the
+    /// message's id and then the reactor's, both by their bytes. Retractions, reactions to status lines and reactions
+    /// whose message is not held are left out.
+    func reactions(in conversationId: String) -> [ReactionRecord]
+
+    /// Forgets every reaction, retractions included, updated before `cutoff` whose message is not held
+    /// (`ReactionDao.deleteOrphansOlderThan`).
+    func pruneOrphanReactions(updatedBefore cutoff: Int64)
 }
 
 extension MessageStore {

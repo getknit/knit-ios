@@ -16,11 +16,19 @@ public final class MemoryMessageStore: MessageStore {
         let attachment: BlobHash?
     }
 
+    /// A reaction's key: its message's id by its bytes, and who reacted.
+    private struct ReactionKey: Hashable, Sendable {
+        let message: ExactKey
+        let reactor: NodeId
+    }
+
     private struct State: Sendable {
         var rows: [ExactKey: Row] = [:]
         var nextOrder = 0
         /// The deleted ordinary messages, by id.
         var deleted: [ExactKey: Deleted] = [:]
+        /// Every reaction held, retractions and those whose message is not held included.
+        var reactions: [ReactionKey: ReactionRecord] = [:]
 
         mutating func put(_ message: MessageRecord) {
             let key = ExactKey(message.id)
@@ -55,6 +63,16 @@ public final class MemoryMessageStore: MessageStore {
             let held = deleted[key]
             deleted[key] = Deleted(
                 id: record.id, expiresAt: max(held?.expiresAt ?? expiry, expiry), attachment: record.attachment?.hash ?? held?.attachment)
+        }
+
+        /// Removes the row `key` and its reactions, and remembers its id: one delete.
+        mutating func remove(_ key: ExactKey, deletedAt now: Int64) -> MessageRecord? {
+            guard let row = rows.removeValue(forKey: key) else {
+                return nil
+            }
+            reactions = reactions.filter { $0.key.message != key }
+            remember(row.record, deletedAt: now)
+            return row.record
         }
     }
 
@@ -152,26 +170,14 @@ public final class MemoryMessageStore: MessageStore {
 
     @discardableResult
     public func deleteMessage(_ id: String, at now: Int64) -> MessageRecord? {
-        let key = ExactKey(id)
-        return state.withLock { state in
-            guard let row = state.rows.removeValue(forKey: key) else {
-                return nil
-            }
-            state.remember(row.record, deletedAt: now)
-            return row.record
-        }
+        state.withLock { $0.remove(ExactKey(id), deletedAt: now) }
     }
 
     @discardableResult
     public func deleteMessages(in conversationId: String, at now: Int64) -> [MessageRecord] {
         let thread = ExactKey(conversationId)
         return state.withLock { state in
-            let removed = state.inReadingOrder { ExactKey($0.conversationId) == thread }
-            for record in removed {
-                state.rows[ExactKey(record.id)] = nil
-                state.remember(record, deletedAt: now)
-            }
-            return removed
+            state.inReadingOrder { ExactKey($0.conversationId) == thread }.compactMap { state.remove(ExactKey($0.id), deletedAt: now) }
         }
     }
 
@@ -212,6 +218,56 @@ public final class MemoryMessageStore: MessageStore {
     public func waitingForModeration() -> [MessageRecord] {
         state.withLock { state in
             state.rows.values.filter { $0.record.moderation == .waiting }.sorted { $0.order < $1.order }.map(\.record)
+        }
+    }
+
+    @discardableResult
+    public func applyReaction(_ reaction: ReactionRecord) -> Bool {
+        let key = ReactionKey(message: ExactKey(reaction.messageId), reactor: reaction.reactor)
+        return state.withLock { state in
+            guard state.deleted[key.message] == nil else {
+                return false
+            }
+            if let held = state.reactions[key], reaction.updatedAt <= held.updatedAt {
+                return false
+            }
+            state.reactions[key] = reaction
+            return true
+        }
+    }
+
+    public func reaction(on messageId: String, by reactor: NodeId) -> ReactionRecord? {
+        state.withLock { $0.reactions[ReactionKey(message: ExactKey(messageId), reactor: reactor)] }
+    }
+
+    public func reactions(in conversationId: String) -> [ReactionRecord] {
+        let thread = ExactKey(conversationId)
+        return state.withLock { state in
+            state.reactions
+                .filter { key, reaction in
+                    guard reaction.emoji != nil, let row = state.rows[key.message] else {
+                        return false
+                    }
+                    return row.record.kind == .message && ExactKey(row.record.conversationId) == thread
+                }
+                .sorted { first, second in
+                    if first.value.updatedAt != second.value.updatedAt {
+                        return first.value.updatedAt < second.value.updatedAt
+                    }
+                    if first.key.message != second.key.message {
+                        return first.key.message.bytes.lexicographicallyPrecedes(second.key.message.bytes)
+                    }
+                    return first.key.reactor.string.utf8.lexicographicallyPrecedes(second.key.reactor.string.utf8)
+                }
+                .map(\.value)
+        }
+    }
+
+    public func pruneOrphanReactions(updatedBefore cutoff: Int64) {
+        state.withLock { state in
+            state.reactions = state.reactions.filter { key, reaction in
+                reaction.updatedAt >= cutoff || state.rows[key.message] != nil
+            }
         }
     }
 }

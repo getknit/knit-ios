@@ -55,4 +55,27 @@ extension SchemaTests {
         let again = MessageRecord(id: "m1", senderId: bob, recipientId: nil, conversationId: "nearby", body: "hi", sentAt: 3)
         #expect(messages.contains("m1") && !messages.insertIfAbsent(again), "the new table remembers it")
     }
+
+    @Test func v9HoldsNoReactionsAndKeepsEveryMessage() throws {
+        // Nobody reacted before v9: every stored message reads as it was, with nothing on it, and a reaction applies.
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v8")
+        let bob = fixtureNodeId(2)
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO messages (id, senderId, conversationId, body, sentAt, delivered, pendingKey, kind, moderation)
+                    VALUES (?, ?, ?, ?, 3, 0, 0, 0, 0)
+                    """,
+                arguments: [StoredText.bytes("m1"), StoredText.bytes(bob.string), StoredText.bytes("nearby"), StoredText.bytes("hi")]
+            )
+        }
+        let database = try KnitDatabase(writer: queue, failures: recordFailure)
+        let messages = SQLMessageStore(database)
+        #expect(messages.message("m1")?.body == "hi")
+        #expect(messages.reactions(in: "nearby").isEmpty)
+        let thumbs = ReactionRecord(messageId: "m1", reactor: bob, emoji: "\u{1F44D}", updatedAt: 4)
+        #expect(messages.applyReaction(thumbs))
+        #expect(messages.reactions(in: "nearby") == [thumbs])
+    }
 }

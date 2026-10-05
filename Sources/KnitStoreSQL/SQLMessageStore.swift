@@ -2,8 +2,9 @@ import GRDB
 public import KnitStore
 public import KnitWire
 
-/// The ``MessageStore`` on SQLite: the `messages` table (`MessageDao.kt` in knit-next), and `deleted_messages`, the ids
-/// of deleted messages still remembered (ADR 2026-10.u7cq).
+/// The ``MessageStore`` on SQLite: the `messages` table (`MessageDao.kt` in knit-next), `deleted_messages`, the ids of
+/// deleted messages still remembered (ADR 2026-10.u7cq), and `reactions` (`ReactionDao.kt`), which a delete clears in
+/// the same transaction.
 ///
 /// A thread reads in `sentAt` order, ties in the order rows were first stored: the table's `seq`, which a save
 /// over an existing row keeps.
@@ -14,7 +15,8 @@ public final class SQLMessageStore: MessageStore {
         """
     private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
-    private let database: KnitDatabase
+    /// The database, which the reactions' extension shares.
+    let database: KnitDatabase
 
     /// The messages table in `database`.
     public init(_ database: KnitDatabase) {
@@ -255,6 +257,7 @@ extension SQLMessageStore {
                 return nil
             }
             try db.execute(sql: "DELETE FROM messages WHERE id = ?", arguments: [key])
+            try db.execute(sql: "DELETE FROM reactions WHERE messageId = ?", arguments: [key])
             try Self.remember(record, deletedAt: now, db)
             return record
         }
@@ -271,6 +274,8 @@ extension SQLMessageStore {
                 sql: "SELECT \(Self.columns) FROM messages WHERE conversationId = ? ORDER BY sentAt, seq",
                 arguments: [thread]
             ).map(Self.record)
+            try db.execute(
+                sql: "DELETE FROM reactions WHERE messageId IN (SELECT id FROM messages WHERE conversationId = ?)", arguments: [thread])
             try db.execute(sql: "DELETE FROM messages WHERE conversationId = ?", arguments: [thread])
             for record in removed {
                 try Self.remember(record, deletedAt: now, db)

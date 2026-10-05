@@ -25,6 +25,7 @@ internal enum Schema {
         ("v6", v6),
         ("v7", v7),
         ("v8", v8),
+        ("v9", v9),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -192,6 +193,22 @@ internal enum Schema {
     private static let v8 = [
         "CREATE TABLE deleted_messages (id BLOB NOT NULL PRIMARY KEY, expiresAt INTEGER NOT NULL, attachmentHash BLOB) STRICT",
         "CREATE INDEX deleted_messages_expiresAt ON deleted_messages (expiresAt)",
+    ]
+
+    /// Schema v9: reactions (`reactions` in knit-next), one row per message and reactor, a retraction kept as a row with no
+    /// emoji so it can beat an older add that arrives after it. There is no foreign key: a reaction may land before its
+    /// message, and the message store clears a deleted message's reactions itself. The primary key leads with
+    /// `messageId`, so it serves the join from a thread's messages. A database that predates it holds none.
+    private static let v9 = [
+        """
+        CREATE TABLE reactions (
+            messageId BLOB NOT NULL,
+            reactor BLOB NOT NULL,
+            emoji BLOB,
+            updatedAt INTEGER NOT NULL,
+            PRIMARY KEY (messageId, reactor)
+        ) STRICT
+        """
     ]
 
     /// The migrator that brings any database this build knows up to date.
