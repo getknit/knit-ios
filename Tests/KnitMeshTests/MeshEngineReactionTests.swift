@@ -218,6 +218,26 @@ import Testing
         #expect(fixture.transport.written(.reaction).isEmpty)
     }
 
+    @Test func noFrameGoesOutThatCouldNotBeNewerThanOurOwnHeldReaction() throws {
+        // Ours, stamped as far ahead as any receiver allows, comes back from a neighbour: a tap this millisecond cannot
+        // outrank it anywhere, so nothing is sent rather than a frame every node would ignore.
+        let fixture = try holdingAPost()
+        fixture.deliver(try alice.reaction(thumbs, to: "post-1", id: "r-ahead", sentAt: start + 3_600_000), from: bob)
+        fixture.transport.clear()
+        #expect(fixture.engine.react(to: "post-1", with: heart) == nil)
+        #expect(fixture.transport.written(.reaction).isEmpty)
+        #expect(fixture.stores.messages.reaction(on: "post-1", by: alice.nodeId)?.emoji == thumbs)
+    }
+
+    @Test func aReactionFromNoNodeIdChangesNothing() throws {
+        // `verify` refuses such a sender before the handler sees it; the handler still asks.
+        let fixture = try holdingAPost()
+        let payload = ReactionContent(messageId: "post-1", emoji: thumbs).encoded
+        fixture.engine.handleReaction(RelayEnvelope(type: .reaction, id: "r-x", senderId: "not a node", sentAt: start, payload: payload))
+        #expect(fixture.stores.messages.reactions(in: Conversations.nearby).isEmpty)
+        #expect(fixture.engine.drainEvents().isEmpty && fixture.engine.dropped.isEmpty)
+    }
+
     @Test func ourOwnFrameServedBackChangesNothingAndRestoresWhatAWipeLost() throws {
         let fixture = try holdingAPost()
         fixture.engine.react(to: "post-1", with: thumbs)

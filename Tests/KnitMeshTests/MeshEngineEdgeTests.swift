@@ -20,6 +20,18 @@ import Testing
         }
     }
 
+    @Test func aTypingCueIsShownNowhereAndNotCarried() throws {
+        // Not custodial, and worthless a moment later (`isCustodial`): it is relayed and dropped here without a word.
+        let fixture = EngineFixture(alice)
+        try fixture.pin(bob)
+        _ = fixture.engine.drainEvents()
+        let typing = RelayEnvelope(type: .typing, id: "typing-1", senderId: bob.nodeId.string, payload: TypingContent().encoded)
+        fixture.deliver(try bob.signed(typing), from: bob)
+        #expect(!fixture.stores.custody.contains("typing-1"))
+        #expect(fixture.engine.drainEvents().isEmpty)
+        #expect(fixture.engine.dropped.isEmpty)
+    }
+
     @Test func aSealedRoomPostCannotBeOpened() throws {
         let fixture = EngineFixture(alice)
         try fixture.pin(bob)
