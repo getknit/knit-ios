@@ -42,7 +42,7 @@ import Testing
         let manifest = try manifest()
         #expect(!manifest.tracking)
         #expect(manifest.trackingDomains.isEmpty)
-        #expect(manifest.collected.isEmpty)
+        #expect(manifest.collected.map(\.type).isEmpty)
     }
 
     /// Knit seals messages with its own encryption, beyond what iOS does for it, so it does not take the exempt answer.

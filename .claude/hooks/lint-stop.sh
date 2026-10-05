@@ -6,7 +6,8 @@
 #
 # Clean -> exit 0 and the turn ends. Findings -> exit 2 with them on stderr, which Claude Code feeds back so
 # the model fixes them. Builds and tests stay out on purpose: knit-next dropped its build and test Stop hooks
-# once each turn cost minutes. `scripts/check.sh fast` runs them in the pre-push hook instead.
+# once each turn cost minutes. `scripts/check.sh fast` runs them in the pre-push hook instead. Periphery, which
+# needs an incremental build, has a Stop hook of its own: periphery-stop.sh.
 #
 # Honors `stop_hook_active`, so an unfixable finding cannot trap a session in a loop, and exits 0 when docker
 # or the image is missing (offline), so a missing tool never wedges a turn.

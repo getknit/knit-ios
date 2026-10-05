@@ -39,6 +39,13 @@ this repository's files (`no_warnings`), leaving warnings in checked-out depende
 every configuration, Debug and Release for the iPhone and the Simulator, the device tests, and SwiftPM on Linux and
 macOS, then had none.
 
+**Amended 2026-10-04:** a second Stop hook, `.claude/hooks/periphery-stop.sh`, runs `check.sh periphery` on Linux.
+Nothing ran Periphery before a push, so its findings surfaced only in CI, and two in test code had landed by this date.
+The hook hashes the Swift files, `Package.resolved` and `check.sh`, and scans only when the hash differs from its last
+clean pass. Its build is incremental and keeps `check.sh`'s `SWIFT_JOBS` and `nice` caps; on a built tree the whole run
+took 4 s. Other builds and the tests stay out of Stop hooks, and the Mac's scan, which needs the iPhone build's index,
+stays in CI.
+
 **Consequences / limits:** a new toolchain's warnings stop the build. `KNIT_WARNINGS_AS_ERRORS=0` gets past them
 locally, and CI never sets it. Disabling a lint rule means a line with its reason in `.swiftlint.yml`. The
 guard is `.gitlab-ci.yml` itself: it carries no `allow_failure` beyond the named advisories, and every job

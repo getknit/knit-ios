@@ -339,13 +339,11 @@ struct AppRig {
     let mesh: FakeMesh
     let notifier: RecordingNotifier
     let session: AppSession
-    let preferences: MemoryPreferences
 
     init(radio: RadioState? = nil, screening: TextScreening? = nil, preferences: MemoryPreferences = MemoryPreferences()) {
         stores = MeshStores.inMemory()
         mesh = FakeMesh(nodeId: Self.me.nodeId, stores: stores, radio: radio)
         notifier = RecordingNotifier()
-        self.preferences = preferences
         session = AppSession(
             identity: OwnIdentity(bundle: Self.me.bundle),
             stores: stores,

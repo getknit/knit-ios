@@ -45,8 +45,10 @@ exact interval, then update this file in the same change.
   when told to (`--index-store-path .build/out`), which `scripts/check.sh periphery` does. On the Mac the gate
   also reads the iPhone build's index in `.build-xcode`, so run `check.sh xcode periphery` there, and leaves
   `KnitBlueZ` to Linux. An index keeps records of deleted files until the tree is rebuilt, so clear
-  `.build/out` before trusting a finding in code that is gone. Periphery ships macOS binaries only, so on
-  Linux it is built from source and installed at user level:
+  `.build/out` before trusting a finding in code that is gone. A Claude Stop hook,
+  `.claude/hooks/periphery-stop.sh`, runs the Linux gate whenever the Swift files changed since its last clean
+  pass (ADR 2026-09.jgs6). Periphery ships macOS binaries only, so on Linux it is built from source and
+  installed at user level:
 
   ```sh
   git clone --depth 1 --branch 3.8.0 https://github.com/peripheryapp/periphery.git
