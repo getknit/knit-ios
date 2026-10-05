@@ -37,21 +37,26 @@
                 react: state.canReact ? Reacting(model: model) : nil
             )
             .bottomBar {
-                if state.isRequest {
-                    RequestBar(
-                        title: state.requestTitle,
-                        explanation: state.requestBody,
-                        accept: { Task { await model.accept() } },
-                        // A group's request has nobody to block.
-                        block: state.peer == nil ? nil : { confirmsBlock = true }
-                    )
-                } else if state.isBlocked {
-                    BlockedBar(name: state.title) { Task { await model.unblock() } }
-                } else if state.nobodyElse {
-                    NobodyLeftBar()
-                } else {
-                    ComposerBar(model: model, demoPhoto: demoPhoto)
+                Group {
+                    if state.isRequest {
+                        RequestBar(
+                            title: state.requestTitle,
+                            explanation: state.requestBody,
+                            accept: { Task { await model.accept() } },
+                            // A group's request has nobody to block.
+                            block: state.peer == nil ? nil : { confirmsBlock = true }
+                        )
+                    } else if state.isBlocked {
+                        BlockedBar(name: state.title) { Task { await model.unblock() } }
+                    } else if state.nobodyElse {
+                        NobodyLeftBar()
+                    } else {
+                        ComposerBar(model: model, demoPhoto: demoPhoto)
+                    }
                 }
+                // A container, so the audit knows where the bar starts (`AuditPolicy`).
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(AccessibilityID.chatBottomBar)
             }
             .navigationTitle(state.title)
             .navigationBarTitleDisplayMode(.inline)
@@ -115,17 +120,6 @@
         }
     }
 
-    /// What toggles our reaction to a message, from its menu, a chip or VoiceOver (ADR 2026-10.ehe6).
-    @MainActor
-    private struct Reacting {
-        let model: ChatModel
-
-        /// What toggles our reaction to `message` with an emoji.
-        func to(_ message: ChatMessage) -> (String) -> Void {
-            { emoji in Task { await model.react(to: message, with: emoji) } }
-        }
-    }
-
     /// The thread's title, as Signal sets it: the face, the name, and a line under it, a DM's reach or a group's size. In a
     /// DM or a group it opens the profile or the group's info. The face is decorative, so it reads as the title and line.
     private struct ThreadTitle: View {
@@ -167,6 +161,10 @@
                     }
                 }
             }
+            // The bar's whole height, so a tap just under the face opens the profile. iOS takes a tap on the bar's empty strip
+            // there as a scroll to the thread's top.
+            .frame(maxHeight: .infinity)
+            .contentShape(.rect)
             .accessibilityElement(children: .combine)
         }
 
@@ -177,170 +175,6 @@
                 return Copy.Groups.memberCount(count)
             }
             return state.peer == nil ? nil : state.isLinked ? Copy.Chat.inRange : Copy.Profile.outOfRange
-        }
-    }
-
-    /// The thread's messages, newest at the bottom, with what the thread says about itself above them. Each day starts
-    /// under its date, and a run from one author clusters, as Signal draws it (``MessageClusters``).
-    private struct MessageList: View {
-        let state: ChatState
-        /// The messages tapped to show what the filter hid of them.
-        let revealed: Set<String>
-        /// Shows what the filter hid of a message.
-        let reveal: (String) -> Void
-        /// Opens a message's photo full screen.
-        let view: (ViewedPhoto) -> Void
-        /// Asks to delete a message, from its menu.
-        let delete: (ChatMessage) -> Void
-        /// Toggles our reaction to a message, or `nil` where the thread takes none.
-        let react: Reacting?
-        /// Where the thread rests: at its bottom edge, below the newest message's padding. A position on the edge stays on
-        /// it as a row grows, where one scrolled to the newest message's id did not: a photo holds a spinner's place until
-        /// it decodes, then stands up to a hundred points taller, which left its stamp and tick under the composer.
-        @State private var position = ScrollPosition(edge: .bottom)
-        /// Whether the thread keeps to its bottom edge: from opening until someone scrolls away, and again once they scroll
-        /// back. The lazy stack guesses the height of rows it has yet to draw, and the edge it opens on moves as it draws
-        /// them; a long room opened short of its newest posts, or past them over empty space.
-        @State private var followsBottom = true
-        @Environment(BlobImageCache.self) private var photos: BlobImageCache?
-        @Environment(\.calendar) private var calendar
-
-        var body: some View {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ThreadHeader(state: state)
-                    let places = MessageClusters.places(state.messages, calendar: calendar)
-                    ForEach(Array(zip(state.messages, places)), id: \.0.id) { message, place in
-                        VStack(spacing: Layout.small) {
-                            if place.startsDay {
-                                DaySeparator(sentAt: message.sentAt)
-                            }
-                            if let notice = message.notice {
-                                ThreadNote(text: notice)
-                                    .accessibilityIdentifier(AccessibilityID.chatNotice(message.id))
-                            } else {
-                                MessageBubble(
-                                    message: message,
-                                    place: place,
-                                    revealed: revealed.contains(message.id),
-                                    reveal: { reveal(message.id) },
-                                    open: { view(.chat($0, sender: sender(of: message))) },
-                                    delete: { delete(message) },
-                                    react: react?.to(message)
-                                )
-                            }
-                        }
-                        // Bubbles in a run sit close; runs sit apart.
-                        .padding(.top, place.joinsPrevious ? Layout.clusterGap : Layout.small)
-                    }
-                }
-                .padding()
-            }
-            .scrollPosition($position)
-            .defaultScrollAnchor(.bottom)
-            .scrollDismissesKeyboard(.interactively)
-            .accessibilityIdentifier(AccessibilityID.chatThread)
-            .onChange(of: state.messages.last?.id) {
-                followsBottom = true
-                position.scrollTo(edge: .bottom)
-            }
-            // The edge moves as rows are drawn, a photo decodes, the composer grows or the keyboard rises.
-            .onScrollGeometryChange(for: CGFloat.self, of: Self.bottomOffset) { _, _ in
-                if followsBottom {
-                    position.scrollTo(edge: .bottom)
-                }
-            }
-            .onScrollPhaseChange { _, phase, context in
-                switch phase {
-                case .tracking, .interacting, .decelerating:
-                    followsBottom = false
-                case .idle:
-                    followsBottom = context.geometry.contentOffset.y >= Self.bottomOffset(context.geometry) - Layout.small
-                case .animating:
-                    break
-                @unknown default:
-                    break
-                }
-            }
-            // Each photo's shape is read ahead, newest first since the thread opens at its bottom, so a photo scrolled up to
-            // stands at its own height from the start, rather than a spinner's that grows and pushes the thread down.
-            .task(id: state.messages.compactMap(\.attachment)) {
-                await photos?.measure(state.messages.reversed().compactMap(\.attachment))
-            }
-        }
-
-        /// The offset that shows the thread's bottom edge above the composer.
-        private static func bottomOffset(_ geometry: ScrollGeometry) -> CGFloat {
-            geometry.contentSize.height + geometry.contentInsets.bottom - geometry.containerSize.height
-        }
-
-        /// Who sent `message`, as the viewer's bar names them: "You", the author's label, or a DM's peer.
-        private func sender(of message: ChatMessage) -> String {
-            message.isMine ? Copy.Common.you : message.authorLabel ?? state.title
-        }
-    }
-
-    /// The room's notice, what an out-of-range DM means, and what an empty thread holds. A group's size is under the title.
-    private struct ThreadHeader: View {
-        let state: ChatState
-
-        var body: some View {
-            if state.isRoom {
-                ThreadNote(text: Copy.Chat.roomNotice, symbol: "person.3")
-                if state.messages.isEmpty {
-                    ThreadNote(text: Copy.Chat.roomEmpty, symbol: "hand.wave")
-                }
-            } else if state.peer != nil {
-                if !state.isLinked {
-                    ThreadNote(text: Copy.Chat.outOfRange)
-                }
-                if state.messages.isEmpty {
-                    ThreadNote(text: Copy.Chat.directEmpty(state.title), symbol: "lock")
-                }
-            }
-        }
-    }
-
-    /// The date over a day's first message, as the system words it: Today, Yesterday, or the date.
-    private struct DaySeparator: View {
-        private static let formatter: DateFormatter = {
-            let style = DateFormatter()
-            style.dateStyle = .medium
-            style.timeStyle = .none
-            style.doesRelativeDateFormatting = true
-            return style
-        }()
-
-        let sentAt: Int64
-
-        var body: some View {
-            ThreadNote(text: Self.formatter.string(from: Date(milliseconds: sentAt)))
-                .accessibilityAddTraits(.isHeader)
-        }
-    }
-
-    /// A line the thread says about itself rather than a message: a group's event, the room's notice, a day's date. It sits
-    /// centered on a gray capsule, opaque, so it reads the same over any thread.
-    private struct ThreadNote: View {
-        let text: String
-        var symbol: String?
-
-        var body: some View {
-            Group {
-                if let symbol {
-                    Label(text, systemImage: symbol)
-                } else {
-                    Text(text)
-                }
-            }
-            .font(.footnote)
-            .foregroundStyle(Palette.secondaryText)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, Layout.medium)
-            .padding(.vertical, Layout.tight)
-            .background(Palette.incomingBubble, in: .rect(cornerRadius: Layout.noteCorner, style: .continuous))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Layout.tight)
         }
     }
 

@@ -114,6 +114,16 @@ extension Copy {
             )
         }
 
+        /// The round button over a thread scrolled up, which jumps back to its newest message, for a screen reader.
+        public static var scrollToNewest: String {
+            NSLocalizedString(
+                "chat.scroll-to-newest",
+                bundle: .main,
+                value: "Scroll to newest message",
+                comment: "Chat: spoken label of the round button that jumps back to the newest message"
+            )
+        }
+
         /// The encryption badge, for a screen reader.
         public static var encrypted: String {
             NSLocalizedString(

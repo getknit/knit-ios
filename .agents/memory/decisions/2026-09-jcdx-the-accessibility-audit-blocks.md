@@ -80,6 +80,13 @@ screen from VoiceOver, so those rows leave the accessibility tree, as they must.
 reported this, because no text lay under its edges. Such a report is exempt only while an alert is up with content
 text partly under it. The alert's own words are elements, and anywhere else such a report still fails.
 
+**Amended 2026-10-05, for a thread scrolled up (ADR 2026-10.5waw):** the scrolling walk is the first to audit a thread
+away from its bottom edge, with the way back to the newest message showing. A post scrolled beneath the composer failed
+contrast, read through the composer's glass, the same report the navigation bar's exemption covers at the top. A thread's
+text under its bottom bar is now exempt while that button shows, and only then: a thread resting on its edge has nothing
+under the bar, which is how the audit caught a thread that opened short of it while this change was written. The bar's
+own words stay checked. The bar is a container with an identifier, `chat_bottom_bar`, so the policy can find its top.
+
 **Consequences / limits:**
 
 - **The pixel measurement trusts extremes.** It passes an element whose darkest and lightest pixels contrast

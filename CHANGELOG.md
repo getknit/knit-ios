@@ -63,6 +63,8 @@ document:
 - Long-press a message to react with one of six emoji, and see the reactions Android phones send, whichever
   emoji they pick. Reactions travel unencrypted, so phones that pass them on can see who reacted to a message,
   though never what it says.
+- Scroll up into a chat's older messages and Knit keeps your place as new ones arrive, with a button in the
+  corner that jumps back to the newest. Sending a message still takes you straight down to it.
 
 ### Changed
 

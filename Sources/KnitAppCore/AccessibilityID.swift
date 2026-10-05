@@ -71,6 +71,10 @@ public enum AccessibilityID {
     public static let chatEncryption = "chat_encryption"
     /// A group thread's way to group info (Android's overflow "Settings").
     public static let chatGroupInfo = "chat_group_settings"
+    /// The way back to the newest message, over a thread scrolled up.
+    public static let chatScrollToNewest = "chat_scroll_to_bottom"
+    /// The bar under the thread: the composer, or what stands in its place. Android has no tag here.
+    public static let chatBottomBar = "chat_bottom_bar"
     /// A status line in a thread, `chat_notice_<row id>`. Android has no tag here.
     public static func chatNotice(_ id: String) -> String {
         "chat_notice_\(id)"

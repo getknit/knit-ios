@@ -11,6 +11,10 @@ import XCTest
 ///   the status bar too. Text scrolled wholly into that strip is a blur the audit cannot name an element for, so a
 ///   contrast report with no element is exempt while content text lies under the glass.
 /// - Contrast of anything not wholly on screen: the part off it is read as black.
+/// - Contrast of a thread's text under the bar below it, while the thread is scrolled up, which the way back to the newest
+///   message marks: content scrolled beneath the composer is read through its glass, as under a navigation bar. A thread
+///   resting on its bottom edge has nothing under the bar, so text found there still fails, and the bar's own words stay
+///   checked.
 /// - Contrast of an emoji, an element whose label is one: a picture the font draws in its own colors, which no view picks.
 ///   A reaction chip's 👍 is yellow on light gray, and no fill brings it to 4.5:1 in light and dark alike. WCAG 1.4.3 is
 ///   for text; the chip's count and the bubble's VoiceOver value carry what it says (ADR 2026-10.ehe6).
@@ -50,7 +54,7 @@ enum AuditPolicy {
         }
         switch issue.auditType {
         case .contrast:
-            return !element.isEnabled || !window.contains(frame) || isEmoji(element.label)
+            return !element.isEnabled || !window.contains(frame) || isEmoji(element.label) || isUnderTheThreadsBar(element, in: app)
                 || measuredContrast(of: element) >= minimumContrast
         case .textClipped:
             return [.staticText, .button, .textField].contains(element.elementType)
@@ -68,6 +72,18 @@ enum AuditPolicy {
                 frame.minY < bar.minY && glass.intersects(frame) && frame.maxY <= glass.maxY
             }
         }
+    }
+
+    /// Whether `element` is a thread's text reaching under the bar below it, none of the bar's own words, while the way back
+    /// to the newest message shows.
+    private static func isUnderTheThreadsBar(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        let bar = app.element(AccessibilityID.chatBottomBar)
+        guard element.elementType == .staticText, app.element(AccessibilityID.chatScrollToNewest).exists, bar.exists else {
+            return false
+        }
+        let frame = element.frame
+        return frame.maxY > bar.frame.minY
+            && !bar.staticTexts.allElementsBoundByIndex.contains { $0.frame == frame && $0.label == element.label }
     }
 
     /// Whether an alert is up with some content text partly under it, which its glass shows through.

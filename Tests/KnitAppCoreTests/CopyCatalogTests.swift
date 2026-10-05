@@ -19,6 +19,7 @@ import Testing
             Copy.Chat.profile,
             Copy.Chat.inRange,
             Copy.Chat.outOfRange,
+            Copy.Chat.scrollToNewest,
             Copy.Chat.encrypted,
             Copy.Chat.requestBody,
             Copy.Chat.accept,

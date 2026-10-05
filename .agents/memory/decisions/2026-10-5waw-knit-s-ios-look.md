@@ -69,6 +69,25 @@ button the chat list already has. The other alternatives:
 - **Use `#E55E4C` as it is.** It fails contrast wherever it labels anything.
 - **Glass under the composer's words.** It is the defect ADR 2026-09.jcdx fixed.
 
+**Amended 2026-10-05, for scrolling a thread:** a tap just under a DM's face landed on the navigation bar's empty strip,
+which iOS 26 and later take as a scroll to the top, the way they take a tap on the status bar. That scroll reports no
+phase, so the thread, which keeps to its bottom edge until a finger takes it away, pulled it back down the moment a row it
+passed changed height. A long thread flashed; one whose rows were all measured ended at its top. The changes:
+
+- **The thread lets the scroll run.** An offset that rises off the bottom edge in two readings in a row is a scroll. One
+  reading is not enough, because the composer and the keyboard lower the offset for one reading when they change height.
+- **The title fills the bar's height,** so the strip under the face opens the profile.
+- **The thread reads its bottom edge from the container between the bars.** It used to misread the edge by the two bars'
+  height, so scrolling back down by hand never set it following again.
+- **A round button jumps back to the newest message** once someone is half a screen up a thread, as Android's floating
+  button does. It sits over the thread's bottom trailing corner, Liquid Glass from iOS 26 and an opaque disc before that
+  or with Reduce Transparency on, and stays until the thread is back on its edge.
+- **A new message takes the thread down only when it is ours, or when the button is not showing.** That is Android's
+  rule, so a reader up in a busy room stays where they are.
+
+The guard is `KnitUITests`' `testAThreadScrolledUpOffersTheWayBackToItsNewestMessage`. It cannot make the list guess a
+row's height, so the flash itself has no test.
+
 **Consequences / limits:**
 
 - **iOS 18 to 25 get no glass.** The same screens draw opaque bars and bordered buttons there.
