@@ -3980,12 +3980,14 @@ def iphone_delete(arguments: argparse.Namespace) -> int:
 
 
 def iphone_react(arguments: argparse.Namespace) -> int:
-    """Reactions both ways, in the clear as Android floods them toward a peer without the ratchet (ADR 2026-10.ehe6). The
-    phone posts in Nearby, sends a DM and writes in a group the two share, and reacts 👍 to each through its bridge; the
-    iPhone must show each. The iPhone reacts ❤️ to each, and the phone must show each; it then replaces the room's with 😂
-    and takes that back with a repeat. The phone replaces its room reaction with 🔥, outside the iPhone's six, which the
-    iPhone must still take. A stop and start of the iPhone's mesh flips nothing, and the custody sets converge. While the
-    iPhone blocks the phone, the phone's next reaction never lands. The two must already hold each other's keys."""
+    """Reactions both ways, in the clear as Android floods them toward a peer without the ratchet (ADR 2026-10.ehe6).
+    The phone posts in Nearby, sends a DM and writes in a group, and reacts 👍 to each through its bridge; the iPhone
+    must show each. The group adds a fresh ghost nobody runs, since a group's id comes from its members alone, and the
+    two phones' own group may be one either has left. The iPhone reacts ❤️ to each, and the phone must show each; it
+    then replaces the room's with 😂 and takes that back with a repeat. The phone replaces its room reaction with 🔥,
+    outside the iPhone's six, which the iPhone must still take. A stop and start of the iPhone's mesh flips nothing, and
+    the custody sets converge. While the iPhone blocks the phone, the phone's next reaction never lands. The two must
+    already hold each other's keys."""
     phone = Phone(arguments.device)
     ios = IPhone(arguments.udid, arguments.host)
     run = Run()
@@ -3996,8 +3998,9 @@ def iphone_react(arguments: argparse.Namespace) -> int:
         phone_id = phone.state()["self"]["nodeId"]
         print(json.dumps({"run": "iphone-react", "phone": phone_id, "iphone": ios.node_id, "nonce": nonce}))
         run.step("link", lambda: _ios_linked(ios, phone, phone_id))
-        group = ios.command(cmd="group-create", members=[phone_id])["id"]
-        run.step("group-ids-agree", lambda: _agrees(group, phone.make_group([ios.node_id])))
+        ghost = _ghost("iphone-react-ghost")
+        group = ios.command(cmd="group-create", members=[phone_id, ghost])["id"]
+        run.step("group-ids-agree", lambda: _agrees(group, phone.make_group([ios.node_id, ghost])))
         # Each thread as the iPhone names it, then as the phone does, and the phone's message in it.
         threads = {"room": ("nearby", "nearby"), "dm": (phone_id, ios.node_id), "group": (group, group)}
         ids = {}
@@ -5034,6 +5037,7 @@ def main() -> int:
         ios_photos,
         ios_block,
         ios_delete,
+        ios_react,
         ios_soak,
         ios_forgets,
         commands.choices["iphone-relay"],

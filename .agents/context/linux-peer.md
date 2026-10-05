@@ -1489,6 +1489,33 @@ and the phone's screenshots added, passed all 17:
   in 45.6 s, about 10.5 KB/s. That is the rate the iPhone's profile photo got on the same link in Phase 1 (13,109 B
   in 1.2 s), well under the 28 KiB/s pace a file is allowed.
 
+## What the reaction runs showed
+
+`interop.py iphone-react` ran on 2026-10-04 between the iPhone 12, built from `feat/reactions` at `78c996e`, and the
+Pixel 3 on Android 2.8.0, with the Pixel 7, 8 and 9 in range (ADR 2026-10.ehe6). The third run passed 17 of its 18
+steps:
+
+- **Reactions crossed both ways in Nearby, a DM and a group,** each within 0.5 s of the bridge's answer. The Pixel 3's
+  👍 showed on the iPhone, and the iPhone's ❤️ on the Pixel, whose screen drew it beside its own outlined 👍. The
+  iPhone's 😂 replaced its ❤️ in Nearby and a second 😂 took it back, on the Pixel too. The Pixel's 🔥, outside the
+  iPhone's six, reached the iPhone 2.0 s after it was sent.
+- **A restart flipped nothing, and the block held.** For 90 s after the iPhone's mesh stopped and started, no
+  reaction it held changed, and custody matched at 480 ids. The 😮 the Pixel sent while the iPhone blocked it never
+  showed there. After the unblock the iPhone still shows the Pixel's earlier 👍 on that DM while the Pixel shows its
+  😮, the way a DM sent during a block stays unseen.
+- **The relink after that restart failed for 7 minutes.** The Pixel 3, 8 and 9, which dial the iPhone, read PSM 192
+  from its GATT service, and every dial failed within a second (`bt connect … failed reason=OTHER`) or ran out the
+  12 s watchdog, though the iPhone had logged `ble listening on PSM 192`. The iPhone kept the link it dials, to the
+  Pixel 7. A second `stop` and `start` cleared it: the Pixel 8 linked on its next dial, 35 s after the start, and
+  the Pixel 3 on its next, 3 min 44 s after, once its backoff ran out. Nothing on the branch touches the radio. Why
+  is not known; not yet read in btmon.
+- **The first two runs found harness bugs.** `iphone-react` lacked `--udid` and `--host`. Then the Pixel's group
+  message never reached the iPhone: a group's id comes from its members alone, and the Pixel held the iPhone's
+  `leave` from the pair's own group, sent on 2026-10-03, so `MKGROUP` reused a group the iPhone had left. The
+  scenario now adds a fresh ghost member. `iphone-delete` makes the same pair's group, so it would fail the same way.
+- **The iPhone's own screens were not looked at.** Its passcode is set, and XCUITest on the phone waits for someone
+  to type it (ADR 2026-09.63em).
+
 ## What background seeking showed
 
 `interop.py iphone-seek` ran four times on 2026-10-02 against the iPhone 12, locked each time, with the lab phones in
