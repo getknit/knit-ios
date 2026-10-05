@@ -43,6 +43,9 @@ public enum ControlCommand: Equatable, Sendable {
     case messages(String, limit: Int)
     /// One of the delete commands.
     case delete(DeleteCommand)
+    /// `{"cmd":"react","id":"<message id>","emoji":"👍"}`: react to a message, or take our reaction back when it is the
+    /// one we hold, as the bubble's menu does (ADR 2026-10.ehe6). It goes out in the clear.
+    case react(id: String, emoji: String)
     /// One of the group commands.
     case group(GroupCommand)
     /// `{"cmd":"stop"}`: stop the mesh, closing every link, as Settings' Stop does.
@@ -87,6 +90,8 @@ public enum ControlCommand: Equatable, Sendable {
             "messages"
         case .delete(let command):
             command.name
+        case .react:
+            "react"
         case .group(let command):
             command.name
         case .stop:
@@ -192,6 +197,7 @@ public struct ControlRequest: Equatable, Sendable {
         var mime: String?
         var path: String?
         var clear: Bool? // swiftlint:disable:this discouraged_optional_boolean
+        var emoji: String?
         var tag: String?
     }
 
@@ -245,6 +251,8 @@ public struct ControlRequest: Equatable, Sendable {
             required(raw.id, "id").map { .delete(.message($0)) }
         case "delete-chat":
             required(raw.conv, "conv").map { .delete(.chat($0)) }
+        case "react":
+            required(raw.id, "id").flatMap { id in required(raw.emoji, "emoji").map { .react(id: id, emoji: $0) } }
         default:
             groupCommand(from: raw).map(ControlCommand.group)
         }

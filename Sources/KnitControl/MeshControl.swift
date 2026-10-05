@@ -33,6 +33,8 @@ public protocol ControlActions: Sendable {
     func deleteMessage(_ id: String) async -> Bool
     /// Deletes a whole thread here, sending nothing.
     func deleteChat(_ conversationId: String) async -> Bool
+    /// Reacts to a message, or takes our reaction back, and answers what we hold now (ADR 2026-10.ehe6).
+    func react(to messageId: String, with emoji: String) async -> ReactionRecord?
     /// Blocks a peer (ADR 2026-10.5wgg).
     func block(_ peer: NodeId) async
     /// Unblocks a peer.
@@ -202,27 +204,29 @@ public actor MeshControl {
             return .success(["conv": .string(conversation), "messages": .array(messages(in: conversation, limit: limit))])
         case .delete(let command):
             return await answer(command)
+        case .react(let id, let emoji):
+            return await react(to: id, with: emoji)
         case .group(let command):
             return await answer(command)
-        case .stop:
-            await actions.stop()
-            return .success(["running": .bool(await mesh.isRunning)])
-        case .start:
-            await actions.start()
+        case .stop, .start:
+            await (command == .stop ? actions.stop() : actions.start())
             return .success(["running": .bool(await mesh.isRunning)])
         case .quit:
             return .success([:])
         }
     }
 
-    /// The newest `limit` messages of `conversation` as lines, each with its ticks, and, for one carrying a photo,
-    /// whether the photo's bytes are here, so a run can tell a photo that arrived from one still owed. A message the
+    /// The newest `limit` messages of `conversation` as lines, each with its ticks and the reactions standing on it as
+    /// `{reactor: emoji}`, Android's bridge's shape, and, for one carrying a photo, whether the photo's bytes are here, so
+    /// a run can tell a photo that arrived from one still owed. A message the
     /// content filter flagged, or has yet to screen, says so in `moderation` (ADR 2026-10.e4kz).
     private func messages(in conversation: String, limit: Int) -> [JSONValue] {
         let messages = stores.messages.messages(in: conversation).suffix(limit)
         let held = stores.blobs.held(among: Set(messages.compactMap(\.attachment?.hash)))
+        let reactions = ControlLines.reactions(stores.messages.reactions(in: conversation))
         return messages.map { message in
             var fields = ControlLines.fields(of: message)
+            fields["reactions"] = reactions[ExactKey(message.id)] ?? .object([:])
             if let hash = message.attachment?.hash {
                 fields["attachmentHeld"] = .bool(held.contains(hash))
             }

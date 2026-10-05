@@ -161,10 +161,12 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   `digest` (live custody ids and their fingerprint), `custody` (every live frame, and who a sealed chat is
   wrapped to), `messages` (`conv`, `limit`; each message carries its `kind`, 0 for a message and Android's
   notice codes for a status line, a photo's `attachmentHash`, `attachmentMime` and `attachmentHeld`, whether its
-  bytes are here, and `moderation`, `flagged` or `waiting`, when the content filter flagged it or has yet to screen
-  it, ADR 2026-10.e4kz), `delete-message` (`id`) and `delete-chat` (`conv`; its reply's `deleted` says whether
-  there was anything to delete), which delete here and send nothing, a group keeping us as a member (ADR
-  2026-10.u7cq), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the peer exits; the
+  bytes are here, `moderation`, `flagged` or `waiting`, when the content filter flagged it or has yet to screen
+  it, ADR 2026-10.e4kz, and `reactions`, `{reactor: emoji}` as Android's bridge reports them), `delete-message`
+  (`id`) and `delete-chat` (`conv`; its reply's `deleted` says whether there was anything to delete), which delete
+  here and send nothing, a group keeping us as a member (ADR 2026-10.u7cq), `react` (`id`, `emoji`; the same emoji
+  again takes it back, and the reply's `emoji` is what we hold now, `null` once taken back; it goes out in the clear,
+  ADR 2026-10.ehe6), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the peer exits; the
   app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):
   - `group-create` (`members`, the others' node ids) makes a group, or opens the one they already share. Nothing
@@ -172,7 +174,8 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   - `group-send` (`conv`, `text`), `group-rename` (`conv`, `name`) and `group-leave` (`conv`) act on a group.
   - `groups` lists every group held, left ones included. `status` counts them.
 - **Events** are `ready` (with `radioProfile`, and `host` and `version` from the app), `link` (`up` true or false), `profile`, `message` (with `request` for a stranger's
-  first DM or group, and a photo's `attachmentHash` and `attachmentMime`), `sent`, `delivered`, `radio` (`state`:
+  first DM or group, and a photo's `attachmentHash` and `attachmentMime`), `sent`, `delivered`, `reaction` (`id`,
+  `from` and `emoji`, `null` for one taken back, whenever someone's reaction to a message held here changes), `radio` (`state`:
   `on`, `off`, `unauthorized` or `unsupported`), `group` (`id`, `name`, `members`, `departed` and `left`, whenever
   a group changes) and `attachment` (`hash`, once a message's photo has arrived).
 - **Log lines** carry `ms`, the wall-clock time, so they line up with a phone's logcat.

@@ -16,6 +16,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-photos --device SERIAL [--udid UDID]
     scripts/interop.py iphone-block --device SERIAL [--udid UDID]
     scripts/interop.py iphone-delete --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-react --device SERIAL [--udid UDID]
     scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
@@ -35,7 +36,9 @@ runs the same items between the iPhone and the peer; `iphone-relay` runs MVP ite
 iPhone, ADR 2026-09.n393); `iphone-photos` sends photos both ways between the iPhone and the phone, in Nearby, a DM
 and a group (ADR 2026-10.6cas); `iphone-block` checks that a block on the iPhone leaves the phone's ✓✓ on its room post
 and its custody converging (ADR 2026-10.5wgg); `iphone-delete` checks that what the iPhone deletes stays deleted across
-a restart of its mesh, and that the delete sends nothing (ADR 2026-10.u7cq); `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
+a restart of its mesh, and that the delete sends nothing (ADR 2026-10.u7cq); `iphone-react` sends reactions both ways in
+every thread, and checks a replacement, a retraction, an emoji outside the iPhone's six and a block (ADR 2026-10.ehe6);
+`iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
 `iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `iphone-reboot` is item 1's
 relaunch and reboot, with someone to close Knit and unlock the iPhone; `iphone-scan` is P8's scan-filter check, with
 someone to do the same; `iphone-seek` checks that a locked iPhone with no link finds a peer within its wake budget
@@ -3976,6 +3979,92 @@ def iphone_delete(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def iphone_react(arguments: argparse.Namespace) -> int:
+    """Reactions both ways, in the clear as Android floods them toward a peer without the ratchet (ADR 2026-10.ehe6). The
+    phone posts in Nearby, sends a DM and writes in a group the two share, and reacts 👍 to each through its bridge; the
+    iPhone must show each. The iPhone reacts ❤️ to each, and the phone must show each; it then replaces the room's with 😂
+    and takes that back with a repeat. The phone replaces its room reaction with 🔥, outside the iPhone's six, which the
+    iPhone must still take. A stop and start of the iPhone's mesh flips nothing, and the custody sets converge. While the
+    iPhone blocks the phone, the phone's next reaction never lands. The two must already hold each other's keys."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid, arguments.host)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    thumbs, heart, laugh, fire, gasp = "\U0001f44d", "\u2764\ufe0f", "\U0001f602", "\U0001f525", "\U0001f62e"
+    ios.start()
+    try:
+        phone_id = phone.state()["self"]["nodeId"]
+        print(json.dumps({"run": "iphone-react", "phone": phone_id, "iphone": ios.node_id, "nonce": nonce}))
+        run.step("link", lambda: _ios_linked(ios, phone, phone_id))
+        group = ios.command(cmd="group-create", members=[phone_id])["id"]
+        run.step("group-ids-agree", lambda: _agrees(group, phone.make_group([ios.node_id])))
+        # Each thread as the iPhone names it, then as the phone does, and the phone's message in it.
+        threads = {"room": ("nearby", "nearby"), "dm": (phone_id, ios.node_id), "group": (group, group)}
+        ids = {}
+        for kind, (on_ios, on_phone) in threads.items():
+            body = f"interop {kind} to react to {nonce}"
+            _phone_sends(phone, body, on_phone)
+            run.step(f"{kind}-arrived", lambda on_ios=on_ios, body=body: _timed(lambda: _ios_has_body(ios, on_ios, body), 60))
+            ids[kind] = _ios_message_id(ios, on_ios, body)
+        for kind, (on_ios, _) in threads.items():
+            phone.bridge("REACT", id=ids[kind], emoji=thumbs)
+            run.step(f"{kind}-phone-reaction-shows", lambda on_ios=on_ios, kind=kind: _timed(
+                lambda: _ios_reactions(ios, on_ios, ids[kind]).get(phone_id) == thumbs, 60))
+        for kind, (_, on_phone) in threads.items():
+            _ios_ok(ios.command(cmd="react", id=ids[kind], emoji=heart))
+            run.step(f"{kind}-iphone-reaction-shows", lambda on_phone=on_phone, kind=kind: _timed(
+                lambda: _phone_reactions(phone, on_phone, ids[kind]).get(ios.node_id) == heart, 60))
+        _ios_ok(ios.command(cmd="react", id=ids["room"], emoji=laugh))
+        run.step("iphone-replaces", lambda: _timed(lambda: _phone_reactions(phone, "nearby", ids["room"]).get(ios.node_id) == laugh, 60))
+        taken = _ios_ok(ios.command(cmd="react", id=ids["room"], emoji=laugh))
+        run.step("iphone-takes-back", lambda: _timed(
+            lambda: taken.get("emoji") is None and ios.node_id not in _phone_reactions(phone, "nearby", ids["room"]), 60))
+        phone.bridge("REACT", id=ids["room"], emoji=fire)
+        run.step("any-emoji-shows", lambda: _timed(lambda: _ios_reactions(ios, "nearby", ids["room"]).get(phone_id) == fire, 60))
+        before = {kind: _ios_reactions(ios, on_ios, ids[kind]) for kind, (on_ios, _) in threads.items()}
+        ios.command(cmd="stop")
+        ios.command(cmd="start")
+        run.step("relinked", lambda: _ios_linked(ios, phone, phone_id))
+        run.step("nothing-flips", lambda: _stays_false(
+            lambda: any(_ios_reactions(ios, on_ios, ids[kind]) != before[kind] for kind, (on_ios, _) in threads.items()), 90))
+        run.step("custody-converges", lambda: _converges(ios, phone, 180))
+        _ios_ok(ios.command(cmd="block", peer=phone_id))
+        try:
+            phone.bridge("REACT", id=ids["dm"], emoji=gasp)
+            run.step("blocked-reaction-never-lands", lambda: _stays_false(
+                lambda: _ios_reactions(ios, phone_id, ids["dm"]).get(phone_id) == gasp, 60))
+        finally:
+            ios.command(cmd="unblock", peer=phone_id)
+    finally:
+        ios.stop()
+    print(json.dumps({"summary": "iphone-react", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _ios_message_id(ios: IPhone, conversation: str, body: str) -> str:
+    """The id of the iPhone's message `body` in `conversation`: the frame id both sides key reactions by."""
+    found = [message["id"] for message in ios.command(cmd="messages", conv=conversation, limit=50)["messages"] if message.get("body") == body]
+    if not found:
+        raise RuntimeError(f"the iPhone has no {body!r}")
+    return found[0]
+
+
+def _ios_reactions(ios: IPhone, conversation: str, message_id: str) -> dict[str, str]:
+    """The reactions standing on the iPhone's message `message_id`, as `{reactor: emoji}`."""
+    for message in ios.command(cmd="messages", conv=conversation, limit=50)["messages"]:
+        if message.get("id") == message_id:
+            return message.get("reactions") or {}
+    raise RuntimeError(f"the iPhone has no message {message_id} in {conversation}")
+
+
+def _phone_reactions(phone: Phone, conversation: str, message_id: str) -> dict[str, str]:
+    """The reactions standing on the phone's message `message_id`, as its bridge's `STATE` reports them."""
+    for message in phone.state(conversation, limit=50).get("messages", []):
+        if message.get("id") == message_id:
+            return message.get("reactions") or {}
+    raise RuntimeError(f"the phone has no message {message_id} in {conversation}")
+
+
 def _ios_ok(reply: dict) -> dict:
     """A bridge reply that did what it was asked."""
     if not reply.get("ok"):
@@ -4294,6 +4383,7 @@ class IPhoneSoakTraffic:
         self.photo_bodies: set[str] = set()
         self.phone_dms: set[str] = set()
         self.sent_dms: dict[str, dict[str, str]] = {"iphone": {}, "peer": {}, "to-peer": {}}  # id -> body
+        self.reacted: set[str] = set()  # the iPhone's posts the phone reacted to
         self.failures: dict[str, int] = {}
 
     def _try(self, what: str, action) -> object:
@@ -4328,6 +4418,8 @@ class IPhoneSoakTraffic:
         if kind == "react" and self.posts["iphone"]:
             latest = list(self.posts["iphone"].values())[-1]
             done = self._try(kind, lambda: self.phone.bridge("REACT", id=latest, emoji="\U0001f44d"))
+            if done is not None and latest:
+                self.reacted.add(latest)
         elif kind == "typing":
             done = self._try(kind, lambda: self.phone.bridge("TYPING", conv=self.ios.node_id))
         elif kind == "dm-from-phone":
@@ -4403,18 +4495,24 @@ class IPhoneSoakTraffic:
     def extras_report(self) -> dict:
         heard = _heard(self.ios)
         ios_delivered = _delivered_at(self.ios)
+        # The phone's reactions the iPhone took, from its event lines (ADR 2026-10.ehe6). The same post can be reacted to
+        # twice, which takes the reaction back, so only whether each post heard one counts.
+        reactions = {line["id"] for line in self.ios.lines(lambda line: line.get("event") == "reaction" and line.get("from") == self.phone_id)}
         status = self.ios.command(cmd="status")
         detail: dict[str, object] = {
             "sent": self.extras,
             "photosHeard": len(self.photo_bodies & heard),
             "phoneDmsHeard": len(self.phone_dms & heard),
             "iphoneDmsDelivered": len([i for i in self.sent_dms["iphone"] if i in ios_delivered]),
+            "reactionsHeard": len(self.reacted & reactions),
             "files": status.get("files"),
             "dropped": status.get("dropped"),
         }
         problems = []
         if self.photo_bodies - heard:
             problems.append(f"{len(self.photo_bodies - heard)} photo captions never arrived")
+        if self.reacted - reactions:
+            problems.append(f"{len(self.reacted - reactions)} of the phone's reactions never reached the iPhone")
         if self.phone_dms - heard:
             problems.append(f"{len(self.phone_dms - heard)} of the phone's DMs never arrived")
         if detail["iphoneDmsDelivered"] != len(self.sent_dms["iphone"]):
@@ -4845,6 +4943,8 @@ def main() -> int:
     ios_block.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_delete = commands.add_parser("iphone-delete")
     ios_delete.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios_react = commands.add_parser("iphone-react")
+    ios_react.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak = commands.add_parser("iphone-soak")
     ios_soak.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak.add_argument("--peer", action="store_true", help="knit-peer on hci0 joins as a third author, linked to the iPhone alone")
@@ -4952,7 +5052,9 @@ def main() -> int:
         parser.error("--far phone needs --device")
     if arguments.command == "android-reads" and arguments.links > 1 and arguments.order != "peer-above":
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
-    if arguments.command in ("iphone", "iphone-wake", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-delete", "bridge"):
+    if arguments.command in (
+        "iphone", "iphone-wake", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-delete", "iphone-react", "bridge"
+    ):
         return {
             "iphone": iphone,
             "iphone-wake": iphone_wake,
@@ -4960,6 +5062,7 @@ def main() -> int:
             "iphone-photos": iphone_photos,
             "iphone-block": iphone_block,
             "iphone-delete": iphone_delete,
+            "iphone-react": iphone_react,
             "bridge": bridge,
         }[arguments.command](arguments)
     if not PEER.exists():

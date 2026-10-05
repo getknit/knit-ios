@@ -262,7 +262,7 @@ struct ControlRig {
 
 /// Actions that record what they were asked, as the app's session would take them.
 final class RecordingActions: ControlActions {
-    private let me: NodeId
+    let me: NodeId
     let refuses: Bool
     private let recorded = Lock<[String]>([])
 

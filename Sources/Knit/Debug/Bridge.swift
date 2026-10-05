@@ -155,6 +155,14 @@
             await session.deleteChat(conversationId)
         }
 
+        /// Reacts as the bubble's menu does, then reads back what the store holds for us.
+        func react(to messageId: String, with emoji: String) async -> ReactionRecord? {
+            guard await session.react(to: messageId, with: emoji) else {
+                return nil
+            }
+            return await session.stores.messages.reaction(on: messageId, by: session.identity.nodeId)
+        }
+
         func block(_ peer: NodeId) async {
             await session.block(peer)
         }
