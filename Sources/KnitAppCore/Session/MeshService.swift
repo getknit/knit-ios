@@ -40,6 +40,10 @@ public protocol MeshService: AnyObject, Sendable {
     func deleteMessage(_ id: String) async -> Bool
     /// Deletes a whole thread from this iPhone, sending nothing: a group's membership stays (ADR 2026-10.u7cq).
     func deleteChat(_ conversationId: String) async -> Bool
+    /// Reacts to a message with `emoji`, or takes our reaction back when it is the one we hold, and floods it in the clear
+    /// (ADR 2026-10.ehe6). Answers what we hold now, or `nil` when nothing changed.
+    @discardableResult
+    func react(to messageId: String, with emoji: String) async -> ReactionRecord?
     /// Changes our profile and floods it.
     func updateProfile(name: String, status: String, openToChat: Bool) async
     /// Sets our photo, a JPEG, or clears it with `nil`, floods the profile that names it, and pushes it to every

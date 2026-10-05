@@ -125,6 +125,9 @@ explicit direction.** Update this file in the change that ships an item.
   - **Delete (2026-10-04):** a message from its bubble's menu, a chat or request from its swipe, and Nearby cleared,
     all local as on Android. Unlike Android, a deleted message is remembered until no carrier can re-serve it, and a
     delete never turns an accepted thread into a request (ADR 2026-10.u7cq).
+  - **Reactions (2026-10-04):** six to pick from a bubble's menu, any one emoji shown, in every thread, sent and taken
+    in the clear as Android floods them toward a peer without the ratchet (ADR 2026-10.ehe6). Android's full picker
+    and its recents row are not ported.
   - **Still owed:** no unread counts yet, and no Sign out.
 - **P7, the Mac:** begun on 2026-09-27. The Mac Mini has Xcode 27.0 and the tools, `check.sh fast` passes
   there, and the `macos` runner is online (`.agents/context/toolchain.md`, "The Mac"). XcodeGen
@@ -409,8 +412,9 @@ explicit direction.** Update this file in the change that ships an item.
   unit tests, coverage and both sanitizers. Because the engine is synchronous, a later lab could run
   deterministically from a seed (ADR 2026-09.gq84).
 
-- **Message features:** files and voice notes, reactions, replies, mentions and typing indicators. Profile photos
-  and photos in chats are in flight (ADR 2026-10.nh55).
+- **Message features:** files and voice notes, replies, mentions and typing indicators, and Android's full emoji
+  picker for reactions. Profile photos and photos in chats are in flight (ADR 2026-10.nh55), and reactions are in
+  with a fixed six (ADR 2026-10.ehe6).
 - **Groups with forward secrecy** (knit-next's group ratchet), which comes with the DM ratchet. v1 groups are in
   flight above.
 - **Search, drafts and backups.** Search has its place already: a `.searchable` on the chat list's stack, which iOS 26

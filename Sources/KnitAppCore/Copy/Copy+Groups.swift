@@ -114,7 +114,7 @@ extension Copy {
             NSLocalizedString("groups.leave.action", bundle: .main, value: "Leave", comment: "Group info: the button that confirms leaving")
         }
 
-        /// What group encryption covers, and what it does not.
+        /// What group encryption covers, and what it does not: the name, the members and reactions (ADR 2026-10.ehe6).
         public static var encryptionBody: String {
             NSLocalizedString(
                 "groups.encryption.body",
@@ -122,8 +122,9 @@ extension Copy {
                 value: """
                     Only the group's members can read its messages or see its photos. Messages and photos are sealed before they leave \
                     your phone, so the phones that carry them can't open them. The group's name and member list travel unencrypted, so \
-                    those phones can see who's in it. This version doesn't have forward secrecy yet: anyone who later gets a member's \
-                    keys could open what they recorded earlier.
+                    those phones can see who's in it. Reactions do too: those phones can see who reacted to a message and with which \
+                    emoji, but not what it says. This version doesn't have forward secrecy yet: anyone who later gets a member's keys \
+                    could open what they recorded earlier.
                     """,
                 comment: "Chat: what group encryption covers"
             )

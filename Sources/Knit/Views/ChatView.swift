@@ -28,83 +28,101 @@
 
         var body: some View {
             let state = model.state
-            MessageList(state: state, revealed: revealed, reveal: { revealed.insert($0) }, view: { viewing = $0 }, delete: askToDelete)
-                .bottomBar {
-                    if state.isRequest {
-                        RequestBar(
-                            title: state.requestTitle,
-                            explanation: state.requestBody,
-                            accept: { Task { await model.accept() } },
-                            // A group's request has nobody to block.
-                            block: state.peer == nil ? nil : { confirmsBlock = true }
-                        )
-                    } else if state.isBlocked {
-                        BlockedBar(name: state.title) { Task { await model.unblock() } }
-                    } else if state.nobodyElse {
-                        NobodyLeftBar()
-                    } else {
-                        ComposerBar(model: model, demoPhoto: demoPhoto)
-                    }
+            MessageList(
+                state: state,
+                revealed: revealed,
+                reveal: { revealed.insert($0) },
+                view: { viewing = $0 },
+                delete: askToDelete,
+                react: state.canReact ? Reacting(model: model) : nil
+            )
+            .bottomBar {
+                if state.isRequest {
+                    RequestBar(
+                        title: state.requestTitle,
+                        explanation: state.requestBody,
+                        accept: { Task { await model.accept() } },
+                        // A group's request has nobody to block.
+                        block: state.peer == nil ? nil : { confirmsBlock = true }
+                    )
+                } else if state.isBlocked {
+                    BlockedBar(name: state.title) { Task { await model.unblock() } }
+                } else if state.nobodyElse {
+                    NobodyLeftBar()
+                } else {
+                    ComposerBar(model: model, demoPhoto: demoPhoto)
                 }
-                .navigationTitle(state.title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        ThreadTitle(state: state, conversationId: model.conversationId)
-                    }
-                    // What is sealed, on the lock: the one place Knit's thread keeps a button Signal's has not, because it
-                    // says exactly what the encryption covers.
-                    if state.peer != nil || state.isGroup {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                showsEncryption = true
-                            } label: {
-                                Label(Copy.Chat.encrypted, systemImage: state.isVerified ? "checkmark.shield.fill" : "lock.fill")
-                            }
-                            .accessibilityIdentifier(
-                                state.isGroup ? AccessibilityID.chatEncryption : state.isVerified ? AccessibilityID.chatVerified : ""
-                            )
+            }
+            .navigationTitle(state.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    ThreadTitle(state: state, conversationId: model.conversationId)
+                }
+                // What is sealed, on the lock: the one place Knit's thread keeps a button Signal's has not, because it
+                // says exactly what the encryption covers.
+                if state.peer != nil || state.isGroup {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showsEncryption = true
+                        } label: {
+                            Label(Copy.Chat.encrypted, systemImage: state.isVerified ? "checkmark.shield.fill" : "lock.fill")
                         }
+                        .accessibilityIdentifier(
+                            state.isGroup ? AccessibilityID.chatEncryption : state.isVerified ? AccessibilityID.chatVerified : ""
+                        )
                     }
                 }
-                .sheet(isPresented: $showsEncryption) {
-                    EncryptionSheet(text: state.isGroup ? Copy.Groups.encryptionBody : Copy.Chat.encryptionBody(state.title))
+            }
+            .sheet(isPresented: $showsEncryption) {
+                EncryptionSheet(text: state.isGroup ? Copy.Groups.encryptionBody : Copy.Chat.encryptionBody(state.title))
+            }
+            .fullScreenCover(item: $viewing) { photo in
+                PhotoViewer(photo: photo)
+            }
+            .confirmsBlock(of: state.title, isPresented: $confirmsBlock) {
+                Task { await model.block() }
+            }
+            .confirmsDelete($deleting, asking: DeleteQuestion.message) { message in
+                Task { await model.delete(message) }
+            }
+            .alert(Copy.Photo.unreadable, isPresented: $model.photoFailed) {
+                Button(Copy.Common.done, role: .cancel) {
+                    // The alert closes itself.
                 }
-                .fullScreenCover(item: $viewing) { photo in
-                    PhotoViewer(photo: photo)
+            }
+            .answersExplicitPhotos(of: model)
+            .alert(Copy.Moderation.wordsRefusedTitle, isPresented: $model.wordsRefused) {
+                Button(Copy.Common.done, role: .cancel) {
+                    // The alert closes itself, and the words stay in the composer.
                 }
-                .confirmsBlock(of: state.title, isPresented: $confirmsBlock) {
-                    Task { await model.block() }
+            } message: {
+                Text(state.isRoom ? Copy.Moderation.wordsRefusedInRoom : Copy.Moderation.wordsRefused)
+            }
+            // A group we left is gone: its thread closes, however the leave came.
+            .onChange(of: state.exists) { _, exists in
+                if !exists {
+                    dismiss()
                 }
-                .confirmsDelete($deleting, asking: DeleteQuestion.message) { message in
-                    Task { await model.delete(message) }
-                }
-                .alert(Copy.Photo.unreadable, isPresented: $model.photoFailed) {
-                    Button(Copy.Common.done, role: .cancel) {
-                        // The alert closes itself.
-                    }
-                }
-                .answersExplicitPhotos(of: model)
-                .alert(Copy.Moderation.wordsRefusedTitle, isPresented: $model.wordsRefused) {
-                    Button(Copy.Common.done, role: .cancel) {
-                        // The alert closes itself, and the words stay in the composer.
-                    }
-                } message: {
-                    Text(state.isRoom ? Copy.Moderation.wordsRefusedInRoom : Copy.Moderation.wordsRefused)
-                }
-                // A group we left is gone: its thread closes, however the leave came.
-                .onChange(of: state.exists) { _, exists in
-                    if !exists {
-                        dismiss()
-                    }
-                }
-                .task { await model.appear() }
-                .onDisappear(perform: model.disappear)
+            }
+            .task { await model.appear() }
+            .onDisappear(perform: model.disappear)
         }
 
         /// Asks before deleting `message`, from its bubble's menu.
         private func askToDelete(_ message: ChatMessage) {
             deleting = message
+        }
+    }
+
+    /// What toggles our reaction to a message, from its menu, a chip or VoiceOver (ADR 2026-10.ehe6).
+    @MainActor
+    private struct Reacting {
+        let model: ChatModel
+
+        /// What toggles our reaction to `message` with an emoji.
+        func to(_ message: ChatMessage) -> (String) -> Void {
+            { emoji in Task { await model.react(to: message, with: emoji) } }
         }
     }
 
@@ -174,6 +192,8 @@
         let view: (ViewedPhoto) -> Void
         /// Asks to delete a message, from its menu.
         let delete: (ChatMessage) -> Void
+        /// Toggles our reaction to a message, or `nil` where the thread takes none.
+        let react: Reacting?
         /// Where the thread rests: at its bottom edge, below the newest message's padding. A position on the edge stays on
         /// it as a row grows, where one scrolled to the newest message's id did not: a photo holds a spinner's place until
         /// it decodes, then stands up to a hundred points taller, which left its stamp and tick under the composer.
@@ -205,7 +225,8 @@
                                     revealed: revealed.contains(message.id),
                                     reveal: { reveal(message.id) },
                                     open: { view(.chat($0, sender: sender(of: message))) },
-                                    delete: { delete(message) }
+                                    delete: { delete(message) },
+                                    react: react?.to(message)
                                 )
                             }
                         }

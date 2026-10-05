@@ -323,9 +323,14 @@ gate_uitest() {
 		[ -n "${CI:-}" ] && simulator="Knit CI"
 		simulator_named "$simulator"
 	fi
+	# KNIT_UI_TESTS narrows the run to one walk while iterating, as KNIT_DEVICE_TESTS does on the iPhone.
+	local only=()
+	if [ -n "${KNIT_UI_TESTS:-}" ]; then
+		only=("-only-testing:$KNIT_UI_TESTS")
+	fi
 	local results=.build-xcode/uitest.xcresult
 	rm -rf "$results"
-	xcodebuild "${xcode_build[@]}" -scheme Knit -destination "platform=iOS Simulator,name=$simulator" \
+	xcodebuild "${xcode_build[@]}" -scheme Knit -destination "platform=iOS Simulator,name=$simulator" "${only[@]}" \
 		-resultBundlePath "$results" -collect-test-diagnostics never test | "${xcode_pretty[@]}"
 }
 

@@ -52,6 +52,7 @@ final class FakeMesh: MeshService {
         var photos: [BlobHash] = []
         var groups: [String] = []
         var deleted: [String] = []
+        var reactions: [String] = []
     }
 
     let nodeId: NodeId
@@ -194,6 +195,11 @@ final class FakeMesh: MeshService {
     func deleteChat(_ conversationId: String) -> Bool {
         state.withLock { $0.calls.deleted.append("chat \(conversationId)") }
         return stores.deleteChat(conversationId, at: clock, me: nodeId)
+    }
+
+    func react(to messageId: String, with emoji: String) -> ReactionRecord? {
+        state.withLock { $0.calls.reactions.append("\(messageId) \(emoji)") }
+        return stores.react(to: messageId, with: emoji, at: clock, me: nodeId)
     }
 
     func setVerified(_ peer: NodeId, _ verified: Bool) {

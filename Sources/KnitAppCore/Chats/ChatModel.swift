@@ -30,6 +30,9 @@ public struct ChatMessage: Sendable, Equatable, Identifiable {
     public var attachment: ChatAttachment?
     /// Why the content filter keeps its words out of sight, or `nil` while they show (ADR 2026-10.e4kz).
     public var hiddenWords: HiddenWords?
+    /// The emoji people reacted with, each where it first appeared; empty for none and for a status line
+    /// (ADR 2026-10.ehe6).
+    public var reactions: [ReactionChip] = []
 }
 
 /// Why a thread keeps someone else's words out of sight while the content filter is on.
@@ -91,6 +94,9 @@ public struct ChatState: Sendable, Equatable {
     public var isRoom: Bool { kind == .room }
     /// Whether this is a group.
     public var isGroup: Bool { kind == .group }
+    /// Whether its messages take a reaction: wherever the composer is, so not on a request, a blocked person's DM or a
+    /// group nobody else is left in (ADR 2026-10.ehe6).
+    public var canReact: Bool { exists && !isRequest && !isBlocked && !nobodyElse }
 }
 
 /// A thread's view model: its messages and status lines, the composer, and a request's Accept.
@@ -254,6 +260,15 @@ public final class ChatModel {
         await session.deleteMessage(message.id)
     }
 
+    /// Reacts to `message` with `emoji`, or takes our reaction back when it is the one we hold, from its bubble's menu or
+    /// a chip (ADR 2026-10.ehe6). A status line takes none.
+    public func react(to message: ChatMessage, with emoji: String) async {
+        guard message.notice == nil, state.canReact else {
+            return
+        }
+        await session.react(to: message.id, with: emoji)
+    }
+
     /// Blocks the DM's peer: from a request's bar.
     public func block() async {
         if let peer = NodeId(conversationId) {
@@ -290,8 +305,12 @@ public final class ChatModel {
         let stored = session.stores.messages.messages(in: conversationId).filter { !directory.blocked.contains($0.senderId) }
         let held = session.stores.blobs.held(among: Set(stored.compactMap(\.attachment?.hash)))
         let filtering = session.filtersContent
+        let audience = ReactionAudience.of(conversationId, kind: kind, group: group, me: me)
+        let chips = ReactionChips.chips(
+            session.stores.messages.reactions(in: conversationId), me: me, audience: audience, blocked: directory.blocked)
         let messages = stored.compactMap { message in
             chatMessage(message, kind: kind, directory: directory, held: held, filtering: filtering)
+                .map { $0.reacted(chips[ExactKey(message.id)] ?? []) }
         }
         let members = group?.members ?? []
         let isBlocked = peer.map(directory.blocked.contains) ?? false
@@ -347,5 +366,14 @@ public final class ChatModel {
         return GroupNaming.notice(message, me: me, directory: directory).map { words in
             ChatMessage(id: message.id, body: "", sentAt: message.sentAt, isMine: false, author: message.senderId, notice: words)
         }
+    }
+}
+
+extension ChatMessage {
+    /// The message with `chips` under it, unless it is a status line, which takes none.
+    func reacted(_ chips: [ReactionChip]) -> Self {
+        var copy = self
+        copy.reactions = notice == nil ? chips : []
+        return copy
     }
 }

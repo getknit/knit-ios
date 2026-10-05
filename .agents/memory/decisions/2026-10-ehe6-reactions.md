@@ -55,8 +55,16 @@ differences. Nothing on the wire changes, and Android needs no change.
 - **Difference 3, the clock and the reaping.** Two taps in one millisecond stamp the second one past the first, never
   past five minutes ahead, so it still wins everywhere it lands. Orphans are reaped in every sweep, not only at start:
   a relay keeps every reaction it hears, and knit-peer may run for weeks.
-- **The picker** offers the six in Android's order, ❤️ with its `U+FE0F` as Android spells it. Any emoji another phone
-  sends still shows.
+- **The picker** offers the six in Android's order, ❤️ with its `U+FE0F` as Android spells it, in one row at the top of
+  a bubble's long-press menu, above Copy and Delete. Any emoji another phone sends still shows. The row is a palette
+  `ControlGroup` of toggles, so ours shows chosen. A palette keeps its menu open after a choice, buttons included, so the
+  row sets `menuActionDismissBehavior(.enabled)`. A palette also drops its toggles' identifiers, so the walk finds
+  them by their emoji.
+- **The chips** sit under the words, opaque and ringed in the thread's background where they overlap the bubble (ADR
+  2026-10.5waw), wrapping as Android's `FlowRow` does. A tap toggles ours with that emoji. VoiceOver reads a bubble as
+  one element, so the chips are hidden from it: the bubble's value lists each emoji and who chose it, and its actions
+  offer each of the six. The audit's contrast check reads an emoji as text, and a yellow 👍 on light gray fails it, so
+  contrast on an element whose label is one emoji is exempt (ADR 2026-09.jcdx, amended).
 - **Custody never reads any of it.** The carry runs above the handler, so a refusal, a block or a delete changes what
   this node shows and never what it carries.
 
@@ -82,3 +90,6 @@ with the copy saying plainly that reactions travel unencrypted.
     carried, a deleted target, a parked reaction meeting a block, our own frames served back, and one digest whatever
     this node shows.
   - `IdentityCodecTests`' emoji cases.
+  - `ReactionTests` in KnitAppCore (the six's bytes, chips, whose reactions each thread shows, the toggle, where none
+    is offered), `DemoTests`' seeded chips through a real `Mesh`, and `KnitUITests`' reaction walk, whose menu and
+    chips the audit reads in every mode.

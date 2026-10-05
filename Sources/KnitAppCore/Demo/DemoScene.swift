@@ -18,8 +18,8 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// waiting to be delivered, and nobody linked. The default.
     case edgeCases = "edge-cases"
     /// A day on the trail for store screenshots and social posts, with three peers linked, and most people wearing a
-    /// profile photo. After knit-next's hiking theme (`DemoScenarios.kt`), less what the iPhone does not do yet:
-    /// reactions, photos in chats, voice notes, LoRa and Internet relays.
+    /// profile photo. After knit-next's hiking theme (`DemoScenarios.kt`), less what the iPhone does not do yet: voice
+    /// notes, LoRa and Internet relays.
     case marketing = "marketing"
 
     /// Who and what the scene seeds.
@@ -92,6 +92,13 @@ internal struct DemoCast {
         var photo: DemoPortrait?
     }
 
+    /// Someone's reaction to one of the scene's lines, a moment after it (ADR 2026-10.ehe6).
+    struct Reaction {
+        let line: String
+        let by: Slot
+        let emoji: String
+    }
+
     /// The scene's group: its members besides us, in pick order, and who started it.
     struct Group {
         let members: [Slot]
@@ -112,9 +119,15 @@ internal struct DemoCast {
     let linked: [Slot]
     /// The scene's group, if it has one.
     var group: Group?
+    /// The reactions, in the order they were made.
+    var reactions: [Reaction] = []
+
+    private static let thumbs = "\u{1F44D}"
+    private static let heart = "\u{2764}\u{FE0F}"
 
     /// Two peers share a name, to show a discriminated label; the stranger has none, to show an alias. Jonas is blocked,
-    /// so Settings lists someone and his profile shows the badge.
+    /// so Settings lists someone and his profile shows the badge. Our room post has a count above one, an emoji outside
+    /// the six, and a heart from Jonas that his block hides; Sam's DM has ours, and a stranger's that a DM does not show.
     static let edgeCases = Self(
         people: [
             Person(slot: .sam, name: "Sam", status: "At the north gate", verified: true),
@@ -137,7 +150,16 @@ internal struct DemoCast {
         ],
         accepted: [.sam],
         linked: [],
-        group: Group(members: [.sam, .priya, .otherSam], createdBy: .priya, departed: [.otherSam])
+        group: Group(members: [.sam, .priya, .otherSam], createdBy: .priya, departed: [.otherSam]),
+        reactions: [
+            Reaction(line: "room-3", by: .sam, emoji: thumbs),
+            Reaction(line: "room-3", by: .priya, emoji: thumbs),
+            Reaction(line: "room-3", by: .otherSam, emoji: "\u{1F525}"),
+            Reaction(line: "room-3", by: .jonas, emoji: heart),
+            Reaction(line: "dm-2", by: .me, emoji: thumbs),
+            Reaction(line: "dm-2", by: .stranger, emoji: "\u{1F602}"),
+            Reaction(line: "group-1", by: .sam, emoji: thumbs),
+        ]
     )
 
     /// Every name is set and distinct, every message of ours delivered, and three peers are linked, as in knit-next's
@@ -205,6 +227,17 @@ internal struct DemoCast {
         ],
         accepted: [.dani, .sam],
         linked: [.sam, .dani, .priya],
-        group: Group(members: [.dani, .sam, .theo], createdBy: .me, name: "Summit crew")
+        group: Group(members: [.dani, .sam, .theo], createdBy: .me, name: "Summit crew"),
+        reactions: [
+            Reaction(line: "dm-dani-3", by: .me, emoji: "\u{1F602}"),
+            Reaction(line: "room-5", by: .me, emoji: heart),
+            Reaction(line: "room-5", by: .sam, emoji: heart),
+            Reaction(line: "room-5", by: .priya, emoji: heart),
+            Reaction(line: "room-7", by: .sam, emoji: "\u{1F64F}"),
+            Reaction(line: "room-7", by: .priya, emoji: "\u{1F64F}"),
+            Reaction(line: "room-7", by: .jonas, emoji: thumbs),
+            Reaction(line: "group-1", by: .theo, emoji: thumbs),
+            Reaction(line: "group-1", by: .me, emoji: thumbs),
+        ]
     )
 }

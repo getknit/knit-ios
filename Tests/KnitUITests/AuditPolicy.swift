@@ -11,6 +11,9 @@ import XCTest
 ///   the status bar too. Text scrolled wholly into that strip is a blur the audit cannot name an element for, so a
 ///   contrast report with no element is exempt while content text lies under the glass.
 /// - Contrast of anything not wholly on screen: the part off it is read as black.
+/// - Contrast of an emoji, an element whose label is one: a picture the font draws in its own colors, which no view picks.
+///   A reaction chip's 👍 is yellow on light gray, and no fill brings it to 4.5:1 in light and dark alike. WCAG 1.4.3 is
+///   for text; the chip's count and the bubble's VoiceOver value carry what it says (ADR 2026-10.ehe6).
 /// - Contrast that the element's own pixels pass: the audit fails the newest message of a thread at the largest
 ///   size, black on light gray, whatever the view does. Its screenshot is measured instead, darkest pixel against
 ///   lightest, which is the text against what it sits on, and it must reach WCAG's 4.5:1.
@@ -47,7 +50,8 @@ enum AuditPolicy {
         }
         switch issue.auditType {
         case .contrast:
-            return !element.isEnabled || !window.contains(frame) || measuredContrast(of: element) >= minimumContrast
+            return !element.isEnabled || !window.contains(frame) || isEmoji(element.label)
+                || measuredContrast(of: element) >= minimumContrast
         case .textClipped:
             return [.staticText, .button, .textField].contains(element.elementType)
         default:
@@ -76,6 +80,15 @@ enum AuditPolicy {
         return app.staticTexts.allElementsBoundByIndex.contains { text in
             text.frame.intersects(frame) && !frame.contains(text.frame)
         }
+    }
+
+    /// Whether `label` is one emoji: one character whose first scalar shows as an emoji, or is made one by what follows
+    /// it, as ❤️ is. A bare digit or symbol that defaults to text is no emoji.
+    private static func isEmoji(_ label: String) -> Bool {
+        guard label.count == 1, let first = label.unicodeScalars.first else {
+            return false
+        }
+        return first.properties.isEmojiPresentation || (first.properties.isEmoji && label.unicodeScalars.count > 1)
     }
 
     /// WCAG AA's contrast for text of normal size.

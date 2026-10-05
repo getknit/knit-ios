@@ -36,6 +36,10 @@
         static let bubbleJoin: CGFloat = 4
         /// Between the bubbles of one run.
         static let clusterGap: CGFloat = 2
+        /// A reaction chip's least height, ring included, so a short row of emoji still stands clear of the bubble.
+        static let chipHeight: CGFloat = 28
+        /// The tint's outline around our own reaction's chip.
+        static let chipOutline: CGFloat = 1.5
         /// A thread's note's corners.
         static let noteCorner: CGFloat = 12
         /// The composer's field's corners: a capsule at one line.

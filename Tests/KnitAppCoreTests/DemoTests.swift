@@ -291,3 +291,30 @@ private struct DemoClock: MeshClock {
         try await Task.sleep(for: .seconds(3600))
     }
 }
+
+// Reactions (ADR 2026-10.ehe6), apart from the suite's body only to keep it inside the lint's length.
+extension DemoTests {
+    @Test func theDemosReactionsShowAsEachThreadShowsThemAndATapReachesTheMesh() async throws {
+        // ADR 2026-10.ehe6: our room post has a count above one and an emoji outside the six, and Jonas's heart stays
+        // hidden behind his block; Sam's DM shows ours, and not the stranger's.
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        DemoSeed.populate(stores, me: identity.nodeId, now: 10_000_000, scene: .edgeCases)
+        let (session, _) = Self.session(stores, identity: identity, radio: .on, linked: [])
+        let room = ChatModel(conversationId: Conversations.nearby, session: session)
+        let post = try #require(room.state.messages.first { $0.id == "room-3" })
+        #expect(
+            post.reactions == [
+                ReactionChip(emoji: "\u{1F44D}", count: 2, mine: false), ReactionChip(emoji: "\u{1F525}", count: 1, mine: false),
+            ])
+        let sam = try #require(stores.peers.allPeers().first { $0.name == "Sam" && $0.verified })
+        let direct = ChatModel(conversationId: sam.nodeId.string, session: session)
+        #expect(direct.state.messages.first { $0.id == "dm-2" }?.reactions == [ReactionChip(emoji: "\u{1F44D}", count: 1, mine: true)])
+        let first = try #require(room.state.messages.first { $0.id == "room-1" })
+        await room.react(to: first, with: ReactionChoices.six[1])
+        #expect(
+            room.state.messages.first { $0.id == "room-1" }?.reactions == [
+                ReactionChip(emoji: ReactionChoices.six[1], count: 1, mine: true)
+            ])
+    }
+}

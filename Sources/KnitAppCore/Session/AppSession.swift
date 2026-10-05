@@ -228,6 +228,15 @@ public final class AppSession {
         return deleted
     }
 
+    /// Reacts to a message with `emoji`, or takes our reaction back when it is the one we hold (ADR 2026-10.ehe6). The
+    /// reaction travels unencrypted, as the thread's encryption sheet says. Answers whether anything changed.
+    @discardableResult
+    public func react(to messageId: String, with emoji: String) async -> Bool {
+        let reacted = await mesh.react(to: messageId, with: emoji) != nil
+        revision += 1
+        return reacted
+    }
+
     /// Accepts a message request, and takes back the requests notification once none waits.
     public func accept(_ conversationId: String) async {
         await mesh.accept(conversationId)

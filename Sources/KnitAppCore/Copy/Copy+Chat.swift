@@ -124,7 +124,8 @@ extension Copy {
             )
         }
 
-        /// The encryption sheet: whom encryption covers, and the one limit v1 has (ADR 2026-09.qsd9).
+        /// The encryption sheet: whom encryption covers, what travels unencrypted (ADR 2026-10.ehe6), and the one limit
+        /// v1 has (ADR 2026-09.qsd9).
         public static func encryptionBody(_ name: String) -> String {
             format(
                 NSLocalizedString(
@@ -132,8 +133,9 @@ extension Copy {
                     bundle: .main,
                     value: """
                         Only you and %@ can read this chat or see its photos. Messages and photos are sealed before they leave your phone, \
-                        so the phones that carry them can't open them. This version doesn't have forward secrecy yet: anyone who later \
-                        gets the keys from either phone could open what they recorded earlier.
+                        so the phones that carry them can't open them. Reactions travel unencrypted: those phones can see who reacted to a \
+                        message and with which emoji, but not what the message says. This version doesn't have forward secrecy yet: anyone \
+                        who later gets the keys from either phone could open what they recorded earlier.
                         """,
                     comment: "Chat: what DM encryption covers; %@ is the other person's name"
                 ),

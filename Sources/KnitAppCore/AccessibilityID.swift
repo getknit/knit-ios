@@ -93,6 +93,15 @@ public enum AccessibilityID {
     public static let chatMessageCopy = "chat_message_copy"
     /// A bubble menu's Delete (ADR 2026-10.u7cq). Android has no tag here.
     public static let chatMessageDelete = "chat_message_delete"
+    /// A chip under a message, `chat_reaction_<message id>_<the emoji's code points in hex>`, so an identifier never
+    /// holds an emoji (ADR 2026-10.ehe6). The six in a bubble's menu have none: a palette drops its toggles' identifiers,
+    /// so a walk finds them by their emoji. Android has no tag here.
+    public static func chatReaction(_ messageId: String, _ emoji: String) -> String {
+        "chat_reaction_\(messageId)_\(emoji.unicodeScalars.map { String($0.value, radix: hex) }.joined(separator: "-"))"
+    }
+
+    /// The base a chip's identifier spells its emoji's code points in.
+    private static let hex = 16
 
     /// A message that carries no photo, `chat_message_<message id>`, whose value says when the content filter hides its
     /// words (ADR 2026-10.e4kz). Android has no tag here.

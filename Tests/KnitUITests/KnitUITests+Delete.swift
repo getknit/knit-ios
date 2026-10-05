@@ -18,7 +18,7 @@ extension KnitUITests {
         try walkDeleteChat()
     }
 
-    /// Both delete walks, for the walks every screen takes again.
+    /// Both delete walks, for the walks every screen takes again (``walkMessageMenus()``).
     func walkDeletes() throws {
         try walkDeleteMessage()
         try walkDeleteChat()

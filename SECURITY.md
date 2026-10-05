@@ -36,7 +36,7 @@ reports:
   writing to whom, and how often.
 - **Group messages have no forward secrecy either,** and travel with their group's name and member list in the
   clear, so relaying phones can see who is in a group, what it is called and how often each member writes.
-  Group delivery ticks travel in the clear too.
+  Group delivery ticks and reactions travel in the clear too.
 - **Leaving a group takes effect as word of it spreads.** Each member's phone stops sealing messages to you
   once your signed leave reaches it. Phones carry the leave for up to a day, so a member who stays out of
   reach for longer keeps sealing their messages to you.

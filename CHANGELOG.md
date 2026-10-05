@@ -60,6 +60,9 @@ document:
 - Long-press a message to copy or delete it, or swipe a chat or request to delete it and Nearby to clear it.
   Only your iPhone forgets them: other phones keep their copies, and you stay in any group whose chat you
   delete.
+- Long-press a message to react with one of six emoji, and see the reactions Android phones send, whichever
+  emoji they pick. Reactions travel unencrypted, so phones that pass them on can see who reacted to a message,
+  though never what it says.
 
 ### Changed
 

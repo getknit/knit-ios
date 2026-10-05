@@ -137,6 +137,11 @@ public final class DemoMesh: MeshService {
         await mesh.deleteChat(conversationId)
     }
 
+    /// Reacts to a message.
+    public func react(to messageId: String, with emoji: String) async -> ReactionRecord? {
+        await mesh.react(to: messageId, with: emoji)
+    }
+
     /// Changes our profile.
     public func updateProfile(name: String, status: String, openToChat: Bool) async {
         await mesh.updateProfile(name: name, status: status, openToChat: openToChat)

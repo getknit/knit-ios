@@ -8,7 +8,8 @@
     /// the words, and opens full screen. The content filter can hide either until a tap: an explicit photo (ADR
     /// 2026-10.rpmq), and words it flagged or has yet to read (ADR 2026-10.e4kz). In a run from one author (`place`), the
     /// name tops the first bubble and the face sits by the last, as Signal clusters them (ADR 2026-10.5waw). A long press
-    /// opens its menu, Copy and Delete, and VoiceOver offers Delete among its actions (ADR 2026-10.u7cq).
+    /// opens its menu, Copy and Delete, and VoiceOver offers Delete among its actions (ADR 2026-10.u7cq). Where the thread
+    /// takes reactions, the menu opens on the six, and VoiceOver offers each as an action (ADR 2026-10.ehe6).
     internal struct MessageBubble: View {
         let message: ChatMessage
         /// Where it sits in its run.
@@ -21,6 +22,8 @@
         let open: (ChatAttachment) -> Void
         /// Asks to delete the message.
         let delete: () -> Void
+        /// Toggles our reaction with an emoji, or `nil` where the thread takes none.
+        let react: ((String) -> Void)?
         @Environment(\.dynamicTypeSize) private var typeSize
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
 
@@ -43,18 +46,9 @@
                         .accessibilityHidden(true)
                     }
                 }
-                BubbleContent(message: message, place: place, covered: covered, hidden: hidden, reveal: reveal, open: open)
+                BubbleContent(message: message, place: place, covered: covered, hidden: hidden, reveal: reveal, open: open, react: react)
                     .contextMenu {
-                        // Copy takes the words only while they show. The menu replaces the text's own selection, which a
-                        // long press on the words would otherwise open in its place.
-                        if hidden == nil, !message.body.isEmpty {
-                            Button(Copy.Chat.copy, systemImage: "doc.on.doc") {
-                                UIPasteboard.general.string = message.body
-                            }
-                            .accessibilityIdentifier(AccessibilityID.chatMessageCopy)
-                        }
-                        Button(Copy.Delete.delete, systemImage: "trash", role: .destructive, action: delete)
-                            .accessibilityIdentifier(AccessibilityID.chatMessageDelete)
+                        BubbleMenu(message: message, copies: hidden == nil, delete: delete, react: react)
                     }
                 if !message.isMine {
                     Spacer(minLength: Layout.bubbleInset)
@@ -72,6 +66,11 @@
                         Button(Copy.Moderation.showPhoto, action: reveal)
                     } else {
                         Button(Copy.Attachments.viewPhoto) { open(photo) }
+                    }
+                }
+                if let react {
+                    ForEach(ReactionChoices.six, id: \.self) { emoji in
+                        Button(message.isOurReaction(emoji) ? Copy.Reactions.remove(emoji) : Copy.Reactions.react(emoji)) { react(emoji) }
                     }
                 }
                 Button(Copy.Delete.delete, action: delete)
@@ -96,18 +95,64 @@
         }
 
         /// What VoiceOver adds after the message: its time and tick when the run's stamp under a later bubble says them,
-        /// and what the filter hides of it.
+        /// what the filter hides of it, and its reactions.
         private var value: String {
             let time = Date(milliseconds: message.sentAt).formatted(date: .omitted, time: .shortened)
             let stamp = place.showsStamp ? [] : [time, message.status?.label]
-            return (stamp + [hidden.map { _ in Copy.Moderation.hiddenMessage }, covered ? Copy.Moderation.hiddenPhotoValue : nil])
+            let hides = [hidden.map { _ in Copy.Moderation.hiddenMessage }, covered ? Copy.Moderation.hiddenPhotoValue : nil]
+            return (stamp + hides + [message.reactionSummary])
                 .compactMap(\.self)
                 .joined(separator: ", ")
         }
     }
 
+    /// A bubble's long-press menu: the six where the thread takes reactions, then Copy and Delete (ADR 2026-10.u7cq).
+    private struct BubbleMenu: View {
+        let message: ChatMessage
+        /// Whether the words show, so Copy can take them.
+        let copies: Bool
+        let delete: () -> Void
+        let react: ((String) -> Void)?
+
+        var body: some View {
+            if let react {
+                ReactionPicker(message: message, react: react)
+            }
+            // Copy takes the words only while they show. The menu replaces the text's own selection, which a long press on
+            // the words would otherwise open in its place.
+            if copies, !message.body.isEmpty {
+                Button(Copy.Chat.copy, systemImage: "doc.on.doc") {
+                    UIPasteboard.general.string = message.body
+                }
+                .accessibilityIdentifier(AccessibilityID.chatMessageCopy)
+            }
+            Button(Copy.Delete.delete, systemImage: "trash", role: .destructive, action: delete)
+                .accessibilityIdentifier(AccessibilityID.chatMessageDelete)
+        }
+    }
+
+    /// The six at the top of a bubble's menu, in one row (ADR 2026-10.ehe6): toggles in a palette, so ours shows chosen and
+    /// choosing it again takes it back. A palette keeps its menu open after a choice, as for a multiple choice; a reaction
+    /// is one choice, so this one closes it.
+    private struct ReactionPicker: View {
+        let message: ChatMessage
+        let react: (String) -> Void
+
+        var body: some View {
+            ControlGroup {
+                ForEach(ReactionChoices.six, id: \.self) { emoji in
+                    Toggle(isOn: Binding(get: { message.isOurReaction(emoji) }, set: { _ in react(emoji) })) {
+                        Text(emoji)
+                    }
+                }
+            }
+            .controlGroupStyle(.palette)
+            .menuActionDismissBehavior(.enabled)
+        }
+    }
+
     /// A message's column: the author's name in the room and a group, which opens their profile, its photo, its words or
-    /// what stands in for them, and its stamp.
+    /// what stands in for them, its reactions, and its stamp.
     private struct BubbleContent: View {
         let message: ChatMessage
         let place: MessagePlace
@@ -117,6 +162,7 @@
         let hidden: HiddenWords?
         let reveal: () -> Void
         let open: (ChatAttachment) -> Void
+        let react: ((String) -> Void)?
 
         var body: some View {
             VStack(alignment: message.isMine ? .trailing : .leading, spacing: Layout.hairline) {
@@ -139,6 +185,9 @@
                         .padding(.horizontal, Layout.medium)
                         .padding(.vertical, Layout.small)
                         .background(message.isMine ? Palette.ownBubble : Palette.incomingBubble, in: shape)
+                }
+                if !message.reactions.isEmpty {
+                    ReactionStrip(message: message, react: react)
                 }
                 if place.showsStamp {
                     Stamp(message: message)

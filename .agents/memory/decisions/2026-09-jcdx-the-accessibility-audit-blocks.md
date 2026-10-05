@@ -92,3 +92,10 @@ text partly under it. The alert's own words are elements, and anywhere else such
 - **The run takes six minutes,** about half of it the largest-size walk, on a runner that takes one job at a time.
 - **The guards:** `KnitUITests`, `AuditPolicy`, and the `test:ios:simulator` job, which carries no
   `allow_failure`.
+
+**Amended 2026-10-04, for emoji (ADR 2026-10.ehe6):** the room's walk was the first to audit reaction chips, and the
+contrast check failed the 👍 under our seeded post at the default size, in light mode only: the element's label is the
+emoji alone, a yellow glyph on the chip's light gray. The emoji is a picture the font draws in its own colors, which no
+view picks, and no fill brings 👍 to 4.5:1 in light and dark alike; WCAG 1.4.3 is for text. Contrast on an element whose
+label is exactly one emoji is exempt. The chip's count and the bubble's VoiceOver value say what the chip says, and the
+same check still reads every other element, the chip's count included.

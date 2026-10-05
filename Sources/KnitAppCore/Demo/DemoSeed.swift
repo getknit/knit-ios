@@ -137,6 +137,9 @@ public enum DemoSeed {
     /// How long before `now` the demo's peers last changed their profiles.
     private static let profileAge: Int64 = 180_000
 
+    /// How far apart the scene's reactions were made.
+    private static let reactionStep: Int64 = 1000
+
     /// Fills `stores` with `scene`, as of `now` on the wall clock, from `me`'s side. Whoever the scene gives a profile
     /// photo gets the picture `paint` makes of their ``DemoPortrait``, and a post the scene gives a photo carries the
     /// picture `snap` makes of its own: the app paints them, and a test hands in bytes of its own.
@@ -165,8 +168,10 @@ public enum DemoSeed {
         let groupId = cast.group.map { group in GroupId.derive((group.members + [.me]).compactMap { nodeIds[$0]?.string }) }
         var sentAt = now
         var groupStart = now
+        var sentAts: [String: Int64] = [:]
         for line in cast.lines.reversed() {
             sentAt -= line.then.rawValue
+            sentAts[line.id] = sentAt
             let sender = nodeIds[line.from, default: me]
             let recipient = line.to.map { nodeIds[$0, default: me] }
             let group = line.inGroup ? groupId : nil
@@ -195,6 +200,26 @@ public enum DemoSeed {
         }
         for peer in cast.accepted.compactMap({ nodeIds[$0] }) {
             stores.conversations.accept(peer.string)
+        }
+        seed(cast.reactions, after: sentAts, now: now, people: nodeIds, in: stores)
+    }
+
+    /// The scene's reactions, each a second after the one before it and after the line it answers, in the order the
+    /// scene lists them, so each chip stands where its emoji first appeared.
+    private static func seed(
+        _ reactions: [DemoCast.Reaction],
+        after sentAts: [String: Int64],
+        now: Int64,
+        people nodeIds: [DemoCast.Slot: NodeId],
+        in stores: MeshStores
+    ) {
+        // Every slot a scene names is cast, `.me` included, so each reactor has an id.
+        for (index, reaction) in reactions.enumerated() {
+            guard let reactor = nodeIds[reaction.by] else {
+                continue
+            }
+            let at = (sentAts[reaction.line] ?? now) + Int64(index + 1) * reactionStep
+            stores.messages.applyReaction(ReactionRecord(messageId: reaction.line, reactor: reactor, emoji: reaction.emoji, updatedAt: at))
         }
     }
 
