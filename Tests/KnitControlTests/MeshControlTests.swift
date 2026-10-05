@@ -261,9 +261,9 @@ struct ControlRig {
 }
 
 /// Actions that record what they were asked, as the app's session would take them.
-private final class RecordingActions: ControlActions {
+final class RecordingActions: ControlActions {
     private let me: NodeId
-    private let refuses: Bool
+    let refuses: Bool
     private let recorded = Lock<[String]>([])
 
     init(me: NodeId, refuses: Bool = false) {
@@ -340,7 +340,7 @@ private final class RecordingActions: ControlActions {
         GroupRecord(id: "g-1", name: name, createdBy: me.string, createdAt: 1, roster: [GroupMember(nodeId: me.string)])
     }
 
-    private func record(_ call: String) {
+    func record(_ call: String) {
         recorded.withLock { $0.append(call) }
     }
 

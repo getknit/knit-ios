@@ -10,6 +10,8 @@
         @State private var viewing: ViewedPhoto?
         /// Whether a request's Block is asking first.
         @State private var confirmsBlock = false
+        /// The message whose Delete is asking first (ADR 2026-10.u7cq).
+        @State private var deleting: ChatMessage?
         /// The messages tapped to show what the content filter hid of them, photo and words, while the thread is open (ADR
         /// 2026-10.rpmq, ADR 2026-10.e4kz).
         @State private var revealed: Set<String> = []
@@ -26,7 +28,7 @@
 
         var body: some View {
             let state = model.state
-            MessageList(state: state, revealed: revealed, reveal: { revealed.insert($0) }, view: { viewing = $0 })
+            MessageList(state: state, revealed: revealed, reveal: { revealed.insert($0) }, view: { viewing = $0 }, delete: askToDelete)
                 .bottomBar {
                     if state.isRequest {
                         RequestBar(
@@ -74,6 +76,9 @@
                 .confirmsBlock(of: state.title, isPresented: $confirmsBlock) {
                     Task { await model.block() }
                 }
+                .confirmsDelete($deleting, asking: DeleteQuestion.message) { message in
+                    Task { await model.delete(message) }
+                }
                 .alert(Copy.Photo.unreadable, isPresented: $model.photoFailed) {
                     Button(Copy.Common.done, role: .cancel) {
                         // The alert closes itself.
@@ -95,6 +100,11 @@
                 }
                 .task { await model.appear() }
                 .onDisappear(perform: model.disappear)
+        }
+
+        /// Asks before deleting `message`, from its bubble's menu.
+        private func askToDelete(_ message: ChatMessage) {
+            deleting = message
         }
     }
 
@@ -162,6 +172,8 @@
         let reveal: (String) -> Void
         /// Opens a message's photo full screen.
         let view: (ViewedPhoto) -> Void
+        /// Asks to delete a message, from its menu.
+        let delete: (ChatMessage) -> Void
         /// Where the thread rests: at its bottom edge, below the newest message's padding. A position on the edge stays on
         /// it as a row grows, where one scrolled to the newest message's id did not: a photo holds a spinner's place until
         /// it decodes, then stands up to a hundred points taller, which left its stamp and tick under the composer.
@@ -192,7 +204,8 @@
                                     place: place,
                                     revealed: revealed.contains(message.id),
                                     reveal: { reveal(message.id) },
-                                    open: { view(.chat($0, sender: sender(of: message))) }
+                                    open: { view(.chat($0, sender: sender(of: message))) },
+                                    delete: { delete(message) }
                                 )
                             }
                         }

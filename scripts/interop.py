@@ -15,6 +15,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-peer [--order iphone-below|iphone-above] [--skip-offline] [--udid UDID]
     scripts/interop.py iphone-photos --device SERIAL [--udid UDID]
     scripts/interop.py iphone-block --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-delete --device SERIAL [--udid UDID]
     scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
@@ -33,7 +34,8 @@ runs the same items between the iPhone and the peer; `iphone-relay` runs MVP ite
 `iphone-group` v1 groups along that line, the peer as the third member (`group` runs them with two peers and no
 iPhone, ADR 2026-09.n393); `iphone-photos` sends photos both ways between the iPhone and the phone, in Nearby, a DM
 and a group (ADR 2026-10.6cas); `iphone-block` checks that a block on the iPhone leaves the phone's ✓✓ on its room post
-and its custody converging (ADR 2026-10.5wgg); `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
+and its custody converging (ADR 2026-10.5wgg); `iphone-delete` checks that what the iPhone deletes stays deleted across
+a restart of its mesh, and that the delete sends nothing (ADR 2026-10.u7cq); `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
 `iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `iphone-reboot` is item 1's
 relaunch and reboot, with someone to close Knit and unlock the iPhone; `iphone-scan` is P8's scan-filter check, with
 someone to do the same; `iphone-seek` checks that a locked iPhone with no link finds a peer within its wake budget
@@ -3927,6 +3929,71 @@ def iphone_block(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def iphone_delete(arguments: argparse.Namespace) -> int:
+    """A delete on the iPhone sends nothing and stays deleted (ADR 2026-10.u7cq). The phone posts in Nearby, sends a DM
+    and writes in a group the two share. Through its bridge the iPhone deletes the post and the group message one by one,
+    and the DM's whole chat. Its mesh then stops and starts, and the start replays every group message its own custody
+    holds and its threads lack: the deleted one stays gone, and so do the others past a re-offer. The two custody sets
+    still converge, and the phone's next DM brings the chat back. The two must already hold each other's keys."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid, arguments.host)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    try:
+        phone_id = phone.state()["self"]["nodeId"]
+        print(json.dumps({"run": "iphone-delete", "phone": phone_id, "iphone": ios.node_id, "nonce": nonce}))
+        run.step("link", lambda: _ios_linked(ios, phone, phone_id))
+        group = ios.command(cmd="group-create", members=[phone_id])["id"]
+        run.step("group-ids-agree", lambda: _agrees(group, phone.make_group([ios.node_id])))
+        # Each thread as the iPhone names it, then as the phone does.
+        threads = {"room": ("nearby", "nearby"), "dm": (phone_id, ios.node_id), "group": (group, group)}
+        bodies = {kind: f"interop {kind} to delete {nonce}" for kind in threads}
+        for kind, (on_ios, on_phone) in threads.items():
+            _phone_sends(phone, bodies[kind], on_phone)
+            run.step(f"{kind}-arrived", lambda on_ios=on_ios, body=bodies[kind]: _timed(lambda: _ios_has_body(ios, on_ios, body), 60))
+        for kind in ("room", "group"):
+            on_ios = threads[kind][0]
+            run.step(f"{kind}-deleted", lambda on_ios=on_ios, body=bodies[kind]: _ios_deletes_message(ios, on_ios, body))
+        run.step("dm-chat-deleted", lambda: _ios_ok(ios.command(cmd="delete-chat", conv=phone_id)))
+        deleted = {on_ios: bodies[kind] for kind, (on_ios, _) in threads.items()}
+        run.step("iphone-shows-none", lambda: _ios_lacks(ios, deleted))
+        ios.command(cmd="stop")
+        ios.command(cmd="start")
+        run.step("relinked", lambda: _ios_linked(ios, phone, phone_id))
+        # The start replays our custody's group messages; past a re-offer, a peer that would serve the rest again has had
+        # its chance.
+        run.step("deleted-stays-deleted", lambda: _stays_false(lambda: bool(_ios_holds_any(ios, deleted)), 90))
+        run.step("custody-converges", lambda: _converges(ios, phone, 180))
+        again = f"interop dm after the delete {nonce}"
+        _phone_sends(phone, again, ios.node_id)
+        run.step("dm-chat-comes-back", lambda: _timed(lambda: _ios_has_body(ios, phone_id, again), 60))
+    finally:
+        ios.stop()
+    print(json.dumps({"summary": "iphone-delete", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _ios_ok(reply: dict) -> dict:
+    """A bridge reply that did what it was asked."""
+    if not reply.get("ok"):
+        raise RuntimeError(f"the iPhone refused: {reply}")
+    return reply
+
+
+def _ios_deletes_message(ios: IPhone, conversation: str, body: str) -> dict:
+    """Deletes the iPhone's message `body` in `conversation` through the bridge, as its bubble's Delete would."""
+    found = [message["id"] for message in ios.command(cmd="messages", conv=conversation, limit=50)["messages"] if message.get("body") == body]
+    if not found:
+        raise RuntimeError(f"the iPhone has no {body!r} to delete")
+    return _ios_ok(ios.command(cmd="delete-message", id=found[0]))
+
+
+def _ios_holds_any(ios: IPhone, bodies: dict[str, str]) -> list[str]:
+    """Which of `bodies` the iPhone stores, each looked for in the thread it names."""
+    return [body for conversation, body in bodies.items() if _ios_has_body(ios, conversation, body)]
+
+
 def _ios_blocked(ios: IPhone, peer: str, blocked: bool) -> dict:
     """Whether the iPhone's `peers` says `peer` is blocked, as `blocked` expects."""
     found = [entry for entry in ios.command(cmd="peers")["peers"] if entry["peer"] == peer]
@@ -4774,6 +4841,8 @@ def main() -> int:
     ios_photos.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_block = commands.add_parser("iphone-block")
     ios_block.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios_delete = commands.add_parser("iphone-delete")
+    ios_delete.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak = commands.add_parser("iphone-soak")
     ios_soak.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak.add_argument("--peer", action="store_true", help="knit-peer on hci0 joins as a third author, linked to the iPhone alone")
@@ -4862,6 +4931,7 @@ def main() -> int:
         ios_peer,
         ios_photos,
         ios_block,
+        ios_delete,
         ios_soak,
         ios_forgets,
         commands.choices["iphone-relay"],
@@ -4880,13 +4950,14 @@ def main() -> int:
         parser.error("--far phone needs --device")
     if arguments.command == "android-reads" and arguments.links > 1 and arguments.order != "peer-above":
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
-    if arguments.command in ("iphone", "iphone-wake", "iphone-reboot", "iphone-photos", "iphone-block", "bridge"):
+    if arguments.command in ("iphone", "iphone-wake", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-delete", "bridge"):
         return {
             "iphone": iphone,
             "iphone-wake": iphone_wake,
             "iphone-reboot": iphone_reboot,
             "iphone-photos": iphone_photos,
             "iphone-block": iphone_block,
+            "iphone-delete": iphone_delete,
             "bridge": bridge,
         }[arguments.command](arguments)
     if not PEER.exists():

@@ -57,6 +57,9 @@ document:
 - Content filtering also hides abusive messages from other people until you tap them, in chats, the chat list
   and notifications. Your iPhone checks each message as it arrives, and Knit won't send one that looks abusive
   or post profanity in Nearby.
+- Long-press a message to copy or delete it, or swipe a chat or request to delete it and Nearby to clear it.
+  Only your iPhone forgets them: other phones keep their copies, and you stay in any group whose chat you
+  delete.
 
 ### Changed
 

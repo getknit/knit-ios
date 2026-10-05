@@ -46,6 +46,12 @@ public enum AccessibilityID {
         "contact_\(conversationId)"
     }
 
+    /// A chat row's Delete, or the room's Clear, on its swipe: `contact_delete_<conversation id>` (ADR 2026-10.u7cq).
+    /// Android deletes from the row's long-press menu, with no tag.
+    public static func chatRowDelete(_ conversationId: String) -> String {
+        "contact_delete_\(conversationId)"
+    }
+
     /// The thread's message list.
     public static let chatThread = "chat_thread"
     /// The composer.
@@ -82,6 +88,11 @@ public enum AccessibilityID {
     public static func chatPhoto(_ messageId: String) -> String {
         "chat_photo_\(messageId)"
     }
+
+    /// A bubble menu's Copy (ADR 2026-10.u7cq). Android has no tag here.
+    public static let chatMessageCopy = "chat_message_copy"
+    /// A bubble menu's Delete (ADR 2026-10.u7cq). Android has no tag here.
+    public static let chatMessageDelete = "chat_message_delete"
 
     /// A message that carries no photo, `chat_message_<message id>`, whose value says when the content filter hides its
     /// words (ADR 2026-10.e4kz). Android has no tag here.
@@ -130,6 +141,12 @@ public enum AccessibilityID {
     /// A request's accept button, `request_accept_<conversation id>`.
     public static func requestAccept(_ conversationId: String) -> String {
         "request_accept_\(conversationId)"
+    }
+
+    /// A request's Delete, `request_delete_<conversation id>` (ADR 2026-10.u7cq). Android deletes from the row's menu,
+    /// with no tag.
+    public static func requestDelete(_ conversationId: String) -> String {
+        "request_delete_\(conversationId)"
     }
 
     /// A DM request's Block, `request_block_<conversation id>`. Android blocks from the row's menu, with no tag.

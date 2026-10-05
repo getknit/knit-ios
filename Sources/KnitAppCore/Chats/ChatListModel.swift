@@ -59,8 +59,9 @@ public enum ChatListAssembler {
         for head in threads.heads where NodeId(head.conversationId) != nil && !threads.isRequest(head.conversationId) {
             rows.append(row(head.conversationId, head: head, linked: linked, reader: reader))
         }
-        // Group rows come from the groups we hold rather than from messages, so a group shows before its first one.
-        for group in threads.groups where !threads.isRequest(group.id) {
+        // Group rows come from the groups we hold rather than from messages, so a group shows before its first one, but
+        // not once its chat was deleted, until its next row (ADR 2026-10.u7cq).
+        for group in threads.listedGroups where !threads.isRequest(group.id) {
             let head = threads.heads.first { ExactKey($0.conversationId) == ExactKey(group.id) }
             rows.append(row(group, head: head, reader: reader))
         }
@@ -167,5 +168,11 @@ public final class ChatListModel {
     /// Starts a stopped mesh, from the status line.
     public func start() async {
         await session.start()
+    }
+
+    /// Deletes `row`'s thread from this iPhone (`ChatListViewModel.deleteConversation`, ADR 2026-10.u7cq): a DM or a
+    /// group leaves the list until its next message, and the room empties and stays.
+    public func delete(_ row: ChatRow) async {
+        await session.deleteChat(row.id)
     }
 }

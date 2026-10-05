@@ -113,8 +113,8 @@ public final class MeshEngine {
     }
 
     /// Starts the node (`MeshManager.seedOwnProfileCustody`): republishes our profile if its stamp is stale, puts it
-    /// in custody, sweeps what expired while we were down, delivers group chats custody holds and our threads lack,
-    /// and starts the timers. Idempotent.
+    /// in custody, sweeps what expired while we were down, forgets deleted messages no carrier can still hold, delivers
+    /// group chats custody holds and our threads lack, and starts the timers. Idempotent.
     public func start() {
         guard !isStarted else {
             return
@@ -122,6 +122,7 @@ public final class MeshEngine {
         republishIfStale()
         _ = ownProfile()
         sweep()
+        stores.messages.pruneDeleted(before: clock.wallMilliseconds())
         replayCustodiedGroupChats()
         sweepUnreferencedBlobs()
         rewantMissingBlobs(sparing: [])
@@ -238,6 +239,7 @@ public final class MeshEngine {
         if stores.custody.sweepExpired(now: clock.wallMilliseconds()) > 0 {
             custodyRevision += 1
         }
+        releaseDeletedPhotos()
         pendingInbound.sweep(now: now)
         keyExchange.sweep(now: now)
         ackSync.sweep(now: now)

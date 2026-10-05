@@ -41,6 +41,8 @@ public enum ControlCommand: Equatable, Sendable {
     case custody
     /// `{"cmd":"messages","conv":"nearby","limit":20}`: a thread's newest messages and their ticks.
     case messages(String, limit: Int)
+    /// One of the delete commands.
+    case delete(DeleteCommand)
     /// One of the group commands.
     case group(GroupCommand)
     /// `{"cmd":"stop"}`: stop the mesh, closing every link, as Settings' Stop does.
@@ -83,6 +85,8 @@ public enum ControlCommand: Equatable, Sendable {
             "custody"
         case .messages:
             "messages"
+        case .delete(let command):
+            command.name
         case .group(let command):
             command.name
         case .stop:
@@ -136,6 +140,25 @@ public enum GroupCommand: Equatable, Sendable {
     }
 }
 
+/// A control command that deletes here and sends nothing, as the screens' Delete does (ADR 2026-10.u7cq).
+public enum DeleteCommand: Equatable, Sendable {
+    /// `{"cmd":"delete-message","id":"<message id>"}`: one message, as its bubble's Delete does.
+    case message(String)
+    /// `{"cmd":"delete-chat","conv":"<conversation id>"}`: a whole thread, or the room's messages; a group keeps us as a
+    /// member.
+    case chat(String)
+
+    /// The name a reply carries back.
+    public var name: String {
+        switch self {
+        case .message:
+            "delete-message"
+        case .chat:
+            "delete-chat"
+        }
+    }
+}
+
 /// A command and the tag the caller wants echoed on its reply.
 public struct ControlRequest: Equatable, Sendable {
     /// How many messages `messages` returns when no limit is given.
@@ -158,6 +181,7 @@ public struct ControlRequest: Equatable, Sendable {
         var to: String?
         var peer: String?
         var conv: String?
+        var id: String?
         var name: String?
         var status: String?
         var openToChat: Bool? // swiftlint:disable:this discouraged_optional_boolean
@@ -217,6 +241,10 @@ public struct ControlRequest: Equatable, Sendable {
             nodeId(raw.peer, "peer").map(ControlCommand.unblock)
         case "messages":
             required(raw.conv, "conv").map { .messages($0, limit: max(1, raw.limit ?? defaultLimit)) }
+        case "delete-message":
+            required(raw.id, "id").map { .delete(.message($0)) }
+        case "delete-chat":
+            required(raw.conv, "conv").map { .delete(.chat($0)) }
         default:
             groupCommand(from: raw).map(ControlCommand.group)
         }

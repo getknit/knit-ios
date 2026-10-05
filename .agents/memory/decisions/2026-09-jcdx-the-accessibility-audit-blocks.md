@@ -73,6 +73,13 @@ is Liquid Glass from iOS 26, and the composer may sit in a glass container as lo
 mode was designed but never audited. `Palette`'s colors now come from KnitAppCore's `Swatches`, which
 `SwatchContrastTests` measures on Linux, Increase Contrast included.
 
+**Amended 2026-10-04, for alerts (ADR 2026-10.u7cq):** the delete walks were the first to audit an alert over a
+thread and over the chat list, and each reported two pieces of "potentially inaccessible text" with no element. The
+screenshots show the dimmed rows behind the alert, read through its glass and at its edges. A modal alert takes the
+screen from VoiceOver, so those rows leave the accessibility tree, as they must. Block's alert over a profile never
+reported this, because no text lay under its edges. Such a report is exempt only while an alert is up with content
+text partly under it. The alert's own words are elements, and anywhere else such a report still fails.
+
 **Consequences / limits:**
 
 - **The pixel measurement trusts extremes.** It passes an element whose darkest and lightest pixels contrast

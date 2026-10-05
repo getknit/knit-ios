@@ -4,9 +4,12 @@
     import SwiftUI
 
     /// The chat list, laid out as Signal's (ADR 2026-10.5waw): our face at the top left, which opens Settings, and compose at
-    /// the top right; then the status line, the first-run card, the room, the DMs and groups, and the requests entry.
+    /// the top right; then the status line, the first-run card, the room, the DMs and groups, and the requests entry. A
+    /// swipe deletes a chat, or clears the room (ADR 2026-10.u7cq).
     internal struct ChatListView: View {
         @State private var model: ChatListModel
+        /// The row whose Delete, or the room's Clear, is asking first.
+        @State private var deleting: ChatRow?
         private let newMessage: () -> Void
 
         /// The list over `session`, whose compose button calls `newMessage`.
@@ -30,12 +33,22 @@
                         ChatRowView(row: row)
                     }
                     .accessibilityIdentifier(AccessibilityID.chatRow(row.id))
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        // Not a destructive role: the row stays until the alert's Delete, which takes it, as Block's swipe
+                        // on a request does. The room's row stays even then.
+                        Button(row.isRoom ? Copy.Delete.clear : Copy.Delete.delete) { deleting = row }
+                            .tint(Palette.critical)
+                            .accessibilityIdentifier(AccessibilityID.chatRowDelete(row.id))
+                    }
                 }
                 if state.requestCount > 0 {
                     RequestsEntry(count: state.requestCount)
                 }
             }
             .listStyle(.plain)
+            .confirmsDelete($deleting, asking: DeleteQuestion.chat) { row in
+                Task { await model.delete(row) }
+            }
             .navigationTitle(Copy.ChatList.title)
             // Small, between the face and compose: the screen hardly needs naming, but VoiceOver and the back button
             // read the title.

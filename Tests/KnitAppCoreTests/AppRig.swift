@@ -51,6 +51,7 @@ final class FakeMesh: MeshService {
         var avatars: [BlobHash?] = []
         var photos: [BlobHash] = []
         var groups: [String] = []
+        var deleted: [String] = []
     }
 
     let nodeId: NodeId
@@ -179,10 +180,20 @@ final class FakeMesh: MeshService {
         guard var group = stores.groups.group(groupId), !group.hasLeft else {
             return false
         }
-        stores.messages.deleteMessages(in: groupId)
+        stores.messages.deleteMessages(in: groupId, at: clock)
         group.hasLeft = true
         stores.groups.save(group)
         return true
+    }
+
+    func deleteMessage(_ id: String) -> Bool {
+        state.withLock { $0.calls.deleted.append("message \(id)") }
+        return stores.deleteMessage(id, at: clock, me: nodeId)
+    }
+
+    func deleteChat(_ conversationId: String) -> Bool {
+        state.withLock { $0.calls.deleted.append("chat \(conversationId)") }
+        return stores.deleteChat(conversationId, at: clock, me: nodeId)
     }
 
     func setVerified(_ peer: NodeId, _ verified: Bool) {

@@ -24,6 +24,10 @@ public struct ThreadTable: Sendable {
     public let heads: [MessageRecord]
     /// The groups we are in, never one we left, by the bytes of their ids.
     public let groups: [GroupRecord]
+    /// The groups we are in whose thread holds a row of any kind, status lines included: the ones the lists show. Every
+    /// group has its "created" line from the start, so only one whose chat was deleted is missing, and its next row
+    /// brings it back (ADR 2026-10.u7cq).
+    public let listedGroups: [GroupRecord]
     private let accepted: Set<String>
     private let authored: Set<String>
     private let verified: Set<NodeId>
@@ -35,6 +39,8 @@ public struct ThreadTable: Sendable {
             NodeId(head.conversationId).map { !blocked.contains($0) } ?? true
         }
         groups = stores.groups.groups().filter { !$0.hasLeft }
+        let threads = Set(stores.messages.conversationIds().map(ExactKey.init))
+        listedGroups = groups.filter { threads.contains(ExactKey($0.id)) }
         accepted = stores.conversations.acceptedConversations()
         authored = stores.messages.conversations(authoredBy: me)
         self.verified = verified
@@ -58,12 +64,12 @@ public struct ThreadTable: Sendable {
             conversationId, accepted: accepted, verified: verified, authored: authored, groupSenders: groupSenders)
     }
 
-    /// The requests, newest first: a stranger's DMs, and every group that waits, even one of nothing but status lines,
-    /// as Android lists it (`ConversationTable.kt:23`).
+    /// The requests, newest first: a stranger's DMs, and every listed group that waits, even one of nothing but status
+    /// lines, as Android lists it (`ConversationTable.kt:23`).
     public var requests: [Request] {
         let directs = heads.filter { NodeId($0.conversationId) != nil && isRequest($0.conversationId) }
             .map { Request(id: $0.conversationId, head: $0, group: nil) }
-        let waiting = groups.filter { isRequest($0.id) }.map { group in
+        let waiting = listedGroups.filter { isRequest($0.id) }.map { group in
             Request(id: group.id, head: heads.first { ExactKey($0.conversationId) == ExactKey(group.id) }, group: group)
         }
         // Newest first, a tie keeping the order the table read them in.

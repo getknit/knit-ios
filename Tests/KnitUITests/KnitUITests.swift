@@ -146,6 +146,7 @@ final class KnitUITests: XCTestCase {
         try walkContentFilter()
         try walkBlocked()
         try walkRequestBlock()
+        try walkDeletes()
         try walkRadioStates()
     }
 

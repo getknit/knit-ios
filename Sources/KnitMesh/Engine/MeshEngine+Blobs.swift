@@ -243,10 +243,13 @@ extension MeshEngine {
 
     // MARK: Collecting
 
-    /// Every blob something here still names: our photo, each peer's photo, shown or advertised, and every photo a
-    /// message carries.
+    /// Every blob something here still names: our photo, each peer's photo, shown or advertised, every photo a
+    /// message carries, and a deleted message's photo while our custody carries its frame (ADR 2026-10.u7cq).
     func referencedBlobs() -> Set<BlobHash> {
         var named = stores.messages.attachmentHashes()
+        for deleted in stores.messages.deletedAttachments() where stores.custody.contains(deleted.id) {
+            named.insert(deleted.hash)
+        }
         if let own = stores.ownProfile.load().avatarHash {
             named.insert(own)
         }

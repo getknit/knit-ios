@@ -14,7 +14,7 @@ import Testing
 /// is already here: a phone that ran that migration keeps the schema it left.
 @Suite struct SchemaTests {
     /// The migrations every earlier build has run, in order.
-    private static let frozen = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"]
+    private static let frozen = ["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"]
 
     @Test func migrationsOnlyEverGrowAtTheEnd() {
         let identifiers = Schema.migrations.map(\.identifier)
@@ -53,7 +53,8 @@ import Testing
         }
         #expect(
             tables.map(\.name) == [
-                "accepted_conversations", "blobs", "blocked_device_tags", "blocked_nodes", "forward_store", "group_members", "groups",
+                "accepted_conversations", "blobs", "blocked_device_tags", "blocked_nodes", "deleted_messages", "forward_store",
+                "group_members", "groups",
                 "messages", "own_profile",
                 "peer_profiles", "peers",
             ])
@@ -206,6 +207,7 @@ enum SchemaPins {
         ("v5", v5),
         ("v6", v6),
         ("v7", v7),
+        ("v8", v8),
     ]
 
     /// Every table, index and trigger this app made, sorted, with the statement SQLite keeps for it. GRDB's own

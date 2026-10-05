@@ -2,12 +2,14 @@
     import KnitAppCore
     import SwiftUI
 
-    /// Message requests: strangers' DMs, each with Accept, and Block a swipe away. A row opens the thread to read it
-    /// first, where Block also waits under Accept.
+    /// Message requests: strangers' DMs, each with Accept, and Delete and Block a swipe away (ADR 2026-10.u7cq). A row
+    /// opens the thread to read it first, where Block also waits under Accept.
     internal struct RequestsView: View {
         @State private var model: RequestsModel
         /// The request whose sender Block is asking about.
         @State private var blocking: RequestRow?
+        /// The request whose Delete is asking first.
+        @State private var deleting: RequestRow?
         @Environment(\.dynamicTypeSize) private var typeSize
 
         init(session: AppSession) {
@@ -35,15 +37,7 @@
                             .secondaryButton()
                             .accessibilityIdentifier(AccessibilityID.requestAccept(row.id))
                         }
-                        .swipeActions {
-                            // A group's request has nobody to block. Not a destructive role: the row stays until the
-                            // dialog's Block, which takes it.
-                            if !row.isGroup {
-                                Button(Copy.Block.block) { blocking = row }
-                                    .tint(Palette.critical)
-                                    .accessibilityIdentifier(AccessibilityID.requestBlock(row.id))
-                            }
-                        }
+                        .swipeActions { swipes(for: row) }
                     }
                 } footer: {
                     SectionNote(Copy.Requests.explanation)
@@ -54,6 +48,23 @@
                 if let row = blocking {
                     Task { await model.block(row.id) }
                 }
+            }
+            .confirmsDelete($deleting, asking: DeleteQuestion.request) { row in
+                Task { await model.delete(row.id) }
+            }
+        }
+
+        /// A request's swipe: Delete, and Block for a stranger's DM, since a group's request has nobody to block. Neither is a
+        /// destructive role: the row stays until the alert's Delete or Block, which takes it.
+        @ViewBuilder
+        private func swipes(for row: RequestRow) -> some View {
+            Button(Copy.Delete.delete) { deleting = row }
+                .tint(Palette.critical)
+                .accessibilityIdentifier(AccessibilityID.requestDelete(row.id))
+            if !row.isGroup {
+                Button(Copy.Block.block) { blocking = row }
+                    .tint(Palette.critical)
+                    .accessibilityIdentifier(AccessibilityID.requestBlock(row.id))
             }
         }
 

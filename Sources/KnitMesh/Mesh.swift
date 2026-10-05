@@ -177,6 +177,20 @@ public actor Mesh {
         return engine.leaveGroup(groupId)
     }
 
+    /// Deletes one message from this iPhone, sending nothing (``MeshEngine/deleteMessage(_:)``, ADR 2026-10.u7cq).
+    @discardableResult
+    public func deleteMessage(_ id: String) -> Bool {
+        defer { settle() }
+        return engine.deleteMessage(id)
+    }
+
+    /// Deletes a whole thread from this iPhone, sending nothing (``MeshEngine/deleteChat(_:)``, ADR 2026-10.u7cq).
+    @discardableResult
+    public func deleteChat(_ conversationId: String) -> Bool {
+        defer { settle() }
+        return engine.deleteChat(conversationId)
+    }
+
     /// Changes our profile and floods it.
     public func updateProfile(name: String, status: String, openToChat: Bool) {
         engine.updateProfile(name: name, status: status, openToChat: openToChat)

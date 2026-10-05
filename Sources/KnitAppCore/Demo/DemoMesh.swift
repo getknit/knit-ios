@@ -127,6 +127,16 @@ public final class DemoMesh: MeshService {
         await mesh.leaveGroup(groupId)
     }
 
+    /// Deletes a message.
+    public func deleteMessage(_ id: String) async -> Bool {
+        await mesh.deleteMessage(id)
+    }
+
+    /// Deletes a thread.
+    public func deleteChat(_ conversationId: String) async -> Bool {
+        await mesh.deleteChat(conversationId)
+    }
+
     /// Changes our profile.
     public func updateProfile(name: String, status: String, openToChat: Bool) async {
         await mesh.updateProfile(name: name, status: status, openToChat: openToChat)

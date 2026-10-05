@@ -13,6 +13,12 @@ extension Copy {
             )
         }
 
+        /// The bubble menu's action that copies a message's words.
+        public static var copy: String {
+            NSLocalizedString(
+                "chat.copy", bundle: .main, value: "Copy", comment: "Chat: the bubble menu's action that copies the message's words")
+        }
+
         /// A DM with nothing in it yet.
         public static func directEmpty(_ name: String) -> String {
             format(

@@ -162,8 +162,10 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   wrapped to), `messages` (`conv`, `limit`; each message carries its `kind`, 0 for a message and Android's
   notice codes for a status line, a photo's `attachmentHash`, `attachmentMime` and `attachmentHeld`, whether its
   bytes are here, and `moderation`, `flagged` or `waiting`, when the content filter flagged it or has yet to screen
-  it, ADR 2026-10.e4kz), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit`
-  (the peer exits; the app's bridge only closes the connection).
+  it, ADR 2026-10.e4kz), `delete-message` (`id`) and `delete-chat` (`conv`; its reply's `deleted` says whether
+  there was anything to delete), which delete here and send nothing, a group keeping us as a member (ADR
+  2026-10.u7cq), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the peer exits; the
+  app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):
   - `group-create` (`members`, the others' node ids) makes a group, or opens the one they already share. Nothing
     is sent until its first message.

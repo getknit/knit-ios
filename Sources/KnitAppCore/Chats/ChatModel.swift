@@ -245,6 +245,15 @@ public final class ChatModel {
         await session.accept(conversationId)
     }
 
+    /// Deletes `message` from this iPhone (ADR 2026-10.u7cq), from its bubble's menu. A status line is not a message, and
+    /// stays.
+    public func delete(_ message: ChatMessage) async {
+        guard message.notice == nil else {
+            return
+        }
+        await session.deleteMessage(message.id)
+    }
+
     /// Blocks the DM's peer: from a request's bar.
     public func block() async {
         if let peer = NodeId(conversationId) {

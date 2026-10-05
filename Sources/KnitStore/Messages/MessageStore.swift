@@ -1,4 +1,3 @@
-import KnitSync
 public import KnitWire
 
 /// What a thread row is (`MessageEntity.kind`, `MessageEntity.kt:225-277`): an ordinary message, or a status line
@@ -159,11 +158,12 @@ public protocol MessageStore: AnyObject, Sendable {
     /// The message `id`, or `nil`.
     func message(_ id: String) -> MessageRecord?
 
-    /// Whether `id` is held: the gate that keeps a re-served frame from notifying twice.
+    /// Whether `id` is held, or was deleted and is still remembered: the gate that keeps a re-served frame from
+    /// notifying twice, and a deleted one from coming back (ADR 2026-10.u7cq).
     func contains(_ id: String) -> Bool
 
-    /// Stores `message` unless its id is held, and answers whether it did. A re-served frame carries the same
-    /// signed bytes, so it can never say anything new.
+    /// Stores `message` unless its id is held or remembered as deleted, and answers whether it did. A re-served frame
+    /// carries the same signed bytes, so it can never say anything new.
     @discardableResult
     func insertIfAbsent(_ message: MessageRecord) -> Bool
 
@@ -200,8 +200,28 @@ public protocol MessageStore: AnyObject, Sendable {
     /// wrote, has no head (`observeDistinctConversations`).
     func threadHeads(excludingSenders blocked: Set<NodeId>) -> [MessageRecord]
 
-    /// Removes every row of `conversationId`, status lines included: what leaving a group does to its thread.
-    func deleteMessages(in conversationId: String)
+    /// Removes the message `id` at `now` and answers what it was, or `nil` when nothing is held under that id. An
+    /// ordinary message's id is remembered until ``DeletedMessages/expiry(sentAt:deletedAt:limits:)``, so a carrier
+    /// that re-serves its frame cannot bring it back (ADR 2026-10.u7cq). A status line's is not: its id is our own,
+    /// and a later change to the group must be able to write it again.
+    @discardableResult
+    func deleteMessage(_ id: String, at now: Int64) -> MessageRecord?
+
+    /// Removes every row of `conversationId` at `now`, status lines included, remembering each ordinary message's id as
+    /// ``deleteMessage(_:at:)`` does, and answers what it removed: what deleting a chat and leaving a group do to its
+    /// thread.
+    @discardableResult
+    func deleteMessages(in conversationId: String, at now: Int64) -> [MessageRecord]
+
+    /// Forgets every deleted id remembered only until before `now`: no carrier holds those frames any more.
+    func pruneDeleted(before now: Int64)
+
+    /// The photos the deleted messages still remembered carried, by their frames' ids' bytes.
+    func deletedAttachments() -> [DeletedAttachment]
+
+    /// Every thread with a row of any kind, status lines included. A group whose thread was deleted has none, and
+    /// leaves the chat list until its next row (ADR 2026-10.u7cq).
+    func conversationIds() -> Set<String>
 
     /// The blobs the messages carry: what keeps a photo from being swept, and what is fetched while its bytes are
     /// missing (`MessageDao.attachmentHashes`).
@@ -220,161 +240,5 @@ extension MessageStore {
     /// The newest message of every thread, newest thread first, whoever wrote it.
     public func threadHeads() -> [MessageRecord] {
         threadHeads(excludingSenders: [])
-    }
-}
-
-/// A ``MessageStore`` in memory, keyed by the ids' bytes (``ExactKey``) and safe to share across threads.
-public final class MemoryMessageStore: MessageStore {
-    private struct Row: Sendable {
-        var record: MessageRecord
-        /// When it was first stored, which breaks ties in `sentAt`.
-        let order: Int
-    }
-
-    private struct State: Sendable {
-        var rows: [ExactKey: Row] = [:]
-        var nextOrder = 0
-
-        mutating func put(_ message: MessageRecord) {
-            let key = ExactKey(message.id)
-            if let existing = rows[key] {
-                rows[key] = Row(record: message, order: existing.order)
-            } else {
-                rows[key] = Row(record: message, order: nextOrder)
-                nextOrder += 1
-            }
-        }
-
-        /// The rows `isIncluded` picks, in reading order: `sentAt`, then the order stored.
-        func inReadingOrder(where isIncluded: (MessageRecord) -> Bool) -> [MessageRecord] {
-            rows.values
-                .filter { isIncluded($0.record) }
-                .sorted(by: Self.precedes)
-                .map(\.record)
-        }
-
-        /// Whether `first` reads before `second` in a thread.
-        static func precedes(_ first: Row, _ second: Row) -> Bool {
-            (first.record.sentAt, first.order) < (second.record.sentAt, second.order)
-        }
-    }
-
-    private let state = Lock(State())
-
-    /// An empty store.
-    public init() {
-        // Nothing to set up.
-    }
-
-    public func message(_ id: String) -> MessageRecord? {
-        state.withLock { $0.rows[ExactKey(id)]?.record }
-    }
-
-    public func contains(_ id: String) -> Bool {
-        state.withLock { $0.rows[ExactKey(id)] != nil }
-    }
-
-    @discardableResult
-    public func insertIfAbsent(_ message: MessageRecord) -> Bool {
-        state.withLock { state in
-            guard state.rows[ExactKey(message.id)] == nil else {
-                return false
-            }
-            state.put(message)
-            return true
-        }
-    }
-
-    public func save(_ message: MessageRecord) {
-        state.withLock { $0.put(message) }
-    }
-
-    @discardableResult
-    public func markDelivered(_ id: String) -> Bool {
-        state.withLock { state in
-            let key = ExactKey(id)
-            guard let row = state.rows[key], !row.record.delivered else {
-                return false
-            }
-            state.rows[key]?.record.delivered = true
-            return true
-        }
-    }
-
-    public func pendingKey(to recipient: NodeId) -> [MessageRecord] {
-        state.withLock { state in
-            state.inReadingOrder { $0.pendingKey && $0.recipientId == recipient }
-        }
-    }
-
-    public func pendingKey(in conversationId: String) -> [MessageRecord] {
-        let thread = ExactKey(conversationId)
-        return state.withLock { state in
-            state.inReadingOrder { $0.pendingKey && ExactKey($0.conversationId) == thread }
-        }
-    }
-
-    public func clearPendingKey(_ id: String) {
-        state.withLock { $0.rows[ExactKey(id)]?.record.pendingKey = false }
-    }
-
-    public func conversations(authoredBy author: NodeId) -> Set<String> {
-        state.withLock { Set($0.rows.values.map(\.record).filter { $0.senderId == author }.map(\.conversationId)) }
-    }
-
-    public func senders(in conversationId: String) -> Set<NodeId> {
-        let thread = ExactKey(conversationId)
-        return state.withLock { state in
-            Set(state.rows.values.map(\.record).filter { !$0.kind.isNotice && ExactKey($0.conversationId) == thread }.map(\.senderId))
-        }
-    }
-
-    public func messages(in conversationId: String) -> [MessageRecord] {
-        state.withLock { state in
-            state.inReadingOrder { $0.conversationId == conversationId }
-        }
-    }
-
-    public func threadHeads(excludingSenders blocked: Set<NodeId>) -> [MessageRecord] {
-        state.withLock { state in
-            var heads: [ExactKey: Row] = [:]
-            for row in state.rows.values where !row.record.kind.isNotice && !blocked.contains(row.record.senderId) {
-                let thread = ExactKey(row.record.conversationId)
-                if let head = heads[thread], State.precedes(row, head) {
-                    continue
-                }
-                heads[thread] = row
-            }
-            return heads.values.sorted { State.precedes($1, $0) }.map(\.record)
-        }
-    }
-
-    public func deleteMessages(in conversationId: String) {
-        let thread = ExactKey(conversationId)
-        state.withLock { state in
-            state.rows = state.rows.filter { ExactKey($0.value.record.conversationId) != thread }
-        }
-    }
-
-    public func attachmentHashes() -> Set<BlobHash> {
-        state.withLock { Set($0.rows.values.compactMap(\.record.attachment?.hash)) }
-    }
-
-    @discardableResult
-    public func setModeration(_ id: String, to moderation: MessageModeration) -> Bool {
-        state.withLock { state in
-            let key = ExactKey(id)
-            guard let row = state.rows[key], row.record.moderation != moderation else {
-                return false
-            }
-            state.rows[key]?.record.moderation = moderation
-            return true
-        }
-    }
-
-    public func waitingForModeration() -> [MessageRecord] {
-        state.withLock { state in
-            state.rows.values.filter { $0.record.moderation == .waiting }.sorted { $0.order < $1.order }.map(\.record)
-        }
     }
 }

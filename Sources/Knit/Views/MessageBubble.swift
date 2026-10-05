@@ -1,12 +1,14 @@
 #if os(iOS)
     import KnitAppCore
     import SwiftUI
+    import UIKit
 
     /// One message: ours on the right with its tick, theirs on the left, with the author's face and name in the room and
     /// a group. The author's face and name open their profile, which is how a DM starts (MVP item 5). A photo sits above
     /// the words, and opens full screen. The content filter can hide either until a tap: an explicit photo (ADR
     /// 2026-10.rpmq), and words it flagged or has yet to read (ADR 2026-10.e4kz). In a run from one author (`place`), the
-    /// name tops the first bubble and the face sits by the last, as Signal clusters them (ADR 2026-10.5waw).
+    /// name tops the first bubble and the face sits by the last, as Signal clusters them (ADR 2026-10.5waw). A long press
+    /// opens its menu, Copy and Delete, and VoiceOver offers Delete among its actions (ADR 2026-10.u7cq).
     internal struct MessageBubble: View {
         let message: ChatMessage
         /// Where it sits in its run.
@@ -17,6 +19,8 @@
         let reveal: () -> Void
         /// Opens the message's photo.
         let open: (ChatAttachment) -> Void
+        /// Asks to delete the message.
+        let delete: () -> Void
         @Environment(\.dynamicTypeSize) private var typeSize
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
 
@@ -40,6 +44,18 @@
                     }
                 }
                 BubbleContent(message: message, place: place, covered: covered, hidden: hidden, reveal: reveal, open: open)
+                    .contextMenu {
+                        // Copy takes the words only while they show. The menu replaces the text's own selection, which a
+                        // long press on the words would otherwise open in its place.
+                        if hidden == nil, !message.body.isEmpty {
+                            Button(Copy.Chat.copy, systemImage: "doc.on.doc") {
+                                UIPasteboard.general.string = message.body
+                            }
+                            .accessibilityIdentifier(AccessibilityID.chatMessageCopy)
+                        }
+                        Button(Copy.Delete.delete, systemImage: "trash", role: .destructive, action: delete)
+                            .accessibilityIdentifier(AccessibilityID.chatMessageDelete)
+                    }
                 if !message.isMine {
                     Spacer(minLength: Layout.bubbleInset)
                 }
@@ -58,6 +74,7 @@
                         Button(Copy.Attachments.viewPhoto) { open(photo) }
                     }
                 }
+                Button(Copy.Delete.delete, action: delete)
             }
             .accessibilityValue(value)
             .accessibilityIdentifier(photo.map { _ in AccessibilityID.chatPhoto(message.id) } ?? AccessibilityID.chatMessage(message.id))
@@ -122,7 +139,6 @@
                         .padding(.horizontal, Layout.medium)
                         .padding(.vertical, Layout.small)
                         .background(message.isMine ? Palette.ownBubble : Palette.incomingBubble, in: shape)
-                        .textSelection(.enabled)
                 }
                 if place.showsStamp {
                     Stamp(message: message)

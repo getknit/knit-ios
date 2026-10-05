@@ -2,7 +2,8 @@ import GRDB
 public import KnitStore
 public import KnitWire
 
-/// The ``MessageStore`` on SQLite: the `messages` table (`MessageDao.kt` in knit-next).
+/// The ``MessageStore`` on SQLite: the `messages` table (`MessageDao.kt` in knit-next), and `deleted_messages`, the ids
+/// of deleted messages still remembered (ADR 2026-10.u7cq).
 ///
 /// A thread reads in `sentAt` order, ties in the order rows were first stored: the table's `seq`, which a save
 /// over an existing row keeps.
@@ -28,15 +29,27 @@ public final class SQLMessageStore: MessageStore {
     }
 
     public func contains(_ id: String) -> Bool {
-        database.read(or: false) { db in
-            try Bool.fetchOne(db, sql: "SELECT EXISTS (SELECT 1 FROM messages WHERE id = ?)", arguments: [StoredText.bytes(id)])
-                ?? false
+        let key = StoredText.bytes(id)
+        return database.read(or: false) { db in
+            try Bool.fetchOne(
+                db,
+                sql: "SELECT EXISTS (SELECT 1 FROM messages WHERE id = ?) OR EXISTS (SELECT 1 FROM deleted_messages WHERE id = ?)",
+                arguments: [key, key]
+            ) ?? false
         }
     }
 
     @discardableResult
     public func insertIfAbsent(_ message: MessageRecord) -> Bool {
         database.write(or: false) { db in
+            let deleted = try Bool.fetchOne(
+                db,
+                sql: "SELECT EXISTS (SELECT 1 FROM deleted_messages WHERE id = ?)",
+                arguments: [StoredText.bytes(message.id)]
+            )
+            guard deleted != true else {
+                return false
+            }
             try db.execute(sql: "\(Self.insert) ON CONFLICT (id) DO NOTHING", arguments: Self.arguments(message))
             return db.changesCount > 0
         }
@@ -154,12 +167,6 @@ public final class SQLMessageStore: MessageStore {
         }
     }
 
-    public func deleteMessages(in conversationId: String) {
-        database.write(or: ()) { db in
-            try db.execute(sql: "DELETE FROM messages WHERE conversationId = ?", arguments: [StoredText.bytes(conversationId)])
-        }
-    }
-
     public func attachmentHashes() -> Set<BlobHash> {
         database.read(or: []) { db in
             Set(
@@ -231,5 +238,86 @@ public final class SQLMessageStore: MessageStore {
                 size: try row.decode(Int64?.self, forColumn: "attachmentSize")
             )
         }
+    }
+}
+
+// Deleting, apart from the class only to keep its body inside the lint's length.
+extension SQLMessageStore {
+    /// Removes message `id` and remembers its id in `deleted_messages`, in one transaction (``MessageStore/deleteMessage(_:at:)``).
+    @discardableResult
+    public func deleteMessage(_ id: String, at now: Int64) -> MessageRecord? {
+        database.write(or: nil) { db in
+            let key = StoredText.bytes(id)
+            guard
+                let record = try Row.fetchOne(db, sql: "SELECT \(Self.columns) FROM messages WHERE id = ?", arguments: [key]).map(
+                    Self.record)
+            else {
+                return nil
+            }
+            try db.execute(sql: "DELETE FROM messages WHERE id = ?", arguments: [key])
+            try Self.remember(record, deletedAt: now, db)
+            return record
+        }
+    }
+
+    /// Removes thread `conversationId` and remembers its messages' ids, in one transaction
+    /// (``MessageStore/deleteMessages(in:at:)``).
+    @discardableResult
+    public func deleteMessages(in conversationId: String, at now: Int64) -> [MessageRecord] {
+        database.write(or: []) { db in
+            let thread = StoredText.bytes(conversationId)
+            let removed = try Row.fetchAll(
+                db,
+                sql: "SELECT \(Self.columns) FROM messages WHERE conversationId = ? ORDER BY sentAt, seq",
+                arguments: [thread]
+            ).map(Self.record)
+            try db.execute(sql: "DELETE FROM messages WHERE conversationId = ?", arguments: [thread])
+            for record in removed {
+                try Self.remember(record, deletedAt: now, db)
+            }
+            return removed
+        }
+    }
+
+    /// Forgets the deleted ids whose time is up (``MessageStore/pruneDeleted(before:)``).
+    public func pruneDeleted(before now: Int64) {
+        database.write(or: ()) { db in
+            try db.execute(sql: "DELETE FROM deleted_messages WHERE expiresAt < ?", arguments: [now])
+        }
+    }
+
+    /// The photos deleted messages carried (``MessageStore/deletedAttachments()``).
+    public func deletedAttachments() -> [DeletedAttachment] {
+        database.read(or: []) { db in
+            try Row.fetchAll(db, sql: "SELECT id, attachmentHash FROM deleted_messages WHERE attachmentHash IS NOT NULL ORDER BY id")
+                .map { DeletedAttachment(id: try $0.text("id"), hash: try $0.blobHash("attachmentHash")) }
+        }
+    }
+
+    /// Every thread with a row (``MessageStore/conversationIds()``).
+    public func conversationIds() -> Set<String> {
+        database.read(or: []) { db in
+            Set(try Row.fetchAll(db, sql: "SELECT DISTINCT conversationId FROM messages").map { try $0.text("conversationId") })
+        }
+    }
+
+    /// Remembers deleted `record`'s id and the photo it carried, unless it is a status line, keeping the later of two
+    /// expiries.
+    private static func remember(_ record: MessageRecord, deletedAt now: Int64, _ db: Database) throws {
+        guard !record.kind.isNotice else {
+            return
+        }
+        try db.execute(
+            sql: """
+                INSERT INTO deleted_messages (id, expiresAt, attachmentHash) VALUES (?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET
+                    expiresAt = max(expiresAt, excluded.expiresAt),
+                    attachmentHash = coalesce(excluded.attachmentHash, attachmentHash)
+                """,
+            arguments: [
+                StoredText.bytes(record.id), DeletedMessages.expiry(sentAt: record.sentAt, deletedAt: now),
+                StoredText.bytes(record.attachment?.hash.string),
+            ]
+        )
     }
 }

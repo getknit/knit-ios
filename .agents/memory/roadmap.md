@@ -122,7 +122,10 @@ explicit direction.** Update this file in the change that ships an item.
     peer verified, and stores list each thread's newest message.
   - **Block (2026-10-03):** presentation only, as on Android: a blocked person's messages stop at delivery and are
     still carried, relayed and ticked (ADR 2026-10.5wgg).
-  - **Still owed:** no unread counts yet, and no delete or Sign out.
+  - **Delete (2026-10-04):** a message from its bubble's menu, a chat or request from its swipe, and Nearby cleared,
+    all local as on Android. Unlike Android, a deleted message is remembered until no carrier can re-serve it, and a
+    delete never turns an accepted thread into a request (ADR 2026-10.u7cq).
+  - **Still owed:** no unread counts yet, and no Sign out.
 - **P7, the Mac:** begun on 2026-09-27. The Mac Mini has Xcode 27.0 and the tools, `check.sh fast` passes
   there, and the `macos` runner is online (`.agents/context/toolchain.md`, "The Mac"). XcodeGen
   generates the app project (ADR 2026-09.de8f), which builds for the iPhone and the Simulator in
@@ -242,8 +245,8 @@ explicit direction.** Update this file in the change that ships an item.
   - group info, with members, rename and leave;
   - group requests and notifications.
 
-  Out of scope: photos, per-member delivery counts, and Delete chat. Capabilities become `0xB` once the screens
-  ship. Two companion changes in knit-next go with it:
+  Out of scope: photos, per-member delivery counts, and Delete chat (which came later, ADR 2026-10.u7cq).
+  Capabilities become `0xB` once the screens ship. Two companion changes in knit-next go with it:
   - **A5 (keyed group vectors):** a paired change that iOS leads. knit-next's `keyed-v1.json` gains:
     - a third identity, `dave`, from seeds 7 and 8;
     - `groupIds` known answers;

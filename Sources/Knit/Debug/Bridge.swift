@@ -147,6 +147,14 @@
             await session.leaveGroup(groupId)
         }
 
+        func deleteMessage(_ id: String) async -> Bool {
+            await session.deleteMessage(id)
+        }
+
+        func deleteChat(_ conversationId: String) async -> Bool {
+            await session.deleteChat(conversationId)
+        }
+
         func block(_ peer: NodeId) async {
             await session.block(peer)
         }

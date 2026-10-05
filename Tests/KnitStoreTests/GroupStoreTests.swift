@@ -205,9 +205,12 @@ import Testing
         kelvin.conversationId = "g-\u{212A}"
         store.save(kelvin)
         store.save(message("dm", from: bob, to: alice))
-        store.deleteMessages(in: "g-K")
-        #expect(!store.contains("g1") && !store.contains("created:g-K"))
-        #expect(store.contains("kelvin"), "a thread whose id differs in its bytes stays")
-        #expect(store.contains("dm"))
+        let removed = store.deleteMessages(in: "g-K", at: 5)
+        #expect(removed.map(\.id) == ["g1", "created:g-K"], "what went, in reading order")
+        #expect(store.message("g1") == nil && store.message("created:g-K") == nil)
+        #expect(store.contains("g1"), "a deleted message's id is remembered")
+        #expect(!store.contains("created:g-K"), "a status line's is not")
+        #expect(store.message("kelvin") != nil, "a thread whose id differs in its bytes stays")
+        #expect(store.message("dm") != nil)
     }
 }

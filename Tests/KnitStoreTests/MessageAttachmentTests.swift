@@ -70,7 +70,7 @@ import Testing
         store.save(message("c", in: "g-group", carrying: MessageAttachment(hash: hash(5))))
         store.save(message("d", in: "g-group", carrying: nil))
         #expect(store.attachmentHashes() == [hash(5), hash(6)])
-        store.deleteMessages(in: "g-group")
+        store.deleteMessages(in: "g-group", at: 0)
         #expect(store.attachmentHashes() == [hash(5)], "a thread that goes takes its photos' names with it")
     }
 }

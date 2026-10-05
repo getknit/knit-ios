@@ -108,7 +108,7 @@ extension MeshEngine {
         originate(leave)
         // The thread goes first: a crash between the two leaves an empty group still open, not old messages that a
         // later re-create would bring back.
-        stores.messages.deleteMessages(in: groupId)
+        stores.messages.deleteMessages(in: groupId, at: now)
         group.hasLeft = true
         stores.groups.save(group)
         events.append(.groupChanged(groupId))

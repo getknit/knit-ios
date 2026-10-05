@@ -29,6 +29,10 @@ public protocol ControlActions: Sendable {
     func renameGroup(_ groupId: String, to name: String) async -> GroupRecord?
     /// Leaves a group, telling its members.
     func leaveGroup(_ groupId: String) async -> Bool
+    /// Deletes one message here, sending nothing (ADR 2026-10.u7cq).
+    func deleteMessage(_ id: String) async -> Bool
+    /// Deletes a whole thread here, sending nothing.
+    func deleteChat(_ conversationId: String) async -> Bool
     /// Blocks a peer (ADR 2026-10.5wgg).
     func block(_ peer: NodeId) async
     /// Unblocks a peer.
@@ -55,7 +59,7 @@ public actor MeshControl {
     nonisolated public let nodeId: NodeId
     private let bundle: PublicKeyBundle
     private let mesh: Mesh
-    private let actions: any ControlActions
+    let actions: any ControlActions
     private let stores: MeshStores
     private let clock: any MeshClock
     private let details: [String: JSONValue]
@@ -194,6 +198,8 @@ public actor MeshControl {
             return .success(["frames": .array(frames.map { ControlLines.describe($0.envelope) })])
         case .messages(let conversation, let limit):
             return .success(["conv": .string(conversation), "messages": .array(messages(in: conversation, limit: limit))])
+        case .delete(let command):
+            return await answer(command)
         case .group(let command):
             return await answer(command)
         case .stop:

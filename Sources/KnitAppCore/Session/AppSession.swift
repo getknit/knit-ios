@@ -205,6 +205,29 @@ public final class AppSession {
         return left
     }
 
+    /// Deletes one message from this iPhone (ADR 2026-10.u7cq). Nobody is told, and one of ours already sent still
+    /// arrives. Answers whether it was there to delete.
+    @discardableResult
+    public func deleteMessage(_ id: String) async -> Bool {
+        let deleted = await mesh.deleteMessage(id)
+        revision += 1
+        return deleted
+    }
+
+    /// Deletes a whole thread from this iPhone (ADR 2026-10.u7cq): a DM or a group leaves the list until its next
+    /// message, and the Nearby room empties and stays. Its notification goes, and the requests notification once none
+    /// is left. Nobody is told, and a group keeps us as a member. Answers whether there was anything to delete.
+    @discardableResult
+    public func deleteChat(_ conversationId: String) async -> Bool {
+        let deleted = await mesh.deleteChat(conversationId)
+        revision += 1
+        await notifier?.withdraw(threadId: conversationId)
+        if threads().requests.isEmpty {
+            await notifier?.withdraw(threadId: NotificationPolicy.requestsThread)
+        }
+        return deleted
+    }
+
     /// Accepts a message request, and takes back the requests notification once none waits.
     public func accept(_ conversationId: String) async {
         await mesh.accept(conversationId)

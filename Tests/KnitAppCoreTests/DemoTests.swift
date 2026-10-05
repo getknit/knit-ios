@@ -239,8 +239,11 @@ import Testing
         let shown = [Neighbor(nodeId: sam.nodeId)]
         #expect(mesh.nodeId == fake.nodeId)
         await mesh.start()
-        #expect(await mesh.postToRoom("hi", photo: nil) != nil)
+        let posted = await mesh.postToRoom("hi", photo: nil)
+        #expect(posted != nil)
         #expect(await mesh.sendDirectMessage("hey", to: sam.nodeId, photo: nil) != nil)
+        #expect(await mesh.deleteMessage(posted?.id ?? ""))
+        #expect(await mesh.deleteChat(sam.nodeId.string))
         await mesh.accept("c1")
         await mesh.updateProfile(name: "Maya", status: "", openToChat: true)
         await mesh.setVerified(sam.nodeId, true)
@@ -259,7 +262,8 @@ import Testing
             verified: ["\(sam.nodeId): true"],
             blocked: ["block \(sam.nodeId)", "unblock \(sam.nodeId)"],
             profiles: ["Maya||true"],
-            groups: ["create \(sam.nodeId)", "send \(id): all", "rename \(id): Pair", "leave \(id)"]
+            groups: ["create \(sam.nodeId)", "send \(id): all", "rename \(id): Pair", "leave \(id)"],
+            deleted: ["message \(posted?.id ?? "")", "chat \(sam.nodeId)"]
         )
         #expect(fake.calls == expected)
         var events = mesh.events.makeAsyncIterator()

@@ -24,6 +24,7 @@ internal enum Schema {
         ("v5", v5),
         ("v6", v6),
         ("v7", v7),
+        ("v8", v8),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -183,6 +184,14 @@ internal enum Schema {
     private static let v7 = [
         "ALTER TABLE messages ADD COLUMN moderation INTEGER NOT NULL DEFAULT 0",
         "CREATE INDEX messages_waiting ON messages (seq) WHERE moderation = 2",
+    ]
+
+    /// Schema v8: the ids of deleted messages (ADR 2026-10.u7cq), each with when it may be forgotten, so a carrier that
+    /// re-serves a deleted message's frame cannot bring it back, and the photo it carried, whose bytes stay while custody
+    /// carries the frame. Android keeps no ids. A database that predates it has deleted nothing.
+    private static let v8 = [
+        "CREATE TABLE deleted_messages (id BLOB NOT NULL PRIMARY KEY, expiresAt INTEGER NOT NULL, attachmentHash BLOB) STRICT",
+        "CREATE INDEX deleted_messages_expiresAt ON deleted_messages (expiresAt)",
     ]
 
     /// The migrator that brings any database this build knows up to date.

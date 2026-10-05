@@ -18,8 +18,8 @@ public struct RequestRow: Sendable, Equatable, Identifiable {
     public var face: Face
 }
 
-/// The message requests' view model (`MessageRequestsViewModel` in knit-next): Accept, and Block for a stranger's DM.
-/// Delete waits for moderation.
+/// The message requests' view model (`MessageRequestsViewModel` in knit-next): Accept, Delete, and Block for a stranger's
+/// DM.
 @preconcurrency
 @MainActor
 @Observable
@@ -58,6 +58,12 @@ public final class RequestsModel {
     /// Accepts a request: its thread moves to the chat list and notifies from now on.
     public func accept(_ conversationId: String) async {
         await session.accept(conversationId)
+    }
+
+    /// Deletes a request from this iPhone (`MessageRequestsViewModel.delete`, ADR 2026-10.u7cq). It stays a request: the
+    /// sender's next message makes a new one.
+    public func delete(_ conversationId: String) async {
+        await session.deleteChat(conversationId)
     }
 
     /// Blocks the stranger whose DM this request is (`MessageRequestsViewModel.block`): the request leaves the list,

@@ -19,6 +19,10 @@ import XCTest
 ///   whole on two lines at the largest), and a one-line field scrolls rather than loses its text. No view limits its
 ///   lines but the chat list's preview, and the largest-size walk's screenshots show the rest. Text combined into one
 ///   element, which the report names no element for, is text all the same.
+/// - Text read through an alert: a modal alert takes the screen from VoiceOver, so what lies behind it leaves the
+///   accessibility tree, and the alert's glass shows that text through and at its edges. The audit reports it as text no
+///   element names. Such a report is exempt only while an alert is up with content text partly under it; the alert's
+///   own words are elements, which the other checks read.
 @MainActor
 enum AuditPolicy {
     /// Whether `issue`, found in `app`, is one of the reports above. `bars` are the navigation bars' frames, `window`
@@ -31,6 +35,8 @@ enum AuditPolicy {
                 return true
             case .contrast:
                 return textUnderGlass(in: app, bars: bars, glass: glass)
+            case .elementDetection:
+                return textBehindAlert(in: app)
             default:
                 return false
             }
@@ -57,6 +63,18 @@ enum AuditPolicy {
             return zip(bars, glass).contains { bar, glass in
                 frame.minY < bar.minY && glass.intersects(frame) && frame.maxY <= glass.maxY
             }
+        }
+    }
+
+    /// Whether an alert is up with some content text partly under it, which its glass shows through.
+    private static func textBehindAlert(in app: XCUIApplication) -> Bool {
+        let alert = app.alerts.firstMatch
+        guard alert.exists else {
+            return false
+        }
+        let frame = alert.frame
+        return app.staticTexts.allElementsBoundByIndex.contains { text in
+            text.frame.intersects(frame) && !frame.contains(text.frame)
         }
     }
 

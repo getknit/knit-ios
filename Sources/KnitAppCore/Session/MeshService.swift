@@ -36,6 +36,10 @@ public protocol MeshService: AnyObject, Sendable {
     func renameGroup(_ groupId: String, to name: String) async -> GroupRecord?
     /// Leaves a group, telling its members.
     func leaveGroup(_ groupId: String) async -> Bool
+    /// Deletes one message from this iPhone, sending nothing (ADR 2026-10.u7cq).
+    func deleteMessage(_ id: String) async -> Bool
+    /// Deletes a whole thread from this iPhone, sending nothing: a group's membership stays (ADR 2026-10.u7cq).
+    func deleteChat(_ conversationId: String) async -> Bool
     /// Changes our profile and floods it.
     func updateProfile(name: String, status: String, openToChat: Bool) async
     /// Sets our photo, a JPEG, or clears it with `nil`, floods the profile that names it, and pushes it to every
