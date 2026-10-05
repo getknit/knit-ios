@@ -29,8 +29,12 @@
         /// them; a long room opened short of its newest posts, or past them over empty space.
         @State private var followsBottom = true
         /// Whether the offset is rising off the bottom edge with no finger on it, reading after reading (see
-        /// ``follow(from:to:)``).
+        /// ``follow(to:)``).
         @State private var rising = false
+        /// Whether a finger is on the thread, or it is still gliding from one.
+        @State private var scrolling = false
+        /// The last reading ``follow(to:)`` took, which the next is measured against.
+        @State private var reading: Reach?
         /// Whether the way back to the newest message shows: from half a screen up the thread until it is back on its bottom
         /// edge, so it stays while someone scrolls down toward it (`showScrollToNewest` in knit-next's `ChatScreen.kt`).
         @State private var offersNewest = false
@@ -94,14 +98,16 @@
                 position.scrollTo(edge: .bottom)
             }
             // The edge moves as rows are drawn, a photo decodes, the composer grows or the keyboard rises.
-            .onScrollGeometryChange(for: Reach.self, of: Reach.init) { old, new in
-                follow(from: old, to: new)
+            .onScrollGeometryChange(for: Reach.self, of: Reach.init) { _, new in
+                follow(to: new)
             }
             .onScrollPhaseChange { _, phase, context in
                 switch phase {
                 case .tracking, .interacting, .decelerating:
+                    scrolling = true
                     followsBottom = false
                 case .idle:
+                    scrolling = false
                     followsBottom = Reach(context.geometry).isAtBottom
                 case .animating:
                     break
@@ -121,18 +127,30 @@
         /// A finger's scroll reports its phase, but iOS's own scroll to the top, on a tap on the status bar or on the empty
         /// part of the navigation bar, reports none. Pulled back down as it passed rows whose height the lazy stack had only
         /// guessed, it flashed the thread, and finished at the top only when no guess changed on the way. A rise of the
-        /// offset off the bottom edge is that scroll once a second reading rises too. One reading is not enough: when the
+        /// content off the bottom edge is that scroll once a second reading rises too. One reading is not enough: when the
         /// composer or the keyboard changes height, the container changes a reading before the insets do, and the offset
         /// dips by the difference until they catch up. The thread holds still while the offset climbs, and follows again
         /// at the first reading where it stops: a rise that outlived its climb held the thread off its edge as it opened,
         /// while every row it drew moved the edge further down.
-        private func follow(from old: Reach, to new: Reach) {
+        ///
+        /// Each reading is measured against the last one this took, not against the `old` value the change hands over. As a
+        /// thread opened, that value paired the offset of the lazy stack's first guess with the container the bars had
+        /// settled, which read as a climb of thousands of points, and a reopened room stopped 150 points short of its newest
+        /// post. A thread past its bottom edge with no finger on it goes back to the edge, following or not. When a long
+        /// room's rows replaced the first guess at its height, the offset stayed where the guess had put it, far below the
+        /// content's end, and the room showed nothing until it was dragged (2026-10-05, 2,167 posts on an iPhone 12).
+        private func follow(to new: Reach) {
+            let old = reading ?? new
+            reading = new
             let rises = new.rose(from: old) && !new.isAtBottom
             if rises, rising {
                 followsBottom = false
             }
-            rising = rises || (rising && new.offset < old.offset && !new.isAtBottom)
-            if followsBottom, !rising, new.bottom != old.bottom {
+            rising = rises || (rising && new.top < old.top && !new.isAtBottom)
+            if new.isPastBottom, !scrolling {
+                followsBottom = true
+                position.scrollTo(edge: .bottom)
+            } else if followsBottom, !rising, !new.isAtBottom {
                 position.scrollTo(edge: .bottom)
             }
             if !followsBottom, new.away > new.screen * Self.wayBackScreens {
@@ -157,24 +175,25 @@
 
     /// Where a thread stands against its bottom edge, in one reading of its scroll geometry.
     private struct Reach: Equatable {
-        /// The scroll offset, which counts from the top of the screen, under the navigation bar.
-        let offset: CGFloat
-        /// The offset that shows the thread's bottom edge above the composer. The container is the part of the thread
-        /// between the bars, and starts the top inset below the offset: the edge shows once the two reach the content's
-        /// end. Content shorter than the screen puts its padding in that inset, which leaves this below the offset.
-        let bottom: CGFloat
+        /// Where the content stands at the top of the container, the part of the thread between the bars: the offset,
+        /// which counts from the top of the screen, plus the top inset. The inset settles as the thread opens, and moves
+        /// the offset with it, but not the content.
+        let top: CGFloat
+        /// The `top` that shows the thread's bottom edge above the composer. Content shorter than the container puts its
+        /// padding in the top inset, which leaves this below zero.
+        let end: CGFloat
         /// The height of the thread between the bars.
         let screen: CGFloat
 
         init(_ geometry: ScrollGeometry) {
-            offset = geometry.contentOffset.y
-            bottom = geometry.contentSize.height - geometry.containerSize.height - geometry.contentInsets.top
+            top = geometry.contentOffset.y + geometry.contentInsets.top
+            end = geometry.contentSize.height - geometry.containerSize.height
             screen = geometry.containerSize.height
         }
 
         /// How far up the thread stands from its bottom edge; zero or less on it.
         var away: CGFloat {
-            bottom - offset
+            end - top
         }
 
         /// Whether the thread stands on its bottom edge, near enough.
@@ -182,11 +201,17 @@
             away <= Layout.small
         }
 
-        /// Whether the offset rose from `old`, toward older messages, further than the edge did, in a container of the same
-        /// height: a scroll. A row's change of height moves the two together, and the thread's first layout and the bars'
-        /// change of height change the container.
+        /// Whether the thread stands past its bottom edge, over empty space: content that shrank as the lazy stack drew rows
+        /// it had guessed taller, under an offset nothing moved.
+        var isPastBottom: Bool {
+            top > max(end, 0) + Layout.small
+        }
+
+        /// Whether the content rose from `old`, toward older messages, further than the edge did, in a container of the
+        /// same height: a scroll. A row's change of height moves the two together, the thread's first layout and the bars'
+        /// change of height change the container, and an inset that settles moves neither.
         func rose(from old: Self) -> Bool {
-            screen == old.screen && old.offset - offset > max(old.bottom - bottom, 0) + Layout.small
+            screen == old.screen && old.top - top > max(old.end - end, 0) + Layout.small
         }
     }
 

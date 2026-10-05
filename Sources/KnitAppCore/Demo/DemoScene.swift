@@ -21,6 +21,9 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// profile photo. After knit-next's hiking theme (`DemoScenarios.kt`), less what the iPhone does not do yet: voice
     /// notes, LoRa and Internet relays.
     case marketing = "marketing"
+    /// The marketing scene with a room far longer than the screen, for the walk that opens one: the lazy stack opens it on
+    /// rows whose height it has only guessed.
+    case longRoom = "long-room"
 
     /// Who and what the scene seeds.
     var cast: DemoCast {
@@ -29,6 +32,8 @@ public enum DemoScene: String, Sendable, CaseIterable {
             .edgeCases
         case .marketing:
             .marketing
+        case .longRoom:
+            .longRoom
         }
     }
 }
@@ -240,4 +245,45 @@ internal struct DemoCast {
             Reaction(line: "group-1", by: .me, emoji: thumbs),
         ]
     )
+
+    /// How many posts the long room adds to the marketing scene's: enough that it opens on rows the lazy stack has only
+    /// guessed the height of, few enough to seed in a moment.
+    private static let longRoomPosts = 240
+    /// Every how many posts one from someone else carries a photo.
+    private static let longRoomPhotoEvery = 3
+    /// What the long room's posts say, in turn: rows of one line, of several, and of an emoji.
+    private static let longRoomBodies = [
+        "Anyone on the ridge?",
+        "Water's running at the second creek crossing. Bring a filter.",
+        "Made it to the hut. The fire's going and there's room for four more if anyone's coming down before dark.",
+        thumbs,
+        "Lost the markers past the boulder field, so we're heading back the way we came.",
+    ]
+
+    /// The marketing scene with ``longRoomPosts`` more posts in the room, from everyone in turn, each a few minutes after
+    /// the last. Every few from someone else carries a photo, which stands at a spinner's height until it is read.
+    static let longRoom: Self = {
+        let authors: [Slot] = [.sam, .dani, .theo, .priya, .jonas, .lena, .me]
+        let photos = DemoPortrait.allCases
+        let posts = (0..<longRoomPosts).map { index in
+            let author = authors[index % authors.count]
+            return Line(
+                id: "long-\(index)",
+                from: author,
+                to: nil,
+                body: longRoomBodies[index % longRoomBodies.count],
+                delivered: author == .me,
+                photo: author != .me && index.isMultiple(of: longRoomPhotoEvery) ? photos[index % photos.count] : nil
+            )
+        }
+        return Self(
+            me: marketing.me,
+            people: marketing.people,
+            lines: marketing.lines + posts,
+            accepted: marketing.accepted,
+            linked: marketing.linked,
+            group: marketing.group,
+            reactions: marketing.reactions
+        )
+    }()
 }

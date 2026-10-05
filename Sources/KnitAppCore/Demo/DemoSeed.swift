@@ -168,6 +168,7 @@ public enum DemoSeed {
         let groupId = cast.group.map { group in GroupId.derive((group.members + [.me]).compactMap { nodeIds[$0]?.string }) }
         var sentAt = now
         var groupStart = now
+        let paintings = paintings(of: cast, snap: snap)
         var sentAts: [String: Int64] = [:]
         for line in cast.lines.reversed() {
             sentAt -= line.then.rawValue
@@ -188,7 +189,7 @@ public enum DemoSeed {
                     sentAt: sentAt,
                     arrivedAt: sender == me ? nil : sentAt,
                     delivered: line.delivered,
-                    attachment: line.photo.flatMap { photo(snap($0), in: stores, at: sentAt) },
+                    attachment: photo(line.photo.flatMap { paintings[$0] }, in: stores, at: sentAt),
                     // As the engine stores them: someone else's words wait for the content filter, which the session
                     // runs over them as it starts listening.
                     moderation: sender == me ? .clear : .waiting
@@ -274,6 +275,12 @@ public enum DemoSeed {
             )
             return keys.nodeId
         }
+    }
+
+    /// The picture `snap` makes of each ``DemoPortrait`` a post in `cast` shows, painted once: the long room would paint
+    /// one for every post that carries it.
+    private static func paintings(of cast: DemoCast, snap: (DemoPortrait) -> [UInt8]?) -> [DemoPortrait: [UInt8]] {
+        Dictionary(uniqueKeysWithValues: Set(cast.lines.compactMap(\.photo)).compactMap { picture in snap(picture).map { (picture, $0) } })
     }
 
     /// Keeps a post's painted photo in the blob store, as the engine keeps a room post's, and answers what the post carries.

@@ -12,10 +12,16 @@ extension KnitUITests {
         try walkScrolling()
     }
 
+    /// A room far longer than the screen opens on its newest post, each time it is opened.
+    func testALongRoomOpensOnItsNewestPost() throws {
+        try walkLongRoom()
+    }
+
     /// A thread's photos and its scrolling, for the walks every screen takes again.
     func walkThreadPhotosAndScrolling() throws {
         try walkChatPhotos()
         try walkScrolling()
+        try walkLongRoom()
     }
 
     /// The marketing scene's room, the longest thread the demo seeds. A tap on the navigation bar's empty end scrolls it to
@@ -54,6 +60,29 @@ extension KnitUITests {
         try app.appear(AccessibilityID.chatSend).tap()
         XCTAssert(way.waitForNonExistence(timeout: Walking.appears), "our own post left the room up in its history")
         wait(for: try app.staticTexts["Back at camp"].appear("our post"), until: "isHittable == true")
+        app.terminate()
+    }
+}
+
+// MARK: Opening a long room
+
+extension KnitUITests {
+    /// How many times the long room is opened: the first open drew it right where a later one stopped short.
+    private static let roomOpenings = 3
+
+    /// The long-room scene's room, whose rows the lazy stack has mostly guessed the height of as it opens. Each time, it
+    /// opens with its newest post above the composer. Reopened, it once stopped 150 points short, its newest posts under
+    /// the composer, when the bars settling as it opened read as a tap on the bar scrolling it to the top.
+    func walkLongRoom() throws {
+        let app = launch("-demoScene", "long-room")
+        for _ in 0..<Self.roomOpenings {
+            try app.reveal(AccessibilityID.chatRow("nearby")).tap()
+            let newest = try app.appear(AccessibilityID.chatMessage("long-239"))
+            let composer = try app.appear(AccessibilityID.chatInput)
+            settle(newest)
+            XCTAssertLessThanOrEqual(newest.frame.maxY, composer.frame.minY, "the room opened short of its newest post")
+            app.back()
+        }
         app.terminate()
     }
 }

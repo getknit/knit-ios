@@ -88,6 +88,23 @@ passed changed height. A long thread flashed; one whose rows were all measured e
 The guard is `KnitUITests`' `testAThreadScrolledUpOffersTheWayBackToItsNewestMessage`. It cannot make the list guess a
 row's height, so the flash itself has no test.
 
+**Amended 2026-10-05, for opening a long thread:** the Nearby room, 2,167 posts on the maintainer's iPhone 12, opened
+blank until dragged, and then partway up its history. In the Simulator, a 249-post room reopened 150 points short of its
+newest post. The changes:
+
+- **A thread left past its bottom edge goes back to it.** When the rows replaced the lazy stack's first guess at the
+  room's height, the offset stayed where the guess had put it, about 1.7 million points below the content's end, and the
+  room showed nothing. With no finger on the thread, it now goes to its edge whether it follows or not.
+- **Each reading is measured against the last one the thread took.** The change's own `old` value paired the first
+  guess's offset with the settled bars. Against that, the thread seemed to climb, as under a tap on the bar, and held
+  still 150 points short.
+- **The readings track the content under the navigation bar,** the offset plus the top inset, so an inset that settles
+  is no longer a climb.
+
+A `long-room` demo scene adds 240 posts to the marketing room, and `testALongRoomOpensOnItsNewestPost` opens it three
+times. On the old code it caught the shortfall on the second and third. The Simulator never went past the edge, even at
+2,000 posts, so the blank has no test.
+
 **Consequences / limits:**
 
 - **iOS 18 to 25 get no glass.** The same screens draw opaque bars and bordered buttons there.
