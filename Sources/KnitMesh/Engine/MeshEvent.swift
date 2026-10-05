@@ -10,6 +10,9 @@ public enum MeshEvent: Sendable, Equatable {
     case delivered(messageId: String)
     /// One of our messages that waited for a key was sealed and sent: ✓.
     case sent(messageId: String)
+    /// Someone's reaction to a message we hold was added, replaced or taken back (ADR 2026-10.ehe6). Our own reactions
+    /// are not announced: whoever made one already has the answer.
+    case reacted(ReactionRecord)
     /// A group changed: we made, renamed or left it, or a frame changed its roster, its name or its status lines.
     case groupChanged(String)
     /// A peer's profile pinned or changed.
@@ -49,4 +52,7 @@ public enum DropReason: Sendable, Hashable, CaseIterable {
     /// A message, a roster change or a departure from someone the user blocked (ADR 2026-10.5wgg). It is still carried
     /// and relayed; only its delivery stops here.
     case blocked
+    /// A reaction that is not one emoji of at most 32 UTF-16 units (`REACTION_REFUSED`, ADR 2026-10.ehe6). Android
+    /// refuses only the length; this port refuses words too.
+    case reactionRefused
 }

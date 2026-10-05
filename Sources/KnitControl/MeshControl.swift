@@ -45,7 +45,7 @@ extension Mesh: ControlActions {}
 /// on standard input and output, and a debug build of the app speaks over its bridge.
 ///
 /// Replies carry `"reply"` with the command's name, `"ok"`, and the caller's `"tag"`; events carry `"event"`
-/// (`ready`, `link`, `profile`, `message`, `sent`, `delivered`, `radio` and `group`).
+/// (`ready`, `link`, `profile`, `message`, `sent`, `delivered`, `reaction`, `radio` and `group`).
 public actor MeshControl {
     /// One reply line, and whether the caller asked to quit.
     public struct Reply: Equatable, Sendable {
@@ -136,6 +136,8 @@ public actor MeshControl {
             return [JSONValue.object(["event": "delivered", "id": .string(id)]).line]
         case .sent(let id):
             return [JSONValue.object(["event": "sent", "id": .string(id)]).line]
+        case .reacted(let reaction):
+            return [JSONValue.object(ControlLines.fields(of: reaction).merging(["event": "reaction"]) { $1 }).line]
         case .peerUpdated(let node):
             guard let peer = stores.peers.peer(node) else {
                 return []

@@ -101,3 +101,8 @@ Left out, and why:
 - **Photos are in scope.** The iPhone will fetch and show a group's photo, but never set one.
 - **The `createdBy` rule stays this port's own.** It also checks that the creator is a founding member, which Android
   does not.
+
+**Amended 2026-10-04, when reactions came into scope (ADR 2026-10.ehe6):** reactions are no longer out. The iPhone
+takes and sends them in groups as in DMs and Nearby, as the cleartext `reaction` frame Android floods toward a member
+without the ratchet, so a group's reactions travel unencrypted, as its ticks do. A group shows reactions only from its
+founding roster. Typing, mentions and replies stay out.

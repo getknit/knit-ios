@@ -59,5 +59,6 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.ym9y](decisions/2026-10-ym9y-the-iphone-asks-for.md) | The iPhone asks for, serves and carries blobs as Android's BlobExchange does | mesh, blobs, interop |
 | [2026-10.5waw](decisions/2026-10-5waw-knit-s-ios-look.md) | Knit's iOS look: the HIG and Liquid Glass, Signal's layout, Android's coral and stitch | ui, accessibility, brand |
 | [2026-10.e4kz](decisions/2026-10-e4kz-messages-from-others-are-screened.md) | Messages from others are screened as they arrive, by Android's Detoxify model in Core ML | moderation, store, app, build |
+| [2026-10.ehe6](decisions/2026-10-ehe6-reactions.md) | Reactions: six to pick, any one emoji shown, sent in the clear | messages, wire, interop, ui |
 | [2026-10.rpmq](decisions/2026-10-rpmq-photos-from-others-are-screened.md) | Photos from others are screened on the iPhone when first shown, by Android's NSFW model in Core ML | moderation, blobs, app, build |
 | [2026-10.u7cq](decisions/2026-10-u7cq-a-delete-removes-messages-from.md) | A delete removes messages from this iPhone and keeps them gone | messages, custody, store, ui |

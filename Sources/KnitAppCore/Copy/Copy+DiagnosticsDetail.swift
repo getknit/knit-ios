@@ -48,12 +48,12 @@ extension Copy {
                     value: "Dropped: key change refused",
                     comment: "A drop counter"
                 )
-            case .cleartextGroup, .rosterRefused, .blocked:
+            case .cleartextGroup, .rosterRefused, .blocked, .reactionRefused:
                 laterReason(reason)
             }
         }
 
-        /// The labels for the drops groups and blocking brought.
+        /// The labels for the drops groups, blocking and reactions brought.
         private static func laterReason(_ reason: DropReason) -> String {
             switch reason {
             case .cleartextGroup:
@@ -69,6 +69,13 @@ extension Copy {
                     bundle: .main,
                     value: "Dropped: blocked sender",
                     comment: "A drop counter: frames from someone the user blocked, still passed on for others but not shown"
+                )
+            case .reactionRefused:
+                NSLocalizedString(
+                    "diagnostics.drop.reaction-refused",
+                    bundle: .main,
+                    value: "Dropped: reaction that isn't an emoji",
+                    comment: "A drop counter: a reaction whose text is not a single emoji, still passed on for others but not shown"
                 )
             default:
                 NSLocalizedString(

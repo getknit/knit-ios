@@ -233,13 +233,15 @@ public final class MeshEngine {
         }
     }
 
-    /// Expired custody, parked frames, stale key wants and aged-out ticks (`MeshManager.sweepExpired`).
+    /// Expired custody, parked frames, stale key wants, aged-out ticks and reactions left with no message
+    /// (`MeshManager.sweepExpired`).
     func sweep() {
         let now = clock.monotonicMilliseconds()
         if stores.custody.sweepExpired(now: clock.wallMilliseconds()) > 0 {
             custodyRevision += 1
         }
         releaseDeletedPhotos()
+        pruneOrphanReactions()
         pendingInbound.sweep(now: now)
         keyExchange.sweep(now: now)
         ackSync.sweep(now: now)

@@ -78,6 +78,35 @@ public enum TextLimits {
         !isBlank(emoji) && emoji.utf16.count <= reaction
     }
 
+    /// Whether this port takes `emoji` as a reaction: knit-next's rule, and one emoji besides (``isSingleEmoji(_:)``).
+    /// Android takes any short text, but its picker only ever sends an emoji, so the extra rule refuses only words a
+    /// modified build might send, which a chip would otherwise show to everyone in the thread.
+    public static func isAcceptedReaction(_ emoji: String) -> Bool {
+        isValidReaction(emoji) && isSingleEmoji(emoji)
+    }
+
+    /// Whether `text` is one emoji: a single grapheme cluster whose first scalar shows as an emoji by default, or one
+    /// that a variation selector, a keycap, a skin tone or a joiner makes into one, such as ❤️ or 1️⃣. A first scalar
+    /// the standard library's Unicode tables do not know yet passes when it lies in the emoji planes, so an emoji newer
+    /// than this build, from Android's picker, is not refused. A bare digit, letter or symbol that defaults to text
+    /// does not pass.
+    public static func isSingleEmoji(_ text: String) -> Bool {
+        guard text.count == 1, let first = text.unicodeScalars.first else {
+            return false
+        }
+        let properties = first.properties
+        if properties.isEmojiPresentation {
+            return true
+        }
+        if properties.isEmoji, text.unicodeScalars.count > 1 {
+            return true
+        }
+        return properties.generalCategory == .unassigned && emojiPlanes.contains(first.value)
+    }
+
+    /// The blocks where new emoji are assigned: Mahjong Tiles through Symbols and Pictographs Extended-A.
+    private static let emojiPlanes: ClosedRange<UInt32> = 0x1F000...0x1FAFF
+
     /// Kotlin's `isBlank()`: empty, or nothing but whitespace in Kotlin's Unicode-wide sense. A name that is
     /// blank shows the alias instead.
     public static func isBlank(_ text: String) -> Bool {

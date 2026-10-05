@@ -39,9 +39,11 @@ extension MeshEngine {
             handleGroupLeave(envelope)
         case .blobRequest:
             handleBlobRequest(frame)
+        case .reaction:
+            handleReaction(envelope)
         default:
-            // Reactions, typing cues and types this build has never heard of are carried and relayed where custodial,
-            // and shown nowhere.
+            // Typing cues and types this build has never heard of are carried and relayed where custodial, and shown
+            // nowhere.
             break
         }
     }

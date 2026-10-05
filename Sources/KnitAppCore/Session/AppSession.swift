@@ -147,7 +147,7 @@ public final class AppSession {
             }
             revision += 1
             await notify(message, isRequest: isRequest)
-        case .delivered, .sent, .peerUpdated, .groupChanged, .attachmentArrived:
+        case .delivered, .sent, .reacted, .peerUpdated, .groupChanged, .attachmentArrived:
             revision += 1
         case .neighborsChanged(let linked):
             neighbors = linked

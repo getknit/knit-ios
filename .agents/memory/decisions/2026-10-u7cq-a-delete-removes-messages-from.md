@@ -96,3 +96,8 @@ for a day, so it was ruled out.
     served while its frame is carried, then released.
   - `DeleteTests` in KnitAppCore, `MeshControlDeleteTests`, `KnitUITests`' two delete walks, and
     `interop.py iphone-delete` on the phones.
+
+**Amended 2026-10-04, when reactions came in (ADR 2026-10.ehe6):** a delete also removes the deleted messages'
+reactions, in the same transaction, as Android's `deleteForMessage` does. A reaction that arrives later for a deleted id
+still remembered is refused, so it cannot leave a row behind. Custody still never reads a delete. `ReactionStoreTests`
+and `MeshEngineReactionTests.aReactionToADeletedMessageIsRefusedSilently` guard it.

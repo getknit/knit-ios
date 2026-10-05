@@ -148,7 +148,8 @@ and photos in chats the same day (ADR 2026-10.6cas).
 | `receipt`, `relay = false`, no `sentAt` | room and group ticks over the link | yes: Android's room and group ticks to us |
 | `keyreq` (`relay = false`, signed) | when a sender's key is missing | answer with cached signed profiles |
 | `blobreq` (unsigned, `relay = false`, `sentAt` 0) | for each blob wanted: to every neighbour, at link-up and every 60 s | serve it if held, as FILE records of kind ATTACHMENT; otherwise want it; never flood it (ADR 2026-10.ym9y) |
-| `reaction`, `typing`, `commons`, unknown types | no | carry and relay where custodial; never crash |
+| `reaction`, `relay = true`, `sentAt` set, no recipient, no group | when the user reacts, in any thread, toggling as Android does (ADR 2026-10.ehe6) | yes: one emoji, last writer wins per message and reactor; never acked or notified |
+| `typing`, `commons`, unknown types | no | carry and relay where custodial; never crash |
 
 FILE records, which are not frames, go both ways too:
 

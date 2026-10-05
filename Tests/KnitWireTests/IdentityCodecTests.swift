@@ -169,6 +169,22 @@ import Testing
         #expect(!TextLimits.isValidReaction(String(repeating: "👍", count: 17)))
     }
 
+    /// This port's own rule on top of Android's: a reaction is one emoji, whatever the emoji, including one newer than
+    /// this build's Unicode tables (U+1FAFF, in the emoji planes).
+    @Test(arguments: [
+        "👍", "\u{2764}\u{FE0F}", "😂", "😮", "😢", "🙏", "👍🏽", "🇺🇸", "1\u{FE0F}\u{20E3}", "👨\u{200D}👩\u{200D}👧", "🔥",
+        "\u{1FAE8}", "\u{1FAFF}",
+    ])
+    func aReactionThatIsOneEmojiIsAccepted(emoji: String) {
+        #expect(TextLimits.isSingleEmoji(emoji))
+        #expect(TextLimits.isAcceptedReaction(emoji))
+    }
+
+    @Test(arguments: ["lol", "a", "1", "#", "\u{2764}", "\u{00A9}", "👍👍", "👍 ", " ", "", "\u{1FB00}"])
+    func aReactionThatIsNotOneEmojiIsRefused(text: String) {
+        #expect(!TextLimits.isAcceptedReaction(text))
+    }
+
     /// `GroupDetailsViewModel.rename`: one line, at most 32 units, and never blank.
     @Test func aRenameIsNormalizedCutAndNeverBlank() {
         #expect(TextLimits.outgoingGroupName("  Hiking\t\tclub ") == "Hiking club")

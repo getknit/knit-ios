@@ -191,6 +191,13 @@ public actor Mesh {
         return engine.deleteChat(conversationId)
     }
 
+    /// Reacts to a message, or takes our reaction back, and floods it (``MeshEngine/react(to:with:)``, ADR 2026-10.ehe6).
+    @discardableResult
+    public func react(to messageId: String, with emoji: String) -> ReactionRecord? {
+        defer { settle() }
+        return engine.react(to: messageId, with: emoji)
+    }
+
     /// Changes our profile and floods it.
     public func updateProfile(name: String, status: String, openToChat: Bool) {
         engine.updateProfile(name: name, status: status, openToChat: openToChat)

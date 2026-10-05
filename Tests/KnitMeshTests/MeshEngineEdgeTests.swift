@@ -5,7 +5,7 @@ import KnitWire
 import Testing
 
 /// Frames this build carries and relays but never shows, frames it cannot open, and the edges of its profile cache.
-/// Blob requests have suites of their own (`MeshEngineBlobTests`).
+/// Blob requests and reactions have suites of their own (`MeshEngineBlobTests`, `MeshEngineReactionTests`).
 @Suite struct MeshEngineEdgeTests {
     private let alice = TestPeer(seed: 1)
     private let bob = TestPeer(seed: 2)
@@ -18,24 +18,6 @@ import Testing
             }
             return record.id
         }
-    }
-
-    @Test func aReactionIsCarriedAndShownNowhere() throws {
-        let fixture = EngineFixture(alice)
-        try fixture.pin(bob)
-        _ = fixture.engine.drainEvents()
-        let payload = ReactionContent(messageId: "m1", emoji: "👍").encoded
-        let reaction = RelayEnvelope(
-            type: .reaction,
-            id: "react-1",
-            senderId: bob.nodeId.string,
-            sentAt: EngineFixture.start,
-            payload: payload
-        )
-        fixture.deliver(try bob.signed(reaction), from: bob)
-        #expect(fixture.stores.custody.contains("react-1"))
-        #expect(fixture.engine.drainEvents().isEmpty)
-        #expect(fixture.engine.dropped.isEmpty)
     }
 
     @Test func aSealedRoomPostCannotBeOpened() throws {
