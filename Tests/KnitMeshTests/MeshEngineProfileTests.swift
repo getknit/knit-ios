@@ -25,7 +25,7 @@ import Testing
             pubKey: alice.keys.bundle.encoded,
             deviceTag: "0011223344556677",
             protoVersion: 1,
-            capabilities: 0xB,
+            capabilities: 0xF,
             version: 0
         )
         #expect(content == expected, "every required field, status included, or Android never pins our key")

@@ -183,7 +183,7 @@ struct LinkDoorbellTests {
         for id in [dialed, accepted] {
             let hello = try #require(rig.radio.records(on: id).first)
             #expect(hello == LinkRig.ourHello(LinkRig.high, servesDoorbell: serves))
-            #expect(Hello(payload: hello.payload).capabilities.hex == (serves ? "100b" : "b"))
+            #expect(Hello(payload: hello.payload).capabilities.hex == (serves ? "100f" : "f"))
         }
     }
 

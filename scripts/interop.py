@@ -521,8 +521,8 @@ def poll(check, timeout: float, every: float = 2):
 
 def in_range(seconds: int = 20, adapter: list[str] | None = None) -> dict[str, dict]:
     """Every Knit node a quiet scan hears, by node id, with what it advertised: its flags, and the low byte of its
-    capabilities, `ff` from Android and `b` from an iPhone or an `ios` peer (`9` before groups). `adapter` scans elsewhere
-    than hci1."""
+    capabilities, `ff` from Android and `f` from an iPhone or an `ios` peer (`b` before reactions, `9` before groups).
+    `adapter` scans elsewhere than hci1."""
     command = [str(PEER), "scan", "--seconds", str(seconds), "--log", "debug", *(adapter or [])]
     result = subprocess.run(command, capture_output=True, text=True, check=True)
     # The scan links any node BlueZ lists with the UUID and no service data to read its payload, so what it did is kept:
@@ -541,10 +541,11 @@ def others_in_range(phone_id: str, seconds: int = 20) -> set[str]:
 # FLAG_DIALS_GATT_PEERS, bit 1 of the advert's flags byte: the node reads GATT payloads, so it can find a node that
 # advertises only the 0xFE30 UUID, and such a node waits for it to dial (ADR 2026-09.xzpt).
 DIALS_GATT_PEERS = 0x02
-# The low byte of the capabilities this port advertises, as the scan spells it: 0xB since groups (ADR 2026-09.n393), and
-# 0x9 from a build before them, which phones and peers may still run. Android's builds send 0xFF.
-IOS_ADVERT_CAPABILITIES = "b"
-IOS_ADVERT_CAPABILITIES_ALL = frozenset({IOS_ADVERT_CAPABILITIES, "9"})
+# The low byte of the capabilities this port advertises, as the scan spells it: 0xF since reactions (ADR 2026-10.ehe6),
+# 0xB from a build before them (ADR 2026-09.n393), and 0x9 from one before groups, which phones and peers may still run.
+# Android's builds send 0xFF.
+IOS_ADVERT_CAPABILITIES = "f"
+IOS_ADVERT_CAPABILITIES_ALL = frozenset({IOS_ADVERT_CAPABILITIES, "b", "9"})
 # knit-next #103 (its ADR 2026-09.hj4a): a phone that has held no BLE link for three minutes may dial a peer it sights
 # above it, and logs `bt lonely dial <id> (alone=<ms>ms rssi=<dBm> dwell=<ms>ms)` just before that dial's `bt initiating
 # to`. The peer admits it only if it never sighted the phone.
@@ -553,7 +554,8 @@ LONELY_DIAL = "bt lonely dial "
 
 def androids(heard: dict[str, dict]) -> set[str]:
     """The nodes a scan heard that advertise as Android does. The scan does not say where a payload came from, so
-    this goes by the capabilities' low byte, which only this port's nodes send as 0xB, or 0x9 before groups."""
+    this goes by the capabilities' low byte, which only this port's nodes send as 0xF, 0xB before reactions, or 0x9
+    before groups."""
     return {node for node, entry in heard.items() if entry.get("capabilities") not in IOS_ADVERT_CAPABILITIES_ALL}
 
 

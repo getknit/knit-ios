@@ -221,7 +221,8 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
     - Alice's v1 group chat to Bob and Dave (frame id seed 23), which `KeyedVectorTest` opens as each of them;
     - her rename `groupupdate` (seed 24) and her `groupleave` (seed 25).
   - **`IosEmittedVectorTest`** opens Carol's iOS-sealed group chat as Alice and Bob, derives its id from the roster,
-    verifies Carol's `groupupdate` and `groupleave`, and expects `0xB` in Carol's profile.
+    verifies Carol's `groupupdate` and `groupleave`, and expects `0xF` in Carol's profile, which reactions moved it to
+    (ADR 2026-10.ehe6). knit-next's copy of the file still holds the `0x9` it was exported with.
   - **Additive only.** `digestIds` keeps its three ids, so the DIGEST, its fold and the advert stay put. Alice's
     profile, HELLO and advert keep `0x9`.
 - **A6** (filed 2026-09-30 as knit-next #107 and #108, ADR 2026-09.n393): two Android group fixes. Android fixed
@@ -238,4 +239,4 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
     known answer for a sealed photo. An ATTACHMENT's header, with its size, came with knit-next ADR 2026-10.y9qh.
   - **The test:** `IosEmittedVectorTest` decodes an iOS header and opens an iOS-sealed photo.
   - **The bridge:** `state` could name each reachable peer's `avatarHash`, so `interop.py` can see a photo land.
-  - **Additive only:** `0xB` stays.
+  - **Additive only:** `0xF` stays.

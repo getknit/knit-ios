@@ -34,3 +34,8 @@ would not.
 still without `CAP_RATCHET`. Groups seal with v1 as DMs do, and Android seals v1 back to any group with an iPhone in
 it. `LinkTests` pins `0xB`. The keyed vectors keep the `0x9` they were made with, and `KeyedVectorTests` and
 `LinkVectorTests` pin that value as the vectors' own.
+
+**Amended 2026-10-04:** reactions (ADR 2026-10.ehe6) add `CAP_REACTIONS`, so the advertised capabilities are `0xF`, still
+without `CAP_RATCHET`. Android reads the reactions bit for diagnostics only, and keeps flooding reactions to the iPhone in
+the clear, as it does to any peer without the ratchet. `LinkTests` pins `0xF`. `ios-emitted-v1.json` now carries `0xF`
+in Carol's profile; knit-next's copy keeps the `0x9` it was exported with until the next export, which A5 makes.

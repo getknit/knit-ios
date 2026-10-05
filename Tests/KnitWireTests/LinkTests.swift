@@ -113,8 +113,8 @@ import Testing
     }
 
     @Test func helloCarriesOurCapabilitiesAsLowercaseHex() {
-        #expect(Hello(nodeId: nodeA).payload == Array("\(nodeA)|1|b".utf8))
-        #expect(Capabilities.local.hex == "b", "end-to-end, groups and store-and-forward (ADR 2026-09.n393)")
+        #expect(Hello(nodeId: nodeA).payload == Array("\(nodeA)|1|f".utf8))
+        #expect(Capabilities.local.hex == "f", "end-to-end, groups, reactions and store-and-forward (ADR 2026-10.ehe6)")
         #expect(Capabilities(rawValue: 0xFFF).hex == "fff")
     }
 
@@ -122,8 +122,12 @@ import Testing
         // `Protocol.CAP_DOORBELL`: the radio adds it to the HELLO, and this build never advertises it anywhere else.
         #expect(Capabilities.doorbell.rawValue == 0x1000)
         #expect(!Capabilities.local.contains(.doorbell))
-        #expect(Capabilities.local.union(.doorbell).hex == "100b")
-        #expect(Hello(payload: Array("\(nodeA)|1|100b".utf8)).capabilities == [.endToEnd, .groups, .storeForward, .doorbell])
+        #expect(Capabilities.local.union(.doorbell).hex == "100f")
+        #expect(
+            Hello(payload: Array("\(nodeA)|1|100f".utf8)).capabilities == [.endToEnd, .groups, .reactions, .storeForward, .doorbell])
+        #expect(
+            Hello(payload: Array("\(nodeA)|1|100b".utf8)).capabilities == [.endToEnd, .groups, .storeForward, .doorbell],
+            "a build from before reactions")
         #expect(
             Hello(payload: Array("\(nodeA)|1|1009".utf8)).capabilities == [.endToEnd, .storeForward, .doorbell],
             "a build from before groups")

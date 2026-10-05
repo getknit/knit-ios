@@ -32,10 +32,11 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     /// radio that serves one (`Radio.servesDoorbell`): it is above the advert's 8 bits, and never in the profile.
     public static let doorbell: Self = 0x1000
 
-    /// What this build advertises: end-to-end DMs, groups (both v1) and store-and-forward, `0xB` (ADR 2026-09.n393).
-    /// Never the ratchet until it ships, or Android would seal DMs and groups we cannot open. Never ``doorbell``
-    /// either: that is the radio's to claim, in the HELLO alone.
-    public static let local: Self = [.endToEnd, .groups, .storeForward]
+    /// What this build advertises: end-to-end DMs, groups (both v1), reactions and store-and-forward, `0xF` (ADR
+    /// 2026-09.n393, ADR 2026-10.ehe6). Android reads the reactions bit for diagnostics only. Never the ratchet until it
+    /// ships, or Android would seal DMs and groups we cannot open. Never ``doorbell`` either: that is the radio's to claim,
+    /// in the HELLO alone.
+    public static let local: Self = [.endToEnd, .groups, .reactions, .storeForward]
 
     /// The bit field, a Kotlin `Long`.
     public let rawValue: Int64

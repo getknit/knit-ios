@@ -16,11 +16,11 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   the digest fold match `.agents/context/custody.md` exactly, or digests never agree.
 - **Send a full DIGEST at link-up and every 60 s.** Android back-fills only in answer to one.
 - **Never write a link record tag outside 1..7.** Android drops the link on an unknown tag.
-- **Advertise only what is implemented.** This build sends capabilities `0xB`: E2E, GROUPS and STORE_FORWARD
-  (ADR 2026-09.n393). The MVP sent `0x9`, before groups.
+- **Advertise only what is implemented.** This build sends capabilities `0xF`: E2E, GROUPS, REACTIONS and
+  STORE_FORWARD (ADR 2026-10.ehe6). Builds before reactions sent `0xB` (ADR 2026-09.n393), and the MVP `0x9`.
   `CAP_RATCHET` is a promise to handle v2 DMs, their ctl codes and resets; it stays off until the ratchet
   milestone ships.
-- **`CAP_DOORBELL` (`0x1000`) lives in the HELLO alone.** The HELLO adds it, reading `100b`, when the radio
+- **`CAP_DOORBELL` (`0x1000`) lives in the HELLO alone.** The HELLO adds it, reading `100f`, when the radio
   serves the doorbell (`Radio.servesDoorbell`). Nothing else ever advertises it: not `Capabilities.local`, not the
   signed profile, not the advert, and never the Linux peer's `android` profile, which serves no GATT.
 - **Text limits count UTF-16 code units,** and whitespace means Java's `\s`. Node ids compare as ASCII
