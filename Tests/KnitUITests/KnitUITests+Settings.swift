@@ -11,6 +11,8 @@ extension KnitUITests {
     private static let quiet: TimeInterval = 3
     /// The marketing scene's post by the fire, Dani's, which carries a photo.
     private static let firePost = "room-5"
+    /// The farthest one drag moves the thread, in points: well inside the screen at either end.
+    private static let dragStep: CGFloat = 300
     /// The room's newest post, Priya's, which carries words alone.
     private static let newestPost = "room-9"
     /// What the walk tries to post, which the demo's classifier finds abusive like everything else.
@@ -127,10 +129,26 @@ extension KnitUITests {
 
     /// Taps `identifier` at `offset` within it once the thread holds still. A swipe's glide carries the thread on after
     /// `reveal` finds the element, and a tap on the moving thread lands on whatever slid under it: an author's name, whose
-    /// link opens their profile.
+    /// link opens their profile. At the largest sizes a message with a photo stands taller than the screen, and `reveal`
+    /// finds it with the point the tap aims at still off it, where a tap lands on the status bar and scrolls the thread to
+    /// its top. Slow drags bring that point between the bars first.
     private func tapWhenStill(_ identifier: String, at offset: CGVector, in app: XCUIApplication) throws {
         let element = try app.reveal(identifier)
         settle(element)
+        let thread = try app.appear(AccessibilityID.chatThread)
+        let top = app.navigationBars.firstMatch.frame.maxY
+        let bottom = try app.appear(AccessibilityID.chatBottomBar).frame.minY
+        for _ in 0..<Walking.swipes {
+            let aim = element.coordinate(withNormalizedOffset: offset).screenPoint.y
+            guard aim < top || aim > bottom else {
+                break
+            }
+            let step = max(min((top + bottom) / 2 - aim, Self.dragStep), -Self.dragStep)
+            let from = thread.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: step > 0 ? 0.3 : 0.7))
+            let to = from.withOffset(CGVector(dx: 0, dy: step))
+            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.2)
+            settle(element)
+        }
         element.coordinate(withNormalizedOffset: offset).tap()
     }
 

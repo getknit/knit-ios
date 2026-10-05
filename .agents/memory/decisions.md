@@ -62,3 +62,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.ehe6](decisions/2026-10-ehe6-reactions.md) | Reactions: six to pick, any one emoji shown, sent in the clear | messages, wire, interop, ui |
 | [2026-10.rpmq](decisions/2026-10-rpmq-photos-from-others-are-screened.md) | Photos from others are screened on the iPhone when first shown, by Android's NSFW model in Core ML | moderation, blobs, app, build |
 | [2026-10.u7cq](decisions/2026-10-u7cq-a-delete-removes-messages-from.md) | A delete removes messages from this iPhone and keeps them gone | messages, custody, store, ui |
+| [2026-10.pkbu](decisions/2026-10-pkbu-a-thread-is-a-uikit.md) | A thread is a UIKit collection view | ui, accessibility |

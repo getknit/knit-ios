@@ -26,6 +26,7 @@
         let react: ((String) -> Void)?
         @Environment(\.dynamicTypeSize) private var typeSize
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
+        @Environment(\.openRoute) private var openRoute
 
         var body: some View {
             HStack(alignment: .bottom, spacing: Layout.small) {
@@ -39,7 +40,9 @@
                         Color.clear
                             .frame(width: Layout.faceBubble)
                     } else {
-                        NavigationLink(value: Route.peer(message.author)) {
+                        Button {
+                            openRoute(.peer(message.author))
+                        } label: {
                             AvatarView(face: face, size: Layout.faceBubble)
                         }
                         .buttonStyle(.plain)
@@ -163,11 +166,14 @@
         let reveal: () -> Void
         let open: (ChatAttachment) -> Void
         let react: ((String) -> Void)?
+        @Environment(\.openRoute) private var openRoute
 
         var body: some View {
             VStack(alignment: message.isMine ? .trailing : .leading, spacing: Layout.hairline) {
                 if let author = message.authorLabel, !place.joinsPrevious {
-                    NavigationLink(value: Route.peer(message.author)) {
+                    Button {
+                        openRoute(.peer(message.author))
+                    } label: {
                         Text(author)
                             .font(.caption.bold())
                     }

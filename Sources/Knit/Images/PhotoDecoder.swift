@@ -1,6 +1,7 @@
 #if os(iOS)
     import Foundation
     import ImageIO
+    import KnitStore
     import UniformTypeIdentifiers
 
     /// Decodes image bytes only as bounded ImageIO thumbnails, turned upright by their orientation tag. A blob comes
@@ -47,6 +48,14 @@
             let orientation = (properties[kCGImagePropertyOrientation] as? UInt32).flatMap(CGImagePropertyOrientation.init)
             let turned = orientation.map(quarterTurns.contains) ?? false
             return turned ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
+        }
+
+        /// The upright size of `bytes`, a photo from the mesh, read from its header: what the session stores on each message
+        /// that carries it (ADR 2026-10.6cas). `nil` for bytes ``thumbnail(_:side:types:pixels:)`` would refuse.
+        static func dimensions(_ bytes: [UInt8]) -> PhotoDimensions? {
+            uprightSize(Data(bytes), types: meshTypes, pixels: meshPixels).flatMap { size in
+                PhotoDimensions(width: Int(size.width), height: Int(size.height))
+            }
         }
 
         /// The orientations that stand an image on its side, so it is upright with its width and height swapped.

@@ -26,6 +26,7 @@ internal enum Schema {
         ("v7", v7),
         ("v8", v8),
         ("v9", v9),
+        ("v10", v10),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -209,6 +210,14 @@ internal enum Schema {
             PRIMARY KEY (messageId, reactor)
         ) STRICT
         """
+    ]
+
+    /// Schema v10: a photo's upright size in pixels, read from its bytes on this phone (ADR 2026-10.6cas), so a thread
+    /// holds its place at its shape before it decodes. Local only, as knit-next's `voiceDurationMs` and `voicePeaks` are:
+    /// nothing on the wire carries it. Every row already stored reads no size until a launch reads it.
+    private static let v10 = [
+        "ALTER TABLE messages ADD COLUMN attachmentWidth INTEGER",
+        "ALTER TABLE messages ADD COLUMN attachmentHeight INTEGER",
     ]
 
     /// The migrator that brings any database this build knows up to date.

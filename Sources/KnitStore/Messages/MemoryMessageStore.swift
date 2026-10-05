@@ -203,6 +203,26 @@ public final class MemoryMessageStore: MessageStore {
         state.withLock { Set($0.rows.values.compactMap(\.record.attachment?.hash)) }
     }
 
+    public func unsizedAttachments(named hash: BlobHash?) -> [MessageAttachment] {
+        state.withLock { state in
+            var seen = Set<BlobHash>()
+            return state.rows.values.sorted { $0.order > $1.order }.compactMap(\.record.attachment)
+                .filter { $0.dimensions == nil && (hash == nil || $0.hash == hash) && seen.insert($0.hash).inserted }
+        }
+    }
+
+    @discardableResult
+    public func setAttachmentDimensions(_ hash: BlobHash, to dimensions: PhotoDimensions) -> Bool {
+        state.withLock { state in
+            var changed = false
+            for (key, row) in state.rows where row.record.attachment?.hash == hash && row.record.attachment?.dimensions != dimensions {
+                state.rows[key]?.record.attachment?.dimensions = dimensions
+                changed = true
+            }
+            return changed
+        }
+    }
+
     @discardableResult
     public func setModeration(_ id: String, to moderation: MessageModeration) -> Bool {
         state.withLock { state in

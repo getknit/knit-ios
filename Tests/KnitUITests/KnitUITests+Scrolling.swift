@@ -17,11 +17,17 @@ extension KnitUITests {
         try walkLongRoom()
     }
 
+    /// A room far longer than the screen, dragged up its history, moves with the finger and nothing else.
+    func testALongRoomDraggedUpMovesWithTheFinger() throws {
+        try walkLongRoomDrags()
+    }
+
     /// A thread's photos and its scrolling, for the walks every screen takes again.
     func walkThreadPhotosAndScrolling() throws {
         try walkChatPhotos()
         try walkScrolling()
         try walkLongRoom()
+        try walkLongRoomDrags()
     }
 
     /// The marketing scene's room, the longest thread the demo seeds. A tap on the navigation bar's empty end scrolls it to
@@ -82,6 +88,53 @@ extension KnitUITests {
             settle(newest)
             XCTAssertLessThanOrEqual(newest.frame.maxY, composer.frame.minY, "the room opened short of its newest post")
             app.back()
+        }
+        app.terminate()
+    }
+}
+
+// MARK: Dragging up a long room
+
+extension KnitUITests {
+    /// How many times the long room is dragged up, each about a third of the screen: far enough up its history for UIKit
+    /// to measure a few dozen rows it had only estimated.
+    private static let roomDrags = 12
+    /// How fast the room is dragged, in points a second: slowly, so the finger is still down as rows come in above.
+    private static let dragSpeed: CGFloat = 300
+    /// How long the finger rests before it lifts, so the room does not glide on.
+    private static let dragRest: TimeInterval = 0.2
+    /// How far a post may end from where the finger took it: the pan's own slop before the thread follows.
+    private static let dragSlop: CGFloat = 12
+
+    /// The long-room scene's room, dragged up its history. Each time, a post in the top half moves exactly as far as the
+    /// finger does, whatever the rows that come in above it measure. The thread once corrected its offset for those rows
+    /// on top of UIKit's own correction, and threw itself down by what each differed from UIKit's estimate (ADR
+    /// 2026-10.pkbu).
+    func walkLongRoomDrags() throws {
+        let app = launch("-demoScene", "long-room")
+        try app.reveal(AccessibilityID.chatRow("nearby")).tap()
+        let thread = try app.appear(AccessibilityID.chatThread)
+        settle(try app.appear(AccessibilityID.chatMessage("long-239")))
+        let posts = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.chatMessage("long-")))
+        for _ in 0..<Self.roomDrags {
+            let room = thread.frame
+            // A post whose top is in the room's top half, which the drag keeps on screen. At the largest sizes a post can
+            // stand taller than half the room.
+            guard let post = posts.allElementsBoundByIndex.first(where: { (room.minY..<room.midY).contains($0.frame.minY) }) else {
+                XCTFail("no post starts in the top half of the room")
+                return
+            }
+            let held = app.element(post.identifier)
+            let top = held.frame.minY
+            let start = thread.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+            let end = thread.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+            let speed = XCUIGestureVelocity(rawValue: Self.dragSpeed)
+            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: speed, thenHoldForDuration: Self.dragRest)
+            settle(held)
+            let moved = held.frame.minY - top
+            let dragged = end.screenPoint.y - start.screenPoint.y
+            XCTAssertEqual(moved, dragged, accuracy: Self.dragSlop, "\(post.identifier) strayed from the finger")
         }
         app.terminate()
     }

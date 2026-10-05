@@ -78,4 +78,34 @@ extension SchemaTests {
         #expect(messages.applyReaction(thumbs))
         #expect(messages.reactions(in: "nearby") == [thumbs])
     }
+
+    @Test func v10ReadsNoPhotosSizeUntilOneIsRead() throws {
+        // No size was kept before v10 (ADR 2026-10.6cas): a stored photo reads with none, waits for a launch to read it,
+        // and keeps the size once read.
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v9")
+        let bob = fixtureNodeId(2)
+        let hash = BlobHash(String(repeating: "5", count: 64)) ?? .empty
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO messages (id, senderId, conversationId, body, sentAt, delivered, pendingKey, kind, moderation,
+                        attachmentHash, attachmentMime)
+                    VALUES (?, ?, ?, ?, 3, 0, 0, 0, 0, ?, ?)
+                    """,
+                arguments: [
+                    StoredText.bytes("m1"), StoredText.bytes(bob.string), StoredText.bytes("nearby"), StoredText.bytes(""),
+                    StoredText.bytes(hash.string), StoredText.bytes("image/jpeg"),
+                ]
+            )
+        }
+        let database = try KnitDatabase(writer: queue, failures: recordFailure)
+        let messages = SQLMessageStore(database)
+        #expect(messages.message("m1")?.attachment == MessageAttachment(hash: hash, mime: "image/jpeg"))
+        #expect(messages.unsizedAttachments(named: nil) == [MessageAttachment(hash: hash, mime: "image/jpeg")])
+        let size = try #require(PhotoDimensions(width: 1280, height: 960))
+        #expect(messages.setAttachmentDimensions(hash, to: size))
+        #expect(messages.message("m1")?.attachment?.dimensions == size)
+        #expect(messages.unsizedAttachments(named: nil).isEmpty)
+    }
 }

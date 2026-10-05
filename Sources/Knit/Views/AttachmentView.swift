@@ -1,6 +1,7 @@
 #if os(iOS)
     import KnitAppCore
     import KnitMesh
+    import KnitStore
     import KnitWire
     import SwiftUI
 
@@ -52,14 +53,15 @@
         @State private var failed = false
 
         var body: some View {
-            // The photo's own shape, once it has decoded or been measured. A spinner or a hidden photo holds it, so a row
-            // built above the screen as the thread scrolls up keeps its height, and nothing below it jumps.
-            let place = photos?.shape(attachment.hash, key: attachment.key).map(Self.frame(for:))
+            // The photo's own shape, read from its bytes as they landed. A spinner or a hidden photo holds it, so a row
+            // keeps its height from its first frame, and nothing around it moves as the photo decodes.
+            let place = attachment.dimensions.map { Self.frame(for: CGSize(width: $0.width, height: $0.height)) }
             Group {
                 if covered {
                     HiddenPhoto(place: place, reveal: reveal)
                 } else if let image {
-                    let size = Self.frame(for: image.size)
+                    // The stored shape where there is one: a thumbnail's sides are rounded, and the row would shift a hair.
+                    let size = place ?? Self.frame(for: image.size)
                     Button(action: open) {
                         Image(uiImage: image)
                             .resizable()

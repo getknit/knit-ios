@@ -11,9 +11,10 @@ public import KnitWire
 public final class SQLMessageStore: MessageStore {
     private static let columns = """
         id, senderId, recipientId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind, \
-        attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, moderation
+        attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, moderation, attachmentWidth, \
+        attachmentHeight
         """
-    private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
     /// The database, which the reactions' extension shares.
     let database: KnitDatabase
@@ -69,7 +70,8 @@ public final class SQLMessageStore: MessageStore {
                         arrivedAt = excluded.arrivedAt, delivered = excluded.delivered, pendingKey = excluded.pendingKey,
                         kind = excluded.kind, attachmentHash = excluded.attachmentHash, attachmentMime = excluded.attachmentMime,
                         attachmentKey = excluded.attachmentKey, attachmentName = excluded.attachmentName,
-                        attachmentSize = excluded.attachmentSize, moderation = excluded.moderation
+                        attachmentSize = excluded.attachmentSize, moderation = excluded.moderation,
+                        attachmentWidth = excluded.attachmentWidth, attachmentHeight = excluded.attachmentHeight
                     """,
                 arguments: Self.arguments(message)
             )
@@ -178,6 +180,36 @@ public final class SQLMessageStore: MessageStore {
         }
     }
 
+    public func unsizedAttachments(named hash: BlobHash?) -> [MessageAttachment] {
+        let named = hash.map { _ in "AND attachmentHash = ?" } ?? ""
+        return database.read(or: []) { db in
+            var seen = Set<BlobHash>()
+            return try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, attachmentWidth,
+                        attachmentHeight
+                    FROM messages WHERE attachmentHash IS NOT NULL AND attachmentWidth IS NULL \(named) ORDER BY seq DESC
+                    """,
+                arguments: StatementArguments(hash.map { [StoredText.bytes($0.string)] } ?? [])
+            ).compactMap(Self.attachment).filter { seen.insert($0.hash).inserted }
+        }
+    }
+
+    @discardableResult
+    public func setAttachmentDimensions(_ hash: BlobHash, to dimensions: PhotoDimensions) -> Bool {
+        database.write(or: false) { db in
+            try db.execute(
+                sql: """
+                    UPDATE messages SET attachmentWidth = ?, attachmentHeight = ?
+                    WHERE attachmentHash = ? AND (attachmentWidth IS NOT ? OR attachmentHeight IS NOT ?)
+                    """,
+                arguments: [dimensions.width, dimensions.height, StoredText.bytes(hash.string), dimensions.width, dimensions.height]
+            )
+            return db.changesCount > 0
+        }
+    }
+
     @discardableResult
     public func setModeration(_ id: String, to moderation: MessageModeration) -> Bool {
         database.write(or: false) { db in
@@ -207,7 +239,7 @@ public final class SQLMessageStore: MessageStore {
             StoredText.bytes(message.conversationId), StoredText.bytes(message.body), message.sentAt, message.arrivedAt,
             message.delivered, message.pendingKey, message.kind.rawValue, StoredText.bytes(attachment?.hash.string),
             StoredText.bytes(attachment?.mime), StoredText.bytes(attachment?.key), StoredText.bytes(attachment?.name), attachment?.size,
-            message.moderation.rawValue,
+            message.moderation.rawValue, attachment?.dimensions?.width, attachment?.dimensions?.height,
         ]
     }
 
@@ -237,7 +269,10 @@ public final class SQLMessageStore: MessageStore {
                 mime: try row.optionalText("attachmentMime"),
                 key: try row.optionalText("attachmentKey"),
                 name: try row.optionalText("attachmentName"),
-                size: try row.decode(Int64?.self, forColumn: "attachmentSize")
+                size: try row.decode(Int64?.self, forColumn: "attachmentSize"),
+                dimensions: try row.decode(Int?.self, forColumn: "attachmentWidth").flatMap { width in
+                    try row.decode(Int?.self, forColumn: "attachmentHeight").flatMap { PhotoDimensions(width: width, height: $0) }
+                }
             )
         }
     }

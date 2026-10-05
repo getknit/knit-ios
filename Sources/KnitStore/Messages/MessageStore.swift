@@ -81,14 +81,39 @@ public struct MessageAttachment: Sendable, Equatable {
     public var name: String?
     /// A file's size in bytes, before sealing, which only a file carries.
     public var size: Int64?
+    /// A photo's size, read from its bytes on this phone: `nil` until they are here and have been read, and for
+    /// anything but a photo. It never crosses the wire, as knit-next's voice-note fields never do.
+    public var dimensions: PhotoDimensions?
 
     /// An attachment.
-    public init(hash: BlobHash, mime: String? = nil, key: String? = nil, name: String? = nil, size: Int64? = nil) {
+    public init(
+        hash: BlobHash, mime: String? = nil, key: String? = nil, name: String? = nil, size: Int64? = nil,
+        dimensions: PhotoDimensions? = nil
+    ) {
         self.hash = hash
         self.mime = mime
         self.key = key
         self.name = name
         self.size = size
+        self.dimensions = dimensions
+    }
+}
+
+/// A photo's size in pixels, upright: turned as its orientation says, so a portrait stands taller than it is wide. A
+/// thread holds a photo's place at this shape from its first frame, before the photo decodes.
+public struct PhotoDimensions: Sendable, Hashable {
+    /// The width, in pixels.
+    public let width: Int
+    /// The height, in pixels.
+    public let height: Int
+
+    /// A size, or `nil` unless both sides are at least a pixel.
+    public init?(width: Int, height: Int) {
+        guard width > 0, height > 0 else {
+            return nil
+        }
+        self.width = width
+        self.height = height
     }
 }
 
@@ -226,6 +251,16 @@ public protocol MessageStore: AnyObject, Sendable {
     /// The blobs the messages carry: what keeps a photo from being swept, and what is fetched while its bytes are
     /// missing (`MessageDao.attachmentHashes`).
     func attachmentHashes() -> Set<BlobHash>
+
+    /// What the messages carry whose size this phone has not read, each blob once with the key that opens it, the latest
+    /// stored first: all of it for a launch to read the sizes of, or only blob `hash`'s, which has just landed. Files and
+    /// voice messages are among them, and never get a size.
+    func unsizedAttachments(named hash: BlobHash?) -> [MessageAttachment]
+
+    /// Records the size of the photo in blob `hash` on every message that carries it, and answers whether that changed
+    /// anything.
+    @discardableResult
+    func setAttachmentDimensions(_ hash: BlobHash, to dimensions: PhotoDimensions) -> Bool
 
     /// Records what the content filter made of message `id`'s words, and answers whether that changed anything.
     @discardableResult

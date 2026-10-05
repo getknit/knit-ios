@@ -8,8 +8,8 @@
     /// The photos faces and threads draw, decoded from the blob store off the main actor and kept by hash and size. View
     /// state carries only hashes, so this is where an image lives. A size is rounded up to a power of two, so the faces
     /// of one person at 36 to 96 points share one decode of their 256-pixel photo. A photo sealed in a DM or a group is
-    /// opened here, in memory, with the key its message carried, and only the decoded image is kept, with the upright size
-    /// of each message's photo, which its bubble holds while the photo decodes.
+    /// opened here, in memory, with the key its message carried, and only the decoded image is kept. A message's photo
+    /// stands at the size its message stores, read as its bytes landed (ADR 2026-10.6cas).
     @MainActor
     @Observable
     internal final class BlobImageCache {
@@ -36,15 +36,6 @@
         @ObservationIgnored private var order: [Key] = []
         @ObservationIgnored private var held = 0
         @ObservationIgnored private var decoding: [Key: Task<UIImage?, Never>] = [:]
-        /// The upright size each message's photo stands at, from its decode or its header. It outlives the photo's pixels,
-        /// and a size is a few bytes, so none is let go.
-        @ObservationIgnored private var shapes: [Shape: CGSize] = [:]
-
-        /// A message's photo at any size: the shape its bubble takes. Keyed like a decode, by the key that opens it.
-        private struct Shape: Hashable {
-            var hash: BlobHash
-            var secret: String?
-        }
 
         /// Photos from `session`'s blob store.
         init(session: AppSession) {
@@ -60,32 +51,7 @@
         /// A message's photo, opened with `key` when it is sealed, no larger than `pixels` on its long side; `nil` when its
         /// bytes are missing, the key does not open them, or they are no image a thread may show.
         func attachment(_ hash: BlobHash, key: String?, pixels: Int) async -> UIImage? {
-            let image = await image(Key(hash: hash, side: Self.bucket(pixels), secret: key), unsaved: nil)
-            if let image {
-                shapes[Shape(hash: hash, secret: key)] = image.size
-            }
-            return image
-        }
-
-        /// The upright size of the message's photo `hash`, opened with `key`, once it has decoded or been measured, and
-        /// `nil` before. Its bubble holds this shape while the photo decodes, so the thread does not jump as it comes in.
-        func shape(_ hash: BlobHash, key: String?) -> CGSize? {
-            shapes[Shape(hash: hash, secret: key)]
-        }
-
-        /// Reads the size of each held photo in `attachments` not yet known from its header, one at a time, off the main
-        /// actor, so a bubble built later takes its photo's place from its first frame. Bytes that are missing or would
-        /// not decode leave the size unknown.
-        func measure(_ attachments: [ChatAttachment]) async {
-            for attachment in attachments where attachment.kind == .photo && attachment.isHeld {
-                guard !Task.isCancelled else {
-                    return
-                }
-                let shape = Shape(hash: attachment.hash, secret: attachment.key)
-                if shapes[shape] == nil, let size = await Self.measure(shape, session: session) {
-                    shapes[shape] = size
-                }
-            }
+            await image(Key(hash: hash, side: Self.bucket(pixels), secret: key), unsaved: nil)
         }
 
         /// A message's photo as it was sent, opened with `key` when it is sealed, for Save: read off the main actor, and
@@ -148,13 +114,6 @@
                 return nil
             }
             return UIImage(cgImage: image)
-        }
-
-        @concurrent
-        nonisolated private static func measure(_ shape: Shape, session: AppSession) async -> CGSize? {
-            session.attachment(shape.hash, key: shape.secret).flatMap { bytes in
-                PhotoDecoder.uprightSize(Data(bytes), types: PhotoDecoder.meshTypes, pixels: PhotoDecoder.meshPixels)
-            }
         }
 
         @concurrent

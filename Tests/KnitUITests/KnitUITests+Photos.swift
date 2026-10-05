@@ -63,8 +63,8 @@ extension KnitUITests {
         try ours.appear("our photo")
         // The photo reads as such once it has decoded; until then its place holds a spinner, which a tap does nothing to.
         wait(for: ours, until: "label CONTAINS 'Photo'")
-        // The decoded photo stands a hundred points taller than the spinner did, and the thread follows it down: its stamp
-        // and tick end above the composer, where they used to end under it.
+        // The photo stands upright, a hundred points taller than a spinner's square, and the thread shows it whole: its
+        // stamp and tick end above the composer, where they once ended under it.
         let composer = try app.appear(AccessibilityID.chatInput)
         XCTAssertLessThanOrEqual(ours.frame.maxY, composer.frame.minY, "our photo's stamp sat under the composer")
         // A message reads as one element, so the tap goes where its photo is: above its stamp.

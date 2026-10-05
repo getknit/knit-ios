@@ -1,4 +1,3 @@
-import KnitCrypto
 public import KnitMesh
 public import KnitStore
 public import KnitWire
@@ -25,7 +24,7 @@ public final class AppSession {
     /// Whether the mesh runs: false before the first start, and after Settings' Stop.
     public private(set) var isRunning = false
     /// Moves whenever messages, peers, conversations or our own profile may have changed.
-    public private(set) var revision = 0
+    public internal(set) var revision = 0
     /// Whether the app is in front, which the app keeps current from its scene phase through ``setActive(_:)``.
     public private(set) var isActive = true
     /// Hears every mesh event once the session has handled it: a debug build's bridge reports them to every connection.
@@ -42,6 +41,9 @@ public final class AppSession {
     }
     /// What a message's words are checked with, sent or received; `nil` checks nothing.
     @ObservationIgnored public let textScreening: TextScreening?
+    /// Reads a photo's upright size from its bytes without decoding it, or `nil` for bytes that are no photo. Without
+    /// it no size is read, and a thread holds a photo's place at a square until the photo decodes.
+    @ObservationIgnored let photoDimensions: (@Sendable ([UInt8]) -> PhotoDimensions?)?
 
     @ObservationIgnored private let mesh: any MeshService
     @ObservationIgnored private let notifier: (any Notifier)?
@@ -51,13 +53,16 @@ public final class AppSession {
     @ObservationIgnored private var cachedDirectory = Cached<Int, Directory>()
 
     /// A session over `mesh` and the stores it writes, posting notifications through `notifier`, screening words with
-    /// `textScreening`, and keeping the content filter's toggle in `preferences`.
+    /// `textScreening`, reading photos' sizes with `photoDimensions`, and keeping the content filter's toggle in
+    /// `preferences`.
+    @preconcurrency
     public init(
         identity: OwnIdentity,
         stores: MeshStores,
         mesh: any MeshService,
         notifier: (any Notifier)? = nil,
         textScreening: TextScreening? = nil,
+        photoDimensions: (@Sendable ([UInt8]) -> PhotoDimensions?)? = nil,
         preferences: any AppPreferences = MemoryPreferences()
     ) {
         self.identity = identity
@@ -65,6 +70,7 @@ public final class AppSession {
         self.mesh = mesh
         self.notifier = notifier
         self.textScreening = textScreening
+        self.photoDimensions = photoDimensions
         self.preferences = preferences
         filtersContent = preferences.filtersContent
     }
@@ -84,23 +90,6 @@ public final class AppSession {
         }
     }
 
-    /// The bytes of a photo the blob store holds, or `nil`. It reads the disk, so the app calls it off the main actor,
-    /// as it decodes the photo.
-    nonisolated public func photo(_ hash: BlobHash) -> [UInt8]? {
-        stores.blobs.bytes(of: hash)
-    }
-
-    /// The bytes of a message's photo, off the main actor like ``photo(_:)``: the blob as it is for the room's, or
-    /// opened in memory with `key` for a DM's or a group's, whose blob is sealed (`AttachmentCrypto`). `nil` while the
-    /// blob is missing, or when the key does not open it.
-    nonisolated public func attachment(_ hash: BlobHash, key: String?) -> [UInt8]? {
-        let blob = stores.blobs.bytes(of: hash)
-        guard let key else {
-            return blob
-        }
-        return blob.flatMap { sealed in Base64.decode(key).flatMap { AttachmentCrypto.open(sealed, key: $0) } }
-    }
-
     /// The threads, and which are requests, as of the current revision.
     public func threads() -> ThreadTable {
         let known = directory
@@ -118,10 +107,13 @@ public final class AppSession {
         radioState = await mesh.radioState
         isRunning = await mesh.isRunning
         await screenWaiting()
+        // Read beside the mesh, not before it: the first launch of a build that keeps sizes reads every photo held.
+        async let sized: Void = measure(stores.messages.unsizedAttachments(named: nil))
         for await event in mesh.events {
             await handle(event)
             eventTap?(event)
         }
+        await sized
     }
 
     /// Starts the mesh and its radio. On a first run this is what asks for Bluetooth.
@@ -147,7 +139,11 @@ public final class AppSession {
             }
             revision += 1
             await notify(message, isRequest: isRequest)
-        case .delivered, .sent, .reacted, .peerUpdated, .groupChanged, .attachmentArrived:
+        case .attachmentArrived(let hash):
+            // Its size first, so the thread that redraws for it holds the photo's place at its shape.
+            await measure(stores.messages.unsizedAttachments(named: hash))
+            revision += 1
+        case .delivered, .sent, .reacted, .peerUpdated, .groupChanged:
             revision += 1
         case .neighborsChanged(let linked):
             neighbors = linked
@@ -175,6 +171,7 @@ public final class AppSession {
         } else {
             return nil
         }
+        await measure(sent?.attachment.map { [$0] } ?? [])
         revision += 1
         return sent
     }

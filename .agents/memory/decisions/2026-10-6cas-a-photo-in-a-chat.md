@@ -64,10 +64,13 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
     build can't read.
   - A sealed photo is opened in memory each time it is decoded. Only the decoded image is cached, keyed by the hash,
     the size and the key, so two messages that name one blob with different keys never share a decode.
-    (Amended 2026-10-04: each photo's upright size is kept too, under the same hash and key, and outlives its
-    decoded image. An open thread reads the sizes it lacks from the photos' headers, newest first. A decoding
-    photo's spinner and a hidden photo's box take that size, so a photo scrolled up to keeps its height as it
-    decodes. Before, it grew from the spinner's 160 points and pushed the thread down.)
+    (Amended 2026-10-05: each photo's upright size is kept on its messages, schema v10's `attachmentWidth` and
+    `attachmentHeight`, read from its bytes on this phone. The session reads it as the photo is sent, as its bytes
+    land and before the thread redraws for them, and at launch for any photo held without one, 64 at a time, the
+    latest stored first. Like knit-next's voice-note fields, it never crosses the wire. A decoding photo's spinner and
+    a hidden photo's box take that size from the row's first frame. A photo grew from the spinner's 160 points and
+    pushed the thread down until 2026-10-04, when a fix kept sizes in memory and read them as a thread opened; a row
+    drawn before its photo was read still grew as it decoded.)
   - A message stays one element for VoiceOver, and its photo opens with a View photo action. A photo made an element
     of its own left the author's name one too, a hit area the accessibility audit fails.
   - Tapping a photo opens the viewer. Its Save adds the bytes as they were sent to Photos, asking only to add
@@ -95,12 +98,11 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
   photo it carries for others reaches them from whoever holds it.
 - **Guards:**
   - `AttachmentCryptoTests`: the known answer, a wrong key, a bad tag, a short blob, and a fresh key each time.
-  - `MessageAttachmentTests` and `SchemaTests` (v5) for the store.
+  - `MessageAttachmentTests` and `SchemaTests` (v5) for the store, and `PhotoDimensionsTests` and `SchemaTests` (v10)
+    for a photo's size. `PhotoSizeTests` covers when the session reads it, a sealed photo through its key.
   - `MeshEnginePhotoTests`: sending in all three threads, a pending photo's reseal, receiving, the hash and length
     checks, and the sweep.
   - `ChatPhotoTests` and `CopyTests` for the app's state, the lines, and the plist's words.
   - `MeshControlPhotoTests` for the control lines, and `KnitUITests`' photo walk for the composer, the bubble and the
-    viewer at both text sizes. The walk's picked picture stands upright, so the photo it sends grows a hundred points
-    as it decodes, and the walk checks that the thread follows it down, its stamp above the composer. The thread rests
-    on its bottom edge (`ScrollPosition`), which a growing row keeps it on; scrolled to the newest message's id, it
-    left the stamp under the composer.
+    viewer at both text sizes. The walk's picked picture stands upright, a hundred points taller than a spinner's
+    square, and the walk checks that the thread shows the photo whole, its stamp above the composer.

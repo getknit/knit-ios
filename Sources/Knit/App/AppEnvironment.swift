@@ -246,6 +246,19 @@
             #endif
         }
 
+        /// The app's session over `service`, which reads words with the text classifier and photos' sizes with ImageIO.
+        private static func session(_ parts: Parts, over service: any MeshService, notifying alerts: LocalNotifier) -> AppSession {
+            AppSession(
+                identity: OwnIdentity(bundle: parts.identity.bundle),
+                stores: parts.stores,
+                mesh: service,
+                notifier: alerts,
+                textScreening: TextScreening(classifier: parts.textClassifier, words: wordList(log: parts.log)),
+                photoDimensions: { PhotoDecoder.dimensions($0) },
+                preferences: parts.preferences
+            )
+        }
+
         private static func compose(_ parts: Parts, replace: IdentityReplacer?) -> AppEnvironment {
             let clock = SystemClock()
             let node = Mesh(
@@ -259,14 +272,7 @@
             )
             let alerts = LocalNotifier()
             let service: any MeshService = parts.linked.isEmpty ? node : DemoMesh(node, linked: parts.linked)
-            let app = AppSession(
-                identity: OwnIdentity(bundle: parts.identity.bundle),
-                stores: parts.stores,
-                mesh: service,
-                notifier: alerts,
-                textScreening: TextScreening(classifier: parts.textClassifier, words: wordList(log: parts.log)),
-                preferences: parts.preferences
-            )
+            let app = session(parts, over: service, notifying: alerts)
             let environment = AppEnvironment(
                 session: app,
                 mesh: node,

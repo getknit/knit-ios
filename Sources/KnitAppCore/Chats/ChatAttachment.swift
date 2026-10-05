@@ -84,6 +84,9 @@ public struct ChatAttachment: Sendable, Equatable {
     public var isHeld: Bool
     /// What it is, in words: a file's name, or what a voice message or a photo is called.
     public var label: String
+    /// A photo's upright size, once its bytes have been read on this phone: the shape its bubble holds from its first
+    /// frame, before the photo decodes.
+    public var dimensions: PhotoDimensions?
 }
 
 extension ChatAttachment {
@@ -105,6 +108,7 @@ extension ChatAttachment {
         self.kind = kind
         key = attachment.key
         self.isHeld = isHeld
+        dimensions = attachment.dimensions
     }
 }
 

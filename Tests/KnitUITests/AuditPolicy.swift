@@ -15,6 +15,10 @@ import XCTest
 ///   message marks: content scrolled beneath the composer is read through its glass, as under a navigation bar. A thread
 ///   resting on its bottom edge has nothing under the bar, so text found there still fails, and the bar's own words stay
 ///   checked.
+/// - Contrast reported for no element while every text on screen passes the rules here: a thread's rows are SwiftUI in
+///   UIKit cells (ADR 2026-10.pkbu), and the audit names no element for some of their text, a reaction chip's emoji or
+///   words under the composer's glass among it. Each text is then checked as if the report had named it, its own pixels
+///   measured where no rule exempts it, so text that fails still fails.
 /// - Contrast of an emoji, an element whose label is one: a picture the font draws in its own colors, which no view picks.
 ///   A reaction chip's 👍 is yellow on light gray, and no fill brings it to 4.5:1 in light and dark alike. WCAG 1.4.3 is
 ///   for text; the chip's count and the bubble's VoiceOver value carry what it says (ADR 2026-10.ehe6).
@@ -41,7 +45,7 @@ enum AuditPolicy {
             case .textClipped:
                 return true
             case .contrast:
-                return textUnderGlass(in: app, bars: bars, glass: glass)
+                return textUnderGlass(in: app, bars: bars, glass: glass) || noTextFails(in: app, glass: glass, window: window)
             case .elementDetection:
                 return textBehindAlert(in: app)
             default:
@@ -54,8 +58,7 @@ enum AuditPolicy {
         }
         switch issue.auditType {
         case .contrast:
-            return !element.isEnabled || !window.contains(frame) || isEmoji(element.label) || isUnderTheThreadsBar(element, in: app)
-                || measuredContrast(of: element) >= minimumContrast
+            return passesContrast(element, in: app, window: window)
         case .textClipped:
             return [.staticText, .button, .textField].contains(element.elementType)
         default:
@@ -84,6 +87,20 @@ enum AuditPolicy {
         let frame = element.frame
         return frame.maxY > bar.frame.minY
             && !bar.staticTexts.allElementsBoundByIndex.contains { $0.frame == frame && $0.label == element.label }
+    }
+
+    /// Whether `element`, out from under the glass, passes contrast by the rules above.
+    private static func passesContrast(_ element: XCUIElement, in app: XCUIApplication, window: CGRect) -> Bool {
+        !element.isEnabled || !window.contains(element.frame) || isEmoji(element.label) || isUnderTheThreadsBar(element, in: app)
+            || measuredContrast(of: element) >= minimumContrast
+    }
+
+    /// Whether every text on screen passes contrast by the rules above, so a report that names no element is about none
+    /// of them.
+    private static func noTextFails(in app: XCUIApplication, glass: [CGRect], window: CGRect) -> Bool {
+        app.staticTexts.allElementsBoundByIndex.allSatisfy { text in
+            glass.contains { $0.intersects(text.frame) } || passesContrast(text, in: app, window: window)
+        }
     }
 
     /// Whether an alert is up with some content text partly under it, which its glass shows through.

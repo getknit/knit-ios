@@ -4,7 +4,7 @@
     import SwiftUI
 
     /// Where the app goes from the chat list.
-    internal enum Route: Hashable {
+    internal enum Route: Hashable, Sendable {
         case chat(String)
         case requests
         case groupInfo(String)
@@ -14,6 +14,24 @@
         case blocked
         case about
         case diagnostics
+    }
+
+    /// Opens a screen on the app's navigation stack. A thread's rows are drawn in a UIKit collection view, outside the
+    /// stack's SwiftUI, where a `NavigationLink` to a value finds no destination (ADR 2026-10.5waw).
+    internal struct OpenRoute: Sendable {
+        let open: @MainActor @Sendable (Route) -> Void
+
+        @MainActor
+        func callAsFunction(_ route: Route) {
+            open(route)
+        }
+    }
+
+    extension EnvironmentValues {
+        /// Opens a screen on the app's navigation stack; nothing outside it.
+        @Entry var openRoute = OpenRoute { _ in
+            // Outside the stack, nothing opens.
+        }
     }
 
     /// The launch's stage: waiting for the first unlock, onboarding, or the app.
@@ -96,10 +114,12 @@
         @State private var composing = false
 
         var body: some View {
+            let stack = $path
             NavigationStack(path: $path) {
                 ChatListView(session: environment.session) { composing = true }
                     .navigationDestination(for: Route.self, destination: destination)
             }
+            .environment(\.openRoute, OpenRoute { stack.wrappedValue.append($0) })
             .sheet(isPresented: $composing) {
                 // The sheet goes and the thread is under it, as Android drops its picker from the back stack.
                 NewMessageView(session: environment.session) { conversationId in
