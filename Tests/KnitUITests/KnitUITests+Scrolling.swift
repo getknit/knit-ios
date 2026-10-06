@@ -106,8 +106,8 @@ extension KnitUITests {
     /// How far a post may end from where the finger took it: the pan's own slop before the thread follows.
     private static let dragSlop: CGFloat = 12
 
-    /// The long-room scene's room, dragged up its history. Each time, a post in the top half moves exactly as far as the
-    /// finger does, whatever the rows that come in above it measure. The thread once corrected its offset for those rows
+    /// The long-room scene's room, dragged up its history. Each time, a post on screen moves exactly as far as the finger
+    /// does, whatever the rows that come in above it measure. The thread once corrected its offset for those rows
     /// on top of UIKit's own correction, and threw itself down by what each differed from UIKit's estimate (ADR
     /// 2026-10.pkbu).
     func walkLongRoomDrags() throws {
@@ -115,25 +115,32 @@ extension KnitUITests {
         try app.reveal(AccessibilityID.chatRow("nearby")).tap()
         let thread = try app.appear(AccessibilityID.chatThread)
         settle(try app.appear(AccessibilityID.chatMessage("long-239")))
-        let posts = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.chatMessage("long-")))
+        // A post with a photo takes the photo's name.
+        let named = NSPredicate(
+            format: "identifier BEGINSWITH %@ OR identifier BEGINSWITH %@",
+            AccessibilityID.chatMessage("long-"),
+            AccessibilityID.chatPhoto("long-"))
+        let posts = app.descendants(matching: .any).matching(named)
         for _ in 0..<Self.roomDrags {
             let room = thread.frame
-            // A post whose top is in the room's top half, which the drag keeps on screen. At the largest sizes a post can
-            // stand taller than half the room.
-            guard let post = posts.allElementsBoundByIndex.first(where: { (room.minY..<room.midY).contains($0.frame.minY) }) else {
-                XCTFail("no post starts in the top half of the room")
+            let start = thread.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+            let end = thread.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+            let dragged = end.screenPoint.y - start.screenPoint.y
+            // A post on screen whose top the drag leaves above the room's bottom edge, so its row stays laid out. At the
+            // largest sizes one post with a photo can fill the room, its top above it.
+            let onScreen = posts.allElementsBoundByIndex.first { post in
+                post.frame.maxY > room.minY && post.frame.minY + dragged < room.maxY
+            }
+            guard let post = onScreen else {
+                XCTFail("no post on screen to drag")
                 return
             }
             let held = app.element(post.identifier)
             let top = held.frame.minY
-            let start = thread.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-            let end = thread.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
             let speed = XCUIGestureVelocity(rawValue: Self.dragSpeed)
             start.press(forDuration: 0.05, thenDragTo: end, withVelocity: speed, thenHoldForDuration: Self.dragRest)
             settle(held)
             let moved = held.frame.minY - top
-            let dragged = end.screenPoint.y - start.screenPoint.y
             XCTAssertEqual(moved, dragged, accuracy: Self.dragSlop, "\(post.identifier) strayed from the finger")
         }
         app.terminate()
