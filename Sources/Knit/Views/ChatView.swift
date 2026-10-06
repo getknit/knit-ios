@@ -110,6 +110,7 @@
                     dismiss()
                 }
             }
+            .releasesKeyboardWhenCovered()
             .task { await model.appear() }
             .onDisappear(perform: model.disappear)
         }

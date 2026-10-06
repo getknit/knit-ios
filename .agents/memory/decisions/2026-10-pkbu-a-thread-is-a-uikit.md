@@ -68,6 +68,11 @@ The alternatives:
   throws the thread by the row's difference from the estimate.
 - **A cell's environment is hand-fed.** A row that starts reading an environment value from the app gets the default
   in a thread until `MessageList` passes it in. Navigation from a row goes through `openRoute`.
+- **The keyboard is the thread's to put away.** A drag takes it down with the finger (`keyboardDismissMode`), and a
+  tap on the thread puts it away without taking the tap from the row under it. A thread covered by another screen
+  lets go of it first (`releasesKeyboardWhenCovered`). UIKit otherwise brought it back with the thread, and SwiftUI
+  left the composer under it. The collection view is not the cause: on iOS 27 in the Simulator, a plain `ScrollView`
+  in its place, under `safeAreaBar` or `safeAreaInset`, did the same.
 - **History is not windowed.** Every message is an item in the snapshot. knit-next draws 60 and pages in 100 at a
   time.
 - **The guards** are `KnitUITests`:

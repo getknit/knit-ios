@@ -109,6 +109,29 @@
         }
     }
 
+    /// Puts the keyboard away on a tap on the thread, without taking the tap from the row under it: a photo still opens, a
+    /// face still opens its profile.
+    @MainActor
+    private final class KeyboardTap: NSObject, UIGestureRecognizerDelegate {
+        let recognizer = UITapGestureRecognizer()
+
+        override init() {
+            super.init()
+            recognizer.addTarget(self, action: #selector(tapped))
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesEnded = false
+            recognizer.delegate = self
+        }
+
+        @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
+            recognizer.view?.window?.endEditing(true)
+        }
+
+        func gestureRecognizer(_: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer) -> Bool {
+            true
+        }
+    }
+
     /// A thread's collection view, which keeps to its bottom edge while it is pinned there. Up in its history, the
     /// compositional layout keeps what shows still itself: as it measures a row above the screen, it moves the offset by
     /// what the row's height differs from its estimate.
@@ -139,6 +162,8 @@
         private var offering = false
         /// Whether the thread is laying out its rows, where every offset it moves to is its own.
         private var laying = false
+        /// A tap anywhere on the thread puts the keyboard away.
+        private let tap = KeyboardTap()
 
         init() {
             super.init(frame: .zero, collectionViewLayout: Self.layout())
@@ -149,6 +174,7 @@
             contentInsetAdjustmentBehavior = .never
             accessibilityIdentifier = AccessibilityID.chatThread
             delegate = self
+            addGestureRecognizer(tap.recognizer)
         }
 
         @available(*, unavailable)
