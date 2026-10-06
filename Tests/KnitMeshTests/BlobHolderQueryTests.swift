@@ -115,24 +115,11 @@ import Testing
         #expect(exchange.counts.confirms == 1 && exchange.counts.fallbacks == 1)
     }
 
-    @Test func aSilentConfirmFallsBack() {
-        var exchange = exchange()
-        let linked = capable(bob, carol)
-        _ = step(&exchange, linked, at: 0)
-        _ = answer(&exchange, bob, .have, at: 10)
-        _ = answer(&exchange, carol, .have, load: 1, at: 10)
-        _ = step(&exchange, linked, at: 10)
-        _ = step(&exchange, linked, at: 10 + grace)
-        #expect(step(&exchange, linked, at: 10 + grace + wait - 1).asks.isEmpty, "its answer is still due")
-        let silent = step(&exchange, linked, at: 10 + grace + wait)
-        #expect(silent.asks.map(\.to) == [carol])
-        #expect(silent.notes.contains { $0.hasSuffix("\(bob) (confirm silent) → next") })
-    }
-
     @Test func aConfirmThatStillSendsBuysAnotherGraceAndTheSecondConfirmIsNeverRead() {
         // Android's `fetchWait` checks `MAX_CONFIRMS` before `confirmWait` reads the second confirm's answer
-        // (`BlobExchange.kt:385`), so a holder still sending after two graces is passed over for its grace. Ported as
-        // written, so both phones log the same steps; a fix lands in knit-next first.
+        // (`BlobExchange.kt:385` at the pin), so a holder still sending after two graces is held to its ask's floor
+        // whatever it said (knit-next #140). Ported as written, so both phones log the same steps; a fix lands in
+        // knit-next first.
         var exchange = exchange()
         let linked = capable(bob, carol)
         _ = step(&exchange, linked, at: 0)
@@ -145,10 +132,11 @@ import Testing
         #expect(more.asks.isEmpty && more.wake == grace, "still sending: a fresh grace")
         #expect(step(&exchange, linked, at: 20 + 2 * grace).query == [bob], "the second confirm")
         _ = answer(&exchange, bob, .sending, at: 30 + 2 * grace)
-        let passed = step(&exchange, linked, at: 20 + 2 * grace + wait)
-        #expect(passed.asks.map(\.to) == [carol])
-        #expect(passed.notes.contains { $0.hasSuffix("\(bob) (grace) → next") })
-        #expect(exchange.counts.confirms == 2)
+        let held = step(&exchange, linked, at: 20 + 2 * grace + wait)
+        let floor = 10 + BlobExchange.serveMemoMilliseconds - (20 + 2 * grace + wait)
+        #expect(held.asks.isEmpty && held.wake == floor, "carol is not asked while bob's copy may be on its way")
+        #expect(held.notes == ["blob hold \(photo.string.prefix(8))… on \(bob) (sending), floor \(floor) ms"])
+        #expect(exchange.counts.confirms == 2 && exchange.counts.fallbacks == 0)
     }
 
     @Test func aHolderThatSaysHaveToAQueryAfterOurAskNeverGotItAndIsAskedOnceMore() {

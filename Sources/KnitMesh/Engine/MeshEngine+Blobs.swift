@@ -89,13 +89,17 @@ extension MeshEngine {
     /// owed a newcomer, the next holder once an ask's grace is up, the widened blind ask, or the next cycle, which is
     /// the re-ask that moves a hop-by-hop pull on.
     func stepBlobs() {
-        let wanted = blobExchange.wanted
-        guard !wanted.isEmpty else {
+        stepBlobs(blobExchange.wanted)
+    }
+
+    /// Each of `hashes` takes its next step against one look at the links, and their queries share one flush.
+    func stepBlobs(_ hashes: [BlobHash]) {
+        guard !hashes.isEmpty else {
             return
         }
         let now = clock.monotonicMilliseconds()
         let candidates = blobCandidates()
-        for hash in wanted {
+        for hash in hashes {
             stepBlob(hash, among: candidates, now: now)
         }
         flushBlobQueries()

@@ -1,7 +1,7 @@
 import KnitWire
 
 /// Holder queries out and their answers in (`queue`, `flushQueries` and `recordAnswers`, `BlobExchange.kt:712-829`,
-/// knit-next ADR 2026-10.6e5t), and the log's words for them.
+/// knit-next ADR 2026-10.6e5t), the waits each neighbour's round trip sizes (knit-next #140), and the log's words.
 extension BlobExchange {
     /// Queues `hash` for each of `peers`, behind what each is already owed (`queue`).
     mutating func queue(_ hash: BlobHash, for peers: [NodeId]) {
@@ -52,9 +52,13 @@ extension BlobExchange {
     /// queried for it this cycle, counts; when the answer names a query we remember, the hash must be one that query
     /// named, and that query no older than the latest one queued to that neighbour for it. An answer naming no query we
     /// remember is still taken from a neighbour queried this cycle, as Android takes it. Only the first
-    /// ``maxQueryHashes`` items are read. Answers the items that counted, and how long their query took.
+    /// ``maxQueryHashes`` items are read. Answers the items that counted, and how long their query took, which is kept
+    /// as that neighbour's round trip (knit-next #140) whatever the items say.
     mutating func recordAnswers(_ content: BlobHasContent, from peer: NodeId, now: Int64) -> (touched: [BlobHasItem], latency: Int64?) {
         let sent = content.re.flatMap { sentQueries[ExactKey($0)] }.flatMap { $0.peer == peer ? $0 : nil }
+        if let sent {
+            roundTrips.record(peer, now - sent.at)
+        }
         var touched: [BlobHasItem] = []
         for item in content.items.prefix(Self.maxQueryHashes) {
             guard let hash = BlobHash(item.hash), var want = wants[hash], let queriedAt = want.queried[peer] else {
@@ -80,6 +84,25 @@ extension BlobExchange {
             counts.answersTaken += 1
         }
         return (touched, sent.map { now - $0.at })
+    }
+
+    // MARK: Waits sized by the round trip
+
+    /// How long an answer from `peer` may take before it reads as silence (`queryWaitFor`, knit-next #140):
+    /// ``queryWaitMilliseconds``, or the round trip its last answer took plus that wait when longer, at most
+    /// ``queryWaitCapMilliseconds``. An asker whose own frames are queued on a link would otherwise read its lag as the
+    /// neighbour's silence.
+    func queryWait(for peer: NodeId) -> Int64 {
+        guard let trip = roundTrips[peer] else {
+            return Self.queryWaitMilliseconds
+        }
+        return max(Self.queryWaitMilliseconds, min(trip + Self.queryWaitMilliseconds, Self.queryWaitCapMilliseconds))
+    }
+
+    /// An ask's grace (`graceFor`): ``firstAskGraceMilliseconds`` plus the round trip `peer`'s link last took, at most
+    /// ``queryWaitCapMilliseconds`` of it (`rttOf`). Android adds its Wi-Fi Aware link's wait too; one radio has none.
+    func grace(for peer: NodeId) -> Int64 {
+        Self.firstAskGraceMilliseconds + min(roundTrips[peer] ?? 0, Self.queryWaitCapMilliseconds)
     }
 
     // MARK: The log's words

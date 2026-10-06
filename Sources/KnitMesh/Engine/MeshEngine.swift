@@ -164,8 +164,11 @@ public final class MeshEngine {
         log.log(.info, "mesh link up \(peer)")
     }
 
-    /// A link to `nodeId` went down.
+    /// A link to `nodeId` went down. Every blob whose ask or hold stood on it takes its next step now, so the next holder
+    /// is asked at once rather than at the next timer or tick (`BlobExchange.unlinked`, knit-next #140): an ask stands on
+    /// a live link until its floor, never on one that is gone.
     public func linkDown(_ nodeId: NodeId) {
+        stepBlobs(blobExchange.fetches(on: [nodeId]))
         events.append(.neighborsChanged(transport.neighbors))
         log.log(.info, "mesh link down \(nodeId)")
     }

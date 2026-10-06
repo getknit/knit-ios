@@ -13,8 +13,9 @@ import KnitWire
 /// Nothing is pushed to a node that did not just ask, and nothing is asked for while its bytes stream in or land
 /// (knit-next ADR 2026-09.4tx5). Everything here is unsigned, so the books are bounded: at most 256 blobs wanted, each
 /// forgotten after 30 minutes unrefreshed; a 45-second serve memo of at most 512 entries; 256 queries remembered; and a
-/// budget of answers per neighbour. This type keeps the books and decides; the engine reads the links and the store,
-/// sends what a step decides, and times its next step. Times are on the monotonic clock.
+/// budget of answers and a round trip per neighbour, for at most 64 neighbours. This type keeps the books and decides;
+/// the engine reads the links and the store, sends what a step decides, and times its next step. Times are on the
+/// monotonic clock.
 internal struct BlobExchange: Sendable {
     /// The most blobs wanted at once (`MAX_FETCHING`), the bound on what unsigned requests can make us fetch.
     static let maxWanted = 256
@@ -32,8 +33,13 @@ internal struct BlobExchange: Sendable {
     /// How long an ask has to bring a header in before the next holder is tried (`FIRST_ASK_GRACE_MS`). This port has
     /// no Wi-Fi Aware link for a holder to wait on, so no ask ever gets Android's `BULK_GRACE_MS` on top.
     static let firstAskGraceMilliseconds: Int64 = 5000
-    /// How long the choice waits for every queried neighbour's answer (`QUERY_WAIT_MS`).
+    /// How long the choice waits for every queried neighbour's answer (`QUERY_WAIT_MS`), before the neighbour's own
+    /// round trip stretches it (``queryWait(for:)``).
     static let queryWaitMilliseconds: Int64 = 5000
+    /// The most a neighbour's measured round trip stretches the wait for its answer, or adds to an ask's grace
+    /// (`QUERY_WAIT_CAP_MS`, knit-next #140). Past it a neighbour reads as silent anyway, and an ask to a holder still
+    /// stands to its floor.
+    static let queryWaitCapMilliseconds: Int64 = 30_000
     /// How often a holder streaming us a file is looked at again, so its grace starts when the stream ends
     /// (`STREAM_POLL_MS`).
     static let streamPollMilliseconds: Int64 = 2000
@@ -85,6 +91,9 @@ internal struct BlobExchange: Sendable {
     private var serves: [(serve: Serve, at: Int64)] = []
     /// Each neighbour's budget of answers.
     private var answerBudget = AnswerBudget()
+    /// How long each neighbour's latest answer took to come back (`answerRtt`, knit-next #140): our own outgoing backlog
+    /// on that link, which every wait on it is stretched by.
+    var roundTrips = AnswerRoundTrips()
 
     /// Books for a node that queries holders before asking, or, with `queriesHolders` off, asks blind.
     init(queriesHolders: Bool) {
@@ -156,11 +165,18 @@ internal struct BlobExchange: Sendable {
 
     /// Neighbours that just linked, or linked again (`linked`): an ask or a query sent before may have died with the old
     /// link, so each is open to every cycle again, its answer and failure forgotten, and a fetch that went to it starts
-    /// over. Call it ahead of the link-up's steps.
+    /// over. Its round trip goes too: a new link, a new queue. Call it ahead of the link-up's steps.
     mutating func linked(_ ids: Set<NodeId>) {
+        roundTrips.forget(ids)
         for hash in order {
             wants[hash]?.forgetLinks(ids)
         }
+    }
+
+    /// The wants whose ask or hold stands on one of `ids`, oldest first (`unlinked`, knit-next #140): when those links
+    /// go, the engine steps them at once, so the next holder is asked now rather than at the next timer or tick.
+    func fetches(on ids: Set<NodeId>) -> [BlobHash] {
+        order.filter { hash in wants[hash]?.fetch.map { ids.contains($0.peer) } == true }
     }
 
     // MARK: Timers
@@ -278,5 +294,33 @@ internal struct AnswerBudget: Sendable {
             buckets.removeFirst(buckets.count - Self.maxPeers)
         }
         return admitted
+    }
+}
+
+/// How long each neighbour's latest answer took to come back (`answerRtt`, knit-next #140), the backlog of our own
+/// frames on that link. A wait for its answer, or for an ask's header, is stretched by it, so an asker whose sends are
+/// queued never reads its own lag as the neighbour's silence. At most ``AnswerBudget/maxPeers`` neighbours are
+/// remembered, the one answered longest ago dropped first; Android also counts a read as a use, which only matters past
+/// that many neighbours.
+internal struct AnswerRoundTrips: Sendable {
+    private var trips: [(peer: NodeId, milliseconds: Int64)] = []
+
+    /// `peer`'s latest answer took `milliseconds`.
+    mutating func record(_ peer: NodeId, _ milliseconds: Int64) {
+        trips.removeAll { $0.peer == peer }
+        trips.append((peer, max(0, milliseconds)))
+        if trips.count > AnswerBudget.maxPeers {
+            trips.removeFirst(trips.count - AnswerBudget.maxPeers)
+        }
+    }
+
+    /// Forgets the neighbours that linked again.
+    mutating func forget(_ peers: Set<NodeId>) {
+        trips.removeAll { peers.contains($0.peer) }
+    }
+
+    /// `peer`'s latest round trip, or `nil` before any answer of its came back.
+    subscript(_ peer: NodeId) -> Int64? {
+        trips.last { $0.peer == peer }?.milliseconds
     }
 }

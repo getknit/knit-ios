@@ -76,3 +76,30 @@ leaves the iPhone paying a copy per holder in range whenever it asks.
 - **The device oracle:** the iPhone's `mesh blob query`, `blob answer`, `blob fetch`, `blob has` and `blob ask` lines
   against the Android phones' `blob …` lines in logcat. Each (asker, hash) owes one `file ATTACHMENT/<hash>`, on the
   holder its `blob fetch` named.
+
+**Amended 2026-10-06, for knit-next #140 (its ADR 2026-10.6e5t's amendment of that date):** an ask to a holder now
+stands until its link goes, its floor passes or the holder says it no longer holds the blob. On 2026-10-06 the lab
+Pixel 3 took five photos twice each. Its own outgoing frames were 13 to 44 s behind, so every answer missed the wait and
+the author was asked blind. The author's HAVE landed inside that ask's grace, but its header did not. When the grace
+ended, a second holder's late HAVE was asked, and nothing on the wire withdraws the first ask. The iPhone's asker did the
+same: `BlobAskStandsTests` holds the trace. Mirrored from knit-next's `fix/blob-ask-race` before it merges, with its
+author's word that the design is settled. No wire change.
+
+- **A blind first pick that said it holds the blob is confirmed, not widened past.** Its fetch is re-tiered as a
+  holder's, and the round counts as widened, so a fallback asks the next holder.
+- **Silence holds; only a no moves on.** A silent confirm, or a holder still sending after two confirms, is held to its
+  floor: our last ask plus the 45 s serve memo (`blob hold <h8>… on <node> (<why>), floor <ms> ms`). At the floor the
+  next holder is asked (`blob fallback … (floor) → next`). A NONE, FETCHING or unknown answer still moves on at once.
+  A stream from the held holder restarts what is left of the hold from the stream's end, as any grace does, since our
+  copy may sit behind it (knit-next ADR 2026-10.nxfb), so a hold can outlast the floor it logged.
+- **`askHolder` never asks past a holder asked inside its floor** whose answer is older than the ask.
+- **A link that goes steps its blobs at once** (`MeshEngine.linkDown`, `BlobExchange.fetches(on:)`), so the next
+  holder is asked without waiting for a timer or the tick.
+- **Waits sized by the round trip.** Each matched answer's round trip is kept per neighbour (`AnswerRoundTrips`) and
+  forgotten when it links again. The wait for its answers, and for a confirm's, is that round trip plus 5 s; an ask's
+  grace gains the round trip. Both stop at 30 s (`queryWaitCapMilliseconds`).
+
+The cost, as on Android: a holder whose ask really died on a link that stays up keeps the blob waiting up to 45 s from
+the ask, not about 15 s. The `BlobExchange.kt:385` quirk stays: the second confirm's answer is still never read, and the
+holder is now held rather than passed over. Guards: `BlobAskStandsTests`, the hold in `BlobHolderQueryTests`, and
+`MeshEngineBlobQueryTests.anAskWhoseLinkGoesAsksTheNextHolderAtOnce`.

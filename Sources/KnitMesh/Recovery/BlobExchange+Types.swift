@@ -144,7 +144,8 @@ extension BlobExchange {
 
     /// The one ask outstanding for a blob, or a wait on a holder already sending it (`Fetch`). Its grace counts from
     /// ``quietSince``, the first look that found the holder streaming nothing to us; ``confirmAt`` is when it was queried
-    /// again once that grace ran out.
+    /// again once that grace ran out. A blind first ask whose pick said it holds the blob is re-tiered as a holder's, and
+    /// a ``Tier/pending`` one is a hold on an ask already made, its grace running to the floor.
     struct Fetch: Sendable {
         var peer: NodeId
         var tier: Tier
@@ -207,12 +208,14 @@ extension BlobExchange {
 
     /// What an outstanding fetch is (`Tier`): an ask of a holder over a link with nothing streaming to us, or over one
     /// that is (Android's slow link also covers the Coded PHY, which this port cannot see), a wait on a holder already
-    /// sending, or a blind first ask. The first two rank holders, best first.
+    /// sending, a blind first ask, or a hold on an ask already made, its grace running to the ask's floor (knit-next
+    /// #140). The first two rank holders, best first.
     enum Tier: Int, Comparable, Sendable {
         case link = 0
         case slowLink = 1
         case sending = 2
         case blind = 3
+        case pending = 4
 
         static func < (lhs: Self, rhs: Self) -> Bool {
             lhs.rawValue < rhs.rawValue

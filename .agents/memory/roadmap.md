@@ -317,11 +317,15 @@ explicit direction.** Update this file in the change that ships an item.
     `5f521cb9`. The iPhone answers `blobhave` in every build and claims `CAP_BLOB_HAVE` in its HELLO. It queries before
     it asks in a debug build and knit-peer, and asks blind, the author first, in release. Every Linux gate passes. Still
     owed:
-    - the device trial, with the iPhone and the Pixels on debug builds: the Pixels' `blob answer ← <iPhone>` and
-      `blob fetch … → <iPhone>` lines, one serve per asker, and the iPhone fetching one copy from the holder its
-      `blob fetch` names. Then `queriesBlobHolders` flips on in release, once Android's `BLOB_QUERY` has;
+    - `queriesBlobHolders` on in release, once Android's `BLOB_QUERY` is. The device trial passed on 2026-10-06, with
+      `51b4796` on the iPhone 12 and four Pixels on knit-next debug builds. Every Pixel queried the iPhone and fetched
+      one copy of its photo, the iPhone took one copy of each Pixel's from the holder its `blob fetch` named, and a
+      `knit-peer` from `main`, which cannot answer, was asked blind as the author;
     - knit-next's second confirm, whose answer `fetchWait` never reads (`BlobExchange.kt:385`): this port mirrors the
       Kotlin, so the fix lands in knit-next first and comes here with the next pin;
+    - the pin, past knit-next #140 (`fix/blob-ask-race`, the 2026-10-06 amendment to its ADR 2026-10.6e5t), once it
+      merges. This port mirrored it from the working tree that day (ADR 2026-10.m9uq's amendment), so check the merged
+      Kotlin against `BlobAskStandsTests` then;
     - knit-next ADR 2026-10.nxfb's holder half, a fed file kept in flight while its link feeds that peer more;
     - knit-next ADR 2026-10.8jwn's pace: one 4 KiB/s budget across the links feeding, in 2 to 16 KiB chunks, where
       this port feeds 28 KiB/s a link. Without it a photo the iPhone serves can hold a DM behind it in Android's

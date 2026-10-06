@@ -81,6 +81,7 @@ import hashlib
 import io
 import json
 import os
+import random
 import re
 import secrets
 import shlex
@@ -4182,11 +4183,16 @@ def _ios_holds(ios: IPhone, conversation: str, body: str) -> dict | None:
 
 
 def _noise_jpeg(seed: str) -> bytes:
-    """A small picture no node holds yet: noise, which no encoder shrinks to anything another run made."""
+    """A small picture no node holds yet: noise drawn from `seed`, which no encoder shrinks to anything another run made.
+    Pillow's `effect_noise` draws the same noise in every process, so two runs' first pictures could match at one of
+    its 32 levels, and a node that held one from an earlier run never asked for it (2026-10-06)."""
     from PIL import Image  # noqa: PLC0415 - only the photo runs need it
 
+    draw = random.Random(seed)
+    sigma = 64 + draw.randrange(32)
+    pixels = bytes(min(255, max(0, round(draw.gauss(128, sigma)))) for _ in range(320 * 240))
     out = io.BytesIO()
-    Image.effect_noise((320, 240), 64 + int(hashlib.sha256(seed.encode()).hexdigest()[:2], 16) % 32).convert("RGB").save(out, "JPEG", quality=70)
+    Image.frombytes("L", (320, 240), pixels).convert("RGB").save(out, "JPEG", quality=70)
     return out.getvalue()
 
 

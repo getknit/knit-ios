@@ -140,10 +140,30 @@ import Testing
         let shown = "\(photoHash.string.prefix(8))"
         #expect(
             fixture.log.all.contains("debug mesh blob answer ← \(carol.nodeId) #\(toCarol.prefix(6)) in 250 ms: \(shown) HAVE 41B load=0"))
-        #expect(fixture.log.all.contains("debug mesh blob fetch \(shown)… → \(carol.nodeId) (link, load 0), grace 5000 ms"))
+        // The grace gains the 250 ms carol's answer took: our own frames to her may be that far behind (knit-next #140).
+        #expect(fixture.log.all.contains("debug mesh blob fetch \(shown)… → \(carol.nodeId) (link, load 0), grace 5250 ms"))
         fixture.advance(BlobExchange.firstAskGraceMilliseconds)
+        #expect(fixture.transport.written(.blobHave).count == 2, "inside the stretched grace")
+        fixture.advance(250)
         #expect(fixture.transport.written(.blobHave).last?.to == carol.nodeId, "the grace's own timer confirms")
         #expect(fixture.engine.blobExchange.counts == BlobCounts(queriesSent: 3, answersTaken: 2, fetches: 1, confirms: 1))
+    }
+
+    @Test func anAskWhoseLinkGoesAsksTheNextHolderAtOnce() throws {
+        // knit-next #140: an ask stands on a live link until its floor, so a link that goes must move it on itself.
+        let fixture = EngineFixture(alice, configuration: MeshConfiguration(queriesBlobHolders: true))
+        fixture.link(bob, carol, capabilities: Capabilities.local.union(.blobHave))
+        fixture.transport.clear()
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        let queries = fixture.transport.written(.blobHave)
+        let toBob = try #require(queries.first?.envelope.id)
+        let toCarol = try #require(queries.last?.envelope.id)
+        fixture.deliver(bob.blobHas([BlobHasItem(hash: photoHash.string, state: .have)], re: toBob), from: bob)
+        fixture.deliver(carol.blobHas([BlobHasItem(hash: photoHash.string, state: .have)], re: toCarol, load: 1), from: carol)
+        #expect(fixture.transport.written(.blobRequest).map(\.to) == [bob.nodeId])
+        fixture.unlink(bob)
+        #expect(fixture.transport.written(.blobRequest).map(\.to) == [bob.nodeId, carol.nodeId], "no timer waited on")
+        #expect(fixture.log.all.contains("debug mesh blob fallback \(photoHash.string.prefix(8))… \(bob.nodeId) (link gone) → next"))
     }
 
     @Test func anAnswerNamingNoQueryIsStillTakenFromANeighbourQueriedThisCycle() {

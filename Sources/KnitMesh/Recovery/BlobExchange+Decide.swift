@@ -97,7 +97,10 @@ extension BlobExchange {
     /// How long the outstanding fetch still has, or `nil` once it is over (`fetchWait`). `holder` is its neighbour as
     /// linked now, `nil` once the link is gone. While the holder streams anything to us, our copy may be queued behind
     /// it, so the grace counts from the first quiet look, never from the last look during the stream. A queried holder
-    /// whose grace is up is queried once more.
+    /// whose grace is up is queried once more, and one still sending after ``maxConfirms`` is held to its floor
+    /// (``hold(_:_:_:_:_:)``). A blind first ask whose pick said it holds the blob is confirmed the same way rather than
+    /// widened (knit-next #140): it is a holder with our ask on it, and the round counts as widened, so a fallback from
+    /// it asks the next holder, not a second first pick.
     private mutating func fetchWait(_ want: inout Want, _ fetch: Fetch, holder: Candidate?, _ now: Int64, _ plan: inout Plan) -> Int64? {
         var fetch = fetch
         guard let holder else {
@@ -115,20 +118,50 @@ extension BlobExchange {
         if left > 0 {
             return left
         }
-        if fetch.tier == .blind {
+        let queryable = holder.capable && queriesHolders
+        switch fetch.tier {
+        case .pending:
+            return over(&want, fetch, "floor", &plan)
+        case .blind:
+            guard queryable, want.answers[holder.id]?.state.isHeld == true else {
+                return over(&want, fetch, "grace", &plan)
+            }
+            want.blindWidened = true
+            fetch.tier = Self.tier(of: holder)
+            want.fetch = fetch
+            return confirmWait(&want, fetch, holder, now, &plan)
+        default:
+            if queryable, fetch.confirms < Self.maxConfirms {
+                return confirmWait(&want, fetch, holder, now, &plan)
+            }
+            if queryable, let floor = hold(&want, holder, "sending", now, &plan) {
+                return floor
+            }
             return over(&want, fetch, "grace", &plan)
         }
-        if !holder.capable || !queriesHolders || fetch.confirms >= Self.maxConfirms {
-            return over(&want, fetch, "grace", &plan)
+    }
+
+    /// Holds `want`'s fetch on `holder` until our last ask's serve-memo floor, when it was asked inside it (`hold`,
+    /// knit-next #140). Nothing on the wire withdraws an ask and every holder serves a fresh one, so asking the next
+    /// holder now buys a second copy whenever the first one's is only late. The hold ends early when the holder's link
+    /// goes or the bytes arrive, and at the floor the next holder is asked. `nil` when there is no floor left to hold on.
+    private func hold(_ want: inout Want, _ holder: Candidate, _ why: String, _ now: Int64, _ plan: inout Plan) -> Int64? {
+        guard let asked = want.askedAt[holder.id], asked + Self.serveMemoMilliseconds > now else {
+            return nil
         }
-        return confirmWait(&want, fetch, holder, now, &plan)
+        let floor = asked + Self.serveMemoMilliseconds - now
+        want.fetch = Fetch(peer: holder.id, tier: .pending, at: now, graceMilliseconds: floor)
+        plan.notes.append("blob hold \(want.hash8)… on \(holder.id) (\(why)), floor \(floor) ms")
+        return floor
     }
 
     /// ``fetchWait(_:_:holder:_:_:)`` once the grace is up (`confirmWait`): query the holder again, or read its answer.
     /// Still sending, it gets another grace. Holding it, to a query sent after our ask, it never had the ask and is asked
-    /// again, once. Anything else, or silence, and the next holder is tried.
+    /// again, once. Silent past the wait, stretched to its round trip, it is held to its floor: silence on a link still
+    /// up is a late answer, not a no (knit-next #140). Anything else, and the next holder is tried.
     private mutating func confirmWait(_ want: inout Want, _ fetch: Fetch, _ holder: Candidate, _ now: Int64, _ plan: inout Plan) -> Int64? {
         var fetch = fetch
+        let wait = queryWait(for: holder.id)
         guard let sent = fetch.confirmAt else {
             fetch.confirmAt = now
             fetch.confirms += 1
@@ -138,11 +171,11 @@ extension BlobExchange {
             plan.query.append(holder.id)
             counts.confirms += 1
             plan.notes.append("blob confirm \(want.hash8)… → \(holder.id)")
-            return Self.queryWaitMilliseconds
+            return wait
         }
         let answer = want.answers[holder.id]
-        if answer == nil, now - sent < Self.queryWaitMilliseconds {
-            return sent + Self.queryWaitMilliseconds - now
+        if answer == nil, now - sent < wait {
+            return sent + wait - now
         }
         if answer?.state == .sending {
             fetch.quietSince = now
@@ -155,7 +188,10 @@ extension BlobExchange {
             want.fetch = nil
             return nil
         }
-        return over(&want, fetch, "confirm \(answer.map { Self.label($0.state) } ?? "silent")", &plan)
+        guard let answer else {
+            return hold(&want, holder, "confirm silent", now, &plan) ?? over(&want, fetch, "confirm silent", &plan)
+        }
+        return over(&want, fetch, "confirm \(Self.label(answer.state))", &plan)
     }
 
     /// Ends `fetch`, whose holder brought nothing, and says why (`over`). A blind first ask's end widens its round
@@ -175,7 +211,8 @@ extension BlobExchange {
     /// Asks the best capable neighbour that said it holds the blob, or waits on one already sending it (`askHolder`).
     /// True when the step is decided: asked, or waiting for answers still due, a holder's memo floor, or a blind
     /// widening's grace. The choice waits for every answer: Android's one exception, a holder on a live Wi-Fi Aware
-    /// link, never comes up here.
+    /// link, never comes up here. It never asks past a holder whose ask of ours still stands inside its floor, however
+    /// the fetch came to be empty (knit-next #140): that one's copy may only be late.
     private mutating func askHolder(_ want: inout Want, _ capable: [Candidate], _ now: Int64, _ plan: inout Plan) -> Bool {
         let holders = capable.compactMap { candidate in
             want.answers[candidate.id].flatMap { answer in
@@ -184,31 +221,36 @@ extension BlobExchange {
         }
         if let sending = holders.first(where: { $0.answer.state == .sending }) {
             let peer = sending.candidate.id
-            want.fetch = Fetch(peer: peer, tier: .sending, at: now, graceMilliseconds: Self.firstAskGraceMilliseconds)
-            plan.notes.append("blob wait \(want.hash8)… on \(peer) (sending), grace \(Self.firstAskGraceMilliseconds) ms")
-            plan.waitFor(Self.firstAskGraceMilliseconds)
+            let grace = grace(for: peer)
+            want.fetch = Fetch(peer: peer, tier: .sending, at: now, graceMilliseconds: grace)
+            plan.notes.append("blob wait \(want.hash8)… on \(peer) (sending), grace \(grace) ms")
+            plan.waitFor(grace)
             return true
         }
-        // When each neighbour still to answer was queried, while its answer is due.
-        let answering = capable.compactMap { want.answers[$0.id] == nil ? want.queried[$0.id] : nil }
-            .filter { now - $0 < Self.queryWaitMilliseconds }
+        // When each neighbour still to answer was queried, while its answer is due, the wait stretched to its round trip.
+        let answering = capable.compactMap { candidate in
+            want.answers[candidate.id] == nil ? want.queried[candidate.id].map { $0 + queryWait(for: candidate.id) } : nil
+        }.filter { $0 > now }
         let widenGate = want.blindWidenedAt.map { $0 + Self.firstAskGraceMilliseconds - now }.flatMap { $0 > 0 ? $0 : nil }
         let askable = holders.filter { isAskable(want, $0, now) }
-        if let best = askable.min(by: Self.ranksBefore), widenGate == nil, answering.isEmpty {
+        // A holder that is not askable was asked inside its floor, and its answer is older than the ask.
+        let standing = askable.count < holders.count
+        if let best = askable.min(by: Self.ranksBefore), widenGate == nil, answering.isEmpty, !standing {
             let tier = Self.tier(of: best.candidate)
-            want.fetch = Fetch(peer: best.candidate.id, tier: tier, at: now, graceMilliseconds: Self.firstAskGraceMilliseconds)
+            let grace = grace(for: best.candidate.id)
+            want.fetch = Fetch(peer: best.candidate.id, tier: tier, at: now, graceMilliseconds: grace)
             want.askedAt[best.candidate.id] = now
             plan.asks.append(Ask(to: best.candidate.id, line: .fetch))
             plan.why = "\(tier == .slowLink ? "slow link" : "link"), load \(best.answer.load)"
             counts.fetches += 1
-            plan.waitFor(Self.firstAskGraceMilliseconds)
+            plan.waitFor(grace)
             return true
         }
         if holders.isEmpty, answering.isEmpty {
             return false
         }
         let floors = holders.compactMap { holder in want.askedAt[holder.candidate.id].map { $0 + Self.serveMemoMilliseconds - now } }
-        let answersDue = answering.map { $0 + Self.queryWaitMilliseconds - now }
+        let answersDue = answering.map { $0 - now }
         if let wait = (floors + answersDue + [widenGate].compactMap(\.self)).filter({ $0 > 0 }).min() {
             plan.waitFor(wait)
         }
@@ -255,13 +297,14 @@ extension BlobExchange {
             return false
         }
         if !want.blindWidened {
+            let grace = grace(for: pick.id)
             want.blindAsked.insert(pick.id)
             want.askedAt[pick.id] = now
-            want.fetch = Fetch(peer: pick.id, tier: .blind, at: now, graceMilliseconds: Self.firstAskGraceMilliseconds)
+            want.fetch = Fetch(peer: pick.id, tier: .blind, at: now, graceMilliseconds: grace)
             plan.asks.append(Ask(to: pick.id, line: .first))
             plan.why = Self.rank(of: pick, in: want).label
             counts.blindAsks += 1
-            plan.waitFor(Self.firstAskGraceMilliseconds)
+            plan.waitFor(grace)
             return true
         }
         want.blindWidenedAt = now
