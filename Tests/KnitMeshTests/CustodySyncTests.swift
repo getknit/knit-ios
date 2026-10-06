@@ -59,7 +59,7 @@ import Testing
         let store = MemoryCustodyStore()
         var sync = CustodySync()
         let carried: [FrameType] = [.chat, .receipt, .reaction, .profile, .groupUpdate, .groupLeave]
-        let refused: [FrameType] = [.keyRequest, .blobRequest, .typing, .commons, FrameType(rawValue: "future")]
+        let refused: [FrameType] = [.keyRequest, .blobRequest, .blobHave, .blobHas, .typing, .commons, FrameType(rawValue: "future")]
         for type in carried + refused {
             _ = sync.carry(frame(type.rawValue, type: type), in: store, now: now) { true }
         }

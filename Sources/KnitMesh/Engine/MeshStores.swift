@@ -70,6 +70,10 @@ public struct MeshConfiguration: Sendable {
     /// How old our profile's publish stamp may grow before a republish, inside custody's 24 hours
     /// (`PROFILE_REPUBLISH_MS`).
     public var republishMilliseconds: Int64
+    /// Whether a fetch queries the neighbours that answer one before it asks for a blob (`BuildConfig.BLOB_QUERY`,
+    /// knit-next ADR 2026-10.6e5t): on in a debug build and the Linux peer, off in a release one until the iPhone's
+    /// device trial. Off, every neighbour gets the blind round. Answering a query is on whatever this says.
+    public var queriesBlobHolders: Bool
 
     /// knit-next's cadences unless told otherwise: 60 s, 10 min, 15 min and 12 h.
     public init(
@@ -77,12 +81,14 @@ public struct MeshConfiguration: Sendable {
         reofferMilliseconds: Int64 = 60_000,
         sweepMilliseconds: Int64 = 600_000,
         healMilliseconds: Int64 = 900_000,
-        republishMilliseconds: Int64 = 43_200_000
+        republishMilliseconds: Int64 = 43_200_000,
+        queriesBlobHolders: Bool = false
     ) {
         self.router = router
         self.reofferMilliseconds = reofferMilliseconds
         self.sweepMilliseconds = sweepMilliseconds
         self.healMilliseconds = healMilliseconds
         self.republishMilliseconds = republishMilliseconds
+        self.queriesBlobHolders = queriesBlobHolders
     }
 }

@@ -149,7 +149,8 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 - **Control lines** are JSON objects with a `cmd`, and an optional `tag` that the reply echoes. `KnitControl`
   holds the protocol, and a debug build of the app speaks it too, over USB or Wi-Fi (ADR 2026-09.kwa8,
   ADR 2026-10.dz8d): `status` (with `avatarHash`, our photo; `files`, the FILE records received, refused and sent;
-  `footprint`, the size of each table the mesh keeps in memory, blobs wanted and files queued among them; and
+  `blobs`, the blob holder query's counts under Android's bridge names less their `blob` prefix, from `queriesSent`
+  to `pullThroughs` (ADR 2026-10.6e5t in knit-next); `footprint`, the size of each table the mesh keeps in memory, blobs wanted and files queued among them; and
   `router`, what the router has admitted, relayed and refused), `peers` (names, aliases, safety numbers, each
   peer's `avatarHash` shown and `advertisedAvatarHash`, and `blocked`), `links` (links and sightings), `room` (`text`), `dm` (`to`,
   `text`); `room`, `dm` and `group-send` also take a `photo` as base64 and its `mime`, `image/jpeg` when absent, and

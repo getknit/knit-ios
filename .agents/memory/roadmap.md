@@ -311,7 +311,21 @@ explicit direction.** Update this file in the change that ships an item.
   - **Android's progress ring** (knit-next ADR 2026-10.y9qh): every header this port writes declares its size since
     2026-10-04, so an Android phone fills a ring as our photo arrives. Still owed:
     - the iPhone's own ring for a photo arriving, from the size `FileIntake` already reads;
-    - resuming a cut transfer from the bytes kept (knit-next ADR 2026-10.wtyc, knit-ios #2), which is past the pin.
+    - resuming a cut transfer from the bytes kept (knit-next ADR 2026-10.wtyc, knit-ios #2), in the pin since
+      2026-10-05. This port reads a `blobreq`'s `offset` and serves the whole file meanwhile.
+  - **The blob holder query, begun 2026-10-05** on `feat/blob-query` (ADR 2026-10.m9uq), with the pin moved to
+    `5f521cb9`. The iPhone answers `blobhave` in every build and claims `CAP_BLOB_HAVE` in its HELLO. It queries before
+    it asks in a debug build and knit-peer, and asks blind, the author first, in release. Every Linux gate passes. Still
+    owed:
+    - the device trial, with the iPhone and the Pixels on debug builds: the Pixels' `blob answer ← <iPhone>` and
+      `blob fetch … → <iPhone>` lines, one serve per asker, and the iPhone fetching one copy from the holder its
+      `blob fetch` names. Then `queriesBlobHolders` flips on in release, once Android's `BLOB_QUERY` has;
+    - knit-next's second confirm, whose answer `fetchWait` never reads (`BlobExchange.kt:385`): this port mirrors the
+      Kotlin, so the fix lands in knit-next first and comes here with the next pin;
+    - knit-next ADR 2026-10.nxfb's holder half, a fed file kept in flight while its link feeds that peer more;
+    - knit-next ADR 2026-10.8jwn's pace: one 4 KiB/s budget across the links feeding, in 2 to 16 KiB chunks, where
+      this port feeds 28 KiB/s a link. Without it a photo the iPhone serves can hold a DM behind it in Android's
+      stack for a minute or more, and an older Android asker can be served twice.
 
   Out of scope: files, voice notes, link previews, direct transfer, screening, and setting a group photo.
   Capabilities stay `0xB`. One companion change goes with it:

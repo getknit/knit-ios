@@ -94,3 +94,7 @@ that serves the doorbell reads `100b`, and one from any other radio reads `b`. A
 A photo streaming to a locked iPhone therefore wakes it no more often than its frames do, and the frames around it
 still ring. `LinkDoorbellTests.fileRecordsDoNotRing` pins it. The device check that a file streaming to a locked
 iPhone does not hold back a DM's ring is owed (ADR 2026-10.nh55's plan, Phase 3).
+
+**Amended 2026-10-05, for the blob holder query (ADR 2026-10.m9uq):** `blobhave` and `blobhas` join the upkeep that
+never rings, five types in all, as Android's `DoorbellPolicy.UPKEEP` has them since `403cd861`. A HELLO now also claims
+`CAP_BLOB_HAVE` (`0x2000`), so one from a radio that serves the doorbell reads `300f`, and one that does not, `200f`.

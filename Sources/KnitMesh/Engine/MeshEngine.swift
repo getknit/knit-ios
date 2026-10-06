@@ -26,7 +26,7 @@ public final class MeshEngine {
     var custody = CustodySync()
     var pendingInbound = PendingInbound()
     var keyExchange: KeyExchange
-    var blobExchange = BlobExchange()
+    var blobExchange: BlobExchange
     /// The attachments the links were last told to keep as they stream in (``syncAcceptedFiles()``).
     var acceptedFiles: Set<BlobHash> = []
     /// The photo each neighbour has had from us whole, this run (``pushAvatar(to:)``).
@@ -71,6 +71,7 @@ public final class MeshEngine {
         self.configuration = configuration
         self.log = log
         router = Router(configuration: configuration.router)
+        blobExchange = BlobExchange(queriesHolders: configuration.queriesBlobHolders)
         keyExchange = KeyExchange { [peers = stores.peers] in peers.profileFrame(of: $0) }
     }
 
@@ -79,6 +80,9 @@ public final class MeshEngine {
 
     /// What the router has done so far.
     public var routerCounters: Router.Counters { router.counters }
+
+    /// What the blob holder query has done so far (knit-next ADR 2026-10.6e5t).
+    public var blobCounts: BlobCounts { blobExchange.counts }
 
     /// What the engine holds in memory. The link manager's two tables are the driver's to fill (``Mesh``).
     public var footprint: MeshFootprint {
@@ -109,7 +113,7 @@ public final class MeshEngine {
         guard let timers else {
             return nil
         }
-        return [router.nextDeadline, timers.reoffer, timers.sweep, timers.heal].compactMap(\.self).min()
+        return [router.nextDeadline, blobExchange.nextDeadline, timers.reoffer, timers.sweep, timers.heal].compactMap(\.self).min()
     }
 
     /// Starts the node (`MeshManager.seedOwnProfileCustody`): republishes our profile if its stamp is stale, puts it
@@ -142,13 +146,17 @@ public final class MeshEngine {
 
     // MARK: Links
 
-    /// A link to `neighbor` came up (`MeshManager.watchNeighbors`): push our profile and our photo, ask for the blobs
-    /// we lack, send our digest, ask for the keys we lack, and send the ticks we owe it.
+    /// A link to `neighbor` came up (`MeshManager.watchNeighbors`): push our profile and our photo, step the blobs we
+    /// lack, send our digest, ask for the keys we lack, and send the ticks we owe it. A neighbour that links again holds
+    /// no ask or query of ours, since one sent before may have died with the old link, so every fetch is open to it
+    /// again first (`BlobExchange.linked`).
     public func linkUp(_ neighbor: Neighbor) {
         let peer = neighbor.nodeId
         pushProfile(to: peer)
         pushAvatar(to: peer)
-        reaskBlobs(of: [peer], except: rewantMissingBlobs(sparing: Set(neighborIds)))
+        blobExchange.linked([peer])
+        rewantMissingBlobs(sparing: Set(neighborIds))
+        stepBlobs()
         transport.sendDigest(stores.custody.liveIds(now: clock.wallMilliseconds()), to: peer)
         askForMissingKeys(to: [peer])
         sendOwedTicks(to: peer)
@@ -169,10 +177,10 @@ public final class MeshEngine {
             return
         }
         deliver(frame)
-        // A blob request is answered, never flooded, whatever its relay flag says. Android floods one marked `relay =
-        // true`, and every node it reached would serve the neighbour that handed it on; no build sends one
-        // (ADR 2026-10.nh55).
-        guard frame.envelope.type != .blobRequest else {
+        // The blob traffic is answered, never flooded, whatever its relay flag says. Android floods a request marked
+        // `relay = true`, and every node it reached would serve the neighbour that handed it on; no build sends one
+        // (ADR 2026-10.nh55). A holder query and its answer are as unsigned and as point to point.
+        guard !frame.envelope.type.isUnsignedPointToPoint else {
             return
         }
         perform(router.relay(frame, neighbors: neighborIds, jitter: drawJitter(), now: now))
@@ -204,6 +212,7 @@ public final class MeshEngine {
         guard var due = timers else {
             return
         }
+        stepDueBlobs(now: now)
         if now >= due.reoffer {
             reoffer()
             due.reoffer = now + configuration.reofferMilliseconds
@@ -221,10 +230,11 @@ public final class MeshEngine {
 
     /// The 60-second re-offer to every linked neighbour (`MeshManager.reofferToNeighborsPeriodically`): the blobs and
     /// keys we still lack, our digest, and any ticks owed. A Bluetooth link stays up, so this is what reconciles
-    /// custody that drifts after link-up, and what moves a blob one hop nearer.
+    /// custody that drifts after link-up, and what opens a blob's next cycle, which moves it one hop nearer.
     func reoffer() {
         let neighbors = neighborIds
-        reaskBlobs(of: neighbors, except: rewantMissingBlobs(sparing: []))
+        rewantMissingBlobs(sparing: [])
+        stepBlobs()
         askForMissingKeys(to: neighbors)
         let ids = stores.custody.liveIds(now: clock.wallMilliseconds())
         for peer in neighbors {

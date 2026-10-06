@@ -252,6 +252,11 @@ public protocol MessageStore: AnyObject, Sendable {
     /// missing (`MessageDao.attachmentHashes`).
     func attachmentHashes() -> Set<BlobHash>
 
+    /// Who sent the earliest message carrying each of `hashes`, by `sentAt` and then by id, its bytes compared
+    /// (`MessageDao.attachmentsNeedingFetch`): the one holder a fetch of that blob can name (knit-next ADR 2026-10.f7gg).
+    /// A hash no message carries has no entry.
+    func attachmentSenders(among hashes: Set<BlobHash>) -> [BlobHash: NodeId]
+
     /// What the messages carry whose size this phone has not read, each blob once with the key that opens it, the latest
     /// stored first: all of it for a launch to read the sizes of, or only blob `hash`'s, which has just landed. Files and
     /// voice messages are among them, and never get a size.

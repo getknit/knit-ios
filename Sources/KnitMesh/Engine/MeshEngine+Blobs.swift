@@ -54,81 +54,162 @@ extension MeshEngine {
 
     // MARK: Asking
 
-    /// Wants `hash` (`BlobExchange.want`): asks every neighbour, unless its bytes are held, arriving on a link, or
-    /// already wanted. Answers whether it asked.
+    /// Wants `hash` (`BlobExchange.want`) and takes its first step: a query of the neighbours that can answer one, or
+    /// the blind round's first ask (knit-next ADRs 2026-10.6e5t and 2026-10.f7gg). `author` and `via` rank the neighbours
+    /// that cannot be queried, and `asker` is a neighbour we are pulling it for. Answers whether it is wanted: a blob
+    /// held, or on its way in, is not.
     @discardableResult
-    func wantBlob(_ hash: BlobHash) -> Bool {
-        guard !stores.blobs.contains(hash), !transport.arrivingFileKeys.contains(hash),
-            blobExchange.want(hash, now: clock.monotonicMilliseconds())
-        else {
+    func wantBlob(_ hash: BlobHash, author: NodeId?, via: NodeId?, asker: NodeId?) -> Bool {
+        guard !isBlobOnItsWayOrHeld(hash) else {
             return false
         }
-        syncAcceptedFiles()
-        sendBlobRequests(for: [hash], to: neighborIds)
+        let now = clock.monotonicMilliseconds()
+        note(blobExchange.recordWant(hash, now: now, author: author, via: via, asker: asker))
+        stepBlob(hash, among: blobCandidates(), now: now)
+        flushBlobQueries()
         return true
     }
 
-    /// Asks `peers` again for every blob still wanted that is neither held nor arriving (`onNeighborAdded`), save the
-    /// ones in `asked`, which every neighbour was asked for a moment ago. A blob held by now is wanted no more.
-    func reaskBlobs(of peers: [NodeId], except asked: Set<BlobHash>) {
-        let arriving = transport.arrivingFileKeys
-        var missing: [BlobHash] = []
-        for hash in blobExchange.wanted {
-            if stores.blobs.contains(hash) {
-                blobExchange.forget(hash)
-            } else if !arriving.contains(hash), !asked.contains(hash) {
-                missing.append(hash)
-            }
+    /// Wants each of `wanted`, with its author, stepped together so their queries share one frame per neighbour
+    /// (`wantAll`).
+    func wantBlobs(_ wanted: [(hash: BlobHash, author: NodeId?)]) {
+        guard !wanted.isEmpty else {
+            return
         }
-        syncAcceptedFiles()
-        sendBlobRequests(for: missing, to: peers)
+        let now = clock.monotonicMilliseconds()
+        let candidates = blobCandidates()
+        for (hash, author) in wanted where !isBlobOnItsWayOrHeld(hash) {
+            note(blobExchange.recordWant(hash, now: now, author: author, via: nil, asker: nil))
+            stepBlob(hash, among: candidates, now: now)
+        }
+        flushBlobQueries()
     }
 
-    /// Wants every blob the stores name and the blob store lacks (`rewantMissingBlobs`, knit-next ADR 2026-09.ptv8):
-    /// the photos peers' profiles advertise, and the photos messages carry. The wants are a memo of the stores and never
-    /// their source, so this runs at start, at link-up and at each 60 s re-offer. At link-up a linked peer's own photo
-    /// is left to its push (`sparing`), and asked for at the next re-offer if it never came; Android leaves a lost push
-    /// lost. Answers the blobs it asked every neighbour for, so the re-ask that follows does not ask again: Android
-    /// does (knit-next ADR 2026-09.ptv8, "What it costs").
-    @discardableResult
-    func rewantMissingBlobs(sparing: Set<NodeId>) -> Set<BlobHash> {
-        var asked: Set<BlobHash> = []
+    /// Every blob still wanted takes its next step (`reask`): at link-up and at each 60 s re-offer. That is the query
+    /// owed a newcomer, the next holder once an ask's grace is up, the widened blind ask, or the next cycle, which is
+    /// the re-ask that moves a hop-by-hop pull on.
+    func stepBlobs() {
+        let wanted = blobExchange.wanted
+        guard !wanted.isEmpty else {
+            return
+        }
+        let now = clock.monotonicMilliseconds()
+        let candidates = blobCandidates()
+        for hash in wanted {
+            stepBlob(hash, among: candidates, now: now)
+        }
+        flushBlobQueries()
+    }
+
+    /// Steps the wants whose timers are due: a grace up, answers due, or a holder's stream that may have ended.
+    func stepDueBlobs(now: Int64) {
+        let due = blobExchange.takeDue(now: now)
+        guard !due.isEmpty else {
+            return
+        }
+        let candidates = blobCandidates()
+        for hash in due {
+            stepBlob(hash, among: candidates, now: now)
+        }
+        flushBlobQueries()
+    }
+
+    /// One step of `hash`'s fetch (`step`): never for a blob on its way in or held, which is wanted no more once held.
+    /// The asks it decides go out under one request, and its next step is timed.
+    func stepBlob(_ hash: BlobHash, among candidates: [BlobExchange.Candidate], now: Int64) {
+        if transport.arrivingFileKeys.contains(hash) {
+            return
+        }
+        if stores.blobs.contains(hash) {
+            blobExchange.forget(hash)
+            syncAcceptedFiles()
+            return
+        }
+        let plan = blobExchange.decide(hash, among: candidates, now: now)
+        note(plan.notes)
+        if let line = plan.asks.first?.line {
+            let request = blobRequest(hash)
+            for ask in plan.asks {
+                transport.send(request, to: ask.to)
+            }
+            log.log(.debug, "mesh \(BlobExchange.askLine(hash, plan, line))")
+        }
+        if let wake = plan.wake {
+            blobExchange.arm(hash, at: now + wake)
+        }
+        syncAcceptedFiles()
+    }
+
+    /// Whether `hash`'s bytes are on their way in or held, read in the order the bytes move: the link, then the store
+    /// (knit-next #138), so a blob that lands between the two reads is seen by the second.
+    func isBlobOnItsWayOrHeld(_ hash: BlobHash) -> Bool {
+        transport.arrivingFileKeys.contains(hash) || stores.blobs.contains(hash)
+    }
+
+    /// The linked neighbours as a step reads them (`linkedNow`), in the order their links came up.
+    func blobCandidates() -> [BlobExchange.Candidate] {
+        transport.neighbors.map { neighbor in
+            BlobExchange.Candidate(
+                id: neighbor.nodeId,
+                streaming: transport.isFileArriving(from: neighbor.nodeId),
+                capable: neighbor.capabilities.contains(.blobHave)
+            )
+        }
+    }
+
+    /// Wants every blob the stores name and the blob store lacks (`rewantMissingBlobs`, knit-next ADR 2026-09.ptv8): the
+    /// photos peers' profiles advertise, each with its owner as the author, and the photos messages carry, each with the
+    /// sender of the earliest message naming it. The wants are a memo of the stores and never their source, so this runs
+    /// at start, at link-up and at each 60 s re-offer. At link-up a linked peer's own photo is left to its push
+    /// (`sparing`), and wanted at the next re-offer if it never came; Android leaves a lost push lost.
+    func rewantMissingBlobs(sparing: Set<NodeId>) {
+        var wanted: [(hash: BlobHash, author: NodeId?)] = []
         for peer in stores.peers.allPeers() where !sparing.contains(peer.nodeId) {
-            if let advertised = peer.advertisedAvatarHash, !stores.blobs.contains(advertised), wantBlob(advertised) {
-                asked.insert(advertised)
+            if let advertised = peer.advertisedAvatarHash, !stores.blobs.contains(advertised) {
+                wanted.append((advertised, peer.nodeId))
             }
         }
         let carried = stores.messages.attachmentHashes()
-        for hash in carried.subtracting(stores.blobs.held(among: carried)) where wantBlob(hash) {
-            asked.insert(hash)
+        let missing = carried.subtracting(stores.blobs.held(among: carried))
+        let senders = stores.messages.attachmentSenders(among: missing)
+        for hash in missing.sorted() {
+            wanted.append((hash, senders[hash]))
         }
-        return asked
+        wantBlobs(wanted)
     }
 
-    /// Point-to-point blob requests for `hashes`, one each, to each of `peers`.
-    func sendBlobRequests(for hashes: [BlobHash], to peers: [NodeId]) {
-        guard !peers.isEmpty else {
-            return
-        }
-        for hash in hashes {
-            let request = blobRequest(hash)
-            for peer in peers {
-                transport.send(request, to: peer)
-            }
-            log.log(.debug, "mesh blobreq \(LinkManager.shown(hash.string)) to \(peers.map(\.string).joined(separator: ", "))")
+    /// Point-to-point holder queries for what the steps since the last flush owe, one frame per neighbour.
+    func flushBlobQueries() {
+        let now = clock.monotonicMilliseconds()
+        for query in blobExchange.takeQueries() {
+            let id = newFrameId()
+            blobExchange.noteQuerySent(id, to: query.peer, hashes: query.hashes, now: now)
+            let content = BlobHaveContent(hashes: query.hashes.map(\.string))
+            transport.send(unsignedPointToPoint(.blobHave, id: id, payload: content.encoded), to: query.peer)
+            let shown = query.hashes.map { String($0.string.prefix(BlobExchange.shownHashCharacters)) }.joined(separator: ", ")
+            let queryId = id.prefix(BlobExchange.shownIdCharacters)
+            log.log(.debug, "mesh blob query → \(query.peer) \(query.hashes.count) hashes #\(queryId) [\(shown)]")
         }
     }
 
-    /// One blob request (`BlobExchange.blobRequest`): unsigned by design, a fresh id, our id as its sender, `relay =
-    /// false` so no router floods it, and `sentAt` left at 0, as Android leaves it.
+    /// One blob request (`BlobExchange.blobRequest`). This port keeps no prefix of a cut transfer, so it never names an
+    /// offset (knit-ios #2).
     func blobRequest(_ hash: BlobHash) -> WireEnvelope {
-        let envelope = RelayEnvelope(
-            type: .blobRequest,
-            id: newFrameId(),
-            senderId: nodeId.string,
-            payload: BlobRequestContent(hash: hash.string).encoded
-        )
+        unsignedPointToPoint(.blobRequest, id: newFrameId(), payload: BlobRequestContent(hash: hash.string).encoded)
+    }
+
+    /// An unsigned, point-to-point frame (`unsignedPointToPoint`): our id as its sender, `relay = false` so no router
+    /// floods it, and `sentAt` left at 0, as Android leaves it.
+    func unsignedPointToPoint(_ type: FrameType, id: String, payload: [UInt8]) -> WireEnvelope {
+        let envelope = RelayEnvelope(type: type, id: id, senderId: nodeId.string, payload: payload)
         return WireEnvelope(relay: false, sig: [], signed: envelope.encoded)
+    }
+
+    /// Logs the blob exchange's own lines, as the mesh logs its others.
+    func note(_ lines: [String]) {
+        for line in lines {
+            log.log(.debug, "mesh \(line)")
+        }
     }
 
     /// Tells the links which attachments to keep as they stream in: the blobs wanted.
@@ -155,7 +236,8 @@ extension MeshEngine {
         if let file = outboundFile(hash, kind: .attachment) {
             answer = serve(file, to: frame.from)
         } else {
-            answer = wantBlob(hash) ? "not held; asked our neighbours" : "not held; already asked for or arriving"
+            // Wanted on the asker's behalf, which this cycle neither queries nor asks: it lacks the bytes.
+            answer = wantBlob(hash, author: nil, via: nil, asker: frame.from) ? "not held; fetching it" : "not held; already arriving"
         }
         log.log(.debug, "mesh blobreq \(LinkManager.shown(hash.string)) from \(frame.from): \(answer)")
     }
@@ -193,7 +275,11 @@ extension MeshEngine {
     /// A whole file a neighbour streamed (`MeshBlobStore.saveIncoming`, `InboundPipeline.onAvatarReceived`). Its bytes
     /// must hash to its key, or it is dropped and the link kept. A pushed photo must be the one its pusher's signed
     /// profile advertises, and anything else must be a blob this node wants.
+    ///
+    /// The link counts the file as on its way until the store has answered, kept or refused (`fileTaken`, knit-next
+    /// #138): read before that, a blob past its END is neither arriving nor held, and would be asked for again.
     public func receiveFile(_ file: InboundFile) {
+        defer { transport.fileTaken(from: file.from, hash: file.hash) }
         guard BlobHash(of: file.bytes) == file.hash else {
             reject(file, "does not match its hash")
             return

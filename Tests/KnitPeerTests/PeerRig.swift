@@ -132,8 +132,18 @@ final class CapturingTransport: MeshTransport {
 
     var arrivingFileKeys: Set<BlobHash> { [] }
 
+    var feedingLoad: Int { 0 }
+
     func acceptFiles(_: Set<BlobHash>) {
         // Nothing streams in here.
+    }
+
+    func fileTaken(from _: NodeId, hash _: BlobHash) {
+        // Nothing streams in here.
+    }
+
+    func isFileArriving(from _: NodeId) -> Bool {
+        false
     }
 
     /// Everything sent since the last call.

@@ -104,22 +104,30 @@ public struct KeyRequestContent: CBORRepresentable, Equatable {
 public struct BlobRequestContent: CBORRepresentable, Equatable {
     /// The blob's content hash, 64 lowercase hex characters.
     public var hash: String
+    /// How many bytes of the blob the asker kept from a cut transfer, so a holder streams only the rest (knit-next ADR
+    /// 2026-10.wtyc, `Wire.kt:300-304`). Omitted when `nil`, so a plain ask is the bytes every build has sent. This
+    /// port reads it and never sends it: a holder here serves the whole file, the older holder's answer that knit-next's
+    /// resume falls back on (knit-ios #2).
+    public var offset: Int64?
 
     /// Makes a blob request.
-    public init(hash: String) {
+    public init(hash: String, offset: Int64? = nil) {
         self.hash = hash
+        self.offset = offset
     }
 
     /// Reads a blob request from a decoded item.
     public init(cbor: CBOR) throws(WireDecodingError) {
         let fields = try CBORFields(cbor, type: "BlobReqContent")
         hash = try fields.required("hash", .text)
+        offset = try fields.nullable("offset", .int64)
     }
 
     /// The request as an item.
     public var cbor: CBOR {
         var writer = CBORFieldWriter()
         writer.text("hash", hash)
+        writer.long("offset", optional: offset)
         return writer.cbor
     }
 }

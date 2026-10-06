@@ -40,6 +40,8 @@ import Testing
         #expect(
             events == [.file(InboundFile(from: LinkRig.low, kind: .attachment, hash: BlobHash(of: file), mime: "image/jpeg", bytes: file))])
         #expect(rig.links.filesReceived == 1)
+        #expect(rig.links.arrivingFileKeys == [BlobHash(of: file)], "landing until the engine takes it")
+        rig.links.fileTaken(from: LinkRig.low, hash: BlobHash(of: file))
         #expect(rig.links.arrivingFileKeys.isEmpty)
     }
 
@@ -193,6 +195,7 @@ import Testing
         #expect(rig.links.sendFile(outbound(first), to: LinkRig.low), "already on its way")
         #expect(rig.links.isFileInFlight(BlobHash(of: second), to: LinkRig.low), "waiting counts as on its way")
         #expect(rig.links.queuedFileCount == 2)
+        #expect(rig.links.feedingLoad == 1, "the load counts links streaming, not files waiting")
         let headers = { rig.radio.records(on: channel).filter { $0.tag == .fileHeader }.count }
         #expect(headers() == 1)
         #expect(rig.handle(.wroteFileRecord(channel)).isEmpty, "the chunk is out; the END goes")
@@ -201,6 +204,7 @@ import Testing
         _ = rig.handle(.wroteFileRecord(channel))
         #expect(rig.handle(.wroteFileRecord(channel)) == [.fileSent(BlobHash(of: second), to: LinkRig.low)])
         #expect(rig.links.queuedFileCount == 0)
+        #expect(rig.links.feedingLoad == 0)
     }
 
     @Test func aFileThatFinishesInsideSendIsHandedOverAtTheNextTick() {
@@ -260,5 +264,50 @@ import Testing
         #expect(!closed.contains(.fileSent(BlobHash(of: file), to: LinkRig.low)))
         #expect(rig.links.queuedFileCount == 0)
         #expect(rig.links.filesSent == 0)
+    }
+}
+
+/// A file on its way in, as a holder query and the fetch read it (knit-next #138 and ADR 2026-10.nxfb).
+extension LinkFileTests {
+    @Test func aFileStaysOnItsWayFromItsEndUntilTheEngineTakesItFromThatPeer() {
+        // knit-next #138: a frame ahead of the END in the same radio read reaches the engine after the END has cleared
+        // the intake, so the landing file must still read as arriving then, and only the peer that sent it takes it.
+        let rig = LinkRig(local: LinkRig.high)
+        _ = rig.accept(LinkRig.low, on: channel)
+        let file = bytes(100)
+        let hash = BlobHash(of: file)
+        rig.links.acceptFiles([hash])
+        _ = rig.handle(.received(channel, records(.attachment, file)))
+        #expect(rig.links.arrivingFileKeys == [hash])
+        #expect(!rig.links.isFileArriving(from: LinkRig.low), "a landed file is no longer streaming")
+        rig.links.fileTaken(from: LinkRig.middle, hash: hash)
+        #expect(rig.links.arrivingFileKeys == [hash], "another peer's take leaves it")
+        _ = rig.handle(.closed(channel))
+        #expect(rig.links.arrivingFileKeys == [hash], "the landing outlives its link")
+        rig.links.fileTaken(from: LinkRig.low, hash: hash)
+        #expect(rig.links.arrivingFileKeys.isEmpty)
+    }
+
+    @Test func stoppingForgetsFilesStillLanding() {
+        let rig = LinkRig(local: LinkRig.high)
+        _ = rig.accept(LinkRig.low, on: channel)
+        let file = bytes(100)
+        rig.links.acceptFiles([BlobHash(of: file)])
+        _ = rig.handle(.received(channel, records(.attachment, file)))
+        _ = rig.links.stop()
+        #expect(rig.links.arrivingFileKeys.isEmpty)
+    }
+
+    @Test func aPeerIsStreamingToUsFromAHeaderToItsEndEvenWhenTheFileIsSkipped() {
+        let rig = LinkRig(local: LinkRig.high)
+        _ = rig.accept(LinkRig.low, on: channel)
+        let unasked = bytes(100)
+        let header = LinkRecord(
+            .fileHeader, payload: LinkJSON.fileHeaderPayload(FileHeader(kind: .attachment, key: BlobHash(of: unasked).string, mime: "x")))
+        _ = rig.handle(.received(channel, header.encoded ?? []))
+        #expect(rig.links.isFileArriving(from: LinkRig.low))
+        #expect(!rig.links.isFileArriving(from: LinkRig.middle))
+        _ = rig.handle(.received(channel, LinkRecord(.fileEnd).encoded ?? []))
+        #expect(!rig.links.isFileArriving(from: LinkRig.low))
     }
 }

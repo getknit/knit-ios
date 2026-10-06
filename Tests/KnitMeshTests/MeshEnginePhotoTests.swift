@@ -144,6 +144,26 @@ import Testing
         #expect(fixture.engine.blobExchange.isWanted(hash))
     }
 
+    /// Android forwards a room picture into a DM under the room's own hash, with no key (knit-next ADR 2026-10.mptm): a
+    /// null key has always meant a plaintext blob, so the message keeps the hash alone and the photo is fetched as is.
+    /// Many messages may name that one blob.
+    @Test func aSealedMessageMayNameAPhotoWithNoKeyWhichIsThePlaintextBlob() throws {
+        let fixture = EngineFixture(alice)
+        fixture.link(bob)
+        try fixture.pin(bob)
+        let hash = BlobHash(of: jpeg.bytes)
+        let content = MessageContent(body: "look", attachmentHash: hash.string, attachmentMime: "image/jpeg")
+        fixture.deliver(try bob.directMessage("look", to: alice, id: "dm-1", sentAt: EngineFixture.start, content: content), from: bob)
+        let room = ChatContent(body: "", attachmentHash: hash.string, attachmentMime: "image/jpeg")
+        let post = RelayEnvelope(type: .chat, id: "post-1", senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: room.encoded)
+        fixture.deliver(try bob.signed(post), from: bob)
+        #expect(fixture.stores.messages.message("dm-1")?.attachment == MessageAttachment(hash: hash, mime: "image/jpeg"))
+        #expect(fixture.engine.blobExchange.isWanted(hash))
+        fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: hash, mime: "image/jpeg", bytes: jpeg.bytes))
+        #expect(fixture.stores.blobs.bytes(of: hash) == jpeg.bytes, "the plaintext itself, opened by nothing")
+        #expect(fixture.engine.drainEvents().contains(.attachmentArrived(hash)))
+    }
+
     /// A file arrives with its name and size, which only a file carries; this build shows it as a label.
     @Test func aFileKeepsItsNameAndSize() throws {
         let fixture = EngineFixture(alice)
@@ -198,7 +218,9 @@ import Testing
                 attachment: MessageAttachment(hash: missing)
             )
         )
-        #expect(fixture.engine.rewantMissingBlobs(sparing: []) == [missing])
+        fixture.engine.rewantMissingBlobs(sparing: [])
+        #expect(fixture.engine.blobExchange.isWanted(missing))
+        #expect(fixture.engine.blobExchange.wants[missing]?.author == bob.nodeId, "asked of its sender first (`attachmentsNeedingFetch`)")
 
         let group = try #require(fixture.engine.createGroup(with: [bob.nodeId]))
         let sent = try #require(fixture.engine.sendGroupMessage("", to: group.id, photo: jpeg))

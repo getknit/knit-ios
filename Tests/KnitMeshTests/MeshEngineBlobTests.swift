@@ -67,22 +67,24 @@ import Testing
         #expect(answers(fixture) == [serving, "served to it within the serve memo", "already on its way", serving])
     }
 
-    @Test func aBlobNotHeldIsAskedForOnTheAskersBehalf() throws {
+    @Test func aBlobNotHeldIsPulledOnTheAskersBehalfAndNeverAskedOfIt() throws {
+        // `aBlobPulledForANeighbourIsNotAskedOfItThatRoundButIsTheNext`: the asker lacks it (knit-next ADR 2026-10.f7gg).
         let fixture = EngineFixture(alice)
         fixture.link(bob, carol)
         fixture.transport.clear()
         fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-1"), from: bob)
         #expect(fixture.transport.files.isEmpty)
         let asked = fixture.transport.written(.blobRequest)
-        #expect(Set(asked.map(\.to)) == [bob.nodeId, carol.nodeId], "every neighbour, the asker too")
+        #expect(asked.map(\.to) == [carol.nodeId])
         let request = try #require(asked.first)
         #expect(try BlobRequestContent(decoding: request.envelope.payload).hash == photoHash.string)
         #expect(fixture.transport.accepted == [photoHash], "the links keep it when it streams in")
         fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-2"), from: bob)
-        #expect(fixture.transport.written(.blobRequest).count == 2, "already wanted: asked once")
-        #expect(answers(fixture) == ["not held; asked our neighbours", "not held; already asked for or arriving"])
-        let ask = fixture.log.all.filter { $0.hasPrefix("debug mesh blobreq \(photoHash.string.prefix(12)) to ") }
-        #expect(ask.count == 1 && ask.allSatisfy { $0.contains(bob.nodeId.string) && $0.contains(carol.nodeId.string) })
+        fixture.advance(BlobExchange.firstAskGraceMilliseconds)
+        #expect(fixture.transport.written(.blobRequest).count == 1, "already wanted, and the round has nobody else to widen to")
+        #expect(answers(fixture) == ["not held; fetching it", "not held; fetching it"])
+        let shown = "\(photoHash.string.prefix(BlobExchange.shownHashCharacters))…"
+        #expect(fixture.log.all.contains("debug mesh blob ask \(shown) → \(carol.nodeId) first (neighbour), widen in 5000 ms"))
     }
 
     @Test func aRequestWhoseHashIsNotOneIsDropped() {
@@ -112,7 +114,7 @@ import Testing
         fixture.link(bob)
         fixture.transport.clear()
         fixture.transport.arrivingFileKeys = [photoHash]
-        fixture.engine.wantBlob(photoHash)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
         #expect(fixture.transport.written(.blobRequest).isEmpty)
         #expect(!fixture.engine.blobExchange.isWanted(photoHash), "not even marked: a torn transfer re-arms from the stores")
     }
@@ -120,7 +122,7 @@ import Testing
     @Test func aWantedBlobIsAskedAgainAtEachReofferUntilItArrives() {
         let fixture = EngineFixture(alice)
         fixture.link(bob)
-        fixture.engine.wantBlob(photoHash)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
         fixture.transport.clear()
         fixture.advance(60_000)
         #expect(fixture.transport.written(.blobRequest).map(\.to) == [bob.nodeId])
@@ -131,18 +133,30 @@ import Testing
         #expect(!fixture.engine.blobExchange.isWanted(photoHash))
     }
 
-    @Test func aNewNeighbourIsAskedForEveryBlobStillWanted() {
+    @Test func aNeighbourThatLinksDuringTheFirstAsksGraceIsAskedWhenTheRoundWidens() {
         let fixture = EngineFixture(alice)
         fixture.link(bob)
-        fixture.engine.wantBlob(photoHash)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
         fixture.transport.clear()
         fixture.link(carol)
-        #expect(fixture.transport.written(.blobRequest).map(\.to) == [carol.nodeId])
+        #expect(fixture.transport.written(.blobRequest).isEmpty, "the first ask's grace runs")
+        fixture.advance(BlobExchange.firstAskGraceMilliseconds)
+        #expect(fixture.transport.written(.blobRequest).map(\.to) == [carol.nodeId], "widened on the grace's own timer")
+    }
+
+    @Test func aNeighbourThatLinksAgainIsAskedAgainAtOnce() {
+        let fixture = EngineFixture(alice)
+        fixture.link(bob)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.transport.clear()
+        fixture.unlink(bob)
+        fixture.link(bob)
+        #expect(fixture.transport.written(.blobRequest).map(\.to) == [bob.nodeId], "the ask may have died with the old link")
     }
 
     @Test func aWantNobodyRefreshedIsSweptAndTheLinksForgetIt() {
         let fixture = EngineFixture(alice)
-        fixture.engine.wantBlob(photoHash)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
         #expect(fixture.transport.accepted == [photoHash])
         fixture.advance(BlobExchange.wantMilliseconds + 600_000)
         #expect(!fixture.engine.blobExchange.isWanted(photoHash))
@@ -151,7 +165,7 @@ import Testing
 
     @Test func aFileWhoseBytesDoNotMatchItsHashIsDropped() {
         let fixture = EngineFixture(alice)
-        fixture.engine.wantBlob(photoHash)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
         fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: photoHash, mime: "image/jpeg", bytes: [1]))
         #expect(!fixture.stores.blobs.contains(photoHash))
         #expect(fixture.engine.filesRejected == 1)
@@ -165,9 +179,19 @@ import Testing
         #expect(fixture.engine.filesRejected == 1)
     }
 
+    @Test func aFileIsTakenOffTheLinkOnceTheStoreHasAnsweredKeptOrNot() {
+        // knit-next #138: until then a landing file still reads as on its way, so it is neither asked for nor queried.
+        let fixture = EngineFixture(alice)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: photoHash, mime: "image/jpeg", bytes: [1]))
+        fixture.engine.receiveFile(InboundFile(from: carol.nodeId, kind: .attachment, hash: photoHash, mime: "image/jpeg", bytes: photo))
+        #expect(fixture.transport.taken.map(\.from) == [bob.nodeId, carol.nodeId])
+        #expect(fixture.transport.taken.allSatisfy { $0.hash == photoHash })
+    }
+
     @Test func aWantedFileIsKeptAndWantedNoMore() {
         let fixture = EngineFixture(alice)
-        fixture.engine.wantBlob(photoHash)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
         fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: photoHash, mime: "image/webp", bytes: photo))
         #expect(fixture.stores.blobs.bytes(of: photoHash) == photo)
         #expect(fixture.stores.blobs.mime(of: photoHash) == "image/webp")

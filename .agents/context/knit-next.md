@@ -9,10 +9,9 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`, and `v2.8.0` is `45e09f19`. The port started from HEAD `02051b64`, five
   test-only commits after `v2.7.0`, on 2026-09-25.
-- **The pin is `e4ff84b3`,** on knit-next's `origin/main`, moved on 2026-10-04 for the FILE_HEADER's size alone.
-  knit-next's `main` was at `d6c3be1b` that day, 12 commits on, resuming a cut transfer (knit-next ADR 2026-10.wtyc)
-  among them. None of those has been read here yet. `sync-vectors.py --check` needs a checkout at the pin, since a
-  later one carries vectors this port has not taken.
+- **The pin is `5f521cb9`,** knit-next's `main` on 2026-10-05, moved for the blob holder query (knit-next ADR
+  2026-10.6e5t). Every commit since `e4ff84b3` was read for it, and "Since then" below says what each means here.
+  `sync-vectors.py --check` needs a checkout at the pin, since a later one may carry vectors this port has not taken.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
     never opens). Of what the files below say, only the BLE responder moved.
@@ -146,7 +145,7 @@ Kotlin wins.
       - The rest is Android's alone: backup, storage, the 2.8.0 release, the Wear OS docs, a debug Wi-Fi Aware switch,
         CI, lint and screenshot tests.
     - No wire bytes or vectors moved.
-  - **Since then** (two commits):
+  - **Up to `e4ff84b3`** (the previous pin; two commits):
     - **The header's size** (`e4ff84b3`, knit-next #115 and its ADR 2026-10.y9qh). A receiver shows how far an
       incoming attachment has got:
       - the `FILE_HEADER` gains `size`, the length of the stream that follows;
@@ -157,8 +156,42 @@ Kotlin wins.
       `arrivingFiles()` carrying a count are its own. The iPhone does not yet show an incoming photo's progress
       (`.agents/memory/roadmap.md`).
     - `f6ecf8ac` drops an unused `Unit` from a test.
+  - **Since then** (30 commits; five vectors added, none moved):
+    - **The blob holder query** (`403cd861`, knit-next ADR 2026-10.6e5t), on top of **the likeliest holder first**
+      (`1c82da2d`, #136, knit-next ADR 2026-10.f7gg). Mirrored here (ADR router, "blob holder"):
+      - the iPhone answers `blobhave` with `blobhas` in every build, and every HELLO claims `CAP_BLOB_HAVE` (`0x2000`);
+      - it queries the neighbours that answer and asks the best holder alone in a debug build and knit-peer, as Android
+        does behind `BuildConfig.BLOB_QUERY`, and asks blind everywhere else: the author first, then the hop the frame
+        came from, then everyone once a 5 s grace is up;
+      - the three vectors `blobHaveContent`, `blobHasContent` and `blobHasContentReserved`.
+    - **A file is on its way until it is stored** (`c1437646`, #138, an amendment to knit-next ADR 2026-09.4tx5):
+      mirrored as `LinkManager`'s landing files and `MeshTransport.fileTaken`. `512b72bc` (#139) keeps Android's file
+      collector alive past one bad file, which helps what this port serves, and needs nothing here.
+    - **A blob is not asked of a peer streaming to us** (`dedd985e`, #121, knit-next ADR 2026-10.nxfb): its asker half
+      is mirrored (`MeshTransport.isFileArriving(from:)`, which also counts a file this port skips). Its holder half, a
+      fed file kept in flight while the link goes on feeding that peer, is not: `isFileInFlight` ends at our own END,
+      so an Android asker on an older build can still be served twice across the stack's buffer (roadmap).
+    - **Resuming a cut transfer** (`e13c2c76`, #116, knit-next ADR 2026-10.wtyc) is still owed (knit-ios #2). This port
+      reads a `blobreq`'s `offset` and serves the whole file, the older holder's answer Android lands whole, and never
+      sends one. `blobReqContentResumed` round-trips; `fileHeaderResumed` is synced and not decoded.
+    - **One file pace budget** (`99ee3f81`, `37dd5f22`, knit-next ADR 2026-10.8jwn): Android feeds at most 4 KiB/s across
+      every 1M and 2M link it feeds, in chunks of 2 to 16 KiB (`ble-transport.md`). Sender-side only; this port still
+      feeds 28 KiB/s a link (roadmap).
+    - **An attachment keeps its arrival identity** (`01b2fd5d`, knit-next ADR 2026-10.mptm): a sealed DM or group message
+      may name a room picture by its plaintext hash with no key, and one blob may recur across messages
+      (`crypto.md`). This port took both already, and still seals every send fresh. `7dd7dcc3` screens spool-pulled
+      pictures and never adopts a held avatar its filter refused; this port keeps a flagged face adopted and hides it
+      when drawn (ADR 2026-10.rpmq), so nothing moves.
+    - **Nothing to mirror:**
+      - `ab0d17aa` hunts a Coded peer lost at range (knit-next ADR 2026-10.yvn6), never an iPhone (`ble-transport.md`);
+      - `d6c3be1b` gives up a GATT payload read on the elapsed clock, still after 12 s;
+      - `38e425b5` keys the DM ratchet's receive state by root tag (ADR 2026-10.gcrd), and this port has no ratchet;
+      - `540bf032` re-sends a direct transfer's READY, `d9b6f1c4` paces LoRa, and `47485429` fades stranger name clashes
+        after a week (ADR 2026-10.k8ge);
+      - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
+      - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e4ff84b3`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5f521cb9`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 

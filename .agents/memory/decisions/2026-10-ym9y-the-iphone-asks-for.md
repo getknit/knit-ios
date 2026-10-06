@@ -8,7 +8,11 @@ topics: [mesh, blobs, interop]
 
 # ADR 2026-10.ym9y — The iPhone asks for, serves and carries blobs as Android's BlobExchange does
 
-Status: Accepted (2026-10-03)
+Status: Accepted (2026-10-03). Asking amended by ADR 2026-10.m9uq (2026-10-05): a blob is no longer asked of every
+neighbour at once. A neighbour whose HELLO carries `CAP_BLOB_HAVE` is queried first and the best holder asked alone; the
+rest get knit-next ADR 2026-10.f7gg's round, the author first. Serving, taking a file in, the bounds and the two
+hardenings below are unchanged. The re-ask no longer skips a blob just asked of everyone: each step asks only what its
+cycle owes.
 
 **Context:** a photo names its bytes by hash, and the bytes move one hop at a time (`BlobExchange.kt`, knit-next ADRs
 2026-09.4tx5 and 2026-09.ptv8):

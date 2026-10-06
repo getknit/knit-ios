@@ -58,6 +58,8 @@ extension LinkManager {
         let now = clock.monotonicMilliseconds()
         let ids = channels.keys.sorted(by: Self.inOrder)
         let events = ids.flatMap { retire($0, backingOff: false, now: now) }
+        // A file that landed in a session is taken in it; nothing landed before a start is one the engine will take.
+        landingFiles.removeAll()
         presence = PresenceTracker(configuration: configuration.presence)
         addresses.removeAll()
         backoffs.removeAll()
@@ -85,10 +87,15 @@ extension LinkManager {
         radio.advertise(payload)
     }
 
-    /// Writes our HELLO: this build's capabilities, plus `CAP_DOORBELL` when the radio serves one, so Android rings
-    /// it (knit-next ADR 2026-09.dqvb). The bit goes nowhere else: not in the advert, and not in the signed profile.
+    /// Writes our HELLO: this build's capabilities, plus the bits that are the link's to claim. `CAP_BLOB_HAVE` always,
+    /// since every build answers a holder query and Android reads the bit from the link alone (knit-next ADR
+    /// 2026-10.6e5t), and `CAP_DOORBELL` when the radio serves one, so Android rings it (knit-next ADR 2026-09.dqvb).
+    /// Neither goes anywhere else: not in the advert, and not in the signed profile.
     func writeHello(on id: ChannelID) {
-        let capabilities: Capabilities = radio.servesDoorbell ? Capabilities.local.union(.doorbell) : .local
+        var capabilities = Capabilities.local.union(.blobHave)
+        if radio.servesDoorbell {
+            capabilities.insert(.doorbell)
+        }
         if let record = LinkRecord(.hello, payload: Hello(nodeId: localId.string, capabilities: capabilities).payload).encoded {
             write(record, on: id)
         }

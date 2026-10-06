@@ -26,7 +26,7 @@ extension MeshEngine {
         }
         switch envelope.type {
         case .chat:
-            handleChat(envelope)
+            handleChat(envelope, via: frame.from)
         case .profile:
             handleProfile(frame.wire, envelope)
         case .receipt:
@@ -39,6 +39,10 @@ extension MeshEngine {
             handleGroupLeave(envelope)
         case .blobRequest:
             handleBlobRequest(frame)
+        case .blobHave:
+            handleBlobHave(frame)
+        case .blobHas:
+            handleBlobHas(frame)
         case .reaction:
             handleReaction(envelope)
         default:
@@ -53,9 +57,9 @@ extension MeshEngine {
     /// and is parked, so it lands once the key pins.
     func verify(_ frame: InboundFrame) -> Bool {
         let envelope = frame.envelope
-        if envelope.type == .blobRequest {
-            // Unsigned by design (`MeshManager.verifyInbound`): nothing in it is trusted but its hash, and only to look
-            // up what we hold.
+        if envelope.type.isUnsignedPointToPoint {
+            // The blob traffic is unsigned by design (`InboundPipeline.verifyInbound`, `InboundPipeline.kt:587`):
+            // nothing in it is trusted but its hashes, and only to look up what we hold, so it never asks for a key.
             return true
         }
         guard let bundle = verifierBundle(for: envelope) else {
@@ -114,7 +118,7 @@ extension MeshEngine {
 
     /// A chat frame (`InboundPipeline.handleChat` and `decryptAndDeliver`): a room post, a DM addressed to us, or a
     /// group message (``handleGroupChat(_:group:sender:)``). Someone else's DM is only relayed.
-    func handleChat(_ envelope: RelayEnvelope) {
+    func handleChat(_ envelope: RelayEnvelope, via hop: NodeId?) {
         guard let sender = NodeId(envelope.senderId) else {
             return
         }
@@ -126,7 +130,7 @@ extension MeshEngine {
         }
         // A group message names no recipient, so it is told apart before the DM check would take it for the room.
         if let group = envelope.group {
-            handleGroupChat(envelope, group: group, sender: sender)
+            handleGroupChat(envelope, group: group, sender: sender, via: hop)
             return
         }
         let recipient = envelope.recipientId.flatMap(NodeId.init)
@@ -140,14 +144,13 @@ extension MeshEngine {
             drop(.undecodable, envelope)
             return
         }
-        let conversation = Conversations.id(sender: sender, recipient: recipient, me: nodeId)
         guard let enc = chat.enc else {
             guard recipient == nil else {
                 // Android always seals a DM; one in the clear would read as private and is not.
                 drop(.cleartextDirect, envelope)
                 return
             }
-            deliverChat(envelope, Self.delivered(chat), sender: sender, recipient: nil, conversation: conversation)
+            deliverChat(envelope, Self.delivered(chat), sender: sender, recipient: nil, via: hop)
             return
         }
         // Custody re-serves the same ciphertext routinely; once the row exists, only the receipt is owed.
@@ -159,7 +162,7 @@ extension MeshEngine {
         guard let content = open(enc, envelope), content.ctl == nil else {
             return
         }
-        deliverChat(envelope, Self.delivered(content), sender: sender, recipient: recipient, conversation: conversation)
+        deliverChat(envelope, Self.delivered(content), sender: sender, recipient: recipient, via: hop)
     }
 
     /// Opens a v1 envelope addressed to us (`InboundPipeline.decrypt`). Versions 2 and 3 need the ratchet: they are
@@ -180,12 +183,16 @@ extension MeshEngine {
 
     /// Stores a delivered message and acknowledges it (`InboundPipeline.deliverChat`). A re-served frame leaves the
     /// row as it was and is not announced again, and the receipt goes out every time. A photo the message carries is
-    /// fetched at once unless its bytes are already here, as they are when they were carried for someone else.
+    /// fetched at once unless its bytes are already here, as they are when they were carried for someone else: asked of
+    /// its author first, then of `hop`, the neighbour the frame came from, which `nil` leaves unnamed (knit-next ADR
+    /// 2026-10.f7gg).
     ///
     /// Someone else's words are stored waiting for the content filter (ADR 2026-10.e4kz). Android classifies them
     /// before the row is written (`InboundPipeline.inboundModeration`); here the app screens them as it hears the
     /// event, off this actor, and nothing shows them until it has.
-    func deliverChat(_ envelope: RelayEnvelope, _ delivered: DeliveredChat, sender: NodeId, recipient: NodeId?, conversation: String) {
+    func deliverChat(_ envelope: RelayEnvelope, _ delivered: DeliveredChat, sender: NodeId, recipient: NodeId?, via hop: NodeId?) {
+        // A group's thread is the group; a DM's and the room's follow from who sent it to whom.
+        let conversation = envelope.group?.id ?? Conversations.id(sender: sender, recipient: recipient, me: nodeId)
         let attachment = delivered.attachment
         let isNew = !stores.messages.contains(envelope.id)
         // Our own limit bounds what we send, not what a peer floods.
@@ -206,7 +213,7 @@ extension MeshEngine {
             events.append(.received(record, isRequest: !isAccepted(conversation)))
         }
         if let attachment {
-            wantBlob(attachment.hash)
+            wantBlob(attachment.hash, author: sender, via: hop, asker: nil)
         }
         acknowledge(envelope, sender: sender)
     }

@@ -2,9 +2,9 @@
   "source": {
     "repository": "knit-next",
     "path": "vectors/keyed-v1.json",
-    "commit": "e4ff84b3ac0677494b77399a6f0e97cbf138f9c7",
+    "commit": "5f521cb98fd9f8df9fc27f56d5debf4736a3aa4a",
     "uncommitted": false,
-    "sha256": "55b01fef367330f1781f3c4a5a3b271aee3f6fc08aeeaad7668a8de82bff397c"
+    "sha256": "37431c8e1ae93cd9c8c858e9304bd9f7048f9224a955e16a2747b91e07edb873"
   },
   "about": "Keyed vectors: two fixed identities, the frames Alice signs, a v1 DM she seals to Bob, their safety number, the link records a peer reads, and the advert it reads first. KeyedVectorTest checks them. See vectors/README.md.",
   "identities": {
@@ -72,6 +72,14 @@
       "mime": "image/jpeg",
       "size": 203807,
       "record": "02000000807b226b696e64223a224154544143484d454e54222c226b6579223a2231373165323532633333336134313438346635363564363436623732373938303837386539353963613361616231623862666336636464346462653265396630222c226d696d65223a22696d6167652f6a706567222c2273697a65223a3230333830377d"
+    },
+    "fileHeaderResumed": {
+      "kind": "ATTACHMENT",
+      "key": "171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0",
+      "mime": "image/jpeg",
+      "size": 121887,
+      "offset": 81920,
+      "record": "020000008f7b226b696e64223a224154544143484d454e54222c226b6579223a2231373165323532633333336134313438346635363564363436623732373938303837386539353963613361616231623862666336636464346462653265396630222c226d696d65223a22696d6167652f6a706567222c2273697a65223a3132313838372c226f6666736574223a38313932307d"
     },
     "advert": {
       "nodeId": "4cgq2pnhh6p3j3afwsue3chrpi",

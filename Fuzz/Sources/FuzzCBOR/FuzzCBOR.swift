@@ -21,6 +21,8 @@ public func fuzzCBOR(_ data: UnsafePointer<UInt8>, _ count: Int) -> CInt {
     _ = try? ReactionContent(cbor: item)
     _ = try? KeyRequestContent(cbor: item)
     _ = try? BlobRequestContent(cbor: item)
+    _ = try? BlobHaveContent(cbor: item)
+    _ = try? BlobHasContent(cbor: item)
     _ = try? TypingContent(cbor: item)
     _ = try? GroupLeaveContent(cbor: item)
     _ = try? EncEnvelope(cbor: item)

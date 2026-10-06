@@ -48,6 +48,14 @@ public struct FileIntake: Sendable {
         if case .keeping(_, let key, _, _) = state { key } else { nil }
     }
 
+    /// Whether a file is streaming in: its header is in and its END is not, whether its bytes are kept or skipped
+    /// (`FramedLink.rxInProgress`, which `fileArrivingFrom` reads, knit-next ADR 2026-10.nxfb). Android keeps every file
+    /// that decodes, so its own read is the kept file alone. This intake skips an attachment nobody asked for, and a
+    /// skipped file holds the link just the same: whatever the peer sends next waits behind it.
+    public var isStreaming: Bool {
+        if case .idle = state { false } else { true }
+    }
+
     /// The bytes of the file being kept, so far.
     public var bufferedBytes: Int {
         if case .keeping(_, _, _, let bytes) = state { bytes.count } else { 0 }

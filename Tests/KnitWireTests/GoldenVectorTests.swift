@@ -15,9 +15,9 @@ import Testing
         #expect(item.encoded == bytes, "\(name) did not re-encode to its pinned bytes")
     }
 
-    @Test func thereAreFiftySevenVectors() {
+    @Test func thereAreSixtyOneVectors() {
         // A new fixture in knit-next needs a typed test here when this build models its type.
-        #expect(GoldenVectors.names.count == 57)
+        #expect(GoldenVectors.names.count == 61)
     }
 
     @Test(arguments: typedFixtures)
@@ -134,6 +134,25 @@ let typedFixtures: [TypedFixture] = [
     TypedFixture("groupLeaveContent", GroupLeaveContent(groupId: "g-1")),
     TypedFixture("keyReqContent", KeyRequestContent(nodeIds: ["a", "b"])),
     TypedFixture("blobReqContent", BlobRequestContent(hash: "h1")),
+    TypedFixture("blobReqContentResumed", BlobRequestContent(hash: "h1", offset: 400_000)),
+    TypedFixture("blobHaveContent", BlobHaveContent(hashes: ["h1", "h2"])),
+    TypedFixture(
+        "blobHasContent",
+        BlobHasContent(
+            items: [
+                BlobHasItem(hash: "h1", state: .have, size: 140_948),
+                BlobHasItem(hash: "h2", state: .sending, size: 4096),
+                BlobHasItem(hash: "h3", state: .fetching),
+                BlobHasItem(hash: "h4", state: .notHeld),
+            ],
+            load: 2,
+            re: "q1"
+        )
+    ),
+    TypedFixture(
+        "blobHasContentReserved",
+        BlobHasContent(items: [BlobHasItem(hash: "h1", state: .partial, size: 1000, held: 400)])
+    ),
     TypedFixture("typingContent", TypingContent(groupId: "g-1")),
     TypedFixture("mention", Mention(nodeId: "node1", name: "Ann")),
     TypedFixture(

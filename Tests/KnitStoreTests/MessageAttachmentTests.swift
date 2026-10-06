@@ -73,4 +73,28 @@ import Testing
         store.deleteMessages(in: "g-group", at: 0)
         #expect(store.attachmentHashes() == [hash(5)], "a thread that goes takes its photos' names with it")
     }
+
+    /// Android's `attachmentsNeedingFetch`: the sender of the earliest message carrying each blob, by `sentAt` and then
+    /// by id, so a re-armed fetch asks that author first (knit-next ADR 2026-10.f7gg).
+    @Test(arguments: kinds)
+    func theEarliestMessageCarryingABlobNamesItsSender(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        let carol = fixtureNodeId(3)
+        var late = message("a-late", in: Conversations.nearby, carrying: MessageAttachment(hash: hash(7)))
+        late.sentAt = 9
+        var early = message("z-early", in: "g-group", carrying: MessageAttachment(hash: hash(7)))
+        early.senderId = alice
+        early.sentAt = 2
+        var tied = message("b-tied", in: Conversations.nearby, carrying: MessageAttachment(hash: hash(8)))
+        tied.senderId = carol
+        tied.sentAt = 4
+        var tiedFirst = message("a-tied", in: Conversations.nearby, carrying: MessageAttachment(hash: hash(8)))
+        tiedFirst.sentAt = 4
+        for record in [late, early, tied, tiedFirst, message("plain", in: bob.string, carrying: nil)] {
+            store.save(record)
+        }
+        #expect(store.attachmentSenders(among: [hash(7), hash(8), hash(9)]) == [hash(7): alice, hash(8): bob])
+        #expect(store.attachmentSenders(among: [hash(8)]) == [hash(8): bob])
+        #expect(store.attachmentSenders(among: []).isEmpty)
+    }
 }

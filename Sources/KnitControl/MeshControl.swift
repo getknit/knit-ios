@@ -292,6 +292,7 @@ public actor MeshControl {
             "custody": .int(Int64(stores.custody.liveIds(now: clock.wallMilliseconds()).count)),
             "dropped": .object(Dictionary(dropped) { first, _ in first }),
             "files": ControlLines.describe(await mesh.files),
+            "blobs": ControlLines.describe(await mesh.blobs),
             "rings": .int(Int64(await mesh.rings)),
             "rung": .int(Int64(await mesh.ringsHeard)),
             "seeking": .bool(await mesh.isSeeking),

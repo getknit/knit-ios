@@ -103,6 +103,10 @@ public struct VectorSafetyNumber: Codable, Sendable, Equatable {
 }
 
 /// knit-next's link vectors: the HELLO, DIGEST and FILE_HEADER records, the custody fingerprint and an advert.
+///
+/// `fileHeaderResumed`, the header that answers a `blobreq` naming an offset (knit-next ADR 2026-10.wtyc), is left
+/// undecoded: this port never asks with an offset, so no such header is ever sent to it. It is read once resuming a cut
+/// transfer lands (knit-ios #2).
 public struct VectorLink: Decodable, Sendable {
     /// A HELLO record and its text payload.
     public struct Hello: Decodable, Sendable {

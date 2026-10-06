@@ -160,7 +160,7 @@ import Testing
         fixture.deliver(try profile(of: bob, photo: newer, version: 6, from: fixture), from: bob)
         var record = try #require(fixture.stores.peers.peer(bob.nodeId))
         #expect(record.avatarHash == BlobHash(of: jpeg) && record.advertisedAvatarHash == BlobHash(of: newer))
-        fixture.engine.wantBlob(BlobHash(of: newer))
+        fixture.engine.wantBlob(BlobHash(of: newer), author: bob.nodeId, via: nil, asker: nil)
         fixture.engine.receiveFile(
             InboundFile(from: bob.nodeId, kind: .attachment, hash: BlobHash(of: newer), mime: "image/jpeg", bytes: newer))
         record = try #require(fixture.stores.peers.peer(bob.nodeId))

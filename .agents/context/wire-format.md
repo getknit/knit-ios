@@ -49,7 +49,13 @@ The payload types:
 - `ChatContent { body = "", mentions = [], attachmentHash?, attachmentMime?, enc: EncEnvelope?, replyTo: ReplyRef? }`
 - `ProfileContent { name, status, avatarHash?, pubKey?, deviceTag?, protoVersion?, capabilities?, prekey?, version?, openToChat = false, loraNode?, loraKey? }`
 - `ReceiptContent { ackId }`, `ReactionContent { messageId, emoji? }`, `KeyReqContent { nodeIds }`,
-  `BlobReqContent { hash }`, `TypingContent { groupId? }`
+  `BlobReqContent { hash, offset? }`, `TypingContent { groupId? }`
+- `BlobHaveContent { hashes }` and `BlobHasContent { items: [BlobHasItem { hash, state, size?, held? }], load?, re? }`,
+  the holder query and its answer (knit-next ADR 2026-10.6e5t). `state` has no default, so it is always written, `0`
+  included: NONE 0, HAVE 1, SENDING 2, FETCHING 3, and PARTIAL 4, which is reserved. A state a build does not know is
+  never taken for HAVE.
+- A `blobreq`'s `offset` is how many bytes of a cut transfer the asker kept, echoed by the `FILE_HEADER` that answers
+  it (knit-next ADR 2026-10.wtyc). This port reads it and never sends it, and serves the whole file (knit-ios #2).
 - `EncEnvelope { v = 1, nonce, ct, keys: [WrappedKey { to, wk }], r: RatchetHeader?, g: GroupRatchetHeader? }`
 
 `ProfileContent.pubKey` is effectively required: a profile without it is dropped. Keep every field we
@@ -61,7 +67,7 @@ thinned.
 These only ever grow. A value is never reused, even after it is retired.
 
 - **Frame types are strings:** `chat`, `groupupdate`, `groupleave`, `profile`, `receipt`, `reaction`,
-  `blobreq`, `keyreq`, `typing`, `commons`. `meshpost` is burned.
+  `blobreq`, `blobhave`, `blobhas`, `keyreq`, `typing`, `commons`. `meshpost` is burned.
   - `isReplayable` covers chat, reaction, receipt, groupupdate and groupleave.
   - `isCustodial` is `isReplayable` plus `profile`.
 - **`MessageContent.ctl`:**
@@ -91,8 +97,10 @@ These only ever grow. A value is never reused, even after it is retired.
   | `0x008` | `STORE_FORWARD` | `0x200` | `FILES` |
   | `0x010` | `RATCHET` | `0x400` | `LINK_PREVIEW` |
   | `0x020` | `FAST_COMPACT` | `0x800` | `DIRECT_TRANSFER` |
+  | `0x1000` | `DOORBELL` | `0x2000` | `BLOB_HAVE` |
 
-  Android sends `0xFFF`. Only the signed profile copy gates anything, and only at send time: `RATCHET`
+  `DOORBELL` and `BLOB_HAVE` sit above the advert's 8 bits and are read from the HELLO alone. Android sends `0x2FFF`
+  since `403cd861`, and `0xFFF` before it; it never claims `DOORBELL`. Only the signed profile copy gates anything, and only at send time: `RATCHET`
   (with a prekey) picks v2 DMs, `CRYPTO_V3` picks v3, `INLINE_ACK`, `FILES`, `LINK_PREVIEW` and
   `DIRECT_TRANSFER` gate features. The rest are diagnostic.
 
@@ -103,8 +111,9 @@ These only ever grow. A value is never reused, even after it is retired.
   - our own frames verify with our own key;
   - a `profile` verifies with the key inside its own payload;
   - everything else verifies with the sender's pinned key.
-- **Unsigned frames** come in exactly two shapes: `blobreq`, and the v3 live-link tick (a `relay = false`
-  DM-form `chat` addressed to us). Anything else with an empty `sig` is refused.
+- **Unsigned frames** come in two shapes: the blob traffic, `blobreq`, `blobhave` and `blobhas`, each `relay = false`
+  (`FrameType.isUnsignedPointToPoint`), and the v3 live-link tick (a `relay = false` DM-form `chat` addressed to us).
+  Anything else with an empty `sig` is refused.
 - **Frame id:** 16 random bytes, base64url, no padding, 22 characters. Profiles use
   `profile-<nodeId>-<publishedAt>`.
 - **`ttl` is a hop limit, not a time.** A frame is relayed only while `hops < min(ttl, 8)`.
@@ -130,7 +139,7 @@ Adding a custodial type is a flag day, not an additive change. Breaking changes 
 ## What this build sends and understands
 
 Groups joined the MVP's frames on 2026-09-30 (ADR 2026-09.n393), profile photos on 2026-10-03 (ADR 2026-10.nh55),
-and photos in chats the same day (ADR 2026-10.6cas).
+photos in chats the same day (ADR 2026-10.6cas), and the blob holder query on 2026-10-05.
 
 | Frame | We send | We receive |
 | --- | --- | --- |
@@ -147,7 +156,9 @@ and photos in chats the same day (ADR 2026-10.6cas).
 | `receipt`, `relay = true`, `sentAt` set | our DM acks | yes: ✓✓ on our DMs |
 | `receipt`, `relay = false`, no `sentAt` | room and group ticks over the link | yes: Android's room and group ticks to us |
 | `keyreq` (`relay = false`, signed) | when a sender's key is missing | answer with cached signed profiles |
-| `blobreq` (unsigned, `relay = false`, `sentAt` 0) | for each blob wanted: to every neighbour, at link-up and every 60 s | serve it if held, as FILE records of kind ATTACHMENT; otherwise want it; never flood it (ADR 2026-10.ym9y) |
+| `blobreq` (unsigned, `relay = false`, `sentAt` 0, no `offset`) | to the best holder a query found, or blind: the author, then the hop the frame came from, then every other neighbour once a 5 s grace is up; a cycle at most every 45 s, on a link-up or the 60 s tick (knit-next ADRs 2026-10.f7gg and 2026-10.6e5t) | serve it if held, as FILE records of kind ATTACHMENT, the whole file whatever `offset` says; otherwise want it, never asking the asker back that cycle; never flood it (ADR 2026-10.ym9y) |
+| `blobhave` (unsigned, `relay = false`, `sentAt` 0, ≤ 32 hashes) | in a debug build, and from knit-peer: to each neighbour whose HELLO carries `CAP_BLOB_HAVE`, one frame per neighbour per step | answer every one, from the link that carried it and only when its sender is that link's peer, within 16 a burst and one a second; never flood it |
+| `blobhas` (unsigned, `relay = false`, `sentAt` 0) | the answer: NONE, HAVE with the size, SENDING, or FETCHING per hash, our `load` and the query's `re` | taken only from a neighbour queried this cycle for a hash it names; a state this build does not know is never HAVE |
 | `reaction`, `relay = true`, `sentAt` set, no recipient, no group | when the user reacts, in any thread, toggling as Android does (ADR 2026-10.ehe6) | yes: one emoji, last writer wins per message and reactor; never acked or notified |
 | `typing`, `commons`, unknown types | no | carry and relay where custodial; never crash |
 
@@ -160,7 +171,7 @@ FILE records, which are not frames, go both ways too:
 
 ## Golden vectors
 
-`GoldenVectorTest.kt` holds 57 fixtures as inline hex in its `EXPECTED` map. The inputs are generated:
+knit-next's `vectors/wire-v1.json` holds 61 fixtures, which `GoldenVectorTest.kt` reads. The inputs are generated:
 `bytes(n, seed)[i] = (7 * i + seed) & 0xFF`, with `frameId(seed)` and `nodeId(seed)` built from
 `bytes(16, seed)`. They are codec vectors only, with placeholder ids like `"m1"`; none carries a real
 signature or ciphertext. The bundle probe (`sigPub = bytes(32, 10)`, `hpkePub = bytes(32, 20)`) derives node

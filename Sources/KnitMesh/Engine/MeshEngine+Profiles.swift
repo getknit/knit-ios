@@ -171,7 +171,7 @@ extension MeshEngine {
         // A linked peer pushes its own photo right behind its profile, so only someone else's is asked for now; a push
         // that never came is asked for at the next re-offer.
         if let advertised = photo.advertised, photo.shown != advertised, !transport.isLinked(sender) {
-            wantBlob(advertised)
+            wantBlob(advertised, author: sender, via: nil, asker: nil)
         }
         if let replaced = existing?.avatarHash, replaced != photo.shown {
             releaseBlob(replaced)

@@ -291,3 +291,28 @@ public final class MemoryMessageStore: MessageStore {
         }
     }
 }
+
+extension MemoryMessageStore {
+    /// Who sent the earliest message carrying each of `hashes` (``MessageStore/attachmentSenders(among:)``).
+    public func attachmentSenders(among hashes: Set<BlobHash>) -> [BlobHash: NodeId] {
+        state.withLock { state in
+            // Earliest first, as the SQL store reads them, so the first message carrying each hash names its sender.
+            let carriers = state.rows.values.map(\.record).filter { $0.attachment.map { hashes.contains($0.hash) } ?? false }
+            var senders: [BlobHash: NodeId] = [:]
+            for record in carriers.sorted(by: Self.precedes) {
+                if let hash = record.attachment?.hash, senders[hash] == nil {
+                    senders[hash] = record.senderId
+                }
+            }
+            return senders
+        }
+    }
+
+    /// Whether `lhs` comes before `rhs` by `sentAt` and then by its id's bytes, as SQLite's BINARY collation orders it.
+    private static func precedes(_ lhs: MessageRecord, _ rhs: MessageRecord) -> Bool {
+        guard lhs.sentAt == rhs.sentAt else {
+            return lhs.sentAt < rhs.sentAt
+        }
+        return Array(lhs.id.utf8).lexicographicallyPrecedes(Array(rhs.id.utf8))
+    }
+}

@@ -76,10 +76,10 @@ bytes. The tags:
 | --- | --- | --- |
 | 1 | `FRAME` | CBOR `WireEnvelope` (`wire-format.md`) |
 | 2 | `FILE_HEADER` | UTF-8 JSON `{"kind":"AVATAR"\|"ATTACHMENT","key":"<64 lowercase hex>","mime":"…","size":<bytes>}`; `size` since knit-next ADR 2026-10.y9qh |
-| 3 | `FILE_CHUNK` | raw bytes, at most 16 KiB from Android (2 KiB on a Coded link); a file over 8 MiB + 64 KiB is aborted |
+| 3 | `FILE_CHUNK` | raw bytes, 2 to 16 KiB from Android (2 KiB on a Coded link); a file over 8 MiB + 64 KiB is aborted |
 | 4 | `FILE_END` | empty |
 | 5 | `KEEPALIVE` | empty; Android never sends one and ignores it on receipt |
-| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|fff`; the caps may carry `CAP_DOORBELL` (`0x1000`), which no advert can |
+| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|2fff`; the caps may carry `CAP_DOORBELL` (`0x1000`) and `CAP_BLOB_HAVE` (`0x2000`), which no advert can |
 | 7 | `DIGEST` | UTF-8 JSON `{"ids":[…]}` |
 
 - **An unknown tag, a bad length or a truncated record throws on Android and drops the link.** Never send
@@ -93,10 +93,12 @@ bytes. The tags:
   file still lands, and a header from a build before the field has none. Android and this port always write it.
 - Android caps each socket write at `min(maxTransmitPacketSize, 8192)` bytes. Keep our writes at 8 KiB or less.
 - Android paces files by the link's PHY, read again before every chunk (`CodedPhyPolicy.pace`, #114):
-  - 28 KiB/s in 16 KiB chunks on 1M and 2M;
-  - 1 KiB/s in 2 KiB chunks on Coded.
+  - on 1M and 2M, one budget of 4 KiB/s split evenly across the links feeding a file, each chunk two seconds of a
+    link's share, from 2 to 16 KiB (knit-next ADR 2026-10.8jwn, since `99ee3f81`; it was 28 KiB/s a link before);
+  - 1 KiB/s in 2 KiB chunks on Coded, outside the split.
 
-  The pace is the sender's own choice, and a receiver takes a chunk of any length.
+  The pace is the sender's own choice, and a receiver takes a chunk of any length. This port still feeds each link
+  at 28 KiB/s in 16 KiB chunks behind the radio's report (ADR 2026-10.h6zz; `.agents/memory/roadmap.md`).
 
 ### The handshake
 
@@ -163,6 +165,10 @@ radio.
     links stay on 1M.
   - After its last link drops, a phone searches at the 12 s scan gap for three minutes before relaxing (knit-next
     ADR 2026-09.w3xk).
+  - The side that dials back hunts a Coded peer it lost at range, every other window Coded-only, for three minutes,
+    or up to 30 while Knit is open, which also hunts on its own (knit-next ADR 2026-10.yvn6, amended `ab0d17aa`). Only
+    a peer heard on Coded is hunted, so never an iPhone; a hunting window that is Coded-only is deaf to an iPhone's
+    advert.
 
 ## What this means for an iPhone
 
@@ -231,10 +237,12 @@ no payload left alone for ten minutes. A payload serves the address's adverts un
 channel opens, a HELLO there names another node, or the address goes unheard for a minute of scanning while nothing
 links it. Those three rules are shared law with A3 (ADR 2026-09.xzpt, amended 2026-09-29).
 
-The HELLO adds `CAP_DOORBELL` (`0x1000`) to this build's `0xF`, reading `100f`, only when the radio serves the
-doorbell (`Radio.servesDoorbell`): `KnitBLE`, and knit-peer's `ios` profile. The `android` profile, like Android,
-serves no GATT and never sends it. The link manager rings after every frame it writes except `typing`, `blobreq`
-and `keyreq`, as Android does, so both platforms wake an iPhone equally often (ADR 2026-09.khjj).
+The HELLO adds `CAP_BLOB_HAVE` (`0x2000`) to this build's `0xF` always, since every build answers a holder query
+(knit-next ADR 2026-10.6e5t), reading `200f`. It adds `CAP_DOORBELL` (`0x1000`) too, reading `300f`, only when the
+radio serves the doorbell (`Radio.servesDoorbell`): `KnitBLE`, and knit-peer's `ios` profile. The `android` profile,
+like Android, serves no GATT and never sends it. The link manager rings after every frame it writes except `typing`,
+`blobreq`, `blobhave`, `blobhas` and `keyreq`, as Android does, so both platforms wake an iPhone equally often (ADR
+2026-09.khjj).
 
 Files cross a link as Android's do (ADR 2026-10.h6zz).
 
@@ -245,6 +253,8 @@ Files cross a link as Android's do (ADR 2026-10.h6zz).
 - **In:** each link's records pass through a `FileIntake` under Android's receiving rules.
   - A peer's own AVATAR push is kept up to 1 MiB, and an ATTACHMENT only when the engine asked for its hash.
   - Partial files on all links together stay under 16 MiB.
+  - A whole file stays on its way, to the fetch and to a holder query, from its END until the engine has taken it
+    (`MeshTransport.fileTaken`, knit-next #138), since a radio read runs all its records before the engine sees one.
   - FILE records never ring a doorbell.
 
 `KnitBLE` is the iPhone's radio. Its central scans every advert with duplicates, or the `0xFE30` UUID alone while

@@ -279,6 +279,7 @@ import Testing
         #expect(fixture.transport.accepted.contains(missing))
         #expect(fixture.engine.deleteChat(Conversations.nearby))
         #expect(!fixture.transport.accepted.contains(missing))
-        #expect(fixture.engine.rewantMissingBlobs(sparing: []).isEmpty, "nothing names it any more")
+        fixture.engine.rewantMissingBlobs(sparing: [])
+        #expect(!fixture.engine.blobExchange.isWanted(missing), "nothing names it any more")
     }
 }

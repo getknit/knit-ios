@@ -71,6 +71,9 @@ document:
 - Knit now wears Knit for Android's coral, groups each person's messages with a date over every day, and puts
   your picture at the top of Chats as the way into Settings. On iOS 26 and later its buttons and composer use
   Liquid Glass, and Increase Contrast deepens its text colors.
+- Your iPhone now asks the phone that posted a photo for it first, and other nearby phones only if that
+  one hasn't started sending within a few seconds. Messages now rarely wait behind several copies of the
+  same photo.
 
 ## About this file
 

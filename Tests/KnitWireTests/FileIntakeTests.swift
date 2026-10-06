@@ -28,6 +28,28 @@ import Testing
         #expect(intake.bufferedBytes == 0)
     }
 
+    @Test func aFileIsStreamingFromItsHeaderToItsEndWhetherKeptOrSkipped() {
+        // A skipped file holds the link as a kept one does (knit-next ADR 2026-10.nxfb), so both count.
+        var kept = FileIntake()
+        #expect(!kept.isStreaming)
+        _ = kept.header(header(), limit: keepAll)
+        #expect(kept.isStreaming)
+        _ = kept.end()
+        #expect(!kept.isStreaming)
+        var skipped = FileIntake()
+        _ = skipped.header(header()) { _, _ in nil }
+        #expect(skipped.isStreaming && skipped.arriving == nil)
+        _ = skipped.chunk([1])
+        #expect(skipped.isStreaming)
+        _ = skipped.end()
+        #expect(!skipped.isStreaming)
+        var unreadable = FileIntake()
+        _ = unreadable.header([0x7B], limit: keepAll)
+        #expect(unreadable.isStreaming)
+        unreadable.reset()
+        #expect(!unreadable.isStreaming)
+    }
+
     @Test func anEmptyFileIsAHeaderAndAnEnd() throws {
         var intake = FileIntake()
         _ = intake.header(header(.avatar), limit: keepAll)

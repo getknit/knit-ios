@@ -125,9 +125,14 @@ ChatContent { enc, attachmentHash: hash }                the hash alone in the c
 
 - **Opening** takes the key from the opened message: split off the 12-byte nonce and the 16-byte tag, and
   open. A wrong key, a bad tag or a blob shorter than 28 bytes opens nothing, as Android answers null.
-- **The same photo sent twice** is two unrelated blobs, since each send draws its own key.
+- **The same photo sent twice** from this port is two unrelated blobs, since each send draws its own key. Android
+  since `01b2fd5d` seals a picture once and forwards it under the hash and key it arrived with, so one blob and key
+  may recur across messages and a carrier can see that two frames carry one file (knit-next ADR 2026-10.mptm).
 - **The key and the nonce come from the system's generator,** never the injected one, as a message's do.
-- **A room post's photo is not sealed:** its blob is the photo, and its hash is the photo's.
+- **A room post's photo is not sealed:** its blob is the photo, and its hash is the photo's. A sealed DM or group
+  message may name such a photo too, with no `attachmentKey`: a room picture Android forwards under its own hash
+  (knit-next ADR 2026-10.mptm). A null key has always meant a plaintext blob, and this port shows it as one
+  (`MeshEnginePhotoTests.aSealedMessageMayNameAPhotoWithNoKeyWhichIsThePlaintextBlob`).
 - **The goldens:** `AttachmentCryptoTests` pins a blob and its hash at a fixed key and nonce, computed with
   the port itself and checked against Python's `cryptography`, until A7 adds one to `keyed-v1.json`.
 

@@ -20,9 +20,13 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   STORE_FORWARD (ADR 2026-10.ehe6). Builds before reactions sent `0xB` (ADR 2026-09.n393), and the MVP `0x9`.
   `CAP_RATCHET` is a promise to handle v2 DMs, their ctl codes and resets; it stays off until the ratchet
   milestone ships.
-- **`CAP_DOORBELL` (`0x1000`) lives in the HELLO alone.** The HELLO adds it, reading `100f`, when the radio
+- **`CAP_DOORBELL` (`0x1000`) lives in the HELLO alone.** The HELLO adds it, reading `300f`, when the radio
   serves the doorbell (`Radio.servesDoorbell`). Nothing else ever advertises it: not `Capabilities.local`, not the
   signed profile, not the advert, and never the Linux peer's `android` profile, which serves no GATT.
+- **`CAP_BLOB_HAVE` (`0x2000`) lives in the HELLO alone too.** Every HELLO carries it, reading `200f`, because
+  every build answers a `blobhave` (knit-next ADR 2026-10.6e5t). Android reads it from the link only, so it stays
+  out of `Capabilities.local`, the signed profile and the emitted vectors. Answering is never gated; only asking is
+  (`MeshConfiguration.queriesBlobHolders`).
 - **Text limits count UTF-16 code units,** and whitespace means Java's `\s`. Node ids compare as ASCII
   strings, never as raw bytes.
 - **Changes stay additive** (`docs/WIRE_COMPAT.md` in knit-next). If a change can only be made by breaking

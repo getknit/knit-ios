@@ -123,9 +123,9 @@ struct LinkDoorbellTests {
 
     // MARK: What rings
 
-    @Test(arguments: [FrameType.typing, .blobRequest, .keyRequest])
+    @Test(arguments: [FrameType.typing, .blobRequest, .blobHave, .blobHas, .keyRequest])
     func upkeepGoesOutWithoutRinging(type: FrameType) throws {
-        // Android skips the same three (`DoorbellPolicy.rings`): the 60 s tick re-sends the requests.
+        // Android skips the same five (`DoorbellPolicy.UPKEEP`): the 60 s tick re-sends the requests and the queries.
         let rig = LinkRig(local: LinkRig.high)
         let id = try rig.link(LinkRig.low)
         rig.links.send(LinkRig.signedFrame("u1", type: type), to: LinkRig.low)
@@ -183,7 +183,7 @@ struct LinkDoorbellTests {
         for id in [dialed, accepted] {
             let hello = try #require(rig.radio.records(on: id).first)
             #expect(hello == LinkRig.ourHello(LinkRig.high, servesDoorbell: serves))
-            #expect(Hello(payload: hello.payload).capabilities.hex == (serves ? "100f" : "f"))
+            #expect(Hello(payload: hello.payload).capabilities.hex == (serves ? "300f" : "200f"))
         }
     }
 

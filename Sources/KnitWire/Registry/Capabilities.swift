@@ -31,11 +31,16 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     /// This node serves the GATT doorbell; ring it after frames. Read from the HELLO only, and sent only there, by a
     /// radio that serves one (`Radio.servesDoorbell`): it is above the advert's 8 bits, and never in the profile.
     public static let doorbell: Self = 0x1000
+    /// This node answers a `blobhave` query with a `blobhas` (`Protocol.CAP_BLOB_HAVE`, knit-next ADR 2026-10.6e5t). An
+    /// asker queries only a neighbour whose link carries it, since a build without it refuses the unsigned frame and the
+    /// asker would wait out an answer that never comes. Read from the HELLO only, never from a pinned profile, and sent
+    /// only there: every build answers, so every HELLO claims it, and it is above the advert's 8 bits.
+    public static let blobHave: Self = 0x2000
 
     /// What this build advertises: end-to-end DMs, groups (both v1), reactions and store-and-forward, `0xF` (ADR
     /// 2026-09.n393, ADR 2026-10.ehe6). Android reads the reactions bit for diagnostics only. Never the ratchet until it
-    /// ships, or Android would seal DMs and groups we cannot open. Never ``doorbell`` either: that is the radio's to claim,
-    /// in the HELLO alone.
+    /// ships, or Android would seal DMs and groups we cannot open. Never ``doorbell`` or ``blobHave`` either: those are the
+    /// link's to claim, in the HELLO alone.
     public static let local: Self = [.endToEnd, .groups, .reactions, .storeForward]
 
     /// The bit field, a Kotlin `Long`.

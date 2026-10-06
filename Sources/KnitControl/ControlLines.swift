@@ -120,6 +120,24 @@ internal enum ControlLines {
         ["received": .int(Int64(files.received)), "refused": .int(Int64(files.refused)), "sent": .int(Int64(files.sent))]
     }
 
+    /// What the blob holder query did, by Android's debug bridge's names less their `blob` prefix (knit-next ADR
+    /// 2026-10.6e5t): queries sent, answered and refused, answers taken and ignored, and the fetches, confirms, fallbacks,
+    /// blind asks and pulls they led to.
+    static func describe(_ blobs: BlobCounts) -> JSONValue {
+        [
+            "queriesSent": .int(Int64(blobs.queriesSent)),
+            "queriesAnswered": .int(Int64(blobs.queriesAnswered)),
+            "queriesRefused": .int(Int64(blobs.queriesRefused)),
+            "answersTaken": .int(Int64(blobs.answersTaken)),
+            "answersIgnored": .int(Int64(blobs.answersIgnored)),
+            "fetches": .int(Int64(blobs.fetches)),
+            "confirms": .int(Int64(blobs.confirms)),
+            "fallbacks": .int(Int64(blobs.fallbacks)),
+            "blindAsks": .int(Int64(blobs.blindAsks)),
+            "pullThroughs": .int(Int64(blobs.pullThroughs)),
+        ]
+    }
+
     static func describe(_ counters: Router.Counters) -> JSONValue {
         [
             "admitted": .int(Int64(counters.admitted)),

@@ -9,7 +9,7 @@ ladder, not the first.
    under `swift test`, TSan and ASan. Use `@Test` and `#expect`/`#require`; XCTest is disabled
    (`--disable-xctest`) so each target writes one xUnit report. Locks are `KnitSync`'s `Lock`, which TSan
    can see (ADR 2026-09.ahrr), so a TSan report is a real race: fix it, never rerun the gate until it passes.
-2. **Golden and known-answer vectors.** knit-next's `vectors/` (the 57 codec fixtures, and keyed vectors:
+2. **Golden and known-answer vectors.** knit-next's `vectors/` (the 61 codec fixtures, and keyed vectors:
    identities, signed frames, a sealed DM, the safety number, the link records and an advert), its node id,
    alias and card goldens, and the RFC 7748, 8032, 5869 and 9180 vectors. The other direction runs too:
    `EmittedVectorTests` writes frames this port signs, and knit-next's `IosEmittedVectorTest` verifies them

@@ -123,7 +123,7 @@ import Testing
 
     @Test func frameTypesKeepKnitNextsCustodyMembership() {
         let custodial: [FrameType] = [.chat, .reaction, .receipt, .groupUpdate, .groupLeave, .profile]
-        let transient: [FrameType] = [.blobRequest, .keyRequest, .typing, .commons, FrameType(rawValue: "future")]
+        let transient: [FrameType] = [.blobRequest, .blobHave, .blobHas, .keyRequest, .typing, .commons, FrameType(rawValue: "future")]
         let allCustodial = custodial.allSatisfy(\.isCustodial)
         let anyTransientCustodial = transient.contains(where: \.isCustodial)
         #expect(allCustodial)

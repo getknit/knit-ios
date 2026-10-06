@@ -260,6 +260,9 @@ public actor Mesh {
     public var files: FileCounts {
         FileCounts(received: links.filesReceived, refused: links.filesRefused + engine.filesRejected, sent: links.filesSent)
     }
+
+    /// What the blob holder query has done so far, both ends.
+    public var blobs: BlobCounts { engine.blobCounts }
     /// Doorbells rung on peers' links, to wake a suspended iPhone (``LinkManager/rings``).
     public var rings: Int { links.rings }
     /// Rings of this node's own doorbell (``LinkManager/ringsHeard``).

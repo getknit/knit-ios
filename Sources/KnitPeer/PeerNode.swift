@@ -42,6 +42,8 @@ public actor PeerNode {
             radio: radio,
             clock: clock,
             random: random,
+            // The peer is a test bench, so it queries a blob's holders as a debug build does (knit-next ADR 2026-10.6e5t).
+            configuration: MeshConfiguration(queriesBlobHolders: true),
             linkConfiguration: linkConfiguration,
             log: log
         )

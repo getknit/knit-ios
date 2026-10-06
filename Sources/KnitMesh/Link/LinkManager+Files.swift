@@ -36,6 +36,12 @@ internal struct FileFeed {
     }
 }
 
+/// A whole file past its END that the engine has not taken yet, by the neighbour whose link carried it.
+internal struct LandingFile: Hashable {
+    var from: NodeId
+    var hash: BlobHash
+}
+
 /// FILE records both ways (ADR 2026-10.h6zz).
 ///
 /// **In,** each link's file passes through a ``FileIntake``, which applies Android's receiver rules. A peer's own AVATAR
@@ -76,9 +82,29 @@ extension LinkManager {
         liveChannel(to: peer).flatMap { feeds[$0] }?.holds(hash) ?? false
     }
 
-    /// The files whose header has arrived on some link and whose END has not.
+    /// The files on their way in: those streaming in on some link, then those past their END that the engine has not
+    /// taken (`arrivingFiles`, read in that order so a file is never in neither; knit-next ADR 2026-09.4tx5, amended
+    /// for #138). A radio read runs all its records before the engine sees any of them, so a frame ahead of a FILE_END
+    /// in the same read reaches the engine after the END has cleared the intake and before the file is stored.
     public var arrivingFileKeys: Set<BlobHash> {
-        Set(intakes.values.compactMap(\.arriving))
+        Set(intakes.values.compactMap(\.arriving)).union(landingFiles.map(\.hash))
+    }
+
+    /// The engine has taken a file `peer` sent us, stored or refused, so it is no longer on its way
+    /// (`MeshTransport.fileTaken`).
+    public func fileTaken(from peer: NodeId, hash: BlobHash) {
+        landingFiles.remove(LandingFile(from: peer, hash: hash))
+    }
+
+    /// Whether a file from `peer` is streaming in now, kept or skipped (`fileArrivingFrom`, knit-next ADR 2026-10.nxfb).
+    /// A file that has landed is not streaming.
+    public func isFileArriving(from peer: NodeId) -> Bool {
+        liveChannel(to: peer).flatMap { intakes[$0] }?.isStreaming ?? false
+    }
+
+    /// How many links are streaming a file out now (`feedingLoad`): one radio, so the count is over every link.
+    public var feedingLoad: Int {
+        feeds.values.count { $0.streaming != nil }
     }
 
     /// The attachments to keep as they stream in: the blobs the engine wants.
@@ -124,6 +150,7 @@ extension LinkManager {
             return []
         }
         filesReceived += 1
+        landingFiles.insert(LandingFile(from: peer, hash: key))
         log.log(.info, "link file \(header.kind.rawValue) \(Self.shown(key.string)) from \(peer): \(bytes.count) bytes")
         return [.file(InboundFile(from: peer, kind: header.kind, hash: key, mime: header.mime, bytes: bytes))]
     }

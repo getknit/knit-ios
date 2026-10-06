@@ -45,9 +45,22 @@ public protocol MeshTransport: AnyObject {
     /// ships nothing (knit-next ADR 2026-09.4tx5).
     func isFileInFlight(_ hash: BlobHash, to peer: NodeId) -> Bool
 
-    /// The files whose header has arrived on some link and whose END has not (`MeshTransport.arrivingFiles`). A blob
-    /// arriving is neither asked for nor asked again (knit-next ADR 2026-09.4tx5).
+    /// The files on their way in (`MeshTransport.arrivingFiles`): streaming in on some link, or past their END and not
+    /// yet taken by the engine (``fileTaken(from:hash:)``). A blob arriving is neither asked for nor asked again, and a
+    /// holder query about it answers FETCHING (knit-next ADRs 2026-09.4tx5 and 2026-10.6e5t).
     var arrivingFileKeys: Set<BlobHash> { get }
+
+    /// The engine has taken a whole file `peer` sent, stored or refused (`MeshTransport.fileTaken`), so it is no longer
+    /// on its way.
+    func fileTaken(from peer: NodeId, hash: BlobHash)
+
+    /// Whether a file from `peer` is streaming in now (`MeshTransport.fileArrivingFrom`, knit-next ADR 2026-10.nxfb). A
+    /// link delivers in order, so whatever that peer has already sent us waits behind it: the peer, not the hash.
+    func isFileArriving(from peer: NodeId) -> Bool
+
+    /// How many files this node is streaming out now (`MeshTransport.feedingLoad`), the `load` a holder query's answer
+    /// carries.
+    var feedingLoad: Int { get }
 
     /// The attachments worth keeping when their bytes stream in: the blobs this node wants. Any other ATTACHMENT file
     /// is dropped as it streams by. A peer's own AVATAR push is kept whatever this says.

@@ -41,6 +41,13 @@ import Testing
         #expect(status["links"] as? Int == 0)
         #expect(status["custody"] as? Int == 1, "our own profile")
         #expect(status["files"] as? [String: Int] == ["received": 0, "refused": 0, "sent": 0])
+        let blobs = try #require(status["blobs"] as? [String: Int])
+        #expect(
+            blobs.keys.sorted() == [
+                "answersIgnored", "answersTaken", "blindAsks", "confirms", "fallbacks", "fetches", "pullThroughs", "queriesAnswered",
+                "queriesRefused", "queriesSent",
+            ])
+        #expect(blobs.values.allSatisfy { $0 == 0 })
     }
 
     @Test func statusCountsWhatTheMeshHoldsInMemory() async throws {

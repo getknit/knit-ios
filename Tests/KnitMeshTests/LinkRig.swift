@@ -124,8 +124,9 @@ struct LinkRig {
         return WireEnvelope(sig: Array(repeating: sig, count: 64), signed: envelope.encoded)
     }
 
-    /// The HELLO this node sends: caps `f`, or `100f` when its radio serves a doorbell.
+    /// The HELLO this node sends: caps `200f`, since it answers holder queries, or `300f` when its radio serves a
+    /// doorbell too.
     static func ourHello(_ local: NodeId, servesDoorbell: Bool = false) -> LinkRecord {
-        LinkRecord(.hello, payload: Array("\(local)|1|\(servesDoorbell ? "100f" : "f")".utf8))
+        LinkRecord(.hello, payload: Array("\(local)|1|\(servesDoorbell ? "300f" : "200f")".utf8))
     }
 }

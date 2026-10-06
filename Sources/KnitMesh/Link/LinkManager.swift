@@ -108,6 +108,8 @@ public final class LinkManager: MeshTransport {
     var feeds: [ChannelID: FileFeed] = [:]
     /// The attachments the engine wants kept when they stream in (``acceptFiles(_:)``).
     var acceptedFileKeys: Set<BlobHash> = []
+    /// Whole files past their END that the engine has not taken yet (``fileTaken(from:hash:)``), still on their way.
+    var landingFiles: Set<LandingFile> = []
     /// Files that finished streaming outside ``handle(_:)`` and ``advance()``, handed over by the next of either.
     var finishedFiles: [Event] = []
     var crossings = LinkCrossings<ChannelID>()

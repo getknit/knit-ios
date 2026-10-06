@@ -175,7 +175,7 @@ extension MeshEngine {
     /// A group chat (`InboundPipeline.handleChat`, `:675-683`, and `decryptAndDeliver`). The roster is reconciled
     /// first, so a member's verified frame makes the group even when we cannot open it, then the message is opened
     /// and delivered into the group's thread.
-    func handleGroupChat(_ envelope: RelayEnvelope, group info: GroupInfo, sender: NodeId) {
+    func handleGroupChat(_ envelope: RelayEnvelope, group info: GroupInfo, sender: NodeId, via hop: NodeId?) {
         guard let chat = try? ChatContent(decoding: envelope.payload) else {
             drop(.undecodable, envelope)
             return
@@ -196,7 +196,7 @@ extension MeshEngine {
         guard let content = open(enc, envelope), content.ctl == nil else {
             return
         }
-        deliverChat(envelope, Self.delivered(content), sender: sender, recipient: nil, conversation: info.id)
+        deliverChat(envelope, Self.delivered(content), sender: sender, recipient: nil, via: hop)
     }
 
     /// A standalone roster frame, such as a rename (`handleGroupUpdate`, `:1976-1979`): reconciled, with no message to
@@ -267,7 +267,8 @@ extension MeshEngine {
         let frames = stores.custody.liveFrames(now: clock.wallMilliseconds()).reversed()
         for frame in frames where frame.envelope.type == .chat && frame.envelope.group != nil {
             if !stores.messages.contains(frame.envelope.id) {
-                handleChat(frame.envelope)
+                // Custody kept no hop, so the photo it carries is asked of its author first.
+                handleChat(frame.envelope, via: nil)
             }
         }
     }
