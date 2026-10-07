@@ -25,6 +25,9 @@ public struct FrameType: RawRepresentable, Hashable, Sendable {
     /// A file's receiver telling its sender how much of the file it holds (knit-next ADR 2026-10.nsr7): unsigned and point
     /// to point like a ``blobHave``.
     public static let blobProgress = Self(rawValue: "blobprog")
+    /// An asker withdrawing its ask for a blob (knit-next ADR 2026-10.nsr7): unsigned and point to point like a
+    /// ``blobRequest``.
+    public static let blobCancel = Self(rawValue: "blobcancel")
     /// A point-to-point request for missing profiles.
     public static let keyRequest = Self(rawValue: "keyreq")
     /// A one-hop typing cue, never carried.
@@ -56,6 +59,6 @@ public struct FrameType: RawRepresentable, Hashable, Sendable {
     /// in `Wire.kt`): taken without a signature, so its sender id is a claim nobody checked. None of it is ever carried,
     /// parked, flooded or the cause of a key request.
     public var isUnsignedPointToPoint: Bool {
-        self == .blobRequest || self == .blobHave || self == .blobHas || self == .blobProgress
+        self == .blobRequest || self == .blobHave || self == .blobHas || self == .blobProgress || self == .blobCancel
     }
 }

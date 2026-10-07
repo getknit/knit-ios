@@ -149,6 +149,18 @@ internal struct BlobExchange: Sendable {
         return plan.notes
     }
 
+    /// Stops wanting `hash`, now held (`clearFetching`, then `withdrawAsks`), and answers the neighbours asked for it whose
+    /// ask still stands, but `from`, whose link brought it. Each is owed a `blobcancel` (knit-next ADR 2026-10.nsr7), so a
+    /// copy one queued for us is not sent as a second.
+    mutating func obtained(_ hash: BlobHash, from: NodeId?) -> [NodeId] {
+        guard var want = wants[hash] else {
+            return []
+        }
+        let asked = want.askedAt.keys.sorted().filter { $0 != from && want.withdraw($0) }
+        forget(hash)
+        return asked
+    }
+
     /// Stops wanting `hash`: it arrived, or is held some other way.
     mutating func forget(_ hash: BlobHash) {
         guard wants.removeValue(forKey: hash) != nil else {

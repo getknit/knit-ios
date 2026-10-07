@@ -97,13 +97,9 @@ extension MeshEngine {
 
     /// A file streaming in from a neighbour has got this far (`BlobExchange.onFileProgress`): tell its sender how much of
     /// it we hold, so it measures the drain its stack's queue hides from it and times the asks it parked behind the feed
-    /// by it. Only to a neighbour whose link carries ``Capabilities/blobHave``, as Android sends one, and never to an
-    /// iPhone (``Capabilities/doorbell``): no iPhone holder measures a feed, and one on a build before this takes the
-    /// unsigned type for a signed one and counts it dropped. A build that does not know the type drops it.
+    /// by it. Only to a neighbour that reads one (``readsBlobUpkeep(_:)``).
     public func fileProgress(_ progress: FileProgress) {
-        guard let neighbor = transport.neighbors.first(where: { $0.nodeId == progress.from }),
-            neighbor.capabilities.contains(.blobHave), !neighbor.capabilities.contains(.doorbell)
-        else {
+        guard readsBlobUpkeep(progress.from) else {
             return
         }
         let report = BlobProgressContent(hash: progress.hash.string, held: progress.held, ms: progress.milliseconds)
@@ -128,5 +124,49 @@ extension MeshEngine {
             return
         }
         blobExchange.counts.progressTaken += 1
+    }
+
+    /// Whether `peer` is sent the progress reports and withdrawals that only an Android holder acts on (knit-next ADR
+    /// 2026-10.nsr7): a neighbour whose link carries ``Capabilities/blobHave``, as Android sends them, and no iPhone
+    /// (``Capabilities/doorbell``). No iPhone holder measures a feed, and one on a build before ADR 2026-10.ds45 takes
+    /// either unsigned type for a signed one and counts it dropped. A build that does not know a type drops it.
+    func readsBlobUpkeep(_ peer: NodeId) -> Bool {
+        transport.neighbors.first { $0.nodeId == peer }.map { neighbor in
+            neighbor.capabilities.contains(.blobHave) && !neighbor.capabilities.contains(.doorbell)
+        } ?? false
+    }
+
+    // MARK: Withdrawals
+
+    /// Withdraws our ask for `hash` from each of `peers` that reads a withdrawal (`withdrawAsk`, knit-next ADR
+    /// 2026-10.nsr7): its holder drops a copy it queued for us and has not started.
+    func withdrawAsks(_ hash: BlobHash, from peers: [NodeId]) {
+        let shown = hash.string.prefix(BlobExchange.shownHashCharacters)
+        for peer in peers where readsBlobUpkeep(peer) {
+            let content = BlobCancelContent(hash: hash.string)
+            transport.send(unsignedPointToPoint(.blobCancel, id: newFrameId(), payload: content.encoded), to: peer)
+            blobExchange.counts.cancelsSent += 1
+            log.log(.debug, "mesh blob cancel \(shown)… → \(peer)")
+        }
+    }
+
+    /// A neighbour withdrew its ask for a blob (`BlobExchange.onCancel`): a copy queued for it and not yet streaming comes
+    /// off its link, and the serve memo forgets it, so a later ask of its own is served. A copy already streaming goes on.
+    /// Android also drops the ask if it parked it; this port parks none. Taken only from the link's own peer, and its
+    /// sender's key is never asked for.
+    func handleBlobCancel(_ frame: InboundFrame) {
+        guard isFromItsLink(frame) else {
+            return
+        }
+        guard let cancel = try? BlobCancelContent(decoding: frame.envelope.payload) else {
+            drop(.undecodable, frame.envelope)
+            return
+        }
+        guard let hash = BlobHash(cancel.hash), transport.cancelQueuedFile(hash, to: frame.from) else {
+            return
+        }
+        blobExchange.forgetServe(hash, to: frame.from)
+        blobExchange.counts.cancelsTaken += 1
+        log.log(.debug, "mesh blob cancel ← \(frame.from) \(hash.string.prefix(BlobExchange.shownHashCharacters))…: queued copy withdrawn")
     }
 }

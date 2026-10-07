@@ -26,8 +26,9 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
 - **`CAP_BLOB_HAVE` (`0x2000`) lives in the HELLO alone too.** Every HELLO carries it, reading `200f`, because
   every build answers a `blobhave` (knit-next ADR 2026-10.6e5t). Android reads it from the link only, so it stays
   out of `Capabilities.local`, the signed profile and the emitted vectors. Answering is never gated; only asking is
-  (`MeshConfiguration.queriesBlobHolders`). A file's progress report, `blobprog`, rides the same bit: it goes only to
-  a neighbour whose HELLO carries it and not `CAP_DOORBELL` (knit-next ADR 2026-10.nsr7, ADR 2026-10.ds45).
+  (`MeshConfiguration.queriesBlobHolders`). A file's progress report, `blobprog`, and an asker's withdrawal,
+  `blobcancel`, ride the same bit: each goes only to a neighbour whose HELLO carries it and not `CAP_DOORBELL`
+  (knit-next ADR 2026-10.nsr7, ADR 2026-10.ds45).
 - **Text limits count UTF-16 code units,** and whitespace means Java's `\s`. Node ids compare as ASCII
   strings, never as raw bytes.
 - **Changes stay additive** (`docs/WIRE_COMPAT.md` in knit-next). If a change can only be made by breaking

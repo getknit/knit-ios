@@ -130,6 +130,11 @@ final class CapturingTransport: MeshTransport {
         false
     }
 
+    func cancelQueuedFile(_: BlobHash, to _: NodeId) -> Bool {
+        // Nothing is ever queued here.
+        false
+    }
+
     var arrivingFileKeys: Set<BlobHash> { [] }
 
     var feedingLoad: Int { 0 }

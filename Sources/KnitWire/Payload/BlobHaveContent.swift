@@ -178,3 +178,31 @@ public struct BlobProgressContent: CBORRepresentable, Equatable, Sendable {
         return writer.cbor
     }
 }
+
+/// An asker withdrawing its ask for a blob (`BlobCancelContent` in knit-next's `Wire.kt`, ADR 2026-10.nsr7 there), sent to
+/// a neighbour it asked once it moves on to another holder, or once the blob has landed from someone else.
+///
+/// Unsigned and point to point like a ``BlobHaveContent``, under the same ``Capabilities/blobHave`` bit. Its holder drops
+/// a copy queued for the asker that has not started streaming, so the asker is not sent a second copy.
+public struct BlobCancelContent: CBORRepresentable, Equatable, Sendable {
+    /// The withdrawn blob's content hash.
+    public var hash: String
+
+    /// Makes a withdrawal.
+    public init(hash: String) {
+        self.hash = hash
+    }
+
+    /// Reads a withdrawal from a decoded item.
+    public init(cbor: CBOR) throws(WireDecodingError) {
+        let fields = try CBORFields(cbor, type: "BlobCancelContent")
+        hash = try fields.required("hash", .text)
+    }
+
+    /// The withdrawal as an item.
+    public var cbor: CBOR {
+        var writer = CBORFieldWriter()
+        writer.text("hash", hash)
+        return writer.cbor
+    }
+}

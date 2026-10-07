@@ -75,3 +75,36 @@ the roadmap.
   - `MeshEngineBlobQueryTests`' two progress cases for the gate and for taking a report without a key;
   - `BlobAskStandsTests`' three `eta` cases for the hold and the cap;
   - `LinkDoorbellTests.upkeepGoesOutWithoutRinging` and `PeerNodeTests` for `status.blobs`.
+
+**Amendment (2026-10-07): an asker withdraws its ask (`blobcancel`).** The same day, knit-next's nsr7 gained a fourth
+unsigned type, still uncommitted above `3890f16b`: `blobcancel` (`BlobCancelContent`: the hash), under `CAP_BLOB_HAVE`,
+with the vector `blobCancelContent`. Until then nothing could withdraw an ask, so moving on to a second holder risked a
+second copy. This port mirrors both ends.
+
+- **The wire.** `FrameType.blobCancel` joins `isUnsignedPointToPoint`, and it is the seventh upkeep type on both
+  platforms, so it never rings.
+- **The holder** (`MeshEngine.handleBlobCancel`, `LinkManager.cancelQueuedFile`). A withdrawal from the link's own peer
+  takes that blob's copy off the link if it is still waiting behind another file, before its header goes. The serve
+  memo then forgets it, so a later ask of the peer's own is served. A copy already streaming goes on. Android also
+  drops the ask if it parked it, and this port parks none. `cancelsTaken` counts only withdrawals that took a copy off,
+  as Android's `blobCancelsTaken` does. Android sends an iPhone none yet: the gate is the one on `blobprog`, and it
+  lifts once knit-next hears that this build takes the type.
+- **The asker** (`BlobExchange.over` and `obtained`, `MeshEngine.withdrawAsks`). When a fetch falls back from a holder
+  that is still linked, our ask on it is withdrawn: at its floor, when a grace runs out (a blind first ask's included),
+  or after a confirm. Once the blob lands, every other neighbour we asked gets one, never the neighbour it came from.
+  When the blob turns up held some other way, every neighbour asked gets one. Each ask is withdrawn once
+  (`Want.withdrawnAt`). Withdrawals go where reports go (`readsBlobUpkeep`): to a neighbour with `CAP_BLOB_HAVE` and
+  without `CAP_DOORBELL`. They are counted as `cancelsSent`.
+- **Not mirrored.** Two asker changes knit-next made the same day, neither on the wire, are on the roadmap: leaving a
+  neighbour whose other stream to us has more than 30 s left while an idle holder is linked (Android's fifth
+  fallback, which withdraws too), and letting go of an ask that found its neighbour lacking the blob. A pushed photo
+  withdraws the other asks as it lands here, where Android withdraws them at the blob's next step, the pusher's too.
+- **Limits.** A holder that starts our copy before the withdrawal reaches it still sends a second copy, and so does
+  one already streaming. An Android build with `CAP_BLOB_HAVE` from before the amendment drops a withdrawal as an
+  unsigned frame of a type it does not know, as it drops Android's own. The hold floors are unchanged.
+- **Guards:**
+  - `GoldenVectorTests` (64 vectors) and `BlobHaveContentTests` for the wire;
+  - `LinkFileCancelTests` for the link;
+  - `MeshEngineBlobCancelTests`' four cases for both ends and the gate;
+  - `BlobAskStandsTests`' floor and link-gone cases for the fallback;
+  - `LinkDoorbellTests.upkeepGoesOutWithoutRinging` and `PeerNodeTests` for `status.blobs`.

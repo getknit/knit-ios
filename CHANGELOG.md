@@ -77,6 +77,8 @@ document:
 - An Android phone sending your iPhone a photo now sees how fast it arrives, so if the copy stalls, others
   waiting for that photo start getting theirs about 15 seconds later. Your iPhone also waits on a photo a
   phone says is coming instead of fetching another copy.
+- Fewer spare copies of a photo now hold up your messages. Once your iPhone has a photo, or turns to another
+  phone for it, it tells the Android phones it asked to drop any copy they haven't started sending.
 
 ## About this file
 

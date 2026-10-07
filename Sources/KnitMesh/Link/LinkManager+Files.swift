@@ -94,6 +94,18 @@ extension LinkManager {
         liveChannel(to: peer).flatMap { feeds[$0] }?.holds(hash) ?? false
     }
 
+    /// `peer` withdrew its ask for `hash` (`FramedLink.cancelQueued`, knit-next ADR 2026-10.nsr7): a copy waiting on its
+    /// link is dropped before its header goes. Answers whether one was. A copy already streaming goes on, since cutting
+    /// it short would need a record no build reads.
+    public func cancelQueuedFile(_ hash: BlobHash, to peer: NodeId) -> Bool {
+        guard let id = liveChannel(to: peer), let index = feeds[id]?.waiting.firstIndex(where: { $0.hash == hash }) else {
+            return false
+        }
+        feeds[id]?.waiting.remove(at: index)
+        log.log(.debug, "link \(id) file \(Self.shown(hash.string)) withdrawn by \(peer) before it streamed")
+        return true
+    }
+
     /// The files on their way in: those streaming in on some link, then those past their END that the engine has not
     /// taken (`arrivingFiles`, read in that order so a file is never in neither; knit-next ADR 2026-09.4tx5, amended
     /// for #138). A radio read runs all its records before the engine sees any of them, so a frame ahead of a FILE_END

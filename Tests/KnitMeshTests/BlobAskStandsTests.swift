@@ -72,6 +72,7 @@ import Testing
         let next = step(&exchange, capable(holder), at: 23_000)
         #expect(next.asks == [BlobExchange.Ask(to: holder, line: .fetch)], "the author's link gone, the holder is asked at once")
         #expect(next.notes.contains("blob fallback \(photo.string.prefix(8))… \(author) (link gone) → next"))
+        #expect(next.cancels.isEmpty, "its link, and any copy queued on it, are gone")
         #expect(exchange.counts.fallbacks == 1)
     }
 
@@ -81,6 +82,7 @@ import Testing
         #expect(step(&exchange, linked, at: wait + memo - 1).asks.isEmpty, "inside the floor, still held")
         let floor = step(&exchange, linked, at: wait + memo)
         #expect(floor.notes.contains("blob fallback \(photo.string.prefix(8))… \(author) (floor) → next"))
+        #expect(floor.cancels == [author], "the held ask is withdrawn as the fetch moves on (knit-next ADR 2026-10.nsr7)")
         #expect(floor.asks.isEmpty && floor.query == [author, holder], "the cycle that stood since 0 opens again")
         send(&exchange, at: wait + memo)
         answer(&exchange, holder, have: photo, load: 0, at: wait + memo)

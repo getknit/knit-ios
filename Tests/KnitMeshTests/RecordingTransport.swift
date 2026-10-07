@@ -21,6 +21,11 @@ final class RecordingTransport: MeshTransport {
     var arrivingFileKeys: Set<BlobHash> = []
     /// The files a link would say are still on their way, by hash and peer, as a test sets them.
     var inFlight: [(hash: BlobHash, to: NodeId)] = []
+    /// The files a link would say are queued and not yet streaming, by hash and peer, as a test sets them. A withdrawal
+    /// takes one off, and off ``inFlight`` too.
+    var queued: [(hash: BlobHash, to: NodeId)] = []
+    /// Every queued file a withdrawal took off, in order.
+    private(set) var withdrawn: [(hash: BlobHash, to: NodeId)] = []
     /// The neighbours a link would say are streaming a file to us, as a test sets them.
     var arrivingFrom: Set<NodeId> = []
     /// How many files a link would say it is streaming out, as a test sets it.
@@ -49,6 +54,16 @@ final class RecordingTransport: MeshTransport {
 
     func isFileInFlight(_ hash: BlobHash, to peer: NodeId) -> Bool {
         inFlight.contains { $0.hash == hash && $0.to == peer }
+    }
+
+    func cancelQueuedFile(_ hash: BlobHash, to peer: NodeId) -> Bool {
+        guard let index = queued.firstIndex(where: { $0.hash == hash && $0.to == peer }) else {
+            return false
+        }
+        queued.remove(at: index)
+        inFlight.removeAll { $0.hash == hash && $0.to == peer }
+        withdrawn.append((hash, peer))
+        return true
     }
 
     func acceptFiles(_ keys: Set<BlobHash>) {

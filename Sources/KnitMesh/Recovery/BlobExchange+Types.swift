@@ -33,6 +33,8 @@ extension BlobExchange {
         var fetch: Fetch?
         /// Every ask, any cycle: the memo's floor on asking a holder again, and the rule for a peer streaming to us.
         var askedAt: [NodeId: Int64] = [:]
+        /// Each neighbour's ask of ours that a `blobcancel` already withdrew, by when it was made: one cancel per ask.
+        var withdrawnAt: [NodeId: Int64] = [:]
         /// The blind round over the neighbours nobody can query.
         var blindAsked: Set<NodeId> = []
         var blindWidened = false
@@ -108,6 +110,16 @@ extension BlobExchange {
             pulledAt = nil
         }
 
+        /// Whether our last ask of `peer` is still to be withdrawn (`Want.withdraw`), and marks it withdrawn, so each
+        /// ask is withdrawn once.
+        mutating func withdraw(_ peer: NodeId) -> Bool {
+            guard let asked = askedAt[peer] else {
+                return false
+            }
+            defer { withdrawnAt[peer] = asked }
+            return withdrawnAt[peer] != asked
+        }
+
         /// Forgets what this cycle knew of neighbours that linked again (`linked`). Every ask's time stays, so the memo
         /// floor and the rule for a peer streaming to us still hold.
         mutating func forgetLinks(_ ids: Set<NodeId>) {
@@ -179,11 +191,12 @@ extension BlobExchange {
         var capable: Bool
     }
 
-    /// What one step decided (`Plan`): the neighbours it owes a query, the asks it makes, when it wants to be stepped
-    /// again, and the log lines it owes.
+    /// What one step decided (`Plan`): the neighbours it owes a query, the asks it makes, the neighbours whose ask of ours
+    /// it withdraws, when it wants to be stepped again, and the log lines it owes.
     struct Plan: Sendable {
         var query: [NodeId] = []
         var asks: [Ask] = []
+        var cancels: [NodeId] = []
         var wake: Int64?
         var why = ""
         var notes: [String] = []

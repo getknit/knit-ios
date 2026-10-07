@@ -5,7 +5,7 @@ import Testing
 /// The holder query's wire types beyond their golden vectors (knit-next ADR 2026-10.6e5t).
 @Suite struct BlobHaveContentTests {
     @Test func onlyTheBlobTrafficIsUnsignedPointToPoint() {
-        let unsigned: [FrameType] = [.blobRequest, .blobHave, .blobHas, .blobProgress]
+        let unsigned: [FrameType] = [.blobRequest, .blobHave, .blobHas, .blobProgress, .blobCancel]
         let signed: [FrameType] = [.chat, .profile, .receipt, .reaction, .keyRequest, .typing, FrameType(rawValue: "future")]
         let allUnsigned = unsigned.allSatisfy(\.isUnsignedPointToPoint)
         let anySignedUnsigned = signed.contains(where: \.isUnsignedPointToPoint)
@@ -43,6 +43,12 @@ import Testing
         #expect(throws: WireDecodingError.self) { try BlobProgressContent(decoding: partial.encoded) }
         let whole = try BlobProgressContent(decoding: GoldenVectors.bytes("blobProgressContent"))
         #expect(whole == BlobProgressContent(hash: "h1", held: 245_760, ms: 13_500))
+    }
+
+    @Test func aWithdrawalWithoutItsHashIsRefused() throws {
+        // Android's `BlobCancelContent.hash` has no default, so a withdrawal that names no blob is malformed.
+        #expect(throws: WireDecodingError.self) { try BlobCancelContent(decoding: CBOR.map([]).encoded) }
+        #expect(try BlobCancelContent(decoding: GoldenVectors.bytes("blobCancelContent")) == BlobCancelContent(hash: "h1"))
     }
 
     @Test func aPlainBlobRequestIsTheBytesEveryBuildSends() {

@@ -7,10 +7,13 @@ import KnitWire
 extension LinkManager {
     /// The frame types that never ring: the link's upkeep, which waits for the next wake as a digest does. A typing
     /// cue is worthless to a locked phone, and the 60 s tick re-sends `blobreq`, `blobhave` and `keyreq` for as long as
-    /// a blob or a key is missing, which would wake the iPhone every minute; a `blobhas` only answers one, and a
-    /// `blobprog` goes to a peer already feeding us. Android skips the same six (`DoorbellPolicy.UPKEEP`, knit-next ADRs
-    /// 2026-09.dqvb, 2026-10.6e5t and 2026-10.nsr7), so both platforms wake an iPhone equally often.
-    static let upkeepTypes: Set<FrameType> = [.typing, .blobRequest, .blobHave, .blobHas, .blobProgress, .keyRequest]
+    /// a blob or a key is missing, which would wake the iPhone every minute; a `blobhas` only answers one, a `blobprog`
+    /// goes to a peer already feeding us, and a `blobcancel` only spares one a copy. Android skips the same seven
+    /// (`DoorbellPolicy.UPKEEP`, knit-next ADRs 2026-09.dqvb, 2026-10.6e5t and 2026-10.nsr7), so both platforms wake an
+    /// iPhone equally often.
+    static let upkeepTypes: Set<FrameType> = [
+        .typing, .blobRequest, .blobHave, .blobHas, .blobProgress, .blobCancel, .keyRequest,
+    ]
 
     /// Whether writing `wire` rings: every frame but upkeep's. One whose type cannot be read rings, as on Android.
     static func rings(_ wire: WireEnvelope) -> Bool {

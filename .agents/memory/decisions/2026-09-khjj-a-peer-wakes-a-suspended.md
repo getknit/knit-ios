@@ -100,4 +100,5 @@ never rings, five types in all, as Android's `DoorbellPolicy.UPKEEP` has them si
 `CAP_BLOB_HAVE` (`0x2000`), so one from a radio that serves the doorbell reads `300f`, and one that does not, `200f`.
 
 **Amended 2026-10-07, for knit-next ADR 2026-10.nsr7 (ADR 2026-10.ds45):** `blobprog`, a file receiver's progress report
-to its sender, is upkeep too, as in Android's `DoorbellPolicy.UPKEEP`. Guard: `LinkDoorbellTests.upkeepGoesOutWithoutRinging`.
+to its sender, is upkeep too, as in Android's `DoorbellPolicy.UPKEEP`. So, from its cancel amendment the same day, is
+`blobcancel`, an asker's withdrawal. Guard: `LinkDoorbellTests.upkeepGoesOutWithoutRinging`.

@@ -1,6 +1,6 @@
 /// What the blob holder query has done so far (`BlobExchange.BlobEvent` in knit-next, ADR 2026-10.6e5t there), and the
-/// progress reports beside it (ADR 2026-10.nsr7 there), named as Android's debug bridge names them, less its `blob`
-/// prefix.
+/// progress reports and withdrawals beside it (ADR 2026-10.nsr7 there), named as Android's debug bridge names them,
+/// less its `blob` prefix.
 public struct BlobCounts: Sendable, Equatable {
     /// Holder queries sent, one per frame.
     public var queriesSent: Int
@@ -26,6 +26,10 @@ public struct BlobCounts: Sendable, Equatable {
     public var progressSent: Int
     /// Progress reports taken from the receiver of a file we feed.
     public var progressTaken: Int
+    /// Asks of ours withdrawn from the neighbours they were on.
+    public var cancelsSent: Int
+    /// Withdrawals that took a copy queued for their asker off its link.
+    public var cancelsTaken: Int
 
     /// Bundles the counts.
     public init(
@@ -40,7 +44,9 @@ public struct BlobCounts: Sendable, Equatable {
         blindAsks: Int = 0,
         pullThroughs: Int = 0,
         progressSent: Int = 0,
-        progressTaken: Int = 0
+        progressTaken: Int = 0,
+        cancelsSent: Int = 0,
+        cancelsTaken: Int = 0
     ) {
         self.queriesSent = queriesSent
         self.queriesAnswered = queriesAnswered
@@ -54,5 +60,7 @@ public struct BlobCounts: Sendable, Equatable {
         self.pullThroughs = pullThroughs
         self.progressSent = progressSent
         self.progressTaken = progressTaken
+        self.cancelsSent = cancelsSent
+        self.cancelsTaken = cancelsTaken
     }
 }

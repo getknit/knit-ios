@@ -119,13 +119,14 @@ extension MeshEngine {
     }
 
     /// One step of `hash`'s fetch (`step`): never for a blob on its way in or held, which is wanted no more once held.
-    /// The asks it decides go out under one request, and its next step is timed.
+    /// The asks it decides go out under one request, the asks it moves on from are withdrawn, and its next step is timed.
     func stepBlob(_ hash: BlobHash, among candidates: [BlobExchange.Candidate], now: Int64) {
         if transport.arrivingFileKeys.contains(hash) {
             return
         }
         if stores.blobs.contains(hash) {
-            blobExchange.forget(hash)
+            // Held some other way: every ask still standing is withdrawn.
+            withdrawAsks(hash, from: blobExchange.obtained(hash, from: nil))
             syncAcceptedFiles()
             return
         }
@@ -138,6 +139,7 @@ extension MeshEngine {
             }
             log.log(.debug, "mesh \(BlobExchange.askLine(hash, plan, line))")
         }
+        withdrawAsks(hash, from: plan.cancels)
         if let wake = plan.wake {
             blobExchange.arm(hash, at: now + wake)
         }
@@ -278,7 +280,9 @@ extension MeshEngine {
 
     /// A whole file a neighbour streamed (`MeshBlobStore.saveIncoming`, `InboundPipeline.onAvatarReceived`). Its bytes
     /// must hash to its key, or it is dropped and the link kept. A pushed photo must be the one its pusher's signed
-    /// profile advertises, and anything else must be a blob this node wants.
+    /// profile advertises, and anything else must be a blob this node wants. Once it is stored, our asks for it on every
+    /// other neighbour are withdrawn (`BlobExchange.onReceived`, knit-next ADR 2026-10.nsr7). Android withdraws them for
+    /// a pushed photo at that blob's next step, the pusher's ask too.
     ///
     /// The link counts the file as on its way until the store has answered, kept or refused (`fileTaken`, knit-next
     /// #138): read before that, a blob past its END is neither arriving nor held, and would be asked for again.
@@ -304,7 +308,7 @@ extension MeshEngine {
             }
         }
         stores.blobs.insert(file.bytes, hash: file.hash, mime: file.mime, storedAt: clock.wallMilliseconds())
-        blobExchange.forget(file.hash)
+        withdrawAsks(file.hash, from: blobExchange.obtained(file.hash, from: file.from))
         syncAcceptedFiles()
         adoptAvatar(file.hash)
         if stores.messages.attachmentHashes().contains(file.hash) {

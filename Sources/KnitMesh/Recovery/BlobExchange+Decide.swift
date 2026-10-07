@@ -104,7 +104,7 @@ extension BlobExchange {
     private mutating func fetchWait(_ want: inout Want, _ fetch: Fetch, holder: Candidate?, _ now: Int64, _ plan: inout Plan) -> Int64? {
         var fetch = fetch
         guard let holder else {
-            return over(&want, fetch, "link gone", &plan)
+            return over(&want, fetch, "link gone", &plan, withdrawing: false)
         }
         if holder.streaming {
             fetch.quietSince = nil
@@ -143,9 +143,10 @@ extension BlobExchange {
 
     /// Holds `want`'s fetch on `holder` until our last ask's serve-memo floor, when it was asked inside it, or until the
     /// copy a SENDING answer said should land by then has had ``holdSlackMilliseconds`` more (`hold`, knit-next #140 and
-    /// ADR 2026-10.nsr7). Nothing on the wire withdraws an ask and every holder serves a fresh one, so asking the next
-    /// holder now buys a second copy whenever the first one's is only late. The hold ends early when the holder's link
-    /// goes or the bytes arrive, and at the floor the next holder is asked. `nil` when there is no floor left to hold on.
+    /// ADR 2026-10.nsr7). A withdrawal reaches only a holder that reads one, and never stops a copy already streaming,
+    /// while every holder serves a fresh ask, so asking the next holder now can buy a second copy whenever the first one's
+    /// is only late. The hold ends early when the holder's link goes or the bytes arrive, and at the floor the next holder
+    /// is asked. `nil` when there is no floor left to hold on.
     private func hold(_ want: inout Want, _ holder: Candidate, _ why: String, _ now: Int64, _ plan: inout Plan) -> Int64? {
         let memo = want.askedAt[holder.id].map { $0 + Self.serveMemoMilliseconds - now }
         let promised = want.answers[holder.id]?.etaAt.map { $0 + Self.holdSlackMilliseconds - now }
@@ -197,9 +198,15 @@ extension BlobExchange {
     }
 
     /// Ends `fetch`, whose holder brought nothing, and says why (`over`). A blind first ask's end widens its round
-    /// instead, and says nothing.
-    private mutating func over(_ want: inout Want, _ fetch: Fetch, _ why: String, _ plan: inout Plan) -> Int64? {
+    /// instead, and says nothing. While the holder is still linked, our ask on it is withdrawn (knit-next ADR
+    /// 2026-10.nsr7), since a copy it queued would come as a second.
+    private mutating func over(
+        _ want: inout Want, _ fetch: Fetch, _ why: String, _ plan: inout Plan, withdrawing: Bool = true
+    ) -> Int64? {
         want.fetch = nil
+        if withdrawing, want.withdraw(fetch.peer) {
+            plan.cancels.append(fetch.peer)
+        }
         if fetch.tier == .blind {
             want.blindWidened = true
             return nil

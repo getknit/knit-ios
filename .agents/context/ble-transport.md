@@ -241,8 +241,8 @@ The HELLO adds `CAP_BLOB_HAVE` (`0x2000`) to this build's `0xF` always, since ev
 (knit-next ADR 2026-10.6e5t), reading `200f`. It adds `CAP_DOORBELL` (`0x1000`) too, reading `300f`, only when the
 radio serves the doorbell (`Radio.servesDoorbell`): `KnitBLE`, and knit-peer's `ios` profile. The `android` profile,
 like Android, serves no GATT and never sends it. The link manager rings after every frame it writes except `typing`,
-`blobreq`, `blobhave`, `blobhas`, `blobprog` and `keyreq`, as Android does, so both platforms wake an iPhone equally
-often (ADR 2026-09.khjj).
+`blobreq`, `blobhave`, `blobhas`, `blobprog`, `blobcancel` and `keyreq`, as Android does, so both platforms wake an
+iPhone equally often (ADR 2026-09.khjj).
 
 Files cross a link as Android's do (ADR 2026-10.h6zz).
 
@@ -257,6 +257,8 @@ Files cross a link as Android's do (ADR 2026-10.h6zz).
     (`MeshTransport.fileTaken`, knit-next #138), since a radio read runs all its records before the engine sees one.
   - Every 2 s of a kept file's chunks, the engine tells an Android sender how much of it is in with a `blobprog`, by
     which Android measures the drain its stack's queue hides (knit-next ADR 2026-10.nsr7, ADR 2026-10.ds45).
+  - A `blobcancel` from the asker takes its copy off the link while that copy still waits behind another file. One
+    already streaming goes on.
   - FILE records never ring a doorbell.
 
 `KnitBLE` is the iPhone's radio. Its central scans every advert with duplicates, or the `0xFE30` UUID alone while

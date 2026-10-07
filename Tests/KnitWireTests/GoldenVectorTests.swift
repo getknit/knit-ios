@@ -15,9 +15,9 @@ import Testing
         #expect(item.encoded == bytes, "\(name) did not re-encode to its pinned bytes")
     }
 
-    @Test func thereAreSixtyThreeVectors() {
+    @Test func thereAreSixtyFourVectors() {
         // A new fixture in knit-next needs a typed test here when this build models its type.
-        #expect(GoldenVectors.names.count == 63)
+        #expect(GoldenVectors.names.count == 64)
     }
 
     @Test(arguments: typedFixtures)
@@ -159,6 +159,7 @@ let typedFixtures: [TypedFixture] = [
         BlobHasContent(items: [BlobHasItem(hash: "h1", state: .sending, size: 409_600, eta: 140_000)])
     ),
     TypedFixture("blobProgressContent", BlobProgressContent(hash: "h1", held: 245_760, ms: 13_500)),
+    TypedFixture("blobCancelContent", BlobCancelContent(hash: "h1")),
     TypedFixture("typingContent", TypingContent(groupId: "g-1")),
     TypedFixture("mention", Mention(nodeId: "node1", name: "Ann")),
     TypedFixture(

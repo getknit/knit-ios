@@ -45,6 +45,10 @@ public protocol MeshTransport: AnyObject {
     /// ships nothing (knit-next ADR 2026-09.4tx5).
     func isFileInFlight(_ hash: BlobHash, to peer: NodeId) -> Bool
 
+    /// `peer` withdrew its ask for `hash` (`MeshTransport.cancelQueuedFile`, knit-next ADR 2026-10.nsr7): a copy queued to
+    /// it and not yet streaming is taken off its link. Answers whether one was. A copy already streaming goes on.
+    func cancelQueuedFile(_ hash: BlobHash, to peer: NodeId) -> Bool
+
     /// The files on their way in (`MeshTransport.arrivingFiles`): streaming in on some link, or past their END and not
     /// yet taken by the engine (``fileTaken(from:hash:)``). A blob arriving is neither asked for nor asked again, and a
     /// holder query about it answers FETCHING (knit-next ADRs 2026-09.4tx5 and 2026-10.6e5t).

@@ -201,6 +201,11 @@ Kotlin wins.
       else moved. When it commits, check `PROGRESS_EVERY_MS` (2 s), `HOLD_SLACK_MS` (30 s), `HOLD_CAP_MS` (15 min),
       `hold` and `onFileProgress`'s gate against `LinkFileProgressTests`, `BlobAskStandsTests` and
       `MeshEngineBlobQueryTests`, then sync the vectors from the commit.
+    - nsr7's cancel amendment, ported the same day from the same working tree (ADR 2026-10.ds45's amendment). This
+      port takes `blobcancel` as a holder and sends it as an asker; the sync added `blobCancelContent` and nothing
+      else. When it commits, check `onCancel`, `withdrawAsk`'s gate, `Want.withdraw`, the `over` calls that withdraw
+      and `withdrawAsks` at landing against `MeshEngineBlobCancelTests`, `LinkFileCancelTests` and
+      `BlobAskStandsTests`.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5f521cb9`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
