@@ -3,8 +3,8 @@
     import KnitWire
     import SwiftUI
 
-    /// Another person's profile: who they are, their safety number and our code for them to scan, Message, and Block
-    /// (MVP items 3 and 5, ADR 2026-10.65xx, ADR 2026-10.5wgg).
+    /// Another person's profile: who they are, their safety number and our code for them to scan, Message, Block and
+    /// Report (MVP items 3 and 5, ADR 2026-10.65xx, ADR 2026-10.5wgg, ADR 2026-10.f6kf).
     internal struct PeerProfileView: View {
         @State private var model: PeerProfileModel
         @State private var scanning = false
@@ -16,6 +16,8 @@
         @State private var viewing = false
         /// Whether Block is asking first.
         @State private var confirmsBlock = false
+        /// The report asking first.
+        @State private var reporting: AbuseReport?
         private let camera: any CameraAccess
 
         init(nodeId: NodeId, session: AppSession, camera: any CameraAccess) {
@@ -50,7 +52,7 @@
                         scan: { scanning = true },
                         setVerified: { verified in Task { await model.setVerified(verified) } }
                     )
-                    BlockSection(state: state, block: { confirmsBlock = true }, unblock: { Task { await model.setBlocked(false) } })
+                    BlockSection(state: state, block: askToBlock, unblock: unblock, report: askToReport)
                 }
             }
             .navigationTitle(state.title)
@@ -82,11 +84,26 @@
             .confirmsBlock(of: state.title, isPresented: $confirmsBlock) {
                 Task { await model.setBlocked(true) }
             }
+            .confirmsReport($reporting) { report in
+                await model.report(report)
+            }
             .fullScreenCover(isPresented: $viewing) {
                 if let photo = state.face.photo {
                     PhotoViewer(photo: .profile(photo, title: state.title))
                 }
             }
+        }
+
+        private func askToBlock() {
+            confirmsBlock = true
+        }
+
+        private func unblock() {
+            Task { await model.setBlocked(false) }
+        }
+
+        private func askToReport() {
+            reporting = model.reporting
         }
 
         private var showsOutcome: Binding<Bool> {
@@ -139,11 +156,13 @@
         }
     }
 
-    /// Block, which asks first, or Unblock, which does not (ADR 2026-10.5wgg).
+    /// Block, which asks first, or Unblock, which does not (ADR 2026-10.5wgg), and Report, which asks first and blocks
+    /// too (ADR 2026-10.f6kf).
     private struct BlockSection: View {
         let state: PeerProfileState
         let block: () -> Void
         let unblock: () -> Void
+        let report: () -> Void
 
         var body: some View {
             Section {
@@ -155,6 +174,9 @@
                         .foregroundStyle(Palette.critical)
                         .accessibilityIdentifier(AccessibilityID.profileDetailsBlock)
                 }
+                Button(Copy.Report.reportPerson(state.title), role: .destructive, action: report)
+                    .foregroundStyle(Palette.critical)
+                    .accessibilityIdentifier(AccessibilityID.profileDetailsReport)
             }
         }
     }

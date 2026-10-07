@@ -15,6 +15,8 @@
         let view: (ViewedPhoto) -> Void
         /// Asks to delete a message, from its menu.
         let delete: (ChatMessage) -> Void
+        /// Asks to report a message, from its menu, or `nil` for one that cannot be reported.
+        let report: (ChatMessage) -> (() -> Void)?
         /// Toggles our reaction to a message, or `nil` where the thread takes none.
         let react: Reacting?
         /// Whether the way back to the newest message shows: from half a screen up the thread until it is back on its bottom
@@ -95,6 +97,7 @@
                             reveal: { reveal(message.id) },
                             open: { view(.chat($0, sender: sender(of: message))) },
                             delete: { delete(message) },
+                            report: report(message),
                             react: react?.to(message)
                         )
                     }

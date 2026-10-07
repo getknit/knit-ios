@@ -269,6 +269,11 @@ public final class ChatModel {
         await session.react(to: message.id, with: emoji)
     }
 
+    /// Files `report` on this iPhone: the message goes and its author is blocked.
+    public func report(_ report: AbuseReport) async {
+        await session.report(report)
+    }
+
     /// Blocks the DM's peer: from a request's bar.
     public func block() async {
         if let peer = NodeId(conversationId) {

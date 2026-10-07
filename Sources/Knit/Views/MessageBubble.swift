@@ -8,7 +8,8 @@
     /// the words, and opens full screen. The content filter can hide either until a tap: an explicit photo (ADR
     /// 2026-10.rpmq), and words it flagged or has yet to read (ADR 2026-10.e4kz). In a run from one author (`place`), the
     /// name tops the first bubble and the face sits by the last, as Signal clusters them (ADR 2026-10.5waw). A long press
-    /// opens its menu, Copy and Delete, and VoiceOver offers Delete among its actions (ADR 2026-10.u7cq). Where the thread
+    /// opens its menu, Copy and Delete, and Report on someone else's, and VoiceOver offers them among its actions (ADR
+    /// 2026-10.u7cq, ADR 2026-10.f6kf). Where the thread
     /// takes reactions, the menu opens on the six, and VoiceOver offers each as an action (ADR 2026-10.ehe6).
     internal struct MessageBubble: View {
         let message: ChatMessage
@@ -22,6 +23,8 @@
         let open: (ChatAttachment) -> Void
         /// Asks to delete the message.
         let delete: () -> Void
+        /// Asks to report the message, or `nil` for one of ours.
+        let report: (() -> Void)?
         /// Toggles our reaction with an emoji, or `nil` where the thread takes none.
         let react: ((String) -> Void)?
         @Environment(\.dynamicTypeSize) private var typeSize
@@ -51,7 +54,7 @@
                 }
                 BubbleContent(message: message, place: place, covered: covered, hidden: hidden, reveal: reveal, open: open, react: react)
                     .contextMenu {
-                        BubbleMenu(message: message, copies: hidden == nil, delete: delete, react: react)
+                        BubbleMenu(message: message, copies: hidden == nil, delete: delete, report: report, react: react)
                     }
                 if !message.isMine {
                     Spacer(minLength: Layout.bubbleInset)
@@ -77,6 +80,9 @@
                     }
                 }
                 Button(Copy.Delete.delete, action: delete)
+                if let report {
+                    Button(Copy.Report.report, action: report)
+                }
             }
             .accessibilityValue(value)
             .accessibilityIdentifier(photo.map { _ in AccessibilityID.chatPhoto(message.id) } ?? AccessibilityID.chatMessage(message.id))
@@ -109,12 +115,14 @@
         }
     }
 
-    /// A bubble's long-press menu: the six where the thread takes reactions, then Copy and Delete (ADR 2026-10.u7cq).
+    /// A bubble's long-press menu: the six where the thread takes reactions, then Copy, Delete, and Report on someone
+    /// else's (ADR 2026-10.u7cq, ADR 2026-10.f6kf).
     private struct BubbleMenu: View {
         let message: ChatMessage
         /// Whether the words show, so Copy can take them.
         let copies: Bool
         let delete: () -> Void
+        let report: (() -> Void)?
         let react: ((String) -> Void)?
 
         var body: some View {
@@ -131,6 +139,10 @@
             }
             Button(Copy.Delete.delete, systemImage: "trash", role: .destructive, action: delete)
                 .accessibilityIdentifier(AccessibilityID.chatMessageDelete)
+            if let report {
+                Button(Copy.Report.report, systemImage: "exclamationmark.bubble", role: .destructive, action: report)
+                    .accessibilityIdentifier(AccessibilityID.chatMessageReport)
+            }
         }
     }
 

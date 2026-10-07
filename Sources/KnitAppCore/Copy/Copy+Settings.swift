@@ -128,6 +128,11 @@ extension Copy {
             NSLocalizedString("about.source", bundle: .main, value: "Source code", comment: "About: the row that opens the source code")
         }
 
+        /// The row that emails Knit, the contact App Store rule 1.2 asks for (ADR 2026-10.f6kf).
+        public static var contact: String {
+            NSLocalizedString("about.contact", bundle: .main, value: "Email Knit", comment: "About: the row that emails Knit")
+        }
+
         /// The row that lists the open-source components inside Knit.
         public static var notices: String {
             NSLocalizedString(

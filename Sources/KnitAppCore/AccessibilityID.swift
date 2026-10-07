@@ -97,6 +97,8 @@ public enum AccessibilityID {
     public static let chatMessageCopy = "chat_message_copy"
     /// A bubble menu's Delete (ADR 2026-10.u7cq). Android has no tag here.
     public static let chatMessageDelete = "chat_message_delete"
+    /// A bubble menu's Report, on someone else's message (ADR 2026-10.f6kf). Android has no report.
+    public static let chatMessageReport = "chat_message_report"
     /// A chip under a message, `chat_reaction_<message id>_<the emoji's code points in hex>`, so an identifier never
     /// holds an emoji (ADR 2026-10.ehe6). The six in a bubble's menu have none: a palette drops its toggles' identifiers,
     /// so a walk finds them by their emoji. Android has no tag here.
@@ -167,6 +169,11 @@ public enum AccessibilityID {
         "request_block_\(conversationId)"
     }
 
+    /// A DM request's Report, `request_report_<conversation id>` (ADR 2026-10.f6kf). Android has no report.
+    public static func requestReport(_ conversationId: String) -> String {
+        "request_report_\(conversationId)"
+    }
+
     /// A stranger's thread's Block, under Accept. Android blocks from the thread's menu, with no tag.
     public static let chatRequestBlock = "chat_request_block"
     /// A blocked DM's Unblock, in the composer's place. Android has no tag here.
@@ -180,6 +187,8 @@ public enum AccessibilityID {
     public static let profileDetailsBlocked = "profile_details_blocked"
     /// Its Block, or Unblock once blocked. Android has no tag here.
     public static let profileDetailsBlock = "profile_details_block"
+    /// Its Report (ADR 2026-10.f6kf). Android has no report.
+    public static let profileDetailsReport = "profile_details_report"
     /// Its node id row.
     public static let profileDetailsNodeId = "profile_details_node_id"
     /// Its alias row.
@@ -263,6 +272,8 @@ public enum AccessibilityID {
     public static let aboutLicense = "about_license"
     /// About's source link.
     public static let aboutSource = "about_source"
+    /// About's email link (ADR 2026-10.f6kf).
+    public static let aboutContact = "about_contact"
     /// About's version line.
     public static let aboutVersion = "about_version"
     /// Diagnostics.

@@ -14,9 +14,10 @@ extension KnitUITests {
         try walkReactions()
     }
 
-    /// The menus a message and a chat open, deleting and reacting, for the walks every screen takes again.
+    /// The menus a message and a chat open, deleting, reporting and reacting, for the walks every screen takes again.
     func walkMessageMenus() throws {
         try walkDeletes()
+        try walkReports()
         try walkReactions()
     }
 

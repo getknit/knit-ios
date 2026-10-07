@@ -18,8 +18,8 @@ public struct RequestRow: Sendable, Equatable, Identifiable {
     public var face: Face
 }
 
-/// The message requests' view model (`MessageRequestsViewModel` in knit-next): Accept, Delete, and Block for a stranger's
-/// DM.
+/// The message requests' view model (`MessageRequestsViewModel` in knit-next): Accept, Delete, and Block and Report for a
+/// stranger's DM.
 @preconcurrency
 @MainActor
 @Observable
@@ -72,5 +72,19 @@ public final class RequestsModel {
         if let peer = NodeId(conversationId) {
             await session.block(peer)
         }
+    }
+
+    /// A report of the stranger whose DM `row` is (ADR 2026-10.f6kf), or `nil` for a group's request, which has nobody
+    /// to report. A message in the thread is reported from its own menu.
+    public func reporting(_ row: RequestRow) -> AbuseReport? {
+        guard !row.isGroup, let peer = NodeId(row.id) else {
+            return nil
+        }
+        return AbuseReport(person: peer, name: row.title, place: .request)
+    }
+
+    /// Files `report` on this iPhone: the stranger is blocked, and their request goes with the block.
+    public func report(_ report: AbuseReport) async {
+        await session.report(report)
     }
 }

@@ -47,8 +47,8 @@ public enum VerifyScanOutcome: Sendable, Equatable, CaseIterable {
     case notACode
 }
 
-/// Another person's profile's view model: who they are, whether their key is verified, the way to message them, and
-/// Block.
+/// Another person's profile's view model: who they are, whether their key is verified, the way to message them, Block
+/// and Report.
 @preconcurrency
 @MainActor
 @Observable
@@ -89,6 +89,20 @@ public final class PeerProfileModel {
         } else {
             await session.unblock(nodeId)
         }
+    }
+
+    /// A report of the person, with their status line (ADR 2026-10.f6kf), or `nil` on our own profile.
+    public var reporting: AbuseReport? {
+        guard !isSelf else {
+            return nil
+        }
+        let profile = state
+        return AbuseReport(person: nodeId, name: profile.title, place: .profile, status: profile.status)
+    }
+
+    /// Files `report` on this iPhone: the person is blocked.
+    public func report(_ report: AbuseReport) async {
+        await session.report(report)
     }
 
     /// Compares a scanned code with the key pinned for this person, and marks them verified on an exact match

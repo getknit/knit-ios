@@ -2,14 +2,16 @@
     import KnitAppCore
     import SwiftUI
 
-    /// Message requests: strangers' DMs, each with Accept, and Delete and Block a swipe away (ADR 2026-10.u7cq). A row
-    /// opens the thread to read it first, where Block also waits under Accept.
+    /// Message requests: strangers' DMs, each with Accept, and Delete, Block and Report a swipe away (ADR 2026-10.u7cq,
+    /// ADR 2026-10.f6kf). A row opens the thread to read it first, where Block also waits under Accept.
     internal struct RequestsView: View {
         @State private var model: RequestsModel
         /// The request whose sender Block is asking about.
         @State private var blocking: RequestRow?
         /// The request whose Delete is asking first.
         @State private var deleting: RequestRow?
+        /// The report asking first.
+        @State private var reporting: AbuseReport?
         @Environment(\.dynamicTypeSize) private var typeSize
 
         init(session: AppSession) {
@@ -52,10 +54,13 @@
             .confirmsDelete($deleting, asking: DeleteQuestion.request) { row in
                 Task { await model.delete(row.id) }
             }
+            .confirmsReport($reporting) { report in
+                await model.report(report)
+            }
         }
 
-        /// A request's swipe: Delete, and Block for a stranger's DM, since a group's request has nobody to block. Neither is a
-        /// destructive role: the row stays until the alert's Delete or Block, which takes it.
+        /// A request's swipe: Delete, and Block and Report for a stranger's DM, since a group's request has nobody to block.
+        /// None is a destructive role: the row stays until the alert's Delete, Block or Report, which takes it.
         @ViewBuilder
         private func swipes(for row: RequestRow) -> some View {
             Button(Copy.Delete.delete) { deleting = row }
@@ -65,6 +70,11 @@
                 Button(Copy.Block.block) { blocking = row }
                     .tint(Palette.critical)
                     .accessibilityIdentifier(AccessibilityID.requestBlock(row.id))
+            }
+            if let report = model.reporting(row) {
+                Button(Copy.Report.report) { reporting = report }
+                    .tint(Palette.critical)
+                    .accessibilityIdentifier(AccessibilityID.requestReport(row.id))
             }
         }
 

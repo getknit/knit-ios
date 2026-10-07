@@ -12,6 +12,8 @@
         @State private var confirmsBlock = false
         /// The message whose Delete is asking first (ADR 2026-10.u7cq).
         @State private var deleting: ChatMessage?
+        /// The report asking first (ADR 2026-10.f6kf).
+        @State private var reporting: AbuseReport?
         /// The messages tapped to show what the content filter hid of them, photo and words, while the thread is open (ADR
         /// 2026-10.rpmq, ADR 2026-10.e4kz).
         @State private var revealed: Set<String> = []
@@ -34,6 +36,7 @@
                 reveal: { revealed.insert($0) },
                 view: { viewing = $0 },
                 delete: askToDelete,
+                report: askToReport,
                 react: state.canReact ? Reacting(model: model) : nil
             )
             .bottomBar {
@@ -91,6 +94,9 @@
             .confirmsDelete($deleting, asking: DeleteQuestion.message) { message in
                 Task { await model.delete(message) }
             }
+            .confirmsReport($reporting) { report in
+                await model.report(report)
+            }
             .alert(Copy.Photo.unreadable, isPresented: $model.photoFailed) {
                 Button(Copy.Common.done, role: .cancel) {
                     // The alert closes itself.
@@ -118,6 +124,11 @@
         /// Asks before deleting `message`, from its bubble's menu.
         private func askToDelete(_ message: ChatMessage) {
             deleting = message
+        }
+
+        /// What asks before reporting `message`, from its bubble's menu, or `nil` for one of ours.
+        private func askToReport(_ message: ChatMessage) -> (() -> Void)? {
+            model.reporting(message).map { report in { reporting = report } }
         }
     }
 
