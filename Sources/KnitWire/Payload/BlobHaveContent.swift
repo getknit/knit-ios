@@ -70,13 +70,17 @@ public struct BlobHasItem: CBORRepresentable, Equatable, Sendable {
     public var size: Int64?
     /// Reserved for ``BlobHolding/partial``: the bytes held from 0.
     public var held: Int64?
+    /// With ``BlobHolding/sending``, when the holder can tell: the milliseconds until the asker's copy should have landed
+    /// (knit-next ADR 2026-10.nsr7). The asker holds on that holder that long rather than ask another.
+    public var eta: Int64?
 
     /// Makes one answer.
-    public init(hash: String, state: BlobHolding, size: Int64? = nil, held: Int64? = nil) {
+    public init(hash: String, state: BlobHolding, size: Int64? = nil, held: Int64? = nil, eta: Int64? = nil) {
         self.hash = hash
         self.state = state
         self.size = size
         self.held = held
+        self.eta = eta
     }
 
     /// Reads one answer from a decoded item.
@@ -86,6 +90,7 @@ public struct BlobHasItem: CBORRepresentable, Equatable, Sendable {
         state = BlobHolding(rawValue: try fields.required("state", .int32))
         size = try fields.nullable("size", .int64)
         held = try fields.nullable("held", .int64)
+        eta = try fields.nullable("eta", .int64)
     }
 
     /// The answer as an item.
@@ -95,6 +100,7 @@ public struct BlobHasItem: CBORRepresentable, Equatable, Sendable {
         writer.int("state", state.rawValue)
         writer.long("size", optional: size)
         writer.long("held", optional: held)
+        writer.long("eta", optional: eta)
         return writer.cbor
     }
 }
@@ -130,6 +136,45 @@ public struct BlobHasContent: CBORRepresentable, Equatable, Sendable {
         writer.list("items", items)
         writer.int("load", optional: load)
         writer.text("re", optional: re)
+        return writer.cbor
+    }
+}
+
+/// How much of a file streaming in over a link its receiver holds (`BlobProgressContent` in knit-next's `Wire.kt`, ADR
+/// 2026-10.nsr7 there), sent back to the file's sender every couple of seconds of chunks.
+///
+/// Unsigned and point to point like a ``BlobHaveContent``, under the same ``Capabilities/blobHave`` bit. `ms` is by the
+/// receiver's own clock, so the rate between two reports is the drain whatever a report waited for on its way back: the
+/// sender measures what its stack's queue hides from it, and times the asks it parked behind the feed by it.
+public struct BlobProgressContent: CBORRepresentable, Equatable, Sendable {
+    /// The key of the file streaming in, its content hash.
+    public var hash: String
+    /// The bytes of it held so far, a resumed stream's kept prefix included.
+    public var held: Int64
+    /// The milliseconds since its header arrived, by the receiver's clock.
+    public var ms: Int64
+
+    /// Makes a progress report.
+    public init(hash: String, held: Int64, ms: Int64) {
+        self.hash = hash
+        self.held = held
+        self.ms = ms
+    }
+
+    /// Reads a progress report from a decoded item.
+    public init(cbor: CBOR) throws(WireDecodingError) {
+        let fields = try CBORFields(cbor, type: "BlobProgressContent")
+        hash = try fields.required("hash", .text)
+        held = try fields.required("held", .int64)
+        ms = try fields.required("ms", .int64)
+    }
+
+    /// The report as an item.
+    public var cbor: CBOR {
+        var writer = CBORFieldWriter()
+        writer.text("hash", hash)
+        writer.long("held", held)
+        writer.long("ms", ms)
         return writer.cbor
     }
 }

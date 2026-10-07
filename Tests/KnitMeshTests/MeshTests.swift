@@ -32,8 +32,8 @@ import Testing
         return Rig(mesh: mesh, radio: radio, clock: clock, stores: stores)
     }
 
-    func hello(_ peer: TestPeer) -> [UInt8] {
-        LinkRecord(.hello, payload: Hello(nodeId: peer.nodeId.string, capabilities: 0xFFF).payload).encoded ?? []
+    func hello(_ peer: TestPeer, capabilities: Capabilities = 0xFFF) -> [UInt8] {
+        LinkRecord(.hello, payload: Hello(nodeId: peer.nodeId.string, capabilities: capabilities).payload).encoded ?? []
     }
 
     /// Links `bob` as a dialer we never sighted.

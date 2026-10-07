@@ -67,7 +67,7 @@ thinned.
 These only ever grow. A value is never reused, even after it is retired.
 
 - **Frame types are strings:** `chat`, `groupupdate`, `groupleave`, `profile`, `receipt`, `reaction`,
-  `blobreq`, `blobhave`, `blobhas`, `keyreq`, `typing`, `commons`. `meshpost` is burned.
+  `blobreq`, `blobhave`, `blobhas`, `blobprog`, `keyreq`, `typing`, `commons`. `meshpost` is burned.
   - `isReplayable` covers chat, reaction, receipt, groupupdate and groupleave.
   - `isCustodial` is `isReplayable` plus `profile`.
 - **`MessageContent.ctl`:**
@@ -111,7 +111,7 @@ These only ever grow. A value is never reused, even after it is retired.
   - our own frames verify with our own key;
   - a `profile` verifies with the key inside its own payload;
   - everything else verifies with the sender's pinned key.
-- **Unsigned frames** come in two shapes: the blob traffic, `blobreq`, `blobhave` and `blobhas`, each `relay = false`
+- **Unsigned frames** come in two shapes: the blob traffic, `blobreq`, `blobhave`, `blobhas` and `blobprog`, each `relay = false`
   (`FrameType.isUnsignedPointToPoint`), and the v3 live-link tick (a `relay = false` DM-form `chat` addressed to us).
   Anything else with an empty `sig` is refused.
 - **Frame id:** 16 random bytes, base64url, no padding, 22 characters. Profiles use
@@ -158,7 +158,8 @@ photos in chats the same day (ADR 2026-10.6cas), and the blob holder query on 20
 | `keyreq` (`relay = false`, signed) | when a sender's key is missing | answer with cached signed profiles |
 | `blobreq` (unsigned, `relay = false`, `sentAt` 0, no `offset`) | to the best holder a query found, or blind: the author, then the hop the frame came from, then every other neighbour once a 5 s grace is up; a cycle at most every 45 s, on a link-up or the 60 s tick (knit-next ADRs 2026-10.f7gg and 2026-10.6e5t) | serve it if held, as FILE records of kind ATTACHMENT, the whole file whatever `offset` says; otherwise want it, never asking the asker back that cycle; never flood it (ADR 2026-10.ym9y) |
 | `blobhave` (unsigned, `relay = false`, `sentAt` 0, ≤ 32 hashes) | in a debug build, and from knit-peer: to each neighbour whose HELLO carries `CAP_BLOB_HAVE`, one frame per neighbour per step | answer every one, from the link that carried it and only when its sender is that link's peer, within 16 a burst and one a second; never flood it |
-| `blobhas` (unsigned, `relay = false`, `sentAt` 0) | the answer: NONE, HAVE with the size, SENDING, or FETCHING per hash, our `load` and the query's `re` | taken only from a neighbour queried this cycle for a hash it names; a state this build does not know is never HAVE |
+| `blobhas` (unsigned, `relay = false`, `sentAt` 0) | the answer: NONE, HAVE with the size, SENDING, or FETCHING per hash, our `load` and the query's `re`; never an `eta` | taken only from a neighbour queried this cycle for a hash it names; a state this build does not know is never HAVE; a SENDING `eta` holds the ask on that holder until then plus 30 s, the `eta` taken as at most 15 min (ADR 2026-10.ds45) |
+| `blobprog` (unsigned, `relay = false`, `sentAt` 0, `BlobProgressContent`: hash, held, ms) | every 2 s of a kept file's chunks, to its sender when that link's HELLO carries `CAP_BLOB_HAVE` and not `CAP_DOORBELL` (knit-next ADR 2026-10.nsr7) | counted, from the link that carried it and only when its sender is that link's peer; nothing here measures a feed; never flood it (ADR 2026-10.ds45) |
 | `reaction`, `relay = true`, `sentAt` set, no recipient, no group | when the user reacts, in any thread, toggling as Android does (ADR 2026-10.ehe6) | yes: one emoji, last writer wins per message and reactor; never acked or notified |
 | `typing`, `commons`, unknown types | no | carry and relay where custodial; never crash |
 

@@ -190,9 +190,17 @@ Kotlin wins.
         after a week (ADR 2026-10.k8ge);
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
-  - **Mirrored ahead of the pin:** knit-next #140, an ask to a holder that stands until its link goes (the 2026-10-06
-    amendment to ADR 2026-10.6e5t), ported from the uncommitted `fix/blob-ask-race` on 2026-10-06 (ADR 2026-10.m9uq's
-    amendment). Check the merged `BlobExchange.kt` against `BlobAskStandsTests` when the pin passes it.
+  - **Mirrored ahead of the pin:**
+    - knit-next #140, an ask to a holder that stands until its link goes (the 2026-10-06 amendment to ADR
+      2026-10.6e5t), ported from the uncommitted `fix/blob-ask-race` on 2026-10-06 (ADR 2026-10.m9uq's amendment).
+      Check the merged `BlobExchange.kt` against `BlobAskStandsTests` when the pin passes it.
+    - knit-next ADR 2026-10.nsr7, a file's receiver reporting its progress, ported on 2026-10-07 from its uncommitted
+      work on `main` above `3890f16b` (ADR 2026-10.ds45). This port takes `blobprog`, sends it as a receiver, and holds
+      on a SENDING answer's `eta`; the holder's meter and parking are Android's alone. `vectors/wire-v1.json` was
+      synced from that working tree, which added `blobProgressContent` and `blobHasContentSendingEta`, and nothing
+      else moved. When it commits, check `PROGRESS_EVERY_MS` (2 s), `HOLD_SLACK_MS` (30 s), `HOLD_CAP_MS` (15 min),
+      `hold` and `onFileProgress`'s gate against `LinkFileProgressTests`, `BlobAskStandsTests` and
+      `MeshEngineBlobQueryTests`, then sync the vectors from the commit.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5f521cb9`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

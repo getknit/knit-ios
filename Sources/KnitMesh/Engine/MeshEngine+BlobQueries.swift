@@ -1,10 +1,12 @@
 import KnitWire
 
-/// The blob holder query, both ends (`BlobExchange.onHaveQuery` and `onHaveAnswer`, knit-next ADR 2026-10.6e5t).
+/// The blob holder query, both ends (`BlobExchange.onHaveQuery` and `onHaveAnswer`, knit-next ADR 2026-10.6e5t), and the
+/// progress report a file's receiver sends its sender under the same bit (`onFileProgress` and `onProgressReport`,
+/// knit-next ADR 2026-10.nsr7).
 extension MeshEngine {
-    /// Whether a holder query or its answer came point to point from the neighbour whose link carried it, the only way
-    /// either is taken (`InboundPipeline.kt:316`, `:587`). Neither is signed, so its sender id is a claim, checked here
-    /// against the link, and one marked to be relayed is no query of anyone's.
+    /// Whether a holder query, its answer or a progress report came point to point from the neighbour whose link carried
+    /// it, the only way any is taken (`InboundPipeline.kt:316`, `:587`). None is signed, so its sender id is a claim,
+    /// checked here against the link, and one marked to be relayed is no query of anyone's.
     private func isFromItsLink(_ frame: InboundFrame) -> Bool {
         !frame.wire.relay && NodeId(frame.envelope.senderId) == frame.from
     }
@@ -89,5 +91,42 @@ extension MeshEngine {
             stepBlob(hash, among: candidates, now: now)
         }
         flushBlobQueries()
+    }
+
+    // MARK: Progress reports
+
+    /// A file streaming in from a neighbour has got this far (`BlobExchange.onFileProgress`): tell its sender how much of
+    /// it we hold, so it measures the drain its stack's queue hides from it and times the asks it parked behind the feed
+    /// by it. Only to a neighbour whose link carries ``Capabilities/blobHave``, as Android sends one, and never to an
+    /// iPhone (``Capabilities/doorbell``): no iPhone holder measures a feed, and one on a build before this takes the
+    /// unsigned type for a signed one and counts it dropped. A build that does not know the type drops it.
+    public func fileProgress(_ progress: FileProgress) {
+        guard let neighbor = transport.neighbors.first(where: { $0.nodeId == progress.from }),
+            neighbor.capabilities.contains(.blobHave), !neighbor.capabilities.contains(.doorbell)
+        else {
+            return
+        }
+        let report = BlobProgressContent(hash: progress.hash.string, held: progress.held, ms: progress.milliseconds)
+        transport.send(unsignedPointToPoint(.blobProgress, id: newFrameId(), payload: report.encoded), to: progress.from)
+        blobExchange.counts.progressSent += 1
+    }
+
+    /// A neighbour said how much of a file we feed it holds (`BlobExchange.onProgressReport`). Android's link measures its
+    /// drain by it. This port feeds each link at its own pace and parks no asks behind a feed (knit-next ADRs 2026-10.8jwn
+    /// and 2026-10.g24x are not mirrored), so a report is counted and nothing else. It is taken only from the link's own
+    /// peer, as a holder query is, and its sender's key is never asked for.
+    func handleBlobProgress(_ frame: InboundFrame) {
+        guard isFromItsLink(frame) else {
+            return
+        }
+        guard let report = try? BlobProgressContent(decoding: frame.envelope.payload) else {
+            drop(.undecodable, frame.envelope)
+            return
+        }
+        // Android's `plausible`: counts that cannot be negative, and a key no longer than a hash.
+        guard report.held >= 0, report.ms >= 0, !report.hash.isEmpty, report.hash.utf16.count <= BlobExchange.maxHashCharacters else {
+            return
+        }
+        blobExchange.counts.progressTaken += 1
     }
 }

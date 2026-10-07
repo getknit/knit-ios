@@ -74,6 +74,9 @@ document:
 - Your iPhone now asks the phone that posted a photo for it first, and other nearby phones only if that
   one hasn't started sending within a few seconds. Messages now rarely wait behind several copies of the
   same photo.
+- An Android phone sending your iPhone a photo now sees how fast it arrives, so if the copy stalls, others
+  waiting for that photo start getting theirs about 15 seconds later. Your iPhone also waits on a photo a
+  phone says is coming instead of fetching another copy.
 
 ## About this file
 

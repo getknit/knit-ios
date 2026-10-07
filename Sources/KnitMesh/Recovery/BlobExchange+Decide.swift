@@ -141,15 +141,17 @@ extension BlobExchange {
         }
     }
 
-    /// Holds `want`'s fetch on `holder` until our last ask's serve-memo floor, when it was asked inside it (`hold`,
-    /// knit-next #140). Nothing on the wire withdraws an ask and every holder serves a fresh one, so asking the next
+    /// Holds `want`'s fetch on `holder` until our last ask's serve-memo floor, when it was asked inside it, or until the
+    /// copy a SENDING answer said should land by then has had ``holdSlackMilliseconds`` more (`hold`, knit-next #140 and
+    /// ADR 2026-10.nsr7). Nothing on the wire withdraws an ask and every holder serves a fresh one, so asking the next
     /// holder now buys a second copy whenever the first one's is only late. The hold ends early when the holder's link
     /// goes or the bytes arrive, and at the floor the next holder is asked. `nil` when there is no floor left to hold on.
     private func hold(_ want: inout Want, _ holder: Candidate, _ why: String, _ now: Int64, _ plan: inout Plan) -> Int64? {
-        guard let asked = want.askedAt[holder.id], asked + Self.serveMemoMilliseconds > now else {
+        let memo = want.askedAt[holder.id].map { $0 + Self.serveMemoMilliseconds - now }
+        let promised = want.answers[holder.id]?.etaAt.map { $0 + Self.holdSlackMilliseconds - now }
+        guard let floor = [memo, promised].compactMap(\.self).max(), floor > 0 else {
             return nil
         }
-        let floor = asked + Self.serveMemoMilliseconds - now
         want.fetch = Fetch(peer: holder.id, tier: .pending, at: now, graceMilliseconds: floor)
         plan.notes.append("blob hold \(want.hash8)… on \(holder.id) (\(why)), floor \(floor) ms")
         return floor

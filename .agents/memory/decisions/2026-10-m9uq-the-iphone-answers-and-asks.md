@@ -103,3 +103,7 @@ The cost, as on Android: a holder whose ask really died on a link that stays up 
 the ask, not about 15 s. The `BlobExchange.kt:385` quirk stays: the second confirm's answer is still never read, and the
 holder is now held rather than passed over. Guards: `BlobAskStandsTests`, the hold in `BlobHolderQueryTests`, and
 `MeshEngineBlobQueryTests.anAskWhoseLinkGoesAsksTheNextHolderAtOnce`.
+
+**Amended 2026-10-07, for knit-next ADR 2026-10.nsr7 (ADR 2026-10.ds45):** a SENDING answer may carry `eta`, and a hold
+then runs to the later of the ask's floor and that promise plus 30 s, the promise taken as at most 15 min. A holder we
+only waited on now holds us when it promises. Guard: `BlobAskStandsTests`' `eta` cases.

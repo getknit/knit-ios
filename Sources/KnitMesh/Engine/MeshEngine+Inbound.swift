@@ -43,6 +43,8 @@ extension MeshEngine {
             handleBlobHave(frame)
         case .blobHas:
             handleBlobHas(frame)
+        case .blobProgress:
+            handleBlobProgress(frame)
         case .reaction:
             handleReaction(envelope)
         default:

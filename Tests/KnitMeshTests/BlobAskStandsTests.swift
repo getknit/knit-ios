@@ -146,6 +146,80 @@ import Testing
         #expect(passed.notes.contains("blob fallback \(photo.string.prefix(8))… \(holder) (grace) → next"))
     }
 
+    // MARK: A SENDING answer's eta (knit-next ADR 2026-10.nsr7)
+
+    /// `peer` says it is sending the photo, its copy `eta` ms from landing, to the latest query sent it, at `now`.
+    private func sending(_ exchange: inout BlobExchange, _ peer: NodeId, eta: Int64?, at now: Int64) {
+        let latest = exchange.sentQueries.values.filter { $0.peer == peer }.max { $0.at < $1.at }
+        let item = BlobHasItem(hash: photo.string, state: .sending, size: 1000, eta: eta)
+        let re = latest.map { "\($0.peer)@\($0.at)" }
+        _ = exchange.recordAnswers(BlobHasContent(items: [item], load: 0, re: re), from: peer, now: now)
+    }
+
+    @Test func aSendingAnswersEtaHoldsTheAskerPastItsFloorAndOnlyThenIsTheNextHolderAsked() {
+        // `BlobHolderQueryTest.aSendingAnswersEtaHoldsTheAskerPastItsFloor`: the holder parked our ask behind another
+        // copy's three-minute feed, and says when ours should land. Asking the next holder at our ask's 45 s floor would
+        // buy a second copy of a photo already on its way.
+        var exchange = BlobExchange(queriesHolders: true)
+        _ = exchange.recordWant(photo, now: 0, author: nil, via: nil, asker: nil)
+        let linked = capable(holder, author)
+        _ = step(&exchange, linked, at: 0)
+        send(&exchange, at: 0)
+        answer(&exchange, holder, have: photo, load: 0, at: 0)
+        answer(&exchange, author, have: photo, load: 1, at: 0)
+        #expect(step(&exchange, linked, at: 0).asks.map(\.to) == [holder])
+        let eta: Int64 = 180_000
+        #expect(step(&exchange, linked, at: grace).query == [holder], "the first confirm")
+        send(&exchange, at: grace)
+        sending(&exchange, holder, eta: eta, at: grace)
+        #expect(step(&exchange, linked, at: grace).wake == grace, "still sending: another grace")
+        #expect(step(&exchange, linked, at: 2 * grace).query == [holder], "the second confirm")
+        send(&exchange, at: 2 * grace)
+        sending(&exchange, holder, eta: eta, at: 2 * grace)
+        let until = 2 * grace + eta + BlobExchange.holdSlackMilliseconds
+        let held = step(&exchange, linked, at: 2 * grace + wait)
+        let floor = until - (2 * grace + wait)
+        #expect(held.asks.isEmpty && held.wake == floor, "held to the promise and its slack, not to our ask's floor")
+        #expect(held.notes == ["blob hold \(photo.string.prefix(8))… on \(holder) (sending), floor \(floor) ms"])
+        #expect(step(&exchange, linked, at: memo + 1).asks.isEmpty, "past our ask's own floor, still held")
+        #expect(step(&exchange, linked, at: until - 1).asks.isEmpty)
+        #expect(exchange.counts.fallbacks == 0)
+        let spent = step(&exchange, linked, at: until)
+        #expect(spent.notes.contains("blob fallback \(photo.string.prefix(8))… \(holder) (floor) → next"), "the promise is spent")
+        #expect(exchange.counts.fallbacks == 1)
+    }
+
+    @Test func aHolderOnlyWaitedOnThatSaysWhenOurCopyLandsIsHeldToThat() {
+        // No ask of ours stands on it, so there is no floor, but its answer is a promise: `hold` takes the later of the
+        // two, and here there is only the promise.
+        var exchange = BlobExchange(queriesHolders: true)
+        _ = exchange.recordWant(photo, now: 0, author: nil, via: nil, asker: nil)
+        let linked = capable(holder, author)
+        _ = step(&exchange, linked, at: 0)
+        sending(&exchange, holder, eta: 60_000, at: 10)
+        answer(&exchange, author, have: photo, load: 1, at: 10)
+        #expect(step(&exchange, linked, at: 10).notes.first?.hasPrefix("blob wait") == true)
+        #expect(step(&exchange, linked, at: 10 + grace).query == [holder], "the first confirm")
+        sending(&exchange, holder, eta: 60_000, at: 20 + grace)
+        #expect(step(&exchange, linked, at: 20 + grace).asks.isEmpty, "still sending: another grace")
+        #expect(step(&exchange, linked, at: 20 + 2 * grace).query == [holder], "the second confirm")
+        sending(&exchange, holder, eta: 60_000, at: 30 + 2 * grace)
+        let held = step(&exchange, linked, at: 30 + 2 * grace)
+        let floor = 60_000 + BlobExchange.holdSlackMilliseconds
+        #expect(held.asks.isEmpty, "the author is not asked while the holder's promise stands")
+        #expect(held.notes == ["blob hold \(photo.string.prefix(8))… on \(holder) (sending), floor \(floor) ms"])
+    }
+
+    @Test func onlyASendingAnswerPromisesAndNoPromiseRunsPastTheCap() {
+        // `etaAt`: an eta rides SENDING alone, a negative one is no promise, and a holder's lie costs at most 15 min.
+        let cap = BlobExchange.holdCapMilliseconds
+        #expect(BlobExchange.etaAt(BlobHasItem(hash: "h", state: .have, size: 1, eta: 1000), now: 5) == nil)
+        #expect(BlobExchange.etaAt(BlobHasItem(hash: "h", state: .sending, size: 1), now: 5) == nil)
+        #expect(BlobExchange.etaAt(BlobHasItem(hash: "h", state: .sending, size: 1, eta: -1), now: 5) == nil)
+        #expect(BlobExchange.etaAt(BlobHasItem(hash: "h", state: .sending, size: 1, eta: 1000), now: 5) == 1005)
+        #expect(BlobExchange.etaAt(BlobHasItem(hash: "h", state: .sending, size: 1, eta: .max), now: 5) == 5 + cap)
+    }
+
     @Test func theWaitForAnAnswerStretchesToTheNeighboursLastRoundTrip() {
         let first = BlobHash(of: Array("first".utf8))
         let second = BlobHash(of: Array("second".utf8))

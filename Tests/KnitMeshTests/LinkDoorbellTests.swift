@@ -123,9 +123,10 @@ struct LinkDoorbellTests {
 
     // MARK: What rings
 
-    @Test(arguments: [FrameType.typing, .blobRequest, .blobHave, .blobHas, .keyRequest])
+    @Test(arguments: [FrameType.typing, .blobRequest, .blobHave, .blobHas, .blobProgress, .keyRequest])
     func upkeepGoesOutWithoutRinging(type: FrameType) throws {
-        // Android skips the same five (`DoorbellPolicy.UPKEEP`): the 60 s tick re-sends the requests and the queries.
+        // Android skips the same six (`DoorbellPolicy.UPKEEP`): the 60 s tick re-sends the requests and the queries, and a
+        // progress report goes to a peer already feeding us (knit-next ADR 2026-10.nsr7).
         let rig = LinkRig(local: LinkRig.high)
         let id = try rig.link(LinkRig.low)
         rig.links.send(LinkRig.signedFrame("u1", type: type), to: LinkRig.low)

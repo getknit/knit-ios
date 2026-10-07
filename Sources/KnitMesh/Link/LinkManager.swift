@@ -30,6 +30,9 @@ public final class LinkManager: MeshTransport {
         case digest([String], from: NodeId)
         /// A whole file arrived, its hash not yet checked.
         case file(InboundFile)
+        /// A file streaming in has got this far: every ``progressEveryMilliseconds`` of its chunks (knit-next ADR
+        /// 2026-10.nsr7). A stall reports nothing.
+        case fileProgress(FileProgress)
         /// A file we streamed left the radio whole, its END included (``sendFile(_:to:)``).
         case fileSent(BlobHash, to: NodeId)
     }
@@ -104,6 +107,8 @@ public final class LinkManager: MeshTransport {
     /// Each live link's incoming file, kept apart from ``channels`` so that reading a channel never copies a file's
     /// bytes.
     var intakes: [ChannelID: FileIntake] = [:]
+    /// When each live link's incoming file began, and when it was last reported back to its sender (``Event/fileProgress(_:)``).
+    var arrivalClocks: [ChannelID: ArrivalClock] = [:]
     /// Each live link's outgoing files: the one streaming and those waiting behind it.
     var feeds: [ChannelID: FileFeed] = [:]
     /// The attachments the engine wants kept when they stream in (``acceptFiles(_:)``).

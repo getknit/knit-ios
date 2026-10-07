@@ -54,6 +54,10 @@ internal struct BlobExchange: Sendable {
     static let maxBackoffShift = 3
     /// The most confirms one ask gets (`MAX_CONFIRMS`).
     static let maxConfirms = 2
+    /// How long past a SENDING answer's `eta` the asker holds on that holder (`HOLD_SLACK_MS`, knit-next ADR 2026-10.nsr7),
+    /// and the most an `eta` is taken for (`HOLD_CAP_MS`): a holder's lie costs at most that, plus the slack.
+    static let holdSlackMilliseconds: Int64 = 30_000
+    static let holdCapMilliseconds: Int64 = 900_000
     /// The most hashes one query names, and one answer is read for (`MAX_QUERY_HASHES`).
     static let maxQueryHashes = 32
     /// The longest hash a query is answered for (`MAX_HASH_CHARS`).

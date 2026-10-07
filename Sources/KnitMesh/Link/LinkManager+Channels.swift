@@ -14,6 +14,7 @@ extension LinkManager {
         doorbells[id] = nil
         // A file cut off mid-stream is dropped either way; the next re-ask fetches it whole (`FramedLink.kt:183-190`).
         intakes[id] = nil
+        arrivalClocks[id] = nil
         feeds[id] = nil
         var events: [Event] = []
         var peer: NodeId?

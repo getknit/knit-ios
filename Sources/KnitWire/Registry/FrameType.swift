@@ -22,6 +22,9 @@ public struct FrameType: RawRepresentable, Hashable, Sendable {
     public static let blobHave = Self(rawValue: "blobhave")
     /// The answer to a ``blobHave``, sent back to the neighbour that asked.
     public static let blobHas = Self(rawValue: "blobhas")
+    /// A file's receiver telling its sender how much of the file it holds (knit-next ADR 2026-10.nsr7): unsigned and point
+    /// to point like a ``blobHave``.
+    public static let blobProgress = Self(rawValue: "blobprog")
     /// A point-to-point request for missing profiles.
     public static let keyRequest = Self(rawValue: "keyreq")
     /// A one-hop typing cue, never carried.
@@ -49,8 +52,10 @@ public struct FrameType: RawRepresentable, Hashable, Sendable {
     /// additive change (`docs/WIRE_COMPAT.md` in knit-next).
     public var isCustodial: Bool { isReplayable || self == .profile }
 
-    /// Whether a frame of this type is the unsigned point-to-point blob traffic (`FrameType.isUnsignedPointToPoint`,
-    /// `Wire.kt:104`): taken without a signature, so its sender id is a claim nobody checked. None of it is ever carried,
+    /// Whether a frame of this type is the unsigned point-to-point blob traffic (`FrameType.isUnsignedPointToPoint`
+    /// in `Wire.kt`): taken without a signature, so its sender id is a claim nobody checked. None of it is ever carried,
     /// parked, flooded or the cause of a key request.
-    public var isUnsignedPointToPoint: Bool { self == .blobRequest || self == .blobHave || self == .blobHas }
+    public var isUnsignedPointToPoint: Bool {
+        self == .blobRequest || self == .blobHave || self == .blobHas || self == .blobProgress
+    }
 }

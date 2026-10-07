@@ -36,6 +36,13 @@ internal struct FileFeed {
     }
 }
 
+/// When a link's incoming file began and was last reported (`FramedLink.rxStartedAt` and `rxReportedAt`, knit-next ADR
+/// 2026-10.nsr7), on the monotonic clock.
+internal struct ArrivalClock {
+    let startedAt: Int64
+    var reportedAt: Int64
+}
+
 /// A whole file past its END that the engine has not taken yet, by the neighbour whose link carried it.
 internal struct LandingFile: Hashable {
     var from: NodeId
@@ -47,7 +54,9 @@ internal struct LandingFile: Hashable {
 /// **In,** each link's file passes through a ``FileIntake``, which applies Android's receiver rules. A peer's own AVATAR
 /// push is kept up to ``Configuration/maxAvatarFileBytes``. An ATTACHMENT is kept only when the engine asked for its
 /// hash (``acceptFiles(_:)``), up to Android's 8 MiB and 64 KiB, and partial files on every link together stay within
-/// ``Configuration/maxBufferedFileBytes``. A whole file goes to the engine, which checks its hash.
+/// ``Configuration/maxBufferedFileBytes``. A whole file goes to the engine, which checks its hash. Every
+/// ``progressEveryMilliseconds`` of a kept file's chunks, how much of it is in goes to the engine too, which tells the
+/// sender (knit-next ADR 2026-10.nsr7).
 ///
 /// **Out,** a file streams as Android streams one: its header, chunks of 16 KiB, then its END, one file at a time per
 /// link, paced at 28 KiB/s. Each chunk waits until the radio reports the last one out of its queue, so the queue never
@@ -59,6 +68,9 @@ extension LinkManager {
     static let shownKeyCharacters = 12
     /// For the pace's arithmetic.
     static let millisecondsPerSecond: Int64 = 1000
+    /// How often a file streaming in is reported back to its sender (`FramedLink.PROGRESS_EVERY_MS`, knit-next ADR
+    /// 2026-10.nsr7): often enough that its sender sees a stall within 15 s, rarely enough to cost nothing beside the file.
+    public static let progressEveryMilliseconds: Int64 = 2000
 
     // MARK: MeshTransport
 
@@ -119,7 +131,9 @@ extension LinkManager {
 
     // MARK: In
 
-    func fileHeader(_ payload: [UInt8], on id: ChannelID) {
+    func fileHeader(_ payload: [UInt8], on id: ChannelID, now: Int64) {
+        // Stamped at every header, kept or not, as Android's is; only a kept file is ever reported.
+        arrivalClocks[id] = ArrivalClock(startedAt: now, reportedAt: now)
         let accepted = acceptedFileKeys
         let avatarLimit = configuration.maxAvatarFileBytes
         let events = intakes[id, default: FileIntake()].header(payload) { header, key in
@@ -135,14 +149,30 @@ extension LinkManager {
         }
     }
 
-    func fileChunk(_ payload: [UInt8], on id: ChannelID) {
+    func fileChunk(_ payload: [UInt8], from peer: NodeId, on id: ChannelID, now: Int64) -> [Event] {
         guard intakes[id] != nil else {
-            return
+            return []
         }
         let others = intakes.reduce(0) { $1.key == id ? $0 : $0 + $1.value.bufferedBytes }
         if let event = intakes[id]?.chunk(payload, room: configuration.maxBufferedFileBytes - others) {
             note(event, on: id)
         }
+        return fileProgress(from: peer, on: id, now: now)
+    }
+
+    /// How much of the kept file streaming in on `id` is held, once ``progressEveryMilliseconds`` have passed since its
+    /// header or its last report (`FramedLink.reportRx`): after the chunk is in, so a stall reports nothing. A resumed
+    /// stream would count its kept prefix too; this port never asks for one (knit-ios #2).
+    private func fileProgress(from peer: NodeId, on id: ChannelID, now: Int64) -> [Event] {
+        guard let intake = intakes[id], let hash = intake.arriving, var clock = arrivalClocks[id],
+            now - clock.reportedAt >= Self.progressEveryMilliseconds
+        else {
+            return []
+        }
+        clock.reportedAt = now
+        arrivalClocks[id] = clock
+        let held = Int64(intake.bufferedBytes)
+        return [.fileProgress(FileProgress(from: peer, hash: hash, held: held, milliseconds: now - clock.startedAt))]
     }
 
     func fileEnd(from peer: NodeId, on id: ChannelID) -> [Event] {

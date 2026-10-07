@@ -97,6 +97,27 @@ public struct OutboundFile {
     }
 }
 
+/// How far a file streaming in from a neighbour has got (`FileProgress` in knit-next's `MeshTransport.kt`, its ADR
+/// 2026-10.nsr7): noted every couple of seconds of chunks, and sent back to the sender as a `blobprog`.
+public struct FileProgress: Sendable, Equatable {
+    /// The neighbour whose link is streaming it.
+    public var from: NodeId
+    /// The hash its header's key named.
+    public var hash: BlobHash
+    /// The bytes held so far.
+    public var held: Int64
+    /// The milliseconds since its header arrived, on the monotonic clock.
+    public var milliseconds: Int64
+
+    /// A note on a file streaming in.
+    public init(from: NodeId, hash: BlobHash, held: Int64, milliseconds: Int64) {
+        self.from = from
+        self.hash = hash
+        self.held = held
+        self.milliseconds = milliseconds
+    }
+}
+
 /// A whole file a neighbour streamed to us. Its bytes are not yet checked against its hash: the engine does that
 /// (`MeshBlobStore.saveIncoming`).
 public struct InboundFile: Sendable, Equatable {

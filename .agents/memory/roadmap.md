@@ -307,7 +307,10 @@ explicit direction.** Update this file in the change that ships an item.
       now keeping the phone's photos.
     - Out of reach here: the bubbles on the iPhone's own screen, which only a device UI test can open. The Simulator
       walks draw them, and the bridge's `photos` decodes them on the phone.
-  - **Phase 4:** group photos shown but never set, and carried frames' photos pulled within Android's 128 MiB.
+  - **Phase 4:** group photos shown but never set, and carried frames' photos pulled within Android's 128 MiB. A carrier's
+    pull follows knit-next ADR 2026-10.g24x's `CarrierPullPolicy`: a DM's picture waits up to 10 min while its recipient
+    is linked, and, since its 2026-10-07 amendment, a group's picture waits while the group's author is linked unless the
+    carrier is a member (`GroupInfo.members`).
   - **Android's progress ring** (knit-next ADR 2026-10.y9qh): every header this port writes declares its size since
     2026-10-04, so an Android phone fills a ring as our photo arrives. Still owed:
     - the iPhone's own ring for a photo arriving, from the size `FileIntake` already reads;
@@ -330,6 +333,10 @@ explicit direction.** Update this file in the change that ships an item.
     - knit-next ADR 2026-10.8jwn's pace: one 4 KiB/s budget across the links feeding, in 2 to 16 KiB chunks, where
       this port feeds 28 KiB/s a link. Without it a photo the iPhone serves can hold a DM behind it in Android's
       stack for a minute or more, and an older Android asker can be served twice.
+    - knit-next ADR 2026-10.nsr7's holder half, after 8jwn: a meter on our own feeds from the `blobprog` reports
+      Android's receivers send, and parking a second ask behind a live feed. Only then are Android's reports to an
+      iPhone worth sending, so Android's gate on them stays until it lands (ADR 2026-10.ds45, which mirrors the
+      receiving and asking halves).
 
   Out of scope: files, voice notes, link previews, direct transfer, screening, and setting a group photo.
   Capabilities stay `0xB`. One companion change goes with it:

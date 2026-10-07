@@ -85,3 +85,8 @@ from the size it reads (`.agents/memory/roadmap.md`). Guards:
 - `LinkVectorTests.theFileHeaderRecordMatchesKotlinxByteForByte`, against knit-next's `fileHeader` vector;
 - `LinkTests.aSizeThatWillNotDecodeCostsTheLabelNotTheFile`, Android's bad sizes;
 - `LinkFileTests.aFileStreamsAsAHeaderChunksAndAnEndAtTheBlePace`, for the size a served file declares.
+
+**Amended 2026-10-07, for knit-next ADR 2026-10.nsr7 (ADR 2026-10.ds45):** every 2 s of a kept file's chunks, the
+receiving link emits `.fileProgress`, and the engine sends the file's sender a `blobprog` with the bytes held and the ms
+since the header. Nothing is reported in a stall, and a skipped file is never reported. Guard:
+`LinkFileProgressTests`.

@@ -5,7 +5,7 @@ import Testing
 /// The holder query's wire types beyond their golden vectors (knit-next ADR 2026-10.6e5t).
 @Suite struct BlobHaveContentTests {
     @Test func onlyTheBlobTrafficIsUnsignedPointToPoint() {
-        let unsigned: [FrameType] = [.blobRequest, .blobHave, .blobHas]
+        let unsigned: [FrameType] = [.blobRequest, .blobHave, .blobHas, .blobProgress]
         let signed: [FrameType] = [.chat, .profile, .receipt, .reaction, .keyRequest, .typing, FrameType(rawValue: "future")]
         let allUnsigned = unsigned.allSatisfy(\.isUnsignedPointToPoint)
         let anySignedUnsigned = signed.contains(where: \.isUnsignedPointToPoint)
@@ -35,6 +35,14 @@ import Testing
             )
         ])
         #expect(answer.cbor == expected)
+    }
+
+    @Test func aProgressReportMissingAFieldIsRefused() throws {
+        // Every field of Android's `BlobProgressContent` is required: a report without one is malformed.
+        let partial = CBOR.map([CBOR.Entry(key: .text("hash"), value: .text("h1")), CBOR.Entry(key: .text("held"), value: CBOR(1))])
+        #expect(throws: WireDecodingError.self) { try BlobProgressContent(decoding: partial.encoded) }
+        let whole = try BlobProgressContent(decoding: GoldenVectors.bytes("blobProgressContent"))
+        #expect(whole == BlobProgressContent(hash: "h1", held: 245_760, ms: 13_500))
     }
 
     @Test func aPlainBlobRequestIsTheBytesEveryBuildSends() {

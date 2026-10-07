@@ -64,3 +64,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.u7cq](decisions/2026-10-u7cq-a-delete-removes-messages-from.md) | A delete removes messages from this iPhone and keeps them gone | messages, custody, store, ui |
 | [2026-10.m9uq](decisions/2026-10-m9uq-the-iphone-answers-and-asks.md) | The iPhone answers and asks blob holder queries | mesh, blobs, interop, wire |
 | [2026-10.pkbu](decisions/2026-10-pkbu-a-thread-is-a-uikit.md) | A thread is a UIKit collection view | ui, accessibility |
+| [2026-10.ds45](decisions/2026-10-ds45-the-iphone-reports-a-file.md) | The iPhone reports a file's progress to its sender, and holds on a SENDING answer's eta | mesh, blobs, interop, wire |

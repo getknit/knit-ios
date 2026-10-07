@@ -127,13 +127,15 @@ extension BlobExchange {
         }
     }
 
-    /// A neighbour's answer for one blob (`Answer`): its state, its load, and when the query it answers went. Android
-    /// also keeps the size, to tell whether a blob is worth raising the Wi-Fi Aware link for; one radio has no link to
-    /// raise, so the size is only logged.
+    /// A neighbour's answer for one blob (`Answer`): its state, its load, when the query it answers went, and, for a
+    /// SENDING one that said so, when our copy should have landed (knit-next ADR 2026-10.nsr7), which ``hold`` waits on.
+    /// Android also keeps the size, to tell whether a blob is worth raising the Wi-Fi Aware link for; one radio has no
+    /// link to raise, so the size is only logged.
     struct Answer: Sendable {
         var state: BlobHolding
         var load: Int
         var querySentAt: Int64
+        var etaAt: Int64?
     }
 
     /// A capable neighbour that said it holds the blob, with what it said.

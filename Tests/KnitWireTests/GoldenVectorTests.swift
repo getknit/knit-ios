@@ -15,9 +15,9 @@ import Testing
         #expect(item.encoded == bytes, "\(name) did not re-encode to its pinned bytes")
     }
 
-    @Test func thereAreSixtyOneVectors() {
+    @Test func thereAreSixtyThreeVectors() {
         // A new fixture in knit-next needs a typed test here when this build models its type.
-        #expect(GoldenVectors.names.count == 61)
+        #expect(GoldenVectors.names.count == 63)
     }
 
     @Test(arguments: typedFixtures)
@@ -153,6 +153,12 @@ let typedFixtures: [TypedFixture] = [
         "blobHasContentReserved",
         BlobHasContent(items: [BlobHasItem(hash: "h1", state: .partial, size: 1000, held: 400)])
     ),
+    // knit-next ADR 2026-10.nsr7: a SENDING answer that says when the asker's copy should land, and a receiver's report.
+    TypedFixture(
+        "blobHasContentSendingEta",
+        BlobHasContent(items: [BlobHasItem(hash: "h1", state: .sending, size: 409_600, eta: 140_000)])
+    ),
+    TypedFixture("blobProgressContent", BlobProgressContent(hash: "h1", held: 245_760, ms: 13_500)),
     TypedFixture("typingContent", TypingContent(groupId: "g-1")),
     TypedFixture("mention", Mention(nodeId: "node1", name: "Ann")),
     TypedFixture(

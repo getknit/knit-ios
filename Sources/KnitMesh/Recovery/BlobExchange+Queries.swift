@@ -70,7 +70,8 @@ extension BlobExchange {
             want.answers[peer] = Answer(
                 state: item.state,
                 load: max(0, content.load ?? 0),
-                querySentAt: sent?.at ?? queriedAt
+                querySentAt: sent?.at ?? queriedAt,
+                etaAt: Self.etaAt(item, now: now)
             )
             if item.state.isHeld || item.state == .fetching {
                 want.sawLead(at: now)
@@ -84,6 +85,15 @@ extension BlobExchange {
             counts.answersTaken += 1
         }
         return (touched, sent.map { now - $0.at })
+    }
+
+    /// When a SENDING `item` answered at `now` says our copy should have landed, at most ``holdCapMilliseconds`` on
+    /// (`etaAt`, knit-next ADR 2026-10.nsr7). `nil` for any other state, or one that said nothing.
+    static func etaAt(_ item: BlobHasItem, now: Int64) -> Int64? {
+        guard item.state == .sending, let eta = item.eta, eta >= 0 else {
+            return nil
+        }
+        return now + min(eta, holdCapMilliseconds)
     }
 
     // MARK: Waits sized by the round trip

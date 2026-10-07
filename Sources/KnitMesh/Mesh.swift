@@ -289,25 +289,6 @@ public actor Mesh {
 
     // MARK: Plumbing
 
-    private func apply(_ linkEvents: [LinkManager.Event]) {
-        for event in linkEvents {
-            switch event {
-            case .up(let neighbor):
-                engine.linkUp(neighbor)
-            case .down(let nodeId):
-                engine.linkDown(nodeId)
-            case .frame(let frame):
-                engine.receive(frame)
-            case .digest(let ids, let from):
-                engine.receiveDigest(ids, from: from)
-            case .file(let file):
-                engine.receiveFile(file)
-            case .fileSent(let hash, let peer):
-                engine.fileSent(hash, to: peer)
-            }
-        }
-    }
-
     /// After any work: hand on the engine's events, re-advertise a changed digest cue, and aim the timer at the
     /// next deadline.
     private func settle() {
@@ -350,6 +331,30 @@ public actor Mesh {
         if scheduled == deadline {
             scheduled = nil
             fireDueTimers()
+        }
+    }
+}
+
+extension Mesh {
+    /// Hands each link event to the engine, in order.
+    private func apply(_ linkEvents: [LinkManager.Event]) {
+        for event in linkEvents {
+            switch event {
+            case .up(let neighbor):
+                engine.linkUp(neighbor)
+            case .down(let nodeId):
+                engine.linkDown(nodeId)
+            case .frame(let frame):
+                engine.receive(frame)
+            case .digest(let ids, let from):
+                engine.receiveDigest(ids, from: from)
+            case .file(let file):
+                engine.receiveFile(file)
+            case .fileProgress(let progress):
+                engine.fileProgress(progress)
+            case .fileSent(let hash, let peer):
+                engine.fileSent(hash, to: peer)
+            }
         }
     }
 }

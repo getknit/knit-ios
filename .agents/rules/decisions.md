@@ -44,6 +44,7 @@ growing an explanation, that explanation belongs in the ADR.
 | FILE records, `FileIntake`, `LinkManager+Files`, `Radio.writeFileRecord`, or how a file streams on a link | [ADR 2026-10.h6zz](../memory/decisions/2026-10-h6zz-file-records-cross-a-link.md) |
 | `blobreq`, `BlobExchange`, `MeshEngine+Blobs`, a `BlobStore`, our photo's push, or how a peer's photo is adopted | [ADR 2026-10.ym9y](../memory/decisions/2026-10-ym9y-the-iphone-asks-for.md) |
 | `blobhave`, `blobhas`, `CAP_BLOB_HAVE`, `MeshEngine+BlobQueries`, who a blob is asked of and when, `queriesBlobHolders`, or `MeshTransport.fileTaken` | [ADR 2026-10.m9uq](../memory/decisions/2026-10-m9uq-the-iphone-answers-and-asks.md) |
+| `blobprog`, `BlobProgressContent`, `FileProgress`, `progressEveryMilliseconds`, `BlobHasItem.eta`, or how long a held ask waits on a SENDING answer | [ADR 2026-10.ds45](../memory/decisions/2026-10-ds45-the-iphone-reports-a-file.md) |
 | a face, `Face`, `AvatarTint`, `AvatarView`, `Sources/Knit/Images/`, the profile photo's picker or cropper, or `-demoPhoto` | [ADR 2026-10.sepc](../memory/decisions/2026-10-sepc-a-face-is-a-person.md) |
 | a photo in a chat, `AttachmentCrypto`, `MessageAttachment`, `ChatAttachment`, the composer's photo, or the viewer's Save | [ADR 2026-10.6cas](../memory/decisions/2026-10-6cas-a-photo-in-a-chat.md) |
 | blocking, `BlockStore`, `MeshEngine+Blocks`, `DropReason.blocked`, the Blocked people screen, or anything the delivery path reads that custody must not | [ADR 2026-10.5wgg](../memory/decisions/2026-10-5wgg-a-block-hides-a-person.md) |
