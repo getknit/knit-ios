@@ -337,7 +337,7 @@ explicit direction.** Update this file in the change that ships an item.
       Android's receivers send, and parking a second ask behind a live feed, which a `blobcancel` then drops. Only
       then are Android's reports to an iPhone worth sending, so Android's gate on them stays until it lands (ADR
       2026-10.ds45, which mirrors the receiving and asking halves, and both ends of `blobcancel`). Android's gate on
-      `blobcancel` can lift sooner: this build takes one already.
+      `blobcancel` to an iPhone lifted on 2026-10-07, after a device check passed (ADR 2026-10.ds45's amendment).
     - nsr7's two asker changes of 2026-10-07 that are not on the wire: leaving a neighbour whose other stream to us
       has more than 30 s left while an idle holder is linked, which needs that stream's ETA from `FileIntake`, and
       letting go of an ask that found its neighbour lacking the blob. Its holder changes the same day, members served

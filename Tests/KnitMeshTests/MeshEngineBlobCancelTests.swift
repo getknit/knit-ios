@@ -38,6 +38,11 @@ import Testing
         #expect(fixture.engine.blobExchange.counts.cancelsTaken == 1)
         #expect(fixture.engine.dropped.isEmpty)
         #expect(fixture.transport.written.isEmpty, "unsigned by design, so no key is asked for, and never relayed")
+        let shown = photoHash.string.prefix(BlobExchange.shownHashCharacters)
+        #expect(
+            fixture.log.all.filter { $0.contains("blob cancel ←") } == [
+                "debug mesh blob cancel ← \(bob.nodeId) \(shown)…: queued copy dropped"
+            ])
         fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-2"), from: bob)
         #expect(fixture.transport.files.count == 1, "inside the memo, but the withdrawal forgot it")
     }
@@ -53,6 +58,12 @@ import Testing
         fixture.deliver(bob.unsigned(.blobCancel, payload: [0xFF], id: "cancel-bad"), from: bob)
         #expect(fixture.engine.blobExchange.counts.cancelsTaken == 0)
         #expect(fixture.engine.dropped[.undecodable] == 1)
+        let shown = photoHash.string.prefix(BlobExchange.shownHashCharacters)
+        #expect(
+            fixture.log.all.filter { $0.contains("blob cancel ←") } == [
+                "debug mesh blob cancel ← \(bob.nodeId) \(shown)…: nothing queued",
+                "debug mesh blob cancel ← \(bob.nodeId) not-a-ha…: nothing queued",
+            ], "every one taken is logged, so a run can tell a late one from one that never came")
         fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-2"), from: bob)
         #expect(fixture.transport.files.isEmpty, "a copy that streamed keeps its memo")
     }

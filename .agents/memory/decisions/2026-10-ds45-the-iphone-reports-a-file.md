@@ -89,8 +89,10 @@ second copy. This port mirrors both ends.
   takes that blob's copy off the link if it is still waiting behind another file, before its header goes. The serve
   memo then forgets it, so a later ask of the peer's own is served. A copy already streaming goes on. Android also
   drops the ask if it parked it, and this port parks none. `cancelsTaken` counts only withdrawals that took a copy off,
-  as Android's `blobCancelsTaken` does. Android sends an iPhone none yet: the gate is the one on `blobprog`, and it
-  lifts once knit-next hears that this build takes the type.
+  as Android's `blobCancelsTaken` does, but every withdrawal taken is logged, as `blob cancel ← <id> <hash>…` with
+  `queued copy dropped` or `nothing queued`, so a device run can tell one that came too late from one that never
+  came. Android lifted its gate on sending one to an iPhone on 2026-10-07, uncommitted on knit-next's `main` that day;
+  its gate on `blobprog` stays.
 - **The asker** (`BlobExchange.over` and `obtained`, `MeshEngine.withdrawAsks`). When a fetch falls back from a holder
   that is still linked, our ask on it is withdrawn: at its floor, when a grace runs out, or after a confirm. Once the
   blob lands, every other neighbour we asked gets one, never the neighbour it came from. When the blob turns up held
@@ -112,6 +114,13 @@ second copy. This port mirrors both ends.
 - **Limits.** A holder that starts our copy before the withdrawal reaches it still sends a second copy, and so does
   one already streaming. An Android build with `CAP_BLOB_HAVE` from before the amendment drops a withdrawal as an
   unsigned frame of a type it does not know, as it drops Android's own. The hold floors are unchanged.
+- **Device check (2026-10-07), passed:** the iPhone 12 on this build, with a Pixel 8 and a Pixel 9 on knit-next's
+  working tree. The iPhone fed the Pixel 8 a 4 MiB DM file, at about 8 KB/s for 524 s. A photo posted to a group of
+  the three queued behind it for the Pixel 8 while the Pixel 9 took its copy in 76 s. Then the Pixel 8 withdrew its
+  ask: the iPhone logged `blob withdrawn … before it streamed` and `queued copy dropped`, and `cancelsTaken` went
+  to 1. The Pixel 8 took its one copy from the Pixel 9, and none followed from the iPhone after the DM. There was no
+  key request and no drop, and the links stayed up. A first run had shown a cancel taken with nothing queued, and the
+  Pixel 8's never-reasked NONE answerer, which knit-next then fixed.
 - **Guards:**
   - `GoldenVectorTests` (64 vectors) and `BlobHaveContentTests` for the wire;
   - `LinkFileCancelTests` for the link;

@@ -153,7 +153,8 @@ extension MeshEngine {
     /// A neighbour withdrew its ask for a blob (`BlobExchange.onCancel`): a copy queued for it and not yet streaming comes
     /// off its link, and the serve memo forgets it, so a later ask of its own is served. A copy already streaming goes on.
     /// Android also drops the ask if it parked it; this port parks none. Taken only from the link's own peer, and its
-    /// sender's key is never asked for.
+    /// sender's key is never asked for. Every one taken is logged, a withdrawal of nothing queued too, so a device run
+    /// can tell one that came too late from one that never came.
     func handleBlobCancel(_ frame: InboundFrame) {
         guard isFromItsLink(frame) else {
             return
@@ -162,11 +163,13 @@ extension MeshEngine {
             drop(.undecodable, frame.envelope)
             return
         }
+        let line = "mesh blob cancel ← \(frame.from) \(cancel.hash.prefix(BlobExchange.shownHashCharacters))…"
         guard let hash = BlobHash(cancel.hash), transport.cancelQueuedFile(hash, to: frame.from) else {
+            log.log(.debug, "\(line): nothing queued")
             return
         }
         blobExchange.forgetServe(hash, to: frame.from)
         blobExchange.counts.cancelsTaken += 1
-        log.log(.debug, "mesh blob cancel ← \(frame.from) \(hash.string.prefix(BlobExchange.shownHashCharacters))…: queued copy withdrawn")
+        log.log(.debug, "\(line): queued copy dropped")
     }
 }
