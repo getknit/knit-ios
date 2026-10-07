@@ -194,18 +194,19 @@ Kotlin wins.
     - knit-next #140, an ask to a holder that stands until its link goes (the 2026-10-06 amendment to ADR
       2026-10.6e5t), ported from the uncommitted `fix/blob-ask-race` on 2026-10-06 (ADR 2026-10.m9uq's amendment).
       Check the merged `BlobExchange.kt` against `BlobAskStandsTests` when the pin passes it.
-    - knit-next ADR 2026-10.nsr7, a file's receiver reporting its progress, ported on 2026-10-07 from its uncommitted
-      work on `main` above `3890f16b` (ADR 2026-10.ds45). This port takes `blobprog`, sends it as a receiver, and holds
-      on a SENDING answer's `eta`; the holder's meter and parking are Android's alone. `vectors/wire-v1.json` was
-      synced from that working tree, which added `blobProgressContent` and `blobHasContentSendingEta`, and nothing
-      else moved. When it commits, check `PROGRESS_EVERY_MS` (2 s), `HOLD_SLACK_MS` (30 s), `HOLD_CAP_MS` (15 min),
-      `hold` and `onFileProgress`'s gate against `LinkFileProgressTests`, `BlobAskStandsTests` and
-      `MeshEngineBlobQueryTests`, then sync the vectors from the commit.
-    - nsr7's cancel amendment, ported the same day from the same working tree (ADR 2026-10.ds45's amendment). This
-      port takes `blobcancel` as a holder and sends it as an asker; the sync added `blobCancelContent` and nothing
-      else. When it commits, check `onCancel`, `withdrawAsk`'s gate, `Want.withdraw`, the `over` calls that withdraw
-      and `withdrawAsks` at landing against `MeshEngineBlobCancelTests`, `LinkFileCancelTests` and
-      `BlobAskStandsTests`.
+    - knit-next ADR 2026-10.nsr7, a file's receiver reporting its progress, with its cancel amendment (ADR
+      2026-10.ds45 and its amendment). Ported on 2026-10-07 from uncommitted work on `main` above `3890f16b`, then
+      checked the same day against its commit, `79f38d3d`, which is not yet pushed. This port takes `blobprog`, sends
+      it as a receiver, and holds on a SENDING answer's `eta`; it takes `blobcancel` as a holder and sends it as an
+      asker. The holder's meter and parking are Android's alone. `Tests/Vectors/` records `79f38d3d`, past the pin:
+      the commit's vectors are byte for byte the working tree's, with `blobProgressContent`,
+      `blobHasContentSendingEta` and `blobCancelContent` new. Checked against the commit: `PROGRESS_EVERY_MS` (2 s),
+      `HOLD_SLACK_MS` (30 s), `HOLD_CAP_MS` (15 min), `hold`, the gate `onFileProgress` and `withdrawAsk` share,
+      `onCancel`, `Want.over` (a blind ask kept at the widening), `withdrawAsks` at landing, and `Want.withdraw`, whose
+      commit skips a neighbour only when its answer saying it lacks the blob came at or after the ask
+      (`Answer.receivedAt`, mirrored then). When the pin passes `79f38d3d`, check those again against
+      `LinkFileProgressTests`, `BlobAskStandsTests`, `MeshEngineBlobQueryTests`, `MeshEngineBlobCancelTests`,
+      `LinkFileCancelTests` and `BlobPullThroughTests`.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5f521cb9`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

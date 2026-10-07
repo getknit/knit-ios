@@ -198,18 +198,20 @@ extension BlobExchange {
     }
 
     /// Ends `fetch`, whose holder brought nothing, and says why (`over`). A blind first ask's end widens its round
-    /// instead, and says nothing. While the holder is still linked, our ask on it is withdrawn (knit-next ADR
-    /// 2026-10.nsr7), since a copy it queued would come as a second.
+    /// instead, says nothing and keeps its ask: widening adds asks and gives up on nobody, and the first pick, often the
+    /// author, may have queued the closest copy. Withdrawn at the widening on Android, an author's parked ask was lost
+    /// and its asker came back 28 s late (knit-next's device rerun of 2026-10-07). Otherwise, while the holder is still
+    /// linked, our ask on it is withdrawn (knit-next ADR 2026-10.nsr7), since a copy it queued would come as a second.
     private mutating func over(
         _ want: inout Want, _ fetch: Fetch, _ why: String, _ plan: inout Plan, withdrawing: Bool = true
     ) -> Int64? {
         want.fetch = nil
-        if withdrawing, want.withdraw(fetch.peer) {
-            plan.cancels.append(fetch.peer)
-        }
         if fetch.tier == .blind {
             want.blindWidened = true
             return nil
+        }
+        if withdrawing, want.withdraw(fetch.peer) {
+            plan.cancels.append(fetch.peer)
         }
         want.failed.insert(fetch.peer)
         counts.fallbacks += 1

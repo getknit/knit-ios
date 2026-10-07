@@ -102,7 +102,8 @@ extension LinkManager {
             return false
         }
         feeds[id]?.waiting.remove(at: index)
-        log.log(.debug, "link \(id) file \(Self.shown(hash.string)) withdrawn by \(peer) before it streamed")
+        // Off the `file` wording a holder's serves are counted by, as Android keeps its line (`FramedLink.kt`).
+        log.log(.debug, "link \(id) blob withdrawn \(Self.shown(hash.string)) by \(peer) before it streamed")
         return true
     }
 

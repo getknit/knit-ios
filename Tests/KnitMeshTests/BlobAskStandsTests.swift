@@ -89,6 +89,7 @@ import Testing
         #expect(step(&exchange, linked, at: wait + memo).asks.isEmpty, "the author's answer to the new cycle is still due")
         let asked = step(&exchange, linked, at: wait + memo + 7000 + wait)
         #expect(asked.asks == [BlobExchange.Ask(to: holder, line: .fetch)], "past the author's stretched wait")
+        #expect(exchange.obtained(photo, from: nil) == [holder], "the author's ask was withdrawn once, at its floor")
     }
 
     @Test func aHolderWhoseConfirmIsSilentIsHeldToItsFloorNotPassedOver() {

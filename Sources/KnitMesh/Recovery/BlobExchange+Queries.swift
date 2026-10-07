@@ -71,7 +71,8 @@ extension BlobExchange {
                 state: item.state,
                 load: max(0, content.load ?? 0),
                 querySentAt: sent?.at ?? queriedAt,
-                etaAt: Self.etaAt(item, now: now)
+                etaAt: Self.etaAt(item, now: now),
+                receivedAt: now
             )
             if item.state.isHeld || item.state == .fetching {
                 want.sawLead(at: now)

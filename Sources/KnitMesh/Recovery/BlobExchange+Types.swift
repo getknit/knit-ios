@@ -111,9 +111,14 @@ extension BlobExchange {
         }
 
         /// Whether our last ask of `peer` is still to be withdrawn (`Want.withdraw`), and marks it withdrawn, so each
-        /// ask is withdrawn once.
+        /// ask is withdrawn once. An ask whose neighbour said, at or after it, that it lacks the blob has nothing to
+        /// withdraw: it was a pull, and a neighbour that lacks a blob remembers no asker (knit-next's device rerun of
+        /// 2026-10-07, where a dead want sent a cancel every cycle).
         mutating func withdraw(_ peer: NodeId) -> Bool {
             guard let asked = askedAt[peer] else {
+                return false
+            }
+            if let answer = answers[peer], !answer.state.isHeld, answer.receivedAt >= asked {
                 return false
             }
             defer { withdrawnAt[peer] = asked }
@@ -139,8 +144,10 @@ extension BlobExchange {
         }
     }
 
-    /// A neighbour's answer for one blob (`Answer`): its state, its load, when the query it answers went, and, for a
-    /// SENDING one that said so, when our copy should have landed (knit-next ADR 2026-10.nsr7), which ``hold`` waits on.
+    /// A neighbour's answer for one blob (`Answer`): its state, its load, when the query it answers went, for a SENDING
+    /// one that said so when our copy should have landed (knit-next ADR 2026-10.nsr7), which ``hold`` waits on, and when
+    /// it reached us. One saying the neighbour lacks the blob that reached us at or after our ask says the ask found it
+    /// lacking.
     /// Android also keeps the size, to tell whether a blob is worth raising the Wi-Fi Aware link for; one radio has no
     /// link to raise, so the size is only logged.
     struct Answer: Sendable {
@@ -148,6 +155,7 @@ extension BlobExchange {
         var load: Int
         var querySentAt: Int64
         var etaAt: Int64?
+        var receivedAt: Int64
     }
 
     /// A capable neighbour that said it holds the blob, with what it said.

@@ -59,7 +59,7 @@ import Testing
 
     // MARK: Asking
 
-    @Test func anAskIsWithdrawnOnceWhenTheFetchMovesOnAndFromEveryOtherHolderWhenTheBlobLands() throws {
+    @Test func aWideningKeepsTheFirstPicksAskAndTheBlobLandingWithdrawsEveryOtherAsk() throws {
         let fixture = EngineFixture(alice)
         let dave = TestPeer(seed: 4)
         let erin = TestPeer(seed: 5)
@@ -70,10 +70,10 @@ import Testing
         fixture.advance(BlobExchange.firstAskGraceMilliseconds)
         let widened = fixture.transport.written(.blobRequest).dropFirst().map(\.to)
         #expect(widened == [carol.nodeId, erin.nodeId, dave.nodeId])
-        #expect(fixture.transport.written(.blobCancel).map(\.to) == [bob.nodeId], "the round moved on from the author")
+        #expect(fixture.transport.written(.blobCancel).isEmpty, "widening gives up on nobody: the author may have it queued")
         fixture.engine.receiveFile(InboundFile(from: carol.nodeId, kind: .attachment, hash: photoHash, mime: "image/png", bytes: photo))
         let cancels = fixture.transport.written(.blobCancel)
-        #expect(cancels.map(\.to) == [bob.nodeId, erin.nodeId], "not the one it came from, an iPhone, or the author again")
+        #expect(cancels.map(\.to) == [bob.nodeId, erin.nodeId].sorted(), "not the one it came from, nor an iPhone")
         let cancel = try #require(cancels.last)
         #expect(try BlobCancelContent(decoding: cancel.envelope.payload) == BlobCancelContent(hash: photoHash.string))
         #expect(!cancel.wire.relay && cancel.wire.sig.isEmpty && cancel.envelope.senderId == alice.nodeId.string)

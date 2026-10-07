@@ -53,6 +53,27 @@ import Testing
         #expect(wide.asks.map(\.to) == [bob, carol] && wide.why == "wide", "from the next empty cycle on")
     }
 
+    @Test func aPullHasNothingToWithdrawOnceItsNeighbourSaysAtOrAfterItThatItLacksTheBlob() {
+        // A neighbour that lacks a blob remembers no asker (knit-next ADR 2026-10.nsr7's device rerun of 2026-10-07, where a
+        // dead want sent a cancel every cycle). Only an answer at or after the ask says the ask found it lacking.
+        var exchange = exchange(via: bob)
+        let linked = capable(bob, carol)
+        var together = exchange
+        #expect(deadCycle(&together, linked, at: 0).asks.map(\.to) == [bob])
+        #expect(together.obtained(photo, from: carol).isEmpty, "pulled in the step its answer came in")
+        _ = step(&exchange, linked, at: 0)
+        answer(&exchange, bob, .notHeld, at: 0)
+        answer(&exchange, carol, .notHeld, at: 0)
+        #expect(step(&exchange, linked, at: 10).asks.map(\.to) == [bob])
+        var earlier = exchange
+        #expect(earlier.obtained(photo, from: carol) == [bob], "its answer is older than the ask, which may have found it holding")
+        answer(&exchange, bob, .fetching, at: recheck + 10)
+        var lacking = exchange
+        #expect(lacking.obtained(photo, from: carol).isEmpty, "it said after the ask that it lacks it")
+        answer(&exchange, bob, .have, at: 2 * recheck)
+        #expect(exchange.obtained(photo, from: carol) == [bob], "it holds it now, and may have our copy queued")
+    }
+
     @Test func nothingIsPulledWhileANeighbourFetchesItAndThatNeighbourIsQueriedAgainShortly() {
         var exchange = exchange(via: bob)
         let linked = capable(bob, carol)
