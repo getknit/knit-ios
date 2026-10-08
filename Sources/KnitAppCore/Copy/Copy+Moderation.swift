@@ -14,17 +14,54 @@ extension Copy {
             )
         }
 
-        /// What the toggle does, under it. It promises no more than the classifier gives.
+        /// What the toggle does, short, under it; ``filterInfo`` holds the rest. It promises no more than the classifier
+        /// gives.
         public static var filterFooter: String {
             NSLocalizedString(
-                "moderation.filter.footer",
+                "moderation.filter.footer.short",
                 bundle: .main,
-                value: """
-                    Explicit photos and abusive messages from other people stay hidden until you tap them, and an explicit \
-                    profile photo shows as the person's initial. Knit checks them on this iPhone. It can miss some, or hide some \
-                    that are fine.
-                    """,
-                comment: "Settings: what Content filtering does, and that it can be wrong"
+                value: "Explicit photos and abusive messages from other people stay hidden until you tap them.",
+                comment: "Settings: what Content filtering does"
+            )
+        }
+
+        /// The info button beside the toggle, and the title of the sheet it opens.
+        public static var filterInfo: String {
+            NSLocalizedString(
+                "moderation.filter.info",
+                bundle: .main,
+                value: "About content filtering",
+                comment: "Settings: the info button beside Content filtering, and the title of the sheet it opens"
+            )
+        }
+
+        /// The sheet's first point: where the checking happens.
+        public static var filterOnDevice: String {
+            NSLocalizedString(
+                "moderation.filter.on-device",
+                bundle: .main,
+                value: "Knit checks photos and messages on this iPhone.",
+                comment: "Content filtering: the check runs on the phone"
+            )
+        }
+
+        /// The sheet's second point: what happens to an explicit profile photo.
+        public static var filterProfilePhoto: String {
+            NSLocalizedString(
+                "moderation.filter.profile-photo",
+                bundle: .main,
+                value: "An explicit profile photo shows as the person's initial.",
+                comment: "Content filtering: an explicit profile photo is replaced by an initial"
+            )
+        }
+
+        /// The sheet's third point: that it can be wrong.
+        public static var filterMistakes: String {
+            NSLocalizedString(
+                "moderation.filter.mistakes",
+                bundle: .main,
+                value: "The filter can miss some, or hide some that are fine.",
+                comment: "Content filtering: it can miss explicit content or hide content that is fine"
             )
         }
 

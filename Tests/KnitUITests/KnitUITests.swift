@@ -43,7 +43,7 @@ final class KnitUITests: XCTestCase {
         try walkRoom()
     }
 
-    /// The radio's boundary waits behind the status line's info button, which shows it under the line.
+    /// The radio's boundary waits behind the status line's info button, which opens it in a sheet.
     func testTheStatusLineShowsTheBoundaryOnRequest() throws {
         try walkBoundary()
     }

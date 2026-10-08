@@ -33,6 +33,7 @@
                         ChatRowView(row: row)
                     }
                     .accessibilityIdentifier(AccessibilityID.chatRow(row.id))
+                    .listRowSeparator(.hidden)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         // Not a destructive role: the row stays until the alert's Delete, which takes it, as Block's swipe
                         // on a request does. The room's row stays even then.
@@ -43,9 +44,13 @@
                 }
                 if state.requestCount > 0 {
                     RequestsEntry(count: state.requestCount)
+                        .listRowSeparator(.hidden)
                 }
             }
             .listStyle(.plain)
+            // A thread that moves to the top, a request that arrives, a peer that comes into range: each eases into place
+            // rather than jumping.
+            .animation(.snappy, value: state)
             .confirmsDelete($deleting, asking: DeleteQuestion.chat) { row in
                 Task { await model.delete(row) }
             }
@@ -54,8 +59,17 @@
             // read the title.
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    SettingsButton(face: model.ownFace)
+                // The face is its own round shape: from iOS 26 it goes without the glass disc a toolbar puts behind
+                // its items, which drew a second circle around it, as Signal's goes without one.
+                if #available(iOS 26, *) {
+                    ToolbarItem(placement: .topBarLeading) {
+                        SettingsButton(face: model.ownFace)
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .topBarLeading) {
+                        SettingsButton(face: model.ownFace)
+                    }
                 }
                 // Compose at the trailing edge, where Signal, Messages and Mail keep it.
                 ToolbarItem(placement: .topBarTrailing) {
@@ -107,6 +121,7 @@
                     Text(count, format: .number)
                         .font(.subheadline.bold())
                         .monospacedDigit()
+                        .contentTransition(.numericText(value: Double(count)))
                         .foregroundStyle(Palette.onAccent)
                         .padding(.horizontal, Layout.small)
                         .padding(.vertical, Layout.hairline)
@@ -119,7 +134,8 @@
         }
     }
 
-    /// How many peers are linked, or why none can be, with the one control that helps.
+    /// How many peers are linked, or why none can be, with the one control that helps. A count that changes rolls to its
+    /// new figure.
     private struct StatusLine: View {
         let status: ConnectionStatus
         let start: () -> Void
@@ -131,21 +147,20 @@
                     Label {
                         Text(status.line)
                             .font(.subheadline)
+                            .contentTransition(.numericText())
                     } icon: {
                         StatusMark(status: status)
                     }
                     .accessibilityIdentifier(AccessibilityID.chatListStatus(status.accessibilityState))
                     if status.offersBoundary {
                         Spacer()
-                        BoundaryButton(isShowing: $showsBoundary)
+                        // A sheet, not a row that grows: a list row that changes height mid-animation jumps. The boundary
+                        // needs reading once, not every time the list opens.
+                        InfoButton(label: Copy.Status.boundaryButton) { showsBoundary = true }
+                            .accessibilityIdentifier(AccessibilityID.chatListStatusAbout)
                     }
                 }
-                if status.offersBoundary, showsBoundary {
-                    Text(Copy.Status.boundary)
-                        .font(.footnote)
-                        .foregroundStyle(Palette.secondaryText)
-                        .accessibilityIdentifier(AccessibilityID.chatListBoundary)
-                }
+                .animation(.snappy, value: status)
                 if status.offersStart {
                     Button(Copy.Status.start, action: start)
                         .secondaryButton()
@@ -158,6 +173,13 @@
                 }
             }
             .accessibilityElement(children: .contain)
+            .infoSheet(
+                isPresented: $showsBoundary,
+                symbol: "dot.radiowaves.left.and.right",
+                title: Copy.Status.boundaryButton,
+                points: Copy.Status.boundaryPoints,
+                identifier: AccessibilityID.chatListBoundary
+            )
         }
     }
 
@@ -186,28 +208,6 @@
             case .starting, .stopped, .bluetoothOff, .notAllowed, .unsupported:
                 status.isWarning ? Palette.warning : Palette.secondaryText
             }
-        }
-    }
-
-    /// The status line's info button, which shows the radio's boundary under the line and hides it again. The boundary
-    /// needs reading once, not every time the list opens. It is no popover: anchored in a list row, one opens as a
-    /// sheet on the iPhone whatever its compact adaptation asks.
-    private struct BoundaryButton: View {
-        @Binding var isShowing: Bool
-
-        var body: some View {
-            Button {
-                withAnimation { isShowing.toggle() }
-            } label: {
-                Label(Copy.Status.boundaryButton, systemImage: isShowing ? "info.circle.fill" : "info.circle")
-                    .labelStyle(.iconOnly)
-                    .frame(minWidth: Layout.hitTarget, minHeight: Layout.hitTarget)
-                    .contentShape(Rectangle())
-            }
-            // Borderless, so only the glyph takes the tap and not the whole row.
-            .buttonStyle(.borderless)
-            .accessibilityAddTraits(isShowing ? .isSelected : [])
-            .accessibilityIdentifier(AccessibilityID.chatListStatusAbout)
         }
     }
 
@@ -265,6 +265,7 @@
                         .overlay(alignment: .bottomTrailing) {
                             if row.isLinked {
                                 LinkedBadge()
+                                    .transition(.scale.combined(with: .opacity))
                             }
                         }
                 }
@@ -328,15 +329,7 @@
                     Spacer()
                 }
                 if let at = row.lastMessageAt {
-                    // Formatted against the clock, not once at render, so the time keeps counting while the list
-                    // stays open. Android's list ticks the same way (ChatListScreen.kt's rememberCurrentTimeMillis).
-                    Text(
-                        .currentDate,
-                        format: Date.AnchoredRelativeFormatStyle(
-                            anchor: Date(milliseconds: at), presentation: .numeric, unitsStyle: .abbreviated)
-                    )
-                    .font(.caption)
-                    .foregroundStyle(Palette.secondaryText)
+                    RowTime(sent: Date(milliseconds: at))
                 }
             }
         }
@@ -351,6 +344,9 @@
             Image(systemName: symbol)
                 .font(.caption)
                 .foregroundStyle(status == .delivered ? AnyShapeStyle(.tint) : AnyShapeStyle(Palette.secondaryText))
+                // Sent turning delivered morphs one glyph into the next.
+                .contentTransition(.symbolEffect(.replace))
+                .animation(.snappy, value: status)
                 .accessibilityLabel(status.label)
         }
 

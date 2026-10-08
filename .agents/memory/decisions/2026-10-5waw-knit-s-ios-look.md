@@ -93,6 +93,19 @@ blank until dragged. ADR 2026-10.pkbu moved the thread into a UIKit collection v
 above and the corrections that followed it, which read SwiftUI's scroll geometry. What the amendment above says of the
 title's height, the way back, and our own message taking the thread down still holds.
 
+**Amended 2026-10-07, for polish against Signal's current screenshots:**
+
+- **The chat list draws no separators,** as Signal's draws none. A row's time takes Signal's short form: "Now", "7m",
+  the time today, the weekday within the week, then the date (`RowAge`). VoiceOver hears minutes in full.
+- **Our face at the top left goes without the glass disc** iOS 26 puts behind a toolbar item
+  (`sharedBackgroundVisibility(.hidden)`). The disc drew a second circle around the face.
+- **An explanation longer than a line goes in an `InfoSheet`:** a glyph, a title and short points, in a sheet as tall
+  as its words. The status line's boundary, the encryption sheet, and Settings' mesh and content filter use it, and
+  their footers keep one line. The boundary used to open under the status line, and a list row that grows mid-animation
+  jumps.
+- **A reaction chip stands 32 points tall,** so a lone emoji reads as a pill rather than a flat bar.
+- **Inside the glass composer the field draws no ring of its own.** The opaque bar before iOS 26 keeps it.
+
 **Consequences / limits:**
 
 - **iOS 18 to 25 get no glass.** The same screens draw opaque bars and bordered buttons there.

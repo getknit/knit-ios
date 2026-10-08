@@ -134,22 +134,59 @@ extension Copy {
             )
         }
 
-        /// The encryption sheet: whom encryption covers, what travels unencrypted (ADR 2026-10.ehe6), and the one limit
-        /// v1 has (ADR 2026-09.qsd9).
-        public static func encryptionBody(_ name: String) -> String {
+        // The encryption sheet, a point at a time: whom encryption covers, what the carrying phones can't open, what
+        // travels unencrypted (ADR 2026-10.ehe6), and the one limit v1 has (ADR 2026-09.qsd9). A group's sheet shares the
+        // second and third.
+
+        /// Whom a DM's encryption covers.
+        public static func encryptionWho(_ name: String) -> String {
             format(
                 NSLocalizedString(
-                    "chat.encryption.body",
+                    "chat.encryption.who",
                     bundle: .main,
-                    value: """
-                        Only you and %@ can read this chat or see its photos. Messages and photos are sealed before they leave your phone, \
-                        so the phones that carry them can't open them. Reactions travel unencrypted: those phones can see who reacted to a \
-                        message and with which emoji, but not what the message says. This version doesn't have forward secrecy yet: anyone \
-                        who later gets the keys from either phone could open what they recorded earlier.
-                        """,
-                    comment: "Chat: what DM encryption covers; %@ is the other person's name"
+                    value: "Only you and %@ can read this chat or see its photos.",
+                    comment: "Encryption sheet: who can read a DM; %@ is the other person's name"
                 ),
                 name
+            )
+        }
+
+        /// What the phones that carry a message can't open.
+        public static var encryptionSealed: String {
+            NSLocalizedString(
+                "chat.encryption.sealed",
+                bundle: .main,
+                value: """
+                    Messages and photos are sealed before they leave your phone, so the phones that carry them can't open \
+                    them.
+                    """,
+                comment: "Encryption sheet: relaying phones cannot open messages or photos"
+            )
+        }
+
+        /// What travels unencrypted: reactions.
+        public static var encryptionReactions: String {
+            NSLocalizedString(
+                "chat.encryption.reactions",
+                bundle: .main,
+                value: """
+                    Reactions travel unencrypted. The phones that carry them can see who reacted and with which emoji, but \
+                    not what the message says.
+                    """,
+                comment: "Encryption sheet: reactions are not encrypted"
+            )
+        }
+
+        /// A DM's one limit: no forward secrecy yet.
+        public static var encryptionSecrecy: String {
+            NSLocalizedString(
+                "chat.encryption.secrecy",
+                bundle: .main,
+                value: """
+                    This version doesn't have forward secrecy yet. Anyone who later gets the keys from either phone could \
+                    open what they recorded earlier.
+                    """,
+                comment: "Encryption sheet: DMs have no forward secrecy in this version"
             )
         }
 

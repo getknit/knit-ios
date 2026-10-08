@@ -92,21 +92,41 @@ extension Copy {
             )
         }
 
-        /// The one boundary of the iPhone's radio, said once (`.agents/rules/copy.md`): new people are found only while
-        /// Knit is open, and in the background a message waits for a phone that can wake Knit (ADR 2026-09.khjj).
-        public static var boundary: String {
+        // The one boundary of the iPhone's radio, said once (`.agents/rules/copy.md`), as three points: new people are
+        // found only while Knit is open, and in the background a message waits for a phone that can wake Knit (ADR
+        // 2026-09.khjj).
+
+        /// The boundary's first point: where new people are found.
+        public static var boundaryOpen: String {
             NSLocalizedString(
-                "status.boundary",
+                "status.boundary.open",
                 bundle: .main,
-                value: """
-                    Knit finds new people while it's open. In the background it stays linked to them, and some phones can wake it to \
-                    deliver a message. Messages from the rest arrive when you next open Knit.
-                    """,
-                comment: "Where the app says once that new people are found only while it is open, and what reaches it in the background"
+                value: "Knit finds new people while it's open.",
+                comment: "How Knit connects: new people are found only while the app is open"
             )
         }
 
-        /// The button beside a running status line that shows ``boundary``.
+        /// The boundary's second point: what reaches Knit in the background.
+        public static var boundaryBackground: String {
+            NSLocalizedString(
+                "status.boundary.background",
+                bundle: .main,
+                value: "In the background it stays linked to them, and some phones can wake it to deliver a message.",
+                comment: "How Knit connects: in the background links stay up, and some phones can wake the app"
+            )
+        }
+
+        /// The boundary's third point: what waits.
+        public static var boundaryLater: String {
+            NSLocalizedString(
+                "status.boundary.later",
+                bundle: .main,
+                value: "Messages from the rest arrive when you next open Knit.",
+                comment: "How Knit connects: messages from phones that cannot wake the app wait until it is next open"
+            )
+        }
+
+        /// The button beside a running status line that shows the boundary, and the title of the sheet it opens.
         public static var boundaryButton: String {
             NSLocalizedString(
                 "status.boundary-button",
@@ -127,6 +147,11 @@ extension Copy {
         /// The public room's name.
         public static var nearby: String {
             NSLocalizedString("chat-list.nearby", bundle: .main, value: "Nearby", comment: "The public room everyone in range shares")
+        }
+
+        /// A row's time when its newest message is under a minute old.
+        public static var justNow: String {
+            NSLocalizedString("chat-list.now", bundle: .main, value: "Now", comment: "Chat list: a message sent under a minute ago")
         }
 
         /// A thread with nothing in it yet.

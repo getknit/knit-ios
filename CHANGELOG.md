@@ -87,6 +87,9 @@ document:
   phone says is coming instead of fetching another copy.
 - Fewer spare copies of a photo now hold up your messages. Once your iPhone has a photo, or turns to another
   phone for it, it tells the Android phones it asked to drop any copy they haven't started sending.
+- Chats now draws no lines between rows, shows shorter times such as "7m" and "Tue", and drops the second
+  ring around your picture. Longer explanations in Settings now sit behind info buttons, and the encryption
+  sheet fits its text.
 
 ## About this file
 

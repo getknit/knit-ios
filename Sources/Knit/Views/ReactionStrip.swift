@@ -32,22 +32,25 @@
         }
     }
 
-    /// One chip: the emoji, and how many chose it once that is more than one.
+    /// One chip: the emoji, and how many chose it once that is more than one. A count that changes rolls to its new
+    /// figure, and our own choice taps once under the finger.
     private struct ChipLabel: View {
         let chip: ReactionChip
 
         var body: some View {
-            HStack(spacing: Layout.hairline) {
+            HStack(spacing: Layout.tight) {
                 Text(chip.emoji)
+                    .font(.subheadline)
                 if chip.count > 1 {
                     Text(chip.count, format: .number)
+                        .font(.footnote.weight(.medium))
                         .monospacedDigit()
+                        .contentTransition(.numericText(value: Double(chip.count)))
                 }
             }
-            .font(.footnote)
             .foregroundStyle(.primary)
-            .padding(.horizontal, Layout.small)
-            .padding(.vertical, Layout.hairline)
+            .padding(.horizontal, Layout.chipPaddingHorizontal)
+            .padding(.vertical, Layout.chipPaddingVertical)
             .background(Palette.incomingBubble, in: .capsule)
             .overlay {
                 if chip.mine {
@@ -58,6 +61,8 @@
             .background(.background, in: .capsule)
             .frame(minHeight: Layout.chipHeight)
             .contentShape(.capsule)
+            .animation(.snappy, value: chip)
+            .sensoryFeedback(.selection, trigger: chip.mine)
         }
     }
 

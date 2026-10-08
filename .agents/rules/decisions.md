@@ -60,9 +60,10 @@ growing an explanation, that explanation belongs in the ADR.
 | a string a person reads, `Copy`, `App/Info.plist`'s usage strings, or a view's text | [ADR 2026-09.ycza](../memory/decisions/2026-09-ycza-user-facing-copy-lives-in.md) |
 | `check.sh periphery`, a `verify:periphery` job, a `periphery:ignore`, or a Periphery finding | [ADR 2026-09.xgtz](../memory/decisions/2026-09-xgtz-periphery-blocks-on-the-mac.md) |
 | a view's colors, `Palette`, `KnitUITests`, `AuditPolicy`, `scripts/check.sh uitest`, or an accessibility audit finding | [ADR 2026-09.jcdx](../memory/decisions/2026-09-jcdx-the-accessibility-audit-blocks.md) |
-| a view's look or layout, `Swatches`, `KnitMarkPath`, `KnitMark`, `View+Buttons.swift`, Liquid Glass, the app icon, or where Search will go | [ADR 2026-10.5waw](../memory/decisions/2026-10-5waw-knit-s-ios-look.md) |
+| a view's look or layout, `Swatches`, `KnitMarkPath`, `KnitMark`, `View+Buttons.swift`, `InfoSheet`, Liquid Glass, the app icon, or where Search will go | [ADR 2026-10.5waw](../memory/decisions/2026-10-5waw-knit-s-ios-look.md) |
 | a thread's rows or scrolling, `MessageList`, `ThreadCollection`, `openRoute`, or a SwiftUI view drawn in a UIKit cell | [ADR 2026-10.pkbu](../memory/decisions/2026-10-pkbu-a-thread-is-a-uikit.md) |
 | `KnitDeviceTests`, the `KnitDevice` scheme, `scripts/check.sh devicetest`, `SystemApps`, or an id that names a state | [ADR 2026-09.63em](../memory/decisions/2026-09-63em-device-ui-tests-run-by.md) |
+| the store's screenshots, `KnitShots`, the `KnitShots` scheme, or `scripts/check.sh shots` | [ADR 2026-10.5u39](../memory/decisions/2026-10-5u39-store-screenshots-come-from-a.md) |
 
 ## Where they live
 

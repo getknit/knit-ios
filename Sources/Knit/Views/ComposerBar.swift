@@ -9,6 +9,7 @@
     internal struct ComposerBar: View {
         @Bindable var model: ChatModel
         let demoPhoto: Data?
+        @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
         var body: some View {
             VStack(alignment: .trailing, spacing: Layout.tight) {
@@ -31,16 +32,31 @@
                         .frame(minHeight: Layout.hitTarget)
                         .background(Palette.incomingBubble, in: .rect(cornerRadius: Layout.composerCorner, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: Layout.composerCorner, style: .continuous)
-                                .strokeBorder(.separator)
+                            // On the opaque bar the field needs an edge; inside the glass panel the panel draws one, and
+                            // a second ring inside it looked heavy.
+                            if !isGlass {
+                                RoundedRectangle(cornerRadius: Layout.composerCorner, style: .continuous)
+                                    .strokeBorder(.separator)
+                            }
                         }
                         .accessibilityIdentifier(AccessibilityID.chatInput)
                     SendButton(model: model, demoPhoto: demoPhoto)
                         .frame(minWidth: Layout.hitTarget, minHeight: Layout.hitTarget)
+                        // Add photo turns into Send, and back, with a quick swap rather than a cut.
+                        .animation(.snappy, value: model.offersPhoto)
                 }
             }
             .padding(Layout.small)
             .glassPanel()
+        }
+
+        /// Whether ``SwiftUI/View/glassPanel()`` draws glass here, as it does from iOS 26 unless Reduce Transparency is on.
+        private var isGlass: Bool {
+            if #available(iOS 26, *) {
+                !reduceTransparency
+            } else {
+                false
+            }
         }
     }
 
@@ -97,6 +113,7 @@
                         .labelStyle(.iconOnly)
                         .font(.title)
                 }
+                .transition(.scale(scale: Layout.swapScale).combined(with: .opacity))
                 .accessibilityIdentifier(AccessibilityID.chatAddPhoto)
             } else {
                 Button {
@@ -114,6 +131,7 @@
                         }
                 }
                 .disabled(!model.canSend)
+                .transition(.scale(scale: Layout.swapScale).combined(with: .opacity))
                 .sensoryFeedback(.impact(weight: .light), trigger: model.isSending) { was, now in !was && now }
                 .accessibilityLabel(spinning ? Copy.Chat.sending : Copy.Chat.send)
                 .accessibilityIdentifier(AccessibilityID.chatSend)

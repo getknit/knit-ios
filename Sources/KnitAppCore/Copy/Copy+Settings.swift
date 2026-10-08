@@ -23,13 +23,33 @@ extension Copy {
             NSLocalizedString("settings.start", bundle: .main, value: "Start mesh", comment: "Settings: starts the mesh")
         }
 
-        /// What stopping does.
+        /// What stopping costs, short, under the button; ``meshInfo`` holds the rest.
         public static var stopFooter: String {
+            NSLocalizedString(
+                "settings.stop.footer.short",
+                bundle: .main,
+                value: "Messages you write while the mesh is stopped wait on this iPhone.",
+                comment: "Settings: under Stop mesh, what happens to messages while it is stopped"
+            )
+        }
+
+        /// The info button beside Stop and Start, and the title of the sheet it opens.
+        public static var meshInfo: String {
+            NSLocalizedString(
+                "settings.mesh.info",
+                bundle: .main,
+                value: "About the mesh",
+                comment: "Settings: the info button beside Stop mesh, and the title of the sheet it opens"
+            )
+        }
+
+        /// What stopping does, in full, first in ``meshInfo``'s sheet.
+        public static var stopDetail: String {
             NSLocalizedString(
                 "settings.stop.footer",
                 bundle: .main,
                 value: """
-                    Stopping closes every link and stops looking for people. Messages you write meanwhile wait on this phone until you \
+                    Stopping closes every link and stops looking for people. Messages you write meanwhile wait on this iPhone until you \
                     start again.
                     """,
                 comment: "Settings: what stopping the mesh does"
@@ -61,15 +81,13 @@ extension Copy {
             NSLocalizedString("settings.notifications.off", bundle: .main, value: "Off", comment: "Settings: notifications are refused")
         }
 
-        /// How to change a refusal.
+        /// What notifications are for.
         public static var notificationsFooter: String {
             NSLocalizedString(
-                "settings.notifications.footer",
+                "settings.notifications.footer.short",
                 bundle: .main,
-                value: """
-                    Notifications tell you about messages that arrive while Knit is in the background. Change them in the Settings app.
-                    """,
-                comment: "Settings: what notifications do, and where to change them"
+                value: "Hear about messages that arrive while Knit is in the background.",
+                comment: "Settings: what notifications are for"
             )
         }
 

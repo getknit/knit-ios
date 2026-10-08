@@ -111,6 +111,24 @@ targets:
         # Its runner, app.getknit.knit.devicetests.xctrunner, installs on the phone, so it signs as the app does and
         # -allowProvisioningUpdates makes its profile.
         CODE_SIGN_STYLE: Automatic
+  # The store's screenshots (`scripts/check.sh shots`, ADR 2026-10.5u39): the screens the listing shows, on the marketing
+  # scene, in light and dark. Only the KnitShots scheme runs it, in a Simulator of its own.
+  KnitShots:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ../Tests/KnitShots
+      - path: ../Tests/KnitUITests/Walking.swift
+      - path: ../Sources/KnitAppCore/AccessibilityID.swift
+    dependencies:
+      - target: KnitApp
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.shots
+        TARGETED_DEVICE_FAMILY: "1"
+        LM_SKIP_METADATA_EXTRACTION: true
 schemes:
   Knit:
     build:
@@ -147,3 +165,12 @@ schemes:
       config: Debug
       targets:
         - KnitDeviceTests
+  KnitShots:
+    build:
+      targets:
+        KnitApp: all
+        KnitShots: [test]
+    test:
+      config: Debug
+      targets:
+        - KnitShots

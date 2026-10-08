@@ -82,9 +82,13 @@
                     }
                 }
             }
-            .sheet(isPresented: $showsEncryption) {
-                EncryptionSheet(text: state.isGroup ? Copy.Groups.encryptionBody : Copy.Chat.encryptionBody(state.title))
-            }
+            .infoSheet(
+                isPresented: $showsEncryption,
+                symbol: state.isVerified ? "checkmark.shield.fill" : "lock.fill",
+                title: Copy.Chat.encrypted,
+                points: state.isGroup ? EncryptionSheet.group : EncryptionSheet.direct(state.title),
+                identifier: nil
+            )
             .fullScreenCover(item: $viewing) { photo in
                 PhotoViewer(photo: photo)
             }

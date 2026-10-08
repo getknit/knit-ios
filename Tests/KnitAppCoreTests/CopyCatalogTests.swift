@@ -37,7 +37,7 @@ import Testing
             Copy.Status.unsupported,
             Copy.Status.stopped,
             Copy.Status.start,
-            Copy.Status.boundary,
+            Copy.Status.boundaryOpen,
             Copy.Status.boundaryButton,
             Copy.ChatList.title,
             Copy.ChatList.nearby,
@@ -149,7 +149,7 @@ import Testing
             Copy.Chat.directEmpty("Sam"),
             Copy.Chat.remaining(1),
             Copy.Chat.remaining(2),
-            Copy.Chat.encryptionBody("Sam"),
+            Copy.Chat.encryptionWho("Sam"),
             Copy.Chat.requestTitle("Sam"),
             Copy.Profile.remaining(3),
             Copy.Profile.safetyNumberCaption("Sam"),
@@ -165,7 +165,7 @@ import Testing
             Copy.Diagnostics.clockAhead(seconds: 5),
             Copy.Diagnostics.clockBehind(seconds: 5),
         ] + Self.groupStrings + Self.newMessageStrings + Self.verifyStrings + Self.photoStrings + Self.blockStrings + Self.deleteStrings
-            + Self.moderationStrings + Self.reactionStrings + Self.reportStrings + Self.termsStrings
+            + Self.moderationStrings + Self.reactionStrings + Self.reportStrings + Self.termsStrings + Self.infoStrings
     }
 
     private static var photoStrings: [String] {
@@ -210,7 +210,7 @@ import Testing
             Copy.Groups.leaveTitle,
             Copy.Groups.leaveBody,
             Copy.Groups.leaveAction,
-            Copy.Groups.encryptionBody,
+            Copy.Groups.encryptionWho,
             Copy.Groups.nobodyLeft,
             Copy.Groups.waitingForKeys,
             Copy.Groups.requestTitle("Sam"),

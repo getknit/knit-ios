@@ -129,7 +129,7 @@ import Testing
         #expect(Copy.Diagnostics.sighting(rssi: -67, secondsAgo: 3) == "-67 dBm, 3 s ago")
         #expect(Copy.Diagnostics.link(version: 3, capabilities: "9") == "v3, caps 9")
         #expect(Copy.Onboarding.nameBody(alias: "OptimallyArtfulFox").contains("OptimallyArtfulFox"))
-        #expect(Copy.Chat.encryptionBody("Sam").hasPrefix("Only you and Sam"))
+        #expect(Copy.Chat.encryptionWho("Sam") == "Only you and Sam can read this chat or see its photos.")
         #expect(Copy.Profile.safetyNumberCaption("Sam").contains("Sam"))
         #expect(Copy.Profile.codeCaption("Sam") == "Let Sam scan this code to verify you.")
         #expect(Copy.Profile.scanOutcome(.match, name: "Sam") == "The keys match. Sam is now verified.")
@@ -139,7 +139,7 @@ import Testing
     }
 
     @Test func aWrappedStringReadsAsOneLine() {
-        #expect(!Copy.Chat.encryptionBody("Sam").contains("\n"))
+        #expect(!Copy.Settings.stopDetail.contains("\n"))
         #expect(!Copy.About.security.contains("\n"))
         #expect(!Copy.System.bluetoothUsage.contains("  "))
         #expect(!Copy.System.cameraUsage.contains("\n") && !Copy.System.cameraUsage.contains("  "))

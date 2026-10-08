@@ -79,19 +79,39 @@
         }
     }
 
-    /// Content filtering, and what it does (ADR 2026-10.rpmq).
+    /// Content filtering, what it does in a line, and the rest behind an info button (ADR 2026-10.rpmq).
     private struct ContentFilterSection: View {
         @Bindable var screening: PhotoScreening
+        @State private var showsInfo = false
 
         var body: some View {
             Section {
-                Toggle(isOn: $screening.filtersContent) {
+                // The info button sits beside the switch, not in its label, where VoiceOver would fold it into the
+                // switch and never reach it.
+                HStack(spacing: Layout.tight) {
                     RowLabel(Copy.Moderation.filter, symbol: "eye.slash")
+                        .accessibilityHidden(true)
+                    InfoButton(label: Copy.Moderation.filterInfo) { showsInfo = true }
+                    Spacer()
+                    Toggle(Copy.Moderation.filter, isOn: $screening.filtersContent)
+                        .labelsHidden()
+                        .accessibilityLabel(Copy.Moderation.filter)
+                        .accessibilityIdentifier(AccessibilityID.settingsContentFiltering)
                 }
-                .accessibilityIdentifier(AccessibilityID.settingsContentFiltering)
             } footer: {
                 SectionNote(Copy.Moderation.filterFooter)
             }
+            .infoSheet(
+                isPresented: $showsInfo,
+                symbol: "eye.slash",
+                title: Copy.Moderation.filter,
+                points: [
+                    InfoPoint(symbol: "iphone", text: Copy.Moderation.filterOnDevice),
+                    InfoPoint(symbol: "person.crop.circle", text: Copy.Moderation.filterProfilePhoto),
+                    InfoPoint(symbol: "exclamationmark.triangle", text: Copy.Moderation.filterMistakes),
+                ],
+                identifier: nil
+            )
         }
     }
 
@@ -113,26 +133,37 @@
         }
     }
 
-    /// Stop and Start, what stopping does, and the radio's one boundary.
+    /// Stop and Start, what stopping costs in a line, and the rest, with the radio's one boundary, behind an info button.
     private struct MeshSection: View {
         let isRunning: Bool
         let toggle: () -> Void
+        @State private var showsInfo = false
 
         var body: some View {
             Section {
-                Button(action: toggle) {
-                    RowLabel(isRunning ? Copy.Settings.stop : Copy.Settings.start, symbol: isRunning ? "pause.circle" : "play.circle")
+                HStack(spacing: Layout.tight) {
+                    // Borderless beside the info button, so each takes its own taps; the label fills the row up to it.
+                    Button(action: toggle) {
+                        RowLabel(isRunning ? Copy.Settings.stop : Copy.Settings.start, symbol: isRunning ? "pause.circle" : "play.circle")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityIdentifier(AccessibilityID.settingsMesh)
+                    InfoButton(label: Copy.Settings.meshInfo) { showsInfo = true }
                 }
-                .accessibilityIdentifier(AccessibilityID.settingsMesh)
             } header: {
                 SectionNote(Copy.Settings.meshSection)
             } footer: {
-                VStack(alignment: .leading, spacing: Layout.small) {
-                    Text(Copy.Settings.stopFooter)
-                    Text(Copy.Status.boundary)
-                }
-                .foregroundStyle(Palette.secondaryText)
+                SectionNote(Copy.Settings.stopFooter)
             }
+            .infoSheet(
+                isPresented: $showsInfo,
+                symbol: "point.3.connected.trianglepath.dotted",
+                title: Copy.Settings.meshInfo,
+                points: [InfoPoint(symbol: "pause.circle", text: Copy.Settings.stopDetail)] + Copy.Status.boundaryPoints,
+                identifier: nil
+            )
         }
     }
 

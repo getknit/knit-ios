@@ -23,6 +23,10 @@
         static let cardCorner: CGFloat = 16
         /// Knit's mark beside a heading.
         static let markInline: CGFloat = 22
+        /// The disc around an info sheet's glyph.
+        static let infoHero: CGFloat = 56
+        /// The column an info sheet's point's glyph sits in.
+        static let infoGlyph: CGFloat = 24
         /// Knit's mark heading the welcome page.
         static let markHero: CGFloat = 96
         /// The status line's dot, as Android draws it (8 dp).
@@ -36,8 +40,12 @@
         static let bubbleJoin: CGFloat = 4
         /// Between the bubbles of one run.
         static let clusterGap: CGFloat = 2
-        /// A reaction chip's least height, ring included, so a short row of emoji still stands clear of the bubble.
-        static let chipHeight: CGFloat = 28
+        /// A reaction chip's least height, ring included, so a short row of emoji still stands clear of the bubble, and a
+        /// lone emoji's chip reads round rather than as a flat bar.
+        static let chipHeight: CGFloat = 32
+        /// A reaction chip's padding around its emoji, inside the ring.
+        static let chipPaddingVertical: CGFloat = 5
+        static let chipPaddingHorizontal: CGFloat = 9
         /// The tint's outline around our own reaction's chip.
         static let chipOutline: CGFloat = 1.5
         /// A thread's note's corners.
@@ -52,6 +60,8 @@
         static let hitTarget: CGFloat = 44
         /// A preview's lines in a list.
         static let previewLines = 2
+        /// How small the composer's button shrinks as Add photo and Send swap.
+        static let swapScale: CGFloat = 0.6
         /// How far the composer grows before it scrolls.
         static let composerLines = 1...6
         /// A verify code's side, as Android shows it (200 dp).
@@ -60,8 +70,9 @@
         static let codeQuietZone: CGFloat = 12
 
         // A face's side on each surface, as Android sizes it.
-        /// Ours, at the chat list's top left, where it opens Settings.
-        static let faceToolbar: CGFloat = 32
+        /// Ours, at the chat list's top left, where it opens Settings. Larger than Android's 32 dp: with no glass disc
+        /// behind it, it stands opposite the 44-point compose button, and at 32 it read undersized.
+        static let faceToolbar: CGFloat = 40
         /// A chat list row's.
         static let faceList: CGFloat = 52
         /// A thread's, beside its title.

@@ -4,7 +4,7 @@
 #     scripts/check.sh fast        # format, lint, build, unit tests (the pre-push hook)
 #     scripts/check.sh all         # every gate that runs on Linux
 #     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama xcode uitest device devicetest
-#                                  # release archive upload
+#                                  # release archive upload shots
 #
 # Each build variant (coverage, TSan, ASan, analyze) gets its own --scratch-path, so switching between them never
 # rebuilds the plain debug tree. `.agents/context/commands.md` explains when to run which.
@@ -192,7 +192,8 @@ xcode_archive=.build-xcode/Knit.xcarchive
 xcode_export=.build-xcode/export
 # Xcode indexes while it builds; Periphery reads this store for the app's own code.
 xcode_index=.build-xcode/Index.noindex/DataStore
-# Each gate names its scheme: Knit for the app and the Simulator's UI tests, KnitDevice for the iPhone's device tests.
+# Each gate names its scheme: Knit for the app and the Simulator's UI tests, KnitDevice for the iPhone's device tests,
+# KnitShots for the store's screenshots.
 xcode_common=(-project App/Knit.xcodeproj -derivedDataPath .build-xcode -jobs "$swift_jobs" -disableAutomaticPackageResolution)
 xcode_build=("${xcode_common[@]}" -configuration Debug)
 xcode_release=("${xcode_common[@]}" -configuration Release)
@@ -290,6 +291,9 @@ gate_xcode() {
 	# The device tests compile here too, unsigned, so a change that breaks them fails in CI rather than at the phone.
 	xcodebuild "${xcode_build[@]}" -scheme KnitDevice -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO \
 		build-for-testing | tee -a "$log" | "${xcode_pretty[@]}"
+	# So does the store's screenshot walk, which only `check.sh shots` runs (ADR 2026-10.5u39).
+	xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO \
+		build-for-testing | tee -a "$log" | "${xcode_pretty[@]}"
 	no_warnings "$log"
 }
 
@@ -334,12 +338,68 @@ gate_uitest() {
 		-resultBundlePath "$results" -collect-test-diagnostics never test | "${xcode_pretty[@]}"
 }
 
-# Makes a Simulator named $1 unless one exists: an iPhone 18 Pro, the model the audit was set on (ADR 2026-09.jcdx),
-# on the newest iOS runtime.
+# Makes a Simulator named $1 unless one exists, on the newest iOS runtime: the model $2, or an iPhone 18 Pro, the model
+# the audit was set on (ADR 2026-09.jcdx).
 simulator_named() {
 	if ! xcrun simctl list devices available | grep -qF -- "    $1 ("; then
-		xcrun simctl create "$1" "iPhone 18 Pro" >/dev/null
+		xcrun simctl create "$1" "${2:-iPhone 18 Pro}" >/dev/null
 	fi
+}
+
+# The store's screenshots (ADR 2026-10.5u39): KnitShots walks the screens the listing shows on the marketing scene, in
+# light and dark, and each lands in .build-xcode/shots/ as <light|dark>_<shot>.png. It runs in a Simulator of its own,
+# "Knit shots", an iPhone 18 Pro Max, whose 6.9-inch screen is the size App Store Connect asks for, so no shot is scaled.
+# The status bar is frozen first: 9:41, a full battery, and no cellular or Wi-Fi bars, since Knit needs neither. The
+# walk is built once and run once per appearance. KNIT_SHOTS narrows the run to some of KnitShots' tests by name
+# (testChatList testNearby), and KNIT_SHOT_MODES to one appearance (light or dark). Nothing here checks the app, so no
+# CI job runs it.
+gate_shots() {
+	step "xcodebuild test (KnitShots, the store's screenshots, in the Simulator)"
+	xcode_project shots
+	local simulator=${KNIT_SIMULATOR:-Knit shots}
+	simulator_named "$simulator" "iPhone 18 Pro Max"
+	# Booted afresh, and the appearance set here with `simctl ui`, which a running Simulator draws at once. In this
+	# Simulator, XCUIDevice.appearance set from the test changed what it reported and nothing it drew: every dark shot came
+	# out byte for byte the light one (iOS 27.0, 2026-10-07), though KnitUITests' dark walk draws dark in "Knit local".
+	xcrun simctl shutdown "$simulator" 2>/dev/null || true
+	xcrun simctl boot "$simulator"
+	xcrun simctl bootstatus "$simulator" -b >/dev/null
+	xcrun simctl status_bar "$simulator" override --time 9:41 --batteryState discharging --batteryLevel 100 \
+		--cellularMode notSupported --wifiBars 0 --dataNetwork hide
+	local only=() test
+	for test in ${KNIT_SHOTS:-}; do
+		only+=("-only-testing:KnitShots/KnitShots/$test")
+	done
+	local destination="platform=iOS Simulator,name=$simulator" out=.build-xcode/shots status=0 mode results
+	rm -rf "$out" .build-xcode/shots-*.xcresult
+	xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination "$destination" build-for-testing | "${xcode_pretty[@]}"
+	for mode in ${KNIT_SHOT_MODES:-light dark}; do
+		xcrun simctl ui "$simulator" appearance "$mode"
+		results=.build-xcode/shots-$mode.xcresult
+		# xcodebuild hands a TEST_RUNNER_ variable to the test runner without its prefix. A shot whose screen never
+		# appeared fails its test, and the rest are still worth keeping, so the run goes on to export them.
+		TEST_RUNNER_KNIT_SHOT_MODE=$mode xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination "$destination" \
+			"${only[@]}" -resultBundlePath "$results" -collect-test-diagnostics never test-without-building |
+			"${xcode_pretty[@]}" || status=$?
+		xcrun xcresulttool export attachments --path "$results" --output-path "$out/$mode" >/dev/null
+	done
+	xcrun simctl ui "$simulator" appearance light
+	# The export names each file by a UUID; manifest.json maps it back to the attachment's name, which XCTest suffixes.
+	# A heredoc at the margin, so Python's indentation can be tabs, as .editorconfig asks of shell files.
+	python3 - "$out" <<'PY'
+import json, pathlib, re, shutil, sys
+out = pathlib.Path(sys.argv[1])
+for manifest in out.glob("*/manifest.json"):
+	for test in json.loads(manifest.read_text()):
+		for attachment in test["attachments"]:
+			name = re.match(r"(?:light|dark)_[a-z-]+", attachment["suggestedHumanReadableName"])
+			if name:
+				shutil.copy(manifest.parent / attachment["exportedFileName"], out / f"{name[0]}.png")
+PY
+	local count
+	count=$(find "$out" -maxdepth 1 -name "*.png" | wc -l | tr -d " ")
+	echo "$count screenshots in $out/"
+	return "$status"
 }
 
 # The signed iPhone build (ADR 2026-09.zawh). Signing needs the login Keychain, which only the desktop session has
@@ -560,9 +620,9 @@ case "${1:-fast}" in
 fast) run format lint build test ;;
 all) run format lint adr build test coverage tsan asan analyze lintorama ;;
 format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | xcode | uitest | device | devicetest | \
-	release | archive | upload) run "$@" ;;
+	release | archive | upload | shots) run "$@" ;;
 *)
-	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest|release|archive|upload]" >&2
+	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest|release|archive|upload|shots]" >&2
 	exit 2
 	;;
 esac

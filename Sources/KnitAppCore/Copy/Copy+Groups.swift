@@ -114,19 +114,39 @@ extension Copy {
             NSLocalizedString("groups.leave.action", bundle: .main, value: "Leave", comment: "Group info: the button that confirms leaving")
         }
 
-        /// What group encryption covers, and what it does not: the name, the members and reactions (ADR 2026-10.ehe6).
-        public static var encryptionBody: String {
+        // A group's encryption sheet: whom it covers, what travels unencrypted (the name, the members, and reactions, ADR
+        // 2026-10.ehe6), and the one limit v1 has. ``Chat/encryptionSealed`` and ``Chat/encryptionReactions`` sit between.
+
+        /// Whom a group's encryption covers.
+        public static var encryptionWho: String {
             NSLocalizedString(
-                "groups.encryption.body",
+                "groups.encryption.who",
+                bundle: .main,
+                value: "Only the group's members can read its messages or see its photos.",
+                comment: "Encryption sheet: who can read a group"
+            )
+        }
+
+        /// What a group shows the phones that carry it.
+        public static var encryptionRoster: String {
+            NSLocalizedString(
+                "groups.encryption.roster",
+                bundle: .main,
+                value: "The group's name and member list travel unencrypted, so the phones that carry them can see who's in it.",
+                comment: "Encryption sheet: a group's name and members are not encrypted"
+            )
+        }
+
+        /// A group's one limit: no forward secrecy yet.
+        public static var encryptionSecrecy: String {
+            NSLocalizedString(
+                "groups.encryption.secrecy",
                 bundle: .main,
                 value: """
-                    Only the group's members can read its messages or see its photos. Messages and photos are sealed before they leave \
-                    your phone, so the phones that carry them can't open them. The group's name and member list travel unencrypted, so \
-                    those phones can see who's in it. Reactions do too: those phones can see who reacted to a message and with which \
-                    emoji, but not what it says. This version doesn't have forward secrecy yet: anyone who later gets a member's keys \
-                    could open what they recorded earlier.
+                    This version doesn't have forward secrecy yet. Anyone who later gets a member's keys could open what \
+                    they recorded earlier.
                     """,
-                comment: "Chat: what group encryption covers"
+                comment: "Encryption sheet: groups have no forward secrecy in this version"
             )
         }
 
