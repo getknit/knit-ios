@@ -49,6 +49,7 @@ growing an explanation, that explanation belongs in the ADR.
 | a photo in a chat, `AttachmentCrypto`, `MessageAttachment`, `ChatAttachment`, the composer's photo, or the viewer's Save | [ADR 2026-10.6cas](../memory/decisions/2026-10-6cas-a-photo-in-a-chat.md) |
 | blocking, `BlockStore`, `MeshEngine+Blocks`, `DropReason.blocked`, the Blocked people screen, or anything the delivery path reads that custody must not | [ADR 2026-10.5wgg](../memory/decisions/2026-10-5wgg-a-block-hides-a-person.md) |
 | reporting, `AbuseReport`, `ReportEmail`, `AppSession.report`, `View+Report.swift`, the report address, or About's Email Knit | [ADR 2026-10.f6kf](../memory/decisions/2026-10-f6kf-a-report-blocks-the-person.md) |
+| what is screened on sending, `ChatModel.send` or `choosePhoto`'s checks, a profile photo's screening, or `profilePhotoRefused` | [ADR 2026-10.spcy](../memory/decisions/2026-10-spcy-the-iphone-screens-on-sending.md) |
 | the slur list, `App/Models/Slurs.txt`, `TextScreening`'s order of lists, or `TextScreening.bundled` | [ADR 2026-10.8e2u](../memory/decisions/2026-10-8e2u-every-conversation-runs-android-s.md) |
 | the terms of use, `Terms`, `OnboardingStep.terms`, `acceptedTerms`, `TermsView`, or a launch that skips the terms | [ADR 2026-10.cgm3](../memory/decisions/2026-10-cgm3-everyone-agrees-to-terms-with.md) |
 | the content filter, `PhotoScreening`, `ExplicitPhoto`, `Sources/Knit/Moderation/`, `App/Models/`, `tools/models/`, or `-demoSensitive` | [ADR 2026-10.rpmq](../memory/decisions/2026-10-rpmq-photos-from-others-are-screened.md) |

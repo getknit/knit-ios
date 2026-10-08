@@ -3,8 +3,8 @@
     import SwiftUI
 
     extension View {
-        /// A thread's answers to an explicit photo just picked (ADR 2026-10.rpmq): the room refuses it, and a DM or a group
-        /// asks whether to send it anyway.
+        /// A thread's answer to an explicit photo just picked for the room, which refuses it (ADR 2026-10.rpmq). A DM or a
+        /// group takes any photo unchecked (ADR 2026-10.spcy).
         func answersExplicitPhotos(of model: ChatModel) -> some View {
             modifier(ExplicitPhotoAlerts(model: model))
         }
@@ -21,12 +21,6 @@
                     }
                 } message: {
                     Text(Copy.Moderation.roomRefusal)
-                }
-                .alert(Copy.Moderation.explicitTitle, isPresented: $model.asksAboutExplicitPhoto) {
-                    Button(Copy.Moderation.sendAnyway) { Task { await model.keepExplicitPhoto() } }
-                    Button(Copy.Common.cancel, role: .cancel, action: model.dropExplicitPhoto)
-                } message: {
-                    Text(Copy.Moderation.explicitAsk)
                 }
         }
     }

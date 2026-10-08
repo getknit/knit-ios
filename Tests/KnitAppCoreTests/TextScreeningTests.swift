@@ -268,6 +268,18 @@ actor HeldTextClassifier: TextClassifier {
         #expect(rig.mesh.calls.room == [Self.fine])
     }
 
+    @Test func aDMOrAGroupSendsItsWordsUnread() async {
+        // knit-next ADR 2026-10.9rh6: the receiver's phone screens what arrives, so the sender's never reads them.
+        let (screening, classifier) = Self.screening()
+        let rig = AppRig(screening: screening)
+        let model = ChatModel(conversationId: AppRig.sam.nodeId.string, session: rig.session)
+        model.draft = Self.threat
+        await model.send()
+        #expect(!model.wordsRefused && model.draft.isEmpty)
+        #expect(rig.mesh.calls.direct == ["\(AppRig.sam.nodeId): \(Self.threat)"])
+        #expect(await classifier.asked.isEmpty)
+    }
+
     @Test func profanityGoesInADM() async {
         let (screening, _) = Self.screening()
         let rig = AppRig(screening: screening)
@@ -281,7 +293,7 @@ actor HeldTextClassifier: TextClassifier {
     @Test func sendIsUnderWayWhileTheWordsAreCheckedAndATapMeanwhileSendsNothingMore() async {
         let classifier = HeldTextClassifier()
         let rig = AppRig(screening: TextScreening(classifier: classifier, words: WordFilter(words: []), slurs: WordFilter(words: [])))
-        let model = ChatModel(conversationId: AppRig.sam.nodeId.string, session: rig.session)
+        let model = ChatModel(conversationId: Conversations.nearby, session: rig.session)
         model.draft = Self.fine
         let first = Task { await model.send() }
         await classifier.holding()
@@ -291,6 +303,6 @@ actor HeldTextClassifier: TextClassifier {
         await classifier.release()
         await first.value
         #expect(!model.isSending && model.draft.isEmpty)
-        #expect(rig.mesh.calls.direct == ["\(AppRig.sam.nodeId): \(Self.fine)"], "sent once")
+        #expect(rig.mesh.calls.room == [Self.fine], "sent once")
     }
 }

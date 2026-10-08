@@ -9,9 +9,10 @@
         @Environment(\.dismiss) private var dismiss
         private let demoPhoto: Data?
 
-        /// The profile over `session`, cropping photos through `codec`. `demoPhoto` stands in for the photo library.
-        init(session: AppSession, codec: any ImageCodec, demoPhoto: Data?) {
-            _model = State(initialValue: OwnProfileModel(session: session, codec: codec))
+        /// The profile over `session`, cropping photos through `codec` and checking them with `screening`. `demoPhoto`
+        /// stands in for the photo library.
+        init(session: AppSession, codec: any ImageCodec, screening: PhotoScreening, demoPhoto: Data?) {
+            _model = State(initialValue: OwnProfileModel(session: session, codec: codec, screening: screening))
             self.demoPhoto = demoPhoto
         }
 
@@ -59,6 +60,7 @@
                     // The alert closes itself.
                 }
             }
+
             .accessibilityIdentifier(AccessibilityID.profileScreen)
         }
     }
@@ -111,7 +113,16 @@
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, Layout.small)
             } footer: {
-                SectionNote(Copy.Profile.photoFooter)
+                // A refusal says so here rather than in an alert: it lands as the cropper closes, and SwiftUI drops an
+                // alert that starts while the cropper's page is still going (ADR 2026-10.spcy).
+                if model.photoRefused {
+                    Text(Copy.Moderation.profileRefusal)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.critical)
+                        .accessibilityIdentifier(AccessibilityID.profilePhotoRefused)
+                } else {
+                    SectionNote(Copy.Profile.photoFooter)
+                }
             }
         }
 

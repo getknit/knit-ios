@@ -54,8 +54,9 @@ extension KnitUITests {
     /// - the room's post by the fire hides its photo behind a tap, and a tap shows it;
     /// - the room's newest post hides its words behind a tap, and a tap shows them;
     /// - a photo picked for the room is refused, and so are words sent there, which stay in the composer;
-    /// - a photo picked for Sam's DM asks before it goes in the composer;
+    /// - a photo picked for Sam's DM goes straight in the composer, unchecked (ADR 2026-10.spcy);
     /// - Sam's face shows his initial, so his profile offers no photo to open;
+    /// - our own profile refuses the explicit photo once it is cropped, and has nothing to save;
     /// - Content filtering off shows the post by the fire at once.
     func walkContentFilter() throws {
         let app = launch("-demoScene", "marketing", "-demoPhoto", "-demoSensitive")
@@ -89,9 +90,8 @@ extension KnitUITests {
 
         try openDirect(in: app)
         try app.appear(AccessibilityID.chatAddPhoto).tap()
-        try app.alerts.firstMatch.appear("the DM's question")
-        app.alerts.buttons["Send anyway"].tap()
         try app.appear(AccessibilityID.chatStagedPhoto)
+        XCTAssertFalse(app.alerts.firstMatch.exists, "the DM asked about its photo")
         try app.appear(AccessibilityID.chatProfile).tap()
         try app.appear(AccessibilityID.profileDetailsScreen)
         XCTAssert(
@@ -102,6 +102,7 @@ extension KnitUITests {
         app.back()
 
         try app.appear(AccessibilityID.chatListSettings).tap()
+        try refuseProfilePhoto(in: app)
         try app.reveal(AccessibilityID.settingsContentFiltering)
         audit(app, screen: AccessibilityID.settingsScreen)
         // A toggle's element spans its row, and a tap on the middle lands on its words: the switch sits at the end. The
@@ -117,6 +118,19 @@ extension KnitUITests {
         hides.isInverted = true
         XCTAssertEqual(XCTWaiter.wait(for: [hides], timeout: Self.quiet), .completed, "the photo hid with the filter off")
         app.terminate()
+    }
+
+    /// From Settings: our profile, an explicit photo picked and cropped, its refusal audited, and nothing left to save;
+    /// then back to Settings.
+    private func refuseProfilePhoto(in app: XCUIApplication) throws {
+        try app.reveal(AccessibilityID.settingsProfileRow).tap()
+        try app.reveal(AccessibilityID.profileChoosePhoto).tap()
+        settle(try app.appear(AccessibilityID.photoCropScreen))
+        try app.appear(AccessibilityID.photoCropChoose).tap()
+        try app.reveal(AccessibilityID.profilePhotoRefused)
+        audit(app, screen: "the profile photo's refusal")
+        XCTAssertFalse(try app.appear(AccessibilityID.profileSave).isEnabled, "the refused photo waits for Save")
+        app.back()
     }
 
     /// The room's post by the fire, with its photo hidden or not. A query rather than an element, so asking about a post

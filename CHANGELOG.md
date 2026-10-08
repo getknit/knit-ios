@@ -58,13 +58,13 @@ document:
   minors, illegal content and spam. If you set Knit up before the terms existed, you'll see them once at your
   next launch, and About keeps a copy.
 - Content filtering hides explicit photos from other people until you tap them, and shows an initial in place
-  of an explicit profile picture. Your iPhone checks each photo itself, and Knit asks before you send an
-  explicit one and won't post it in Nearby.
+  of an explicit profile picture. Your iPhone checks each photo itself, and Knit won't post an explicit photo
+  in Nearby or use one as your profile picture.
 - Content filtering also hides abusive messages from other people until you tap them, in chats, the chat list
-  and notifications. Your iPhone checks each message as it arrives, and Knit won't send one that looks abusive
-  or post profanity in Nearby.
-- Content filtering now catches slurs aimed at a person in direct messages and groups, not only in Nearby, and
-  Knit won't send one. It uses the same word list as Knit for Android, so both phones hide the same words.
+  and notifications. Your iPhone checks each message as it arrives, and Knit won't post abuse or profanity in
+  Nearby, where everyone in range reads it.
+- Content filtering now catches slurs aimed at a person in direct messages and groups, not only in Nearby. It
+  uses the same word list as Knit for Android, so both phones hide the same words.
 - Long-press a message to copy or delete it, or swipe a chat or request to delete it and Nearby to clear it.
   Only your iPhone forgets them: other phones keep their copies, and you stay in any group whose chat you
   delete.

@@ -83,33 +83,49 @@ actor FakeClassifier: PhotoClassifier {
         let model = ChatModel(conversationId: Conversations.nearby, session: rig.session, codec: FakeCodec(), screening: screening)
         await model.choosePhoto(Self.picked)
         #expect(model.photoRefused && model.staged == nil)
-        #expect(model.explicitPhoto == nil && !model.asksAboutExplicitPhoto && !model.photoFailed)
+        #expect(!model.photoFailed)
     }
 
-    /// A DM or a group holds an explicit photo out of the composer until the sender says to send it anyway, or drops it.
+    /// A DM or a group takes any photo unchecked, with no question: the receiver's phone screens it (ADR 2026-10.spcy,
+    /// knit-next ADR 2026-10.9rh6).
     @Test(arguments: [false, true])
-    func aPrivateThreadAsksBeforeAnExplicitPhotoGoesIn(group: Bool) async throws {
+    func aPrivateThreadTakesAPhotoUnchecked(group: Bool) async throws {
         let rig = AppRig()
         await rig.pin(AppRig.sam, name: "Sam")
         let thread = group ? GroupId.derive([rig.me.string, AppRig.sam.nodeId.string]) : AppRig.sam.nodeId.string
-        let (screening, _) = filter(rig, [Self.prepared: FakeClassifier.explicit])
+        let (screening, classifier) = filter(rig, [Self.prepared: FakeClassifier.explicit])
         let model = ChatModel(conversationId: thread, session: rig.session, codec: FakeCodec(), screening: screening)
-
         await model.choosePhoto(Self.picked)
-        #expect(model.asksAboutExplicitPhoto && model.staged == nil && !model.photoRefused)
-        #expect(model.explicitPhoto?.bytes == Self.prepared)
-        await model.keepExplicitPhoto()
         let staged = try #require(model.staged)
-        #expect(staged.photo.bytes == Self.prepared && staged.hash == BlobHash(of: Self.prepared))
-        #expect(model.explicitPhoto == nil)
+        #expect(staged.photo.bytes == Self.prepared && !model.photoRefused)
+        #expect(await classifier.asked == 0, "never classified on the way out")
+    }
 
-        model.removePhoto()
-        model.asksAboutExplicitPhoto = false
+    /// A profile photo shows to strangers in Nearby, so an explicit one is refused when it is cropped, whatever the toggle
+    /// says, and the profile keeps the photo it had (`AvatarStore.saveOwnAvatar`, ADR 2026-10.spcy).
+    @Test func anExplicitProfilePhotoIsRefusedAndTheOldOneStays() async throws {
+        let rig = AppRig()
+        // What the crop makes of the pick, read from a profile that checks nothing.
+        let unchecked = OwnProfileModel(session: rig.session, codec: FakeCodec())
+        await unchecked.choosePhoto(Self.picked)
+        let source = try #require(unchecked.cropSource)
+        await unchecked.cropPhoto(AvatarFraming(sourceWidth: source.pixelWidth, sourceHeight: source.pixelHeight))
+        let cropped = try #require(unchecked.unsavedPhoto)
+
+        let (screening, _) = filter(rig, [cropped: FakeClassifier.explicit], filters: false)
+        let model = OwnProfileModel(session: rig.session, codec: FakeCodec(), screening: screening)
         await model.choosePhoto(Self.picked)
-        model.dropExplicitPhoto()
-        #expect(model.explicitPhoto == nil && model.staged == nil, "dropped, it never reached the composer")
-        await model.keepExplicitPhoto()
-        #expect(model.staged == nil, "there is nothing left to keep")
+        await model.cropPhoto(AvatarFraming(sourceWidth: source.pixelWidth, sourceHeight: source.pixelHeight))
+        #expect(model.photoRefused && !model.isCropping)
+        #expect(model.unsavedPhoto == nil && !model.hasChanges)
+        await model.save()
+        #expect(rig.mesh.calls.avatars.isEmpty)
+
+        let (clean, _) = filter(rig, [cropped: FakeClassifier.clean])
+        let other = OwnProfileModel(session: rig.session, codec: FakeCodec(), screening: clean)
+        await other.choosePhoto(Self.picked)
+        await other.cropPhoto(AvatarFraming(sourceWidth: source.pixelWidth, sourceHeight: source.pixelHeight))
+        #expect(!other.photoRefused && other.unsavedPhoto == cropped)
     }
 
     /// A clean photo, or one the model cannot score, goes straight into the composer, in the room as anywhere.

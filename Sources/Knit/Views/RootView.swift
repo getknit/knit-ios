@@ -169,7 +169,12 @@
             case .peer(let nodeId):
                 PeerProfileView(nodeId: nodeId, session: environment.session, camera: environment.camera)
             case .profile:
-                OwnProfileView(session: environment.session, codec: environment.codec, demoPhoto: environment.demoPhoto)
+                OwnProfileView(
+                    session: environment.session,
+                    codec: environment.codec,
+                    screening: environment.screening,
+                    demoPhoto: environment.demoPhoto
+                )
             case .settings:
                 SettingsView(session: environment.session, permission: environment.notifier, about: environment.about)
             case .blocked:

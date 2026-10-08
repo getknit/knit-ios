@@ -108,7 +108,7 @@
                     // The alert closes itself, and the words stay in the composer.
                 }
             } message: {
-                Text(state.isRoom ? Copy.Moderation.wordsRefusedInRoom : Copy.Moderation.wordsRefused)
+                Text(Copy.Moderation.wordsRefusedInRoom)
             }
             // A group we left is gone: its thread closes, however the leave came.
             .onChange(of: state.exists) { _, exists in

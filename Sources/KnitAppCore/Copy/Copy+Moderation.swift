@@ -109,16 +109,6 @@ extension Copy {
             )
         }
 
-        /// Why a DM or a group did not send a message, and that it is still in the composer.
-        public static var wordsRefused: String {
-            NSLocalizedString(
-                "moderation.refused.direct",
-                bundle: .main,
-                value: "This looks abusive, so Knit didn't send it. Your message is still there if you want to change it.",
-                comment: "Chat, in a DM or a group: a message that looks abusive was not sent"
-            )
-        }
-
         /// Why Nearby did not post a message, and that it is still in the composer.
         public static var wordsRefusedInRoom: String {
             NSLocalizedString(
@@ -132,7 +122,7 @@ extension Copy {
             )
         }
 
-        /// The title over both answers to an explicit photo picked: the DM's or group's question, and the room's refusal.
+        /// The title over the room's refusal of an explicit photo.
         public static var explicitTitle: String {
             NSLocalizedString(
                 "moderation.explicit.title",
@@ -142,23 +132,13 @@ extension Copy {
             )
         }
 
-        /// The question a DM or a group asks before an explicit photo goes in the composer.
-        public static var explicitAsk: String {
+        /// Why a profile refused an explicit photo, under the photo (ADR 2026-10.spcy).
+        public static var profileRefusal: String {
             NSLocalizedString(
-                "moderation.explicit.ask",
+                "moderation.explicit.profile",
                 bundle: .main,
-                value: "Send it only if whoever you're sending it to wants photos like this.",
-                comment: "Chat, in a DM or a group: before an explicit-looking photo is added"
-            )
-        }
-
-        /// The button that adds the photo anyway.
-        public static var sendAnyway: String {
-            NSLocalizedString(
-                "moderation.explicit.send",
-                bundle: .main,
-                value: "Send anyway",
-                comment: "Chat: adds an explicit-looking photo to the message after all"
+                value: "Everyone nearby sees your profile photo, so Knit won't use a photo like this one.",
+                comment: "Own profile: an explicit-looking profile photo is refused"
             )
         }
 

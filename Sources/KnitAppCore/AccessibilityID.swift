@@ -229,6 +229,8 @@ public enum AccessibilityID {
     public static let profileAlias = "profile_alias"
     /// Its save button.
     public static let profileSave = "profile_save"
+    /// What the profile says under its photo when it refused an explicit one (ADR 2026-10.spcy).
+    public static let profilePhotoRefused = "profile_photo_refused"
     /// Its Choose photo, or Change photo.
     public static let profileChoosePhoto = "profile_choose_photo"
     /// Its Remove photo.

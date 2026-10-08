@@ -22,6 +22,7 @@ public final class OwnProfileModel {
 
     @ObservationIgnored private let session: AppSession
     @ObservationIgnored private let codec: (any ImageCodec)?
+    @ObservationIgnored private let screening: PhotoScreening?
     private var nameText: String
     private var statusText: String
     /// Whether to invite DMs from people not met yet.
@@ -35,6 +36,9 @@ public final class OwnProfileModel {
     public private(set) var cropSource: (any PreparedImage)?
     /// Whether the last photo picked could not be read or cropped, which the screen says until it is dismissed.
     public var photoFailed = false
+    /// Whether the last photo cropped looked explicit, so the profile keeps the photo it had; the screen says so until
+    /// the next pick (ADR 2026-10.spcy).
+    public private(set) var photoRefused = false
 
     private struct Saved: Equatable {
         var name: String
@@ -53,10 +57,12 @@ public final class OwnProfileModel {
         case removed
     }
 
-    /// The profile over `session`, loaded from what it last published, reading and cropping photos through `codec`.
-    public init(session: AppSession, codec: (any ImageCodec)? = nil) {
+    /// The profile over `session`, loaded from what it last published, reading and cropping photos through `codec` and
+    /// checking them with `screening`.
+    public init(session: AppSession, codec: (any ImageCodec)? = nil, screening: PhotoScreening? = nil) {
         self.session = session
         self.codec = codec
+        self.screening = screening
         let own = session.stores.ownProfile.load()
         nameText = own.name
         statusText = own.status
@@ -128,6 +134,7 @@ public final class OwnProfileModel {
             photoFailed = true
             return
         }
+        photoRefused = false
         cropSource = source
         isCropping = true
     }
@@ -139,6 +146,10 @@ public final class OwnProfileModel {
 
     /// Crops the picked photo as `framing` places it, into the photo Save will publish
     /// (`ProfileViewModel.confirmCrop`).
+    ///
+    /// A profile photo shows to everyone who sees the profile, strangers in Nearby included, so the cropped photo is
+    /// checked whatever the content filter says, and one that looks explicit is refused (`AvatarStore.saveOwnAvatar`,
+    /// ADR 2026-10.spcy). One the model cannot score goes.
     public func cropPhoto(_ framing: AvatarFraming) async {
         guard isCropping, let source = cropSource else {
             return
@@ -146,6 +157,10 @@ public final class OwnProfileModel {
         isCropping = false
         guard let jpeg = await codec?.profilePhoto(from: source, crop: framing.crop) else {
             photoFailed = true
+            return
+        }
+        if await screening?.isExplicit(outgoing: jpeg) == true {
+            photoRefused = true
             return
         }
         let hash = BlobHash(of: jpeg)

@@ -118,14 +118,8 @@ public final class ChatModel {
     /// Whether the last photo picked looked explicit in the room, which refuses it; the screen says so until it is
     /// dismissed.
     public var photoRefused = false
-    /// A photo picked in a DM or a group that looked explicit, held out of the composer until the sender says to send it
-    /// anyway or drops it (ADR 2026-10.rpmq).
-    private(set) var explicitPhoto: OutgoingPhoto?
-    /// Whether the screen asks about ``explicitPhoto``. Its answer is ``keepExplicitPhoto()`` or
-    /// ``dropExplicitPhoto()``; dismissing the question changes neither.
-    public var asksAboutExplicitPhoto = false
-    /// Whether the last Send was refused for abusive words, which the screen says until it is dismissed. The draft and
-    /// the photo stay in the composer (`ChatViewModel.send`).
+    /// Whether the last Send in the room was refused for abusive words, which the screen says until it is dismissed. The
+    /// draft and the photo stay in the composer (`ChatViewModel.send`).
     public var wordsRefused = false
     /// Whether a Send is under way, from the tap until the message is stored or refused (`ChatViewModel.isSending`).
     /// The words are checked first, and the first check in a while waits for the model to load, so the screen shows it
@@ -174,8 +168,9 @@ public final class ChatModel {
 
     /// Sends the draft and the photo held, and clears each once the message is stored, unless it changed meanwhile.
     ///
-    /// Words that look abusive are not sent, in any thread and whatever the content filter says, which governs only
-    /// what we are shown (`MeshManager.sendChat`). The room adds its word list. Words the model could not read go.
+    /// Words that look abusive are not posted in the room, whatever the content filter says, which governs only what we
+    /// are shown (`MeshManager.sendChat`). A DM or a group sends them unread: the receiver's phone screens what arrives,
+    /// and its filter decides (ADR 2026-10.spcy). Words the model could not read go.
     public func send() async {
         guard !isSending else {
             return
@@ -184,7 +179,7 @@ public final class ChatModel {
         defer { isSending = false }
         let sending = text
         let photo = staged
-        if await session.textScreening?.isAbusive(sending, inRoom: state.isRoom) ?? false {
+        if state.isRoom, await session.textScreening?.isAbusive(sending, inRoom: true) ?? false {
             wordsRefused = true
             return
         }
@@ -202,37 +197,19 @@ public final class ChatModel {
     /// Makes a picked photo ready to send (`AttachmentStore.ingest`) and holds it in the composer, in place of any held
     /// before. One the picker could not hand over, or the codec cannot read, says so.
     ///
-    /// The prepared photo is checked whatever the content filter says (`ChatViewModel.stage`). One that looks explicit
-    /// is refused in the room, which floods to everyone in range, and held for a DM or a group until the sender answers.
+    /// In the room, which floods to everyone in range, the prepared photo is checked whatever the content filter says,
+    /// and one that looks explicit is refused (`ChatViewModel.stage`). A DM or a group takes it unchecked: the receiver's
+    /// phone screens it (ADR 2026-10.spcy).
     public func choosePhoto(_ data: Data?) async {
         guard let data, let codec, let photo = await codec.chatPhoto(from: data) else {
             photoFailed = true
             return
         }
-        guard await screening?.isExplicit(outgoing: photo.bytes) == true else {
-            staged = await Self.stage(photo)
-            return
-        }
-        if state.isRoom {
+        if state.isRoom, await screening?.isExplicit(outgoing: photo.bytes) == true {
             photoRefused = true
-        } else {
-            explicitPhoto = photo
-            asksAboutExplicitPhoto = true
-        }
-    }
-
-    /// Holds the explicit photo in the composer after all: the sender said to send it anyway.
-    public func keepExplicitPhoto() async {
-        guard let photo = explicitPhoto else {
             return
         }
-        explicitPhoto = nil
         staged = await Self.stage(photo)
-    }
-
-    /// Drops the explicit photo, which never reached the composer.
-    public func dropExplicitPhoto() {
-        explicitPhoto = nil
     }
 
     /// Takes the held photo out of the composer.

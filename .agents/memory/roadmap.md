@@ -455,7 +455,8 @@ explicit direction.** Update this file in the change that ships an item.
   message and blocks the person on this phone, and can email `iosreports@getknit.app`; About has the address. Terms
   of use with zero tolerance are agreed to in onboarding, and again when they change (ADR 2026-10.cgm3). Android
   has no report yet. knit-next ADR 2026-10.d62w's slur list now runs in every conversation here too (ADR 2026-10.8e2u);
-  its ADR 2026-10.9rh6, which screens on sending only in the rooms, is not mirrored yet.
+  its ADR 2026-10.9rh6 is mirrored too (ADR 2026-10.spcy): the iPhone screens on sending only in Nearby, and screens
+  its profile photo when it is set.
 - **App Store readiness:** started on 2026-10-03 at the maintainer's direction. The privacy manifest and the export
   answer are in, Knit ships for iPhone only (ADR 2026-10.kedu), and `check.sh release`, `archive` and `upload` build,
   check, sign and upload the store build (ADR 2026-10.8cy5). The review notes, the listing and the export filing

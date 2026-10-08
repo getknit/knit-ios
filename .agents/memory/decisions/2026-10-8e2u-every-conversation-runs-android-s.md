@@ -27,19 +27,16 @@ in every scope. App Review tests the content filter for guideline 1.2, and a slu
 - **The order** (`TextScreening.isAbusive`): the slur list in every conversation, then the profanity list in the
   Nearby room, then the model. This is `ScopedTextModerator`'s chain. The same `WordFilter` matcher reads both lists,
   so leetspeak and stretched or spaced-out letters are caught alike.
-- **Where it applies:** wherever the iPhone already screens words: someone else's message on arrival, hidden behind
-  Content filtering, and our own on sending, which ADR 2026-10.e4kz checks in every conversation.
+- **Where it applies:** wherever the iPhone screens words: someone else's message on arrival, in every conversation,
+  hidden behind Content filtering, and our own on sending, in Nearby only since ADR 2026-10.spcy.
 - **Wiring:** `TextScreening.bundled` loads both lists from the app. A missing list is logged and skipped, as
   `Profanity.txt` was before. About lists the file under the same MIT notice.
 
 **Consequences / limits:**
 
-- **A DM that quotes or discusses a slur is refused on sending and hidden on arrival**, behind tap-to-show. Known false
+- **A DM that quotes or discusses a slur is hidden on arrival**, behind tap-to-show. Known false
   positives are the ones d62w names: `faggot` as a British dish and `tranny` as slang for a gearbox. It is English only.
-- **The iPhone still blocks on sending in DMs and groups; Android no longer does.** knit-next ADR 2026-10.9rh6 (the
-  same day) screens on sending only in the public rooms, keeps screening on arrival everywhere, and screens avatars
-  and group photos when they are set. That decision is not mirrored here yet. Until it is, a slur in a DM is refused
-  on an iPhone and goes out from Android, and the receiving phone hides it either way.
+- **Screening on sending** in DMs and groups ended the same day: ADR 2026-10.spcy mirrors knit-next ADR 2026-10.9rh6.
 - **The aliases** come from the same word lists as Android's, byte for byte (`AliasTests`). knit-next's `AliasTest`
   checks them against both word lists, so the iPhone relies on that check rather than repeating it.
 - **The guards:** `SlurListTests` (knit-next's `SlurListTest`: the slurs the model misses and their plurals, the

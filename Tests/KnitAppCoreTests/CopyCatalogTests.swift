@@ -381,15 +381,13 @@ extension CopyCatalogTests {
             Copy.Moderation.hiddenPhotoValue,
             Copy.Moderation.showPhoto,
             Copy.Moderation.explicitTitle,
-            Copy.Moderation.explicitAsk,
-            Copy.Moderation.sendAnyway,
+            Copy.Moderation.profileRefusal,
             Copy.Moderation.roomRefusal,
             Copy.Moderation.hiddenWords,
             Copy.Moderation.hiddenMessage,
             Copy.Moderation.showMessage,
             Copy.Moderation.checkingMessage,
             Copy.Moderation.wordsRefusedTitle,
-            Copy.Moderation.wordsRefused,
             Copy.Moderation.wordsRefusedInRoom,
         ]
     }

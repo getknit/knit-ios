@@ -92,8 +92,9 @@ final class KnitUITests: XCTestCase {
         try walkSettings()
     }
 
-    /// Someone else's explicit photo hides behind a tap and their face behind their initial, an explicit pick asks or is
-    /// refused, and Content filtering off shows everything (ADR 2026-10.rpmq).
+    /// Someone else's explicit photo hides behind a tap and their face behind their initial, an explicit pick is refused in
+    /// Nearby and for our profile and taken in a DM, and Content filtering off shows everything (ADR 2026-10.rpmq, ADR
+    /// 2026-10.spcy).
     func testTheContentFilterHidesAsksAndTurnsOff() throws {
         try walkContentFilter()
     }
