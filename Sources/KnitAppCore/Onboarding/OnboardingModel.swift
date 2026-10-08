@@ -4,14 +4,16 @@ import KnitStore
 import KnitWire
 public import Observation
 
-/// Where onboarding stands (MVP item 1): welcome, then an optional name, then the permissions.
+/// Where onboarding stands (MVP item 1): welcome, the terms, then an optional name, then the permissions.
 public enum OnboardingStep: Int, Sendable, CaseIterable {
     /// What Knit is.
     case welcome = 0
+    /// The terms of use, which the user agrees to before going on (ADR 2026-10.cgm3).
+    case terms = 1
     /// The name people nearby see; blank keeps the alias.
-    case name = 1
+    case name = 2
     /// Bluetooth, and optionally notifications.
-    case permissions = 2
+    case permissions = 3
 }
 
 /// Where the Bluetooth permission stands, as the permissions page shows it.
@@ -28,7 +30,9 @@ public enum BluetoothGrant: Sendable, Equatable {
     case unsupported
 }
 
-/// Onboarding's view model. Finishing publishes the profile even with no name, so its version moves to now: a
+/// Onboarding's view model, which also holds whether the user agreed to the current ``Terms``: an install that
+/// onboarded before the terms, or before they last changed, is asked again before the app opens (ADR 2026-10.cgm3).
+/// Finishing publishes the profile even with no name, so its version moves to now: a
 /// reinstall that finds its old identity in the Keychain takes its presentation back from peers holding an older one
 /// (ADR 2026-09.tkww).
 @preconcurrency
@@ -39,6 +43,8 @@ public final class OnboardingModel {
     public private(set) var step = OnboardingStep.welcome
     /// Whether onboarding is done.
     public private(set) var isFinished: Bool
+    /// Whether the user agreed to the current ``Terms``.
+    public private(set) var acceptedTerms: Bool
     /// Whether the app may notify.
     public private(set) var notifications = NotificationAuthorization.notDetermined
     @ObservationIgnored private let session: AppSession
@@ -52,6 +58,7 @@ public final class OnboardingModel {
         self.preferences = preferences
         self.permission = permission
         isFinished = preferences.hasOnboarded
+        acceptedTerms = preferences.acceptedTerms >= Terms.version
     }
 
     /// The name as typed, cut at ``TextLimits/displayName`` UTF-16 units.
@@ -78,7 +85,7 @@ public final class OnboardingModel {
         TextLimits.isBlank(nameText)
     }
 
-    /// "Step 1 of 2" over the name and permissions pages; the welcome page has none.
+    /// "Step 1 of 3" over the terms, name and permissions pages; the welcome page has none.
     public var progress: String? {
         step == .welcome ? nil : Copy.Onboarding.step(step.rawValue, of: OnboardingStep.allCases.count - 1)
     }
@@ -100,6 +107,15 @@ public final class OnboardingModel {
     /// The next page.
     public func next() {
         step = OnboardingStep(rawValue: step.rawValue + 1) ?? .permissions
+    }
+
+    /// Agrees to the current terms, and goes on to the next page while onboarding.
+    public func acceptTerms() {
+        preferences.acceptedTerms = Terms.version
+        acceptedTerms = true
+        if !isFinished {
+            next()
+        }
     }
 
     /// The page before.

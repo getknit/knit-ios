@@ -6,17 +6,21 @@ public protocol AppPreferences: AnyObject, Sendable {
     var hasOnboarded: Bool { get set }
     /// Whether someone else's explicit photos and faces hide: Content filtering, on until it is turned off.
     var filtersContent: Bool { get set }
+    /// The version of ``Terms`` the user agreed to on this install, or 0 before they agreed to any (ADR 2026-10.cgm3).
+    var acceptedTerms: Int { get set }
 }
 
 /// ``AppPreferences`` in memory.
 public final class MemoryPreferences: AppPreferences {
     private let onboarded: Lock<Bool>
     private let filters: Lock<Bool>
+    private let terms: Lock<Int>
 
-    /// Preferences starting from `hasOnboarded` and `filtersContent`.
-    public init(hasOnboarded: Bool = false, filtersContent: Bool = true) {
+    /// Preferences starting from `hasOnboarded`, `filtersContent` and `acceptedTerms`.
+    public init(hasOnboarded: Bool = false, filtersContent: Bool = true, acceptedTerms: Int = 0) {
         onboarded = Lock(hasOnboarded)
         filters = Lock(filtersContent)
+        terms = Lock(acceptedTerms)
     }
 
     public var hasOnboarded: Bool {
@@ -27,6 +31,11 @@ public final class MemoryPreferences: AppPreferences {
     public var filtersContent: Bool {
         get { filters.withLock { $0 } }
         set { filters.withLock { $0 = newValue } }
+    }
+
+    public var acceptedTerms: Int {
+        get { terms.withLock { $0 } }
+        set { terms.withLock { $0 = newValue } }
     }
 }
 

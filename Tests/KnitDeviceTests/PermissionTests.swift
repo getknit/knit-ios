@@ -43,6 +43,7 @@ final class PermissionTests: XCTestCase {
         try app.appear(AccessibilityID.onboardingWelcome)
         try phone.system.noPrompt(before: "onboarding's Allow")
         try app.reveal(AccessibilityID.onboardingNext).tap()
+        try app.reveal(AccessibilityID.onboardingAgree).tap()
         let field = try app.appear(AccessibilityID.onboardingName)
         if !name.isEmpty {
             field.tap()

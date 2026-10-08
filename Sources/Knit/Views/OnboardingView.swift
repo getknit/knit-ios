@@ -2,7 +2,7 @@
     import KnitAppCore
     import SwiftUI
 
-    /// The first run: welcome, a name, then Bluetooth and notifications (MVP item 1).
+    /// The first run: welcome, the terms, a name, then Bluetooth and notifications (MVP item 1, ADR 2026-10.cgm3).
     internal struct OnboardingView: View {
         let model: OnboardingModel
 
@@ -12,6 +12,8 @@
                     switch model.step {
                     case .welcome:
                         WelcomePage(model: model)
+                    case .terms:
+                        TermsPage(model: model)
                     case .name:
                         NamePage(model: model)
                     case .permissions:
@@ -128,6 +130,29 @@
         }
     }
 
+    /// The terms, and Agree, which goes on. In onboarding, and alone when the terms change after it (ADR 2026-10.cgm3).
+    internal struct TermsPage: View {
+        let model: OnboardingModel
+        @Environment(\.dynamicTypeSize) private var typeSize
+
+        private var button: PageButton {
+            PageButton(title: Copy.Terms.agree, identifier: AccessibilityID.onboardingAgree, action: model.acceptTerms)
+        }
+
+        var body: some View {
+            Form {
+                TermsSections(heading: true)
+                InlinePageButton(button: button, inline: typeSize.isAccessibilitySize)
+            }
+            .accessibilityIdentifier(AccessibilityID.onboardingTerms)
+            .safeAreaInset(edge: .bottom) {
+                if !typeSize.isAccessibilitySize {
+                    button
+                }
+            }
+        }
+    }
+
     private struct NamePage: View {
         @Bindable var model: OnboardingModel
         @FocusState private var focused: Bool
@@ -190,7 +215,7 @@
     }
 
     /// A page's heading, set as the first section's header.
-    private struct PageHeading: View {
+    internal struct PageHeading: View {
         let text: String
 
         var body: some View {

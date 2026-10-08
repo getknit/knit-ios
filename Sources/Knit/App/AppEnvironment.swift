@@ -210,7 +210,9 @@
                     stores: stores,
                     radio: DemoRadio(state: options.demoRadio),
                     log: log,
-                    preferences: MemoryPreferences(hasOnboarded: !options.demoOnboarding),
+                    preferences: MemoryPreferences(
+                        hasOnboarded: !options.demoOnboarding, acceptedTerms: options.demoOnboarding ? 0 : Terms.version
+                    ),
                     classifier: DemoPhotoClassifier(flagsEverything: options.demoSensitive),
                     textClassifier: DemoTextClassifier(flagsEverything: options.demoSensitive),
                     linked: DemoSeed.linked(in: options.demoScene),

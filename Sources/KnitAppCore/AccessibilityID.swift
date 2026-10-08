@@ -7,6 +7,10 @@ public enum AccessibilityID {
     public static let onboardingWelcome = "onboarding_page_welcome"
     /// The name page.
     public static let onboardingNamePage = "onboarding_page_name"
+    /// The terms page (ADR 2026-10.cgm3), in onboarding and when the terms change.
+    public static let onboardingTerms = "onboarding_page_terms"
+    /// The terms page's Agree.
+    public static let onboardingAgree = "onboarding_agree"
     /// The permissions page.
     public static let onboardingPermissions = "onboarding_page_permissions"
     /// The name field.
@@ -272,6 +276,10 @@ public enum AccessibilityID {
     public static let aboutLicense = "about_license"
     /// About's source link.
     public static let aboutSource = "about_source"
+    /// About's terms row (ADR 2026-10.cgm3).
+    public static let aboutTerms = "about_terms"
+    /// The terms, read from About.
+    public static let termsScreen = "screen_terms"
     /// About's email link (ADR 2026-10.f6kf).
     public static let aboutContact = "about_contact"
     /// About's version line.

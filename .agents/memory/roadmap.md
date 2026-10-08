@@ -452,7 +452,8 @@ explicit direction.** Update this file in the change that ships an item.
 - **Moderation and report.** App Store rule 1.2 requires them before a store build. Block is in (ADR 2026-10.5wgg),
   and so is screening photos from others, with Android's model in Core ML (ADR 2026-10.rpmq), and screening messages
   with Android's Detoxify model and word list (ADR 2026-10.e4kz). Report is in too (ADR 2026-10.f6kf): it deletes the
-  message and blocks the person on this phone, and can email `iosreports@getknit.app`; About has the address. Android
+  message and blocks the person on this phone, and can email `iosreports@getknit.app`; About has the address. Terms
+  of use with zero tolerance are agreed to in onboarding, and again when they change (ADR 2026-10.cgm3). Android
   has no report yet, and knit-next ADR 2026-10.d62w's slur list for DMs and groups is not ported here.
 - **App Store readiness:** started on 2026-10-03 at the maintainer's direction. The privacy manifest and the export
   answer are in, Knit ships for iPhone only (ADR 2026-10.kedu), and `check.sh release`, `archive` and `upload` build,

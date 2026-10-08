@@ -17,16 +17,19 @@ import Testing
         OnboardingModel(session: rig.session, preferences: MemoryPreferences(), permission: permission)
     }
 
-    @Test func theStepsGoWelcomeNameThenPermissions() {
+    @Test func theStepsGoWelcomeTermsNameThenPermissions() {
         let model = onboarding(AppRig())
         #expect(model.step == .welcome)
         #expect(model.progress == nil)
         model.next()
+        #expect(model.step == .terms)
+        model.next()
         #expect(model.step == .name)
-        #expect(model.progress == Copy.Onboarding.step(1, of: 2))
+        #expect(model.progress == Copy.Onboarding.step(2, of: 3))
         model.next()
         model.next()
         #expect(model.step == .permissions, "the last page is the last")
+        model.back()
         model.back()
         model.back()
         model.back()

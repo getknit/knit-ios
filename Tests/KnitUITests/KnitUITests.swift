@@ -35,7 +35,7 @@ final class KnitUITests: XCTestCase {
     /// Whether the walk runs in dark mode.
     private var dark = false
 
-    func testOnboardingWalksWelcomeNameAndPermissions() throws {
+    func testOnboardingWalksWelcomeTermsNameAndPermissions() throws {
         try walkOnboarding()
     }
 
@@ -148,24 +148,6 @@ final class KnitUITests: XCTestCase {
         try walkRequestBlock()
         try walkMessageMenus()
         try walkRadioStates()
-    }
-
-    private func walkOnboarding() throws {
-        let app = launch("-demoOnboarding")
-        try audit(app, AccessibilityID.onboardingWelcome)
-        try app.reveal(AccessibilityID.onboardingNext).tap()
-
-        try audit(app, AccessibilityID.onboardingNamePage)
-        let name = try app.appear(AccessibilityID.onboardingName)
-        name.tap()
-        name.typeText("Robin")
-        try app.reveal(AccessibilityID.onboardingNext).tap()
-
-        try audit(app, AccessibilityID.onboardingPermissions)
-        try app.reveal(AccessibilityID.onboardingAllowBluetooth).tap()
-        try app.reveal(AccessibilityID.onboardingStart).tap()
-        try app.appear(AccessibilityID.chatListStatus)
-        app.terminate()
     }
 
     private func walkRoom() throws {

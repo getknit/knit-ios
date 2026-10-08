@@ -13,6 +13,7 @@
         case settings
         case blocked
         case about
+        case terms
         case diagnostics
     }
 
@@ -77,7 +78,8 @@
         }
     }
 
-    /// Onboarding until it is done, then the app.
+    /// Onboarding until it is done, then the app, once the user has agreed to the current terms: an install that onboarded
+    /// before them, or before they changed, sees the terms page alone first (ADR 2026-10.cgm3).
     private struct ReadyView: View {
         let environment: AppEnvironment
         let launch: Launch
@@ -94,8 +96,12 @@
 
         var body: some View {
             Group {
-                if onboarding.isFinished {
+                if onboarding.isFinished, onboarding.acceptedTerms {
                     MainView(environment: environment, launch: launch)
+                } else if onboarding.isFinished {
+                    NavigationStack {
+                        TermsPage(model: onboarding)
+                    }
                 } else {
                     OnboardingView(model: onboarding)
                 }
@@ -170,6 +176,8 @@
                 BlockedView(session: environment.session)
             case .about:
                 AboutView(about: environment.about)
+            case .terms:
+                TermsView()
             case .diagnostics:
                 DiagnosticsView(session: environment.session, replaceIdentity: environment.replaceIdentity)
             }

@@ -54,6 +54,9 @@ document:
 - Report someone from a message's menu, their profile or their request, and your iPhone deletes the message
   and blocks them without telling them. Choose Report and Email Knit to send the Knit team what you reported,
   minus any photo.
+- Onboarding now asks you to agree to Knit's terms of use, which rule out harassment, sexual content involving
+  minors, illegal content and spam. If you set Knit up before the terms existed, you'll see them once at your
+  next launch, and About keeps a copy.
 - Content filtering hides explicit photos from other people until you tap them, and shows an initial in place
   of an explicit profile picture. Your iPhone checks each photo itself, and Knit asks before you send an
   explicit one and won't post it in Nearby.
