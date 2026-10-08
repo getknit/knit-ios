@@ -13,7 +13,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID] [--expect-avatar] [--peer-avatar JPEG]
     scripts/interop.py iphone-group --device SERIAL [--udid UDID]
     scripts/interop.py iphone-peer [--order iphone-below|iphone-above] [--skip-offline] [--udid UDID]
-    scripts/interop.py iphone-photos --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-photos --device SERIAL [--animated] [--udid UDID]
     scripts/interop.py iphone-block --device SERIAL [--udid UDID]
     scripts/interop.py iphone-delete --device SERIAL [--udid UDID]
     scripts/interop.py iphone-react --device SERIAL [--udid UDID]
@@ -3853,7 +3853,8 @@ def iphone_photos(arguments: argparse.Namespace) -> int:
     The iPhone sends through its bridge and the phone through SENDIMG, each a fresh picture, so no node holds it yet. The
     phone's log shows the iPhone's photo come in whole from the iPhone, and the bridge's `messages` shows the phone's
     photo held on the iPhone. A DM's or a group's photo travels sealed, and only its message's key opens it: the screens
-    show whether it opened. The two must already hold each other's keys."""
+    show whether it opened. With `--animated` both pictures are GIFs, and the iPhone must play both, the phone's as the
+    animated WebP Android sends. The two must already hold each other's keys."""
     phone = Phone(arguments.device)
     ios = IPhone(arguments.udid, arguments.host)
     run = Run()
@@ -3866,19 +3867,23 @@ def iphone_photos(arguments: argparse.Namespace) -> int:
         group = ios.command(cmd="group-create", members=[phone_id])["id"]
         run.step("group-ids-agree", lambda: _agrees(group, phone.make_group([ios.node_id])))
         for kind, on_ios, on_phone in (("room", "nearby", "nearby"), ("dm", phone_id, ios.node_id), ("group", group, group)):
-            _photos_both_ways(run, ios, phone, kind, (on_ios, on_phone), nonce)
+            _photos_both_ways(run, ios, phone, kind, (on_ios, on_phone), nonce, animated=arguments.animated)
     finally:
         ios.stop()
     print(json.dumps({"summary": "iphone-photos", "steps": run.steps, "failed": run.failed}))
     return run.failed
 
 
-def _photos_both_ways(run: Run, ios: IPhone, phone: Phone, kind: str, threads: tuple[str, str], nonce: str) -> None:
+def _photos_both_ways(
+    run: Run, ios: IPhone, phone: Phone, kind: str, threads: tuple[str, str], nonce: str, *, animated: bool = False
+) -> None:
     """A photo from the iPhone to the phone, then one back, in the thread the two know as `threads`, the iPhone's id for
-    it first."""
+    it first: GIFs when `animated`, which the iPhone must play."""
     on_ios, on_phone = threads
     body = f"photo from iphone, {kind} {nonce}"
-    sent = _ios_photo(ios, kind, on_ios, body, _noise_jpeg(f"{nonce}-iphone-{kind}"))
+    seed = f"{nonce}-iphone-{kind}"
+    picture, mime = (_noise_gif(seed), "image/gif") if animated else (_noise_jpeg(seed), "image/jpeg")
+    sent = _ios_photo(ios, kind, on_ios, body, picture, mime)
     run.step(f"{kind}-iphone-to-phone", lambda: poll(lambda: _has(phone.state(on_phone), body), 60) and {})
     run.step(
         f"{kind}-iphone-photo-on-phone",
@@ -3886,10 +3891,12 @@ def _photos_both_ways(run: Run, ios: IPhone, phone: Phone, kind: str, threads: t
         hash=sent["attachmentHash"],
     )
     back = f"photo from phone, {kind} {nonce}"
-    reply = phone.bridge("SENDIMG", path=_stage_photo(phone, f"{nonce}-phone-{kind}"), text=back, conv=on_phone)
+    reply = phone.bridge("SENDIMG", path=_stage_photo(phone, f"{nonce}-phone-{kind}", animated), text=back, conv=on_phone)
     held = run.step(f"{kind}-phone-photo-on-iphone", lambda: poll(lambda: _ios_holds(ios, on_ios, back), 180), sent=reply)
     shown = {sent["attachmentHash"]} | ({held["hash"]} if held else set())
     run.step(f"{kind}-photos-show-on-iphone", lambda: _ios_shows(ios, on_ios, shown))
+    if animated:
+        run.step(f"{kind}-photos-play-on-iphone", lambda: _ios_plays(ios, on_ios, shown))
     run.step(f"{kind}-phone-screen", lambda: _phone_screen(phone, on_phone, f"{nonce}-{kind}"))
 
 
@@ -4137,7 +4144,17 @@ def _ios_shows(ios: IPhone, conversation: str, hashes: set[str]) -> dict:
     missing = sorted(hash_ for hash_ in hashes if not photos.get(hash_, {}).get("shown"))
     if missing:
         raise RuntimeError(f"the iPhone shows none of {missing}: {[photos.get(hash_) for hash_ in missing]}")
-    return {"shown": [{key: photos[hash_][key] for key in ("sealed", "width", "height")} for hash_ in sorted(hashes)]}
+    return {"shown": [{key: photos[hash_].get(key) for key in ("sealed", "width", "height", "frames")} for hash_ in sorted(hashes)]}
+
+
+def _ios_plays(ios: IPhone, conversation: str, hashes: set[str]) -> dict:
+    """Whether each photo in `hashes` plays on the iPhone, more than one frame of it (the bridge's `photos`): a GIF from
+    the iPhone as it went, and one from the phone as the animated WebP Android shrinks it into."""
+    photos = {photo["hash"]: photo for photo in ios.command(cmd="photos", conv=conversation)["photos"]}
+    still = sorted(hash_ for hash_ in hashes if photos.get(hash_, {}).get("frames", 0) < 2)
+    if still:
+        raise RuntimeError(f"the iPhone plays none of {still}: {[photos.get(hash_) for hash_ in still]}")
+    return {"frames": [photos[hash_]["frames"] for hash_ in sorted(hashes)]}
 
 
 def _phone_screen(phone: Phone, conversation: str, name: str) -> dict:
@@ -4160,15 +4177,15 @@ def _agrees(ours: str, theirs: str) -> dict:
     return {"group": ours}
 
 
-def _ios_photo(ios: IPhone, kind: str, conversation: str, body: str, jpeg: bytes) -> dict:
-    """Sends `jpeg` with `body` from the iPhone, as its composer would: to the room, a DM or a group."""
-    photo = base64.b64encode(jpeg).decode()
+def _ios_photo(ios: IPhone, kind: str, conversation: str, body: str, picture: bytes, mime: str = "image/jpeg") -> dict:
+    """Sends `picture` with `body` from the iPhone, as its composer would: to the room, a DM or a group."""
+    photo = base64.b64encode(picture).decode()
     if kind == "room":
-        reply = ios.command(cmd="room", text=body, photo=photo)
+        reply = ios.command(cmd="room", text=body, photo=photo, mime=mime)
     elif kind == "dm":
-        reply = ios.command(cmd="dm", to=conversation, text=body, photo=photo)
+        reply = ios.command(cmd="dm", to=conversation, text=body, photo=photo, mime=mime)
     else:
-        reply = ios.command(cmd="group-send", conv=conversation, text=body, photo=photo)
+        reply = ios.command(cmd="group-send", conv=conversation, text=body, photo=photo, mime=mime)
     if not reply.get("attachmentHash") or reply.get("pendingKey"):
         raise RuntimeError(f"the iPhone did not send its photo: {reply}")
     return reply
@@ -4196,14 +4213,27 @@ def _noise_jpeg(seed: str) -> bytes:
     return out.getvalue()
 
 
-def _stage_photo(phone: Phone, seed: str) -> str:
-    """A fresh picture in the app's own storage, where SENDIMG can read it, as `_stage_image` stages the soak's."""
-    local = ROOT / ".build" / "interop-photos" / f"{seed}.jpg"
+def _noise_gif(seed: str) -> bytes:
+    """A small moving picture no node holds yet: four frames of `_noise_jpeg`'s noise, a tenth of a second each, for
+    good."""
+    from PIL import Image  # noqa: PLC0415 - only the photo runs need it
+
+    frames = [Image.open(io.BytesIO(_noise_jpeg(f"{seed}-{index}"))).convert("L") for index in range(4)]
+    out = io.BytesIO()
+    frames[0].save(out, "GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    return out.getvalue()
+
+
+def _stage_photo(phone: Phone, seed: str, animated: bool = False) -> str:
+    """A fresh picture in the app's own storage, where SENDIMG can read it, as `_stage_image` stages the soak's: a GIF
+    when `animated`, which Android shrinks into an animated WebP as it sends it."""
+    name = "knit-photo.gif" if animated else "knit-photo.jpg"
+    local = ROOT / ".build" / "interop-photos" / f"{seed}{Path(name).suffix}"
     local.parent.mkdir(parents=True, exist_ok=True)
-    local.write_bytes(_noise_jpeg(seed))
-    subprocess.run(["adb", "-s", phone.serial, "push", str(local), "/data/local/tmp/knit-photo.jpg"], capture_output=True, check=True, timeout=60)
-    phone.shell(f"cat /data/local/tmp/knit-photo.jpg | run-as {PACKAGE} sh -c 'cat > files/knit-photo.jpg'")
-    return f"/data/data/{PACKAGE}/files/knit-photo.jpg"
+    local.write_bytes(_noise_gif(seed) if animated else _noise_jpeg(seed))
+    subprocess.run(["adb", "-s", phone.serial, "push", str(local), f"/data/local/tmp/{name}"], capture_output=True, check=True, timeout=60)
+    phone.shell(f"cat /data/local/tmp/{name} | run-as {PACKAGE} sh -c 'cat > files/{name}'")
+    return f"/data/data/{PACKAGE}/files/{name}"
 
 
 def iphone_soak(arguments: argparse.Namespace) -> int:
@@ -4948,6 +4978,7 @@ def main() -> int:
     ios_peer.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     ios_photos = commands.add_parser("iphone-photos")
     ios_photos.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios_photos.add_argument("--animated", action="store_true", help="send GIFs both ways, and check that the iPhone plays both")
     ios_block = commands.add_parser("iphone-block")
     ios_block.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_delete = commands.add_parser("iphone-delete")

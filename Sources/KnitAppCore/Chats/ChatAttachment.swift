@@ -35,12 +35,14 @@ public enum AttachmentKind: Sendable, Equatable {
     }
 
     /// What a message carrying `attachment` and no words says in a line: a list's preview, or a notification
-    /// (`attachmentPreview` in knit-next). Only the type speaks for a GIF here, since the line is written before the
-    /// bytes are in.
+    /// (`attachmentPreview` in knit-next). A photo whose bytes have been read is a GIF when it moves, as Android labels one
+    /// from its frames (knit-next `0b9d19ea`), since Android sends every GIF as an animated WebP. Until then only the type
+    /// speaks for one: a notification is written before the bytes are in.
     public static func preview(of attachment: MessageAttachment) -> String {
         switch Self(attachment) {
         case .photo:
-            attachment.mime == "image/gif" ? Copy.Attachments.gifPreview : Copy.Attachments.photoPreview
+            attachment.dimensions.map(\.animated) ?? (attachment.mime == "image/gif")
+                ? Copy.Attachments.gifPreview : Copy.Attachments.photoPreview
         case .voice:
             Copy.Attachments.voicePreview
         case .file:

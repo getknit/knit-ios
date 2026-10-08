@@ -33,8 +33,8 @@
     /// knit-next). A chat's photo has Save, which adds it to the library as it was sent.
     internal struct PhotoViewer: View {
         /// The size the viewer decodes at: past any photo the mesh carries, which is 1280 pixels at most on its long side,
-        /// so it shows one whole.
-        private static let pixels = 2048
+        /// so it shows one whole. A moving photo's frames are decoded at it too.
+        static let pixels = 2048
         /// How long the line that says how Save went stays, in seconds.
         private static let resultShown = 3
 
@@ -43,12 +43,13 @@
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
         @Environment(\.dismiss) private var dismiss
         @State private var image: UIImage?
+        @State private var animation: AnimatedPhoto?
         @State private var saving = false
         @State private var result: String?
 
         var body: some View {
             NavigationStack {
-                ViewerStage(image: image, label: photo.label, result: result)
+                ViewerStage(image: image, animation: animation, label: photo.label, result: result)
                     .navigationTitle(photo.title)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbarBackground(.black, for: .navigationBar, .bottomBar)
@@ -66,6 +67,10 @@
                     return
                 }
                 image = await photos?.attachment(photo.hash, key: photo.key, pixels: Self.pixels)
+                // A chat's photo that moves plays here, as Android's viewer plays it; a profile's photo is always a still.
+                if image != nil, photo.savable {
+                    animation = await photos?.animation(photo.hash, key: photo.key, unsaved: nil)
+                }
             }
         }
 
@@ -117,16 +122,24 @@
         }
     }
 
-    /// The photo on black, and how Save went over its bottom.
+    /// The photo on black, playing when it moves, and how Save went over its bottom.
     private struct ViewerStage: View {
         let image: UIImage?
+        let animation: AnimatedPhoto?
         let label: String
         let result: String?
 
         var body: some View {
             ZStack {
                 Color.black.ignoresSafeArea()
-                if let image {
+                if let image, let animation {
+                    AnimatedPhotoView(photo: animation, poster: image, pixels: PhotoViewer.pixels, fills: false)
+                        .aspectRatio(image.size, contentMode: .fit)
+                        .accessibilityElement()
+                        .accessibilityLabel(label)
+                        .accessibilityAddTraits(.isImage)
+                        .accessibilityIgnoresInvertColors()
+                } else if let image {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()

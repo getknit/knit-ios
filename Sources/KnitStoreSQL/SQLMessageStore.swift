@@ -12,9 +12,9 @@ public final class SQLMessageStore: MessageStore {
     private static let columns = """
         id, senderId, recipientId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind, \
         attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, moderation, attachmentWidth, \
-        attachmentHeight
+        attachmentHeight, attachmentAnimated
         """
-    private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
     /// The database, which the reactions' extension shares.
     let database: KnitDatabase
@@ -71,7 +71,8 @@ public final class SQLMessageStore: MessageStore {
                         kind = excluded.kind, attachmentHash = excluded.attachmentHash, attachmentMime = excluded.attachmentMime,
                         attachmentKey = excluded.attachmentKey, attachmentName = excluded.attachmentName,
                         attachmentSize = excluded.attachmentSize, moderation = excluded.moderation,
-                        attachmentWidth = excluded.attachmentWidth, attachmentHeight = excluded.attachmentHeight
+                        attachmentWidth = excluded.attachmentWidth, attachmentHeight = excluded.attachmentHeight,
+                        attachmentAnimated = excluded.attachmentAnimated
                     """,
                 arguments: Self.arguments(message)
             )
@@ -188,8 +189,10 @@ public final class SQLMessageStore: MessageStore {
                 db,
                 sql: """
                     SELECT attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, attachmentWidth,
-                        attachmentHeight
-                    FROM messages WHERE attachmentHash IS NOT NULL AND attachmentWidth IS NULL \(named) ORDER BY seq DESC
+                        attachmentHeight, attachmentAnimated
+                    FROM messages
+                    WHERE attachmentHash IS NOT NULL AND (attachmentWidth IS NULL OR attachmentAnimated IS NULL) \(named)
+                    ORDER BY seq DESC
                     """,
                 arguments: StatementArguments(hash.map { [StoredText.bytes($0.string)] } ?? [])
             ).compactMap(Self.attachment).filter { seen.insert($0.hash).inserted }
@@ -201,10 +204,14 @@ public final class SQLMessageStore: MessageStore {
         database.write(or: false) { db in
             try db.execute(
                 sql: """
-                    UPDATE messages SET attachmentWidth = ?, attachmentHeight = ?
-                    WHERE attachmentHash = ? AND (attachmentWidth IS NOT ? OR attachmentHeight IS NOT ?)
+                    UPDATE messages SET attachmentWidth = ?, attachmentHeight = ?, attachmentAnimated = ?
+                    WHERE attachmentHash = ?
+                        AND (attachmentWidth IS NOT ? OR attachmentHeight IS NOT ? OR attachmentAnimated IS NOT ?)
                     """,
-                arguments: [dimensions.width, dimensions.height, StoredText.bytes(hash.string), dimensions.width, dimensions.height]
+                arguments: [
+                    dimensions.width, dimensions.height, dimensions.animated, StoredText.bytes(hash.string), dimensions.width,
+                    dimensions.height, dimensions.animated,
+                ]
             )
             return db.changesCount > 0
         }
@@ -240,6 +247,7 @@ public final class SQLMessageStore: MessageStore {
             message.delivered, message.pendingKey, message.kind.rawValue, StoredText.bytes(attachment?.hash.string),
             StoredText.bytes(attachment?.mime), StoredText.bytes(attachment?.key), StoredText.bytes(attachment?.name), attachment?.size,
             message.moderation.rawValue, attachment?.dimensions?.width, attachment?.dimensions?.height,
+            attachment?.dimensions?.animated,
         ]
     }
 
@@ -261,6 +269,17 @@ public final class SQLMessageStore: MessageStore {
         )
     }
 
+    /// The size a row's photo was read at, and whether it moves. One sized before schema v11 reads as still until a
+    /// launch reads it again (``unsizedAttachments(named:)``).
+    private static func dimensions(_ row: Row) throws -> PhotoDimensions? {
+        guard let width = try row.decode(Int?.self, forColumn: "attachmentWidth"),
+            let height = try row.decode(Int?.self, forColumn: "attachmentHeight")
+        else {
+            return nil
+        }
+        return PhotoDimensions(width: width, height: height, animated: try row.decode(Int?.self, forColumn: "attachmentAnimated") == 1)
+    }
+
     /// What the row carries, or `nil` for nothing.
     private static func attachment(_ row: Row) throws -> MessageAttachment? {
         try row.optionalBlobHash("attachmentHash").map { hash in
@@ -270,9 +289,7 @@ public final class SQLMessageStore: MessageStore {
                 key: try row.optionalText("attachmentKey"),
                 name: try row.optionalText("attachmentName"),
                 size: try row.decode(Int64?.self, forColumn: "attachmentSize"),
-                dimensions: try row.decode(Int?.self, forColumn: "attachmentWidth").flatMap { width in
-                    try row.decode(Int?.self, forColumn: "attachmentHeight").flatMap { PhotoDimensions(width: width, height: $0) }
-                }
+                dimensions: try dimensions(row)
             )
         }
     }
@@ -360,35 +377,4 @@ extension SQLMessageStore {
             ]
         )
     }
-}
-
-extension SQLMessageStore {
-    /// Who sent the earliest message carrying each of `hashes` (``MessageStore/attachmentSenders(among:)``).
-    public func attachmentSenders(among hashes: Set<BlobHash>) -> [BlobHash: NodeId] {
-        let sorted = hashes.sorted()
-        var senders: [BlobHash: NodeId] = [:]
-        for start in stride(from: 0, to: sorted.count, by: Self.hashBatchSize) {
-            let batch = sorted[start..<min(start + Self.hashBatchSize, sorted.count)]
-            let carriers = database.read(or: []) { db in
-                try Row.fetchAll(
-                    db,
-                    sql: """
-                        SELECT attachmentHash, senderId FROM messages
-                        WHERE attachmentHash IN (\(Array(repeating: "?", count: batch.count).joined(separator: ", ")))
-                        ORDER BY sentAt, id
-                        """,
-                    arguments: StatementArguments(batch.map { StoredText.bytes($0.string) })
-                )
-                .map { (hash: try $0.blobHash("attachmentHash"), sender: try $0.nodeId("senderId")) }
-            }
-            // Earliest first, so the first row for each hash names its sender.
-            for carrier in carriers where senders[carrier.hash] == nil {
-                senders[carrier.hash] = carrier.sender
-            }
-        }
-        return senders
-    }
-
-    /// How many hashes one `IN (…)` list binds, as `SQLBlobStore` binds them.
-    private static let hashBatchSize = 500
 }

@@ -71,3 +71,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.f6kf](decisions/2026-10-f6kf-a-report-blocks-the-person.md) | A report blocks the person and deletes the message here, and can email Knit | moderation, privacy, ui |
 | [2026-10.spcy](decisions/2026-10-spcy-the-iphone-screens-on-sending.md) | The iPhone screens on sending only in Nearby, and screens its profile photo | moderation, privacy |
 | [2026-10.g3k9](decisions/2026-10-g3k9-the-store-s-video-is.md) | The store's video is a scripted demo scene filmed in the Simulator | testing, store, ui |
+| [2026-10.ytvx](decisions/2026-10-ytvx-a-moving-photo-plays-in.md) | A moving photo plays in a chat | blobs, app, ui |

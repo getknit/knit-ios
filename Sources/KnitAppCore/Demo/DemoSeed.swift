@@ -6,9 +6,9 @@ public import KnitWire
 /// How the app was launched: `-seedDemo`, the radio state the demo reports (`-demoRadio off`), so a screen can be
 /// checked in a state no real phone here is in, the unsupported device's among them (MVP item 10), the scene it
 /// seeds (`-demoScene marketing`), whether it starts at onboarding (`-demoOnboarding`), what the camera answers
-/// (`-demoCamera denied`), whether Choose photo picks a painted picture (`-demoPhoto`), whether the demo posts a
-/// notification to tap (`-demoNotification`), and whether every photo and every message from someone else looks explicit
-/// or abusive to the content filter (`-demoSensitive`).
+/// (`-demoCamera denied`), whether Choose photo picks a painted picture (`-demoPhoto`) or a painted GIF
+/// (`-demoPhoto gif`), whether the demo posts a notification to tap (`-demoNotification`), and whether every photo and
+/// every message from someone else looks explicit or abusive to the content filter (`-demoSensitive`).
 public struct LaunchOptions: Sendable, Equatable {
     /// Whether to run the demo: seeded stores in memory, a radio that goes nowhere, and a fixed identity.
     public var seedDemo = false
@@ -24,6 +24,8 @@ public struct LaunchOptions: Sendable, Equatable {
     /// Whether Choose photo hands the cropper a painted picture rather than opening the photo library, in the demo and in
     /// a debug build's live launch: the system's picker runs outside Knit, out of a UI test's reach.
     public var demoPhoto = false
+    /// Whether that picture is a painted GIF that moves, so a UI test can watch one play in a thread.
+    public var demoPhotoMoves = false
     /// Whether the demo asks to notify as it launches, then posts the room's notification each time Knit goes to the
     /// background: the demo's radio brings no messages, so a UI test would have no notification to tap.
     public var demoNotification = false
@@ -45,7 +47,10 @@ public struct LaunchOptions: Sendable, Equatable {
         if let flag = arguments.firstIndex(of: "-demoCamera"), arguments.indices.contains(flag + 1) {
             demoCamera = Self.cameraAnswers[arguments[flag + 1]]
         }
-        demoPhoto = arguments.contains("-demoPhoto")
+        if let flag = arguments.firstIndex(of: "-demoPhoto") {
+            demoPhoto = true
+            demoPhotoMoves = arguments.indices.contains(flag + 1) && arguments[flag + 1] == "gif"
+        }
         demoNotification = arguments.contains("-demoNotification")
         demoSensitive = arguments.contains("-demoSensitive")
     }

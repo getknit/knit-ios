@@ -9,9 +9,10 @@
 
     /// `{"cmd":"photos","conv":"nearby"}`: whether each photo in a thread shows, decoded as the thread draws it: read
     /// from the blob store, opened in memory with its message's key when it is sealed, and read by ImageIO under the
-    /// rules for a photo from the mesh (ADR 2026-10.6cas), and whether the content filter hides it behind a tap (ADR
-    /// 2026-10.rpmq). The control lines say whether a photo's bytes are here, and only the app can say whether they open
-    /// or hide, so the bridge answers it rather than ``MeshControl``.
+    /// rules for a photo from the mesh (ADR 2026-10.6cas), how many frames it plays (1 for a still, 0 when it does not
+    /// show), and whether the content filter hides it behind a tap (ADR 2026-10.rpmq). The control lines say whether a
+    /// photo's bytes are here, and only the app can say whether they open, play or hide, so the bridge answers it rather
+    /// than ``MeshControl``.
     internal struct PhotosCommand: Decodable {
         static let name = "photos"
         /// The size each photo decodes at: the viewer's, past any photo the mesh carries.
@@ -42,6 +43,8 @@
                     continue
                 }
                 let image = await photos.attachment(attachment.hash, key: attachment.key, pixels: Self.pixels)
+                let animation = await photos.animation(attachment.hash, key: attachment.key, unsaved: nil)
+                let frames = image == nil ? 0 : animation?.timing.frames ?? 1
                 var hidden = false
                 // Held or not, the screen reads the store itself, and lets missing bytes through.
                 if let shown = ChatAttachment(attachment, isHeld: true) {
@@ -56,6 +59,7 @@
                         "hidden": .bool(hidden),
                         "width": .int(Int64(image?.size.width ?? 0)),
                         "height": .int(Int64(image?.size.height ?? 0)),
+                        "frames": .int(Int64(frames)),
                     ])
                 )
             }

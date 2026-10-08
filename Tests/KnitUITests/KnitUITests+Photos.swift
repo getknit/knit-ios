@@ -77,6 +77,48 @@ extension KnitUITests {
         app.terminate()
     }
 
+    /// A GIF picked with Add photo under `-demoPhoto gif`, four painted scenes of 0.3 seconds each: it plays as the
+    /// composer holds it, in its bubble once sent, and full screen (ADR 2026-10.ytvx). Each place shows another frame a
+    /// moment after the first look.
+    func walkMovingPhoto() throws {
+        let app = launch("-demoScene", "marketing", "-demoPhoto", "gif")
+        try app.reveal(AccessibilityID.chatRow("nearby")).tap()
+        try app.appear(AccessibilityID.chatThread)
+        try app.appear(AccessibilityID.chatAddPhoto).tap()
+        plays(try app.appear(AccessibilityID.chatStagedPhoto), "the GIF the composer holds")
+        try app.appear(AccessibilityID.chatSend).tap()
+        XCTAssert(app.element(AccessibilityID.chatStagedPhoto).waitForNonExistence(timeout: Walking.appears), "Send kept the GIF")
+
+        let fire = AccessibilityID.chatPhoto("room-5")
+        let ours = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier != %@", "chat_photo_", fire)).firstMatch
+        try ours.appear("our GIF")
+        wait(for: ours, until: "label CONTAINS 'Photo'")
+        plays(ours, "our GIF in its bubble")
+        audit(app, screen: AccessibilityID.chatThread)
+        ours.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        let viewer = try app.appear(AccessibilityID.photoViewerScreen)
+        settle(viewer)
+        plays(viewer, "our GIF full screen")
+        audit(app, screen: AccessibilityID.photoViewerScreen)
+        app.buttons["Done"].tap()
+        app.terminate()
+    }
+
+    /// Fails the walk unless `element` looks different a moment after the first look: a frame of `what` other than the
+    /// first has shown. It looks again as fast as screenshots come, not on a waiter's once-a-second poll, which can land
+    /// on the same frame of a clip whose cycle is a whole number of seconds every time.
+    func plays(_ element: XCUIElement, _ what: String) {
+        let first = element.screenshot().pngRepresentation
+        let deadline = Date.now.addingTimeInterval(Walking.appears)
+        while Date.now < deadline {
+            if element.screenshot().pngRepresentation != first {
+                return
+            }
+        }
+        XCTFail("\(what) never moved")
+    }
+
     /// Waits for `element` to match `predicate`, and fails the walk if it never does.
     func wait(for element: XCUIElement, until predicate: String) {
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: predicate), object: element)

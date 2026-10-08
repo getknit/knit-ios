@@ -1,7 +1,9 @@
 #if os(iOS)
     import CoreGraphics
     import Foundation
+    import ImageIO
     import KnitAppCore
+    import UniformTypeIdentifiers
 
     /// The demo's photos, painted rather than shipped: a sky, a few shapes, and a JPEG of them, encoded as a profile
     /// photo or a chat's photo is. Coordinates are fractions of the picture, from its bottom left corner.
@@ -14,6 +16,11 @@
         private static let snapshot = (width: 960, height: 720)
         /// Each channel's depth.
         private static let bitsPerComponent = 8
+        /// The GIF `-demoPhoto gif` picks: four scenes in turn, each for 0.3 seconds, for good. A cycle of a whole number
+        /// of seconds would show a UI test that looks once a second the same frame each time.
+        private static let reel: [DemoPortrait] = [.sunset, .lake, .forest, .campfire]
+        private static let reelFrame = (width: 480, height: 360)
+        private static let reelDelay = 0.3
 
         /// `portrait` as a profile photo.
         static func profilePhoto(_ portrait: DemoPortrait) -> [UInt8]? {
@@ -25,12 +32,39 @@
             jpeg(portrait, width: snapshot.width, height: snapshot.height, quality: ChatPhoto.quality)
         }
 
-        /// The picture Choose photo and Add photo pick under `-demoPhoto`.
-        static func pickedPhoto() -> Data? {
+        /// The picture Choose photo and Add photo pick under `-demoPhoto`, or the GIF they pick under `-demoPhoto gif`.
+        static func picked(moving: Bool) -> Data? {
+            moving ? pickedGIF() : pickedPhoto()
+        }
+
+        private static func pickedPhoto() -> Data? {
             jpeg(.summit, width: pick.width, height: pick.height, quality: ProfilePhoto.quality).map { Data($0) }
         }
 
+        /// The picture Add photo picks under `-demoPhoto gif`: a GIF that moves, written by ImageIO, so a UI test can watch
+        /// one play in a thread (ADR 2026-10.ytvx).
+        private static func pickedGIF() -> Data? {
+            let frames = reel.compactMap { painted($0, width: reelFrame.width, height: reelFrame.height) }
+            let output = NSMutableData()
+            guard frames.count == reel.count,
+                let destination = CGImageDestinationCreateWithData(output, UTType.gif.identifier as CFString, frames.count, nil)
+            else {
+                return nil
+            }
+            let forever = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]]
+            CGImageDestinationSetProperties(destination, forever as CFDictionary)
+            let delay = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: reelDelay]]
+            for frame in frames {
+                CGImageDestinationAddImage(destination, frame, delay as CFDictionary)
+            }
+            return CGImageDestinationFinalize(destination) ? output as Data : nil
+        }
+
         private static func jpeg(_ portrait: DemoPortrait, width: Int, height: Int, quality: Double) -> [UInt8]? {
+            painted(portrait, width: width, height: height).flatMap { DeviceImageCodec.jpeg($0, quality: quality) }
+        }
+
+        private static func painted(_ portrait: DemoPortrait, width: Int, height: Int) -> CGImage? {
             guard let space = CGColorSpace(name: CGColorSpace.sRGB),
                 let context = CGContext(
                     data: nil,
@@ -45,7 +79,7 @@
                 return nil
             }
             Canvas(context: context, space: space, width: CGFloat(width), height: CGFloat(height)).paint(Scene.of(portrait))
-            return context.makeImage().flatMap { DeviceImageCodec.jpeg($0, quality: quality) }
+            return context.makeImage()
         }
     }
 

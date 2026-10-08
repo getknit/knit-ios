@@ -27,6 +27,7 @@ internal enum Schema {
         ("v8", v8),
         ("v9", v9),
         ("v10", v10),
+        ("v11", v11),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -218,6 +219,13 @@ internal enum Schema {
     private static let v10 = [
         "ALTER TABLE messages ADD COLUMN attachmentWidth INTEGER",
         "ALTER TABLE messages ADD COLUMN attachmentHeight INTEGER",
+    ]
+
+    /// Schema v11: whether a photo has more than one frame, read beside its size (ADR 2026-10.6cas), so a line about a
+    /// message names a GIF from its frames, as knit-next's database v17 does. Local only, like the size. A row sized
+    /// before it reads no answer, which a launch reads again with the size.
+    private static let v11 = [
+        "ALTER TABLE messages ADD COLUMN attachmentAnimated INTEGER"
     ]
 
     /// The migrator that brings any database this build knows up to date.

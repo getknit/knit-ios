@@ -66,6 +66,21 @@ import Testing
         #expect(store.unsizedAttachments(named: nil).isEmpty)
     }
 
+    @Test(arguments: kinds)
+    func whetherAPhotoMovesIsKeptWithItsSize(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        store.save(message("a", carrying: sunset))
+        let still = try #require(PhotoDimensions(width: 480, height: 270))
+        let moving = try #require(PhotoDimensions(width: 480, height: 270, animated: true))
+        #expect(store.setAttachmentDimensions(sunset, to: still))
+        #expect(store.setAttachmentDimensions(sunset, to: moving), "frames alone are a change")
+        #expect(store.message("a")?.attachment?.dimensions?.animated == true)
+        var saved = message("b", carrying: summit)
+        saved.attachment?.dimensions = moving
+        store.save(saved)
+        #expect(store.message("b") == saved)
+    }
+
     @Test func aSizeHasBothSides() {
         #expect(PhotoDimensions(width: 0, height: 10) == nil)
         #expect(PhotoDimensions(width: 10, height: -1) == nil)

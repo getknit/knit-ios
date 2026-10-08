@@ -171,6 +171,13 @@ import Testing
         for (attachment, line) in lines {
             #expect(AttachmentKind.preview(of: attachment) == line)
         }
+        // Once the bytes are read, the frames decide, not the type: Android sends every GIF as an animated WebP.
+        let moving = PhotoDimensions(width: 480, height: 270, animated: true)
+        let still = PhotoDimensions(width: 480, height: 270)
+        let sticker = MessageAttachment(hash: hash, mime: "image/webp", dimensions: moving)
+        let oneFrame = MessageAttachment(hash: hash, mime: "image/gif", dimensions: still)
+        #expect(AttachmentKind.preview(of: sticker) == Copy.Attachments.gifPreview)
+        #expect(AttachmentKind.preview(of: oneFrame) == Copy.Attachments.photoPreview)
         #expect(Copy.Attachments.photoPreview == "📷 Photo" && Copy.Attachments.filePreview("map.pdf") == "📎 map.pdf")
 
         await receive("", carrying: MessageAttachment(hash: hash, mime: "image/jpeg"), from: AppRig.sam.nodeId, in: rig)

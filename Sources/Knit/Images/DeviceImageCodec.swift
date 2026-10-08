@@ -70,14 +70,20 @@
             return context.makeImage().flatMap { jpeg($0, quality: ProfilePhoto.quality) }
         }
 
-        /// A picked photo made ready for a chat (`AttachmentStore.ingest`). A GIF goes as it is, frames and all, when the
-        /// mesh takes it whole and a phone may decode it; Android's shrinks one into an animated WebP, which ImageIO
-        /// cannot write. Anything else, a GIF too heavy or too large among it, is drawn upright at no more than
+        /// A picked photo made ready for a chat (`AttachmentStore.ingest`). A GIF or an animated WebP goes as it is, frames
+        /// and all, when the mesh takes it whole and a phone may decode it; Android shrinks a GIF into an animated WebP, which
+        /// ImageIO cannot write. A WebP loses its metadata on the way (``AnimatedWebP``), as Android's sticker does. Anything
+        /// else, a moving photo too heavy, too large or not understood among it, is drawn upright at no more than
         /// ``ChatPhoto/side`` and encoded afresh, which leaves its metadata behind.
         @concurrent
         private static func chatPhoto(_ data: Data) async -> OutgoingPhoto? {
-            if data.count <= OutgoingPhoto.maxBytes, PhotoDecoder.isGIF(data, pixels: PhotoDecoder.meshPixels) {
-                return OutgoingPhoto(bytes: [UInt8](data), mime: Mime.gif)
+            if data.count <= OutgoingPhoto.maxBytes {
+                if PhotoDecoder.isGIF(data, pixels: PhotoDecoder.meshPixels) {
+                    return OutgoingPhoto(bytes: [UInt8](data), mime: Mime.gif)
+                }
+                if PhotoDecoder.isAnimatedWebP(data, pixels: PhotoDecoder.meshPixels), let sticker = AnimatedWebP.stripped([UInt8](data)) {
+                    return OutgoingPhoto(bytes: sticker, mime: Mime.webp)
+                }
             }
             return PhotoDecoder.thumbnail(data, side: ChatPhoto.side, types: nil, pixels: PhotoDecoder.pickedPixels)
                 .flatMap(chatPhoto(drawing:))
@@ -118,6 +124,7 @@
             static let jpeg = "image/jpeg"
             static let png = "image/png"
             static let gif = "image/gif"
+            static let webp = "image/webp"
         }
 
         /// `image` as a JPEG at `quality`, and nothing else.

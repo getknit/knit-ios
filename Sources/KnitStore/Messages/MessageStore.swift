@@ -81,8 +81,8 @@ public struct MessageAttachment: Sendable, Equatable {
     public var name: String?
     /// A file's size in bytes, before sealing, which only a file carries.
     public var size: Int64?
-    /// A photo's size, read from its bytes on this phone: `nil` until they are here and have been read, and for
-    /// anything but a photo. It never crosses the wire, as knit-next's voice-note fields never do.
+    /// A photo's size, and whether it moves, read from its bytes on this phone: `nil` until they are here and have been
+    /// read, and for anything but a photo. It never crosses the wire, as knit-next's voice-note fields never do.
     public var dimensions: PhotoDimensions?
 
     /// An attachment.
@@ -100,20 +100,24 @@ public struct MessageAttachment: Sendable, Equatable {
 }
 
 /// A photo's size in pixels, upright: turned as its orientation says, so a portrait stands taller than it is wide. A
-/// thread holds a photo's place at this shape from its first frame, before the photo decodes.
+/// thread holds a photo's place at this shape from its first frame, before the photo decodes. Read beside it, from
+/// the same bytes, is whether the photo moves, which a line about the message names a GIF (knit-next `0b9d19ea`).
 public struct PhotoDimensions: Sendable, Hashable {
     /// The width, in pixels.
     public let width: Int
     /// The height, in pixels.
     public let height: Int
+    /// Whether it has more than one frame: a GIF, an animated WebP or an APNG that plays.
+    public let animated: Bool
 
     /// A size, or `nil` unless both sides are at least a pixel.
-    public init?(width: Int, height: Int) {
+    public init?(width: Int, height: Int, animated: Bool = false) {
         guard width > 0, height > 0 else {
             return nil
         }
         self.width = width
         self.height = height
+        self.animated = animated
     }
 }
 

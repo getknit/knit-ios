@@ -73,6 +73,8 @@ document:
   though never what it says.
 - Scroll up into a chat's older messages and Knit keeps your place as new ones arrive, with a button in the
   corner that jumps back to the newest. Sending a message still takes you straight down to it.
+- GIFs and animated stickers now play in chats and full screen, including ones sent from Android phones, and
+  the chat list calls them GIFs. They stay still if you turn off Auto-Play Animated Images in Settings.
 
 ### Changed
 

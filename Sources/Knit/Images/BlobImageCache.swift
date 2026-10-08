@@ -21,6 +21,11 @@
         private static let photosKept = 128
         private static let bytesPerPixel = 4
         private static let growth = 2
+        /// What the moving photos kept may weigh, as bytes rather than frames, half the stills' budget: a player decodes its
+        /// own frames as they fall due. Android sends no GIF past 480 pixels, so a few dozen fit.
+        private static let animationBudget = budget / growth
+        /// How many answers about moving photos are kept, stills among them.
+        private static let animationsKept = 256
 
         /// One decode: a photo at one size, opened with the key a sealed one needs. A message names its blob's key, so two
         /// messages naming one blob with different keys never share a decode.
@@ -36,6 +41,12 @@
         @ObservationIgnored private var order: [Key] = []
         @ObservationIgnored private var held = 0
         @ObservationIgnored private var decoding: [Key: Task<UIImage?, Never>] = [:]
+        /// The moving photos read, by hash and key, least recently used first; `nil` for one that turned out still or too
+        /// large to play, so it is not read again.
+        @ObservationIgnored private var animations: [Key: AnimatedPhoto?] = [:]
+        @ObservationIgnored private var animationOrder: [Key] = []
+        @ObservationIgnored private var animationsHeld = 0
+        @ObservationIgnored private var reading: [Key: Task<AnimatedPhoto??, Never>] = [:]
 
         /// Photos from `session`'s blob store.
         init(session: AppSession) {
@@ -52,6 +63,44 @@
         /// bytes are missing, the key does not open them, or they are no image a thread may show.
         func attachment(_ hash: BlobHash, key: String?, pixels: Int) async -> UIImage? {
             await image(Key(hash: hash, side: Self.bucket(pixels), secret: key), unsaved: nil)
+        }
+
+        /// A message's photo as it moves, opened with `key` when it is sealed, for a player to decode frame by frame; `nil`
+        /// when its bytes are missing, the key does not open them, or it is still or too large to play. `unsaved` stands in
+        /// for the store, for a photo picked and not yet sent.
+        func animation(_ hash: BlobHash, key secret: String?, unsaved: [UInt8]?) async -> AnimatedPhoto? {
+            let key = Key(hash: hash, side: 0, secret: secret)
+            if let known = animations[key] {
+                animationOrder.removeAll { $0 == key }
+                animationOrder.append(key)
+                return known
+            }
+            if let pending = reading[key] {
+                return await pending.value.flatMap(\.self)
+            }
+            let source = session
+            let task = Task { await Self.animation(key, unsaved: unsaved, session: source) }
+            reading[key] = task
+            let read = await task.value
+            reading[key] = nil
+            // Bytes still missing, or a key that does not open them yet, are asked about again.
+            guard let animation = read else {
+                return nil
+            }
+            keep(animation, as: key)
+            return animation
+        }
+
+        private func keep(_ animation: AnimatedPhoto?, as key: Key) {
+            guard animations.updateValue(animation, forKey: key) == nil else {
+                return
+            }
+            animationOrder.append(key)
+            animationsHeld += animation?.cost ?? 0
+            while animationsHeld > Self.animationBudget || animationOrder.count > Self.animationsKept, animationOrder.count > 1 {
+                let oldest = animationOrder.removeFirst()
+                animationsHeld -= animations.removeValue(forKey: oldest)??.cost ?? 0
+            }
         }
 
         /// A message's photo as it was sent, opened with `key` when it is sealed, for Save: read off the main actor, and
@@ -114,6 +163,13 @@
                 return nil
             }
             return UIImage(cgImage: image)
+        }
+
+        @concurrent
+        /// The photo `key` names as it moves: `nil` while its bytes are missing or do not open, and `.some(nil)` for one
+        /// that is still or too large to play.
+        nonisolated private static func animation(_ key: Key, unsaved: [UInt8]?, session: AppSession) async -> AnimatedPhoto?? {
+            (unsaved ?? session.attachment(key.hash, key: key.secret)).map { PhotoDecoder.animation(Data($0)) }
         }
 
         @concurrent

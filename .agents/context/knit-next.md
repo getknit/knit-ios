@@ -85,7 +85,8 @@ Kotlin wins.
       this port only checks it (`interop.py android-reads --links`, `iphone --links`; "What the put-back race
       showed", `linux-peer.md`).
     - `0b9d19ea` labels an animated image "GIF", from its frames, read locally after the blob lands and stored on
-      the message (database v17). It adds no wire field, so this port has nothing to mirror.
+      the message (database v17). It adds no wire field. This port mirrors the label in schema v11 (ADR 2026-10.ytvx),
+      since Android sends every GIF as an animated WebP and a type alone cannot say it moves.
     - `2d059df6` moves Android's dependencies, `cb295894` its CI, and `e40135f2` and `3031fe60` its tests.
   - **Up to `a87d2255`** (the previous pin):
     - #103 (knit-next ADR 2026-09.hj4a), rebased onto `c1b7c19c` and merged unchanged from the branch this port

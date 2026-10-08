@@ -180,7 +180,7 @@
                 parts.storage = StorageReport(
                     nodeId: identity.nodeId, keyStore: keyStore, directory: directory, preferences: defaults, launch: launch)
                 // The device tests pick a painted photo too: the system's picker is out of their reach.
-                parts.demoPhoto = options.demoPhoto ? DemoPortraits.pickedPhoto() : nil
+                parts.demoPhoto = options.demoPhoto ? DemoPortraits.picked(moving: options.demoPhotoMoves) : nil
                 return compose(parts) { keys in try keyStore.write(keys.storedForm) }
             #else
                 return compose(parts, replace: nil)
@@ -324,7 +324,7 @@
                         wait: { milliseconds in try? await Task.sleep(for: .milliseconds(milliseconds)) }
                     ),
                     camera: options.demoCamera.map(DemoCamera.init),
-                    demoPhoto: options.demoPhoto ? DemoPortraits.pickedPhoto() : nil,
+                    demoPhoto: options.demoPhoto ? DemoPortraits.picked(moving: options.demoPhotoMoves) : nil,
                     notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
                 )
                 return compose(parts, replace: nil)

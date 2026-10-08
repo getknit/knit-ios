@@ -89,7 +89,8 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
 
 - **What a carrier sees:** a DM's or a group's photo blob is ciphertext, but its hash, its size and the fact that a
   message carries a photo travel in the clear. A Nearby photo is as public as the post.
-- **A GIF shows its first frame here;** Android animates it.
+- **A GIF shows its first frame here;** Android animates it. (Amended 2026-10-08: a GIF, an animated WebP or an APNG
+  plays here too, and a list's line names a GIF from its frames; ADR 2026-10.ytvx.)
 - **A transparent photo goes as PNG,** which weighs more than Android's WebP.
 - **A file or a voice message** from Android is named here and can't be opened.
 - **Save keeps the sender's file as it is,** metadata and all. Android strips metadata from what it sends, but a

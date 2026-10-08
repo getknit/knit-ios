@@ -30,10 +30,11 @@
         }
     }
 
-    /// A message's photo: the picture once its bytes are here, at its own shape; until then a placeholder that says why
-    /// it waits; and a line that says so when the bytes do not open, which a wrong key, a damaged blob or a type this
-    /// build cannot read leaves behind. Someone else's photo is screened before it is drawn, and one the content filter
-    /// hides waits behind a tap (`AttachmentImage` in knit-next).
+    /// A message's photo: the picture once its bytes are here, at its own shape, playing when it moves; until then a
+    /// placeholder that says why it waits; and a line that says so when the bytes do not open, which a wrong key, a
+    /// damaged blob or a type this build cannot read leaves behind. Someone else's photo is screened before it is drawn,
+    /// on its first frame as Android screens it, and one the content filter hides waits behind a tap (`AttachmentImage`
+    /// in knit-next).
     private struct MessagePhoto: View {
         /// What is drawn: the photo, under the filter as it stands, so turning the filter on screens what shows.
         private struct Drawing: Equatable {
@@ -50,6 +51,7 @@
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
         @Environment(\.displayScale) private var scale
         @State private var image: UIImage?
+        @State private var animation: AnimatedPhoto?
         @State private var failed = false
 
         var body: some View {
@@ -63,9 +65,7 @@
                     // The stored shape where there is one: a thumbnail's sides are rounded, and the row would shift a hair.
                     let size = place ?? Self.frame(for: image.size)
                     Button(action: open) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
+                        FilledPhoto(image: image, animation: animation, pixels: pixels)
                             .frame(width: size.width, height: size.height)
                             .clipShape(.rect(cornerRadius: Layout.photoCorner))
                             .accessibilityIgnoresInvertColors()
@@ -92,11 +92,18 @@
                 }
                 // Screened first, so an explicit photo is never drawn before the filter has seen it.
                 _ = await screening?.hides(attachment, isMine: isMine)
-                let pixels = Int((Layout.photoWidth * scale).rounded(.up))
                 let decoded = await photos?.attachment(attachment.hash, key: attachment.key, pixels: pixels)
                 image = decoded
                 failed = decoded == nil
+                // Only a photo read as moving is read again for its frames, so a still costs nothing more.
+                let moves = decoded != nil && attachment.dimensions?.animated == true
+                animation = moves ? await photos?.animation(attachment.hash, key: attachment.key, unsaved: nil) : nil
             }
+        }
+
+        /// The most pixels the photo is decoded at, on its long side.
+        private var pixels: Int {
+            Int((Layout.photoWidth * scale).rounded(.up))
         }
 
         /// The size a photo of `pixels` takes: ``Layout/photoWidth`` wide, unless that would stand it taller than
@@ -105,6 +112,26 @@
             let aspect = pixels.width / max(pixels.height, 1)
             let height = min(Layout.photoWidth / max(aspect, .ulpOfOne), Layout.photoMaxHeight)
             return CGSize(width: height * aspect, height: height)
+        }
+    }
+
+    /// A photo drawn to fill its frame: playing when it moves, its first frame otherwise.
+    private struct FilledPhoto: View {
+        let image: UIImage
+        let animation: AnimatedPhoto?
+        /// The most pixels a moving photo's frames are decoded at, on their long side.
+        let pixels: Int
+
+        var body: some View {
+            if let animation {
+                AnimatedPhotoView(photo: animation, poster: image, pixels: pixels, fills: true)
+            } else {
+                // The caller names the photo: the bubble's button, or the composer's element.
+                // swiftlint:disable:next accessibility_label_for_image
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            }
         }
     }
 
@@ -207,14 +234,14 @@
         @Environment(BlobImageCache.self) private var photos: BlobImageCache?
         @Environment(\.displayScale) private var scale
         @State private var image: UIImage?
+        @State private var animation: AnimatedPhoto?
 
         var body: some View {
             ZStack(alignment: .topTrailing) {
                 Group {
                     if let image {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
+                        // A picked GIF plays as it will in the thread, so the sender sees what goes.
+                        FilledPhoto(image: image, animation: animation, pixels: pixels)
                             .accessibilityIgnoresInvertColors()
                     } else {
                         Palette.incomingBubble
@@ -240,9 +267,14 @@
                 .accessibilityIdentifier(AccessibilityID.chatRemovePhoto)
             }
             .task(id: staged.hash) {
-                let pixels = Int((Layout.stagedPhoto * scale).rounded(.up))
                 image = await photos?.image(staged.hash, pixels: pixels, unsaved: staged.photo.bytes)
+                animation = await photos?.animation(staged.hash, key: nil, unsaved: staged.photo.bytes)
             }
+        }
+
+        /// The most pixels the photo is decoded at, on its long side.
+        private var pixels: Int {
+            Int((Layout.stagedPhoto * scale).rounded(.up))
         }
     }
 #endif

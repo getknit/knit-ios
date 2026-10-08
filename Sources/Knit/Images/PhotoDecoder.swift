@@ -1,6 +1,7 @@
 #if os(iOS)
     import Foundation
     import ImageIO
+    import KnitAppCore
     import KnitStore
     import UniformTypeIdentifiers
 
@@ -36,11 +37,9 @@
             return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnail)
         }
 
-        /// The size `data` stands at once turned upright, read from its header without decoding it, or `nil` when
-        /// ``thumbnail(_:side:types:pixels:)`` would refuse it.
-        static func uprightSize(_ data: Data, types: Set<String>?, pixels: Int) -> CGSize? {
-            guard let source = source(of: data, types: types, pixels: pixels),
-                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+        /// The size the first frame of `source` stands at once turned upright, read from its header without decoding it.
+        private static func uprightSize(of source: CGImageSource) -> CGSize? {
+            guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
                 let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int
             else {
                 return nil
@@ -50,12 +49,73 @@
             return turned ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
         }
 
-        /// The upright size of `bytes`, a photo from the mesh, read from its header: what the session stores on each message
-        /// that carries it (ADR 2026-10.6cas). `nil` for bytes ``thumbnail(_:side:types:pixels:)`` would refuse.
+        /// The upright size of `bytes`, a photo from the mesh, and whether it has more than one frame, read from its header:
+        /// what the session stores on each message that carries it (ADR 2026-10.6cas). `nil` for bytes
+        /// ``thumbnail(_:side:types:pixels:)`` would refuse.
         static func dimensions(_ bytes: [UInt8]) -> PhotoDimensions? {
-            uprightSize(Data(bytes), types: meshTypes, pixels: meshPixels).flatMap { size in
-                PhotoDimensions(width: Int(size.width), height: Int(size.height))
+            guard let source = source(of: Data(bytes), types: meshTypes, pixels: meshPixels), let size = uprightSize(of: source) else {
+                return nil
             }
+            return PhotoDimensions(width: Int(size.width), height: Int(size.height), animated: CGImageSourceGetCount(source) > 1)
+        }
+
+        /// `data`'s frames and when each shows, for a photo from the mesh that moves and is small enough to play
+        /// (``AnimationTiming``); `nil` for a still, for one past its limits, which shows its first frame, and for bytes
+        /// ``thumbnail(_:side:types:pixels:)`` would refuse. Nothing is decoded: each frame's delay is read from its
+        /// header, the unclamped one first, as browsers read it.
+        static func animation(_ data: Data) -> AnimatedPhoto? {
+            guard let source = source(of: data, types: meshTypes, pixels: meshPixels) else {
+                return nil
+            }
+            let count = CGImageSourceGetCount(source)
+            guard count > 1, count <= AnimationTiming.maxFrames,
+                let first = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                let width = first[kCGImagePropertyPixelWidth] as? Int, let height = first[kCGImagePropertyPixelHeight] as? Int
+            else {
+                return nil
+            }
+            let delays = (0..<count).map { index in
+                (CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]).map(delay(in:)) ?? 0
+            }
+            return AnimationTiming(delays: delays, width: width, height: height).map { AnimatedPhoto(bytes: data, timing: $0) }
+        }
+
+        /// Where a type that moves keeps a frame's delay: its dictionary, its unclamped delay and its delay.
+        private struct DelayKeys {
+            var dictionary: CFString
+            var unclamped: CFString
+            var clamped: CFString
+        }
+
+        /// Built where it is read: a `CFString` is not `Sendable`, so a stored global cannot hold one.
+        private static var delayKeys: [DelayKeys] {
+            [
+                DelayKeys(
+                    dictionary: kCGImagePropertyGIFDictionary,
+                    unclamped: kCGImagePropertyGIFUnclampedDelayTime,
+                    clamped: kCGImagePropertyGIFDelayTime
+                ),
+                DelayKeys(
+                    dictionary: kCGImagePropertyWebPDictionary,
+                    unclamped: kCGImagePropertyWebPUnclampedDelayTime,
+                    clamped: kCGImagePropertyWebPDelayTime
+                ),
+                DelayKeys(
+                    dictionary: kCGImagePropertyPNGDictionary,
+                    unclamped: kCGImagePropertyAPNGUnclampedDelayTime,
+                    clamped: kCGImagePropertyAPNGDelayTime
+                ),
+            ]
+        }
+
+        /// A frame's delay in seconds from its `properties`, or 0, which plays as a short delay does.
+        private static func delay(in properties: [CFString: Any]) -> Double {
+            for keys in delayKeys {
+                if let frame = properties[keys.dictionary] as? [CFString: Any] {
+                    return (frame[keys.unclamped] as? Double) ?? (frame[keys.clamped] as? Double) ?? 0
+                }
+            }
+            return 0
         }
 
         /// The orientations that stand an image on its side, so it is upright with its width and height swapped.
@@ -64,6 +124,12 @@
         /// Whether `data` is a GIF declaring at most `pixels` pixels, which a chat sends as it is to keep its frames.
         static func isGIF(_ data: Data, pixels: Int) -> Bool {
             source(of: data, types: [UTType.gif.identifier], pixels: pixels) != nil
+        }
+
+        /// Whether `data` is a WebP of more than one frame declaring at most `pixels` pixels, which a chat sends as it is,
+        /// as Android sends a sticker (ADR 2026-10.8hmx in knit-next).
+        static func isAnimatedWebP(_ data: Data, pixels: Int) -> Bool {
+            source(of: data, types: [UTType.webP.identifier], pixels: pixels).map { CGImageSourceGetCount($0) > 1 } ?? false
         }
 
         /// Whether `data` is an image of a type a photo from the mesh may be, declaring at most ``meshPixels``: what the

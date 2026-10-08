@@ -278,6 +278,9 @@ struct FakeCodec: ImageCodec {
     @Test func theLaunchOptionsReadTheDemosPhoto() {
         #expect(!LaunchOptions(arguments: ["-seedDemo"]).demoPhoto)
         #expect(LaunchOptions(arguments: ["-seedDemo", "-demoPhoto"]).demoPhoto)
+        #expect(!LaunchOptions(arguments: ["-demoPhoto", "-seedDemo"]).demoPhotoMoves)
+        let moving = LaunchOptions(arguments: ["-seedDemo", "-demoPhoto", "gif"])
+        #expect(moving.demoPhoto && moving.demoPhotoMoves)
     }
 
     /// The marketing scene gives most of its people a photo, painted by whoever seeds it, and leaves the rest their

@@ -75,6 +75,11 @@ final class KnitUITests: XCTestCase {
         try walkChatPhotos()
     }
 
+    /// A GIF plays in the composer, in its bubble and full screen (ADR 2026-10.ytvx).
+    func testAGIFPlaysWhereverItShows() throws {
+        try walkMovingPhoto()
+    }
+
     func testNewMessageOpensADirectThreadForOnePerson() throws {
         try walkNewMessage()
     }
