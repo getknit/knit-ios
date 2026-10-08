@@ -1,0 +1,91 @@
+import KnitCrypto
+import KnitMesh
+import KnitStore
+import KnitWire
+import Testing
+
+@testable import KnitAppCore
+
+/// The trailer's director (ADR 2026-10.g3k9): only the trailer has a script, and it plays through a real mesh, session
+/// and room, typing the user's part into the composer.
+@MainActor
+@Suite(.timeLimit(.minutes(1))) struct DemoDirectorTests {
+    @Test func onlyAScriptedSceneHasADirector() throws {
+        let identity = try #require(DemoSeed.identity)
+        let scenes = DemoScene.allCases.filter { scene in
+            Self.director(of: scene, over: MeshStores.inMemory(), me: identity.nodeId) != nil
+        }
+        #expect(scenes == [.trailer])
+        #expect(LaunchOptions(arguments: ["-seedDemo", "-demoScene", "trailer"]).demoScene == .trailer)
+    }
+
+    /// The trailer opens on Sam linked and the room at its opening, and plays nothing until the room is on screen. Then
+    /// the director types the user's posts into the room's composer, which sends them, and the room answers each one
+    /// only once it is sent.
+    @Test func theTrailersDirectorPlaysItsScriptThroughTheRoom() async throws {
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        DemoSeed.populate(stores, me: identity.nodeId, now: 100_000_000, scene: .trailer)
+        let room = { stores.messages.messages(in: Conversations.nearby) }
+        #expect(room().map(\.id) == ["room-1", "room-2", "room-3"])
+        let director = try #require(Self.director(of: .trailer, over: stores, me: identity.nodeId))
+        let session = Self.session(stores, identity: identity, director: director)
+        let listening = Task { await session.listen() }
+        await session.start()
+        while session.neighbors.isEmpty {
+            await Task.yield()
+        }
+        for _ in 0..<100 {
+            await Task.yield()
+        }
+        #expect(session.neighbors.count == 1 && room().count == 3, "nothing plays before the room is on screen")
+
+        let chat = ChatModel(conversationId: Conversations.nearby, session: session)
+        let following = Task { await chat.appear() }
+        let mine = { room().filter { $0.senderId == identity.nodeId && $0.id.hasPrefix("room-") == false } }
+        while !room().contains(where: { $0.id == "trailer-3" }) || mine().first?.delivered != true {
+            await Task.yield()
+        }
+        #expect(mine().map(\.body) == ["Anyone still up top?"], "typed and sent in the composer")
+        #expect(chat.draft.isEmpty, "the composer emptied by the send")
+        #expect(stores.messages.message("trailer-3")?.attachment != nil, "Dani's post carries the fire")
+        #expect(!room().contains { $0.id == "trailer-4" }, "nobody answers a post not yet made")
+
+        while chat.state.messages.first(where: { $0.id == "trailer-4" })?.reactions.isEmpty != false {
+            await Task.yield()
+        }
+        #expect(mine().map(\.body) == ["Anyone still up top?", "On my way, give me 20."])
+        #expect(session.neighbors.count == 3)
+        #expect(chat.state.messages.first { $0.id == "trailer-2" }?.reactions == [ReactionChip(emoji: "\u{1F64F}", count: 2, mine: false)])
+        following.cancel()
+        listening.cancel()
+    }
+
+    /// `scene`'s director over `stores`, with no pause between cues and a byte or two for each photo.
+    private static func director(of scene: DemoScene, over stores: MeshStores, me: NodeId) -> DemoDirector? {
+        DemoDirector(
+            scene: scene,
+            stores: stores,
+            me: me,
+            snap: { _ in [0xFF, 0xD8] },
+            now: { 100_000_000 },
+            wait: { _ in await Task.yield() }
+        )
+    }
+
+    /// A session over a real mesh on the demo's radio, showing the trailer's linked peers, with `director` playing.
+    private static func session(_ stores: MeshStores, identity: IdentityKeys, director: DemoDirector) -> AppSession {
+        let node = Mesh(
+            identity: identity,
+            deviceTag: nil,
+            stores: stores,
+            radio: DemoRadio(state: .on),
+            clock: DemoClock(),
+            random: SystemRandomNumberGenerator()
+        )
+        let mesh = DemoMesh(node, linked: DemoSeed.linked(in: .trailer), director: director)
+        let session = AppSession(identity: OwnIdentity(bundle: identity.bundle), stores: stores, mesh: mesh)
+        session.director = director
+        return session
+    }
+}

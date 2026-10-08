@@ -280,7 +280,7 @@ import Testing
 }
 
 /// The wall and monotonic clocks, for a mesh whose timers never need to fire in a test.
-private struct DemoClock: MeshClock {
+struct DemoClock: MeshClock {
     func wallMilliseconds() -> Int64 {
         10_000_000
     }

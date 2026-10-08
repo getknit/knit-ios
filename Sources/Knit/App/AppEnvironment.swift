@@ -187,43 +187,6 @@
             #endif
         }
 
-        #if DEBUG
-            private static func demo(_ options: LaunchOptions) throws -> AppEnvironment {
-                guard let identity = DemoSeed.identity else {
-                    throw SecretStoreError.unavailable("the demo identity")
-                }
-                let clock = SystemClock()
-                let log = UnifiedLog(clock: clock)
-                // `scripts/check.sh release` fails when a release build holds this line: it would mean the demo ships.
-                log.log(.info, "running the demo on seeded stores in memory")
-                let stores = MeshStores.inMemory()
-                DemoSeed.populate(
-                    stores,
-                    me: identity.nodeId,
-                    now: clock.wallMilliseconds(),
-                    scene: options.demoScene,
-                    paint: DemoPortraits.profilePhoto,
-                    snap: DemoPortraits.chatPhoto
-                )
-                let parts = Parts(
-                    identity: identity,
-                    stores: stores,
-                    radio: DemoRadio(state: options.demoRadio),
-                    log: log,
-                    preferences: MemoryPreferences(
-                        hasOnboarded: !options.demoOnboarding, acceptedTerms: options.demoOnboarding ? 0 : Terms.version
-                    ),
-                    classifier: DemoPhotoClassifier(flagsEverything: options.demoSensitive),
-                    textClassifier: DemoTextClassifier(flagsEverything: options.demoSensitive),
-                    linked: DemoSeed.linked(in: options.demoScene),
-                    camera: options.demoCamera.map(DemoCamera.init),
-                    demoPhoto: options.demoPhoto ? DemoPortraits.pickedPhoto() : nil,
-                    notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
-                )
-                return compose(parts, replace: nil)
-            }
-        #endif
-
         /// What an environment is made from.
         private struct Parts {
             let identity: IdentityKeys
@@ -236,6 +199,8 @@
             let textClassifier: any TextClassifier
             /// The peers a demo scene shows as linked, which only a demo has.
             var linked: [NodeId] = []
+            /// What plays a demo scene's script, under `-demoScene trailer`.
+            var director: DemoDirector?
             /// A demo's camera, under `-demoCamera`; otherwise the phone's.
             var camera: (any CameraAccess)?
             /// The picture Choose photo picks, under `-demoPhoto`.
@@ -282,8 +247,10 @@
                 log: parts.log
             )
             let alerts = LocalNotifier()
-            let service: any MeshService = parts.linked.isEmpty ? node : DemoMesh(node, linked: parts.linked)
+            let service: any MeshService =
+                parts.linked.isEmpty && parts.director == nil ? node : DemoMesh(node, linked: parts.linked, director: parts.director)
             let app = session(parts, over: service, notifying: alerts)
+            app.director = parts.director
             let environment = AppEnvironment(
                 session: app,
                 mesh: node,
@@ -319,6 +286,51 @@
 
     // Apart from the class only to keep its body inside the lint's length.
     extension AppEnvironment {
+        #if DEBUG
+            private static func demo(_ options: LaunchOptions) throws -> AppEnvironment {
+                guard let identity = DemoSeed.identity else {
+                    throw SecretStoreError.unavailable("the demo identity")
+                }
+                let clock = SystemClock()
+                let log = UnifiedLog(clock: clock)
+                // `scripts/check.sh release` fails when a release build holds this line: it would mean the demo ships.
+                log.log(.info, "running the demo on seeded stores in memory")
+                let stores = MeshStores.inMemory()
+                DemoSeed.populate(
+                    stores,
+                    me: identity.nodeId,
+                    now: clock.wallMilliseconds(),
+                    scene: options.demoScene,
+                    paint: DemoPortraits.profilePhoto,
+                    snap: DemoPortraits.chatPhoto
+                )
+                let parts = Parts(
+                    identity: identity,
+                    stores: stores,
+                    radio: DemoRadio(state: options.demoRadio),
+                    log: log,
+                    preferences: MemoryPreferences(
+                        hasOnboarded: !options.demoOnboarding, acceptedTerms: options.demoOnboarding ? 0 : Terms.version
+                    ),
+                    classifier: DemoPhotoClassifier(flagsEverything: options.demoSensitive),
+                    textClassifier: DemoTextClassifier(flagsEverything: options.demoSensitive),
+                    linked: DemoSeed.linked(in: options.demoScene),
+                    director: DemoDirector(
+                        scene: options.demoScene,
+                        stores: stores,
+                        me: identity.nodeId,
+                        snap: DemoPortraits.chatPhoto,
+                        now: { clock.wallMilliseconds() },
+                        wait: { milliseconds in try? await Task.sleep(for: .milliseconds(milliseconds)) }
+                    ),
+                    camera: options.demoCamera.map(DemoCamera.init),
+                    demoPhoto: options.demoPhoto ? DemoPortraits.pickedPhoto() : nil,
+                    notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
+                )
+                return compose(parts, replace: nil)
+            }
+        #endif
+
         /// Knit went to the background, where iOS may suspend it, or came back. Control Center or an alert over Knit is
         /// neither: Knit is still on screen, and Android still finds it. Going posts `-demoNotification`'s notification.
         func setInBackground(_ background: Bool) {

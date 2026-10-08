@@ -70,3 +70,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.ds45](decisions/2026-10-ds45-the-iphone-reports-a-file.md) | The iPhone reports a file's progress to its sender, and holds on a SENDING answer's eta | mesh, blobs, interop, wire |
 | [2026-10.f6kf](decisions/2026-10-f6kf-a-report-blocks-the-person.md) | A report blocks the person and deletes the message here, and can email Knit | moderation, privacy, ui |
 | [2026-10.spcy](decisions/2026-10-spcy-the-iphone-screens-on-sending.md) | The iPhone screens on sending only in Nearby, and screens its profile photo | moderation, privacy |
+| [2026-10.g3k9](decisions/2026-10-g3k9-the-store-s-video-is.md) | The store's video is a scripted demo scene filmed in the Simulator | testing, store, ui |

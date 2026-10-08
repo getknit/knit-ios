@@ -284,7 +284,7 @@ public enum DemoSeed {
     }
 
     /// Keeps a post's painted photo in the blob store, as the engine keeps a room post's, and answers what the post carries.
-    private static func photo(_ jpeg: [UInt8]?, in stores: MeshStores, at now: Int64) -> MessageAttachment? {
+    static func photo(_ jpeg: [UInt8]?, in stores: MeshStores, at now: Int64) -> MessageAttachment? {
         keep(jpeg, in: stores, at: now).map { MessageAttachment(hash: $0, mime: "image/jpeg") }
     }
 
@@ -295,6 +295,11 @@ public enum DemoSeed {
             stores.blobs.insert(jpeg, hash: hash, mime: "image/jpeg", storedAt: now)
             return hash
         }
+    }
+
+    /// `slot`'s node id, the same every launch: this device's for `.me`.
+    static func nodeId(_ slot: DemoCast.Slot) -> NodeId? {
+        keys(slot)?.nodeId
     }
 
     /// Fixed keys for `slot`. Any 32 bytes are an Ed25519 seed and an X25519 scalar.

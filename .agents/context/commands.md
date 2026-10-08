@@ -24,6 +24,7 @@ tree, so switching between them never rebuilds the plain debug tree.
 | `scripts/check.sh archive` | on the Mac: the App Store build, archived and checked as `release` checks, then signed for distribution in the desktop session and exported to `.build-xcode/export/Knit.ipa`; nothing leaves the Mac | before an upload, and after touching signing |
 | `scripts/check.sh upload` | on the Mac: the same archive, uploaded to App Store Connect for TestFlight; raise `CURRENT_PROJECT_VERSION` first | to ship a build, with the go-ahead |
 | `scripts/check.sh shots` | on the Mac: `KnitShots` in the "Knit shots" Simulator, an iPhone 18 Pro Max with its status bar frozen, every screen the store listing shows on the marketing scene in light and dark, into `.build-xcode/shots/<light\|dark>_<shot>.png` (ADR 2026-10.5u39); `KNIT_SHOTS` names some tests, `KNIT_SHOT_MODES` one appearance | for store screenshots, through `scripts/mac.sh run` |
+| `scripts/check.sh trailer` | on the Mac: films the "Knit shots" Simulator while `-demoScene trailer` plays in the Nearby room, opened by `KnitTrailer`, into `.build-xcode/trailer/<mode>_trailer.mov` with its `.marks` (ADR 2026-10.g3k9); dark unless `KNIT_SHOT_MODES` names others | for the store's video, through `scripts/mac.sh run` |
 
 ## Other scripts
 
@@ -150,6 +151,7 @@ scripts/mac.sh run xcrun simctl launch --terminate-running-process booted app.ge
 scripts/mac.sh run xcrun simctl io booted screenshot .build-xcode/shot.png   # then: scripts/mac.sh pull .build-xcode/shot.png
 scripts/mac.sh run scripts/check.sh shots                         # the store's screenshots, then: scripts/mac.sh pull .build-xcode/shots
 scripts/mac.sh run env KNIT_SHOTS="testChatList testNearby" KNIT_SHOT_MODES=dark scripts/check.sh shots   # some, in one appearance
+scripts/mac.sh run scripts/check.sh trailer                       # the store's video, then: scripts/mac.sh pull .build-xcode/trailer
 xcrun devicectl list devices                                      # at the Mac, once the iPhone is paired (toolchain.md)
 xcrun devicectl device install app --device <id> .build-xcode/Build/Products/Debug-iphoneos/Knit.app   # after check.sh device, with the go-ahead
 xcrun devicectl device process launch --device <id> app.getknit.knit.dev   # launches Knit, which otherwise waits for someone to open it

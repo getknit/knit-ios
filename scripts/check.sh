@@ -4,7 +4,7 @@
 #     scripts/check.sh fast        # format, lint, build, unit tests (the pre-push hook)
 #     scripts/check.sh all         # every gate that runs on Linux
 #     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama xcode uitest device devicetest
-#                                  # release archive upload shots
+#                                  # release archive upload shots trailer
 #
 # Each build variant (coverage, TSan, ASan, analyze) gets its own --scratch-path, so switching between them never
 # rebuilds the plain debug tree. `.agents/context/commands.md` explains when to run which.
@@ -193,7 +193,7 @@ xcode_export=.build-xcode/export
 # Xcode indexes while it builds; Periphery reads this store for the app's own code.
 xcode_index=.build-xcode/Index.noindex/DataStore
 # Each gate names its scheme: Knit for the app and the Simulator's UI tests, KnitDevice for the iPhone's device tests,
-# KnitShots for the store's screenshots.
+# KnitShots for the store's screenshots and video.
 xcode_common=(-project App/Knit.xcodeproj -derivedDataPath .build-xcode -jobs "$swift_jobs" -disableAutomaticPackageResolution)
 xcode_build=("${xcode_common[@]}" -configuration Debug)
 xcode_release=("${xcode_common[@]}" -configuration Release)
@@ -291,7 +291,8 @@ gate_xcode() {
 	# The device tests compile here too, unsigned, so a change that breaks them fails in CI rather than at the phone.
 	xcodebuild "${xcode_build[@]}" -scheme KnitDevice -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO \
 		build-for-testing | tee -a "$log" | "${xcode_pretty[@]}"
-	# So does the store's screenshot walk, which only `check.sh shots` runs (ADR 2026-10.5u39).
+	# So do the store's screenshot walk and video, which only `check.sh shots` and `trailer` run (ADR 2026-10.5u39,
+	# ADR 2026-10.g3k9).
 	xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO \
 		build-for-testing | tee -a "$log" | "${xcode_pretty[@]}"
 	no_warnings "$log"
@@ -346,10 +347,23 @@ simulator_named() {
 	fi
 }
 
+# The Simulator the store's pictures are taken in, booted afresh: "Knit shots", an iPhone 18 Pro Max, whose 6.9-inch
+# screen is the size App Store Connect asks for, so nothing is scaled. Its own, so it never takes CI's or "Knit local".
+# The status bar is frozen: 9:41, a full battery, and no cellular or Wi-Fi bars, since Knit needs neither. Each gate sets
+# the appearance with `simctl ui`, which a running Simulator draws at once. In this Simulator, XCUIDevice.appearance set
+# from a test changed what it reported and nothing it drew: every dark shot came out byte for byte the light one (iOS
+# 27.0, 2026-10-07), though KnitUITests' dark walk draws dark in "Knit local".
+store_simulator() {
+	simulator_named "$1" "iPhone 18 Pro Max"
+	xcrun simctl shutdown "$1" 2>/dev/null || true
+	xcrun simctl boot "$1"
+	xcrun simctl bootstatus "$1" -b >/dev/null
+	xcrun simctl status_bar "$1" override --time 9:41 --batteryState discharging --batteryLevel 100 \
+		--cellularMode notSupported --wifiBars 0 --dataNetwork hide
+}
+
 # The store's screenshots (ADR 2026-10.5u39): KnitShots walks the screens the listing shows on the marketing scene, in
-# light and dark, and each lands in .build-xcode/shots/ as <light|dark>_<shot>.png. It runs in a Simulator of its own,
-# "Knit shots", an iPhone 18 Pro Max, whose 6.9-inch screen is the size App Store Connect asks for, so no shot is scaled.
-# The status bar is frozen first: 9:41, a full battery, and no cellular or Wi-Fi bars, since Knit needs neither. The
+# light and dark, in store_simulator's Simulator, and each lands in .build-xcode/shots/ as <light|dark>_<shot>.png. The
 # walk is built once and run once per appearance. KNIT_SHOTS narrows the run to some of KnitShots' tests by name
 # (testChatList testNearby), and KNIT_SHOT_MODES to one appearance (light or dark). Nothing here checks the app, so no
 # CI job runs it.
@@ -357,19 +371,15 @@ gate_shots() {
 	step "xcodebuild test (KnitShots, the store's screenshots, in the Simulator)"
 	xcode_project shots
 	local simulator=${KNIT_SIMULATOR:-Knit shots}
-	simulator_named "$simulator" "iPhone 18 Pro Max"
-	# Booted afresh, and the appearance set here with `simctl ui`, which a running Simulator draws at once. In this
-	# Simulator, XCUIDevice.appearance set from the test changed what it reported and nothing it drew: every dark shot came
-	# out byte for byte the light one (iOS 27.0, 2026-10-07), though KnitUITests' dark walk draws dark in "Knit local".
-	xcrun simctl shutdown "$simulator" 2>/dev/null || true
-	xcrun simctl boot "$simulator"
-	xcrun simctl bootstatus "$simulator" -b >/dev/null
-	xcrun simctl status_bar "$simulator" override --time 9:41 --batteryState discharging --batteryLevel 100 \
-		--cellularMode notSupported --wifiBars 0 --dataNetwork hide
-	local only=() test
-	for test in ${KNIT_SHOTS:-}; do
-		only+=("-only-testing:KnitShots/KnitShots/$test")
-	done
+	store_simulator "$simulator"
+	# The KnitShots class alone: the scheme also holds KnitTrailer, which only `trailer` runs.
+	local only=(-only-testing:KnitShots/KnitShots) test
+	if [ -n "${KNIT_SHOTS:-}" ]; then
+		only=()
+		for test in $KNIT_SHOTS; do
+			only+=("-only-testing:KnitShots/KnitShots/$test")
+		done
+	fi
 	local destination="platform=iOS Simulator,name=$simulator" out=.build-xcode/shots status=0 mode results
 	rm -rf "$out" .build-xcode/shots-*.xcresult
 	xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination "$destination" build-for-testing | "${xcode_pretty[@]}"
@@ -399,6 +409,73 @@ PY
 	local count
 	count=$(find "$out" -maxdepth 1 -name "*.png" | wc -l | tr -d " ")
 	echo "$count screenshots in $out/"
+	return "$status"
+}
+
+# The store's video (ADR 2026-10.g3k9): films store_simulator's screen while KnitTrailer plays the user's part in
+# `-demoScene trailer`, whose DemoDirector plays everyone else's. Each appearance in KNIT_SHOT_MODES (dark, unless it
+# names others) lands in .build-xcode/trailer/ as <mode>_trailer.mov, with <mode>_trailer.marks beside it: the seconds
+# at which the test launched the app, opened the room, reached the photo and ended, counted from the recording's first
+# change. Both clocks are the Mac's, since a Simulator's processes run on it. Nothing here checks the app, so no CI job
+# runs it.
+#
+# simctl's "Recording started" is not the recording's zero: on a still screen its first frame came 4 s later
+# (2026-10-08), and the marks with it. So the gate makes the first change itself: it records the home screen in the
+# other appearance, waits, reads the time, and switches to the take's. That switch is the recording's second frame,
+# which build-trailer.sh reads as the marks' zero.
+gate_trailer() {
+	step "xcodebuild test (KnitTrailer, the store's video, filmed in the Simulator)"
+	xcode_project trailer
+	local simulator=${KNIT_SIMULATOR:-Knit shots}
+	store_simulator "$simulator"
+	local destination="platform=iOS Simulator,name=$simulator" out=.build-xcode/trailer status=0 mode results film
+	local recorder started waited
+	rm -rf "$out" .build-xcode/trailer-*.xcresult
+	mkdir -p "$out"
+	xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination "$destination" build-for-testing | "${xcode_pretty[@]}"
+	for mode in ${KNIT_SHOT_MODES:-dark}; do
+		results=.build-xcode/trailer-$mode.xcresult
+		film=$out/${mode}_trailer.mov
+		if [ "$mode" = dark ]; then
+			xcrun simctl ui "$simulator" appearance light
+		else
+			xcrun simctl ui "$simulator" appearance dark
+		fi
+		xcrun simctl io "$simulator" recordVideo --codec=h264 --force "$film" 2>"$out/$mode-record.log" &
+		recorder=$!
+		waited=0
+		until grep -q "Recording started" "$out/$mode-record.log"; do
+			if ! kill -0 "$recorder" 2>/dev/null || [ "$waited" -ge 100 ]; then
+				cat "$out/$mode-record.log" >&2
+				echo "the Simulator's recording never started" >&2
+				return 1
+			fi
+			sleep 0.1
+			waited=$((waited + 1))
+		done
+		sleep 6
+		started=$(python3 -c 'import time; print(time.time())')
+		xcrun simctl ui "$simulator" appearance "$mode"
+		xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination "$destination" -only-testing:KnitShots/KnitTrailer \
+			-resultBundlePath "$results" -collect-test-diagnostics never test-without-building |
+			"${xcode_pretty[@]}" || status=$?
+		# An interrupt is how simctl is told to finish the file.
+		kill -INT "$recorder"
+		wait "$recorder" || true
+		xcrun xcresulttool export attachments --path "$results" --output-path "$out/$mode" >/dev/null
+		python3 - "$out/$mode" "$started" "$out/${mode}_trailer.marks" <<'PY'
+import json, pathlib, sys
+exported, started, marks = pathlib.Path(sys.argv[1]), float(sys.argv[2]), pathlib.Path(sys.argv[3])
+for test in json.loads((exported / "manifest.json").read_text()):
+	for attachment in test["attachments"]:
+		if attachment["suggestedHumanReadableName"].startswith("trailer_marks"):
+			lines = (exported / attachment["exportedFileName"]).read_text().split()
+			at = dict(line.split("=") for line in lines)
+			marks.write_text("".join(f"{name}={float(when) - started:.2f}\n" for name, when in at.items()))
+			print(f"{marks}: " + " ".join(marks.read_text().split()))
+PY
+	done
+	xcrun simctl ui "$simulator" appearance light
 	return "$status"
 }
 
@@ -620,9 +697,9 @@ case "${1:-fast}" in
 fast) run format lint build test ;;
 all) run format lint adr build test coverage tsan asan analyze lintorama ;;
 format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | xcode | uitest | device | devicetest | \
-	release | archive | upload | shots) run "$@" ;;
+	release | archive | upload | shots | trailer) run "$@" ;;
 *)
-	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest|release|archive|upload|shots]" >&2
+	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest|release|archive|upload|shots|trailer]" >&2
 	exit 2
 	;;
 esac

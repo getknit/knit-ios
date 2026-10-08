@@ -1,26 +1,31 @@
 public import KnitMesh
 public import KnitStore
+import KnitSync
 public import KnitWire
 
 /// A demo scene's mesh: the real ``Mesh`` on the demo's radio, reporting the scene's peers as linked while it runs
 /// with the radio on. The demo's radio links nobody, so without this the status line only ever says it is looking,
 /// and no screenshot shows who is nearby. Everything else passes through, so what the demo sends still waits in
-/// custody.
-public final class DemoMesh: MeshService {
-    /// The peers shown as linked.
-    private let linked: [Neighbor]
+/// custody. A scene with a script also has a ``DemoDirector``, which plays it here once the mesh first starts.
+public final class DemoMesh: MeshService, DemoDirector.Stage {
+    /// The peers shown as linked, which the director adds to.
+    private let linked: Lock<[Neighbor]>
     private let mesh: any MeshService
+    private let director: DemoDirector?
     private let continuation: AsyncStream<MeshEvent>.Continuation
     private let pump: Task<Void, Never>
+    /// The director's performance, once the mesh has started.
+    private let performance = Lock<Task<Void, Never>?>(nil)
     /// The mesh's events, with every change of the radio's state or the links answered by the links shown now.
     public let events: AsyncStream<MeshEvent>
 
-    /// `mesh`, reporting `linked` as linked.
-    public init(_ mesh: any MeshService, linked: [NodeId]) {
-        let shown = linked.map { Neighbor(nodeId: $0) }
+    /// `mesh`, reporting `linked` as linked, and playing `director`'s script once it starts.
+    public init(_ mesh: any MeshService, linked: [NodeId], director: DemoDirector? = nil) {
+        let shown = Lock(linked.map { Neighbor(nodeId: $0) })
         let (stream, sink) = AsyncStream<MeshEvent>.makeStream()
         self.linked = shown
         self.mesh = mesh
+        self.director = director
         events = stream
         continuation = sink
         pump = Task {
@@ -41,14 +46,32 @@ public final class DemoMesh: MeshService {
 
     deinit {
         pump.cancel()
+        performance.withLock { $0?.cancel() }
         continuation.finish()
     }
 
     /// `linked` while `mesh` runs with the radio on, since a stopped mesh or a radio that cannot run links nobody.
-    private static func shown(_ linked: [Neighbor], by mesh: any MeshService) async -> [Neighbor] {
+    private static func shown(_ linked: Lock<[Neighbor]>, by mesh: any MeshService) async -> [Neighbor] {
         let running = await mesh.isRunning
         let radio = await mesh.radioState
-        return running && radio == .on ? linked : []
+        return running && radio == .on ? linked.withLock { $0 } : []
+    }
+
+    // MARK: The director's stage
+
+    /// Shows `peer` as linked from now on, and says so.
+    func link(_ peer: NodeId) async {
+        linked.withLock { shown in
+            if !shown.contains(where: { $0.nodeId == peer }) {
+                shown.append(Neighbor(nodeId: peer))
+            }
+        }
+        continuation.yield(.neighborsChanged(await neighbors))
+    }
+
+    /// Tells the session that `event` happened.
+    func announce(_ event: MeshEvent) {
+        continuation.yield(event)
     }
 
     /// This node's id.
@@ -80,10 +103,18 @@ public final class DemoMesh: MeshService {
         }
     }
 
-    /// Starts the mesh, and shows the links once the radio is on.
+    /// Starts the mesh, and shows the links once the radio is on. The first start also starts the director.
     public func start() async {
         await mesh.start()
         continuation.yield(.neighborsChanged(await neighbors))
+        guard let director else {
+            return
+        }
+        performance.withLock { playing in
+            if playing == nil {
+                playing = Task { [self] in await director.play(on: self) }
+            }
+        }
     }
 
     /// Stops the mesh, which closes every link shown.
@@ -92,9 +123,13 @@ public final class DemoMesh: MeshService {
         continuation.yield(.neighborsChanged([]))
     }
 
-    /// Posts to the Nearby room, where nobody hears it.
+    /// Posts to the Nearby room, where nobody hears it but the director.
     public func postToRoom(_ text: String, photo: OutgoingPhoto?) async -> MessageRecord? {
-        await mesh.postToRoom(text, photo: photo)
+        let posted = await mesh.postToRoom(text, photo: photo)
+        if let posted {
+            director?.heard(posted)
+        }
+        return posted
     }
 
     /// Sends a DM, which waits in custody.

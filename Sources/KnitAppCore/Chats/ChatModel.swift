@@ -265,9 +265,26 @@ public final class ChatModel {
         }
     }
 
-    /// The thread came on screen.
+    /// The thread came on screen. In the room, under `-demoScene trailer`, it then follows the director's composer
+    /// until it leaves the screen (ADR 2026-10.g3k9).
     public func appear() async {
         await session.show(conversationId)
+        if let director = session.director, state.isRoom {
+            await follow(director)
+        }
+    }
+
+    /// Raises `director`'s curtain and does in the composer what it does: the words it types, and Send.
+    func follow(_ director: DemoDirector) async {
+        director.curtain()
+        for await step in director.composer {
+            switch step {
+            case .draft(let words):
+                draft = words
+            case .send:
+                await send()
+            }
+        }
     }
 
     /// The thread left the screen.

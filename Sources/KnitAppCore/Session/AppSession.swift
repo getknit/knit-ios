@@ -30,6 +30,8 @@ public final class AppSession {
     /// Hears every mesh event once the session has handled it: a debug build's bridge reports them to every connection.
     /// The mesh has one stream of events, and the session is its consumer.
     @ObservationIgnored public var eventTap: (@Sendable (MeshEvent) -> Void)?
+    /// What plays `-demoScene trailer`, whose composer the room follows (ADR 2026-10.g3k9); `nil` outside that demo.
+    @ObservationIgnored public var director: DemoDirector?
     /// Whether someone else's abusive words and explicit photos hide: the Content filtering toggle, on until it is turned
     /// off (ADR 2026-10.rpmq, ADR 2026-10.e4kz). It governs only what we are shown; what we send is checked either way,
     /// and every message is screened as it arrives, so turning it back on hides what came while it was off.

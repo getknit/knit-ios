@@ -24,6 +24,10 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// The marketing scene with a room far longer than the screen, for the walk that opens one: the lazy stack opens it on
     /// rows whose height it has only guessed.
     case longRoom = "long-room"
+    /// The marketing scene with the room down to its opening and one peer linked, and a script that ``DemoDirector``
+    /// plays once the room is on screen: the user types and posts, and the room answers. `KnitTrailer` opens the room
+    /// while `check.sh trailer` films it for the store's video (ADR 2026-10.g3k9).
+    case trailer = "trailer"
 
     /// Who and what the scene seeds.
     var cast: DemoCast {
@@ -34,6 +38,8 @@ public enum DemoScene: String, Sendable, CaseIterable {
             .marketing
         case .longRoom:
             .longRoom
+        case .trailer:
+            .trailer
         }
     }
 }
@@ -126,9 +132,11 @@ internal struct DemoCast {
     var group: Group?
     /// The reactions, in the order they were made.
     var reactions: [Reaction] = []
+    /// What ``DemoDirector`` plays once the mesh starts; nothing, in a scene for stills.
+    var script: [Cue] = []
 
     private static let thumbs = "\u{1F44D}"
-    private static let heart = "\u{2764}\u{FE0F}"
+    static let heart = "\u{2764}\u{FE0F}"
 
     /// Two peers share a name, to show a discriminated label; the stranger has none, to show an alias. Jonas is blocked,
     /// so Settings lists someone and his profile shows the badge. Our room post has a count above one, an emoji outside
