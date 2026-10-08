@@ -32,6 +32,10 @@ ANDROID_TOKENIZER_SHA256 = "77e18685566ddefc3267601b473a3c55aa6fa2735611e1eae67d
 # knit-next's `scripts/gen-profanity-list.py` derives from dsojevic/profanity-list.
 PROFANITY = MODELS / "Profanity.txt"
 ANDROID_PROFANITY_SHA256 = "33f3ecf64ef23f819508a5b4fb5df58843f8ca2bf430392c6b5a3faab2de9ff5"
+# knit-next's `app/src/main/assets/moderation/slurs_en.txt`, byte for byte: the identity-slur list every conversation
+# runs (knit-next ADR 2026-10.d62w), from the same generator and corpus.
+SLURS = MODELS / "Slurs.txt"
+ANDROID_SLURS_SHA256 = "6277be8391b89bdf4252e267187c7c10a08ebdfb4ca0f6ba71564c2f9bd0dbed"
 # knit-next's `app/src/main/assets/moderation/toxicity.tflite`, which `parity.py --reference --android` scores too.
 ANDROID_TFLITE_SHA256 = "5edb906c77e7b872f7e53eac15968da238f7b0fadd26e7b497ef22f72fac8a39"
 

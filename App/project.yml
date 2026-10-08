@@ -40,6 +40,8 @@ targets:
         buildPhase: resources
       - path: Models/Profanity.txt
         buildPhase: resources
+      - path: Models/Slurs.txt
+        buildPhase: resources
     dependencies:
       - package: Knit
         product: Knit

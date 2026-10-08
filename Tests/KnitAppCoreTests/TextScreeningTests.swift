@@ -66,12 +66,14 @@ actor HeldTextClassifier: TextClassifier {
 @Suite struct TextScreeningTests {
     private static let threat = "I will find you"
     private static let fine = "see you at noon"
+    /// A stand-in slur list: `SlurListTests` reads the shipped one.
+    private static let slurs = WordFilter(words: ["zorp"])
 
     private static func screening(_ table: [String: [Float]] = [threat: FakeTextClassifier.scores("threat", 0.95)]) -> (
         TextScreening, FakeTextClassifier
     ) {
         let classifier = FakeTextClassifier(table.merging([fine: FakeTextClassifier.scores("toxicity", 0.2)]) { kept, _ in kept })
-        return (TextScreening(classifier: classifier, words: WordFilter(words: ["shit"])), classifier)
+        return (TextScreening(classifier: classifier, words: WordFilter(words: ["shit"]), slurs: Self.slurs), classifier)
     }
 
     // MARK: The policy
@@ -109,6 +111,16 @@ actor HeldTextClassifier: TextClassifier {
         #expect(await !screening.isAbusive(Self.fine, inRoom: true))
     }
 
+    @Test func everyConversationRunsTheSlurListBeforeTheModel() async {
+        // knit-next ADR 2026-10.d62w: the model scores a slur aimed at someone as an insult, which blocks nothing.
+        let (screening, classifier) = Self.screening(["you zorp": FakeTextClassifier.scores("insult", 0.99)])
+        #expect(await screening.isAbusive("you zorp", inRoom: false))
+        #expect(await screening.isAbusive("you z0rp", inRoom: true))
+        #expect(await classifier.asked.isEmpty, "the list answered, so the model was never asked")
+        let blind = TextScreening(classifier: nil, words: WordFilter(words: []), slurs: Self.slurs)
+        #expect(await blind.isAbusive("z o r p", inRoom: false), "with no model, the slur list still holds")
+    }
+
     @Test func positionsComeOutAndWordsTheModelCannotReadPass() async {
         let (screening, classifier) = Self.screening()
         #expect(await screening.isAbusive("\(Self.threat) geo:37.9455,-122.1", inRoom: false))
@@ -116,9 +128,9 @@ actor HeldTextClassifier: TextClassifier {
         #expect(await !screening.isAbusive("geo:37.9455,-122.1", inRoom: true), "a position alone is no words at all")
         #expect(await !screening.isAbusive("something the model cannot read", inRoom: false))
         #expect(await !screening.isAbusive("  ", inRoom: true))
-        let blind = TextScreening(classifier: nil, words: WordFilter(words: ["shit"]))
+        let blind = TextScreening(classifier: nil, words: WordFilter(words: ["shit"]), slurs: Self.slurs)
         #expect(await blind.isAbusive("oh shit", inRoom: true))
-        #expect(await !blind.isAbusive(Self.threat, inRoom: false), "with no model, only the room's list holds anything back")
+        #expect(await !blind.isAbusive(Self.threat, inRoom: false), "with no model, only the lists hold anything back")
     }
 
     // MARK: Arriving
@@ -268,7 +280,7 @@ actor HeldTextClassifier: TextClassifier {
 
     @Test func sendIsUnderWayWhileTheWordsAreCheckedAndATapMeanwhileSendsNothingMore() async {
         let classifier = HeldTextClassifier()
-        let rig = AppRig(screening: TextScreening(classifier: classifier, words: WordFilter(words: [])))
+        let rig = AppRig(screening: TextScreening(classifier: classifier, words: WordFilter(words: []), slurs: WordFilter(words: [])))
         let model = ChatModel(conversationId: AppRig.sam.nodeId.string, session: rig.session)
         model.draft = Self.fine
         let first = Task { await model.send() }

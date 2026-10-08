@@ -29,6 +29,7 @@ public struct ThirdPartyNotice: Sendable, Equatable, Identifiable {
             url: "https://huggingface.co/albert/albert-base-v2"
         ),
         Self(id: "App/Models/Profanity.txt", name: "profanity-list", license: "MIT", url: "https://github.com/dsojevic/profanity-list"),
+        Self(id: "App/Models/Slurs.txt", name: "profanity-list, slurs", license: "MIT", url: "https://github.com/dsojevic/profanity-list"),
     ]
 }
 

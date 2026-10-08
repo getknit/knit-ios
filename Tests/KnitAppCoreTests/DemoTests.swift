@@ -166,7 +166,9 @@ import Testing
             clock: DemoClock(),
             random: SystemRandomNumberGenerator()
         )
-        let screening = TextScreening(classifier: DemoTextClassifier(flagsEverything: sensitive), words: WordFilter(words: []))
+        let screening = TextScreening(
+            classifier: DemoTextClassifier(flagsEverything: sensitive), words: WordFilter(words: []), slurs: WordFilter(words: [])
+        )
         let session = AppSession(
             identity: OwnIdentity(bundle: identity.bundle),
             stores: stores,

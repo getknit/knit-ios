@@ -255,7 +255,7 @@
                 stores: parts.stores,
                 mesh: service,
                 notifier: alerts,
-                textScreening: TextScreening(classifier: parts.textClassifier, words: wordList(log: parts.log)),
+                textScreening: .bundled(classifier: parts.textClassifier, log: parts.log),
                 photoDimensions: { PhotoDecoder.dimensions($0) },
                 preferences: parts.preferences
             )
@@ -345,23 +345,31 @@
             }
         }
 
-        /// The Nearby room's word list, bundled as `Profanity.txt` (knit-next's `profanity_en.txt`). Without it the room
-        /// screens with the model alone, and says so.
-        private static func wordList(log: any KnitLog) -> WordFilter {
-            guard let url = Bundle.main.url(forResource: "Profanity", withExtension: "txt"),
-                let text = try? String(contentsOf: url, encoding: .utf8)
-            else {
-                log.log(.warning, "text filter: Profanity.txt is not in the app, so Nearby is screened by the model alone")
-                return WordFilter(words: [])
-            }
-            return WordFilter(list: text)
-        }
-
         /// The database's own directory, under Application Support, which is backed up unless told otherwise; the
         /// store excludes it (ADR 2026-09.nyya).
         private static func databaseDirectory() throws -> URL {
             try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
                 .appending(path: "Database", directoryHint: .isDirectory)
+        }
+    }
+
+    extension TextScreening {
+        /// The filter over `classifier` and the word lists bundled in the app, which reports a missing list to `log`.
+        static func bundled(classifier: (any TextClassifier)?, log: any KnitLog) -> TextScreening {
+            TextScreening(classifier: classifier, words: wordList("Profanity", log: log), slurs: wordList("Slurs", log: log))
+        }
+
+        /// A word list bundled as `<name>.txt`: `Profanity`, the Nearby room's (knit-next's `profanity_en.txt`), or
+        /// `Slurs`, every conversation's (its `slurs_en.txt`, knit-next ADR 2026-10.d62w). Without it the filter screens
+        /// without that list, and says so.
+        private static func wordList(_ name: String, log: any KnitLog) -> WordFilter {
+            guard let url = Bundle.main.url(forResource: name, withExtension: "txt"),
+                let text = try? String(contentsOf: url, encoding: .utf8)
+            else {
+                log.log(.warning, "text filter: \(name).txt is not in the app, so the filter screens without it")
+                return WordFilter(words: [])
+            }
+            return WordFilter(list: text)
         }
     }
 #endif

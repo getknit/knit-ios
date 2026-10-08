@@ -1,9 +1,10 @@
 # The message toxicity model
 
 `App/Models/Toxicity.mlpackage` is the text classifier Knit for Android ships as
-`app/src/main/assets/moderation/toxicity.tflite`, rebuilt for Core ML. Beside it sit two of Android's files, byte for
-byte: `ToxicityTokenizer.json` (Android's `tokenizer.json`) and `Profanity.txt` (its `profanity_en.txt`, the Nearby
-room's word list). This directory holds the recipe that builds the package and the checks that it still scores what
+`app/src/main/assets/moderation/toxicity.tflite`, rebuilt for Core ML. Beside it sit three of Android's files, byte
+for byte: `ToxicityTokenizer.json` (Android's `tokenizer.json`), `Profanity.txt` (its `profanity_en.txt`, the Nearby
+room's word list) and `Slurs.txt` (its `slurs_en.txt`, the slur list every conversation runs, knit-next ADR
+2026-10.d62w). This directory holds the recipe that builds the package and the checks that it still scores what
 the model should.
 
 ## Where it comes from

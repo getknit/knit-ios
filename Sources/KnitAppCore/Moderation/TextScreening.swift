@@ -52,16 +52,21 @@ public enum AbusiveText {
 /// The content filter for words (ADR 2026-10.e4kz): what a message we write is checked against before it is sent, and
 /// what someone else's is screened with as it arrives (`ScopedTextModerator`).
 ///
-/// The Nearby room runs the word list first and the model on what it lets through. A DM or a group runs the model alone:
-/// profanity between people who chose each other is theirs, and only the room reaches strangers in range.
+/// Every conversation runs the slur list first: the model reads a slur aimed at someone as an insult, a label it
+/// ignores, so without the list a slur in a DM passes (knit-next ADR 2026-10.d62w). The Nearby room then runs the
+/// profanity list, and everything ends with the model. Profanity between people who chose each other is theirs, and only
+/// the room reaches strangers in range.
 public final class TextScreening: Sendable {
     private let classifier: (any TextClassifier)?
     private let words: WordFilter
+    private let slurs: WordFilter
 
-    /// The filter that runs `words` in the room and `classifier` everywhere; no classifier screens with the list alone.
-    public init(classifier: (any TextClassifier)?, words: WordFilter) {
+    /// The filter that runs `slurs` everywhere, `words` in the room and `classifier` everywhere; with no classifier it
+    /// screens with the lists alone.
+    public init(classifier: (any TextClassifier)?, words: WordFilter, slurs: WordFilter) {
         self.classifier = classifier
         self.words = words
+        self.slurs = slurs
     }
 
     /// Whether `text` looks abusive, in the room when `inRoom`. Words the model could not read pass, as Android's do. A
@@ -72,7 +77,7 @@ public final class TextScreening: Sendable {
         guard !TextLimits.isBlank(read) else {
             return false
         }
-        if inRoom, words.flags(read) {
+        if slurs.flags(read) || inRoom && words.flags(read) {
             return true
         }
         guard let classifier, let scores = await classifier.scores(of: read) else {

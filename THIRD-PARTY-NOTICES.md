@@ -24,6 +24,7 @@ the `knit-peer` test tool, which is not distributed.
 | `App/Models/Toxicity.mlpackage`, the message classifier (Detoxify unbiased-small, copyright Unitary) | [unitaryai/detoxify](https://github.com/unitaryai/detoxify) | Apache-2.0 |
 | `App/Models/ToxicityTokenizer.json`, its tokenizer (ALBERT base v2's SentencePiece vocabulary) | [albert/albert-base-v2](https://huggingface.co/albert/albert-base-v2) | Apache-2.0 |
 | `App/Models/Profanity.txt`, the Nearby room's word list (copyright 2021 David Sojevic) | [dsojevic/profanity-list](https://github.com/dsojevic/profanity-list) | MIT |
+| `App/Models/Slurs.txt`, the slur list every conversation runs (copyright 2021 David Sojevic) | [dsojevic/profanity-list](https://github.com/dsojevic/profanity-list) | MIT |
 
 The photo classifier is release 1.2.0's SavedModel converted to Core ML, the same weights Knit for Android bundles as
 `nsfw.tflite`. The message classifier is Detoxify's v0.1.2 checkpoint `unbiased-albert-c8519128.ckpt`, which builds

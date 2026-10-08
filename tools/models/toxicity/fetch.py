@@ -14,12 +14,14 @@ import urllib.request
 
 from common import (
     ANDROID_PROFANITY_SHA256,
+    ANDROID_SLURS_SHA256,
     ANDROID_TOKENIZER_SHA256,
     CACHE,
     CHECKPOINT,
     CHECKPOINT_SHA256,
     CHECKPOINT_URL,
     PROFANITY,
+    SLURS,
     TOKENIZER,
     sha256,
 )
@@ -37,12 +39,13 @@ def main() -> int:
         (CHECKPOINT, CHECKPOINT_SHA256, "Detoxify's v0.1.2 release"),
         (TOKENIZER, ANDROID_TOKENIZER_SHA256, "knit-next's tokenizer.json"),
         (PROFANITY, ANDROID_PROFANITY_SHA256, "knit-next's profanity_en.txt"),
+        (SLURS, ANDROID_SLURS_SHA256, "knit-next's slurs_en.txt"),
     ):
         if (found := sha256(path)) != expected:
             print(f"{path.name}: sha256 {found} is not {whose} ({expected})", file=sys.stderr)
             failed = True
     if not failed:
-        print(f"{CHECKPOINT.name}, {TOKENIZER.name} and {PROFANITY.name}: what knit-next's toxicity screening is built from")
+        print(f"{CHECKPOINT.name}, {TOKENIZER.name}, {PROFANITY.name} and {SLURS.name}: what knit-next's toxicity screening is built from")
     return 1 if failed else 0
 
 

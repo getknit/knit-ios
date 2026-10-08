@@ -35,12 +35,13 @@ import Testing
         #expect(weights > 20_000_000 && weights < 30_000_000)
     }
 
-    /// The tokenizer and the room's word list are knit-next's files, byte for byte (`tools/models/toxicity/common.py`
-    /// pins the same hashes), so both phones read a message the same way.
+    /// The tokenizer, the room's word list and the slur list are knit-next's files, byte for byte
+    /// (`tools/models/toxicity/common.py` pins the same hashes), so both phones read a message the same way.
     @Test func theTokenizerAndTheWordListAreAndroids() throws {
         let pins = [
             "App/Models/ToxicityTokenizer.json": "77e18685566ddefc3267601b473a3c55aa6fa2735611e1eae67dee9a27e4d966",
             "App/Models/Profanity.txt": "33f3ecf64ef23f819508a5b4fb5df58843f8ca2bf430392c6b5a3faab2de9ff5",
+            "App/Models/Slurs.txt": "6277be8391b89bdf4252e267187c7c10a08ebdfb4ca0f6ba71564c2f9bd0dbed",
         ]
         for (path, pinned) in pins {
             let digest = SHA256.hash(data: try RepoFiles.data(path)).map { String(format: "%02x", $0) }.joined()

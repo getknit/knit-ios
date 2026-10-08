@@ -1,0 +1,88 @@
+# English identity-slur list for LexicalTextFilter -- the lexical pass that runs in EVERY conversation
+# scope, DMs and groups included (the general profanity list is the Nearby room's alone). One term per
+# line; blank lines and lines starting with '#' are ignored. Matching is the same whole-token,
+# evasion-tolerant matcher as profanity_en.txt. Why it exists: ADR 2026-10.d62w.
+#
+# GENERATED FILE -- DO NOT EDIT BY HAND. Regenerate with:  python3 scripts/gen-profanity-list.py
+#
+# Source:  dsojevic/profanity-list -- https://github.com/dsojevic/profanity-list
+# Commit:  c27924319aa9bd6f917e3782b4f4b6604a50b652  (retrieved 2026-07-18)
+# License: MIT (c) 2021 David Sojevic -- full text: app/src/main/assets/moderation/README.md
+#
+# Transform: keep the racial, religious tags at severity >= 3; reduce as for the
+# profanity list; drop the in-group and everyday terms in SLUR_DROP; union the hand-picked anti-LGBTQ slurs;
+# add each term's plural; dedupe; sort. Full detail: scripts/gen-profanity-list.py.
+
+beaner
+beaners
+buddhahead
+buddhaheads
+cameljockey
+cameljockeys
+cameljockies
+chink
+chinks
+chinky
+chinkys
+currymuncher
+currymunchers
+darkey
+darkeys
+darkie
+darkies
+darky
+darkys
+dooncoon
+dooncoons
+faggot
+faggots
+gook
+gookie
+gookies
+gooks
+gooky
+gookys
+jigaboo
+jigaboos
+jiggerboo
+jiggerboos
+kike
+kikes
+nigger
+niggers
+nignog
+nignogs
+paki
+pakis
+petrolsniffer
+petrolsniffers
+pikey
+pikeys
+raghead
+ragheads
+sandnigger
+sandniggers
+shemale
+shemales
+slanteye
+slanteyes
+spearchucker
+spearchuckers
+spic
+spick
+spicks
+spics
+timbernigger
+timberniggers
+towelhead
+towelheads
+trannie
+trannies
+tranny
+trannys
+wetback
+wetbacks
+whitepower
+whitepowers
+zipperhead
+zipperheads
