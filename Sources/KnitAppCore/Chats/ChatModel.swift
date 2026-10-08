@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 import KnitCrypto
 import KnitMesh
 import KnitStore
@@ -107,14 +107,18 @@ public final class ChatModel {
     /// The thread: `nearby`, the peer's node id, or the group's id.
     public let conversationId: String
     @ObservationIgnored private let session: AppSession
-    @ObservationIgnored private let codec: (any ImageCodec)?
-    @ObservationIgnored private let screening: PhotoScreening?
+    @ObservationIgnored let codec: (any ImageCodec)?
+    @ObservationIgnored let screening: PhotoScreening?
     @ObservationIgnored private var cache = Cached<Int, ChatState>()
     private var text = ""
     /// The photo the composer holds, which Send sends with the draft or alone.
-    public private(set) var staged: StagedPhoto?
-    /// Whether the last photo picked could not be read, which the screen says until it is dismissed.
-    public var photoFailed = false
+    public internal(set) var staged: StagedPhoto?
+    /// Why the last photo picked cannot be sent, which the screen says until it is dismissed.
+    public var photoFailure: PhotoFailure?
+    /// Whether a picked photo is being made ready to send: a GIF's frames take a moment to shrink.
+    public internal(set) var preparingPhoto = false
+    /// Counts picks, so a slow one that finishes after a later pick leaves the later one in the composer.
+    @ObservationIgnored var picks = 0
     /// Whether the last photo picked looked explicit in the room, which refuses it; the screen says so until it is
     /// dismissed.
     public var photoRefused = false
@@ -192,35 +196,6 @@ public final class ChatModel {
         if staged == photo {
             staged = nil
         }
-    }
-
-    /// Makes a picked photo ready to send (`AttachmentStore.ingest`) and holds it in the composer, in place of any held
-    /// before. One the picker could not hand over, or the codec cannot read, says so.
-    ///
-    /// In the room, which floods to everyone in range, the prepared photo is checked whatever the content filter says,
-    /// and one that looks explicit is refused (`ChatViewModel.stage`). A DM or a group takes it unchecked: the receiver's
-    /// phone screens it (ADR 2026-10.spcy).
-    public func choosePhoto(_ data: Data?) async {
-        guard let data, let codec, let photo = await codec.chatPhoto(from: data) else {
-            photoFailed = true
-            return
-        }
-        if state.isRoom, await screening?.isExplicit(outgoing: photo.bytes) == true {
-            photoRefused = true
-            return
-        }
-        staged = await Self.stage(photo)
-    }
-
-    /// Takes the held photo out of the composer.
-    public func removePhoto() {
-        staged = nil
-    }
-
-    /// `photo` with the hash of its bytes, taken off the main actor, since a GIF may weigh megabytes.
-    @concurrent
-    private static func stage(_ photo: OutgoingPhoto) async -> StagedPhoto {
-        StagedPhoto(photo: photo, hash: BlobHash(of: photo.bytes))
     }
 
     /// Accepts the request this thread is.

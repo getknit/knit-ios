@@ -14,10 +14,11 @@ struct FakeImage: PreparedImage {
 }
 
 /// A codec that reads any bytes as a 640 by 480 picture, unless told it cannot read, and crops into a "JPEG" that
-/// names the crop.
+/// names the crop. Its chat photos fail with `refuses` when that is set.
 struct FakeCodec: ImageCodec {
     var reads = true
     var crops = true
+    var refuses: PhotoFailure?
 
     func prepare(_ data: Data) -> (any PreparedImage)? {
         reads && !data.isEmpty ? FakeImage(pixelWidth: 640, pixelHeight: 480) : nil
@@ -28,8 +29,12 @@ struct FakeCodec: ImageCodec {
     }
 
     /// The picked bytes behind a marker, as a JPEG, so a test can tell what was prepared from what was picked.
-    func chatPhoto(from data: Data) -> OutgoingPhoto? {
-        reads && !data.isEmpty ? OutgoingPhoto(bytes: Array("ready ".utf8) + Array(data), mime: "image/jpeg") : nil
+    func chatPhoto(from data: Data) -> Result<OutgoingPhoto, PhotoFailure> {
+        if let refuses {
+            return .failure(refuses)
+        }
+        return reads && !data.isEmpty
+            ? .success(OutgoingPhoto(bytes: Array("ready ".utf8) + Array(data), mime: "image/jpeg")) : .failure(.unreadable)
     }
 }
 

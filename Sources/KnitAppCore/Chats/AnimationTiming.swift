@@ -71,7 +71,7 @@ public struct AnimationTiming: Sendable, Equatable {
     }
 
     /// `seconds` in whole milliseconds, within ``shortestDelay`` and ``longestDelay``.
-    private static func clamped(_ seconds: Double) -> Int {
+    static func clamped(_ seconds: Double) -> Int {
         let milliseconds = seconds * millisecondsPerSecond
         guard milliseconds.isFinite, milliseconds >= Double(shortestDelay) else {
             return standInDelay

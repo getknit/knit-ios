@@ -17,9 +17,10 @@
         /// Each channel's depth.
         private static let bitsPerComponent = 8
         /// The GIF `-demoPhoto gif` picks: four scenes in turn, each for 0.3 seconds, for good. A cycle of a whole number
-        /// of seconds would show a UI test that looks once a second the same frame each time.
+        /// of seconds would show a UI test that looks once a second the same frame each time. It is twice the size a
+        /// moving photo goes at, so the one a UI test watches play is the animated WebP the GIF was shrunk into.
         private static let reel: [DemoPortrait] = [.sunset, .lake, .forest, .campfire]
-        private static let reelFrame = (width: 480, height: 360)
+        private static let reelFrame = (width: 960, height: 720)
         private static let reelDelay = 0.3
 
         /// `portrait` as a profile photo.
@@ -29,7 +30,7 @@
 
         /// `portrait` as a photo a post carries.
         static func chatPhoto(_ portrait: DemoPortrait) -> [UInt8]? {
-            jpeg(portrait, width: snapshot.width, height: snapshot.height, quality: ChatPhoto.quality)
+            jpeg(portrait, width: snapshot.width, height: snapshot.height, quality: ChatPhoto.imageIOQuality)
         }
 
         /// The picture Choose photo and Add photo pick under `-demoPhoto`, or the GIF they pick under `-demoPhoto gif`.

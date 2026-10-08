@@ -15,15 +15,18 @@
     }
 
     /// The phone's image codec (`AvatarStore.kt` and `AttachmentStore.kt` in knit-next): ImageIO decodes a picked photo
-    /// upright and bounded, and CoreGraphics crops, scales and encodes the profile photo and a chat's photo, all off the
-    /// main actor.
+    /// upright and bounded, CoreGraphics crops, scales and encodes the profile photo, and ``PickedPhoto`` makes a chat's
+    /// photo, all off the main actor.
     internal struct DeviceImageCodec: ImageCodec {
+        /// Where a chat's photo says what it was picked as and what it goes as.
+        private let log: any KnitLog = UnifiedLog(clock: SystemClock())
+
         func prepare(_ data: Data) async -> (any PreparedImage)? {
             await Self.decode(data)
         }
 
-        func chatPhoto(from data: Data) async -> OutgoingPhoto? {
-            await Self.chatPhoto(data)
+        func chatPhoto(from data: Data) async -> Result<OutgoingPhoto, PhotoFailure> {
+            await Self.chatPhoto(data, log: log)
         }
 
         func profilePhoto(from image: any PreparedImage, crop: CropRect) async -> [UInt8]? {
@@ -70,61 +73,10 @@
             return context.makeImage().flatMap { jpeg($0, quality: ProfilePhoto.quality) }
         }
 
-        /// A picked photo made ready for a chat (`AttachmentStore.ingest`). A GIF or an animated WebP goes as it is, frames
-        /// and all, when the mesh takes it whole and a phone may decode it; Android shrinks a GIF into an animated WebP, which
-        /// ImageIO cannot write. A WebP loses its metadata on the way (``AnimatedWebP``), as Android's sticker does. Anything
-        /// else, a moving photo too heavy, too large or not understood among it, is drawn upright at no more than
-        /// ``ChatPhoto/side`` and encoded afresh, which leaves its metadata behind.
+        /// A picked photo made ready for a chat, off the main actor: a GIF's frames take a moment to shrink.
         @concurrent
-        private static func chatPhoto(_ data: Data) async -> OutgoingPhoto? {
-            if data.count <= OutgoingPhoto.maxBytes {
-                if PhotoDecoder.isGIF(data, pixels: PhotoDecoder.meshPixels) {
-                    return OutgoingPhoto(bytes: [UInt8](data), mime: Mime.gif)
-                }
-                if PhotoDecoder.isAnimatedWebP(data, pixels: PhotoDecoder.meshPixels), let sticker = AnimatedWebP.stripped([UInt8](data)) {
-                    return OutgoingPhoto(bytes: sticker, mime: Mime.webp)
-                }
-            }
-            return PhotoDecoder.thumbnail(data, side: ChatPhoto.side, types: nil, pixels: PhotoDecoder.pickedPixels)
-                .flatMap(chatPhoto(drawing:))
-                .flatMap { $0.bytes.count <= OutgoingPhoto.maxBytes ? $0 : nil }
-        }
-
-        /// `image` drawn into sRGB and encoded with nothing of the source's own: a JPEG at ``ChatPhoto/quality``, or a PNG
-        /// when it has transparency, which a JPEG would fill in black.
-        private static func chatPhoto(drawing image: CGImage) -> OutgoingPhoto? {
-            let transparent = [.first, .last, .premultipliedFirst, .premultipliedLast].contains(image.alphaInfo)
-            let alpha: CGImageAlphaInfo = transparent ? .premultipliedLast : .noneSkipLast
-            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-                let context = CGContext(
-                    data: nil,
-                    width: image.width,
-                    height: image.height,
-                    bitsPerComponent: bitsPerComponent,
-                    bytesPerRow: 0,
-                    space: space,
-                    bitmapInfo: alpha.rawValue
-                )
-            else {
-                return nil
-            }
-            context.interpolationQuality = .high
-            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-            guard let drawn = context.makeImage() else {
-                return nil
-            }
-            if transparent {
-                return encode(drawn, as: .png, properties: [:]).map { OutgoingPhoto(bytes: $0, mime: Mime.png) }
-            }
-            return jpeg(drawn, quality: ChatPhoto.quality).map { OutgoingPhoto(bytes: $0, mime: Mime.jpeg) }
-        }
-
-        /// The types a chat's photo goes under.
-        private enum Mime {
-            static let jpeg = "image/jpeg"
-            static let png = "image/png"
-            static let gif = "image/gif"
-            static let webp = "image/webp"
+        private static func chatPhoto(_ data: Data, log: any KnitLog) async -> Result<OutgoingPhoto, PhotoFailure> {
+            PickedPhoto.prepare(data, log: log)
         }
 
         /// `image` as a JPEG at `quality`, and nothing else.

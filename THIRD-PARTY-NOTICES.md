@@ -10,9 +10,11 @@ package this file does not account for.
 | Package | Project | License |
 | --- | --- | --- |
 | `grdb.swift` | [groue/GRDB.swift](https://github.com/groue/GRDB.swift) | MIT |
+| `libwebp-xcode` | [SDWebImage/libwebp-Xcode](https://github.com/SDWebImage/libwebp-Xcode), packaging [webmproject/libwebp](https://github.com/webmproject/libwebp) 1.6.0 | BSD-3-Clause |
 | `swift-crypto` | [apple/swift-crypto](https://github.com/apple/swift-crypto) | Apache-2.0 |
 
-GRDB links the SQLite that ships with iOS and bundles none of its own. On iPhone, swift-crypto hands every
+GRDB links the SQLite that ships with iOS and bundles none of its own. libwebp, copyright Google, writes the WebP
+pictures ImageIO can't: a GIF shrunk for a chat, and a transparent photo. On iPhone, swift-crypto hands every
 operation to Apple's CryptoKit. Its bundled copies of BoringSSL and XKCP compile only into Linux builds, such as
 the `knit-peer` test tool, which is not distributed.
 

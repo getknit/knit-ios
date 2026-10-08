@@ -83,7 +83,7 @@ actor FakeClassifier: PhotoClassifier {
         let model = ChatModel(conversationId: Conversations.nearby, session: rig.session, codec: FakeCodec(), screening: screening)
         await model.choosePhoto(Self.picked)
         #expect(model.photoRefused && model.staged == nil)
-        #expect(!model.photoFailed)
+        #expect(model.photoFailure == nil)
     }
 
     /// A DM or a group takes any photo unchecked, with no question: the receiver's phone screens it (ADR 2026-10.spcy,

@@ -71,17 +71,43 @@ import Testing
         let rig = AppRig()
         let model = ChatModel(conversationId: Conversations.nearby, session: rig.session, codec: FakeCodec(reads: false))
         await model.choosePhoto(Self.picked)
-        #expect(model.photoFailed && model.staged == nil)
+        #expect(model.photoFailure == .unreadable && model.staged == nil && !model.preparingPhoto)
 
         let reading = ChatModel(conversationId: Conversations.nearby, session: rig.session, codec: FakeCodec())
         await reading.choosePhoto(nil)
-        #expect(reading.photoFailed)
-        reading.photoFailed = false
+        #expect(reading.photoFailure == .unreadable)
+        reading.photoFailure = nil
         await reading.choosePhoto(Self.picked)
-        #expect(reading.staged != nil && !reading.photoFailed)
+        #expect(reading.staged != nil && reading.photoFailure == nil)
         reading.removePhoto()
         #expect(reading.staged == nil && reading.offersPhoto)
         #expect(ChatModel(conversationId: Conversations.nearby, session: rig.session).offersPhoto, "a thread with no codec still offers")
+    }
+
+    /// A photo too large to send even made smaller says that, not that it could not be read.
+    @Test func aPhotoTooLargeToSendSaysSo() async {
+        let rig = AppRig()
+        let model = ChatModel(conversationId: Conversations.nearby, session: rig.session, codec: FakeCodec(refuses: .tooLarge))
+        await model.choosePhoto(Self.picked)
+        #expect(model.photoFailure == .tooLarge && model.staged == nil)
+    }
+
+    /// A photo still being made ready shows as preparing, and a photo picked meanwhile is the one held, however late
+    /// the first finishes.
+    @Test func theLastPhotoPickedIsTheOneHeld() async {
+        let rig = AppRig()
+        let gate = Gate()
+        let model = ChatModel(conversationId: Conversations.nearby, session: rig.session, codec: GatedCodec(gate: gate))
+        async let slow: Void = model.choosePhoto(Data("slow".utf8))
+        await gate.held()
+        #expect(model.preparingPhoto)
+        await model.choosePhoto(Data("quick".utf8))
+        #expect(model.staged?.photo.bytes == Array("ready quick".utf8))
+        #expect(!model.preparingPhoto)
+        await gate.open()
+        await slow
+        #expect(model.staged?.photo.bytes == Array("ready quick".utf8), "the slow pick finished last and left the later one")
+        #expect(!model.preparingPhoto && model.photoFailure == nil)
     }
 
     /// A send the mesh refuses keeps the photo in the composer, to try again.
@@ -199,5 +225,53 @@ import Testing
         await receive("", carrying: MessageAttachment(hash: hash, mime: "image/jpeg"), from: AppRig.stranger.nodeId, to: rig.me, in: rig)
         let request = try #require(RequestsModel(session: rig.session).rows.first)
         #expect(request.preview == Copy.Attachments.photoPreview)
+    }
+}
+
+/// Holds a codec's work on "slow" until a test opens it.
+private actor Gate {
+    private var waiting: CheckedContinuation<Void, Never>?
+    private var arrived: CheckedContinuation<Void, Never>?
+    private var isHeld = false
+
+    /// Waits until ``open()``.
+    func hold() async {
+        isHeld = true
+        arrived?.resume()
+        arrived = nil
+        await withCheckedContinuation { waiting = $0 }
+    }
+
+    /// Returns once something is held.
+    func held() async {
+        guard !isHeld else {
+            return
+        }
+        await withCheckedContinuation { arrived = $0 }
+    }
+
+    func open() {
+        waiting?.resume()
+        waiting = nil
+    }
+}
+
+/// ``FakeCodec``'s chat photos, the bytes "slow" held at ``Gate`` until it opens.
+private struct GatedCodec: ImageCodec {
+    let gate: Gate
+
+    func prepare(_: Data) -> (any PreparedImage)? {
+        nil
+    }
+
+    func profilePhoto(from _: any PreparedImage, crop _: CropRect) -> [UInt8]? {
+        nil
+    }
+
+    func chatPhoto(from data: Data) async -> Result<OutgoingPhoto, PhotoFailure> {
+        if data == Data("slow".utf8) {
+            await gate.hold()
+        }
+        return FakeCodec().chatPhoto(from: data)
     }
 }

@@ -128,8 +128,19 @@ custom_rules:
   seam_images:
     name: The photo frameworks stay in the app's Images
     regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+(PhotosUI|Photos|ImageIO|UniformTypeIdentifiers|CoreTransferable)\b'
-    excluded: 'Sources/Knit/Images/'
+    # The two ImageIOTests check, on the Mac, that ImageIO reads what libwebp writes and writes what JPEGStrip reads.
+    excluded:
+      - 'Sources/Knit/Images/'
+      - 'Tests/(KnitAppCoreTests|KnitWebPTests)/ImageIOTests\.swift'
     message: Only the app's Images directory picks, decodes, encodes and saves photos; what a face or thread shows is KnitAppCore's.
+    severity: error
+  seam_webp:
+    name: libwebp stays in KnitWebP
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+libwebp\b'
+    excluded:
+      - 'Sources/KnitWebP/'
+      - 'Tests/KnitWebPTests/'
+    message: Only KnitWebP calls libwebp (ADR 2026-10.m4ah); the app writes WebP through its Swift API.
     severity: error
   seam_coreml:
     name: Core ML stays in the app's Moderation

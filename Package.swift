@@ -28,6 +28,7 @@ let pure: [SwiftSetting] = strict + [.strictMemorySafety()]
 
 let crypto: Target.Dependency = .product(name: "Crypto", package: "swift-crypto")
 let grdb: Target.Dependency = .product(name: "GRDB", package: "GRDB.swift")
+let webp: Target.Dependency = .product(name: "libwebp", package: "libwebp-Xcode")
 // libdbus through pkg-config, for the BlueZ radio: Linux only, where every `import CDBus` sits behind `#if os(Linux)`.
 // Declared on a Mac too, the system library cost every SwiftPM build there two pkg-config warnings.
 #if os(Linux)
@@ -55,6 +56,8 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0"),
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.11.1"),
+        // Upstream libwebp's sources as one C target: ImageIO reads WebP but writes none (ADR 2026-10.m4ah).
+        .package(url: "https://github.com/SDWebImage/libwebp-Xcode.git", from: "1.6.0"),
     ],
     targets: [
         // A lock ThreadSanitizer can see, which every target uses in place of Synchronization.Mutex (ADR 2026-09.ahrr).
@@ -71,11 +74,17 @@ let package = Package(
         // View models, UI state and the copy catalog: everything the screens show, tested on Linux.
         .target(name: "KnitAppCore", dependencies: ["KnitSync", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
 
+        // libwebp's encoder behind a small Swift API: a picked GIF leaves as an animated WebP, as Android's does. Not
+        // `pure`: every call into the C library is unsafe.
+        .target(name: "KnitWebP", dependencies: [webp], swiftSettings: strict),
+
         // Apple: the CoreBluetooth radio and the SwiftUI app. Both compile to empty modules elsewhere.
         .target(name: "KnitBLE", dependencies: ["KnitMesh", "KnitWire"], swiftSettings: strict),
         .target(
             name: "Knit",
-            dependencies: ["KnitAppCore", "KnitBLE", "KnitStoreSQL", "KnitControl", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"],
+            dependencies: [
+                "KnitAppCore", "KnitBLE", "KnitStoreSQL", "KnitControl", "KnitWebP", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire",
+            ],
             swiftSettings: strict,
             // The app links every target as a static archive, and the linker keeps only the members something names.
             // CoreBluetooth calls KnitBLE's delegates through the Objective-C runtime alone, so without -ObjC their
@@ -165,6 +174,7 @@ let package = Package(
         ),
         // KnitBLE's stream code over bound stream pairs, on the Mac; an empty target elsewhere, like KnitBLE itself.
         .testTarget(name: "KnitBLETests", dependencies: ["KnitSync", "KnitBLE", "KnitMesh"], swiftSettings: strict),
+        .testTarget(name: "KnitWebPTests", dependencies: ["KnitWebP", webp], swiftSettings: strict),
         .testTarget(name: "RepoConventionTests", dependencies: [crypto], swiftSettings: strict),
     ] + dbusLibrary
 )

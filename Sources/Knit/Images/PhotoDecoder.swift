@@ -24,9 +24,12 @@
         /// `data` as an upright image no larger than `side` pixels on its long side, or `nil` when it is no image, a
         /// type outside `types` (any type ImageIO reads, for `nil`), or one declaring more than `pixels` pixels.
         static func thumbnail(_ data: Data, side: Int, types: Set<String>?, pixels: Int) -> CGImage? {
-            guard let source = source(of: data, types: types, pixels: pixels) else {
-                return nil
-            }
+            source(of: data, types: types, pixels: pixels).flatMap { frame($0, at: 0, side: side) }
+        }
+
+        /// Frame `index` of `source`, as it shows on screen, upright and no larger than `side` pixels on its long side.
+        /// ImageIO draws a GIF's, a WebP's or an APNG's frame over the ones before it, as a player shows it.
+        static func frame(_ source: CGImageSource, at index: Int, side: Int) -> CGImage? {
             let thumbnail =
                 [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -34,8 +37,70 @@
                     kCGImageSourceShouldCacheImmediately: true,
                     kCGImageSourceThumbnailMaxPixelSize: max(side, 1),
                 ] as CFDictionary
-            return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnail)
+            return CGImageSourceCreateThumbnailAtIndex(source, index, thumbnail)
         }
+
+        /// A picked picture, opened but not decoded: its type, how many frames it has, its declared size, and whether
+        /// its orientation tag leaves it as it is stored.
+        struct Picked {
+            let source: CGImageSource
+            let type: String
+            let frames: Int
+            let width: Int
+            let height: Int
+            let upright: Bool
+        }
+
+        /// `data` opened as a picked picture, or why it cannot be sent: no image ImageIO reads, or one declaring more than
+        /// ``pickedPixels`` pixels.
+        static func picked(_ data: Data) -> Result<Picked, PhotoFailure> {
+            let options = [kCGImageSourceShouldCache: false] as CFDictionary
+            guard let source = CGImageSourceCreateWithData(data as CFData, options), CGImageSourceGetCount(source) > 0,
+                let type = CGImageSourceGetType(source) as String?,
+                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
+                width > 0, height > 0
+            else {
+                return .failure(.unreadable)
+            }
+            let (area, overflow) = width.multipliedReportingOverflow(by: height)
+            guard !overflow, area <= pickedPixels else {
+                return .failure(.tooLarge)
+            }
+            let orientation = properties[kCGImagePropertyOrientation] as? UInt32
+            let picked = Picked(
+                source: source,
+                type: type,
+                frames: CGImageSourceGetCount(source),
+                width: width,
+                height: height,
+                upright: orientation.map { $0 == CGImagePropertyOrientation.up.rawValue } ?? true
+            )
+            return .success(picked)
+        }
+
+        /// How long each of `source`'s `count` frames stays, in seconds, as its header says.
+        static func delays(of source: CGImageSource, count: Int) -> [Double] {
+            (0..<count).map { index in
+                (CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]).map(delay(in:)) ?? 0
+            }
+        }
+
+        /// Whether `bytes` decode, at exactly `width` by `height`: the check a picture passes before it leaves as its own
+        /// bytes (`decodesAt` in knit-next). Read at an eighth of the size, so nothing large is held, though the decoder
+        /// still walks the whole stream.
+        static func decodes(_ bytes: [UInt8], width: Int, height: Int) -> Bool {
+            guard let source = source(of: Data(bytes), types: nil, pixels: pickedPixels),
+                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                properties[kCGImagePropertyPixelWidth] as? Int == width, properties[kCGImagePropertyPixelHeight] as? Int == height
+            else {
+                return false
+            }
+            return frame(source, at: 0, side: max(width, height) / checkScale) != nil
+        }
+
+        /// How much smaller ``decodes(_:width:height:)`` reads a picture than it is (`PASS_THROUGH_CHECK_SAMPLE`).
+        private static let checkScale = 8
 
         /// The size the first frame of `source` stands at once turned upright, read from its header without decoding it.
         private static func uprightSize(of source: CGImageSource) -> CGSize? {
@@ -74,9 +139,7 @@
             else {
                 return nil
             }
-            let delays = (0..<count).map { index in
-                (CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]).map(delay(in:)) ?? 0
-            }
+            let delays = delays(of: source, count: count)
             return AnimationTiming(delays: delays, width: width, height: height).map { AnimatedPhoto(bytes: data, timing: $0) }
         }
 
@@ -120,17 +183,6 @@
 
         /// The orientations that stand an image on its side, so it is upright with its width and height swapped.
         private static let quarterTurns: Set<CGImagePropertyOrientation> = [.left, .leftMirrored, .right, .rightMirrored]
-
-        /// Whether `data` is a GIF declaring at most `pixels` pixels, which a chat sends as it is to keep its frames.
-        static func isGIF(_ data: Data, pixels: Int) -> Bool {
-            source(of: data, types: [UTType.gif.identifier], pixels: pixels) != nil
-        }
-
-        /// Whether `data` is a WebP of more than one frame declaring at most `pixels` pixels, which a chat sends as it is,
-        /// as Android sends a sticker (ADR 2026-10.8hmx in knit-next).
-        static func isAnimatedWebP(_ data: Data, pixels: Int) -> Bool {
-            source(of: data, types: [UTType.webP.identifier], pixels: pixels).map { CGImageSourceGetCount($0) > 1 } ?? false
-        }
 
         /// Whether `data` is an image of a type a photo from the mesh may be, declaring at most ``meshPixels``: what the
         /// viewer lets Save add to the library.

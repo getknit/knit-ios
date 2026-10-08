@@ -54,6 +54,9 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
   - CoreGraphics draws it into sRGB and encodes it afresh: a JPEG at quality 85, or a PNG when it has transparency.
     Android writes WebP for those, and ImageIO cannot. Nothing of the picked file's metadata is carried over.
   - A GIF of at most 8 MiB and 25 megapixels goes as it is, so Android plays it. Any other GIF goes as a still.
+  - (Amended 2026-10-08: a picked picture now goes as Android's would. A GIF becomes an animated WebP, a clean still
+    goes as its own bytes stripped, a transparent one as lossy WebP, and a JPEG is written at the ImageIO quality whose
+    tables read as libjpeg's 85; ADR 2026-10.m4ah.)
 - **The thread:**
   - The composer's button adds a photo while there is nothing to send, and sends otherwise (`SendAction`). The photo
     it holds shows above the field, with a button that takes it out.
@@ -91,7 +94,8 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
   message carries a photo travel in the clear. A Nearby photo is as public as the post.
 - **A GIF shows its first frame here;** Android animates it. (Amended 2026-10-08: a GIF, an animated WebP or an APNG
   plays here too, and a list's line names a GIF from its frames; ADR 2026-10.ytvx.)
-- **A transparent photo goes as PNG,** which weighs more than Android's WebP.
+- **A transparent photo goes as PNG,** which weighs more than Android's WebP. (Amended 2026-10-08: it goes as lossy
+  WebP, through libwebp; ADR 2026-10.m4ah.)
 - **A file or a voice message** from Android is named here and can't be opened.
 - **Save keeps the sender's file as it is,** metadata and all. Android strips metadata from what it sends, but a
   modified peer might not.

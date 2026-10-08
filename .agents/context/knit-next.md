@@ -87,6 +87,10 @@ Kotlin wins.
     - `0b9d19ea` labels an animated image "GIF", from its frames, read locally after the blob lands and stored on
       the message (database v17). It adds no wire field. This port mirrors the label in schema v11 (ADR 2026-10.ytvx),
       since Android sends every GIF as an animated WebP and a type alone cannot say it moves.
+    - knit-next ADRs 2026-10.unqn (a clean, bounded picture is stripped, not re-encoded) and 2026-10.8hmx (an
+      animated picture keeps its frames) shape the pick pipeline. This port mirrors both, numbers and allow-lists
+      included, with libwebp in place of Android's encoder (ADR 2026-10.m4ah). Android's GIF door samples with
+      `android.graphics.Movie` and its WebP door composites by hand; ImageIO composites here.
     - `2d059df6` moves Android's dependencies, `cb295894` its CI, and `e40135f2` and `3031fe60` its tests.
   - **Up to `a87d2255`** (the previous pin):
     - #103 (knit-next ADR 2026-09.hj4a), rebased onto `c1b7c19c` and merged unchanged from the branch this port

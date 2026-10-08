@@ -9,7 +9,7 @@
 
     /// `{"cmd":"photos","conv":"nearby"}`: whether each photo in a thread shows, decoded as the thread draws it: read
     /// from the blob store, opened in memory with its message's key when it is sealed, and read by ImageIO under the
-    /// rules for a photo from the mesh (ADR 2026-10.6cas), how many frames it plays (1 for a still, 0 when it does not
+    /// rules for a photo from the mesh (ADR 2026-10.6cas), the type it went as, how many frames it plays (1 for a still, 0 when it does not
     /// show), and whether the content filter hides it behind a tap (ADR 2026-10.rpmq). The control lines say whether a
     /// photo's bytes are here, and only the app can say whether they open, play or hide, so the bridge answers it rather
     /// than ``MeshControl``.
@@ -54,6 +54,7 @@
                     .object([
                         "id": .string(message.id),
                         "hash": .string(attachment.hash.string),
+                        "mime": attachment.mime.map(JSONValue.string) ?? .null,
                         "sealed": .bool(attachment.key != nil),
                         "shown": .bool(image != nil),
                         "hidden": .bool(hidden),

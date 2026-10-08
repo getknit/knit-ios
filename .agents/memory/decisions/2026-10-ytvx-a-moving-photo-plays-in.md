@@ -70,6 +70,9 @@ need frames repeated. ImageIO's `CGAnimateImageDataWithBlock` decodes full-size 
   takes longer to cross the mesh.
 - **A picked animated WebP goes whole,** up to 8 MiB, where Android sends a sticker as it is only up to 1 MiB and
   shrinks anything larger.
+- (Amended 2026-10-08: both limits are gone. libwebp now writes the WebP ImageIO cannot, so a picked GIF, an animated
+  WebP past the sticker's bounds and an APNG are shrunk as Android shrinks them; `AnimatedWebP` is now
+  `WebPStrip.animated`; ADR 2026-10.m4ah.)
 - **A sent GIF keeps any metadata it carries.** GIF has no EXIF, but an application extension can hold text.
 - **A label for a photo sized before v11** says Photo until the launch's read reaches it, 64 photos at a time.
 - **Guards:**

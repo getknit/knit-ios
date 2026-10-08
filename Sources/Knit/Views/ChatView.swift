@@ -101,7 +101,7 @@
             .confirmsReport($reporting) { report in
                 await model.report(report)
             }
-            .alert(Copy.Photo.unreadable, isPresented: $model.photoFailed) {
+            .alert(model.photoFailure == .tooLarge ? Copy.Photo.tooLarge : Copy.Photo.unreadable, isPresented: photoFailed) {
                 Button(Copy.Common.done, role: .cancel) {
                     // The alert closes itself.
                 }
@@ -123,6 +123,11 @@
             .releasesKeyboardWhenCovered()
             .task { await model.appear() }
             .onDisappear(perform: model.disappear)
+        }
+
+        /// Whether the composer says why the last photo picked cannot be sent; dismissing it forgets the reason.
+        private var photoFailed: Binding<Bool> {
+            Binding(get: { model.photoFailure != nil }, set: { if !$0 { model.photoFailure = nil } })
         }
 
         /// Asks before deleting `message`, from its bubble's menu.

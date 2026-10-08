@@ -138,6 +138,16 @@ extension Copy {
             )
         }
 
+        /// The composer's spinner while a picked photo is made ready to send, for VoiceOver.
+        public static var preparingPhoto: String {
+            NSLocalizedString(
+                "attachments.preparing",
+                bundle: .main,
+                value: "Preparing photo",
+                comment: "Chat: VoiceOver's name for the spinner while a picked photo is made smaller to send"
+            )
+        }
+
         /// The button that takes the photo out of the composer.
         public static var removePhoto: String {
             NSLocalizedString(

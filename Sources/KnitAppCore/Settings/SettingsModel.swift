@@ -15,6 +15,7 @@ public struct ThirdPartyNotice: Sendable, Equatable, Identifiable {
     /// What ships, kept equal to the notices file by a test.
     public static let shipped = [
         Self(id: "grdb.swift", name: "GRDB.swift", license: "MIT", url: "https://github.com/groue/GRDB.swift"),
+        Self(id: "libwebp-xcode", name: "libwebp", license: "BSD-3-Clause", url: "https://github.com/webmproject/libwebp"),
         Self(id: "swift-crypto", name: "Swift Crypto", license: "Apache-2.0", url: "https://github.com/apple/swift-crypto"),
     ]
 

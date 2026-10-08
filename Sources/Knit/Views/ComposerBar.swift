@@ -11,12 +11,21 @@
         let demoPhoto: Data?
         @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
+        /// The photo the composer holds, or a spinner while a picked one is made ready to send.
+        @ViewBuilder private var held: some View {
+            if model.preparingPhoto {
+                ProgressView()
+                    .frame(width: Layout.stagedPhoto, height: Layout.stagedPhoto)
+                    .accessibilityLabel(Copy.Attachments.preparingPhoto)
+            } else if let staged = model.staged {
+                StagedPhotoView(staged: staged, remove: model.removePhoto)
+            }
+        }
+
         var body: some View {
             VStack(alignment: .trailing, spacing: Layout.tight) {
-                if let staged = model.staged {
-                    StagedPhotoView(staged: staged, remove: model.removePhoto)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                held
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 if let remaining = model.remaining {
                     Text(Copy.Chat.remaining(remaining))
                         .font(.caption)

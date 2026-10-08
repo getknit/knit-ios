@@ -81,6 +81,10 @@ exact interval, then update this file in the same change.
 - **GRDB in the package (P5):** pinned at 7.11.1 in both `Package.resolved` files. The `STRICT` tables need
   SQLite 3.37 or later: iOS 18 and noble both have it, and an older SQLite fails the first migration rather
   than opening a looser schema. CI's Swift image installs `libsqlite3-dev` in `.swift`'s `before_script`.
+- **libwebp (2026-10-08):** `SDWebImage/libwebp-Xcode` 1.6.0, upstream libwebp v1.6.0's sources as one C target,
+  pinned in both `Package.resolved` files. Its manifest names no Linux, but SwiftPM reads that list as minimums only,
+  and it builds under Swift Build on Linux and in Xcode with nothing installed. Only `KnitWebP` imports it (ADR
+  2026-10.m4ah). whatsnew tracks neither repository, so read upstream's `NEWS` before moving it.
 - **Not needed:** `libbluetooth-dev`. `CBluetoothShim` writes out the few socket definitions itself.
 
 ## CI

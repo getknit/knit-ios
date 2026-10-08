@@ -38,6 +38,16 @@ extension Copy {
             )
         }
 
+        /// A picked photo too large to send: past the most pixels Knit opens, or still over 8 MB once shrunk.
+        public static var tooLarge: String {
+            NSLocalizedString(
+                "photo.too-large",
+                bundle: .main,
+                value: "That photo is too large to send. Try a smaller one.",
+                comment: "Chat: the picked image is too large to send, even made smaller"
+            )
+        }
+
         /// The photo the viewer shows, for VoiceOver.
         public static var profilePhoto: String {
             NSLocalizedString(

@@ -179,6 +179,7 @@ import Testing
             Copy.Photo.cropChoose,
             Copy.Photo.zoom,
             Copy.Photo.unreadable,
+            Copy.Photo.tooLarge,
             Copy.Photo.profilePhoto,
         ] + Self.attachmentStrings
     }
@@ -340,6 +341,7 @@ extension CopyCatalogTests {
             Copy.Attachments.viewPhoto,
             Copy.Attachments.addPhoto,
             Copy.Attachments.stagedPhoto,
+            Copy.Attachments.preparingPhoto,
             Copy.Attachments.removePhoto,
             Copy.Attachments.save,
             Copy.Attachments.saved,

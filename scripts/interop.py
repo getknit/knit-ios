@@ -4144,7 +4144,7 @@ def _ios_shows(ios: IPhone, conversation: str, hashes: set[str]) -> dict:
     missing = sorted(hash_ for hash_ in hashes if not photos.get(hash_, {}).get("shown"))
     if missing:
         raise RuntimeError(f"the iPhone shows none of {missing}: {[photos.get(hash_) for hash_ in missing]}")
-    return {"shown": [{key: photos[hash_].get(key) for key in ("sealed", "width", "height", "frames")} for hash_ in sorted(hashes)]}
+    return {"shown": [{key: photos[hash_].get(key) for key in ("mime", "sealed", "width", "height", "frames")} for hash_ in sorted(hashes)]}
 
 
 def _ios_plays(ios: IPhone, conversation: str, hashes: set[str]) -> dict:
