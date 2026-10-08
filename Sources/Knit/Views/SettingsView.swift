@@ -83,21 +83,31 @@
     private struct ContentFilterSection: View {
         @Bindable var screening: PhotoScreening
         @State private var showsInfo = false
+        @Environment(\.dynamicTypeSize) private var typeSize
 
         var body: some View {
             Section {
-                // The info button sits beside the switch, not in its label, where VoiceOver would fold it into the
-                // switch and never reach it.
-                HStack(spacing: Layout.tight) {
-                    RowLabel(Copy.Moderation.filter, symbol: "eye.slash")
-                        .accessibilityHidden(true)
-                    InfoButton(label: Copy.Moderation.filterInfo) { showsInfo = true }
-                    Spacer()
-                    Toggle(Copy.Moderation.filter, isOn: $screening.filtersContent)
-                        .labelsHidden()
-                        .accessibilityLabel(Copy.Moderation.filter)
-                        .accessibilityIdentifier(AccessibilityID.settingsContentFiltering)
+                // The info button sits in the toggle's label, so the row keeps a toggle row's height; a tap on the label
+                // never flips the switch, so the button keeps its own. VoiceOver reads the row as the one switch, so
+                // the sheet is also among its actions.
+                Toggle(isOn: $screening.filtersContent) {
+                    // A Label on the outside, as RowLabel draws it, so the words keep the column every other row's do.
+                    let title = HStack(spacing: Layout.tight) {
+                        Text(Copy.Moderation.filter)
+                        InfoButton(label: Copy.Moderation.filterInfo) { showsInfo = true }
+                    }
+                    if typeSize.isAccessibilitySize {
+                        title
+                    } else {
+                        Label {
+                            title
+                        } icon: {
+                            Image(systemName: "eye.slash")
+                        }
+                    }
                 }
+                .accessibilityAction(named: Copy.Moderation.filterInfo) { showsInfo = true }
+                .accessibilityIdentifier(AccessibilityID.settingsContentFiltering)
             } footer: {
                 SectionNote(Copy.Moderation.filterFooter)
             }
