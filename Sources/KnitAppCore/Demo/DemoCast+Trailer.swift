@@ -40,9 +40,8 @@ extension DemoCast {
 
     /// The marketing scene's people, DMs, group and request, with the room down to its opening and only Sam linked. Its
     /// script is a short film in the room, after knit-next's: the user asks who is still up top, Sam answers, Lena warns
-    /// of the bridge, Dani posts the fire, the user says they are on their way, and Priya posts the sunset, with
-    /// reactions between. Each reply lands as someone reading it would expect, and `build-trailer.sh` speeds the whole
-    /// up to fit.
+    /// of the bridge, Dani posts the fire, and Priya posts the sunset, with reactions between. Each reply lands as someone
+    /// reading it would expect, and `build-trailer.sh` speeds the whole up to fit.
     static let trailer = Self(
         me: marketing.me,
         people: marketing.people,
@@ -70,8 +69,6 @@ extension DemoCast {
             ),
             Cue(after: .moment, beat: .react(Reaction(line: "trailer-3", by: .sam, emoji: heart))),
             Cue(after: .glance, beat: .react(Reaction(line: "trailer-3", by: .priya, emoji: heart))),
-            Cue(after: .moment, beat: .type("On my way, give me 20.")),
-            Cue(after: .glance, beat: .heard),
             Cue(
                 after: .reply,
                 beat: .post(

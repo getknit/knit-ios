@@ -20,8 +20,8 @@ import Testing
     }
 
     /// The trailer opens on Sam linked and the room at its opening, and plays nothing until the room is on screen. Then
-    /// the director types the user's posts into the room's composer, which sends them, and the room answers each one
-    /// only once it is sent.
+    /// the director types the user's post into the room's composer, which sends it, and the room answers it only once
+    /// it is sent.
     @Test func theTrailersDirectorPlaysItsScriptThroughTheRoom() async throws {
         let identity = try #require(DemoSeed.identity)
         let stores = MeshStores.inMemory()
@@ -49,12 +49,11 @@ import Testing
         #expect(mine().map(\.body) == ["Anyone still up top?"], "typed and sent in the composer")
         #expect(chat.draft.isEmpty, "the composer emptied by the send")
         #expect(stores.messages.message("trailer-3")?.attachment != nil, "Dani's post carries the fire")
-        #expect(!room().contains { $0.id == "trailer-4" }, "nobody answers a post not yet made")
 
         while chat.state.messages.first(where: { $0.id == "trailer-4" })?.reactions.isEmpty != false {
             await Task.yield()
         }
-        #expect(mine().map(\.body) == ["Anyone still up top?", "On my way, give me 20."])
+        #expect(mine().map(\.body) == ["Anyone still up top?"])
         #expect(session.neighbors.count == 3)
         #expect(chat.state.messages.first { $0.id == "trailer-2" }?.reactions == [ReactionChip(emoji: "\u{1F64F}", count: 2, mine: false)])
         following.cancel()
