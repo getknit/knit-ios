@@ -24,8 +24,12 @@
 
         var body: some View {
             VStack(alignment: .trailing, spacing: Layout.tight) {
-                held
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Only while there is something to hold: an empty full-width frame here kept the thread above relaying
+                // itself at the largest text size, and the accessibility audit never finished.
+                if model.preparingPhoto || model.staged != nil {
+                    held
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 if let remaining = model.remaining {
                     Text(Copy.Chat.remaining(remaining))
                         .font(.caption)
