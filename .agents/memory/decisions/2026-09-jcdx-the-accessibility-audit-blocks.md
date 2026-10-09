@@ -106,3 +106,19 @@ emoji alone, a yellow glyph on the chip's light gray. The emoji is a picture the
 view picks, and no fill brings 👍 to 4.5:1 in light and dark alike; WCAG 1.4.3 is for text. Contrast on an element whose
 label is exactly one emoji is exempt. The chip's count and the bubble's VoiceOver value say what the chip says, and the
 same check still reads every other element, the chip's count included.
+
+**Amended 2026-10-08, for a truncated title on glass:** `test:ios:simulator` failed on `main` (job 7649) with "Audit
+failed to complete in time" on the direct thread at the largest size, and failed most runs on the Mac after it. The app
+sat idle while `testmanagerd` ran at 100% CPU in the contrast check's count of colors. Each check finished alone in under
+two seconds, and so did every pair but one: contrast with the clipping check. Over a truncated navigation title on glass,
+Sam's discriminated name with the thread's coral bubble blurred behind it, that pair never finished inside the audit's
+15 seconds, and a name that fit cleared it. A timed-out audit also keeps `testmanagerd` busy, so every audit after it in
+that Simulator times out too, and retrying one does not help. The audit now runs in two passes, every check but Dynamic
+Type and clipping, then clipping alone (`AuditPolicy.passes`). Every check still reads every screen, and an audit that
+times out still fails.
+
+**Amended 2026-10-09, for the keyboard's suggestions:** the dark walk failed once on the onboarding name page with three
+"Element has no description" reports, each naming a `TUIPredictionViewCell`: the empty cells of the suggestion bar the
+system keyboard draws above its keys. CI's dark walk passed on the same commit, so whether the bar is still empty when the
+audit reads it comes down to timing. The cells are Apple's, and an empty one has nothing to describe. A description report
+that names that class is exempt; any other still fails, Knit's own fields included.

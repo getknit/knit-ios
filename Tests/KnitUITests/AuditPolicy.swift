@@ -34,8 +34,18 @@ import XCTest
 ///   accessibility tree, and the alert's glass shows that text through and at its edges. The audit reports it as text no
 ///   element names. Such a report is exempt only while an alert is up with content text partly under it; the alert's
 ///   own words are elements, which the other checks read.
+/// - A missing description on the keyboard's suggestion cells: the system draws the bar above its keys, empty until it has
+///   something to suggest, and an empty cell has nothing to say. The report names the cell's class, `TUIPredictionViewCell`,
+///   and only a report that does is exempt; every element Knit draws is still read.
 @MainActor
 enum AuditPolicy {
+    /// What one screen's audit asks for, in two passes: every check but Dynamic Type, then the clipping check on its own.
+    /// Together the clipping and contrast checks never finish over a truncated navigation title on Liquid Glass (Sam's
+    /// discriminated name over a thread scrolled under the bar): the audit grinds through the glass's colors in
+    /// `testmanagerd` until it gives up, and every audit after it in that Simulator times out behind it. Apart, each
+    /// takes a couple of seconds, and every check still reads every screen.
+    static let passes: [XCUIAccessibilityAuditType] = [.all.subtracting([.dynamicType, .textClipped]), .textClipped]
+
     /// Whether `issue`, found in `app`, is one of the reports above. `bars` are the navigation bars' frames, `window`
     /// the screen's.
     static func exempt(_ issue: XCUIAccessibilityAuditIssue, in app: XCUIApplication, bars: [CGRect], window: CGRect) -> Bool {
@@ -61,6 +71,8 @@ enum AuditPolicy {
             return passesContrast(element, in: app, window: window)
         case .textClipped:
             return [.staticText, .button, .textField].contains(element.elementType)
+        case .sufficientElementDescription:
+            return issue.detailedDescription.contains("TUIPredictionViewCell")
         default:
             return false
         }
