@@ -134,6 +134,12 @@ custom_rules:
       - 'Tests/(KnitAppCoreTests|KnitWebPTests)/ImageIOTests\.swift'
     message: Only the app's Images directory picks, decodes, encodes and saves photos; what a face or thread shows is KnitAppCore's.
     severity: error
+  seam_storekit:
+    name: StoreKit stays in the app's Platform
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+StoreKit\b'
+    excluded: 'Sources/Knit/Platform/'
+    message: Only the app's Platform directory reads the storefront (ADR 2026-10.zv5c); which links show is KnitAppCore's.
+    severity: error
   seam_webp:
     name: libwebp stays in KnitWebP
     regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+libwebp\b'

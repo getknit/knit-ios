@@ -166,6 +166,7 @@ import Testing
             Copy.Diagnostics.clockBehind(seconds: 5),
         ] + Self.groupStrings + Self.newMessageStrings + Self.verifyStrings + Self.photoStrings + Self.blockStrings + Self.deleteStrings
             + Self.moderationStrings + Self.reactionStrings + Self.reportStrings + Self.termsStrings + Self.infoStrings
+            + Self.supportStrings
     }
 
     private static var photoStrings: [String] {

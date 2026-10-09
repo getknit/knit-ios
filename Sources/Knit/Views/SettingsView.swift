@@ -2,7 +2,7 @@
     import KnitAppCore
     import SwiftUI
 
-    /// Settings: the profile row, Stop and Start, notifications, the people blocked, About and Diagnostics (MVP item 10),
+    /// Settings: the profile row, Stop and Start, notifications, the people blocked, About, Support Knit and Diagnostics (MVP item 10),
     /// each row after a glyph, as Signal lists its settings (ADR 2026-10.5waw).
     internal struct SettingsView: View {
         @State private var model: SettingsModel
@@ -63,7 +63,7 @@
         }
     }
 
-    /// About and Diagnostics.
+    /// About, Support Knit and Diagnostics.
     private struct AboutSection: View {
         var body: some View {
             Section {
@@ -71,6 +71,10 @@
                     RowLabel(Copy.Settings.about, symbol: "info.circle")
                 }
                 .accessibilityIdentifier(AccessibilityID.settingsAbout)
+                NavigationLink(value: Route.support) {
+                    RowLabel(Copy.Support.title, symbol: "heart")
+                }
+                .accessibilityIdentifier(AccessibilityID.settingsSupport)
                 NavigationLink(value: Route.diagnostics) {
                     RowLabel(Copy.Settings.diagnostics, symbol: "stethoscope")
                 }

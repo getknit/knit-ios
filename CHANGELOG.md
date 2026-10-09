@@ -75,6 +75,8 @@ document:
   corner that jumps back to the newest. Sending a message still takes you straight down to it.
 - GIFs and animated stickers now play in chats and full screen, including ones sent from Android phones, and
   the chat list calls them GIFs. They stay still if you turn off Auto-Play Animated Images in Settings.
+- Settings has a Support Knit page that rates Knit on the App Store or shares it with a friend. On the US App
+  Store it also links to Ko-fi, Liberapay and GitHub Sponsors, for anyone who wants to leave a tip.
 
 ### Changed
 

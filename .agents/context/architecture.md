@@ -46,6 +46,7 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
   | AVFoundation, Vision, VisionKit and CoreImage | `Knit`'s `Codes/`, which draws and scans verify codes |
   | PhotosUI, Photos, ImageIO, UniformTypeIdentifiers and CoreTransferable | `Knit`'s `Images/`, which picks, decodes, encodes and saves photos |
   | CoreML | `Knit`'s `Moderation/`, which runs the content filter's photo and text models (ADR 2026-10.rpmq, ADR 2026-10.e4kz) |
+  | StoreKit | `Knit`'s `Platform/`, which reads the storefront for Support Knit (ADR 2026-10.zv5c) |
   | GRDB | `KnitStoreSQL` |
   | libwebp | `KnitWebP`, and `KnitWebPTests`, which reads back what it writes |
   | CDBus and the socket shim | `KnitBlueZ`, and `KnitBlueZTests`, which hosts a fake BlueZ |

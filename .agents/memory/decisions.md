@@ -75,3 +75,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.m4ah](decisions/2026-10-m4ah-a-picked-picture-is-shrunk.md) | A picked picture is shrunk as Android shrinks it | blobs, app |
 | [2026-10.ytvx](decisions/2026-10-ytvx-a-moving-photo-plays-in.md) | A moving photo plays in a chat | blobs, app, ui |
 | [2026-10.xwjc](decisions/2026-10-xwjc-the-iphone-s-file-feed.md) | The iPhone's file feed is clocked by its receiver's reports | ble, mesh, blobs, interop |
+| [2026-10.zv5c](decisions/2026-10-zv5c-tip-links-show-on-the.md) | Tip links show on the US storefront only | app, store, copy |

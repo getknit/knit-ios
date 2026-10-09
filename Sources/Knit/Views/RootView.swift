@@ -13,6 +13,7 @@
         case settings
         case blocked
         case about
+        case support
         case terms
         case diagnostics
     }
@@ -181,6 +182,8 @@
                 BlockedView(session: environment.session)
             case .about:
                 AboutView(about: environment.about)
+            case .support:
+                SupportView()
             case .terms:
                 TermsView()
             case .diagnostics:

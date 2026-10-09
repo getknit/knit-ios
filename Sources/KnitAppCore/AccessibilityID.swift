@@ -257,6 +257,19 @@ public enum AccessibilityID {
     public static let settingsAbout = "settings_menu_about"
     /// Settings' way to Diagnostics.
     public static let settingsDiagnostics = "settings_diagnostics"
+    /// Settings' way to Support Knit. Android opens it from the chat list's menu, with no tag.
+    public static let settingsSupport = "settings_support"
+    /// Support Knit, Android's `screen_donate`.
+    public static let supportScreen = "screen_donate"
+    /// One tip link, `support_tip_<key>`. Android has no tag here.
+    public static func supportTip(_ name: String) -> String {
+        "support_tip_\(name)"
+    }
+
+    /// Support Knit's Rate Knit. Android has no tag here.
+    public static let supportRate = "support_rate"
+    /// Support Knit's Share Knit. Android has no tag here.
+    public static let supportShare = "support_share"
     /// Settings' way to the people blocked. Android opens them from the chat list's menu, with no tag.
     public static let settingsBlocked = "settings_blocked"
     /// Settings' Content filtering toggle, Android's `settings_content_filtering`.
