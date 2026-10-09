@@ -90,3 +90,8 @@ from the size it reads (`.agents/memory/roadmap.md`). Guards:
 receiving link emits `.fileProgress`, and the engine sends the file's sender a `blobprog` with the bytes held and the ms
 since the header. Nothing is reported in a stall, and a skipped file is never reported. Guard:
 `LinkFileProgressTests`.
+
+**Amended 2026-10-09 by ADR 2026-10.xwjc:** the 28 KiB/s pace is gone. A file to a peer that reports is clocked by its
+reports (`FeedWindow`, knit-next ADR 2026-10.5buf), and the fallback is one 4 KiB/s budget split among the links
+feeding at the pace (knit-next ADR 2026-10.8jwn). The gate on the radio's report stands, and so does the per-chunk
+spacing. A file streaming in is reported at the window's cadence.

@@ -27,8 +27,8 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   every build answers a `blobhave` (knit-next ADR 2026-10.6e5t). Android reads it from the link only, so it stays
   out of `Capabilities.local`, the signed profile and the emitted vectors. Answering is never gated; only asking is
   (`MeshConfiguration.queriesBlobHolders`). A file's progress report, `blobprog`, and an asker's withdrawal,
-  `blobcancel`, ride the same bit: each goes only to a neighbour whose HELLO carries it and not `CAP_DOORBELL`
-  (knit-next ADR 2026-10.nsr7, ADR 2026-10.ds45).
+  `blobcancel`, ride the same bit: each goes only to a neighbour whose HELLO carries it, an iPhone included (knit-next
+  ADR 2026-10.nsr7, ADR 2026-10.ds45, ADR 2026-10.xwjc). Android still sends an iPhone no `blobprog`.
 - **Text limits count UTF-16 code units,** and whitespace means Java's `\s`. Node ids compare as ASCII
   strings, never as raw bytes.
 - **Changes stay additive** (`docs/WIRE_COMPAT.md` in knit-next). If a change can only be made by breaking

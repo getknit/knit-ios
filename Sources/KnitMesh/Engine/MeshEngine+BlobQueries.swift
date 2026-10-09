@@ -107,10 +107,10 @@ extension MeshEngine {
         blobExchange.counts.progressSent += 1
     }
 
-    /// A neighbour said how much of a file we feed it holds (`BlobExchange.onProgressReport`). Android's link measures its
-    /// drain by it. This port feeds each link at its own pace and parks no asks behind a feed (knit-next ADRs 2026-10.8jwn
-    /// and 2026-10.g24x are not mirrored), so a report is counted and nothing else. It is taken only from the link's own
-    /// peer, as a holder query is, and its sender's key is never asked for.
+    /// A neighbour said how much of a file we feed it holds (`BlobExchange.onProgressReport`): the link feeding it clocks
+    /// its window by the report (knit-next ADR 2026-10.5buf). This port parks no asks behind a feed (knit-next ADR
+    /// 2026-10.g24x is not mirrored), so nothing else reads it. It is taken only from the link's own peer, as a holder
+    /// query is, and its sender's key is never asked for.
     func handleBlobProgress(_ frame: InboundFrame) {
         guard isFromItsLink(frame) else {
             return
@@ -124,16 +124,18 @@ extension MeshEngine {
             return
         }
         blobExchange.counts.progressTaken += 1
+        guard let hash = BlobHash(report.hash) else {
+            return
+        }
+        transport.fileProgressReported(from: frame.from, hash: hash, held: report.held, milliseconds: report.ms)
     }
 
-    /// Whether `peer` is sent the progress reports and withdrawals that only an Android holder acts on (knit-next ADR
-    /// 2026-10.nsr7): a neighbour whose link carries ``Capabilities/blobHave``, as Android sends them, and no iPhone
-    /// (``Capabilities/doorbell``). No iPhone holder measures a feed, and one on a build before ADR 2026-10.ds45 takes
-    /// either unsigned type for a signed one and counts it dropped. A build that does not know a type drops it.
+    /// Whether `peer` is sent progress reports and withdrawals (knit-next ADR 2026-10.nsr7): a neighbour whose link
+    /// carries ``Capabilities/blobHave``, an iPhone included. An iPhone holder clocks its feed by the reports since ADR
+    /// 2026-10.xwjc; Android sends none to an iPhone yet (`BlobExchange.onFileProgress`). An iPhone on a build before ADR
+    /// 2026-10.ds45 takes either unsigned type for a signed one, and a build that does not know a type drops it.
     func readsBlobUpkeep(_ peer: NodeId) -> Bool {
-        transport.neighbors.first { $0.nodeId == peer }.map { neighbor in
-            neighbor.capabilities.contains(.blobHave) && !neighbor.capabilities.contains(.doorbell)
-        } ?? false
+        transport.neighbors.first { $0.nodeId == peer }?.capabilities.contains(.blobHave) ?? false
     }
 
     // MARK: Withdrawals

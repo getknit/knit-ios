@@ -7,7 +7,7 @@ public import KnitWire
 /// knit-peer [run] [--adapter-address AA:BB:CC:DD:EE:FF] [--shared-adapter]
 ///           [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
 ///           [--log debug|info|warning|off] [--rssi-floor DBM] [--never-sight NODE_ID[,NODE_ID…]]
-///           [--no-gatt-payload] [--no-gatt-reads]
+///           [--no-gatt-payload] [--no-gatt-reads] [--feed window|pace]
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
 /// knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
 ///                [--advertise android|ios] [--instance NAME | --state DIR]
@@ -32,7 +32,7 @@ public enum PeerCommand: Equatable, Sendable {
             knit-peer [run] [--adapter-address ADDRESS] [--shared-adapter]
                 [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
                 [--log debug|info|warning|off] [--rssi-floor DBM] [--receive-mtu BYTES] [--send-mtu BYTES]
-                [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload] [--no-gatt-reads]
+                [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload] [--no-gatt-reads] [--feed window|pace]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
             knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
@@ -115,8 +115,13 @@ public struct RunOptions: Equatable, Sendable {
     /// read without the peer connecting to the iPhone at the same moment, which on 2026-09-29 made the iPhone file
     /// the peer as a stranger for ten minutes.
     public var readsGattPayloads = true
+    /// Whether a file to a peer that reports is clocked by its reports, and a file streaming in is reported at the
+    /// window's cadence (``LinkManager/Configuration/feedWindow``, ADR 2026-10.xwjc). `--feed pace` turns both off, the
+    /// A/B switch Android's `…debug.LINKTUNE --es feed` is.
+    public var feedWindow = true
 
     static let profiles = ["android", "ios"]
+    static let feeds = ["window", "pace"]
     static let logLevels = ["debug", "info", "warning", "off"]
 
     init(flags: inout Flags, environment: [String: String]) throws(UsageError) {
@@ -144,6 +149,7 @@ public struct RunOptions: Equatable, Sendable {
         }
         servesGattPayload = !flags.take(switch: "--no-gatt-payload")
         readsGattPayloads = !flags.take(switch: "--no-gatt-reads")
+        feedWindow = try flags.take("--feed", oneOf: Self.feeds).map { $0 == "window" } ?? feedWindow
     }
 
     private static func mtu(_ text: String?, flag: String) throws(UsageError) -> Int? {

@@ -49,6 +49,11 @@ public protocol MeshTransport: AnyObject {
     /// it and not yet streaming is taken off its link. Answers whether one was. A copy already streaming goes on.
     func cancelQueuedFile(_ hash: BlobHash, to peer: NodeId) -> Bool
 
+    /// `peer` holds `held` bytes of `hash`, `milliseconds` after its header reached it by its own clock: its `blobprog`
+    /// (`MeshTransport.onFileProgress`, knit-next ADR 2026-10.nsr7). The link feeding it that file clocks its window by
+    /// it (knit-next ADR 2026-10.5buf); a report about any other file only wakes the feed.
+    func fileProgressReported(from peer: NodeId, hash: BlobHash, held: Int64, milliseconds: Int64)
+
     /// The files on their way in (`MeshTransport.arrivingFiles`): streaming in on some link, or past their END and not
     /// yet taken by the engine (``fileTaken(from:hash:)``). A blob arriving is neither asked for nor asked again, and a
     /// holder query about it answers FETCHING (knit-next ADRs 2026-09.4tx5 and 2026-10.6e5t).

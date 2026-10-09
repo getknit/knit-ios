@@ -30,8 +30,9 @@ public final class LinkManager: MeshTransport {
         case digest([String], from: NodeId)
         /// A whole file arrived, its hash not yet checked.
         case file(InboundFile)
-        /// A file streaming in has got this far: every ``progressEveryMilliseconds`` of its chunks (knit-next ADR
-        /// 2026-10.nsr7). A stall reports nothing.
+        /// A file streaming in has got this far: on every chunk that brings ``windowedProgressEveryBytes``, at least
+        /// every ``windowedProgressEveryMilliseconds``, and once more after chunks no report carried (knit-next ADRs
+        /// 2026-10.nsr7 and 2026-10.5buf). A stall reports nothing.
         case fileProgress(FileProgress)
         /// A file we streamed left the radio whole, its END included (``sendFile(_:to:)``).
         case fileSent(BlobHash, to: NodeId)
@@ -258,13 +259,13 @@ public final class LinkManager: MeshTransport {
     }
 
     /// When ``advance()`` next has work, on the monotonic clock: a dial or HELLO timing out, the advert, a doorbell, a
-    /// backoff running out, or a dwell ending between a peer's adverts.
+    /// backoff running out, a dwell ending between a peer's adverts, a file's next chunk, or a trailing report.
     public var nextDeadline: Int64? {
         let now = clock.monotonicMilliseconds()
         let backoffDue = backoffs.values.map(\.nextAt).filter { $0 > now }.min()
         let ringDue = doorbells.values.compactMap(\.due).min()
         let fileDue = finishedFiles.isEmpty ? feeds.values.compactMap(\.due).min() : now
-        let due = [advertDue, backoffDue, ringDue, dwellDue(now: now), fileDue].compactMap(\.self)
+        let due = [advertDue, backoffDue, ringDue, dwellDue(now: now), fileDue, trailingReportDue].compactMap(\.self)
         return (channels.values.compactMap(\.deadline) + due).min()
     }
 
@@ -323,8 +324,8 @@ public final class LinkManager: MeshTransport {
         }
     }
 
-    /// Times out dials and HELLOs, re-advertises a settled cue, rings doorbells that are due, and dials peers whose
-    /// backoff has run out or whose dwell has just ended.
+    /// Times out dials and HELLOs, re-advertises a settled cue, rings doorbells that are due, feeds files, sends the
+    /// trailing reports that are due, and dials peers whose backoff has run out or whose dwell has just ended.
     public func advance() -> [Event] {
         let now = clock.monotonicMilliseconds()
         var events: [Event] = []
@@ -342,6 +343,7 @@ public final class LinkManager: MeshTransport {
             advertiseNow()
         }
         ringDue(now: now)
+        events += reportTrailing(now: now)
         events += feedDueFiles(now: now)
         return events + promote(now: now) + reconsiderSeeking(now: now)
     }

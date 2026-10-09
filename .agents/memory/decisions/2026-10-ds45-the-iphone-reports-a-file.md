@@ -128,3 +128,9 @@ second copy. This port mirrors both ends.
   - `BlobAskStandsTests`' floor and link-gone cases for the fallback, and for withdrawing once;
   - `BlobPullThroughTests.aPullHasNothingToWithdrawOnceItsNeighbourSaysAtOrAfterItThatItLacksTheBlob`;
   - `LinkDoorbellTests.upkeepGoesOutWithoutRinging` and `PeerNodeTests` for `status.blobs`.
+
+**Amended 2026-10-09 by ADR 2026-10.xwjc:** the iPhone reports at the window's cadence: on every chunk that brings
+2 KiB, at least every 500 ms, and once more after chunks no report carried. Every two seconds is now the
+`feedWindow`-off case. It now measures what it feeds: a report it takes clocks the window of the file streaming to
+that peer. So `blobprog` and `blobcancel` go to an iPhone too, to every neighbour whose HELLO carries `CAP_BLOB_HAVE`.
+Android's gate on sending reports to an iPhone is the one left, and the maintainer lifts it in knit-next.

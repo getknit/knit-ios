@@ -16,7 +16,7 @@ import Testing
 
     @Test func aQueuedCopyThePeerWithdrawsIsSkippedButAStreamingOneIsNot() {
         var configuration = LinkManager.Configuration()
-        configuration.filePaceBytesPerSecond = 0
+        configuration.filePaceBudgetBytesPerSecond = 0
         let rig = LinkRig(local: LinkRig.high, reportsFileWrites: true, configuration: configuration)
         _ = rig.accept(LinkRig.low, on: channel)
         let first = BlobHash(of: Array("streaming".utf8))

@@ -181,8 +181,8 @@ Kotlin wins.
       reads a `blobreq`'s `offset` and serves the whole file, the older holder's answer Android lands whole, and never
       sends one. `blobReqContentResumed` round-trips; `fileHeaderResumed` is synced and not decoded.
     - **One file pace budget** (`99ee3f81`, `37dd5f22`, knit-next ADR 2026-10.8jwn): Android feeds at most 4 KiB/s across
-      every 1M and 2M link it feeds, in chunks of 2 to 16 KiB (`ble-transport.md`). Sender-side only; this port still
-      feeds 28 KiB/s a link (roadmap).
+      every 1M and 2M link it feeds, in chunks of 2 to 16 KiB (`ble-transport.md`). Sender-side only; mirrored ahead
+      of the pin with 5buf's window, below (ADR 2026-10.xwjc).
     - **An attachment keeps its arrival identity** (`01b2fd5d`, knit-next ADR 2026-10.mptm): a sealed DM or group message
       may name a room picture by its plaintext hash with no key, and one blob may recur across messages
       (`crypto.md`). This port took both already, and since ADR 2026-10.f3mv mirrors the rest: a held pick goes as its
@@ -205,11 +205,19 @@ Kotlin wins.
       `BLOB_QUERY` changes what this port does: the app now queries in every build (ADR 2026-10.m9uq's amendment of
       2026-10-09). With the others, a release Android phone now finds a foreground iPhone through its GATT payload and
       dials it, hunts a Coded peer in windows deaf to an iPhone, and feeds an iPhone at the paced base, since it never
-      boosts or windows an iPhone link (`ble-transport.md`; knit-next ADR 2026-10.5buf, a follow-up here).
+      boosts or windows an iPhone link (`ble-transport.md`; knit-next ADR 2026-10.5buf, mirrored below).
+    - knit-next ADR 2026-10.5buf, a file clocked by its receiver's reports, with both amendments of 2026-10-08, and
+      knit-next ADR 2026-10.8jwn's budget as its fallback (ADR 2026-10.xwjc, 2026-10-09). Read from the working tree
+      at `713b29d6`: `FeedWindow.kt` (ported whole but for its Coded parts and resume), `RxReports.kt` (the cadence),
+      `FramedLink.kt:367-430` and `:686-828`, `CodedPhyPolicy.kt:311-387` and `BluetoothMeshTransport.kt:1174-1227`.
+      This port also windows and reports to iPhones, where Android keeps two gates (`BleFeedPolicy.windowed`,
+      `BlobExchange.onFileProgress`) that the maintainer lifts in knit-next (roadmap). When the pin passes 5buf, check
+      `FeedWindow.kt` against `FeedWindowTests` and `FeedWindowSimTests`, and `RxReports.kt` against
+      `LinkFileProgressTests`.
     - knit-next ADR 2026-10.g24x's item 2 (`e2191bb9`): a querying asker asks the frame's author on its HAVE, without
       waiting for the other answers (`BlobExchange.answersIn`, mirrored on 2026-10-09). Its other items are not
       mirrored: the carrier's hold waits for Phase 4's carrier pulls, and the per-link budget and one copy at a time
-      wait for 5buf.
+      wait for nsr7's holder half (parking), now that 5buf is in.
     - knit-next #140, an ask to a holder that stands until its link goes (the 2026-10-06 amendment to ADR
       2026-10.6e5t), ported from the uncommitted `fix/blob-ask-race` on 2026-10-06 (ADR 2026-10.m9uq's amendment).
       Check the merged `BlobExchange.kt` against `BlobAskStandsTests` when the pin passes it.

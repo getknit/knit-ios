@@ -1,46 +1,20 @@
 public import KnitWire
 
-/// A link's outgoing files (`FramedLink.streamFile` and its `stash`, `FramedLink.kt:107-108` and `:321-359`): one
-/// streams at a time, and the rest wait their turn in order.
-internal struct FileFeed {
-    /// The file streaming now.
-    struct Streaming {
-        var file: OutboundFile
-        /// When its header went out, for the log.
-        let startedAt: Int64
-        /// How many of the file's bytes are written.
-        var offset = 0
-        /// FILE records handed to a radio that reports writes, whose last byte it has not reported out yet.
-        var unreported = 0
-        /// Whether the END is written.
-        var ended = false
-        /// When the next record may go: the last chunk's share of a second at the pace.
-        var nextAt: Int64
-    }
-
-    var streaming: Streaming?
-    var waiting: [OutboundFile] = []
-
-    /// When this feed next has work on the clock alone: a record waiting out the pace. A feed waiting for the radio's
-    /// report has none, since the report itself brings the next record.
-    var due: Int64? {
-        guard let streaming, streaming.unreported == 0 else {
-            return nil
-        }
-        return streaming.nextAt
-    }
-
-    /// Whether `hash` is streaming or waiting here.
-    func holds(_ hash: BlobHash) -> Bool {
-        streaming?.file.hash == hash || waiting.contains { $0.hash == hash }
-    }
-}
-
-/// When a link's incoming file began and was last reported (`FramedLink.rxStartedAt` and `rxReportedAt`, knit-next ADR
-/// 2026-10.nsr7), on the monotonic clock.
+/// When a link's incoming file began and was last reported (`RxReports`, knit-next ADRs 2026-10.nsr7 and 2026-10.5buf),
+/// on the monotonic clock: how much the last report held, and when the trailing report is due.
 internal struct ArrivalClock {
+    /// The neighbour streaming the file, whom the reports go to.
+    let peer: NodeId
     let startedAt: Int64
     var reportedAt: Int64
+    var reportedBytes: Int64 = -1
+    var trailingAt: Int64?
+
+    init(peer: NodeId, startedAt: Int64) {
+        self.peer = peer
+        self.startedAt = startedAt
+        reportedAt = startedAt
+    }
 }
 
 /// A whole file past its END that the engine has not taken yet, by the neighbour whose link carried it.
@@ -54,36 +28,49 @@ internal struct LandingFile: Hashable {
 /// **In,** each link's file passes through a ``FileIntake``, which applies Android's receiver rules. A peer's own AVATAR
 /// push is kept up to ``Configuration/maxAvatarFileBytes``. An ATTACHMENT is kept only when the engine asked for its
 /// hash (``acceptFiles(_:)``), up to Android's 8 MiB and 64 KiB, and partial files on every link together stay within
-/// ``Configuration/maxBufferedFileBytes``. A whole file goes to the engine, which checks its hash. Every
-/// ``progressEveryMilliseconds`` of a kept file's chunks, how much of it is in goes to the engine too, which tells the
-/// sender (knit-next ADR 2026-10.nsr7).
+/// ``Configuration/maxBufferedFileBytes``. A whole file goes to the engine, which checks its hash. How much of a kept
+/// file is in goes to the engine too, which tells the sender (knit-next ADR 2026-10.nsr7): on every chunk that brings
+/// 2 KiB, at least every half second, and once more half a second after chunks no report carried, so a windowed sender
+/// always has a report coming (`RxReports`, knit-next ADR 2026-10.5buf).
 ///
-/// **Out,** a file streams as Android streams one: its header, chunks of 16 KiB, then its END, one file at a time per
-/// link, paced at 28 KiB/s. Each chunk waits until the radio reports the last one out of its queue, so the queue never
+/// **Out,** a file streams as Android streams one: its header, chunks, then its END, one file at a time per link. A
+/// peer that reports (its HELLO carries ``Capabilities/blobHave``) clocks the file by its reports (``FeedWindow``):
+/// chunks of about a quarter second of the drain, written while what no report has said landed is under the drain over
+/// the round trip plus a quarter second. A silent peer, one that reports only every two seconds, or one that does not
+/// report at all, gets the paced fallback: 4 KiB/s split among the links feeding at that pace (knit-next ADR
+/// 2026-10.8jwn). Either way each chunk waits until the radio reports the last one out of its queue, so the queue never
 /// holds more than one chunk of a file, and frames written meanwhile go out between the chunks. Android's writer
 /// blocks on its socket and interleaves frames the same way (`FramedLink.drainFramesInto`). FILE records never ring a
 /// doorbell, as on Android (`BluetoothMeshTransport.sendFile`).
 extension LinkManager {
     /// How much of a key the log shows: enough to tell files apart.
     static let shownKeyCharacters = 12
-    /// For the pace's arithmetic.
-    static let millisecondsPerSecond: Int64 = 1000
-    /// How often a file streaming in is reported back to its sender (`FramedLink.PROGRESS_EVERY_MS`, knit-next ADR
-    /// 2026-10.nsr7): often enough that its sender sees a stall within 15 s, rarely enough to cost nothing beside the file.
+    /// How often a file streaming in is reported back to its sender with ``Configuration/feedWindow`` off
+    /// (`RxReports.EVERY_MS`, knit-next ADR 2026-10.nsr7): often enough that its sender sees a stall within 15 s, rarely
+    /// enough to cost nothing beside the file.
     public static let progressEveryMilliseconds: Int64 = 2000
+    /// How often it is reported with the switch on, at the least (`RxReports.WINDOWED_EVERY_MS`), and how soon after
+    /// chunks no report carried the trailing report goes.
+    public static let windowedProgressEveryMilliseconds: Int64 = 500
+    /// And on every chunk that brings this much since the last report (`RxReports.WINDOWED_EVERY_BYTES`): a sender's
+    /// smallest chunk, so under every window. A windowed sender writes nothing more until it hears, and between two
+    /// dark phones only a Bluetooth packet wakes either, so the report on the chunk itself is the one that always comes.
+    public static let windowedProgressEveryBytes = Int64(FeedWindow.minChunkBytes)
 
     // MARK: MeshTransport
 
     /// Streams `file` to `peer` as FILE records, behind any file already on that link, and answers whether a link took
     /// it. A file already queued or streaming there is not queued again.
     public func sendFile(_ file: OutboundFile, to peer: NodeId) -> Bool {
-        guard let id = liveChannel(to: peer) else {
+        guard let link = liveLinks.first(where: { $0.neighbor.nodeId == peer }) else {
             return false
         }
+        let id = link.channel
         guard !(feeds[id]?.holds(file.hash) ?? false) else {
             return true
         }
-        feeds[id, default: FileFeed()].waiting.append(file)
+        let reports = link.neighbor.capabilities.contains(.blobHave)
+        feeds[id, default: FileFeed(peer: peer, reports: reports, maxChunkBytes: configuration.fileChunkBytes)].waiting.append(file)
         // At once: the timers run the links before the engine, so a file waiting for the next tick would lose one.
         pump(id, now: clock.monotonicMilliseconds())
         return true
@@ -144,9 +131,9 @@ extension LinkManager {
 
     // MARK: In
 
-    func fileHeader(_ payload: [UInt8], on id: ChannelID, now: Int64) {
+    func fileHeader(_ payload: [UInt8], from peer: NodeId, on id: ChannelID, now: Int64) {
         // Stamped at every header, kept or not, as Android's is; only a kept file is ever reported.
-        arrivalClocks[id] = ArrivalClock(startedAt: now, reportedAt: now)
+        arrivalClocks[id] = ArrivalClock(peer: peer, startedAt: now)
         let accepted = acceptedFileKeys
         let avatarLimit = configuration.maxAvatarFileBytes
         let events = intakes[id, default: FileIntake()].header(payload) { header, key in
@@ -173,19 +160,64 @@ extension LinkManager {
         return fileProgress(from: peer, on: id, now: now)
     }
 
-    /// How much of the kept file streaming in on `id` is held, once ``progressEveryMilliseconds`` have passed since its
-    /// header or its last report (`FramedLink.reportRx`): after the chunk is in, so a stall reports nothing. A resumed
-    /// stream would count its kept prefix too; this port never asks for one (knit-ios #2).
+    /// How much of the kept file streaming in on `id` is held, after the chunk is in, so a stall reports nothing
+    /// (`RxReports.chunk`). With the window's switch on, on a chunk that brings ``windowedProgressEveryBytes`` since the
+    /// last report or once ``windowedProgressEveryMilliseconds`` have passed, else arming the trailing report; with it
+    /// off, every ``progressEveryMilliseconds``. A resumed stream would count its kept prefix too; this port never asks
+    /// for one (knit-ios #2).
     private func fileProgress(from peer: NodeId, on id: ChannelID, now: Int64) -> [Event] {
-        guard let intake = intakes[id], let hash = intake.arriving, var clock = arrivalClocks[id],
-            now - clock.reportedAt >= Self.progressEveryMilliseconds
-        else {
+        guard let intake = intakes[id], let hash = intake.arriving, var clock = arrivalClocks[id] else {
+            return []
+        }
+        let held = Int64(intake.bufferedBytes)
+        let windowed = configuration.feedWindow
+        let every = windowed ? Self.windowedProgressEveryMilliseconds : Self.progressEveryMilliseconds
+        let grown = windowed && held - max(clock.reportedBytes, 0) >= Self.windowedProgressEveryBytes
+        guard now - clock.reportedAt >= every || grown else {
+            if windowed, clock.trailingAt == nil {
+                clock.trailingAt = clock.reportedAt + Self.windowedProgressEveryMilliseconds
+                arrivalClocks[id] = clock
+            }
             return []
         }
         clock.reportedAt = now
+        clock.reportedBytes = held
         arrivalClocks[id] = clock
-        let held = Int64(intake.bufferedBytes)
         return [.fileProgress(FileProgress(from: peer, hash: hash, held: held, milliseconds: now - clock.startedAt))]
+    }
+
+    /// When a trailing report is next due on any link.
+    var trailingReportDue: Int64? {
+        arrivalClocks.values.compactMap(\.trailingAt).min()
+    }
+
+    /// The trailing reports that are due (`RxReports.trail`): while chunks have landed that no report covered, one every
+    /// ``windowedProgressEveryMilliseconds``. A clock with nothing owed, or whose file is over, stops; the next chunk
+    /// that goes unreported arms it again. A suspended app fires it late, and the sender's next chunk wakes us anyway.
+    func reportTrailing(now: Int64) -> [Event] {
+        let due = arrivalClocks.compactMap { id, clock in clock.trailingAt.flatMap { $0 <= now ? (id, clock) : nil } }
+            .sorted { Self.inOrder($0.0, $1.0) }
+        var events: [Event] = []
+        for (id, armed) in due {
+            var clock = armed
+            guard let intake = intakes[id], let hash = intake.arriving, Int64(intake.bufferedBytes) > clock.reportedBytes else {
+                clock.trailingAt = nil
+                arrivalClocks[id] = clock
+                continue
+            }
+            let left = clock.reportedAt + Self.windowedProgressEveryMilliseconds - now
+            if left <= 0 {
+                let held = Int64(intake.bufferedBytes)
+                clock.reportedAt = now
+                clock.reportedBytes = held
+                clock.trailingAt = now + Self.windowedProgressEveryMilliseconds
+                events.append(.fileProgress(FileProgress(from: clock.peer, hash: hash, held: held, milliseconds: now - clock.startedAt)))
+            } else {
+                clock.trailingAt = now + left
+            }
+            arrivalClocks[id] = clock
+        }
+        return events
     }
 
     func fileEnd(from peer: NodeId, on id: ChannelID) -> [Event] {
@@ -216,119 +248,5 @@ extension LinkManager {
     /// The first characters of a key, for the log.
     static func shown(_ key: String) -> Substring {
         key.prefix(shownKeyCharacters)
-    }
-
-    // MARK: Out
-
-    /// The radio reported a FILE record's last byte out on `id`: the next one may go once its pace allows.
-    func fileRecordWritten(on id: ChannelID, now: Int64) -> [Event] {
-        if let unreported = feeds[id]?.streaming?.unreported, unreported > 0 {
-            feeds[id]?.streaming?.unreported = unreported - 1
-        }
-        pump(id, now: now)
-        return []
-    }
-
-    /// Writes the next record of every feed whose pace has run out, and hands over the files that finished.
-    func feedDueFiles(now: Int64) -> [Event] {
-        let due = feeds.filter { $0.value.due.map { $0 <= now } ?? false }.keys.sorted(by: Self.inOrder)
-        for id in due {
-            pump(id, now: now)
-        }
-        return takeFinishedFiles()
-    }
-
-    /// The files that finished streaming since the last call.
-    func takeFinishedFiles() -> [Event] {
-        defer { finishedFiles.removeAll() }
-        return finishedFiles
-    }
-
-    /// Writes what `id`'s feed may write now: a waiting file's header, then a chunk or the END each time the radio has
-    /// reported the last record out and its pace has run.
-    private func pump(_ id: ChannelID, now: Int64) {
-        while var feed = feeds[id] {
-            guard let streaming = feed.streaming else {
-                guard startNextFile(&feed, on: id, now: now) else {
-                    feeds[id] = nil
-                    return
-                }
-                feeds[id] = feed
-                continue
-            }
-            guard streaming.unreported == 0 else {
-                return
-            }
-            if streaming.ended {
-                feed.streaming = nil
-                feeds[id] = feed
-                noteSent(streaming, on: id, now: now)
-                continue
-            }
-            guard now >= streaming.nextAt else {
-                return
-            }
-            feed.streaming = writeNextRecord(of: streaming, on: id, now: now)
-            feeds[id] = feed
-        }
-    }
-
-    /// Starts the next waiting file with its header, or answers `false` when none waits.
-    private func startNextFile(_ feed: inout FileFeed, on id: ChannelID, now: Int64) -> Bool {
-        guard !feed.waiting.isEmpty else {
-            return false
-        }
-        let file = feed.waiting.removeFirst()
-        if let header = LinkRecord(.fileHeader, payload: LinkJSON.fileHeaderPayload(file.header)).encoded {
-            write(header, on: id)
-        }
-        feed.streaming = FileFeed.Streaming(file: file, startedAt: now, nextAt: now)
-        return true
-    }
-
-    /// Writes a file's next chunk, or its END once its bytes run out. A file whose bytes cannot be read ends early,
-    /// which fails the receiver's hash check, so it drops the file and keeps the link.
-    private func writeNextRecord(of streaming: FileFeed.Streaming, on id: ChannelID, now: Int64) -> FileFeed.Streaming {
-        var streaming = streaming
-        let remaining = streaming.file.size - streaming.offset
-        let chunk = remaining > 0 ? streaming.file.read(streaming.offset, min(configuration.fileChunkBytes, remaining)) : nil
-        let record: [UInt8]?
-        if let chunk, !chunk.isEmpty {
-            record = LinkRecord(.fileChunk, payload: chunk).encoded
-            streaming.offset += chunk.count
-            streaming.nextAt = now + paceMilliseconds(for: chunk.count)
-        } else {
-            if remaining > 0 {
-                log.log(.warning, "link \(id) file \(Self.shown(streaming.file.hash.string)) unreadable at \(streaming.offset); ending it")
-            }
-            record = LinkRecord(.fileEnd).encoded
-            streaming.ended = true
-        }
-        if let record {
-            radio.writeFileRecord(record, to: id)
-            if radio.reportsFileWrites {
-                streaming.unreported += 1
-            }
-        }
-        return streaming
-    }
-
-    /// A file's END is out: it counts as sent, the log says so as it says a file arrived, and the engine hears so.
-    private func noteSent(_ streaming: FileFeed.Streaming, on id: ChannelID, now: Int64) {
-        filesSent += 1
-        if let peer = liveLinks.first(where: { $0.channel == id })?.neighbor.nodeId {
-            let file = streaming.file
-            let took = now - streaming.startedAt
-            log.log(
-                .info, "link file \(file.kind.rawValue) \(Self.shown(file.hash.string)) to \(peer): \(streaming.offset) bytes in \(took) ms"
-            )
-            finishedFiles.append(.fileSent(file.hash, to: peer))
-        }
-    }
-
-    /// One chunk's share of a second at the pace: 16 KiB at 28 KiB/s is 571 ms.
-    private func paceMilliseconds(for count: Int) -> Int64 {
-        let pace = configuration.filePaceBytesPerSecond
-        return pace > 0 ? Int64(count) * Self.millisecondsPerSecond / Int64(pace) : 0
     }
 }

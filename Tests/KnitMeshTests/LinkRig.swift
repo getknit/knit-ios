@@ -99,10 +99,26 @@ struct LinkRig {
         return id
     }
 
-    /// A peer dials us and sends its HELLO.
-    func accept(_ peer: NodeId, on id: ChannelID) -> [LinkManager.Event] {
+    /// A peer dials us and sends its HELLO, carrying `capabilities`.
+    func accept(_ peer: NodeId, on id: ChannelID, capabilities: Capabilities = 0xFFF) -> [LinkManager.Event] {
         _ = handle(.accepted(id))
-        return handle(.received(id, Self.helloRecord(peer)))
+        return handle(.received(id, Self.helloRecord(peer, capabilities: capabilities)))
+    }
+
+    /// Fires every deadline up to `time` in turn, as the `Mesh` actor's timer does, then moves the clock to `time`. A
+    /// clock that jumps past a feed's wait reads as the app suspended (``FeedWindow/slept(_:now:)``).
+    @discardableResult
+    func run(until time: Int64) -> [LinkManager.Event] {
+        var events: [LinkManager.Event] = []
+        // Bounded, so a deadline that never moves fails the test rather than hanging it.
+        for _ in 0..<10_000 {
+            guard let next = links.nextDeadline, next <= time else {
+                break
+            }
+            events += advance(max(0, next - clock.monotonicMilliseconds()))
+        }
+        clock.advance(time - clock.monotonicMilliseconds())
+        return events
     }
 
     static func sighting(_ peer: NodeId, flags: UInt8 = AdvertPayload.dialsGattPeersFlag, rssi: Int = -50) -> RadioSighting {

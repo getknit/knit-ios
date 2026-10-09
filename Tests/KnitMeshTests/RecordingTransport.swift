@@ -32,6 +32,8 @@ final class RecordingTransport: MeshTransport {
     var feedingLoad = 0
     /// Every file the engine said it took, in order.
     private(set) var taken: [(from: NodeId, hash: BlobHash)] = []
+    /// Every progress report the engine handed the links, in order.
+    private(set) var progressReports: [FileProgress] = []
 
     func send(_ wire: WireEnvelope, to peer: NodeId?) {
         guard let envelope = try? RelayEnvelope(decoding: wire.signed) else {
@@ -72,6 +74,10 @@ final class RecordingTransport: MeshTransport {
 
     func fileTaken(from peer: NodeId, hash: BlobHash) {
         taken.append((peer, hash))
+    }
+
+    func fileProgressReported(from peer: NodeId, hash: BlobHash, held: Int64, milliseconds: Int64) {
+        progressReports.append(FileProgress(from: peer, hash: hash, held: held, milliseconds: milliseconds))
     }
 
     func isFileArriving(from peer: NodeId) -> Bool {

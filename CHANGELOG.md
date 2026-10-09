@@ -97,6 +97,9 @@ document:
 - A photo you save from Knit and send again now goes as the same copy, so phones that already have it don't
   fetch it, and a GIF keeps moving. When someone in a chat shares a photo your iPhone has, it shows its own
   copy.
+- A message you send while a photo is going out now arrives in about two seconds instead of minutes, because
+  your iPhone paces the photo by what the other phone reports taking in. Until Android phones update to report
+  it, photos you send them go more slowly than before.
 
 ## About this file
 

@@ -38,7 +38,9 @@ import Testing
         rig.links.acceptFiles([BlobHash(of: file)])
         let events = rig.handle(.received(channel, records(.attachment, file)))
         #expect(
-            events == [.file(InboundFile(from: LinkRig.low, kind: .attachment, hash: BlobHash(of: file), mime: "image/jpeg", bytes: file))])
+            events.last
+                == .file(InboundFile(from: LinkRig.low, kind: .attachment, hash: BlobHash(of: file), mime: "image/jpeg", bytes: file)))
+        #expect(events.dropLast().allSatisfy { if case .fileProgress = $0 { true } else { false } }, "reported as it came")
         #expect(rig.links.filesReceived == 1)
         #expect(rig.links.arrivingFileKeys == [BlobHash(of: file)], "landing until the engine takes it")
         rig.links.fileTaken(from: LinkRig.low, hash: BlobHash(of: file))
@@ -114,7 +116,8 @@ import Testing
 
     // MARK: Out
 
-    @Test func aFileStreamsAsAHeaderChunksAndAnEndAtTheBlePace() {
+    @Test func aFileToAPeerThatDoesNotReportStreamsAtThePacedBase() {
+        // knit-next ADR 2026-10.8jwn: alone, a link takes the whole 4 KiB/s in chunks of two seconds of it.
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
         let file = bytes(40 * 1024)
@@ -124,36 +127,36 @@ import Testing
         }
         #expect(fileRecords().map(\.tag) == [.fileHeader, .fileChunk], "the header and a first chunk at once")
         #expect(rig.links.isFileInFlight(BlobHash(of: file), to: LinkRig.low))
-        // 16 KiB at 28 KiB/s is 571 ms a chunk.
-        #expect(rig.advance(570).isEmpty)
+        // 8 KiB at 4 KiB/s is two seconds a chunk.
+        #expect(rig.advance(1999).isEmpty)
         #expect(fileRecords().count == 2)
         _ = rig.advance(1)
         #expect(fileRecords().count == 3)
-        _ = rig.advance(571)
-        #expect(fileRecords().count == 4, "8 KiB left")
-        _ = rig.advance(284)
-        #expect(fileRecords().count == 4)
+        _ = rig.run(until: rig.clock.monotonicMilliseconds() + 7999)
+        #expect(fileRecords().count == 6, "the fifth and last chunk went at 8 s")
         let ended = rig.advance(1)
         #expect(ended == [.fileSent(BlobHash(of: file), to: LinkRig.low)])
         let written = fileRecords()
-        #expect(written.map(\.tag) == [.fileHeader, .fileChunk, .fileChunk, .fileChunk, .fileEnd])
+        #expect(written.map(\.tag) == [.fileHeader] + Array(repeating: .fileChunk, count: 5) + [.fileEnd])
         #expect(
             written.first?.payload
                 == LinkJSON.fileHeaderPayload(
                     FileHeader(kind: .attachment, key: BlobHash(of: file).string, mime: "image/jpeg", size: file.count)),
             "the header declares the size, so Android can draw how far the file has got")
-        #expect(written.filter { $0.tag == .fileChunk }.map(\.payload.count) == [16_384, 16_384, 8192])
+        #expect(written.filter { $0.tag == .fileChunk }.map(\.payload.count) == Array(repeating: 8192, count: 5))
         #expect(written.filter { $0.tag == .fileChunk }.flatMap(\.payload) == file)
         #expect(rig.links.filesSent == 1)
         #expect(!rig.links.isFileInFlight(BlobHash(of: file), to: LinkRig.low))
         let key = BlobHash(of: file).string.prefix(12)
+        #expect(rig.log.all.contains("info link file pace budget=4096 feeding=1 share=4096 chunk=8192 → \(LinkRig.low)"))
         #expect(
-            rig.log.all.contains("info link file ATTACHMENT \(key) to \(LinkRig.low): 40960 bytes in 1427 ms"), "as a file in is logged")
+            rig.log.all.contains("info link file ATTACHMENT \(key) to \(LinkRig.low): 40960 bytes in 10000 ms @4096"),
+            "as a file in is logged, with its pace")
     }
 
     @Test func aReportingRadioGetsTheNextRecordOnlyOnceTheLastIsOut() {
         var configuration = LinkManager.Configuration()
-        configuration.filePaceBytesPerSecond = 0
+        configuration.filePaceBudgetBytesPerSecond = 0
         let rig = LinkRig(local: LinkRig.high, reportsFileWrites: true, configuration: configuration)
         _ = rig.accept(LinkRig.low, on: channel)
         let file = bytes(20 * 1024)
@@ -173,7 +176,7 @@ import Testing
 
     @Test func framesWrittenMeanwhileGoOutBetweenTheChunks() {
         var configuration = LinkManager.Configuration()
-        configuration.filePaceBytesPerSecond = 0
+        configuration.filePaceBudgetBytesPerSecond = 0
         let rig = LinkRig(local: LinkRig.high, reportsFileWrites: true, configuration: configuration)
         _ = rig.accept(LinkRig.low, on: channel)
         _ = rig.links.sendFile(outbound(bytes(20 * 1024)), to: LinkRig.low)
@@ -185,7 +188,7 @@ import Testing
 
     @Test func oneFileStreamsAtATimeAndAFileAlreadyQueuedIsNotQueuedAgain() {
         var configuration = LinkManager.Configuration()
-        configuration.filePaceBytesPerSecond = 0
+        configuration.filePaceBudgetBytesPerSecond = 0
         let rig = LinkRig(local: LinkRig.high, reportsFileWrites: true, configuration: configuration)
         _ = rig.accept(LinkRig.low, on: channel)
         let first = bytes(10)
@@ -209,7 +212,7 @@ import Testing
 
     @Test func aFileThatFinishesInsideSendIsHandedOverAtTheNextTick() {
         var configuration = LinkManager.Configuration()
-        configuration.filePaceBytesPerSecond = 0
+        configuration.filePaceBudgetBytesPerSecond = 0
         let rig = LinkRig(local: LinkRig.high, configuration: configuration)
         _ = rig.accept(LinkRig.low, on: channel)
         let file = bytes(10)
@@ -228,8 +231,9 @@ import Testing
         _ = rig.links.sendFile(outbound(second), to: LinkRig.middle)
         _ = rig.links.sendFile(outbound(first), to: LinkRig.low)
         #expect(rig.links.queuedFileCount == 2)
-        // 1000 bytes at 28 KiB/s is 34 ms, and then both ENDs are due.
-        #expect(rig.advance(34) == [.fileSent(BlobHash(of: first), to: LinkRig.low), .fileSent(BlobHash(of: second), to: LinkRig.middle)])
+        // 1000 bytes at the whole 4 KiB/s is 244 ms, and at half of it, shared with the first link, 488 ms: by then both
+        // ENDs are due.
+        #expect(rig.advance(488) == [.fileSent(BlobHash(of: first), to: LinkRig.low), .fileSent(BlobHash(of: second), to: LinkRig.middle)])
         #expect(rig.links.queuedFileCount == 0)
     }
 

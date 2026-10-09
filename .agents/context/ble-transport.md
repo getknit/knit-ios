@@ -92,13 +92,19 @@ bytes. The tags:
   total only in 1..8,454,144 and shows the bytes alone outside it. A size that will not decode is read as none and the
   file still lands, and a header from a build before the field has none. Android and this port always write it.
 - Android caps each socket write at `min(maxTransmitPacketSize, 8192)` bytes. Keep our writes at 8 KiB or less.
-- Android paces files by the link's PHY, read again before every chunk (`CodedPhyPolicy.pace`, #114):
-  - on 1M and 2M, one budget of 4 KiB/s split evenly across the links feeding a file, each chunk two seconds of a
-    link's share, from 2 to 16 KiB (knit-next ADR 2026-10.8jwn, since `99ee3f81`; it was 28 KiB/s a link before);
+- Android clocks a file to a peer that reports by the peer's `blobprog` reports (`FeedWindow`, knit-next ADR
+  2026-10.5buf): a window of `rate × (round trip + 250 ms)`, 4 to 64 KiB, in chunks of about a quarter second of the
+  rate. A peer that reports is an Android build whose HELLO carries `CAP_BLOB_HAVE`. Android never windows an iPhone
+  (`BleFeedPolicy.windowed`) and sends one no report (`BlobExchange.onFileProgress`), two gates the maintainer lifts
+  in knit-next. Otherwise, and as the fallback for a silent or two-second receiver, it paces by the link's PHY, read
+  again before every chunk (`CodedPhyPolicy.pace`, #114):
+  - on 1M and 2M, one budget of 4 KiB/s split evenly across the links feeding at the pace, each chunk two seconds of
+    a link's share, from 2 to 16 KiB (knit-next ADR 2026-10.8jwn; it was 28 KiB/s a link before);
   - 1 KiB/s in 2 KiB chunks on Coded, outside the split.
 
-  The pace is the sender's own choice, and a receiver takes a chunk of any length. This port still feeds each link
-  at 28 KiB/s in 16 KiB chunks behind the radio's report (ADR 2026-10.h6zz; `.agents/memory/roadmap.md`).
+  The pace is the sender's own choice, and a receiver takes a chunk of any length. This port does the same since ADR
+  2026-10.xwjc, without the Coded parts: it windows any peer whose HELLO carries `CAP_BLOB_HAVE`, iPhones included,
+  and paces the rest at 8jwn's budget, each chunk still behind the radio's report (ADR 2026-10.h6zz).
 
 ### The handshake
 
@@ -246,17 +252,22 @@ iPhone equally often (ADR 2026-09.khjj).
 
 Files cross a link as Android's do (ADR 2026-10.h6zz).
 
-- **Out:** a header, 16 KiB chunks paced at 28 KiB/s, then an END, one file per link at a time.
-  - Each chunk waits until the radio reports the last one out of its `LinkOutbox` (`RadioEvent.wroteFileRecord`), so
-    frames go out between chunks.
+- **Out:** a header, chunks, then an END, one file per link at a time (ADR 2026-10.xwjc).
+  - A peer whose HELLO carries `CAP_BLOB_HAVE` is fed by `FeedWindow`, clocked by its `blobprog` reports. Any other
+    peer, or a windowed one whose receiver is silent for 3 s or reports only every 2 s, is paced at one 4 KiB/s budget
+    split among the links feeding at the pace. The window logs `link file window …` and the pace `link file pace …`.
+  - Each chunk also waits until the radio reports the last one out of its `LinkOutbox`
+    (`RadioEvent.wroteFileRecord`), so frames go out between chunks.
   - Our photo goes as kind AVATAR right behind our profile at each link-up. Anything served goes as kind ATTACHMENT.
 - **In:** each link's records pass through a `FileIntake` under Android's receiving rules.
   - A peer's own AVATAR push is kept up to 1 MiB, and an ATTACHMENT only when the engine asked for its hash.
   - Partial files on all links together stay under 16 MiB.
   - A whole file stays on its way, to the fetch and to a holder query, from its END until the engine has taken it
     (`MeshTransport.fileTaken`, knit-next #138), since a radio read runs all its records before the engine sees one.
-  - Every 2 s of a kept file's chunks, the engine tells an Android sender how much of it is in with a `blobprog`, by
-    which Android measures the drain its stack's queue hides (knit-next ADR 2026-10.nsr7, ADR 2026-10.ds45).
+  - The engine tells the sender how much of a kept file is in with a `blobprog`: on every chunk that brings 2 KiB, at
+    least every 500 ms, and once more 500 ms after chunks no report carried (`RxReports`, ADR 2026-10.xwjc). Every
+    2 s with `feedWindow` off. It goes to any neighbour whose HELLO carries `CAP_BLOB_HAVE`, an iPhone included
+    (knit-next ADR 2026-10.nsr7, ADR 2026-10.ds45).
   - A `blobcancel` from the asker takes its copy off the link while that copy still waits behind another file. One
     already streaming goes on.
   - FILE records never ring a doorbell.

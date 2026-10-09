@@ -334,14 +334,12 @@ explicit direction.** Update this file in the change that ships an item.
       merges. This port mirrored it from the working tree that day (ADR 2026-10.m9uq's amendment), so check the merged
       Kotlin against `BlobAskStandsTests` then;
     - knit-next ADR 2026-10.nxfb's holder half, a fed file kept in flight while its link feeds that peer more;
-    - knit-next ADR 2026-10.8jwn's pace: one 4 KiB/s budget across the links feeding, in 2 to 16 KiB chunks, where
-      this port feeds 28 KiB/s a link. Without it a photo the iPhone serves can hold a DM behind it in Android's
-      stack for a minute or more, and an older Android asker can be served twice.
-    - knit-next ADR 2026-10.nsr7's holder half, after 8jwn: a meter on our own feeds from the `blobprog` reports
-      Android's receivers send, and parking a second ask behind a live feed, which a `blobcancel` then drops. Only
-      then are Android's reports to an iPhone worth sending, so Android's gate on them stays until it lands (ADR
-      2026-10.ds45, which mirrors the receiving and asking halves, and both ends of `blobcancel`). Android's gate on
-      `blobcancel` to an iPhone lifted on 2026-10-07, after a device check passed (ADR 2026-10.ds45's amendment).
+    - knit-next ADR 2026-10.nsr7's holder half: a meter on our own feeds for an `eta`, and parking a second ask
+      behind a live feed, which a `blobcancel` then drops. The reports it would read already clock the feed's window
+      since ADR 2026-10.xwjc, which mirrors 8jwn's pace and 5buf's window. ADR 2026-10.ds45 mirrors the receiving
+      and asking halves, and both ends of `blobcancel`.
+    - ADR 2026-10.xwjc's device check: knit-peer on dongle A with `--radio-profile android` against a Pixel, a photo
+      near 1 MiB each way, `--feed window` against `--feed pace`.
     - nsr7's two asker changes of 2026-10-07 that are not on the wire: leaving a neighbour whose other stream to us
       has more than 30 s left while an idle holder is linked, which needs that stream's ETA from `FileIntake`, and
       letting go of an ask that found its neighbour lacking the blob. Its holder changes the same day, members served
@@ -414,6 +412,12 @@ explicit direction.** Update this file in the change that ships an item.
   showed"). A bad record's warning now carries what the link read around it, so the next one can be read from the
   iPhone's log. Android rings only links the iPhone dialed until A3, which must then take a dialed iPhone's
   capabilities from its HELLO reply rather than its advert.
+- **Android windows its feed to an iPhone, and reports to one** (knit-next ADR 2026-10.5buf; ADR 2026-10.xwjc): two
+  gates in knit-next, which the maintainer lifts there. `BleFeedPolicy.windowed` leaves out a peer whose HELLO carries
+  `CAP_DOORBELL`, so Android feeds an iPhone at its paced base. `BlobExchange.onFileProgress` sends an iPhone no
+  `blobprog`, so an iPhone feeding Android hears nothing, waits out 3 s of silence, and goes on at the 4 KiB/s
+  fallback. This port reports at the window's cadence and windows any reporting peer already. Check both directions
+  with `interop.py iphone-photos` once both gates lift.
 - **An iPhone's links run on a 720 ms supervision timeout** (knit-next #102): iOS sets it as the central, and Android's
   stack puts it back after the doorbell lookup briefly raises it to 5 s. One dropped at about 10 m in the walk test
   (`.agents/context/linux-peer.md`, "What the walk test showed"). The fix is on Android's side: knit-next `82898694`

@@ -84,11 +84,13 @@ import Testing
         #expect(fixture.transport.written(.blobCancel).isEmpty, "widening gives up on nobody: the author may have it queued")
         fixture.engine.receiveFile(InboundFile(from: carol.nodeId, kind: .attachment, hash: photoHash, mime: "image/png", bytes: photo))
         let cancels = fixture.transport.written(.blobCancel)
-        #expect(cancels.map(\.to) == [bob.nodeId, erin.nodeId].sorted(), "not the one it came from, nor an iPhone")
+        #expect(
+            cancels.map(\.to) == [bob.nodeId, erin.nodeId, dave.nodeId].sorted(),
+            "not the one it came from; an iPhone too (ADR 2026-10.xwjc)")
         let cancel = try #require(cancels.last)
         #expect(try BlobCancelContent(decoding: cancel.envelope.payload) == BlobCancelContent(hash: photoHash.string))
         #expect(!cancel.wire.relay && cancel.wire.sig.isEmpty && cancel.envelope.senderId == alice.nodeId.string)
-        #expect(fixture.engine.blobExchange.counts.cancelsSent == 2)
+        #expect(fixture.engine.blobExchange.counts.cancelsSent == 3)
     }
 
     @Test func aBlobHeldSomeOtherWayWithdrawsEveryAskAtItsNextStep() {

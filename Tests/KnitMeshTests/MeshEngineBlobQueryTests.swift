@@ -110,7 +110,7 @@ import Testing
 
     // MARK: Progress reports (knit-next ADR 2026-10.nsr7)
 
-    @Test func aFileStreamingInIsReportedToItsSenderOnlyWhenItsLinkCarriesTheBitAndItIsNoIPhone() throws {
+    @Test func aFileStreamingInIsReportedToItsSenderOnlyWhenItsLinkCarriesTheBit() throws {
         // `BlobHolderQueryTest.aFileStreamingInIsReportedToACapableSenderAndAReportReachesItsLink`'s sending half.
         let fixture = EngineFixture(alice)
         let dave = TestPeer(seed: 4)
@@ -122,13 +122,14 @@ import Testing
             fixture.engine.fileProgress(FileProgress(from: peer.nodeId, hash: photoHash, held: 40_960, milliseconds: 2000))
         }
         let sent = fixture.transport.written(.blobProgress)
-        #expect(sent.map(\.to) == [bob.nodeId], "not to an older build, an iPhone or a peer no longer linked")
+        // An iPhone too, since it clocks its feed by the reports (ADR 2026-10.xwjc).
+        #expect(sent.map(\.to) == [bob.nodeId, dave.nodeId], "not to an older build or a peer no longer linked")
         let report = try #require(sent.first)
         #expect(
             try BlobProgressContent(decoding: report.envelope.payload)
                 == BlobProgressContent(hash: photoHash.string, held: 40_960, ms: 2000))
         #expect(!report.wire.relay && report.wire.sig.isEmpty && report.envelope.senderId == alice.nodeId.string)
-        #expect(fixture.engine.blobExchange.counts.progressSent == 1)
+        #expect(fixture.engine.blobExchange.counts.progressSent == 2)
     }
 
     @Test func aReportIsTakenQuietlyFromItsOwnLinkAndNeverAsksForAKey() {
@@ -142,11 +143,16 @@ import Testing
         #expect(fixture.engine.blobExchange.counts.progressTaken == 1)
         #expect(fixture.engine.dropped.isEmpty)
         #expect(fixture.transport.written.isEmpty, "no key request, and never relayed")
+        let handed = FileProgress(from: bob.nodeId, hash: photoHash, held: 40_960, milliseconds: 2000)
+        #expect(fixture.transport.progressReports == [handed], "the link feeding bob clocks its window by it")
         fixture.deliver(carol.unsigned(.blobProgress, payload: report.encoded, id: "prog-claimed"), from: bob)
         let negative = BlobProgressContent(hash: photoHash.string, held: -1, ms: 2000)
         fixture.deliver(bob.unsigned(.blobProgress, payload: negative.encoded, id: "prog-negative"), from: bob)
         fixture.deliver(bob.unsigned(.blobProgress, payload: [0xFF], id: "prog-bad"), from: bob)
-        #expect(fixture.engine.blobExchange.counts.progressTaken == 1, "another sender's claim, or a count that cannot be")
+        let notAHash = BlobProgressContent(hash: "not-a-hash", held: 1, ms: 1)
+        fixture.deliver(bob.unsigned(.blobProgress, payload: notAHash.encoded, id: "prog-not-a-hash"), from: bob)
+        #expect(fixture.engine.blobExchange.counts.progressTaken == 2, "not another sender's claim, nor a count that cannot be")
+        #expect(fixture.transport.progressReports.count == 1, "a key that is no hash names no file we feed")
         #expect(fixture.engine.dropped[.undecodable] == 1)
         #expect(fixture.transport.written.isEmpty)
     }

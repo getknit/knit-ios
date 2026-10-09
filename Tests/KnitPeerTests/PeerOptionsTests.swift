@@ -71,6 +71,10 @@ import Testing
         #expect(options.servesGattPayload)
         #expect(options.readsGattPayloads)
         #expect(try !run(["--no-gatt-reads"]).readsGattPayloads)
+        #expect(options.feedWindow, "a file is clocked by its receiver's reports unless asked")
+        #expect(try !run(["--feed", "pace"]).feedWindow)
+        #expect(try run(["--feed", "window"]).feedWindow)
+        #expect(throws: UsageError.self) { try run(["--feed", "fast"]) }
         let low = fixtureNodeId(8)
         let high = fixtureNodeId(9)
         let asked = try run(["--never-sight", "\(low.string),\(high.string)", "--no-gatt-payload", "--radio-profile", "ios"])

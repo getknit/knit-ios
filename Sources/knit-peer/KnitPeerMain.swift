@@ -72,6 +72,10 @@ import Foundation
                 links.promotion.rssiFloor = Double(floor)
                 log.log(.info, "promotion floor loosened to \(floor) dBm for development; Android's is -90")
             }
+            links.feedWindow = options.feedWindow
+            if !options.feedWindow {
+                log.log(.info, "files paced and reported every 2 s, the window off for an A/B (--feed pace)")
+            }
             let node = makeNode(options, host: host, links: links, log: log)
             let signals = stopOnSignals(node, host)
             await node.start(name: options.name)

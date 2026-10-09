@@ -147,6 +147,10 @@ final class CapturingTransport: MeshTransport {
         // Nothing streams in here.
     }
 
+    func fileProgressReported(from _: NodeId, hash _: BlobHash, held _: Int64, milliseconds _: Int64) {
+        // Nothing streams out here, so no report has a window to clock.
+    }
+
     func isFileArriving(from _: NodeId) -> Bool {
         false
     }
