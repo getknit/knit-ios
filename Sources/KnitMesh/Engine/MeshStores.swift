@@ -71,8 +71,8 @@ public struct MeshConfiguration: Sendable {
     /// (`PROFILE_REPUBLISH_MS`).
     public var republishMilliseconds: Int64
     /// Whether a fetch queries the neighbours that answer one before it asks for a blob (`BuildConfig.BLOB_QUERY`,
-    /// knit-next ADR 2026-10.6e5t): on in a debug build and the Linux peer, off in a release one until the iPhone's
-    /// device trial. Off, every neighbour gets the blind round. Answering a query is on whatever this says.
+    /// knit-next ADR 2026-10.6e5t): on in the app, in every build, and in the Linux peer. Off, the default tests start
+    /// from, every neighbour gets the blind round. Answering a query is on whatever this says.
     public var queriesBlobHolders: Bool
 
     /// knit-next's cadences unless told otherwise: 60 s, 10 min, 15 min and 12 h.

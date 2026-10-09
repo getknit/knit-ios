@@ -44,9 +44,9 @@ reach it. Neither is in `0xFE30` or on the mesh wire, and Knit ignores both.
 ## The advert
 
 Legacy advertising (`ADV_IND`, connectable and scannable), about one second apart, 1M PHY, at full power
-(`TX_POWER_HIGH`) since knit-next ADR 2026-10.ryak; it was medium until then. A debug build running the Coded PHY
-experiment (knit-next ADR 2026-10.yvn6, dark in release) also airs a second, extended set on the Coded PHY with
-the same payload. An iPhone cannot hear that set, and nothing here reads it.
+(`TX_POWER_HIGH`) since knit-next ADR 2026-10.ryak; it was medium until then. A build running the Coded PHY
+(knit-next ADR 2026-10.yvn6; debug builds, and release since knit-next `713b29d6`) also airs a second, extended set on
+the Coded PHY with the same payload. An iPhone cannot hear that set, and nothing here reads it.
 There is no local name, no UUID list and no scan response, which is 31 bytes on air:
 
 ```text
@@ -160,7 +160,7 @@ radio.
 - **Backoff** (`ConnectBackoffPolicy`): 10 s × 2^(streak − 1), capped at 180 s, ±20 % jitter. A link that
   ends at EOF also bumps the streak, and success resets it.
 - **Connect:** a 12 s watchdog around each dial (`CONNECT_TIMEOUT_MS`). No MTU request and no bonding.
-  - The Coded experiment (debug builds only) works only with a peer it hears on Coded. It dials that peer's Coded
+  - The Coded PHY (debug builds, and release since knit-next `713b29d6`) works only with a peer it hears on Coded. It dials that peer's Coded
     address with a 25 s watchdog, and switches the link's PHY over GATT. An iPhone is never heard on Coded, so its
     links stay on 1M.
   - After its last link drops, a phone searches at the 12 s scan gap for three minutes before relaxing (knit-next
@@ -177,8 +177,8 @@ radio.
   sees Android.
 - **So the iPhone dials Android, and Android's responder refuses it** unless the iPhone's id sorts higher.
   Companion change A1 accepts a dialer Android never sighted, so every pair links.
-- **With companion change A3, Android sees a foreground iPhone** (knit-next ADR 2026-09.kwq2, merged in the pin; its debug builds
-  only, since `BLE_GATT_PEERS` keeps it dark in release). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
+- **With companion change A3, Android sees a foreground iPhone** (knit-next ADR 2026-09.kwq2, merged in the pin; behind `BLE_GATT_PEERS`,
+  on in release since knit-next `713b29d6`, ahead of its device trial). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
   of an advert that lists only the UUID, on `GattPayloads`' rules, sights the iPhone with it, and dials it when its
   own id sorts higher. It reads nothing while one of its dials is in flight, and holds its dials while a read runs.
   Once it sets `FLAG_DIALS_GATT_PEERS`, an iPhone whose id sorts lower waits to be dialed, and Android refuses that

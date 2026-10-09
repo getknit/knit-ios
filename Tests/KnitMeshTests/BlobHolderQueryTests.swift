@@ -55,6 +55,33 @@ import Testing
         #expect(exchange.counts.fetches == 1)
     }
 
+    @Test func theAuthorsHaveDecidesWithoutWaitingForTheOtherAnswers() {
+        // knit-next ADR 2026-10.g24x: the frame's author is the holder the rest would only relay for.
+        var exchange = exchange(author: bob)
+        let linked = capable(bob, carol)
+        _ = step(&exchange, linked, at: 0)
+        _ = answer(&exchange, bob, .have, at: 124)
+        let plan = step(&exchange, linked, at: 124)
+        #expect(plan.asks == [BlobExchange.Ask(to: bob, line: .fetch)], "carol's answer is still due")
+        #expect(plan.why == "link, load 0")
+    }
+
+    @Test func anAuthorStreamingUsAFileWaitsForAQuietNeighbourStillToAnswer() {
+        // Android's author on a Coded link waits for a neighbour that may hold it on a better one; here the slow link is
+        // one streaming us a file.
+        var waiting = exchange(author: bob)
+        let quiet = capable(bob, carol, streaming: [bob])
+        _ = step(&waiting, quiet, at: 0)
+        _ = answer(&waiting, bob, .have, at: 100)
+        let held = step(&waiting, quiet, at: 100)
+        #expect(held.asks.isEmpty && held.wake == wait - 100, "carol could send it over a quiet link")
+        var asked = exchange(author: bob)
+        let busy = capable(bob, carol, streaming: [bob, carol])
+        _ = step(&asked, busy, at: 0)
+        _ = answer(&asked, bob, .have, at: 100)
+        #expect(step(&asked, busy, at: 100).asks.map(\.to) == [bob], "carol streams us a file too, so is no better")
+    }
+
     @Test func theBestHolderIsAskedAloneByItsLinkThenItsLoadThenItsId() {
         var exchange = exchange()
         let linked = capable(bob, carol, dave, streaming: [dave])

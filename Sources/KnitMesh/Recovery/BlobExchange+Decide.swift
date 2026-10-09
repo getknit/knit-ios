@@ -221,8 +221,8 @@ extension BlobExchange {
 
     /// Asks the best capable neighbour that said it holds the blob, or waits on one already sending it (`askHolder`).
     /// True when the step is decided: asked, or waiting for answers still due, a holder's memo floor, or a blind
-    /// widening's grace. The choice waits for every answer: Android's one exception, a holder on a live Wi-Fi Aware
-    /// link, never comes up here. It never asks past a holder whose ask of ours still stands inside its floor, however
+    /// widening's grace. The choice waits for every answer unless the best holder is the frame's author
+    /// (``answersIn(_:_:_:)``). It never asks past a holder whose ask of ours still stands inside its floor, however
     /// the fetch came to be empty (knit-next #140): that one's copy may only be late.
     private mutating func askHolder(_ want: inout Want, _ capable: [Candidate], _ now: Int64, _ plan: inout Plan) -> Bool {
         let holders = capable.compactMap { candidate in
@@ -240,13 +240,15 @@ extension BlobExchange {
         }
         // When each neighbour still to answer was queried, while its answer is due, the wait stretched to its round trip.
         let answering = capable.compactMap { candidate in
-            want.answers[candidate.id] == nil ? want.queried[candidate.id].map { $0 + queryWait(for: candidate.id) } : nil
-        }.filter { $0 > now }
+            want.answers[candidate.id] == nil
+                ? want.queried[candidate.id].map { (candidate: candidate, due: $0 + queryWait(for: candidate.id)) } : nil
+        }.filter { $0.due > now }
         let widenGate = want.blindWidenedAt.map { $0 + Self.firstAskGraceMilliseconds - now }.flatMap { $0 > 0 ? $0 : nil }
         let askable = holders.filter { isAskable(want, $0, now) }
         // A holder that is not askable was asked inside its floor, and its answer is older than the ask.
         let standing = askable.count < holders.count
-        if let best = askable.min(by: Self.ranksBefore), widenGate == nil, answering.isEmpty, !standing {
+        let best = askable.min(by: Self.ranksBefore)
+        if let best, widenGate == nil, !standing, Self.answersIn(want, best.candidate, answering.map(\.candidate)) {
             let tier = Self.tier(of: best.candidate)
             let grace = grace(for: best.candidate.id)
             want.fetch = Fetch(peer: best.candidate.id, tier: tier, at: now, graceMilliseconds: grace)
@@ -261,7 +263,7 @@ extension BlobExchange {
             return false
         }
         let floors = holders.compactMap { holder in want.askedAt[holder.candidate.id].map { $0 + Self.serveMemoMilliseconds - now } }
-        let answersDue = answering.map { $0 - now }
+        let answersDue = answering.map { $0.due - now }
         if let wait = (floors + answersDue + [widenGate].compactMap(\.self)).filter({ $0 > 0 }).min() {
             plan.waitFor(wait)
         }
@@ -275,6 +277,16 @@ extension BlobExchange {
             return true
         }
         return holder.answer.querySentAt > at || now - at >= Self.serveMemoMilliseconds
+    }
+
+    /// Whether the choice of `best` may be made (`answersIn`): every answer is in, or `best` is the frame's author and no
+    /// neighbour still to answer could come over a better link (knit-next ADR 2026-10.g24x, `BlobExchange.kt:764`). A
+    /// linked author that says it holds the blob is the holder the rest would only relay for: Android's trace waited 5 s
+    /// on a carrier's NONE after the author's HAVE came back in 124 ms. Android's other exception, a holder on a live
+    /// Wi-Fi Aware link, never comes up here, and with one radio `bestTierFor` is ``tier(of:)``: an author streaming us
+    /// a file still waits for a quiet neighbour's answer.
+    private static func answersIn(_ want: Want, _ best: Candidate, _ answering: [Candidate]) -> Bool {
+        answering.isEmpty || (best.id == want.author && answering.allSatisfy { tier(of: $0) >= tier(of: best) })
     }
 
     /// The link a holder's copy would come over (`tierOf`): one radio, so only whether it is streaming us a file.

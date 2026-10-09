@@ -226,14 +226,6 @@
             )
         }
 
-        /// Whether a fetch queries a blob's holders before it asks (knit-next ADR 2026-10.6e5t): a debug build does, as
-        /// Android's does, and a release one asks blind until the iPhone's device trial.
-        #if DEBUG
-            private static let queriesBlobHolders = true
-        #else
-            private static let queriesBlobHolders = false
-        #endif
-
         private static func compose(_ parts: Parts, replace: IdentityReplacer?) -> AppEnvironment {
             let clock = SystemClock()
             let node = Mesh(
@@ -243,7 +235,9 @@
                 radio: parts.radio,
                 clock: clock,
                 random: SystemRandomNumberGenerator(),
-                configuration: MeshConfiguration(queriesBlobHolders: queriesBlobHolders),
+                // Every build queries a blob's holders before it asks, as Android's does since its `BLOB_QUERY` shipped
+                // on in release (knit-next `713b29d6`, ADR 2026-10.m9uq's amendment).
+                configuration: MeshConfiguration(queriesBlobHolders: true),
                 log: parts.log
             )
             let alerts = LocalNotifier()

@@ -107,3 +107,20 @@ holder is now held rather than passed over. Guards: `BlobAskStandsTests`, the ho
 **Amended 2026-10-07, for knit-next ADR 2026-10.nsr7 (ADR 2026-10.ds45):** a SENDING answer may carry `eta`, and a hold
 then runs to the later of the ask's floor and that promise plus 30 s, the promise taken as at most 15 min. A holder we
 only waited on now holds us when it promises. Guard: `BlobAskStandsTests`' `eta` cases.
+
+**Amended 2026-10-09, for knit-next `713b29d6` and its ADR 2026-10.g24x:** two changes to asking. No wire change.
+
+- **Every build queries.** Android's `BLOB_QUERY` is on in release since knit-next `713b29d6` (2026-10-08, not yet
+  pushed when this was written), ahead of Android's own device trial. The iPhone's trial passed on 2026-10-06, so the
+  gate above comes off: the app queries before it asks in every build, as knit-peer does.
+  `MeshConfiguration.queriesBlobHolders` stays, off by default, so a test can still run f7gg's blind round.
+- **The author's HAVE decides** (g24x's item 2, knit-next `e2191bb9`). If the best holder so far is the frame's author,
+  the iPhone asks it as soon as it answers HAVE, and stops waiting for the rest. The others would only relay the
+  author's copy. Android's trace waited 5 s on a carrier's NONE after the author's HAVE came back in 124 ms. Android
+  waits for the others only when the author is on a Coded link and one of them might be on a faster one. With one
+  radio, the iPhone's only slow link is a neighbour streaming us a file, so an author doing that still waits for an
+  answer from a neighbour that isn't.
+
+The cost, as on Android: the author is asked even when a neighbour still to answer has a lighter load. Guards:
+`BlobHolderQueryTests`' `theAuthorsHaveDecidesWithoutWaitingForTheOtherAnswers` and
+`anAuthorStreamingUsAFileWaitsForAQuietNeighbourStillToAnswer`.

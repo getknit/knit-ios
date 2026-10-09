@@ -165,9 +165,10 @@ Kotlin wins.
     - **The blob holder query** (`403cd861`, knit-next ADR 2026-10.6e5t), on top of **the likeliest holder first**
       (`1c82da2d`, #136, knit-next ADR 2026-10.f7gg). Mirrored here (ADR router, "blob holder"):
       - the iPhone answers `blobhave` with `blobhas` in every build, and every HELLO claims `CAP_BLOB_HAVE` (`0x2000`);
-      - it queries the neighbours that answer and asks the best holder alone in a debug build and knit-peer, as Android
-        does behind `BuildConfig.BLOB_QUERY`, and asks blind everywhere else: the author first, then the hop the frame
-        came from, then everyone once a 5 s grace is up;
+      - it queries the neighbours that answer and asks the best holder alone, as Android does behind
+        `BuildConfig.BLOB_QUERY`: at the pin in a debug build and knit-peer, and in every build since knit-next turned the
+        flag on in release (below). Off, it asks blind: the author first, then the hop the frame came from, then
+        everyone once a 5 s grace is up;
       - the three vectors `blobHaveContent`, `blobHasContent` and `blobHasContentReserved`.
     - **A file is on its way until it is stored** (`c1437646`, #138, an amendment to knit-next ADR 2026-09.4tx5):
       mirrored as `LinkManager`'s landing files and `MeshTransport.fileTaken`. `512b72bc` (#139) keeps Android's file
@@ -198,6 +199,17 @@ Kotlin wins.
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Mirrored ahead of the pin:**
+    - knit-next `713b29d6` (2026-10-08, on its local `main` and not yet pushed on 2026-10-09) turns every BLE flag on
+      in release: `BLE_SIDE_PLANE`, `BLE_GATT_PEERS`, `BLOB_QUERY`, `BLE_CODED_PHY` (always AUTO), `BLE_LINK_BOOST` and
+      `BLE_FEED_WINDOW`, each ahead of its own trial. `6760b843` documents them in `docs/BLUETOOTH_PLANE.md`. Only
+      `BLOB_QUERY` changes what this port does: the app now queries in every build (ADR 2026-10.m9uq's amendment of
+      2026-10-09). With the others, a release Android phone now finds a foreground iPhone through its GATT payload and
+      dials it, hunts a Coded peer in windows deaf to an iPhone, and feeds an iPhone at the paced base, since it never
+      boosts or windows an iPhone link (`ble-transport.md`; knit-next ADR 2026-10.5buf, a follow-up here).
+    - knit-next ADR 2026-10.g24x's item 2 (`e2191bb9`): a querying asker asks the frame's author on its HAVE, without
+      waiting for the other answers (`BlobExchange.answersIn`, mirrored on 2026-10-09). Its other items are not
+      mirrored: the carrier's hold waits for Phase 4's carrier pulls, and the per-link budget and one copy at a time
+      wait for 5buf.
     - knit-next #140, an ask to a holder that stands until its link goes (the 2026-10-06 amendment to ADR
       2026-10.6e5t), ported from the uncommitted `fix/blob-ask-race` on 2026-10-06 (ADR 2026-10.m9uq's amendment).
       Check the merged `BlobExchange.kt` against `BlobAskStandsTests` when the pin passes it.

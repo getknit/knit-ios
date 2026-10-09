@@ -319,13 +319,15 @@ explicit direction.** Update this file in the change that ships an item.
     - resuming a cut transfer from the bytes kept (knit-next ADR 2026-10.wtyc, knit-ios #2), in the pin since
       2026-10-05. This port reads a `blobreq`'s `offset` and serves the whole file meanwhile.
   - **The blob holder query, begun 2026-10-05** on `feat/blob-query` (ADR 2026-10.m9uq), with the pin moved to
-    `5f521cb9`. The iPhone answers `blobhave` in every build and claims `CAP_BLOB_HAVE` in its HELLO. It queries before
-    it asks in a debug build and knit-peer, and asks blind, the author first, in release. Every Linux gate passes. Still
-    owed:
-    - `queriesBlobHolders` on in release, once Android's `BLOB_QUERY` is. The device trial passed on 2026-10-06, with
-      `51b4796` on the iPhone 12 and four Pixels on knit-next debug builds. Every Pixel queried the iPhone and fetched
-      one copy of its photo, the iPhone took one copy of each Pixel's from the holder its `blob fetch` named, and a
-      `knit-peer` from `main`, which cannot answer, was asked blind as the author;
+    `5f521cb9`. The iPhone answers `blobhave` in every build and claims `CAP_BLOB_HAVE` in its HELLO. Since 2026-10-09
+    it queries before it asks in every build, as Android's release does since knit-next `713b29d6`, and asks the author
+    on its HAVE without waiting for the other answers (knit-next ADR 2026-10.g24x's item 2; ADR 2026-10.m9uq's
+    amendment). The device trial passed on 2026-10-06, with `51b4796` on the iPhone 12 and four Pixels on knit-next
+    debug builds. Every Pixel queried the iPhone and fetched one copy of its photo, the iPhone took one copy of each
+    Pixel's from the holder its `blob fetch` named, and a `knit-peer` from `main`, which cannot answer, was asked blind
+    as the author. Every Linux gate passes. Still owed:
+    - a device run of a release build's first photo fetch, querying, and of the author's HAVE deciding with a carrier
+      linked that holds the photo too;
     - knit-next's second confirm, whose answer `fetchWait` never reads (`BlobExchange.kt:385`): this port mirrors the
       Kotlin, so the fix lands in knit-next first and comes here with the next pin;
     - the pin, past knit-next #140 (`fix/blob-ask-race`, the 2026-10-06 amendment to its ADR 2026-10.6e5t), once it
