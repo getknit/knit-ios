@@ -311,6 +311,15 @@ extension KnitUITests {
         let bars = app.navigationBars.allElementsBoundByIndex.map(\.frame)
         let window = app.windows.firstMatch.frame
         do {
+            for failure in try AuditPolicy.contrastFailures(in: app, bars: bars, window: window) {
+                issues.append(failure.description)
+                if let image = failure.image {
+                    let shot = XCTAttachment(image: image)
+                    shot.name = "\(label): \(failure.description)"
+                    shot.lifetime = .keepAlways
+                    shots.append(shot)
+                }
+            }
             try app.performAccessibilityAudit(for: AuditPolicy.checks) { issue in
                 if AuditPolicy.exempt(issue, in: app, bars: bars, window: window) {
                     return true

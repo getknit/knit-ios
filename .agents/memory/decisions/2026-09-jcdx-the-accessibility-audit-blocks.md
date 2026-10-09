@@ -133,3 +133,16 @@ fields, and for reports with no element, and the largest-size screenshots alread
 every check but Dynamic Type and clipping now (`AuditPolicy.checks`), in one pass, which supersedes the two passes above.
 The same scrolling had brought rows outside a list's reach into the accessibility tree, and the blocking walk leaned on
 it to find the badge at the head of a profile scrolled to its foot. That walk swipes to the badge now.
+
+**Amended 2026-10-09, for Knit's own contrast check:** with clipping gone, the audit's contrast check still ran out of
+time alone, in the content filter walk at the largest size, over a coral bubble blurred under the composer's glass. It
+counts an element's colors one object a pixel, so any saturated content under Liquid Glass can stall it, and a stalled
+audit takes every later one in the Simulator down with it. Contrast is now Knit's check, not the audit's. One snapshot of
+the screen's elements and one screenshot are read together, and every element with a label is measured inside its frame,
+lightest pixel against darkest, at 4.5:1: the measurement the policy already used to clear the audit's false reports.
+The exemptions carry over, and two are new, both for drawing that is the system's: its chrome, named by label (scroll
+indicators, the keyboard's suggestion bar, a sheet's grabber), text inside a system alert, and a message's menu, a
+context menu whose Delete the system draws in its destructive red at 4.4:1 on the menu's material. With the bar raised to an
+unreachable 25:1, the room's walk reports 27 texts and 13 buttons, so the check reads what it should. It reads text and
+controls only, never an image, and the measurement's trust in extremes, under the limits below, now covers every element
+rather than only those the audit flagged.
