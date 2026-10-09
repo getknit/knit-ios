@@ -194,6 +194,9 @@
                 Text(text)
                     .font(.caption)
                     .multilineTextAlignment(.center)
+                    // Every line it needs: the photo's height below is a floor, and the stack would otherwise share it
+                    // out, cutting the line short at the largest sizes ("Sensitive photo. Ta…"). The place grows instead.
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(Layout.medium)
             .frame(width: place?.width ?? Layout.photoPlaceholder)
