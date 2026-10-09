@@ -122,3 +122,14 @@ times out still fails.
 system keyboard draws above its keys. CI's dark walk passed on the same commit, so whether the bar is still empty when the
 audit reads it comes down to timing. The cells are Apple's, and an empty one has nothing to describe. A description report
 that names that class is exempt; any other still fails, Knit's own fields included.
+
+**Amended 2026-10-09, dropping the clipping check:** the clipping pass on its own still moved threads. To reach every
+cell, the check scrolls each collection view and enlarges its text, then puts the offset back. A thread takes any scroll
+it did not make for someone scrolling it, as it must for VoiceOver, so it let go of its bottom edge, and the restored
+offset could land 14 points short of it. Staging a photo then grew the composer over the newest rows, and the next
+audit's contrast check failed a timestamp under the glass. The dark walk failed this way after midnight, when the "Today"
+separator sat where the offset came back short. The check had little left to find: it was exempt for text, buttons and
+fields, and for reports with no element, and the largest-size screenshots already stand in for it. The audit asks for
+every check but Dynamic Type and clipping now (`AuditPolicy.checks`), in one pass, which supersedes the two passes above.
+The same scrolling had brought rows outside a list's reach into the accessibility tree, and the blocking walk leaned on
+it to find the badge at the head of a profile scrolled to its foot. That walk swipes to the badge now.

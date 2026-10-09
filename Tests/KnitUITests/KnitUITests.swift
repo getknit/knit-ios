@@ -311,22 +311,20 @@ extension KnitUITests {
         let bars = app.navigationBars.allElementsBoundByIndex.map(\.frame)
         let window = app.windows.firstMatch.frame
         do {
-            for pass in AuditPolicy.passes {
-                try app.performAccessibilityAudit(for: pass) { issue in
-                    if AuditPolicy.exempt(issue, in: app, bars: bars, window: window) {
-                        return true
-                    }
-                    let element =
-                        issue.element.map { "\($0.elementType.rawValue) '\($0.label)' #\($0.identifier) at \($0.frame)" } ?? "the screen"
-                    issues.append("\(issue.compactDescription): \(element). \(issue.detailedDescription)")
-                    if let found = issue.element, found.exists {
-                        let shot = XCTAttachment(screenshot: found.screenshot())
-                        shot.name = "\(label): \(issue.compactDescription), \(found.label)"
-                        shot.lifetime = .keepAlways
-                        shots.append(shot)
-                    }
+            try app.performAccessibilityAudit(for: AuditPolicy.checks) { issue in
+                if AuditPolicy.exempt(issue, in: app, bars: bars, window: window) {
                     return true
                 }
+                let element =
+                    issue.element.map { "\($0.elementType.rawValue) '\($0.label)' #\($0.identifier) at \($0.frame)" } ?? "the screen"
+                issues.append("\(issue.compactDescription): \(element). \(issue.detailedDescription)")
+                if let found = issue.element, found.exists {
+                    let shot = XCTAttachment(screenshot: found.screenshot())
+                    shot.name = "\(label): \(issue.compactDescription), \(found.label)"
+                    shot.lifetime = .keepAlways
+                    shots.append(shot)
+                }
+                return true
             }
         } catch {
             issues.append("the audit failed: \(error)")

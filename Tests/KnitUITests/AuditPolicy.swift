@@ -25,11 +25,11 @@ import XCTest
 /// - Contrast that the element's own pixels pass: the audit fails the newest message of a thread at the largest
 ///   size, black on light gray, whatever the view does. Its screenshot is measured instead, darkest pixel against
 ///   lightest, which is the text against what it sits on, and it must reach WCAG's 4.5:1.
-/// - Clipping of text, buttons and fields: the check calls wrapped text clipped (the status line it flags reads whole at
-///   the largest size), a button's label wraps the same way (Clear verification, flagged at the default size, reads
-///   whole on two lines at the largest), and a one-line field scrolls rather than loses its text. No view limits its
-///   lines but the chat list's preview, and the largest-size walk's screenshots show the rest. Text combined into one
-///   element, which the report names no element for, is text all the same.
+/// - The clipping check is never asked for either. It called wrapped text clipped (the status line it flagged reads whole
+///   at the largest size), and a wrapped button label and a one-line field the same way, so text, buttons and fields
+///   were exempt from it already. What it still cost: run with contrast, it never finished over a truncated navigation
+///   title on glass, and to reach every cell it scrolls each collection view, which leaves a thread off its bottom edge.
+///   No view limits its lines but the chat list's preview, and the largest-size walk's screenshots show the rest.
 /// - Text read through an alert: a modal alert takes the screen from VoiceOver, so what lies behind it leaves the
 ///   accessibility tree, and the alert's glass shows that text through and at its edges. The audit reports it as text no
 ///   element names. Such a report is exempt only while an alert is up with content text partly under it; the alert's
@@ -39,12 +39,8 @@ import XCTest
 ///   and only a report that does is exempt; every element Knit draws is still read.
 @MainActor
 enum AuditPolicy {
-    /// What one screen's audit asks for, in two passes: every check but Dynamic Type, then the clipping check on its own.
-    /// Together the clipping and contrast checks never finish over a truncated navigation title on Liquid Glass (Sam's
-    /// discriminated name over a thread scrolled under the bar): the audit grinds through the glass's colors in
-    /// `testmanagerd` until it gives up, and every audit after it in that Simulator times out behind it. Apart, each
-    /// takes a couple of seconds, and every check still reads every screen.
-    static let passes: [XCUIAccessibilityAuditType] = [.all.subtracting([.dynamicType, .textClipped]), .textClipped]
+    /// What one screen's audit asks for: every check but Dynamic Type and clipping, for the reasons above.
+    static let checks = XCUIAccessibilityAuditType.all.subtracting([.dynamicType, .textClipped])
 
     /// Whether `issue`, found in `app`, is one of the reports above. `bars` are the navigation bars' frames, `window`
     /// the screen's.
@@ -52,8 +48,6 @@ enum AuditPolicy {
         let glass = bars.map { CGRect(x: $0.minX, y: window.minY, width: $0.width, height: $0.maxY - window.minY) }
         guard let element = issue.element else {
             switch issue.auditType {
-            case .textClipped:
-                return true
             case .contrast:
                 return textUnderGlass(in: app, bars: bars, glass: glass) || noTextFails(in: app, glass: glass, window: window)
             case .elementDetection:
@@ -69,8 +63,6 @@ enum AuditPolicy {
         switch issue.auditType {
         case .contrast:
             return passesContrast(element, in: app, window: window)
-        case .textClipped:
-            return [.staticText, .button, .textField].contains(element.elementType)
         case .sufficientElementDescription:
             return issue.detailedDescription.contains("TUIPredictionViewCell")
         default:

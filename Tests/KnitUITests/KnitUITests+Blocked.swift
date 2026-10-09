@@ -30,7 +30,8 @@ extension KnitUITests {
         let confirm = try confirmation(in: app)
         audit(app, screen: "the block confirmation")
         confirm.tap()
-        try app.appear(AccessibilityID.profileDetailsBlocked)
+        // The badge heads the profile, which Block left scrolled to its foot, out of the list's reach.
+        try app.reveal(AccessibilityID.profileDetailsBlocked)
         app.terminate()
     }
 
