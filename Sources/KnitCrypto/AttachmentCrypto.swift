@@ -4,8 +4,9 @@ import Foundation
 /// A photo in a DM or a group, sealed for the mesh (`AttachmentCrypto.kt`). The photo is sealed with AES-256-GCM under
 /// a fresh key and nonce, with no AAD, and the blob that is stored, served and carried is `nonce ‖ ciphertext ‖ tag`.
 /// The blob is named by its SHA-256 like any other, so the blob exchange and custody move it unchanged, while a relay
-/// only ever sees ciphertext. The key travels inside the sealed message, in base64, and never in the clear. A fresh key
-/// per send means the same photo sent twice is two unrelated blobs.
+/// only ever sees ciphertext. The key travels inside the sealed message, in base64, and never in the clear. A photo is
+/// sealed once: sent again, it goes as the blob and key this phone already holds it under (ADR 2026-10.f3mv), so a
+/// carrier can tell that two messages carry one photo.
 public enum AttachmentCrypto {
     /// The key's length.
     public static let keyByteCount = 32

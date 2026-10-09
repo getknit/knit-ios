@@ -9,12 +9,12 @@ public import KnitWire
 /// A thread reads in `sentAt` order, ties in the order rows were first stored: the table's `seq`, which a save
 /// over an existing row keeps.
 public final class SQLMessageStore: MessageStore {
-    private static let columns = """
+    static let columns = """
         id, senderId, recipientId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind, \
         attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, moderation, attachmentWidth, \
-        attachmentHeight, attachmentAnimated
+        attachmentHeight, attachmentAnimated, attachmentPlainHash, attachmentSourceHash
         """
-    private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
     /// The database, which the reactions' extension shares.
     let database: KnitDatabase
@@ -72,7 +72,11 @@ public final class SQLMessageStore: MessageStore {
                         attachmentKey = excluded.attachmentKey, attachmentName = excluded.attachmentName,
                         attachmentSize = excluded.attachmentSize, moderation = excluded.moderation,
                         attachmentWidth = excluded.attachmentWidth, attachmentHeight = excluded.attachmentHeight,
-                        attachmentAnimated = excluded.attachmentAnimated
+                        attachmentAnimated = excluded.attachmentAnimated,
+                        attachmentPlainHash = CASE WHEN attachmentHash IS excluded.attachmentHash
+                            THEN coalesce(excluded.attachmentPlainHash, attachmentPlainHash) ELSE excluded.attachmentPlainHash END,
+                        attachmentSourceHash = CASE WHEN attachmentHash IS excluded.attachmentHash
+                            THEN coalesce(excluded.attachmentSourceHash, attachmentSourceHash) ELSE excluded.attachmentSourceHash END
                     """,
                 arguments: Self.arguments(message)
             )
@@ -188,8 +192,7 @@ public final class SQLMessageStore: MessageStore {
             return try Row.fetchAll(
                 db,
                 sql: """
-                    SELECT attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, attachmentWidth,
-                        attachmentHeight, attachmentAnimated
+                    SELECT \(Self.attachmentColumns)
                     FROM messages
                     WHERE attachmentHash IS NOT NULL AND (attachmentWidth IS NULL OR attachmentAnimated IS NULL) \(named)
                     ORDER BY seq DESC
@@ -247,12 +250,13 @@ public final class SQLMessageStore: MessageStore {
             message.delivered, message.pendingKey, message.kind.rawValue, StoredText.bytes(attachment?.hash.string),
             StoredText.bytes(attachment?.mime), StoredText.bytes(attachment?.key), StoredText.bytes(attachment?.name), attachment?.size,
             message.moderation.rawValue, attachment?.dimensions?.width, attachment?.dimensions?.height,
-            attachment?.dimensions?.animated,
+            attachment?.dimensions?.animated, StoredText.bytes(attachment?.plainHash?.string),
+            StoredText.bytes(attachment?.sourceHash?.string),
         ]
     }
 
     /// The message in a row of ``columns``.
-    private static func record(_ row: Row) throws -> MessageRecord {
+    static func record(_ row: Row) throws -> MessageRecord {
         MessageRecord(
             id: try row.text("id"),
             senderId: try row.nodeId("senderId"),
@@ -267,31 +271,6 @@ public final class SQLMessageStore: MessageStore {
             attachment: try attachment(row),
             moderation: MessageModeration(rawValue: try row.decode(Int.self, forColumn: "moderation"))
         )
-    }
-
-    /// The size a row's photo was read at, and whether it moves. One sized before schema v11 reads as still until a
-    /// launch reads it again (``unsizedAttachments(named:)``).
-    private static func dimensions(_ row: Row) throws -> PhotoDimensions? {
-        guard let width = try row.decode(Int?.self, forColumn: "attachmentWidth"),
-            let height = try row.decode(Int?.self, forColumn: "attachmentHeight")
-        else {
-            return nil
-        }
-        return PhotoDimensions(width: width, height: height, animated: try row.decode(Int?.self, forColumn: "attachmentAnimated") == 1)
-    }
-
-    /// What the row carries, or `nil` for nothing.
-    private static func attachment(_ row: Row) throws -> MessageAttachment? {
-        try row.optionalBlobHash("attachmentHash").map { hash in
-            MessageAttachment(
-                hash: hash,
-                mime: try row.optionalText("attachmentMime"),
-                key: try row.optionalText("attachmentKey"),
-                name: try row.optionalText("attachmentName"),
-                size: try row.decode(Int64?.self, forColumn: "attachmentSize"),
-                dimensions: try dimensions(row)
-            )
-        }
     }
 }
 

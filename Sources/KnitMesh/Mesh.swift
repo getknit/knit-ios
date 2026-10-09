@@ -144,6 +144,11 @@ public actor Mesh {
         return engine.sendDirectMessage(text, to: recipient, photo: photo)
     }
 
+    /// `picked` as the picture this phone already holds it as, or `nil` (``MeshEngine/heldPhoto(picked:)``).
+    public func heldPhoto(picked: [UInt8]) -> OutgoingPhoto? {
+        engine.heldPhoto(picked: picked)
+    }
+
     /// Accepts a message request.
     public func accept(_ conversationId: String) {
         engine.accept(conversationId)

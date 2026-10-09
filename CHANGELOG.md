@@ -94,6 +94,9 @@ document:
   sheet fits its text.
 - Photos and GIFs you send now leave at the size Android's do, about half for a photo and usually far less
   for a GIF, so they cross the mesh faster. A photo you send again keeps its quality.
+- A photo you save from Knit and send again now goes as the same copy, so phones that already have it don't
+  fetch it, and a GIF keeps moving. When someone in a chat shares a photo your iPhone has, it shows its own
+  copy.
 
 ## About this file
 

@@ -106,7 +106,7 @@ public struct ChatState: Sendable, Equatable {
 public final class ChatModel {
     /// The thread: `nearby`, the peer's node id, or the group's id.
     public let conversationId: String
-    @ObservationIgnored private let session: AppSession
+    @ObservationIgnored let session: AppSession
     @ObservationIgnored let codec: (any ImageCodec)?
     @ObservationIgnored let screening: PhotoScreening?
     @ObservationIgnored private var cache = Cached<Int, ChatState>()

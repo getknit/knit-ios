@@ -119,6 +119,10 @@
             await session.send(text, photo: photo, in: recipient.string)
         }
 
+        func heldPhoto(picked: [UInt8]) async -> OutgoingPhoto? {
+            await session.heldPhoto(picked: Data(picked))
+        }
+
         func accept(_ conversationId: String) async {
             await session.accept(conversationId)
         }

@@ -67,6 +67,8 @@ final class FakeMesh: MeshService {
     }
 
     private let state: Lock<State>
+    /// The pictures this mesh holds, by the hash of the bytes a pick hands over (`FakeMesh+Photos.swift`).
+    let held = Lock<[BlobHash: OutgoingPhoto]>([:])
     let clock: Int64
 
     init(nodeId: NodeId, stores: MeshStores, radio: RadioState? = nil, clock: Int64 = 1_790_000_000_000) {
@@ -244,7 +246,7 @@ final class FakeMesh: MeshService {
         let hash = BlobHash(of: photo.bytes)
         stores.blobs.insert(photo.bytes, hash: hash, mime: photo.mime, storedAt: clock)
         state.withLock { $0.calls.photos.append(hash) }
-        return MessageAttachment(hash: hash, mime: photo.mime)
+        return MessageAttachment(hash: hash, mime: photo.mime, sourceHash: photo.sourceHash)
     }
 }
 

@@ -84,11 +84,18 @@ public struct MessageAttachment: Sendable, Equatable {
     /// A photo's size, and whether it moves, read from its bytes on this phone: `nil` until they are here and have been
     /// read, and for anything but a photo. It never crosses the wire, as knit-next's voice-note fields never do.
     public var dimensions: PhotoDimensions?
+    /// The SHA-256 of a sealed blob's plaintext, which names the picture apart from any one seal: written as we seal
+    /// it, as its bytes land, or as it is saved, and `nil` for a room post's, whose ``hash`` already is that (knit-next
+    /// `MessageEntity.attachmentPlainHash`, ADR 2026-10.f3mv). Local only.
+    public var plainHash: BlobHash?
+    /// The hash of the bytes the picker handed over for one of our sends, when preparing them changed them, so the
+    /// same original picked again is found (`attachmentSourceHash`). Local only.
+    public var sourceHash: BlobHash?
 
     /// An attachment.
     public init(
         hash: BlobHash, mime: String? = nil, key: String? = nil, name: String? = nil, size: Int64? = nil,
-        dimensions: PhotoDimensions? = nil
+        dimensions: PhotoDimensions? = nil, plainHash: BlobHash? = nil, sourceHash: BlobHash? = nil
     ) {
         self.hash = hash
         self.mime = mime
@@ -96,6 +103,8 @@ public struct MessageAttachment: Sendable, Equatable {
         self.name = name
         self.size = size
         self.dimensions = dimensions
+        self.plainHash = plainHash
+        self.sourceHash = sourceHash
     }
 }
 
@@ -270,6 +279,26 @@ public protocol MessageStore: AnyObject, Sendable {
     /// anything.
     @discardableResult
     func setAttachmentDimensions(_ hash: BlobHash, to dimensions: PhotoDimensions) -> Bool
+
+    /// The pictures held under a name `bytesHash` could be, best first (`MessageDao.identityFor`, ADR 2026-10.f3mv): a
+    /// sealed one whose plaintext it is, one of our sends whose picked bytes it is, or a room post's, which it names
+    /// outright. A room post's wins, since its public name is the one most phones nearby hold, then a moving one, then
+    /// the earliest. A sealed one that has no plaintext name never answers, or its ciphertext's hash would stand for
+    /// the plaintext's. Whether each blob is still held is the caller's to ask.
+    func identities(matching bytesHash: BlobHash) -> [MessageAttachment]
+
+    /// The messages that carry a sealed copy of the plaintext `plainHash`, the earliest first by `sentAt` and then by
+    /// id (`MessageDao.sealedHolding`, before its author's test).
+    func sealedCopies(of plainHash: BlobHash) -> [MessageRecord]
+
+    /// The key of a message carrying sealed blob `hash` that does not know its plaintext yet, or `nil` when none
+    /// wants it (`MessageDao.attachmentKeyWantingPlain`).
+    func keyWantingPlainHash(_ hash: BlobHash) -> String?
+
+    /// Records `plainHash` on every sealed message carrying blob `hash` that has none, and answers whether that changed
+    /// anything (`MessageDao.setAttachmentPlainHash`).
+    @discardableResult
+    func setAttachmentPlainHash(_ hash: BlobHash, to plainHash: BlobHash) -> Bool
 
     /// Records what the content filter made of message `id`'s words, and answers whether that changed anything.
     @discardableResult

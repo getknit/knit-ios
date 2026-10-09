@@ -1,5 +1,6 @@
+public import Foundation
 import KnitCrypto
-import KnitMesh
+public import KnitMesh
 import KnitStore
 public import KnitWire
 
@@ -25,6 +26,24 @@ extension AppSession {
             return blob
         }
         return blob.flatMap { sealed in Base64.decode(key).flatMap { AttachmentCrypto.open(sealed, key: $0) } }
+    }
+
+    /// The bytes of a message's photo to save to Photos, as ``attachment(_:key:)`` opens them. A sealed one's plaintext
+    /// name is recorded on the way, as Android's Save does (`ChatViewModel.saveAttachment`), so the saved picture picked
+    /// again goes as the blob it arrived as, whenever its row was stored (ADR 2026-10.f3mv).
+    nonisolated public func attachmentToSave(_ hash: BlobHash, key: String?) -> [UInt8]? {
+        let bytes = attachment(hash, key: key)
+        if key != nil, let bytes {
+            stores.messages.setAttachmentPlainHash(hash, to: BlobHash(of: bytes))
+        }
+        return bytes
+    }
+
+    /// `picked` as the picture this phone already holds it as, or `nil` (``MeshService/heldPhoto(picked:)``), copied off
+    /// the main actor, since a GIF may weigh megabytes.
+    @concurrent
+    nonisolated public func heldPhoto(picked: Data) async -> OutgoingPhoto? {
+        await mesh.heldPhoto(picked: [UInt8](picked))
     }
 
     /// Reads the size of each photo in `attachments` whose bytes are here, off the main actor, and stores it on every

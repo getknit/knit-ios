@@ -184,7 +184,9 @@ Kotlin wins.
       feeds 28 KiB/s a link (roadmap).
     - **An attachment keeps its arrival identity** (`01b2fd5d`, knit-next ADR 2026-10.mptm): a sealed DM or group message
       may name a room picture by its plaintext hash with no key, and one blob may recur across messages
-      (`crypto.md`). This port took both already, and still seals every send fresh. `7dd7dcc3` screens spool-pulled
+      (`crypto.md`). This port took both already, and since ADR 2026-10.f3mv mirrors the rest: a held pick goes as its
+      blob, and a key-less frame from someone in the chain is copied from our own store, in `deliverChat` alone until
+      carrier pulls land. `7dd7dcc3` screens spool-pulled
       pictures and never adopts a held avatar its filter refused; this port keeps a flagged face adopted and hides it
       when drawn (ADR 2026-10.rpmq), so nothing moves.
     - **Nothing to mirror:**

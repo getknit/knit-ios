@@ -27,6 +27,8 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
 - **Sealing** is `AttachmentCrypto` in KnitCrypto. Its key and nonce come from the system's secure generator, not
   the injected one: a seeded generator in a test must never reach a real key (`Digest.swift`). A known answer at a
   fixed key and nonce pins the layout.
+  (Amended 2026-10-08: a photo is sealed once; sent again, it goes as the blob and key this phone already holds it
+  under; ADR 2026-10.f3mv.)
 - **Sending:**
   - `postToRoom`, `sendDirectMessage` and `sendGroupMessage` take an `OutgoingPhoto`. A message may be a photo and no
     words, and a photo past 8 MiB sends nothing.

@@ -137,6 +137,11 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
         await mesh.sendDirectMessage(text, to: recipient, photo: photo)
     }
 
+    /// A picture the demo already holds, as the mesh finds it.
+    public func heldPhoto(picked: [UInt8]) async -> OutgoingPhoto? {
+        await mesh.heldPhoto(picked: picked)
+    }
+
     /// Accepts a message request.
     public func accept(_ conversationId: String) async {
         await mesh.accept(conversationId)

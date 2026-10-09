@@ -78,11 +78,12 @@ extension MeshEngine {
         return photo == nil ? nil : ""
     }
 
-    /// Keeps a room post's photo as it is, under its own hash, and answers what the message carries.
+    /// Keeps a room post's photo as it is, under its own hash, and answers what the message carries. A picture held
+    /// sealed goes to the room under its plaintext's name all the same, as on Android.
     func keepPhoto(_ photo: OutgoingPhoto, at now: Int64) -> MessageAttachment {
         let hash = BlobHash(of: photo.bytes)
         stores.blobs.insert(photo.bytes, hash: hash, mime: photo.mime, storedAt: now)
-        return MessageAttachment(hash: hash, mime: photo.mime)
+        return MessageAttachment(hash: hash, mime: photo.mime, sourceHash: photo.sourceHash)
     }
 
     /// What a DM or a group message carries: nothing without a photo, or `photo` sealed and kept (``sealPhoto(_:at:)``).
@@ -94,14 +95,33 @@ extension MeshEngine {
         return sealPhoto(photo, at: now).map(Optional.some)
     }
 
-    /// Seals a DM's or a group message's photo under a fresh key (`MeshManager.sealAttachment`), keeps the ciphertext
-    /// under its own hash, and answers what the message carries: the ciphertext's hash, the type and the key, which
-    /// travel sealed. `nil` only if sealing fails.
+    /// What a DM's or a group message's photo goes as (`MeshManager.sealAttachment`): the blob this phone already holds
+    /// it as, if its identity's blob is still here, so a picture is sealed once (ADR 2026-10.f3mv); otherwise sealed
+    /// under a fresh key, the ciphertext kept under its own hash. A room post's picture goes as its key-less self. The
+    /// message carries the blob's hash, the type and the key, which travel sealed, and remembers the plaintext's name and
+    /// the picked bytes', which never leave this phone. `nil` only if sealing fails.
     func sealPhoto(_ photo: OutgoingPhoto, at now: Int64) -> MessageAttachment? {
-        AttachmentCrypto.seal(photo.bytes).map { sealed in
+        let plainHash = BlobHash(of: photo.bytes)
+        if let held = photo.identity, stores.blobs.contains(held.hash) {
+            return MessageAttachment(
+                hash: held.hash,
+                mime: photo.mime,
+                key: held.key,
+                plainHash: held.key == nil ? nil : plainHash,
+                sourceHash: photo.sourceHash
+            )
+        }
+        // No identity, or its blob went between the pick and the send: seal it afresh, from the bytes in hand.
+        return AttachmentCrypto.seal(photo.bytes).map { sealed in
             let hash = BlobHash(of: sealed.blob)
             stores.blobs.insert(sealed.blob, hash: hash, mime: photo.mime, storedAt: now)
-            return MessageAttachment(hash: hash, mime: photo.mime, key: Base64.encode(sealed.key))
+            return MessageAttachment(
+                hash: hash,
+                mime: photo.mime,
+                key: Base64.encode(sealed.key),
+                plainHash: plainHash,
+                sourceHash: photo.sourceHash
+            )
         }
     }
 

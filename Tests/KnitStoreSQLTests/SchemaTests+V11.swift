@@ -40,4 +40,37 @@ extension SchemaTests {
         #expect(messages.unsizedAttachments(named: nil).isEmpty)
         #expect(!messages.setAttachmentDimensions(hash, to: moving), "the same reading changes nothing")
     }
+
+    @Test func v12NamesNoPictureUntilItsPlaintextIsLearned() throws {
+        // A sealed photo stored under v11 knows no plaintext name (ADR 2026-10.f3mv): it is no identity a pick finds,
+        // until its bytes are opened (a save), and a room post's is one by its own hash from the start.
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v11")
+        let bob = fixtureNodeId(2)
+        let sealed = BlobHash(String(repeating: "6", count: 64)) ?? .empty
+        let plain = BlobHash(String(repeating: "7", count: 64)) ?? .empty
+        try queue.write { db in
+            for (id, hash, key, conversation) in [("m1", sealed, "a2V5", bob.string), ("m2", plain, nil, "nearby")] {
+                try db.execute(
+                    sql: """
+                        INSERT INTO messages (id, senderId, conversationId, body, sentAt, delivered, pendingKey, kind, moderation,
+                            attachmentHash, attachmentMime, attachmentKey)
+                        VALUES (?, ?, ?, ?, 3, 0, 0, 0, 0, ?, ?, ?)
+                        """,
+                    arguments: [
+                        StoredText.bytes(id), StoredText.bytes(bob.string), StoredText.bytes(conversation), StoredText.bytes(""),
+                        StoredText.bytes(hash.string), StoredText.bytes("image/jpeg"), StoredText.bytes(key),
+                    ]
+                )
+            }
+        }
+        let database = try KnitDatabase(writer: queue, failures: recordFailure)
+        let messages = SQLMessageStore(database)
+        #expect(messages.message("m1")?.attachment?.plainHash == nil)
+        #expect(messages.identities(matching: plain).map(\.hash) == [plain])
+        #expect(messages.keyWantingPlainHash(sealed) == "a2V5")
+        #expect(messages.setAttachmentPlainHash(sealed, to: plain))
+        #expect(messages.identities(matching: plain).map(\.hash) == [plain, sealed], "the room's public name first")
+        #expect(messages.keyWantingPlainHash(sealed) == nil)
+    }
 }

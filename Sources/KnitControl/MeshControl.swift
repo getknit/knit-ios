@@ -15,6 +15,8 @@ public protocol ControlActions: Sendable {
     func postToRoom(_ text: String, photo: OutgoingPhoto?) async -> MessageRecord?
     /// Sends a DM.
     func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?) async -> MessageRecord?
+    /// A photo's bytes as the picture this node already holds them as, or `nil` (ADR 2026-10.f3mv).
+    func heldPhoto(picked: [UInt8]) async -> OutgoingPhoto?
     /// Accepts a message request.
     func accept(_ conversationId: String) async
     /// Changes our profile and floods it.
@@ -174,15 +176,17 @@ public actor MeshControl {
         case .links:
             return .success(await links())
         case .room(let text, let photo):
-            guard let record = await actions.postToRoom(text, photo: photo) else {
+            let sending = await identified(photo)
+            guard let record = await actions.postToRoom(text, photo: sending) else {
                 return .failure(.refused("a blank message, or a photo past 8 MiB, is not sent"))
             }
-            return .success(Self.sent(record))
+            return .success(Self.sent(record, reusing: sending))
         case .directMessage(let recipient, let text, let photo):
-            guard let record = await actions.sendDirectMessage(text, to: recipient, photo: photo) else {
+            let sending = await identified(photo)
+            guard let record = await actions.sendDirectMessage(text, to: recipient, photo: sending) else {
                 return .failure(.refused("a blank message, a photo past 8 MiB, or one to ourselves, is not sent"))
             }
-            return .success(Self.sent(record))
+            return .success(Self.sent(record, reusing: sending))
         case .accept(let conversation):
             await actions.accept(conversation)
             return .success(["conv": .string(conversation)])
@@ -239,11 +243,6 @@ public actor MeshControl {
         }
     }
 
-    /// A sent message's reply: its id, whether it waits for a key, and the blob its photo is kept under.
-    private static func sent(_ record: MessageRecord) -> [String: JSONValue] {
-        ["id": .string(record.id), "pendingKey": .bool(record.pendingKey), "attachmentHash": .text(record.attachment?.hash.string)]
-    }
-
     private func answer(_ command: GroupCommand) async -> Result<[String: JSONValue], ControlError> {
         switch command {
         case .create(let members):
@@ -252,11 +251,12 @@ public actor MeshControl {
             }
             return .success(ControlLines.fields(of: group))
         case .send(let conversation, let text, let photo):
-            guard let record = await actions.sendGroupMessage(text, to: conversation, photo: photo) else {
+            let sending = await identified(photo)
+            guard let record = await actions.sendGroupMessage(text, to: conversation, photo: sending) else {
                 return .failure(
                     .refused("a blank message, a photo past 8 MiB, or one to a group we are not in or nobody else is left in, is not sent"))
             }
-            return .success(Self.sent(record))
+            return .success(Self.sent(record, reusing: sending))
         case .rename(let conversation, let name):
             guard let group = await actions.renameGroup(conversation, to: name) else {
                 return .failure(.refused("a blank name, or a group we are not in, is not renamed"))

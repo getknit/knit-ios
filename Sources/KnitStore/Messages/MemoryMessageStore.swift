@@ -33,6 +33,13 @@ public final class MemoryMessageStore: MessageStore {
         mutating func put(_ message: MessageRecord) {
             let key = ExactKey(message.id)
             if let existing = rows[key] {
+                var message = message
+                // A save that names the same blob keeps what this phone learned of its names, as the SQL upsert does.
+                if let held = existing.record.attachment, var kept = message.attachment, kept.hash == held.hash {
+                    kept.plainHash = kept.plainHash ?? held.plainHash
+                    kept.sourceHash = kept.sourceHash ?? held.sourceHash
+                    message.attachment = kept
+                }
                 rows[key] = Row(record: message, order: existing.order)
             } else {
                 rows[key] = Row(record: message, order: nextOrder)
@@ -305,6 +312,68 @@ extension MemoryMessageStore {
                 }
             }
             return senders
+        }
+    }
+
+    /// The pictures held under a name `bytesHash` could be, best first (``MessageStore/identities(matching:)``).
+    public func identities(matching bytesHash: BlobHash) -> [MessageAttachment] {
+        state.withLock { state in
+            let named = state.rows.values.map(\.record).filter { record in
+                guard let attachment = record.attachment, attachment.mime != nil else {
+                    return false
+                }
+                // A sealed row that does not know its plaintext names nothing (`identityFor`'s guard).
+                guard attachment.key == nil || attachment.plainHash != nil else {
+                    return false
+                }
+                return attachment.plainHash == bytesHash || attachment.sourceHash == bytesHash
+                    || (attachment.key == nil && attachment.hash == bytesHash)
+            }
+            return named.sorted { lhs, rhs in
+                let lhsMoves = lhs.attachment?.dimensions?.animated == true
+                let rhsMoves = rhs.attachment?.dimensions?.animated == true
+                if lhsMoves != rhsMoves {
+                    return lhsMoves
+                }
+                let lhsSealed = lhs.attachment?.key != nil
+                let rhsSealed = rhs.attachment?.key != nil
+                if lhsSealed != rhsSealed {
+                    return !lhsSealed
+                }
+                return Self.precedes(lhs, rhs)
+            }
+            .compactMap(\.attachment)
+        }
+    }
+
+    /// The messages carrying a sealed copy of plaintext `plainHash` (``MessageStore/sealedCopies(of:)``).
+    public func sealedCopies(of plainHash: BlobHash) -> [MessageRecord] {
+        state.withLock { state in
+            state.rows.values.map(\.record)
+                .filter { $0.attachment?.key != nil && $0.attachment?.mime != nil && $0.attachment?.plainHash == plainHash }
+                .sorted(by: Self.precedes)
+        }
+    }
+
+    /// The key of a sealed message carrying `hash` with no plaintext name (``MessageStore/keyWantingPlainHash(_:)``).
+    public func keyWantingPlainHash(_ hash: BlobHash) -> String? {
+        state.withLock { state in
+            state.rows.values.lazy.compactMap(\.record.attachment)
+                .first { $0.hash == hash && $0.key != nil && $0.plainHash == nil }?.key
+        }
+    }
+
+    /// Names the plaintext of sealed blob `hash` (``MessageStore/setAttachmentPlainHash(_:to:)``).
+    @discardableResult
+    public func setAttachmentPlainHash(_ hash: BlobHash, to plainHash: BlobHash) -> Bool {
+        state.withLock { state in
+            var changed = false
+            for (key, row) in state.rows
+            where row.record.attachment?.hash == hash && row.record.attachment?.key != nil && row.record.attachment?.plainHash == nil {
+                state.rows[key]?.record.attachment?.plainHash = plainHash
+                changed = true
+            }
+            return changed
         }
     }
 

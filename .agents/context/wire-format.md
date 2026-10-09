@@ -145,7 +145,7 @@ photos in chats the same day (ADR 2026-10.6cas), and the blob holder query on 20
 | --- | --- | --- |
 | `profile` | on every new link, on edit, and at least every 12 h; `avatarHash` names our photo | pin, verify, carry; the photo shows once its bytes are held |
 | `chat` DM, `enc.v = 1` | yes | yes, always |
-| a photo in a DM or a group | sealed with `AttachmentCrypto`: the hash, type and key inside the sealed content, the hash alone beside `enc` | kept with the message, its blob wanted; opened in memory with the key when shown |
+| a photo in a DM or a group | sealed with `AttachmentCrypto`: the hash, type and key inside the sealed content, the hash alone beside `enc`; a picture held already goes as its blob and key, or a room picture under its own hash with no key (ADR 2026-10.f3mv) | kept with the message, its blob wanted, or held from our own sealed copy when a key-less one's author was in that chat; opened in memory with the key when shown |
 | a photo in a room post | `attachmentHash` and `attachmentMime` in the clear; the blob is the photo | kept with the post, its blob wanted |
 | `chat` DM, `enc.v = 2` or `3` | no (`CAP_RATCHET` stays off) | carry and relay; cannot open |
 | `chat` room post (no recipient, no group) | yes, signed and cleartext | yes |

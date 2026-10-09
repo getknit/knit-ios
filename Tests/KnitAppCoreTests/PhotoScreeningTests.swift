@@ -86,6 +86,18 @@ actor FakeClassifier: PhotoClassifier {
         #expect(model.photoFailure == nil)
     }
 
+    /// A picture the phone already holds is screened for the room like any other pick (ADR 2026-10.f3mv).
+    @Test func theRoomRefusesAnExplicitPictureThePhoneHolds() async {
+        let rig = AppRig()
+        let identity = PhotoIdentity(hash: BlobHash(of: Array("blob".utf8)), key: "aw==")
+        let held = OutgoingPhoto(bytes: Array("a held picture".utf8), mime: "image/jpeg", identity: identity)
+        rig.mesh.hold(held, pickedAs: Array(Self.picked))
+        let (screening, _) = filter(rig, [held.bytes: FakeClassifier.explicit])
+        let model = ChatModel(conversationId: Conversations.nearby, session: rig.session, codec: FakeCodec(), screening: screening)
+        await model.choosePhoto(Self.picked)
+        #expect(model.photoRefused && model.staged == nil)
+    }
+
     /// A DM or a group takes any photo unchecked, with no question: the receiver's phone screens it (ADR 2026-10.spcy,
     /// knit-next ADR 2026-10.9rh6).
     @Test(arguments: [false, true])

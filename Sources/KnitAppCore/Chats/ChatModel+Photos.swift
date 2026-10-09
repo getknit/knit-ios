@@ -10,6 +10,10 @@ extension ChatModel {
     /// before. One the picker could not hand over, or the codec cannot send, says why. While a pick is being made ready
     /// another may replace it, and the last one picked is the one held.
     ///
+    /// A picture this phone already holds goes as that blob, undecoded, so it keeps its frames, its quality and its
+    /// identity (`AttachmentStore.ingestPicked`, ADR 2026-10.f3mv). Any other goes through the codec, and remembers the
+    /// picked bytes' hash when the codec changed them, so the same original picked again is found.
+    ///
     /// In the room, which floods to everyone in range, the prepared photo is checked whatever the content filter says,
     /// and one that looks explicit is refused (`ChatViewModel.stage`). A DM or a group takes it unchecked: the receiver's
     /// phone screens it (ADR 2026-10.spcy).
@@ -27,7 +31,12 @@ extension ChatModel {
                 preparingPhoto = false
             }
         }
-        let prepared = await codec.chatPhoto(from: data)
+        let prepared: Result<OutgoingPhoto, PhotoFailure>
+        if let identified = await session.heldPhoto(picked: data) {
+            prepared = .success(identified)
+        } else {
+            prepared = await Self.prepare(data, with: codec)
+        }
         guard pick == picks else {
             return
         }
@@ -54,6 +63,20 @@ extension ChatModel {
     /// Takes the held photo out of the composer.
     public func removePhoto() {
         staged = nil
+    }
+
+    /// `data` made ready by `codec`, remembering the picked bytes' hash when they changed, off the main actor, since a
+    /// GIF may weigh megabytes.
+    @concurrent
+    private static func prepare(_ data: Data, with codec: any ImageCodec) async -> Result<OutgoingPhoto, PhotoFailure> {
+        await codec.chatPhoto(from: data).map { ready in
+            var photo = ready
+            let source = BlobHash(of: [UInt8](data))
+            if source != BlobHash(of: photo.bytes) {
+                photo.sourceHash = source
+            }
+            return photo
+        }
     }
 
     /// `photo` with the hash of its bytes, taken off the main actor, since a GIF may weigh megabytes.

@@ -110,6 +110,32 @@ import Testing
         #expect(!model.preparingPhoto && model.photoFailure == nil)
     }
 
+    /// A picture the phone already holds goes as that blob, never through the codec, so it keeps its frames, its
+    /// quality and its identity (ADR 2026-10.f3mv): here the codec would refuse it.
+    @Test func aPictureThePhoneHoldsGoesAsThatBlobUndecoded() async {
+        let rig = AppRig()
+        let identity = PhotoIdentity(hash: BlobHash(of: Array("its sealed blob".utf8)), key: "aw==")
+        let held = OutgoingPhoto(bytes: Array("the moving picture".utf8), mime: "image/webp", identity: identity)
+        rig.mesh.hold(held, pickedAs: Array(Self.picked))
+        let model = ChatModel(conversationId: AppRig.sam.nodeId.string, session: rig.session, codec: FakeCodec(refuses: .unreadable))
+        await model.choosePhoto(Self.picked)
+        #expect(model.staged?.photo == held && model.photoFailure == nil)
+    }
+
+    /// A fresh pick remembers the bytes the picker handed over when the codec changed them, and only then, so the same
+    /// original picked again is found.
+    @Test func aFreshPickRemembersThePickedBytesWhenTheCodecChangedThem() async {
+        let rig = AppRig()
+        let changed = ChatModel(conversationId: Conversations.nearby, session: rig.session, codec: FakeCodec())
+        await changed.choosePhoto(Self.picked)
+        #expect(changed.staged?.photo.sourceHash == BlobHash(of: Array(Self.picked)))
+        await changed.send()
+        #expect(rig.stores.messages.messages(in: Conversations.nearby).last?.attachment?.sourceHash == BlobHash(of: Array(Self.picked)))
+        let kept = ChatModel(conversationId: Conversations.nearby, session: rig.session, codec: AsItIsCodec())
+        await kept.choosePhoto(Self.picked)
+        #expect(kept.staged?.photo.bytes == Array(Self.picked) && kept.staged?.photo.sourceHash == nil)
+    }
+
     /// A send the mesh refuses keeps the photo in the composer, to try again.
     @Test func aRefusedSendKeepsThePhoto() async {
         let rig = AppRig()
@@ -155,6 +181,10 @@ import Testing
         #expect(rig.session.attachment(hash, key: Base64.encode([UInt8](repeating: 7, count: 32))) == nil, "a wrong key opens nothing")
         #expect(rig.session.attachment(hash, key: "not base64!") == nil)
         #expect(rig.session.attachment(BlobHash(of: photo), key: key) == nil, "a blob that is missing opens nothing")
+        #expect(rig.stores.messages.keyWantingPlainHash(hash) == key, "shown, the photo still has no plaintext name")
+        #expect(rig.session.attachmentToSave(hash, key: key) == photo)
+        #expect(rig.stores.messages.keyWantingPlainHash(hash) == nil, "saved, it has (ADR 2026-10.f3mv)")
+        #expect(rig.stores.messages.identities(matching: BlobHash(of: photo)).map(\.hash) == [hash])
     }
 
     /// What a message carries is told by its name, then its type (`AttachmentKindTest`), and a link's card shows
@@ -253,6 +283,21 @@ private actor Gate {
     func open() {
         waiting?.resume()
         waiting = nil
+    }
+}
+
+/// A codec whose chat photos go as they were picked, as a clean JPEG goes stripped of nothing.
+private struct AsItIsCodec: ImageCodec {
+    func prepare(_: Data) -> (any PreparedImage)? {
+        nil
+    }
+
+    func profilePhoto(from _: any PreparedImage, crop _: CropRect) -> [UInt8]? {
+        nil
+    }
+
+    func chatPhoto(from data: Data) -> Result<OutgoingPhoto, PhotoFailure> {
+        .success(OutgoingPhoto(bytes: Array(data), mime: "image/jpeg"))
     }
 }
 

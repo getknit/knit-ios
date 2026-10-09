@@ -8,6 +8,10 @@
     /// `-demoPhoto` it hands over `demo` instead, since the Simulator's library and the system's picker are out of a UI
     /// test's reach.
     ///
+    /// It asks for the file as the library holds it (`.current`), not a version transcoded for compatibility, so a
+    /// picture Knit saved is handed back byte for byte and goes as the blob it arrived as (ADR 2026-10.f3mv). The codec
+    /// takes whatever comes, HEIC included.
+    ///
     /// It is a button that presents the picker, not a `PhotosPicker`: from iOS 27, `PhotosPicker` takes its label as a
     /// `@Sendable` closure, which cannot read this view's `label` on the main actor.
     internal struct PhotoPickerButton<Label: View>: View {
@@ -27,7 +31,7 @@
             } label: {
                 label
             }
-            .photosPicker(isPresented: $picking, selection: $item, matching: .images)
+            .photosPicker(isPresented: $picking, selection: $item, matching: .images, preferredItemEncoding: .current)
             .onChange(of: item) { _, chosen in
                 guard let chosen else {
                     return

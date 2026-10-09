@@ -81,6 +81,7 @@ same reason.
 - **Loop counts are not carried over.** Every clip loops for good, as both apps play every clip.
 - **A GIF that goes as it is keeps any text its application extensions carry,** as on Android.
 - **Identity reuse (knit-next ADR 2026-10.mptm) is not ported:** a picture already held still goes under a fresh seal.
+  (Amended 2026-10-08: it is now; a picture this phone holds goes as that blob, undecoded; ADR 2026-10.f3mv.)
 - **Guards:**
   - `WebPEncoderTests` (Linux) and `ImageIOTests` in KnitWebPTests (the Mac): frames, timing, loop, alpha, and
     ImageIO reading what libwebp writes.

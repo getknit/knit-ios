@@ -311,6 +311,7 @@ extension MeshEngine {
         withdrawAsks(file.hash, from: blobExchange.obtained(file.hash, from: file.from))
         syncAcceptedFiles()
         adoptAvatar(file.hash)
+        notePlainHash(file.hash)
         if stores.messages.attachmentHashes().contains(file.hash) {
             events.append(.attachmentArrived(file.hash))
         }

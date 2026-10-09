@@ -174,7 +174,7 @@
 
         @concurrent
         nonisolated private static func original(_ hash: BlobHash, key: String?, session: AppSession) async -> Data? {
-            session.attachment(hash, key: key).map { Data($0) }.flatMap { PhotoDecoder.isMeshPhoto($0) ? $0 : nil }
+            session.attachmentToSave(hash, key: key).map { Data($0) }.flatMap { PhotoDecoder.isMeshPhoto($0) ? $0 : nil }
         }
     }
 #endif

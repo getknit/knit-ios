@@ -310,7 +310,9 @@ explicit direction.** Update this file in the change that ships an item.
   - **Phase 4:** group photos shown but never set, and carried frames' photos pulled within Android's 128 MiB. A carrier's
     pull follows knit-next ADR 2026-10.g24x's `CarrierPullPolicy`: a DM's picture waits up to 10 min while its recipient
     is linked, and, since its 2026-10-07 amendment, a group's picture waits while the group's author is linked unless the
-    carrier is a member (`GroupInfo.members`).
+    carrier is a member (`GroupInfo.members`). Before that pull, a carried frame's key-less picture is copied from our own
+    sealed copy under the same author test as `deliverChat`'s (`copyFromOwnStore`, ADR 2026-10.f3mv), as Android's
+    `onCarriedFrame` does.
   - **Android's progress ring** (knit-next ADR 2026-10.y9qh): every header this port writes declares its size since
     2026-10-04, so an Android phone fills a ring as our photo arrives. Still owed:
     - the iPhone's own ring for a photo arriving, from the size `FileIntake` already reads;

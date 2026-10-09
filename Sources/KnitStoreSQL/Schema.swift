@@ -28,6 +28,7 @@ internal enum Schema {
         ("v9", v9),
         ("v10", v10),
         ("v11", v11),
+        ("v12", v12),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -226,6 +227,16 @@ internal enum Schema {
     /// before it reads no answer, which a launch reads again with the size.
     private static let v11 = [
         "ALTER TABLE messages ADD COLUMN attachmentAnimated INTEGER"
+    ]
+
+    /// Schema v12: the names a photo goes by on this phone, so a picture is sealed once (ADR 2026-10.f3mv, knit-next
+    /// ADR 2026-10.mptm and its database v20). `attachmentPlainHash` is the SHA-256 of a sealed photo's plaintext, and
+    /// `attachmentSourceHash` the picker's own bytes for one of our sends whose preparing changed them. Local only, like
+    /// the size. Every row already stored names neither: a sealed one learns its plaintext when it is saved.
+    private static let v12 = [
+        "ALTER TABLE messages ADD COLUMN attachmentPlainHash BLOB",
+        "ALTER TABLE messages ADD COLUMN attachmentSourceHash BLOB",
+        "CREATE INDEX messages_attachmentPlainHash ON messages (attachmentPlainHash) WHERE attachmentPlainHash IS NOT NULL",
     ]
 
     /// The migrator that brings any database this build knows up to date.

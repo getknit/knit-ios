@@ -217,9 +217,24 @@ extension MeshEngine {
             events.append(.received(record, isRequest: !isAccepted(conversation)))
         }
         if let attachment {
-            wantBlob(attachment.hash, author: sender, via: hop, asker: nil)
+            receiveAttachment(attachment, author: sender, via: hop)
         }
         acknowledge(envelope, sender: sender)
+    }
+
+    /// Fetches what a delivered message carries, unless its bytes are here already, when a sealed one learns its
+    /// plaintext's name. A key-less picture, a room post's or one forwarded under its public name, is held from our own
+    /// sealed copy instead when its author was party to the conversation that copy came through (ADR 2026-10.f3mv);
+    /// this is the one door to that copy.
+    private func receiveAttachment(_ attachment: MessageAttachment, author: NodeId, via hop: NodeId?) {
+        let hash = attachment.hash
+        if stores.blobs.contains(hash) {
+            notePlainHash(hash)
+        } else if attachment.key == nil, !transport.arrivingFileKeys.contains(hash), copyFromOwnStore(hash, author: author) {
+            events.append(.attachmentArrived(hash))
+            return
+        }
+        wantBlob(hash, author: author, via: hop, asker: nil)
     }
 
     /// The longest text an attachment's type, key or file name keeps: a peer's frame bounds nothing on its own.

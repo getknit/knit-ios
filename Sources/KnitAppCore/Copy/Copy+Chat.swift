@@ -151,16 +151,18 @@ extension Copy {
             )
         }
 
-        /// What the phones that carry a message can't open.
+        /// What the phones that carry a message can't open, and the one photo they can: a Nearby picture shared here goes
+        /// under its public name (ADR 2026-10.f3mv).
         public static var encryptionSealed: String {
             NSLocalizedString(
                 "chat.encryption.sealed",
                 bundle: .main,
                 value: """
                     Messages and photos are sealed before they leave your phone, so the phones that carry them can't open \
-                    them.
+                    them. A photo first posted in Nearby stays public, so phones that have it can tell when it's shared \
+                    here, though never what's said.
                     """,
-                comment: "Encryption sheet: relaying phones cannot open messages or photos"
+                comment: "Encryption sheet: relaying phones cannot open messages or photos; a Nearby photo shared here stays public"
             )
         }
 

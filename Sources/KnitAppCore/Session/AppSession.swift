@@ -47,7 +47,7 @@ public final class AppSession {
     /// it no size is read, and a thread holds a photo's place at a square until the photo decodes.
     @ObservationIgnored let photoDimensions: (@Sendable ([UInt8]) -> PhotoDimensions?)?
 
-    @ObservationIgnored private let mesh: any MeshService
+    @ObservationIgnored let mesh: any MeshService
     @ObservationIgnored private let notifier: (any Notifier)?
     @ObservationIgnored private let preferences: any AppPreferences
     @ObservationIgnored private var visible: String?

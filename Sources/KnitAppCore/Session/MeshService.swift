@@ -26,6 +26,9 @@ public protocol MeshService: AnyObject, Sendable {
     func postToRoom(_ text: String, photo: OutgoingPhoto?) async -> MessageRecord?
     /// Sends a DM, with a photo if one is given.
     func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?) async -> MessageRecord?
+    /// `picked` as the picture this phone already holds it as, ready to send under that blob's identity, or `nil` when
+    /// it holds no such picture (ADR 2026-10.f3mv).
+    func heldPhoto(picked: [UInt8]) async -> OutgoingPhoto?
     /// Accepts a message request.
     func accept(_ conversationId: String) async
     /// Makes a group with `others`, or opens the one they already share.
