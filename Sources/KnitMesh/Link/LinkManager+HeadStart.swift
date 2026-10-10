@@ -68,11 +68,11 @@ extension LinkManager {
         return candidates.filter { !isHeadStartCandidate($0) || $0.nodeId == strongest }
     }
 
-    /// Logs a head-start dial, before the dial's own line.
-    func logHeadStartDial(to peer: NodeId, now: Int64) {
-        let snapshot = presence.present(now: now).first { $0.nodeId == peer }
-        let dwell = snapshot.map { "\($0.dwellMilliseconds)" } ?? "?"
-        let rssi = snapshot.map { "\(Int($0.smoothedRssi.rounded()))" } ?? "?"
-        log.log(.info, "link head start over for \(peer) (dwell=\(dwell)ms rssi=\(rssi)dBm)")
+    /// Logs a head-start dial, before the dial's own line, with the peer's whole dwell and its smoothed RSSI.
+    /// `candidate` is the peer as promotion saw it (``withHeadStart(_:)``).
+    func logHeadStartDial(_ candidate: PresenceTracker.Snapshot) {
+        let dwell = candidate.dwellMilliseconds + configuration.headStartMilliseconds
+        let rssi = Int(candidate.smoothedRssi.rounded())
+        log.log(.info, "link head start over for \(candidate.nodeId) (dwell=\(dwell)ms rssi=\(rssi)dBm)")
     }
 }

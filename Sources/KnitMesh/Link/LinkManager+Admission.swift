@@ -31,7 +31,8 @@ extension LinkManager {
         let backoff = backingOff(now: now)
         let promotion = promotionConfiguration
         let pool = keepingOneHeadStart(candidates(snapshots, busy: occupied), backoff: backoff, configuration: promotion)
-        let headStarts = Set(pool.filter(isHeadStartCandidate).map(\.nodeId))
+        // At most one, by keepingOneHeadStart.
+        let headStart = pool.first(where: isHeadStartCandidate)
         let decision = PromotionPolicy.decide(
             candidates: pool,
             links: links,
@@ -46,7 +47,7 @@ extension LinkManager {
             }
         }
         for node in decision.promote {
-            dial(node, headStart: headStarts.contains(node), now: now)
+            dial(node, headStart: headStart?.nodeId == node ? headStart : nil, now: now)
         }
         return events
     }
@@ -92,13 +93,14 @@ extension LinkManager {
         Set(backoffs.filter { now < $0.value.nextAt }.keys)
     }
 
-    func dial(_ peer: NodeId, headStart: Bool, now: Int64) {
+    /// Dials `peer`, logging the head-start line first when `headStart` is the peer as promotion saw it.
+    func dial(_ peer: NodeId, headStart: PresenceTracker.Snapshot?, now: Int64) {
         // A PSM of 0 means the peer's listener is not open; Android never advertises one.
         guard let address = addresses[peer], let advert = presence.advert(of: peer), advert.psm != 0 else {
             return
         }
-        if headStart {
-            logHeadStartDial(to: peer, now: now)
+        if let headStart {
+            logHeadStartDial(headStart)
         }
         let id = radio.dial(address, psm: advert.psm)
         channels[id] = Channel(role: .dialer(peer), stage: .connecting, deadline: now + configuration.connectTimeoutMilliseconds)
