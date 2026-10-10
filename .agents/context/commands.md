@@ -95,6 +95,7 @@ python3 scripts/interop.py iphone-soak --device <serial> --peer --extras   # MVP
 python3 scripts/interop.py iphone-wake --device <serial>          # MVP item 9 from the phone: someone locks the iPhone, a DM a minute
 python3 scripts/interop.py iphone-wake --device <serial> --expect-wakes   # the same from an A4 build, which must ring and wake Knit for every DM
 python3 scripts/interop.py iphone-wake --sender peer              # the same from a peer on hci0, which rings the iPhone's doorbell
+python3 scripts/interop.py android-keeps-iphone --device <serial> --quiet <serials…>   # AND-3: the phone keeps a backgrounded iPhone's link and admits its re-dial; devicectl moves Knit, nobody at the iPhone
 python3 scripts/interop.py iphone-reboot --restart                # MVP item 1: the identity survives closing Knit and a reboot; someone unlocks
 python3 scripts/interop.py iphone-rings                           # the iPhone rings a peer's doorbell (hci1, ios profile); Knit open
 python3 scripts/interop.py android-rings --device <serial>        # A4: custody converges, then an Android phone rings the peer's doorbell (hci1, ios profile; --link dialed|accepted)
@@ -147,6 +148,8 @@ scripts/mac.sh run scripts/check.sh device                        # the same app
 scripts/mac.sh run scripts/mac-desktop.sh <command…>              # any command in the Mac's desktop session, where the Keychain is open
 scripts/mac.sh run scripts/check.sh devicetest                    # the device tests on the iPhone: unlocked, Auto-Lock off, UI Automation on, passcode typed on the phone each run; with the go-ahead
 scripts/mac.sh run env KNIT_DEVICE_TESTS=KnitDeviceTests/RadioTests scripts/check.sh devicetest   # one class, or Class/testName
+scripts/mac.sh run env KNIT_DEVICE_KEEP_KNIT=build scripts/check.sh devicetest   # builds the steps that leave the running Knit alone
+KNIT_MAC_SYNC=0 scripts/mac.sh run env KNIT_DEVICE_KEEP_KNIT=1 KNIT_DEVICE_TESTS=KnitDeviceTests/BackgroundTests/testSendKnitToBackground scripts/check.sh devicetest   # or testBringKnitToFront
 scripts/mac.sh run env KNIT_UI_TESTS=KnitUITests/KnitUITests/testTheChatListAndTheRoomTakeAPost scripts/check.sh uitest   # one walk
 scripts/mac.sh run xcrun xcresulttool get test-results summary --path .build-xcode/devicetest.xcresult   # what failed, and why
 scripts/mac.sh run bash -c 'xcrun simctl boot "iPhone 18 Pro"; xcrun simctl install booted .build-xcode/Build/Products/Debug-iphonesimulator/Knit.app'

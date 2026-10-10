@@ -46,12 +46,28 @@ sync_tree() {
 	# Filter order matters: the first match wins. Lock files are git's own in-flight state. .git is included
 	# whole before the .gitignore rules are read, so an ignore pattern can never drop a ref or an object.
 	# --delete-after lets a .gitignore that changes in this sync protect its paths from this sync's deletions.
+	# A worktree's .git is a file naming a Git dir on this machine, which the Mac cannot read. Its tree goes as any
+	# other, and the shared Git dir goes after it as the mirror's .git, with the worktree's own HEAD and index.
+	local worktree=
+	if [ -f .git ]; then
+		worktree=$(git rev-parse --path-format=absolute --git-dir)
+	fi
 	changes=$(rsync -rlpt --mkpath --delete-after --itemize-changes \
 		--rsync-path="$remote_rsync" -e "ssh ${ssh_opts[*]}" \
+		${worktree:+--filter='- /.git'} \
 		--filter='- /.git/*.lock' \
 		--filter='+ /.git/***' \
 		--filter=':- .gitignore' \
 		./ "$host:$dir/")
+	if [ -n "$worktree" ]; then
+		# shellcheck disable=SC2029 # expanding here is the point
+		ssh "${ssh_opts[@]}" "$host" "[ -d $(printf '%q' "$dir/.git") ] || rm -f $(printf '%q' "$dir/.git")"
+		rsync -rlpt --mkpath --delete-after --rsync-path="$remote_rsync" -e "ssh ${ssh_opts[*]}" \
+			--filter='- *.lock' --filter='- /worktrees/' \
+			"$(git rev-parse --path-format=absolute --git-common-dir)/" "$host:$dir/.git/"
+		rsync -lpt --rsync-path="$remote_rsync" -e "ssh ${ssh_opts[*]}" \
+			"$worktree/HEAD" "$worktree/index" "$host:$dir/.git/"
+	fi
 	count=0
 	if [ -n "$changes" ]; then
 		count=$(grep -cv '^\.' <<<"$changes" || true)

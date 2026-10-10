@@ -77,7 +77,10 @@ ladder, not the first.
     chooses, crops and saves our profile photo, a demo photo under `-demoPhoto`, which a debug build honours live too,
     and leaves it set for a look at the lab's phones (ADR 2026-10.sepc). It reads the status
     line's state from its identifier, never its words, and each test puts Bluetooth, the permission and the mesh
-    back as it ends, `PhotoTests`' photo apart. Its sources live in `Tests/KnitDeviceTests/`, which only the `KnitDevice` scheme builds.
+    back as it ends, `PhotoTests`' photo apart. `BackgroundTests` is the exception: two steps `interop.py` runs one at a
+    time, which bring the Settings app or Knit to the front and never launch, end or restore Knit. They run from an
+    xctestrun with Knit left out of the install (`KNIT_DEVICE_KEEP_KNIT`), since installing Knit ends its process and
+    its links. Its sources live in `Tests/KnitDeviceTests/`, which only the `KnitDevice` scheme builds.
 
 ## Coverage
 

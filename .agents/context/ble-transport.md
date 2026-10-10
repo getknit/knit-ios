@@ -163,6 +163,13 @@ radio.
   stronger at the same spot than before. At the budget, an unsighted link, which an iPhone's often is, is now shed
   ahead of a sighted one more often. The connect loop also wakes when a candidate's dwell ends, between scan
   windows (knit-next ADR 2026-10.pj9w), as `LinkManager` already did.
+- **A backgrounded iPhone's link scored −127 until AND-3's fix** (the interop audit's finding, knit-next
+  `fix/gatt-only-link-score`, ahead of the pin). Android sighted the iPhone in front, by its GATT payload. Knit then
+  left the front, iOS moved its UUID to the overflow area, and Android heard it no more. Ninety seconds later the
+  iPhone left presence, and its live link scored `ABSENT_LINK_RSSI`, the first shed at the cap. Since the fix, a
+  link whose HELLO carried `CAP_DOORBELL` scores the floor, −90, while its peer is out of presence, as a link
+  Android never sighted does. That ranks it beside an unsighted link, not above every candidate: one 8 dB
+  stronger than the floor still replaces it at the budget.
 - **Backoff** (`ConnectBackoffPolicy`): 10 s × 2^(streak − 1), capped at 180 s, ±20 % jitter. A link that
   ends at EOF also bumps the streak, and success resets it.
 - **Connect:** a 12 s watchdog around each dial (`CONNECT_TIMEOUT_MS`). No MTU request and no bonding.
@@ -190,6 +197,13 @@ radio.
   Once it sets `FLAG_DIALS_GATT_PEERS`, an iPhone whose id sorts lower waits to be dialed, and Android refuses that
   iPhone's own dial as a sighted dialer below it. It still cannot see a backgrounded iPhone, whose UUID sits in the
   overflow area, and admits one unsighted under A1 when it dials.
+- **Until AND-3's fix, that admission waited 90 s.** A backgrounded iPhone stays in Android's presence for the 90 s
+  linger after Android last heard it, so a re-dial in that time met a sighted dialer's rule, and an Android phone
+  above it refused it. Nothing on Android dialed it either, since it was no longer heard. Since the fix, a dialer
+  whose HELLO carries `CAP_DOORBELL` counts as sighted only if Android heard it in the last 12 s, the promotion
+  policy's silence limit. One heard that recently is in front, and Android dials it itself. Any other is admitted,
+  and its refused or accepted line names `heardAgoMs` and `inPresence`. Android's scan is duty-cycled, so a
+  foreground iPhone's dial is sometimes admitted too.
 - **A lonely Android phone may dial an iPhone above it** (#103), but it must sight the iPhone first, which means a
   foreground iPhone whose payload it has read. That iPhone has sighted the phone's advert too, so it refuses the
   dial and dials the phone itself.

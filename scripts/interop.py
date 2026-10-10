@@ -20,6 +20,8 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
+    scripts/interop.py android-keeps-iphone --device SERIAL [--stages held,redial] [--quiet SERIAL ...]
+                                [--mover devicectl|devicetest|prompts] [--minutes 10]
     scripts/interop.py iphone-reboot [--restart] [--locked 120] [--closed 60] [--skip-relaunch] [--udid UDID]
     scripts/interop.py iphone-rings [--udid UDID]
     scripts/interop.py android-reads --device SERIAL [--order peer-below|peer-above] [--link-timeout 180] [--links N] [--hci0]
@@ -40,7 +42,9 @@ and its custody converging (ADR 2026-10.5wgg); `iphone-delete` checks that what 
 a restart of its mesh, and that the delete sends nothing (ADR 2026-10.u7cq); `iphone-react` sends reactions both ways in
 every thread, and checks a replacement, a retraction, an emoji outside the iPhone's six and a block (ADR 2026-10.ehe6);
 `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
-`iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `iphone-reboot` is item 1's
+`iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `android-keeps-iphone` checks that
+an Android phone keeps a backgrounded iPhone's link and admits its re-dial (knit-next AND-3), moving Knit away from the
+front and back through device tests run on the Mac, with nobody at the iPhone; `iphone-reboot` is item 1's
 relaunch and reboot, with someone to close Knit and unlock the iPhone; `iphone-scan` is P8's scan-filter check, with
 someone to do the same; `iphone-seek` checks that a locked iPhone with no link finds a peer within its wake budget
 (ADR 2026-10.mueg), with someone to do the same; `bridge` sends that bridge commands by hand and prints what comes back, and
@@ -146,9 +150,12 @@ class Phone:
         subprocess.run(["adb", "disconnect", self.serial], capture_output=True, timeout=20, check=False)
         subprocess.run(["adb", "connect", self.serial], capture_output=True, timeout=30, check=False)
 
-    def bridge(self, action: str, **extras: str | int) -> dict:
+    def bridge(self, action: str, **extras: str | int | bool) -> dict:
         parts = [f"am broadcast -a {PACKAGE}.debug.{action} -p {PACKAGE}"]
         for key, value in extras.items():
+            if isinstance(value, bool):
+                parts.append(f"--ez {key} {str(value).lower()}")
+                continue
             kind = "--ei" if isinstance(value, int) else "--es"
             parts.append(f"{kind} {key} {shlex.quote(str(value))}")
         command = " ".join(parts)
@@ -1038,6 +1045,302 @@ class _PeerSender:
     def stop(self) -> None:
         self.stopping.set()
         self.peer.stop()
+
+
+def android_keeps_iphone(arguments: argparse.Namespace) -> int:
+    """knit-next's AND-3 fix (`gatt-only-link-score`): an Android phone keeps the link of an iPhone it can no longer
+    hear, and admits the iPhone's own dial back. Android sights a foreground iPhone only by its GATT payload; once Knit
+    leaves the front, iOS moves its UUID to the overflow area, Android stops hearing it, and 90 s later the iPhone
+    leaves its presence. Before the fix that link scored -127 dBm, the first shed at the cap, and the iPhone's re-dial
+    was refused as a sighted dialer below the phone for those 90 s. Nobody touches the iPhone: `KnitFront` moves Knit
+    away from the front and back from the Mac, unless `--prompts` asks a person.
+
+    - **held:** the phone sits at its cap (`BLECAP` max = the links it holds), Knit leaves the front, and after more
+      than 90 s the phone's eviction-score line must show the iPhone's link at the floor, -90, never -127. Then the link
+      must hold for `--minutes`, a DM from the phone each minute, `link-held` as `iphone-wake` reads it.
+    - **redial:** with Knit back in front and the phone hearing it again, Knit leaves the front, and once the phone has
+      not heard it for 12 s the phone sheds the link (`BLECAP` max 0, cleared once the link is down). The iPhone's seek
+      dial must be admitted while the phone still holds it in presence, as the admission line's `heardAgoMs` (12 to 90
+      s) and `inPresence` show, and the link, which the iPhone dialed, must end at BALANCED's 5 s timeout (#102).
+
+    The phone's id must sort above the iPhone's, which is the order the old rule refused. Other Android phones in range
+    can take the cap's slots or be the candidate that sheds the iPhone, so `--quiet` pauses their meshes for the run."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid, arguments.host)
+    front = KnitFront("prompts" if arguments.prompts else arguments.mover, arguments.away_wait, arguments.udid)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    quiet = [Phone(serial) for serial in arguments.quiet]
+    stages = arguments.stages.split(",")
+    run.step("device-steps-built", front.prepare)
+    try:
+        ios.start()
+    except TimeoutError:
+        run.step("knit-opened", lambda: front.to_front(ios))
+    sender = _PhoneSender(phone, ios)
+    phone_id = sender.node_id
+    print(json.dumps({"run": "android-keeps-iphone", "phone": phone_id, "iphone": ios.node_id, "stages": stages, "mover": front.mover}))
+    if phone_id < ios.node_id:
+        ios.stop()
+        sys.exit(f"the phone's id sorts below the iPhone's ({phone_id} < {ios.node_id}): pick a phone above it")
+    for other in quiet:
+        run.step(f"paused-{other.serial}", lambda other=other: _paused(other, True))
+    try:
+        if "held" in stages:
+            _held_at_cap(run, phone, ios, sender, front, arguments, nonce)
+        if "redial" in stages:
+            _redialed(run, phone, ios, sender, front, arguments)
+    finally:
+        phone.bridge("BLECAP", clear=True)
+        for other in quiet:
+            run.step(f"resumed-{other.serial}", lambda other=other: _paused(other, False))
+        ios.stop()
+    print(json.dumps({"summary": "android-keeps-iphone", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+class KnitFront:
+    """Moves Knit out of the iPhone's front and back, never launching it afresh, so the running Knit and its links live
+    on. `devicectl`, with nobody at the iPhone: the Mac's devicectl opens the Settings app, then opens Knit again, which
+    brings the running process back rather than starting one. `devicetest` does the same through `BackgroundTests`, run
+    from an xctestrun that leaves Knit out of the install (`KNIT_DEVICE_KEEP_KNIT`, `scripts/check.sh`); with a passcode
+    set, iOS asks for it on the phone before each run's automation mode, so that needs someone there. `prompts` asks a
+    person, as `iphone-wake` does. KNIT_DEVICE_STEP_WRAP prefixes each Mac build or test, such as a build lock."""
+
+    TESTS = "KnitDeviceTests/BackgroundTests"
+    KNIT = "app.getknit.knit.dev"
+    SETTINGS = "com.apple.Preferences"
+
+    def __init__(self, mover: str, wait: float, udid: str | None) -> None:
+        self.mover = mover
+        self.prompts = mover == "prompts"
+        self.wait = wait
+        self.udid = udid or first_usb_iphone()
+        self.wrap = shlex.split(os.environ.get("KNIT_DEVICE_STEP_WRAP", ""))
+        self.log = ROOT / ".build" / "knit-front.log"
+
+    def prepare(self) -> dict:
+        """Syncs this tree to the Mac and builds the steps for the iPhone, signed; a run then only installs the runner."""
+        if self.mover != "devicetest":
+            return {"mover": self.mover}
+        return self._mac(["env", f"KNIT_DEVICE={self.udid}", "KNIT_DEVICE_KEEP_KNIT=build", "scripts/check.sh", "devicetest"], sync=True)
+
+    def away(self, ios: IPhone) -> dict:
+        """Knit leaves the front, and iOS suspends it: the bridge stops answering, as `_suspended` sees."""
+        if self.prompts:
+            print(json.dumps({"action": "open the Settings app on the iPhone, leaving Knit running behind it"}), flush=True)
+            moved = {}
+        elif self.mover == "devicectl":
+            moved = self._open(self.SETTINGS)
+        else:
+            moved = self._mac(self._step("testSendKnitToBackground"))
+        suspended = _suspended(ios, self.wait)
+        ios.stop()
+        return {**moved, "suspendedAfter": suspended["seconds"]}
+
+    def to_front(self, ios: IPhone) -> dict:
+        """Knit comes back to the front, and its bridge answers again."""
+        if self.prompts:
+            print(json.dumps({"action": "open Knit on the iPhone"}), flush=True)
+            moved = {}
+        elif self.mover == "devicectl":
+            moved = self._open(self.KNIT)
+        else:
+            moved = self._mac(self._step("testBringKnitToFront"))
+        opened = _reopened(ios, self.wait)
+        return {**moved, "bridgeAfter": opened["seconds"]}
+
+    def _step(self, test: str) -> list[str]:
+        only = f"KNIT_DEVICE_TESTS={self.TESTS}/{test}"
+        return ["env", f"KNIT_DEVICE={self.udid}", "KNIT_DEVICE_KEEP_KNIT=1", only, "scripts/check.sh", "devicetest"]
+
+    def _open(self, bundle: str) -> dict:
+        """Brings `bundle` to the iPhone's front through the Mac's devicectl, which needs no automation mode. Without
+        `--terminate-existing` it brings a running app forward in the same process, as Knit's pid showed (2026-10-10)."""
+        started = time.monotonic()
+        command = ["xcrun", "devicectl", "device", "process", "launch", "--device", self.udid, bundle]
+        result = subprocess.run(
+            [str(ROOT / "scripts" / "mac.sh"), "run", *command], capture_output=True, text=True, env={**os.environ, "KNIT_MAC_SYNC": "0"}, check=False
+        )
+        with open(self.log, "a", encoding="utf-8") as log:
+            log.write(f"\n== {shlex.join(command)} (exit {result.returncode})\n{result.stdout}{result.stderr}")
+        if result.returncode:
+            raise RuntimeError(f"devicectl could not open {bundle} (exit {result.returncode}): {result.stderr.strip()[-300:]}")
+        return {"opened": bundle, "macSeconds": round(time.monotonic() - started, 1)}
+
+    def _mac(self, command: list[str], sync: bool = False) -> dict:
+        """Runs `command` in the Mac's mirror, its output appended to the log; a failed or skipped test raises. Only the
+        build syncs the tree, so a step costs no more than the test."""
+        started = time.monotonic()
+        environment = {**os.environ, "KNIT_MAC_SYNC": "1" if sync else "0"}
+        result = subprocess.run(
+            [*self.wrap, str(ROOT / "scripts" / "mac.sh"), "run", *command], capture_output=True, text=True, env=environment, check=False
+        )
+        output = result.stdout + result.stderr
+        with open(self.log, "a", encoding="utf-8") as log:
+            log.write(f"\n== {shlex.join(command)} (exit {result.returncode})\n{output}")
+        tail = output.strip().splitlines()[-5:]
+        if result.returncode:
+            raise RuntimeError(f"the Mac's step failed (exit {result.returncode}, {self.log}): {tail}")
+        if re.search(r"\bskipped\b", output, re.IGNORECASE):
+            raise RuntimeError(f"the step skipped: Knit was not running ({self.log})")
+        return {"macSeconds": round(time.monotonic() - started, 1)}
+
+
+# The eviction score each link carries on the phone (knit-next gatt-only-link-score): the last field of a debug build's
+# `bt state` line, `linkScores=<node id>:<dBm>,…`, logged each minute. An eviction logs `bt evicting <id> (score=<dBm>
+# doorbell=<bool>)` too.
+SCORE_LINE = " linkScores="
+# The floor a link scores when Android cannot sight its peer (UNSIGHTED_LINK_RSSI), and the score of one that left
+# presence (ABSENT_LINK_RSSI), which a backgrounded iPhone had before the fix.
+FLOOR_SCORE = -90.0
+ABSENT_SCORE = -127.0
+# Rule 2's window: a doorbell dialer counts as sighted only if the phone heard it this recently, and presence lingers
+# this long after the last sighting.
+HEARD_RECENTLY_MS = 12_000
+PRESENCE_LINGER_MS = 90_000
+
+
+def _held_at_cap(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: KnitFront, arguments: argparse.Namespace, nonce: str) -> None:
+    ios_id = ios.node_id
+    if run.step("link", lambda: sender.link(ios)) is None:
+        return
+    phone.shell("logcat -c")
+    run.step("phone-hears-iphone", lambda: _scored(phone, ios_id, _heard_score, 150))
+    run.step("phone-at-cap", lambda: _at_cap(phone))
+    if run.step("knit-away", lambda: front.away(ios)) is None:
+        return
+    away = time.monotonic()
+    time.sleep(max(0.0, away + PRESENCE_LINGER_MS / 1000 + 10 - time.monotonic()))
+    phone.shell("logcat -c")
+    run.step("iphone-scores-the-floor", lambda: _scored(phone, ios_id, lambda score: score == FLOOR_SCORE, 150))
+    sender.begin()
+    sent = _wake_window(sender, nonce, arguments.minutes)
+    run.step("link-held", lambda: sender.held(sum(dm["linkGone"] for dm in sent)))
+    run.step("iphone-still-scores-the-floor", lambda: _scored(phone, ios_id, lambda score: score == FLOOR_SCORE, 150))
+    phone.bridge("BLECAP", clear=True)
+    if run.step("knit-front", lambda: front.to_front(ios)) is not None:
+        run.step("link-held-on-iphone", lambda: _ios_still_linked(ios, sender.node_id))
+
+
+def _redialed(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: KnitFront, arguments: argparse.Namespace) -> None:
+    ios_id = ios.node_id
+    if ios.socket is None and run.step("knit-front", lambda: front.to_front(ios)) is None:
+        return
+    phone.bridge("BLECAP", clear=True)
+    if run.step("redial-link", lambda: sender.link(ios)) is None:
+        return
+    phone.shell("logcat -c")
+    if run.step("redial-phone-hears-iphone", lambda: _scored(phone, ios_id, _heard_score, 150)) is None:
+        return
+    if run.step("redial-knit-away", lambda: front.away(ios)) is None:
+        return
+    # Knit left the front before its bridge went quiet, so the phone last heard it at least this long ago.
+    time.sleep(HEARD_RECENTLY_MS / 1000 + 3)
+    phone.shell("logcat -c")
+    shed = time.monotonic()
+    phone.bridge("BLECAP", max=0)
+    try:
+        run.step("phone-shed-iphone", lambda: {"lines": poll(lambda: _phone_log(phone, f"link down: {ios_id}"), 40, every=1)[:2]})
+    finally:
+        phone.bridge("BLECAP", clear=True)
+    admitted = run.step("phone-admits-redial", lambda: _admitted(phone, ios_id, shed, arguments.redial_timeout))
+    if admitted is not None:
+        time.sleep(arguments.hold)
+        tally: list[dict] = []
+        run.step("redial-balanced", lambda: {**_balanced(phone, ios_id, tally), **_phone_held(phone, ios_id), "heldSeconds": arguments.hold})
+    if run.step("redial-knit-front", lambda: front.to_front(ios)) is not None:
+        run.step("redial-link-on-iphone", lambda: _ios_linked(ios, phone, sender.node_id))
+
+
+def _paused(phone: Phone, paused: bool) -> dict:
+    """Pauses another phone's mesh for an hour, or resumes it, as its notification's Pause and Resume do."""
+    reply = phone.bridge("PAUSE", minutes=60) if paused else phone.bridge("RESUME")
+    return {"reply": reply.get("status")}
+
+
+def _at_cap(phone: Phone) -> dict:
+    """Caps the phone's links at the number it holds now, so the next link it wants must shed one."""
+    linked = phone.bridge("BLECAP")["linked"]
+    if not linked:
+        raise RuntimeError("the phone holds no link to cap")
+    reply = phone.bridge("BLECAP", max=min(int(linked), 6))
+    return {"cap": reply["cap"], "linked": reply["linked"]}
+
+
+def _heard_score(score: float) -> bool:
+    """A score the phone gives a link whose peer is in its presence: the raw RSSI, which may sit below the floor, so
+    anything but the floor itself and the absent score."""
+    return score not in (FLOOR_SCORE, ABSENT_SCORE)
+
+
+def _scores(phone: Phone) -> list[dict[str, float]]:
+    """Each eviction-score line the phone logged since its log was last cleared, as node id to score, oldest first."""
+    scored = []
+    for line in _phone_log(phone, SCORE_LINE):
+        tail = line.split(SCORE_LINE, 1)[1]
+        scored.append({node: float(score) for node, score in re.findall(r"([a-z2-7]{26}):(-?\d+(?:\.\d+)?)", tail)})
+    return scored
+
+
+def _scored(phone: Phone, node: str, wanted, timeout: float) -> dict:
+    """The first score line, logged since the phone's log was cleared, that scores `node`'s link as `wanted` says; any
+    line that scores it otherwise is reported if none does."""
+    seen: list[float] = []
+
+    def look() -> dict | None:
+        seen.clear()
+        for scores in _scores(phone):
+            if node in scores:
+                seen.append(scores[node])
+                if wanted(scores[node]):
+                    return {"score": scores[node], "links": len(scores)}
+        return None
+
+    try:
+        return poll(look, timeout, every=5)
+    except TimeoutError:
+        raise RuntimeError(f"no score line scored {node} as wanted in {timeout:.0f} s; it scored {seen[-5:] or 'nothing'}") from None
+
+
+CLIENT_VERDICT = re.compile(r"bt (accepted|refused) client ([a-z2-7]{26}) \((.*?)\)")
+
+
+def _client_verdicts(phone: Phone, node: str) -> list[dict]:
+    """Every admission line the phone logged for `node`'s dials since its log was cleared, oldest first, with its fields:
+    `bt refused client <id> (sighted=<b> codedOnly=<b> heldAgeMs=<ms|null> atCap=<b>[ doorbell=true heardAgoMs=<ms|null>
+    inPresence=<b>])` and its accepted twin. Booleans, numbers and null come back as Python's."""
+    verdicts = []
+    for line in _phone_log(phone, " client "):
+        match = CLIENT_VERDICT.search(line)
+        if not match or match.group(2) != node:
+            continue
+        fields: dict = {"verdict": match.group(1)}
+        for key, value in re.findall(r"(\w+)=(\S+)", match.group(3)):
+            fields[key] = {"true": True, "false": False, "null": None}.get(value, int(value) if value.lstrip("-").isdigit() else value)
+        verdicts.append(fields)
+    return verdicts
+
+
+def _admitted(phone: Phone, node: str, since: float, timeout: float) -> dict:
+    """The phone admitted `node`'s dial after the shed at `since`, with no refusal before, while it still held `node` in
+    presence and had not heard it for 12 s: Rule 2's case, which the old rule refused as a sighted dialer below it."""
+
+    def admitted_yet() -> list[dict] | None:
+        verdicts = _client_verdicts(phone, node)
+        return verdicts if any(verdict["verdict"] == "accepted" for verdict in verdicts) else None
+
+    verdicts = poll(admitted_yet, timeout, every=1)
+    seconds = round(time.monotonic() - since, 1)
+    refused = [v for v in verdicts if v["verdict"] == "refused"]
+    accepted = next(v for v in verdicts if v["verdict"] == "accepted")
+    detail = {"secondsAfterShed": seconds, "accepted": accepted, "refusedFirst": refused}
+    if refused:
+        raise RuntimeError(f"the phone refused the iPhone's dial before admitting it: {json.dumps(detail)}")
+    heard = accepted.get("heardAgoMs")
+    if accepted.get("inPresence") is not True or not isinstance(heard, int) or not HEARD_RECENTLY_MS < heard <= PRESENCE_LINGER_MS:
+        raise RuntimeError(f"admitted outside the 12-90 s window in presence: {json.dumps(detail)}")
+    return detail
 
 
 def _all_woke(woke: int, ticks: list) -> dict:
@@ -3218,8 +3521,8 @@ def _custody_converges_with_keys(peer: Peer, phone: Phone, timeout: float, serve
 
 
 def _refused_inside_hold(phone: Phone, peer_id: str) -> dict | None:
-    log = phone.shell("logcat -d -s BluetoothMeshTransport:*")
-    ages = [int(age) for age in re.findall(rf"bt refused client {peer_id} \(sighted=false heldAgeMs=(\d+)\)", log)]
+    refused = [line for line in _client_verdicts(phone, peer_id) if line["verdict"] == "refused" and line.get("sighted") is False]
+    ages = [line["heldAgeMs"] for line in refused if isinstance(line.get("heldAgeMs"), int)]
     young = [age for age in ages if age < 30_000]
     return {"refusedAtHeldAgeMs": young} if young else None
 
@@ -5219,6 +5522,21 @@ def main() -> int:
     wake.add_argument(
         "--expect-wakes", action="store_true", help="the phone runs A4 (knit-next feat/ble-doorbell): every DM must wake Knit, as with --sender peer"
     )
+    keeps = commands.add_parser("android-keeps-iphone")
+    keeps.add_argument("--device", required=True, help="the adb serial of a phone whose id sorts above the iPhone's, with the go-ahead")
+    keeps.add_argument("--stages", default="held,redial", help="which of held and redial to run, comma-separated")
+    keeps.add_argument("--minutes", type=int, default=10, help="how long the iPhone's link must hold in the background, a DM each minute")
+    keeps.add_argument("--hold", type=float, default=60, help="seconds the re-dialed link must hold before its parameters are judged")
+    keeps.add_argument("--redial-timeout", type=float, default=150, help="seconds after the shed for the iPhone's dial to be admitted")
+    keeps.add_argument("--quiet", nargs="*", default=[], help="adb serials of other Android phones in range, whose meshes pause for the run")
+    keeps.add_argument("--away-wait", type=float, default=300, help="seconds for Knit to leave the front, or come back, once asked")
+    keeps.add_argument(
+        "--mover",
+        default="devicectl",
+        choices=["devicectl", "devicetest", "prompts"],
+        help="how Knit leaves the front and comes back: the Mac's devicectl, the BackgroundTests device tests, or a person",
+    )
+    keeps.add_argument("--prompts", action="store_true", help="the same as --mover prompts, for when the Mac cannot reach the iPhone")
     ios_peer = commands.add_parser("iphone-peer")
     ios_peer.add_argument(
         "--order", default="iphone-below", choices=["iphone-below", "iphone-above"], help="where the iPhone's id sorts against the peer's"
@@ -5325,6 +5643,7 @@ def main() -> int:
     for sub in (
         ios,
         wake,
+        keeps,
         reboot,
         rings,
         scan,
@@ -5355,12 +5674,13 @@ def main() -> int:
     if arguments.command == "android-reads" and arguments.links > 1 and arguments.order != "peer-above":
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
     if arguments.command in (
-        "iphone", "iphone-wake", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-delete", "iphone-react", "bridge",
-        "record-pull",
+        "iphone", "iphone-wake", "android-keeps-iphone", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-delete",
+        "iphone-react", "bridge", "record-pull",
     ):
         return {
             "iphone": iphone,
             "iphone-wake": iphone_wake,
+            "android-keeps-iphone": android_keeps_iphone,
             "iphone-reboot": iphone_reboot,
             "iphone-photos": iphone_photos,
             "iphone-block": iphone_block,

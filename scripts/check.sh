@@ -607,6 +607,10 @@ local_setting() {
 # connected. It stays unlocked for the run, with Auto-Lock off and Settings > Developer > Enable UI Automation on.
 # $KNIT_DEVICE_TESTS narrows the run, as in KnitDeviceTests/RadioTests/testBluetoothOffAndOn. Signing, and the
 # runner's profile, come from the desktop session and the API key, as gate_device's do.
+#
+# $KNIT_DEVICE_KEEP_KNIT runs a step that must leave the running Knit alone, such as BackgroundTests for interop.py's
+# AND-3 trial: `build` builds for testing and writes an xctestrun without Knit in it, and `1` runs that, installing
+# only the runner and opening nothing after. A test run otherwise installs Knit, which ends its process and every link.
 gate_devicetest() {
 	step "xcodebuild test on the iPhone (KnitDeviceTests, signed in the desktop session)"
 	xcode_project devicetest
@@ -621,6 +625,17 @@ gate_devicetest() {
 	if [ -n "${KNIT_DEVICE_TESTS:-}" ]; then
 		only=("-only-testing:$KNIT_DEVICE_TESTS")
 	fi
+	case ${KNIT_DEVICE_KEEP_KNIT:-} in
+	'' | 0) ;;
+	build)
+		devicetest_build_keeping_knit "$udid"
+		return
+		;;
+	*)
+		devicetest_keeping_knit "$udid" "${only[@]}"
+		return
+		;;
+	esac
 	local results=.build-xcode/devicetest.xcresult status=0
 	# A fresh bundle for the same broken-seal reason as gate_device's.
 	rm -rf "$xcode_app" "$results"
@@ -634,6 +649,63 @@ gate_devicetest() {
 		echo "could not open Knit again on $udid: open it on the phone" >&2
 	fi
 	return "$status"
+}
+
+# Where KNIT_DEVICE_KEEP_KNIT=build leaves the device tests' xctestrun with Knit taken out.
+keep_knit_xctestrun=.build-xcode/Build/Products/keep-knit.xctestrun
+
+# Builds the device tests for the iPhone $1, signed, and writes $keep_knit_xctestrun: the build's xctestrun without Knit
+# among the products a run installs, and with the runner as the tests' target app. A step run from it reaches Knit by
+# its bundle id alone.
+devicetest_build_keeping_knit() {
+	local udid=$1 products=.build-xcode/Build/Products xctestrun
+	# A fresh runner, for the broken-seal reason gate_device gives.
+	rm -rf "$products"/Debug-iphoneos/KnitDeviceTests-Runner.app "$products"/KnitDevice_*.xctestrun "$keep_knit_xctestrun"
+	scripts/mac-desktop.sh xcodebuild "${xcode_build[@]}" -scheme KnitDevice -destination "platform=iOS,id=$udid" \
+		-allowProvisioningUpdates "${team[@]}" "${key[@]}" build-for-testing | "${xcode_pretty[@]}"
+	xctestrun=$(find "$products" -maxdepth 1 -name 'KnitDevice_*.xctestrun' | head -n 1)
+	if [ -z "$xctestrun" ]; then
+		echo "build-for-testing left no KnitDevice xctestrun in $products" >&2
+		return 1
+	fi
+	python3 - "$xctestrun" "$keep_knit_xctestrun" <<'PY'
+import plistlib, sys
+run = plistlib.load(open(sys.argv[1], "rb"))
+# Format 2 lists the targets under TestConfigurations; format 1 keys each target at the top.
+if "TestConfigurations" in run:
+	targets = [target for configuration in run["TestConfigurations"] for target in configuration["TestTargets"]]
+else:
+	targets = [value for key, value in run.items() if key != "__xctestrun_metadata__" and isinstance(value, dict)]
+dropped = 0
+for target in targets:
+	# xcodebuild wants a target app for UI tests, and installs it: the runner stands in, since it installs anyway.
+	target["UITargetAppPath"] = target["TestHostPath"]
+	target["UITargetAppBundleIdentifier"] = target["TestHostBundleIdentifier"]
+	for key in ("UITargetAppEnvironmentVariables", "UITargetAppCommandLineArguments"):
+		target.pop(key, None)
+	paths = target.get("DependentProductPaths", [])
+	kept = [path for path in paths if not path.endswith("/Knit.app")]
+	dropped += len(paths) - len(kept)
+	target["DependentProductPaths"] = kept
+if not dropped:
+	sys.exit(f"{sys.argv[1]} names no Knit.app to leave out: has the xctestrun's format moved?")
+plistlib.dump(run, open(sys.argv[2], "wb"))
+print(f"{sys.argv[2]}: {len(targets)} test targets, Knit left out of the install")
+PY
+}
+
+# Runs the device tests named after $1 (the -only-testing flags) from $keep_knit_xctestrun on the iPhone $1, leaving
+# Knit as it is: neither installed nor opened after, so a step that sends it to the background leaves it there.
+devicetest_keeping_knit() {
+	local udid=$1 results=.build-xcode/devicetest.xcresult
+	shift
+	if [ ! -f "$keep_knit_xctestrun" ]; then
+		echo "no $keep_knit_xctestrun: run KNIT_DEVICE_KEEP_KNIT=build scripts/check.sh devicetest first" >&2
+		return 1
+	fi
+	rm -rf "$results"
+	scripts/mac-desktop.sh xcodebuild test-without-building -xctestrun "$keep_knit_xctestrun" \
+		-destination "platform=iOS,id=$udid" "$@" -resultBundlePath "$results" | "${xcode_pretty[@]}"
 }
 
 # The App Store build (ADR 2026-10.8cy5): the Knit scheme archived in Release in the desktop session, held to
