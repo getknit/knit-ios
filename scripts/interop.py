@@ -1059,9 +1059,11 @@ def android_keeps_iphone(arguments: argparse.Namespace) -> int:
         than 90 s the phone's eviction-score line must show the iPhone's link at the floor, -90, never -127. Then the link
         must hold for `--minutes`, a DM from the phone each minute, `link-held` as `iphone-wake` reads it.
     - **redial:** with Knit back in front and the phone hearing it again, Knit leaves the front, and once the phone has
-        not heard it for 12 s the phone sheds the link (`BLECAP` max 0, cleared once the link is down). The iPhone's seek
-        dial must be admitted while the phone still holds it in presence, as the admission line's `heardAgoMs` (12 to 90
-        s) and `inPresence` show, and the link, which the iPhone dialed, must end at BALANCED's 5 s timeout (#102).
+        not heard it for 12 s the phone sheds the link (`BLECAP` max 0). The cap stays at 0 until the iPhone's seek dial
+        comes, so the phone cannot dial the iPhone back first from its presence. That dial is refused at the cap, but its
+        line must say `sighted=false`, with `inPresence=true` and a `heardAgoMs` of 12 to 90 s: Rule 2's verdict, where
+        the old rule said `sighted=true` and refused it for being below the phone. Then the cap clears, and a link the
+        iPhone dials back must end at BALANCED's 5 s timeout (#102). `--baseline` expects `sighted=true` instead.
 
     The phone's id must sort above the iPhone's, which is the order the old rule refused. Other Android phones in range
     can take the cap's slots or be the candidate that sheds the iPhone, so `--quiet` pauses their meshes for the run."""
@@ -1207,11 +1209,8 @@ PRESENCE_LINGER_MS = 90_000
 
 def _held_at_cap(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: KnitFront, arguments: argparse.Namespace, nonce: str) -> None:
     ios_id = ios.node_id
-    # A phone that was just installed, or whose links were just paused away, can take minutes to relink an iPhone.
-    if run.step("link", lambda: _ios_linked(ios, phone, sender.node_id, 360)) is None:
+    if run.step("phone-hears-iphone", lambda: _sighted_link(phone, ios, sender.node_id)) is None:
         return
-    phone.shell("logcat -c")
-    run.step("phone-hears-iphone", lambda: _scored(phone, ios_id, _heard_score, 150))
     run.step("phone-at-cap", lambda: _at_cap(phone))
     if run.step("knit-away", lambda: front.away(ios)) is None:
         return
@@ -1233,13 +1232,12 @@ def _redialed(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: 
     if ios.socket is None and run.step("knit-front", lambda: front.to_front(ios)) is None:
         return
     phone.bridge("BLECAP", clear=True)
-    if run.step("redial-link", lambda: _ios_linked(ios, phone, sender.node_id, 360)) is None:
-        return
-    phone.shell("logcat -c")
     if arguments.baseline:
+        if run.step("redial-link", lambda: _ios_linked(ios, phone, sender.node_id, 360)) is None:
+            return
         # A build without the fix logs no scores: give the phone the time a fresh link takes to read the payload.
         time.sleep(30)
-    elif run.step("redial-phone-hears-iphone", lambda: _scored(phone, ios_id, _heard_score, 150)) is None:
+    elif run.step("redial-phone-hears-iphone", lambda: _sighted_link(phone, ios, sender.node_id)) is None:
         return
     if run.step("redial-knit-away", lambda: front.away(ios)) is None:
         return
@@ -1247,17 +1245,20 @@ def _redialed(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: 
     time.sleep(HEARD_RECENTLY_MS / 1000 + 3)
     phone.shell("logcat -c")
     shed = time.monotonic()
+    # The cap stays at 0 until the iPhone has dialed: with a slot free, the phone dials the iPhone itself from the
+    # presence it still holds, 8 s after the shed (2026-10-10), and the iPhone's own dial never comes. A dial at the cap
+    # is refused, but its line still says whether Rule 2 counted the iPhone as sighted, which is the verdict under test.
     phone.bridge("BLECAP", max=0)
     try:
         run.step("phone-shed-iphone", lambda: {"lines": poll(lambda: _phone_log(phone, f"link down: {ios_id}"), 40, every=1)[:2]})
+        if arguments.baseline:
+            run.step("phone-judges-redial-sighted", lambda: _judged(phone, ios_id, shed, arguments.redial_timeout, sighted=True))
+        else:
+            run.step("phone-judges-redial-unsighted", lambda: _judged(phone, ios_id, shed, arguments.redial_timeout, sighted=False))
     finally:
         phone.bridge("BLECAP", clear=True)
-    if arguments.baseline:
-        run.step("phone-refuses-redial", lambda: _refused_sighted(phone, ios_id, shed, arguments.redial_timeout))
-        admitted = None
-    else:
-        admitted = run.step("phone-admits-redial", lambda: _admitted(phone, ios_id, shed, arguments.redial_timeout))
-    if admitted is not None:
+    relinked = run.step("redial-relinked", lambda: _relinked_by(phone, ios_id, 180))
+    if relinked is not None and relinked["by"] == "iphone":
         time.sleep(arguments.hold)
         tally: list[dict] = []
         run.step("redial-balanced", lambda: {**_balanced(phone, ios_id, tally), **_phone_held(phone, ios_id), "heldSeconds": arguments.hold})
@@ -1265,22 +1266,38 @@ def _redialed(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: 
         run.step("redial-link-on-iphone", lambda: _ios_linked(ios, phone, sender.node_id))
 
 
-def _refused_sighted(phone: Phone, node: str, since: float, timeout: float) -> dict:
-    """The baseline, on a build without the fix: the phone refuses `node`'s dial as a sighted dialer below it while it
-    still holds `node` in presence, AND-3 itself. Reports when it was admitted after, if it was within `timeout`."""
-    refused = poll(
-        lambda: [v for v in _client_verdicts(phone, node) if v["verdict"] == "refused" and v.get("sighted") and not v.get("atCap")],
-        PRESENCE_LINGER_MS / 1000,
-        every=1,
-    )
-    refused_after = round(time.monotonic() - since, 1)
-    try:
-        poll(lambda: any(v["verdict"] == "accepted" for v in _client_verdicts(phone, node)), max(0.0, since + timeout - time.monotonic()), every=2)
-        admitted_after = round(time.monotonic() - since, 1)
-    except TimeoutError:
-        admitted_after = None
-    accepted = [v for v in _client_verdicts(phone, node) if v["verdict"] == "accepted"]
-    return {"refusedAfterShed": refused_after, "refused": refused[:3], "admittedAfterShed": admitted_after, "accepted": accepted[:1]}
+def _judged(phone: Phone, node: str, since: float, timeout: float, sighted: bool) -> dict:
+    """The phone's verdict on the iPhone's first dial after the shed at `since`, made while the shed's cap of 0 still
+    stood. With the fix, Rule 2 counts the iPhone as unsighted: `sighted=false` beside `doorbell=true`, `inPresence=true`
+    and a `heardAgoMs` between 12 and 90 s, the case the old rule refused as a sighted dialer below the phone. Without
+    the fix (`sighted`), the same dial reads `sighted=true`, and the line has no doorbell suffix."""
+    verdict = poll(lambda: next(iter(_client_verdicts(phone, node)), None), timeout, every=1)
+    detail = {"secondsAfterShed": round(time.monotonic() - since, 1), "verdict": verdict}
+    if verdict.get("sighted") is not sighted:
+        raise RuntimeError(f"the phone judged the dial sighted={verdict.get('sighted')}, not {sighted}: {json.dumps(detail)}")
+    if sighted:
+        return detail
+    if verdict.get("doorbell") is not True or verdict.get("doorbellTrusted") is False:
+        raise RuntimeError(f"no trusted doorbell suffix: {json.dumps(detail)}")
+    heard = verdict.get("heardAgoMs")
+    if verdict.get("inPresence") is not True or not isinstance(heard, int) or not HEARD_RECENTLY_MS < heard <= PRESENCE_LINGER_MS:
+        raise RuntimeError(f"judged outside the 12-90 s window in presence: {json.dumps(detail)}")
+    return detail
+
+
+def _relinked_by(phone: Phone, node: str, timeout: float) -> dict:
+    """Who brought the link back once the cap cleared: the iPhone, whose dial the phone accepted (`bt accepted client`),
+    or the phone, which dialed the iPhone itself (`bt initiating to`)."""
+
+    def back() -> dict | None:
+        lines = _phone_lines(phone)
+        if not any(line.startswith(f"bt link up: {node}") for line in lines):
+            return None
+        accepted = [v for v in _client_verdicts(phone, node) if v["verdict"] == "accepted"]
+        dialed = [line for line in lines if line.startswith(f"bt initiating to {node}")]
+        return {"by": "iphone" if accepted else "phone", "accepted": accepted[-1:], "dialed": dialed[-1:]}
+
+    return poll(back, timeout, every=2)
 
 
 def _paused(phone: Phone, paused: bool) -> dict:
@@ -1296,6 +1313,27 @@ def _at_cap(phone: Phone) -> dict:
         raise RuntimeError("the phone holds no link to cap")
     reply = phone.bridge("BLECAP", max=min(int(linked), 6))
     return {"cap": reply["cap"], "linked": reply["linked"]}
+
+
+def _sighted_link(phone: Phone, ios: IPhone, phone_id: str, tries: int = 4) -> dict:
+    """A link the phone holds to the iPhone after sighting it, which is AND-3's case: its score is a raw RSSI while
+    Knit is in front. A link the iPhone dialed first is never sighted, since the phone reads no payload from an address
+    a link holds, and scores the floor under either rule; then the iPhone refuses the phone a moment, which ends that
+    link, and lets it dial again. A phone that was just installed, or whose links were just paused away, can take
+    minutes to link an iPhone at all."""
+    floors = 0
+    for attempt in range(tries):
+        linked = _ios_linked(ios, phone, phone_id, 360)
+        phone.shell("logcat -c")
+        try:
+            return {**_scored(phone, ios.node_id, _heard_score, 300), "linkedAfter": linked["seconds"], "relinks": attempt}
+        except RuntimeError:
+            floors += 1
+        if attempt + 1 < tries:
+            ios.command(cmd="deny-link", peer=phone_id)
+            time.sleep(10)
+            ios.command(cmd="allow-link", peer=phone_id)
+    raise RuntimeError(f"the phone never held a sighted link to the iPhone: {floors} links scored the floor in front")
 
 
 def _heard_score(score: float) -> bool:
@@ -1354,33 +1392,6 @@ def _client_verdicts(phone: Phone, node: str) -> list[dict]:
             fields[key] = {"true": True, "false": False, "null": None}.get(value, int(value) if value.lstrip("-").isdigit() else value)
         verdicts.append(fields)
     return verdicts
-
-
-def _admitted(phone: Phone, node: str, since: float, timeout: float) -> dict:
-    """The phone admitted `node`'s dial after the shed at `since`, with no refusal before, while it still held `node` in
-    presence and had not heard it for 12 s: Rule 2's case, which the old rule refused as a sighted dialer below it. The
-    line says `sighted=true`, the presence it was judged against, so the window is read from the doorbell suffix, whose
-    `doorbellTrusted=false` would mean the phone's own evidence did not back the HELLO's bit."""
-
-    def admitted_yet() -> list[dict] | None:
-        verdicts = _client_verdicts(phone, node)
-        return verdicts if any(verdict["verdict"] == "accepted" for verdict in verdicts) else None
-
-    verdicts = poll(admitted_yet, timeout, every=1)
-    seconds = round(time.monotonic() - since, 1)
-    # A dial that came while the shed's cap of 0 still stood is refused at the cap, which is the run's doing, not Rule 2.
-    refused = [v for v in verdicts if v["verdict"] == "refused" and not v.get("atCap")]
-    accepted = next(v for v in verdicts if v["verdict"] == "accepted")
-    at_cap = sum(1 for v in verdicts if v["verdict"] == "refused" and v.get("atCap"))
-    detail = {"secondsAfterShed": seconds, "accepted": accepted, "refusedFirst": refused, "refusedAtCap": at_cap}
-    if refused:
-        raise RuntimeError(f"the phone refused the iPhone's dial before admitting it: {json.dumps(detail)}")
-    heard = accepted.get("heardAgoMs")
-    if accepted.get("doorbell") is not True or accepted.get("doorbellTrusted") is False:
-        raise RuntimeError(f"admitted without a trusted doorbell suffix: {json.dumps(detail)}")
-    if accepted.get("inPresence") is not True or not isinstance(heard, int) or not HEARD_RECENTLY_MS < heard <= PRESENCE_LINGER_MS:
-        raise RuntimeError(f"admitted outside the 12-90 s window in presence: {json.dumps(detail)}")
-    return detail
 
 
 def _all_woke(woke: int, ticks: list) -> dict:
