@@ -1239,10 +1239,13 @@ def _redialed(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: 
         time.sleep(30)
     elif run.step("redial-phone-hears-iphone", lambda: _sighted_link(phone, ios, sender.node_id)) is None:
         return
+    away = time.monotonic()
     if run.step("redial-knit-away", lambda: front.away(ios)) is None:
         return
-    # Knit left the front before its bridge went quiet, so the phone last heard it at least this long ago.
-    time.sleep(HEARD_RECENTLY_MS / 1000 + 3)
+    # The phone last heard Knit no later than it left the front, which the step began with. The shed comes as soon
+    # as that is 12 s past, so the iPhone's dial lands inside the 90 s presence holds: the first dial that reached the
+    # phone came 40 s after the shed (2026-10-10), and a 15 s wait after the suspension had let presence run out.
+    time.sleep(max(0.0, away + HEARD_RECENTLY_MS / 1000 + 1 - time.monotonic()))
     phone.shell("logcat -c")
     shed = time.monotonic()
     # The cap stays at 0 until the iPhone has dialed: with a slot free, the phone dials the iPhone itself from the
@@ -1261,9 +1264,19 @@ def _redialed(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: 
     if relinked is not None and relinked["by"] == "iphone":
         time.sleep(arguments.hold)
         tally: list[dict] = []
-        run.step("redial-balanced", lambda: {**_balanced(phone, ios_id, tally), **_phone_held(phone, ios_id), "heldSeconds": arguments.hold})
+        run.step("redial-balanced", lambda: {**_balanced(phone, ios_id, tally), **_held_since_accept(phone, ios_id), "heldSeconds": arguments.hold})
     if run.step("redial-knit-front", lambda: front.to_front(ios)) is not None:
         run.step("redial-link-on-iphone", lambda: _ios_linked(ios, phone, sender.node_id))
+
+
+def _held_since_accept(phone: Phone, node: str) -> dict:
+    """The phone logged no link down for `node` after it last accepted its dial; the shed before it logged one."""
+    lines = _phone_lines(phone)
+    accepts = [index for index, line in enumerate(lines) if line.startswith(f"bt accepted client {node} ")]
+    downs = [line for line in lines[accepts[-1] if accepts else 0 :] if f"link down: {node}" in line]
+    if downs:
+        raise RuntimeError(f"the phone dropped the re-dialed link: {downs[:3]}")
+    return {}
 
 
 def _judged(phone: Phone, node: str, since: float, timeout: float, sighted: bool) -> dict:
