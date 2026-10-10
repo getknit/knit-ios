@@ -155,6 +155,19 @@ final class CapturingTransport: MeshTransport {
         false
     }
 
+    func fileArrivingLeftMilliseconds(from _: NodeId) -> Int64? {
+        nil
+    }
+
+    func fileFeed(of _: BlobHash, to _: NodeId) -> FeedReading? {
+        // Nothing streams out here, so nothing is fed.
+        nil
+    }
+
+    func expectedFileRate(to _: NodeId) -> Int64 {
+        0
+    }
+
     /// Everything sent since the last call.
     func take() -> [WireEnvelope] {
         defer { sent.removeAll() }

@@ -96,5 +96,9 @@ import Testing
         #expect(store.attachmentSenders(among: [hash(7), hash(8), hash(9)]) == [hash(7): alice, hash(8): bob])
         #expect(store.attachmentSenders(among: [hash(8)]) == [hash(8): bob])
         #expect(store.attachmentSenders(among: []).isEmpty)
+        // Its thread too: whom a holder serves first (`MessageDao.conversationOfAttachment`, knit-next ADR 2026-10.nsr7).
+        #expect(store.conversation(ofAttachment: hash(7)) == "g-group")
+        #expect(store.conversation(ofAttachment: hash(8)) == Conversations.nearby)
+        #expect(store.conversation(ofAttachment: hash(9)) == nil)
     }
 }

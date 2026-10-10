@@ -79,14 +79,16 @@ import Testing
         #expect(intake.end() == .finished(FileHeader(kind: .attachment, key: other, mime: "image/jpeg"), hash, [5]))
     }
 
-    @Test func aFilePastItsLimitIsDroppedAndItsRestIgnored() {
+    @Test func aFilePastItsLimitIsDroppedAndItsRestIgnored() throws {
         var intake = FileIntake()
         _ = intake.header(header()) { _, _ in 4 }
         #expect(intake.chunk([1, 2, 3, 4]) == nil)
         #expect(intake.chunk([5]) == .abandoned(FileHeader(kind: .attachment, key: key, mime: "image/jpeg")))
         #expect(intake.arriving == nil)
         #expect(intake.chunk([6]) == nil)
+        #expect(intake.reading == FileIntake.Reading(key: try #require(BlobHash(key)), bytes: 6, total: nil), "read on, not kept")
         #expect(intake.end() == nil, "abortRx: the END of a dropped file yields nothing")
+        #expect(intake.reading == nil)
     }
 
     @Test func noFileGrowsPastAndroidsCeiling() {
@@ -94,7 +96,24 @@ import Testing
         _ = intake.header(header(), limit: keepAll)
         #expect(intake.chunk([UInt8](repeating: 0, count: FileIntake.maxFileBytes)) == nil)
         #expect(intake.chunk([0]) == .abandoned(FileHeader(kind: .attachment, key: key, mime: "image/jpeg")))
+        #expect(intake.reading == nil, "Android aborts it there, and reports nothing more")
+        #expect(intake.isStreaming, "the link is still held to its END")
         #expect(FileIntake.maxFileBytes == 8_454_144)
+    }
+
+    @Test func aSkippedFileIsReadUpToAndroidsCeilingAndNoFurther() throws {
+        var intake = FileIntake()
+        let sized = FileHeader(kind: .attachment, key: key, mime: "image/jpeg", size: 6)
+        _ = intake.header(LinkJSON.fileHeaderPayload(sized)) { _, _ in nil }
+        let hash = try #require(BlobHash(key))
+        #expect(intake.reading == FileIntake.Reading(key: hash, bytes: 0, total: 6))
+        #expect(intake.chunk([1, 2]) == nil)
+        #expect(intake.reading == FileIntake.Reading(key: hash, bytes: 2, total: 6))
+        #expect(intake.arriving == nil && intake.bufferedBytes == 0, "nothing kept")
+        _ = intake.chunk([UInt8](repeating: 0, count: FileIntake.maxFileBytes - 2))
+        #expect(intake.reading?.bytes == FileIntake.maxFileBytes)
+        _ = intake.chunk([0])
+        #expect(intake.reading == nil)
     }
 
     @Test func theOwnersRoomCanStopAFileShortOfItsLimit() {

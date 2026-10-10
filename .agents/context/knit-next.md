@@ -199,6 +199,21 @@ Kotlin wins.
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Mirrored ahead of the pin:**
+    - knit-next `79f38d3d`, `09f70b3e`, `e2191bb9` and `3890f16b`, all on knit-next `main` at `8dc60836` (ADR
+      2026-10.ds45's amendment of 2026-10-10, the `ios-blob-parity` order, for the interop audit's IOS-1, AND-5 and
+      AND-7). Read at `8dc60836`:
+      - the asker's `stuckOn`, `streamWait`, `askedLacking`, `idleHolderPast`, `lackedWhileStuck` and `recheckAt`
+        (`BlobExchange.kt:371-528`), with `FramedLink.rxEtaMs`: `InteropAuditMeshTests` and `BlobStreamWaitTests`;
+      - the holder's parking, `waitsBehindFeed`, `serveParked`, `first` and `etaFor` (`BlobExchange.kt:1185-1452`),
+        `onCancel` dropping a parked ask, and `MeshManager.addresseesOf`: `MeshEngineBlobParkTests`,
+        `MeshTests.aSecondAskForAPhotoWeFeedIsParkedAndServedOnceTheFeedEnds` and `MessageAttachmentTests`;
+      - `FeedMeter.kt` whole, `FramedLink.feed` and `notePaced`, and `BluetoothMeshTransport.fileFeed` and
+        `expectedFileRate`: `FeedMeterTests`, which are `FeedMeterTest`'s ten cases, and `LinkFileFeedTests`;
+      - `FileIntake.kt:124-131` and `RxReports.kt:48-70` for a skipped file's reports: `LinkFileProgressTests` and
+        `FileIntakeTests`.
+
+      This closes g24x's per-link budget and one copy at a time, listed as waiting in the entry below. Its carrier's
+      hold still waits on Phase 4. When the pin passes `8dc60836`, check those Kotlin files against these tests.
     - knit-next `713b29d6` (2026-10-08, on its local `main` and not yet pushed on 2026-10-09) turns every BLE flag on
       in release: `BLE_SIDE_PLANE`, `BLE_GATT_PEERS`, `BLOB_QUERY`, `BLE_CODED_PHY` (always AUTO), `BLE_LINK_BOOST` and
       `BLE_FEED_WINDOW`, each ahead of its own trial. `6760b843` documents them in `docs/BLUETOOTH_PLANE.md`. Only

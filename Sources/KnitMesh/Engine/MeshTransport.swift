@@ -67,9 +67,26 @@ public protocol MeshTransport: AnyObject {
     /// link delivers in order, so whatever that peer has already sent us waits behind it: the peer, not the hash.
     func isFileArriving(from peer: NodeId) -> Bool
 
+    /// How long the file streaming in from `peer` has left, at the rate it has come in since its header
+    /// (`MeshTransport.fileArrivingEtaMs`, `FramedLink.rxEtaMs`, knit-next ADR 2026-10.nsr7): what an asker weighs before
+    /// its fetch waits out that peer's stream of another file. Kept or skipped, as ``isFileArriving(from:)`` reads it.
+    /// `nil` when nothing streams in from it, or no size or rate is known yet.
+    func fileArrivingLeftMilliseconds(from peer: NodeId) -> Int64?
+
     /// How many files this node is streaming out now (`MeshTransport.feedingLoad`), the `load` a holder query's answer
     /// carries.
     var feedingLoad: Int { get }
+
+    /// The copy of `hash` fed to `peer` (`MeshTransport.fileFeed`, knit-next ADRs 2026-10.nsr7 and 2026-10.g24x): streaming
+    /// now, or queued with nothing else streaming to it. `nil` when it is queued behind another file, so not fed yet, or
+    /// not on the link at all. A holder feeds one such copy of a blob at a time and parks the other asks while it is
+    /// ``FeedReading/live``.
+    func fileFeed(of hash: BlobHash, to peer: NodeId) -> FeedReading?
+
+    /// The rate, in bytes a second, a file fed to `peer` now would most likely go at (`MeshTransport.expectedFileRate`):
+    /// a holder serves the fastest parked ask first, and one beside a slower feed only when its own copy would end
+    /// first. 0 when unknown, which never goes ahead of a feed.
+    func expectedFileRate(to peer: NodeId) -> Int64
 
     /// The attachments worth keeping when their bytes stream in: the blobs this node wants. Any other ATTACHMENT file
     /// is dropped as it streams by. A peer's own AVATAR push is kept whatever this says.

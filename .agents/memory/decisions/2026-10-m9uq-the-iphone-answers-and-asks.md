@@ -124,3 +124,11 @@ only waited on now holds us when it promises. Guard: `BlobAskStandsTests`' `eta`
 The cost, as on Android: the author is asked even when a neighbour still to answer has a lighter load. Guards:
 `BlobHolderQueryTests`' `theAuthorsHaveDecidesWithoutWaitingForTheOtherAnswers` and
 `anAuthorStreamingUsAFileWaitsForAQuietNeighbourStillToAnswer`.
+
+**Amended 2026-10-10, for knit-next `79f38d3d` and `09f70b3e` (ADR 2026-10.ds45's amendment of that date):** a fetch
+waiting on a holder that streams us another file no longer waits it out whatever it takes. The ask is dropped when that
+holder said, at or after it, that it lacks the blob. The holder is left for an idle one, a neighbour that said HAVE with
+load 0 and streams us nothing, when the stream has more than 30 s left. While stuck behind such a stream, a neighbour
+that said NONE is queried again every 10 s. As a holder, the iPhone now parks a second ask for a blob it is already
+feeding, and its SENDING answers carry `eta`. Guards: `InteropAuditMeshTests`, `BlobStreamWaitTests` and
+`MeshEngineBlobParkTests`.

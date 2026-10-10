@@ -297,6 +297,10 @@ public actor Mesh {
     /// After any work: hand on the engine's events, re-advertise a changed digest cue, and aim the timer at the
     /// next deadline.
     private func settle() {
+        // A feed's reading moved under whatever just ran: the holder re-reads its parked asks on the edge.
+        if links.takeFeedsChanged() {
+            engine.fileFeedsChanged()
+        }
         publish()
         if engine.custodyRevision != advertisedRevision {
             advertisedRevision = engine.custodyRevision

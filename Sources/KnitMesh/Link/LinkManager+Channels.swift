@@ -15,7 +15,10 @@ extension LinkManager {
         // A file cut off mid-stream is dropped either way; the next re-ask fetches it whole (`FramedLink.kt:183-190`).
         intakes[id] = nil
         arrivalClocks[id] = nil
-        feeds[id] = nil
+        if feeds.removeValue(forKey: id)?.streaming != nil {
+            // A copy cut off holds nobody parked behind it.
+            noteFeedsChanged()
+        }
         var events: [Event] = []
         var peer: NodeId?
         switch channel.stage {

@@ -134,3 +134,70 @@ second copy. This port mirrors both ends.
 `feedWindow`-off case. It now measures what it feeds: a report it takes clocks the window of the file streaming to
 that peer. So `blobprog` and `blobcancel` go to an iPhone too, to every neighbour whose HELLO carries `CAP_BLOB_HAVE`.
 Android's gate on sending reports to an iPhone is the one left, and the maintainer lifts it in knit-next.
+
+**Amendment (2026-10-10): the iPhone reports a skipped file, leaves a stream that won't end soon, and parks a second
+ask.** The interop audit of 2026-10-09 (`orders/interop-audit/findings.md`, knit-next `8dc60836` against this repo's
+`9ac4cdf`) found three gaps on this side. This amendment ports the committed Kotlin for each, rule for rule. No wire
+byte moves and no vector changes.
+
+- **A skipped file is reported** (AND-7, IOS-3). This reverses "a skipped file is never reported" above. Android
+  keeps every file whose header decodes and reports it (`FileIntake.kt:124-131`, `RxReports.kt:48-70`). So when the
+  iPhone skipped an attachment nobody wanted, an Android sender's window heard nothing: after 3 s it fell back to the
+  paced 4 KiB/s (`FeedWindow.kt:367`, `:474`) and streamed the whole file into nothing. `FileIntake` now keeps a
+  skipped file's key, its declared size and a count (`FileIntake.reading`), and the link reports it at the receiver's
+  cadence: on every chunk that brings 2 KiB, at least every 500 ms, and once more after chunks no report carried. The
+  iPhone still keeps none of the bytes.
+  - A file this port drops past one of its own limits, the photo cap or the shared buffer, is read on the same way,
+    since Android would have kept it.
+  - A file that passes Android's 8 MiB and 64 KiB ceiling goes silent, as Android's `abort` does
+    (`FileIntake.kt:308-318`). A stream cut off by another header stops reporting there, and the new file's count
+    starts from its own header.
+  - A header with a malformed key is still not reported. Android reads its chunks and rejects it at its END, but a
+    `blobprog` names a hash, and this one has none.
+- **The asker leaves a stream that won't end soon** (IOS-1; knit-next `79f38d3d` and `09f70b3e`,
+  `BlobExchange.kt:371-528`). While the holder a fetch waits on streamed us another file, the fetch polled every 2 s
+  for as long as the stream ran, and knit-next's trace of that shape stalled for 12 min. Three rules now let it go.
+  - An ask whose neighbour answered NONE at or after it is dropped, not failed (`askedLacking`). That neighbour may
+    hold the blob soon, and its HAVE asks it again.
+  - A stream with more than 30 s left (`STREAM_SWITCH_MS`) is left when another neighbour said HAVE with load 0 and
+    streams us nothing (`idleHolderPast`). The holder fails for the cycle, and our ask on it is withdrawn.
+  - While stuck behind such a stream, a neighbour that said NONE is queried again every 10 s, and that doesn't count
+    against `PULL_RECHECKS` (`lackedWhileStuck`).
+
+  The time left is Android's `rxEtaMs`: the declared size less the bytes so far, at the rate since the header
+  (`MeshTransport.fileArrivingLeftMilliseconds`), a skipped stream's included. This closes the first "Not mirrored"
+  item above.
+- **The holder parks a second ask, and answers with an `eta`** (AND-5; knit-next `79f38d3d`, `e2191bb9` and
+  `3890f16b`, `BlobExchange.kt:1185-1452`). This reverses "it does not measure what it feeds" and "this port's own
+  SENDING answers carry no `eta`".
+  - **The meter.** `FeedMeter` ports `FeedMeter.kt` line for line. Each link's feed is measured from its receiver's
+    reports, with Android's 15 s stall and its deadline of ETA × 5/4 + 30 s.
+  - **Parking.** A holder already feeding a live copy of a blob parks a second ask for it. It serves the parked asks
+    when that feed ends, stalls or passes its deadline, one a pass: members of the blob's conversation first, then
+    the fastest link, then the oldest ask. A member goes beside a carrier's copy, and a carrier waits behind any copy.
+    An ask goes beside a member's copy only when its own would end first and save more than it costs the feeds
+    already running.
+  - **The `eta`.** A SENDING answer carries the asker's own feed's ETA. A parked asker gets the feed ahead's end plus
+    its own copy, and its park is kept that long plus 30 s.
+  - **The edges.** A `blobcancel` drops a parked ask. The link tells the engine when a feed's reading moves
+    (`LinkManager.takeFeedsChanged`, read by `Mesh` after each batch of events), and a poll every 1 to 10 s covers
+    stalls and deadlines.
+- **Left out, with reasons.**
+  - Android's Wi-Fi Aware and Coded exceptions (`ridesSharedBudget`): with one radio, every feed shares the budget.
+  - The boost's settling pace (`3890f16b`'s `settlingPace`): this port asks for no boost (ADR 2026-10.xwjc), so its
+    feeds settle after 2 chunks.
+  - `fedWhileBusy`, Android's count of a file fed in full while its link still feeds others: the radio here reports
+    each chunk out of its queue.
+  - The carrier's hold, which waits on Phase 4's carrier pulls, and resuming a cut transfer (knit-ios #2).
+- **What grew.** `MeshTransport` gains `fileArrivingLeftMilliseconds(from:)`, `fileFeed(of:to:)` with its
+  `FeedReading`, and `expectedFileRate(to:)`. Android gives each a default; here every transport answers them.
+  `MessageStore.conversation(ofAttachment:)` names whom a holder serves first. `status.blobs` gains `asksParked`,
+  Android's `blobAsksParked`.
+- **Guards:**
+  - `InteropAuditMeshTests`, both repros without `withKnownIssue`, and the idle holder;
+  - `BlobStreamWaitTests` for the stuck rechecks and the waits that stay;
+  - `FeedMeterTests`, `FeedMeterTest`'s ten cases;
+  - `LinkFileFeedTests` and `MeshEngineBlobParkTests` for the readings, the parks, the order and the `eta`;
+  - `MeshTests.aSecondAskForAPhotoWeFeedIsParkedAndServedOnceTheFeedEnds` through the actor;
+  - `LinkFileProgressTests`' and `FileIntakeTests`' skipped-file cases;
+  - `MessageAttachmentTests` for the conversation.

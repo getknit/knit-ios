@@ -106,3 +106,8 @@ So this is a port, not a redesign.
   - **The peer pushing a photo near 1 MiB:** read `link file window rate=` and a DM sent mid-file landing within
     about 5 s, then the same with `--feed pace`.
   - **The Pixel sending to the peer:** read `bt file window rate=` in its logcat and no `paced: two-second reporter`.
+
+**Amended 2026-10-10 by ADR 2026-10.ds45's amendment:** nsr7's holder half, left out above, is in. Each feed has a
+meter (`FeedMeter`, ported from `FeedMeter.kt`) beside its window, a second ask for a blob being fed live is parked
+behind it, and a SENDING answer carries `eta`. A file the iPhone skips is reported at this ADR's cadence too, so an
+Android sender's window no longer falls back to the pace for want of reports.

@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitWire
 import Testing
 
@@ -41,6 +42,20 @@ import Testing
         #expect(exchange.wants.count == BlobExchange.maxWanted)
         #expect(!exchange.isWanted(hash(0)))
         #expect(exchange.isWanted(hash(BlobExchange.maxWanted)))
+    }
+
+    @Test func theEldestBlobsParkedAsksGoPastTheCap() {
+        // `MAX_PARKED_BLOBS`: an unsigned `blobreq` can park one, so the eldest blob's askers ask again.
+        var exchange = BlobExchange(queriesHolders: true)
+        let hashes = (0...BlobExchange.maxParkedBlobs).map { BlobHash(of: [UInt8(truncatingIfNeeded: $0), 1]) }
+        for hash in hashes {
+            _ = exchange.park(hash, for: alice, bytes: 1, now: 0)
+        }
+        #expect(!exchange.isParked(hashes[0], for: alice))
+        #expect(exchange.isParked(hashes[1], for: alice) && exchange.parkedOrder.count == BlobExchange.maxParkedBlobs)
+        let fresh = exchange.park(hashes[1], for: alice, bytes: 1, now: 5)
+        #expect(!fresh, "a re-ask only refreshes it")
+        #expect(exchange.parked[hashes[1]]?[alice] == BlobExchange.ParkedAsk(bytes: 1, since: 0, at: 5, until: 0))
     }
 
     @Test func aWantNobodyRefreshedAgesOut() {

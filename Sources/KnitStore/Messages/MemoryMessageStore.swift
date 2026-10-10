@@ -315,6 +315,13 @@ extension MemoryMessageStore {
         }
     }
 
+    /// The thread of the earliest message carrying `hash` (``MessageStore/conversation(ofAttachment:)``).
+    public func conversation(ofAttachment hash: BlobHash) -> String? {
+        state.withLock { state in
+            state.rows.values.map(\.record).filter { $0.attachment?.hash == hash }.min(by: Self.precedes)?.conversationId
+        }
+    }
+
     /// The pictures held under a name `bytesHash` could be, best first (``MessageStore/identities(matching:)``).
     public func identities(matching bytesHash: BlobHash) -> [MessageAttachment] {
         state.withLock { state in

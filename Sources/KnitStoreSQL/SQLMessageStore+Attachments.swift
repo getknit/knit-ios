@@ -31,6 +31,18 @@ extension SQLMessageStore {
         return senders
     }
 
+    /// The thread of the earliest message carrying `hash` (``MessageStore/conversation(ofAttachment:)``).
+    public func conversation(ofAttachment hash: BlobHash) -> String? {
+        database.read(or: nil) { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT conversationId FROM messages WHERE attachmentHash = ? ORDER BY sentAt, id LIMIT 1",
+                arguments: [StoredText.bytes(hash.string)]
+            )
+            .map { try $0.text("conversationId") }
+        }
+    }
+
     /// The pictures held under a name `bytesHash` could be, best first (``MessageStore/identities(matching:)``).
     public func identities(matching bytesHash: BlobHash) -> [MessageAttachment] {
         // `MessageDao.identityFor` (knit-next 5f521cb9), less its join on the blobs, which the engine asks of its own

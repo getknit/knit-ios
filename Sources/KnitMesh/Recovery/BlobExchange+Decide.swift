@@ -21,8 +21,9 @@ extension BlobExchange {
     private mutating func decide(_ want: inout Want, _ linked: [Candidate], _ now: Int64, _ plan: inout Plan) {
         if let fetch = want.fetch {
             // Queries go out mid-fetch too (a newcomer, a fetching neighbour's recheck): fresh answers for the fallback.
-            owedQueries(&want, capableOf(linked.filter { !want.pullers.contains($0.id) }), now, &plan)
-            if let wait = fetchWait(&want, fetch, holder: linked.first { $0.id == fetch.peer }, now, &plan) {
+            let stuck = Self.stuckOn(fetch, linked)
+            owedQueries(&want, capableOf(linked.filter { !want.pullers.contains($0.id) }), now, &plan, stuckOn: stuck)
+            if let wait = fetchWait(&want, fetch, linked, now, &plan) {
                 plan.waitFor(wait)
                 return
             }
@@ -59,16 +60,18 @@ extension BlobExchange {
 
     /// The queries `want` owes this cycle (`owedQueries`): each capable neighbour once, and again once its recheck is
     /// due, or due within the timer's window, which stepped it early to share this frame. A recheck of one we asked to
-    /// pull it through counts against ``pullRechecks``.
-    private func owedQueries(_ want: inout Want, _ capable: [Candidate], _ now: Int64, _ plan: inout Plan) {
+    /// pull it through counts against ``pullRechecks``; one of a neighbour that lacked the blob while the fetch is
+    /// stuck on `stuckOn` does not (``lackedWhileStuck(_:_:stuckOn:)``).
+    private func owedQueries(_ want: inout Want, _ capable: [Candidate], _ now: Int64, _ plan: inout Plan, stuckOn: NodeId? = nil) {
         let owed = capable.filter { candidate in
             guard let at = want.queried[candidate.id] else {
                 return true
             }
-            return recheckAt(want, candidate.id, queriedAt: at).map { now + Self.timerCoalesceMilliseconds >= $0 } == true
+            return recheckAt(want, candidate.id, queriedAt: at, stuckOn: stuckOn).map { now + Self.timerCoalesceMilliseconds >= $0 } == true
         }
         for candidate in owed {
-            if want.queried[candidate.id] != nil, want.answers[candidate.id]?.state != .fetching {
+            let counted = want.answers[candidate.id]?.state != .fetching && !Self.lackedWhileStuck(want, candidate.id, stuckOn: stuckOn)
+            if want.queried[candidate.id] != nil, counted {
                 want.pullRechecks[candidate.id, default: 0] += 1
             }
             want.queried[candidate.id] = now
@@ -80,10 +83,11 @@ extension BlobExchange {
     /// blob is queried a recheck after it said so. One we asked to pull it through, and that has not said it holds it,
     /// is queried a recheck after the pull or its last query, at most ``pullRechecks`` times and only in the first
     /// ``pullRecheckDeadCycles`` cycles of a dead streak: it holds the blob the moment its own fetch lands, and the next
-    /// cycle may be minutes off.
-    private func recheckAt(_ want: Want, _ id: NodeId, queriedAt at: Int64) -> Int64? {
+    /// cycle may be minutes off. And while the fetch waits on `stuckOn` behind a long stream, one that said it lacked the
+    /// blob is queried a recheck after it said so (``lackedWhileStuck(_:_:stuckOn:)``).
+    private func recheckAt(_ want: Want, _ id: NodeId, queriedAt at: Int64, stuckOn: NodeId? = nil) -> Int64? {
         let state = want.answers[id]?.state
-        if state == .fetching {
+        if state == .fetching || Self.lackedWhileStuck(want, id, stuckOn: stuckOn) {
             return at + Self.fetchingRecheckMilliseconds
         }
         guard let asked = want.askedAt[id], want.pulled.contains(id), !want.failed.contains(id), state?.isHeld != true,
@@ -94,22 +98,21 @@ extension BlobExchange {
         return max(at, asked) + Self.fetchingRecheckMilliseconds
     }
 
-    /// How long the outstanding fetch still has, or `nil` once it is over (`fetchWait`). `holder` is its neighbour as
-    /// linked now, `nil` once the link is gone. While the holder streams anything to us, our copy may be queued behind
-    /// it, so the grace counts from the first quiet look, never from the last look during the stream. A queried holder
+    /// How long the outstanding fetch still has, or `nil` once it is over (`fetchWait`). Its holder is read among
+    /// `linked`, and the fetch is over once its link is gone. While the holder streams anything to us, our copy may be
+    /// queued behind it, so the grace counts from the first quiet look, never from the last look during the stream,
+    /// unless the stream lets the holder go (``streamWait(_:_:_:_:_:)``). A queried holder
     /// whose grace is up is queried once more, and one still sending after ``maxConfirms`` is held to its floor
     /// (``hold(_:_:_:_:_:)``). A blind first ask whose pick said it holds the blob is confirmed the same way rather than
     /// widened (knit-next #140): it is a holder with our ask on it, and the round counts as widened, so a fallback from
     /// it asks the next holder, not a second first pick.
-    private mutating func fetchWait(_ want: inout Want, _ fetch: Fetch, holder: Candidate?, _ now: Int64, _ plan: inout Plan) -> Int64? {
+    private mutating func fetchWait(_ want: inout Want, _ fetch: Fetch, _ linked: [Candidate], _ now: Int64, _ plan: inout Plan) -> Int64? {
         var fetch = fetch
-        guard let holder else {
+        guard let holder = linked.first(where: { $0.id == fetch.peer }) else {
             return over(&want, fetch, "link gone", &plan, withdrawing: false)
         }
         if holder.streaming {
-            fetch.quietSince = nil
-            want.fetch = fetch
-            return min(Self.streamPollMilliseconds, fetch.graceMilliseconds)
+            return streamWait(&want, fetch, holder, linked, &plan)
         }
         let quiet = fetch.quietSince ?? now
         fetch.quietSince = quiet
@@ -158,7 +161,7 @@ extension BlobExchange {
         return floor
     }
 
-    /// ``fetchWait(_:_:holder:_:_:)`` once the grace is up (`confirmWait`): query the holder again, or read its answer.
+    /// ``fetchWait(_:_:_:_:_:)`` once the grace is up (`confirmWait`): query the holder again, or read its answer.
     /// Still sending, it gets another grace. Holding it, to a query sent after our ask, it never had the ask and is asked
     /// again, once. Silent past the wait, stretched to its round trip, it is held to its floor: silence on a link still
     /// up is a late answer, not a no (knit-next #140). Anything else, and the next holder is tried.
@@ -202,9 +205,12 @@ extension BlobExchange {
     /// author, may have queued the closest copy. Withdrawn at the widening on Android, an author's parked ask was lost
     /// and its asker came back 28 s late (knit-next's device rerun of 2026-10-07). Otherwise, while the holder is still
     /// linked, our ask on it is withdrawn (knit-next ADR 2026-10.nsr7), since a copy it queued would come as a second.
-    private mutating func over(
-        _ want: inout Want, _ fetch: Fetch, _ why: String, _ plan: inout Plan, withdrawing: Bool = true
-    ) -> Int64? {
+    private mutating func over(_ want: inout Want, _ fetch: Fetch, _ why: String, _ plan: inout Plan) -> Int64? {
+        over(&want, fetch, why, &plan, withdrawing: true)
+    }
+
+    /// ``over(_:_:_:_:)``, where `withdrawing` false keeps our ask on a holder whose link is gone: nothing reaches it.
+    mutating func over(_ want: inout Want, _ fetch: Fetch, _ why: String, _ plan: inout Plan, withdrawing: Bool) -> Int64? {
         want.fetch = nil
         if fetch.tier == .blind {
             want.blindWidened = true

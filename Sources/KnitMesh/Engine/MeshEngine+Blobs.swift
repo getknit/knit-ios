@@ -158,7 +158,8 @@ extension MeshEngine {
             BlobExchange.Candidate(
                 id: neighbor.nodeId,
                 streaming: transport.isFileArriving(from: neighbor.nodeId),
-                capable: neighbor.capabilities.contains(.blobHave)
+                capable: neighbor.capabilities.contains(.blobHave),
+                streamLeftMilliseconds: transport.fileArrivingLeftMilliseconds(from: neighbor.nodeId)
             )
         }
     }
@@ -238,23 +239,34 @@ extension MeshEngine {
             drop(.undecodable, frame.envelope)
             return
         }
+        serveOrWant(hash, to: frame.from, mayPark: true)
+    }
+
+    /// Serves `hash` to `peer` if it is held, and otherwise wants it on the asker's behalf (`serveOrWant`). `mayPark`
+    /// false serves at once whatever else is being fed: a parked ask whose turn came. The log says what became of it.
+    func serveOrWant(_ hash: BlobHash, to peer: NodeId, mayPark: Bool) {
         let answer: String
         if let file = outboundFile(hash, kind: .attachment) {
-            answer = serve(file, to: frame.from)
+            answer = serve(file, to: peer, mayPark: mayPark)
         } else {
             // Wanted on the asker's behalf, which this cycle neither queries nor asks: it lacks the bytes.
-            answer = wantBlob(hash, author: nil, via: nil, asker: frame.from) ? "not held; fetching it" : "not held; already arriving"
+            answer = wantBlob(hash, author: nil, via: nil, asker: peer) ? "not held; fetching it" : "not held; already arriving"
         }
-        log.log(.debug, "mesh blobreq \(LinkManager.shown(hash.string)) from \(frame.from): \(answer)")
+        log.log(.debug, "mesh blobreq \(LinkManager.shown(hash.string)) from \(peer): \(answer)")
     }
 
     /// Streams a held blob to `peer` as kind ATTACHMENT, whatever it is, as Android serves every blob: not while a
-    /// copy is already on the link to it, and not twice inside the serve memo. Answers what it did, for the log.
-    func serve(_ file: OutboundFile, to peer: NodeId) -> String {
+    /// copy is already on the link to it, not while another copy of it is fed live to someone else, when `mayPark`
+    /// (``parkBehindFeed(_:for:bytes:now:)``), and not twice inside the serve memo. Answers what it did, for the log.
+    func serve(_ file: OutboundFile, to peer: NodeId, mayPark: Bool) -> String {
         guard !transport.isFileInFlight(file.hash, to: peer) else {
             return "already on its way"
         }
-        guard blobExchange.shouldServe(file.hash, to: peer, now: clock.monotonicMilliseconds()) else {
+        let now = clock.monotonicMilliseconds()
+        if mayPark, parkBehindFeed(file.hash, for: peer, bytes: Int64(file.size), now: now) {
+            return "parked behind a feed"
+        }
+        guard blobExchange.shouldServe(file.hash, to: peer, now: now) else {
             return "served to it within the serve memo"
         }
         guard transport.sendFile(file, to: peer) else {

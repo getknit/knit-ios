@@ -334,16 +334,12 @@ explicit direction.** Update this file in the change that ships an item.
       merges. This port mirrored it from the working tree that day (ADR 2026-10.m9uq's amendment), so check the merged
       Kotlin against `BlobAskStandsTests` then;
     - knit-next ADR 2026-10.nxfb's holder half, a fed file kept in flight while its link feeds that peer more;
-    - knit-next ADR 2026-10.nsr7's holder half: a meter on our own feeds for an `eta`, and parking a second ask
-      behind a live feed, which a `blobcancel` then drops. The reports it would read already clock the feed's window
-      since ADR 2026-10.xwjc, which mirrors 8jwn's pace and 5buf's window. ADR 2026-10.ds45 mirrors the receiving
-      and asking halves, and both ends of `blobcancel`.
+    - Closed on 2026-10-10 by ADR 2026-10.ds45's amendment (`fix/ios-blob-parity`): nsr7's holder half, a meter on
+      our own feeds for an `eta` and a second ask parked behind a live feed, members served before carriers; nsr7's
+      two asker changes of 2026-10-07, leaving a long stream for an idle holder and dropping an ask that found its
+      neighbour lacking the blob; and a skipped file reported to its sender.
     - ADR 2026-10.xwjc's device check: knit-peer on dongle A with `--radio-profile android` against a Pixel, a photo
       near 1 MiB each way, `--feed window` against `--feed pace`.
-    - nsr7's two asker changes of 2026-10-07 that are not on the wire: leaving a neighbour whose other stream to us
-      has more than 30 s left while an idle holder is linked, which needs that stream's ETA from `FileIntake`, and
-      letting go of an ask that found its neighbour lacking the blob. Its holder changes the same day, members served
-      before carriers, need parking first.
 
   Out of scope: files, voice notes, link previews, direct transfer, screening, and setting a group photo.
   Capabilities stay `0xB`. One companion change goes with it:

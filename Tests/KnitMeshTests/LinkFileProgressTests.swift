@@ -121,6 +121,63 @@ import Testing
         #expect(rig.handle(.received(channel, chunk(second[0..<1024]))) == [progress(second, held: 1024, at: 600)])
     }
 
+    // MARK: A skipped file (ADR 2026-10.ds45's amendment of 2026-10-10)
+
+    @Test func aSkippedFileIsReportedAtTheWindowsCadenceToItsEnd() {
+        // A windowed sender then runs at the windowed rate rather than its 4 KiB/s fallback (`FeedWindow.kt:367`, `:474`).
+        let rig = LinkRig(local: LinkRig.high)
+        _ = rig.accept(LinkRig.low, on: channel)
+        let unasked = bytes(8192, seed: 4)
+        _ = rig.handle(.received(channel, header(unasked)))
+        rig.clock.advance(100)
+        #expect(rig.handle(.received(channel, chunk(unasked[0..<1024]))).isEmpty, "half a smallest chunk")
+        #expect(rig.handle(.received(channel, chunk(unasked[1024..<2048]))) == [progress(unasked, held: 2048, at: 100)])
+        #expect(rig.handle(.received(channel, chunk(unasked[2048..<2560]))).isEmpty)
+        #expect(rig.advance(500) == [progress(unasked, held: 2560, at: 600)], "the trailing report, half a second on")
+        _ = rig.handle(.received(channel, LinkRecord(.fileEnd).encoded ?? []))
+        #expect(rig.advance(500).isEmpty, "a skipped file's END ends its reports")
+        #expect(rig.links.isFileArriving(from: LinkRig.low) == false)
+    }
+
+    @Test func aFileDroppedPastThisPortsLimitIsReadOn() {
+        // Android keeps a file to its 8 MiB and 64 KiB ceiling. This port's own limits are lower, and a file it drops for
+        // one is read on as a skipped one; past the ceiling, `FileIntakeTests` has it go silent, as Android's `abort` does.
+        var configuration = LinkManager.Configuration()
+        configuration.maxAvatarFileBytes = 1024
+        let rig = LinkRig(local: LinkRig.high, configuration: configuration)
+        _ = rig.accept(LinkRig.low, on: channel)
+        let avatar = bytes(4096, seed: 5)
+        _ = rig.handle(.received(channel, header(avatar, kind: .avatar)))
+        #expect(rig.handle(.received(channel, chunk(avatar[0..<2048]))) == [progress(avatar, held: 2048, at: 0)], "past its limit")
+        #expect(rig.handle(.received(channel, chunk(avatar[2048..<4096]))) == [progress(avatar, held: 4096, at: 0)])
+    }
+
+    @Test func aMalformedKeyIsNeitherKeptNorReported() {
+        let rig = LinkRig(local: LinkRig.high)
+        _ = rig.accept(LinkRig.low, on: channel)
+        let header = FileHeader(kind: .attachment, key: String(repeating: "Z", count: 64), mime: "image/jpeg", size: 4096)
+        _ = rig.handle(.received(channel, LinkRecord(.fileHeader, payload: LinkJSON.fileHeaderPayload(header)).encoded ?? []))
+        #expect(rig.handle(.received(channel, chunk(bytes(4096)[0..<4096]))).isEmpty)
+    }
+
+    @Test func aStreamsTimeLeftIsItsDeclaredRestAtItsRateSoFarKeptOrSkipped() {
+        // `FramedLink.rxEtaMs`: what an asker weighs before it waits out the stream (knit-next 79f38d3d).
+        let rig = LinkRig(local: LinkRig.high)
+        _ = rig.accept(LinkRig.low, on: channel)
+        let unasked = bytes(8192, seed: 6)
+        #expect(rig.links.fileArrivingLeftMilliseconds(from: LinkRig.low) == nil, "nothing streaming")
+        _ = rig.handle(.received(channel, header(unasked)))
+        #expect(rig.links.fileArrivingLeftMilliseconds(from: LinkRig.low) == nil, "before a byte of it")
+        rig.clock.advance(1000)
+        _ = rig.handle(.received(channel, chunk(unasked[0..<2048])))
+        #expect(rig.links.fileArrivingLeftMilliseconds(from: LinkRig.low) == 3000, "6 KiB more at 2 KiB a second")
+        let undeclared = FileHeader(kind: .attachment, key: BlobHash(of: unasked).string, mime: "image/jpeg", size: nil)
+        _ = rig.handle(.received(channel, LinkRecord(.fileHeader, payload: LinkJSON.fileHeaderPayload(undeclared)).encoded ?? []))
+        rig.clock.advance(1000)
+        _ = rig.handle(.received(channel, chunk(unasked[0..<2048])))
+        #expect(rig.links.fileArrivingLeftMilliseconds(from: LinkRig.low) == nil, "no size declared")
+    }
+
     // MARK: The switch off
 
     @Test func aKeptFileStreamingInIsReportedEveryTwoSecondsOfChunks() {
@@ -147,13 +204,15 @@ import Testing
         #expect(ended.last == .file(InboundFile(from: LinkRig.low, kind: .attachment, hash: hash, mime: "image/jpeg", bytes: file)))
     }
 
-    @Test func aSkippedFileIsNeverReportedAndEachHeaderStartsItsOwnClock() {
+    @Test func aSkippedFileIsReportedAsItIsReadAndEachHeaderStartsItsOwnClock() {
+        // Android keeps every file whose header decodes and reports it (`FileIntake.kt:124-131`, `RxReports.kt:48-70`).
         let rig = pacedRig()
         _ = rig.accept(LinkRig.low, on: channel)
         let unasked = bytes(4096, seed: 2)
         _ = rig.handle(.received(channel, header(unasked)))
         rig.clock.advance(5000)
-        #expect(rig.handle(.received(channel, chunk(unasked[0..<1024]))).isEmpty, "nobody asked for it, so nothing is kept")
+        let skipped = rig.handle(.received(channel, chunk(unasked[0..<1024])))
+        #expect(skipped == [.fileProgress(FileProgress(from: LinkRig.low, hash: BlobHash(of: unasked), held: 1024, milliseconds: 5000))])
         let file = bytes(4096)
         rig.links.acceptFiles([BlobHash(of: file)])
         _ = rig.handle(.received(channel, header(file)))

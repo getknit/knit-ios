@@ -140,6 +140,7 @@ internal enum ControlLines {
             "progressTaken": .int(Int64(blobs.progressTaken)),
             "cancelsSent": .int(Int64(blobs.cancelsSent)),
             "cancelsTaken": .int(Int64(blobs.cancelsTaken)),
+            "asksParked": .int(Int64(blobs.asksParked)),
         ]
     }
 

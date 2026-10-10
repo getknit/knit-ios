@@ -191,12 +191,15 @@ extension BlobExchange {
         var hashes: Set<BlobHash>
     }
 
-    /// A linked neighbour as a step reads it (`Candidate`): whether it is streaming a file to us, and whether its link
-    /// says it answers a query. One radio, so there is no plane to choose and no slow link to tell apart.
+    /// A linked neighbour as a step reads it (`Candidate`): whether it is streaming a file to us, whether its link
+    /// says it answers a query, and how long the file it streams us has left at its rate so far (`streamLeftMs`,
+    /// `MeshTransport.fileArrivingEtaMs`), `nil` when that is not known. One radio, so there is no plane to choose and
+    /// no slow link to tell apart.
     struct Candidate: Sendable, Equatable {
         var id: NodeId
         var streaming: Bool
         var capable: Bool
+        var streamLeftMilliseconds: Int64?
     }
 
     /// What one step decided (`Plan`): the neighbours it owes a query, the asks it makes, the neighbours whose ask of ours

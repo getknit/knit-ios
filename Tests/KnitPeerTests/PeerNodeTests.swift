@@ -44,7 +44,8 @@ import Testing
         let blobs = try #require(status["blobs"] as? [String: Int])
         #expect(
             blobs.keys.sorted() == [
-                "answersIgnored", "answersTaken", "blindAsks", "cancelsSent", "cancelsTaken", "confirms", "fallbacks", "fetches",
+                "answersIgnored", "answersTaken", "asksParked", "blindAsks", "cancelsSent", "cancelsTaken", "confirms", "fallbacks",
+                "fetches",
                 "progressSent", "progressTaken", "pullThroughs", "queriesAnswered", "queriesRefused", "queriesSent",
             ])
         #expect(blobs.values.allSatisfy { $0 == 0 })

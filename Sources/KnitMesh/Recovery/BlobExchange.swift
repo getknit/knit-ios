@@ -43,6 +43,9 @@ internal struct BlobExchange: Sendable {
     /// How often a holder streaming us a file is looked at again, so its grace starts when the stream ends
     /// (`STREAM_POLL_MS`).
     static let streamPollMilliseconds: Int64 = 2000
+    /// How long a neighbour's stream of another file to us may still have before an idle holder is asked instead
+    /// (`STREAM_SWITCH_MS`, knit-next `79f38d3d`).
+    static let streamSwitchMilliseconds: Int64 = 30_000
     /// When a neighbour fetching the blob, or one asked to pull it through, is queried again
     /// (`FETCHING_RECHECK_MS`).
     static let fetchingRecheckMilliseconds: Int64 = 10_000
@@ -91,6 +94,12 @@ internal struct BlobExchange: Sendable {
     /// Queries sent, by their envelope id's bytes (ADR 2026-09.jc2x), oldest first.
     var sentQueries: [ExactKey: SentQuery] = [:]
     var sentOrder: [ExactKey] = []
+    /// Asks parked behind another copy's feed, by blob and asker, and the blobs in the order their first ask was parked
+    /// (``park(_:for:bytes:now:)``).
+    var parked: [BlobHash: [NodeId: ParkedAsk]] = [:]
+    var parkedOrder: [BlobHash] = []
+    /// When the parked asks are next looked at, or `nil` while none is parked (`parkPoll`).
+    var parkPollAt: Int64?
     /// Recent serves, oldest first.
     private var serves: [(serve: Serve, at: Int64)] = []
     /// Each neighbour's budget of answers.

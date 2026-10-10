@@ -31,6 +31,11 @@ internal struct FileFeed {
         var rateShown: Int64 = 0
         /// The pace its last paced chunk went at, for the line at its end.
         var paceShown: Int64 = 0
+        /// The pace its last chunk was noted at for the meter, and how many chunks were (`txPace`, `txPaced`).
+        var notedPace: Int64 = 0
+        var notedChunks = 0
+        /// When its last chunk was written, or its header (`txWroteAt`).
+        var wroteAt: Int64
     }
 
     var streaming: Streaming?
@@ -39,6 +44,9 @@ internal struct FileFeed {
     var window: FeedWindow
     /// How many links fed at the pace when this one's `link file pace` line was last logged.
     var feedingShown: Int?
+    /// What the receiver's reports say of the stream going now, and what the link's last stream drained
+    /// (`FramedLink.meter`, knit-next ADR 2026-10.nsr7).
+    var meter = FeedMeter()
 
     /// The neighbour the link feeds.
     let peer: NodeId
@@ -78,6 +86,10 @@ extension LinkManager {
     /// How far a windowed feed's rate must move, as a share of the rate its log last showed, to show again
     /// (`FramedLink.PACE_MOVE_DEN`): a quarter.
     static let rateMoveShare: Int64 = 4
+    /// How many chunks a feed's pace takes to settle (`FramedLink.SETTLE_CHUNKS`): until then its reading takes the
+    /// faster of its measured rate and its pace. Android's longer settle for a link earning the boost never comes up:
+    /// this port asks for no boost (ADR 2026-10.xwjc).
+    static let settleChunks = 2
 
     /// `peer` holds `held` bytes of `hash`, `milliseconds` after its header reached it (its `blobprog`,
     /// `BluetoothMeshTransport.onFileProgress`): the window of the file streaming to it takes the report, if it is that
@@ -88,9 +100,15 @@ extension LinkManager {
             return
         }
         let now = clock.monotonicMilliseconds()
-        if let streaming = feed.streaming, streaming.windowed, streaming.file.hash == hash {
+        let before = feed.meter.measured
+        let ours = feed.meter.report(hash, held: held, milliseconds: milliseconds, now: now)
+        if ours, let streaming = feed.streaming, streaming.windowed {
             feed.window.report(held: held, milliseconds: milliseconds, now: now)
-            feeds[id] = feed
+        }
+        feeds[id] = feed
+        if ours, !before, feed.meter.measured {
+            // Its first rate: the feed's ETA is the drain's from now.
+            noteFeedsChanged()
         }
         pump(id, now: now)
     }
@@ -112,6 +130,10 @@ extension LinkManager {
         for (id, at) in due {
             if feeds[id]?.streaming?.windowed == true {
                 feeds[id]?.window.slept(now - at, now: now)
+            }
+            if feeds[id]?.streaming?.windowedNow == false {
+                // A pace wait: what it ran past is the app asleep, which the meter does not count (`FramedLink.pauseFor`).
+                feeds[id]?.meter.resumed(now: now)
             }
             pump(id, now: now)
         }
@@ -142,14 +164,20 @@ extension LinkManager {
             }
             if streaming.ended {
                 feed.streaming = nil
+                feed.meter.end()
                 feeds[id] = feed
                 noteSent(streaming, window: feed.window, on: id, now: now)
+                noteFeedsChanged()
                 continue
             }
             var current = streaming
             let allowed = admit(&current, window: &feed.window, feedingShown: &feed.feedingShown, on: id, now: now)
             if let allowed {
-                writeNextRecord(&current, window: &feed.window, allowed: allowed, on: id, now: now)
+                if allowed.pace != nil {
+                    // Out of its pace wait on time, by the timer or the radio's report (`FramedLink.pauseFor`).
+                    feed.meter.resumed(now: current.nextAt)
+                }
+                writeNextRecord(&current, feed: &feed, allowed: allowed, on: id, now: now)
             }
             feed.streaming = current
             feeds[id] = feed
@@ -170,10 +198,12 @@ extension LinkManager {
         if windowed {
             feed.window.start(now: now)
         }
+        feed.meter.start(file.hash, now: now)
+        feed.meter.sized(offset: 0, length: Int64(file.size))
         if let header = LinkRecord(.fileHeader, payload: LinkJSON.fileHeaderPayload(file.header)).encoded {
             write(header, on: id)
         }
-        feed.streaming = FileFeed.Streaming(file: file, peer: feed.peer, startedAt: now, windowed: windowed, nextAt: now)
+        feed.streaming = FileFeed.Streaming(file: file, peer: feed.peer, startedAt: now, windowed: windowed, nextAt: now, wroteAt: now)
         return true
     }
 
@@ -235,7 +265,7 @@ extension LinkManager {
     /// read ends early, which fails the receiver's hash check, so it drops the file and keeps the link. A windowed chunk
     /// is counted out to its window at hand-off; a paced one holds the next back by its share of a second at `pace`.
     private func writeNextRecord(
-        _ streaming: inout FileFeed.Streaming, window: inout FeedWindow, allowed: Allowance, on id: ChannelID, now: Int64
+        _ streaming: inout FileFeed.Streaming, feed: inout FileFeed, allowed: Allowance, on id: ChannelID, now: Int64
     ) {
         let remaining = streaming.file.size - streaming.offset
         let count = min(max(allowed.bytes, 1), configuration.fileChunkBytes, remaining)
@@ -243,15 +273,19 @@ extension LinkManager {
         let record: [UInt8]?
         if let chunk, !chunk.isEmpty {
             record = LinkRecord(.fileChunk, payload: chunk).encoded
+            notePaced(&streaming, meter: &feed.meter, allowed.pace?.bytesPerSecond ?? windowedPace(streaming, window: feed.window, on: id))
             streaming.offset += chunk.count
+            streaming.wroteAt = now
             if streaming.windowed {
-                window.wrote(chunk.count, now: now)
+                feed.window.wrote(chunk.count, now: now)
             }
             if let pace = allowed.pace {
-                streaming.nextAt = now + pace.spacing(for: chunk.count)
+                let spacing = pace.spacing(for: chunk.count)
+                streaming.nextAt = now + spacing
                 streaming.paceShown = pace.bytesPerSecond
+                feed.meter.pausing(spacing, now: now)
             } else {
-                noteWindowRate(&streaming, window: window)
+                noteWindowRate(&streaming, window: feed.window)
             }
         } else {
             if remaining > 0 {
@@ -266,6 +300,29 @@ extension LinkManager {
                 streaming.unreported += 1
             }
         }
+    }
+
+    /// The next chunk is fed at `pace` (`FramedLink.notePaced`): what the meter's reading takes, and what a measured
+    /// rate is held against. The reading changes when the settle ends or the pace moves, so the holder is told then.
+    private func notePaced(_ streaming: inout FileFeed.Streaming, meter: inout FeedMeter, _ pace: Int64) {
+        let moved = streaming.notedChunks > 0 && pace != streaming.notedPace
+        streaming.notedPace = pace
+        streaming.notedChunks += 1
+        meter.paced(pace)
+        if moved || streaming.notedChunks == Self.settleChunks {
+            noteFeedsChanged()
+        }
+    }
+
+    /// The pace a windowed chunk is noted at for the meter (`FramedLink.windowedPace`): the window's rate, or the paced
+    /// share before one. It moves only past a quarter of the last, since a pace move resets the meter's measured rate.
+    private func windowedPace(_ streaming: FileFeed.Streaming, window: FeedWindow, on id: ChannelID) -> Int64 {
+        let paced = feeds.count { $0.key != id && $0.value.streaming.map { !$0.windowedNow } ?? false }
+        let fallback = FilePace(
+            budget: configuration.filePaceBudgetBytesPerSecond, feeding: paced + 1, maxChunkBytes: configuration.fileChunkBytes)
+        let rate = window.rate > 0 ? window.rate : fallback.bytesPerSecond
+        let last = streaming.notedPace
+        return last > 0 && abs(rate - last) * Self.rateMoveShare < last ? last : rate
     }
 
     /// Logs a windowed feed's rate when it moves by a quarter or more (`FramedLink.windowedPace` and `logWindow`), so the

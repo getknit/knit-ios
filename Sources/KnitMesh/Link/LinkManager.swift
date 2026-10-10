@@ -118,6 +118,8 @@ public final class LinkManager: MeshTransport {
     var landingFiles: Set<LandingFile> = []
     /// Files that finished streaming outside ``handle(_:)`` and ``advance()``, handed over by the next of either.
     var finishedFiles: [Event] = []
+    /// Whether a feed's reading moved since ``takeFeedsChanged()`` last ran (``noteFeedsChanged()``).
+    var feedsChanged = false
     var crossings = LinkCrossings<ChannelID>()
     var psm: UInt16?
     var digestCue: UInt32 = 0

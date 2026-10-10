@@ -113,7 +113,8 @@ public final class MeshEngine {
         guard let timers else {
             return nil
         }
-        return [router.nextDeadline, blobExchange.nextDeadline, timers.reoffer, timers.sweep, timers.heal].compactMap(\.self).min()
+        let blobs = [blobExchange.nextDeadline, blobExchange.parkPollAt]
+        return ([router.nextDeadline, timers.reoffer, timers.sweep, timers.heal] + blobs).compactMap(\.self).min()
     }
 
     /// Starts the node (`MeshManager.seedOwnProfileCustody`): republishes our profile if its stamp is stale, puts it
@@ -216,6 +217,7 @@ public final class MeshEngine {
             return
         }
         stepDueBlobs(now: now)
+        pollParkedAsks(now: now)
         if now >= due.reoffer {
             reoffer()
             due.reoffer = now + configuration.reofferMilliseconds

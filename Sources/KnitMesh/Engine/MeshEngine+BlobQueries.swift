@@ -14,8 +14,10 @@ extension MeshEngine {
     /// A neighbour asked which of some blobs we hold (`onHaveQuery`, `BlobExchange.kt:744-784`). Each is answered from
     /// reads alone, in the order the bytes move, backwards:
     ///
-    /// - **SENDING** when a copy is on the link to it, or was served to it inside the memo, so a `blobreq` now would be
-    ///   refused: it should wait. The memo is peeked at, never stamped.
+    /// - **SENDING** when a copy is on the link to it, was served to it inside the memo, or its ask is parked behind
+    ///   another copy's feed, so a `blobreq` now would be refused or parked: it should wait. The memo is peeked at, never
+    ///   stamped. It carries `eta`, when its copy should land (``eta(of:to:now:)``, knit-next ADR 2026-10.nsr7), and
+    ///   renews a parked ask.
     /// - **HAVE**, with its size, when a `blobreq` now would be served: the serve's own test, which reads the store's
     ///   index and never the bytes.
     /// - **FETCHING** when its bytes are streaming in or landing. Android also reads its store's screening here
@@ -44,6 +46,7 @@ extension MeshEngine {
         let sending = Set(
             asked.compactMap(BlobHash.init).filter { hash in
                 transport.isFileInFlight(hash, to: peer) || blobExchange.memoHolds(hash, for: peer, now: now)
+                    || blobExchange.isParked(hash, for: peer)
             })
         let arriving = transport.arrivingFileKeys
         let items = asked.map { named -> BlobHasItem in
@@ -51,7 +54,10 @@ extension MeshEngine {
                 return BlobHasItem(hash: named, state: .notHeld)
             }
             if let size = outboundFile(hash, kind: .attachment)?.size {
-                return BlobHasItem(hash: named, state: sending.contains(hash) ? .sending : .have, size: Int64(size))
+                guard sending.contains(hash) else {
+                    return BlobHasItem(hash: named, state: .have, size: Int64(size))
+                }
+                return BlobHasItem(hash: named, state: .sending, size: Int64(size), eta: eta(of: hash, to: peer, now: now))
             }
             return BlobHasItem(hash: named, state: arriving.contains(hash) ? .fetching : .notHeld)
         }
@@ -108,9 +114,9 @@ extension MeshEngine {
     }
 
     /// A neighbour said how much of a file we feed it holds (`BlobExchange.onProgressReport`): the link feeding it clocks
-    /// its window by the report (knit-next ADR 2026-10.5buf). This port parks no asks behind a feed (knit-next ADR
-    /// 2026-10.g24x is not mirrored), so nothing else reads it. It is taken only from the link's own peer, as a holder
-    /// query is, and its sender's key is never asked for.
+    /// its window by the report (knit-next ADR 2026-10.5buf), and its meter by it, which times the asks parked behind
+    /// that feed (knit-next ADR 2026-10.nsr7): they are judged on the next pass. It is taken only from the link's own
+    /// peer, as a holder query is, and its sender's key is never asked for.
     func handleBlobProgress(_ frame: InboundFrame) {
         guard isFromItsLink(frame) else {
             return
@@ -152,10 +158,10 @@ extension MeshEngine {
         }
     }
 
-    /// A neighbour withdrew its ask for a blob (`BlobExchange.onCancel`): a copy queued for it and not yet streaming comes
-    /// off its link, and the serve memo forgets it, so a later ask of its own is served. A copy already streaming goes on.
-    /// Android also drops the ask if it parked it; this port parks none. Taken only from the link's own peer, and its
-    /// sender's key is never asked for. Every one taken is logged, a withdrawal of nothing queued too, so a device run
+    /// A neighbour withdrew its ask for a blob (`BlobExchange.onCancel`): its ask is dropped if it was parked, and a copy
+    /// queued for it and not yet streaming comes off its link, and the serve memo forgets it, so a later ask of its own
+    /// is served. A copy already streaming goes on. Taken only from the link's own peer, and its sender's key is never
+    /// asked for. Every one taken is logged, a withdrawal of nothing queued too, so a device run
     /// can tell one that came too late from one that never came.
     func handleBlobCancel(_ frame: InboundFrame) {
         guard isFromItsLink(frame) else {
@@ -166,12 +172,20 @@ extension MeshEngine {
             return
         }
         let line = "mesh blob cancel ← \(frame.from) \(cancel.hash.prefix(BlobExchange.shownHashCharacters))…"
-        guard let hash = BlobHash(cancel.hash), transport.cancelQueuedFile(hash, to: frame.from) else {
+        guard let hash = BlobHash(cancel.hash) else {
             log.log(.debug, "\(line): nothing queued")
             return
         }
-        blobExchange.forgetServe(hash, to: frame.from)
+        let parkedOne = blobExchange.takeParked(hash, for: frame.from)
+        let queued = transport.cancelQueuedFile(hash, to: frame.from)
+        if queued {
+            blobExchange.forgetServe(hash, to: frame.from)
+        }
+        guard parkedOne || queued else {
+            log.log(.debug, "\(line): nothing queued")
+            return
+        }
         blobExchange.counts.cancelsTaken += 1
-        log.log(.debug, "\(line): queued copy dropped")
+        log.log(.debug, "\(line): \(parkedOne ? "parked ask dropped" : "queued copy dropped")")
     }
 }
