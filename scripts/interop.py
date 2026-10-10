@@ -1310,13 +1310,17 @@ CLIENT_VERDICT = re.compile(r"bt (accepted|refused) client ([a-z2-7]{26}) \((.*?
 def _client_verdicts(phone: Phone, node: str) -> list[dict]:
     """Every admission line the phone logged for `node`'s dials since its log was cleared, oldest first, with its fields:
     `bt refused client <id> (sighted=<b> codedOnly=<b> heldAgeMs=<ms|null> atCap=<b>[ doorbell=true heardAgoMs=<ms|null>
-    inPresence=<b>])` and its accepted twin. Booleans, numbers and null come back as Python's."""
+    inPresence=<b>[ doorbellTrusted=false]])`, and `bt accepted client <id> (<Admit|Replace>, sighted=<b> codedOnly=<b>[ …])`
+    with the same suffix, whose verdict comes back as `as`. Booleans, numbers and null come back as Python's."""
     verdicts = []
     for line in _phone_log(phone, " client "):
         match = CLIENT_VERDICT.search(line)
         if not match or match.group(2) != node:
             continue
         fields: dict = {"verdict": match.group(1)}
+        first = match.group(3).split(",", 1)[0]
+        if "=" not in first:
+            fields["as"] = first
         for key, value in re.findall(r"(\w+)=(\S+)", match.group(3)):
             fields[key] = {"true": True, "false": False, "null": None}.get(value, int(value) if value.lstrip("-").isdigit() else value)
         verdicts.append(fields)
@@ -1325,7 +1329,9 @@ def _client_verdicts(phone: Phone, node: str) -> list[dict]:
 
 def _admitted(phone: Phone, node: str, since: float, timeout: float) -> dict:
     """The phone admitted `node`'s dial after the shed at `since`, with no refusal before, while it still held `node` in
-    presence and had not heard it for 12 s: Rule 2's case, which the old rule refused as a sighted dialer below it."""
+    presence and had not heard it for 12 s: Rule 2's case, which the old rule refused as a sighted dialer below it. The
+    line says `sighted=true`, the presence it was judged against, so the window is read from the doorbell suffix, whose
+    `doorbellTrusted=false` would mean the phone's own evidence did not back the HELLO's bit."""
 
     def admitted_yet() -> list[dict] | None:
         verdicts = _client_verdicts(phone, node)
@@ -1333,12 +1339,16 @@ def _admitted(phone: Phone, node: str, since: float, timeout: float) -> dict:
 
     verdicts = poll(admitted_yet, timeout, every=1)
     seconds = round(time.monotonic() - since, 1)
-    refused = [v for v in verdicts if v["verdict"] == "refused"]
+    # A dial that came while the shed's cap of 0 still stood is refused at the cap, which is the run's doing, not Rule 2.
+    refused = [v for v in verdicts if v["verdict"] == "refused" and not v.get("atCap")]
     accepted = next(v for v in verdicts if v["verdict"] == "accepted")
-    detail = {"secondsAfterShed": seconds, "accepted": accepted, "refusedFirst": refused}
+    at_cap = sum(1 for v in verdicts if v["verdict"] == "refused" and v.get("atCap"))
+    detail = {"secondsAfterShed": seconds, "accepted": accepted, "refusedFirst": refused, "refusedAtCap": at_cap}
     if refused:
         raise RuntimeError(f"the phone refused the iPhone's dial before admitting it: {json.dumps(detail)}")
     heard = accepted.get("heardAgoMs")
+    if accepted.get("doorbell") is not True or accepted.get("doorbellTrusted") is False:
+        raise RuntimeError(f"admitted without a trusted doorbell suffix: {json.dumps(detail)}")
     if accepted.get("inPresence") is not True or not isinstance(heard, int) or not HEARD_RECENTLY_MS < heard <= PRESENCE_LINGER_MS:
         raise RuntimeError(f"admitted outside the 12-90 s window in presence: {json.dumps(detail)}")
     return detail
