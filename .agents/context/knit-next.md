@@ -229,6 +229,13 @@ Kotlin wins.
       `BlobExchange.onFileProgress`) that the maintainer lifts in knit-next (roadmap). When the pin passes 5buf, check
       `FeedWindow.kt` against `FeedWindowTests` and `FeedWindowSimTests`, and `RxReports.kt` against
       `LinkFileProgressTests`.
+    - knit-next AND-3, `fix/gatt-only-link-score` at `b7c13e57` (from `8dc60836`, 2026-10-10, unmerged), amending
+      its ADRs 2026-09.shzv and 2026-09.kwq2. A link whose HELLO carried `CAP_DOORBELL` scores −90 out of presence,
+      never −127, and a doorbell dialer counts as sighted for admission only if heard in the last 12 s, with the bit
+      backed by the phone's own evidence. Nothing on the wire moves, and this port changes no Swift for it: an
+      Android peer never leaves presence the way an iPhone does (`LinkManager+Configuration.swift`). Its lines,
+      `bt state … linkScores=` and the admission lines' `doorbell=true heardAgoMs= inPresence=` suffix, are what
+      `interop.py android-keeps-iphone` reads (`ble-transport.md`, `linux-peer.md`).
     - knit-next ADR 2026-10.g24x's item 2 (`e2191bb9`): a querying asker asks the frame's author on its HAVE, without
       waiting for the other answers (`BlobExchange.answersIn`, mirrored on 2026-10-09). Its other items are not
       mirrored: the carrier's hold waits for Phase 4's carrier pulls, and the per-link budget and one copy at a time
