@@ -1095,6 +1095,9 @@ def android_keeps_iphone(arguments: argparse.Namespace) -> int:
         run.step("cap-cleared", lambda: {"cap": phone.bridge("BLECAP", clear=True).get("cap")})
         for other in quiet:
             run.step(f"resumed-{other.serial}", lambda other=other: _paused(other, False))
+        if ios.socket is None and not front.prompts:
+            # A stage that failed while Knit was away leaves it there; the lab expects it in front.
+            run.step("knit-front-at-end", lambda: front.to_front(ios))
         ios.stop()
     print(json.dumps({"summary": "android-keeps-iphone", "steps": run.steps, "failed": run.failed}))
     return run.failed
