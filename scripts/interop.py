@@ -1232,7 +1232,10 @@ def _redialed(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: 
     if run.step("redial-link", lambda: sender.link(ios)) is None:
         return
     phone.shell("logcat -c")
-    if run.step("redial-phone-hears-iphone", lambda: _scored(phone, ios_id, _heard_score, 150)) is None:
+    if arguments.baseline:
+        # A build without the fix logs no scores: give the phone the time a fresh link takes to read the payload.
+        time.sleep(30)
+    elif run.step("redial-phone-hears-iphone", lambda: _scored(phone, ios_id, _heard_score, 150)) is None:
         return
     if run.step("redial-knit-away", lambda: front.away(ios)) is None:
         return
@@ -1245,13 +1248,35 @@ def _redialed(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: 
         run.step("phone-shed-iphone", lambda: {"lines": poll(lambda: _phone_log(phone, f"link down: {ios_id}"), 40, every=1)[:2]})
     finally:
         phone.bridge("BLECAP", clear=True)
-    admitted = run.step("phone-admits-redial", lambda: _admitted(phone, ios_id, shed, arguments.redial_timeout))
+    if arguments.baseline:
+        run.step("phone-refuses-redial", lambda: _refused_sighted(phone, ios_id, shed, arguments.redial_timeout))
+        admitted = None
+    else:
+        admitted = run.step("phone-admits-redial", lambda: _admitted(phone, ios_id, shed, arguments.redial_timeout))
     if admitted is not None:
         time.sleep(arguments.hold)
         tally: list[dict] = []
         run.step("redial-balanced", lambda: {**_balanced(phone, ios_id, tally), **_phone_held(phone, ios_id), "heldSeconds": arguments.hold})
     if run.step("redial-knit-front", lambda: front.to_front(ios)) is not None:
         run.step("redial-link-on-iphone", lambda: _ios_linked(ios, phone, sender.node_id))
+
+
+def _refused_sighted(phone: Phone, node: str, since: float, timeout: float) -> dict:
+    """The baseline, on a build without the fix: the phone refuses `node`'s dial as a sighted dialer below it while it
+    still holds `node` in presence, AND-3 itself. Reports when it was admitted after, if it was within `timeout`."""
+    refused = poll(
+        lambda: [v for v in _client_verdicts(phone, node) if v["verdict"] == "refused" and v.get("sighted") and not v.get("atCap")],
+        PRESENCE_LINGER_MS / 1000,
+        every=1,
+    )
+    refused_after = round(time.monotonic() - since, 1)
+    try:
+        poll(lambda: any(v["verdict"] == "accepted" for v in _client_verdicts(phone, node)), max(0.0, since + timeout - time.monotonic()), every=2)
+        admitted_after = round(time.monotonic() - since, 1)
+    except TimeoutError:
+        admitted_after = None
+    accepted = [v for v in _client_verdicts(phone, node) if v["verdict"] == "accepted"]
+    return {"refusedAfterShed": refused_after, "refused": refused[:3], "admittedAfterShed": admitted_after, "accepted": accepted[:1]}
 
 
 def _paused(phone: Phone, paused: bool) -> dict:
@@ -5539,6 +5564,7 @@ def main() -> int:
     keeps.add_argument("--minutes", type=int, default=10, help="how long the iPhone's link must hold in the background, a DM each minute")
     keeps.add_argument("--hold", type=float, default=60, help="seconds the re-dialed link must hold before its parameters are judged")
     keeps.add_argument("--redial-timeout", type=float, default=150, help="seconds after the shed for the iPhone's dial to be admitted")
+    keeps.add_argument("--baseline", action="store_true", help="the phone runs a build without the fix: its re-dial must be refused")
     keeps.add_argument("--quiet", nargs="*", default=[], help="adb serials of other Android phones in range, whose meshes pause for the run")
     keeps.add_argument("--away-wait", type=float, default=300, help="seconds for Knit to leave the front, or come back, once asked")
     keeps.add_argument(
