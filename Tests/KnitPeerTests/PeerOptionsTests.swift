@@ -69,8 +69,12 @@ import Testing
         let options = try run([])
         #expect(options.neverSighted.isEmpty)
         #expect(options.servesGattPayload)
-        #expect(options.readsGattPayloads)
-        #expect(try !run(["--no-gatt-reads"]).readsGattPayloads)
+        #expect(options.gattReads == .asProfile, "the profile's own")
+        #expect(try run(["--no-gatt-reads"]).gattReads == .off)
+        #expect(try run(["--gatt-reads", "--radio-profile", "android"]).gattReads == .on)
+        #expect(throws: UsageError.invalid(flag: "--gatt-reads", value: "--no-gatt-reads")) {
+            try run(["--gatt-reads", "--no-gatt-reads"])
+        }
         #expect(options.feedWindow, "a file is clocked by its receiver's reports unless asked")
         #expect(try !run(["--feed", "pace"]).feedWindow)
         #expect(try run(["--feed", "window"]).feedWindow)

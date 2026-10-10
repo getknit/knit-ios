@@ -265,7 +265,7 @@ import Testing
 
     @Test func eachProfileFindsPeersAsItsPlatformDoes() {
         #expect(RadioProfile.android.advertisesServiceData)
-        #expect(!RadioProfile.android.readsGattPayloads, "neither Android 2.7 nor A1 reads a GATT payload")
+        #expect(!RadioProfile.android.readsGattPayloads, "by default, as Android before knit-next 713b29d6 reads none")
         #expect(!RadioProfile.ios.advertisesServiceData)
         #expect(RadioProfile.ios.readsGattPayloads)
     }

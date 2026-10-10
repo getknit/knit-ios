@@ -28,11 +28,15 @@ extension LinkManager {
             let rssi = presence.smoothedRssi(of: node) ?? (link.sighted ? configuration.absentLinkRssi : configuration.unsightedLinkRssi)
             return PromotionPolicy.LinkSnapshot(nodeId: node, smoothedRssi: rssi, ageMilliseconds: now - link.since)
         }
+        let backoff = backingOff(now: now)
+        let promotion = promotionConfiguration
+        let pool = keepingOneHeadStart(candidates(snapshots, busy: occupied), backoff: backoff, configuration: promotion)
+        let headStarts = Set(pool.filter(isHeadStartCandidate).map(\.nodeId))
         let decision = PromotionPolicy.decide(
-            candidates: candidates(snapshots, busy: occupied),
+            candidates: pool,
             links: links,
-            backoff: backingOff(now: now),
-            configuration: promotionConfiguration
+            backoff: backoff,
+            configuration: promotion
         )
         var events: [Event] = []
         for node in decision.evict {
@@ -42,14 +46,15 @@ extension LinkManager {
             }
         }
         for node in decision.promote {
-            dial(node, now: now)
+            dial(node, headStart: headStarts.contains(node), now: now)
         }
         return events
     }
 
     /// When a sighted peer's dwell ends between its adverts, so that promotion runs then instead of at its next advert
-    /// (``PromotionPolicy/untilDwellEnds(candidates:backoff:configuration:)``). A peer backing off waits for its
-    /// backoff's own deadline, and the promotion that runs then asks again.
+    /// (``PromotionPolicy/untilDwellEnds(candidates:backoff:configuration:)``). A head-start peer's dwell counts its
+    /// head start, so this is also when that ends. A peer backing off waits for its backoff's own deadline, and the
+    /// promotion that runs then asks again.
     func dwellDue(now: Int64) -> Int64? {
         let snapshots = presence.present(now: now)
         let wait = PromotionPolicy.untilDwellEnds(
@@ -65,13 +70,20 @@ extension LinkManager {
         Set(liveLinks.map(\.neighbor.nodeId)).union(dialing.keys)
     }
 
-    /// The sighted peers promotion may pick: ours to dial, or any while seeking (``dialsWhateverTheOrder``), not `busy`,
-    /// and not refused.
+    /// The sighted peers promotion may pick: ours to dial, any while seeking (``dialsWhateverTheOrder``), or a flagged
+    /// peer above us once its head start ends (``isHeadStartCandidate(_:)``), not `busy`, and not refused. A head-start
+    /// peer's dwell counts its head start less, and none is a candidate while a head-start dial is open.
     func candidates(_ snapshots: [PresenceTracker.Snapshot], busy: Set<NodeId>) -> [PresenceTracker.Snapshot] {
         let anyOrder = dialsWhateverTheOrder
-        return snapshots.filter { snapshot in
-            (anyOrder || weDial(snapshot.nodeId, flags: snapshot.advert.flags)) && !busy.contains(snapshot.nodeId)
-                && !refused.contains(snapshot.nodeId)
+        let headStartOpen = headStartDialInFlight
+        return snapshots.compactMap { snapshot in
+            guard !busy.contains(snapshot.nodeId), !refused.contains(snapshot.nodeId) else {
+                return nil
+            }
+            if anyOrder || weDial(snapshot.nodeId, flags: snapshot.advert.flags) {
+                return snapshot
+            }
+            return isHeadStartCandidate(snapshot) && !headStartOpen ? withHeadStart(snapshot) : nil
         }
     }
 
@@ -80,10 +92,13 @@ extension LinkManager {
         Set(backoffs.filter { now < $0.value.nextAt }.keys)
     }
 
-    func dial(_ peer: NodeId, now: Int64) {
+    func dial(_ peer: NodeId, headStart: Bool, now: Int64) {
         // A PSM of 0 means the peer's listener is not open; Android never advertises one.
         guard let address = addresses[peer], let advert = presence.advert(of: peer), advert.psm != 0 else {
             return
+        }
+        if headStart {
+            logHeadStartDial(to: peer, now: now)
         }
         let id = radio.dial(address, psm: advert.psm)
         channels[id] = Channel(role: .dialer(peer), stage: .connecting, deadline: now + configuration.connectTimeoutMilliseconds)

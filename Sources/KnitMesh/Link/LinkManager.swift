@@ -261,7 +261,8 @@ public final class LinkManager: MeshTransport {
     }
 
     /// When ``advance()`` next has work, on the monotonic clock: a dial or HELLO timing out, the advert, a doorbell, a
-    /// backoff running out, a dwell ending between a peer's adverts, a file's next chunk, or a trailing report.
+    /// backoff running out, a dwell or a head start ending between a peer's adverts, a file's next chunk, or a trailing
+    /// report.
     public var nextDeadline: Int64? {
         let now = clock.monotonicMilliseconds()
         let backoffDue = backoffs.values.map(\.nextAt).filter { $0 > now }.min()

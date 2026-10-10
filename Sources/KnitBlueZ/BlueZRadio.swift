@@ -17,8 +17,9 @@
             /// How the peer shows itself.
             public var profile: RadioProfile
             /// Whether the radio reads the GATT payload of a peer that advertises only the `0xFE30` UUID, and so
-            /// can find an iPhone. The `ios` profile does, as an iPhone does, and the `android` profile does not, as
-            /// Android does not; `knit-peer scan` reads them whatever it advertises, to list iPhones too.
+            /// can find an iPhone. The `ios` profile does, as an iPhone does, and the `android` profile does not
+            /// unless told to, as Android before knit-next `713b29d6` does not; `knit-peer scan` reads them whatever it
+            /// advertises, to list iPhones too. The advert's `FLAG_DIALS_GATT_PEERS` follows it.
             public var readsGattPayloads: Bool
             /// Whether the `ios` profile's GATT application serves the payload characteristic. A test switch: without
             /// it the service holds the doorbell alone, and a reader files the peer as a stranger, so it never sights

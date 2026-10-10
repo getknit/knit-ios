@@ -24,7 +24,7 @@
             if options.receiveMTU != nil || options.sendMTU != nil {
                 throw .unsupported("--receive-mtu and --send-mtu: CoreBluetooth picks a channel's MTU itself")
             }
-            if !options.neverSighted.isEmpty || !options.servesGattPayload || !options.readsGattPayloads {
+            if !options.neverSighted.isEmpty || !options.servesGattPayload || options.gattReads == .off {
                 throw .unsupported("--never-sight, --no-gatt-payload and --no-gatt-reads: they are BlueZ's test switches")
             }
             bluetooth = BLERadio(log: log)

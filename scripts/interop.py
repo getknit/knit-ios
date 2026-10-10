@@ -164,8 +164,15 @@ class Phone:
         # The bridge writes its JSON between the quotes as it is, unescaped.
         return json.loads(match.group(1))
 
+    # Whether `wake` wakes the phone. A run that times the phone's own cadence, a screen-off phone's above all, turns it
+    # off (`--no-wake`): a wake keeps the scanner at its balanced cadence and nudges a scan, which hides the wait.
+    wakes = True
+
     def wake(self) -> None:
-        """Keeps the phone interactive so its scanner runs at its balanced cadence, and nudges a scan."""
+        """Keeps the phone interactive so its scanner runs at its balanced cadence, and nudges a scan, unless the run
+        turned waking off."""
+        if not self.wakes:
+            return
         self.shell("input keyevent KEYCODE_WAKEUP")
         self.bridge("HEAL")
 
@@ -288,11 +295,13 @@ class Peer(Node):
         log_path: Path | None = None,
         never_sight: set[str] | None = None,
         gatt_payload: bool = True,
-        gatt_reads: bool = True,
+        gatt_reads: bool | None = None,
     ) -> None:
         super().__init__()
         # knit-peer's test switches: nodes it never takes as sighted, so it never dials them and admits their dials
-        # unsighted; and, in the `ios` profile, a doorbell served without the payload, so an A3 phone never sights it.
+        # unsighted; in the `ios` profile, a doorbell served without the payload, so an A3 phone never sights it; and
+        # GATT reads, with FLAG_DIALS_GATT_PEERS, on (`--gatt-reads`, a release Android's advert in the `android`
+        # profile), off (`--no-gatt-reads`), or the profile's own (None).
         self.never_sight = never_sight or set()
         self.gatt_payload = gatt_payload
         self.gatt_reads = gatt_reads
@@ -314,8 +323,8 @@ class Peer(Node):
             arguments += ["--never-sight", ",".join(sorted(self.never_sight))]
         if not self.gatt_payload:
             arguments.append("--no-gatt-payload")
-        if not self.gatt_reads:
-            arguments.append("--no-gatt-reads")
+        if self.gatt_reads is not None:
+            arguments.append("--gatt-reads" if self.gatt_reads else "--no-gatt-reads")
         if ON_MAC:
             # The adapter and the MTU knobs are BlueZ's; CoreBluetooth has one radio and picks its own MTU.
             command = on_mac("run", arguments)
@@ -702,8 +711,17 @@ def iphone(arguments: argparse.Namespace) -> int:
     supervision timeout, not iOS's 720 ms put back after the doorbell lookup (`link-balanced`, `relink-balanced`). A
     link already up when the run began left its lines before the log was cleared, and passes unseen. `--links N`
     then brings the link down and up again until N links have found the doorbell, each dialed by the iPhone, held
-    for `--hold` seconds and checked the same way, and the summary lists every link's last timeout."""
+    for `--hold` seconds and checked the same way, and the summary lists every link's last timeout.
+
+    With the iPhone below a flagged phone, the phone dials, unless it has not by the time the iPhone's 15 s head start
+    ends; then the iPhone dials it (interop-audit finding AND-2), and is that link's central. Each head-start link
+    must find the doorbell and end at 5 s too. `--links N` then counts head-start links: each time it stops the
+    iPhone's mesh, waits `--away` seconds so that the phone's sighting of the iPhone lingers out, starts it, and times
+    the first link from there, as MVP item 2 does. A link the phone dialed is checked and reported, and not counted.
+    The iPhone's own log, over USB, shows each head-start line. `--no-wake` never wakes the phone, so that a
+    screen-off phone keeps its own scan cadence."""
     phone = Phone(arguments.device)
+    phone.wakes = not arguments.no_wake
     ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -717,9 +735,8 @@ def iphone(arguments: argparse.Namespace) -> int:
     order = "iphone-above" if ios.node_id > phone_id else "iphone-below"
     above = order == "iphone-above"
     tally: list[dict] = []
-    if arguments.links > 1 and not above:
-        ios.stop()
-        raise SystemExit("--links needs the iPhone above the phone, so that the iPhone is each link's central")
+    head_starts: list[dict] = []
+    knit = None if above else _iphone_log(ios, f"interop-iphone-{nonce}.log")
     print(
         json.dumps(
             {
@@ -730,6 +747,7 @@ def iphone(arguments: argparse.Namespace) -> int:
                 "phoneName": phone_name,
                 "order": order,
                 "fresh": fresh,
+                "wakes": phone.wakes,
             }
         )
     )
@@ -764,24 +782,30 @@ def iphone(arguments: argparse.Namespace) -> int:
             body = f"interop dm reply from iphone {nonce}"
             sent = ios.command(cmd="dm", to=phone_id, text=body)
             run.step("dm-iphone-reply-delivered", lambda: _delivered(ios, sent, 30))
-        balanced = not above or run.step("link-balanced", lambda: _balanced(phone, ios.node_id, tally, fresh=False)) is not None
+        head_start = not above
+        step = run.step("link-balanced", lambda: _balanced(phone, ios.node_id, tally, fresh=False, head_start=head_start))
+        balanced = step is not None
         if not arguments.skip_offline:
             phone.shell("logcat -c")
             _offline(run, ios, phone, phone_id, nonce)
             run.step("relink-dialer", lambda: _dialed_by(phone, ios, phone_id, order))
-            if above and balanced:
+            if balanced:
                 # The doorbell lookup and the put-back come seconds after the link: judge it once it has held.
                 ups = ios.lines(lambda line: _link(line, phone_id))
                 time.sleep(max(0.0, ups[-1]["_at"] + arguments.hold - time.monotonic()) if ups else 0.0)
-                balanced = run.step("relink-balanced", lambda: _balanced(phone, ios.node_id, tally)) is not None
+                balanced = run.step("relink-balanced", lambda: _balanced(phone, ios.node_id, tally, head_start=head_start)) is not None
         run.step("custody-converges", lambda: _converges(ios, phone, 180))
-        if above and balanced:
+        if balanced and above:
             _relinks(run, ios, phone, phone_id, arguments.links, arguments.hold, 180, tally)
+        elif balanced and arguments.links > 1:
+            _head_start_relinks(run, ios, phone, phone_id, arguments, tally, head_starts, knit)
     finally:
         ios.stop()
-    summary = {"summary": "iphone", "steps": run.steps, "failed": run.failed}
-    if above:
-        summary["lastTimeouts"] = _last_timeouts(tally)
+        if knit:
+            knit.stop()
+    summary = {"summary": "iphone", "steps": run.steps, "failed": run.failed, "lastTimeouts": _last_timeouts(tally)}
+    if head_starts:
+        summary["headStarts"] = head_starts
     print(json.dumps(summary))
     return run.failed
 
@@ -792,7 +816,8 @@ def _dialed_by(phone: Phone, ios: IPhone, phone_id: str, order: str) -> dict:
     iPhone sorts below it and the phone's advert, as the iPhone sights it, sets FLAG_DIALS_GATT_PEERS, or when it has
     held no link for three minutes and the iPhone sorts above it (knit-next #103). Such a lonely dial is reported, as
     is the link it opened, and only a dial the rules don't allow fails the step. The iPhone refuses a lonely phone it
-    has sighted, so those dials end `HANDSHAKE` and the iPhone dials."""
+    has sighted, so those dials end `HANDSHAKE` and the iPhone dials. Below a flagged phone, the iPhone dials it once
+    its head start ends, and that is reported too."""
     flags = next((s["flags"] for s in ios.command(cmd="links")["sightings"] if s["peer"] == phone_id), None)
     expected = "phone" if order == "iphone-below" and flags is not None and flags & DIALS_GATT_PEERS else "iphone"
     lines = _phone_lines(phone)
@@ -812,6 +837,9 @@ def _dialed_by(phone: Phone, ios: IPhone, phone_id: str, order: str) -> dict:
     if dialer != expected:
         if detail.get("lonelyDials", [{}])[-1].get("outcome") == "linked":
             return {"dialer": dialer, "outcome": "lonely dial", **detail}
+        if dialer == "iphone" and order == "iphone-below":
+            # The phone had not dialed by the end of the iPhone's head start (interop-audit finding AND-2).
+            return {"dialer": dialer, "outcome": "head start", **detail}
         raise RuntimeError(f"the {dialer} dialed; with the phone's flags at {flags} the {expected} should have: {ends[-2:]}")
     return {"dialer": dialer, **detail}
 
@@ -1826,16 +1854,30 @@ PRIORITY_AGAIN = re.compile(r"bt doorbell priority (\S+) again \((.*)\) requeste
 
 
 def _conn_params(phone: Phone, node: str) -> list[dict]:
-    """The phone's links from `node` since its log was last cleared, each opened by its `bt accepted client` line: when
-    its doorbell lookup found the doorbell, which is when the phone asks for BALANCED, every `bt conn params` line
-    logged for it, how many of those came before the find, and each time the fix asked for BALANCED again. Lines
-    before the first accept belong to a link already up, and open a link whose `acceptedAt` is None."""
+    """The phone's links with `node` since its log was last cleared, each opened by its `bt accepted client` line, or by
+    `bt connect ok` for one the phone dialed: when its doorbell lookup found the doorbell, which is when the phone asks
+    for BALANCED, every `bt conn params` line logged for it, how many of those came before the find, and each time the
+    fix asked for BALANCED again. Lines before the first open belong to a link already up, and open a link whose
+    `openedAt` is None."""
     log = phone.shell("logcat -d -v time -s BluetoothMeshTransport:*", timeout=60)
     links: list[dict] = []
 
+    def opened(at: str | None, accepted: bool | None) -> dict:
+        return {
+            "openedAt": at,
+            "accepted": accepted,
+            "acceptedAt": at if accepted else None,
+            "foundAt": None,
+            "beforeFound": 0,
+            "params": [],
+            "again": [],
+            "events": [],
+            "downAt": None,
+        }
+
     def current() -> dict:
         if not links:
-            links.append({"acceptedAt": None, "foundAt": None, "beforeFound": 0, "params": [], "again": [], "events": [], "downAt": None})
+            links.append(opened(None, None))
         return links[-1]
 
     for line in log.splitlines():
@@ -1843,7 +1885,9 @@ def _conn_params(phone: Phone, node: str) -> list[dict]:
         # `-v time` opens each line with "MM-DD HH:MM:SS.mmm".
         at = line[6:18]
         if message.startswith(f"bt accepted client {node} "):
-            links.append({"acceptedAt": at, "foundAt": None, "beforeFound": 0, "params": [], "again": [], "events": [], "downAt": None})
+            links.append(opened(at, True))
+        elif message.startswith(f"bt connect ok {node}"):
+            links.append(opened(at, False))
         elif message.startswith(f"bt doorbell found {node} "):
             link = current()
             link["foundAt"] = at
@@ -1861,7 +1905,7 @@ def _conn_params(phone: Phone, node: str) -> list[dict]:
     return links
 
 
-def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True) -> dict:
+def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True, head_start: bool = False) -> dict:
     """knit-next #102: every link the phone accepted from `node` since its log was cleared, whose doorbell lookup found
     the doorbell, ends at BALANCED's 5 s supervision timeout. The last `bt conn params` line the link logs after
     `bt doorbell found`, for as long as it lives, must say `timeout=5000ms`: a central's first values put back after
@@ -1869,10 +1913,14 @@ def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True) ->
     link whose lookup never found the doorbell never asked for BALANCED, so it is reported, and neither passes nor
     fails nor counts toward `--links`. Each link goes into `tally`, for the run's summary. With `fresh`, a link must
     have come up since the clear; without, one already up when the log was cleared, which left no lines, passes
-    unseen."""
+    unseen.
+
+    With `head_start`, the iPhone sorts below the phone, so a link the phone accepted is a head-start dial (interop-audit
+    finding AND-2), and one whose lookup found no doorbell fails: only that lookup asks for 5 s. A link the phone
+    dialed fails too if its last timeout is under 5 s."""
     links = _conn_params(phone, node)
     if fresh:
-        links = [link for link in links if link["acceptedAt"]]
+        links = [link for link in links if link["openedAt"]]
     if not links:
         if fresh:
             raise RuntimeError(f"the phone accepted no link from {node} since its log was cleared")
@@ -1883,11 +1931,13 @@ def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True) ->
         report.append(
             {
                 "acceptedAt": link["acceptedAt"],
+                "accepted": link["accepted"],
                 "doorbellFound": link["foundAt"] is not None,
                 "foundAt": link["foundAt"],
                 "timeouts": [params["timeoutMs"] for params in link["params"]],
                 "updatesAfterFound": len(after),
                 "last": after[-1] if after else None,
+                "lastAny": link["params"][-1] if link["params"] else None,
                 "again": link["again"],
                 "failedUpdates": _failed_updates(link["events"]),
                 "downAt": link["downAt"],
@@ -1896,9 +1946,16 @@ def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True) ->
     tally.extend(report)
     found = [link for link in report if link["doorbellFound"]]
     short = [link for link in found if link["last"] is None or link["last"]["timeoutMs"] < BALANCED_TIMEOUT_MS]
+    if head_start:
+        unfound = [link for link in report if not link["doorbellFound"]]
+        short += [link for link in unfound if link["lastAny"] and link["lastAny"]["timeoutMs"] < BALANCED_TIMEOUT_MS]
+        silent = [link for link in unfound if link["accepted"]]
+        if silent:
+            raise RuntimeError(f"{len(silent)} head-start links found no doorbell: {json.dumps(report)}")
     if short:
-        raise RuntimeError(f"{len(short)} of {len(found)} links did not end at {BALANCED_TIMEOUT_MS} ms: {json.dumps(report)}")
-    return {"links": report, "counted": len(found), "noDoorbell": len(report) - len(found)}
+        raise RuntimeError(f"{len(short)} of {len(report)} links did not end at {BALANCED_TIMEOUT_MS} ms: {json.dumps(report)}")
+    counted = sum(1 for link in found if link["accepted"] is not False)
+    return {"links": report, "counted": counted, "noDoorbell": len(report) - len(found)}
 
 
 def _failed_updates(events: list[dict]) -> list[dict]:
@@ -1917,8 +1974,9 @@ def _failed_updates(events: list[dict]) -> list[dict]:
 
 
 def _counted(tally: list[dict]) -> int:
-    """The links in `tally` that count toward `--links`: those whose lookup found the doorbell."""
-    return sum(1 for link in tally if link["doorbellFound"])
+    """The links in `tally` that count toward `--links`: those the phone took from the central, whose lookup found the
+    doorbell."""
+    return sum(1 for link in tally if link["doorbellFound"] and link["accepted"] is not False)
 
 
 def _relinks(run: Run, central: Node, phone: Phone, phone_id: str, want: int, hold: float, timeout: float, tally: list[dict]) -> None:
@@ -1967,11 +2025,85 @@ def _link_after(central: Node, phone: Phone, phone_id: str, since: float, timeou
                 raise
 
 
+def _head_start_relinks(
+    run: Run, ios: IPhone, phone: Phone, phone_id: str, arguments: argparse.Namespace, tally: list[dict], head_starts: list[dict], knit
+) -> None:
+    """With the iPhone below the phone, more link-ups until `--links` head-start links have found the doorbell, or twice
+    that many link-ups have come. Each time the iPhone's mesh stops for `--away` seconds, long enough for the phone's
+    sighting of it to linger out (90 s, `BlePresenceTracker.kt:274`), then starts, and the first link from there is
+    timed, as MVP item 2 times it. Whoever dialed, the link must hold `--hold` seconds and pass `_balanced`. Each link
+    goes into `head_starts`: its time, its dialer, and whether the iPhone logged its head-start line."""
+    want = arguments.links
+    attempt = 0
+    while _counted(tally) < want and attempt < 2 * want:
+        attempt += 1
+        label = f"head-start-{attempt}"
+        ios.command(cmd="stop")
+        time.sleep(arguments.away)
+        phone.shell("logcat -c")
+        started, wall = time.monotonic(), time.time()
+        ios.command(cmd="start")
+        link = run.step(label, lambda started=started: _relinked(ios, phone, phone_id, started, 180))
+        if link is None:
+            return
+        time.sleep(max(0.0, started + link["seconds"] + arguments.hold - time.monotonic()))
+        dialer = _last_dialer(phone, ios.node_id)
+        line = _head_start_line(knit, phone_id, wall)
+        entry = {"seconds": link["seconds"], "withinThirtySeconds": link["withinThirtySeconds"], "dialer": dialer, "line": line}
+        head_starts.append(entry)
+
+        def checked(entry: dict = entry) -> dict:
+            report = _balanced(phone, ios.node_id, tally, head_start=True)
+            entry["lastTimeoutMs"] = [link["lastAny"]["timeoutMs"] if link["lastAny"] else None for link in report["links"]]
+            if entry["dialer"] == "iphone" and knit and not entry["line"]:
+                raise RuntimeError("the iPhone dialed with no head-start line in its log")
+            return {**report, **_phone_held(phone, ios.node_id), **entry}
+
+        # The first link that fails stops the run, so its logs are fresh when someone looks.
+        if run.step(f"{label}-balanced", checked) is None:
+            return
+    if _counted(tally) < want:
+        run.step("links-counted", lambda: _fail(f"{_counted(tally)} of {want} head-start links found the doorbell in {attempt} link-ups"))
+
+
+def _last_dialer(phone: Phone, node: str) -> str | None:
+    """Who dialed the phone's last link with `node` since its log was cleared: "iphone" for `bt accepted client`,
+    "phone" for `bt connect ok`."""
+    ends = [line for line in _phone_lines(phone) if line.startswith((f"bt connect ok {node}", f"bt accepted client {node} "))]
+    if not ends:
+        return None
+    return "phone" if ends[-1].startswith("bt connect ok") else "iphone"
+
+
+# The line the iPhone's link manager logs before each head-start dial (`LinkManager+HeadStart.swift`).
+HEAD_START_LINE = "link head start over for "
+
+
+def _iphone_log(ios: IPhone, name: str):
+    """Knit's own log over USB, for the head-start line, or None when the iPhone is not on USB."""
+    try:
+        return IPhoneLog(ios.udid, ROOT / ".build" / name)
+    except (RuntimeError, OSError):
+        return None
+
+
+def _head_start_line(knit, peer: str, since: float) -> str | None:
+    """The iPhone's head-start line for `peer` logged since `since`, on the wall clock, if its log is being read."""
+    if knit is None:
+        return None
+    knit.file.flush()
+    for entry in IPhoneLog.entries(knit.path):
+        if f"{HEAD_START_LINE}{peer}" in entry["message"] and entry.get("ms", 0) / 1000 >= since - 1:
+            return entry["message"]
+    return None
+
+
 def _last_timeouts(tally: list[dict]) -> list[dict]:
     """Each link's last supervision timeout after its doorbell was found, in ms, for a run's summary line, with why
     the phone asked for BALANCED again on it, which shows whether the callback or the settle timer put it right."""
     return [
         {
+            "accepted": link["accepted"],
             "doorbellFound": link["doorbellFound"],
             "lastTimeoutMs": link["last"]["timeoutMs"] if link["last"] else None,
             "again": [again["why"] for again in link["again"]],
@@ -3830,25 +3962,47 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
     an Android phone. `--order` puts the iPhone's node id above or below a fresh peer identity, so the iPhone's first DM
     is a message request on the peer every run.
 
-    The peer runs the `android` profile, which leaves FLAG_DIALS_GATT_PEERS clear, so the iPhone dials it in both
-    orders and the peer admits it unsighted, as an A1 phone does (ADR 2026-09.6es2). The peer refuses every node but
-    the iPhone, so whatever crosses between the two crossed their own link. It runs on hci0, dongle B since 2026-10-03,
-    which takes the iPhone's dial (.agents/context/linux-peer.md, "What the nRF52840 dongles showed")."""
+    The peer runs the `android` profile, which leaves FLAG_DIALS_GATT_PEERS clear by default, as Android before knit-next
+    `713b29d6` does, so the iPhone dials it in both orders and the peer admits it unsighted, as an A1 phone does (ADR
+    2026-09.6es2). `--release-android` sets the flag (knit-peer's `--gatt-reads`), as every Android build since does,
+    and has the peer never sight the iPhone, a gapped Android that never dials it: the iPhone below it then dials it
+    once its 15 s head start ends (interop-audit finding AND-2), and the run records the first link's time and the
+    iPhone's head-start line. The peer refuses every node but the iPhone, so whatever crosses between the two crossed
+    their own link. It runs on hci0, dongle B since 2026-10-03, which takes the iPhone's dial (.agents/context/linux-peer.md,
+    "What the nRF52840 dongles showed"), unless `--adapter hci1` picks dongle A."""
+    if arguments.release_android and arguments.order != "iphone-below":
+        raise SystemExit("--release-android needs --order iphone-below: the head start is the smaller id's")
     ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
     ios.start()
     others = others_in_range(ios.node_id)
     peer_id = _keygen("iphone-peer", *_peer_window(ios.node_id, others, arguments.order))
-    print(json.dumps({"run": "iphone-peer", "iphone": ios.node_id, "peer": peer_id, "order": arguments.order, "refused": sorted(others)}))
+    header = {"run": "iphone-peer", "iphone": ios.node_id, "peer": peer_id, "order": arguments.order, "refused": sorted(others)}
+    print(json.dumps({**header, "releaseAndroid": arguments.release_android, "adapter": arguments.adapter}))
     run.step("iphone-forgot-old-peers", lambda: _forgets_all_but(ios, others))
     stop = threading.Event()
-    peer = Peer("android", f"knit-peer {nonce}", others, arguments.peer_log, arguments.rssi_floor, "iphone-peer", HCI0)
+    release = arguments.release_android
+    peer = Peer(
+        "android",
+        f"knit-peer {nonce}",
+        others,
+        arguments.peer_log,
+        arguments.rssi_floor,
+        "iphone-peer",
+        HCI0 if arguments.adapter == "hci0" else [],
+        never_sight={ios.node_id} if release else None,
+        gatt_reads=True if release else None,
+    )
+    knit = _iphone_log(ios, f"interop-iphone-peer-{nonce}.log") if release else None
     try:
-        started = time.monotonic()
+        started, wall = time.monotonic(), time.time()
         peer.start()
         threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
         run.step("link", lambda: _linked_since(peer, ios.node_id, started, 180))
+        if release:
+            run.step("peer-flagged", lambda: _sighted_flagged(ios, peer_id))
+            run.step("head-start-line", lambda: _head_start_logged(knit, peer_id, wall))
         run.step("profile-on-iphone", lambda: _ios_pinned(ios, peer_id, peer.name))
         run.step("profile-on-peer", lambda: _peer_pinned(peer, ios))
         run.step("safety-numbers-match", lambda: _same_safety_number(ios, peer))
@@ -3876,14 +4030,35 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
         sent = ios.command(cmd="dm", to=peer_id, text=body)
         run.step("dm-iphone-reply-delivered", lambda: _delivered(ios, sent, 30))
         if not arguments.skip_offline:
+            wall = time.time()
             _offline(run, ios, peer, peer_id, nonce)
+            if release:
+                run.step("relink-head-start-line", lambda: _head_start_logged(knit, peer_id, wall))
         run.step("custody-converges-again", lambda: _peers_converge(peer, ios, 300, frozenset()))
     finally:
         stop.set()
         peer.stop()
         ios.stop()
+        if knit:
+            knit.stop()
     print(json.dumps({"summary": "iphone-peer", "steps": run.steps, "failed": run.failed}))
     return run.failed
+
+
+def _sighted_flagged(ios: IPhone, peer_id: str) -> dict:
+    """The iPhone sights the peer with FLAG_DIALS_GATT_PEERS set, so only the head start dialed it."""
+    flags = next((s["flags"] for s in ios.command(cmd="links")["sightings"] if s["peer"] == peer_id), None)
+    if flags is None or not flags & DIALS_GATT_PEERS:
+        raise RuntimeError(f"the iPhone sights the peer with flags {flags}")
+    return {"flags": flags}
+
+
+def _head_start_logged(knit, peer_id: str, since: float, timeout: float = 30) -> dict:
+    """The iPhone logged its head-start line for the peer since `since`, on the wall clock."""
+    if knit is None:
+        raise RuntimeError("the iPhone's log is not being read: it needs the iPhone on USB")
+    line = poll(lambda: _head_start_line(knit, peer_id, since), timeout, every=2)
+    return {"line": line}
 
 
 def iphone_photos(arguments: argparse.Namespace) -> int:
@@ -4994,8 +5169,12 @@ def main() -> int:
     ios = commands.add_parser("iphone")
     ios.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios.add_argument("--skip-offline", action="store_true", help="leave out MVP item 6, which stops the iPhone's mesh")
-    ios.add_argument("--links", type=int, default=1, help="link-ups to check at the 5 s timeout, the iPhone above the phone (#102)")
+    ios.add_argument(
+        "--links", type=int, default=1, help="link-ups to check at the 5 s timeout: the iPhone's dials above the phone (#102), head-start links below it"
+    )
     ios.add_argument("--hold", type=float, default=60, help="seconds the relink and each extra link must hold before they are judged")
+    ios.add_argument("--away", type=float, default=95, help="below the phone, seconds the iPhone's mesh stays stopped before each extra link")
+    ios.add_argument("--no-wake", action="store_true", help="never wake the phone, so a screen-off phone keeps its own scan cadence")
     wake = commands.add_parser("iphone-wake")
     wake.add_argument("--sender", default="phone", choices=["phone", "peer"], help="who DMs the locked iPhone: the phone, or knit-peer on hci0")
     wake.add_argument("--device", help="the adb serial of a phone the maintainer approved for this session; needed with --sender phone")
@@ -5014,6 +5193,12 @@ def main() -> int:
     ios_peer.add_argument("--skip-offline", action="store_true", help="leave out MVP item 6, which stops the iPhone's mesh")
     ios_peer.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
     ios_peer.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
+    ios_peer.add_argument(
+        "--release-android",
+        action="store_true",
+        help="the peer advertises as a release Android does, FLAG_DIALS_GATT_PEERS set, and never sights the iPhone, which must dial it after its head start",
+    )
+    ios_peer.add_argument("--adapter", default="hci0", choices=["hci0", "hci1"], help="the peer's adapter: hci0 (dongle B) or hci1 (dongle A)")
     ios_photos = commands.add_parser("iphone-photos")
     ios_photos.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_photos.add_argument("--animated", action="store_true", help="send GIFs both ways, and check that the iPhone plays both")

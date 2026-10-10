@@ -132,7 +132,7 @@ public enum PromotionPolicy {
     }
 
     /// Close enough, present long enough, heard lately, and not backing off.
-    private static func isPromotable(_ candidate: PresenceTracker.Snapshot, backoff: Set<NodeId>, configuration: Configuration) -> Bool {
+    static func isPromotable(_ candidate: PresenceTracker.Snapshot, backoff: Set<NodeId>, configuration: Configuration) -> Bool {
         candidate.smoothedRssi >= configuration.rssiFloor && candidate.dwellMilliseconds >= configuration.dwellMilliseconds
             && candidate.lastSeenAgoMilliseconds <= configuration.heardWithinMilliseconds && !backoff.contains(candidate.nodeId)
     }

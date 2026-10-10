@@ -14,8 +14,10 @@ public enum RadioProfile: Sendable, CaseIterable {
     }
 
     /// Whether the radio reads the GATT payload of a peer that advertises only the `0xFE30` UUID, as an iPhone does,
-    /// and so sets `FLAG_DIALS_GATT_PEERS`. The `android` profile reads none, as neither Android 2.7 nor A1 does, so
-    /// an iPhone meets it as it meets Android: a peer it must dial whatever the order.
+    /// and so sets `FLAG_DIALS_GATT_PEERS`, unless told otherwise (``BlueZRadio/Configuration/readsGattPayloads``). The
+    /// `android` profile reads none by default, as Android 2.7, A1 and 2.8.0 do not, so an iPhone meets it as a peer it
+    /// must dial whatever the order. knit-peer's `--gatt-reads` makes it read and set the flag, as every Android build
+    /// since knit-next `713b29d6` does.
     var readsGattPayloads: Bool {
         self == .ios
     }

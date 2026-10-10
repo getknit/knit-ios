@@ -31,6 +31,10 @@ extension LinkManager {
         /// How long one wake lasts: a sighting this long after the current wake began starts another, since iOS resumes a
         /// suspended app for about 10 s at a time.
         public var seekWakeMilliseconds: Int64
+        /// How long past the ordinary dwell a node at the front that serves the doorbell waits for a flagged peer above
+        /// it to dial first, before it dials that peer itself (``LinkManager/givesHeadStart``, interop-audit finding
+        /// AND-2). 12 s of dwell and 15 s of head start leave about 3 s of a dial inside MVP item 2's 30 s.
+        public var headStartMilliseconds: Int64
         /// How long a link must have held for its loss to start a fresh spell of seeking. One that flapped carries the
         /// spell's wakes on, so a peer that links and drops cannot keep a lonely iPhone awake.
         public var seekSpellResetMilliseconds: Int64
@@ -74,6 +78,7 @@ extension LinkManager {
             seekWakeBudget: Int = 8,
             seekWakeMilliseconds: Int64 = 10_000,
             seekSpellResetMilliseconds: Int64 = 30_000,
+            headStartMilliseconds: Int64 = 15_000,
             lateDeadlineGraceMilliseconds: Int64 = 3000,
             fileChunkBytes: Int = 16_384,
             filePaceBudgetBytesPerSecond: Int64 = 4096,
@@ -95,6 +100,7 @@ extension LinkManager {
             self.seekWakeBudget = seekWakeBudget
             self.seekWakeMilliseconds = seekWakeMilliseconds
             self.seekSpellResetMilliseconds = seekSpellResetMilliseconds
+            self.headStartMilliseconds = headStartMilliseconds
             self.lateDeadlineGraceMilliseconds = lateDeadlineGraceMilliseconds
             self.fileChunkBytes = fileChunkBytes
             self.filePaceBudgetBytesPerSecond = filePaceBudgetBytesPerSecond
