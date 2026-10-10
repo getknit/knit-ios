@@ -80,7 +80,10 @@ ladder, not the first.
     back as it ends, `PhotoTests`' photo apart. `BackgroundTests` is the exception: two steps `interop.py` runs one at a
     time, which bring the Settings app or Knit to the front and never launch, end or restore Knit. They run from an
     xctestrun with Knit left out of the install (`KNIT_DEVICE_KEEP_KNIT`), since installing Knit ends its process and
-    its links. Its sources live in `Tests/KnitDeviceTests/`, which only the `KnitDevice` scheme builds.
+    its links. The lab iPhone's passcode stops automation mode until someone types it, so `interop.py
+    android-keeps-iphone` moves Knit with `devicectl device process launch` instead, which brings a running app forward
+    in the same process, and keeps these steps for a phone without a passcode. Its sources live in
+    `Tests/KnitDeviceTests/`, which only the `KnitDevice` scheme builds.
 
 ## Coverage
 
