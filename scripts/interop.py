@@ -1204,7 +1204,8 @@ PRESENCE_LINGER_MS = 90_000
 
 def _held_at_cap(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: KnitFront, arguments: argparse.Namespace, nonce: str) -> None:
     ios_id = ios.node_id
-    if run.step("link", lambda: sender.link(ios)) is None:
+    # A phone that was just installed, or whose links were just paused away, can take minutes to relink an iPhone.
+    if run.step("link", lambda: _ios_linked(ios, phone, sender.node_id, 360)) is None:
         return
     phone.shell("logcat -c")
     run.step("phone-hears-iphone", lambda: _scored(phone, ios_id, _heard_score, 150))
@@ -1229,7 +1230,7 @@ def _redialed(run: Run, phone: Phone, ios: IPhone, sender: _PhoneSender, front: 
     if ios.socket is None and run.step("knit-front", lambda: front.to_front(ios)) is None:
         return
     phone.bridge("BLECAP", clear=True)
-    if run.step("redial-link", lambda: sender.link(ios)) is None:
+    if run.step("redial-link", lambda: _ios_linked(ios, phone, sender.node_id, 360)) is None:
         return
     phone.shell("logcat -c")
     if arguments.baseline:
