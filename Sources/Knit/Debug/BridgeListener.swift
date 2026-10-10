@@ -219,7 +219,16 @@
             connection.send(content: Data((line + "\n").utf8), completion: .idempotent)
         }
 
-        /// Reads lines until the far side closes, answering each in order: the next read waits for the last answer.
+        /// Sends `line` and returns once the network has taken it, or the connection has failed, so a client that
+        /// pulls a recording a megabyte at a time never has more than one reply queued on the phone.
+        private func deliver(_ line: String, on connection: NWConnection) async {
+            await withCheckedContinuation { continuation in
+                connection.send(content: Data((line + "\n").utf8), completion: .contentProcessed { _ in continuation.resume() })
+            }
+        }
+
+        /// Reads lines until the far side closes, answering each in order: the next read waits for the last answer to
+        /// be sent.
         private func receive(on connection: NWConnection, from origin: BridgeOrigin, pending: [UInt8]) {
             connection.receive(minimumIncompleteLength: 1, maximumLength: Self.readSize) { [self] data, _, isComplete, error in
                 var bytes = pending + (data.map { [UInt8]($0) } ?? [])
@@ -232,7 +241,7 @@
                 Task { [self] in
                     for line in lines {
                         let reply = await answer(line, origin)
-                        send(reply.line, on: connection)
+                        await deliver(reply.line, on: connection)
                         if reply.closes {
                             connection.cancel()
                             return

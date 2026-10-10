@@ -262,6 +262,8 @@ app = pathlib.Path(sys.argv[1])
 info = plistlib.load(open(app / "Info.plist", "rb"))
 if info.get("ITSAppUsesNonExemptEncryption") is not True:
 	sys.exit(f"{app}/Info.plist lacks ITSAppUsesNonExemptEncryption = YES: Knit seals messages with its own encryption")
+if "NSMicrophoneUsageDescription" in info:
+	sys.exit(f"{app}/Info.plist asks for the microphone, which only a debug build's screen recordings use (ADR 2026-10.x2cq)")
 if info.get("UIDeviceFamily") != [1]:
 	sys.exit(f"{app} is built for device families {info.get('UIDeviceFamily')}, not the iPhone alone (ADR 2026-10.kedu)")
 # GRDB and swift-crypto each bring a manifest in a resource bundle; App/PrivacyInfo.xcprivacy is the app's own.

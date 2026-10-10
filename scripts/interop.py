@@ -28,6 +28,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
     scripts/interop.py iphone-seek --far hci1|hci0|phone [--device SERIAL] [--mode drop|relink|budget] [--drop kill|radio-off]
     scripts/interop.py bridge  [--udid UDID | --host ADDRESS] [--watch SECONDS] [COMMAND_JSON ...]
+    scripts/interop.py record-pull --out FILE [--udid UDID | --host ADDRESS] [--chunk BYTES] [--keep]
 
 `iphone` runs MVP items 2 to 6 between an iPhone and the Android phone, driving the iPhone through a debug build's
 bridge (ADR 2026-09.kwa8), and the phone's Requests screen for a pair that has never talked; `iphone-peer`
@@ -42,7 +43,8 @@ every thread, and checks a replacement, a retraction, an emoji outside the iPhon
 `iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `iphone-reboot` is item 1's
 relaunch and reboot, with someone to close Knit and unlock the iPhone; `iphone-scan` is P8's scan-filter check, with
 someone to do the same; `iphone-seek` checks that a locked iPhone with no link finds a peer within its wake budget
-(ADR 2026-10.mueg), with someone to do the same; `bridge` sends that bridge commands by hand and prints what comes back. `iphone-rings` checks
+(ADR 2026-10.mueg), with someone to do the same; `bridge` sends that bridge commands by hand and prints what comes back, and
+`record-pull` copies the bridge's last finished screen recording to a file and checks its SHA-256. `iphone-rings` checks
 the doorbell rings an iPhone sends, and `android-rings` those an Android phone sends, with companion change A4.
 `android-reads` is companion change A3's device gate: an Android phone reads the peer's GATT payload and dials it, or
 is dialed, by the id order.
@@ -2873,6 +2875,42 @@ def bridge(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def record_pull(arguments: argparse.Namespace) -> int:
+    """Copies the bridge's last finished screen recording (ADR 2026-10.x2cq) to --out, a chunk at a time, checks its
+    SHA-256 against the one `record-stop` reported, then deletes it on the phone unless --keep. Run `record-stop`
+    first; asking it again only reads back the finished file."""
+    ios = IPhone(arguments.udid, arguments.host)
+    ios.start()
+    try:
+        take = ios.command(cmd="record-stop", timeout=120)
+        if not take.get("ok"):
+            raise RuntimeError(f"no recording to pull: {take.get('code')}: {take.get('error')}")
+        started = time.monotonic()
+        digest = hashlib.sha256()
+        offset = 0
+        with open(arguments.out, "wb") as out:
+            while True:
+                chunk = ios.command(cmd="record-fetch", offset=offset, length=arguments.chunk, timeout=60)
+                if not chunk.get("ok"):
+                    raise RuntimeError(f"record-fetch at {offset}: {chunk.get('code')}: {chunk.get('error')}")
+                data = base64.b64decode(chunk["data"])
+                out.write(data)
+                digest.update(data)
+                offset += len(data)
+                if chunk["eof"]:
+                    break
+        seconds = time.monotonic() - started
+        if offset != take["bytes"] or digest.hexdigest() != take["sha256"]:
+            raise RuntimeError(f"{arguments.out} is {offset} bytes, sha256 {digest.hexdigest()}; the phone has {take['bytes']}, {take['sha256']}")
+        if not arguments.keep:
+            ios.command(cmd="record-delete")
+        result = {key: take[key] for key in ("file", "bytes", "sha256", "startedAt", "durationMs", "endedBy")}
+        print(json.dumps({**result, "out": arguments.out, "seconds": round(seconds, 1), "mbps": round(offset * 8 / seconds / 1e6, 1)}))
+    finally:
+        ios.stop()
+    return 0
+
+
 def refusal(arguments: argparse.Namespace) -> int:
     """Checklist L's third group, against Android 2.7 only: with the `ios` profile 2.7 cannot see the peer, so the peer
     dials, and Android's responder closes a dialer whose id sorts below its own (`BluetoothMeshTransport.kt:754`). The
@@ -5002,6 +5040,10 @@ def main() -> int:
     by_hand = commands.add_parser("bridge")
     by_hand.add_argument("--watch", type=float, default=0, help="print the bridge's events for this many seconds")
     by_hand.add_argument("commands", nargs="*", help='commands as JSON, such as \'{"cmd":"status"}\'')
+    pull = commands.add_parser("record-pull")
+    pull.add_argument("--out", required=True, help="where to write the recording")
+    pull.add_argument("--chunk", type=int, default=1_048_576, help="bytes per record-fetch; the phone sends at most 1 MiB")
+    pull.add_argument("--keep", action="store_true", help="leave the recording on the phone after the copy")
     rings = commands.add_parser("iphone-rings")
     rings.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
     rings.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
@@ -5070,6 +5112,7 @@ def main() -> int:
         scan,
         seek,
         by_hand,
+        pull,
         ios_peer,
         ios_photos,
         ios_block,
@@ -5094,7 +5137,8 @@ def main() -> int:
     if arguments.command == "android-reads" and arguments.links > 1 and arguments.order != "peer-above":
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
     if arguments.command in (
-        "iphone", "iphone-wake", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-delete", "iphone-react", "bridge"
+        "iphone", "iphone-wake", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-delete", "iphone-react", "bridge",
+        "record-pull",
     ):
         return {
             "iphone": iphone,
@@ -5105,6 +5149,7 @@ def main() -> int:
             "iphone-delete": iphone_delete,
             "iphone-react": iphone_react,
             "bridge": bridge,
+            "record-pull": record_pull,
         }[arguments.command](arguments)
     if not PEER.exists():
         sys.exit(f"build knit-peer first: swift build --product knit-peer ({PEER} is missing)")

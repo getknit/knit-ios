@@ -70,6 +70,11 @@ targets:
         # ADR 2026-09.txqp: Xcode-signed development builds take the .dev id.
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.dev
+          # The bridge's screen recordings take the microphone (ADR 2026-10.x2cq), and iOS ends an app that asks for it
+          # without this key. Debug only: a store build never records, and `check.sh release` checks the key is absent.
+          INFOPLIST_KEY_NSMicrophoneUsageDescription: >-
+            This debug build of Knit records sound with the screen when a test script asks, so a demo film can line
+            up its audio.
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit
   # The Simulator's UI tests and accessibility audit (`scripts/check.sh uitest`). The sources live under Tests/ so

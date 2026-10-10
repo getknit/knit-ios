@@ -16,8 +16,8 @@
     /// bridge answers `wifi`, `wifi-pin` and `wifi-unpin` itself (``WiFiCommand``); `scan-filter`, since only the
     /// iPhone's radio has a scan probe (``ScanProbeCommand``); `storage`, since only the app keeps its identity in the
     /// Keychain and its database under Data Protection (``StorageCommand``); `photos`, since only the app decodes them
-    /// (``PhotosCommand``); and `screen`, since only the app runs the content filter's model (``ScreenCommand``). Each
-    /// `status` carries
+    /// (``PhotosCommand``); `screen`, since only the app runs the content filter's model (``ScreenCommand``); and the
+    /// `record-` commands, since only the app has ReplayKit (``RecordCommand``, ADR 2026-10.x2cq). Each `status` carries
     /// `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its memory grow.
     @MainActor
     internal final class Bridge {
@@ -54,6 +54,7 @@
                 ["memoryAvailableKb": .int(Int64(os_proc_available_memory() / Self.bytesPerKilobyte))]
             }
             let gate = WiFiGate(log: log, defaults: .standard)
+            let takes = BridgeRecorder.start(clock: clock)
             let channel = BridgeListener(log: log) {
                 control.ready
             } answer: { line, origin in
@@ -75,9 +76,20 @@
                 if let ask = ScreenTextCommand.parse(line) {
                     return (await ask.answer(textClassifier), false)
                 }
+                if let ask = RecordCommand.parse(line) {
+                    return (await ask.answer(takes), false)
+                }
                 let reply = await control.handle(line)
                 return (reply.line, reply.quits)
             }
+            Self.relay(session, through: control, to: channel)
+            gate.attach(channel)
+            listener = channel
+            wifi = gate
+        }
+
+        /// Sends every event `session` taps to every connection on `channel`, as `control` writes it.
+        private static func relay(_ session: AppSession, through control: MeshControl, to channel: BridgeListener) {
             let (events, continuation) = AsyncStream<MeshEvent>.makeStream()
             session.eventTap = { continuation.yield($0) }
             Task {
@@ -87,9 +99,6 @@
                     }
                 }
             }
-            gate.attach(channel)
-            listener = channel
-            wifi = gate
         }
 
         /// Listens anew, and on Wi-Fi too if the phone is on a pinned network; called at launch and at every foreground.

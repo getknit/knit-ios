@@ -108,6 +108,8 @@ python3 scripts/interop.py iphone-seek --far hci1 --mode budget --minutes 10   #
 python3 scripts/interop.py bridge '{"cmd":"status"}' --watch 60   # the iPhone's bridge by hand: replies, then events
 python3 scripts/interop.py bridge '{"cmd":"wifi-pin"}'           # over USB: let the bridge listen on Wi-Fi on this network
 python3 scripts/interop.py bridge --host <phone-ip> '{"cmd":"wifi"}'   # over Wi-Fi: the network, its pin, the listener
+python3 scripts/interop.py bridge --host <phone-ip> '{"cmd":"record-start","mic":true}'   # record the screen; someone taps Allow
+python3 scripts/interop.py record-pull --host <phone-ip> --out take.mp4   # record-stop, then fetch, check and delete the file
 python3 scripts/soak.py run [--hours 10]                          # a night against every phone in range; drives none
 python3 scripts/soak.py status | report [--json] | stop           # the latest run (.build/soak/current)
 sudo scripts/hci1-supervision.sh                                  # dongles A and B's supervision timeout to 5 s, until a replug
@@ -174,6 +176,23 @@ listens, and `wifi-unpin` (with `"all":true` for every network) undoes a pin. Ev
 `interop.py` then takes `--host <phone-ip>`, or `KNIT_IPHONE_HOST`; `--host ''` forces USB. The log, crash reports
 and restarts still need the cable. Keep the phone on 5 GHz Wi-Fi for runs that time the BLE link, since 2.4 GHz
 Wi-Fi shares the phone's radio with Bluetooth.
+
+The bridge records the screen for knit-next's demo film (ADR 2026-10.x2cq), with ReplayKit's in-app recorder:
+only Knit's own screens, and the microphone unless `"mic":false`. Every reply echoes `tag`, and a refusal carries
+`"ok":false`, a `code` and an `error`.
+
+| Command | Answer |
+| --- | --- |
+| `{"cmd":"record-start","mic":true}` | once recording runs: `"recording":true`, `microphone`, `startedAt` (wall ms). Refused with `busy`, `declined`, `unavailable`, `timeout` (nobody tapped Allow within 120 s) or `failed` |
+| `{"cmd":"record-stop"}` | the finished file: `file`, `bytes`, `sha256`, `startedAt`, `durationMs`, `microphone`, `endedBy` (`stop` or `background`). Asked again, the same answer. Refused with `idle`, `busy` (still starting), `lost` (iOS ended the take and kept nothing) or `failed` |
+| `{"cmd":"record-fetch","offset":0,"length":1048576}` | `data`, base64 of at most 1 MiB (`length` defaults to that and is capped there), with `offset`, `length`, `bytes` and `eof`. Refused with `none` or `range` |
+| `{"cmd":"record-delete"}` | `deleted`, the file's name or `null` |
+| `{"cmd":"record-status"}` | `state` (`idle`, `starting`, `recording` or `finishing`), `take` (as `record-stop` gives it, or `null`) and `lost` |
+
+iOS asks the person holding the phone at each start, so someone taps Allow on camera; a start made earlier does not
+carry over past eight minutes, and on recent iOS not at all. Leaving Knit ends the take and keeps the file, which
+`record-stop` returns once Knit is back. A new start deletes the last file, and a relaunch forgets it. Pulling runs a
+megabyte per round trip; `record-pull` prints the rate it got.
 
 The debug log carries link events, not messages; the bridge's `messages`, `peers` and `digest` answer what the
 store holds. When Knit is not running, copy

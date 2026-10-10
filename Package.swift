@@ -96,8 +96,8 @@ let package = Package(
         .target(name: "CBluetoothShim"),
         .target(name: "KnitBlueZ", dependencies: ["KnitSync", "KnitMesh", "KnitWire", "CBluetoothShim"] + dbus, swiftSettings: strict),
         // The JSON-lines control surface, platform-free: what `knit-peer` answers on standard input, and a debug build
-        // of the app over its bridge, with the bridge's Wi-Fi pins.
-        .target(name: "KnitControl", dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
+        // of the app over its bridge, with the bridge's Wi-Fi pins and screen recordings, whose files it hashes.
+        .target(name: "KnitControl", dependencies: ["KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", crypto], swiftSettings: strict),
         // The peer's logic, platform-free so its tests run anywhere: options, its state directory and keygen.
         // `knit-peer` wires it to the BlueZ radio.
         .target(
