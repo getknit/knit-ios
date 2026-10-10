@@ -164,17 +164,19 @@ class Phone:
         # The bridge writes its JSON between the quotes as it is, unescaped.
         return json.loads(match.group(1))
 
-    # Whether `wake` wakes the phone. A run that times the phone's own cadence, a screen-off phone's above all, turns it
-    # off (`--no-wake`): a wake keeps the scanner at its balanced cadence and nudges a scan, which hides the wait.
-    wakes = True
+    # What `wake` does: "heal" keeps the screen on and nudges a scan, "screen" only keeps the screen on, and "none" does
+    # nothing (`--wake`). A run that times the phone's own cadence can't nudge its scans, which would hide the wait: an
+    # open phone's run keeps its screen on alone, and a screen-off phone's never wakes it.
+    wakes = "heal"
 
     def wake(self) -> None:
-        """Keeps the phone interactive so its scanner runs at its balanced cadence, and nudges a scan, unless the run
-        turned waking off."""
-        if not self.wakes:
+        """Keeps the phone interactive so its scanner runs at its balanced cadence, and nudges a scan, as far as the
+        run's `wakes` allows."""
+        if self.wakes == "none":
             return
         self.shell("input keyevent KEYCODE_WAKEUP")
-        self.bridge("HEAL")
+        if self.wakes == "heal":
+            self.bridge("HEAL")
 
     def state(self, conversation: str | None = None, limit: int = 20) -> dict:
         return self.bridge("STATE", conv=conversation, limit=limit) if conversation else self.bridge("STATE")
@@ -713,15 +715,16 @@ def iphone(arguments: argparse.Namespace) -> int:
     then brings the link down and up again until N links have found the doorbell, each dialed by the iPhone, held
     for `--hold` seconds and checked the same way, and the summary lists every link's last timeout.
 
-    With the iPhone below a flagged phone, the phone dials, unless it has not by the time the iPhone's 15 s head start
+    With the iPhone below a flagged phone, the phone dials, unless it has not by the time the iPhone's 12 s head start
     ends; then the iPhone dials it (interop-audit finding AND-2), and is that link's central. Each head-start link
     must find the doorbell and end at 5 s too. `--links N` then counts head-start links: each time it stops the
     iPhone's mesh, waits `--away` seconds so that the phone's sighting of the iPhone lingers out, starts it, and times
     the first link from there, as MVP item 2 does. A link the phone dialed is checked and reported, and not counted.
-    The iPhone's own log, over USB, shows each head-start line. `--no-wake` never wakes the phone, so that a
-    screen-off phone keeps its own scan cadence."""
+    The iPhone's own log, over USB, shows each head-start line. `--wake screen` keeps an open phone's screen on
+    without nudging its scans, and `--wake none` never wakes the phone, so that a screen-off phone keeps its own
+    scan cadence."""
     phone = Phone(arguments.device)
-    phone.wakes = not arguments.no_wake
+    phone.wakes = arguments.wake
     ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -1921,6 +1924,10 @@ def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True, he
     links = _conn_params(phone, node)
     if fresh:
         links = [link for link in links if link["openedAt"]]
+    if not links and fresh:
+        # A network adb link sometimes reads back an empty log; read it once more before failing.
+        time.sleep(3)
+        links = [link for link in _conn_params(phone, node) if link["openedAt"]]
     if not links:
         if fresh:
             raise RuntimeError(f"the phone accepted no link from {node} since its log was cleared")
@@ -2034,8 +2041,13 @@ def _head_start_relinks(
     timed, as MVP item 2 times it. Whoever dialed, the link must hold `--hold` seconds and pass `_balanced`. Each link
     goes into `head_starts`: its time, its dialer, and whether the iPhone logged its head-start line."""
     want = arguments.links
+
+    def counted() -> int:
+        # `--count any` counts every link-up that passed, whoever dialed, as an open phone's run does.
+        return len(head_starts) if arguments.count == "any" else _counted(tally)
+
     attempt = 0
-    while _counted(tally) < want and attempt < 2 * want:
+    while counted() < want and attempt < 2 * want:
         attempt += 1
         label = f"head-start-{attempt}"
         ios.command(cmd="stop")
@@ -2062,8 +2074,8 @@ def _head_start_relinks(
         # The first link that fails stops the run, so its logs are fresh when someone looks.
         if run.step(f"{label}-balanced", checked) is None:
             return
-    if _counted(tally) < want:
-        run.step("links-counted", lambda: _fail(f"{_counted(tally)} of {want} head-start links found the doorbell in {attempt} link-ups"))
+    if counted() < want:
+        run.step("links-counted", lambda: _fail(f"{counted()} of {want} links counted ({arguments.count}) in {attempt} link-ups"))
 
 
 def _last_dialer(phone: Phone, node: str) -> str | None:
@@ -3966,12 +3978,11 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
     `713b29d6` does, so the iPhone dials it in both orders and the peer admits it unsighted, as an A1 phone does (ADR
     2026-09.6es2). `--release-android` sets the flag (knit-peer's `--gatt-reads`), as every Android build since does,
     and has the peer never sight the iPhone, a gapped Android that never dials it: the iPhone below it then dials it
-    once its 15 s head start ends (interop-audit finding AND-2), and the run records the first link's time and the
-    iPhone's head-start line. The peer refuses every node but the iPhone, so whatever crosses between the two crossed
+    once its 12 s head start ends (interop-audit finding AND-2), and the run records the first link's time and the
+    iPhone's head-start line. With `--order iphone-above`, the iPhone dials it at the ordinary dwell, and logs no
+    head-start line. The peer refuses every node but the iPhone, so whatever crosses between the two crossed
     their own link. It runs on hci0, dongle B since 2026-10-03, which takes the iPhone's dial (.agents/context/linux-peer.md,
     "What the nRF52840 dongles showed"), unless `--adapter hci1` picks dongle A."""
-    if arguments.release_android and arguments.order != "iphone-below":
-        raise SystemExit("--release-android needs --order iphone-below: the head start is the smaller id's")
     ios = IPhone(arguments.udid, arguments.host)
     run = Run()
     nonce = secrets.token_hex(3)
@@ -4000,9 +4011,13 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
         peer.start()
         threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
         run.step("link", lambda: _linked_since(peer, ios.node_id, started, 180))
+        below = arguments.order == "iphone-below"
         if release:
             run.step("peer-flagged", lambda: _sighted_flagged(ios, peer_id))
-            run.step("head-start-line", lambda: _head_start_logged(knit, peer_id, wall))
+            if below:
+                run.step("head-start-line", lambda: _head_start_logged(knit, peer_id, wall))
+            else:
+                run.step("no-head-start-line", lambda: _no_head_start_line(knit, peer_id, wall))
         run.step("profile-on-iphone", lambda: _ios_pinned(ios, peer_id, peer.name))
         run.step("profile-on-peer", lambda: _peer_pinned(peer, ios))
         run.step("safety-numbers-match", lambda: _same_safety_number(ios, peer))
@@ -4032,7 +4047,7 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
         if not arguments.skip_offline:
             wall = time.time()
             _offline(run, ios, peer, peer_id, nonce)
-            if release:
+            if release and below:
                 run.step("relink-head-start-line", lambda: _head_start_logged(knit, peer_id, wall))
         run.step("custody-converges-again", lambda: _peers_converge(peer, ios, 300, frozenset()))
     finally:
@@ -4059,6 +4074,16 @@ def _head_start_logged(knit, peer_id: str, since: float, timeout: float = 30) ->
         raise RuntimeError("the iPhone's log is not being read: it needs the iPhone on USB")
     line = poll(lambda: _head_start_line(knit, peer_id, since), timeout, every=2)
     return {"line": line}
+
+
+def _no_head_start_line(knit, peer_id: str, since: float) -> dict:
+    """The iPhone, above the peer, dialed it without a head start: no head-start line for it since `since`."""
+    if knit is None:
+        raise RuntimeError("the iPhone's log is not being read: it needs the iPhone on USB")
+    line = _head_start_line(knit, peer_id, since)
+    if line:
+        raise RuntimeError(f"the iPhone gave a head start to a peer below it: {line}")
+    return {}
 
 
 def iphone_photos(arguments: argparse.Namespace) -> int:
@@ -5173,8 +5198,16 @@ def main() -> int:
         "--links", type=int, default=1, help="link-ups to check at the 5 s timeout: the iPhone's dials above the phone (#102), head-start links below it"
     )
     ios.add_argument("--hold", type=float, default=60, help="seconds the relink and each extra link must hold before they are judged")
+    ios.add_argument(
+        "--count", default="head-start", choices=["head-start", "any"], help="below the phone, which extra links count toward --links"
+    )
     ios.add_argument("--away", type=float, default=95, help="below the phone, seconds the iPhone's mesh stays stopped before each extra link")
-    ios.add_argument("--no-wake", action="store_true", help="never wake the phone, so a screen-off phone keeps its own scan cadence")
+    ios.add_argument(
+        "--wake",
+        default="heal",
+        choices=["heal", "screen", "none"],
+        help="what a poll does to the phone: keep it on and nudge a scan, keep its screen on only, or nothing (a screen-off phone)",
+    )
     wake = commands.add_parser("iphone-wake")
     wake.add_argument("--sender", default="phone", choices=["phone", "peer"], help="who DMs the locked iPhone: the phone, or knit-peer on hci0")
     wake.add_argument("--device", help="the adb serial of a phone the maintainer approved for this session; needed with --sender phone")
@@ -5196,7 +5229,7 @@ def main() -> int:
     ios_peer.add_argument(
         "--release-android",
         action="store_true",
-        help="the peer advertises as a release Android does, FLAG_DIALS_GATT_PEERS set, and never sights the iPhone, which must dial it after its head start",
+        help="the peer advertises as a release Android does, FLAG_DIALS_GATT_PEERS set, and never sights the iPhone, which must dial it",
     )
     ios_peer.add_argument("--adapter", default="hci0", choices=["hci0", "hci1"], help="the peer's adapter: hci0 (dongle B) or hci1 (dongle A)")
     ios_photos = commands.add_parser("iphone-photos")

@@ -3,7 +3,7 @@ import KnitWire
 import Testing
 
 /// The head start (interop-audit finding AND-2): at the front, a radio that serves the doorbell dials a flagged peer
-/// above it once the ordinary 12 s dwell and a 15 s head start have passed, one such dial at a time, strongest first.
+/// above it once the ordinary 12 s dwell and a 12 s head start have passed, one such dial at a time, strongest first.
 /// Admission keeps the order, and a refusal is an ordinary failed dial.
 @Suite struct LinkHeadStartTests {
     private let low = LinkRig.low
@@ -20,18 +20,18 @@ import Testing
         rig.log.all.filter { $0.contains("link head start over for") }
     }
 
-    @Test func aFlaggedPeerAboveIsDialedAtTwentySevenSecondsOfDwellAndNotBefore() {
+    @Test func aFlaggedPeerAboveIsDialedAtTwentyFourSecondsOfDwellAndNotBefore() {
         let rig = iPhone(low)
         let first = rig.clock.monotonicMilliseconds()
         rig.sightToPromotion(high)
         #expect(rig.radio.dials.isEmpty, "not at the ordinary 12 s")
-        rig.advance(14_000, hearing: high)
-        _ = rig.advance(999)
-        #expect(rig.clock.monotonicMilliseconds() - first == 26_999)
-        #expect(rig.radio.dials.isEmpty, "not before 27 s")
+        rig.advance(10_000, hearing: high)
+        _ = rig.advance(1999)
+        #expect(rig.clock.monotonicMilliseconds() - first == 23_999)
+        #expect(rig.radio.dials.isEmpty, "not before 24 s")
         _ = rig.advance(1)
         #expect(rig.radio.dials.map(\.address) == [RadioAddress("addr-\(high)")])
-        #expect(headStartLines(rig) == ["info link head start over for \(high) (dwell=27000ms rssi=-50dBm)"])
+        #expect(headStartLines(rig) == ["info link head start over for \(high) (dwell=24000ms rssi=-50dBm)"])
         let lines = rig.log.all
         let marked = lines.firstIndex { $0.contains("link head start over for \(high)") }
         let dialed = lines.firstIndex { $0.contains("link dialing \(high)") }
@@ -41,15 +41,15 @@ import Testing
     @Test func theManagerWakesWhenAHeadStartEndsWithNothingHeard() {
         let rig = iPhone(low)
         let first = rig.clock.monotonicMilliseconds()
-        // Heard every two seconds for 20 s, then quiet: 27 s finds it heard 7 s ago, inside the 12 s limit.
+        // Heard every two seconds for 20 s, then quiet: 24 s finds it heard 4 s ago, inside the 12 s limit.
         for step in 0...10 {
             if step > 0 {
                 rig.clock.advance(2000)
             }
             _ = rig.handle(.sighted(LinkRig.sighting(high)))
         }
-        #expect(rig.links.nextDeadline == first + 27_000)
-        rig.run(until: first + 27_000)
+        #expect(rig.links.nextDeadline == first + 24_000)
+        rig.run(until: first + 24_000)
         #expect(rig.radio.dials.count == 1)
     }
 
@@ -74,7 +74,7 @@ import Testing
     @Test func aRefusalBacksOffAndTheNextAttemptFollowsTheBackoff() throws {
         let rig = iPhone(low)
         rig.sightToPromotion(high)
-        rig.advance(15_000, hearing: high)
+        rig.advance(12_000, hearing: high)
         let id = try #require(rig.radio.dials.first?.channel)
         _ = rig.handle(.connected(id))
         // Android closes a dialer it sighted without a HELLO reply (`BleAdmissionPolicy.kt:51`).
@@ -90,7 +90,7 @@ import Testing
     @Test func aHeadStartDialsHelloAsksToBeRung() throws {
         let rig = iPhone(low)
         rig.sightToPromotion(high)
-        rig.advance(15_000, hearing: high)
+        rig.advance(12_000, hearing: high)
         let id = try #require(rig.radio.dials.first?.channel)
         _ = rig.handle(.connected(id))
         #expect(rig.radio.records(on: id) == [LinkRig.ourHello(low, servesDoorbell: true)], "caps 300f")

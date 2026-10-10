@@ -33,7 +33,9 @@ extension LinkManager {
         public var seekWakeMilliseconds: Int64
         /// How long past the ordinary dwell a node at the front that serves the doorbell waits for a flagged peer above
         /// it to dial first, before it dials that peer itself (``LinkManager/givesHeadStart``, interop-audit finding
-        /// AND-2). 12 s of dwell and 15 s of head start leave about 3 s of a dial inside MVP item 2's 30 s.
+        /// AND-2). 12 s of dwell and 12 s of head start leave about 6 s inside MVP item 2's 30 s for the first sighting
+        /// and the dial, which took 4.7 s to a screen-off Pixel 3. A 15 s head start put those links at 29.6 to 32.0 s
+        /// (ADR 2026-10.6eyf).
         public var headStartMilliseconds: Int64
         /// How long a link must have held for its loss to start a fresh spell of seeking. One that flapped carries the
         /// spell's wakes on, so a peer that links and drops cannot keep a lonely iPhone awake.
@@ -78,7 +80,7 @@ extension LinkManager {
             seekWakeBudget: Int = 8,
             seekWakeMilliseconds: Int64 = 10_000,
             seekSpellResetMilliseconds: Int64 = 30_000,
-            headStartMilliseconds: Int64 = 15_000,
+            headStartMilliseconds: Int64 = 12_000,
             lateDeadlineGraceMilliseconds: Int64 = 3000,
             fileChunkBytes: Int = 16_384,
             filePaceBudgetBytesPerSecond: Int64 = 4096,

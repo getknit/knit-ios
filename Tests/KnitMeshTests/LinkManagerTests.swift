@@ -71,14 +71,14 @@ import Testing
     }
 
     @Test func theSmallerIdWaitsOutTheHeadStartOfAPeerThatCanSeeIt() {
-        // An iPhone at the front gives a peer that reads GATT payloads 15 s past the dwell to dial it, then dials it
+        // An iPhone at the front gives a peer that reads GATT payloads 12 s past the dwell to dial it, then dials it
         // itself (LinkHeadStartTests).
         let withFlag = LinkRig(local: low, advertisesServiceData: false, servesDoorbell: true)
         withFlag.sightToPromotion(high, flags: AdvertPayload.dialsGattPeersFlag)
         #expect(withFlag.radio.dials.isEmpty, "a peer that reads GATT payloads has its head start to dial us")
-        withFlag.advance(14_000, hearing: high)
+        withFlag.advance(10_000, hearing: high)
         #expect(withFlag.radio.dials.isEmpty, "still inside the head start")
-        withFlag.advance(1000, hearing: high)
+        withFlag.advance(2000, hearing: high)
         #expect(withFlag.radio.dials.map(\.address) == [RadioAddress("addr-\(high)")], "the head start is over")
         let serviceData = LinkRig(local: low, advertisesServiceData: true)
         serviceData.sightToPromotion(high, flags: 0)

@@ -25,7 +25,7 @@ start, then dials that peer itself (`LinkManager+HeadStart.swift`). It dials whe
 - **The peer.** Its advert carries the flag, and its id sorts above ours as an ASCII string.
 - **Promotion.** It passes the ordinary promotion filters: at least −90 dBm, heard within 12 s, not backing off,
   not linked or being dialed, and within the 6-link budget.
-- **The dwell.** It has dwelled 27 000 ms: the ordinary 12 s plus a 15 s head start
+- **The dwell.** It has dwelled 24 000 ms: the ordinary 12 s plus a 12 s head start
   (`Configuration.headStartMilliseconds`).
 - **One at a time.** No other head-start dial is open. Like Android's `lonelyDialInFlight`, this is derived from
   the dials in flight, never kept, since at the front the order never dials a flagged peer above us.
@@ -33,13 +33,16 @@ start, then dials that peer itself (`LinkManager+HeadStart.swift`). It dials whe
 Among eligible peers the strongest goes first. A refusal is an ordinary failed dial, with the ordinary backoff. The
 head start is a promotion override, as seeking's `dialsWhateverTheOrder` is. `weDial` and admission keep the order,
 so a peer that has sighted the iPhone refuses the dial (`:51`) and dials the iPhone itself. A head-start peer's dwell
-counts 15 s less wherever promotion reads it, so `dwellDue` wakes the link manager when the head start ends, with no
+counts 12 s less wherever promotion reads it, so `dwellDue` wakes the link manager when the head start ends, with no
 sighting needed. `link head start over for <id> (dwell=<ms>ms rssi=<dBm>dBm)` comes right before the dial's own
 `link dialing` line. This is knit-next ADR 2026-09.hj4a's lonely dial turned the other way.
 
-**Why 15 s.** MVP item 2 wants a link within 30 s. 12 s of dwell and 15 s of head start leave about 3 s for the dial.
-A shorter head start would take the dial away from more Android phones that are about to dial anyway. A longer one
-misses the item.
+**Why 12 s.** MVP item 2 wants a link within 30 s. The first build gave a 15 s head start, which left about 3 s for
+the dial. On 2026-10-10 the iPhone's dial to a screen-off Pixel 3 took 4.7 s from `link dialing` to `link up`, and
+the dwell starts at the first sighting, a moment after Knit starts. So the screen-off Pixel 3's three head-start links
+came at 29.6, 31.5 and 32.0 s, two of them over the item. The revised contract made the head start 12 s, which leaves
+about 6 s. A shorter head start takes the dial from more phones that are about to dial anyway: the open Pixel 3
+dialed at 15.6 to 17.2 s, inside either head start.
 
 **Why the doorbell gates it.** A head-start dial makes the iPhone the link's central, which CoreBluetooth opens at a
 720 ms supervision timeout and lets the iPhone change no further. Only Android's doorbell lookup asks for BALANCED's
@@ -61,13 +64,13 @@ that never dials the iPhone (`interop.py iphone-peer --release-android`).
 - **The rule covers any flagged peer above us:** a release Android, knit-peer's `ios` profile, and another iPhone.
   Each of those that has sighted us refuses the dial and dials us itself.
 - **Some links move to the iPhone-central path.** An iPhone below an A3 Android was always the peripheral before.
-  Now an Android that has not dialed within 27 s gets the iPhone's dial, and that link reaches 5 s only through the
+  Now an Android that has not dialed within 24 s gets the iPhone's dial, and that link reaches 5 s only through the
   doorbell lookup. `interop.py iphone --links N` counts those links with the iPhone below, and fails any link that
   does not end at `timeout=5000ms` and any head-start link whose lookup found no doorbell. Only a real Android asks
   for BALANCED, and only a real iPhone opens at 720 ms, so knit-peer cannot stand in for this check.
 - **A sighted Android refuses first.** Before its own dial lands, an Android that sighted the iPhone within 90 s
   costs the iPhone one refused dial and a 10 s backoff.
-- **27 s of dwell needs the phone heard without an 8 s gap.** A gap restarts the dwell, as it does the ordinary one.
+- **24 s of dwell needs the phone heard without an 8 s gap.** A gap restarts the dwell, as it does the ordinary one.
 - **Guards:** `LinkHeadStartTests` covers the dwell, the timer, one dial at a time, the refusal's backoff, the
   `300f` HELLO, a radio without a doorbell, an unflagged peer, a larger-id iPhone, seeking, and admission.
   `LinkManagerTests`' `theSmallerIdWaitsOutTheHeadStartOfAPeerThatCanSeeIt` pins both halves of the wait.

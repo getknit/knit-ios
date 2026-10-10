@@ -6,7 +6,7 @@ import KnitWire
 /// Every Android build since knit-next `713b29d6` advertises `FLAG_DIALS_GATT_PEERS`, so the order says an iPhone whose
 /// id sorts below it waits to be dialed. But an open Android holding one link scans every 60 s or more, and a
 /// screen-off one every 240 to 840 s, so the iPhone waited minutes for a link MVP item 2 wants within 30 s. The iPhone
-/// now gives the peer the ordinary 12 s dwell plus a 15 s head start, then dials it itself, one such dial at a time,
+/// now gives the peer the ordinary 12 s dwell plus a 12 s head start, then dials it itself, one such dial at a time,
 /// strongest first. Android admits a dialer it has not sighted whatever the order (`BleAdmissionPolicy.kt:52`, knit-next
 /// ADR 2026-09.shzv), which is exactly the peer that has not dialed us yet. One that has sighted us refuses the dial
 /// (`:51`) and dials us itself; the refusal is an ordinary failed dial, with the ordinary backoff. This is Android's own

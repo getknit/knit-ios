@@ -473,7 +473,7 @@ explicit direction.** Update this file in the change that ships an item.
   hears the link end while suspended (Android drops it; BlueZ with a GATT client of its own is untried), and a fix
   that needs the far side's help becomes a Track A item.
 - **Done 2026-10-10: an iPhone below a flagged Android phone no longer waits for its dial.** This was the iPhone's
-  twin of knit-next #103, and interop-audit finding AND-2. At the front the iPhone gives the phone a 15 s head start
+  twin of knit-next #103, and interop-audit finding AND-2. At the front the iPhone gives the phone a 12 s head start
   past the dwell, then dials it itself (ADR 2026-10.6eyf). Android admits a dialer it has not sighted, so no Android
   change was needed, and the Track A item is closed. In the background a lonely iPhone dials it anyway (ADR 2026-10.mueg).
 - **Never on iOS:** Wi-Fi Aware, the BLE side channel, spool relays and commons, LoRa, and Wi-Fi Direct.

@@ -194,7 +194,7 @@ radio.
   foreground iPhone whose payload it has read. That iPhone has sighted the phone's advert too, so it refuses the
   dial and dials the phone itself.
 - **An iPhone below a flagged phone gives it a head start, then dials it** (ADR 2026-10.6eyf, interop-audit finding
-  AND-2). At the front, once the phone has dwelled 27 s (the ordinary 12 s plus 15 s), the iPhone dials it, one such
+  AND-2). At the front, once the phone has dwelled 24 s (the ordinary 12 s plus 12 s), the iPhone dials it, one such
   dial at a time, strongest first. A phone that has sighted the iPhone within 90 s refuses that dial and dials the
   iPhone itself; one that has not admits it under A1. The iPhone is then the link's central, opened at 720 ms, and
   the HELLO's `CAP_DOORBELL` is what has Android ask for BALANCED's 5 s, so a radio that serves no doorbell gives
