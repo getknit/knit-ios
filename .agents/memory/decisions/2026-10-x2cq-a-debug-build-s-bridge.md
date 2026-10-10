@@ -43,9 +43,19 @@ over Wi-Fi (ADR 2026-10.dz8d), but had no way to record.
 
 - **In-app recording sees only Knit.** The home screen, other apps, Control Center and notification banners are not
   in the movie. A demo that leaves Knit ends the take there.
-- **Nobody can allow a take ahead of time.** Apple documents that the question comes back once eight minutes have
-  passed since the last start, and developers report it at every start since iOS 18.5. Someone has to tap Allow at
-  each take's `record-start`.
+- **The movie is smaller than the screen, and its frame rate varies.** The iPhone 12 wrote 888 by 1920 where its
+  screen is 1170 by 2532, and a frame only when the screen changed. Control Center's recording is full size. An editor
+  that wants a fixed rate needs the file converted first (`ffmpeg -i in.mp4 -fps_mode cfr -r 30 out.mp4`). If the
+  size shows in the film, `startCapture` with a writer of our own is the next thing to try.
+- **An Allow lasts eight minutes.** Apple documents that the question comes back once eight minutes have passed
+  since the last start, and the iPhone 12 on iOS 27.0.1 behaved so: starts one and five minutes after an Allow did
+  not ask. Developers report a question at every start on iOS 18.5 and 26. A start at prep time therefore covers a
+  take only if the take starts within eight minutes; otherwise someone taps Allow at the take's `record-start`.
+- **ReplayKit's state can disagree with the bridge's.** On 2026-10-09 the lab iPhone answered a start, with the
+  bridge idle and `isRecording` false, with -5830, "already in recording state". So a start now stops any
+  recording ReplayKit reports and, on -5830, stops once more and retries. A second -5830 is `elsewhere`, since
+  Control Center's Screen Recording is the likely holder. `record-status` reports ReplayKit's own `capturing` flag,
+  and `stale` when it records while the bridge is idle.
 - **A take does not outlive the app.** The file sits in the app's temporary directory. A relaunch forgets it, and
   the next start clears the directory. If iOS stops a recording itself, it keeps nothing, and the next `record-stop`
   answers `lost`.
@@ -53,4 +63,10 @@ over Wi-Fi (ADR 2026-10.dz8d), but had no way to record.
 - **Guards.** `RecordCommandTests` covers parsing, the start, the stop and its repeat, chunked fetches with their
   SHA-256, a take that ended at the background, a start that replaces a take, refusals, a lost take, and the consent
   timeout with a late start. `check.sh release` checks that a store build has no bridge (its queue label) and no
-  microphone key. `ReplayCapture` and the background stop are checked on the iPhone only.
+  microphone key. `ReplayCapture` and the background stop are checked on the iPhone only. On 2026-10-09 the iPhone 12 (iOS 27.0.1),
+  over Wi-Fi, answered `record-start` 4.1 s after the request, Allow tapped in between. It wrote H.264 at 888 by 1920
+  with stereo 44.1 kHz AAC from the microphone, where two claps peaked near 0 dBFS over a room at about -19 dB. A
+  four-minute take of a still screen came to 6.3 MB, since ReplayKit writes a frame only when the screen changes, and
+  `record-pull` copied it in 0.3 s with its SHA-256 matching. Leaving Knit ended a take with `"endedBy":"background"`,
+  and the bridge answered over Wi-Fi while Knit was in the background. A refusal, the consent timeout and a lost take
+  have not been seen on the phone.

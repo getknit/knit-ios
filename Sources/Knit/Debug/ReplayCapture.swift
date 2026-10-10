@@ -11,6 +11,9 @@
     internal final class ReplayCapture: NSObject, ScreenCapture, RPScreenRecorderDelegate {
         /// `RPRecordingErrorCode.userDeclined`: the person said no to iOS's question.
         private static let userDeclined = -5801
+        /// "Attempting to start a recording while already in recording state", which the lab iPhone returned while
+        /// `isRecording` was false: a recording left over in ReplayKit, or one Control Center holds.
+        private static let alreadyRecording = -5830
 
         /// What iOS ended by itself, with its reason, for ``ScreenRecording/lose(_:)``.
         nonisolated let losses: AsyncStream<String>
@@ -27,15 +30,34 @@
             guard recorder.isAvailable else {
                 throw RecordingRefusal(.unavailable, "ReplayKit cannot record now: a call, AirPlay or mirroring may hold the screen")
             }
-            guard !recorder.isRecording else {
-                throw RecordingRefusal(.busy, "ReplayKit is already recording")
-            }
             recorder.isMicrophoneEnabled = microphone
-            let failure: (any Error)? = await withCheckedContinuation { continuation in
-                recorder.startRecording { error in continuation.resume(returning: error) }
+            var failure = await Self.start(recorder)
+            if let first = failure as NSError?, first.domain == RPRecordingErrorDomain, first.code == Self.alreadyRecording {
+                // Once: stop whatever ReplayKit thinks it records, then try again.
+                await discard()
+                failure = await Self.start(recorder)
             }
             if let failure {
                 throw Self.refusal(failure, starting: true)
+            }
+        }
+
+        func isCapturing() -> Bool {
+            RPScreenRecorder.shared().isRecording
+        }
+
+        func discard() async {
+            let scratch = FileManager.default.temporaryDirectory.appending(path: "knit-discard-\(UUID().uuidString).mp4")
+            _ =
+                await withCheckedContinuation { continuation in
+                    RPScreenRecorder.shared().stopRecording(withOutput: scratch) { error in continuation.resume(returning: error) }
+                } as (any Error)?
+            try? FileManager.default.removeItem(at: scratch)
+        }
+
+        private static func start(_ recorder: RPScreenRecorder) async -> (any Error)? {
+            await withCheckedContinuation { continuation in
+                recorder.startRecording { error in continuation.resume(returning: error) }
             }
         }
 
@@ -60,6 +82,13 @@
             let failure = error as NSError
             if starting, failure.domain == RPRecordingErrorDomain, failure.code == userDeclined {
                 return RecordingRefusal(.declined, "the person holding the phone did not allow screen recording")
+            }
+            if starting, failure.domain == RPRecordingErrorDomain, failure.code == alreadyRecording {
+                return RecordingRefusal(
+                    .elsewhere,
+                    "ReplayKit still says a recording runs after Knit stopped its own: stop Control Center's Screen Recording "
+                        + "(the red pill), or force-quit Knit"
+                )
             }
             return RecordingRefusal(.failed, "\(failure.localizedDescription) (\(failure.domain) \(failure.code))")
         }

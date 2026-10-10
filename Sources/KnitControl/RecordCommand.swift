@@ -129,6 +129,8 @@ public struct RecordingRefusal: Error, Equatable, Sendable {
         case timeout = "timeout"
         /// A recording is already starting, running or finishing.
         case busy = "busy"
+        /// Something outside the bridge holds ReplayKit's recording, such as Control Center's Screen Recording.
+        case elsewhere = "elsewhere"
         /// Nothing is recording.
         case idle = "idle"
         /// iOS stopped the recording itself, and kept nothing.

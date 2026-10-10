@@ -10,6 +10,12 @@ public protocol ScreenCapture: Sendable {
 
     /// Stops recording and writes what it recorded to `file`, which does not exist yet.
     func end(writingTo file: URL) async throws(RecordingRefusal)
+
+    /// Whether the recorder says it records, whatever ``ScreenRecording`` thinks.
+    func isCapturing() async -> Bool
+
+    /// Stops a recording nobody asked for, and keeps nothing of it.
+    func discard() async
 }
 
 /// One finished recording, kept in ``ScreenRecording``'s directory until it is deleted or a new one starts.
@@ -82,6 +88,10 @@ public actor ScreenRecording {
         lost = nil
         take = nil
         clear()
+        // Idle here, so a recording the recorder still runs is left over from an earlier one: stop it first.
+        if await capture.isCapturing() {
+            await capture.discard()
+        }
         switch await begin(microphone: microphone) {
         case .success:
             let startedAt = clock.wallMilliseconds()
@@ -164,12 +174,16 @@ public actor ScreenRecording {
         return .success(["deleted": .text(deleted)])
     }
 
-    /// Whether it records, since when, and the finished file.
-    func status() -> [String: JSONValue] {
-        var fields: [String: JSONValue] = ["take": take.map { .object($0.json) } ?? .null, "lost": .text(lost)]
+    /// Whether it records, since when, and the finished file. `capturing` is what the recorder itself says, and
+    /// `stale` the state where it records while nothing here asked it to; the next start stops that recording.
+    func status() async -> [String: JSONValue] {
+        let capturing = await capture.isCapturing()
+        var fields: [String: JSONValue] = [
+            "take": take.map { .object($0.json) } ?? .null, "lost": .text(lost), "capturing": .bool(capturing),
+        ]
         switch phase {
         case .idle:
-            fields["state"] = "idle"
+            fields["state"] = capturing ? "stale" : "idle"
         case .starting:
             fields["state"] = "starting"
         case .recording(let startedAt, _, let microphone):

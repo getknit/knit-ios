@@ -105,6 +105,23 @@ import Testing
         #expect(try reply(await RecordCommand(.fetch(offset: 0, length: 1)).answer(recording))["code"] as? String == "none")
     }
 
+    @Test func aRecordingLeftOverIsReportedAndStoppedByTheNextStart() async throws {
+        let capture = FakeCapture(movie: [7], orphaned: true)
+        let recording = ScreenRecording(capture: capture, directory: directory, clock: SteppingClock())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stale = try reply(await RecordCommand(.status).answer(recording))
+        #expect(stale["state"] as? String == "stale")
+        #expect(stale["capturing"] as? Bool == true)
+        let started = try reply(await RecordCommand(.start(microphone: true)).answer(recording))
+        #expect(started["ok"] as? Bool == true)
+        #expect(capture.discards == 1)
+        let running = try reply(await RecordCommand(.status).answer(recording))
+        #expect(running["state"] as? String == "recording")
+        #expect(running["capturing"] as? Bool == true)
+        _ = await RecordCommand(.stop).answer(recording)
+        #expect(try reply(await RecordCommand(.status).answer(recording))["state"] as? String == "idle")
+    }
+
     @Test func refusalsSayWhy() async throws {
         let declined = ScreenRecording(
             capture: FakeCapture(movie: [], refusal: RecordingRefusal(.declined, "the person declined")),
@@ -147,7 +164,8 @@ import Testing
     }
 }
 
-/// A capture that writes `movie` at each end, refuses with `refusal`, or holds each begin until ``release()``.
+/// A capture that writes `movie` at each end, refuses with `refusal`, or holds each begin until ``release()``. It
+/// records from a begin to an end or a discard, or from the start when `orphaned`.
 private final class FakeCapture: ScreenCapture {
     private let movie: [UInt8]
     private let refusal: RecordingRefusal?
@@ -155,18 +173,35 @@ private final class FakeCapture: ScreenCapture {
         var holding: Bool
         var waiters: [CheckedContinuation<Void, Never>] = []
         var ends = 0
+        var capturing = false
+        var discards = 0
     }
 
     private let held: Lock<State>
 
-    init(movie: [UInt8], refusal: RecordingRefusal? = nil, hold: Bool = false) {
+    init(movie: [UInt8], refusal: RecordingRefusal? = nil, hold: Bool = false, orphaned: Bool = false) {
         self.movie = movie
         self.refusal = refusal
-        held = Lock(State(holding: hold))
+        held = Lock(State(holding: hold, capturing: orphaned))
     }
 
     var ends: Int {
         held.withLock { $0.ends }
+    }
+
+    var discards: Int {
+        held.withLock { $0.discards }
+    }
+
+    func isCapturing() -> Bool {
+        held.withLock { $0.capturing }
+    }
+
+    func discard() {
+        held.withLock { state in
+            state.capturing = false
+            state.discards += 1
+        }
     }
 
     func release() {
@@ -195,11 +230,15 @@ private final class FakeCapture: ScreenCapture {
         if let refusal {
             throw refusal
         }
+        held.withLock { $0.capturing = true }
     }
 
     // swiftlint:disable:next async_without_await - the protocol's end is async; this fake writes at once.
     func end(writingTo file: URL) async throws(RecordingRefusal) {
-        held.withLock { $0.ends += 1 }
+        held.withLock { state in
+            state.ends += 1
+            state.capturing = false
+        }
         guard FileManager.default.createFile(atPath: file.path, contents: Data(movie)) else {
             throw RecordingRefusal(.failed, "could not write \(file.lastPathComponent)")
         }
