@@ -97,8 +97,11 @@ never dialed.
 
 In the `ios` profile the peer finds a node that advertises only the `0xFE30` UUID, as an iPhone does, by reading
 the payload from its GATT characteristic (ADR 2026-09.xzpt), and its advert sets `FLAG_DIALS_GATT_PEERS`. The
-`android` profile reads none and leaves the flag clear, as Android 2.7 and A1 do, so an iPhone meets it as it
-meets Android.
+`android` profile reads none and leaves the flag clear by default, as Android 2.7, A1 and 2.8.0 do, so an iPhone
+dials it in either order. `--gatt-reads` makes it read and set the flag, as every Android build since knit-next
+`713b29d6` does, still with service data and no doorbell (interop-audit finding IOS-9). An iPhone below it then
+waits out its head start (ADR 2026-10.6eyf), and with `--never-sight` it is a gapped Android that never dials the
+iPhone: `interop.py iphone-peer --release-android`.
 
 - **A read** is `Device1.Connect`, then a wait for `ServicesResolved`, then `GetManagedObjects` to find the Knit
   characteristic in the device's `0xFE30` service, then `ReadValue`. The radio then drops the link, unless a

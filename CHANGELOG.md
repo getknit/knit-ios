@@ -80,6 +80,8 @@ document:
 
 ### Changed
 
+- Your iPhone now links with any nearby Android phone within about 30 seconds of both opening Knit. Some
+  Android phones used to take several minutes to find it, and longer when their screen was off.
 - Knit now wears Knit for Android's coral, groups each person's messages with a date over every day, and puts
   your picture at the top of Chats as the way into Settings. On iOS 26 and later its buttons and composer use
   Liquid Glass, and Increase Contrast deepens its text colors.
