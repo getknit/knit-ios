@@ -1083,15 +1083,16 @@ def android_keeps_iphone(arguments: argparse.Namespace) -> int:
     if phone_id < ios.node_id:
         ios.stop()
         sys.exit(f"the phone's id sorts below the iPhone's ({phone_id} < {ios.node_id}): pick a phone above it")
-    for other in quiet:
-        run.step(f"paused-{other.serial}", lambda other=other: _paused(other, True))
     try:
+        for other in quiet:
+            run.step(f"paused-{other.serial}", lambda other=other: _paused(other, True))
         if "held" in stages:
             _held_at_cap(run, phone, ios, sender, front, arguments, nonce)
         if "redial" in stages:
             _redialed(run, phone, ios, sender, front, arguments)
     finally:
-        phone.bridge("BLECAP", clear=True)
+        # Whatever failed, and however the run ended, the cap goes and every paused phone runs again.
+        run.step("cap-cleared", lambda: {"cap": phone.bridge("BLECAP", clear=True).get("cap")})
         for other in quiet:
             run.step(f"resumed-{other.serial}", lambda other=other: _paused(other, False))
         ios.stop()
