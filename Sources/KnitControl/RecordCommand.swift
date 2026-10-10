@@ -135,6 +135,9 @@ public struct RecordingRefusal: Error, Equatable, Sendable {
         case idle = "idle"
         /// iOS stopped the recording itself, and kept nothing.
         case lost = "lost"
+        /// The recording stopped before the screen gave it a first frame, so there is no file: a stop straight after a
+        /// start, on a screen that did not change.
+        case empty = "empty"
         /// There is no finished file.
         case noTake = "none"
         /// The offset or length is outside the file.

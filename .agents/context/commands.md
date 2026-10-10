@@ -184,7 +184,7 @@ only Knit's own screens, and the microphone unless `"mic":false`. Every reply ec
 | Command | Answer |
 | --- | --- |
 | `{"cmd":"record-start","mic":true}` | once recording runs: `"recording":true`, `microphone`, `startedAt` (wall ms). A ReplayKit recording left over from before is stopped first. Refused with `busy`, `declined`, `unavailable`, `timeout` (nobody tapped Allow within 120 s), `elsewhere` (ReplayKit still says it records, as with Control Center's Screen Recording running) or `failed` |
-| `{"cmd":"record-stop"}` | the finished file: `file`, `bytes`, `sha256`, `startedAt`, `durationMs`, `microphone`, `endedBy` (`stop` or `background`). Asked again, the same answer. Refused with `idle`, `busy` (still starting), `lost` (iOS ended the take and kept nothing) or `failed` |
+| `{"cmd":"record-stop"}` | the finished file: `file`, `bytes`, `sha256`, `startedAt`, `durationMs`, `microphone`, `endedBy` (`stop` or `background`). Asked again, the same answer. Refused with `idle`, `busy` (still starting), `lost` (iOS ended the take and kept nothing), `empty` (stopped before the screen changed, so no frame and no file) or `failed` |
 | `{"cmd":"record-fetch","offset":0,"length":1048576}` | `data`, base64 of at most 1 MiB (`length` defaults to that and is capped there), with `offset`, `length`, `bytes` and `eof`. Refused with `none` or `range` |
 | `{"cmd":"record-delete"}` | `deleted`, the file's name or `null` |
 | `{"cmd":"record-status"}` | `state` (`idle`, `stale`, `starting`, `recording` or `finishing`), `capturing` (what ReplayKit itself says), `take` (as `record-stop` gives it, or `null`) and `lost`. `stale` is ReplayKit recording while the bridge asked for nothing; the next start stops it |

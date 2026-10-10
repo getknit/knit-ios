@@ -14,6 +14,8 @@
         /// "Attempting to start a recording while already in recording state", which the lab iPhone returned while
         /// `isRecording` was false: a recording left over in ReplayKit, or one Control Center holds.
         private static let alreadyRecording = -5830
+        /// "Failure to process first sample buffer": a stop before the screen changed, so ReplayKit had no frame.
+        private static let noFirstFrame = -5822
 
         /// What iOS ended by itself, with its reason, for ``ScreenRecording/lose(_:)``.
         nonisolated let losses: AsyncStream<String>
@@ -82,6 +84,9 @@
             let failure = error as NSError
             if starting, failure.domain == RPRecordingErrorDomain, failure.code == userDeclined {
                 return RecordingRefusal(.declined, "the person holding the phone did not allow screen recording")
+            }
+            if !starting, failure.domain == RPRecordingErrorDomain, failure.code == noFirstFrame {
+                return RecordingRefusal(.empty, "the recording stopped before the screen changed, so it has no frame")
             }
             if starting, failure.domain == RPRecordingErrorDomain, failure.code == alreadyRecording {
                 return RecordingRefusal(
