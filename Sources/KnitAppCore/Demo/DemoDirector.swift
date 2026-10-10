@@ -27,7 +27,8 @@ public final class DemoDirector: Sendable {
     private let script: [DemoCast.Cue]
     private let stores: MeshStores
     private let me: NodeId
-    private let snap: @Sendable (DemoSnapshot) -> [UInt8]?
+    /// The photo each of the script's posts carries, made before the film starts.
+    private let snapshots: [DemoSnapshot: [UInt8]]
     private let now: @Sendable () -> Int64
     private let wait: @Sendable (Int64) async -> Void
     private let ownPosts: AsyncStream<MessageRecord>
@@ -48,8 +49,9 @@ public final class DemoDirector: Sendable {
     }
 
     /// The director of `scene` over `stores`, from `me`'s side, or `nil` when the scene has no script. A post that
-    /// carries a photo carries the picture `snap` makes of it; `now` is the wall clock in milliseconds, and `wait` pauses
-    /// for a cue's milliseconds.
+    /// carries a photo carries the picture `snap` makes of it, made here rather than as the post lands: a photograph takes
+    /// a moment to decode, scale and encode, which the film would show as a spinner. `now` is the wall clock in
+    /// milliseconds, and `wait` pauses for a cue's milliseconds.
     @preconcurrency
     public init?(
         scene: DemoScene,
@@ -65,7 +67,17 @@ public final class DemoDirector: Sendable {
         script = scene.cast.script
         self.stores = stores
         self.me = me
-        self.snap = snap
+        snapshots = Dictionary(
+            uniqueKeysWithValues: Set(
+                script.compactMap { cue in
+                    if case .post(let line) = cue.beat {
+                        return line.photo
+                    }
+                    return nil
+                }
+            )
+            .compactMap { picture in snap(picture).map { (picture, $0) } }
+        )
         self.now = now
         self.wait = wait
         (ownPosts, posted) = AsyncStream<MessageRecord>.makeStream()
@@ -136,7 +148,7 @@ public final class DemoDirector: Sendable {
             return
         }
         let at = now()
-        let attachment = DemoSeed.photo(line.photo.flatMap(snap), in: stores, at: at)
+        let attachment = DemoSeed.photo(line.photo.flatMap { snapshots[$0] }, in: stores, at: at)
         let message = MessageRecord(
             id: line.id,
             senderId: sender,

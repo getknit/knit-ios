@@ -14,8 +14,9 @@ final class KnitTrailer: XCTestCase {
     private static let sam = "Trail's clear up top"
     private static let dani = "Saved you a spot by the fire"
     private static let priya = "Sunset from the summit"
-    /// How long the last post and its reaction are left on screen before the film ends.
-    private static let ending: TimeInterval = 2.5
+    /// How long the last post is left on screen before the film ends: about a second for its photo to decode, then
+    /// Dani's heart, a moment and a half after it lands.
+    private static let ending: TimeInterval = 4
     /// How long the whole film gets: about 40 s of beats, at a person's pace.
     private static let film: TimeInterval = 90
 
