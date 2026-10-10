@@ -156,6 +156,12 @@ import Testing
         #expect(TextLimits.normalizeSingleLine(" \t ").isEmpty)
     }
 
+    /// The pins `ArtTextSemanticsTest` asserts on ART (knit-next `e0c8d969`, merged on its `main`, unpushed).
+    @Test func normalizationMatchesTheARTPins() {
+        #expect(TextLimits.normalizeSingleLine("  Ana  Bell Cruz\u{3000}") == "Ana Bell Cruz")
+        #expect(TextLimits.normalizeSingleLine("a\u{0085}b c d") == "a b c d")
+    }
+
     /// Every code point against the two sets knit-next's instrumented test read on ART (`ArtTextSemanticsTest`), through
     /// what each one decides: `isBlank` for Kotlin's `isWhitespace`, and a collapse inside a name for regex `\s`.
     @Test func everyCodePointIsWhitespaceExactlyWhereARTSaysSo() {

@@ -257,6 +257,11 @@ Kotlin wins.
       (`Answer.receivedAt`, mirrored then). When the pin passes `79f38d3d`, check those again against
       `LinkFileProgressTests`, `BlobAskStandsTests`, `MeshEngineBlobQueryTests`, `MeshEngineBlobCancelTests`,
       `LinkFileCancelTests` and `BlobPullThroughTests`.
+    - knit-next ADR 2026-10.swst, whitespace as ART measures it, `e0c8d969` (`fix/art-whitespace`), merged on
+      knit-next's local `main` and not yet pushed on 2026-10-10 (ADR 2026-10.7uyt).
+      `app.getknit.knit.text.ArtTextSemanticsTest` walks the BMP on API 33, 34, 36 and 37, and
+      `TextLimits.isKotlinWhitespace` and `isJavaRegexWhitespace` pin its two lists; U+180E is in neither. No Kotlin product code moved, so there is
+      nothing to check when the pin passes it but that the test still stands.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5f521cb9`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

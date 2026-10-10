@@ -22,17 +22,19 @@ group name normalizes to, and on the "Name (Alias)" clash label for names holdin
 The audit also read ART's `Character.isWhitespace` hard-coding U+180E (`Character.java:11812-11815`), though
 Unicode moved U+180E into Cf in 6.3.
 
-**Decision:** whitespace is what ART reports, pinned code point by code point. knit-next's instrumented test,
-`app.getknit.knit.text.ArtTextSemanticsTest`, walks the BMP on an emulator and reads both sets:
+**Decision:** whitespace is what ART reports, pinned code point by code point (knit-next ADR 2026-10.swst,
+`e0c8d969`, merged on knit-next's local `main` and not yet pushed). knit-next's instrumented test,
+`app.getknit.knit.text.ArtTextSemanticsTest`, walks the BMP on emulators at API 33, 34, 36 and 37, and reads the
+same two sets on each:
 
-- **Kotlin's `isWhitespace` on ART:** U+0009–U+000D, U+001C–U+0020, U+00A0, U+1680, U+2000–U+200A, U+2028,
+- **Kotlin's `isWhitespace` on ART, 28 code points:** U+0009–U+000D, U+001C–U+0020, U+00A0, U+1680,
+  U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000.
+- **Regex `\s` on ART, 25 code points:** U+0009–U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028,
   U+2029, U+202F, U+205F, U+3000.
-- **Regex `\s` on ART:** U+0009–U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029,
-  U+202F, U+205F, U+3000.
 
 U+180E is in neither. The test found that ART's answer for it follows the ART mainline module, not the API
-level: whitespace up to API 36's module, and not from API 37's, as in Unicode 6.3 and the desktop JDK. An iPhone
-can't know which module a phone runs, so the law takes ART's current answer.
+level: whitespace up to API 36's module (360527520), and not at API 37's (370399999), as in Unicode 6.3 and the
+desktop JDK. An iPhone can't know which module a phone runs, so the law takes ART's current answer.
 
 So the `isWhitespace` set is the one the port already had, read from Swift's separator categories; only regex
 `\s` widens. Both are now pinned lists.

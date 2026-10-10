@@ -154,6 +154,7 @@ import Testing
     /// end goes with its run though `trim()` alone would keep it.
     @Test(arguments: ["\u{0085}", "\u{1680}", "\u{2028}", "\u{2029}"])
     func aNameKeyFoldsTheSpacesARTMatches(space: String) {
+        #expect(NameKey.of("Ana\(space)Bell") == "ana bell", "ArtTextSemanticsTest's pin")
         #expect(NameKey.of("Alice\(space)Smith") == "alice smith")
         #expect(NameKey.of("\(space)Alice\(space)") == "alice")
         #expect(NameKey.of(" \(space)Alice\(space) ") == "alice")
