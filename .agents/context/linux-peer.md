@@ -1597,3 +1597,46 @@ the maintainer's adapter was not used. The ATS2851 was unplugged.
   −48 dBm, with nothing in the kernel log. It was back in 19 s. Who ended it needs btmon.
 - **Still to run:** the relay line with B as its second peer, six links held at once, and btmon on a slow dial and
   on a drop.
+
+## What the head start showed
+
+On 2026-10-10 the iPhone 12 ran the head start (ADR 2026-10.6eyf), with the maintainer's go-ahead for the batch and
+the device lease. Each count below is a link-up timed from the iPhone's mesh starting after 95 s stopped (`interop.py
+iphone --links N`). That is long enough for the phone's 90 s sighting of the iPhone to linger out. Every phone sorts
+above the iPhone (`dlrr…`) and sets `FLAG_DIALS_GATT_PEERS` (flags `3`, so knit-next `713b29d6` or later). The other
+phones in range were kept out with the iPhone's `deny-link`, or a `PAUSE` through the Android bridge. "Last timeout" is
+the phone's last `bt conn params` line for the link, after `bt doorbell found`.
+
+**Build `f60c552`, a 15 s head start (27 s of dwell):**
+
+- **The Pixel 9, open with one other link, `--wake screen`:** 3 link-ups before the phone left the lab. It dialed at
+  28.1 s and 16.5 s. In the third, the iPhone logged `link head start over for ijeeg… (dwell=27484ms rssi=-81dBm)`, and
+  the phone refused that dial, `bt refused client dlrr… (sighted=true …)` at 14:08:54, having read the iPhone's GATT
+  payload at 14:08:34. Its own dial landed at 14:08:58, 33.8 s after the start. That third link-up is the refusal case:
+  over 30 s because of the refused dial and the phone's own failed first attempt. All three ended at 5000 ms. In an
+  earlier link-up the moto-g, flagged and above too, took the one head-start slot, so it was paused.
+- **The Pixel 3, open with one other link (the moto-g), `--wake screen`:** 10 link-ups. The phone dialed 9 of them at
+  15.6 to 17.2 s. The iPhone dialed the seventh at 28.9 s, after its head start. That link opened at `timeout=720ms`.
+  Then came `bt doorbell found`, a re-ask on the put-back, and `timeout=5000ms`. All 10 ended at 5000 ms.
+- **The Pixel 3, screen off and settled, `--wake none`:** 3 head-start link-ups at 29.6, 31.5 and 32.0 s, each ending
+  at 5000 ms, before the run stopped for the change below. The iPhone's dial to the dozing phone took 4.7 s from `link
+  dialing` to `link up`. With the dwell counted from the first sighting, a 15 s head start put two of three links
+  over MVP item 2's 30 s. The revised contract made it 12 s.
+
+**Build `fa86d7a`, a 12 s head start (24 s of dwell):**
+
+- **The Pixel 3, open, `--wake screen`:** 10 link-ups. The phone dialed 9 at 16.2 to 17.6 s, and the iPhone dialed one
+  after its head start (`dwell=24175ms`) at 25.6 s. All 10 came within 30 s and ended at 5000 ms. None was refused.
+- **The Pixel 3, screen off, `--wake none`:** 10 link-ups, all 10 head-start dials. The phone stayed dozing
+  throughout. First-link times: 26.8, 26.8, 27.0, 28.8, 26.7, 27.1, 27.1, 28.1, 26.0 and 26.0 s. Every link found the
+  doorbell, and every last timeout was 5000 ms.
+
+- **The Pixel 7, below the iPhone:** `interop.py iphone --links 3` passed 23 of 23 steps. The iPhone dialed each
+  link, as before, and each ended at 5000 ms after a re-ask on the 720 ms put-back.
+- **knit-peer on dongle A, `iphone-peer --release-android --adapter hci1`:** 23 of 23 steps. The iPhone sighted the
+  peer with flags `2` and dialed it after its head start (`dwell=24303ms`). The link came 78.2 s after the peer process
+  started, since the iPhone first heard the peer about 54 s in. After the offline step it relinked in 27.4 s, with
+  another head-start line (`dwell=24119ms`).
+
+An open phone reads the iPhone's payload within about 4 s of each start, so it usually dials before the head start
+ends. The head start is what links a screen-off phone, which scans every 240 s or more.

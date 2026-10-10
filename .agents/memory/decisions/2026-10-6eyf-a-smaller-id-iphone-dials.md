@@ -71,6 +71,11 @@ that never dials the iPhone (`interop.py iphone-peer --release-android`).
 - **A sighted Android refuses first.** Before its own dial lands, an Android that sighted the iPhone within 90 s
   costs the iPhone one refused dial and a 10 s backoff.
 - **24 s of dwell needs the phone heard without an 8 s gap.** A gap restarts the dwell, as it does the ordinary one.
+- **On hardware, 2026-10-10** (`.agents/context/linux-peer.md`, "What the head start showed"): with a 12 s head start,
+  a screen-off Pixel 3 linked by the iPhone's head-start dial in 10 of 10 link-ups, at 26.0 to 28.8 s. Each link
+  ended at 5000 ms after its doorbell lookup. An open Pixel 3 dialed first in 9 of 10, at 16.2 to 17.6 s, and the
+  iPhone dialed the tenth at 25.6 s. With 15 s, an open Pixel 9 that had read the iPhone refused one head-start dial,
+  and its own dial landed at 33.8 s.
 - **Guards:** `LinkHeadStartTests` covers the dwell, the timer, one dial at a time, the refusal's backoff, the
   `300f` HELLO, a radio without a doorbell, an unflagged peer, a larger-id iPhone, seeking, and admission.
   `LinkManagerTests`' `theSmallerIdWaitsOutTheHeadStartOfAPeerThatCanSeeIt` pins both halves of the wait.
