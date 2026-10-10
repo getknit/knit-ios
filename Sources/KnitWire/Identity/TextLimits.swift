@@ -14,18 +14,29 @@ public enum TextLimits {
     /// A reaction.
     public static let reaction = 32
 
-    /// knit-next's `normalizeSingleLine`: trim with Kotlin's `trim()`, whose whitespace is Unicode-wide, then
-    /// collapse each run of Java regex `\s` (ASCII whitespace only) to one space.
+    /// knit-next's `normalizeSingleLine` (`TextLimits.kt:47`): `trim()`, then each run of Java regex `\s` collapsed to
+    /// one space. On ART both sets are Unicode-wide, and they differ: see ``isKotlinWhitespace(_:)`` and
+    /// ``isJavaRegexWhitespace(_:)`` (ADR 2026-10.7uyt).
     public static func normalizeSingleLine(_ text: String) -> String {
+        collapsingWhitespaceRuns(trimmed(text))
+    }
+
+    /// Kotlin's `trim()`: ``isKotlinWhitespace(_:)`` off both ends, the inside untouched.
+    public static func trimmed(_ text: String) -> String {
         let scalars = text.unicodeScalars
         guard let first = scalars.firstIndex(where: { !isKotlinWhitespace($0) }),
             let last = scalars.lastIndex(where: { !isKotlinWhitespace($0) })
         else {
             return ""
         }
+        return String(scalars[first...last])
+    }
+
+    /// Kotlin's `replace(Regex("\\s+"), " ")`: each run of ``isJavaRegexWhitespace(_:)`` becomes one space.
+    public static func collapsingWhitespaceRuns(_ text: String) -> String {
         var output = String.UnicodeScalarView()
         var inRun = false
-        for scalar in scalars[first...last] {
+        for scalar in text.unicodeScalars {
             if isJavaRegexWhitespace(scalar) {
                 if !inRun {
                     output.append(" ")
@@ -113,27 +124,31 @@ public enum TextLimits {
         text.unicodeScalars.allSatisfy(isKotlinWhitespace)
     }
 
-    /// Kotlin's `Char.isWhitespace` on the JVM: Java's `isWhitespace` or `isSpaceChar`, which together are the
-    /// Unicode separators plus the ASCII controls `\t`–`\r` and `\u{1C}`–`\u{1F}`.
+    /// Kotlin's `Char.isWhitespace` on ART: Java's `isWhitespace` or `isSpaceChar`, which take `\u{1C}`–`\u{1F}` but not
+    /// U+0085. Pinned to the set knit-next's `ArtTextSemanticsTest` reads on ART. U+180E is not whitespace, as on ART
+    /// from API 37's mainline module; an older module still counts it, a residue ADR 2026-10.7uyt accepts. No code point
+    /// above the BMP is whitespace.
     static func isKotlinWhitespace(_ scalar: Unicode.Scalar) -> Bool {
-        if asciiControlWhitespace.contains(scalar.value) || informationSeparators.contains(scalar.value) {
-            return true
-        }
-        switch scalar.properties.generalCategory {
-        case .spaceSeparator, .lineSeparator, .paragraphSeparator:
-            return true
+        switch scalar {
+        case "\u{09}"..."\u{0D}", "\u{1C}"..."\u{20}", "\u{A0}", "\u{1680}", "\u{2000}"..."\u{200A}", "\u{2028}",
+            "\u{2029}", "\u{202F}", "\u{205F}", "\u{3000}":
+            true
         default:
-            return false
+            false
         }
     }
 
-    /// Java's regex `\s` without `UNICODE_CHARACTER_CLASS`: `[ \t\n\x0B\f\r]`.
+    /// Java's regex `\s` on ART, where `java.util.regex` is ICU and `\s` is Unicode White_Space (android-36.1
+    /// `Pattern.java:178-179`), not the desktop JDK's ASCII `[ \t\n\x0B\f\r]`. It takes U+0085, which Kotlin's
+    /// `isWhitespace` does not, and leaves out `\u{1C}`–`\u{1F}`, which it takes. Pinned to the set knit-next's
+    /// `ArtTextSemanticsTest` reads on ART.
     static func isJavaRegexWhitespace(_ scalar: Unicode.Scalar) -> Bool {
-        scalar == " " || asciiControlWhitespace.contains(scalar.value)
+        switch scalar {
+        case "\u{09}"..."\u{0D}", "\u{20}", "\u{85}", "\u{A0}", "\u{1680}", "\u{2000}"..."\u{200A}", "\u{2028}", "\u{2029}",
+            "\u{202F}", "\u{205F}", "\u{3000}":
+            true
+        default:
+            false
+        }
     }
-
-    /// `\t`, `\n`, `\u{0B}`, `\f` and `\r`.
-    private static let asciiControlWhitespace: ClosedRange<UInt32> = 0x09...0x0D
-    /// The information separators `\u{1C}` to `\u{1F}`, which Java counts as whitespace.
-    private static let informationSeparators: ClosedRange<UInt32> = 0x1C...0x1F
 }

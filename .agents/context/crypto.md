@@ -181,8 +181,11 @@ A blank display name shows an alias. With `d = SHA-256(UTF-8("knit-alias-v2:" + 
 ## Text limits
 
 Limits count UTF-16 code units (`TextLimits.kt`): display name 32, group name 32, status 100, message 2000,
-reaction 32. A name is normalized by trimming and collapsing runs of Java `\s` (ASCII whitespace) to one
-space before it is cut. A group name that arrives is only cut, and a blank one never clears the name held.
+reaction 32. A name is normalized by trimming with Kotlin's `trim()` and collapsing runs of Java regex `\s` to
+one space before it is cut. Both sets are ART's, which knit-next's `ArtTextSemanticsTest` reads on a device: `\s`
+is Unicode White_Space, and `isWhitespace` adds `\u{1C}`–`\u{1F}` but not U+0085. U+180E is neither, as on ART
+from API 37's mainline module (ADR 2026-10.7uyt). A group name that arrives is only cut, and a blank one never
+clears the name held.
 Swift must count `utf16`, not `Character`s.
 
 ## The Swift port (`KnitCrypto`)

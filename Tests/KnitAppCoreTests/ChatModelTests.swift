@@ -124,6 +124,9 @@ import Testing
         #expect(Composer.body(of: "\u{2003} hi \n") == "hi", "Kotlin's trim is Unicode-wide")
         #expect(Composer.body(of: "a  b") == "a  b", "the inside is left alone")
         #expect(Composer.body(of: "\u{3000}") == nil)
+        #expect(Composer.body(of: "\u{001F}") == nil, "ART's isWhitespace takes U+001F")
+        #expect(Composer.body(of: "\u{0085}") == "\u{0085}", "and leaves U+0085, which only regex \\s takes")
+        #expect(Composer.body(of: "a\u{2028}\u{2028}b") == "a\u{2028}\u{2028}b", "a body is never collapsed")
         #expect(Composer.body(of: String(repeating: "x", count: 2500))?.utf16.count == TextLimits.message)
         #expect(Composer.trimmed("").isEmpty)
     }

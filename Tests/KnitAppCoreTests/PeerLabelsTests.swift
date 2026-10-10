@@ -150,6 +150,15 @@ import Testing
         #expect(NameKey.of("Alice\u{3000}Smith") == "alice smith")
     }
 
+    /// `PeerLabels.kt:270-272` on ART: `\s` is Unicode White_Space, and runs collapse before `trim()`, so a U+0085 at an
+    /// end goes with its run though `trim()` alone would keep it.
+    @Test(arguments: ["\u{0085}", "\u{1680}", "\u{2028}", "\u{2029}"])
+    func aNameKeyFoldsTheSpacesARTMatches(space: String) {
+        #expect(NameKey.of("Alice\(space)Smith") == "alice smith")
+        #expect(NameKey.of("\(space)Alice\(space)") == "alice")
+        #expect(NameKey.of(" \(space)Alice\(space) ") == "alice")
+    }
+
     @Test func aNameKeyNormalizesCompatibilityForms() {
         #expect(NameKey.of("\u{FF21}\u{FF4C}\u{FF49}\u{FF43}\u{FF45}") == "alice")
         #expect(NameKey.of("\u{FB01}sh") == "fish")

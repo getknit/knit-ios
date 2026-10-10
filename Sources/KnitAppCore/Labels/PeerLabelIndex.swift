@@ -184,9 +184,10 @@ public struct PeerLabelIndex: Sendable {
 /// "Alice", "alice", "Ａlice" and "Al\u{200B}ice" are one name. Confusables are deliberately not folded: a Cyrillic
 /// "а" stays apart from a Latin "a", a recorded limit.
 public enum NameKey {
-    /// The key of `name`.
+    /// The key of `name`. Runs are collapsed before the ends are trimmed (`PeerLabels.kt:270-272`), the reverse of
+    /// `normalizeSingleLine`, so a U+0085 at an end, which `trim()` keeps but `\s` takes, goes with its run.
     public static func of(_ name: String) -> String {
         let folded = name.precomposedStringWithCompatibilityMapping.unicodeScalars.filter { $0.properties.generalCategory != .format }
-        return TextLimits.normalizeSingleLine(String(String.UnicodeScalarView(folded)).lowercased())
+        return TextLimits.trimmed(TextLimits.collapsingWhitespaceRuns(String(String.UnicodeScalarView(folded)).lowercased()))
     }
 }

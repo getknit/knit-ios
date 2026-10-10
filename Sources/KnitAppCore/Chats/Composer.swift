@@ -28,14 +28,8 @@ public enum Composer {
         TextLimits.truncated(TextLimits.normalizeSingleLine(text), toUTF16: limit)
     }
 
-    /// Kotlin's `trim()`: whitespace in Kotlin's Unicode-wide sense off both ends, the inside untouched.
+    /// Kotlin's `trim()`: whitespace in Kotlin's sense off both ends, the inside untouched.
     static func trimmed(_ text: String) -> String {
-        let scalars = text.unicodeScalars
-        guard let first = scalars.firstIndex(where: { !TextLimits.isBlank(String($0)) }),
-            let last = scalars.lastIndex(where: { !TextLimits.isBlank(String($0)) })
-        else {
-            return ""
-        }
-        return String(scalars[first...last])
+        TextLimits.trimmed(text)
     }
 }

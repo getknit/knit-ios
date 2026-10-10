@@ -29,8 +29,9 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   (`MeshConfiguration.queriesBlobHolders`). A file's progress report, `blobprog`, and an asker's withdrawal,
   `blobcancel`, ride the same bit: each goes only to a neighbour whose HELLO carries it, an iPhone included (knit-next
   ADR 2026-10.nsr7, ADR 2026-10.ds45, ADR 2026-10.xwjc). Android still sends an iPhone no `blobprog`.
-- **Text limits count UTF-16 code units,** and whitespace means Java's `\s`. Node ids compare as ASCII
-  strings, never as raw bytes.
+- **Text limits count UTF-16 code units,** and whitespace is what ART says it is, not the desktop JDK: regex
+  `\s` is Unicode White_Space, and `isWhitespace` is ART's own list, pinned from knit-next's `ArtTextSemanticsTest`
+  (ADR 2026-10.7uyt). Node ids compare as ASCII strings, never as raw bytes.
 - **Changes stay additive** (`docs/WIRE_COMPAT.md` in knit-next). If a change can only be made by breaking
   the wire, don't make it: add it to knit-next's `docs/NEXT_WIRE_BREAK.md` and find the additive route.
 - **A behaviour that needs Android to change** is a Track A item in `.agents/memory/roadmap.md`, made in

@@ -143,15 +143,47 @@ import Testing
 }
 
 @Suite struct TextLimitsTests {
-    @Test func normalizationTrimsUnicodeWhitespaceButCollapsesOnlyASCII() {
+    @Test func normalizationTrimsAndCollapsesUnicodeWhitespaceAsOnART() {
         #expect(TextLimits.normalizeSingleLine("  Ann   Lee \t") == "Ann Lee")
         #expect(TextLimits.normalizeSingleLine("a\n\n\tb") == "a b")
         // Kotlin's trim() is Unicode-wide: a no-break space at the ends goes.
         #expect(TextLimits.normalizeSingleLine("\u{00A0}Ann\u{2003}") == "Ann")
-        // Java's \s is ASCII-only: a no-break space inside survives.
-        #expect(TextLimits.normalizeSingleLine("Ann\u{00A0}\u{00A0}Lee") == "Ann\u{00A0}\u{00A0}Lee")
+        // Java's \s on ART is Unicode White_Space: a no-break space inside collapses too.
+        #expect(TextLimits.normalizeSingleLine("Ann\u{00A0}\u{00A0}Lee") == "Ann Lee")
+        // The two sets differ: trim() keeps U+0085 and \s takes it; \s keeps U+001F and trim() takes it.
+        #expect(TextLimits.normalizeSingleLine("\u{0085}Ann") == " Ann")
+        #expect(TextLimits.normalizeSingleLine("\u{001F}Ann\u{001F}\u{001F}Lee") == "Ann\u{001F}\u{001F}Lee")
         #expect(TextLimits.normalizeSingleLine(" \t ").isEmpty)
     }
+
+    /// Every code point against the two sets knit-next's instrumented test read on ART (`ArtTextSemanticsTest`), through
+    /// what each one decides: `isBlank` for Kotlin's `isWhitespace`, and a collapse inside a name for regex `\s`.
+    @Test func everyCodePointIsWhitespaceExactlyWhereARTSaysSo() {
+        var kotlin: [UInt32] = []
+        var regex: [UInt32] = []
+        for value in UInt32(0)...0x10FFFF {
+            guard let scalar = Unicode.Scalar(value) else {
+                continue
+            }
+            if TextLimits.isBlank(String(scalar)) {
+                kotlin.append(value)
+            }
+            if TextLimits.collapsingWhitespaceRuns("a\(scalar)b") == "a b" {
+                regex.append(value)
+            }
+        }
+        #expect(kotlin == Self.artIsWhitespace)
+        #expect(regex == Self.artRegexWhitespace)
+    }
+
+    /// Kotlin's `Char.isWhitespace()` on ART, as `ArtTextSemanticsTest` read it.
+    private static let artIsWhitespace: [UInt32] =
+        Array(0x09...0x0D) + Array(0x1C...0x20) + [0xA0, 0x1680] + Array(0x2000...0x200A)
+        + [0x2028, 0x2029, 0x202F, 0x205F, 0x3000]
+
+    /// Java's regex `\s` on ART, as `ArtTextSemanticsTest` read it.
+    private static let artRegexWhitespace: [UInt32] =
+        Array(0x09...0x0D) + [0x20, 0x85, 0xA0, 0x1680] + Array(0x2000...0x200A) + [0x2028, 0x2029, 0x202F, 0x205F, 0x3000]
 
     @Test func truncationCountsUTF16Units() {
         let name = String(repeating: "a", count: 40)

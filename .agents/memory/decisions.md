@@ -80,3 +80,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.zv5c](decisions/2026-10-zv5c-tip-links-show-on-the.md) | Tip links show on the US storefront only | app, store, copy |
 | [2026-10.6eyf](decisions/2026-10-6eyf-a-smaller-id-iphone-dials.md) | a smaller-id iPhone dials a flagged peer after a head start | ble, transport, interop |
 | [2026-10.yddp](decisions/2026-10-yddp-app-review-s-clips-are.md) | App Review's clips are scripted scenes filmed like the store's video | testing, store, moderation |
+| [2026-10.7uyt](decisions/2026-10-7uyt-whitespace-is-what-art-says.md) | Whitespace is what ART says it is | interop, wire, text |
