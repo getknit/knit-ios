@@ -287,55 +287,66 @@ struct FakeCodec: ImageCodec {
         let moving = LaunchOptions(arguments: ["-seedDemo", "-demoPhoto", "gif"])
         #expect(moving.demoPhoto && moving.demoPhotoMoves)
     }
+}
 
-    /// The marketing scene gives most of its people a photo, painted by whoever seeds it, and leaves the rest their
-    /// initials, so its screenshots show both.
-    @Test func theMarketingSceneWearsPaintedPhotos() throws {
+// MARK: The demo's pictures
+
+// Apart from the rest only to keep the suite under SwiftLint's body length.
+extension PhotoTests {
+    /// The marketing scene gives everyone their face, made by whoever seeds it (ADR 2026-10.2acj).
+    @Test func theMarketingSceneWearsFaces() throws {
         let identity = try #require(DemoSeed.identity)
         let stores = MeshStores.inMemory()
         DemoSeed.populate(stores, me: identity.nodeId, now: 1_000_000, scene: .marketing) { Array("\($0)".utf8) }
         let own = try #require(stores.ownProfile.load().avatarHash)
-        #expect(stores.blobs.bytes(of: own) == Array("\(DemoPortrait.campfire)".utf8))
+        #expect(stores.blobs.bytes(of: own) == Array("\(DemoPortrait.maya)".utf8))
         let named = Dictionary(stores.peers.allPeers().map { ($0.name, $0) }) { first, _ in first }
-        for (name, portrait) in [("Dani Cho", DemoPortrait.summit), ("Sam Rivera", .lake), ("Priya N.", .sunset), ("Lena F.", .forest)] {
+        let faces: [(String, DemoPortrait)] = [
+            ("Sam Rivera", .sam), ("Dani Cho", .dani), ("Theo Blake", .theo), ("Priya N.", .priya), ("Jonas W.", .jonas),
+            ("Lena F.", .lena), ("River Salas", .river),
+        ]
+        #expect(faces.count == named.count, "everyone wears a face")
+        for (name, portrait) in faces {
             let peer = try #require(named[name])
             #expect(peer.avatarHash == BlobHash(of: Array("\(portrait)".utf8)), "\(name)")
             #expect(peer.advertisedAvatarHash == peer.avatarHash, "\(name)'s photo is the one their profile names")
             #expect(peer.avatarHash.flatMap(stores.blobs.bytes(of:)) != nil)
         }
-        for name in ["Theo Blake", "Jonas W.", "River Salas"] {
-            #expect(named[name]?.avatarHash == nil, "\(name) keeps an initial")
-        }
     }
 
-    /// The marketing scene's post by the fire carries a photo, painted by whoever seeds it, as the room carries one: in
-    /// the clear, its bytes held.
-    @Test func theMarketingScenesFirePostCarriesAPaintedPhoto() throws {
+    /// The marketing scene's photos, made by whoever seeds it, each in the clear with its bytes held: the room's post by
+    /// the fire, a photo in each DM, and one in the group, so a shot of any of them shows one.
+    @Test func theMarketingScenesPhotos() throws {
         let identity = try #require(DemoSeed.identity)
         let stores = MeshStores.inMemory()
         DemoSeed.populate(stores, me: identity.nodeId, now: 1_000_000, scene: .marketing) { _ in
             nil
-        } snap: { portrait in
-            Array("snap \(portrait)".utf8)
+        } snap: { picture in
+            Array("snap \(picture)".utf8)
         }
         let carrying = stores.messages.messages(in: Conversations.nearby).filter { $0.attachment != nil }
         let post = try #require(carrying.first)
         #expect(carrying.count == 1 && post.body == "Saved you a spot by the fire 🔥")
-        let photo = Array("snap \(DemoPortrait.campfire)".utf8)
+        let photo = Array("snap \(DemoSnapshot.campfire)".utf8)
         #expect(post.attachment == MessageAttachment(hash: BlobHash(of: photo), mime: "image/jpeg"))
         #expect(stores.blobs.bytes(of: BlobHash(of: photo)) == photo)
-        #expect(stores.ownProfile.load().avatarHash == nil, "the profile photos have a painter of their own")
+        let elsewhere: [String: DemoSnapshot] = ["dm-dani-d": .summit, "dm-sam-e": .lake, "group-e": .trail]
+        for (id, picture) in elsewhere {
+            let message = try #require(stores.messages.message(id), "\(id)")
+            #expect(message.attachment?.hash == BlobHash(of: Array("snap \(picture)".utf8)), "\(id)")
+        }
+        #expect(stores.ownProfile.load().avatarHash == nil, "the faces have a maker of their own")
     }
 
-    /// Without a painter, or in the edge cases, nobody has a photo.
+    /// Without a maker, or in the edge cases, nobody has a photo.
     @Test(arguments: DemoScene.allCases)
-    func aSceneWithoutAPainterHasNoPhotos(scene: DemoScene) throws {
+    func aSceneWithoutAMakerHasNoPhotos(scene: DemoScene) throws {
         let identity = try #require(DemoSeed.identity)
         let stores = MeshStores.inMemory()
         DemoSeed.populate(stores, me: identity.nodeId, now: 1_000_000, scene: scene)
         #expect(stores.blobs.allHashes().isEmpty)
-        let painted = MeshStores.inMemory()
-        DemoSeed.populate(painted, me: identity.nodeId, now: 1_000_000, scene: .edgeCases) { Array("\($0)".utf8) }
-        #expect(painted.blobs.allHashes().isEmpty, "the edge cases stay as they were")
+        let made = MeshStores.inMemory()
+        DemoSeed.populate(made, me: identity.nodeId, now: 1_000_000, scene: .edgeCases) { Array("\($0)".utf8) }
+        #expect(made.blobs.allHashes().isEmpty, "the edge cases stay as they were")
     }
 }

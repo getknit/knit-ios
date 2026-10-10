@@ -4,7 +4,7 @@
 import XCTest
 
 /// Our profile photo on the iPhone, live (ADR 2026-10.sepc): chosen, cropped and saved, so the lab's phones get it.
-/// `-demoPhoto` hands Choose photo a painted picture, since the system's picker runs outside Knit. It keeps pictures of
+/// `-demoPhoto` hands Choose photo a demo photo, since the system's picker runs outside Knit. It keeps pictures of
 /// the chat list's faces, the cropper, and the profile with the photo waiting for Save.
 ///
 /// The photo stays set, for a look at the lab's phones afterwards: `interop.py bridge '{"cmd":"avatar","clear":true}'`

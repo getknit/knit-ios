@@ -52,7 +52,7 @@ extension KnitUITests {
 
     /// The content filter (ADR 2026-10.rpmq, ADR 2026-10.e4kz) on the marketing scene under `-demoSensitive`, where the
     /// demo's classifiers find every photo explicit and every message abusive, and `-demoPhoto`, under which Add photo
-    /// picks a painted picture:
+    /// picks a demo photo:
     ///
     /// - the room's post by the fire hides its photo behind a tap, and a tap shows it;
     /// - the room's newest post hides its words behind a tap, and a tap shows them;

@@ -84,7 +84,8 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
 - **Copy:** the room's notice says its posts and photos are public. The DM and group encryption sheets say photos
   are sealed like messages, and that the forward-secrecy limit covers them too.
 - **The demo:** the `marketing` scene's post by the fire carries a painted photo, and `-demoPhoto` hands Add photo
-  the cropper's painted picture.
+  the cropper's painted picture. Since 2026-10-09 both are licensed photographs that only a debug build bundles (ADR
+  2026-10.2acj).
 - **Control lines:** `room`, `dm` and `group-send` take a base64 `photo` and an optional `mime`. A reply names the
   `attachmentHash`, a message line adds `attachmentHash`, `attachmentMime` and `attachmentHeld`, and an `attachment`
   event says when a photo's bytes land. A debug build's bridge also answers `photos`: whether each photo in a thread

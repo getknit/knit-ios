@@ -44,6 +44,26 @@ SwiftPM resolves these while building the packages above, and none of their code
 | --- | --- | --- | --- |
 | `swift-asn1` | [apple/swift-asn1](https://github.com/apple/swift-asn1) | Apache-2.0 | Only swift-crypto's `CryptoExtras` uses it, and Knit doesn't link that |
 
+## Demo pictures (debug builds only)
+
+`App/DemoMedia/` holds the faces and photos the demo shows in screenshots, the store's video and the UI tests. Only a
+debug build bundles them; `check.sh release` fails a build that carries them. They are not covered by the GPL: each
+stays under its own license, below. The faces are AI-generated, so none shows a real person, and no photo shows an
+identifiable person or a brand.
+
+| Files | Source | License |
+| --- | --- | --- |
+| `face-maya.jpg`, `face-sam.jpg`, `face-dani.jpg`, `face-theo.jpg`, `face-priya.jpg`, `face-jonas.jpg`, `face-lena.jpg`, `face-river.jpg` | [UI Faces](https://uifaces.co/category/human), human faces 143, 65, 87, 80, 68, 62, 125 and 118 | [UI Faces licenses](https://uifaces.co/licenses), AI-generated images: internal and commercial use |
+| `photo-summit.jpg` | [Unsplash](https://unsplash.com), `photo-1759341157272-68f4487b05bb` | [Unsplash License](https://unsplash.com/license) |
+| `photo-sunset.jpg` | [Unsplash](https://unsplash.com), `photo-1624645384435-5d9fab1a3a23` | [Unsplash License](https://unsplash.com/license) |
+| `photo-forest.jpg` | [Unsplash](https://unsplash.com), `photo-1752230446597-a5b08f8647e4` | [Unsplash License](https://unsplash.com/license) |
+| `photo-trail.jpg` | [Unsplash](https://unsplash.com), `photo-1624648707534-f24d72e01b39` | [Unsplash License](https://unsplash.com/license) |
+| `photo-lake.jpg` | [Unsplash](https://unsplash.com), `photo-1603979649806-5299879db16b` | [Unsplash License](https://unsplash.com/license) |
+| `photo-campfire.jpg` | [Unsplash](https://unsplash.com), `photo-1464808646948-8f732deb6e4b` | [Unsplash License](https://unsplash.com/license) |
+
+Knit for Android's demo uses the same faces and the summit photo. Each picture was cropped or resized and stripped of
+its metadata.
+
 ## Build and test tools (not distributed)
 
 | Tool | Project | License |

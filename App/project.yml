@@ -42,6 +42,11 @@ targets:
         buildPhase: resources
       - path: Models/Slurs.txt
         buildPhase: resources
+      # The demo's faces and photos (ADR 2026-10.2acj), copied whole as Knit.app/DemoMedia for DemoPictures. Debug only:
+      # Release's EXCLUDED_SOURCE_FILE_NAMES leaves it out, and `check.sh release` fails if it lands.
+      - path: DemoMedia
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: Knit
         product: Knit
@@ -77,6 +82,8 @@ targets:
             up its audio.
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit
+          # The demo's pictures are licensed for the demo, and nothing in a store build reads them (ADR 2026-10.2acj).
+          EXCLUDED_SOURCE_FILE_NAMES: DemoMedia
   # The Simulator's UI tests and accessibility audit (`scripts/check.sh uitest`). The sources live under Tests/ so
   # both linters see them, and AccessibilityID.swift comes straight from KnitAppCore, so the ids have one source.
   KnitUITests:

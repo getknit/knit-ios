@@ -6,7 +6,7 @@ public import KnitWire
 /// How the app was launched: `-seedDemo`, the radio state the demo reports (`-demoRadio off`), so a screen can be
 /// checked in a state no real phone here is in, the unsupported device's among them (MVP item 10), the scene it
 /// seeds (`-demoScene marketing`), whether it starts at onboarding (`-demoOnboarding`), what the camera answers
-/// (`-demoCamera denied`), whether Choose photo picks a painted picture (`-demoPhoto`) or a painted GIF
+/// (`-demoCamera denied`), whether Choose photo picks a demo photo (`-demoPhoto`) or a GIF made of them
 /// (`-demoPhoto gif`), whether the demo posts a notification to tap (`-demoNotification`), and whether every photo and
 /// every message from someone else looks explicit or abusive to the content filter (`-demoSensitive`).
 public struct LaunchOptions: Sendable, Equatable {
@@ -21,10 +21,10 @@ public struct LaunchOptions: Sendable, Equatable {
     /// What the demo's camera answers, or `nil` for the device's own: the Simulator has no scanner, so the UI tests reach
     /// the refused and failed states only through this.
     public var demoCamera: DemoCamera.Answer?
-    /// Whether Choose photo hands the cropper a painted picture rather than opening the photo library, in the demo and in
+    /// Whether Choose photo hands the cropper a demo photo rather than opening the photo library, in the demo and in
     /// a debug build's live launch: the system's picker runs outside Knit, out of a UI test's reach.
     public var demoPhoto = false
-    /// Whether that picture is a painted GIF that moves, so a UI test can watch one play in a thread.
+    /// Whether that picture is a GIF that moves, made of demo photos, so a UI test can watch one play in a thread.
     public var demoPhotoMoves = false
     /// Whether the demo asks to notify as it launches, then posts the room's notification each time Knit goes to the
     /// background: the demo's radio brings no messages, so a UI test would have no notification to tap.
@@ -146,25 +146,26 @@ public enum DemoSeed {
     private static let reactionStep: Int64 = 1000
 
     /// Fills `stores` with `scene`, as of `now` on the wall clock, from `me`'s side. Whoever the scene gives a profile
-    /// photo gets the picture `paint` makes of their ``DemoPortrait``, and a post the scene gives a photo carries the
-    /// picture `snap` makes of its own: the app paints them, and a test hands in bytes of its own.
+    /// photo gets the picture `face` makes of their ``DemoPortrait``, and a message the scene gives a photo carries the
+    /// picture `snap` makes of its ``DemoSnapshot``: the app reads them from the pictures a debug build bundles, and a
+    /// test hands in bytes of its own.
     public static func populate(
         _ stores: MeshStores,
         me: NodeId,
         now: Int64,
         scene: DemoScene,
-        paint: (DemoPortrait) -> [UInt8]? = { _ in nil },
-        snap: (DemoPortrait) -> [UInt8]? = { _ in nil }
+        face: (DemoPortrait) -> [UInt8]? = { _ in nil },
+        snap: (DemoSnapshot) -> [UInt8]? = { _ in nil }
     ) {
         let cast = scene.cast
         if let own = cast.me {
-            let photo = own.portrait.flatMap { keep(paint($0), in: stores, at: now) }
+            let photo = own.portrait.flatMap { keep(face($0), in: stores, at: now) }
             stores.ownProfile.save(
                 OwnProfile(name: own.name, status: own.status, openToChat: true, version: now, publishedAt: now, avatarHash: photo))
         }
         var nodeIds = [DemoCast.Slot.me: me]
         for person in cast.people {
-            let pinned = pin(person, in: stores, at: now, paint: paint)
+            let pinned = pin(person, in: stores, at: now, face: face)
             nodeIds[person.slot] = pinned
             if person.blocked, let pinned {
                 stores.blocks.block(pinned, deviceTag: nil)
@@ -173,7 +174,7 @@ public enum DemoSeed {
         let groupId = cast.group.map { group in GroupId.derive((group.members + [.me]).compactMap { nodeIds[$0]?.string }) }
         var sentAt = now
         var groupStart = now
-        let paintings = paintings(of: cast, snap: snap)
+        let snapshots = snapshots(of: cast, snap: snap)
         var sentAts: [String: Int64] = [:]
         for line in cast.lines.reversed() {
             sentAt -= line.then.rawValue
@@ -194,7 +195,7 @@ public enum DemoSeed {
                     sentAt: sentAt,
                     arrivedAt: sender == me ? nil : sentAt,
                     delivered: line.delivered,
-                    attachment: photo(line.photo.flatMap { paintings[$0] }, in: stores, at: sentAt),
+                    attachment: photo(line.photo.flatMap { snapshots[$0] }, in: stores, at: sentAt),
                     // As the engine stores them: someone else's words wait for the content filter, which the session
                     // runs over them as it starts listening.
                     moderation: sender == me ? .clear : .waiting
@@ -260,10 +261,10 @@ public enum DemoSeed {
         }
     }
 
-    /// Pins `person` as of `now`, wearing the photo `paint` makes of their portrait, and answers their node id.
-    private static func pin(_ person: DemoCast.Person, in stores: MeshStores, at now: Int64, paint: (DemoPortrait) -> [UInt8]?) -> NodeId? {
+    /// Pins `person` as of `now`, wearing the photo `face` makes of their portrait, and answers their node id.
+    private static func pin(_ person: DemoCast.Person, in stores: MeshStores, at now: Int64, face: (DemoPortrait) -> [UInt8]?) -> NodeId? {
         keys(person.slot).map { keys in
-            let photo = person.portrait.flatMap { keep(paint($0), in: stores, at: now) }
+            let photo = person.portrait.flatMap { keep(face($0), in: stores, at: now) }
             stores.peers.upsert(
                 PeerRecord(
                     nodeId: keys.nodeId,
@@ -282,18 +283,18 @@ public enum DemoSeed {
         }
     }
 
-    /// The picture `snap` makes of each ``DemoPortrait`` a post in `cast` shows, painted once: the long room would paint
+    /// The picture `snap` makes of each ``DemoSnapshot`` a message in `cast` shows, made once: the long room would make
     /// one for every post that carries it.
-    private static func paintings(of cast: DemoCast, snap: (DemoPortrait) -> [UInt8]?) -> [DemoPortrait: [UInt8]] {
+    private static func snapshots(of cast: DemoCast, snap: (DemoSnapshot) -> [UInt8]?) -> [DemoSnapshot: [UInt8]] {
         Dictionary(uniqueKeysWithValues: Set(cast.lines.compactMap(\.photo)).compactMap { picture in snap(picture).map { (picture, $0) } })
     }
 
-    /// Keeps a post's painted photo in the blob store, as the engine keeps a room post's, and answers what the post carries.
+    /// Keeps a message's photo in the blob store, as the engine keeps a room post's, and answers what the message carries.
     static func photo(_ jpeg: [UInt8]?, in stores: MeshStores, at now: Int64) -> MessageAttachment? {
         keep(jpeg, in: stores, at: now).map { MessageAttachment(hash: $0, mime: "image/jpeg") }
     }
 
-    /// Keeps a painted photo in the blob store, as the engine keeps one it adopted, and answers its hash.
+    /// Keeps a demo photo in the blob store, as the engine keeps one it adopted, and answers its hash.
     private static func keep(_ jpeg: [UInt8]?, in stores: MeshStores, at now: Int64) -> BlobHash? {
         jpeg.map { jpeg in
             let hash = BlobHash(of: jpeg)

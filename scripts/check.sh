@@ -217,6 +217,11 @@ PY
 	# A Debug build keeps the app's code in Knit.debug.dylib, and Knit is a launcher for it.
 	if [ -f "$app/Knit.debug.dylib" ]; then
 		check_delegates "$app/Knit.debug.dylib"
+		# A debug build carries the demo's faces and photos, every one App/DemoMedia holds (ADR 2026-10.2acj).
+		if [ "$(find "$app/DemoMedia" -name '*.jpg' 2>/dev/null | wc -l)" -ne "$(find App/DemoMedia -name '*.jpg' | wc -l)" ]; then
+			echo "$app lacks App/DemoMedia's pictures: the demo would show initials and no photos" >&2
+			return 1
+		fi
 	else
 		check_delegates "$app/Knit"
 	fi
@@ -256,6 +261,11 @@ check_release_app() {
 			return 1
 		fi
 	done
+	# The demo's faces and photos are a debug build's alone (ADR 2026-10.2acj).
+	if [ -e "$app/DemoMedia" ]; then
+		echo "$app holds DemoMedia, the demo's pictures, which only a debug build bundles" >&2
+		return 1
+	fi
 	python3 - "$app" <<'PY'
 import pathlib, plistlib, sys
 app = pathlib.Path(sys.argv[1])

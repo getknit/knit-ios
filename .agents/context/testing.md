@@ -51,8 +51,9 @@ ladder, not the first.
    `test:ios:simulator`), each through `performAccessibilityAudit`, once at the default text size and once at the
    largest, where it keeps a screenshot of every screen. The Simulator has no scanner, so the scan walk reaches the
    scanner's refused and failed states through `-demoCamera` (ADR 2026-10.65xx). The system's photo picker runs
-   outside Knit, so the photo walks pick a painted picture through `-demoPhoto`, on the `marketing` scene, whose
-   people wear painted photos and whose post by the fire carries one (ADR 2026-10.sepc, ADR 2026-10.6cas). Nothing
+   outside Knit, so the photo walks pick a demo photo through `-demoPhoto`, on the `marketing` scene, whose
+   people wear faces and whose post by the fire carries a photo (ADR 2026-10.sepc, ADR 2026-10.6cas). The faces and
+   photos are files in `App/DemoMedia/`, which only a debug build bundles (ADR 2026-10.2acj). Nothing
    reaches the demo's radio, so the notification walk has `-demoNotification` post the room's notification as Knit
    goes to the background, then taps its banner on the home screen. The tap reaches Knit in the background, as one
    on the lock screen does, which is where Knit used to abort. `AuditPolicy` names what the audit
@@ -73,7 +74,7 @@ ladder, not the first.
     Mac, with Knit launched live and the Settings app and SpringBoard driven beside it: Stop and Start, Bluetooth
     off and on, the permission refused and allowed again, onboarding's prompt, a relaunch, and the camera prompt at a
     profile's Scan their code (`CameraTests`, which needs no radio and leaves Bluetooth as it found it). `PhotoTests`
-    chooses, crops and saves our profile photo, a painted one under `-demoPhoto`, which a debug build honours live too,
+    chooses, crops and saves our profile photo, a demo photo under `-demoPhoto`, which a debug build honours live too,
     and leaves it set for a look at the lab's phones (ADR 2026-10.sepc). It reads the status
     line's state from its identifier, never its words, and each test puts Bluetooth, the permission and the mesh
     back as it ends, `PhotoTests`' photo apart. Its sources live in `Tests/KnitDeviceTests/`, which only the `KnitDevice` scheme builds.

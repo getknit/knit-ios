@@ -1,5 +1,5 @@
 /// The demo's content filter: every photo scores as porn under `-demoSensitive`, and as neutral otherwise, whatever it
-/// shows. The demo's photos are painted, and nothing in the repository is explicit.
+/// shows. The demo's faces and photos are chosen to be safe for work, and nothing in the repository is explicit.
 public struct DemoPhotoClassifier: PhotoClassifier {
     /// Whether every photo looks explicit.
     public let flagsEverything: Bool

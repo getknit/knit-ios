@@ -27,7 +27,7 @@ public final class DemoDirector: Sendable {
     private let script: [DemoCast.Cue]
     private let stores: MeshStores
     private let me: NodeId
-    private let snap: @Sendable (DemoPortrait) -> [UInt8]?
+    private let snap: @Sendable (DemoSnapshot) -> [UInt8]?
     private let now: @Sendable () -> Int64
     private let wait: @Sendable (Int64) async -> Void
     private let ownPosts: AsyncStream<MessageRecord>
@@ -55,7 +55,7 @@ public final class DemoDirector: Sendable {
         scene: DemoScene,
         stores: MeshStores,
         me: NodeId,
-        snap: @escaping @Sendable (DemoPortrait) -> [UInt8]?,
+        snap: @escaping @Sendable (DemoSnapshot) -> [UInt8]?,
         now: @escaping @Sendable () -> Int64,
         wait: @escaping @Sendable (Int64) async -> Void
     ) {

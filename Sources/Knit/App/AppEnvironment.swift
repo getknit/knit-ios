@@ -30,7 +30,7 @@
         private let model: DevicePhotoClassifier?
         /// The filter's text model, which lets go soon after its last message in the background; a demo's has none.
         private let textModel: DeviceTextClassifier?
-        /// What Choose photo picks under `-demoPhoto`: a painted picture, since the system's picker is out of a UI test's
+        /// What Choose photo picks under `-demoPhoto`: a demo photo, since the system's picker is out of a UI test's
         /// reach. `nil` opens the photo library.
         let demoPhoto: Data?
         /// What `-demoNotification` posts each time Knit goes to the background, since nothing reaches the demo that
@@ -179,8 +179,8 @@
             #if DEBUG
                 parts.storage = StorageReport(
                     nodeId: identity.nodeId, keyStore: keyStore, directory: directory, preferences: defaults, launch: launch)
-                // The device tests pick a painted photo too: the system's picker is out of their reach.
-                parts.demoPhoto = options.demoPhoto ? DemoPortraits.picked(moving: options.demoPhotoMoves) : nil
+                // The device tests pick a demo photo too: the system's picker is out of their reach.
+                parts.demoPhoto = options.demoPhoto ? DemoPictures.picked(moving: options.demoPhotoMoves) : nil
                 return compose(parts) { keys in try keyStore.write(keys.storedForm) }
             #else
                 return compose(parts, replace: nil)
@@ -295,8 +295,8 @@
                     me: identity.nodeId,
                     now: clock.wallMilliseconds(),
                     scene: options.demoScene,
-                    paint: DemoPortraits.profilePhoto,
-                    snap: DemoPortraits.chatPhoto
+                    face: DemoPictures.profilePhoto,
+                    snap: DemoPictures.chatPhoto
                 )
                 let parts = Parts(
                     identity: identity,
@@ -313,12 +313,12 @@
                         scene: options.demoScene,
                         stores: stores,
                         me: identity.nodeId,
-                        snap: DemoPortraits.chatPhoto,
+                        snap: DemoPictures.chatPhoto,
                         now: { clock.wallMilliseconds() },
                         wait: { milliseconds in try? await Task.sleep(for: .milliseconds(milliseconds)) }
                     ),
                     camera: options.demoCamera.map(DemoCamera.init),
-                    demoPhoto: options.demoPhoto ? DemoPortraits.picked(moving: options.demoPhotoMoves) : nil,
+                    demoPhoto: options.demoPhoto ? DemoPictures.picked(moving: options.demoPhotoMoves) : nil,
                     notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
                 )
                 return compose(parts, replace: nil)

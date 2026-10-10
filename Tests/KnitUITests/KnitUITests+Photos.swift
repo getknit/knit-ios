@@ -7,7 +7,7 @@ import XCTest
 
 // The photo walk, apart from the rest only to keep the class under SwiftLint's body and file lengths.
 extension KnitUITests {
-    /// The marketing scene, whose people wear painted photos, with `-demoPhoto`, under which Choose photo picks a painted
+    /// The marketing scene, whose people wear faces, with `-demoPhoto`, under which Choose photo picks a demo
     /// picture: the system's picker runs outside Knit, out of the walk's reach. The profile, the cropper, the profile
     /// again with the photo waiting for Save, and Sam's photo full screen.
     func walkPhotos() throws {
@@ -38,7 +38,7 @@ extension KnitUITests {
     }
 
     /// Photos in a thread, on the marketing scene, whose post by the fire carries one: the room with its photos, Add
-    /// photo, which picks a painted picture under `-demoPhoto`, the photo the composer holds, the post that sends it, and
+    /// photo, which picks a demo photo under `-demoPhoto`, the photo the composer holds, the post that sends it, and
     /// that photo full screen with its Save. The picked picture stands upright, so our photo grows the most it can once it
     /// decodes, and the walk checks that the thread kept its stamp in view. The walk opens our own photo, the newest
     /// message: at the largest sizes a post further up scrolls in and out of the list's reach as the walk swipes. Save
@@ -77,7 +77,7 @@ extension KnitUITests {
         app.terminate()
     }
 
-    /// A GIF picked with Add photo under `-demoPhoto gif`, four painted scenes of 0.3 seconds each: it plays as the
+    /// A GIF picked with Add photo under `-demoPhoto gif`, four demo photos of 0.3 seconds each: it plays as the
     /// composer holds it, in its bubble once sent, and full screen (ADR 2026-10.ytvx). Each place shows another frame a
     /// moment after the first look.
     func walkMovingPhoto() throws {

@@ -73,7 +73,8 @@ published.
   camera reaches it as `CameraAccess`.
 - **The demo:**
   - The `marketing` scene gives five of its eight people photos. Knit paints them at launch, so no photograph ships in
-    the app. The other three keep their initials.
+    the app. The other three keep their initials. Superseded on 2026-10-09: everyone wears an AI-generated face that
+    only a debug build bundles (ADR 2026-10.2acj).
   - `-demoPhoto` makes Choose photo hand the cropper a painted picture, since the system picker is out of a UI test's
     reach. A debug build honours it in a live launch too, for `KnitDeviceTests`.
   - The `edge-cases` scene is unchanged, so the walks that audit it measure the same rows as before.
