@@ -1056,12 +1056,12 @@ def android_keeps_iphone(arguments: argparse.Namespace) -> int:
     away from the front and back from the Mac, unless `--prompts` asks a person.
 
     - **held:** the phone sits at its cap (`BLECAP` max = the links it holds), Knit leaves the front, and after more
-      than 90 s the phone's eviction-score line must show the iPhone's link at the floor, -90, never -127. Then the link
-      must hold for `--minutes`, a DM from the phone each minute, `link-held` as `iphone-wake` reads it.
+        than 90 s the phone's eviction-score line must show the iPhone's link at the floor, -90, never -127. Then the link
+        must hold for `--minutes`, a DM from the phone each minute, `link-held` as `iphone-wake` reads it.
     - **redial:** with Knit back in front and the phone hearing it again, Knit leaves the front, and once the phone has
-      not heard it for 12 s the phone sheds the link (`BLECAP` max 0, cleared once the link is down). The iPhone's seek
-      dial must be admitted while the phone still holds it in presence, as the admission line's `heardAgoMs` (12 to 90
-      s) and `inPresence` show, and the link, which the iPhone dialed, must end at BALANCED's 5 s timeout (#102).
+        not heard it for 12 s the phone sheds the link (`BLECAP` max 0, cleared once the link is down). The iPhone's seek
+        dial must be admitted while the phone still holds it in presence, as the admission line's `heardAgoMs` (12 to 90
+        s) and `inPresence` show, and the link, which the iPhone dialed, must end at BALANCED's 5 s timeout (#102).
 
     The phone's id must sort above the iPhone's, which is the order the old rule refused. Other Android phones in range
     can take the cap's slots or be the candidate that sheds the iPhone, so `--quiet` pauses their meshes for the run."""
