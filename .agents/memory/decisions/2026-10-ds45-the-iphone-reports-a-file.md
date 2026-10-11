@@ -201,3 +201,13 @@ byte moves and no vector changes.
   - `MeshTests.aSecondAskForAPhotoWeFeedIsParkedAndServedOnceTheFeedEnds` through the actor;
   - `LinkFileProgressTests`' and `FileIntakeTests`' skipped-file cases;
   - `MessageAttachmentTests` for the conversation.
+- **Device check (2026-10-10), passed.** The iPhone 12 ran this build (`81cd95b`) beside a Pixel 3 on knit-next
+  `c544573c`, a Pixel 9 on `a0d8b488`, a Pixel 8 on `b7c13e57`, a Pixel 7 and a moto-g.
+  - `interop.py iphone-photos` against the Pixel 3 passed all 17 steps.
+  - An iPhone photo of 172 KB posted to the room, with the iPhone's log recorded. The Pixel 7 asked first and was fed at
+    the 4 KiB/s pace. The Pixel 3 went beside it (`blob beside … its copy ~18152 ms, the feeds' 40173 ms; saves ~31097
+    ms for ~9076 ms of theirs`) and held the photo 22.3 s after the post. The Pixel 8 and Pixel 9 were parked, then
+    unparked one at a time, after 29.2 s and 71.8 s. The Pixel 9 held the photo 111.8 s after the post.
+  - An earlier 290 KB photo reached the Pixel 3 in 20.4 s and the Pixel 9 in 139.1 s. The iPhone fed the Pixel 3 and
+    Pixel 7 one after the other, and its SENDING answer held the Pixel 9 on its `eta` (`blob hold … floor 103889 ms`).
+
