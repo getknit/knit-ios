@@ -168,8 +168,8 @@ radio.
   left the front, iOS moved its UUID to the overflow area, and Android heard it no more. Ninety seconds later the
   iPhone left presence, and its live link scored `ABSENT_LINK_RSSI`, the first shed at the cap. Since the fix, a
   link whose HELLO carried `CAP_DOORBELL` scores the floor, −90, while its peer is out of presence, as a link
-  Android never sighted does. That ranks it beside an unsighted link, not above every candidate: one 8 dB
-  stronger than the floor still replaces it at the budget.
+  Android never sighted does. That ranks it with an unsighted link, and a candidate 8 dB stronger than the floor
+  still replaces it at the budget.
 - **Backoff** (`ConnectBackoffPolicy`): 10 s × 2^(streak − 1), capped at 180 s, ±20 % jitter. A link that
   ends at EOF also bumps the streak, and success resets it.
 - **Connect:** a 12 s watchdog around each dial (`CONNECT_TIMEOUT_MS`). No MTU request and no bonding.
@@ -203,7 +203,8 @@ radio.
   whose HELLO carries `CAP_DOORBELL` counts as sighted only if Android heard it in the last 12 s, the promotion
   policy's silence limit. One heard that recently is in front, and Android dials it itself. Any other is admitted,
   and its refused or accepted line names `heardAgoMs` and `inPresence`. Android's scan is duty-cycled, so a
-  foreground iPhone's dial is sometimes admitted too.
+  foreground iPhone's dial is sometimes admitted too. Android also dials a backgrounded iPhone back from its presence
+  while that lingers, which usually beats the iPhone's own seek dial (`linux-peer.md`, "What AND-3's trial showed").
 - **A lonely Android phone may dial an iPhone above it** (#103), but it must sight the iPhone first, which means a
   foreground iPhone whose payload it has read. That iPhone has sighted the phone's advert too, so it refuses the
   dial and dials the phone itself.

@@ -1640,3 +1640,47 @@ the phone's last `bt conn params` line for the link, after `bt doorbell found`.
 
 An open phone reads the iPhone's payload within about 4 s of each start, so it usually dials before the head start
 ends. The head start is what links a screen-off phone, which scans every 240 s or more.
+
+## What AND-3's trial showed
+
+On 2026-10-10 from 16:05, `interop.py android-keeps-iphone` ran against the Pixel 8 on a debug build of knit-next
+`b7c13e57` (`fix/gatt-only-link-score`, AND-3's fix). The Pixel 3, Pixel 7, Pixel 9 and moto-g were paused through
+their bridges for each run and resumed after. Nobody touched the iPhone 12: the Mac's `devicectl device process
+launch` opened the Settings app to send Knit to the background, and opened Knit again to bring the same process back
+(pid unchanged). XCUITest could not do it unattended, since the phone's passcode stops automation mode until someone
+types it (ADR 2026-09.63em). Each step's JSON and the iPhone's log are in `.build/and3/`.
+
+| Run | iPhone build | Stages | Steps | Failed |
+| --- | --- | --- | --- | --- |
+| 1 | `fa86d7a` (head start) | held, redial | 26 | 2 |
+| 2 | this branch at `795e1d7` (`763a81b`'s product code) | held, redial | 25 | 2 |
+| 3 | the same | redial | 18 | 2 |
+| 4 | the same | redial | 18 | 1 |
+
+- **A backgrounded iPhone's link now scores the floor, and holds at the cap.** In run 2 the Pixel 8 dialed the
+  iPhone after sighting it, and `bt state`'s `linkScores` read −74 dBm with Knit in front. With the cap at the one
+  link it held, Knit left the front, and once it had been away over 90 s the link scored −90, where `main` gives a
+  link out of presence −127. It held ten minutes, a DM a minute, without a `link down`, scored −90 still, and was
+  up on the iPhone when Knit came back.
+- **A link the iPhone dialed scores −90 under either rule.** In run 1 the iPhone ran the head start (ADR
+  2026-10.6eyf) and dialed the Pixel 8 first. Android reads no GATT payload from an address a link holds, so it
+  never sighted the iPhone during that link, which scored −90 in front and behind alike. AND-3 concerns the links
+  Android dials, and with the head start Android dials only when it wins the race.
+- **Android dials a shed iPhone back from its presence.** In run 1 the Pixel 8 shed the backgrounded iPhone (`bt
+  evicting … (score=-72 doorbell=true)`) and, its cap cleared, dialed it again 8.3 s later from the presence it still
+  held, half a minute after it last heard it: `promote=[…]`, then `bt initiating to …`. The link was back before the
+  iPhone's seek dialed. So the trial holds the cap at 0 until the iPhone's dial comes, which keeps Android from
+  dialing, and reads Rule 2's verdict from the refusal at the cap.
+- **The iPhone's background dial came too late for Rule 2's window.** Knit heard each shed at once (`Code=7`, then
+  `link seeking on (background, no links)`). In run 3 its first dial to reach a HELLO was judged 45 s after the shed,
+  in run 4 108 s after, after two dials that left no line on the phone. Both verdicts read `sighted=false … atCap=true
+  doorbell=true heardAgoMs=null inPresence=false`: presence, which lasts 90 s from when Knit left the front, had
+  already run out, so these dials were unsighted under either rule. A dial judged while the iPhone is unheard but
+  still in presence, Rule 2's case, was not seen on hardware; its verdict rests on knit-next's JVM tests. Android's
+  own re-dial from presence, as in run 1, normally fills that gap. The baseline on `main` was skipped, since it hangs
+  on the same window; the held stage's −74 in front against −90 away is the evidence that tells the builds apart.
+- **The re-dialed link ended at BALANCED.** In run 4, once the cap cleared, the iPhone's dial was admitted (`Admit,
+  sighted=false … inPresence=false`), and its parameters went 5000, then the iPhone's 720 put back, re-asked (`again
+  (put-back 720ms)`), then 5000 ms, where it stayed for the minute it was judged.
+- **The ordering check was skipped.** It needs a knit-peer link that stops being heard while it stays up, and
+  knit-peer cannot stop advertising under a held link.
