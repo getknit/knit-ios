@@ -159,16 +159,74 @@ import Testing
         #expect(capture.ends == 1)
     }
 
+    @Test func aStartStillWaitingRefusesAStopAndSaysItIsStarting() async throws {
+        let capture = FakeCapture(movie: [1], hold: true)
+        let recording = ScreenRecording(capture: capture, directory: directory, clock: SteppingClock())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let starting = Task { await RecordCommand(.start(microphone: true)).answer(recording) }
+        var state: String?
+        for _ in 0..<200 where state != "starting" {
+            try await Task.sleep(for: .milliseconds(5))
+            state = try reply(await RecordCommand(.status).answer(recording))["state"] as? String
+        }
+        #expect(state == "starting")
+        #expect(try reply(await RecordCommand(.stop).answer(recording))["code"] as? String == "busy")
+        capture.release()
+        #expect(try reply(await starting.value)["ok"] as? Bool == true)
+    }
+
+    @Test func aStopTheRecorderFailsOrLeavesNoFileForSaysSo() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let failing = ScreenRecording(
+            capture: FakeCapture(movie: [1], endRefusal: RecordingRefusal(.failed, "ReplayKit said no")),
+            directory: directory,
+            clock: SteppingClock()
+        )
+        _ = await RecordCommand(.start(microphone: false)).answer(failing)
+        let refused = try reply(await RecordCommand(.stop).answer(failing))
+        #expect(refused["code"] as? String == "failed")
+        #expect(refused["error"] as? String == "ReplayKit said no")
+
+        let empty = ScreenRecording(capture: FakeCapture(movie: [1], writes: false), directory: directory, clock: SteppingClock())
+        _ = await RecordCommand(.start(microphone: false)).answer(empty)
+        let missing = try reply(await RecordCommand(.stop).answer(empty))
+        #expect(missing["code"] as? String == "failed")
+        #expect(missing["error"] as? String == "iOS wrote no file at knit-1790300000000.mp4")
+    }
+
+    @Test func aTakeWhoseFileIsGoneCannotBeFetched() async throws {
+        let recording = ScreenRecording(capture: FakeCapture(movie: [1, 2, 3]), directory: directory, clock: SteppingClock())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        _ = await RecordCommand(.start(microphone: false)).answer(recording)
+        _ = await RecordCommand(.stop).answer(recording)
+        try FileManager.default.removeItem(at: directory.appending(path: "knit-1790300000000.mp4"))
+        let fetched = try reply(await RecordCommand(.fetch(offset: 0, length: 3)).answer(recording))
+        #expect(fetched["code"] as? String == "failed")
+        #expect(fetched["error"] as? String == "could not read knit-1790300000000.mp4")
+    }
+
+    @Test func losingNothingRecordedChangesNothing() async throws {
+        let recording = ScreenRecording(capture: FakeCapture(movie: [1]), directory: directory, clock: SteppingClock())
+        await recording.lose("a call took the screen")
+        let status = try reply(await RecordCommand(.status).answer(recording))
+        #expect(status["state"] as? String == "idle")
+        #expect(status["lost"] is NSNull)
+        #expect(try reply(await RecordCommand(.stop).answer(recording))["code"] as? String == "idle")
+    }
+
     private func reply(_ line: String) throws -> [String: Any] {
         try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
     }
 }
 
-/// A capture that writes `movie` at each end, refuses with `refusal`, or holds each begin until ``release()``. It
-/// records from a begin to an end or a discard, or from the start when `orphaned`.
+/// A capture that writes `movie` at each end (or nothing, unless `writes`), refuses a begin with `refusal` and an end
+/// with `endRefusal`, or holds each begin until ``release()``. It records from a begin to an end or a discard, or from
+/// the start when `orphaned`.
 private final class FakeCapture: ScreenCapture {
     private let movie: [UInt8]
     private let refusal: RecordingRefusal?
+    private let endRefusal: RecordingRefusal?
+    private let writes: Bool
     private struct State {
         var holding: Bool
         var waiters: [CheckedContinuation<Void, Never>] = []
@@ -179,9 +237,18 @@ private final class FakeCapture: ScreenCapture {
 
     private let held: Lock<State>
 
-    init(movie: [UInt8], refusal: RecordingRefusal? = nil, hold: Bool = false, orphaned: Bool = false) {
+    init(
+        movie: [UInt8],
+        refusal: RecordingRefusal? = nil,
+        endRefusal: RecordingRefusal? = nil,
+        writes: Bool = true,
+        hold: Bool = false,
+        orphaned: Bool = false
+    ) {
         self.movie = movie
         self.refusal = refusal
+        self.endRefusal = endRefusal
+        self.writes = writes
         held = Lock(State(holding: hold, capturing: orphaned))
     }
 
@@ -238,6 +305,12 @@ private final class FakeCapture: ScreenCapture {
         held.withLock { state in
             state.ends += 1
             state.capturing = false
+        }
+        if let endRefusal {
+            throw endRefusal
+        }
+        guard writes else {
+            return
         }
         guard FileManager.default.createFile(atPath: file.path, contents: Data(movie)) else {
             throw RecordingRefusal(.failed, "could not write \(file.lastPathComponent)")
