@@ -91,6 +91,27 @@ forgot the payload read under the same identifier (`interop.py iphone-forgets`, 
 KnitBLE checks for quiet only at the next UUID-only advert, so its forget is logged then; the payload is never used
 stale.
 
+**Amended 2026-10-11, after knit-next #154: the iPhone keeps no read budget.** Android now allows at most 12 GATT
+payload reads in any 10 minutes, counted across addresses (knit-next `8246d2ec`, the 2026-10-11 amendment of its ADR
+2026-09.kwq2). Every read that ends is charged, and a link whose HELLO names the node the payload named refunds its
+read. Android needed the cap because a read there holds `BleConnectArbiter`, pauses both scans and holds back every
+dial. One radio rotating random addresses under `0xFE30` kept a read running almost all the time and starved the
+phone's own links.
+
+Here `GattPayloads` stays per address, and neither radio takes the cap:
+
+- A read here holds no dial back. KnitBLE's `dial` never looks at the read in flight, and CoreBluetooth makes both
+  connections side by side. KnitBlueZ opens its dial socket at once.
+- On the iPhone a cap would save only battery and radio time against a device rotating its address under `0xFE30`,
+  and it would cost in that same case. Once such a device had spent the reads, a real iPhone nearby would wait up to
+  10 minutes to be read. Today it gets the read slot between the rotating device's reads.
+- Android peers are unaffected either way, since their adverts carry the payload.
+
+knit-next's docs still call `GattPayloads.kt` this type's pacing line for line. The budget and its yield to a dial
+are Android additions, like its 64-address cap. Revisit this if a device trial shows a rotating `0xFE30` advertiser
+keeping an iPhone's read slot full; the stimulus built for knit-next's trial (knit-ios #3) can run beside an iPhone
+too.
+
 **Consequences / limits:**
 
 - **Cross-platform law.** The UUID is law once A3 ships. Change it only together with knit-next.

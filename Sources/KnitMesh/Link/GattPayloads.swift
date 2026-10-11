@@ -21,6 +21,10 @@ public import KnitWire
 /// - **Tried again later.** A read that fails waits ``Configuration/retryMilliseconds``. A peer that answers but
 ///   serves no payload waits ``Configuration/strangerRetryMilliseconds``: `0xFE30` is not Knit's alone, and a
 ///   stranger's device should not be connected to twice a minute.
+///
+/// knit-next's `GattPayloads.kt` adds a budget across addresses (#154), and this type deliberately has none: no radio
+/// here holds a dial back while a read runs, so a cap would only make a real iPhone wait behind strangers (ADR
+/// 2026-09.xzpt, amended 2026-10-11).
 public struct GattPayloads: Sendable {
     /// The reads' tunables.
     public struct Configuration: Sendable {
