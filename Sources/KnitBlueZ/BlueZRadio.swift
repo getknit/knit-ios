@@ -29,6 +29,10 @@
             /// never dials them, and admits their dials as it admits a dialer it never sighted, which is how an
             /// interop run keeps the peer from dialing a phone whose own dial is under test (`--never-sight`).
             public var neverSighted: Set<NodeId> = []
+            /// How often the advert is registered afresh, as a new advertising instance, or `nil` to keep it. A test
+            /// switch: on an adapter with LE privacy on, each new instance goes out from a new resolvable private
+            /// address, which a phone without the adapter's key takes for a new device (`knit-peer stranger`).
+            public var rotateAdvertMilliseconds: Int64?
             /// Where channels come from.
             public var sockets: any SocketProvider
             /// Where D-Bus objects of this process live.
@@ -53,6 +57,7 @@
                 configuration.readsGattPayloads = readsGattPayloads
                 configuration.servesGattPayload = servesGattPayload
                 configuration.neverSighted = neverSighted
+                configuration.rotateAdvertMilliseconds = rotateAdvertMilliseconds
                 return configuration
             }
         }

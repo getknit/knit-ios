@@ -36,6 +36,24 @@
             #expect(service.properties["Primary"]?.bool == true)
         }
 
+        @Test func aRotatingAdvertIsRegisteredAfreshOnItsDeadlineAndTheOldOneWithdrawn() throws {
+            let rig = try LoopRig(profile: .ios, rotateAdvert: 50)
+            rig.startAdvertising()
+            let first = try #require(rig.fake.registered.first)
+            let registrations = { rig.fake.calls.filter { $0 == "\(BlueZ.advertisingManager).RegisterAdvertisement" }.count }
+            rig.settle("never registered afresh") { registrations() >= 3 }
+            rig.settle("the old advert was never withdrawn") { rig.fake.registered.count == 1 }
+            #expect(rig.fake.registered != [first], "each registration is a new instance")
+            #expect(rig.log.all.contains { $0.contains("registered afresh in 50 ms") })
+        }
+
+        @Test func anAdvertIsRegisteredOnceUnlessItRotates() throws {
+            let rig = try LoopRig(profile: .ios)
+            rig.startAdvertising()
+            rig.turn(100)
+            #expect(rig.fake.calls.filter { $0 == "\(BlueZ.advertisingManager).RegisterAdvertisement" }.count == 1)
+        }
+
         @Test func withoutThePayloadTheServiceHoldsTheDoorbellAlone() throws {
             let rig = try LoopRig(profile: .ios, servesGattPayload: false)
             rig.startAdvertising()

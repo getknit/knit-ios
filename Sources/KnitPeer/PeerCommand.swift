@@ -11,6 +11,8 @@ public import KnitWire
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
 /// knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
 ///                [--advertise android|ios] [--instance NAME | --state DIR]
+/// knit-peer stranger [--adapter-address ADDRESS] [--shared-adapter] [--payload none|forged]
+///                    [--rotate SECONDS] [--seconds 1800] [--log debug|info|warning]
 /// knit-peer help
 /// ```
 public enum PeerCommand: Equatable, Sendable {
@@ -20,6 +22,8 @@ public enum PeerCommand: Equatable, Sendable {
     case keygen(KeygenOptions)
     /// List the Knit nodes in range for a while, without linking to any.
     case scan(ScanOptions)
+    /// Advertise the `0xFE30` UUID as a device that is not a Knit node, a test stimulus.
+    case stranger(StrangerOptions)
     /// Print the usage.
     case help
 
@@ -41,12 +45,15 @@ public enum PeerCommand: Equatable, Sendable {
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
             knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
+            knit-peer stranger [--adapter-address ADDRESS] [--shared-adapter] [--payload none|forged]
+                [--rotate SECONDS] [--seconds 1800] [--log debug|info|warning]
 
         A headless Knit node on a Bluetooth adapter of its own, found by its address (--adapter-address, or
         $KNIT_ADAPTER_A), whatever hciN the kernel made it. Commands arrive as JSON lines on standard input, and
         replies and events leave as JSON lines on standard output. The adapters in $KNIT_ADAPTER_RESERVED are
         refused unless --shared-adapter says other devices use them too; the peer then leaves every link it did not
-        make alone.
+        make alone. `stranger` is a test stimulus that never links: it advertises the 0xFE30 UUID as a device
+        that is not Knit's, registering its advert afresh every --rotate seconds.
         """
 
     /// Parses the arguments after the program name. `environment` supplies `HOME` and `XDG_STATE_HOME` for the
@@ -71,6 +78,10 @@ public enum PeerCommand: Equatable, Sendable {
             let options = try ScanOptions(flags: &flags, environment: environment)
             try flags.finish()
             return .scan(options)
+        case "stranger":
+            let options = try StrangerOptions(flags: &flags, environment: environment)
+            try flags.finish()
+            return .stranger(options)
         case "help":
             try flags.finish()
             return .help

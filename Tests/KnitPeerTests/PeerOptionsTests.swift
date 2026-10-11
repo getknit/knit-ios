@@ -106,6 +106,54 @@ import Testing
         #expect(try run(["--never-sight", low.string]).neverSighted == [low])
     }
 
+    // MARK: stranger
+
+    private func stranger(_ arguments: [String]) throws -> StrangerOptions {
+        guard case .stranger(let options) = try PeerCommand.parse(["stranger"] + arguments, environment: home) else {
+            throw UsageError.missing("stranger")
+        }
+        return options
+    }
+
+    @Test func aStrangerServesNoPayloadAndRotatesEveryTwentySecondsUnlessAsked() throws {
+        let options = try stranger([])
+        #expect(options.payload == .withheld)
+        #expect(options.rotateSeconds == 20, "about every 20 s, as knit-ios #3 asks")
+        #expect(options.seconds == 1800, "knit-next #154's 30-minute cell")
+        #expect(options.logLevel == "info")
+        #expect(options.adapterAddress == nil)
+        let asked = try stranger(["--payload", "forged", "--rotate", "5", "--seconds", "60", "--adapter-address", "00:11:22:33:44:55"])
+        #expect(asked.payload == .forged)
+        #expect(asked.rotateSeconds == 5)
+        #expect(asked.seconds == 60)
+        #expect(asked.adapterAddress == "00:11:22:33:44:55")
+    }
+
+    @Test func aStrangerRefusesWhatItCannotDo() {
+        #expect(throws: UsageError.invalid(flag: "--payload", value: "real")) { try stranger(["--payload", "real"]) }
+        for bad in ["0", "7201", "soon"] {
+            #expect(throws: UsageError.invalid(flag: "--rotate", value: bad)) { try stranger(["--rotate", bad]) }
+            #expect(throws: UsageError.invalid(flag: "--seconds", value: bad)) { try stranger(["--seconds", bad]) }
+        }
+        #expect(throws: UsageError.unknownFlag("--radio-profile")) { try stranger(["--radio-profile", "ios"]) }
+        #expect(throws: UsageError.unknownFlag("--instance")) { try stranger(["--instance", "x"]) }
+    }
+
+    /// The forged payload must name a node no phone dials: one that sorts above every real id. Ids sort as ASCII text,
+    /// so the top is not the `0xFF…` bytes.
+    @Test func theForgedNodeSortsAboveEveryId() throws {
+        let forged = try #require(NodeId(StrangerOptions.forgedNodeText), "canonical")
+        #expect(NodeId(bytes: forged.bytes) == forged)
+        let allOnes = try #require(NodeId(bytes: Array(repeating: 0xFF, count: NodeId.byteCount)))
+        #expect(allOnes < forged, "0xFF… spells 777…")
+        for seed in 0..<256 {
+            #expect(fixtureNodeId(seed) < forged)
+        }
+        let below = try #require(NodeId("zzzzzzzzzzzzzzzzzzzzzzzzzu"))
+        #expect(below < forged, "the last character can rise no higher than y")
+        #expect(NodeId("zzzzzzzzzzzzzzzzzzzzzzzzzz") == nil, "z is not canonical there")
+    }
+
     @Test func aNodeNeverSightedMustBeANodeId() {
         for bad in ["phone", "\(fixtureNodeId(8).string),", ",", "\(fixtureNodeId(8).string),x"] {
             #expect(throws: UsageError.invalid(flag: "--never-sight", value: bad)) {

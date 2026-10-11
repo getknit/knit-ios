@@ -36,6 +36,9 @@ import Foundation
             case .scan(let options):
                 let host: any PeerRadioHost.Type = PeerHost.self
                 await host.scan(options)
+            case .stranger(let options):
+                let host: any PeerRadioHost.Type = PeerHost.self
+                await host.stranger(options)
             case .run(let options):
                 await run(options)
             }

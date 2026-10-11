@@ -118,6 +118,53 @@
             Lines.output.write(report.summary)
         }
 
+        private static let millisecondsPerSecond: Int64 = 1000
+
+        /// Advertises the `0xFE30` UUID as a device that is not Knit's, registering the advert afresh every
+        /// `--rotate` seconds, and hangs up on any dialer before a HELLO (``StrangerOptions``).
+        static func stranger(_ options: StrangerOptions) async {
+            let log = JSONLinesLog(
+                threshold: JSONLinesLog.level(named: options.logLevel) ?? .info, clock: SystemClock(), write: Lines.error.write)
+            let selection: AdapterSelection
+            do {
+                selection = try checkedAdapter(
+                    options.adapterAddress, shared: options.sharedAdapter, reserved: options.reservedAdapters, log: log)
+            } catch {
+                KnitPeerMain.fail("refusing to start: \(error)")
+            }
+            guard let forged = NodeId(StrangerOptions.forgedNodeText) else {
+                KnitPeerMain.fail("the forged node id is not canonical")
+            }
+            var configuration = BlueZRadio.Configuration(adapter: selection, profile: .ios, log: log)
+            configuration.readsGattPayloads = false
+            configuration.servesGattPayload = options.payload == .forged
+            configuration.rotateAdvertMilliseconds = Int64(options.rotateSeconds) * millisecondsPerSecond
+            let stranger = BlueZRadio(configuration: configuration)
+            let deadline = ContinuousClock.now.advanced(by: .seconds(options.seconds))
+            let stopper = Task {
+                try? await Task.sleep(until: deadline, clock: .continuous)
+                await stranger.shutdown()
+            }
+            stranger.start()
+            for await event in stranger.events {
+                switch event {
+                case .listening(let psm):
+                    // Only a forged payload is ever read; with none, the advert is the UUID alone all the same.
+                    stranger.advertise(AdvertPayload(capabilities: .local, nodeId: forged, digestCue: 0, psm: psm))
+                    let serving = options.payload == .forged ? "a payload naming \(forged)" : "no payload"
+                    log.log(.info, "stranger advertising 0xFE30 with \(serving), afresh every \(options.rotateSeconds) s")
+                case .accepted(let channel):
+                    log.log(.info, "stranger hung up on a dialer before its HELLO")
+                    stranger.close(channel)
+                case .state(let state) where state != .on:
+                    log.log(.warning, "radio \(state)")
+                default:
+                    continue
+                }
+            }
+            _ = await stopper.result
+        }
+
         private static func checkedAdapter(
             _ address: String?, shared: Bool, reserved: [String], log: any KnitLog
         ) throws -> AdapterSelection {

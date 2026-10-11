@@ -17,6 +17,9 @@ internal protocol PeerRadioHost: Sendable {
 
     /// Lists the nodes in range for `knit-peer scan`, without linking to any.
     static func scan(_ options: ScanOptions) async
+
+    /// Advertises as a device that is not Knit's for `knit-peer stranger`, linking to nobody.
+    static func stranger(_ options: StrangerOptions) async
 }
 
 /// Why a peer's radio cannot start as asked.

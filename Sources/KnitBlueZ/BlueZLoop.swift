@@ -9,35 +9,6 @@
     ///
     /// The tests drive one by hand with ``iterate(maximumWaitMilliseconds:)``, against a fake BlueZ and Unix sockets.
     internal final class BlueZLoop {
-        /// What the loop needs to run.
-        struct Configuration: Sendable {
-            var bus: BusConnection.Address
-            var adapter: AdapterSelection
-            var profile: RadioProfile
-            var sockets: any SocketProvider
-            /// Where this process's own D-Bus objects live: the advertisements and the GATT application.
-            var objectRoot: String
-            var log: any KnitLog
-            /// How long after a peer dials us the advert is registered again. The kernel stops a connectable
-            /// advertising instance when a peer connects through it (spike (e)), and this brings it back.
-            var readvertiseDelayMilliseconds: Int64 = 1000
-            /// How long to wait before retrying a failed advert registration, or a bus that could not be reached.
-            var retryDelayMilliseconds: Int64 = 5000
-            /// Whether to read the GATT payload of a peer that advertises only the `0xFE30` UUID.
-            var readsGattPayloads = false
-            /// How those reads are paced.
-            var gatt = GattPayloads.Configuration()
-            /// Whether the GATT application serves the payload characteristic beside the doorbell (``GattApplication``).
-            var servesGattPayload = true
-            /// Nodes whose adverts and payloads are never reported as sightings (``BlueZRadio/Configuration/neverSighted``).
-            var neverSighted: Set<NodeId> = []
-            /// How long a device goes unheard before the radio asks BlueZ to forget it (`BlueZDevice.isStale`), and
-            /// how often it looks. bluetoothd's own default is 30 s; the radio waits longer, since it never forgets
-            /// a linked device anyway.
-            var forgetQuietDevicesMilliseconds: Int64 = 60_000
-            var forgetSweepMilliseconds: Int64 = 30_000
-        }
-
         /// A channel's socket and what waits to be written to it.
         struct Channel {
             let descriptor: Int32
@@ -317,6 +288,39 @@
             bus?.close()
             bus = nil
             isFinished = true
+        }
+    }
+
+    extension BlueZLoop {
+        /// What the loop needs to run.
+        struct Configuration: Sendable {
+            var bus: BusConnection.Address
+            var adapter: AdapterSelection
+            var profile: RadioProfile
+            var sockets: any SocketProvider
+            /// Where this process's own D-Bus objects live: the advertisements and the GATT application.
+            var objectRoot: String
+            var log: any KnitLog
+            /// How long after a peer dials us the advert is registered again. The kernel stops a connectable
+            /// advertising instance when a peer connects through it (spike (e)), and this brings it back.
+            var readvertiseDelayMilliseconds: Int64 = 1000
+            /// How long to wait before retrying a failed advert registration, or a bus that could not be reached.
+            var retryDelayMilliseconds: Int64 = 5000
+            /// Whether to read the GATT payload of a peer that advertises only the `0xFE30` UUID.
+            var readsGattPayloads = false
+            /// How those reads are paced.
+            var gatt = GattPayloads.Configuration()
+            /// Whether the GATT application serves the payload characteristic beside the doorbell (``GattApplication``).
+            var servesGattPayload = true
+            /// Nodes whose adverts and payloads are never reported as sightings (``BlueZRadio/Configuration/neverSighted``).
+            var neverSighted: Set<NodeId> = []
+            /// How long a device goes unheard before the radio asks BlueZ to forget it (`BlueZDevice.isStale`), and
+            /// how often it looks. bluetoothd's own default is 30 s; the radio waits longer, since it never forgets
+            /// a linked device anyway.
+            var forgetQuietDevicesMilliseconds: Int64 = 60_000
+            var forgetSweepMilliseconds: Int64 = 30_000
+            /// How often the advert is registered afresh, or `nil` to keep it (``BlueZRadio/Configuration/rotateAdvertMilliseconds``).
+            var rotateAdvertMilliseconds: Int64?
         }
     }
 #endif

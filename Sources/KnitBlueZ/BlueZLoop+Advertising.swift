@@ -57,7 +57,13 @@
             let replaced = activeAdvert
             activeAdvert = pendingAdvert
             pendingAdvert = nil
-            log.log(.debug, "bluez advertising \(path)")
+            if let rotate = configuration.rotateAdvertMilliseconds {
+                // A test switch: the next advert is a new instance, which LE privacy sends from a new address.
+                refreshAdvertAt = now + rotate
+                log.log(.info, "bluez advertising \(path), registered afresh in \(rotate) ms")
+            } else {
+                log.log(.debug, "bluez advertising \(path)")
+            }
             if let replaced {
                 withdrawAdvert(replaced.path, now: now)
             }

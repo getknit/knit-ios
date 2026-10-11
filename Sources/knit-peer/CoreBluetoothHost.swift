@@ -39,5 +39,10 @@
         static func scan(_: ScanOptions) {
             KnitPeerMain.fail("scan runs on the Linux peer; on a Mac, run the node and read its `peers`")
         }
+
+        /// `stranger` re-registers BlueZ adverts on an adapter with LE privacy on, so it runs on Linux.
+        static func stranger(_: StrangerOptions) {
+            KnitPeerMain.fail("stranger runs on the Linux peer, whose adapter can rotate its address")
+        }
     }
 #endif
