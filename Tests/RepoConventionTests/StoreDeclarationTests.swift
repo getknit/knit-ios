@@ -45,10 +45,11 @@ import Testing
         #expect(manifest.collected.map(\.type).isEmpty)
     }
 
-    /// Knit seals messages with its own encryption, beyond what iOS does for it, so it does not take the exempt answer.
-    @Test func theExportAnswerSaysKnitUsesItsOwnEncryption() throws {
+    /// Knit's encryption is iOS's own: swift-crypto hands every call to CryptoKit, so the app needs no export
+    /// documentation and takes the exempt answer (ADR 2026-10.nwt2).
+    @Test func theExportAnswerSaysKnitNeedsNoDocumentation() throws {
         let answer = try PropertyListDecoder().decode(ExportAnswer.self, from: try RepoFiles.data("App/Info.plist"))
-        #expect(answer.usesNonExemptEncryption)
+        #expect(!answer.usesNonExemptEncryption)
     }
 
     private func manifest() throws -> PrivacyManifest {

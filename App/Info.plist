@@ -9,7 +9,7 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
-	<true/>
+	<false/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Knit uses Bluetooth to find people nearby and pass messages from phone to phone, so you can chat without internet or cell service.</string>
 	<key>NSCameraUsageDescription</key>

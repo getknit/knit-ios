@@ -8,7 +8,7 @@ topics: [build, signing, ci, store]
 
 # ADR 2026-10.8cy5 — A store build is a Release archive that the Mac checks, signs and uploads
 
-Status: Accepted (2026-10-03)
+Status: Accepted (2026-10-03); the export answer superseded by ADR 2026-10.nwt2 (2026-10-11)
 
 **Context:** nothing had built Knit in Release before 2026-10-03, and the first Release build compiled with the demo
 still reachable. `Launch` read `-seedDemo` and the `-demo…` flags from the process's arguments in any build, and
@@ -74,3 +74,6 @@ instructions that use it, so `-seedDemo` never shows in the binary even while it
 - **The guards:** `StoreDeclarationTests` in `RepoConventionTests` (the manifest against the required-reason calls in
   the shipped sources, both ways; no tracking or collection; the export answer), `check.sh release` with
   `build:ios:release`, and `check_store_ipa` in `check.sh archive`.
+
+**Amended 2026-10-11:** the export answer is now `ITSAppUsesNonExemptEncryption` = NO (ADR 2026-10.nwt2). Knit's
+encryption is CryptoKit's, which needs no export documentation, and the YES above failed the first upload.

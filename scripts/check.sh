@@ -270,8 +270,8 @@ check_release_app() {
 import pathlib, plistlib, sys
 app = pathlib.Path(sys.argv[1])
 info = plistlib.load(open(app / "Info.plist", "rb"))
-if info.get("ITSAppUsesNonExemptEncryption") is not True:
-	sys.exit(f"{app}/Info.plist lacks ITSAppUsesNonExemptEncryption = YES: Knit seals messages with its own encryption")
+if info.get("ITSAppUsesNonExemptEncryption") is not False:
+	sys.exit(f"{app}/Info.plist lacks ITSAppUsesNonExemptEncryption = NO: Knit's encryption is iOS's CryptoKit (ADR 2026-10.nwt2)")
 if "NSMicrophoneUsageDescription" in info:
 	sys.exit(f"{app}/Info.plist asks for the microphone, which only a debug build's screen recordings use (ADR 2026-10.x2cq)")
 if info.get("UIDeviceFamily") != [1]:
