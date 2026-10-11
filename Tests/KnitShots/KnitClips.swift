@@ -67,6 +67,71 @@ final class KnitClips: XCTestCase {
         app.terminate()
     }
 
+    /// The demo's filters flag a stranger's words and photo in the room, and both show hidden; a tap shows the words, never
+    /// the photo. The room then refuses a flagged reply, typed into its composer, and Settings shows Content filtering.
+    /// What is flagged is the scene's choice, not the model's (ADR 2026-10.yddp): the photo is an ordinary one standing in.
+    func testFilter() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-seedDemo", "-demoScene", "filter"]
+        app.launch()
+        let room = try app.appear(AccessibilityID.chatRow("nearby"))
+        mark("room")
+        room.tap()
+        try app.appear(AccessibilityID.chatThread)
+
+        try hiding(AccessibilityID.chatMessage("filter-1"), in: app, hidden: true).appear(
+            "the stranger's words, hidden", timeout: Self.step)
+        mark("words")
+        hold(Self.read)
+        try hiding(AccessibilityID.chatPhoto("filter-2"), in: app, hidden: true).appear("the stranger's photo, hidden", timeout: Self.step)
+        mark("photo")
+        hold(Self.read)
+        try app.element(AccessibilityID.chatMessage("filter-3")).appear("Sam's post", timeout: Self.step)
+        hold(Self.glance)
+        // The tap goes left of the bubble's middle, on the line that stands in for the words, below the author's name.
+        app.element(AccessibilityID.chatMessage("filter-1")).coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.6)).tap()
+        try hiding(AccessibilityID.chatMessage("filter-1"), in: app, hidden: false).appear("the stranger's words, shown")
+        mark("shown")
+        hold(Self.read)
+        XCTAssert(hiding(AccessibilityID.chatPhoto("filter-2"), in: app, hidden: true).exists, "the photo showed with the words")
+
+        try refuseReply(in: app)
+        mark("leaving")
+        app.back()
+        try app.appear(AccessibilityID.chatListSettings).tap()
+        try app.reveal(AccessibilityID.settingsContentFiltering)
+        mark("setting")
+        hold(Self.read)
+        hold(Self.glance)
+        mark("end")
+        keep("filter")
+        app.terminate()
+    }
+
+    /// Types the scene's flagged reply into the room's composer and sends it: the room refuses it, and Done puts the alert
+    /// away with the words still in the composer.
+    private func refuseReply(in app: XCUIApplication) throws {
+        // `DemoCast.filteredReply`, which the demo's text filter is told to flag.
+        let reply = "Get lost, creep."
+        let input = try app.appear(AccessibilityID.chatInput)
+        mark("typing")
+        input.tap()
+        input.typeText(reply)
+        try app.appear(AccessibilityID.chatSend).tap()
+        let done = try confirmation("Done", in: app)
+        mark("refused")
+        hold(Self.read)
+        hold(Self.glance)
+        done.tap()
+        XCTAssertFalse(app.staticTexts[reply].exists, "the room posted the flagged reply")
+    }
+
+    /// The element with `identifier`, with the filter hiding it or not: a hidden message or photo says so in its value.
+    private func hiding(_ identifier: String, in app: XCUIApplication, hidden: Bool) -> XCUIElement {
+        let format = hidden ? "identifier == %@ AND value CONTAINS 'hidden'" : "identifier == %@ AND NOT (value CONTAINS 'hidden')"
+        return app.descendants(matching: .any).matching(NSPredicate(format: format, identifier)).firstMatch
+    }
+
     /// Back to the chat list, then Settings' blocked people, the stranger's profile, and its Unblock, which acts at once.
     private func unblockFromSettings(in app: XCUIApplication) throws {
         mark("leaving")

@@ -290,13 +290,21 @@
                 // `scripts/check.sh release` fails when a release build holds this line: it would mean the demo ships.
                 log.log(.info, "running the demo on seeded stores in memory")
                 let stores = MeshStores.inMemory()
+                // A photo the scene's filter flags is made once, so the bytes the filter knows are the ones every post of
+                // it carries (ADR 2026-10.yddp).
+                let flagged = Dictionary(
+                    uniqueKeysWithValues: options.demoScene.flaggedPhotos.compactMap { picture in
+                        DemoPictures.chatPhoto(picture).map { (picture, $0) }
+                    }
+                )
+                let snap: @Sendable (DemoSnapshot) -> [UInt8]? = { picture in flagged[picture] ?? DemoPictures.chatPhoto(picture) }
                 DemoSeed.populate(
                     stores,
                     me: identity.nodeId,
                     now: clock.wallMilliseconds(),
                     scene: options.demoScene,
                     face: DemoPictures.profilePhoto,
-                    snap: DemoPictures.chatPhoto
+                    snap: snap
                 )
                 let parts = Parts(
                     identity: identity,
@@ -306,14 +314,16 @@
                     preferences: MemoryPreferences(
                         hasOnboarded: !options.demoOnboarding, acceptedTerms: options.demoOnboarding ? 0 : Terms.version
                     ),
-                    classifier: DemoPhotoClassifier(flagsEverything: options.demoSensitive),
-                    textClassifier: DemoTextClassifier(flagsEverything: options.demoSensitive),
+                    classifier: DemoPhotoClassifier(flagsEverything: options.demoSensitive, flagging: Set(flagged.values)),
+                    textClassifier: DemoTextClassifier(
+                        flagsEverything: options.demoSensitive, flagging: options.demoScene.flaggedWords
+                    ),
                     linked: DemoSeed.linked(in: options.demoScene),
                     director: DemoDirector(
                         scene: options.demoScene,
                         stores: stores,
                         me: identity.nodeId,
-                        snap: DemoPictures.chatPhoto,
+                        snap: snap,
                         now: { clock.wallMilliseconds() },
                         wait: { milliseconds in try? await Task.sleep(for: .milliseconds(milliseconds)) }
                     ),

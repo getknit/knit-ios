@@ -16,7 +16,7 @@ import Testing
         let scenes = DemoScene.allCases.filter { scene in
             Self.director(of: scene, over: MeshStores.inMemory(), me: identity.nodeId) != nil
         }
-        #expect(scenes == [.trailer, .block])
+        #expect(scenes == [.trailer, .block, .filter])
         #expect(LaunchOptions(arguments: ["-seedDemo", "-demoScene", "trailer"]).demoScene == .trailer)
     }
 
@@ -89,6 +89,61 @@ import Testing
         #expect(stores.blocks.blockedNodeIds() == [stranger])
         #expect(stores.messages.message("block-1") == nil, "the report deleted the line")
         #expect(stores.messages.message("block-2") == nil, "the block stopped the stranger's next post")
+        following.cancel()
+        listening.cancel()
+    }
+
+    /// The filter clip's stranger posts words and a photo that the demo's filters flag, by name, and Sam a post they pass:
+    /// the session hides the words and nothing else, the photo filter flags the stand-in's bytes alone, and the reply the
+    /// clip types is refused in the room.
+    @Test func theFilterClipsFiltersFlagOnlyWhatTheSceneNames() async throws {
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        DemoSeed.populate(stores, me: identity.nodeId, now: 100_000_000, scene: .filter)
+        let made = DemoDirector(
+            scene: .filter,
+            stores: stores,
+            me: identity.nodeId,
+            snap: { picture in Array(picture.rawValue.utf8) },
+            now: { 100_000_000 },
+            wait: { _ in await Task.yield() }
+        )
+        let director = try #require(made)
+        let node = Mesh(
+            identity: identity,
+            deviceTag: nil,
+            stores: stores,
+            radio: DemoRadio(state: .on),
+            clock: DemoClock(),
+            random: SystemRandomNumberGenerator()
+        )
+        let words = DemoTextClassifier(flagsEverything: false, flagging: DemoScene.filter.flaggedWords)
+        let session = AppSession(
+            identity: OwnIdentity(bundle: identity.bundle),
+            stores: stores,
+            mesh: DemoMesh(node, linked: DemoSeed.linked(in: .filter), director: director),
+            textScreening: TextScreening(classifier: words, words: WordFilter(words: []), slurs: WordFilter(words: []))
+        )
+        session.director = director
+        let listening = Task { await session.listen() }
+        await session.start()
+        let chat = ChatModel(conversationId: Conversations.nearby, session: session)
+        let following = Task { await chat.appear() }
+        while stores.messages.message("filter-3")?.moderation != .clear || stores.messages.message("filter-1")?.moderation == .waiting {
+            await Task.yield()
+        }
+        #expect(stores.messages.message("filter-1")?.moderation == .flagged)
+        #expect(stores.messages.message("filter-2")?.attachment != nil)
+        #expect(stores.messages.messages(in: Conversations.nearby).filter { $0.moderation == .flagged }.map(\.id) == ["filter-1"])
+
+        let photos = DemoPhotoClassifier(flagsEverything: false, flagging: [Array(DemoSnapshot.forest.rawValue.utf8)])
+        #expect(photos.scores(of: Array(DemoSnapshot.forest.rawValue.utf8)).map(ExplicitPhoto.isExplicit) == true)
+        #expect(photos.scores(of: Array(DemoSnapshot.lake.rawValue.utf8)).map(ExplicitPhoto.isExplicit) == false)
+        #expect(DemoScene.filter.flaggedPhotos == [.forest] && DemoScene.marketing.flaggedPhotos.isEmpty)
+
+        chat.draft = DemoCast.filteredReply
+        await chat.send()
+        #expect(stores.messages.messages(in: Conversations.nearby).allSatisfy { $0.body != DemoCast.filteredReply }, "the room took it")
         following.cancel()
         listening.cancel()
     }

@@ -37,6 +37,18 @@ target), filmed by `scripts/check.sh clips` the way `trailer` films `KnitTrailer
 - **The gate:** `film_take` in `check.sh` now films any test, and both `trailer` and `clips` call it. `KNIT_CLIPS`
   names the clips, each the test's name less `test`. Each clip and appearance lands in `.build-xcode/clips/` as
   `<mode>_<clip>.mov` and `.marks`.
+- **The second clip, `filter`,** shows content filtering (ADR 2026-10.rpmq, ADR 2026-10.e4kz) with nothing explicit
+  or abusive on screen or in the repository. The demo's filters flag only what the scene names.
+  - A scene lists `flaggedWords` and `flaggedPhotos`. `DemoTextClassifier` flags those words by exact match, and
+    `DemoPhotoClassifier` flags those photos byte for byte.
+  - The demo environment makes each flagged photo once and hands the same bytes to the classifier, the seed and the
+    director, so the classifier sees exactly the bytes it was given.
+  - The stranger's words are a mild insult, and a tap in the clip shows them. Their photo is an ordinary one standing
+    in, which the clip never shows: a hidden photo draws only an icon.
+  - The test then types a flagged reply into the room, which refuses it, and ends on Settings' Content filtering
+    switch. The captions say the demo flags these posts on purpose.
+  - The other choice was a real false positive for the photo model, so that the real model ran. That needs the Core
+    ML model in the demo and a search for a picture it misreads, and a model update could undo the find.
 - **What stays private:** pulling the takes, and cutting them at real speed with a caption beside the screen for each
   step, in `.private/scripts/`, as for the trailer.
 
@@ -51,13 +63,19 @@ The two-phone video in the review notes is still filmed on real phones, because 
 - **The director's gate is a copy of the engine's, not the engine's.** It checks node ids only, not device tags. If
   the engine's gate changes, this one does not follow it. `theBlockClipWaitsForTheReportAndTheBlockStopsTheStranger`
   pins the behaviour the film shows.
-- **The stranger's words are rude, not abusive.** Nothing in the repository is, and the demo's text filter passes
-  every message unless `-demoSensitive` is set. A clip of the content filter would need a scene in which that filter
-  flags one line, which the demo's classifier cannot yet do.
+- **The stranger's words are rude, not abusive,** in both clips. The filter clip's verdicts are the scene's, not
+  the models'. The models' own scores are checked against Android's by the parity scripts (ADR 2026-10.rpmq, ADR
+  2026-10.e4kz), not here.
 - **The zero is the first frame after the gate's still wait,** not always the second frame, as ADR 2026-10.g3k9 had
-  it. On 2026-10-10 a take of this clip opened on a home screen still drawing its icons: seven frames in its first
-  0.2 s, then the switch at 6.29 s. The builders now read the first frame after a gap of 2 s or more.
+  it. On 2026-10-10 a take of the block clip opened on a home screen still drawing its icons: seven frames in its
+  first 0.2 s, then the switch at 6.29 s. The builders now read the first frame after a gap of 2 s or more.
+- **A mark taken on seeing a change runs late.** XCUITest sees a change only after the app goes idle and a snapshot
+  is taken: a chat list was on screen 2 s before its mark, and an alert 8 s before its mark on a slower run. The
+  recorder writes a frame only when the screen changes, so `build-clips.sh` moves each such mark back to the last
+  frame at or before it. Marks taken after a hold and before a tap (`leaving`, `typing`, `end`) stay as they are.
 - **It checks nothing.** No CI job runs `clips`. `check.sh xcode` builds the `KnitShots` scheme, so `KnitClips`
   compiles, and a clip's test fails when a step it waits for never comes.
-- **The guards:** `DemoDirectorTests` (`onlyAScriptedSceneHasADirector` and the block clip's playback test, through a
-  real mesh and session), and `check.sh release`, which fails if the demo reaches a store build (ADR 2026-10.8cy5).
+- **The guards:**
+  - `DemoDirectorTests`, through a real mesh and session: `onlyAScriptedSceneHasADirector`, the block clip's playback
+    test, and the filter clip's, which checks that only the named words and bytes are flagged.
+  - `check.sh release`, which fails if the demo reaches a store build (ADR 2026-10.8cy5).

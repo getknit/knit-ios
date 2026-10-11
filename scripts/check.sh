@@ -458,7 +458,7 @@ gate_clips() {
 	mkdir -p "$out"
 	xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination "platform=iOS Simulator,name=$simulator" build-for-testing |
 		"${xcode_pretty[@]}"
-	for clip in ${KNIT_CLIPS:-block}; do
+	for clip in ${KNIT_CLIPS:-block filter}; do
 		# The Mac's bash is 3.2, which has no ${clip^}.
 		test=test$(printf %s "${clip:0:1}" | tr '[:lower:]' '[:upper:]')${clip:1}
 		for mode in ${KNIT_SHOT_MODES:-dark}; do

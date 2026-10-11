@@ -72,7 +72,7 @@ growing an explanation, that explanation belongs in the ADR.
 | `KnitDeviceTests`, the `KnitDevice` scheme, `scripts/check.sh devicetest`, `SystemApps`, or an id that names a state | [ADR 2026-09.63em](../memory/decisions/2026-09-63em-device-ui-tests-run-by.md) |
 | the store's screenshots, `KnitShots`, the `KnitShots` scheme, or `scripts/check.sh shots` | [ADR 2026-10.5u39](../memory/decisions/2026-10-5u39-store-screenshots-come-from-a.md) |
 | the store's video, `-demoScene trailer`, `DemoDirector`, a scene's `script`, `AppSession.director`, `KnitTrailer`, or `scripts/check.sh trailer` | [ADR 2026-10.g3k9](../memory/decisions/2026-10-g3k9-the-store-s-video-is.md) |
-| App Review's clips, `KnitClips`, `-demoScene block`, `DemoCast.Beat.blocks`, a demo post a block stops, `film_take`, or `scripts/check.sh clips` | [ADR 2026-10.yddp](../memory/decisions/2026-10-yddp-app-review-s-clips-are.md) |
+| App Review's clips, `KnitClips`, `-demoScene block` or `filter`, a scene's `flaggedWords` or `flaggedPhotos`, `DemoTextClassifier` or `DemoPhotoClassifier`'s `flagging`, `DemoCast.Beat.blocks`, a demo post a block stops, `film_take`, or `scripts/check.sh clips` | [ADR 2026-10.yddp](../memory/decisions/2026-10-yddp-app-review-s-clips-are.md) |
 
 ## Where they live
 

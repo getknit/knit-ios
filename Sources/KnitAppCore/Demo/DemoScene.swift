@@ -48,6 +48,10 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// them: `KnitClips` reports and blocks them, then unblocks them, while `check.sh clips` films it for App Review
     /// (ADR 2026-10.yddp).
     case block = "block"
+    /// The trailer's room with a stranger whose post and photo the demo's filters are told to flag, and a script that
+    /// posts them: `KnitClips` shows each hidden, the words shown on a tap, the room refusing flagged words, and Settings'
+    /// switch, while `check.sh clips` films it for App Review (ADR 2026-10.yddp).
+    case filter = "filter"
 
     /// Who and what the scene seeds.
     var cast: DemoCast {
@@ -62,7 +66,19 @@ public enum DemoScene: String, Sendable, CaseIterable {
             .trailer
         case .block:
             .block
+        case .filter:
+            .filter
         }
+    }
+
+    /// The words the demo's text filter flags in this scene, beyond `-demoSensitive`'s everything.
+    public var flaggedWords: Set<String> {
+        cast.flaggedWords
+    }
+
+    /// The photos the demo's photo filter flags in this scene, beyond `-demoSensitive`'s everything.
+    public var flaggedPhotos: Set<DemoSnapshot> {
+        cast.flaggedPhotos
     }
 }
 
@@ -156,6 +172,10 @@ internal struct DemoCast {
     var reactions: [Reaction] = []
     /// What ``DemoDirector`` plays once the mesh starts; nothing, in a scene for stills.
     var script: [Cue] = []
+    /// The words the demo's text filter flags, for a scene that shows the filter at work (ADR 2026-10.yddp).
+    var flaggedWords: Set<String> = []
+    /// The photos the demo's photo filter flags, for the same.
+    var flaggedPhotos: Set<DemoSnapshot> = []
 
     private static let thumbs = "\u{1F44D}"
     static let heart = "\u{2764}\u{FE0F}"
