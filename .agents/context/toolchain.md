@@ -167,7 +167,7 @@ logs in to the desktop by itself, because the Simulator and signing need a deskt
   `~/source/knit-ios-mirror` on the Mac and overwrites it with the local working tree at each sync, so do real
   work at the Mac in a checkout of its own. It calls `/opt/homebrew/bin/rsync` by path: openrsync speaks
   protocol 29 and gets the filter rules wrong.
-- **What passes there** (2026-09-27, at `b03c841`): `check.sh fast`, in three minutes. `xcodebuild build
+- **What passes there** (2026-09-27, at `d85a4ab`): `check.sh fast`, in three minutes. `xcodebuild build
   -scheme Knit` builds every target of the package for `generic/platform=iOS` and for the Simulator,
   unsigned, with no Xcode project.
 - **The app project** (ADR 2026-09.de8f): XcodeGen generates `App/Knit.xcodeproj` from `App/project.yml`,

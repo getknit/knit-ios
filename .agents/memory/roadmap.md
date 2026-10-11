@@ -153,7 +153,7 @@ explicit direction.** Update this file in the change that ships an item.
     to the `macos` runner, still advisory (ADR 2026-09.fkqb).
   - **Periphery blocks (2026-09-28):** on the Mac, over the iPhone build's index too, and on Linux for
     `KnitBlueZ` (ADR 2026-09.xgtz).
-  - **CI's first run of `test:macos` and `test:ios:simulator`** passed on the push of `76d98fd`
+  - **CI's first run of `test:macos` and `test:ios:simulator`** passed on the push of `84e2055`
     (2026-09-28).
 - **P8, the iPhone:** begun early on 2026-09-26, without the Mac: an iPhone 12 on iOS 27.0, installed over USB
   by xtool on free provisioning. The app runs and links the Linux peer and the lab's Android phones. Against
@@ -323,7 +323,7 @@ explicit direction.** Update this file in the change that ships an item.
     `5f521cb9`. The iPhone answers `blobhave` in every build and claims `CAP_BLOB_HAVE` in its HELLO. Since 2026-10-09
     it queries before it asks in every build, as Android's release does since knit-next `713b29d6`, and asks the author
     on its HAVE without waiting for the other answers (knit-next ADR 2026-10.g24x's item 2; ADR 2026-10.m9uq's
-    amendment). The device trial passed on 2026-10-06, with `51b4796` on the iPhone 12 and four Pixels on knit-next
+    amendment). The device trial passed on 2026-10-06, with `0ba49e6` on the iPhone 12 and four Pixels on knit-next
     debug builds. Every Pixel queried the iPhone and fetched one copy of its photo, the iPhone took one copy of each
     Pixel's from the holder its `blob fetch` named, and a `knit-peer` from `main`, which cannot answer, was asked blind
     as the author. Every Linux gate passes. Still owed:

@@ -4,7 +4,7 @@ import Testing
 
 @testable import KnitMesh
 
-/// Repros for the interop audit of 2026-10-09 (`interop-audit`, knit-next 8dc60836 against knit-ios 9ac4cdf). Each one
+/// Repros for the interop audit of 2026-10-09 (`interop-audit`, knit-next 8dc60836 against knit-ios 0b19f2d). Each one
 /// asserts what Android does. They were known issues until `ios-blob-parity` ported the Kotlin (ADR 2026-10.ds45's
 /// amendment of 2026-10-10).
 @Suite struct InteropAuditMeshTests {

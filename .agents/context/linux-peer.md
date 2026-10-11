@@ -843,7 +843,7 @@ the post landed right behind the sixth. The slot cannot reach bytes the socket h
 
 ## What the one-digest slot showed
 
-This port's slot (ADR 2026-09.3ch7, at `5a05071`) ran on both radios on 2026-09-27, with the Pixel 3 on
+This port's slot (ADR 2026-09.3ch7, at `0b7ef25`) ran on both radios on 2026-09-27, with the Pixel 3 on
 knit-next `11b91371`, which has knit-next's own slot.
 
 - **The Linux peer on `hci1`:** `interop.py android-rings --peer-log debug --arrival-timeout 900` passed 10 of
@@ -888,7 +888,7 @@ Bluetooth once, at the Mac, on 2026-09-28.
   footprint stayed bounded, and custody peaked at 501. The miss was `custody-converges-at-end`, at 303 s, on
   two of the Pixel's own frames at its sender quota, the case the one-digest slot's run describes: allow 11
   minutes.
-- **The soak's guard had been dead since `7c77354`,** which gave `_keep_to` two more parameters and left `soak`
+- **The soak's guard had been dead since `121462d`,** which gave `_keep_to` two more parameters and left `soak`
   calling it with the old three. The thread died at start, so a node the first scan missed could join a soak.
   It is fixed, and this soak refused the iPhone as it appeared.
 
@@ -1087,7 +1087,7 @@ became 12 s on 2026-10-02 (amended that day), so a dwell that ends in a gap of 8
   kept knit-next #102's 5 s. It is the walk test's 720 ms on a BlueZ central.
 
 The gate ran again from 15:05 on knit-next `b7480e85`, still flag clear, with the payload lifetime's three forget rules,
-freshly installed on both phones, and the peer built from this repo's `c7c25d5`:
+freshly installed on both phones, and the peer built from this repo's `224ee87`:
 
 | Phone | Order | Steps | Read at | First link at |
 | --- | --- | --- | --- | --- |
@@ -1119,7 +1119,7 @@ freshly installed on both phones, and the peer built from this repo's `c7c25d5`:
 ## What A3's flag showed
 
 knit-next `8a6d1a58` sets `FLAG_DIALS_GATT_PEERS` whenever the reader runs. From 16:04 on 2026-09-29 the lab's Pixel 7
-and Pixel 3 ran debug builds of it, and the peer ran this repo's `8d9c62a`. Its scan read each phone's flags byte as
+and Pixel 3 ran debug builds of it, and the peer ran this repo's `88112a9`. Its scan read each phone's flags byte as
 `0x03`, the side channel and the new bit.
 
 | Run | Steps | First link at |
@@ -1159,7 +1159,7 @@ and Pixel 3 ran debug builds of it, and the peer ran this repo's `8d9c62a`. Its 
 
 ## What the iPhone's forget rules showed
 
-On 2026-09-29 from 16:50 the iPhone 12 ran a debug build of this repo's `c8aae9d`, whose KnitBLE carries the payload
+On 2026-09-29 from 16:50 the iPhone 12 ran a debug build of this repo's `1b5df53`, whose KnitBLE carries the payload
 lifetime's forget rules (ADR 2026-09.xzpt, amended 2026-09-29), installed from the Mac with `devicectl`.
 `interop.py iphone-forgets` staged each rule with knit-peer in the `ios` profile, restarted under new identities at
 one public address. Its runs and the iPhone's logs are in `.build/interop-iphone-forgets/`.
@@ -1502,7 +1502,7 @@ and the phone's screenshots added, passed all 17:
 
 ## What the reaction runs showed
 
-`interop.py iphone-react` ran on 2026-10-04 between the iPhone 12, built from `feat/reactions` at `78c996e`, and the
+`interop.py iphone-react` ran on 2026-10-04 between the iPhone 12, built from `feat/reactions` at `e05d4a7`, and the
 Pixel 3 on Android 2.8.0, with the Pixel 7, 8 and 9 in range (ADR 2026-10.ehe6). The third run passed 17 of its 18
 steps:
 
@@ -1660,7 +1660,7 @@ in `.build/and3/`.
 | Run | iPhone build | Stages | Steps | Failed |
 | --- | --- | --- | --- | --- |
 | 1 | `fa86d7a` (head start) | held, redial | 26 | 2 |
-| 2 | this branch at `795e1d7` (`763a81b`'s product code) | held, redial | 25 | 2 |
+| 2 | this branch at `795e1d7` (`da725c0`'s product code) | held, redial | 25 | 2 |
 | 3 | the same | redial | 18 | 2 |
 | 4 | the same | redial | 18 | 1 |
 

@@ -137,7 +137,7 @@ Android's gate on sending reports to an iPhone is the one left, and the maintain
 
 **Amendment (2026-10-10): the iPhone reports a skipped file, leaves a stream that won't end soon, and parks a second
 ask.** The interop audit of 2026-10-09 (`orders/interop-audit/findings.md`, knit-next `8dc60836` against this repo's
-`9ac4cdf`) found three gaps on this side. This amendment ports the committed Kotlin for each, rule for rule. No wire
+`0b19f2d`) found three gaps on this side. This amendment ports the committed Kotlin for each, rule for rule. No wire
 byte moves and no vector changes.
 
 - **A skipped file is reported** (AND-7, IOS-3). This reverses "a skipped file is never reported" above. Android
