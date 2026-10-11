@@ -144,6 +144,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | `knit-peer run … --feed window\|pace` | the file feed's A/B switch (ADR 2026-10.xwjc): `window`, the default, clocks a file to a peer that reports by its reports and reports a file coming in at the window's cadence; `pace` feeds at the 4 KiB/s budget and reports every 2 s, as Android's `…debug.LINKTUNE --es feed pace` does |
 | `knit-peer run … --never-sight NODE_ID[,NODE_ID…] --no-gatt-payload` | test switches, BlueZ only: never report those nodes as sighted, so the peer never dials them and admits their dials unsighted; and, in the `ios` profile, serve the doorbell without the payload characteristic, so a phone that reads payloads (A3) files the peer as a stranger and never sights it |
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing, and links a node that advertises only the UUID just long enough to read its payload; `--advertise` also shows the advert |
+| `knit-peer stranger [--payload none\|forged] [--rotate 20] [--seconds 1800]` | a test stimulus for knit-next #154, BlueZ only (knit-ios #3): advertises the `0xFE30` UUID as a device that is not Knit's, and registers the advert afresh every `--rotate` seconds. With LE privacy on its adapter, each registration goes out from a new address. `none` serves the doorbell alone, so a reader files a stranger. `forged` serves a valid payload naming `zzzzzzzzzzzzzzzzzzzzzzzzzy`, the highest node id, which no phone dials. It hangs up on any dialer before a HELLO, so it never links |
 | `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window, with the old name and photo |
 
 - **Every command checks the adapter first.** `--adapter` defaults to `hci1` and `--adapter-address` to
@@ -195,8 +196,8 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 dial order (`--blank-name` for alias parity, `--expect-avatar` and `--peer-avatar` for photos both ways,
 `--radio-profile ios` for the A1 group), `refusal` for the `ios` profile against Android 2.7 only (every A1 build
 admits the dialer it expects refused), `replace` for A1's stale-link rule, `soak`, `relay` (the same two photo
-flags pull photos through the middle peer), `android-rings` for companion change A4, and
-`android-reads`, companion change A3's device gate. It needs the session's go-ahead for the phone
+flags pull photos through the middle peer), `android-rings` for companion change A4,
+`android-reads`, companion change A3's device gate, and `android-strangers`, knit-next #154's. It needs the session's go-ahead for the phone
 (`.agents/rules/devices.md`). It keeps the run on that phone:
 
 - **Before the peer starts**, it scans and picks a node id that no other phone in range dials.
@@ -279,6 +280,24 @@ lapse. A peer above the phone is read and stopped, and nothing advertises for a 
 (`quiet`, which on a floored scan can take minutes). A peer above is read and stopped, and a new identity above it
 dials in at once (`hello`, on a link the phone accepted). A peer below is read, linked and stopped, and a new identity
 below it answers the phone's redial on the same PSM (`hello`, in the reply to the phone's dial).
+
+`android-strangers` is knit-next #154's device trial (knit-ios #3). The phone runs a debug build with #154
+(`8246d2ec`), whose `bt state` line carries `gattBudget=`, and the first step checks for it. `knit-peer stranger` runs
+on dongle B with LE privacy on, set through `knit-hci b btmgmt` before the run and cleared after it however it ends.
+A knit-peer in the `android` profile on dongle A sorts below the phone, so the phone dials it. Every `--cycle`
+seconds (180) that peer refuses the phone and then allows it again, for a fresh promotion and dial. Thirty minutes
+outgrow logcat's buffer, so the phone's transport log streams to `.build/interop-strangers-logcat.txt` for the whole
+run, and the run grades it at the end:
+
+- `reads-within-budget`: of every `bt gatt read` that ended, less those `bt gatt confirmed` refunded, at most 12 in
+  any 10 minutes.
+- `budget-spent-logged`: at least one `bt gatt budget spent`.
+- `dials-not-starved`: no `bt initiating to <peer>` more than 12 s after the first `promote=` naming the peer.
+- `stranger-rotated`: the phone read more than 12 addresses. Fewer means privacy did not rotate dongle B's address.
+
+The summary also gives the reads begun per minute, the count of `scan paused: connect in flight`, and the
+`gattBudget=` values seen. Nobody has yet seen on the dongles whether re-registering an advert under kernel privacy
+gives it a new address.
 
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
 needs no go-ahead for a phone. The peer takes a node id above every phone's and dials them all, since this adapter

@@ -26,6 +26,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-rings [--udid UDID]
     scripts/interop.py android-reads --device SERIAL [--order peer-below|peer-above] [--link-timeout 180] [--links N] [--hci0]
     scripts/interop.py android-forgets --device SERIAL [--link-timeout 180] [--quiet-timeout 600]
+    scripts/interop.py android-strangers --device SERIAL --variant none|forged [--minutes 30] [--rotate 20] [--cycle 180]
     scripts/interop.py android-rings --device SERIAL [--link dialed|accepted] [--converge-timeout 600] [--arrival-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
     scripts/interop.py iphone-seek --far hci1|hci0|phone [--device SERIAL] [--mode drop|relink|budget] [--drop kill|radio-off]
@@ -51,7 +52,8 @@ someone to do the same; `iphone-seek` checks that a locked iPhone with no link f
 `record-pull` copies the bridge's last finished screen recording to a file and checks its SHA-256. `iphone-rings` checks
 the doorbell rings an iPhone sends, and `android-rings` those an Android phone sends, with companion change A4.
 `android-reads` is companion change A3's device gate: an Android phone reads the peer's GATT payload and dials it, or
-is dialed, by the id order.
+is dialed, by the id order. `android-strangers` is knit-next #154's: beside a device rotating its address under
+`0xFE30`, the phone's GATT reads stay within their budget and its dials never wait behind them (knit-ios #3).
 
 `--mac` runs the peer on the Mac instead of hci1, on CoreBluetooth, the iPhone's own radio: checklist M (ADR
 2026-09.vcdk). It always runs the `ios` profile, in the Mac's desktop session through `scripts/mac-peer.sh`, and the
@@ -1814,6 +1816,359 @@ def android_forgets(arguments: argparse.Namespace) -> int:
     run.step("forgets-logged", lambda: {"lines": _phone_log(phone, "bt gatt forget ")})
     print(json.dumps({"summary": "android-forgets", "steps": run.steps, "failed": run.failed}))
     return run.failed
+
+
+# knit-next #154's budget (GattPayloads.BUDGET_READS, BUDGET_WINDOW_MS) and the longest a ripe dial may wait behind
+# the one read in flight: its 12 s connect watchdog.
+GATT_BUDGET_READS = 12
+GATT_BUDGET_WINDOW = 600.0
+GATT_READ_TIMEOUT = 12.0
+# The root wrapper that runs btmgmt on one of Knit's own adapters (scripts/knit-hci.sh, installed by the maintainer).
+KNIT_HCI = "/usr/local/sbin/knit-hci"
+# `logcat -v epoch`: seconds since the epoch, pid, tid, level, tag, then the message.
+EPOCH_LINE = re.compile(r"^\s*(\d+\.\d+)\s+\d+\s+\d+\s+\w\s+BluetoothMeshTransport\s*:\s(.*)$")
+GATT_READ_END = re.compile(r"^bt gatt read (\S+) (?:→ ([a-z2-7]{26})|failed \(|stranger \()")
+GATT_CONFIRMED = re.compile(r"^bt gatt confirmed (\S+) → ([a-z2-7]{26})")
+
+
+class LogcatCapture:
+    """The phone's Bluetooth transport log, streamed to a file for a run longer than logcat's ring buffer holds. A
+    network adb stream can die while the phone sleeps (the iPhone reinstall note in the lab's memory), so the stream is
+    started again from the last second it wrote, and lines it writes twice are dropped."""
+
+    def __init__(self, phone: Phone, path: Path) -> None:
+        self.phone = phone
+        self.path = path
+        self.stop_event = threading.Event()
+        self.process: subprocess.Popen[str] | None = None
+        self.thread = threading.Thread(target=self._stream, daemon=True)
+        self.restarts = 0
+
+    def start(self) -> None:
+        self.path.write_text("")
+        self.thread.start()
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        if self.process and self.process.poll() is None:
+            self.process.terminate()
+        self.thread.join(timeout=10)
+
+    def _stream(self) -> None:
+        last: float | None = None
+        seen_at_last: set[str] = set()
+        with open(self.path, "a", encoding="utf-8") as out:
+            while not self.stop_event.is_set():
+                command = ["adb", "-s", self.phone.serial, "logcat", "-v", "epoch", "-s", "BluetoothMeshTransport:*"]
+                if last is not None:
+                    command += ["-T", f"{last:.3f}"]
+                self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+                assert self.process.stdout
+                for raw in self.process.stdout:
+                    match = EPOCH_LINE.match(raw)
+                    if not match:
+                        continue
+                    at = float(match.group(1))
+                    if last is not None and (at < last or (at == last and raw in seen_at_last)):
+                        continue
+                    if at != last:
+                        last, seen_at_last = at, set()
+                    seen_at_last.add(raw)
+                    out.write(raw)
+                    out.flush()
+                self.process.wait()
+                if self.stop_event.wait(2):
+                    break
+                self.restarts += 1
+                if ":" in self.phone.serial:
+                    self.phone.reconnect()
+
+    def lines(self) -> list[tuple[float, str]]:
+        """Every captured line as its time and its message, in order."""
+        return _epoch_lines(self.path.read_text(encoding="utf-8").splitlines())
+
+
+def _epoch_lines(raw: list[str]) -> list[tuple[float, str]]:
+    lines = []
+    for line in raw:
+        match = EPOCH_LINE.match(line)
+        if match:
+            lines.append((float(match.group(1)), match.group(2)))
+    return lines
+
+
+def _charged_reads(lines: list[tuple[float, str]]) -> list[tuple[float, str]]:
+    """The reads knit-next #154 charges, as the time and address of each: every read that ended, whatever it found,
+    less each a link confirmed, which refunds the latest charged read at that address that named the confirmed node."""
+    charges: list[tuple[float, str, str | None]] = []
+    for at, message in lines:
+        if ended := GATT_READ_END.match(message):
+            charges.append((at, ended.group(1), ended.group(2)))
+        elif confirmed := GATT_CONFIRMED.match(message):
+            address, node = confirmed.groups()
+            for index in range(len(charges) - 1, -1, -1):
+                if charges[index][1] == address and charges[index][2] == node:
+                    del charges[index]
+                    break
+    return [(at, address) for at, address, _ in charges]
+
+
+def _most_charged(charges: list[tuple[float, str]], window: float = GATT_BUDGET_WINDOW) -> dict:
+    """The most charged reads any window held, and when: a charge leaves the window `window` seconds after it, as
+    `GattPayloads.prune` drops it."""
+    times = sorted(at for at, _ in charges)
+    most, when, start = 0, None, 0
+    for end, at in enumerate(times):
+        while at - times[start] >= window:
+            start += 1
+        if end - start + 1 > most:
+            most, when = end - start + 1, at
+    return {"most": most, "at": when}
+
+
+def _dial_waits(lines: list[tuple[float, str]], node: str) -> dict:
+    """How long each of the phone's dials of `node` waited after the connect loop first promoted it: from the first
+    `promote=[…]` naming it to its `bt initiating to`. A promotion while that dial is in flight, or once the link is up,
+    starts no wait; one still waiting at the end of the log is reported as `waiting`."""
+    waits: list[float] = []
+    since: float | None = None
+    dialing = linked = False
+    end = lines[-1][0] if lines else 0.0
+    for at, message in lines:
+        if message.startswith("promote=") and node in message.split(" evict=", 1)[0]:
+            if since is None and not dialing and not linked:
+                since = at
+        elif message.startswith(f"bt initiating to {node} "):
+            if since is not None:
+                waits.append(round(at - since, 1))
+            since, dialing = None, True
+        elif message.startswith((f"bt connect {node} failed", f"bt connect ok {node} ")):
+            dialing = False
+        elif message.startswith(f"bt link up: {node} "):
+            since, dialing, linked = None, False, True
+        elif message.startswith("link down: ") and node in message:
+            linked = False
+    return {"waits": waits, "waiting": round(end - since, 1) if since is not None else None}
+
+
+def _privacy(adapter: str, on: bool) -> dict:
+    """Turns LE privacy on or off on one of Knit's own adapters, through the root wrapper: with it on, each advertising
+    instance goes out from a new resolvable private address, while the adapter's identity, which knit-peer finds it by,
+    stays its public address (ADR 2026-09.5ftc). The adapter must be powered off to change it."""
+    state = "on" if on else "off"
+    script = f"power off\nprivacy {state}\npower on\ninfo\n"
+    result = subprocess.run(
+        ["sudo", "-n", KNIT_HCI, adapter, "btmgmt"], input=script, capture_output=True, text=True, timeout=60, check=False
+    )
+    settings = re.findall(r"current settings: (.*)", result.stdout)
+    if result.returncode or not settings:
+        raise RuntimeError(f"knit-hci {adapter} btmgmt failed ({result.returncode}): {(result.stderr or result.stdout).strip()[-300:]}")
+    if ("privacy" in settings[-1].split()) != on:
+        raise RuntimeError(f"privacy is not {state} on dongle {adapter.upper()}: {settings[-1]}")
+    return {"adapter": adapter, "settings": settings[-1].strip()}
+
+
+class Stranger:
+    """`knit-peer stranger` on dongle B: the `0xFE30` UUID advertised as a device that is not Knit's, registered afresh
+    every `rotate` seconds, serving no payload or a forged one, and never linking (knit-ios #3)."""
+
+    def __init__(self, payload: str, rotate: int, seconds: int, log_path: Path) -> None:
+        self.command = [
+            str(PEER), "stranger", "--payload", payload, "--rotate", str(rotate), "--seconds", str(seconds), "--log", "info", *hci0()
+        ]
+        self.log_path = log_path
+        self.process: subprocess.Popen[str] | None = None
+
+    def start(self) -> None:
+        self.log_path.write_text("")
+        log = open(self.log_path, "a", encoding="utf-8")  # noqa: SIM115 - lives with the process
+        self.process = subprocess.Popen(self.command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log, text=True)
+        poll(lambda: any("stranger advertising 0xFE30" in m for m in self.messages()) or self.process.poll() is not None, 30, every=1)
+        if self.process.poll() is not None:
+            raise RuntimeError(f"knit-peer stranger exited ({self.process.returncode}): {self.messages()[-3:]}")
+
+    def stop(self) -> None:
+        if self.process and self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+
+    def messages(self) -> list[str]:
+        messages = []
+        for line in self.log_path.read_text(encoding="utf-8").splitlines():
+            try:
+                messages.append(json.loads(line).get("message", ""))
+            except json.JSONDecodeError:
+                continue
+        return messages
+
+    def rotations(self) -> int:
+        return sum("registered afresh in" in message for message in self.messages())
+
+
+def _budgets_gatt_reads(phone: Phone) -> dict:
+    """The phone runs a build with knit-next #154: its `bt state` line carries `gattBudget=<used>/<budget>`."""
+    try:
+        lines = poll(lambda: _phone_log(phone, "bt state "), 75, every=5)
+    except TimeoutError as error:
+        raise RuntimeError("the phone logged no bt state line in 75 s: is Knit running, and a debug build?") from error
+    budget = re.search(r"gattBudget=(\d+)/(\d+)", lines[-1])
+    if not budget:
+        raise RuntimeError("the phone's build predates knit-next #154 (8246d2ec): no gattBudget= on its bt state line")
+    return {"gattBudget": f"{budget.group(1)}/{budget.group(2)}", **(_gatt_counts(lines[-1]) or {})}
+
+
+def _cycle_link(peer: Peer, phone: Phone, phone_id: str, timeout: float) -> dict:
+    """Takes the link down and lets the phone dial it again, so the run sees a fresh promotion and dial: the peer
+    refuses the phone, which closes the link, then once it is down and the connection has had time to go, allows it."""
+    since = time.monotonic()
+    peer.command(cmd="deny-link", peer=phone_id)
+    try:
+        peer.wait(lambda line: line.get("event") == "link" and line.get("peer") == phone_id and not line.get("up") and line["_at"] > since, 60)
+    finally:
+        time.sleep(5)
+        peer.command(cmd="allow-link", peer=phone_id)
+    relinked = time.monotonic()
+    line = link_up(peer, phone, phone_id, timeout)
+    return {"relinkSeconds": round(line["_at"] - relinked, 1)}
+
+
+def android_strangers(arguments: argparse.Namespace) -> int:
+    """knit-next #154's device trial (knit-ios #3): a phone's GATT payload reads stay within their budget beside a
+    device that rotates its address under `0xFE30`, and its dials never wait behind them.
+
+    `knit-peer stranger` runs on dongle B with LE privacy on, so each advert it registers afresh, every `--rotate`
+    seconds, goes out from a new resolvable private address the phone cannot resolve: a new device each time, as an
+    iPhone looks after each rotation. `--variant none` serves no payload, so each read finds a stranger. `--variant
+    forged` serves a valid payload naming the highest node id there is, which the phone never dials, so no HELLO ever
+    refunds it. Either way it hangs up on any dialer before a HELLO. A knit-peer in the `android` profile on dongle A
+    sorts below the phone, so the phone dials it; every `--cycle` seconds it refuses the phone and then allows it, for a
+    fresh promotion and dial.
+
+    The phone's transport log is streamed for the whole run (`.build/interop-strangers-logcat.txt`) and graded at the
+    end. `reads-within-budget`: every read that ended, less those a link confirmed, at most 12 in any 10 minutes.
+    `budget-spent-logged`: `bt gatt budget spent` at least once, since the stranger offers far more than 12 addresses.
+    `dials-not-starved`: no dial of the peer more than 12 s, one read, after its first `promote=`. `stranger-rotated`:
+    the phone read more than 12 addresses, so the budget, not the per-address waits, did the bounding. The summary also
+    reports reads begun per minute, `scan paused: connect in flight` lines, and the `gattBudget=` the `bt state` lines
+    showed. Privacy goes off again at the end, whatever happened, since the dongles are shared with knit-next's lab."""
+    phone = Phone(arguments.device)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    phone_id = phone.state()["self"]["nodeId"]
+    if run.step("phone-build-budgets-gatt", lambda: _budgets_gatt_reads(phone)) is None:
+        print(json.dumps({"summary": "android-strangers", "steps": run.steps, "failed": run.failed}))
+        return run.failed
+    heard = in_range()
+    others = set(heard) - {phone_id}
+    if run.step("phone-forgot-old-peers", lambda: _phone_forgets_all_but(phone, set(heard))) is None:
+        print(json.dumps({"summary": "android-strangers", "steps": run.steps, "failed": run.failed}))
+        return run.failed
+    peer_id = keygen(phone_id, "phone-dials", others)
+    seconds = int(arguments.minutes * 60)
+    header = {"run": "android-strangers", "variant": arguments.variant, "phone": phone_id, "peer": peer_id, "refused": sorted(others)}
+    print(json.dumps({**header, "rotate": arguments.rotate, "minutes": arguments.minutes, "cycle": arguments.cycle}))
+    if run.step("privacy-on-b", lambda: _privacy("b", True)) is None:
+        run.step("privacy-off-b", lambda: _privacy("b", False))
+        print(json.dumps({"summary": "android-strangers", "steps": run.steps, "failed": run.failed}))
+        return run.failed
+    capture = LogcatCapture(phone, ROOT / ".build" / "interop-strangers-logcat.txt")
+    stranger = Stranger(arguments.variant, arguments.rotate, seconds + 120, ROOT / ".build" / "interop-stranger.log")
+    peer = Peer("android", f"knit-peer strangers {nonce}", others, arguments.peer_log, arguments.rssi_floor)
+    stop = threading.Event()
+    try:
+        phone.shell("logcat -c")
+        capture.start()
+        started = time.monotonic()
+        peer.start()
+        threading.Thread(target=_keep_to, args=(peer, {phone_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
+        if run.step("link", lambda: _first_link(peer, phone, phone_id, started, arguments.link_timeout)) is not None:
+            run.step("stranger-up", lambda: _start_stranger(stranger))
+            end = time.monotonic() + seconds
+            cycle = 0
+            while time.monotonic() + arguments.cycle < end:
+                stop.wait(arguments.cycle)
+                cycle += 1
+                phone.wake()
+                run.step(f"relink-{cycle}", lambda: _cycle_link(peer, phone, phone_id, arguments.link_timeout))
+            stop.wait(max(0.0, end - time.monotonic()))
+    finally:
+        stop.set()
+        stranger.stop()
+        peer.stop()
+        capture.stop()
+        run.step("privacy-off-b", lambda: _privacy("b", False))
+    lines = capture.lines()
+    charges = _charged_reads(lines)
+    run.step("reads-within-budget", lambda: _within_budget(charges))
+    run.step("budget-spent-logged", lambda: _budget_edges(lines))
+    run.step("dials-not-starved", lambda: _not_starved(lines, peer_id))
+    run.step("stranger-rotated", lambda: _rotated(charges, stranger))
+    print(
+        json.dumps(
+            {
+                "summary": "android-strangers",
+                "steps": run.steps,
+                "failed": run.failed,
+                "lines": len(lines),
+                "logcatRestarts": capture.restarts,
+                "readsBegunPerMinute": _per_minute(lines, "bt gatt reading "),
+                "scanPausedForConnect": sum(message.startswith("scan paused: connect in flight") for _, message in lines),
+                "gattBudgetSeen": sorted({m.group(1) for _, message in lines if (m := re.search(r"gattBudget=(\d+/\d+)", message))}),
+            }
+        )
+    )
+    return run.failed
+
+
+def _within_budget(charges: list[tuple[float, str]]) -> dict:
+    most = _most_charged(charges)
+    if most["most"] > GATT_BUDGET_READS:
+        raise RuntimeError(f"{most['most']} charged reads in 10 minutes, over the budget of {GATT_BUDGET_READS}")
+    return {"charged": len(charges), "mostInTenMinutes": most["most"]}
+
+
+def _budget_edges(lines: list[tuple[float, str]]) -> dict:
+    spent = sum(message.startswith("bt gatt budget spent") for _, message in lines)
+    free = sum(message.startswith("bt gatt budget free") for _, message in lines)
+    if not spent:
+        raise RuntimeError("the phone never logged bt gatt budget spent: the stranger never spent its budget")
+    return {"spent": spent, "free": free}
+
+
+def _not_starved(lines: list[tuple[float, str]], node: str) -> dict:
+    waits = _dial_waits(lines, node)
+    if not waits["waits"]:
+        raise RuntimeError("the phone never dialed the peer after promoting it")
+    late = [wait for wait in waits["waits"] if wait > GATT_READ_TIMEOUT]
+    if late or (waits["waiting"] or 0) > GATT_READ_TIMEOUT:
+        raise RuntimeError(f"dials waited longer than one read ({GATT_READ_TIMEOUT:.0f} s): {late}, still waiting {waits['waiting']}")
+    return {"dials": len(waits["waits"]), "longestWait": max(waits["waits"]), "waits": waits["waits"]}
+
+
+def _start_stranger(stranger: Stranger) -> dict:
+    stranger.start()
+    return {"command": shlex.join(stranger.command[1:])}
+
+
+def _rotated(charges: list[tuple[float, str]], stranger: Stranger) -> dict:
+    addresses = {address for _, address in charges}
+    if len(addresses) <= GATT_BUDGET_READS:
+        raise RuntimeError(
+            f"the phone read only {len(addresses)} addresses in {stranger.rotations()} rotations: is privacy rotating dongle B's address?"
+        )
+    return {"addressesRead": len(addresses), "rotations": stranger.rotations()}
+
+
+def _per_minute(lines: list[tuple[float, str]], prefix: str) -> list[int]:
+    """How many lines start with `prefix` in each minute of the log, from its first line."""
+    if not lines:
+        return []
+    first = lines[0][0]
+    counts = Counter(int((at - first) // 60) for at, message in lines if message.startswith(prefix))
+    return [counts.get(minute, 0) for minute in range(int((lines[-1][0] - first) // 60) + 1)]
 
 
 def iphone_forgets(arguments: argparse.Namespace) -> int:
@@ -5705,6 +6060,15 @@ def main() -> int:
     reads.add_argument("--known", default="", help="iPhones in range the scan may fail to read, by node id, taken as heard and refused; comma-separated")
     reads.add_argument("--hci0", action="store_true", help="run the peer and its scan on hci0, shared, which needs its own go-ahead")
     reads.add_argument("--links", type=int, default=1, help="link-ups to check at the 5 s timeout, with --order peer-above (#102)")
+    strangers = commands.add_parser("android-strangers")
+    strangers.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    strangers.add_argument("--variant", required=True, choices=["none", "forged"], help="what the stranger's GATT service serves")
+    strangers.add_argument("--minutes", type=float, default=30, help="how long the stranger advertises beside the phone")
+    strangers.add_argument("--rotate", type=int, default=20, help="seconds between the stranger's fresh registrations, each a new address")
+    strangers.add_argument("--cycle", type=float, default=180, help="seconds between relinks, each a fresh promotion and dial")
+    strangers.add_argument("--link-timeout", type=float, default=180, help="seconds for each link")
+    strangers.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    strangers.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     forgets = commands.add_parser("android-forgets")
     forgets.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     forgets.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
@@ -5798,6 +6162,8 @@ def main() -> int:
         return android_reads(arguments)
     if arguments.command == "android-forgets":
         return android_forgets(arguments)
+    if arguments.command == "android-strangers":
+        return android_strangers(arguments)
     if arguments.command == "iphone-scan":
         return iphone_scan(arguments)
     if arguments.command == "iphone-seek":

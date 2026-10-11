@@ -70,7 +70,7 @@ ladder, not the first.
     check, with the same help. `iphone-reboot` runs item 1's relaunch and reboot through the bridge's `storage`
     reply, which also reports the Keychain item's class and the database's protection class and backup flag, with
     someone to close Knit and unlock the iPhone. `iphone-rings` and `android-rings` check the doorbell's rings each
-    way, and `android-reads` checks that an Android phone reads the peer's GATT payload (A3). `KnitDeviceTests` (`scripts/check.sh devicetest`, ADR 2026-09.63em) runs XCUITest on the iPhone from the
+    way, and `android-reads` checks that an Android phone reads the peer's GATT payload (A3), and `android-strangers` that its reads stay within knit-next #154's budget beside a rotating `0xFE30` stranger. `KnitDeviceTests` (`scripts/check.sh devicetest`, ADR 2026-09.63em) runs XCUITest on the iPhone from the
     Mac, with Knit launched live and the Settings app and SpringBoard driven beside it: Stop and Start, Bluetooth
     off and on, the permission refused and allowed again, onboarding's prompt, a relaunch, and the camera prompt at a
     profile's Scan their code (`CameraTests`, which needs no radio and leaves Bluetooth as it found it). `PhotoTests`
