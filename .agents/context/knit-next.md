@@ -229,7 +229,8 @@ Kotlin wins.
       `BlobExchange.onFileProgress`) that the maintainer lifts in knit-next (roadmap). When the pin passes 5buf, check
       `FeedWindow.kt` against `FeedWindowTests` and `FeedWindowSimTests`, and `RxReports.kt` against
       `LinkFileProgressTests`.
-    - knit-next AND-3, `fix/gatt-only-link-score` at `b7c13e57` (from `8dc60836`, 2026-10-10, unmerged), amending
+    - knit-next AND-3, `a03fe167` (`fix/gatt-only-link-score`, built and trialled as `b7c13e57`), merged on knit-next's
+      local `main` and not yet pushed on 2026-10-10, with `a2cec531` noting Android's re-dial from presence. It amends
       its ADRs 2026-09.shzv and 2026-09.kwq2. A link whose HELLO carried `CAP_DOORBELL` scores −90 out of presence,
       never −127, and a doorbell dialer counts as sighted for admission only if heard in the last 12 s, with the bit
       backed by the phone's own evidence. Nothing on the wire moves, and this port changes no Swift for it: an

@@ -1644,11 +1644,12 @@ ends. The head start is what links a screen-off phone, which scans every 240 s o
 ## What AND-3's trial showed
 
 On 2026-10-10 from 16:05, `interop.py android-keeps-iphone` ran against the Pixel 8 on a debug build of knit-next
-`b7c13e57` (`fix/gatt-only-link-score`, AND-3's fix). The Pixel 3, Pixel 7, Pixel 9 and moto-g were paused through
-their bridges for each run and resumed after. Nobody touched the iPhone 12: the Mac's `devicectl device process
-launch` opened the Settings app to send Knit to the background, and opened Knit again to bring the same process back
-(pid unchanged). XCUITest could not do it unattended, since the phone's passcode stops automation mode until someone
-types it (ADR 2026-09.63em). Each step's JSON and the iPhone's log are in `.build/and3/`.
+`b7c13e57`, AND-3's fix, since merged as `a03fe167` on knit-next's local `main` (not yet pushed). The Pixel 3, Pixel
+7, Pixel 9 and moto-g were paused through their bridges for each run and resumed after. Nobody touched the iPhone 12:
+the Mac's `devicectl device process launch` opened the Settings app to send Knit to the background, and opened Knit
+again to bring the same process back (pid unchanged). XCUITest could not do it unattended, since the phone's
+passcode stops automation mode until someone types it (ADR 2026-09.63em). Each step's JSON and the iPhone's log are
+in `.build/and3/`.
 
 | Run | iPhone build | Stages | Steps | Failed |
 | --- | --- | --- | --- | --- |
