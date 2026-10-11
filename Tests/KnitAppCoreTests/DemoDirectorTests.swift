@@ -6,8 +6,9 @@ import Testing
 
 @testable import KnitAppCore
 
-/// The trailer's director (ADR 2026-10.g3k9): only the trailer has a script, and it plays through a real mesh, session
-/// and room, typing the user's part into the composer.
+/// The scripted scenes' director (ADR 2026-10.g3k9, ADR 2026-10.yddp): only the trailer and App Review's clips have a
+/// script, and each plays through a real mesh, session and room, the trailer typing the user's part into the composer
+/// and the block clip waiting for the user's report.
 @MainActor
 @Suite(.timeLimit(.minutes(1))) struct DemoDirectorTests {
     @Test func onlyAScriptedSceneHasADirector() throws {
@@ -15,7 +16,7 @@ import Testing
         let scenes = DemoScene.allCases.filter { scene in
             Self.director(of: scene, over: MeshStores.inMemory(), me: identity.nodeId) != nil
         }
-        #expect(scenes == [.trailer])
+        #expect(scenes == [.trailer, .block])
         #expect(LaunchOptions(arguments: ["-seedDemo", "-demoScene", "trailer"]).demoScene == .trailer)
     }
 
@@ -60,6 +61,38 @@ import Testing
         listening.cancel()
     }
 
+    /// The block clip waits on the stranger's line until the user reports it, and the block, which the report makes, stops
+    /// the stranger's next post where the engine would, while Sam's still lands.
+    @Test func theBlockClipWaitsForTheReportAndTheBlockStopsTheStranger() async throws {
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        DemoSeed.populate(stores, me: identity.nodeId, now: 100_000_000, scene: .block)
+        let stranger = try #require(DemoSeed.nodeId(.stranger))
+        let director = try #require(Self.director(of: .block, over: stores, me: identity.nodeId))
+        let session = Self.session(stores, identity: identity, director: director, scene: .block)
+        let listening = Task { await session.listen() }
+        await session.start()
+        let chat = ChatModel(conversationId: Conversations.nearby, session: session)
+        let following = Task { await chat.appear() }
+        while stores.messages.message("block-1") == nil {
+            await Task.yield()
+        }
+        for _ in 0..<100 {
+            await Task.yield()
+        }
+        #expect(stores.messages.message("block-2") == nil && stores.messages.message("block-3") == nil, "the script waits for the block")
+
+        await session.report(AbuseReport(person: stranger, name: "", place: .room, messageId: "block-1"))
+        while stores.messages.message("block-3") == nil {
+            await Task.yield()
+        }
+        #expect(stores.blocks.blockedNodeIds() == [stranger])
+        #expect(stores.messages.message("block-1") == nil, "the report deleted the line")
+        #expect(stores.messages.message("block-2") == nil, "the block stopped the stranger's next post")
+        following.cancel()
+        listening.cancel()
+    }
+
     /// `scene`'s director over `stores`, with no pause between cues and a byte or two for each photo.
     private static func director(of scene: DemoScene, over stores: MeshStores, me: NodeId) -> DemoDirector? {
         DemoDirector(
@@ -72,8 +105,10 @@ import Testing
         )
     }
 
-    /// A session over a real mesh on the demo's radio, showing the trailer's linked peers, with `director` playing.
-    private static func session(_ stores: MeshStores, identity: IdentityKeys, director: DemoDirector) -> AppSession {
+    /// A session over a real mesh on the demo's radio, showing `scene`'s linked peers, with `director` playing.
+    private static func session(
+        _ stores: MeshStores, identity: IdentityKeys, director: DemoDirector, scene: DemoScene = .trailer
+    ) -> AppSession {
         let node = Mesh(
             identity: identity,
             deviceTag: nil,
@@ -82,7 +117,7 @@ import Testing
             clock: DemoClock(),
             random: SystemRandomNumberGenerator()
         )
-        let mesh = DemoMesh(node, linked: DemoSeed.linked(in: .trailer), director: director)
+        let mesh = DemoMesh(node, linked: DemoSeed.linked(in: scene), director: director)
         let session = AppSession(identity: OwnIdentity(bundle: identity.bundle), stores: stores, mesh: mesh)
         session.director = director
         return session

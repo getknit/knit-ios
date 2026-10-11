@@ -13,6 +13,8 @@ extension DemoCast {
         case type(String)
         /// The user's newest room post is heard: it shows delivered.
         case heard
+        /// The script waits until the user blocks this person, however they do it (ADR 2026-10.yddp).
+        case blocks(Slot)
     }
 
     /// How long a beat waits after the one before it, in milliseconds: a person's pauses, not a test's.

@@ -44,6 +44,10 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// plays once the room is on screen: the user types and posts, and the room answers. `KnitTrailer` opens the room
     /// while `check.sh trailer` films it for the store's video (ADR 2026-10.g3k9).
     case trailer = "trailer"
+    /// The trailer's room with a stranger in it who turns on the user, and a script that waits for the user to report
+    /// them: `KnitClips` reports and blocks them, then unblocks them, while `check.sh clips` films it for App Review
+    /// (ADR 2026-10.yddp).
+    case block = "block"
 
     /// Who and what the scene seeds.
     var cast: DemoCast {
@@ -56,6 +60,8 @@ public enum DemoScene: String, Sendable, CaseIterable {
             .longRoom
         case .trailer:
             .trailer
+        case .block:
+            .block
         }
     }
 }

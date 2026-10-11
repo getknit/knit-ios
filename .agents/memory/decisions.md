@@ -78,3 +78,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.x2cq](decisions/2026-10-x2cq-a-debug-build-s-bridge.md) | a debug build's bridge records the screen with ReplayKit | interop, testing, app |
 | [2026-10.xwjc](decisions/2026-10-xwjc-the-iphone-s-file-feed.md) | The iPhone's file feed is clocked by its receiver's reports | ble, mesh, blobs, interop |
 | [2026-10.zv5c](decisions/2026-10-zv5c-tip-links-show-on-the.md) | Tip links show on the US storefront only | app, store, copy |
+| [2026-10.yddp](decisions/2026-10-yddp-app-review-s-clips-are.md) | App Review's clips are scripted scenes filmed like the store's video | testing, store, moderation |

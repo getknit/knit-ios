@@ -196,9 +196,10 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
         await mesh.setVerified(peer, verified)
     }
 
-    /// Blocks a person.
+    /// Blocks a person, and tells the director, whose script may be waiting for it.
     public func block(_ peer: NodeId) async {
         await mesh.block(peer)
+        director?.blocked(peer)
     }
 
     /// Unblocks a person.

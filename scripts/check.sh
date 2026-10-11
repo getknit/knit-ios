@@ -4,7 +4,7 @@
 #     scripts/check.sh fast        # format, lint, build, unit tests (the pre-push hook)
 #     scripts/check.sh all         # every gate that runs on Linux
 #     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama xcode uitest device devicetest
-#                                  # release archive upload shots trailer
+#                                  # release archive upload shots trailer clips
 #
 # Each build variant (coverage, TSan, ASan, analyze) gets its own --scratch-path, so switching between them never
 # rebuilds the plain debug tree. `.agents/context/commands.md` explains when to run which.
@@ -430,64 +430,101 @@ PY
 # at which the test launched the app, opened the room, reached the photo and ended, counted from the recording's first
 # change. Both clocks are the Mac's, since a Simulator's processes run on it. Nothing here checks the app, so no CI job
 # runs it.
-#
-# simctl's "Recording started" is not the recording's zero: on a still screen its first frame came 4 s later
-# (2026-10-08), and the marks with it. So the gate makes the first change itself: it records the home screen in the
-# other appearance, waits, reads the time, and switches to the take's. That switch is the recording's second frame,
-# which build-trailer.sh reads as the marks' zero.
 gate_trailer() {
 	step "xcodebuild test (KnitTrailer, the store's video, filmed in the Simulator)"
 	xcode_project trailer
-	local simulator=${KNIT_SIMULATOR:-Knit shots}
+	local simulator=${KNIT_SIMULATOR:-Knit shots} out=.build-xcode/trailer status=0 mode
 	store_simulator "$simulator"
-	local destination="platform=iOS Simulator,name=$simulator" out=.build-xcode/trailer status=0 mode results film
-	local recorder started waited
 	rm -rf "$out" .build-xcode/trailer-*.xcresult
 	mkdir -p "$out"
-	xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination "$destination" build-for-testing | "${xcode_pretty[@]}"
+	xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination "platform=iOS Simulator,name=$simulator" build-for-testing |
+		"${xcode_pretty[@]}"
 	for mode in ${KNIT_SHOT_MODES:-dark}; do
-		results=.build-xcode/trailer-$mode.xcresult
-		film=$out/${mode}_trailer.mov
-		if [ "$mode" = dark ]; then
-			xcrun simctl ui "$simulator" appearance light
-		else
-			xcrun simctl ui "$simulator" appearance dark
-		fi
-		xcrun simctl io "$simulator" recordVideo --codec=h264 --force "$film" 2>"$out/$mode-record.log" &
-		recorder=$!
-		waited=0
-		until grep -q "Recording started" "$out/$mode-record.log"; do
-			if ! kill -0 "$recorder" 2>/dev/null || [ "$waited" -ge 100 ]; then
-				cat "$out/$mode-record.log" >&2
-				echo "the Simulator's recording never started" >&2
-				return 1
-			fi
-			sleep 0.1
-			waited=$((waited + 1))
+		film_take "$simulator" "$mode" KnitShots/KnitTrailer "$out" trailer || status=$?
+	done
+	xcrun simctl ui "$simulator" appearance light
+	return "$status"
+}
+
+# App Review's clips (ADR 2026-10.yddp): each one a KnitClips test filmed as the trailer is, on a scripted scene of its
+# own. KNIT_CLIPS names the clips (all of them unless it says otherwise), each the test's name less its `test`, so
+# `block` is testBlock. Each clip and appearance lands in .build-xcode/clips/ as <mode>_<clip>.mov and .marks.
+gate_clips() {
+	step "xcodebuild test (KnitClips, App Review's clips, filmed in the Simulator)"
+	xcode_project clips
+	local simulator=${KNIT_SIMULATOR:-Knit shots} out=.build-xcode/clips status=0 mode clip test
+	store_simulator "$simulator"
+	rm -rf "$out" .build-xcode/clips-*.xcresult
+	mkdir -p "$out"
+	xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination "platform=iOS Simulator,name=$simulator" build-for-testing |
+		"${xcode_pretty[@]}"
+	for clip in ${KNIT_CLIPS:-block}; do
+		# The Mac's bash is 3.2, which has no ${clip^}.
+		test=test$(printf %s "${clip:0:1}" | tr '[:lower:]' '[:upper:]')${clip:1}
+		for mode in ${KNIT_SHOT_MODES:-dark}; do
+			film_take "$simulator" "$mode" "KnitShots/KnitClips/$test" "$out" "$clip" || status=$?
 		done
-		sleep 6
-		started=$(python3 -c 'import time; print(time.time())')
-		xcrun simctl ui "$simulator" appearance "$mode"
-		xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination "$destination" -only-testing:KnitShots/KnitTrailer \
-			-resultBundlePath "$results" -collect-test-diagnostics never test-without-building |
-			"${xcode_pretty[@]}" || status=$?
-		# An interrupt is how simctl is told to finish the file.
-		kill -INT "$recorder"
-		wait "$recorder" || true
-		xcrun xcresulttool export attachments --path "$results" --output-path "$out/$mode" >/dev/null
-		python3 - "$out/$mode" "$started" "$out/${mode}_trailer.marks" <<'PY'
+	done
+	xcrun simctl ui "$simulator" appearance light
+	return "$status"
+}
+
+# film_take <simulator> <mode> <test> <out> <name>: films the Simulator while <test> runs in <mode>, into
+# <out>/<mode>_<name>.mov, and turns the test's `<name>_marks` attachment into <out>/<mode>_<name>.marks.
+#
+# simctl's "Recording started" is not the recording's zero: on a still screen its first frame came 4 s later
+# (2026-10-08), and the marks with it. So the gate makes the first change itself: it records the home screen in the
+# other appearance, waits, switches to the take's, and reads the time. That switch is the first frame after the wait,
+# which the builders read as the marks' zero. It is usually the second, but a home screen still drawing its icons as the
+# recording starts writes a few frames first (2026-10-10).
+film_take() {
+	local simulator=$1 mode=$2 test=$3 out=$4 name=$5 status=0 recorder started waited results film
+	local destination="platform=iOS Simulator,name=$simulator"
+	results=.build-xcode/$(basename "$out")-$name-$mode.xcresult
+	film=$out/${mode}_$name.mov
+	rm -rf "$results"
+	if [ "$mode" = dark ]; then
+		xcrun simctl ui "$simulator" appearance light
+	else
+		xcrun simctl ui "$simulator" appearance dark
+	fi
+	xcrun simctl io "$simulator" recordVideo --codec=h264 --force "$film" 2>"$out/$mode-$name-record.log" &
+	recorder=$!
+	waited=0
+	until grep -q "Recording started" "$out/$mode-$name-record.log"; do
+		if ! kill -0 "$recorder" 2>/dev/null || [ "$waited" -ge 100 ]; then
+			cat "$out/$mode-$name-record.log" >&2
+			echo "the Simulator's recording never started" >&2
+			return 1
+		fi
+		sleep 0.1
+		waited=$((waited + 1))
+	done
+	sleep 6
+	# The switch shows as the command returns, which can take seconds: on 2026-10-10 a clip's marks, read before it,
+	# ran 2.3 s late. So the clock is read after, and the command's own time is logged beside the recording's.
+	asked=$(python3 -c 'import time; print(time.time())')
+	xcrun simctl ui "$simulator" appearance "$mode"
+	started=$(python3 -c 'import time; print(time.time())')
+	python3 -c "print(f'the appearance switch took {$started - $asked:.2f} s')" >>"$out/$mode-$name-record.log"
+	xcodebuild "${xcode_build[@]}" -scheme KnitShots -destination "$destination" "-only-testing:$test" \
+		-resultBundlePath "$results" -collect-test-diagnostics never test-without-building |
+		"${xcode_pretty[@]}" || status=$?
+	# An interrupt is how simctl is told to finish the file.
+	kill -INT "$recorder"
+	wait "$recorder" || true
+	xcrun xcresulttool export attachments --path "$results" --output-path "$out/$mode-$name" >/dev/null
+	python3 - "$out/$mode-$name" "$started" "$out/${mode}_$name.marks" "${name}_marks" <<'PY'
 import json, pathlib, sys
-exported, started, marks = pathlib.Path(sys.argv[1]), float(sys.argv[2]), pathlib.Path(sys.argv[3])
+exported, started, marks, wanted = pathlib.Path(sys.argv[1]), float(sys.argv[2]), pathlib.Path(sys.argv[3]), sys.argv[4]
 for test in json.loads((exported / "manifest.json").read_text()):
 	for attachment in test["attachments"]:
-		if attachment["suggestedHumanReadableName"].startswith("trailer_marks"):
+		if attachment["suggestedHumanReadableName"].startswith(wanted):
 			lines = (exported / attachment["exportedFileName"]).read_text().split()
 			at = dict(line.split("=") for line in lines)
 			marks.write_text("".join(f"{name}={float(when) - started:.2f}\n" for name, when in at.items()))
 			print(f"{marks}: " + " ".join(marks.read_text().split()))
 PY
-	done
-	xcrun simctl ui "$simulator" appearance light
 	return "$status"
 }
 
@@ -709,9 +746,9 @@ case "${1:-fast}" in
 fast) run format lint build test ;;
 all) run format lint adr build test coverage tsan asan analyze lintorama ;;
 format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | xcode | uitest | device | devicetest | \
-	release | archive | upload | shots | trailer) run "$@" ;;
+	release | archive | upload | shots | trailer | clips) run "$@" ;;
 *)
-	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest|release|archive|upload|shots|trailer]" >&2
+	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest|release|archive|upload|shots|trailer|clips]" >&2
 	exit 2
 	;;
 esac

@@ -15,6 +15,10 @@ public import KnitWire
 ///
 /// Nor does it start before anyone can see it: the mesh starts as the app launches, before its first frame. The first
 /// cue waits for ``curtain()``, which the room's ``ChatModel`` calls as it starts following.
+///
+/// A clip for App Review waits on the user too (ADR 2026-10.yddp): a ``DemoCast/Beat/blocks(_:)`` beat holds the script
+/// until the user blocks someone, which ``DemoMesh`` reports, and a blocked person's post then stops where the engine
+/// stops one, so the clip shows the block doing what it does with a real peer.
 public final class DemoDirector: Sendable {
     /// What a beat changes: the demo's mesh, which shows who is linked and carries the events.
     internal protocol Stage: Sendable {
@@ -36,6 +40,8 @@ public final class DemoDirector: Sendable {
     private let shown: AsyncStream<Void>
     private let showing: AsyncStream<Void>.Continuation
     private let typing: AsyncStream<ComposerStep>.Continuation
+    private let blocks: AsyncStream<NodeId>
+    private let blocking: AsyncStream<NodeId>.Continuation
 
     /// What the user does in the room's composer, for the room's ``ChatModel`` to follow: one follower.
     public let composer: AsyncStream<ComposerStep>
@@ -83,12 +89,14 @@ public final class DemoDirector: Sendable {
         (ownPosts, posted) = AsyncStream<MessageRecord>.makeStream()
         (shown, showing) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
         (composer, typing) = AsyncStream<ComposerStep>.makeStream()
+        (blocks, blocking) = AsyncStream<NodeId>.makeStream()
     }
 
     deinit {
         posted.finish()
         showing.finish()
         typing.finish()
+        blocking.finish()
     }
 
     /// The room is on screen, where the script can be seen. The first call starts it; later ones change nothing.
@@ -101,6 +109,11 @@ public final class DemoDirector: Sendable {
         posted.yield(message)
     }
 
+    /// The user blocked `peer`. A block made before the script waits for one is kept for it.
+    func blocked(_ peer: NodeId) {
+        blocking.yield(peer)
+    }
+
     /// Plays the script on `stage`, until it ends or the calling task is cancelled.
     func play(on stage: some Stage) async {
         var curtain = shown.makeAsyncIterator()
@@ -108,6 +121,7 @@ public final class DemoDirector: Sendable {
             return
         }
         var own = ownPosts.makeAsyncIterator()
+        var blocked = blocks.makeAsyncIterator()
         var latest: MessageRecord?
         for cue in script {
             await wait(cue.after.rawValue)
@@ -138,13 +152,24 @@ public final class DemoDirector: Sendable {
                 if let latest, stores.messages.markDelivered(latest.id) {
                     stage.announce(.delivered(messageId: latest.id))
                 }
+            case .blocks(let slot):
+                guard let person = DemoSeed.nodeId(slot) else {
+                    break
+                }
+                while !stores.blocks.blockedNodeIds().contains(person) {
+                    guard await blocked.next() != nil else {
+                        return
+                    }
+                }
             }
         }
     }
 
-    /// Someone else's room post arrives now, its photo first, as the engine stores an adopted photo.
+    /// Someone else's room post arrives now, its photo first, as the engine stores an adopted photo. A blocked person's
+    /// stops at delivery, as at the engine's gate (`MeshEngine.handleChat`, ADR 2026-10.5wgg): nothing stored, nothing
+    /// announced.
     private func post(_ line: DemoCast.Line, on stage: some Stage) {
-        guard let sender = DemoSeed.nodeId(line.from) else {
+        guard let sender = DemoSeed.nodeId(line.from), !stores.blocks.blockedNodeIds().contains(sender) else {
             return
         }
         let at = now()
