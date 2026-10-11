@@ -9,26 +9,30 @@ the rules for the radios and phones it touches.
 - **Dongles A and B are the peer's adapters since 2026-10-03:** two Nordic nRF52840 Dongles (PCA10059) running
   `firmware/knit-hci`, Zephyr's `hci_usb` sample with Knit's controller settings ("The nRF52840 dongles"). They show
   up as USB `2fe3:000b`, "Knit nRF52840 HCI".
-  - **Dongle A** is at public address `C0:FF:EE:00:00:0A` (USB serial `<usb serial A>`). It is knit-peer's
-    default adapter, and `interop.py`'s `hci1`.
-  - **Dongle B** is at `C0:FF:EE:00:00:0B` (USB serial `<usb serial B>` in its bootloader). It is the second peer's
-    adapter, `interop.py`'s `hci0`, so no run needs the maintainer's adapter.
+  - **Dongle A** has a public address, `$KNIT_ADAPTER_A`. It is knit-peer's default adapter, and
+    `interop.py`'s `hci1`.
+  - **Dongle B** is at `$KNIT_ADAPTER_B`. It is the second peer's adapter, `interop.py`'s `hci0`, so no run
+    needs the maintainer's adapter.
+  - **The addresses are the lab's own,** kept out of the repository in a gitignored `.private/lab.env`
+    (`KNIT_ADAPTER_A`, `KNIT_ADAPTER_B`, `KNIT_ADAPTER_ATS2851`, `KNIT_ADAPTER_RESERVED`). `interop.py` and
+    the scripts read that file, knit-peer reads the variables from its environment, and the root-run
+    `knit-hci` reads `/etc/knit-hci.conf`. A contributor with other adapters sets their own.
   - **What both have:** 251-byte LE buffers × 8, data length extension, an MPS of 247, 8 connections, 4
     advertising sets, the 2M and Coded PHYs, and +8 dBm. They take incoming LE connections and advertise while
     linked in either role ("What the nRF52840 dongles showed").
-- **The ATS2851 was `hci1` from 2026-09-29 to 2026-10-03** (Actions, USB `10d7:b012`), at `F0:0D:00:00:00:02`,
-  named "linux-host #2". It has 251-byte LE buffers and the 2M and Coded PHYs, but legacy advertising only. It takes no
-  incoming LE connection, so a peer on it only ever dials ("What the ATS2851 showed"). It is unplugged;
-  `--adapter-address F0:0D:00:00:00:02` still runs the peer there.
-- **The Edimax BT-8500 was `hci1` until 2026-09-29** (USB `7392:c611`, Realtek RTL8761BU), at
-  `0A:BC:DE:00:00:A1`. Its controller has 27-byte LE buffers, so the kernel offered an MPS of 23, the least the
-  spec allows. Android copes with that; an iPhone does not ("What the iPhone showed"). It takes incoming
-  connections, but cannot advertise while it holds one. Every section below dated before 2026-09-29 evening was
-  measured on it. When it is plugged in, `--adapter-address 0A:BC:DE:00:00:A1` runs the peer there.
+- **The ATS2851 was `hci1` from 2026-09-29 to 2026-10-03** (Actions, USB `10d7:b012`), at
+  `$KNIT_ADAPTER_ATS2851`. It has 251-byte LE buffers and the 2M and Coded PHYs, but legacy advertising only.
+  It takes no incoming LE connection, so a peer on it only ever dials ("What the ATS2851 showed"). It is
+  unplugged; `--adapter-address "$KNIT_ADAPTER_ATS2851"` still runs the peer there.
+- **The Edimax BT-8500 was `hci1` until 2026-09-29** (USB `7392:c611`, Realtek RTL8761BU). Its controller has
+  27-byte LE buffers, so the kernel offered an MPS of 23, the least the spec allows. Android copes with that;
+  an iPhone does not ("What the iPhone showed"). It takes incoming connections, but cannot advertise while it
+  holds one. Every section below dated before 2026-09-29 evening was measured on it. When it is plugged in,
+  `--adapter-address` with its address runs the peer there.
 - **`hci0` was the maintainer's** in these notes before 2026-10-03: an Intel controller (Bluetooth 5.4) at
-  `A0:00:00:00:00:01` that holds the maintainer's own devices. The peer checks that its adapter has the expected
-  address before it does anything, and binds every socket to that address, so nothing it does lands on another
-  adapter. It runs on the Intel only as a shared adapter, with a go-ahead.
+  `$KNIT_ADAPTER_RESERVED` that holds the maintainer's own devices. The peer checks that its adapter has the
+  expected address before it does anything, and binds every socket to that address, so nothing it does lands
+  on another adapter. It runs on the Intel only as a shared adapter, with a go-ahead.
 - **knit-next's emulator script passes the Edimax through** to an Android emulator, picking it by USB id, so the
   emulator and a peer on a dongle can run at once.
 - **Adapters go by address.** The kernel numbers adapters in the order `btusb` binds them, which follows USB ports and
@@ -61,7 +65,8 @@ in `~/zephyr-sdk-1.0.1`, and Nordic's `nrfutil` with its `nrf5sdk-tools` command
 
 ## What spike (e) showed
 
-Run on 2026-09-25 as `maintainer`, without root; D-Bus policy lets a user register advertisements.
+Run on 2026-09-25 as the maintainer's own user, without root; D-Bus policy lets a user register
+advertisements.
 
 - **The advert:** BlueZ takes Android's layout through `LEAdvertisingManager1` on `hci1`: `Type` peripheral,
   `Discoverable`, and `ServiceData` for `FE30` holding the 24-byte payload, with no name and no includes.
@@ -141,12 +146,13 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing, and links a node that advertises only the UUID just long enough to read its payload; `--advertise` also shows the advert |
 | `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window, with the old name and photo |
 
-- **Every command checks the adapter first.** `--adapter` defaults to `hci1` and `--adapter-address` to the ATS2851's
-  address. An adapter with another address stops the peer before anything opens.
-- **`hci0` is refused by name** unless `--shared-adapter` is given, with its address
-  (`--adapter hci0 --adapter-address A0:00:00:00:00:01 --shared-adapter`). A shared adapter keeps the links other
-  devices hold: at start the peer drops only links on an adapter of its own, and it only ever drops links it made.
-  `.agents/rules/devices.md` says when it may be used.
+- **Every command checks the adapter first.** `--adapter` defaults to `hci1` and `--adapter-address` to
+  `$KNIT_ADAPTER_A`; with neither, the peer stops and asks for one. An adapter with another address stops the
+  peer before anything opens.
+- **`hci0` is refused by name** unless `--shared-adapter` is given, with its address (`--adapter hci0
+  --adapter-address "$KNIT_ADAPTER_RESERVED" --shared-adapter`). A shared adapter keeps the links other
+  devices hold: at start the peer drops only links on an adapter of its own, and it only ever drops links it
+  made. `.agents/rules/devices.md` says when it may be used.
 - **State** lives in `~/.local/state/knit-peer/<instance>/`: `identity` (0600) and `profile.json`, which keeps the
   profile version and publish stamp across restarts, and `avatar.jpg`, the peer's own photo, which `profile.json`
   names. Custody, peers, messages and every other blob live in memory.
@@ -981,8 +987,8 @@ links, and `idevicesyslog` gave each state the radio reported (`ble on`, `off` o
   radio reported `unauthorized`, and the line asked for Bluetooth with a Settings button that opened Knit's page
   there. Allowing it on that page ended the process too. The next launch reported `on` and had all three links back
   in 21 s.
-- **The unsupported device** is not on hand, so `test:ios:simulator` checks its line through `-seedDemo -demoRadio
-  unsupported`, with the other two refusals, and asserts that all three lines differ (pipeline 821).
+- **The unsupported device** is not on hand, so `test:ios:simulator` checks its line through `-seedDemo
+  -demoRadio unsupported`, with the other two refusals, and asserts that all three lines differ.
 - **The bridge seems to answer one client at a time.** The watcher's poll got no answer while a `status` sent by hand
   was open.
 

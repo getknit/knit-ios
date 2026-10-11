@@ -81,4 +81,5 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.6eyf](decisions/2026-10-6eyf-a-smaller-id-iphone-dials.md) | a smaller-id iPhone dials a flagged peer after a head start | ble, transport, interop |
 | [2026-10.7uyt](decisions/2026-10-7uyt-whitespace-is-what-art-says.md) | Whitespace is what ART says it is | interop, wire, text |
 | [2026-10.yddp](decisions/2026-10-yddp-app-review-s-clips-are.md) | App Review's clips are scripted scenes filmed like the store's video | testing, store, moderation |
+| [2026-10.ab6k](decisions/2026-10-ab6k-the-lab-s-hardware-addresses.md) | The lab's hardware addresses and hosts live in a private env file, not the repository | peer, devices, build |
 | [2026-10.nwt2](decisions/2026-10-nwt2-knit-takes-the-exempt-export.md) | Knit takes the exempt export answer because its encryption is CryptoKit | store, crypto, build |

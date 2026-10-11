@@ -103,8 +103,8 @@ explicit direction.** Update this file in the change that ships an item.
     `==`, so ids Swift calls equal could change what the overall trim kept. Both now compare by bytes.
   - **Tests:** the custody and repository contract suites run against the memory and SQL stores alike. Line
     coverage is 99 %. The SQL stores are not wired into anything yet: the app composes them in P6.
-  - **The backup flag holds on the Mac:** `theDirectoryIsExcludedFromBackups` checks it on Darwin, and passed in
-    `test:macos` (pipeline 813, 2026-09-28).
+  - **The backup flag holds on the Mac:** `theDirectoryIsExcludedFromBackups` checks it on Darwin, and passed
+    in `test:macos` (2026-09-28).
   - **The protection class holds on the iPhone:** the database's directory and files are all
     `completeUntilFirstUserAuthentication` (`interop.py iphone-reboot`, 2026-09-28).
 - **P6, the app (`KnitAppCore`, `Knit`, `KnitBLE`):** begun on 2026-09-26.
@@ -153,8 +153,8 @@ explicit direction.** Update this file in the change that ships an item.
     to the `macos` runner, still advisory (ADR 2026-09.fkqb).
   - **Periphery blocks (2026-09-28):** on the Mac, over the iPhone build's index too, and on Linux for
     `KnitBlueZ` (ADR 2026-09.xgtz).
-  - **CI's first run of `test:macos` and `test:ios:simulator`** passed on the push of `76d98fd` (pipeline 813,
-    2026-09-28).
+  - **CI's first run of `test:macos` and `test:ios:simulator`** passed on the push of `76d98fd`
+    (2026-09-28).
 - **P8, the iPhone:** begun early on 2026-09-26, without the Mac: an iPhone 12 on iOS 27.0, installed over USB
   by xtool on free provisioning. The app runs and links the Linux peer and the lab's Android phones. Against
   the peer, items 3 to 5 pass: safety numbers match, the room works both ways with ticks, and DMs go request,
@@ -288,7 +288,8 @@ explicit direction.** Update this file in the change that ships an item.
     Android's sizes, the photo picker, the cropper and the viewer. Every Linux gate passes, sanitizers included, and
     so do the Mac build and all 13 Simulator walks, the new photo walk at both text sizes among them. Checked the same
     day on the iPhone 12 against the Pixel 3:
-    - The iPhone draws the photos of the Pixel 3 and two other people, and their group as both photos side by side.
+    - The iPhone draws the photos of the Pixel 3 and two other people, and their group as both photos side by
+      side.
     - The profile codec, run on the Mac over a GPS-tagged picture, makes a 256-pixel JPEG that keeps only its color
       space and pixel size. Published from the iPhone, it reached the Pixel 3 in 210 ms and shows there.
     - Still owed: `KnitDeviceTests`' `PhotoTests`, which chooses, crops and saves a photo on the iPhone itself. Its run

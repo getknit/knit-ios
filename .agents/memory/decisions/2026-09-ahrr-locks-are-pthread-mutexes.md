@@ -10,12 +10,12 @@ topics: [concurrency, testing, tooling]
 
 Status: Accepted (2026-09-28)
 
-**Context:** shared state sat behind `Synchronization.Mutex`, as `coding.md` asked. On Linux, `Mutex` waits on a
-futex, and ThreadSanitizer sees only the pthread calls it intercepts. It reported races between two
-`withLock` bodies that the lock kept apart. The flake was known on 2026-09-26 and deferred on the roadmap.
-Pipeline 807 (2026-09-28) then failed `test:tsan` twice in a row: once in `KnitBlueZ`'s `Mailbox`, and on the
-retry in `MemoryCustodyStore`. `CustodyStoreTests.concurrentStoresAndSweepsLeaveAConsistentSet` alone failed 13
-of 15 runs under TSan. A gate that fails at random gets rerun until it passes, and then it proves nothing.
+**Context:** shared state sat behind `Synchronization.Mutex`, as `coding.md` asked. On Linux, `Mutex` waits on
+a futex, and ThreadSanitizer sees only the pthread calls it intercepts. It reported races between two
+`withLock` bodies that the lock kept apart. The flake was known on 2026-09-26 and deferred on the roadmap. A
+pipeline on 2026-09-28 then failed `test:tsan` twice in a row: once in `KnitBlueZ`'s `Mailbox`, and on the
+retry in `MemoryCustodyStore`. `CustodyStoreTests.concurrentStoresAndSweepsLeaveAConsistentSet` alone failed
+13 of 15 runs under TSan. A gate that fails at random gets rerun until it passes, and then it proves nothing.
 
 **Decision:** a `KnitSync` target holds one type, `Lock<Value>`. It has `Mutex`'s API, `init(_:)` and
 `withLock`, with the same `sending` rules, over a heap-allocated `pthread_mutex_t`. Every `Mutex` in `Sources/`

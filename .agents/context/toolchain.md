@@ -193,7 +193,7 @@ logs in to the desktop by itself, because the Simulator and signing need a deskt
     launchd job in `gui/501`, where the Keychain is open, and `check.sh device` builds the signed app through
     it. `-allowProvisioningUpdates` renews the profile there too: with the cached one moved aside, it
     fetched a new one from Apple (2026-09-28). CI's `build:ios:signed` takes the same path, with the team in
-    `KNIT_DEVELOPMENT_TEAM`.
+    `KNIT_DEVELOPMENT_TEAM`, a masked CI/CD variable on the GitLab project, never in `.gitlab-ci.yml`.
   - **The command line lost the account (2026-09-28, late).** `xcodebuild` reported "No Accounts" over ssh and in
     the desktop session alike, while Xcode's window listed the account with the Personal Team, and Xcode's
     `DVTDeveloperAccountManagerAppleIDLists` preference was empty. It signs with profiles it already has but
@@ -207,12 +207,12 @@ logs in to the desktop by itself, because the Simulator and signing need a deskt
   - **`app.getknit.knit` belongs to the App Store build.** It was registered to the team on 2026-10-03, through the
     App Store Connect API. Development builds still sign only the `.dev` id, so a development build and a
     TestFlight build are two apps, each with a Keychain identity of its own.
-  - **The App Store build** (ADR 2026-10.8cy5): `check.sh archive` archives the `Knit` scheme in Release through
-    `mac-desktop.sh`, signed for development as any archive under automatic signing is, and the export signs it again
-    for distribution. On 2026-10-03 the API key's first export made `iOS Team Store Provisioning Profile:
-    app.getknit.knit` and signed with `Apple Distribution: … (<team id>)`. That identity is not in the Mac's
-    Keychain, where `security find-identity` lists only the development one, so it looks cloud-managed: Apple holds
-    the key. `check.sh upload` uploads the same build.
+  - **The App Store build** (ADR 2026-10.8cy5): `check.sh archive` archives the `Knit` scheme in Release
+    through `mac-desktop.sh`, signed for development as any archive under automatic signing is, and the export
+    signs it again for distribution. On 2026-10-03 the API key's first export made `iOS Team Store
+    Provisioning Profile: app.getknit.knit` and signed with the team's `Apple Distribution` identity. That
+    identity is not in the Mac's Keychain, where `security find-identity` lists only the development one, so
+    it looks cloud-managed: Apple holds the key. `check.sh upload` uploads the same build.
   - **Exporting needs macOS's rsync first on the `PATH`.** Packaging runs `/usr/bin/rsync`, which starts its other
     end as the first `rsync` on the `PATH`. Homebrew's rsync 3 refused `--extended-attributes`, and the export failed
     with "Copy failed" (2026-10-03). `check.sh archive` puts `/usr/bin` first for the export alone.

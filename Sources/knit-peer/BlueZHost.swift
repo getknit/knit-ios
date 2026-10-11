@@ -8,8 +8,8 @@
     /// This platform's peer radio.
     internal typealias PeerHost = BlueZHost
 
-    /// The Linux peer's radio: BlueZ on one adapter, found by its address, dongle A unless told otherwise, and never
-    /// the maintainer's adapter unshared.
+    /// The Linux peer's radio: BlueZ on one adapter, found by its address (`--adapter-address` or `$KNIT_ADAPTER_A`), and
+    /// never a reserved adapter unshared.
     internal struct BlueZHost: PeerRadioHost {
         let radio: any Radio
         let profile: String
@@ -19,7 +19,8 @@
         init(_ options: RunOptions, log: any KnitLog) throws(PeerHostError) {
             let selection: AdapterSelection
             do {
-                selection = try Self.checkedAdapter(options.adapterAddress, shared: options.sharedAdapter, log: log)
+                selection = try Self.checkedAdapter(
+                    options.adapterAddress, shared: options.sharedAdapter, reserved: options.reservedAdapters, log: log)
             } catch {
                 throw .adapter(error)
             }
@@ -71,7 +72,8 @@
                 threshold: JSONLinesLog.level(named: options.logLevel) ?? .info, clock: SystemClock(), write: Lines.error.write)
             let selection: AdapterSelection
             do {
-                selection = try checkedAdapter(options.adapterAddress, shared: options.sharedAdapter, log: log)
+                selection = try checkedAdapter(
+                    options.adapterAddress, shared: options.sharedAdapter, reserved: options.reservedAdapters, log: log)
             } catch {
                 KnitPeerMain.fail("refusing to start: \(error)")
             }
@@ -116,8 +118,13 @@
             Lines.output.write(report.summary)
         }
 
-        private static func checkedAdapter(_ address: String, shared: Bool, log: any KnitLog) throws -> AdapterSelection {
-            let status = try AdapterProbe.select(address: address, shared: shared)
+        private static func checkedAdapter(
+            _ address: String?, shared: Bool, reserved: [String], log: any KnitLog
+        ) throws -> AdapterSelection {
+            guard let address else {
+                throw PeerHostError.unsupported("no adapter: pass --adapter-address, or set \(PeerCommand.adapterVariable)")
+            }
+            let status = try AdapterProbe.select(address: address, shared: shared, reserved: reserved)
             let selection = status.adapter
             let use = shared ? ", shared" : ""
             log.log(.info, "adapter \(selection.name) is \(selection.address)\(use), \(status.powered ? "powered" : "not powered")")

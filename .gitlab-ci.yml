@@ -3,14 +3,16 @@
 # (ADR router: .agents/memory/decisions.md). The advisory jobs say why beside `allow_failure`.
 #
 # Three kinds of runner:
-#   - shared Linux runners for the light jobs: linux-host and service, both amd64, and the Mac's arm64 Docker runner,
-#     so an untagged job runs on either architecture;
-#   - `knit-local`, a runner on the maintainer's machine, for the heavy jobs (sanitizers, fuzzing, analyze) and for
+#   - shared Linux runners for the light jobs, amd64 Docker runners and the Mac's arm64 Docker runner, so an untagged
+#     job runs on either architecture;
+#   - `knit-local`, a shell runner on a Linux workstation, for the heavy jobs (sanitizers, fuzzing, analyze) and for
 #     `verify:periphery:linux`, since Periphery is built from source there;
-#   - `macos`, the Mac Mini's shell runner, for the Apple jobs: `build:ios:xcode` (ADR 2026-09.de8f), the signed
+#   - `macos`, the Mac's shell runner, for the Apple jobs: `build:ios:xcode` (ADR 2026-09.de8f), the signed
 #     `build:ios:signed` (ADR 2026-09.zawh), `build:ios:release` and the manual `release:testflight` (ADR 2026-10.8cy5),
 #     `test:macos`, `test:ios:simulator` (ADR 2026-09.jcdx) and `verify:periphery`. Every iPhone build happens there.
 # The maintainer's private notes have the runner setup; `.agents/context/toolchain.md` has what a contributor needs.
+# The signing jobs take the team from the project's KNIT_DEVELOPMENT_TEAM CI/CD variable, never from this file
+# (ADR 2026-10.ab6k).
 
 workflow:
   rules:
@@ -30,7 +32,7 @@ stages:
 variables:
   SWIFT_IMAGE: "swift:6.4-noble@sha256:64bab762bc73a3fda6d9ebc559258bd6d7660c10a705bb25ecacad2f99d066f9"
   SWIFTLINT_VERSION: "0.65.1"
-  # One SHA-256 per architecture: the Mac's Docker runner is arm64, linux-host and service are amd64.
+  # One SHA-256 per architecture: the Mac's Docker runner is arm64, the others amd64.
   SWIFTLINT_SHA256_AMD64: "caeed6f4a679c35539ffaf124f6c4ab4a8416917f7d8796279dc52b74026059d"
   SWIFTLINT_SHA256_ARM64: "9ffa52f478e6d8eb485d37d14715ffac90abc81c58f3370d598bf75be05605f8"
 
@@ -61,13 +63,13 @@ variables:
     - unzip -q -o -d /usr/local/bin /tmp/swiftlint.zip swiftlint
 
 .local:
-  # A shell job on the maintainer's desktop has no container limits. The runner takes one job at a time
+  # A shell job on a workstation has no container limits. The runner takes one job at a time
   # (`concurrent = 1`), and check.sh and fuzz.sh cap their own parallelism and priority.
   tags:
     - knit-local
 
 .mac:
-  # The Mac Mini's shell runner, one job at a time and shared with every project's `macos` jobs. Its jobs run as
+  # The Mac's shell runner, one job at a time and shared with every project's `macos` jobs. Its jobs run as
   # the maintainer's account with Xcode, XcodeGen and xcbeautify on the PATH (.agents/context/toolchain.md).
   tags:
     - macos
@@ -134,7 +136,6 @@ build:ios:signed:
     - if: $CI_PROJECT_PATH == "knit/knit-ios"
   variables:
     GIT_CLEAN_FLAGS: -ffdx -e /.build-xcode/
-    KNIT_DEVELOPMENT_TEAM: <team id>
   script:
     - scripts/check.sh device
   artifacts:
@@ -219,7 +220,7 @@ test:asan:
 
 verify:analyze:
   # SourceKit holds every analyzed file's compiler instance until the run ends, and on Linux that outgrows
-  # linux-host's 8 GB per-job cap (OOM-killed at 8.35 GB, pipeline 795). knit-local has no cap and SwiftLint 0.65.1.
+  # the shared runners' 8 GB per-job cap (OOM-killed at 8.35 GB). knit-local has no cap and SwiftLint 0.65.1.
   extends: .local
   stage: verify
   needs: [build:linux]
@@ -282,6 +283,5 @@ release:testflight:
   resource_group: app-store-connect
   variables:
     GIT_CLEAN_FLAGS: -ffdx -e /.build-xcode/
-    KNIT_DEVELOPMENT_TEAM: <team id>
   script:
     - scripts/check.sh upload

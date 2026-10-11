@@ -23,8 +23,12 @@ public enum PeerCommand: Equatable, Sendable {
     /// Print the usage.
     case help
 
-    /// Dongle A, an nRF52840 running `firmware/knit-hci`, whatever `hciN` it is (`.agents/context/linux-peer.md`).
-    public static let defaultAdapterAddress = "C0:FF:EE:00:00:0A"
+    /// The variable naming the default adapter's address, the lab's dongle A, whatever `hciN` it is. The lab's addresses
+    /// stay out of the repository: `.private/lab.env` holds them, and the scripts export them (ADR 2026-10.ab6k).
+    public static let adapterVariable = "KNIT_ADAPTER_A"
+    /// The variable listing, comma-separated, the adapters refused unless shared: ones with live connections of their
+    /// own (`AdapterSelection.shared`).
+    public static let reservedVariable = "KNIT_ADAPTER_RESERVED"
 
     /// The usage text.
     public static let usage = """
@@ -38,14 +42,15 @@ public enum PeerCommand: Equatable, Sendable {
             knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
 
-        A headless Knit node on a Bluetooth adapter of its own, found by its address (dongle A's unless
-        --adapter-address names another), whatever hciN the kernel made it. Commands arrive as JSON lines on standard
-        input, and replies and events leave as JSON lines on standard output. The maintainer's adapter is refused
-        unless --shared-adapter says other devices use it too; the peer then leaves every link it did not make alone.
+        A headless Knit node on a Bluetooth adapter of its own, found by its address (--adapter-address, or
+        $KNIT_ADAPTER_A), whatever hciN the kernel made it. Commands arrive as JSON lines on standard input, and
+        replies and events leave as JSON lines on standard output. The adapters in $KNIT_ADAPTER_RESERVED are
+        refused unless --shared-adapter says other devices use them too; the peer then leaves every link it did not
+        make alone.
         """
 
     /// Parses the arguments after the program name. `environment` supplies `HOME` and `XDG_STATE_HOME` for the
-    /// default state directory.
+    /// default state directory, and the default and reserved adapters (`adapterVariable`, `reservedVariable`).
     public static func parse(_ arguments: [String], environment: [String: String]) throws(UsageError) -> Self {
         var rest = ArraySlice(arguments)
         let verb = rest.first.flatMap { $0.hasPrefix("-") ? nil : $0 }
@@ -77,10 +82,13 @@ public enum PeerCommand: Equatable, Sendable {
 
 /// How to run the node.
 public struct RunOptions: Equatable, Sendable {
-    /// The address of the adapter to run on.
-    public var adapterAddress = PeerCommand.defaultAdapterAddress
-    /// Whether other devices use the adapter too, which the maintainer's needs (`AdapterSelection.shared`).
+    /// The address of the adapter to run on, or `nil` when neither the flag nor the environment names one. Only a
+    /// BlueZ radio needs it.
+    public var adapterAddress: String?
+    /// Whether other devices use the adapter too, which a reserved one needs (`AdapterSelection.shared`).
     public var sharedAdapter = false
+    /// The adapters refused unless shared, from `PeerCommand.reservedVariable`.
+    public var reservedAdapters: [String] = []
     /// `android` or `ios`, or `nil` for the radio's own: `android` on BlueZ, and `ios` on a Mac, whose CoreBluetooth
     /// advertises as an iPhone does.
     public var radioProfile: String?
@@ -131,8 +139,9 @@ public struct RunOptions: Equatable, Sendable {
 
     init(flags: inout Flags, environment: [String: String]) throws(UsageError) {
         stateDirectory = try StateDirectory.resolve(flags: &flags, environment: environment)
-        adapterAddress = flags.take("--adapter-address") ?? adapterAddress
+        adapterAddress = flags.take("--adapter-address") ?? AdapterEnvironment.address(environment)
         sharedAdapter = flags.take(switch: "--shared-adapter")
+        reservedAdapters = AdapterEnvironment.reserved(environment)
         radioProfile = try flags.take("--radio-profile", oneOf: Self.profiles)
         name = flags.take("--name")
         let level = try flags.take("--log", oneOf: Self.logLevels) ?? "info"
@@ -184,10 +193,12 @@ public struct RunOptions: Equatable, Sendable {
 /// above every phone in range (`keygen --above`) checks the advert without linking to anyone. A node that advertises
 /// only the `0xFE30` UUID, as an iPhone does, is linked just long enough to read its payload over GATT.
 public struct ScanOptions: Equatable, Sendable {
-    /// The address of the adapter to scan on.
-    public var adapterAddress = PeerCommand.defaultAdapterAddress
-    /// Whether other devices use the adapter too, which the maintainer's needs (`AdapterSelection.shared`).
+    /// The address of the adapter to scan on, or `nil` when neither the flag nor the environment names one.
+    public var adapterAddress: String?
+    /// Whether other devices use the adapter too, which a reserved one needs (`AdapterSelection.shared`).
     public var sharedAdapter = false
+    /// The adapters refused unless shared, from `PeerCommand.reservedVariable`.
+    public var reservedAdapters: [String] = []
     /// How long to listen.
     public var seconds = 20
     /// The profile to advertise under, or `nil` to stay silent.
@@ -202,8 +213,9 @@ public struct ScanOptions: Equatable, Sendable {
     init(flags: inout Flags, environment: [String: String]) throws(UsageError) {
         stateDirectory = try StateDirectory.resolve(flags: &flags, environment: environment)
         logLevel = try flags.take("--log", oneOf: ["debug", "info", "warning"]) ?? logLevel
-        adapterAddress = flags.take("--adapter-address") ?? adapterAddress
+        adapterAddress = flags.take("--adapter-address") ?? AdapterEnvironment.address(environment)
         sharedAdapter = flags.take(switch: "--shared-adapter")
+        reservedAdapters = AdapterEnvironment.reserved(environment)
         advertise = try flags.take("--advertise", oneOf: RunOptions.profiles)
         if let text = flags.take("--seconds") {
             guard let parsed = Int(text), (1...Self.longest).contains(parsed) else {
@@ -316,6 +328,18 @@ internal struct Flags {
         if let flag = values.keys.min() {
             throw .unknownFlag(flag)
         }
+    }
+}
+
+/// The adapters the environment names (`PeerCommand.adapterVariable`, `PeerCommand.reservedVariable`).
+internal enum AdapterEnvironment {
+    static func address(_ environment: [String: String]) -> String? {
+        environment[PeerCommand.adapterVariable].flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    static func reserved(_ environment: [String: String]) -> [String] {
+        (environment[PeerCommand.reservedVariable] ?? "").split(separator: ",").map { String($0.filter { $0 != " " }) }
+            .filter { !$0.isEmpty }
     }
 }
 

@@ -15,7 +15,7 @@ root=$(git rev-parse --show-toplevel)
 cd "$root"
 
 # This machine runs a lot besides Knit, so every build here is a considerate neighbour: at most $SWIFT_JOBS
-# compilers at a time, at low CPU priority, the way linux-host's CI containers are capped (.agents/rules/build-and-test.md).
+# compilers at a time, at low CPU priority, the way the shared CI runners' containers are capped (.agents/rules/build-and-test.md).
 # Raise them for one run with SWIFT_JOBS=16 KNIT_NICE=0 when the machine is otherwise idle.
 swift_jobs=${SWIFT_JOBS:-8}
 jobs=(-j "$swift_jobs")

@@ -14,13 +14,13 @@
     @Suite(.timeLimit(.minutes(1))) struct BlueZEdgeTests {
         /// Probes on a thread of its own: the probe blocks, and the fake must keep answering on this one.
         private func probe(
-            _ fake: FakeBlueZ, for address: String, shared: Bool = false
+            _ fake: FakeBlueZ, for address: String, shared: Bool = false, reserved: [String] = []
         ) throws -> Result<AdapterProbe.Status, AdapterProbe.Failure> {
             let handoff = Handoff()
             let bus = fake.address
             let thread = Thread {
                 let outcome = Result { () throws(AdapterProbe.Failure) in
-                    try AdapterProbe.select(address: address, shared: shared, on: .peer(bus), waiting: 2000)
+                    try AdapterProbe.select(address: address, shared: shared, reserved: reserved, on: .peer(bus), waiting: 2000)
                 }
                 handoff.result.withLock { $0 = outcome }
             }
@@ -55,15 +55,20 @@
             }
         }
 
-        @Test func theProbeRefusesTheMaintainersAdapterBeforeAskingBlueZ() throws {
+        @Test func theProbeRefusesAReservedAdapterBeforeAskingBlueZ() throws {
             let fake = try FakeBlueZ()
             fake.adapterAddress = "A0:00:00:00:00:01"
-            guard case .failure(.refused(.reservedAdapter)) = try probe(fake, for: "A0:00:00:00:00:01") else {
+            let reserved = ["a0:00:00:00:00:01"]
+            guard case .failure(.refused(.reservedAdapter)) = try probe(fake, for: "A0:00:00:00:00:01", reserved: reserved) else {
                 Issue.record("expected a refusal")
                 return
             }
             #expect(fake.calls.isEmpty, "BlueZ was never asked")
-            #expect(try probe(fake, for: "A0:00:00:00:00:01", shared: true).get().adapter.shared)
+            #expect(try probe(fake, for: "A0:00:00:00:00:01", shared: true, reserved: reserved).get().adapter.shared)
+            guard case .failure(.refused(.notAnAddress("nope"))) = try probe(fake, for: FakeBlueZ.adapterAddress, reserved: ["nope"]) else {
+                Issue.record("expected a reserved list that does not parse to be refused")
+                return
+            }
         }
 
         @Test func theProbeSaysWhenBlueZDoesNotAnswer() throws {
@@ -78,7 +83,7 @@
         @Test func theProbeSaysWhenThereIsNoBus() {
             #expect(throws: AdapterProbe.Failure.self) {
                 try AdapterProbe.select(
-                    address: FakeBlueZ.adapterAddress, shared: false, on: .peer("unix:path=/nonexistent/knit"), waiting: 100)
+                    address: FakeBlueZ.adapterAddress, shared: false, reserved: [], on: .peer("unix:path=/nonexistent/knit"), waiting: 100)
             }
         }
 

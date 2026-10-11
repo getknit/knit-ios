@@ -42,14 +42,16 @@ public struct BluetoothAddress: Hashable, Sendable, CustomStringConvertible {
 
 /// Which adapter the peer may use, and the address it must have. An adapter is chosen by its address, since its name is
 /// only the order its driver bound it in: a reboot on 2026-10-01 made the ATS2851 `hci0` and the maintainer's adapter
-/// `hci1` (ADR 2026-09.5ftc, amended 2026-10-01). The maintainer's adapter has live connections, so it is refused unless
-/// the selection is shared, which the maintainer allows one session at a time (`.agents/rules/devices.md`).
+/// `hci1` (ADR 2026-09.5ftc, amended 2026-10-01). A reserved adapter, such as the maintainer's own with its live
+/// connections, is refused unless the selection is shared, which the maintainer allows one session at a time
+/// (`.agents/rules/devices.md`). Which adapters are reserved is the caller's to say: the lab's addresses stay out of the
+/// repository (ADR 2026-10.ab6k).
 public struct AdapterSelection: Equatable, Sendable {
     /// Why an adapter was refused.
     public enum Refusal: Error, Equatable, Sendable {
         /// Not an `hciN` name.
         case notAnAdapterName(String)
-        /// The maintainer's adapter, which is used only when shared.
+        /// A reserved adapter, which is used only when shared.
         case reservedAdapter
         /// Not a Bluetooth address.
         case notAnAddress(String)
@@ -59,9 +61,6 @@ public struct AdapterSelection: Equatable, Sendable {
         case wrongAddress(adapter: String, expected: BluetoothAddress, found: String)
     }
 
-    /// The maintainer's own adapter, an Intel controller holding their speaker and keyboard.
-    static let maintainersAdapter = "A0:00:00:00:00:01"
-
     /// The adapter's name this boot, `hci1`.
     public let name: String
     /// The address it must have.
@@ -69,24 +68,36 @@ public struct AdapterSelection: Equatable, Sendable {
     /// Whether other devices use the adapter too. The peer then leaves alone every link it did not make.
     public let shared: Bool
 
-    /// Selects `name`, which must have `expectedAddress`. Refuses anything that is not `hciN`, and the maintainer's
-    /// adapter unless `shared`.
-    public init(name: String, expectedAddress: String, shared: Bool = false) throws(Refusal) {
+    /// Selects `name`, which must have `expectedAddress`. Refuses anything that is not `hciN`, and a `reserved` adapter
+    /// unless `shared`.
+    public init(name: String, expectedAddress: String, shared: Bool = false, reserved: Set<BluetoothAddress> = []) throws(Refusal) {
         let digits = name.utf8.dropFirst("hci".utf8.count)
         guard name.hasPrefix("hci"), !digits.isEmpty, digits.allSatisfy({ (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }) else {
             throw .notAnAdapterName(name)
         }
         self.name = name
-        address = try Self.admit(expectedAddress, shared: shared)
+        address = try Self.admit(expectedAddress, shared: shared, reserved: reserved)
         self.shared = shared
     }
 
-    /// Parses `text`, and refuses the maintainer's adapter unless `shared`.
-    static func admit(_ text: String, shared: Bool) throws(Refusal) -> BluetoothAddress {
+    /// Parses each of `texts`, the reserved adapters a caller was given.
+    public static func reserved(_ texts: [String]) throws(Refusal) -> Set<BluetoothAddress> {
+        var addresses: Set<BluetoothAddress> = []
+        for text in texts {
+            guard let parsed = BluetoothAddress(text) else {
+                throw .notAnAddress(text)
+            }
+            addresses.insert(parsed)
+        }
+        return addresses
+    }
+
+    /// Parses `text`, and refuses a `reserved` adapter unless `shared`.
+    static func admit(_ text: String, shared: Bool, reserved: Set<BluetoothAddress>) throws(Refusal) -> BluetoothAddress {
         guard let parsed = BluetoothAddress(text) else {
             throw .notAnAddress(text)
         }
-        guard parsed.description != maintainersAdapter || shared else {
+        guard !reserved.contains(parsed) || shared else {
             throw .reservedAdapter
         }
         return parsed
@@ -95,9 +106,10 @@ public struct AdapterSelection: Equatable, Sendable {
     /// Selects whichever adapter BlueZ lists with `address`, under the name the kernel gave it this boot, from the
     /// objects of a `GetManagedObjects` answer.
     static func find(
-        _ address: String, shared: Bool, among objects: [(path: String, interfaces: [(name: String, properties: DBusValue)])]
+        _ address: String, shared: Bool, reserved: Set<BluetoothAddress>,
+        among objects: [(path: String, interfaces: [(name: String, properties: DBusValue)])]
     ) throws(Refusal) -> Self {
-        let wanted = try admit(address, shared: shared)
+        let wanted = try admit(address, shared: shared, reserved: reserved)
         let root = "/org/bluez/"
         let match = objects.first { object in
             let adapter = object.interfaces.first { $0.name == BlueZ.adapterInterface }
@@ -106,7 +118,7 @@ public struct AdapterSelection: Equatable, Sendable {
         guard let match else {
             throw .absent(wanted.description)
         }
-        return try Self(name: String(match.path.dropFirst(root.count)), expectedAddress: address, shared: shared)
+        return try Self(name: String(match.path.dropFirst(root.count)), expectedAddress: address, shared: shared, reserved: reserved)
     }
 
     /// The adapter's BlueZ object path, `/org/bluez/hci1`.

@@ -1,39 +1,91 @@
+<div align="center">
+
+<img src="docs/images/icon.png" alt="Knit's app icon: a coral K drawn as stitched nodes" width="96">
+
 # Knit for iOS
 
-Message the people around you when there is no network at all, from an iPhone. Knit for iOS is the iPhone
-port of [Knit](https://github.com/getknit/knit), the offline mesh messenger for Android, and it talks to
-Android phones directly over Bluetooth LE.
+**Message the people around you when there is no network at all, from an iPhone.**
 
-> [!NOTE]
-> Knit for iOS is in early development and has no release yet. The first milestone is an iPhone and an
-> Android phone exchanging Nearby-room posts and direct messages as peers on the same mesh.
-> [`.agents/specs/mvp.md`](.agents/specs/mvp.md) lists what that has to prove.
+Phones in range link over Bluetooth LE and relay for one another, so a message reaches people you were never
+in range of yourself. There is no server, no account and no phone number.
+
+[![CI](https://github.com/getknit/knit-ios/actions/workflows/ci.yml/badge.svg)](https://github.com/getknit/knit-ios/actions/workflows/ci.yml)
+![Platform](https://img.shields.io/badge/iOS-18%2B-000000?logo=apple&logoColor=white)
+![Swift](https://img.shields.io/badge/Swift-6.4-F05138?logo=swift&logoColor=white)
+![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
+
+<img src="docs/images/nearby.png"
+     alt="Knit's Nearby room on an iPhone: posts from people in range, a campfire photo, emoji reactions and a message composer"
+     width="280">
+
+<sub>The <b>Nearby</b> room: posts and photos from everyone in Bluetooth range, with no network.</sub>
+
+</div>
+
+---
+
+## About
+
+Knit for iOS is the iPhone port of [Knit](https://github.com/getknit/knit), the offline mesh messenger for
+Android. An iPhone speaks the same protocol as Knit for Android, so the two link directly and relay for each
+other on one mesh.
+
+Version 1.0.0 is headed for the App Store and has not been released yet. Everything below is in that build.
+
+## Features
+
+- **The Nearby room** is an open chat for everyone in range. Posts are signed, so nobody can post as you,
+  but they are not encrypted, and neither are the photos posted there.
+- **Direct messages** are end-to-end encrypted, and so are their photos. The phones that carry them cannot
+  read them. Messages from people you haven't chatted with wait in Requests until you accept them.
+- **Groups** of up to eight people are end-to-end encrypted too. Start one with anyone you've chatted with or
+  verified, then rename it or leave it. Groups started on Android phones work as well.
+- **Send photos in any chat** and save the ones you receive. GIFs and animated stickers play, and you can
+  react to a message with one of six emoji.
+- **Verify people in person** by scanning their code with the camera or comparing safety numbers. It works
+  with Android phones too.
+- **Block or report someone** from their profile, a message or a request. Content filtering runs on the
+  iPhone itself: it hides explicit photos and abusive messages from other people until you tap them, and
+  won't send explicit photos or abuse to Nearby from your iPhone.
+- **Knit stays readable at the largest text sizes,** and its text and buttons meet WCAG AA contrast.
 
 ## How it works
 
-Phones in range link up over Bluetooth LE and pass each message from one to the next, so it can reach
-people you were never in range of yourself. There is no server, no account and no phone number. A phone
-that meets someone later hands over what it was carrying for them.
+Every phone running Knit is a node. Phones in range link over Bluetooth LE and pass each message from one to
+the next. A phone that meets someone later hands over what it was carrying for them, so messages sent while
+you are out of range wait on the phones around you, for up to a day, until you are back.
 
-- **Direct messages are end-to-end encrypted.** The phones that carry a direct message cannot read it or open
-  its photo. The first release uses Knit's static-key scheme, which has no forward secrecy; the epoch ratchet
-  that Knit for Android already runs comes next.
-- **Group chats are end-to-end encrypted too.** Start one with up to seven people you've chatted with or
-  verified. Only its members can read its messages and see its photos. The group's name and member list travel
-  unencrypted, and group messages, like direct ones, have no forward secrecy yet.
-- **The Nearby room is open to everyone in range.** Posts are signed, so nobody can post as you, but they
-  are not encrypted, and neither are the photos posted there.
-- **It meshes with Android.** An iPhone speaks the same protocol as Knit for Android and relays for Android
-  phones the way they relay for each other. Knit for Android also meshes over Wi-Fi Aware, LoRa boards and
-  internet relays, and an iPhone reaches those parts of the mesh through the Android phones around it.
-- **Knit finds new people while it is open, and reconnects on its own when it loses its last link.** iOS keeps
-  an app's open Bluetooth links running in the background, but it doesn't let other phones discover the app
-  there, and it suspends the app until something wakes it. So when your iPhone is left with no link, Knit
-  looks for nearby phones itself and reconnects to the first one it can, without being opened. If it keeps
-  finding phones it can't connect to, it stops after a few tries and waits until you open it. Newer builds of
-  Knit for Android wake it when they have a message for you, and the message arrives within seconds with a
-  notification. Messages from a phone that can't wake Knit wait on the link until you open it. Messages sent
-  while you are out of range wait on the phones around you, for up to a day, until you are back in range.
+Knit for Android also meshes over Wi-Fi Aware, LoRa boards and internet relays. An iPhone reaches those parts
+of the mesh through the Android phones around it.
+
+### On iPhone, in the background
+
+Knit's open links keep running when it's in the background. iOS doesn't let other phones discover a
+backgrounded app, though, and suspends it until something wakes it, so Knit finds new people while it's open.
+
+- **It reconnects on its own.** When your iPhone loses its last link, Knit looks for nearby phones and
+  reconnects to the first one it can, without being opened. If the phones it finds won't connect, it stops
+  after a few tries and waits until you open it.
+- **Some phones wake it.** Newer builds of Knit for Android wake Knit when they have a message for you, and it
+  arrives within seconds with a notification. Messages from a phone that can't wake Knit wait on the link
+  until you next open it.
+
+## Security
+
+- Direct messages and group messages are end-to-end encrypted, and so are their photos.
+- A group's name and member list travel unencrypted, and so do reactions, so the phones that pass them on can
+  see who reacted to a message, though never what it says.
+- Version 1 direct and group messages use Knit's static-key scheme, which has no forward secrecy yet. The
+  epoch ratchet that Knit for Android already runs comes next.
+- The Nearby room is public: everyone in range can read it.
+
+Report vulnerabilities privately, as [`SECURITY.md`](SECURITY.md) describes. It also lists the limits that
+are known and deliberate.
+
+## Requirements
+
+- An iPhone running iOS 18 or later, with Bluetooth on.
+- Other people nearby running Knit, on iPhone or Android.
 
 ## Build
 
@@ -50,19 +102,29 @@ scripts/check.sh all                  # every gate that runs on Linux, sanitizer
 scripts/check.sh xcode                # on a Mac: the iOS app, for the iPhone and the Simulator
 ```
 
-[`.agents/context/toolchain.md`](.agents/context/toolchain.md) lists every tool and version the gates use.
+To sign the app for your own iPhone, put `DEVELOPMENT_TEAM = <your team id>` in `App/Local.xcconfig`, which
+git ignores. [`.agents/context/toolchain.md`](.agents/context/toolchain.md) lists every tool and version the
+gates use.
 
 ## Contributing
 
 Start with [`CONTRIBUTING.md`](CONTRIBUTING.md). Contributors and coding agents both begin at
 [`AGENTS.md`](AGENTS.md), which routes to the rules, reference and decisions in [`.agents/`](.agents/).
 The decisions behind the design are indexed in
-[`.agents/memory/decisions.md`](.agents/memory/decisions.md).
+[`.agents/memory/decisions.md`](.agents/memory/decisions.md), and [`CHANGELOG.md`](CHANGELOG.md) lists what
+changed.
 
-## Security
+## Support
 
-Please report vulnerabilities privately, as [`SECURITY.md`](SECURITY.md) describes. It also lists the
-limits that are known and deliberate.
+Knit is free and open source, with no ads and no tracking, and it is funded by tips. If it's useful to you,
+you can leave a one-off tip on Ko-fi or set up a recurring one on Liberapay or GitHub Sponsors:
+
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-leave%20a%20tip-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/knit)
+[![Support on Liberapay](https://img.shields.io/badge/Liberapay-give%20recurring-F6C915?logo=liberapay&logoColor=black)](https://liberapay.com/zaventh/)
+[![Sponsor on GitHub](https://img.shields.io/badge/GitHub%20Sponsors-sponsor-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/getknit)
+
+Tips are optional and buy no special treatment. Knit is GPLv3 and stays that way. Reporting bugs and telling
+people about Knit help just as much.
 
 ## License
 
@@ -78,4 +140,5 @@ implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 for more details. You should have received a copy of the GNU General Public License along with this
 program; see [`COPYING`](COPYING). If not, see <https://www.gnu.org/licenses/>.
 
-Third-party components and their licenses are listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+Third-party components and their licenses, including the bundled models and the demo pictures in the
+screenshot, are listed in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

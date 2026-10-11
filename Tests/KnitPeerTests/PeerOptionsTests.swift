@@ -15,9 +15,10 @@ import Testing
         return options
     }
 
-    @Test func runIsTheDefaultOnDongleAWithTheRadiosOwnProfile() throws {
+    @Test func runIsTheDefaultWithTheRadiosOwnProfile() throws {
         let options = try run([])
-        #expect(options.adapterAddress == "C0:FF:EE:00:00:0A", "by address, whatever hciN it is")
+        #expect(options.adapterAddress == nil, "no address of the lab's in the code")
+        #expect(options.reservedAdapters.isEmpty)
         #expect(options.radioProfile == nil, "the radio's own")
         #expect(options.stateDirectory == "/home/tester/.local/state/knit-peer/default")
         #expect(options.name == nil)
@@ -25,6 +26,24 @@ import Testing
         #expect(options.rssiFloor == nil, "Android's floor unless asked")
         #expect(!options.sharedAdapter)
         #expect(try run(["run"]) == options)
+    }
+
+    /// The lab's adapters come from the environment (`.private/lab.env`), and a flag still wins.
+    @Test func theEnvironmentNamesTheDefaultAndReservedAdapters() throws {
+        let lab = home.merging([
+            PeerCommand.adapterVariable: "C0:FF:EE:00:00:0A", PeerCommand.reservedVariable: "A0:00:00:00:00:01, A0:00:00:00:00:02,",
+        ]) { $1 }
+        let options = try run([], environment: lab)
+        #expect(options.adapterAddress == "C0:FF:EE:00:00:0A", "by address, whatever hciN it is")
+        #expect(options.reservedAdapters == ["A0:00:00:00:00:01", "A0:00:00:00:00:02"])
+        #expect(try run(["--adapter-address", "00:11:22:33:44:55"], environment: lab).adapterAddress == "00:11:22:33:44:55")
+        guard case .scan(let scan) = try PeerCommand.parse(["scan"], environment: lab) else {
+            Issue.record("not a scan")
+            return
+        }
+        #expect(scan.adapterAddress == "C0:FF:EE:00:00:0A")
+        #expect(scan.reservedAdapters == options.reservedAdapters)
+        #expect(try run([], environment: home.merging([PeerCommand.adapterVariable: ""]) { $1 }).adapterAddress == nil)
     }
 
     /// An index names whichever adapter the kernel bound in that place this boot, so no flag takes one.
@@ -189,7 +208,7 @@ import Testing
         }
         #expect(quiet.seconds == 20)
         #expect(quiet.advertise == nil)
-        #expect(quiet.adapterAddress == PeerCommand.defaultAdapterAddress)
+        #expect(quiet.adapterAddress == nil)
         guard
             case .scan(let loud) = try PeerCommand.parse(
                 ["scan", "--seconds", "5", "--advertise", "ios", "--adapter-address", "0A:BC:DE:00:00:A1"], environment: home)

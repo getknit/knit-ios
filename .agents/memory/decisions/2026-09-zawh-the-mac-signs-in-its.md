@@ -11,12 +11,12 @@ topics: [toolchain, build, ci, signing]
 Status: Accepted (2026-09-28)
 
 **Context:** the first signed build (ADR 2026-09.de8f) came from Xcode at the Mac's desk. On the free Personal
-Team `<team id>`, it made an Apple Development certificate and a 7-day profile for `app.getknit.knit.dev`. Over
-ssh, `codesign` failed with `errSecInternalComponent`, both before and after "Always Allow" on the key, and so
-did `sudo launchctl asuser`. An ssh login gets a security session of its own, and the login Keychain stays
-locked in it. That looked like needing a second keychain with its password in a file. It would also have
-needed a weekly visit to the desk, because renewing a free profile needs the Xcode account, which is kept in
-the same locked Keychain.
+The maintainer's team, it made an Apple Development certificate and a 7-day profile for
+`app.getknit.knit.dev`. Over ssh, `codesign` failed with `errSecInternalComponent`, both before and after
+"Always Allow" on the key, and so did `sudo launchctl asuser`. An ssh login gets a security session of its
+own, and the login Keychain stays locked in it. That looked like needing a second keychain with its password
+in a file. It would also have needed a weekly visit to the desk, because renewing a free profile needs the
+Xcode account, which is kept in the same locked Keychain.
 
 A launchd job loaded into `gui/501` runs in the desktop session instead, and there `codesign` signed a test
 binary (2026-09-28). `xcodebuild -allowProvisioningUpdates` in such a job, started from ssh, built and signed
@@ -35,17 +35,18 @@ already had, but not make one. The device tests' runner, a new App ID, got its p
 2026-09.63em). Until the command line sees the account again, a profile the gate cannot find, a new App ID's or an
 expired one's, comes from the window too. The `.dev` profile expires on 2026-10-05.
 
-**Amended 2026-10-03:** the team joined the Apple Developer Program and kept the id `<team id>`. The
+**Amended 2026-10-03:** the team joined the Apple Developer Program and kept its team id. The
 free-provisioning limit below applies only to profiles made before then, and the last of them expires on
-2026-10-06. The Mac now holds an App Store Connect API key for the team, and `check.sh device` and `devicetest`
-hand it to `xcodebuild` when `KNIT_ASC_KEY_ID` and `KNIT_ASC_ISSUER_ID` name it, from the environment or
-`App/Local.xcconfig`. That gets around "No Accounts": with the cached `.dev` profile moved aside, `check.sh device`
-fetched a new one that lasts a year. Without a key, the gate falls back to Xcode's account and says so.
+2026-10-06. The Mac now holds an App Store Connect API key for the team, and `check.sh device` and
+`devicetest` hand it to `xcodebuild` when `KNIT_ASC_KEY_ID` and `KNIT_ASC_ISSUER_ID` name it, from the
+environment or `App/Local.xcconfig`. That gets around "No Accounts": with the cached `.dev` profile moved
+aside, `check.sh device` fetched a new one that lasts a year. Without a key, the gate falls back to Xcode's
+account and says so.
 
 **Consequences / limits:**
 
-- **Anyone who runs commands as `maintainer` on the Mac can sign as the team.** That covers an ssh login, and a
-  `macos` job from any project on the server, since the runner is an instance runner. The job's rule keeps
+- **Anyone who runs commands as the Mac's build account can sign as the team.** That covers an ssh login, and
+  a `macos` job from any project on the server, since the runner is an instance runner. The job's rule keeps
   forks from signing through this pipeline, but a separate account for the runner is the real fix, as
   `toolchain.md` already says.
 - **The Mac must be logged in at the desktop.** It logs in by itself after a restart; if it ever stops doing

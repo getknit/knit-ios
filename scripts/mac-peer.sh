@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# knit-peer on the Mac, on CoreBluetooth, for checklist M (ADR 2026-09.vcdk). Runs on the Mac, from linux-host through ssh.
+# knit-peer on the Mac, on CoreBluetooth, for checklist M (ADR 2026-09.vcdk). Runs on the Mac, from the Linux machine
+# through ssh.
 #
 #     scripts/mac-peer.sh build           # swift build --product knit-peer, then sign it in the desktop session
 #     scripts/mac-peer.sh run [ARGS...]   # the signed peer in the desktop session, JSON lines on stdin and stdout
@@ -16,7 +17,7 @@ cd "$root"
 peer=$root/.build/out/Products/Debug/knit-peer
 
 if [ "$(uname -s)" != Darwin ]; then
-	echo "mac-peer.sh runs on the Mac: ssh mac.example 'cd source/knit-ios-mirror && scripts/mac-peer.sh $*'" >&2
+	echo "mac-peer.sh runs on the Mac: ssh \$KNIT_MAC_HOST 'cd source/knit-ios-mirror && scripts/mac-peer.sh $*'" >&2
 	exit 2
 fi
 

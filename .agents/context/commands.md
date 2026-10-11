@@ -30,10 +30,11 @@ tree, so switching between them never rebuilds the plain debug tree.
 ## Other scripts
 
 - **The Mac Mini from here:** `scripts/mac.sh run <command…>` copies this working tree, `.git` included, to
-  `~/source/knit-ios-mirror` on the Mac, runs the command there and returns its exit status. Use
-  `run bash -c '…'` for pipes and `&&`. `sync`, `pull <path> [dest]` and `shell` do one step each. Ignored
-  files stay where they are, so each side keeps its own `.build/`, and `.env` and `.private/` never leave
-  this machine. Anything changed in the mirror is lost at the next sync.
+  `~/source/knit-ios-mirror` on the Mac at `$KNIT_MAC_HOST` (set it, or put it in `.private/lab.env`), runs
+  the command there and returns its exit status. Use `run bash -c '…'` for pipes and `&&`. `sync`, `pull
+  <path> [dest]` and `shell` do one step each. Ignored files stay where they are, so each side keeps its own
+  `.build/`, and `.env` and `.private/` never leave this machine. Anything changed in the mirror is lost at
+  the next sync.
 - **Coverage floors:** `python3 scripts/coverage-gate.py --scratch-path .build-cov --ratchet` raises the
   floors in `scripts/coverage-floors.json` to today's figures. It never lowers one.
 - **Fuzzing:** `scripts/fuzz.sh [seconds]` builds `Fuzz/` with `-sanitize=fuzzer,address` and runs every

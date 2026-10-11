@@ -10,12 +10,12 @@ topics: [interop, testing, app]
 
 Status: Accepted (2026-10-01)
 
-**Context:** the bridge (ADR 2026-09.kwa8) listened only on the phone's loopback, so every run kept the iPhone on
-linux-host's USB cable. That rules out range and relay runs with the phone in another room. Android's bridge already
-works over Wi-Fi, because adb does. Loopback was also the bridge's only lock: the protocol reads every thread's
-plaintext and sends as the user, and on Wi-Fi anyone on the network could connect. The maintainer's network is
-private and secured, so what needs locking out is every other network the phone joins, such as a café's or a
-hotspot.
+**Context:** the bridge (ADR 2026-09.kwa8) listened only on the phone's loopback, so every run kept the iPhone
+on the Linux machine's USB cable. That rules out range and relay runs with the phone in another room.
+Android's bridge already works over Wi-Fi, because adb does. Loopback was also the bridge's only lock: the
+protocol reads every thread's plaintext and sends as the user, and on Wi-Fi anyone on the network could
+connect. The maintainer's network is private and secured, so what needs locking out is every other network the
+phone joins, such as a café's or a hotspot.
 
 **Decision:** a debug build also listens on Wi-Fi, on port 5648, but only while the phone is on a network pinned
 over USB. `interop.py --host ADDRESS` connects there in place of `iproxy`.

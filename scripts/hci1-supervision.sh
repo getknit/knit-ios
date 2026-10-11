@@ -6,12 +6,13 @@
 #     sudo scripts/hci1-supervision.sh              # set it now, on each of them that is plugged in
 #     scripts/hci1-supervision.sh --udev-rule       # print udev rules that set it on every plug-in
 #
-# It touches only adapters with those addresses, whatever index the kernel gave them, and never the maintainer's.
+# It touches only adapters with those addresses, whatever index the kernel gave them, and never the maintainer's. The
+# addresses come from /etc/knit-hci.conf, which scripts/knit-hci.sh reads too: root-owned, since udev and sudo give no
+# environment, and out of the repository with the rest of the lab's (ADR 2026-10.ab6k).
 
 set -eu
 
-# Dongle A, dongle B and the ATS2851, in debugfs' lower case.
-knit_addresses="c0:ff:ee:00:00:0a c0:ff:ee:00:00:0b f0:0d:00:00:00:02"
+conf=/etc/knit-hci.conf
 # Units of 10 ms.
 timeout=500
 
@@ -28,6 +29,17 @@ fi
 
 if [ "$(id -u)" != 0 ]; then
 	echo "run it as root: sudo $0" >&2
+	exit 1
+fi
+
+if [ ! -f "$conf" ] || [ "$(stat -c %u "$conf")" != 0 ] || [ -n "$(find "$conf" -perm /022)" ]; then
+	echo "$conf must exist, be root's, and be writable by root alone" >&2
+	exit 1
+fi
+# Dongle A, dongle B and the ATS2851, in debugfs' lower case.
+knit_addresses=$(awk '$1 == "a" || $1 == "b" || $1 == "ats2851" { print tolower($2) }' "$conf" | tr '\n' ' ')
+if [ -z "$knit_addresses" ]; then
+	echo "$conf names no adapter" >&2
 	exit 1
 fi
 

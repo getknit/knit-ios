@@ -2,7 +2,7 @@
     import Glibc
 
     /// The check `knit-peer` makes before it does anything else: some adapter has the address it was given, and which
-    /// `hciN` that is this boot. If none has, the peer exits rather than wait, since another could be the maintainer's own.
+    /// `hciN` that is this boot. If none has, the peer exits rather than wait, since another could be a reserved one.
     ///
     /// It blocks for one round trip to BlueZ, which is fine before the radio starts and nowhere else.
     public enum AdapterProbe {
@@ -20,29 +20,35 @@
             case bus(String)
             /// BlueZ did not answer: bluetoothd is not running.
             case bluez(String)
-            /// No adapter has the address, or it is the maintainer's and not shared.
+            /// No adapter has the address, or it is reserved and not shared.
             case refused(AdapterSelection.Refusal)
         }
 
         /// How long each wait for BlueZ's answer lasts.
         private static let pollMilliseconds: Int32 = 50
 
-        /// Finds the adapter with `address` among those BlueZ lists.
-        public static func select(address: String, shared: Bool, timeoutMilliseconds: Int64 = 5000) throws(Failure) -> Status {
-            try select(address: address, shared: shared, on: .system, waiting: timeoutMilliseconds)
+        /// Finds the adapter with `address` among those BlueZ lists, refusing a `reserved` one unless `shared`.
+        public static func select(
+            address: String, shared: Bool, reserved: [String] = [], timeoutMilliseconds: Int64 = 5000
+        ) throws(Failure) -> Status {
+            try select(address: address, shared: shared, reserved: reserved, on: .system, waiting: timeoutMilliseconds)
         }
 
-        static func select(address: String, shared: Bool, on bus: BusConnection.Address, waiting: Int64) throws(Failure) -> Status {
+        static func select(
+            address: String, shared: Bool, reserved texts: [String], on bus: BusConnection.Address, waiting: Int64
+        ) throws(Failure) -> Status {
+            let reserved: Set<BluetoothAddress>
             do {
-                // Refuse the maintainer's adapter before asking BlueZ anything.
-                _ = try AdapterSelection.admit(address, shared: shared)
+                // Refuse a reserved adapter before asking BlueZ anything.
+                reserved = try AdapterSelection.reserved(texts)
+                _ = try AdapterSelection.admit(address, shared: shared, reserved: reserved)
             } catch {
                 throw .refused(error)
             }
             let objects = try managedObjects(on: bus, waiting: waiting)
             let selection: AdapterSelection
             do {
-                selection = try AdapterSelection.find(address, shared: shared, among: objects)
+                selection = try AdapterSelection.find(address, shared: shared, reserved: reserved, among: objects)
             } catch {
                 throw .refused(error)
             }

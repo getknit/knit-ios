@@ -5,7 +5,12 @@
 # (.agents/rules/devices.md). Install it root-owned, outside the tree, since sudo runs it:
 #
 #     sudo install -o root -g root -m 0755 scripts/knit-hci.sh /usr/local/sbin/knit-hci
-#     # /etc/sudoers.d/knit-hci:   maintainer ALL=(root) NOPASSWD: /usr/local/sbin/knit-hci *
+#     sudo install -o root -g root -m 0644 <your adapters> /etc/knit-hci.conf
+#     # /etc/sudoers.d/knit-hci:   <user> ALL=(root) NOPASSWD: /usr/local/sbin/knit-hci *
+#
+# /etc/knit-hci.conf names each adapter's address, one `NAME AA:BB:CC:DD:EE:FF` line each for a, b and ats2851. The
+# lab's addresses stay out of the repository (ADR 2026-10.ab6k), and sudo clears the environment, so they live in a
+# root-owned file that nobody else can write; this script refuses any other.
 #
 #     knit-hci name                                 # dongle A's hciN; needs no root
 #     sudo knit-hci btmon -w capture.btsnoop        # btmon -i hciN ...
@@ -21,6 +26,7 @@
 set -eu
 
 # Knit's adapters (.agents/context/linux-peer.md, "The adapter"). Only these addresses are ever selected.
+conf=/etc/knit-hci.conf
 adapter=a
 case ${1:-} in
 	a | b | ats2851)
@@ -28,10 +34,14 @@ case ${1:-} in
 		shift
 		;;
 esac
-case $adapter in
-	a) expected=C0:FF:EE:00:00:0A ;;
-	b) expected=C0:FF:EE:00:00:0B ;;
-	ats2851) expected=F0:0D:00:00:00:02 ;;
+if [ ! -f "$conf" ] || [ "$(stat -c %u "$conf")" != 0 ] || [ -n "$(find "$conf" -perm /022)" ]; then
+	echo "$conf must exist, be root's, and be writable by root alone" >&2
+	exit 1
+fi
+expected=$(awk -v want="$adapter" '$1 == want { print toupper($2); exit }' "$conf")
+case $expected in
+	[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]:[0-9A-F][0-9A-F]) ;;
+	*) echo "$conf names no address for $adapter" >&2; exit 1 ;;
 esac
 
 usage() {

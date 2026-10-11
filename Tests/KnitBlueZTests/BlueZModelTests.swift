@@ -8,16 +8,25 @@ import Testing
 @Suite struct BlueZModelTests {
     // MARK: The adapter
 
-    /// The maintainer's adapter is refused by its address, whatever index the kernel gave it this boot.
+    /// A reserved adapter, the maintainer's own in the lab, stands in for whatever the caller reserves.
+    private let reserved = Set([BluetoothAddress("A0:00:00:00:00:01")].compactMap(\.self))
+
+    /// A reserved adapter is refused by its address, whatever index the kernel gave it this boot.
     @Test(arguments: ["hci0", "hci1"])
-    func theMaintainersAdapterIsRefusedUnderAnyName(_ name: String) {
+    func aReservedAdapterIsRefusedUnderAnyName(_ name: String) {
         #expect(throws: AdapterSelection.Refusal.reservedAdapter) {
-            try AdapterSelection(name: name, expectedAddress: "a0:00:00:00:00:01")
+            try AdapterSelection(name: name, expectedAddress: "a0:00:00:00:00:01", reserved: reserved)
         }
     }
 
-    @Test func theMaintainersAdapterIsTakenOnlyAsSharedAndStillByItsAddress() throws {
-        let selection = try AdapterSelection(name: "hci1", expectedAddress: "A0:00:00:00:00:01", shared: true)
+    @Test func nothingIsReservedUnlessTheCallerSaysSo() throws {
+        #expect(try !AdapterSelection(name: "hci1", expectedAddress: "A0:00:00:00:00:01").shared)
+        #expect(try AdapterSelection.reserved(["a0:00:00:00:00:01"]) == reserved)
+        #expect(throws: AdapterSelection.Refusal.notAnAddress("hci1")) { try AdapterSelection.reserved(["hci1"]) }
+    }
+
+    @Test func aReservedAdapterIsTakenOnlyAsSharedAndStillByItsAddress() throws {
+        let selection = try AdapterSelection(name: "hci1", expectedAddress: "A0:00:00:00:00:01", shared: true, reserved: reserved)
         #expect(selection.shared)
         #expect(selection.path == "/org/bluez/hci1")
         try selection.check(reportedAddress: "A0:00:00:00:00:01")
@@ -32,7 +41,7 @@ import Testing
         #expect(!selection.shared)
     }
 
-    /// `GetManagedObjects`' answer on 2026-10-01: the ATS2851 at `hci0`, the maintainer's adapter at `hci1`, and a
+    /// `GetManagedObjects`' answer on 2026-10-01: the ATS2851 at `hci0`, the maintainer's reserved adapter at `hci1`, and a
     /// device of the ATS2851's that, being no adapter, never matches.
     private let swapped: [(path: String, interfaces: [(name: String, properties: DBusValue)])] = [
         ("/org/bluez", [(name: "org.bluez.AgentManager1", properties: .properties([]))]),
@@ -45,16 +54,18 @@ import Testing
     ]
 
     @Test func anAdapterIsFoundByItsAddressUnderWhateverNameItHas() throws {
-        let dongle = try AdapterSelection.find("f0:0d:00:00:00:02", shared: false, among: swapped)
+        let dongle = try AdapterSelection.find("f0:0d:00:00:00:02", shared: false, reserved: [], among: swapped)
         #expect(dongle == (try AdapterSelection(name: "hci0", expectedAddress: "F0:0D:00:00:00:02")))
         #expect(throws: AdapterSelection.Refusal.reservedAdapter) {
-            try AdapterSelection.find("A0:00:00:00:00:01", shared: false, among: swapped)
+            try AdapterSelection.find("A0:00:00:00:00:01", shared: false, reserved: reserved, among: swapped)
         }
-        #expect(try AdapterSelection.find("A0:00:00:00:00:01", shared: true, among: swapped).name == "hci1")
+        #expect(try AdapterSelection.find("A0:00:00:00:00:01", shared: true, reserved: reserved, among: swapped).name == "hci1")
         #expect(throws: AdapterSelection.Refusal.absent("00:11:22:33:44:55"), "a device is no adapter") {
-            try AdapterSelection.find("00:11:22:33:44:55", shared: false, among: swapped)
+            try AdapterSelection.find("00:11:22:33:44:55", shared: false, reserved: [], among: swapped)
         }
-        #expect(throws: AdapterSelection.Refusal.notAnAddress("hci0")) { try AdapterSelection.find("hci0", shared: false, among: swapped) }
+        #expect(throws: AdapterSelection.Refusal.notAnAddress("hci0")) {
+            try AdapterSelection.find("hci0", shared: false, reserved: [], among: swapped)
+        }
     }
 
     @Test(arguments: ["", "hci", "hci1a", "HCI1", "wlan0", "hci-1", "/org/bluez/hci1"])

@@ -3,7 +3,7 @@
 #
 #     scripts/mac-desktop.sh <command> [args...]            # on the Mac, from ssh or a CI job
 #     scripts/mac-desktop.sh --stdio <command> [args...]    # the same, with this shell's stdin fed to the command
-#     scripts/mac.sh run scripts/mac-desktop.sh <command>   # from linux-host
+#     scripts/mac.sh run scripts/mac-desktop.sh <command>   # from the Linux machine
 #
 # An ssh login gets a security session of its own, where the login Keychain stays locked and codesign fails with
 # errSecInternalComponent. A launchd job in gui/<uid> runs in the desktop session instead, where the Keychain is

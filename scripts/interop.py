@@ -53,7 +53,7 @@ the doorbell rings an iPhone sends, and `android-rings` those an Android phone s
 `android-reads` is companion change A3's device gate: an Android phone reads the peer's GATT payload and dials it, or
 is dialed, by the id order.
 
-`--mac` runs the peer on the Mac Mini instead of hci1, on CoreBluetooth, the iPhone's own radio: checklist M (ADR
+`--mac` runs the peer on the Mac instead of hci1, on CoreBluetooth, the iPhone's own radio: checklist M (ADR
 2026-09.vcdk). It always runs the `ios` profile, in the Mac's desktop session through `scripts/mac-peer.sh`, and the
 scan that finds the nodes to refuse still runs here.
 
@@ -69,10 +69,11 @@ installs or launches anything: it wakes the phone, asks its bridge to scan, send
 `iphone-soak --peer` run their one peer there.
 
 hci1 and hci0 here are roles, not the kernel's indices, and everything finds its adapter by address (ADR 2026-09.5ftc).
-Since 2026-10-03 hci1 is dongle A (C0:FF:EE:00:00:0A) and hci0 is dongle B (C0:FF:EE:00:00:0B): two nRF52840s running
+Since 2026-10-03 hci1 is dongle A ($KNIT_ADAPTER_A) and hci0 is dongle B ($KNIT_ADAPTER_B): two nRF52840s running
 firmware/knit-hci, which take incoming LE connections and advertise while linked (.agents/context/linux-peer.md, "What
-the nRF52840 dongles showed"). Until then hci1 was the ATS2851 (F0:0D:00:00:00:02), which took no incoming LE
-connection, and hci0 the maintainer's own adapter, shared, which needed a go-ahead. Some waits below still work around
+the nRF52840 dongles showed"). Until then hci1 was the ATS2851, which took no incoming LE connection, and hci0 the
+maintainer's own adapter, shared, which needed a go-ahead. The addresses and the Mac's host come from the environment,
+or from .private/lab.env when it is there, which stays out of the repository (ADR 2026-10.ab6k). Some waits below still work around
 the ATS2851; they cost time on the dongles, nothing more.
 
 Each step prints one JSON line, {"step": ..., "ok": ..., ...}, and the run ends with a summary line. The exit code
@@ -103,16 +104,46 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_lab_env(path: Path) -> None:
+    """Puts `.private/lab.env`'s KEY=VALUE lines into the environment, under anything already set there, so that every
+    knit-peer this starts inherits the lab's adapters (ADR 2026-10.ab6k)."""
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
+        key, equals, value = line.strip().partition("=")
+        if equals and key and not key.startswith("#"):
+            os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+def lab(name: str) -> str:
+    """A lab setting from the environment, such as an adapter's address; exits saying where to set it when there is
+    none."""
+    value = os.environ.get(name, "")
+    if not value:
+        raise SystemExit(f"{name} is not set: put it in .private/lab.env or the environment (ADR 2026-10.ab6k)")
+    return value
+
+
+def hci0() -> list[str]:
+    """The flags that put a peer on dongle B, the second peer's adapter (.agents/context/linux-peer.md, "The adapter").
+    It was the maintainer's own adapter, shared, until 2026-10-03."""
+    return ["--adapter-address", lab("KNIT_ADAPTER_B")]
+
+
+def hci1_address() -> str:
+    """Dongle A's public address, which every peer on it advertises from, and knit-peer's default adapter. It was the
+    ATS2851's until 2026-10-03."""
+    return lab("KNIT_ADAPTER_A")
+
+
+_load_lab_env(ROOT / ".private" / "lab.env")
 # KNIT_PEER runs another build of the peer, such as one from a commit whose checks passed.
 PEER = Path(os.environ.get("KNIT_PEER") or ROOT / ".build" / "out" / "Products" / "Debug-linux-x86_64" / "knit-peer")
 PACKAGE = "app.getknit.knit"
 INSTANCE = "interop"
-# Dongle B, the second peer's adapter (.agents/context/linux-peer.md, "The adapter"). It was the maintainer's own
-# adapter, shared, until 2026-10-03.
-HCI0_ADDRESS = "C0:FF:EE:00:00:0B"
-HCI0 = ["--adapter-address", HCI0_ADDRESS]
-# The Mac that runs the peer with --mac, and its mirror of this tree (scripts/mac.sh).
-MAC_HOST = "mac.example"
+# The Mac that runs the peer with --mac is $KNIT_MAC_HOST; this is its mirror of this tree (scripts/mac.sh).
 MAC_MIRROR = "source/knit-ios-mirror"
 # Set by --mac: the peer runs on the Mac, on CoreBluetooth.
 ON_MAC = False
@@ -586,7 +617,7 @@ def androids(heard: dict[str, dict]) -> set[str]:
 def on_mac(verb: str, arguments: list[str]) -> list[str]:
     """The Mac's knit-peer `verb` over ssh (scripts/mac-peer.sh): `run` goes to its desktop session, where macOS lets
     it use Bluetooth, with stdin and stdout still attached here."""
-    return ["ssh", MAC_HOST, f"cd {MAC_MIRROR} && scripts/mac-peer.sh {verb} {shlex.join(arguments)}"]
+    return ["ssh", lab("KNIT_MAC_HOST"), f"cd {MAC_MIRROR} && scripts/mac-peer.sh {verb} {shlex.join(arguments)}"]
 
 
 def keygen(phone_id: str, order: str, others: set[str]) -> str:
@@ -1014,7 +1045,7 @@ class _PeerSender:
         self.ios_id = ios.node_id
         self.ids: dict[str, str] = {}
         self.stopping = threading.Event()
-        self.peer = Peer("android", f"knit-peer wake {nonce}", others, arguments.peer_log, arguments.rssi_floor, "iphone-wake", HCI0)
+        self.peer = Peer("android", f"knit-peer wake {nonce}", others, arguments.peer_log, arguments.rssi_floor, "iphone-wake", hci0())
         self.peer.start()
         keep = (self.peer, {ios.node_id}, set(self.peer.refuse), self.stopping, self.peer.instance)
         threading.Thread(target=_keep_to, args=keep, daemon=True).start()
@@ -1609,7 +1640,7 @@ def android_reads(arguments: argparse.Namespace) -> int:
     if run.step("phone-build-reads-gatt", lambda: _reads_gatt_payloads(phone)) is None:
         print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
         return run.failed
-    adapter = HCI0 if arguments.hci0 else None
+    adapter = hci0() if arguments.hci0 else None
     heard = in_range(adapter=adapter)
     # An iPhone the scan could not read, as its reads on hci0 can drop, is still no earlier run's peer, and advertises
     # as this port's nodes do.
@@ -1622,7 +1653,7 @@ def android_reads(arguments: argparse.Namespace) -> int:
     if run.step("phone-forgot-old-peers", lambda: _phone_forgets_all_but(phone, set(heard))) is None:
         print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
         return run.failed
-    address = HCI0_ADDRESS if arguments.hci0 else HCI1_ADDRESS
+    address = lab("KNIT_ADAPTER_B") if arguments.hci0 else hci1_address()
     if run.step("phone-forgot-old-payload", lambda: _address_released(phone, address, arguments.quiet_timeout)) is None:
         print(json.dumps({"summary": "android-reads", "steps": run.steps, "failed": run.failed}))
         return run.failed
@@ -1823,7 +1854,7 @@ def iphone_forgets(arguments: argparse.Namespace) -> int:
         # A peer the iPhone only has to read reads nothing itself: its connection to read the iPhone, made as the
         # iPhone read it, made the iPhone file it as a stranger for ten minutes (2026-09-29).
         _keygen("iphone-forgets", *_peer_window(ios.node_id, others, side))
-        adapter = HCI0 if arguments.hci0 else None
+        adapter = hci0() if arguments.hci0 else None
         started = Peer(
             "ios", f"knit-peer forgets {tag} {nonce}", others, arguments.peer_log, arguments.rssi_floor, "iphone-forgets", adapter, gatt_reads=reads
         )
@@ -1930,7 +1961,7 @@ def _hci1_idle_after(seconds: float) -> dict:
     """Waits `seconds`, then reports any connection hci1 still holds with no peer running, which only a phone's stray
     connect can have made."""
     time.sleep(seconds)
-    listing = subprocess.run(["hcitool", "-i", adapter_name(HCI1_ADDRESS), "con"], capture_output=True, text=True, check=False).stdout
+    listing = subprocess.run(["hcitool", "-i", adapter_name(hci1_address()), "con"], capture_output=True, text=True, check=False).stdout
     held = [line.strip() for line in listing.splitlines()[1:] if line.strip()]
     if held:
         raise RuntimeError(f"hci1 still holds {held}")
@@ -1955,10 +1986,6 @@ def _phone_forgot(phone: Phone, reason: str, timeout: float, mark: int) -> dict:
 
     lines = poll(forgot, timeout, every=3)
     return {"line": lines[-1], "seconds": round(time.monotonic() - started, 1)}
-
-
-# Dongle A's public address, which every peer on it advertises from. It was the ATS2851's until 2026-10-03.
-HCI1_ADDRESS = "C0:FF:EE:00:00:0A"
 
 
 def _address_released(phone: Phone, address: str, timeout: float) -> dict:
@@ -2520,7 +2547,7 @@ def iphone_scan(arguments: argparse.Namespace) -> int:
     data_id = _keygen("scan-data", "--above", max(others | {ios.node_id}))
     if not (Path.home() / ".local" / "state" / "knit-peer" / "scan-uuid" / "identity").exists():
         _keygen("scan-uuid", "--above", max(others | {ios.node_id}))
-    data = Peer("android", f"knit-peer scan data {nonce}", others | {ios.node_id}, arguments.peer_log, None, "scan-data", HCI0)
+    data = Peer("android", f"knit-peer scan data {nonce}", others | {ios.node_id}, arguments.peer_log, None, "scan-data", hci0())
     uuid = Peer("ios", f"knit-peer scan uuid {nonce}", others | {ios.node_id}, arguments.peer_log, None, "scan-uuid")
     stop = threading.Event()
     starts: dict[str, float] = {}
@@ -2810,7 +2837,7 @@ class _SeekPeer:
         # An `ios` peer dials the iPhone, so it sorts above it; the iPhone dials an `android` one whatever the order.
         self.node_id = _keygen(instance, "--above", max(others | {ios.node_id}))
         refuse = set(others) | ({ios.node_id} if arguments.mode == "budget" and arguments.far == "hci0" else set())
-        adapter = HCI0 if arguments.far == "hci0" else []
+        adapter = hci0() if arguments.far == "hci0" else []
         self.peer = Peer(profile, f"knit-peer seek {nonce}", refuse, arguments.peer_log, arguments.rssi_floor, instance, adapter)
         self.peer.start()
         self.powered_off = False
@@ -2857,16 +2884,17 @@ class _SeekPeer:
 def _ats2851_power(on: bool) -> None:
     """Powers the ATS2851 on or off through BlueZ, found by its address. Not through knit-hci: it finds the adapter in
     `hcitool dev`, which lists only adapters that are up, so it cannot power one back on."""
+    wanted = f's "{hci1_address()}"'
     for index in range(8):
         path = f"/org/bluez/hci{index}"
         address = subprocess.run(
             ["busctl", "get-property", "org.bluez", path, "org.bluez.Adapter1", "Address"], capture_output=True, text=True, check=False
         ).stdout.strip()
-        if address == f's "{HCI1_ADDRESS}"':
+        if address == wanted:
             power = ["busctl", "set-property", "org.bluez", path, "org.bluez.Adapter1", "Powered", "b", "true" if on else "false"]
             subprocess.run(power, check=True)
             return
-    raise RuntimeError(f"BlueZ has no adapter at {HCI1_ADDRESS}")
+    raise RuntimeError(f"BlueZ has no adapter at {hci1_address()}")
 
 
 class _SeekPhone:
@@ -3890,7 +3918,7 @@ def relay(arguments: argparse.Namespace) -> int:
     b_id = _keygen("relay-b", "--above", max(others | {phone_id}))
     a_id = _keygen("relay-a", "--above", b_id)
     print(json.dumps({"run": "relay", "phone": phone_id, "a": a_id, "b": b_id, "refused": sorted(others)}))
-    b = Peer("android", f"knit-peer B {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "relay-b", HCI0)
+    b = Peer("android", f"knit-peer B {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "relay-b", hci0())
     a = Peer(arguments.radio_profile, f"knit-peer A {nonce}", others, arguments.peer_log, arguments.rssi_floor, "relay-a")
     b.start()
     a.start()
@@ -3968,7 +3996,7 @@ def iphone_relay(arguments: argparse.Namespace) -> int:
     kept_off: set[str] = set()
     threading.Thread(target=_keep_to, args=(ios, {phone_id, peer_id}, kept_off, stop, "iphone"), daemon=True).start()
     peer = Peer(
-        arguments.radio_profile, f"knit-peer relay {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-relay", HCI0
+        arguments.radio_profile, f"knit-peer relay {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-relay", hci0()
     )
     peer_photo = ""
     try:
@@ -4066,7 +4094,7 @@ def iphone_group(arguments: argparse.Namespace) -> int:
         )
         threading.Thread(target=_keep_to, args=(ios, {phone_id, peer_id}, kept_off, stop, "iphone"), daemon=True).start()
         peer = Peer(
-            "android", f"knit-peer group {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-group", HCI0
+            "android", f"knit-peer group {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-group", hci0()
         )
         peer.start()
         threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
@@ -4112,7 +4140,7 @@ def group(arguments: argparse.Namespace) -> int:
     b_id = _keygen("group-b", "--above", top)
     ghost = _ghost("group-ghost")
     print(json.dumps({"run": "group", "phone": phone_id, "a": a_id, "b": b_id, "ghost": ghost, "refused": sorted(others)}))
-    a = Peer(arguments.radio_profile, f"knit-peer A {nonce}", others | {b_id}, arguments.peer_log, arguments.rssi_floor, "group-a", HCI0)
+    a = Peer(arguments.radio_profile, f"knit-peer A {nonce}", others | {b_id}, arguments.peer_log, arguments.rssi_floor, "group-a", hci0())
     b = Peer("android", f"knit-peer B {nonce}", others | {a_id}, arguments.peer_log, arguments.rssi_floor, "group-b")
     stop = threading.Event()
     try:
@@ -4368,7 +4396,7 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
         arguments.peer_log,
         arguments.rssi_floor,
         "iphone-peer",
-        HCI0 if arguments.adapter == "hci0" else [],
+        hci0() if arguments.adapter == "hci0" else [],
         never_sight={ios.node_id} if release else None,
         gatt_reads=True if release else None,
     )
@@ -4888,7 +4916,7 @@ def iphone_soak(arguments: argparse.Namespace) -> int:
     try:
         if peer_id:
             peer = Peer(
-                "android", f"knit-peer soak {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-soak", HCI0, out / "peer.log"
+                "android", f"knit-peer soak {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-soak", hci0(), out / "peer.log"
             )
             peer.start()
             threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mirror this working tree onto the Mac Mini and run commands there, over one multiplexed ssh connection.
+# Mirror this working tree onto the Mac and run commands there, over one multiplexed ssh connection.
 #
 #     scripts/mac.sh sync                     # mirror the tree, .git included, into ~/source/knit-ios-mirror
 #     scripts/mac.sh run <command> [args...]  # sync, then run the command in the mirror; its exit status is ours
@@ -17,19 +17,23 @@
 # job at a time. A command that outlives this script (the ssh client killed without a tty) keeps running on
 # the Mac; `scripts/mac.sh run pkill -f <pattern>` stops it.
 #
-# KNIT_MAC_HOST (mac.example) and KNIT_MAC_DIR (source/knit-ios-mirror, under the Mac's home) override the
-# defaults. KNIT_MAC_SYNC=0 skips the sync before run and shell, and KNIT_MAC_VERBOSE=1 lists what changed.
+# KNIT_MAC_HOST names the Mac, from the environment or else .private/lab.env, which keeps the lab's hosts out of the
+# repository (ADR 2026-10.ab6k). KNIT_MAC_DIR (source/knit-ios-mirror, under the Mac's home) overrides the mirror's
+# place. KNIT_MAC_SYNC=0 skips the sync before run and shell, and KNIT_MAC_VERBOSE=1 lists what changed.
 
 set -euo pipefail
 
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
-host=${KNIT_MAC_HOST:-mac.example}
+if [ -z "${KNIT_MAC_HOST:-}" ] && [ -f .private/lab.env ]; then
+	KNIT_MAC_HOST=$(sed -n 's/^KNIT_MAC_HOST=//p' .private/lab.env | tail -n 1)
+fi
+host=${KNIT_MAC_HOST:?set KNIT_MAC_HOST in .private/lab.env or the environment (ADR 2026-10.ab6k)}
 dir=${KNIT_MAC_DIR:-source/knit-ios-mirror}
 
 # Every call shares one master connection, so only the first pays for the handshake. These match the
-# `Host mac.example` block in ~/.ssh/config, whose sockets they share, but work without it.
+# `Host` block for the Mac in ~/.ssh/config, whose sockets they share, but work without it.
 ssh_opts=(-o ControlMaster=auto -o "ControlPath=$HOME/.ssh/cm-%C" -o ControlPersist=20m -o Compression=no)
 
 # macOS ships openrsync, which speaks protocol 29 and handles neither these filters nor --delete-after well.
