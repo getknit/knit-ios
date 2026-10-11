@@ -60,7 +60,7 @@ targets:
         GENERATE_INFOPLIST_FILE: true
         # The generated plist takes its version keys from these two, over App/Info.plist's. Keep them equal to
         # its CFBundleShortVersionString and CFBundleVersion; `check.sh xcode` fails when they differ.
-        MARKETING_VERSION: 0.1.0
+        MARKETING_VERSION: 1.0.0
         CURRENT_PROJECT_VERSION: "1"
         # iPhone only (ADR 2026-10.kedu). An iPad runs it in iPhone compatibility mode.
         TARGETED_DEVICE_FAMILY: "1"
