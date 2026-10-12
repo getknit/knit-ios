@@ -137,7 +137,7 @@ Android's gate on sending reports to an iPhone is the one left, and the maintain
 
 **Amendment (2026-10-10): the iPhone reports a skipped file, leaves a stream that won't end soon, and parks a second
 ask.** The interop audit of 2026-10-09 (`orders/interop-audit/findings.md`, knit-next `8dc60836` against this repo's
-`0b19f2d`) found three gaps on this side. This amendment ports the committed Kotlin for each, rule for rule. No wire
+`a339f22`) found three gaps on this side. This amendment ports the committed Kotlin for each, rule for rule. No wire
 byte moves and no vector changes.
 
 - **A skipped file is reported** (AND-7, IOS-3). This reverses "a skipped file is never reported" above. Android
@@ -201,7 +201,7 @@ byte moves and no vector changes.
   - `MeshTests.aSecondAskForAPhotoWeFeedIsParkedAndServedOnceTheFeedEnds` through the actor;
   - `LinkFileProgressTests`' and `FileIntakeTests`' skipped-file cases;
   - `MessageAttachmentTests` for the conversation.
-- **Device check (2026-10-10), passed.** The iPhone 12 ran this build (`81cd95b`) beside a Pixel 3 on knit-next
+- **Device check (2026-10-10), passed.** The iPhone 12 ran this build (`e2ecb62`) beside a Pixel 3 on knit-next
   `c544573c`, a Pixel 9 on `a0d8b488`, a Pixel 8 on `b7c13e57` (merged as `a03fe167`), a Pixel 7 and a moto-g.
   - `interop.py iphone-photos` against the Pixel 3 passed all 17 steps.
   - An iPhone photo of 172 KB posted to the room, with the iPhone's log recorded. The Pixel 7 asked first and was fed at

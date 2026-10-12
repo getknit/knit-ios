@@ -1,7 +1,7 @@
 import KnitWire
 import Testing
 
-/// Repros for the interop audit of 2026-10-09 (`interop-audit`, knit-next 8dc60836 against knit-ios 0b19f2d). Each one
+/// Repros for the interop audit of 2026-10-09 (`interop-audit`, knit-next 8dc60836 against knit-ios a339f22). Each one
 /// asserts what Android does. A divergence still standing sits inside `withKnownIssue`, so the suite passes while it
 /// stands and fails once a fix lands: then drop the `withKnownIssue` and keep the test.
 @Suite struct InteropAuditWireTests {
