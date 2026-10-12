@@ -171,8 +171,9 @@ address under `0xFE30`, and the identity addresses above must not move. So `knit
 LE privacy on, set through `knit-hci b btmgmt`, for the length of `interop.py android-strangers` only, and the run
 turns it off again however it ends. With privacy on, the kernel sends each advertising instance from a resolvable
 private address. `Adapter1.Address` and the debugfs identity stay the public address knit-peer finds the dongle by.
-The stranger registers its advert afresh every `--rotate` seconds, and each new instance should go out from a new
-address. Nobody has seen that on the dongles yet. If it does not happen, the fallback is a `knit-hci` command that
-sets debugfs `rpa_timeout`, whose kernel floor is 30 s. The stranger runs no link manager and hangs up on any dialer
+The stranger registers its advert afresh every `--rotate` seconds, and each new instance goes out from a new address.
+On 2026-10-12, btmon on dongle B showed six registrations in a minute set six resolvable private addresses, on
+advertising handles 1 and 2 in turn, and the adapter's address stayed public. The fallback, had it not, was a
+`knit-hci` command setting debugfs `rpa_timeout`, whose kernel floor is 30 s. The stranger runs no link manager and hangs up on any dialer
 before a HELLO, so it never links. `PeerOptionsTests`' stranger cases and `BlueZAdvertTests`'
 `aRotatingAdvertIsRegisteredAfreshOnItsDeadlineAndTheOldOneWithdrawn` guard it.

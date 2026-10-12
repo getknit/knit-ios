@@ -296,8 +296,10 @@ run, and the run grades it at the end:
 - `stranger-rotated`: the phone read more than 12 addresses. Fewer means privacy did not rotate dongle B's address.
 
 The summary also gives the reads begun per minute, the count of `scan paused: connect in flight`, and the
-`gattBudget=` values seen. Nobody has yet seen on the dongles whether re-registering an advert under kernel privacy
-gives it a new address.
+`gattBudget=` values seen. Re-registering an advert under kernel privacy does give it a new address: on 2026-10-12,
+btmon on dongle B showed six registrations in a minute set six resolvable private addresses, on advertising handles
+1 and 2 in turn, while `btmgmt info` still showed the public address. btmgmt quits at the end of its input before
+its replies arrive, so `_privacy` feeds `knit-hci b btmgmt` one command every 2 s and closes the input after the last.
 
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
 needs no go-ahead for a phone. The peer takes a node id above every phone's and dials them all, since this adapter
@@ -1710,3 +1712,19 @@ in `.build/and3/`.
   (put-back 720ms)`), then 5000 ms, where it stayed for the minute it was judged.
 - **The ordering check was skipped.** It needs a knit-peer link that stops being heard while it stays up, and
   knit-peer cannot stop advertising under a held link.
+
+## What the stranger trial showed
+
+On 2026-10-12, with the go-ahead, `android-strangers --variant none` ran on the Pixel 7 against knit-next's #154
+build. It was stopped after 14 minutes, and a full run is still owed.
+
+- **Rotation works.** A one-minute check with btmon on dongle B showed six registrations set six resolvable private
+  addresses. In the run, the Pixel read one of them as a stranger.
+- **Dongle B then dropped out.** From six minutes in, B was unregistered every 30 to 45 s and came back each time as a
+  fresh controller, with privacy off and its public address on the air. btmon showed `Close Index` and `Delete Index`
+  with no HCI error. The kernel logged no USB disconnect, and the USB device number stayed the same. Once the run was
+  stopped, btusb stayed unbound from B's interface, so B needs someone with root to rebind or replug it. The cause is
+  not known. A process claiming the interface through usbfs would look like this.
+- **The Pixel heard few addresses.** It read 1 of the first 18 rotated addresses in six minutes, at its `floor` scan
+  with links up. The run now wakes the phone every minute, which nudges its scan.
+- **Dials did not wait.** The phone dialed the peer five times, each within 2.2 s of its `promote=`.

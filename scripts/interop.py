@@ -26,7 +26,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-rings [--udid UDID]
     scripts/interop.py android-reads --device SERIAL [--order peer-below|peer-above] [--link-timeout 180] [--links N] [--hci0]
     scripts/interop.py android-forgets --device SERIAL [--link-timeout 180] [--quiet-timeout 600]
-    scripts/interop.py android-strangers --device SERIAL --variant none|forged [--minutes 30] [--rotate 20] [--cycle 180]
+    scripts/interop.py android-strangers --device SERIAL --variant none|forged [--minutes 30] [--rotate 20] [--cycle 180] [--known IDS]
     scripts/interop.py android-rings --device SERIAL [--link dialed|accepted] [--converge-timeout 600] [--arrival-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
     scripts/interop.py iphone-seek --far hci1|hci0|phone [--device SERIAL] [--mode drop|relink|budget] [--drop kill|radio-off]
@@ -1946,7 +1946,7 @@ def _dial_waits(lines: list[tuple[float, str]], node: str) -> dict:
             dialing = False
         elif message.startswith(f"bt link up: {node} "):
             since, dialing, linked = None, False, True
-        elif message.startswith("link down: ") and node in message:
+        elif message.startswith(f"bt link down: {node} "):
             linked = False
     return {"waits": waits, "waiting": round(end - since, 1) if since is not None else None}
 
@@ -1954,15 +1954,24 @@ def _dial_waits(lines: list[tuple[float, str]], node: str) -> dict:
 def _privacy(adapter: str, on: bool) -> dict:
     """Turns LE privacy on or off on one of Knit's own adapters, through the root wrapper: with it on, each advertising
     instance goes out from a new resolvable private address, while the adapter's identity, which knit-peer finds it by,
-    stays its public address (ADR 2026-09.5ftc). The adapter must be powered off to change it."""
+    stays its public address (ADR 2026-09.5ftc). The adapter must be powered off to change it. btmgmt quits at the end
+    of its input before the replies arrive, so each command gets a moment before the next, and the input stays open
+    until the last has answered."""
     state = "on" if on else "off"
-    script = f"power off\nprivacy {state}\npower on\ninfo\n"
-    result = subprocess.run(
-        ["sudo", "-n", KNIT_HCI, adapter, "btmgmt"], input=script, capture_output=True, text=True, timeout=60, check=False
+    process = subprocess.Popen(
+        ["sudo", "-n", KNIT_HCI, adapter, "btmgmt"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
-    settings = re.findall(r"current settings: (.*)", result.stdout)
-    if result.returncode or not settings:
-        raise RuntimeError(f"knit-hci {adapter} btmgmt failed ({result.returncode}): {(result.stderr or result.stdout).strip()[-300:]}")
+    assert process.stdin
+    for command in ("power off", f"privacy {state}", "power on", "info"):
+        process.stdin.write(command + "\n")
+        process.stdin.flush()
+        time.sleep(2)
+    process.stdin.close()
+    output, _ = process.communicate(timeout=30)
+    output = re.sub(r"\x1b\[[0-9;]*m", "", output)
+    settings = re.findall(r"current settings: (.*)", output)
+    if process.returncode or not settings:
+        raise RuntimeError(f"knit-hci {adapter} btmgmt failed ({process.returncode}): {output.strip()[-300:]}")
     if ("privacy" in settings[-1].split()) != on:
         raise RuntimeError(f"privacy is not {state} on dongle {adapter.upper()}: {settings[-1]}")
     return {"adapter": adapter, "settings": settings[-1].strip()}
@@ -2030,9 +2039,8 @@ def _cycle_link(peer: Peer, phone: Phone, phone_id: str, timeout: float) -> dict
     finally:
         time.sleep(5)
         peer.command(cmd="allow-link", peer=phone_id)
-    relinked = time.monotonic()
-    line = link_up(peer, phone, phone_id, timeout)
-    return {"relinkSeconds": round(line["_at"] - relinked, 1)}
+    link = _link_after(peer, phone, phone_id, time.monotonic(), timeout)
+    return {"relinkSeconds": link["seconds"]}
 
 
 def android_strangers(arguments: argparse.Namespace) -> int:
@@ -2045,7 +2053,7 @@ def android_strangers(arguments: argparse.Namespace) -> int:
     forged` serves a valid payload naming the highest node id there is, which the phone never dials, so no HELLO ever
     refunds it. Either way it hangs up on any dialer before a HELLO. A knit-peer in the `android` profile on dongle A
     sorts below the phone, so the phone dials it; every `--cycle` seconds it refuses the phone and then allows it, for a
-    fresh promotion and dial.
+    fresh promotion and dial. The phone is woken every minute, which nudges its scan, or it hears too few addresses.
 
     The phone's transport log is streamed for the whole run (`.build/interop-strangers-logcat.txt`) and graded at the
     end. `reads-within-budget`: every read that ended, less those a link confirmed, at most 12 in any 10 minutes.
@@ -2062,6 +2070,8 @@ def android_strangers(arguments: argparse.Namespace) -> int:
         print(json.dumps({"summary": "android-strangers", "steps": run.steps, "failed": run.failed}))
         return run.failed
     heard = in_range()
+    # An iPhone the scan could not read is still no earlier run's peer: taken as heard, and refused.
+    heard.update({node: {"capabilities": IOS_ADVERT_CAPABILITIES} for node in arguments.known.split(",") if node and node not in heard})
     others = set(heard) - {phone_id}
     if run.step("phone-forgot-old-peers", lambda: _phone_forgets_all_but(phone, set(heard))) is None:
         print(json.dumps({"summary": "android-strangers", "steps": run.steps, "failed": run.failed}))
@@ -2087,13 +2097,17 @@ def android_strangers(arguments: argparse.Namespace) -> int:
         if run.step("link", lambda: _first_link(peer, phone, phone_id, started, arguments.link_timeout)) is not None:
             run.step("stranger-up", lambda: _start_stranger(stranger))
             end = time.monotonic() + seconds
+            relink_at = time.monotonic() + arguments.cycle
             cycle = 0
-            while time.monotonic() + arguments.cycle < end:
-                stop.wait(arguments.cycle)
-                cycle += 1
+            while (left := end - time.monotonic()) > 0:
+                # Each minute the phone is woken, which nudges a scan: at its floor cadence, with links up, the Pixel 7
+                # read 1 of 18 rotated addresses in six minutes on 2026-10-12, too few to reach the budget.
+                stop.wait(min(60.0, left))
                 phone.wake()
-                run.step(f"relink-{cycle}", lambda: _cycle_link(peer, phone, phone_id, arguments.link_timeout))
-            stop.wait(max(0.0, end - time.monotonic()))
+                if time.monotonic() >= relink_at and relink_at + arguments.cycle <= end:
+                    cycle += 1
+                    run.step(f"relink-{cycle}", lambda: _cycle_link(peer, phone, phone_id, arguments.link_timeout))
+                    relink_at += arguments.cycle
     finally:
         stop.set()
         stranger.stop()
@@ -2150,7 +2164,8 @@ def _not_starved(lines: list[tuple[float, str]], node: str) -> dict:
 
 def _start_stranger(stranger: Stranger) -> dict:
     stranger.start()
-    return {"command": shlex.join(stranger.command[1:])}
+    # The adapter's address stays out of the run's output, which may be pasted into an issue (ADR 2026-10.ab6k).
+    return {"command": shlex.join(stranger.command[1 : -len(hci0())])}
 
 
 def _rotated(charges: list[tuple[float, str]], stranger: Stranger) -> dict:
@@ -6067,6 +6082,7 @@ def main() -> int:
     strangers.add_argument("--rotate", type=int, default=20, help="seconds between the stranger's fresh registrations, each a new address")
     strangers.add_argument("--cycle", type=float, default=180, help="seconds between relinks, each a fresh promotion and dial")
     strangers.add_argument("--link-timeout", type=float, default=180, help="seconds for each link")
+    strangers.add_argument("--known", default="", help="iPhones in range the scan may fail to read, by node id, taken as heard and refused; comma-separated")
     strangers.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
     strangers.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     forgets = commands.add_parser("android-forgets")
