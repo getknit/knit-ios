@@ -144,7 +144,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | `knit-peer run … --feed window\|pace` | the file feed's A/B switch (ADR 2026-10.xwjc): `window`, the default, clocks a file to a peer that reports by its reports and reports a file coming in at the window's cadence; `pace` feeds at the 4 KiB/s budget and reports every 2 s, as Android's `…debug.LINKTUNE --es feed pace` does |
 | `knit-peer run … --never-sight NODE_ID[,NODE_ID…] --no-gatt-payload` | test switches, BlueZ only: never report those nodes as sighted, so the peer never dials them and admits their dials unsighted; and, in the `ios` profile, serve the doorbell without the payload characteristic, so a phone that reads payloads (A3) files the peer as a stranger and never sights it |
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing, and links a node that advertises only the UUID just long enough to read its payload; `--advertise` also shows the advert |
-| `knit-peer stranger [--payload none\|forged] [--rotate 20] [--seconds 1800]` | a test stimulus for knit-next #154, BlueZ only (knit-ios #3): advertises the `0xFE30` UUID as a device that is not Knit's, and registers the advert afresh every `--rotate` seconds. With LE privacy on its adapter it advertises from a resolvable private address, which a registration alone does not change on the dongles ("What the stranger trial showed"). `none` serves the doorbell alone, so a reader files a stranger. `forged` serves a valid payload naming `zzzzzzzzzzzzzzzzzzzzzzzzzy`, the highest node id, which no phone dials. It hangs up on any dialer before a HELLO, so it never links |
+| `knit-peer stranger [--payload none\|forged] [--rotate 20] [--seconds 1800]` | a test stimulus for knit-next #154, BlueZ only (knit-ios #3): advertises the `0xFE30` UUID as a device that is not Knit's, and registers the advert afresh every `--rotate` seconds. With LE privacy on its adapter it advertises from a resolvable private address, which changes on the controller's RPA timeout; a registration alone does not change it on the dongles ("What the stranger trial showed"). `none` serves the doorbell alone, so a reader files a stranger. `forged` serves a valid payload naming `zzzzzzzzzzzzzzzzzzzzzzzzzy`, the highest node id, which no phone dials. It hangs up on any dialer before a HELLO, so it never links |
 | `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window, with the old name and photo |
 
 - **Every command checks the adapter first.** `--adapter` defaults to `hci1` and `--adapter-address` to
@@ -283,7 +283,10 @@ below it answers the phone's redial on the same PSM (`hello`, in the reply to th
 
 `android-strangers` is knit-next #154's device trial (knit-ios #3). The phone runs a debug build with #154
 (`8246d2ec`), whose `bt state` line carries `gattBudget=`, and the first step checks for it. `knit-peer stranger` runs
-on dongle B with LE privacy on, set through `knit-hci b btmgmt` before the run and cleared after it however it ends.
+on dongle B with LE privacy on, set through `knit-hci b btmgmt` before the run and cleared after it however it ends,
+and an RPA timeout of `--rotate` seconds (20), sent as HCI LE Set Resolvable Private Address Timeout through `knit-hci b
+hcitool`, so B's address changes that often. `--quiet` pauses the other Android phones' meshes for the run, since
+their links hold the phone at its floor scan.
 A knit-peer in the `android` profile on dongle A sorts below the phone, so the phone dials it. Every `--cycle`
 seconds (180) that peer refuses the phone and then allows it again, for a fresh promotion and dial. Thirty minutes
 outgrow logcat's buffer, so the phone's transport log streams to `.build/interop-strangers-logcat.txt` for the whole
@@ -296,8 +299,7 @@ run, and the run grades it at the end:
 - `stranger-rotated`: the phone read more than 12 addresses. Fewer means privacy did not rotate dongle B's address.
 
 The summary also gives the reads begun per minute, the count of `scan paused: connect in flight`, and the
-`gattBudget=` values seen. On the dongles, re-registering an advert does not give it a new address on the air ("What
-the stranger trial showed"), so the stimulus does not rotate yet. btmgmt quits at the end of its input before
+`gattBudget=` values seen. btmgmt quits at the end of its input before
 its replies arrive, so `_privacy` feeds `knit-hci b btmgmt` one command every 2 s and closes the input after the last.
 
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
@@ -1723,10 +1725,15 @@ the stranger's address never rotated on the air.
   registrations every 10 s. In the 30-minute run the Pixel read `59:20:…` at 01:39 and 01:49 and `73:AC:…` at 01:54
   and 02:04: one address per 15 minutes, the kernel's default `rpa_timeout`, read again as each 10-minute stranger
   wait ran out. The controller advertises from the device's random address, not the set's.
-- **A power cycle may rotate it.** Power-cycling B under privacy every 15 s, with A listening, showed a short-lived
-  address in each interval, though the capture did not tie them to the stranger for certain. Each power-on also
-  registered another advert without withdrawing the last, and the fourth was refused with "Maximum advertisements".
-  KnitBlueZ keeps no advert across a power cycle, and BlueZ does.
+- **The controller rotates it.** Under privacy the kernel advertises with own address type `0x03`, so the controller
+  makes the address from the key in its resolving list and rotates it on the RPA timeout, 900 s by default. With the
+  timeout set to 20 s (HCI `0x08|0x002E` through `knit-hci b hcitool`), dongle A heard the stranger at five addresses
+  in 90 s, each for up to 20 s. The stranger's own advert is exactly `03 03 30 fe 02 01 06`, which picks it out of a
+  capture. Power-cycling B every 15 s gave five addresses in 80 s too.
+- **A power cycle used to pile up adverts.** BlueZ keeps an advert and a GATT application registered through a power
+  cycle and puts them back when the power returns. KnitBlueZ forgot both instead, so each power-on registered more:
+  the application answered AlreadyExists, and the fourth advert "Maximum advertisements reached". Going down now
+  withdraws them (`aPowerCycleWithdrawsWhatWasRegisteredAndRegistersItOnceAgain`).
 - **Dongle B dropped out in the first run.** From six minutes in, B was unregistered every 30 to 45 s and came back each time as a
   fresh controller, with privacy off and its public address on the air. btmon showed `Close Index` and `Delete Index`
   with no HCI error. The kernel logged no USB disconnect, and the USB device number stayed the same. Once the run was

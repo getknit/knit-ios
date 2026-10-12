@@ -174,9 +174,11 @@ private address. `Adapter1.Address` and the debugfs identity stay the public add
 The stranger registers its advert afresh every `--rotate` seconds, but that does not move its address on the air. On
 2026-10-12 the kernel gave each new advertising set its own resolvable private address, as btmon on dongle B showed.
 Dongle A, listening, still heard the stranger at one address through a minute of registrations, and the Pixel 7 read
-it at one address for 15 minutes, the kernel's default `rpa_timeout`. The dongles' controller advertises from the
-device's random address, not the set's. So a rotating stranger needs that address to change. A power cycle under
-privacy appears to give a new one. Debugfs `rpa_timeout` would rotate it in place, through a `knit-hci` command that
-does not exist yet (the kernel's floor is 30 s). Neither is settled. The stranger runs no link manager and hangs up on any dialer
+it at one address for 15 minutes. Under privacy the kernel advertises with own address type `0x03`, so the controller
+makes the address itself from the key in its resolving list, and rotates it on the timeout the kernel gives it, 900 s.
+So the run sets that timeout to `--rotate` seconds with HCI LE Set Resolvable Private Address Timeout (`0x08|0x002E`),
+sent through `knit-hci b hcitool`, which the root wrapper already allows. At 20 s, dongle A heard the stranger at five
+addresses in 90 s. A power cycle also gives a new address, once KnitBlueZ withdraws its advert as the power goes. The
+stranger runs no link manager and hangs up on any dialer
 before a HELLO, so it never links. `PeerOptionsTests`' stranger cases and `BlueZAdvertTests`'
 `aRotatingAdvertIsRegisteredAfreshOnItsDeadlineAndTheOldOneWithdrawn` guard it.

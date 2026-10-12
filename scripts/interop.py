@@ -27,6 +27,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py android-reads --device SERIAL [--order peer-below|peer-above] [--link-timeout 180] [--links N] [--hci0]
     scripts/interop.py android-forgets --device SERIAL [--link-timeout 180] [--quiet-timeout 600]
     scripts/interop.py android-strangers --device SERIAL --variant none|forged [--minutes 30] [--rotate 20] [--cycle 180] [--known IDS]
+                                [--quiet SERIAL ...]
     scripts/interop.py android-rings --device SERIAL [--link dialed|accepted] [--converge-timeout 600] [--arrival-timeout 600]
     scripts/interop.py iphone-scan [--udid UDID] [--window 30] [--away-window 60] [--first android|ios]
     scripts/interop.py iphone-seek --far hci1|hci0|phone [--device SERIAL] [--mode drop|relink|budget] [--drop kill|radio-off]
@@ -1951,30 +1952,61 @@ def _dial_waits(lines: list[tuple[float, str]], node: str) -> dict:
     return {"waits": waits, "waiting": round(end - since, 1) if since is not None else None}
 
 
-def _privacy(adapter: str, on: bool) -> dict:
-    """Turns LE privacy on or off on one of Knit's own adapters, through the root wrapper: with it on, each advertising
-    instance gets a resolvable private address (on the dongles the controller sends from the device's), while the
-    adapter's identity, which knit-peer finds it by, stays its public address (ADR 2026-09.5ftc). The adapter must be
-    powered off to change it. btmgmt quits at the end of its input before the replies arrive, so each command gets a
-    moment before the next, and the input stays open until the last has answered."""
-    state = "on" if on else "off"
+def _btmgmt(adapter: str, commands: list[str]) -> str:
+    """Runs btmgmt `commands` on one of Knit's own adapters, through the root wrapper, and answers what it printed.
+    btmgmt quits at the end of its input before the replies arrive, so each command gets a moment before the next, and
+    the input stays open until the last has answered."""
     process = subprocess.Popen(
         ["sudo", "-n", KNIT_HCI, adapter, "btmgmt"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
     assert process.stdin
-    for command in ("power off", f"privacy {state}", "power on", "info"):
+    for command in commands:
         process.stdin.write(command + "\n")
         process.stdin.flush()
         time.sleep(2)
     process.stdin.close()
     output, _ = process.communicate(timeout=30)
     output = re.sub(r"\x1b\[[0-9;]*m", "", output)
-    settings = re.findall(r"current settings: (.*)", output)
-    if process.returncode or not settings:
+    if process.returncode:
         raise RuntimeError(f"knit-hci {adapter} btmgmt failed ({process.returncode}): {output.strip()[-300:]}")
+    return output
+
+
+def _privacy(adapter: str, on: bool) -> dict:
+    """Turns LE privacy on or off on one of Knit's own adapters: with it on, the adapter advertises from a resolvable
+    private address, while its identity, which knit-peer finds it by, stays its public address (ADR 2026-09.5ftc). The
+    adapter must be powered off to change it."""
+    state = "on" if on else "off"
+    settings = re.findall(r"current settings: (.*)", _btmgmt(adapter, ["power off", f"privacy {state}", "power on", "info"]))
+    if not settings:
+        raise RuntimeError(f"btmgmt on dongle {adapter.upper()} printed no settings")
     if ("privacy" in settings[-1].split()) != on:
         raise RuntimeError(f"privacy is not {state} on dongle {adapter.upper()}: {settings[-1]}")
     return {"adapter": adapter, "settings": settings[-1].strip()}
+
+
+def _rpa_timeout(adapter: str, seconds: int) -> dict:
+    """Has one of Knit's adapters rotate its resolvable private address every `seconds`, through the root wrapper's
+    hcitool: HCI LE Set Resolvable Private Address Timeout (`0x08|0x002E`, 1 to 3600 s). Under LE privacy the kernel
+    advertises with own address type `0x03`, so the controller makes the address itself from the key in its resolving
+    list, and rotates it on this timeout, which the kernel sets to 900 s. A fresh advert registration moves nothing on
+    the lab dongles (`.agents/context/linux-peer.md`, "What the stranger trial showed"). The kernel sets the timeout
+    again when the adapter powers on, so this follows `_privacy`."""
+    if not 1 <= seconds <= 3600:
+        raise ValueError(f"an RPA timeout of {seconds} s is outside 1 to 3600")
+    low, high = seconds & 0xFF, seconds >> 8
+    result = subprocess.run(
+        ["sudo", "-n", KNIT_HCI, adapter, "hcitool", "cmd", "0x08", "0x002e", f"0x{low:02x}", f"0x{high:02x}"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    # The Command Complete's parameters: ncmd, the opcode's two bytes, then the status.
+    reply = result.stdout.strip().splitlines()[-1].split() if result.stdout.strip() else []
+    if result.returncode or reply[-1:] != ["00"]:
+        raise RuntimeError(f"LE Set Resolvable Private Address Timeout failed on dongle {adapter.upper()}: {result.stdout.strip()[-200:]}")
+    return {"adapter": adapter, "rpaTimeoutSeconds": seconds}
 
 
 class Stranger:
@@ -2013,8 +2045,6 @@ class Stranger:
                 continue
         return messages
 
-    def rotations(self) -> int:
-        return sum("registered afresh in" in message for message in self.messages())
 
 
 def _budgets_gatt_reads(phone: Phone) -> dict:
@@ -2047,14 +2077,14 @@ def android_strangers(arguments: argparse.Namespace) -> int:
     """knit-next #154's device trial (knit-ios #3): a phone's GATT payload reads stay within their budget beside a
     device that rotates its address under `0xFE30`, and its dials never wait behind them.
 
-    `knit-peer stranger` runs on dongle B with LE privacy on, registering its advert afresh every `--rotate` seconds.
-    The aim is a new resolvable private address the phone cannot resolve each time, a new device as an iPhone looks
-    after each rotation, but on the lab dongles a registration alone does not change the address on the air
-    (`.agents/context/linux-peer.md`, "What the stranger trial showed"), so `stranger-rotated` fails until it does. `--variant none` serves no payload, so each read finds a stranger. `--variant
-    forged` serves a valid payload naming the highest node id there is, which the phone never dials, so no HELLO ever
-    refunds it. Either way it hangs up on any dialer before a HELLO. A knit-peer in the `android` profile on dongle A
-    sorts below the phone, so the phone dials it; every `--cycle` seconds it refuses the phone and then allows it, for a
-    fresh promotion and dial. The phone is woken every minute, which nudges its scan, or it hears too few addresses.
+    `knit-peer stranger` runs on dongle B with LE privacy on and an RPA timeout of `--rotate` seconds (`_rpa_timeout`),
+    so B advertises from a new resolvable private address the phone cannot resolve that often: a new device each time,
+    as an iPhone looks after each rotation. `--variant none` serves no payload, so each read finds a stranger. `--variant forged` serves a valid
+    payload naming the highest node id there is, which the phone never dials, so no HELLO ever refunds it. Either way
+    it hangs up on any dialer before a HELLO. A knit-peer in the `android` profile on dongle A sorts below the phone, so
+    the phone dials it; every `--cycle` seconds it refuses the phone and then allows it, for a fresh promotion and dial.
+    A phone with links and nothing to dial scans at its floor and seldom hears the stranger, so the phone is woken every
+    minute, and the other Android phones `--quiet` names pause their meshes for the run.
 
     The phone's transport log is streamed for the whole run (`.build/interop-strangers-logcat.txt`) and graded at the
     end. `reads-within-budget`: every read that ended, less those a link confirmed, at most 12 in any 10 minutes.
@@ -2070,6 +2100,18 @@ def android_strangers(arguments: argparse.Namespace) -> int:
     if run.step("phone-build-budgets-gatt", lambda: _budgets_gatt_reads(phone)) is None:
         print(json.dumps({"summary": "android-strangers", "steps": run.steps, "failed": run.failed}))
         return run.failed
+    # Other phones' links keep this one at its floor scan, where it seldom hears the stranger: they pause for the run.
+    quiet = [Phone(serial) for serial in arguments.quiet]
+    for other in quiet:
+        run.step(f"paused-{other.serial}", lambda other=other: _paused(other, True))
+    try:
+        return _strangers_run(arguments, phone, run, nonce, phone_id)
+    finally:
+        for other in quiet:
+            run.step(f"resumed-{other.serial}", lambda other=other: _paused(other, False))
+
+
+def _strangers_run(arguments: argparse.Namespace, phone: Phone, run: Run, nonce: str, phone_id: str) -> int:
     heard = in_range()
     # An iPhone the scan could not read is still no earlier run's peer: taken as heard, and refused.
     heard.update({node: {"capabilities": IOS_ADVERT_CAPABILITIES} for node in arguments.known.split(",") if node and node not in heard})
@@ -2081,12 +2123,15 @@ def android_strangers(arguments: argparse.Namespace) -> int:
     seconds = int(arguments.minutes * 60)
     header = {"run": "android-strangers", "variant": arguments.variant, "phone": phone_id, "peer": peer_id, "refused": sorted(others)}
     print(json.dumps({**header, "rotate": arguments.rotate, "minutes": arguments.minutes, "cycle": arguments.cycle}))
-    if run.step("privacy-on-b", lambda: _privacy("b", True)) is None:
+    if run.step("privacy-on-b", lambda: _privacy("b", True)) is None or run.step(
+        "rpa-timeout-b", lambda: _rpa_timeout("b", arguments.rotate)
+    ) is None:
         run.step("privacy-off-b", lambda: _privacy("b", False))
         print(json.dumps({"summary": "android-strangers", "steps": run.steps, "failed": run.failed}))
         return run.failed
     capture = LogcatCapture(phone, ROOT / ".build" / "interop-strangers-logcat.txt")
-    stranger = Stranger(arguments.variant, arguments.rotate, seconds + 120, ROOT / ".build" / "interop-stranger.log")
+    # The stranger's own re-registration moves nothing on the dongles; the power cycles below rotate its address.
+    stranger = Stranger(arguments.variant, 7200, seconds + 120, ROOT / ".build" / "interop-stranger.log")
     peer = Peer("android", f"knit-peer strangers {nonce}", others, arguments.peer_log, arguments.rssi_floor)
     stop = threading.Event()
     try:
@@ -2120,7 +2165,7 @@ def android_strangers(arguments: argparse.Namespace) -> int:
     run.step("reads-within-budget", lambda: _within_budget(charges))
     run.step("budget-spent-logged", lambda: _budget_edges(lines))
     run.step("dials-not-starved", lambda: _not_starved(lines, peer_id))
-    run.step("stranger-rotated", lambda: _rotated(charges, stranger))
+    run.step("stranger-rotated", lambda: _rotated(charges, seconds // arguments.rotate))
     print(
         json.dumps(
             {
@@ -2169,14 +2214,14 @@ def _start_stranger(stranger: Stranger) -> dict:
     return {"command": shlex.join(stranger.command[1 : -len(hci0())])}
 
 
-def _rotated(charges: list[tuple[float, str]], stranger: Stranger) -> dict:
+def _rotated(charges: list[tuple[float, str]], rotations: int) -> dict:
     addresses = {address for _, address in charges}
     if len(addresses) <= GATT_BUDGET_READS:
         raise RuntimeError(
-            f"the phone read only {len(addresses)} addresses in {stranger.rotations()} registrations: "
+            f"the phone read only {len(addresses)} addresses in about {rotations} rotations: "
             "the stranger's address did not change on the air, or the phone seldom heard it"
         )
-    return {"addressesRead": len(addresses), "rotations": stranger.rotations()}
+    return {"addressesRead": len(addresses), "rotations": rotations}
 
 
 def _per_minute(lines: list[tuple[float, str]], prefix: str) -> list[int]:
@@ -6081,7 +6126,8 @@ def main() -> int:
     strangers.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     strangers.add_argument("--variant", required=True, choices=["none", "forged"], help="what the stranger's GATT service serves")
     strangers.add_argument("--minutes", type=float, default=30, help="how long the stranger advertises beside the phone")
-    strangers.add_argument("--rotate", type=int, default=20, help="seconds between the stranger's fresh registrations, each a new address")
+    strangers.add_argument("--rotate", type=int, default=20, help="dongle B's RPA timeout in seconds: how often its address changes")
+    strangers.add_argument("--quiet", nargs="*", default=[], help="adb serials of other Android phones in range, whose meshes pause for the run")
     strangers.add_argument("--cycle", type=float, default=180, help="seconds between relinks, each a fresh promotion and dial")
     strangers.add_argument("--link-timeout", type=float, default=180, help="seconds for each link")
     strangers.add_argument("--known", default="", help="iPhones in range the scan may fail to read, by node id, taken as heard and refused; comma-separated")
