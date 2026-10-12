@@ -103,7 +103,7 @@ python3 scripts/interop.py android-rings --device <serial>        # A4: custody 
 python3 scripts/interop.py android-reads --device <serial> --order peer-below|peer-above   # A3's gate: the phone reads the peer's GATT payload, and dials it or is dialed
 python3 scripts/interop.py android-reads --device <serial> --order peer-above --links 10  # #102: ten links the peer dials, each ending at the 5 s timeout
 python3 scripts/interop.py android-forgets --device <serial>     # A3's gate: each forget rule of the payload lifetime fires once on the phone
-python3 scripts/interop.py android-strangers --device <serial> --variant none|forged   # knit-next #154: beside a rotating 0xFE30 stranger, reads stay in budget and dials never wait
+python3 scripts/interop.py android-strangers --device <serial> --variant none|forged --quiet <other serials>   # knit-next #154: beside a rotating 0xFE30 stranger, reads stay in budget and dials never wait
 python3 scripts/interop.py iphone-forgets --hci0                 # each forget rule fires once on the iPhone (hci0 needs its go-ahead)
 python3 scripts/interop.py iphone-scan --first ios --away-window 150   # P8's scan-filter check: peers on hci0 and hci1; someone locks the iPhone
 python3 scripts/interop.py iphone-seek --far hci1 --mode drop [--drop radio-off]   # does a locked Knit hear a link a peer dialed end? someone locks the iPhone
