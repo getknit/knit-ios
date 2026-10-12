@@ -144,7 +144,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | `knit-peer run … --feed window\|pace` | the file feed's A/B switch (ADR 2026-10.xwjc): `window`, the default, clocks a file to a peer that reports by its reports and reports a file coming in at the window's cadence; `pace` feeds at the 4 KiB/s budget and reports every 2 s, as Android's `…debug.LINKTUNE --es feed pace` does |
 | `knit-peer run … --never-sight NODE_ID[,NODE_ID…] --no-gatt-payload` | test switches, BlueZ only: never report those nodes as sighted, so the peer never dials them and admits their dials unsighted; and, in the `ios` profile, serve the doorbell without the payload characteristic, so a phone that reads payloads (A3) files the peer as a stranger and never sights it |
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing, and links a node that advertises only the UUID just long enough to read its payload; `--advertise` also shows the advert |
-| `knit-peer stranger [--payload none\|forged] [--rotate 20] [--seconds 1800]` | a test stimulus for knit-next #154, BlueZ only (knit-ios #3): advertises the `0xFE30` UUID as a device that is not Knit's, and registers the advert afresh every `--rotate` seconds. With LE privacy on its adapter, each registration goes out from a new address. `none` serves the doorbell alone, so a reader files a stranger. `forged` serves a valid payload naming `zzzzzzzzzzzzzzzzzzzzzzzzzy`, the highest node id, which no phone dials. It hangs up on any dialer before a HELLO, so it never links |
+| `knit-peer stranger [--payload none\|forged] [--rotate 20] [--seconds 1800]` | a test stimulus for knit-next #154, BlueZ only (knit-ios #3): advertises the `0xFE30` UUID as a device that is not Knit's, and registers the advert afresh every `--rotate` seconds. With LE privacy on its adapter it advertises from a resolvable private address, which a registration alone does not change on the dongles ("What the stranger trial showed"). `none` serves the doorbell alone, so a reader files a stranger. `forged` serves a valid payload naming `zzzzzzzzzzzzzzzzzzzzzzzzzy`, the highest node id, which no phone dials. It hangs up on any dialer before a HELLO, so it never links |
 | `knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME]` | keeps a new identity whose node id sorts inside the window, with the old name and photo |
 
 - **Every command checks the adapter first.** `--adapter` defaults to `hci1` and `--adapter-address` to
@@ -296,9 +296,8 @@ run, and the run grades it at the end:
 - `stranger-rotated`: the phone read more than 12 addresses. Fewer means privacy did not rotate dongle B's address.
 
 The summary also gives the reads begun per minute, the count of `scan paused: connect in flight`, and the
-`gattBudget=` values seen. Re-registering an advert under kernel privacy does give it a new address: on 2026-10-12,
-btmon on dongle B showed six registrations in a minute set six resolvable private addresses, on advertising handles
-1 and 2 in turn, while `btmgmt info` still showed the public address. btmgmt quits at the end of its input before
+`gattBudget=` values seen. On the dongles, re-registering an advert does not give it a new address on the air ("What
+the stranger trial showed"), so the stimulus does not rotate yet. btmgmt quits at the end of its input before
 its replies arrive, so `_privacy` feeds `knit-hci b btmgmt` one command every 2 s and closes the input after the last.
 
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
@@ -1715,16 +1714,27 @@ in `.build/and3/`.
 
 ## What the stranger trial showed
 
-On 2026-10-12, with the go-ahead, `android-strangers --variant none` ran on the Pixel 7 against knit-next's #154
-build. It was stopped after 14 minutes, and a full run is still owed.
+On 2026-10-12, with the go-ahead, `android-strangers --variant none` ran twice on the Pixel 7 against a knit-next
+build with #154: once for 14 minutes until dongle B dropped out, then for the full 30. Neither tested the budget, because
+the stranger's address never rotated on the air.
 
-- **Rotation works.** A one-minute check with btmon on dongle B showed six registrations set six resolvable private
-  addresses. In the run, the Pixel read one of them as a stranger.
-- **Dongle B then dropped out.** From six minutes in, B was unregistered every 30 to 45 s and came back each time as a
+- **A registration does not rotate the address.** btmon on dongle B showed the kernel give each new advertising set
+  its own resolvable private address. Dongle A, listening, heard the stranger at one address for a minute of
+  registrations every 10 s. In the 30-minute run the Pixel read `59:20:…` at 01:39 and 01:49 and `73:AC:…` at 01:54
+  and 02:04: one address per 15 minutes, the kernel's default `rpa_timeout`, read again as each 10-minute stranger
+  wait ran out. The controller advertises from the device's random address, not the set's.
+- **A power cycle may rotate it.** Power-cycling B under privacy every 15 s, with A listening, showed a short-lived
+  address in each interval, though the capture did not tie them to the stranger for certain. Each power-on also
+  registered another advert without withdrawing the last, and the fourth was refused with "Maximum advertisements".
+  KnitBlueZ keeps no advert across a power cycle, and BlueZ does.
+- **Dongle B dropped out in the first run.** From six minutes in, B was unregistered every 30 to 45 s and came back each time as a
   fresh controller, with privacy off and its public address on the air. btmon showed `Close Index` and `Delete Index`
   with no HCI error. The kernel logged no USB disconnect, and the USB device number stayed the same. Once the run was
   stopped, btusb stayed unbound from B's interface, so B needs someone with root to rebind or replug it. The cause is
   not known. A process claiming the interface through usbfs would look like this.
-- **The Pixel heard few addresses.** It read 1 of the first 18 rotated addresses in six minutes, at its `floor` scan
-  with links up. The run now wakes the phone every minute, which nudges its scan.
-- **Dials did not wait.** The phone dialed the peer five times, each within 2.2 s of its `promote=`.
+  A 10-minute run of the stranger alone, privacy on, rotating every 20 s, never dropped out, and neither did the
+  30-minute run after B was replugged.
+- **A settled phone scans little.** With 5 links up and nothing to dial, the Pixel sits in its `floor` tier, whose scan
+  windows are short and far apart, so it hears a stranger seldom whatever its address does.
+- **Dials did not wait.** The phone dialed the peer 12 times in the 30-minute run, each in the same pass as its
+  `promote=`, and charged at most 2 reads in any 10 minutes.

@@ -1953,10 +1953,10 @@ def _dial_waits(lines: list[tuple[float, str]], node: str) -> dict:
 
 def _privacy(adapter: str, on: bool) -> dict:
     """Turns LE privacy on or off on one of Knit's own adapters, through the root wrapper: with it on, each advertising
-    instance goes out from a new resolvable private address, while the adapter's identity, which knit-peer finds it by,
-    stays its public address (ADR 2026-09.5ftc). The adapter must be powered off to change it. btmgmt quits at the end
-    of its input before the replies arrive, so each command gets a moment before the next, and the input stays open
-    until the last has answered."""
+    instance gets a resolvable private address (on the dongles the controller sends from the device's), while the
+    adapter's identity, which knit-peer finds it by, stays its public address (ADR 2026-09.5ftc). The adapter must be
+    powered off to change it. btmgmt quits at the end of its input before the replies arrive, so each command gets a
+    moment before the next, and the input stays open until the last has answered."""
     state = "on" if on else "off"
     process = subprocess.Popen(
         ["sudo", "-n", KNIT_HCI, adapter, "btmgmt"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
@@ -2047,9 +2047,10 @@ def android_strangers(arguments: argparse.Namespace) -> int:
     """knit-next #154's device trial (knit-ios #3): a phone's GATT payload reads stay within their budget beside a
     device that rotates its address under `0xFE30`, and its dials never wait behind them.
 
-    `knit-peer stranger` runs on dongle B with LE privacy on, so each advert it registers afresh, every `--rotate`
-    seconds, goes out from a new resolvable private address the phone cannot resolve: a new device each time, as an
-    iPhone looks after each rotation. `--variant none` serves no payload, so each read finds a stranger. `--variant
+    `knit-peer stranger` runs on dongle B with LE privacy on, registering its advert afresh every `--rotate` seconds.
+    The aim is a new resolvable private address the phone cannot resolve each time, a new device as an iPhone looks
+    after each rotation, but on the lab dongles a registration alone does not change the address on the air
+    (`.agents/context/linux-peer.md`, "What the stranger trial showed"), so `stranger-rotated` fails until it does. `--variant none` serves no payload, so each read finds a stranger. `--variant
     forged` serves a valid payload naming the highest node id there is, which the phone never dials, so no HELLO ever
     refunds it. Either way it hangs up on any dialer before a HELLO. A knit-peer in the `android` profile on dongle A
     sorts below the phone, so the phone dials it; every `--cycle` seconds it refuses the phone and then allows it, for a
@@ -2172,7 +2173,8 @@ def _rotated(charges: list[tuple[float, str]], stranger: Stranger) -> dict:
     addresses = {address for _, address in charges}
     if len(addresses) <= GATT_BUDGET_READS:
         raise RuntimeError(
-            f"the phone read only {len(addresses)} addresses in {stranger.rotations()} rotations: is privacy rotating dongle B's address?"
+            f"the phone read only {len(addresses)} addresses in {stranger.rotations()} registrations: "
+            "the stranger's address did not change on the air, or the phone seldom heard it"
         )
     return {"addressesRead": len(addresses), "rotations": stranger.rotations()}
 

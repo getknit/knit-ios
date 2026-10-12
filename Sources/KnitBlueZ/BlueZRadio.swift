@@ -30,8 +30,9 @@
             /// interop run keeps the peer from dialing a phone whose own dial is under test (`--never-sight`).
             public var neverSighted: Set<NodeId> = []
             /// How often the advert is registered afresh, as a new advertising instance, or `nil` to keep it. A test
-            /// switch: on an adapter with LE privacy on, each new instance goes out from a new resolvable private
-            /// address, which a phone without the adapter's key takes for a new device (`knit-peer stranger`).
+            /// switch for `knit-peer stranger`. On an adapter with LE privacy on, the kernel gives each new instance its
+            /// own resolvable private address, but the lab dongles' controller advertises from the device's random
+            /// address instead, so this alone does not move the address a phone hears (`.agents/context/linux-peer.md`).
             public var rotateAdvertMilliseconds: Int64?
             /// Where channels come from.
             public var sockets: any SocketProvider

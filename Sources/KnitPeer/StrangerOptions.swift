@@ -1,8 +1,8 @@
 /// How `knit-peer stranger` stands in for a device that advertises the `0xFE30` UUID but is no Knit node, the
 /// stimulus knit-next #154's GATT read budget is trialled against (knit-ios #3). It advertises the UUID alone, as an
 /// iPhone does, so a phone that reads payloads connects to read it. It runs no link manager and hangs up on any dialer
-/// before a HELLO, so it never links. With LE privacy on its adapter, each fresh registration goes out from a new
-/// address, and a phone takes it for a new device each time.
+/// before a HELLO, so it never links. A phone takes it for a new device only when its address changes, which LE privacy
+/// on its adapter does; a fresh registration alone does not on the lab dongles (`.agents/context/linux-peer.md`).
 public struct StrangerOptions: Equatable, Sendable {
     /// What its GATT service serves.
     public enum Payload: String, Equatable, Sendable, CaseIterable {
