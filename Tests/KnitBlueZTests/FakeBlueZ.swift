@@ -37,6 +37,7 @@
 
         static let adapter = "/org/bluez/hci1"
         static let adapterAddress = "0A:BC:DE:00:00:A1"
+        static let advertisingSets = 4 // adverts the controller holds at once, as the lab's dongles do
         static let otherAdapter = "/org/bluez/hci0"
 
         let server: BusServer
@@ -159,6 +160,9 @@
         }
 
         private func register(advert path: String, call: BusMessage) -> BusConnection.Answer {
+            guard registered.count < Self.advertisingSets else {
+                return .error(name: "org.bluez.Error.NotPermitted", message: "Maximum advertisements reached")
+            }
             guard let radio,
                 let getAll = BusMessage.methodCall(destination: nil, path: path, interface: BlueZ.properties, member: "GetAll"),
                 (try? getAll.append(.string(BlueZ.advertisementInterface))) != nil
@@ -182,6 +186,9 @@
         }
 
         private func register(application root: String, call: BusMessage) -> BusConnection.Answer {
+            guard applicationRoot == nil else {
+                return .error(name: "org.bluez.Error.AlreadyExists", message: "Already Exists")
+            }
             guard let radio,
                 let objects = BusMessage.methodCall(
                     destination: nil, path: root, interface: BlueZ.objectManager, member: "GetManagedObjects")
@@ -272,12 +279,9 @@
         }
 
         /// The adapter's power changes.
+        /// Turns the adapter on or off, keeping what is registered through it, as BlueZ 5.72 does.
         func setPowered(_ on: Bool) throws {
             powered = on
-            if !on {
-                registered.removeAll()
-                applicationRoot = nil
-            }
             try change(Self.adapter, interface: BlueZ.adapterInterface, .properties([("Powered", .boolean(on))]))
         }
 

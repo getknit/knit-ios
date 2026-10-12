@@ -185,12 +185,11 @@
             case BlueZ.adapterInterface where path == configuration.adapter.path:
                 if let nowPowered = changed["Powered"]?.bool, nowPowered != powered {
                     powered = nowPowered
-                    if !nowPowered {
-                        // BlueZ has dropped our advert and GATT application with the power.
-                        activeAdvert = nil
-                        pendingAdvert = nil
-                        gattRegistered = false
-                    }
+                    // BlueZ keeps our advert and GATT application through a power cycle and puts them back when the
+                    // power returns, so going down withdraws them (`bringDown`). Forgotten instead, as they were until
+                    // 2026-10-12, each power-on registered more: the application answered AlreadyExists, and the fourth
+                    // advert Maximum advertisements reached (`.agents/context/linux-peer.md`, "What the stranger trial
+                    // showed").
                     reconcile(now: Monotonic.milliseconds())
                 }
             case BlueZ.deviceInterface:

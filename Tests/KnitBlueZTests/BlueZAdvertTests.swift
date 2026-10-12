@@ -1,5 +1,6 @@
 #if os(Linux)
     @testable import KnitBlueZ
+    import KnitMesh
     import KnitWire
     import Testing
 
@@ -45,6 +46,25 @@
             rig.settle("the old advert was never withdrawn") { rig.fake.registered.count == 1 }
             #expect(rig.fake.registered != [first], "each registration is a new instance")
             #expect(rig.log.all.contains { $0.contains("registered afresh in 50 ms") })
+        }
+
+        /// BlueZ keeps the advert and the application through a power cycle, so going down withdraws them. Forgotten
+        /// instead, each power-on registered more, until the application answered AlreadyExists and the fourth
+        /// advert was refused (2026-10-12).
+        @Test func aPowerCycleWithdrawsWhatWasRegisteredAndRegistersItOnceAgain() throws {
+            let rig = try LoopRig(profile: .ios)
+            rig.startAdvertising()
+            for cycle in 1...5 {
+                try rig.fake.setPowered(false)
+                rig.settle("cycle \(cycle): never withdrawn") { rig.fake.registered.isEmpty && rig.fake.applicationRoot == nil }
+                try rig.fake.setPowered(true)
+                rig.settle("cycle \(cycle): never back on") {
+                    rig.events.filter { $0 == .listening(psm: UnixSockets.psm) }.count == cycle + 1
+                }
+                rig.post(.advertise(LoopRig.ours))
+                rig.settle("cycle \(cycle): never advertised again") { rig.fake.registered.count == 1 && rig.fake.applicationRoot != nil }
+            }
+            #expect(!rig.log.all.contains { $0.contains("failed") }, "nothing refused: \(rig.log.all.filter { $0.contains("failed") })")
         }
 
         @Test func anAdvertIsRegisteredOnceUnlessItRotates() throws {
