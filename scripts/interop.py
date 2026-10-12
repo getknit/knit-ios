@@ -2102,23 +2102,30 @@ def android_strangers(arguments: argparse.Namespace) -> int:
         return run.failed
     # Other phones' links keep this one at its floor scan, where it seldom hears the stranger: they pause for the run.
     quiet = [Phone(serial) for serial in arguments.quiet]
+    # A paused phone stops advertising, so the scan misses it, while this phone may still hold its link: it counts as
+    # heard, and is refused.
+    paused = {other.state()["self"]["nodeId"] for other in quiet}
     for other in quiet:
         run.step(f"paused-{other.serial}", lambda other=other: _paused(other, True))
+    extras: dict = {}
     try:
-        return _strangers_run(arguments, phone, run, nonce, phone_id)
+        extras = _strangers_run(arguments, phone, run, nonce, phone_id, paused)
     finally:
         for other in quiet:
             run.step(f"resumed-{other.serial}", lambda other=other: _paused(other, False))
+        print(json.dumps({"summary": "android-strangers", "steps": run.steps, "failed": run.failed, **extras}))
+    return run.failed
 
 
-def _strangers_run(arguments: argparse.Namespace, phone: Phone, run: Run, nonce: str, phone_id: str) -> int:
+def _strangers_run(arguments: argparse.Namespace, phone: Phone, run: Run, nonce: str, phone_id: str, paused: set[str]) -> dict:
+    """The run proper, answering what the summary line reports beside the step counts."""
     heard = in_range()
     # An iPhone the scan could not read is still no earlier run's peer: taken as heard, and refused.
     heard.update({node: {"capabilities": IOS_ADVERT_CAPABILITIES} for node in arguments.known.split(",") if node and node not in heard})
+    heard.update({node: {} for node in paused if node not in heard})
     others = set(heard) - {phone_id}
     if run.step("phone-forgot-old-peers", lambda: _phone_forgets_all_but(phone, set(heard))) is None:
-        print(json.dumps({"summary": "android-strangers", "steps": run.steps, "failed": run.failed}))
-        return run.failed
+        return {}
     peer_id = keygen(phone_id, "phone-dials", others)
     seconds = int(arguments.minutes * 60)
     header = {"run": "android-strangers", "variant": arguments.variant, "phone": phone_id, "peer": peer_id, "refused": sorted(others)}
@@ -2127,8 +2134,7 @@ def _strangers_run(arguments: argparse.Namespace, phone: Phone, run: Run, nonce:
         "rpa-timeout-b", lambda: _rpa_timeout("b", arguments.rotate)
     ) is None:
         run.step("privacy-off-b", lambda: _privacy("b", False))
-        print(json.dumps({"summary": "android-strangers", "steps": run.steps, "failed": run.failed}))
-        return run.failed
+        return {}
     capture = LogcatCapture(phone, ROOT / ".build" / "interop-strangers-logcat.txt")
     # The stranger's own re-registration moves nothing on the dongles; the power cycles below rotate its address.
     stranger = Stranger(arguments.variant, 7200, seconds + 120, ROOT / ".build" / "interop-stranger.log")
@@ -2166,21 +2172,13 @@ def _strangers_run(arguments: argparse.Namespace, phone: Phone, run: Run, nonce:
     run.step("budget-spent-logged", lambda: _budget_edges(lines))
     run.step("dials-not-starved", lambda: _not_starved(lines, peer_id))
     run.step("stranger-rotated", lambda: _rotated(charges, seconds // arguments.rotate))
-    print(
-        json.dumps(
-            {
-                "summary": "android-strangers",
-                "steps": run.steps,
-                "failed": run.failed,
-                "lines": len(lines),
-                "logcatRestarts": capture.restarts,
-                "readsBegunPerMinute": _per_minute(lines, "bt gatt reading "),
-                "scanPausedForConnect": sum(message.startswith("scan paused: connect in flight") for _, message in lines),
-                "gattBudgetSeen": sorted({m.group(1) for _, message in lines if (m := re.search(r"gattBudget=(\d+/\d+)", message))}),
-            }
-        )
-    )
-    return run.failed
+    return {
+        "lines": len(lines),
+        "logcatRestarts": capture.restarts,
+        "readsBegunPerMinute": _per_minute(lines, "bt gatt reading "),
+        "scanPausedForConnect": sum(message.startswith("scan paused: connect in flight") for _, message in lines),
+        "gattBudgetSeen": sorted({m.group(1) for _, message in lines if (m := re.search(r"gattBudget=(\d+/\d+)", message))}),
+    }
 
 
 def _within_budget(charges: list[tuple[float, str]]) -> dict:

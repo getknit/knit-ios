@@ -197,8 +197,8 @@ dial order (`--blank-name` for alias parity, `--expect-avatar` and `--peer-avata
 `--radio-profile ios` for the A1 group), `refusal` for the `ios` profile against Android 2.7 only (every A1 build
 admits the dialer it expects refused), `replace` for A1's stale-link rule, `soak`, `relay` (the same two photo
 flags pull photos through the middle peer), `android-rings` for companion change A4,
-`android-reads`, companion change A3's device gate, and `android-strangers`, knit-next #154's. It needs the session's go-ahead for the phone
-(`.agents/rules/devices.md`). It keeps the run on that phone:
+`android-reads`, companion change A3's device gate, and `android-strangers`, knit-next #154's. It needs the
+session's go-ahead for the phone (`.agents/rules/devices.md`). It keeps the run on that phone:
 
 - **Before the peer starts**, it scans and picks a node id that no other phone in range dials.
 - **Once the peer is up**, it refuses every other phone with `deny-link`, and then any node it sights later
@@ -1716,9 +1716,18 @@ in `.build/and3/`.
 
 ## What the stranger trial showed
 
-On 2026-10-12, with the go-ahead, `android-strangers --variant none` ran twice on the Pixel 7 against a knit-next
-build with #154: once for 14 minutes until dongle B dropped out, then for the full 30. Neither tested the budget, because
-the stranger's address never rotated on the air.
+On 2026-10-12, with the go-ahead, `android-strangers` ran on the Pixel 7 against a knit-next build with #154
+(`8246d2ec`). The first two `none` runs did not test the budget: the stranger's address never rotated on the air,
+and a settled phone seldom heard it. Once both were fixed, both variants passed every step in 30 minutes, with
+Pixels 3, 8 and 9 paused (`--quiet`):
+
+| Variant | Charged reads | Most in 10 min | Budget spent | Dials | Longest wait | Addresses read |
+| --- | --- | --- | --- | --- | --- | --- |
+| `none` | 36 | 12 | 10 times | 13 | 4.9 s | 35 |
+| `forged` | 33 | 12 | 7 times | 13 | 4.2 s | 33 |
+
+Reads stopped for three or four minutes each time the budget filled. The forger's 26 payload reads all named
+`zzzzzzzzzzzzzzzzzzzzzzzzzy`, and no `bt gatt confirmed` refunded any of them.
 
 - **A registration does not rotate the address.** btmon on dongle B showed the kernel give each new advertising set
   its own resolvable private address. Dongle A, listening, heard the stranger at one address for a minute of
@@ -1734,14 +1743,12 @@ the stranger's address never rotated on the air.
   cycle and puts them back when the power returns. KnitBlueZ forgot both instead, so each power-on registered more:
   the application answered AlreadyExists, and the fourth advert "Maximum advertisements reached". Going down now
   withdraws them (`aPowerCycleWithdrawsWhatWasRegisteredAndRegistersItOnceAgain`).
-- **Dongle B dropped out in the first run.** From six minutes in, B was unregistered every 30 to 45 s and came back each time as a
-  fresh controller, with privacy off and its public address on the air. btmon showed `Close Index` and `Delete Index`
-  with no HCI error. The kernel logged no USB disconnect, and the USB device number stayed the same. Once the run was
-  stopped, btusb stayed unbound from B's interface, so B needs someone with root to rebind or replug it. The cause is
-  not known. A process claiming the interface through usbfs would look like this.
-  A 10-minute run of the stranger alone, privacy on, rotating every 20 s, never dropped out, and neither did the
-  30-minute run after B was replugged.
-- **A settled phone scans little.** With 5 links up and nothing to dial, the Pixel sits in its `floor` tier, whose scan
-  windows are short and far apart, so it hears a stranger seldom whatever its address does.
-- **Dials did not wait.** The phone dialed the peer 12 times in the 30-minute run, each in the same pass as its
-  `promote=`, and charged at most 2 reads in any 10 minutes.
+- **Dongle B dropped out in the first run.** From six minutes in, B was unregistered every 30 to 45 s and came back
+  each time as a fresh controller, with privacy off and its public address on the air. btmon showed `Close Index` and
+  `Delete Index` with no HCI error. The kernel logged no USB disconnect, and the USB device number stayed the same.
+  Once the run stopped, btusb stayed unbound from B until the maintainer replugged it. The cause is not known; a
+  process claiming the interface through usbfs would look like this. It did not happen again: not in 10 minutes of the
+  stranger alone with privacy on, nor in the three 30-minute runs after the replug.
+- **A settled phone scans little.** With links up and nothing to dial, the Pixel sits in its `floor` tier, whose scan
+  windows are short and far apart. In the first full run it read 2 addresses in 30 minutes. With the other Pixels
+  paused it kept two links, the iPhone's and the paused Pixel 9's, and read two or three addresses a minute.
