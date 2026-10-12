@@ -56,7 +56,7 @@ document:
   minus any photo.
 - Onboarding now asks you to agree to Knit's terms of use, which rule out harassment, sexual content involving
   minors, illegal content and spam. If you set Knit up before the terms existed, you'll see them once at your
-  next launch, and About keeps a copy.
+  next launch, and About keeps a copy beside a link to Knit's privacy policy.
 - Content filtering hides explicit photos from other people until you tap them, and shows an initial in place
   of an explicit profile picture. Your iPhone checks each photo itself, and Knit won't post an explicit photo
   in Nearby or use one as your profile picture.

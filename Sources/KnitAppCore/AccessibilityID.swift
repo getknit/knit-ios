@@ -295,6 +295,8 @@ public enum AccessibilityID {
     public static let aboutTerms = "about_terms"
     /// The terms, read from About.
     public static let termsScreen = "screen_terms"
+    /// About's privacy policy link.
+    public static let aboutPrivacy = "about_privacy"
     /// About's email link (ADR 2026-10.f6kf).
     public static let aboutContact = "about_contact"
     /// About's version line.

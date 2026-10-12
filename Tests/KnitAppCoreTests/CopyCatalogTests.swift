@@ -128,6 +128,7 @@ import Testing
             Copy.About.title,
             Copy.About.license,
             Copy.About.source,
+            Copy.About.privacy,
             Copy.About.notices,
             Copy.About.security,
             Copy.Common.cancel,

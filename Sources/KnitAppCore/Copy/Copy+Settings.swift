@@ -151,6 +151,12 @@ extension Copy {
             NSLocalizedString("about.contact", bundle: .main, value: "Email Knit", comment: "About: the row that emails Knit")
         }
 
+        /// The row that opens the privacy policy, which App Store rule 5.1.1(i) asks the app to link.
+        public static var privacy: String {
+            NSLocalizedString(
+                "about.privacy", bundle: .main, value: "Privacy policy", comment: "About: the row that opens the privacy policy")
+        }
+
         /// The row that lists the open-source components inside Knit.
         public static var notices: String {
             NSLocalizedString(

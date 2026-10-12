@@ -29,6 +29,7 @@ extension KnitUITests {
         app.back()
         try app.reveal(AccessibilityID.settingsAbout).tap()
         try audit(app, AccessibilityID.aboutScreen)
+        try app.reveal(AccessibilityID.aboutPrivacy)
         try app.reveal(AccessibilityID.aboutTerms).tap()
         try audit(app, AccessibilityID.termsScreen)
         app.back()

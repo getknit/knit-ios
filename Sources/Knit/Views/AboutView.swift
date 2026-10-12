@@ -2,7 +2,8 @@
     import KnitAppCore
     import SwiftUI
 
-    /// About: the version, the licence notice, the source, Knit's email, the terms, what encryption covers, and what ships inside.
+    /// About: the version, the licence notice, the source, Knit's email, the privacy policy, the terms, what encryption
+    /// covers, and what ships inside.
     internal struct AboutView: View {
         let about: AboutInfo
 
@@ -29,7 +30,8 @@
         }
     }
 
-    /// About's first section: the version, the licence, and the links out to the source, Knit's email and the terms.
+    /// About's first section: the version, the licence, and the links out to the source, Knit's email, the privacy policy
+    /// and the terms.
     private struct AboutLinks: View {
         let about: AboutInfo
 
@@ -48,6 +50,10 @@
                         ValueRow(Copy.About.contact, value: AbuseReport.address)
                     }
                     .accessibilityIdentifier(AccessibilityID.aboutContact)
+                }
+                if let url = URL(string: AboutInfo.privacyURL) {
+                    Link(Copy.About.privacy, destination: url)
+                        .accessibilityIdentifier(AccessibilityID.aboutPrivacy)
                 }
                 NavigationLink(value: Route.terms) {
                     Text(Copy.Terms.title)

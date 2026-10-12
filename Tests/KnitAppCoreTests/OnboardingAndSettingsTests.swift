@@ -133,5 +133,6 @@ import Testing
         #expect(settings.profileTitle == "Zoë")
         #expect(settings.about.versionLine == "Version 0.1.0 (7)")
         #expect(AboutInfo.sourceURL.hasPrefix("https://"))
+        #expect(AboutInfo.privacyURL.hasPrefix("https://"))
     }
 }

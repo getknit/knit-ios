@@ -38,6 +38,8 @@ public struct ThirdPartyNotice: Sendable, Equatable, Identifiable {
 public struct AboutInfo: Sendable, Equatable {
     /// Where the source lives: the public mirror the repo opens as (`.agents/specs/mvp.md`, P0 hosting).
     public static let sourceURL = "https://github.com/getknit/knit-ios"
+    /// The privacy policy, which App Store rule 5.1.1(i) wants inside the app as well as on the listing.
+    public static let privacyURL = "https://getknit.app/privacy/"
 
     /// The marketing version, `CFBundleShortVersionString`.
     public var version: String
