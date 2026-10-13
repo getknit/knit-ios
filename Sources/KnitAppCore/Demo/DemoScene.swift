@@ -177,6 +177,8 @@ internal struct DemoCast {
     var group: Group?
     /// The reactions, in the order they were made.
     var reactions: [Reaction] = []
+    /// Who is typing, and where.
+    var typing: [Typist] = []
     /// What ``DemoDirector`` plays once the mesh starts; nothing, in a scene for stills.
     var script: [Cue] = []
     /// The words the demo's text filter flags, for a scene that shows the filter at work (ADR 2026-10.yddp).
@@ -190,7 +192,8 @@ internal struct DemoCast {
     /// Two peers share a name, to show a discriminated label; the stranger has none, to show an alias. Jonas is blocked,
     /// so Settings lists someone and his profile shows the badge. Our room post has a count above one, an emoji outside
     /// the six, and a heart from Jonas that his block hides; Sam's DM has ours, and a stranger's that a DM does not show.
-    /// Priya's room post replies to ours, and ours in the group replies to hers.
+    /// Priya's room post replies to ours, and ours in the group replies to hers. Priya and Sam are typing in the room, and
+    /// Jonas too, whom his block hides; Priya is typing in the group.
     static let edgeCases = Self(
         people: [
             Person(slot: .sam, name: "Sam", status: "At the north gate", verified: true),
@@ -222,7 +225,8 @@ internal struct DemoCast {
             Reaction(line: "dm-2", by: .me, emoji: thumbs),
             Reaction(line: "dm-2", by: .stranger, emoji: "\u{1F602}"),
             Reaction(line: "group-1", by: .sam, emoji: thumbs),
-        ]
+        ],
+        typing: [Typist(slot: .sam), Typist(slot: .priya), Typist(slot: .jonas), Typist(slot: .priya, inGroup: true)]
     )
 
     /// Nothing at all, as a phone has before it meets anyone.

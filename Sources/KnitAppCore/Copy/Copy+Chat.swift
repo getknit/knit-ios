@@ -166,16 +166,17 @@ extension Copy {
             )
         }
 
-        /// What travels unencrypted: reactions.
+        /// What travels unencrypted: reactions, and typing indicators (ADR 2026-10.29z9), which share a point so a group's
+        /// sheet still fits under the screen's top.
         public static var encryptionReactions: String {
             NSLocalizedString(
                 "chat.encryption.reactions",
                 bundle: .main,
                 value: """
-                    Reactions travel unencrypted. The phones that carry them can see who reacted and with which emoji, but \
-                    not what the message says.
+                    Reactions and typing indicators travel unencrypted. Phones that carry a reaction can see who reacted and \
+                    with which emoji, but not what the message says.
                     """,
-                comment: "Encryption sheet: reactions are not encrypted"
+                comment: "Encryption sheet: reactions and typing indicators are not encrypted"
             )
         }
 

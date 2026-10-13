@@ -86,6 +86,8 @@
         static let faceTitle: CGFloat = 36
         /// An author's, beside their message.
         static let faceBubble: CGFloat = 40
+        /// Someone typing's, at a thread's foot (`TypingIndicatorRow`'s 30 dp).
+        static let faceTyping: CGFloat = 30
         /// A request's.
         static let faceRequest: CGFloat = 44
         /// A group member's, and a contact's in New message.

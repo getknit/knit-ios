@@ -81,6 +81,8 @@ public enum AccessibilityID {
     public static let chatScrollToNewest = "chat_scroll_to_bottom"
     /// The bar under the thread: the composer, or what stands in its place. Android has no tag here.
     public static let chatBottomBar = "chat_bottom_bar"
+    /// The row at a thread's foot that shows who is typing. Android has no tag here.
+    public static let chatTyping = "chat_typing"
     /// A status line in a thread, `chat_notice_<row id>`. Android has no tag here.
     public static func chatNotice(_ id: String) -> String {
         "chat_notice_\(id)"

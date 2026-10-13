@@ -199,6 +199,8 @@
             let textClassifier: any TextClassifier
             /// The peers a demo scene shows as linked, which only a demo has.
             var linked: [NodeId] = []
+            /// Who a demo scene shows typing where.
+            var typing: [String: [NodeId]] = [:]
             /// What plays a demo scene's script, under `-demoScene trailer`.
             var director: DemoDirector?
             /// A demo's camera, under `-demoCamera`; otherwise the phone's.
@@ -241,8 +243,9 @@
                 log: parts.log
             )
             let alerts = LocalNotifier()
+            let shows = !parts.linked.isEmpty || !parts.typing.isEmpty || parts.director != nil
             let service: any MeshService =
-                parts.linked.isEmpty && parts.director == nil ? node : DemoMesh(node, linked: parts.linked, director: parts.director)
+                shows ? DemoMesh(node, linked: parts.linked, typing: parts.typing, director: parts.director) : node
             let app = session(parts, over: service, notifying: alerts)
             app.director = parts.director
             let environment = AppEnvironment(
@@ -319,6 +322,7 @@
                         flagsEverything: options.demoSensitive, flagging: options.demoScene.flaggedWords
                     ),
                     linked: DemoSeed.linked(in: options.demoScene),
+                    typing: DemoSeed.typing(in: options.demoScene),
                     director: DemoDirector(
                         scene: options.demoScene,
                         stores: stores,

@@ -126,6 +126,20 @@ public enum DemoSeed {
         scene.cast.linked.compactMap { keys($0)?.nodeId }
     }
 
+    /// Who `scene` shows typing where, which only ``DemoMesh`` makes true, as it does the links.
+    public static func typing(in scene: DemoScene) -> [String: [NodeId]] {
+        let cast = scene.cast
+        let groupId = cast.group.map { group in GroupId.derive((group.members + [.me]).compactMap { keys($0)?.nodeId.string }) }
+        var typing: [String: [NodeId]] = [:]
+        for typist in cast.typing {
+            guard let nodeId = keys(typist.slot)?.nodeId, let thread = typist.inGroup ? groupId : Conversations.nearby else {
+                continue
+            }
+            typing[thread, default: []].append(nodeId)
+        }
+        return typing.mapValues { $0.sorted() }
+    }
+
     /// The notification the room's newest post by someone else makes, which `-demoNotification` posts, or `nil` when
     /// nobody else has posted there.
     public static func notification(in stores: MeshStores, me: NodeId) -> LocalNotification? {
@@ -329,5 +343,13 @@ public enum DemoSeed {
         let seed = slot.rawValue
         let count = UInt8(IdentityKeys.privateKeyByteCount)
         return IdentityKeys(signingSeed: (0..<count).map { $0 ^ seed }, agreementScalar: (0..<count).map { $0 &+ count &+ seed })
+    }
+}
+
+extension DemoCast {
+    /// Someone a scene shows typing, for as long as the mesh runs with the radio on: in the room, or in the scene's group.
+    struct Typist {
+        let slot: Slot
+        var inGroup = false
     }
 }

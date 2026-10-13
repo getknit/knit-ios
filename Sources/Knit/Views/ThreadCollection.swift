@@ -3,10 +3,12 @@
     import SwiftUI
     import UIKit
 
-    /// A row of a thread, by the identity its collection view keeps it by across updates: the header, then each message.
+    /// A row of a thread, by the identity its collection view keeps it by across updates: the header, then each message, then
+    /// who is typing, while anyone is.
     internal enum ThreadItem: Hashable, Sendable {
         case header
         case message(String)
+        case typing
     }
 
     /// Jumps a thread's collection view to its newest row, at SwiftUI's asking: the way back, and a message of our own; or

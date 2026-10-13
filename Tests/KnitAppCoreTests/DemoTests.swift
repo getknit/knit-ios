@@ -345,3 +345,39 @@ extension DemoTests {
         #expect(sent.replyTo?.messageId == "room-1" && sent.replyTo?.author == "Sam")
     }
 }
+
+// Typing, apart from the suite's body for the same reason.
+extension DemoTests {
+    @Test func theDemosTypistsShowWhileTheMeshRunsAndGoWhenItStops() async throws {
+        // Priya and Sam are typing in the room, and Jonas too, whom his block hides; Priya is typing in the group.
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        DemoSeed.populate(stores, me: identity.nodeId, now: 10_000_000, scene: .edgeCases)
+        let node = Mesh(
+            identity: identity,
+            deviceTag: nil,
+            stores: stores,
+            radio: DemoRadio(state: .on),
+            clock: DemoClock(),
+            random: SystemRandomNumberGenerator()
+        )
+        let mesh = DemoMesh(node, linked: [], typing: DemoSeed.typing(in: .edgeCases))
+        let session = AppSession(identity: OwnIdentity(bundle: identity.bundle), stores: stores, mesh: mesh)
+        let listening = Task { await session.listen() }
+        await session.start()
+        while session.typing.isEmpty {
+            await Task.yield()
+        }
+        let room = ChatModel(conversationId: Conversations.nearby, session: session)
+        #expect(room.state.typing.count == 2)
+        #expect(room.state.typingLabel == "Priya and others are typing")
+        let group = try #require(stores.groups.groups().first)
+        #expect(ChatModel(conversationId: group.id, session: session).state.typingLabel == "Priya is typing")
+        await session.stop()
+        while !session.typing.isEmpty {
+            await Task.yield()
+        }
+        #expect(room.state.typingLabel == nil)
+        listening.cancel()
+    }
+}

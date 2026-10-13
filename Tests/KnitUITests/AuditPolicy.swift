@@ -26,6 +26,9 @@ import XCTest
 ///   - an emoji, an element whose label is one: a picture the font draws in its own colors, which no view picks. A
 ///     reaction chip's 👍 is yellow on light gray, and no fill brings it to 4.5:1 in light and dark alike. WCAG 1.4.3 is
 ///     for text; the chip's count and the bubble's VoiceOver value carry what it says (ADR 2026-10.ehe6);
+///   - the row at a thread's foot that shows who is typing: its only marks are faces and Knit's stitches, which sweep and
+///     then rest dim between sweeps, so its darkest pixel depends on the moment of the screenshot. It holds no text; its
+///     VoiceOver label says who is typing;
 ///   - an element with no label, which has nothing to read and which the description check reports, and a text field,
 ///     whose placeholder WCAG does not hold to 4.5:1;
 ///   - the system's own chrome, named by its label: scroll indicators, the keyboard's suggestion bar and a sheet's grabber,
@@ -78,7 +81,7 @@ enum AuditPolicy {
                 !measured.contains(element.elementType) || element.label.isEmpty || !element.isEnabled || !window.contains(frame)
                 || frame.isEmpty || glass.contains { $0.intersects(frame) } || isEmoji(element.label)
                 || underBar?(element) == true || alerts.contains { $0.contains(frame) } || isChrome(element.label)
-                || menuItems.contains(element.identifier)
+                || menuItems.contains(element.identifier) || element.identifier == AccessibilityID.chatTyping
             guard !skipped else {
                 return nil
             }

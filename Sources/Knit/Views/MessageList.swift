@@ -35,8 +35,12 @@
 
         var body: some View {
             let places = MessageClusters.places(state.messages, calendar: calendar)
-            let items = [ThreadItem.header] + state.messages.map { .message($0.id) }
+            // Who is typing shows under the newest message. While the thread is on its bottom edge, the row comes into view
+            // as it lays out, as Android scrolls to it from there (`e402ac35`); a reader up in history stays put.
+            let typing = state.typingLabel.map { Row.typing(state.typing, label: $0) }
+            let items = [ThreadItem.header] + state.messages.map { .message($0.id) } + (typing == nil ? [] : [.typing])
             var rows = [ThreadItem.header: Row.header(ThreadHeader.Facts(state))]
+            rows[.typing] = typing
             var replies: [ThreadItem: ChatMessage] = [:]
             for (message, place) in zip(state.messages, places) {
                 rows[.message(message.id)] = .message(
@@ -88,6 +92,7 @@
         private enum Row: Equatable {
             case header(ThreadHeader.Facts)
             case message(ChatMessage, place: MessagePlace, revealed: Bool, highlighted: Bool)
+            case typing([Typist], label: String)
         }
 
         /// How long the tint shows where a quote's tap landed before it fades, in milliseconds (`ChatScreen.kt`'s 1200).
@@ -112,6 +117,8 @@
             switch row {
             case .header(let facts):
                 ThreadHeader(facts: facts)
+            case .typing(let typists, let label):
+                TypingRow(typists: typists, label: label)
             case .message(let message, let place, let revealed, let highlighted):
                 VStack(spacing: Layout.small) {
                     if place.startsDay {
@@ -189,7 +196,8 @@
 
             init(_ state: ChatState) {
                 isRoom = state.isRoom
-                isEmpty = state.messages.isEmpty
+                // Someone typing fills an empty thread, which then says nothing of being empty (`ChatScreen.kt:1265`).
+                isEmpty = state.messages.isEmpty && state.typing.isEmpty
                 isDirect = state.peer != nil
                 isLinked = state.isLinked
                 title = state.title

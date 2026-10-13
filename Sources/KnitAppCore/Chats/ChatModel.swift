@@ -91,6 +91,8 @@ public struct ChatState: Sendable, Equatable {
     /// Whether the DM's peer is blocked: the thread shows only what we wrote, and Unblock in the composer's place
     /// (ADR 2026-10.5wgg).
     public var isBlocked = false
+    /// Who is typing here now, in name order: the row at the thread's foot.
+    public var typing: [Typist] = []
 
     /// Whether this is the room.
     public var isRoom: Bool { kind == .room }
@@ -113,7 +115,8 @@ public final class ChatModel {
     @ObservationIgnored let session: AppSession
     @ObservationIgnored let codec: (any ImageCodec)?
     @ObservationIgnored let screening: PhotoScreening?
-    @ObservationIgnored private var cache = Cached<Int, ChatState>()
+    /// The thread as last built, with whose reactions and typing it shows.
+    @ObservationIgnored private var cache = Cached<Int, (state: ChatState, audience: ReactionAudience)>()
     private var text = ""
     /// The photo the composer holds, which Send sends with the draft or alone.
     public internal(set) var staged: StagedPhoto?
@@ -147,10 +150,18 @@ public final class ChatModel {
         self.screening = screening
     }
 
-    /// What the composer holds, cut at the limit as it is typed.
+    /// What the composer holds, cut at the limit as it is typed. Each change that leaves words in it tells the thread we
+    /// are typing (``cueTyping()``).
     public var draft: String {
         get { text }
-        set { text = Composer.clamp(newValue) }
+        set {
+            let typed = Composer.clamp(newValue)
+            let changed = typed != text
+            text = typed
+            if changed {
+                cueTyping()
+            }
+        }
     }
 
     /// How much room the draft has left, once it nears the limit.
@@ -170,11 +181,14 @@ public final class ChatModel {
         Composer.body(of: text) == nil && staged == nil
     }
 
-    /// The thread, rebuilt only when something changed.
+    /// The thread, rebuilt only when something changed. Who is linked and who is typing are laid over it each time, since
+    /// neither moves the session's revision.
     public var state: ChatState {
         let linked = session.neighbors.contains { $0.nodeId.string == conversationId }
-        var reading = cache.value(for: session.revision) { build() }
+        let built = cache.value(for: session.revision) { build() }
+        var reading = built.state
         reading.isLinked = linked
+        reading.typing = typists(shownBy: built.audience)
         return reading
     }
 
@@ -280,7 +294,7 @@ public final class ChatModel {
         session.hide(conversationId)
     }
 
-    private func build() -> ChatState {
+    private func build() -> (state: ChatState, audience: ReactionAudience) {
         let me = session.identity.nodeId
         let directory = session.directory
         let threads = session.threads()
@@ -329,7 +343,7 @@ public final class ChatModel {
             built.memberCount = members.count
             built.nobodyElse = !members.contains { ExactKey($0) != ExactKey(me.string) }
         }
-        return built
+        return (built, audience)
     }
 
     /// One row of the thread: a message, or a status line this build has words for.
