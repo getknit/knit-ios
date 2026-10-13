@@ -194,7 +194,7 @@ import Testing
         let cases: [(MessageAttachment, AttachmentKind)] = [
             (MessageAttachment(hash: hash, mime: "image/jpeg", name: "photo.jpg"), .file),
             (MessageAttachment(hash: hash, mime: "audio/aac"), .voice),
-            (MessageAttachment(hash: hash, mime: AttachmentKind.linkCardType), .link),
+            (MessageAttachment(hash: hash, mime: MessageAttachment.linkCardType), .link),
             (MessageAttachment(hash: hash, mime: "image/png"), .photo),
             (MessageAttachment(hash: hash), .photo),
             (MessageAttachment(hash: hash, mime: "application/pdf"), .file),
@@ -203,7 +203,7 @@ import Testing
         for (attachment, kind) in cases {
             #expect(AttachmentKind(attachment) == kind, "\(attachment)")
         }
-        #expect(ChatAttachment(MessageAttachment(hash: hash, mime: AttachmentKind.linkCardType), isHeld: true) == nil)
+        #expect(ChatAttachment(MessageAttachment(hash: hash, mime: MessageAttachment.linkCardType), isHeld: true) == nil)
         #expect(ChatAttachment(MessageAttachment(hash: hash, mime: "audio/aac"), isHeld: false)?.label == Copy.Attachments.voiceMessage)
         #expect(ChatAttachment(MessageAttachment(hash: hash, mime: "text/plain", name: "notes.txt"), isHeld: false)?.label == "notes.txt")
         #expect(ChatAttachment(MessageAttachment(hash: hash, mime: "text/plain"), isHeld: false)?.label == Copy.Attachments.file)
@@ -222,7 +222,7 @@ import Testing
             (MessageAttachment(hash: hash, mime: "audio/aac"), Copy.Attachments.voicePreview),
             (MessageAttachment(hash: hash, mime: "application/pdf", name: "map.pdf"), Copy.Attachments.filePreview("map.pdf")),
             (MessageAttachment(hash: hash, mime: "application/zip"), Copy.Attachments.filePreview(Copy.Attachments.file)),
-            (MessageAttachment(hash: hash, mime: AttachmentKind.linkCardType), Copy.Attachments.linkPreview),
+            (MessageAttachment(hash: hash, mime: MessageAttachment.linkCardType), Copy.Attachments.linkPreview),
         ]
         for (attachment, line) in lines {
             #expect(AttachmentKind.preview(of: attachment) == line)

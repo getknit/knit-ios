@@ -29,6 +29,7 @@ internal enum Schema {
         ("v10", v10),
         ("v11", v11),
         ("v12", v12),
+        ("v13", v13),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -237,6 +238,18 @@ internal enum Schema {
         "ALTER TABLE messages ADD COLUMN attachmentPlainHash BLOB",
         "ALTER TABLE messages ADD COLUMN attachmentSourceHash BLOB",
         "CREATE INDEX messages_attachmentPlainHash ON messages (attachmentPlainHash) WHERE attachmentPlainHash IS NOT NULL",
+    ]
+
+    /// Schema v13: replies (ADR 2026-10.mn29). A message gains the quote it carries, as its author took it: the quoted
+    /// message's id, its author's node id and name, a snippet of its words, and whether it carried an attachment
+    /// (`MessageEntity.replyTo*`, Android's names). A row is a reply when `replyToId` is set. Every row already stored
+    /// quotes nothing.
+    private static let v13 = [
+        "ALTER TABLE messages ADD COLUMN replyToId BLOB",
+        "ALTER TABLE messages ADD COLUMN replyToAuthorId BLOB",
+        "ALTER TABLE messages ADD COLUMN replyToAuthor BLOB",
+        "ALTER TABLE messages ADD COLUMN replyToSnippet BLOB",
+        "ALTER TABLE messages ADD COLUMN replyToHasAttachment INTEGER NOT NULL DEFAULT 0",
     ]
 
     /// The migrator that brings any database this build knows up to date.

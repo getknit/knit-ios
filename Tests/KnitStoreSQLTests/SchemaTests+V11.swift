@@ -73,4 +73,30 @@ extension SchemaTests {
         #expect(messages.identities(matching: plain).map(\.hash) == [plain, sealed], "the room's public name first")
         #expect(messages.keyWantingPlainHash(sealed) == nil)
     }
+
+    @Test func v13KeepsEveryMessageQuotingNothing() throws {
+        // No message carried a quote before v13 (ADR 2026-10.mn29): every row reads as replying to nothing, and a reply
+        // stored after it keeps its quote beside them.
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v12")
+        let bob = fixtureNodeId(2)
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO messages (id, senderId, conversationId, body, sentAt, delivered, pendingKey, kind, moderation)
+                    VALUES (?, ?, ?, ?, 3, 0, 0, 0, 0)
+                    """,
+                arguments: [StoredText.bytes("m1"), StoredText.bytes(bob.string), StoredText.bytes("nearby"), StoredText.bytes("hi")]
+            )
+        }
+        let database = try KnitDatabase(writer: queue, failures: recordFailure)
+        let messages = SQLMessageStore(database)
+        #expect(messages.message("m1")?.body == "hi")
+        #expect(messages.message("m1")?.replyTo == nil)
+        let quote = MessageReply(messageId: "m1", authorId: bob.string, author: "Bob", snippet: "hi")
+        let reply = MessageRecord(
+            id: "m2", senderId: bob, recipientId: nil, conversationId: "nearby", body: "yes", sentAt: 4, replyTo: quote)
+        messages.save(reply)
+        #expect(messages.messages(in: "nearby").map(\.replyTo) == [nil, quote])
+    }
 }

@@ -160,6 +160,8 @@ public struct MessageRecord: Sendable, Equatable {
     public var attachment: MessageAttachment?
     /// What the content filter made of its words.
     public var moderation: MessageModeration
+    /// The message it replies to, as its author quoted it, or `nil` (ADR 2026-10.mn29).
+    public var replyTo: MessageReply?
 
     /// Makes a record.
     public init(
@@ -174,7 +176,8 @@ public struct MessageRecord: Sendable, Equatable {
         pendingKey: Bool = false,
         kind: MessageKind = .message,
         attachment: MessageAttachment? = nil,
-        moderation: MessageModeration = .clear
+        moderation: MessageModeration = .clear,
+        replyTo: MessageReply? = nil
     ) {
         self.id = id
         self.senderId = senderId
@@ -188,6 +191,7 @@ public struct MessageRecord: Sendable, Equatable {
         self.kind = kind
         self.attachment = attachment
         self.moderation = moderation
+        self.replyTo = replyTo
     }
 }
 

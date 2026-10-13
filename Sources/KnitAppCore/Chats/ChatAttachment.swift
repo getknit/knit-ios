@@ -15,9 +15,6 @@ public enum AttachmentKind: Sendable, Equatable {
     /// A link's preview card (`LinkPreviewBlob.MIME`), which a thread leaves to the link in the text.
     case link
 
-    /// The one type a link's card goes under.
-    static let linkCardType = "application/vnd.knit.link-preview"
-
     /// What `attachment` is (`attachmentKindOf`).
     public init(_ attachment: MessageAttachment) {
         let mime = attachment.mime
@@ -25,7 +22,7 @@ public enum AttachmentKind: Sendable, Equatable {
             self = .file
         } else if mime?.hasPrefix("audio/") == true {
             self = .voice
-        } else if mime == Self.linkCardType {
+        } else if mime == MessageAttachment.linkCardType {
             self = .link
         } else if mime.map({ $0.hasPrefix("image/") }) ?? true {
             self = .photo

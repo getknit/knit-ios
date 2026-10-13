@@ -12,9 +12,11 @@ public final class SQLMessageStore: MessageStore {
     static let columns = """
         id, senderId, recipientId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind, \
         attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, moderation, attachmentWidth, \
-        attachmentHeight, attachmentAnimated, attachmentPlainHash, attachmentSourceHash
+        attachmentHeight, attachmentAnimated, attachmentPlainHash, attachmentSourceHash, replyToId, replyToAuthorId, \
+        replyToAuthor, replyToSnippet, replyToHasAttachment
         """
-    private static let insert = "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    private static let insert =
+        "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
     /// The database, which the reactions' extension shares.
     let database: KnitDatabase
@@ -76,7 +78,10 @@ public final class SQLMessageStore: MessageStore {
                         attachmentPlainHash = CASE WHEN attachmentHash IS excluded.attachmentHash
                             THEN coalesce(excluded.attachmentPlainHash, attachmentPlainHash) ELSE excluded.attachmentPlainHash END,
                         attachmentSourceHash = CASE WHEN attachmentHash IS excluded.attachmentHash
-                            THEN coalesce(excluded.attachmentSourceHash, attachmentSourceHash) ELSE excluded.attachmentSourceHash END
+                            THEN coalesce(excluded.attachmentSourceHash, attachmentSourceHash) ELSE excluded.attachmentSourceHash END,
+                        replyToId = excluded.replyToId, replyToAuthorId = excluded.replyToAuthorId,
+                        replyToAuthor = excluded.replyToAuthor, replyToSnippet = excluded.replyToSnippet,
+                        replyToHasAttachment = excluded.replyToHasAttachment
                     """,
                 arguments: Self.arguments(message)
             )
@@ -244,6 +249,7 @@ public final class SQLMessageStore: MessageStore {
     /// The values for ``insert``, in ``columns`` order.
     private static func arguments(_ message: MessageRecord) -> StatementArguments {
         let attachment = message.attachment
+        let reply = message.replyTo
         return [
             StoredText.bytes(message.id), StoredText.bytes(message.senderId.string), StoredText.bytes(message.recipientId?.string),
             StoredText.bytes(message.conversationId), StoredText.bytes(message.body), message.sentAt, message.arrivedAt,
@@ -251,7 +257,8 @@ public final class SQLMessageStore: MessageStore {
             StoredText.bytes(attachment?.mime), StoredText.bytes(attachment?.key), StoredText.bytes(attachment?.name), attachment?.size,
             message.moderation.rawValue, attachment?.dimensions?.width, attachment?.dimensions?.height,
             attachment?.dimensions?.animated, StoredText.bytes(attachment?.plainHash?.string),
-            StoredText.bytes(attachment?.sourceHash?.string),
+            StoredText.bytes(attachment?.sourceHash?.string), StoredText.bytes(reply?.messageId), StoredText.bytes(reply?.authorId),
+            StoredText.bytes(reply?.author), StoredText.bytes(reply?.snippet), reply?.hasAttachment ?? false,
         ]
     }
 
@@ -269,7 +276,8 @@ public final class SQLMessageStore: MessageStore {
             pendingKey: try row.decode(Bool.self, forColumn: "pendingKey"),
             kind: MessageKind(rawValue: try row.decode(Int.self, forColumn: "kind")),
             attachment: try attachment(row),
-            moderation: MessageModeration(rawValue: try row.decode(Int.self, forColumn: "moderation"))
+            moderation: MessageModeration(rawValue: try row.decode(Int.self, forColumn: "moderation")),
+            replyTo: try reply(row)
         )
     }
 }
