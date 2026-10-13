@@ -143,6 +143,9 @@ internal struct DemoCast {
         var inGroup = false
         /// The photo it carries, made by whoever seeds the scene.
         var photo: DemoSnapshot?
+        /// The line it replies to, an earlier one in its thread, which it quotes as Android's composer would (ADR
+        /// 2026-10.mn29, `DemoScenarios.kt:54-70`).
+        var replyTo: String?
     }
 
     /// Someone's reaction to one of the scene's lines, a moment after it (ADR 2026-10.ehe6).
@@ -187,6 +190,7 @@ internal struct DemoCast {
     /// Two peers share a name, to show a discriminated label; the stranger has none, to show an alias. Jonas is blocked,
     /// so Settings lists someone and his profile shows the badge. Our room post has a count above one, an emoji outside
     /// the six, and a heart from Jonas that his block hides; Sam's DM has ours, and a stranger's that a DM does not show.
+    /// Priya's room post replies to ours, and ours in the group replies to hers.
     static let edgeCases = Self(
         people: [
             Person(slot: .sam, name: "Sam", status: "At the north gate", verified: true),
@@ -199,9 +203,9 @@ internal struct DemoCast {
             Line(id: "room-1", from: .sam, to: nil, body: "Is anyone else at the festival without signal?"),
             Line(id: "room-2", from: .otherSam, to: nil, body: "Same here. Knit is the only thing working."),
             Line(id: "room-3", from: .me, to: nil, body: "Meet at the food trucks at 6?", delivered: true),
-            Line(id: "room-4", from: .priya, to: nil, body: "On my way."),
+            Line(id: "room-4", from: .priya, to: nil, body: "On my way.", replyTo: "room-3"),
             Line(id: "group-1", from: .priya, to: nil, body: "Who's bringing the tent?", inGroup: true),
-            Line(id: "group-2", from: .me, to: nil, body: "I've got it.", inGroup: true),
+            Line(id: "group-2", from: .me, to: nil, body: "I've got it.", inGroup: true, replyTo: "group-1"),
             Line(id: "dm-1", from: .me, to: .sam, body: "Which gate are you at?", delivered: true),
             Line(id: "dm-2", from: .sam, to: .me, body: "North gate, by the big tent."),
             Line(id: "dm-3", from: .me, to: .sam, body: "Be there in 10."),

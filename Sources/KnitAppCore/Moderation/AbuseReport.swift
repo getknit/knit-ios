@@ -38,6 +38,23 @@ public struct AbuseReport: Sendable, Equatable, Identifiable {
     public var hadPhoto: Bool
     /// Their status line, for a report from their profile.
     public var status: String
+    /// What the message quoted, when it was a reply (ADR 2026-10.mn29): a quote can be what was abusive.
+    public var quote: Quote?
+
+    /// What a reported reply quoted: whom, as the thread named them, and the words the reply carried, whatever this
+    /// iPhone hid of them.
+    public struct Quote: Sendable, Equatable {
+        /// Who wrote the quoted message.
+        public var author: String
+        /// The quoted words, or what stands in for them.
+        public var words: String
+
+        /// A quote.
+        public init(author: String, words: String) {
+            self.author = author
+            self.words = words
+        }
+    }
 
     /// A report of `person` itself, or of one message of theirs when `messageId` is set.
     public init(
@@ -48,7 +65,8 @@ public struct AbuseReport: Sendable, Equatable, Identifiable {
         words: String = "",
         sentAt: Int64? = nil,
         hadPhoto: Bool = false,
-        status: String = ""
+        status: String = "",
+        quote: Quote? = nil
     ) {
         self.person = person
         self.name = name
@@ -58,6 +76,7 @@ public struct AbuseReport: Sendable, Equatable, Identifiable {
         self.sentAt = sentAt
         self.hadPhoto = hadPhoto
         self.status = status
+        self.quote = quote
     }
 
     /// The message's id, or the person's.
@@ -95,6 +114,9 @@ public struct ReportEmail: Sendable, Equatable, Identifiable {
             lines += ["", Copy.Report.emailMessage, report.words.isEmpty ? Copy.Report.emailNoWords : report.words]
             if report.hadPhoto {
                 lines.append(Copy.Report.emailPhoto)
+            }
+            if let quote = report.quote {
+                lines.append(Copy.Report.emailQuote(quote.author, quote.words.isEmpty ? Copy.Report.emailNoWords : quote.words))
             }
         }
         lines += ["", Copy.Report.emailAddMore, ""]

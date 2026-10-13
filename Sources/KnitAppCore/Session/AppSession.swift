@@ -307,13 +307,18 @@ public final class AppSession {
     }
 
     /// What the content filter makes of `message`'s words, stored on its row (`InboundPipeline.inboundModeration`).
-    /// Words the filter could not read are let through, as Android lets them through: `clear`, for good.
+    /// Words the filter could not read are let through, as Android lets them through: `clear`, for good. A reply's quote
+    /// is someone's words too, which Android does not screen: here either flags the message, and one tap shows both
+    /// (ADR 2026-10.mn29).
     private func screen(_ message: MessageRecord) async -> MessageModeration {
         if let stored = stores.messages.message(message.id)?.moderation, stored != .waiting {
             return stored
         }
         let inRoom = message.conversationId == Conversations.nearby
-        let flagged = await textScreening?.isAbusive(message.body, inRoom: inRoom) ?? false
+        var flagged = await textScreening?.isAbusive(message.body, inRoom: inRoom) ?? false
+        if !flagged, let quoted = message.replyTo?.snippet {
+            flagged = await textScreening?.isAbusive(quoted, inRoom: inRoom) ?? false
+        }
         let verdict: MessageModeration = flagged ? .flagged : .clear
         stores.messages.setModeration(message.id, to: verdict)
         return verdict

@@ -7,7 +7,7 @@ import KnitWire
 
 extension AppRig {
     /// Stores a message from `sender` to `recipient` (the room when `nil`), as the engine would on arrival: someone else's
-    /// words wait for the content filter.
+    /// words wait for the content filter, a quote's among them.
     @discardableResult
     func receive(
         _ body: String,
@@ -15,8 +15,10 @@ extension AppRig {
         to recipient: NodeId? = nil,
         id: String? = nil,
         sentAt: Int64 = 1000,
-        arrivedAt: Int64 = 1000
+        arrivedAt: Int64 = 1000,
+        replyTo: MessageReply? = nil
     ) async -> MessageRecord {
+        let wordless = TextLimits.isBlank(body) && TextLimits.isBlank(replyTo?.snippet ?? "")
         let record = MessageRecord(
             id: id ?? "\(sender)-\(sentAt)-\(body)",
             senderId: sender,
@@ -25,7 +27,8 @@ extension AppRig {
             body: body,
             sentAt: sentAt,
             arrivedAt: arrivedAt,
-            moderation: sender == me || TextLimits.isBlank(body) ? .clear : .waiting
+            moderation: sender == me || wordless ? .clear : .waiting,
+            replyTo: replyTo
         )
         stores.messages.save(record)
         let isRequest = session.threads().isRequest(record.conversationId)

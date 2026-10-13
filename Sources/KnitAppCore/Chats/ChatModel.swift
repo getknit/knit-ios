@@ -33,6 +33,8 @@ public struct ChatMessage: Sendable, Equatable, Identifiable {
     /// The emoji people reacted with, each where it first appeared; empty for none and for a status line
     /// (ADR 2026-10.ehe6).
     public var reactions: [ReactionChip] = []
+    /// The message it replies to, as its author quoted it, or `nil` (ADR 2026-10.mn29). Its words hide with the reply's.
+    public var quote: ChatQuote?
 }
 
 /// Why a thread keeps someone else's words out of sight while the content filter is on.
@@ -97,6 +99,8 @@ public struct ChatState: Sendable, Equatable {
     /// Whether its messages take a reaction: wherever the composer is, so not on a request, a blocked person's DM or a
     /// group nobody else is left in (ADR 2026-10.ehe6).
     public var canReact: Bool { exists && !isRequest && !isBlocked && !nobodyElse }
+    /// Whether its messages take a reply: wherever the composer is, as for a reaction (ADR 2026-10.mn29).
+    public var canReply: Bool { canReact }
 }
 
 /// A thread's view model: its messages and status lines, the composer, and a request's Accept.
@@ -113,6 +117,10 @@ public final class ChatModel {
     private var text = ""
     /// The photo the composer holds, which Send sends with the draft or alone.
     public internal(set) var staged: StagedPhoto?
+    /// The quote the composer holds, which Send sends with the draft and the photo (ADR 2026-10.mn29).
+    public internal(set) var replying: ComposerReply?
+    /// How many replies were started here, so the composer's field takes focus at each.
+    public internal(set) var repliesStarted = 0
     /// Why the last photo picked cannot be sent, which the screen says until it is dismissed.
     public var photoFailure: PhotoFailure?
     /// Whether a picked photo is being made ready to send: a GIF's frames take a moment to shrink.
@@ -170,7 +178,8 @@ public final class ChatModel {
         return reading
     }
 
-    /// Sends the draft and the photo held, and clears each once the message is stored, unless it changed meanwhile.
+    /// Sends the draft, the photo and the quote held, and clears each once the message is stored, unless it changed
+    /// meanwhile.
     ///
     /// Words that look abusive are not posted in the room, whatever the content filter says, which governs only what we
     /// are shown (`MeshManager.sendChat`). A DM or a group sends them unread: the receiver's phone screens what arrives,
@@ -183,11 +192,12 @@ public final class ChatModel {
         defer { isSending = false }
         let sending = text
         let photo = staged
+        let reply = replying
         if state.isRoom, await session.textScreening?.isAbusive(sending, inRoom: true) ?? false {
             wordsRefused = true
             return
         }
-        guard await session.send(sending, photo: photo?.photo, in: conversationId) != nil else {
+        guard await session.send(sending, photo: photo?.photo, replyTo: reply?.reply, in: conversationId) != nil else {
             return
         }
         if text == sending {
@@ -195,6 +205,9 @@ public final class ChatModel {
         }
         if staged == photo {
             staged = nil
+        }
+        if replying == reply {
+            replying = nil
         }
     }
 
@@ -282,9 +295,12 @@ public final class ChatModel {
         let audience = ReactionAudience.of(conversationId, kind: kind, group: group, me: me)
         let chips = ReactionChips.chips(
             session.stores.messages.reactions(in: conversationId), me: me, audience: audience, blocked: directory.blocked)
+        // The messages a quote can take the thread to: the ones it shows, status lines aside.
+        let shown = Set(stored.filter { !$0.kind.isNotice }.map { ExactKey($0.id) })
         let messages = stored.compactMap { message in
             chatMessage(message, kind: kind, directory: directory, held: held, filtering: filtering)
                 .map { $0.reacted(chips[ExactKey(message.id)] ?? []) }
+                .map { $0.quoting(message.replyTo.map { ChatQuote($0, me: me, directory: directory, shown: shown) }) }
         }
         let members = group?.members ?? []
         let isBlocked = peer.map(directory.blocked.contains) ?? false
@@ -348,6 +364,13 @@ extension ChatMessage {
     func reacted(_ chips: [ReactionChip]) -> Self {
         var copy = self
         copy.reactions = notice == nil ? chips : []
+        return copy
+    }
+
+    /// The message with `quote` above its words, unless it is a status line, which quotes nothing.
+    func quoting(_ quote: ChatQuote?) -> Self {
+        var copy = self
+        copy.quote = notice == nil ? quote : nil
         return copy
     }
 }

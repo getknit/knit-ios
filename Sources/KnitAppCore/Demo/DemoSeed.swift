@@ -205,10 +205,26 @@ public enum DemoSeed {
         if let group = cast.group, let groupId {
             seed(group, id: groupId, startedAt: groupStart - DemoCast.Pause.minutes.rawValue, people: nodeIds, in: stores)
         }
-        for peer in cast.accepted.compactMap({ nodeIds[$0] }) {
-            stores.conversations.accept(peer.string)
-        }
+        cast.accepted.compactMap { nodeIds[$0]?.string }.forEach(stores.conversations.accept)
         seed(cast.reactions, after: sentAts, now: now, people: nodeIds, in: stores)
+        quote(cast.lines, me: me, in: stores)
+    }
+
+    /// Gives each line that replies the quote of the line it answers, as Android's composer writes one
+    /// (``MessageReply/quoting(_:authorName:hidesWords:attachmentLabel:)``): the author's own name, and the words, which no
+    /// filter hid when they were written.
+    private static func quote(_ lines: [DemoCast.Line], me: NodeId, in stores: MeshStores) {
+        let ownName = stores.ownProfile.load().name
+        for line in lines {
+            guard let answered = line.replyTo, let parent = stores.messages.message(answered), var reply = stores.messages.message(line.id)
+            else {
+                continue
+            }
+            let stored = parent.senderId == me ? ownName : stores.peers.peer(parent.senderId)?.name
+            let name = Alias.displayName(stored: stored, nodeId: parent.senderId.string)
+            reply.replyTo = MessageReply.quoting(parent, authorName: name, hidesWords: false, attachmentLabel: nil)
+            stores.messages.save(reply)
+        }
     }
 
     /// The scene's reactions, each a second after the one before it and after the line it answers, in the order the

@@ -320,3 +320,28 @@ extension DemoTests {
             ])
     }
 }
+
+// Replies (ADR 2026-10.mn29), apart from the suite's body for the same reason.
+extension DemoTests {
+    @Test func theDemosRepliesQuoteTheirOriginalsAndAReplyReachesTheMesh() async throws {
+        // Priya's room post quotes ours, which shows as "You", and ours in the group quotes hers.
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        DemoSeed.populate(stores, me: identity.nodeId, now: 10_000_000, scene: .edgeCases)
+        let (session, _) = Self.session(stores, identity: identity, radio: .on, linked: [])
+        let room = ChatModel(conversationId: Conversations.nearby, session: session)
+        let quote = try #require(room.state.messages.first { $0.id == "room-4" }?.quote)
+        #expect(quote == ChatQuote(messageId: "room-3", author: Copy.Common.you, line: "Meet at the food trucks at 6?", jumps: true))
+        let carried = try #require(stores.messages.message("room-4")?.replyTo)
+        #expect(carried.author == Alias.alias(for: identity.nodeId.string), "the scene names us nothing, so our alias, never You")
+        let group = try #require(stores.messages.message("group-2")?.conversationId)
+        let thread = ChatModel(conversationId: group, session: session)
+        #expect(thread.state.messages.first { $0.id == "group-2" }?.quote?.author == "Priya")
+        let answered = try #require(room.state.messages.first { $0.id == "room-1" })
+        room.reply(to: answered)
+        room.draft = "Same, by the stage"
+        await room.send()
+        let sent = try #require(stores.messages.messages(in: Conversations.nearby).last)
+        #expect(sent.replyTo?.messageId == "room-1" && sent.replyTo?.author == "Sam")
+    }
+}
