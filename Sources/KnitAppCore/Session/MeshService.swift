@@ -47,6 +47,10 @@ public protocol MeshService: AnyObject, Sendable {
     /// (ADR 2026-10.ehe6). Answers what we hold now, or `nil` when nothing changed.
     @discardableResult
     func react(to messageId: String, with emoji: String) async -> ReactionRecord?
+    /// Tells a thread that we are typing, in the clear and one hop, at most once every 8 s a thread. Answers whether a cue
+    /// went out.
+    @discardableResult
+    func noteTyping(in thread: String) async -> Bool
     /// Changes our profile and floods it.
     func updateProfile(name: String, status: String, openToChat: Bool) async
     /// Sets our photo, a JPEG, or clears it with `nil`, floods the profile that names it, and pushes it to every

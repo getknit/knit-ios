@@ -18,6 +18,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-delete --device SERIAL [--udid UDID]
     scripts/interop.py iphone-react --device SERIAL [--udid UDID]
     scripts/interop.py iphone-reply --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-typing --device SERIAL [--udid UDID]
     scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
@@ -45,6 +46,8 @@ and its custody converging (ADR 2026-10.5wgg); `iphone-delete` checks that what 
 a restart of its mesh, and that the delete sends nothing (ADR 2026-10.u7cq); `iphone-react` sends reactions both ways in
 every thread, and checks a replacement, a retraction, an emoji outside the iPhone's six and a block (ADR 2026-10.ehe6);
 `iphone-reply` sends quoted replies both ways in every thread, a photo's among them (ADR 2026-10.mn29);
+`iphone-typing` sends typing cues both ways in every thread, and checks their lapse, a post ending one and a block
+(ADR 2026-10.29z9);
 `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
 `iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `android-keeps-iphone` checks that
 an Android phone keeps a backgrounded iPhone's link and admits its re-dial (knit-next AND-3), moving Knit away from the
@@ -5156,6 +5159,63 @@ def iphone_reply(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def iphone_typing(arguments: argparse.Namespace) -> int:
+    """Typing cues both ways, one hop and in the clear, as Android sends them (ADR 2026-10.29z9). The phone types in
+    Nearby, a DM and a group through its bridge, and the iPhone's `status` must name it in each within seconds, then in
+    none once the cues lapse. The iPhone types in each, and the phone's `STATE` must name it there. The phone types in
+    Nearby and then posts, and the post must end its cue before the cue would lapse. While the iPhone blocks the phone,
+    the phone's cue never shows. The group adds a fresh ghost nobody runs, as `iphone-react`'s does. A cue goes one hop,
+    so the two must be linked, and already hold each other's keys; Knit must be in front, where the iPhone sends cues."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid, arguments.host)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    try:
+        phone_id = phone.state()["self"]["nodeId"]
+        print(json.dumps({"run": "iphone-typing", "phone": phone_id, "iphone": ios.node_id, "nonce": nonce}))
+        run.step("link", lambda: _ios_linked(ios, phone, phone_id))
+        ghost = _ghost("iphone-typing-ghost")
+        group = ios.command(cmd="group-create", members=[phone_id, ghost])["id"]
+        run.step("group-ids-agree", lambda: _agrees(group, phone.make_group([ios.node_id, ghost])))
+        # Each thread as the iPhone names it, then as the phone does.
+        threads = {"room": ("nearby", "nearby"), "dm": (phone_id, ios.node_id), "group": (group, group)}
+        for kind, (on_ios, on_phone) in threads.items():
+            phone.bridge("TYPING", conv=on_phone)
+            run.step(f"{kind}-phone-cue-shows", lambda on_ios=on_ios: _timed(lambda: phone_id in _ios_typing(ios, on_ios), 10))
+        run.step("phone-cues-lapse", lambda: _timed(lambda: not any(_ios_typing(ios, on_ios) for on_ios, _ in threads.values()), 30))
+        for kind, (on_ios, on_phone) in threads.items():
+            sent = _ios_ok(ios.command(cmd="typing", conv=on_ios))
+            run.step(f"{kind}-iphone-cue-shows", lambda on_phone=on_phone, sent=sent: _timed(
+                lambda: sent.get("sent") is True and ios.node_id in _phone_typing(phone, on_phone), 10))
+        phone.bridge("TYPING", conv="nearby")
+        run.step("cue-before-a-post", lambda: _timed(lambda: phone_id in _ios_typing(ios, "nearby"), 10))
+        body = f"interop typing then posting {nonce}"
+        _phone_sends(phone, body, "nearby")
+        run.step("post-ends-the-cue", lambda: _timed(
+            lambda: _ios_has_body(ios, "nearby", body) and phone_id not in _ios_typing(ios, "nearby"), 10))
+        _ios_ok(ios.command(cmd="block", peer=phone_id))
+        try:
+            phone.bridge("TYPING", conv="nearby")
+            run.step("blocked-cue-never-shows", lambda: _stays_false(lambda: phone_id in _ios_typing(ios, "nearby"), 15))
+        finally:
+            ios.command(cmd="unblock", peer=phone_id)
+    finally:
+        ios.stop()
+    print(json.dumps({"summary": "iphone-typing", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _ios_typing(ios: IPhone, conversation: str) -> list:
+    """Who the iPhone's mesh holds typing in `conversation`, from its `status` reply."""
+    return ios.command(cmd="status").get("typing", {}).get(conversation, [])
+
+
+def _phone_typing(phone: Phone, conversation: str) -> list:
+    """Who the phone's tracker holds typing in `conversation`, from its bridge's `STATE` (`DebugBridgeReceiver.kt:865`)."""
+    return phone.state().get("typing", {}).get(conversation, [])
+
+
 def _ios_sends(ios: IPhone, kind: str, conversation: str, body: str, reply_to: str | None = None) -> dict:
     """Sends `body` from the iPhone to the room, a DM or a group, quoting message `reply_to` when it names one."""
     quoting = {"replyTo": reply_to} if reply_to else {}
@@ -6168,6 +6228,8 @@ def main() -> int:
     ios_react.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_reply = commands.add_parser("iphone-reply")
     ios_reply.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios_typing = commands.add_parser("iphone-typing")
+    ios_typing.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak = commands.add_parser("iphone-soak")
     ios_soak.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak.add_argument("--peer", action="store_true", help="knit-peer on hci0 joins as a third author, linked to the iPhone alone")
@@ -6296,7 +6358,7 @@ def main() -> int:
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
     if arguments.command in (
         "iphone", "iphone-wake", "android-keeps-iphone", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-delete",
-        "iphone-react", "iphone-reply", "bridge", "record-pull",
+        "iphone-react", "iphone-reply", "iphone-typing", "bridge", "record-pull",
     ):
         return {
             "iphone": iphone,
@@ -6308,6 +6370,7 @@ def main() -> int:
             "iphone-delete": iphone_delete,
             "iphone-react": iphone_react,
             "iphone-reply": iphone_reply,
+            "iphone-typing": iphone_typing,
             "bridge": bridge,
             "record-pull": record_pull,
         }[arguments.command](arguments)

@@ -53,6 +53,7 @@ final class FakeMesh: MeshService {
         var groups: [String] = []
         var deleted: [String] = []
         var reactions: [String] = []
+        var typing: [String] = []
     }
 
     let nodeId: NodeId
@@ -202,6 +203,12 @@ final class FakeMesh: MeshService {
     func react(to messageId: String, with emoji: String) -> ReactionRecord? {
         state.withLock { $0.calls.reactions.append("\(messageId) \(emoji)") }
         return stores.react(to: messageId, with: emoji, at: clock, me: nodeId)
+    }
+
+    /// Records the cue, and lets every one through: the throttle is the engine's.
+    func noteTyping(in thread: String) -> Bool {
+        state.withLock { $0.calls.typing.append(thread) }
+        return true
     }
 
     func setVerified(_ peer: NodeId, _ verified: Bool) {

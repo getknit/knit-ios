@@ -21,6 +21,9 @@ public final class AppSession {
     public private(set) var radioState: RadioState?
     /// The peers linked now.
     public private(set) var neighbors: [Neighbor] = []
+    /// Who is typing where, as the mesh last said: each thread someone is typing in, with their node ids. Like the links,
+    /// it moves no ``revision``: the screens lay it over what they read.
+    public private(set) var typing: [String: [NodeId]] = [:]
     /// Whether the mesh runs: false before the first start, and after Settings' Stop.
     public private(set) var isRunning = false
     /// Moves whenever messages, peers, conversations or our own profile may have changed.
@@ -149,6 +152,8 @@ public final class AppSession {
             revision += 1
         case .neighborsChanged(let linked):
             neighbors = linked
+        case .typing(let picture):
+            typing = picture
         case .radioChanged(let state):
             radioState = state
         }
@@ -212,6 +217,16 @@ public final class AppSession {
         let reacted = await mesh.react(to: messageId, with: emoji) != nil
         revision += 1
         return reacted
+    }
+
+    /// Tells `conversationId` that the user is typing, as each keystroke in its composer does, while Knit is in front
+    /// (`ChatViewModel.onUserTyping`). The mesh lets one cue a thread through every 8 s. Answers whether one went out.
+    @discardableResult
+    public func noteTyping(in conversationId: String) async -> Bool {
+        guard isActive else {
+            return false
+        }
+        return await mesh.noteTyping(in: conversationId)
     }
 
     /// Accepts a message request, and takes back the requests notification once none waits.

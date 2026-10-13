@@ -21,6 +21,9 @@ public enum MeshEvent: Sendable, Equatable {
     case attachmentArrived(BlobHash)
     /// The live links changed.
     case neighborsChanged([Neighbor])
+    /// Who is typing where changed: each thread someone is typing in, with their node ids in order. The whole picture
+    /// each time; an empty one when nobody is (``MeshEngine/handleTyping(_:)``).
+    case typing([String: [NodeId]])
     /// The radio's state changed: Bluetooth switched on or off, allowed or refused.
     case radioChanged(RadioState)
 }

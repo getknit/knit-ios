@@ -192,4 +192,10 @@ import Testing
         )
         #expect(chat == ChatContent())
     }
+
+    @Test func aTypingCueWithNoGroupIsTheEmptyMapAndroidReads() throws {
+        // A room or DM cue, `{}`: what knit-next's `IosPayloadShapesTest` pins for this port, with no vector to hold it.
+        #expect(TypingContent().encoded == [0xA0])
+        #expect(try TypingContent(decoding: [0xA0]) == TypingContent())
+    }
 }

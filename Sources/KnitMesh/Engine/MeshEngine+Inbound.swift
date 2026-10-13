@@ -49,9 +49,10 @@ extension MeshEngine {
             handleBlobCancel(frame)
         case .reaction:
             handleReaction(envelope)
+        case .typing:
+            handleTyping(envelope)
         default:
-            // Typing cues and types this build has never heard of are carried and relayed where custodial, and shown
-            // nowhere.
+            // Types this build has never heard of are carried and relayed where custodial, and shown nowhere.
             break
         }
     }
@@ -216,6 +217,9 @@ extension MeshEngine {
             replyTo: delivered.replyTo
         )
         stores.messages.insertIfAbsent(record)
+        // Every delivery ends the sender's cue in the thread, a re-delivery too (`InboundPipeline.kt:2728`), and before
+        // the message is announced, so no screen shows both.
+        clearTyping(sender, in: conversation)
         if isNew, sender != nodeId {
             events.append(.received(record, isRequest: !isAccepted(conversation)))
         }

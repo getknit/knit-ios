@@ -5,7 +5,8 @@ import KnitWire
 import Testing
 
 /// Frames this build carries and relays but never shows, frames it cannot open, and the edges of its profile cache.
-/// Blob requests and reactions have suites of their own (`MeshEngineBlobTests`, `MeshEngineReactionTests`).
+/// Blob requests, reactions and typing cues have suites of their own (`MeshEngineBlobTests`, `MeshEngineReactionTests`,
+/// `MeshEngineTypingTests`).
 @Suite struct MeshEngineEdgeTests {
     private let alice = TestPeer(seed: 1)
     private let bob = TestPeer(seed: 2)
@@ -20,16 +21,21 @@ import Testing
         }
     }
 
-    @Test func aTypingCueIsShownNowhereAndNotCarried() throws {
-        // Not custodial, and worthless a moment later (`isCustodial`): it is relayed and dropped here without a word.
+    @Test func aFrameOfATypeThisBuildHasNeverHeardOfIsRelayedAndShownNowhere() throws {
+        // A newer build's type: not custodial here, so not carried, and dropped without a word, but still flooded on.
         let fixture = EngineFixture(alice)
+        fixture.link(bob, carol)
         try fixture.pin(bob)
+        fixture.advance(1000)
+        fixture.transport.clear()
         _ = fixture.engine.drainEvents()
-        let typing = RelayEnvelope(type: .typing, id: "typing-1", senderId: bob.nodeId.string, payload: TypingContent().encoded)
-        fixture.deliver(try bob.signed(typing), from: bob)
-        #expect(!fixture.stores.custody.contains("typing-1"))
+        let future = RelayEnvelope(type: FrameType(rawValue: "future"), id: "future-1", senderId: bob.nodeId.string, payload: [0xA0])
+        fixture.deliver(try bob.signed(future), from: bob)
+        #expect(!fixture.stores.custody.contains("future-1"))
         #expect(fixture.engine.drainEvents().isEmpty)
         #expect(fixture.engine.dropped.isEmpty)
+        fixture.advance(1000)
+        #expect(fixture.transport.written(FrameType(rawValue: "future")).map(\.to) == [carol.nodeId])
     }
 
     @Test func aSealedRoomPostCannotBeOpened() throws {

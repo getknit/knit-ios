@@ -183,6 +183,11 @@
             return await session.stores.messages.reaction(on: messageId, by: session.identity.nodeId)
         }
 
+        /// Tells the thread we are typing, as a keystroke in its composer does.
+        func noteTyping(in thread: String) async -> Bool {
+            await session.noteTyping(in: thread)
+        }
+
         func block(_ peer: NodeId) async {
             await session.block(peer)
         }

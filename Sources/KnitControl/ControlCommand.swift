@@ -1,5 +1,6 @@
 import Foundation
 public import KnitMesh
+import KnitStore
 public import KnitWire
 
 /// One control command, from one JSON line: on `knit-peer`'s standard input, or to a debug build of the app's bridge
@@ -47,6 +48,10 @@ public enum ControlCommand: Equatable, Sendable {
     /// `{"cmd":"react","id":"<message id>","emoji":"👍"}`: react to a message, or take our reaction back when it is the
     /// one we hold, as the bubble's menu does (ADR 2026-10.ehe6). It goes out in the clear.
     case react(id: String, emoji: String)
+    /// `{"cmd":"typing","conv":"<conversation id>"}`: tell a thread we are typing, as a keystroke in its composer does,
+    /// at most once every 8 s a thread; the room when `conv` is left out, and `to` names a DM's peer as Android's bridge
+    /// takes it. It goes one hop, in the clear.
+    case typing(String)
     /// One of the group commands.
     case group(GroupCommand)
     /// `{"cmd":"stop"}`: stop the mesh, closing every link, as Settings' Stop does.
@@ -93,6 +98,8 @@ public enum ControlCommand: Equatable, Sendable {
             command.name
         case .react:
             "react"
+        case .typing:
+            "typing"
         case .group(let command):
             command.name
         case .stop:
@@ -257,6 +264,8 @@ public struct ControlRequest: Equatable, Sendable {
             required(raw.conv, "conv").map { .delete(.chat($0)) }
         case "react":
             required(raw.id, "id").flatMap { id in required(raw.emoji, "emoji").map { .react(id: id, emoji: $0) } }
+        case "typing":
+            .success(.typing(raw.conv ?? raw.to ?? Conversations.nearby))
         default:
             groupCommand(from: raw).map(ControlCommand.group)
         }

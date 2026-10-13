@@ -40,6 +40,8 @@ public protocol ControlActions: Sendable {
     func quote(of messageId: String) async -> MessageReply?
     /// Reacts to a message, or takes our reaction back, and answers what we hold now (ADR 2026-10.ehe6).
     func react(to messageId: String, with emoji: String) async -> ReactionRecord?
+    /// Tells a thread we are typing, at most once a throttle's interval, and answers whether a cue went out.
+    func noteTyping(in thread: String) async -> Bool
     /// Blocks a peer (ADR 2026-10.5wgg).
     func block(_ peer: NodeId) async
     /// Unblocks a peer.
@@ -52,7 +54,7 @@ extension Mesh: ControlActions {}
 /// on standard input and output, and a debug build of the app speaks over its bridge.
 ///
 /// Replies carry `"reply"` with the command's name, `"ok"`, and the caller's `"tag"`; events carry `"event"`
-/// (`ready`, `link`, `profile`, `message`, `sent`, `delivered`, `reaction`, `radio` and `group`).
+/// (`ready`, `link`, `profile`, `message`, `sent`, `delivered`, `reaction`, `typing`, `radio` and `group`).
 public actor MeshControl {
     /// One reply line, and whether the caller asked to quit.
     public struct Reply: Equatable, Sendable {
@@ -167,6 +169,8 @@ public actor MeshControl {
             return [JSONValue.object(fields).line]
         case .attachmentArrived(let hash):
             return [JSONValue.object(["event": "attachment", "hash": .string(hash.string)]).line]
+        case .typing(let picture):
+            return [JSONValue.object(["event": "typing", "typing": ControlLines.typing(picture)]).line]
         }
     }
 
@@ -205,6 +209,8 @@ public actor MeshControl {
             return await answer(command)
         case .react(let id, let emoji):
             return await react(to: id, with: emoji)
+        case .typing(let conversation):
+            return .success(["conv": .string(conversation), "sent": .bool(await actions.noteTyping(in: conversation))])
         case .group(let command):
             return await answer(command)
         case .stop, .start:
@@ -290,6 +296,7 @@ public actor MeshControl {
             "seekSpells": .int(Int64(await mesh.seekSpells)),
             "footprint": ControlLines.describe(await mesh.footprint),
             "router": ControlLines.describe(await mesh.routerCounters),
+            "typing": ControlLines.typing(await mesh.typing),
         ]) { _, own in own }
         return fields
     }

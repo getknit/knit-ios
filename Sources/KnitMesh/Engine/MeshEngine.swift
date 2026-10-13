@@ -32,6 +32,10 @@ public final class MeshEngine {
     /// The photo each neighbour has had from us whole, this run (``pushAvatar(to:)``).
     var avatarPushes: [NodeId: BlobHash] = [:]
     var ackSync = AckSync()
+    /// Who is typing where (``MeshEngine/handleTyping(_:)``).
+    var typing = TypingBoard()
+    /// When our last typing cue went to each thread, on the monotonic clock (``MeshEngine/noteTyping(in:)``).
+    var typingCues: [ExactKey: Int64] = [:]
     var events: [MeshEvent] = []
     /// Our profile frame for the current publish stamp, signed once and reused (ADR 2026-09.qztx in knit-next).
     var signedProfile: SignedFrame?
@@ -114,7 +118,7 @@ public final class MeshEngine {
             return nil
         }
         let blobs = [blobExchange.nextDeadline, blobExchange.parkPollAt]
-        return ([router.nextDeadline, timers.reoffer, timers.sweep, timers.heal] + blobs).compactMap(\.self).min()
+        return ([router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline] + blobs).compactMap(\.self).min()
     }
 
     /// Starts the node (`MeshManager.seedOwnProfileCustody`): republishes our profile if its stamp is stale, puts it
@@ -218,6 +222,7 @@ public final class MeshEngine {
         }
         stepDueBlobs(now: now)
         pollParkedAsks(now: now)
+        lapseTyping(now: now)
         if now >= due.reoffer {
             reoffer()
             due.reoffer = now + configuration.reofferMilliseconds

@@ -104,6 +104,7 @@ public actor Mesh {
         timer = nil
         scheduled = nil
         apply(links.stop())
+        engine.forgetTyping()
         publish()
     }
 
@@ -208,6 +209,14 @@ public actor Mesh {
         return engine.react(to: messageId, with: emoji)
     }
 
+    /// Tells `thread` that we are typing, at most once a throttle's interval (``MeshEngine/noteTyping(in:)``). Answers
+    /// whether a cue went out.
+    @discardableResult
+    public func noteTyping(in thread: String) -> Bool {
+        defer { settle() }
+        return engine.noteTyping(in: thread)
+    }
+
     /// Changes our profile and floods it.
     public func updateProfile(name: String, status: String, openToChat: Bool) {
         engine.updateProfile(name: name, status: status, openToChat: openToChat)
@@ -265,6 +274,9 @@ public actor Mesh {
 
     /// Why frames were dropped so far.
     public var dropped: [DropReason: Int] { engine.dropped }
+
+    /// Who is typing where now (``MeshEngine/typingNow``).
+    public var typing: [String: [NodeId]] { engine.typingNow }
 
     /// What the links did with FILE records so far.
     public var files: FileCounts {

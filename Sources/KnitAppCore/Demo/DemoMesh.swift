@@ -5,11 +5,15 @@ public import KnitWire
 
 /// A demo scene's mesh: the real ``Mesh`` on the demo's radio, reporting the scene's peers as linked while it runs
 /// with the radio on. The demo's radio links nobody, so without this the status line only ever says it is looking,
-/// and no screenshot shows who is nearby. Everything else passes through, so what the demo sends still waits in
-/// custody. A scene with a script also has a ``DemoDirector``, which plays it here once the mesh first starts.
+/// and no screenshot shows who is nearby. It shows the scene's typists the same way, held for as long as the links are,
+/// as Android's demo holds its own (`MeshManager.seedPersistent`). Everything else passes through, so what the demo sends
+/// still waits in custody. A scene with a script also has a ``DemoDirector``, which plays it here once the mesh first
+/// starts.
 public final class DemoMesh: MeshService, DemoDirector.Stage {
     /// The peers shown as linked, which the director adds to.
     private let linked: Lock<[Neighbor]>
+    /// Who is shown typing where.
+    private let typists: [String: [NodeId]]
     private let mesh: any MeshService
     private let director: DemoDirector?
     private let continuation: AsyncStream<MeshEvent>.Continuation
@@ -19,11 +23,12 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     /// The mesh's events, with every change of the radio's state or the links answered by the links shown now.
     public let events: AsyncStream<MeshEvent>
 
-    /// `mesh`, reporting `linked` as linked, and playing `director`'s script once it starts.
-    public init(_ mesh: any MeshService, linked: [NodeId], director: DemoDirector? = nil) {
+    /// `mesh`, reporting `linked` as linked and `typing` as typing, and playing `director`'s script once it starts.
+    public init(_ mesh: any MeshService, linked: [NodeId], typing: [String: [NodeId]] = [:], director: DemoDirector? = nil) {
         let shown = Lock(linked.map { Neighbor(nodeId: $0) })
         let (stream, sink) = AsyncStream<MeshEvent>.makeStream()
         self.linked = shown
+        typists = typing
         self.mesh = mesh
         self.director = director
         events = stream
@@ -36,6 +41,11 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
                 case .radioChanged:
                     sink.yield(event)
                     sink.yield(.neighborsChanged(await Self.shown(shown, by: mesh)))
+                    if !typing.isEmpty {
+                        sink.yield(.typing(await Self.typing(typing, over: [:], by: mesh)))
+                    }
+                case .typing(let picture):
+                    sink.yield(.typing(await Self.typing(typing, over: picture, by: mesh)))
                 default:
                     sink.yield(event)
                 }
@@ -55,6 +65,18 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
         let running = await mesh.isRunning
         let radio = await mesh.radioState
         return running && radio == .on ? linked.withLock { $0 } : []
+    }
+
+    /// `picture` with `shown` laid over it while `mesh` runs with the radio on, as the links are.
+    private static func typing(
+        _ shown: [String: [NodeId]], over picture: [String: [NodeId]], by mesh: any MeshService
+    ) async -> [String: [NodeId]] {
+        let running = await mesh.isRunning
+        let radio = await mesh.radioState
+        guard running, radio == .on else {
+            return picture
+        }
+        return picture.merging(shown) { Array(Set($0 + $1)).sorted() }
     }
 
     // MARK: The director's stage
@@ -107,6 +129,9 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     public func start() async {
         await mesh.start()
         continuation.yield(.neighborsChanged(await neighbors))
+        if !typists.isEmpty {
+            continuation.yield(.typing(await Self.typing(typists, over: [:], by: mesh)))
+        }
         guard let director else {
             return
         }
@@ -121,6 +146,9 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     public func stop() async {
         await mesh.stop()
         continuation.yield(.neighborsChanged([]))
+        if !typists.isEmpty {
+            continuation.yield(.typing([:]))
+        }
     }
 
     /// Posts to the Nearby room, where nobody hears it but the director.
@@ -184,6 +212,11 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     /// Reacts to a message.
     public func react(to messageId: String, with emoji: String) async -> ReactionRecord? {
         await mesh.react(to: messageId, with: emoji)
+    }
+
+    /// Tells a thread we are typing, which nobody hears.
+    public func noteTyping(in thread: String) async -> Bool {
+        await mesh.noteTyping(in: thread)
     }
 
     /// Changes our profile.

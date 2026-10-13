@@ -74,15 +74,23 @@ public struct MeshConfiguration: Sendable {
     /// knit-next ADR 2026-10.6e5t): on in the app, in every build, and in the Linux peer. Off, the default tests start
     /// from, every neighbour gets the blind round. Answering a query is on whatever this says.
     public var queriesBlobHolders: Bool
+    /// How long someone's typing cue shows after it lands, unless another pushes it out (`TYPING_TTL_MS`,
+    /// `TypingTracker.kt:111`).
+    public var typingLifetimeMilliseconds: Int64
+    /// How long after one of our typing cues the next may go to the same thread (`TYPING_SEND_INTERVAL_MS`,
+    /// `ChatViewModel.kt:2542`): the first keystroke after a quiet spell sends one at once, and the rest wait it out.
+    public var typingIntervalMilliseconds: Int64
 
-    /// knit-next's cadences unless told otherwise: 60 s, 10 min, 15 min and 12 h.
+    /// knit-next's cadences unless told otherwise: 60 s, 10 min, 15 min and 12 h, and typing's 12 s and 8 s.
     public init(
         router: Router.Configuration = Router.Configuration(),
         reofferMilliseconds: Int64 = 60_000,
         sweepMilliseconds: Int64 = 600_000,
         healMilliseconds: Int64 = 900_000,
         republishMilliseconds: Int64 = 43_200_000,
-        queriesBlobHolders: Bool = false
+        queriesBlobHolders: Bool = false,
+        typingLifetimeMilliseconds: Int64 = 12_000,
+        typingIntervalMilliseconds: Int64 = 8000
     ) {
         self.router = router
         self.reofferMilliseconds = reofferMilliseconds
@@ -90,5 +98,7 @@ public struct MeshConfiguration: Sendable {
         self.healMilliseconds = healMilliseconds
         self.republishMilliseconds = republishMilliseconds
         self.queriesBlobHolders = queriesBlobHolders
+        self.typingLifetimeMilliseconds = typingLifetimeMilliseconds
+        self.typingIntervalMilliseconds = typingIntervalMilliseconds
     }
 }
