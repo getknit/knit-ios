@@ -134,6 +134,11 @@
             await session.heldPhoto(picked: Data(picked))
         }
 
+        /// The quote the composer would write, so a command's reply reads as a tap's (ADR 2026-10.mn29).
+        func quote(of messageId: String) async -> MessageReply? {
+            await session.quote(of: messageId)
+        }
+
         func accept(_ conversationId: String) async {
             await session.accept(conversationId)
         }

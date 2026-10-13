@@ -17,6 +17,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-block --device SERIAL [--udid UDID]
     scripts/interop.py iphone-delete --device SERIAL [--udid UDID]
     scripts/interop.py iphone-react --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-reply --device SERIAL [--udid UDID]
     scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
@@ -43,6 +44,7 @@ and a group (ADR 2026-10.6cas); `iphone-block` checks that a block on the iPhone
 and its custody converging (ADR 2026-10.5wgg); `iphone-delete` checks that what the iPhone deletes stays deleted across
 a restart of its mesh, and that the delete sends nothing (ADR 2026-10.u7cq); `iphone-react` sends reactions both ways in
 every thread, and checks a replacement, a retraction, an emoji outside the iPhone's six and a block (ADR 2026-10.ehe6);
+`iphone-reply` sends quoted replies both ways in every thread, a photo's among them (ADR 2026-10.mn29);
 `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
 `iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `android-keeps-iphone` checks that
 an Android phone keeps a backgrounded iPhone's link and admits its re-dial (knit-next AND-3), moving Knit away from the
@@ -5100,6 +5102,103 @@ def iphone_react(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def iphone_reply(arguments: argparse.Namespace) -> int:
+    """Quoted replies both ways, in every thread (ADR 2026-10.mn29). The iPhone posts in Nearby, sends a DM and writes
+    in a group, and the phone replies to each through its bridge, quoting it as its composer would; the iPhone must show
+    each quote, naming its own message and itself. The iPhone replies to each of the phone's replies, and the phone must
+    show those quotes and their words. A photo the iPhone posts with no words is quoted by the phone with no snippet,
+    and the iPhone must read that it carried one. The group adds a fresh ghost nobody runs, as `iphone-react`'s does. A
+    stop and start of the iPhone's mesh changes no quote, and the custody sets converge. The two must already hold each
+    other's keys."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid, arguments.host)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    try:
+        phone_id = phone.state()["self"]["nodeId"]
+        print(json.dumps({"run": "iphone-reply", "phone": phone_id, "iphone": ios.node_id, "nonce": nonce}))
+        run.step("link", lambda: _ios_linked(ios, phone, phone_id))
+        ghost = _ghost("iphone-reply-ghost")
+        group = ios.command(cmd="group-create", members=[phone_id, ghost])["id"]
+        run.step("group-ids-agree", lambda: _agrees(group, phone.make_group([ios.node_id, ghost])))
+        # Each thread as the iPhone names it, then as the phone does.
+        threads = {"room": ("nearby", "nearby"), "dm": (phone_id, ios.node_id), "group": (group, group)}
+        quoted = {}
+        for kind, (on_ios, on_phone) in threads.items():
+            body = f"interop {kind} to reply to {nonce}"
+            quoted[kind] = _ios_ok(_ios_sends(ios, kind, on_ios, body))["id"]
+            run.step(f"{kind}-reaches-phone", lambda on_phone=on_phone, body=body: _timed(
+                lambda: _phone_row(phone, on_phone, "", body), 60))
+            answer = f"interop {kind} reply from the phone {nonce}"
+            phone.bridge("SEND", text=answer, conv=on_phone, replyTo=quoted[kind])
+            run.step(f"{kind}-phone-quote-shows", lambda on_ios=on_ios, answer=answer, kind=kind, body=body: _timed(
+                lambda: _ios_quote(ios, on_ios, answer, quoted[kind], ios.node_id, body), 60))
+            back = f"interop {kind} reply from the iPhone {nonce}"
+            _ios_ok(_ios_sends(ios, kind, on_ios, back, reply_to=_ios_message_id(ios, on_ios, answer)))
+            run.step(f"{kind}-iphone-quote-shows", lambda on_phone=on_phone, back=back, answer=answer: _timed(
+                lambda: _phone_quote(phone, on_phone, back, answer), 60))
+        photo = _ios_photo(ios, "room", "nearby", "", _noise_jpeg(f"iphone-reply-{nonce}"))["id"]
+        run.step("photo-reaches-phone", lambda: _timed(lambda: _phone_row(phone, "nearby", photo), 60))
+        phone.bridge("SEND", text=f"interop nice photo {nonce}", conv="nearby", replyTo=photo)
+        run.step("photo-quote-carries-it", lambda: _timed(
+            lambda: _ios_quote(ios, "nearby", f"interop nice photo {nonce}", photo, ios.node_id, "", attachment=True), 60))
+        before = {on_ios: _ios_quotes(ios, on_ios) for on_ios, _ in threads.values()}
+        ios.command(cmd="stop")
+        ios.command(cmd="start")
+        run.step("relinked", lambda: _ios_linked(ios, phone, phone_id))
+        run.step("no-quote-changes", lambda: _stays_false(
+            lambda: any(_ios_quotes(ios, on_ios) != quotes for on_ios, quotes in before.items()), 30))
+        run.step("custody-converges", lambda: _converges(ios, phone, 180))
+    finally:
+        ios.stop()
+    print(json.dumps({"summary": "iphone-reply", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _ios_sends(ios: IPhone, kind: str, conversation: str, body: str, reply_to: str | None = None) -> dict:
+    """Sends `body` from the iPhone to the room, a DM or a group, quoting message `reply_to` when it names one."""
+    quoting = {"replyTo": reply_to} if reply_to else {}
+    if kind == "room":
+        return ios.command(cmd="room", text=body, **quoting)
+    if kind == "dm":
+        return ios.command(cmd="dm", to=conversation, text=body, **quoting)
+    return ios.command(cmd="group-send", conv=conversation, text=body, **quoting)
+
+
+def _ios_quotes(ios: IPhone, conversation: str) -> dict[str, dict]:
+    """Each of the iPhone's messages in `conversation` that quotes one, by id, with the quote it carries."""
+    messages = ios.command(cmd="messages", conv=conversation, limit=50)["messages"]
+    return {message["id"]: message["replyTo"] for message in messages if message.get("replyTo")}
+
+
+def _ios_quote(
+    ios: IPhone, conversation: str, body: str, quoted: str, author: str, snippet: str, attachment: bool = False
+) -> dict | None:
+    """The quote the iPhone's message `body` carries, once it names message `quoted` by `author`, with `snippet` and
+    whether it carried an attachment, as the phone's composer wrote it."""
+    for message in ios.command(cmd="messages", conv=conversation, limit=50)["messages"]:
+        quote = message.get("replyTo")
+        if message.get("body") != body or not quote:
+            continue
+        if (quote["id"], quote["authorId"], quote["snippet"], quote["hasAttachment"]) != (quoted, author, snippet, attachment):
+            raise RuntimeError(f"the iPhone's quote of {quoted} reads {quote}")
+        return {"author": quote["author"]}
+    return None
+
+
+def _phone_quote(phone: Phone, conversation: str, body: str, snippet: str) -> dict | None:
+    """The quote the phone's message `body` carries, once its bridge reports one: the message it names, under whose name,
+    and the words, which must be `snippet` as the iPhone flattened them."""
+    for message in phone.state(conversation, limit=50).get("messages", []):
+        if message.get("body") != body or not message.get("replyToId"):
+            continue
+        if message.get("replyToSnippet") != snippet or not message.get("replyToAuthor"):
+            raise RuntimeError(f"the phone's quote reads {message}")
+        return {"quoted": message["replyToId"], "author": message["replyToAuthor"]}
+    return None
+
+
 def _ios_message_id(ios: IPhone, conversation: str, body: str) -> str:
     """The id of the iPhone's message `body` in `conversation`: the frame id both sides key reactions by."""
     found = [message["id"] for message in ios.command(cmd="messages", conv=conversation, limit=50)["messages"] if message.get("body") == body]
@@ -6067,6 +6166,8 @@ def main() -> int:
     ios_delete.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_react = commands.add_parser("iphone-react")
     ios_react.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios_reply = commands.add_parser("iphone-reply")
+    ios_reply.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak = commands.add_parser("iphone-soak")
     ios_soak.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak.add_argument("--peer", action="store_true", help="knit-peer on hci0 joins as a third author, linked to the iPhone alone")
@@ -6174,6 +6275,7 @@ def main() -> int:
         ios_block,
         ios_delete,
         ios_react,
+        ios_reply,
         ios_soak,
         ios_forgets,
         commands.choices["iphone-relay"],
@@ -6194,7 +6296,7 @@ def main() -> int:
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
     if arguments.command in (
         "iphone", "iphone-wake", "android-keeps-iphone", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-delete",
-        "iphone-react", "bridge", "record-pull",
+        "iphone-react", "iphone-reply", "bridge", "record-pull",
     ):
         return {
             "iphone": iphone,
@@ -6205,6 +6307,7 @@ def main() -> int:
             "iphone-block": iphone_block,
             "iphone-delete": iphone_delete,
             "iphone-react": iphone_react,
+            "iphone-reply": iphone_reply,
             "bridge": bridge,
             "record-pull": record_pull,
         }[arguments.command](arguments)

@@ -33,7 +33,7 @@ internal enum ControlLines {
     }
 
     static func fields(of record: MessageRecord) -> [String: JSONValue] {
-        [
+        var fields: [String: JSONValue] = [
             "id": .string(record.id),
             "from": .string(record.senderId.string),
             "to": .text(record.recipientId?.string),
@@ -47,6 +47,17 @@ internal enum ControlLines {
             "attachmentHash": .text(record.attachment?.hash.string),
             "attachmentMime": .text(record.attachment?.mime),
         ]
+        // A reply's quote, as it came or went (ADR 2026-10.mn29); Android's bridge reports `replyToId` and `replyToAuthor`.
+        if let reply = record.replyTo {
+            fields["replyTo"] = .object([
+                "id": .string(reply.messageId),
+                "authorId": .string(reply.authorId),
+                "author": .string(reply.author),
+                "snippet": .string(reply.snippet),
+                "hasAttachment": .bool(reply.hasAttachment),
+            ])
+        }
+        return fields
     }
 
     /// A group as this node holds it: its name, the members still in it and those who left, in roster order.

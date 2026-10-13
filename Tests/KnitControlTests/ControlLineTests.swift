@@ -19,16 +19,16 @@ import Testing
             (#"{"cmd":"stop"}"#, .stop),
             (#"{"cmd":"start"}"#, .start),
             (#"{"cmd":"quit"}"#, .quit),
-            (#"{"cmd":"room","text":"hi"}"#, .room("hi", photo: nil)),
-            (#"{"cmd":"room","photo":"AQID"}"#, .room("", photo: OutgoingPhoto(bytes: [1, 2, 3], mime: "image/jpeg"))),
+            (#"{"cmd":"room","text":"hi"}"#, .room("hi", photo: nil, replyTo: nil)),
+            (#"{"cmd":"room","photo":"AQID"}"#, .room("", photo: OutgoingPhoto(bytes: [1, 2, 3], mime: "image/jpeg"), replyTo: nil)),
             (
                 #"{"cmd":"room","text":"look","photo":"AQID","mime":"image/png"}"#,
-                .room("look", photo: OutgoingPhoto(bytes: [1, 2, 3], mime: "image/png"))
+                .room("look", photo: OutgoingPhoto(bytes: [1, 2, 3], mime: "image/png"), replyTo: nil)
             ),
-            (#"{"cmd":"dm","to":"\#(peer)","text":"psst"}"#, .directMessage(to: peer, text: "psst", photo: nil)),
+            (#"{"cmd":"dm","to":"\#(peer)","text":"psst"}"#, .directMessage(to: peer, text: "psst", photo: nil, replyTo: nil)),
             (
                 #"{"cmd":"dm","to":"\#(peer)","photo":"AQID"}"#,
-                .directMessage(to: peer, text: "", photo: OutgoingPhoto(bytes: [1, 2, 3], mime: "image/jpeg"))
+                .directMessage(to: peer, text: "", photo: OutgoingPhoto(bytes: [1, 2, 3], mime: "image/jpeg"), replyTo: nil)
             ),
             (#"{"cmd":"accept","conv":"\#(peer)"}"#, .accept(peer.string)),
             (#"{"cmd":"accept","peer":"\#(peer)"}"#, .accept(peer.string)),
@@ -44,10 +44,10 @@ import Testing
             (#"{"cmd":"messages","conv":"nearby"}"#, .messages("nearby", limit: 20)),
             (#"{"cmd":"messages","conv":"nearby","limit":0}"#, .messages("nearby", limit: 1)),
             (#"{"cmd":"group-create","members":["\#(peer)"]}"#, .group(.create([peer]))),
-            (#"{"cmd":"group-send","conv":"g-1","text":"hi"}"#, .group(.send("g-1", text: "hi", photo: nil))),
+            (#"{"cmd":"group-send","conv":"g-1","text":"hi"}"#, .group(.send("g-1", text: "hi", photo: nil, replyTo: nil))),
             (
                 #"{"cmd":"group-send","conv":"g-1","photo":"AQID"}"#,
-                .group(.send("g-1", text: "", photo: OutgoingPhoto(bytes: [1, 2, 3], mime: "image/jpeg")))
+                .group(.send("g-1", text: "", photo: OutgoingPhoto(bytes: [1, 2, 3], mime: "image/jpeg"), replyTo: nil))
             ),
             (#"{"cmd":"group-rename","conv":"g-1","name":"Pair"}"#, .group(.rename("g-1", name: "Pair"))),
             (#"{"cmd":"group-leave","conv":"g-1"}"#, .group(.leave("g-1"))),
@@ -100,11 +100,13 @@ import Testing
     @Test func everyCommandHasTheNameItWasSentAs() {
         let peer = fixtureNodeId(4)
         let names = [
-            ControlCommand.status, .peers, .links, .room("", photo: nil), .directMessage(to: peer, text: "", photo: nil), .accept(""),
+            ControlCommand.status, .peers, .links, .room("", photo: nil, replyTo: nil),
+            .directMessage(to: peer, text: "", photo: nil, replyTo: nil), .accept(""),
             .name(nil, status: nil, openToChat: nil),
             .denyLink(peer), .allowLink(peer), .block(peer), .unblock(peer), .digest, .custody, .messages("", limit: 1), .stop, .start,
             .quit,
-            .group(.create([])), .group(.send("", text: "", photo: nil)), .group(.rename("", name: "")), .group(.leave("")), .group(.list),
+            .group(.create([])), .group(.send("", text: "", photo: nil, replyTo: nil)), .group(.rename("", name: "")), .group(.leave("")),
+            .group(.list),
         ]
         .map(\.name)
         #expect(

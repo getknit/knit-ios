@@ -165,7 +165,9 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   `router`, what the router has admitted, relayed and refused), `peers` (names, aliases, safety numbers, each
   peer's `avatarHash` shown and `advertisedAvatarHash`, and `blocked`), `links` (links and sightings), `room` (`text`), `dm` (`to`,
   `text`); `room`, `dm` and `group-send` also take a `photo` as base64 and its `mime`, `image/jpeg` when absent, and
-  then need no `text`, and their replies name the `attachmentHash` the photo is kept under (ADR 2026-10.6cas),
+  then need no `text`, and their replies name the `attachmentHash` the photo is kept under (ADR 2026-10.6cas); a
+  `replyTo`, the id of a message held here, makes any of them a reply quoting it, as Android's composer would under
+  knit-peer and as the app's does under its bridge, and one not held is refused (ADR 2026-10.mn29),
   `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `avatar` (`jpeg` as base64, a `path` the
   answering side reads, or `clear`; ADR 2026-10.nh55), `deny-link` and `allow-link` (`peer`), `block` and
   `unblock` (`peer`; a blocked peer's frames are still carried, relayed and ticked, and `status`'s `dropped` counts
@@ -174,7 +176,9 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   wrapped to), `messages` (`conv`, `limit`; each message carries its `kind`, 0 for a message and Android's
   notice codes for a status line, a photo's `attachmentHash`, `attachmentMime` and `attachmentHeld`, whether its
   bytes are here, `moderation`, `flagged` or `waiting`, when the content filter flagged it or has yet to screen
-  it, ADR 2026-10.e4kz, and `reactions`, `{reactor: emoji}` as Android's bridge reports them), `delete-message`
+  it, ADR 2026-10.e4kz, `reactions`, `{reactor: emoji}` as Android's bridge reports them, and a reply's `replyTo`,
+  `{id, authorId, author, snippet, hasAttachment}`, where Android's bridge reports `replyToId`, `replyToAuthor` and
+  `replyToSnippet`), `delete-message`
   (`id`) and `delete-chat` (`conv`; its reply's `deleted` says whether there was anything to delete), which delete
   here and send nothing, a group keeping us as a member (ADR 2026-10.u7cq), `react` (`id`, `emoji`; the same emoji
   again takes it back, and the reply's `emoji` is what we hold now, `null` once taken back; it goes out in the clear,
@@ -186,7 +190,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   - `group-send` (`conv`, `text`), `group-rename` (`conv`, `name`) and `group-leave` (`conv`) act on a group.
   - `groups` lists every group held, left ones included. `status` counts them.
 - **Events** are `ready` (with `radioProfile`, and `host` and `version` from the app), `link` (`up` true or false), `profile`, `message` (with `request` for a stranger's
-  first DM or group, and a photo's `attachmentHash` and `attachmentMime`), `sent`, `delivered`, `reaction` (`id`,
+  first DM or group, a photo's `attachmentHash` and `attachmentMime`, and a reply's `replyTo`), `sent`, `delivered`, `reaction` (`id`,
   `from` and `emoji`, `null` for one taken back, whenever someone's reaction to a message held here changes), `radio` (`state`:
   `on`, `off`, `unauthorized` or `unsupported`), `group` (`id`, `name`, `members`, `departed` and `left`, whenever
   a group changes) and `attachment` (`hash`, once a message's photo has arrived).

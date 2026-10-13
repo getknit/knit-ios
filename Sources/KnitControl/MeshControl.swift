@@ -35,6 +35,9 @@ public protocol ControlActions: Sendable {
     func deleteMessage(_ id: String) async -> Bool
     /// Deletes a whole thread here, sending nothing.
     func deleteChat(_ conversationId: String) async -> Bool
+    /// The quote a reply to message `messageId` carries, as this node's own composer writes one, or `nil` to leave it to
+    /// the control surface (ADR 2026-10.mn29).
+    func quote(of messageId: String) async -> MessageReply?
     /// Reacts to a message, or takes our reaction back, and answers what we hold now (ADR 2026-10.ehe6).
     func react(to messageId: String, with emoji: String) async -> ReactionRecord?
     /// Blocks a peer (ADR 2026-10.5wgg).
@@ -64,7 +67,7 @@ public actor MeshControl {
     private let bundle: PublicKeyBundle
     private let mesh: Mesh
     let actions: any ControlActions
-    private let stores: MeshStores
+    let stores: MeshStores
     private let clock: any MeshClock
     private let details: [String: JSONValue]
     private let sample: (@Sendable () -> [String: JSONValue])?
@@ -175,18 +178,10 @@ public actor MeshControl {
             return .success(peers())
         case .links:
             return .success(await links())
-        case .room(let text, let photo):
-            let sending = await identified(photo)
-            guard let record = await actions.postToRoom(text, photo: sending, replyTo: nil) else {
-                return .failure(.refused("a blank message, or a photo past 8 MiB, is not sent"))
-            }
-            return .success(Self.sent(record, reusing: sending))
-        case .directMessage(let recipient, let text, let photo):
-            let sending = await identified(photo)
-            guard let record = await actions.sendDirectMessage(text, to: recipient, photo: sending, replyTo: nil) else {
-                return .failure(.refused("a blank message, a photo past 8 MiB, or one to ourselves, is not sent"))
-            }
-            return .success(Self.sent(record, reusing: sending))
+        case .room(let text, let photo, let replyTo):
+            return await send(text, photo: photo, replyTo: replyTo, to: .room)
+        case .directMessage(let recipient, let text, let photo, let replyTo):
+            return await send(text, photo: photo, replyTo: replyTo, to: .direct(recipient))
         case .accept(let conversation):
             await actions.accept(conversation)
             return .success(["conv": .string(conversation)])
@@ -250,13 +245,8 @@ public actor MeshControl {
                 return .failure(.refused("a group takes one to seven others"))
             }
             return .success(ControlLines.fields(of: group))
-        case .send(let conversation, let text, let photo):
-            let sending = await identified(photo)
-            guard let record = await actions.sendGroupMessage(text, to: conversation, photo: sending, replyTo: nil) else {
-                return .failure(
-                    .refused("a blank message, a photo past 8 MiB, or one to a group we are not in or nobody else is left in, is not sent"))
-            }
-            return .success(Self.sent(record, reusing: sending))
+        case .send(let conversation, let text, let photo, let replyTo):
+            return await send(text, photo: photo, replyTo: replyTo, to: .group(conversation))
         case .rename(let conversation, let name):
             guard let group = await actions.renameGroup(conversation, to: name) else {
                 return .failure(.refused("a blank name, or a group we are not in, is not renamed"))

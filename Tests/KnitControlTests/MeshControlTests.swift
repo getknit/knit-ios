@@ -281,15 +281,15 @@ final class RecordingActions: ControlActions {
         record("stop")
     }
 
-    func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo _: MessageReply?) -> MessageRecord? {
-        record("room \(text)\(Self.describe(photo))")
+    func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?) -> MessageRecord? {
+        record("room \(text)\(Self.describe(photo))\(Self.describe(replyTo))")
         return refuses
             ? nil
             : MessageRecord(id: "room-\(text)", senderId: me, recipientId: nil, conversationId: Conversations.nearby, body: text, sentAt: 1)
     }
 
-    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo _: MessageReply?) -> MessageRecord? {
-        record("dm \(recipient) \(text)\(Self.describe(photo))")
+    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?) -> MessageRecord? {
+        record("dm \(recipient) \(text)\(Self.describe(photo))\(Self.describe(replyTo))")
         return refuses
             ? nil
             : MessageRecord(id: "dm-\(text)", senderId: me, recipientId: recipient, conversationId: recipient.string, body: text, sentAt: 1)
@@ -312,8 +312,8 @@ final class RecordingActions: ControlActions {
         return refuses ? nil : group(named: "")
     }
 
-    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo _: MessageReply?) -> MessageRecord? {
-        record("group-send \(groupId) \(text)\(Self.describe(photo))")
+    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?) -> MessageRecord? {
+        record("group-send \(groupId) \(text)\(Self.describe(photo))\(Self.describe(replyTo))")
         return refuses
             ? nil : MessageRecord(id: "group-\(text)", senderId: me, recipientId: nil, conversationId: groupId, body: text, sentAt: 1)
     }

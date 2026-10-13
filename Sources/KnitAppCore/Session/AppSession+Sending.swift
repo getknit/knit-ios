@@ -4,6 +4,21 @@ import KnitWire
 
 // What a session sends: a message in any thread, with a photo and a quote if it has them.
 extension AppSession {
+    /// The quote a reply to message `id` carries, as Android's composer writes one (`ChatScreen.kt:1352-1388`, ADR
+    /// 2026-10.mn29): the author's own name, ours included, never "You"; words the filter hides from us left out; a label
+    /// for a GIF, a file or a voice note with no words. `nil` for a message not held, or a status line.
+    public func quote(of id: String) -> MessageReply? {
+        guard let parent = stores.messages.message(id), !parent.kind.isNotice else {
+            return nil
+        }
+        return MessageReply.quoting(
+            parent,
+            authorName: directory.label(for: parent.senderId).name,
+            hidesWords: parent.hidesWords(filtering: filtersContent, me: identity.nodeId),
+            attachmentLabel: TextLimits.isBlank(parent.body) ? AttachmentKind.quoteLabel(of: parent.attachment) : nil
+        )
+    }
+
     /// Sends `text` in a thread, with `photo` if one is given, quoting `replyTo` if it replies: the room, a group, or a DM
     /// to the node id the thread is named for. A photo may go with no words. Answers what was stored, or `nil` when there
     /// is nothing to send.
