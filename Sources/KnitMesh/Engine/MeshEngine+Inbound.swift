@@ -201,6 +201,8 @@ extension MeshEngine {
         let isNew = !stores.messages.contains(envelope.id)
         // Our own limit bounds what we send, not what a peer floods.
         let body = TextLimits.truncated(delivered.body, toUTF16: TextLimits.message)
+        // A quote is someone's words too, and the filter reads them with the reply's (ADR 2026-10.mn29).
+        let wordless = TextLimits.isBlank(body) && TextLimits.isBlank(delivered.replyTo?.snippet ?? "")
         let record = MessageRecord(
             id: envelope.id,
             senderId: sender,
@@ -210,7 +212,8 @@ extension MeshEngine {
             sentAt: clampFuture(envelope.sentAt),
             arrivedAt: sender == nodeId ? nil : clock.wallMilliseconds(),
             attachment: attachment,
-            moderation: sender == nodeId || TextLimits.isBlank(body) ? .clear : .waiting
+            moderation: sender == nodeId || wordless ? .clear : .waiting,
+            replyTo: delivered.replyTo
         )
         stores.messages.insertIfAbsent(record)
         if isNew, sender != nodeId {
@@ -240,14 +243,28 @@ extension MeshEngine {
     /// The longest text an attachment's type, key or file name keeps: a peer's frame bounds nothing on its own.
     static let attachmentTextLimit = 256
 
-    /// What a room post says and carries, from its cleartext.
+    /// What a room post says, carries and quotes, from its cleartext.
     static func delivered(_ chat: ChatContent) -> DeliveredChat {
-        DeliveredChat(body: chat.body, attachment: attachment(of: chat))
+        DeliveredChat(body: chat.body, attachment: attachment(of: chat), replyTo: chat.replyTo.map(reply))
     }
 
-    /// What a sealed message says and carries, from its opened content.
+    /// What a sealed message says, carries and quotes, from its opened content. A quote beside the envelope in the clear
+    /// is no part of it (`InboundPipeline.plaintextContent`).
     static func delivered(_ content: MessageContent) -> DeliveredChat {
-        DeliveredChat(body: content.body, attachment: attachment(of: content))
+        DeliveredChat(body: content.body, attachment: attachment(of: content), replyTo: content.replyTo.map(reply))
+    }
+
+    /// The quote a delivered message carries, as the replier wrote it: nothing checks that the message it names is held,
+    /// or is in this thread, as nothing does on Android (`InboundPipeline.deliverChat`). Only the name and the words are
+    /// clipped, which a peer's frame bounds no more than an attachment's text.
+    static func reply(_ ref: ReplyRef) -> MessageReply {
+        MessageReply(
+            messageId: ref.messageId,
+            authorId: ref.authorId,
+            author: TextLimits.truncated(ref.author, toUTF16: attachmentTextLimit),
+            snippet: TextLimits.truncated(ref.snippet, toUTF16: attachmentTextLimit),
+            hasAttachment: ref.hasAttachment
+        )
     }
 
     /// What a room post carries: its photo's hash and type, from the cleartext. A hash that is not 64 lowercase hex
@@ -331,4 +348,6 @@ internal struct DeliveredChat {
     var body: String
     /// Its photo or file, or `nil`.
     var attachment: MessageAttachment?
+    /// The message it replies to, as its author quoted it, or `nil`.
+    var replyTo: MessageReply?
 }

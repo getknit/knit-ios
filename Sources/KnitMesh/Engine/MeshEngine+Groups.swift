@@ -40,7 +40,9 @@ extension MeshEngine {
     /// `pendingKey`, and goes out once one pins, which Android never does. Answers the stored message, or `nil` for a
     /// blank message with no photo, a photo too heavy to send, a group we are not in, or one nobody else is left in.
     @discardableResult
-    public func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto? = nil) -> MessageRecord? {
+    public func sendGroupMessage(
+        _ text: String, to groupId: String, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil
+    ) -> MessageRecord? {
         let sentAt = clock.wallMilliseconds()
         guard let group = stores.groups.group(groupId), !group.hasLeft, hasOthers(group), let body = Self.messageBody(text, photo: photo),
             let attachment = sealing(photo, at: sentAt)
@@ -55,7 +57,8 @@ extension MeshEngine {
             conversationId: group.id,
             body: body,
             sentAt: sentAt,
-            attachment: attachment
+            attachment: attachment,
+            replyTo: replyTo
         )
         let sealed = sealGroup(Self.content(of: record), id: id, sentAt: sentAt, in: group)
         record.pendingKey = sealed.envelope == nil

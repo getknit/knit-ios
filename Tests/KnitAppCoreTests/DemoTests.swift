@@ -241,9 +241,9 @@ import Testing
         let shown = [Neighbor(nodeId: sam.nodeId)]
         #expect(mesh.nodeId == fake.nodeId)
         await mesh.start()
-        let posted = await mesh.postToRoom("hi", photo: nil)
+        let posted = await mesh.postToRoom("hi", photo: nil, replyTo: nil)
         #expect(posted != nil)
-        #expect(await mesh.sendDirectMessage("hey", to: sam.nodeId, photo: nil) != nil)
+        #expect(await mesh.sendDirectMessage("hey", to: sam.nodeId, photo: nil, replyTo: nil) != nil)
         #expect(await mesh.deleteMessage(posted?.id ?? ""))
         #expect(await mesh.deleteChat(sam.nodeId.string))
         await mesh.accept("c1")
@@ -253,7 +253,7 @@ import Testing
         await mesh.unblock(sam.nodeId)
         let group = await mesh.createGroup(with: [sam.nodeId])
         let id = group?.id ?? ""
-        #expect(await mesh.sendGroupMessage("all", to: id, photo: nil) != nil)
+        #expect(await mesh.sendGroupMessage("all", to: id, photo: nil, replyTo: nil) != nil)
         #expect(await mesh.renameGroup(id, to: "Pair")?.name == "Pair")
         #expect(await mesh.leaveGroup(id))
         let expected = FakeMesh.Calls(

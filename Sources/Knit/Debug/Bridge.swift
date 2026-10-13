@@ -120,12 +120,14 @@
             await session.stop()
         }
 
-        func postToRoom(_ text: String, photo: OutgoingPhoto?) async -> MessageRecord? {
-            await session.send(text, photo: photo, in: Conversations.nearby)
+        func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord? {
+            await session.send(text, photo: photo, replyTo: replyTo, in: Conversations.nearby)
         }
 
-        func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?) async -> MessageRecord? {
-            await session.send(text, photo: photo, in: recipient.string)
+        func sendDirectMessage(
+            _ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?
+        ) async -> MessageRecord? {
+            await session.send(text, photo: photo, replyTo: replyTo, in: recipient.string)
         }
 
         func heldPhoto(picked: [UInt8]) async -> OutgoingPhoto? {
@@ -148,8 +150,8 @@
             await session.createGroup(with: others)
         }
 
-        func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?) async -> MessageRecord? {
-            await session.send(text, photo: photo, in: groupId)
+        func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord? {
+            await session.send(text, photo: photo, replyTo: replyTo, in: groupId)
         }
 
         func renameGroup(_ groupId: String, to name: String) async -> GroupRecord? {

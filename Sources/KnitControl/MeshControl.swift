@@ -11,10 +11,10 @@ public protocol ControlActions: Sendable {
     func start() async
     /// Stops the radio and closes every link.
     func stop() async
-    /// Posts to the Nearby room.
-    func postToRoom(_ text: String, photo: OutgoingPhoto?) async -> MessageRecord?
-    /// Sends a DM.
-    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?) async -> MessageRecord?
+    /// Posts to the Nearby room, quoting the message it replies to if it replies.
+    func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord?
+    /// Sends a DM, quoting the message it replies to if it replies.
+    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord?
     /// A photo's bytes as the picture this node already holds them as, or `nil` (ADR 2026-10.f3mv).
     func heldPhoto(picked: [UInt8]) async -> OutgoingPhoto?
     /// Accepts a message request.
@@ -25,8 +25,8 @@ public protocol ControlActions: Sendable {
     func setAvatar(_ jpeg: [UInt8]?) async
     /// Makes a group with `others`, or opens the one they already share.
     func createGroup(with others: [NodeId]) async -> GroupRecord?
-    /// Sends a message to a group.
-    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?) async -> MessageRecord?
+    /// Sends a message to a group, quoting the message it replies to if it replies.
+    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord?
     /// Renames a group and floods the change.
     func renameGroup(_ groupId: String, to name: String) async -> GroupRecord?
     /// Leaves a group, telling its members.
@@ -177,13 +177,13 @@ public actor MeshControl {
             return .success(await links())
         case .room(let text, let photo):
             let sending = await identified(photo)
-            guard let record = await actions.postToRoom(text, photo: sending) else {
+            guard let record = await actions.postToRoom(text, photo: sending, replyTo: nil) else {
                 return .failure(.refused("a blank message, or a photo past 8 MiB, is not sent"))
             }
             return .success(Self.sent(record, reusing: sending))
         case .directMessage(let recipient, let text, let photo):
             let sending = await identified(photo)
-            guard let record = await actions.sendDirectMessage(text, to: recipient, photo: sending) else {
+            guard let record = await actions.sendDirectMessage(text, to: recipient, photo: sending, replyTo: nil) else {
                 return .failure(.refused("a blank message, a photo past 8 MiB, or one to ourselves, is not sent"))
             }
             return .success(Self.sent(record, reusing: sending))
@@ -252,7 +252,7 @@ public actor MeshControl {
             return .success(ControlLines.fields(of: group))
         case .send(let conversation, let text, let photo):
             let sending = await identified(photo)
-            guard let record = await actions.sendGroupMessage(text, to: conversation, photo: sending) else {
+            guard let record = await actions.sendGroupMessage(text, to: conversation, photo: sending, replyTo: nil) else {
                 return .failure(
                     .refused("a blank message, a photo past 8 MiB, or one to a group we are not in or nobody else is left in, is not sent"))
             }

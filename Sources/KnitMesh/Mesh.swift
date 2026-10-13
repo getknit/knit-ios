@@ -130,18 +130,20 @@ public actor Mesh {
 
     // MARK: The app's side
 
-    /// Posts to the Nearby room, with a photo if one is given.
+    /// Posts to the Nearby room, with a photo if one is given, quoting the message it replies to if it replies.
     @discardableResult
-    public func postToRoom(_ text: String, photo: OutgoingPhoto? = nil) -> MessageRecord? {
+    public func postToRoom(_ text: String, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil) -> MessageRecord? {
         defer { settle() }
-        return engine.postToRoom(text, photo: photo)
+        return engine.postToRoom(text, photo: photo, replyTo: replyTo)
     }
 
-    /// Sends a DM, with a photo if one is given.
+    /// Sends a DM, with a photo if one is given, quoting the message it replies to if it replies.
     @discardableResult
-    public func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto? = nil) -> MessageRecord? {
+    public func sendDirectMessage(
+        _ text: String, to recipient: NodeId, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil
+    ) -> MessageRecord? {
         defer { settle() }
-        return engine.sendDirectMessage(text, to: recipient, photo: photo)
+        return engine.sendDirectMessage(text, to: recipient, photo: photo, replyTo: replyTo)
     }
 
     /// `picked` as the picture this phone already holds it as, or `nil` (``MeshEngine/heldPhoto(picked:)``).
@@ -161,11 +163,14 @@ public actor Mesh {
         return engine.createGroup(with: others)
     }
 
-    /// Sends a message to a group, with a photo if one is given (``MeshEngine/sendGroupMessage(_:to:photo:)``).
+    /// Sends a message to a group, with a photo if one is given, quoting the message it replies to if it replies
+    /// (``MeshEngine/sendGroupMessage(_:to:photo:replyTo:)``).
     @discardableResult
-    public func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto? = nil) -> MessageRecord? {
+    public func sendGroupMessage(
+        _ text: String, to groupId: String, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil
+    ) -> MessageRecord? {
         defer { settle() }
-        return engine.sendGroupMessage(text, to: groupId, photo: photo)
+        return engine.sendGroupMessage(text, to: groupId, photo: photo, replyTo: replyTo)
     }
 
     /// Renames a group and floods the change (``MeshEngine/renameGroup(_:to:)``).

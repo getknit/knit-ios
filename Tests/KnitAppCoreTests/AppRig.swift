@@ -110,14 +110,14 @@ final class FakeMesh: MeshService {
         }
     }
 
-    func postToRoom(_ text: String, photo: OutgoingPhoto?) -> MessageRecord? {
+    func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?) -> MessageRecord? {
         state.withLock { $0.calls.room.append(text) }
-        return store(text, to: nil, photo: photo)
+        return store(text, to: nil, photo: photo, replyTo: replyTo)
     }
 
-    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?) -> MessageRecord? {
+    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?) -> MessageRecord? {
         state.withLock { $0.calls.direct.append("\(recipient): \(text)") }
-        return store(text, to: recipient, photo: photo)
+        return store(text, to: recipient, photo: photo, replyTo: replyTo)
     }
 
     func accept(_ conversationId: String) {
@@ -159,12 +159,12 @@ final class FakeMesh: MeshService {
         return group
     }
 
-    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?) -> MessageRecord? {
+    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?) -> MessageRecord? {
         state.withLock { $0.calls.groups.append("send \(groupId): \(text)") }
         guard stores.groups.group(groupId)?.hasLeft == false else {
             return nil
         }
-        return store(text, to: nil, in: groupId, photo: photo)
+        return store(text, to: nil, in: groupId, photo: photo, replyTo: replyTo)
     }
 
     func renameGroup(_ groupId: String, to name: String) -> GroupRecord? {
@@ -222,7 +222,9 @@ final class FakeMesh: MeshService {
         stores.blocks.unblock(peer, deviceTag: stores.peers.peer(peer)?.deviceTag)
     }
 
-    private func store(_ text: String, to recipient: NodeId?, in group: String? = nil, photo: OutgoingPhoto? = nil) -> MessageRecord {
+    private func store(
+        _ text: String, to recipient: NodeId?, in group: String? = nil, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil
+    ) -> MessageRecord {
         let index = state.withLock { state in
             defer { state.next += 1 }
             return state.next
@@ -235,7 +237,8 @@ final class FakeMesh: MeshService {
             body: text,
             sentAt: clock + Int64(index),
             pendingKey: recipient.map { stores.peers.peer($0) == nil } ?? false,
-            attachment: photo.map { keep($0) }
+            attachment: photo.map { keep($0) },
+            replyTo: replyTo
         )
         stores.messages.save(record)
         return record
@@ -363,37 +366,4 @@ struct AppRig {
     }
 
     var me: NodeId { Self.me.nodeId }
-
-    /// Stores a message from `sender` to `recipient` (the room when `nil`), as the engine would on arrival: someone else's
-    /// words wait for the content filter.
-    @discardableResult
-    func receive(
-        _ body: String,
-        from sender: NodeId,
-        to recipient: NodeId? = nil,
-        id: String? = nil,
-        sentAt: Int64 = 1000,
-        arrivedAt: Int64 = 1000
-    ) async -> MessageRecord {
-        let record = MessageRecord(
-            id: id ?? "\(sender)-\(sentAt)-\(body)",
-            senderId: sender,
-            recipientId: recipient,
-            conversationId: Conversations.id(sender: sender, recipient: recipient, me: me),
-            body: body,
-            sentAt: sentAt,
-            arrivedAt: arrivedAt,
-            moderation: sender == me || TextLimits.isBlank(body) ? .clear : .waiting
-        )
-        stores.messages.save(record)
-        let isRequest = session.threads().isRequest(record.conversationId)
-        await session.handle(.received(record, isRequest: isRequest))
-        return record
-    }
-
-    /// Pins `person` under `name`.
-    func pin(_ person: Person, name: String, verified: Bool = false) async {
-        stores.peers.upsert(person.record(name: name, verified: verified))
-        await session.handle(.peerUpdated(person.nodeId))
-    }
 }

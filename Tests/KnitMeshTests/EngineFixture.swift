@@ -125,8 +125,10 @@ struct TestPeer: Equatable {
         return try signed(envelope, relay: relay)
     }
 
-    func roomPost(_ body: String, id: String, sentAt: Int64) throws -> TestFrame {
-        try signed(RelayEnvelope(type: .chat, id: id, senderId: nodeId.string, sentAt: sentAt, payload: ChatContent(body: body).encoded))
+    /// A room post from this peer: `body`, or the whole of `content` when it is given.
+    func roomPost(_ body: String, id: String, sentAt: Int64, content: ChatContent? = nil) throws -> TestFrame {
+        let payload = (content ?? ChatContent(body: body)).encoded
+        return try signed(RelayEnvelope(type: .chat, id: id, senderId: nodeId.string, sentAt: sentAt, payload: payload))
     }
 
     func directMessage(
