@@ -10,7 +10,9 @@
     /// name tops the first bubble and the face sits by the last, as Signal clusters them (ADR 2026-10.5waw). A long press
     /// opens its menu, Copy and Delete, and Report on someone else's, and VoiceOver offers them among its actions (ADR
     /// 2026-10.u7cq, ADR 2026-10.f6kf). Where the thread
-    /// takes reactions, the menu opens on the six, and VoiceOver offers each as an action (ADR 2026-10.ehe6).
+    /// takes reactions, the menu opens on the six, and VoiceOver offers each as an action (ADR 2026-10.ehe6). Where it takes
+    /// replies, Reply leads the rest; a reply's quote sits above its photo and words, and takes the thread to the original
+    /// when the thread shows it (ADR 2026-10.mn29).
     internal struct MessageBubble: View {
         let message: ChatMessage
         /// Where it sits in its run.
@@ -27,9 +29,16 @@
         let report: (() -> Void)?
         /// Toggles our reaction with an emoji, or `nil` where the thread takes none.
         let react: ((String) -> Void)?
+        /// Starts a reply to the message, or `nil` where the thread takes none.
+        let reply: (() -> Void)?
+        /// Takes the thread to the message its quote names, or `nil` when the thread does not show it.
+        let showOriginal: (() -> Void)?
+        /// Whether a quote's tap just brought the thread here, which the row shows for a moment.
+        let highlighted: Bool
         @Environment(\.dynamicTypeSize) private var typeSize
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
         @Environment(\.openRoute) private var openRoute
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             HStack(alignment: .bottom, spacing: Layout.small) {
@@ -52,10 +61,7 @@
                         .accessibilityHidden(true)
                     }
                 }
-                BubbleContent(message: message, place: place, covered: covered, hidden: hidden, reveal: reveal, open: open, react: react)
-                    .contextMenu {
-                        BubbleMenu(message: message, copies: hidden == nil, delete: delete, report: report, react: react)
-                    }
+                column
                 if !message.isMine {
                     Spacer(minLength: Layout.bubbleInset)
                 }
@@ -63,7 +69,19 @@
             // A message reads as one element. Its photo stays a button for a tap, and VoiceOver opens it by name: the
             // photo as an element of its own left the author's name its own element too, a hit area too small to audit.
             .accessibilityElement(children: .combine)
+            // A quote's tap brings the thread here: the row's tint says where it landed, then fades.
+            .background(
+                highlighted ? Palette.accent.opacity(Self.highlight) : .clear,
+                in: .rect(cornerRadius: Layout.bubbleCorner, style: .continuous)
+            )
+            .animation(reduceMotion ? nil : .easeOut(duration: Self.fade), value: highlighted)
             .accessibilityActions {
+                if let reply {
+                    Button(Copy.Replies.reply, action: reply)
+                }
+                if let showOriginal, hidden == nil {
+                    Button(Copy.Replies.showOriginal, action: showOriginal)
+                }
                 if hidden == .flagged {
                     Button(Copy.Moderation.showMessage, action: reveal)
                 }
@@ -88,6 +106,28 @@
             .accessibilityIdentifier(photo.map { _ in AccessibilityID.chatPhoto(message.id) } ?? AccessibilityID.chatMessage(message.id))
         }
 
+        /// How strongly the tint shows where a quote's tap landed (`ChatScreen.kt`'s 22% blend), and how long it takes to
+        /// fade, in seconds (its 600 ms).
+        private static let highlight = 0.22
+        private static let fade = 0.6
+
+        /// The bubble's column, which a long press opens the menu over.
+        private var column: some View {
+            BubbleContent(
+                message: message,
+                place: place,
+                covered: covered,
+                hidden: hidden,
+                reveal: reveal,
+                open: open,
+                react: react,
+                showOriginal: showOriginal
+            )
+            .contextMenu {
+                BubbleMenu(message: message, copies: hidden == nil, delete: delete, report: report, react: react, reply: reply)
+            }
+        }
+
         /// The message's photo, which opens full screen, or `nil` when it carries none.
         private var photo: ChatAttachment? {
             message.attachment.flatMap { $0.kind == .photo ? $0 : nil }
@@ -98,9 +138,11 @@
             !revealed && photo.map { screening?.isHiding($0, isMine: message.isMine) == true } == true
         }
 
-        /// Why the filter hides the words now, or `nil` while they show. Words it has yet to read never show on a tap.
+        /// Why the filter hides the words now, a quote's with the reply's, or `nil` while they show. Words it has yet to read
+        /// never show on a tap.
         private var hidden: HiddenWords? {
-            message.body.isEmpty || (revealed && message.hiddenWords == .flagged) ? nil : message.hiddenWords
+            let wordless = message.body.isEmpty && message.quote?.line == nil
+            return wordless || (revealed && message.hiddenWords == .flagged) ? nil : message.hiddenWords
         }
 
         /// What VoiceOver adds after the message: its time and tick when the run's stamp under a later bubble says them,
@@ -115,8 +157,8 @@
         }
     }
 
-    /// A bubble's long-press menu: the six where the thread takes reactions, then Copy, Delete, and Report on someone
-    /// else's (ADR 2026-10.u7cq, ADR 2026-10.f6kf).
+    /// A bubble's long-press menu: the six where the thread takes reactions, Reply where it takes replies, then Copy,
+    /// Delete, and Report on someone else's (ADR 2026-10.u7cq, ADR 2026-10.f6kf, ADR 2026-10.mn29).
     private struct BubbleMenu: View {
         let message: ChatMessage
         /// Whether the words show, so Copy can take them.
@@ -124,10 +166,16 @@
         let delete: () -> Void
         let report: (() -> Void)?
         let react: ((String) -> Void)?
+        let reply: (() -> Void)?
 
         var body: some View {
             if let react {
                 ReactionPicker(message: message, react: react)
+            }
+            // First under the six, as on Android (`ChatScreen.kt:2726-2731`).
+            if let reply {
+                Button(Copy.Replies.reply, systemImage: "arrowshape.turn.up.left", action: reply)
+                    .accessibilityIdentifier(AccessibilityID.chatMessageReply)
             }
             // Copy takes the words only while they show. The menu replaces the text's own selection, which a long press on
             // the words would otherwise open in its place.
@@ -166,8 +214,8 @@
         }
     }
 
-    /// A message's column: the author's name in the room and a group, which opens their profile, its photo, its words or
-    /// what stands in for them, its reactions, and its stamp.
+    /// A message's column: the author's name in the room and a group, which opens their profile, the quote of the message
+    /// it replies to, its photo, its words or what stands in for them, its reactions, and its stamp.
     private struct BubbleContent: View {
         let message: ChatMessage
         let place: MessagePlace
@@ -178,6 +226,7 @@
         let reveal: () -> Void
         let open: (ChatAttachment) -> Void
         let react: ((String) -> Void)?
+        let showOriginal: (() -> Void)?
         @Environment(\.openRoute) private var openRoute
 
         var body: some View {
@@ -192,6 +241,8 @@
                     .buttonStyle(.plain)
                     .foregroundStyle(.tint)
                 }
+                // A quote's words hide with the reply's, behind the same tap.
+                QuoteButton(quote: hidden == nil ? message.quote : nil, isMine: message.isMine, showOriginal: showOriginal)
                 if let attachment = message.attachment {
                     AttachmentView(attachment: attachment, isMine: message.isMine, covered: covered, reveal: reveal) { open(attachment) }
                 }
@@ -232,6 +283,25 @@
                     topTrailingRadius: Layout.bubbleCorner,
                     style: .continuous
                 )
+        }
+    }
+
+    /// A reply's quote, which takes the thread to the original when the thread shows it, and is no button otherwise; nothing
+    /// for a message that quotes nothing, or whose words hide.
+    private struct QuoteButton: View {
+        let quote: ChatQuote?
+        let isMine: Bool
+        let showOriginal: (() -> Void)?
+
+        var body: some View {
+            if let quote, let showOriginal {
+                Button(action: showOriginal) {
+                    QuoteView(quote: quote, isMine: isMine)
+                }
+                .buttonStyle(.plain)
+            } else if let quote {
+                QuoteView(quote: quote, isMine: isMine)
+            }
         }
     }
 

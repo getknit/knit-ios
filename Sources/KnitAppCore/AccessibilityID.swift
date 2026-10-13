@@ -115,6 +115,13 @@ public enum AccessibilityID {
     /// The base a chip's identifier spells its emoji's code points in.
     private static let hex = 16
 
+    /// A bubble menu's Reply (ADR 2026-10.mn29). Android has no tag here.
+    public static let chatMessageReply = "chat_message_reply"
+    /// The quote the composer holds (`reply_preview` in knit-next).
+    public static let chatReplyBar = "reply_preview"
+    /// Its Cancel reply (`reply_cancel`).
+    public static let chatReplyCancel = "reply_cancel"
+
     /// A message that carries no photo, `chat_message_<message id>`, whose value says when the content filter hides its
     /// words (ADR 2026-10.e4kz). Android has no tag here.
     public static func chatMessage(_ messageId: String) -> String {

@@ -50,6 +50,13 @@
         static let chipOutline: CGFloat = 1.5
         /// A thread's note's corners.
         static let noteCorner: CGFloat = 12
+        /// A quote's accent bar, down its leading edge (`QuotedMessage`'s 3 dp in knit-next).
+        static let quoteBar: CGFloat = 3
+        /// A quote's corners, inside a bubble's (Android's 6 dp, a little rounder beside iOS's bubbles).
+        static let quoteCorner: CGFloat = 10
+        /// How far a bubble follows a swipe to reply before it stops, and how far the finger must go for the reply to start.
+        static let swipeReach: CGFloat = 80
+        static let swipeStarts: CGFloat = 56
         /// The composer's field's corners: a capsule at one line.
         static let composerCorner: CGFloat = 22
         /// The composer's glass panel's corners: the field's, plus the panel's padding around it.

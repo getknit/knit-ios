@@ -3,13 +3,15 @@
     import KnitAppCore
     import SwiftUI
 
-    /// The composer: the photo it holds, the field, what is left near the limit, and Send, or Add photo while there is
-    /// nothing to send (`SendAction` in knit-next). From iOS 26 it sits in a glass panel (``SwiftUI/View/glassPanel()``),
-    /// with the field and the count on opaque fills of their own.
+    /// The composer: the quote it holds, the photo it holds, the field, what is left near the limit, and Send, or Add photo
+    /// while there is nothing to send (`SendAction` in knit-next). From iOS 26 it sits in a glass panel
+    /// (``SwiftUI/View/glassPanel()``), with the quote, the field and the count on opaque fills of their own. A reply started
+    /// from a message gives the field focus (ADR 2026-10.mn29).
     internal struct ComposerBar: View {
         @Bindable var model: ChatModel
         let demoPhoto: Data?
         @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+        @FocusState private var typing: Bool
 
         /// The photo the composer holds, or a spinner while a picked one is made ready to send.
         @ViewBuilder private var held: some View {
@@ -22,14 +24,23 @@
             }
         }
 
+        /// The quote and the photo the composer holds, each only while there is something to hold: an empty full-width
+        /// frame here kept the thread above relaying itself at the largest text size, and the accessibility audit never
+        /// finished.
+        @ViewBuilder private var holding: some View {
+            if let replying = model.replying {
+                ReplyBar(quote: replying.quote, cancel: model.cancelReply)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if model.preparingPhoto || model.staged != nil {
+                held
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+
         var body: some View {
             VStack(alignment: .trailing, spacing: Layout.tight) {
-                // Only while there is something to hold: an empty full-width frame here kept the thread above relaying
-                // itself at the largest text size, and the accessibility audit never finished.
-                if model.preparingPhoto || model.staged != nil {
-                    held
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                holding
                 if let remaining = model.remaining {
                     Text(Copy.Chat.remaining(remaining))
                         .font(.caption)
@@ -39,7 +50,7 @@
                         .background(Color(uiColor: .systemBackground), in: .capsule)
                 }
                 HStack(alignment: .bottom, spacing: Layout.small) {
-                    ComposerField(draft: $model.draft)
+                    ComposerField(draft: $model.draft, typing: $typing)
                         .padding(.horizontal, Layout.medium)
                         .padding(.vertical, Layout.small)
                         .frame(minHeight: Layout.hitTarget)
@@ -61,6 +72,9 @@
             }
             .padding(Layout.small)
             .glassPanel()
+            .onChange(of: model.repliesStarted) {
+                typing = true
+            }
         }
 
         /// Whether ``SwiftUI/View/glassPanel()`` draws glass here, as it does from iOS 26 unless Reduce Transparency is on.
@@ -79,6 +93,8 @@
     /// read off a hidden copy set in the same font and width.
     private struct ComposerField: View {
         @Binding var draft: String
+        /// Whether the field has focus, which a reply started elsewhere asks for.
+        var typing: FocusState<Bool>.Binding
         /// The words' height, and one line's, as the hidden copies measure them.
         @State private var height: CGFloat = 0
         @State private var line: CGFloat = 0
@@ -86,6 +102,7 @@
         var body: some View {
             TextField(Copy.Chat.composerPlaceholder, text: $draft, axis: .vertical)
                 .lineLimit(lines)
+                .focused(typing)
                 .background(alignment: .topLeading) {
                     ZStack(alignment: .topLeading) {
                         // A last line break opens a line the text alone does not measure.

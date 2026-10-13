@@ -9,7 +9,8 @@
         case message(String)
     }
 
-    /// Jumps a thread's collection view to its newest row, at SwiftUI's asking: the way back, and a message of our own.
+    /// Jumps a thread's collection view to its newest row, at SwiftUI's asking: the way back, and a message of our own; or
+    /// to the message a reply's quote names (ADR 2026-10.mn29).
     @MainActor
     internal final class ThreadJump {
         weak var view: ThreadCollectionView?
@@ -17,6 +18,11 @@
         /// Pins the thread to its bottom edge, and takes it there.
         func toNewest() {
             view?.jumpToNewest()
+        }
+
+        /// Unpins the thread and takes `item` to the middle of the screen, gliding there when `animated` and it is near.
+        func to(_ item: ThreadItem, animated: Bool) {
+            view?.jump(to: item, animated: animated)
         }
     }
 
@@ -36,6 +42,9 @@
         let bars: EdgeInsets
         /// Whether the way back to the newest row shows.
         @Binding var offersNewest: Bool
+        /// What a swipe toward the trailing edge does on a row: start a reply to its message, or `nil` for a row that takes
+        /// none. `nil` altogether where the thread takes no replies (ADR 2026-10.mn29).
+        let swipe: ((ThreadItem) -> (() -> Void)?)?
         @ViewBuilder let content: (Row) -> Content
 
         func makeCoordinator() -> Coordinator {
@@ -60,6 +69,7 @@
                 }
             }
             view.bars = UIEdgeInsets(top: bars.top, left: 0, bottom: bars.bottom, right: 0)
+            view.swipe = swipe
             context.coordinator.content = content
             context.coordinator.show(items, rows: rows)
         }
@@ -82,11 +92,15 @@
                     cell.contentConfiguration = UIHostingConfiguration { content(row) }
                         .margins(.all, 0)
                     cell.backgroundConfiguration = .clear()
+                    // A row drawn again mid-swipe, or reused, stands where it belongs.
+                    cell.contentView.transform = .identity
                 }
                 let diffable = UICollectionViewDiffableDataSource<Int, ThreadItem>(collectionView: view) { collection, path, item in
                     collection.dequeueConfiguredReusableCell(using: cell, for: path, item: item)
                 }
                 source = diffable
+                view.find = { [weak diffable] item in diffable?.indexPath(for: item) }
+                view.item = { [weak diffable] path in diffable?.itemIdentifier(for: path) }
             }
 
             /// Shows `items`, drawing again each row whose content changed.
@@ -156,6 +170,11 @@
         var offersNewest: (Bool) -> Void = { _ in
             // Nothing asks until SwiftUI's first update.
         }
+        /// What a swipe does on each row, from SwiftUI (``ThreadCollection/swipe``).
+        var swipe: ((ThreadItem) -> (() -> Void)?)?
+        /// Where a row is, and which row is where, from the data source.
+        var find: (ThreadItem) -> IndexPath? = { _ in nil }
+        var item: (IndexPath) -> ThreadItem? = { _ in nil }
         /// Whether the thread keeps to its bottom edge: from opening until someone scrolls it or iOS scrolls it to the top,
         /// and again once it comes to rest there.
         private var pinned = true
@@ -164,6 +183,8 @@
         private var laying = false
         /// A tap anywhere on the thread puts the keyboard away.
         private let tap = KeyboardTap()
+        /// A swipe toward the trailing edge on a message starts a reply to it.
+        private let swiping = SwipeToReply()
 
         init() {
             super.init(frame: .zero, collectionViewLayout: Self.layout())
@@ -175,6 +196,8 @@
             accessibilityIdentifier = AccessibilityID.chatThread
             delegate = self
             addGestureRecognizer(tap.recognizer)
+            swiping.view = self
+            addGestureRecognizer(swiping.recognizer)
         }
 
         @available(*, unavailable)
@@ -211,12 +234,46 @@
             controller?.setContentScrollView(self, for: .bottom)
         }
 
+        /// The thread's own pan steps aside for a swipe to reply, which it would otherwise take for a scroll that cannot go
+        /// sideways: the two begin on the same movement, and only one may run.
+        override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+            if gesture === panGestureRecognizer, let pan = gesture as? UIPanGestureRecognizer, swiping.takes(pan) {
+                return false
+            }
+            return super.gestureRecognizerShouldBegin(gesture)
+        }
+
         /// Pins the thread to its bottom edge, and takes it there.
         func jumpToNewest() {
             pinned = true
             setNeedsLayout()
             layoutIfNeeded()
         }
+
+        /// Unpins the thread and takes `item` to the middle of the screen, where VoiceOver goes too. Unpinned first, or the
+        /// next layout pass would take the thread back to its bottom edge. A row a screen or two away glides there when
+        /// `animated`. Farther, the rows between are laid out at their estimate until drawn, so the thread jumps, lays out the
+        /// rows around the target, and jumps again to land on it as measured.
+        func jump(to target: ThreadItem, animated: Bool) {
+            guard let path = find(target) else {
+                return
+            }
+            pinned = false
+            let middle = bounds.midY
+            let near = layoutAttributesForItem(at: path).map { abs($0.frame.midY - middle) < bounds.height * Self.glideScreens } ?? false
+            if animated, near {
+                scrollToItem(at: path, at: .centeredVertically, animated: true)
+            } else {
+                scrollToItem(at: path, at: .centeredVertically, animated: false)
+                layoutIfNeeded()
+                scrollToItem(at: path, at: .centeredVertically, animated: false)
+                settle()
+            }
+            UIAccessibility.post(notification: .layoutChanged, argument: cellForItem(at: path))
+        }
+
+        /// How far from the middle of the screen, in screens, a jump still glides.
+        private static let glideScreens: CGFloat = 2
 
         // MARK: Scrolling
 

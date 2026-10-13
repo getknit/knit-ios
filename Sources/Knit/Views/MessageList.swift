@@ -19,10 +19,14 @@
         let report: (ChatMessage) -> (() -> Void)?
         /// Toggles our reaction to a message, or `nil` where the thread takes none.
         let react: Reacting?
+        /// Starts a reply to a message, from its menu, a swipe or VoiceOver, or `nil` where the thread takes none.
+        let reply: ((ChatMessage) -> Void)?
         /// Whether the way back to the newest message shows: from half a screen up the thread until it is back on its bottom
         /// edge, so it stays while someone scrolls down toward it (`showScrollToNewest` in knit-next's `ChatScreen.kt`).
         @State private var offersNewest = false
         @State private var jump = ThreadJump()
+        /// The message a quote's tap just took the thread to, which shows a tint for a moment (`highlightedMessageId`).
+        @State private var highlighted: String?
         @Environment(BlobImageCache.self) private var photos: BlobImageCache?
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
         @Environment(\.calendar) private var calendar
@@ -33,13 +37,24 @@
             let places = MessageClusters.places(state.messages, calendar: calendar)
             let items = [ThreadItem.header] + state.messages.map { .message($0.id) }
             var rows = [ThreadItem.header: Row.header(ThreadHeader.Facts(state))]
+            var replies: [ThreadItem: ChatMessage] = [:]
             for (message, place) in zip(state.messages, places) {
-                rows[.message(message.id)] = .message(message, place: place, revealed: revealed.contains(message.id))
+                rows[.message(message.id)] = .message(
+                    message, place: place, revealed: revealed.contains(message.id), highlighted: highlighted == message.id)
+                if message.notice == nil {
+                    replies[.message(message.id)] = message
+                }
+            }
+            // A swipe starts a reply only on a message, where the thread takes them.
+            let swipe: ((ThreadItem) -> (() -> Void)?)? = reply.map { reply in
+                { item in replies[item].map { message in { reply(message) } } }
             }
             // The thread reaches under the bars, inset by them as SwiftUI lays them out.
             return GeometryReader { proxy in
                 // A cell's SwiftUI is its own, outside this view's: what the rows read from their surroundings goes in by hand.
-                ThreadCollection(items: items, rows: rows, jump: jump, bars: proxy.safeAreaInsets, offersNewest: $offersNewest) { row in
+                ThreadCollection(
+                    items: items, rows: rows, jump: jump, bars: proxy.safeAreaInsets, offersNewest: $offersNewest, swipe: swipe
+                ) { row in
                     content(of: row)
                         .environment(photos)
                         .environment(screening)
@@ -72,7 +87,23 @@
         /// What one row of the thread shows.
         private enum Row: Equatable {
             case header(ThreadHeader.Facts)
-            case message(ChatMessage, place: MessagePlace, revealed: Bool)
+            case message(ChatMessage, place: MessagePlace, revealed: Bool, highlighted: Bool)
+        }
+
+        /// How long the tint shows where a quote's tap landed before it fades, in milliseconds (`ChatScreen.kt`'s 1200).
+        private static let highlightFor = 1200
+
+        /// Takes the thread to message `id`, which a quote names, and tints it for a moment (`onQuoteClick`). The jump
+        /// glides only to a row near what shows, and never with Reduce Motion.
+        private func showOriginal(_ id: String) {
+            highlighted = id
+            jump.to(.message(id), animated: !reduceMotion)
+            Task {
+                try? await Task.sleep(for: .milliseconds(Self.highlightFor))
+                if highlighted == id {
+                    highlighted = nil
+                }
+            }
         }
 
         /// A row: what the thread says about itself, or a message under its day's date when it starts one.
@@ -81,7 +112,7 @@
             switch row {
             case .header(let facts):
                 ThreadHeader(facts: facts)
-            case .message(let message, let place, let revealed):
+            case .message(let message, let place, let revealed, let highlighted):
                 VStack(spacing: Layout.small) {
                     if place.startsDay {
                         DaySeparator(sentAt: message.sentAt)
@@ -98,7 +129,10 @@
                             open: { view(.chat($0, sender: sender(of: message))) },
                             delete: { delete(message) },
                             report: report(message),
-                            react: react?.to(message)
+                            react: react?.to(message),
+                            reply: reply.map { reply in { reply(message) } },
+                            showOriginal: message.quote.flatMap { quote in quote.jumps ? { showOriginal(quote.messageId) } : nil },
+                            highlighted: highlighted
                         )
                     }
                 }

@@ -37,7 +37,8 @@
                 view: { viewing = $0 },
                 delete: askToDelete,
                 report: askToReport,
-                react: state.canReact ? Reacting(model: model) : nil
+                react: state.canReact ? Reacting(model: model) : nil,
+                reply: state.canReply ? { model.reply(to: $0) } : nil
             )
             .bottomBar {
                 Group {

@@ -117,6 +117,7 @@ enum AuditPolicy {
     /// destructive red.
     private static let menuItems: Set = [
         AccessibilityID.chatMessageCopy, AccessibilityID.chatMessageDelete, AccessibilityID.chatMessageReport,
+        AccessibilityID.chatMessageReply,
     ]
 
     /// Whether `label` names a piece of the system's own chrome: a scroll indicator, the keyboard's suggestion bar, or a

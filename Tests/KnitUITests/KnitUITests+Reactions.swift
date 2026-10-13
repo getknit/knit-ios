@@ -14,11 +14,13 @@ extension KnitUITests {
         try walkReactions()
     }
 
-    /// The menus a message and a chat open, deleting, reporting and reacting, for the walks every screen takes again.
+    /// The menus a message and a chat open, deleting, reporting, reacting and replying, for the walks every screen takes
+    /// again.
     func walkMessageMenus() throws {
         try walkDeletes()
         try walkReports()
         try walkReactions()
+        try walkReplies()
     }
 
     /// A room post's menu, by a long press on its bubble: the six above Copy and Delete, and 👍 chosen, which closes the

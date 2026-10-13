@@ -17,6 +17,8 @@ enum Walking {
     static let appears: TimeInterval = 20
     /// How many swipes a control lower down a screen gets to come into view.
     static let swipes = 8
+    /// How near the window's middle a revealed element's own middle is drawn, as a share of the window's height.
+    static let middle: CGFloat = 0.25
 }
 
 @MainActor
@@ -49,7 +51,30 @@ extension XCUIApplication {
         for _ in 0..<Walking.swipes where !(element.exists && element.isHittable) {
             swipeDown()
         }
-        return try element.appear(what)
+        let found = try element.appear(what)
+        center(found)
+        return found
+    }
+
+    /// Drags `element`'s middle toward the window's when it is out of sight: at the largest sizes a message's row is
+    /// taller than half the screen, a swipe can fling the thread past it, and a sliver on screen is hittable while a press
+    /// on its middle lands off the screen. Slow, and held before it lets go, so the drag moves as far as it says.
+    private func center(_ element: XCUIElement) {
+        let window = windows.firstMatch
+        let frame = window.frame
+        guard !frame.contains(CGPoint(x: element.frame.midX, y: element.frame.midY)) else {
+            return
+        }
+        for _ in 0..<Walking.swipes {
+            let offset = element.frame.midY - frame.midY
+            guard abs(offset) > frame.height * Walking.middle else {
+                return
+            }
+            let from = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            let by = min(abs(offset), frame.height / 3) * (offset > 0 ? -1 : 1)
+            from.press(
+                forDuration: 0.05, thenDragTo: from.withOffset(CGVector(dx: 0, dy: by)), withVelocity: .slow, thenHoldForDuration: 0.2)
+        }
     }
 
     /// Back one screen, through the navigation bar.
