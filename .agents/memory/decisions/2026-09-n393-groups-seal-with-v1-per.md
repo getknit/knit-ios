@@ -106,3 +106,7 @@ Left out, and why:
 takes and sends them in groups as in DMs and Nearby, as the cleartext `reaction` frame Android floods toward a member
 without the ratchet, so a group's reactions travel unencrypted, as its ticks do. A group shows reactions only from its
 founding roster. Typing, mentions and replies stay out.
+
+**Amended 2026-10-13, when replies came into scope (ADR 2026-10.mn29):** replies are no longer out. A group's reply
+carries its quote sealed inside `MessageContent`, as a DM's does, and quotes any message the group shows. Typing and
+mentions stay out.

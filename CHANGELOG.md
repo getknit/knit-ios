@@ -77,6 +77,8 @@ document:
   the chat list calls them GIFs. They stay still if you turn off Auto-Play Animated Images in Settings.
 - Settings has a Support Knit page that rates Knit on the App Store or shares it with a friend. On the US App
   Store it also links to Ko-fi, Liberapay and GitHub Sponsors, for anyone who wants to leave a tip.
+- Swipe a message or choose Reply from its menu to answer it with a quote, and tap the quote to jump back to
+  the original. Replies work in Nearby, direct messages and groups, including with Android phones.
 
 ### Changed
 

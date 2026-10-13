@@ -84,3 +84,16 @@ The alternatives:
     own post taking the thread down.
 
   The Simulator has never shown the blank, so the phone is its only test.
+
+**Amended 2026-10-13, for replies (ADR 2026-10.mn29):**
+
+- **A jump to a row.** A tap on a quote takes the thread to the message it names (`ThreadJump.to`). It unpins first, or
+  the next layout pass would take the thread back to its bottom edge, and comes to rest pinned only if it lands there.
+  A row within two screens glides to the middle. A farther one is laid out at the estimate until drawn, so the thread
+  jumps, lays out the rows around it, and jumps again. VoiceOver moves to the row.
+- **A swipe on a row.** `SwipeToReply` owns a pan on the collection view that begins only on a message, mostly
+  sideways and toward the trailing edge. The row's `contentView` follows the finger, and a reply starts past
+  `Layout.swipeStarts`. The navigation bar's edge swipe still goes back. From iOS 26, the content's swipe back waits on
+  this one, which fails at once away from a message. A row drawn again mid-swipe, or reused, resets its transform.
+- **The guard** is `KnitUITests.walkReplies`: a swipe on the room's first post holds a quote, and a tap on our quote in
+  the group shows Priya's message. A jump far up the long room is checked on the phone.

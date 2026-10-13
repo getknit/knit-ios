@@ -129,3 +129,9 @@ The alternatives:
   - `KnitUITests.walkContentFilter` under `-demoSensitive`: a hidden message shows on a tap, and words sent to the room
     are refused and stay in the composer.
   - `convert.py --check` and `parity.py --coreml`, whenever the model or a pin moves.
+
+**Amended 2026-10-13, when reply quotes came (ADR 2026-10.mn29):** a quote reads the column as Android's does. A reply
+to words the filter hides from us carries no snippet. This port goes further than Android, which screens only a reply's
+body: someone else's reply waits for the filter when its quote has words, either its words or its quote flags it, and
+one tap shows both. The guards are `ReplyTests.aFlaggedQuoteHidesItsReply`, `wordsTheFilterHidesStayOutOfTheQuote` and
+`MeshEngineReplyTests.aPhotoOnlyReplyWaitsForTheFilterWhenItsQuoteHasWords`.
