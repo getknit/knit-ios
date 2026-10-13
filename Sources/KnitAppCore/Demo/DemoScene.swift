@@ -33,6 +33,8 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// The states a screen must handle: two peers with one name, a stranger with none, someone blocked, a message still
     /// waiting to be delivered, and nobody linked. The default.
     case edgeCases = "edge-cases"
+    /// A first launch: nobody met and nothing in the room, so the chat list shows its first-run card.
+    case fresh = "fresh"
     /// A day on the trail for store screenshots and social posts, with three peers linked, and most people wearing a
     /// profile photo. After knit-next's hiking theme (`DemoScenarios.kt`), less what the iPhone does not do yet: voice
     /// notes, LoRa and Internet relays.
@@ -58,6 +60,8 @@ public enum DemoScene: String, Sendable, CaseIterable {
         switch self {
         case .edgeCases:
             .edgeCases
+        case .fresh:
+            .fresh
         case .marketing:
             .marketing
         case .longRoom:
@@ -216,6 +220,9 @@ internal struct DemoCast {
             Reaction(line: "group-1", by: .sam, emoji: thumbs),
         ]
     )
+
+    /// Nothing at all, as a phone has before it meets anyone.
+    static let fresh = Self(people: [], lines: [], accepted: [], linked: [])
 
     /// Every name is set and distinct, everyone wears a face, every message of ours delivered, and three peers are linked,
     /// as in knit-next's store screenshots. Theo is over the ridge, out of range: his posts came relayed. Each DM and the

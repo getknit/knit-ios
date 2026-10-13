@@ -26,6 +26,8 @@ public enum AccessibilityID {
 
     /// The chat list's status line: how many peers are linked, or why none can be.
     public static let chatListStatus = "chat_list_status"
+    /// The first-run card's button, which opens the room.
+    public static let chatListGettingStarted = "chat_list_getting_started"
     /// The status line's words, `chat_list_status_<state>`: the identifier names the state, so a test reads it without
     /// reading the words. Android has no tag here, nor for the line's two buttons below.
     public static func chatListStatus(_ state: StatusState) -> String {

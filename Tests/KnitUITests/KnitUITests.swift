@@ -138,6 +138,7 @@ final class KnitUITests: XCTestCase {
     /// Every walk but the notification's, whose banner is the system's.
     private func walkEveryScreen() throws {
         try walkOnboarding()
+        try walkGettingStarted()
         try walkRoom()
         try walkBoundary()
         try walkDirect()

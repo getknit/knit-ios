@@ -221,7 +221,8 @@ Launch arguments, set in the scheme on the Mac (P7):
 - `-demoNotification` (with `-seedDemo`) asks to notify at launch, then posts the room's notification each time
   Knit goes to the background. Nothing reaches the demo's radio, so this is how the UI tests get a notification to
   tap.
-- `-demoScene edge-cases|marketing` (with `-seedDemo`) picks what is seeded. `edge-cases`, the default, is the
+- `-demoScene edge-cases|fresh|marketing` (with `-seedDemo`) picks what is seeded. `fresh` seeds nothing, so the chat
+  list shows its first-run card. `edge-cases`, the default, is the
   cast above: two people with one name, one with none, and nobody linked. `marketing` is for store screenshots
   and social posts, after knit-next's hiking theme: seven named people, a room, two DMs and a request, with
   three people shown as linked (`DemoMesh`), so the status line reads "Connected to 3 nearby devices".

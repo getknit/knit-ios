@@ -2,7 +2,7 @@ import XCTest
 
 // MARK: Onboarding
 
-// The onboarding walk, apart from the rest only to keep the class under SwiftLint's file length.
+// The onboarding and first-run walks, apart from the rest only to keep the class under SwiftLint's file length.
 extension KnitUITests {
     /// Onboarding from the welcome page: each page audited, the terms agreed to (ADR 2026-10.cgm3), a name typed, Bluetooth
     /// allowed, and the chat list reached.
@@ -24,6 +24,19 @@ extension KnitUITests {
         try app.reveal(AccessibilityID.onboardingAllowBluetooth).tap()
         try app.reveal(AccessibilityID.onboardingStart).tap()
         try app.appear(AccessibilityID.chatListStatus)
+        app.terminate()
+    }
+
+    func testTheFirstRunCardOpensTheRoom() throws {
+        try walkGettingStarted()
+    }
+
+    /// A first launch's chat list: the first-run card audited, and its button opening the room.
+    func walkGettingStarted() throws {
+        let app = launch("-demoScene", "fresh")
+        try audit(app, AccessibilityID.chatListGettingStarted)
+        try app.reveal(AccessibilityID.chatListGettingStarted).tap()
+        try app.appear(AccessibilityID.chatThread)
         app.terminate()
     }
 }

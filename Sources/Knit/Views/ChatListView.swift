@@ -227,6 +227,7 @@
     /// The first-run card: Knit's mark, what to do first, and the way into the room, on a gray card.
     private struct GettingStartedCard: View {
         @ScaledMetric(relativeTo: .headline) private var mark = Layout.markInline
+        @Environment(\.openRoute) private var openRoute
 
         var body: some View {
             VStack(alignment: .leading, spacing: Layout.small) {
@@ -240,10 +241,13 @@
                 }
                 Text(Copy.ChatList.gettingStartedBody)
                     .foregroundStyle(Palette.secondaryText)
-                NavigationLink(value: Route.chat(Conversations.nearby)) {
-                    Text(Copy.ChatList.gettingStartedAction)
+                // A Button, not a NavigationLink: a List makes a link in its row a plain navigation row, which drops the
+                // button style but keeps prominentButton's onAccent, white on the gray card in light and black in dark.
+                Button(Copy.ChatList.gettingStartedAction) {
+                    openRoute(.chat(Conversations.nearby))
                 }
                 .prominentButton()
+                .accessibilityIdentifier(AccessibilityID.chatListGettingStarted)
             }
             .padding(Layout.large)
             .frame(maxWidth: .infinity, alignment: .leading)
