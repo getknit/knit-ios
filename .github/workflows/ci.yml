@@ -26,6 +26,9 @@ env:
   # A hosted runner has four CPUs and nothing else to share them with.
   SWIFT_JOBS: "4"
   KNIT_NICE: "0"
+  # SwiftPM's shared clone cache, relative to the checkout, which check.sh passes to every build and test whatever
+  # its scratch path, so both jobs restore one cache.
+  KNIT_SWIFTPM_CACHE: .build-swiftpm-cache
 
 jobs:
   swift:
@@ -53,10 +56,9 @@ jobs:
           unzip -q -o -d /usr/local/bin /tmp/swiftlint.zip swiftlint
       - uses: actions/cache@v6
         with:
-          path: |
-            .build/checkouts
-            .build/repositories
+          path: .build-swiftpm-cache
           key: swiftpm-${{ hashFiles('Package.resolved') }}
+          restore-keys: swiftpm-
       - name: Format, lint, build and test
         run: scripts/check.sh format lint build test
       - name: Upload test results
@@ -82,6 +84,11 @@ jobs:
           persist-credentials: false
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/cache/restore@v6
+        with:
+          path: .build-swiftpm-cache
+          key: swiftpm-${{ hashFiles('Package.resolved') }}
+          restore-keys: swiftpm-
       - name: Tests with coverage, against scripts/coverage-floors.json
         run: scripts/check.sh coverage
 

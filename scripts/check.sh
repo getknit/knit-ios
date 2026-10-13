@@ -19,6 +19,11 @@ cd "$root"
 # Raise them for one run with SWIFT_JOBS=16 KNIT_NICE=0 when the machine is otherwise idle.
 swift_jobs=${SWIFT_JOBS:-8}
 jobs=(-j "$swift_jobs")
+# CI points SwiftPM's shared cache of package clones into the workspace (relative to it, or absolute), where its cache
+# can keep it, so every scratch path below (.build, .build-cov, …) clones the dependencies from disk, not the network.
+if [ -n "${KNIT_SWIFTPM_CACHE:-}" ]; then
+	jobs+=(--cache-path "$KNIT_SWIFTPM_CACHE")
+fi
 if [ "${KNIT_NICE:-10}" != 0 ]; then
 	renice -n "${KNIT_NICE:-10}" -p $$ >/dev/null 2>&1 || true
 fi

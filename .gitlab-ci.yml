@@ -38,15 +38,22 @@ variables:
 
 .swift:
   image: $SWIFT_IMAGE
+  variables:
+    # SwiftPM's shared clone cache, which check.sh passes to every build and test whatever its scratch path.
+    KNIT_SWIFTPM_CACHE: $CI_PROJECT_DIR/.build-swiftpm-cache
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq --no-install-recommends libdbus-1-dev libsqlite3-dev pkg-config python3 unzip curl ca-certificates >/dev/null
+  # Keyed on the pins rather than the branch, so a new branch or MR starts warm. Each runner keeps its own cache, and
+  # only build:linux writes it: the jobs after it would upload the same 250 MB again.
   cache:
-    key: swiftpm-$CI_COMMIT_REF_SLUG
+    key:
+      prefix: swiftpm
+      files:
+        - Package.resolved
     paths:
-      - .build/checkouts/
-      - .build/repositories/
-    policy: pull-push
+      - .build-swiftpm-cache/
+    policy: pull
 
 .swiftlint:
   extends: .swift
@@ -67,6 +74,11 @@ variables:
   # (`concurrent = 1`), and check.sh and fuzz.sh cap their own parallelism and priority.
   tags:
     - knit-local
+  variables:
+    # Keep the sanitizer and fuzzing trees between jobs, so a pipeline rebuilds only what changed, as the Mac keeps
+    # .build-xcode. SwiftPM's clone cache is the runner account's own, in ~/.cache. Not .build: Periphery reads its
+    # index, which keeps the records of deleted files (.agents/context/toolchain.md). analyze clears its own tree.
+    GIT_CLEAN_FLAGS: -ffdx -e /.build-tsan/ -e /.build-asan/ -e /.build-fuzz/
 
 .mac:
   # The Mac's shell runner, one job at a time and shared with every project's `macos` jobs. Its jobs run as
@@ -103,12 +115,16 @@ lint:dco:
 lint:swift:
   extends: .swiftlint
   stage: lint
+  # swift-format and SwiftLint read only the sources, never the packages.
+  cache: []
   script:
     - scripts/check.sh format lint
 
 build:linux:
   extends: .swift
   stage: build
+  cache:
+    policy: pull-push
   script:
     - scripts/check.sh build
 

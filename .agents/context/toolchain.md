@@ -98,6 +98,11 @@ exact interval, then update this file in the same change.
   tests and coverage in the same `swift:6.4-noble` image, plus the ADR router and lintorama. Those jobs need no
   Mac, phone or Bluetooth adapter. The sanitizers, fuzzing, analyze, Periphery and the iPhone build run on
   GitLab only.
+- **Caching.** The Docker jobs and GitHub's set `KNIT_SWIFTPM_CACHE`, which `check.sh` passes to SwiftPM as
+  `--cache-path`, so every scratch path clones the packages from one cache keyed on `Package.resolved`: a cold
+  resolve took 3 min 26 s, a warm one 6 s (2026-10-12). On GitLab only `build:linux` writes it, and
+  `lint:swift` skips it. The shell runners keep their build trees between jobs through `GIT_CLEAN_FLAGS`
+  instead: `.build-xcode` and `.build` on the Mac, the sanitizer and fuzzing trees on `knit-local`.
 - **Runners differ in speed.** `test:coverage` took 643 s on the slowest Linux runner and about 250 s on the
   fastest (2026-09-28). A test that waits on a thread needs a deadline with room for that, as
   `LoopRig.settleMilliseconds` has.
