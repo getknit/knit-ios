@@ -30,6 +30,9 @@ reports:
   scheme (v1): whoever later obtains your identity key can read every direct message sent to it. The epoch
   ratchet that Knit for Android already runs is the next milestone. Until then, delivery ticks and
   reactions on direct messages also travel in the clear.
+- **Typing indicators are not encrypted.** They go only to phones linked directly to yours, and no phone passes them
+  on. In a direct message that means the other person's phone alone; in Nearby or a group, every phone linked to yours,
+  and a group's indicator says which group it's for.
 - **The Bluetooth link itself is not encrypted.** Trust comes from the signature Knit checks on every frame it
   acts on, and from end-to-end encryption on direct and group messages, not from the radio.
 - **Direct messages flood the mesh.** Only the recipient can open one, but relaying phones can see who is

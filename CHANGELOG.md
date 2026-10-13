@@ -79,6 +79,9 @@ document:
   Store it also links to Ko-fi, Liberapay and GitHub Sponsors, for anyone who wants to leave a tip.
 - Swipe a message or choose Reply from its menu to answer it with a quote, and tap the quote to jump back to
   the original. Replies work in Nearby, direct messages and groups, including with Android phones.
+- See when someone is typing, at the bottom of a chat in Nearby, direct messages and groups, and let them see
+  when you are, on Android phones too. Typing indicators travel unencrypted, and only to the phones linked
+  directly to yours.
 
 ### Changed
 

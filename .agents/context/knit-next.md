@@ -199,6 +199,9 @@ Kotlin wins.
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Mirrored ahead of the pin:**
+    - knit-next `03c4c3b1` (2026-10-10, on its `main`) counts a payload that won't decode as `PAYLOAD_DECODE_FAILED`
+      and drops it. For a typing cue that means a broken group cue no longer lights the room (`InboundPipeline.kt:477`).
+      The iPhone's `handleTyping` counts one `undecodable` (ADR 2026-10.29z9): `MeshEngineTypingTests`.
     - knit-next `79f38d3d`, `09f70b3e`, `e2191bb9` and `3890f16b`, all on knit-next `main` at `8dc60836` (ADR
       2026-10.ds45's amendment of 2026-10-10, the `ios-blob-parity` order, for the interop audit's IOS-1, AND-5 and
       AND-7). Read at `8dc60836`:

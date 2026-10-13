@@ -56,8 +56,9 @@ start-up and per device; the marks replace that.
   after saying so (2026-10-08), and marks counted from the message cut the film 4 s late. A recording writes a frame
   only when the screen changes, so the switch the gate makes is its second frame, and a take whose second frame is not
   a fraction of a second in has no zero; the builder refuses it.
-- **The room has no typing indicator or peer count** on the iPhone, unlike Android's, so the people linking (`link`)
-  show only as "in range" in a DM, and nobody is seen typing but the user.
+- **The room has no peer count** on the iPhone, unlike Android's, so the people linking (`link`) show only as "in
+  range" in a DM. The iPhone shows typing since ADR 2026-10.29z9, but no beat has a peer type, so nobody is seen typing
+  but the user.
 - **The composer follows one director at a time.** Its `composer` stream has one reader; a room that closes and opens
   again follows nothing more. The film opens the room once.
 - **It checks nothing.** No CI job runs it. The script is checked on Linux by

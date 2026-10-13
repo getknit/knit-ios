@@ -110,3 +110,7 @@ founding roster. Typing, mentions and replies stay out.
 **Amended 2026-10-13, when replies came into scope (ADR 2026-10.mn29):** replies are no longer out. A group's reply
 carries its quote sealed inside `MessageContent`, as a DM's does, and quotes any message the group shows. Typing and
 mentions stay out.
+
+**Amended 2026-10-13, when typing came into scope (ADR 2026-10.29z9):** typing is no longer out. A group's cue names
+the group in the clear and goes one hop, to every phone linked to ours, as Android sends it. A group shows cues only from
+its roster, and the engine refuses one from off it. Mentions stay out.

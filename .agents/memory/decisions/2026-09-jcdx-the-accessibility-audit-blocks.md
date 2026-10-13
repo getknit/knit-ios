@@ -146,3 +146,8 @@ context menu whose Delete the system draws in its destructive red at 4.4:1 on th
 unreachable 25:1, the room's walk reports 27 texts and 13 buttons, so the check reads what it should. It reads text and
 controls only, never an image, and the measurement's trust in extremes, under the limits below, now covers every element
 rather than only those the audit flagged.
+
+**Amended 2026-10-13, for the typing row (ADR 2026-10.29z9):** the row at a thread's foot that shows who is typing is
+exempt from Knit's contrast check. It holds no text, only faces and the stitches, which rest dim between sweeps, so its
+darkest pixel depends on when the screenshot falls, and the check would fail at random. Every other check reads it,
+and its VoiceOver label says who is typing.

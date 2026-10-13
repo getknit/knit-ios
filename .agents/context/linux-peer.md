@@ -162,7 +162,8 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   ADR 2026-10.dz8d): `status` (with `avatarHash`, our photo; `files`, the FILE records received, refused and sent;
   `blobs`, the blob holder query's counts under Android's bridge names less their `blob` prefix, from `queriesSent`
   to `pullThroughs` (ADR 2026-10.6e5t in knit-next); `footprint`, the size of each table the mesh keeps in memory, blobs wanted and files queued among them; and
-  `router`, what the router has admitted, relayed and refused), `peers` (names, aliases, safety numbers, each
+  `router`, what the router has admitted, relayed and refused; and `typing`, who the mesh holds typing where, as
+  `{conv: [node id, …]}`, the shape of Android's `STATE.typing`), `peers` (names, aliases, safety numbers, each
   peer's `avatarHash` shown and `advertisedAvatarHash`, and `blocked`), `links` (links and sightings), `room` (`text`), `dm` (`to`,
   `text`); `room`, `dm` and `group-send` also take a `photo` as base64 and its `mime`, `image/jpeg` when absent, and
   then need no `text`, and their replies name the `attachmentHash` the photo is kept under (ADR 2026-10.6cas); a
@@ -182,8 +183,10 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   (`id`) and `delete-chat` (`conv`; its reply's `deleted` says whether there was anything to delete), which delete
   here and send nothing, a group keeping us as a member (ADR 2026-10.u7cq), `react` (`id`, `emoji`; the same emoji
   again takes it back, and the reply's `emoji` is what we hold now, `null` once taken back; it goes out in the clear,
-  ADR 2026-10.ehe6), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the peer exits; the
-  app's bridge only closes the connection).
+  ADR 2026-10.ehe6), `typing` (`conv`, or `to` for a DM's peer as Android's bridge takes it, the room when both are
+  left out; one cue, one hop and in the clear, at most once every 8 s a thread, and the reply's `sent` says whether
+  this one went, ADR 2026-10.29z9), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the peer
+  exits; the app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):
   - `group-create` (`members`, the others' node ids) makes a group, or opens the one they already share. Nothing
     is sent until its first message.
@@ -191,7 +194,8 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   - `groups` lists every group held, left ones included. `status` counts them.
 - **Events** are `ready` (with `radioProfile`, and `host` and `version` from the app), `link` (`up` true or false), `profile`, `message` (with `request` for a stranger's
   first DM or group, a photo's `attachmentHash` and `attachmentMime`, and a reply's `replyTo`), `sent`, `delivered`, `reaction` (`id`,
-  `from` and `emoji`, `null` for one taken back, whenever someone's reaction to a message held here changes), `radio` (`state`:
+  `from` and `emoji`, `null` for one taken back, whenever someone's reaction to a message held here changes), `typing`
+  (`typing`, the whole picture as `status` gives it, whenever someone starts, stops or lapses), `radio` (`state`:
   `on`, `off`, `unauthorized` or `unsupported`), `group` (`id`, `name`, `members`, `departed` and `left`, whenever
   a group changes) and `attachment` (`hash`, once a message's photo has arrived).
 - **Log lines** carry `ms`, the wall-clock time, so they line up with a phone's logcat.

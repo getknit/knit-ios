@@ -447,10 +447,10 @@ explicit direction.** Update this file in the change that ships an item.
   unit tests, coverage and both sanitizers. Because the engine is synchronous, a later lab could run
   deterministically from a seed (ADR 2026-09.gq84).
 
-- **Message features:** files and voice notes, mentions and typing indicators, and Android's full emoji picker for
-  reactions. Profile photos and photos in chats are in flight (ADR 2026-10.nh55), reactions are in with a fixed six
-  (ADR 2026-10.ehe6), and quoted replies are in, in every thread (ADR 2026-10.mn29). `interop.py iphone-reply` has yet
-  to run against a phone.
+- **Message features:** files and voice notes, mentions, and Android's full emoji picker for reactions. Profile photos
+  and photos in chats are in flight (ADR 2026-10.nh55), reactions are in with a fixed six (ADR 2026-10.ehe6), quoted
+  replies are in, in every thread (ADR 2026-10.mn29), and so are typing indicators, Android's row at a thread's foot
+  (ADR 2026-10.29z9). `interop.py iphone-reply` and `iphone-typing` have yet to run against a phone.
 - **Groups with forward secrecy** (knit-next's group ratchet), which comes with the DM ratchet. v1 groups are in
   flight above.
 - **Search, drafts and backups.** Search has its place already: a `.searchable` on the chat list's stack, which iOS 26
