@@ -87,4 +87,5 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.2c6c](decisions/2026-10-2c6c-wi-fi-aware-on-the.md) | Wi-Fi Aware on the iPhone can only be a paired file lane, and waits on a spike | scope, transport, wifi-aware |
 | [2026-10.mn29](decisions/2026-10-mn29-replies-quote-in-every-thread.md) | Replies quote in every thread, screened with the reply | messages, wire, interop, ui, moderation |
 | [2026-10.zjmx](decisions/2026-10-zjmx-an-owner-writes-a-plane.md) | an owner writes a plane's change and a separate reviewer judges it | tooling, testing, interop |
+| [2026-10.frmj](decisions/2026-10-frmj-unread-is-a-flag-the.md) | Unread is a flag the store sets as a message arrives | messages, store, ui, notifications |
 | [2026-10.nbhj](decisions/2026-10-nbhj-mentions-highlight-the-sender-s.md) | Mentions highlight the sender's words and alert apart | messages, wire, interop, ui, notifications |

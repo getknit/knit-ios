@@ -15,8 +15,12 @@ public final class SQLMessageStore: MessageStore {
         attachmentHeight, attachmentAnimated, attachmentPlainHash, attachmentSourceHash, replyToId, replyToAuthorId, \
         replyToAuthor, replyToSnippet, replyToHasAttachment, mentions
         """
-    private static let insert =
-        "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    /// Writes a row with ``columns`` and `unread`, which no read takes and no save's update names: it is set once, when a
+    /// row is first stored (ADR 2026-10.frmj).
+    private static let insert: String = {
+        let placeholders = Array(repeating: "?", count: columns.split(separator: ",").count + 1).joined(separator: ", ")
+        return "INSERT INTO messages (\(columns), unread) VALUES (\(placeholders))"
+    }()
 
     /// The database, which the reactions' extension shares.
     let database: KnitDatabase
@@ -246,7 +250,7 @@ public final class SQLMessageStore: MessageStore {
         }
     }
 
-    /// The values for ``insert``, in ``columns`` order.
+    /// The values for ``insert``, in ``columns`` order, then `unread`.
     private static func arguments(_ message: MessageRecord) -> StatementArguments {
         let attachment = message.attachment
         let reply = message.replyTo
@@ -259,7 +263,7 @@ public final class SQLMessageStore: MessageStore {
             attachment?.dimensions?.animated, StoredText.bytes(attachment?.plainHash?.string),
             StoredText.bytes(attachment?.sourceHash?.string), StoredText.bytes(reply?.messageId), StoredText.bytes(reply?.authorId),
             StoredText.bytes(reply?.author), StoredText.bytes(reply?.snippet), reply?.hasAttachment ?? false,
-            mentionsValue(message.mentions),
+            mentionsValue(message.mentions), message.arrivesUnread,
         ]
     }
 

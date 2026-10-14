@@ -118,19 +118,31 @@
                         .font(.headline)
                     Spacer()
                     // The value says how many, in words.
-                    Text(count, format: .number)
-                        .font(.subheadline.bold())
-                        .monospacedDigit()
-                        .contentTransition(.numericText(value: Double(count)))
-                        .foregroundStyle(Palette.onAccent)
-                        .padding(.horizontal, Layout.small)
-                        .padding(.vertical, Layout.hairline)
-                        .background(Palette.accent, in: .capsule)
+                    CountPill(count: count)
                         .accessibilityHidden(true)
                 }
             }
             .accessibilityValue(Copy.ChatList.requestCount(count))
             .accessibilityIdentifier(AccessibilityID.chatListRequests)
+        }
+    }
+
+    /// A count in a coral capsule at a row's trailing edge: how many requests wait, or how many of a thread's messages
+    /// nobody has read (ADR 2026-10.frmj). Never cut short, however large, as Android's badge never is. The figure rolls to
+    /// its new value; whoever draws it says the same in words.
+    private struct CountPill: View {
+        let count: Int
+
+        var body: some View {
+            Text(count, format: .number)
+                .font(.subheadline.bold())
+                .monospacedDigit()
+                .contentTransition(.numericText(value: Double(count)))
+                .foregroundStyle(Palette.onAccent)
+                .padding(.horizontal, Layout.small)
+                .padding(.vertical, Layout.hairline)
+                .background(Palette.accent, in: .capsule)
+                .fixedSize()
         }
     }
 
@@ -255,8 +267,9 @@
         }
     }
 
-    /// One thread, as Signal lists it: the face, the title and the time, and the preview under them. One VoiceOver element
-    /// that reads the title, the preview, the time and the tick, and whether the peer is in range.
+    /// One thread, as Signal lists it: the face, the title and the time, and the preview under them, with how many messages
+    /// nobody has read at its end. One VoiceOver element that reads the title, the preview, the time and the tick, the
+    /// unread count in words, and whether the peer is in range.
     private struct ChatRowView: View {
         let row: ChatRow
         @Environment(\.dynamicTypeSize) private var typeSize
@@ -283,6 +296,12 @@
                             .font(.subheadline)
                             .foregroundStyle(Palette.secondaryText)
                             .lineLimit(Layout.previewLines)
+                        if row.unreadCount > 0 {
+                            Spacer(minLength: Layout.tight)
+                            CountPill(count: row.unreadCount)
+                                .accessibilityLabel(Copy.ChatList.unreadCount(row.unreadCount))
+                                .transition(.scale.combined(with: .opacity))
+                        }
                     }
                 }
             }

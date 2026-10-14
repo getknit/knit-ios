@@ -29,7 +29,7 @@ public final class AppSession {
     /// Moves whenever messages, peers, conversations or our own profile may have changed.
     public internal(set) var revision = 0
     /// Whether the app is in front, which the app keeps current from its scene phase through ``setActive(_:)``.
-    public private(set) var isActive = true
+    public internal(set) var isActive = true
     /// Hears every mesh event once the session has handled it: a debug build's bridge reports them to every connection.
     /// The mesh has one stream of events, and the session is its consumer.
     @ObservationIgnored public var eventTap: (@Sendable (MeshEvent) -> Void)?
@@ -51,9 +51,12 @@ public final class AppSession {
     @ObservationIgnored let photoDimensions: (@Sendable ([UInt8]) -> PhotoDimensions?)?
 
     @ObservationIgnored let mesh: any MeshService
-    @ObservationIgnored private let notifier: (any Notifier)?
+    @ObservationIgnored let notifier: (any Notifier)?
     @ObservationIgnored private let preferences: any AppPreferences
-    @ObservationIgnored private var visible: String?
+    /// The thread on screen, if any; internal only for `AppSession+Reading`.
+    @ObservationIgnored var visible: String?
+    /// What Knit's icon shows, or `nil` before the session first set it; internal only for `AppSession+Reading`.
+    @ObservationIgnored var badge: Int?
     @ObservationIgnored private var listening = false
     @ObservationIgnored private var cachedDirectory = Cached<Int, Directory>()
 
@@ -112,6 +115,7 @@ public final class AppSession {
         radioState = await mesh.radioState
         isRunning = await mesh.isRunning
         await screenWaiting()
+        syncBadge()
         // Read beside the mesh, not before it: the first launch of a build that keeps sizes reads every photo held.
         async let sized: Void = measure(stores.messages.unsizedAttachments(named: nil))
         for await event in mesh.events {
@@ -142,14 +146,23 @@ public final class AppSession {
             if message.moderation == .waiting {
                 message.moderation = await screen(message)
             }
+            // A message into the thread being read is read as it lands, as Android's window stamps it (ADR 2026-10.frmj).
+            if isReading(message.conversationId) {
+                stores.messages.markRead(in: message.conversationId)
+            }
             revision += 1
             await notify(message, isRequest: isRequest)
+            syncBadge()
         case .attachmentArrived(let hash):
             // Its size first, so the thread that redraws for it holds the photo's place at its shape.
             await measure(stores.messages.unsizedAttachments(named: hash))
             revision += 1
-        case .delivered, .sent, .reacted, .peerUpdated, .groupChanged:
+        case .delivered, .sent, .reacted:
             revision += 1
+        case .peerUpdated, .groupChanged:
+            // A profile's device tag can block someone, and a group can lose us: either can take a thread off the list.
+            revision += 1
+            syncBadge()
         case .neighborsChanged(let linked):
             neighbors = linked
         case .typing(let picture):
@@ -183,6 +196,7 @@ public final class AppSession {
     public func leaveGroup(_ groupId: String) async -> Bool {
         let left = await mesh.leaveGroup(groupId)
         revision += 1
+        syncBadge()
         await notifier?.withdraw(threadId: groupId)
         return left
     }
@@ -193,6 +207,7 @@ public final class AppSession {
     public func deleteMessage(_ id: String) async -> Bool {
         let deleted = await mesh.deleteMessage(id)
         revision += 1
+        syncBadge()
         return deleted
     }
 
@@ -203,6 +218,7 @@ public final class AppSession {
     public func deleteChat(_ conversationId: String) async -> Bool {
         let deleted = await mesh.deleteChat(conversationId)
         revision += 1
+        syncBadge()
         await notifier?.withdraw(threadId: conversationId)
         if threads().requests.isEmpty {
             await notifier?.withdraw(threadId: NotificationPolicy.requestsThread)
@@ -233,6 +249,7 @@ public final class AppSession {
     public func accept(_ conversationId: String) async {
         await mesh.accept(conversationId)
         revision += 1
+        syncBadge()
         if threads().requests.isEmpty {
             await notifier?.withdraw(threadId: NotificationPolicy.requestsThread)
         }
@@ -242,6 +259,8 @@ public final class AppSession {
     public func setVerified(_ peer: NodeId, _ verified: Bool) async {
         await mesh.setVerified(peer, verified)
         revision += 1
+        // Verifying a stranger accepts their DM, which leaves the requests for the list.
+        syncBadge()
     }
 
     /// Blocks a person (ADR 2026-10.5wgg): their DM, their requests and what they wrote leave every screen, and the
@@ -252,6 +271,7 @@ public final class AppSession {
         }
         await mesh.block(peer)
         revision += 1
+        syncBadge()
         await notifier?.withdraw(threadId: peer.string)
         if threads().requests.isEmpty {
             await notifier?.withdraw(threadId: NotificationPolicy.requestsThread)
@@ -263,6 +283,7 @@ public final class AppSession {
     public func unblock(_ peer: NodeId) async {
         await mesh.unblock(peer)
         revision += 1
+        syncBadge()
     }
 
     /// Changes our profile and floods it.
@@ -280,31 +301,6 @@ public final class AppSession {
     /// What Diagnostics shows now.
     public func diagnostics() async -> MeshDiagnostics {
         await mesh.diagnostics
-    }
-
-    // MARK: The thread on screen
-
-    /// A thread came on screen: it stays quiet while it is there, and what it posted before goes.
-    public func show(_ conversationId: String) async {
-        visible = conversationId
-        await notifier?.withdraw(threadId: conversationId)
-    }
-
-    /// A thread left the screen.
-    public func hide(_ conversationId: String) {
-        if visible == conversationId {
-            visible = nil
-        }
-    }
-
-    /// The app came to the front or left it. Coming back to a thread still on screen takes back what it posted
-    /// meanwhile, as Android's `ON_RESUME` does (`ChatViewModel.onChatForeground`): the user is reading it, and a
-    /// notification left behind would make the thread's next one a quiet replacement.
-    public func setActive(_ active: Bool) async {
-        isActive = active
-        if active, let visible {
-            await notifier?.withdraw(threadId: visible)
-        }
     }
 
     // MARK: Screening

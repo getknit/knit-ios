@@ -2,27 +2,31 @@ import KnitSync
 public import KnitWire
 
 /// A ``MessageStore`` in memory, keyed by the ids' bytes (``ExactKey``) and safe to share across threads.
+///
+/// Its state is internal, not private, only so its unread extension, in a file of its own for the lint's length, shares it.
 public final class MemoryMessageStore: MessageStore {
-    private struct Row: Sendable {
+    struct Row: Sendable {
         var record: MessageRecord
         /// When it was first stored, which breaks ties in `sentAt`.
         let order: Int
+        /// Whether nobody has read it: set when it is first stored, and kept by every save (ADR 2026-10.frmj).
+        var unread: Bool
     }
 
     /// A deleted ordinary message: its id, when that may be forgotten, and the photo it carried.
-    private struct Deleted: Sendable {
+    struct Deleted: Sendable {
         let id: String
         let expiresAt: Int64
         let attachment: BlobHash?
     }
 
     /// A reaction's key: its message's id by its bytes, and who reacted.
-    private struct ReactionKey: Hashable, Sendable {
+    struct ReactionKey: Hashable, Sendable {
         let message: ExactKey
         let reactor: NodeId
     }
 
-    private struct State: Sendable {
+    struct State: Sendable {
         var rows: [ExactKey: Row] = [:]
         var nextOrder = 0
         /// The deleted ordinary messages, by id.
@@ -40,9 +44,9 @@ public final class MemoryMessageStore: MessageStore {
                     kept.sourceHash = kept.sourceHash ?? held.sourceHash
                     message.attachment = kept
                 }
-                rows[key] = Row(record: message, order: existing.order)
+                rows[key] = Row(record: message, order: existing.order, unread: existing.unread)
             } else {
-                rows[key] = Row(record: message, order: nextOrder)
+                rows[key] = Row(record: message, order: nextOrder, unread: message.arrivesUnread)
                 nextOrder += 1
             }
         }
@@ -83,7 +87,7 @@ public final class MemoryMessageStore: MessageStore {
         }
     }
 
-    private let state = Lock(State())
+    let state = Lock(State())
 
     /// An empty store.
     public init() {

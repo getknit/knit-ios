@@ -207,6 +207,26 @@ extension Copy {
             )
         }
 
+        /// How many of a thread's messages nobody has read, for a screen reader: the count on its row
+        /// (`chat_list_unread_count` in knit-next).
+        public static func unreadCount(_ count: Int) -> String {
+            Copy.count(
+                count,
+                one: NSLocalizedString(
+                    "chat-list.unread.one",
+                    bundle: .main,
+                    value: "%lld unread message",
+                    comment: "Chat list: a thread holds one unread message"
+                ),
+                other: NSLocalizedString(
+                    "chat-list.unread.other",
+                    bundle: .main,
+                    value: "%lld unread messages",
+                    comment: "Chat list: a thread holds several unread messages; %lld is the count"
+                )
+            )
+        }
+
         /// The first-run card's heading.
         public static var gettingStartedTitle: String {
             NSLocalizedString(

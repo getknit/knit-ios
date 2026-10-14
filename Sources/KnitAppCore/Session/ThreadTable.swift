@@ -32,6 +32,7 @@ public struct ThreadTable: Sendable {
     private let authored: Set<String>
     private let verified: Set<NodeId>
     private let senders: [ExactKey: Set<NodeId>]
+    private let unread: [ExactKey: Int]
 
     /// The table over what `stores` hold, from `me`'s side, without what `blocked` people wrote.
     public init(stores: MeshStores, me: NodeId, verified: Set<NodeId>, blocked: Set<NodeId>) {
@@ -44,6 +45,7 @@ public struct ThreadTable: Sendable {
         accepted = stores.conversations.acceptedConversations()
         authored = stores.messages.conversations(authoredBy: me)
         self.verified = verified
+        unread = stores.messages.unreadCounts(excludingSenders: blocked)
         // A blocked member's messages never make a group known (`MessageDao.observeGroupSenders`).
         senders = Dictionary(groups.map { (ExactKey($0.id), stores.messages.senders(in: $0.id).subtracting(blocked)) }) { first, _ in
             first
@@ -62,6 +64,12 @@ public struct ThreadTable: Sendable {
         let groupSenders = senders[ExactKey(conversationId)] ?? []
         return !Conversations.isAccepted(
             conversationId, accepted: accepted, verified: verified, authored: authored, groupSenders: groupSenders)
+    }
+
+    /// How many of `conversationId`'s messages nobody has read, never counting what blocked people wrote (ADR
+    /// 2026-10.frmj).
+    public func unreadCount(_ conversationId: String) -> Int {
+        unread[ExactKey(conversationId)] ?? 0
     }
 
     /// The requests, newest first: a stranger's DMs, and every listed group that waits, even one of nothing but status

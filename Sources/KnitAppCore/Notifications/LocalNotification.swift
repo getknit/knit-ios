@@ -32,6 +32,9 @@ public protocol Notifier: Sendable {
     func post(_ notification: LocalNotification) async
     /// Removes what was posted for a thread, or for the requests list with ``NotificationPolicy/requestsThread``.
     func withdraw(threadId: String) async
+    /// Shows `count` on Knit's icon, or nothing for 0: what nobody has read in the DMs and groups (ADR 2026-10.frmj).
+    /// It never suspends, so counts asked one after another land in that order.
+    func setBadge(_ count: Int)
 }
 
 /// What reaches the user as a notification (`MessageNotifier` in knit-next, the MVP's part of it).

@@ -271,9 +271,12 @@ final class FakeMesh: MeshService {
 final class RecordingNotifier: Notifier {
     private let postedList = Lock<[LocalNotification]>([])
     private let withdrawnList = Lock<[String]>([])
+    private let badgeList = Lock<[Int]>([])
 
     var posted: [LocalNotification] { postedList.withLock { $0 } }
     var withdrawn: [String] { withdrawnList.withLock { $0 } }
+    /// Every count the icon was given, in order.
+    var badges: [Int] { badgeList.withLock { $0 } }
 
     func post(_ notification: LocalNotification) {
         postedList.withLock { $0.append(notification) }
@@ -281,6 +284,10 @@ final class RecordingNotifier: Notifier {
 
     func withdraw(threadId: String) {
         withdrawnList.withLock { $0.append(threadId) }
+    }
+
+    func setBadge(_ count: Int) {
+        badgeList.withLock { $0.append(count) }
     }
 }
 

@@ -149,6 +149,8 @@ internal struct DemoCast {
         /// The people it mentions, each under its sender's name for them, which ``body`` must carry after an "@" (ADR
         /// 2026-10.nbhj).
         var mentions: [Slot] = []
+        /// Whether nobody has read it yet, for someone else's line: its row on the chat list counts it (ADR 2026-10.frmj).
+        var unread = false
     }
 
     /// Someone's reaction to one of the scene's lines, a moment after it (ADR 2026-10.ehe6).
@@ -210,13 +212,13 @@ internal struct DemoCast {
             Line(id: "room-1", from: .sam, to: nil, body: "Is anyone else at the festival without signal?"),
             Line(id: "room-2", from: .otherSam, to: nil, body: "@Sam same here. Knit is the only thing working.", mentions: [.sam]),
             Line(id: "room-3", from: .me, to: nil, body: "Meet at the food trucks at 6?", delivered: true),
-            Line(id: "room-4", from: .priya, to: nil, body: "On my way.", replyTo: "room-3"),
+            Line(id: "room-4", from: .priya, to: nil, body: "On my way.", replyTo: "room-3", unread: true),
             Line(id: "group-1", from: .priya, to: nil, body: "Who's bringing the tent?", inGroup: true),
             Line(id: "group-2", from: .me, to: nil, body: "@Priya I've got it.", inGroup: true, replyTo: "group-1", mentions: [.priya]),
             Line(id: "dm-1", from: .me, to: .sam, body: "Which gate are you at?", delivered: true),
             Line(id: "dm-2", from: .sam, to: .me, body: "North gate, by the big tent."),
             Line(id: "dm-3", from: .me, to: .sam, body: "Be there in 10."),
-            Line(id: "request-1", from: .stranger, to: .me, body: "Hi! Are you the one with the blue tent?"),
+            Line(id: "request-1", from: .stranger, to: .me, body: "Hi! Are you the one with the blue tent?", unread: true),
         ],
         accepted: [.sam],
         linked: [],
@@ -313,9 +315,17 @@ internal struct DemoCast {
                 id: "request-river-1",
                 from: .river,
                 to: .me,
-                body: "Hi! Saw you on the mesh at the trailhead. Are you with the ridge group?"
+                body: "Hi! Saw you on the mesh at the trailhead. Are you with the ridge group?",
+                unread: true
             ),
-            Line(id: "request-river-2", from: .river, to: .me, body: "No worries if not, just trying to find them 🙂", then: .quarterHour),
+            Line(
+                id: "request-river-2",
+                from: .river,
+                to: .me,
+                body: "No worries if not, just trying to find them 🙂",
+                then: .quarterHour,
+                unread: true
+            ),
             Line(
                 id: "room-7",
                 from: .lena,
@@ -332,9 +342,9 @@ internal struct DemoCast {
             Line(id: "dm-sam-f", from: .me, to: .sam, body: "Wow. I'm jumping in when I get there.", delivered: true, then: .moment),
             Line(id: "dm-sam-g", from: .sam, to: .me, body: "Brave. I'll have a towel ready.", then: .halfHour),
             Line(id: "dm-sam-1", from: .me, to: .sam, body: "Great hiking with you today!", delivered: true, then: .quarterHour),
-            Line(id: "room-9", from: .priya, to: nil, body: "Sunset from the summit is unreal tonight 🌄"),
-            Line(id: "dm-sam-2", from: .sam, to: .me, body: "Likewise! Same crew next time?", then: .moment),
-            Line(id: "dm-sam-3", from: .sam, to: .me, body: "Oh, and I found your water bottle 💧"),
+            Line(id: "room-9", from: .priya, to: nil, body: "Sunset from the summit is unreal tonight 🌄", unread: true),
+            Line(id: "dm-sam-2", from: .sam, to: .me, body: "Likewise! Same crew next time?", then: .moment, unread: true),
+            Line(id: "dm-sam-3", from: .sam, to: .me, body: "Oh, and I found your water bottle 💧", unread: true),
         ],
         accepted: [.dani, .sam],
         linked: [.sam, .dani, .priya],

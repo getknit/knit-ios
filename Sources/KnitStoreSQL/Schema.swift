@@ -31,6 +31,7 @@ internal enum Schema {
         ("v12", v12),
         ("v13", v13),
         ("v14", v14),
+        ("v15", v15),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -258,6 +259,15 @@ internal enum Schema {
     /// Every row already stored mentions nobody.
     private static let v14 = [
         "ALTER TABLE messages ADD COLUMN mentions BLOB"
+    ]
+
+    /// Schema v15: unread (ADR 2026-10.frmj). A message gains whether nobody has read it: set when someone else's ordinary
+    /// message is first stored, and cleared when its thread is read. Android keeps a per-thread watermark of the sender's
+    /// clock in its settings instead. Every row already stored reads as read, so an update brings no flood of counts. The
+    /// partial index holds only unread rows, which reading keeps few.
+    private static let v15 = [
+        "ALTER TABLE messages ADD COLUMN unread INTEGER NOT NULL DEFAULT 0",
+        "CREATE INDEX messages_unread ON messages (conversationId) WHERE unread = 1",
     ]
 
     /// The migrator that brings any database this build knows up to date.

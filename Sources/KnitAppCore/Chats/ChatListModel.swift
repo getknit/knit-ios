@@ -25,6 +25,8 @@ public struct ChatRow: Sendable, Equatable, Identifiable {
     public var isVerified: Bool
     /// The thread's face: the room's, the peer's, or the group's.
     public var face = Face.room
+    /// How many of its messages nobody has read (ADR 2026-10.frmj).
+    public var unreadCount = 0
 }
 
 /// The chat list, as one value.
@@ -55,13 +57,9 @@ public enum ChatListAssembler {
     ) -> ChatListState {
         let reader = Reader(directory: directory, me: me, filtering: filtering)
         let room = threads.heads.first { $0.conversationId == Conversations.nearby }
-        var rows: [ChatRow] = []
-        for head in threads.heads where NodeId(head.conversationId) != nil && !threads.isRequest(head.conversationId) {
-            rows.append(row(head.conversationId, head: head, linked: linked, reader: reader))
-        }
-        // Group rows come from the groups we hold rather than from messages, so a group shows before its first one, but
-        // not once its chat was deleted, until its next row (ADR 2026-10.u7cq).
-        for group in threads.listedGroups where !threads.isRequest(group.id) {
+        let listed = Self.listed(threads)
+        var rows = listed.directs.map { row($0.conversationId, head: $0, linked: linked, reader: reader) }
+        for group in listed.groups {
             let head = threads.heads.first { ExactKey($0.conversationId) == ExactKey(group.id) }
             rows.append(row(group, head: head, reader: reader))
         }
@@ -70,8 +68,32 @@ public enum ChatListAssembler {
             .sorted { ($1.element.lastMessageAt ?? 0, $0.offset) < ($0.element.lastMessageAt ?? 0, $1.offset) }
             .map(\.element)
         let requests = threads.requests.count
-        let all = [row(Conversations.nearby, head: room, linked: linked, reader: reader)] + ordered
+        let all = ([row(Conversations.nearby, head: room, linked: linked, reader: reader)] + ordered).map { row in
+            var counted = row
+            counted.unreadCount = threads.unreadCount(row.id)
+            return counted
+        }
         return ChatListState(rows: all, requestCount: requests, showsGettingStarted: all.count == 1 && room == nil && requests == 0)
+    }
+
+    /// What Knit's icon counts: the messages nobody has read in the DMs and groups the list shows (ADR 2026-10.frmj). The
+    /// room's count shows on its row alone, so a back-fill of 200 posts on meeting a peer never fills the icon, and a
+    /// request counts nowhere until it is accepted. It walks the rows ``state(threads:directory:me:linked:filtering:)``
+    /// draws, so the two cannot drift apart.
+    public static func badgeTotal(_ threads: ThreadTable) -> Int {
+        let listed = Self.listed(threads)
+        return listed.directs.reduce(0) { $0 + threads.unreadCount($1.conversationId) }
+            + listed.groups.reduce(0) { $0 + threads.unreadCount($1.id) }
+    }
+
+    /// The threads the list draws besides the room: each accepted DM, by its newest message, and each group we are in
+    /// that is no request. Group rows come from the groups we hold rather than from messages, so a group shows before its
+    /// first one, but not once its chat was deleted, until its next row (ADR 2026-10.u7cq).
+    static func listed(_ threads: ThreadTable) -> (directs: [MessageRecord], groups: [GroupRecord]) {
+        (
+            threads.heads.filter { NodeId($0.conversationId) != nil && !threads.isRequest($0.conversationId) },
+            threads.listedGroups.filter { !threads.isRequest($0.id) }
+        )
     }
 
     /// A group's row: its title, and its newest message with its speaker.

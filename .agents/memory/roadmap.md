@@ -128,7 +128,11 @@ explicit direction.** Update this file in the change that ships an item.
   - **Reactions (2026-10-04):** six to pick from a bubble's menu, any one emoji shown, in every thread, sent and taken
     in the clear as Android floods them toward a peer without the ratchet (ADR 2026-10.ehe6). Android's full picker
     and its recents row are not ported.
-  - **Still owed:** no unread counts yet, and no Sign out.
+  - **Unread counts (2026-10-14):** a count on each chat-list row, Nearby included, read when the thread is on screen
+    with Knit in front, as on Android, and the DMs' and groups' total on Knit's icon, which Android lacks. A flag the
+    store sets as a message arrives stands in for Android's watermark of the sender's clock, so a late message still
+    counts (ADR 2026-10.frmj).
+  - **Still owed:** no Sign out.
 - **P7, the Mac:** begun on 2026-09-27. The Mac Mini has Xcode 27.0 and the tools, `check.sh fast` passes
   there, and the `macos` runner is online (`.agents/context/toolchain.md`, "The Mac"). XcodeGen
   generates the app project (ADR 2026-09.de8f), which builds for the iPhone and the Simulator in

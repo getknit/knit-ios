@@ -36,6 +36,12 @@
             center.removeDeliveredNotifications(withIdentifiers: ids)
         }
 
+        func setBadge(_ count: Int) {
+            // Handed over without waiting, so two counts land in the order the session asked for them. Nothing shows when
+            // the user turned badges off for Knit, which is theirs to choose.
+            center.setBadgeCount(count, withCompletionHandler: nil)
+        }
+
         func authorization() async -> NotificationAuthorization {
             Self.authorization(await center.notificationSettings().authorizationStatus)
         }

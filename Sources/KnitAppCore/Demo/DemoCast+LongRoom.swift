@@ -15,7 +15,8 @@ extension DemoCast {
     ]
 
     /// The marketing scene with ``longRoomPosts`` more posts in the room, from everyone in turn, each a few minutes after
-    /// the last. Every few from someone else carries a photo, which stands at a spinner's height until it is read.
+    /// the last. Every few from someone else carries a photo, which stands at a spinner's height until it is read. Nobody
+    /// has read anyone else's, so the room's row counts in the hundreds: the widest count the chat list draws.
     static let longRoom: Self = {
         let authors: [Slot] = [.sam, .dani, .theo, .priya, .jonas, .lena, .me]
         let photos = DemoSnapshot.allCases
@@ -27,7 +28,8 @@ extension DemoCast {
                 to: nil,
                 body: longRoomBodies[index % longRoomBodies.count],
                 delivered: author == .me,
-                photo: author != .me && index.isMultiple(of: longRoomPhotoEvery) ? photos[index % photos.count] : nil
+                photo: author != .me && index.isMultiple(of: longRoomPhotoEvery) ? photos[index % photos.count] : nil,
+                unread: author != .me
             )
         }
         return Self(

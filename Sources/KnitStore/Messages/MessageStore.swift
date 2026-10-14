@@ -246,6 +246,15 @@ public protocol MessageStore: AnyObject, Sendable {
     /// wrote, has no head (`observeDistinctConversations`).
     func threadHeads(excludingSenders blocked: Set<NodeId>) -> [MessageRecord]
 
+    /// Reads every message of `conversationId`, and answers whether one was unread. A message is unread from when it is
+    /// first stored, if ``MessageRecord/arrivesUnread``, until its thread is read; no save changes that (ADR 2026-10.frmj).
+    @discardableResult
+    func markRead(in conversationId: String) -> Bool
+
+    /// How many unread messages each thread holds, never counting one `blocked` wrote, by the threads' ids' bytes. A
+    /// thread with none has no entry.
+    func unreadCounts(excludingSenders blocked: Set<NodeId>) -> [ExactKey: Int]
+
     /// Removes the message `id` at `now`, with its reactions, and answers what it was, or `nil` when nothing is held
     /// under that id. An ordinary message's id is remembered until ``DeletedMessages/expiry(sentAt:deletedAt:limits:)``,
     /// so a carrier that re-serves its frame cannot bring it back (ADR 2026-10.u7cq). A status line's is not: its id is
@@ -338,6 +347,14 @@ public protocol MessageStore: AnyObject, Sendable {
     /// Forgets every reaction, retractions included, updated before `cutoff` whose message is not held
     /// (`ReactionDao.deleteOrphansOlderThan`).
     func pruneOrphanReactions(updatedBefore cutoff: Int64)
+}
+
+extension MessageRecord {
+    /// Whether it is stored unread: someone else's ordinary message, which reached us by our own clock. Ours has no
+    /// ``arrivedAt``, and a status line is never one (ADR 2026-10.frmj).
+    public var arrivesUnread: Bool {
+        kind == .message && arrivedAt != nil
+    }
 }
 
 extension MessageStore {

@@ -190,32 +190,32 @@ public enum DemoSeed {
         var groupStart = now
         let snapshots = snapshots(of: cast, snap: snap)
         var sentAts: [String: Int64] = [:]
+        var records: [(record: MessageRecord, unread: Bool)] = []
         for line in cast.lines.reversed() {
             sentAt -= line.then.rawValue
             sentAts[line.id] = sentAt
             let sender = nodeIds[line.from, default: me]
             let recipient = line.to.map { nodeIds[$0, default: me] }
-            let group = line.inGroup ? groupId : nil
-            if group != nil {
+            if line.inGroup {
                 groupStart = sentAt
             }
-            stores.messages.save(
-                MessageRecord(
-                    id: line.id,
-                    senderId: sender,
-                    recipientId: recipient,
-                    conversationId: Conversations.id(sender: sender, recipient: recipient, group: group, me: me),
-                    body: line.body,
-                    sentAt: sentAt,
-                    arrivedAt: sender == me ? nil : sentAt,
-                    delivered: line.delivered,
-                    attachment: photo(line.photo.flatMap { snapshots[$0] }, in: stores, at: sentAt),
-                    // As the engine stores them: someone else's words wait for the content filter, which the session
-                    // runs over them as it starts listening.
-                    moderation: sender == me ? .clear : .waiting
-                )
+            let record = MessageRecord(
+                id: line.id,
+                senderId: sender,
+                recipientId: recipient,
+                conversationId: Conversations.id(sender: sender, recipient: recipient, group: line.inGroup ? groupId : nil, me: me),
+                body: line.body,
+                sentAt: sentAt,
+                arrivedAt: sender == me ? nil : sentAt,
+                delivered: line.delivered,
+                attachment: photo(line.photo.flatMap { snapshots[$0] }, in: stores, at: sentAt),
+                // As the engine stores them: someone else's words wait for the content filter, which the session
+                // runs over them as it starts listening.
+                moderation: sender == me ? .clear : .waiting
             )
+            records.append((record, line.unread))
         }
+        store(records, in: stores)
         if let group = cast.group, let groupId {
             seed(group, id: groupId, startedAt: groupStart - DemoCast.Pause.minutes.rawValue, people: nodeIds, in: stores)
         }
@@ -223,6 +223,20 @@ public enum DemoSeed {
         seed(cast.reactions, after: sentAts, now: now, people: nodeIds, in: stores)
         quote(cast.lines, me: me, in: stores)
         mention(cast.lines, people: nodeIds, me: me, in: stores)
+    }
+
+    /// Stores the scene's lines, leaving unread only those it marks. A row is unread from when it is first stored until its
+    /// thread is read (ADR 2026-10.frmj), so the lines read go in first, every thread is read, and the rest go in after.
+    private static func store(_ records: [(record: MessageRecord, unread: Bool)], in stores: MeshStores) {
+        for (record, _) in records.filter({ !$0.unread }) {
+            stores.messages.save(record)
+        }
+        for thread in Set(records.map(\.record.conversationId)) {
+            stores.messages.markRead(in: thread)
+        }
+        for (record, _) in records.filter(\.unread) {
+            stores.messages.save(record)
+        }
     }
 
     /// Gives each line the people it mentions, each under its sender's name for them as a composer writes one: their stored
