@@ -120,14 +120,16 @@
             await session.stop()
         }
 
-        func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord? {
-            await session.send(text, photo: photo, replyTo: replyTo, in: Conversations.nearby)
+        func postToRoom(
+            _ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
+        ) async -> MessageRecord? {
+            await session.send(text, photo: photo, replyTo: replyTo, mentions: mentions, in: Conversations.nearby)
         }
 
         func sendDirectMessage(
-            _ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?
+            _ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
         ) async -> MessageRecord? {
-            await session.send(text, photo: photo, replyTo: replyTo, in: recipient.string)
+            await session.send(text, photo: photo, replyTo: replyTo, mentions: mentions, in: recipient.string)
         }
 
         func heldPhoto(picked: [UInt8]) async -> OutgoingPhoto? {
@@ -137,6 +139,11 @@
         /// The quote the composer would write, so a command's reply reads as a tap's (ADR 2026-10.mn29).
         func quote(of messageId: String) async -> MessageReply? {
             await session.quote(of: messageId)
+        }
+
+        /// The mention the composer would write, under this phone's label (ADR 2026-10.nbhj).
+        func mention(of person: NodeId) async -> MessageMention? {
+            await session.mention(of: person)
         }
 
         func accept(_ conversationId: String) async {
@@ -155,8 +162,10 @@
             await session.createGroup(with: others)
         }
 
-        func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord? {
-            await session.send(text, photo: photo, replyTo: replyTo, in: groupId)
+        func sendGroupMessage(
+            _ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
+        ) async -> MessageRecord? {
+            await session.send(text, photo: photo, replyTo: replyTo, mentions: mentions, in: groupId)
         }
 
         func renameGroup(_ groupId: String, to name: String) async -> GroupRecord? {

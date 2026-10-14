@@ -25,7 +25,8 @@ These are deliberate trade-offs, documented here so nobody has to discover them.
 reports:
 
 - **The Nearby room is not encrypted.** It has no fixed set of recipients, so posts, and the delivery ticks
-  and reactions that go with them, travel in the clear. Posts are signed, so they can't be forged.
+  and reactions that go with them, travel in the clear. A mention there carries the mentioned person's Knit
+  identity, which anyone in range can read. Posts are signed, so they can't be forged.
 - **Direct messages have no forward secrecy yet.** The first release seals them with Knit's static-key
   scheme (v1): whoever later obtains your identity key can read every direct message sent to it. The epoch
   ratchet that Knit for Android already runs is the next milestone. Until then, delivery ticks and

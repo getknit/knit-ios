@@ -1,3 +1,4 @@
+import Foundation
 import GRDB
 import KnitStore
 import KnitTestSupport
@@ -98,5 +99,64 @@ extension SchemaTests {
             id: "m2", senderId: bob, recipientId: nil, conversationId: "nearby", body: "yes", sentAt: 4, replyTo: quote)
         messages.save(reply)
         #expect(messages.messages(in: "nearby").map(\.replyTo) == [nil, quote])
+    }
+
+    @Test func v14KeepsEveryMessageMentioningNobody() throws {
+        // No message carried a mention before v14: every row reads as mentioning nobody, and a message stored after it
+        // keeps its mentions beside them. Bytes that don't read as mentions read as nobody (`MentionStore.decode`).
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v13")
+        let bob = fixtureNodeId(2)
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO messages (id, senderId, conversationId, body, sentAt, delivered, pendingKey, kind, moderation)
+                    VALUES (?, ?, ?, ?, 3, 0, 0, 0, 0)
+                    """,
+                arguments: [StoredText.bytes("m1"), StoredText.bytes(bob.string), StoredText.bytes("nearby"), StoredText.bytes("hi")]
+            )
+        }
+        try Schema.migrator.migrate(queue)
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO messages (id, senderId, conversationId, body, sentAt, delivered, pendingKey, kind, moderation, mentions)
+                    VALUES (?, ?, ?, ?, 4, 0, 0, 0, 0, ?)
+                    """,
+                arguments: [
+                    StoredText.bytes("m2"), StoredText.bytes(bob.string), StoredText.bytes("nearby"), StoredText.bytes("@Bo"),
+                    Data("not cbor".utf8),
+                ]
+            )
+        }
+        let database = try KnitDatabase(writer: queue, failures: recordFailure)
+        let messages = SQLMessageStore(database)
+        #expect(messages.message("m1")?.body == "hi")
+        #expect(messages.message("m1")?.mentions.isEmpty == true)
+        #expect(messages.message("m2")?.mentions.isEmpty == true, "bytes that are no list of mentions read as nobody")
+        let mention = MessageMention(nodeId: bob.string, name: "Bo")
+        let mentioning = MessageRecord(
+            id: "m3", senderId: bob, recipientId: nil, conversationId: "nearby", body: "hi @Bo", sentAt: 5, mentions: [mention])
+        messages.save(mentioning)
+        #expect(messages.messages(in: "nearby").map(\.mentions) == [[], [], [mention]])
+    }
+
+    @Test func aRowsMentionsAreTheFramesOwnBytes() throws {
+        // The column holds the CBOR array a frame carries, each entry as the golden `mention` encodes it, and nothing for
+        // a message that mentions nobody.
+        let queue = try DatabaseQueue()
+        let database = try KnitDatabase(writer: queue, failures: recordFailure)
+        let messages = SQLMessageStore(database)
+        let bob = fixtureNodeId(2)
+        let mention = MessageMention(nodeId: "node1", name: "Ann")
+        messages.save(
+            MessageRecord(
+                id: "m1", senderId: bob, recipientId: nil, conversationId: "nearby", body: "hi @Ann", sentAt: 1, mentions: [mention])
+        )
+        messages.save(MessageRecord(id: "m2", senderId: bob, recipientId: nil, conversationId: "nearby", body: "hi", sentAt: 2))
+        let stored = try queue.read { db in
+            try Row.fetchAll(db, sql: "SELECT mentions FROM messages ORDER BY seq").map { $0["mentions"] as Data? }
+        }
+        #expect(stored == [Data([0x81] + GoldenVectors.bytes("mention")), nil])
     }
 }

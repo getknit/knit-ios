@@ -39,6 +39,7 @@ import Testing
         Pair(name: "onOwnBubble on ownBubble", label: Swatches.onOwnBubble, fill: Swatches.ownBubble),
         Pair(name: "label on incomingBubble", label: systemLabel, fill: Swatches.incomingBubble),
         Pair(name: "secondaryText on incomingBubble", label: Swatches.secondaryText, fill: Swatches.incomingBubble),
+        Pair(name: "mention on incomingBubble", label: Swatches.mention, fill: Swatches.incomingBubble),
     ]
 
     /// The four ways a screen draws: light or dark, with Increase Contrast off or on.
@@ -69,6 +70,12 @@ import Testing
     @Test func theViewersCaptionAndTheCodesPaperRead() {
         #expect(WCAG.contrast(0xFFFFFF, Swatches.viewerCaption) >= Self.increasedText)
         #expect(WCAG.contrast(0x000000, Swatches.codePaper) >= Self.increasedText)
+    }
+
+    /// A mention in someone else's bubble is the tint deepened in light, where the tint itself falls short on the bubble.
+    @Test func aMentionDeepensTheTintWhereItWouldNotRead() {
+        #expect(WCAG.contrast(Swatches.accent.light, Swatches.incomingBubble.light) < Self.text)
+        #expect(Swatches.mention.dark == Swatches.accent.dark && Swatches.mention.increasedDark == Swatches.accent.increasedDark)
     }
 
     /// The coral is Android's, deepened: the brand's own `#E55E4C` reads only 3.5:1 under white, too faint for a label.

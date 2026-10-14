@@ -162,6 +162,8 @@ public struct MessageRecord: Sendable, Equatable {
     public var moderation: MessageModeration
     /// The message it replies to, as its author quoted it, or `nil` (ADR 2026-10.mn29).
     public var replyTo: MessageReply?
+    /// The people it mentions, in the order its author picked them, each carried in ``body``.
+    public var mentions: [MessageMention]
 
     /// Makes a record.
     public init(
@@ -177,7 +179,8 @@ public struct MessageRecord: Sendable, Equatable {
         kind: MessageKind = .message,
         attachment: MessageAttachment? = nil,
         moderation: MessageModeration = .clear,
-        replyTo: MessageReply? = nil
+        replyTo: MessageReply? = nil,
+        mentions: [MessageMention] = []
     ) {
         self.id = id
         self.senderId = senderId
@@ -192,6 +195,7 @@ public struct MessageRecord: Sendable, Equatable {
         self.attachment = attachment
         self.moderation = moderation
         self.replyTo = replyTo
+        self.mentions = mentions
     }
 }
 

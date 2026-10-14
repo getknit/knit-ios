@@ -28,6 +28,8 @@
         static let onOwnBubble = dynamic(Swatches.onOwnBubble)
         /// Someone else's bubble: an opaque gray, so the words on it measure against it and not the thread behind.
         static let incomingBubble = dynamic(Swatches.incomingBubble)
+        /// A name a message mentions, in someone else's bubble (ADR 2026-10.nbhj).
+        static let mention = dynamic(Swatches.mention)
         /// A verify code's paper: white in dark mode too (ADR 2026-10.65xx).
         static let codePaper = Color(uiColor: rgb(Swatches.codePaper))
         /// The capsule a line sits in over a photo in the viewer, under white text, which reads 14:1 on it whatever the

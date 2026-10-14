@@ -3,7 +3,8 @@ public import KnitWire
 
 /// A notification the app should post: what it says, and where a tap leads.
 public struct LocalNotification: Sendable, Equatable {
-    /// Replaces any notification with the same id: each conversation keeps one, and every request shares one.
+    /// Replaces any notification with the same id: each conversation keeps one, a mention of us in it one more, and every
+    /// request shares one.
     public var id: String
     /// Groups the notifications of one thread.
     public var threadId: String
@@ -41,9 +42,19 @@ public protocol Notifier: Sendable {
 /// shows its words or its sender, and every request shares one notification that counts them. A message with no words
 /// says what it carries, such as "📷 Photo", and one whose words the content filter hides says only that (ADR
 /// 2026-10.e4kz). Control frames never arrive here: the engine stores and reports only messages.
+///
+/// A message that mentions us posts under an id of its own in its thread (``mentionId(_:)``), in place of the thread's
+/// usual one, as Android posts it on its Mentions channel under `mention:<conversation>` (`InboundPipeline.kt:2794-2814`,
+/// `MessageNotifier.kt:37-39`). Later messages in the thread then replace only the thread's notification, and the mention
+/// stays until the thread is opened, which withdraws both (ADR 2026-10.nbhj). Its words are an ordinary notification's.
 public enum NotificationPolicy {
     /// The id and thread of the one notification that counts requests.
     public static let requestsThread = "requests"
+
+    /// The id of the notification for a message in `conversationId` that mentions us.
+    public static func mentionId(_ conversationId: String) -> String {
+        "mention:" + conversationId
+    }
 
     /// What a decision reads besides the message.
     public struct Context: Sendable {
@@ -97,7 +108,7 @@ public enum NotificationPolicy {
         // A group's notification is titled for the group and names its speaker, as the room's does.
         let shared = isRoom ? Copy.Notifications.nearbyTitle : context.groupTitle
         return LocalNotification(
-            id: message.conversationId,
+            id: message.mentions.mentions(context.me) ? mentionId(message.conversationId) : message.conversationId,
             threadId: message.conversationId,
             conversationId: message.conversationId,
             title: shared ?? sender,

@@ -214,7 +214,10 @@ extension MeshEngine {
             arrivedAt: sender == nodeId ? nil : clock.wallMilliseconds(),
             attachment: attachment,
             moderation: sender == nodeId || wordless ? .clear : .waiting,
-            replyTo: delivered.replyTo
+            replyTo: delivered.replyTo,
+            // Only the mentions the kept body still holds: that bounds a peer's list, where Android keeps any
+            // (`InboundPipeline.kt:2660`, ADR 2026-10.nbhj).
+            mentions: MessageMention.carried(delivered.mentions, in: body)
         )
         stores.messages.insertIfAbsent(record)
         // Every delivery ends the sender's cue in the thread, a re-delivery too (`InboundPipeline.kt:2728`), and before
@@ -247,15 +250,31 @@ extension MeshEngine {
     /// The longest text an attachment's type, key or file name keeps: a peer's frame bounds nothing on its own.
     static let attachmentTextLimit = 256
 
-    /// What a room post says, carries and quotes, from its cleartext.
+    /// What a room post says, carries, quotes and mentions, from its cleartext.
     static func delivered(_ chat: ChatContent) -> DeliveredChat {
-        DeliveredChat(body: chat.body, attachment: attachment(of: chat), replyTo: chat.replyTo.map(reply))
+        DeliveredChat(
+            body: chat.body,
+            attachment: attachment(of: chat),
+            replyTo: chat.replyTo.map(reply),
+            mentions: chat.mentions.map(mention)
+        )
     }
 
-    /// What a sealed message says, carries and quotes, from its opened content. A quote beside the envelope in the clear
-    /// is no part of it (`InboundPipeline.plaintextContent`).
+    /// What a sealed message says, carries, quotes and mentions, from its opened content. A quote or a mention beside the
+    /// envelope in the clear is no part of it (`InboundPipeline.plaintextContent`, `InboundPipeline.kt:948-960`).
     static func delivered(_ content: MessageContent) -> DeliveredChat {
-        DeliveredChat(body: content.body, attachment: attachment(of: content), replyTo: content.replyTo.map(reply))
+        DeliveredChat(
+            body: content.body,
+            attachment: attachment(of: content),
+            replyTo: content.replyTo.map(reply),
+            mentions: content.mentions.map(mention)
+        )
+    }
+
+    /// A mention as its sender wrote it. ``deliverChat(_:_:sender:recipient:via:)`` keeps it only while the body holds
+    /// its token, which bounds the name by the body's own limit.
+    static func mention(_ mention: Mention) -> MessageMention {
+        MessageMention(nodeId: mention.nodeId, name: mention.name)
     }
 
     /// The quote a delivered message carries, as the replier wrote it: nothing checks that the message it names is held,
@@ -354,4 +373,7 @@ internal struct DeliveredChat {
     var attachment: MessageAttachment?
     /// The message it replies to, as its author quoted it, or `nil`.
     var replyTo: MessageReply?
+    /// The people it mentions, as its author named them, before ``MessageMention/carried(_:in:)`` keeps those the body
+    /// holds.
+    var mentions: [MessageMention]
 }

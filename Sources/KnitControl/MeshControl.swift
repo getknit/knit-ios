@@ -12,9 +12,11 @@ public protocol ControlActions: Sendable {
     /// Stops the radio and closes every link.
     func stop() async
     /// Posts to the Nearby room, quoting the message it replies to if it replies.
-    func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord?
+    func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]) async -> MessageRecord?
     /// Sends a DM, quoting the message it replies to if it replies.
-    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord?
+    func sendDirectMessage(
+        _ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
+    ) async -> MessageRecord?
     /// A photo's bytes as the picture this node already holds them as, or `nil` (ADR 2026-10.f3mv).
     func heldPhoto(picked: [UInt8]) async -> OutgoingPhoto?
     /// Accepts a message request.
@@ -26,7 +28,9 @@ public protocol ControlActions: Sendable {
     /// Makes a group with `others`, or opens the one they already share.
     func createGroup(with others: [NodeId]) async -> GroupRecord?
     /// Sends a message to a group, quoting the message it replies to if it replies.
-    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord?
+    func sendGroupMessage(
+        _ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
+    ) async -> MessageRecord?
     /// Renames a group and floods the change.
     func renameGroup(_ groupId: String, to name: String) async -> GroupRecord?
     /// Leaves a group, telling its members.
@@ -38,6 +42,9 @@ public protocol ControlActions: Sendable {
     /// The quote a reply to message `messageId` carries, as this node's own composer writes one, or `nil` to leave it to
     /// the control surface (ADR 2026-10.mn29).
     func quote(of messageId: String) async -> MessageReply?
+    /// The mention of `person` this node's own composer writes, or `nil` to leave it to the control surface (ADR
+    /// 2026-10.nbhj).
+    func mention(of person: NodeId) async -> MessageMention?
     /// Reacts to a message, or takes our reaction back, and answers what we hold now (ADR 2026-10.ehe6).
     func react(to messageId: String, with emoji: String) async -> ReactionRecord?
     /// Tells a thread we are typing, at most once a throttle's interval, and answers whether a cue went out.
@@ -182,10 +189,10 @@ public actor MeshControl {
             return .success(peers())
         case .links:
             return .success(await links())
-        case .room(let text, let photo, let replyTo):
-            return await send(text, photo: photo, replyTo: replyTo, to: .room)
-        case .directMessage(let recipient, let text, let photo, let replyTo):
-            return await send(text, photo: photo, replyTo: replyTo, to: .direct(recipient))
+        case .room(let text, let photo, let replyTo, let mentions):
+            return await send(text, photo: photo, replyTo: replyTo, mentions: mentions, to: .room)
+        case .directMessage(let recipient, let text, let photo, let replyTo, let mentions):
+            return await send(text, photo: photo, replyTo: replyTo, mentions: mentions, to: .direct(recipient))
         case .accept(let conversation):
             await actions.accept(conversation)
             return .success(["conv": .string(conversation)])
@@ -251,8 +258,8 @@ public actor MeshControl {
                 return .failure(.refused("a group takes one to seven others"))
             }
             return .success(ControlLines.fields(of: group))
-        case .send(let conversation, let text, let photo, let replyTo):
-            return await send(text, photo: photo, replyTo: replyTo, to: .group(conversation))
+        case .send(let conversation, let text, let photo, let replyTo, let mentions):
+            return await send(text, photo: photo, replyTo: replyTo, mentions: mentions, to: .group(conversation))
         case .rename(let conversation, let name):
             guard let group = await actions.renameGroup(conversation, to: name) else {
                 return .failure(.refused("a blank name, or a group we are not in, is not renamed"))

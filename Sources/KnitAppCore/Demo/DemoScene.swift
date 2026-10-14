@@ -146,6 +146,9 @@ internal struct DemoCast {
         /// The line it replies to, an earlier one in its thread, which it quotes as Android's composer would (ADR
         /// 2026-10.mn29, `DemoScenarios.kt:54-70`).
         var replyTo: String?
+        /// The people it mentions, each under its sender's name for them, which ``body`` must carry after an "@" (ADR
+        /// 2026-10.nbhj).
+        var mentions: [Slot] = []
     }
 
     /// Someone's reaction to one of the scene's lines, a moment after it (ADR 2026-10.ehe6).
@@ -186,14 +189,15 @@ internal struct DemoCast {
     /// The photos the demo's photo filter flags, for the same.
     var flaggedPhotos: Set<DemoSnapshot> = []
 
-    private static let thumbs = "\u{1F44D}"
+    static let thumbs = "\u{1F44D}"
     static let heart = "\u{2764}\u{FE0F}"
 
     /// Two peers share a name, to show a discriminated label; the stranger has none, to show an alias. Jonas is blocked,
     /// so Settings lists someone and his profile shows the badge. Our room post has a count above one, an emoji outside
     /// the six, and a heart from Jonas that his block hides; Sam's DM has ours, and a stranger's that a DM does not show.
-    /// Priya's room post replies to ours, and ours in the group replies to hers. Priya and Sam are typing in the room, and
-    /// Jonas too, whom his block hides; Priya is typing in the group.
+    /// Priya's room post replies to ours, and ours in the group replies to hers and mentions her; the other Sam's room post
+    /// mentions Sam. Priya and Sam are typing in the room, and Jonas too, whom his block hides; Priya is typing in the
+    /// group.
     static let edgeCases = Self(
         people: [
             Person(slot: .sam, name: "Sam", status: "At the north gate", verified: true),
@@ -204,11 +208,11 @@ internal struct DemoCast {
         ],
         lines: [
             Line(id: "room-1", from: .sam, to: nil, body: "Is anyone else at the festival without signal?"),
-            Line(id: "room-2", from: .otherSam, to: nil, body: "Same here. Knit is the only thing working."),
+            Line(id: "room-2", from: .otherSam, to: nil, body: "@Sam same here. Knit is the only thing working.", mentions: [.sam]),
             Line(id: "room-3", from: .me, to: nil, body: "Meet at the food trucks at 6?", delivered: true),
             Line(id: "room-4", from: .priya, to: nil, body: "On my way.", replyTo: "room-3"),
             Line(id: "group-1", from: .priya, to: nil, body: "Who's bringing the tent?", inGroup: true),
-            Line(id: "group-2", from: .me, to: nil, body: "I've got it.", inGroup: true, replyTo: "group-1"),
+            Line(id: "group-2", from: .me, to: nil, body: "@Priya I've got it.", inGroup: true, replyTo: "group-1", mentions: [.priya]),
             Line(id: "dm-1", from: .me, to: .sam, body: "Which gate are you at?", delivered: true),
             Line(id: "dm-2", from: .sam, to: .me, body: "North gate, by the big tent."),
             Line(id: "dm-3", from: .me, to: .sam, body: "Be there in 10."),
@@ -351,45 +355,4 @@ internal struct DemoCast {
             Reaction(line: "group-1", by: .me, emoji: thumbs),
         ]
     )
-
-    /// How many posts the long room adds to the marketing scene's: enough that it opens on rows the lazy stack has only
-    /// guessed the height of, few enough to seed in a moment.
-    private static let longRoomPosts = 240
-    /// Every how many posts one from someone else carries a photo.
-    private static let longRoomPhotoEvery = 3
-    /// What the long room's posts say, in turn: rows of one line, of several, and of an emoji.
-    private static let longRoomBodies = [
-        "Anyone on the ridge?",
-        "Water's running at the second creek crossing. Bring a filter.",
-        "Made it to the hut. The fire's going and there's room for four more if anyone's coming down before dark.",
-        thumbs,
-        "Lost the markers past the boulder field, so we're heading back the way we came.",
-    ]
-
-    /// The marketing scene with ``longRoomPosts`` more posts in the room, from everyone in turn, each a few minutes after
-    /// the last. Every few from someone else carries a photo, which stands at a spinner's height until it is read.
-    static let longRoom: Self = {
-        let authors: [Slot] = [.sam, .dani, .theo, .priya, .jonas, .lena, .me]
-        let photos = DemoSnapshot.allCases
-        let posts = (0..<longRoomPosts).map { index in
-            let author = authors[index % authors.count]
-            return Line(
-                id: "long-\(index)",
-                from: author,
-                to: nil,
-                body: longRoomBodies[index % longRoomBodies.count],
-                delivered: author == .me,
-                photo: author != .me && index.isMultiple(of: longRoomPhotoEvery) ? photos[index % photos.count] : nil
-            )
-        }
-        return Self(
-            me: marketing.me,
-            people: marketing.people,
-            lines: marketing.lines + posts,
-            accepted: marketing.accepted,
-            linked: marketing.linked,
-            group: marketing.group,
-            reactions: marketing.reactions
-        )
-    }()
 }

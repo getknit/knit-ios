@@ -152,8 +152,10 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     }
 
     /// Posts to the Nearby room, where nobody hears it but the director.
-    public func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord? {
-        let posted = await mesh.postToRoom(text, photo: photo, replyTo: replyTo)
+    public func postToRoom(
+        _ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
+    ) async -> MessageRecord? {
+        let posted = await mesh.postToRoom(text, photo: photo, replyTo: replyTo, mentions: mentions)
         if let posted {
             director?.heard(posted)
         }
@@ -162,9 +164,9 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
 
     /// Sends a DM, which waits in custody.
     public func sendDirectMessage(
-        _ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?
+        _ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
     ) async -> MessageRecord? {
-        await mesh.sendDirectMessage(text, to: recipient, photo: photo, replyTo: replyTo)
+        await mesh.sendDirectMessage(text, to: recipient, photo: photo, replyTo: replyTo, mentions: mentions)
     }
 
     /// A picture the demo already holds, as the mesh finds it.
@@ -184,9 +186,9 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
 
     /// Sends a group message, which waits in custody.
     public func sendGroupMessage(
-        _ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?
+        _ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
     ) async -> MessageRecord? {
-        await mesh.sendGroupMessage(text, to: groupId, photo: photo, replyTo: replyTo)
+        await mesh.sendGroupMessage(text, to: groupId, photo: photo, replyTo: replyTo, mentions: mentions)
     }
 
     /// Renames a group.

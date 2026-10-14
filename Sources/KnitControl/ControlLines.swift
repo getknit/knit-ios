@@ -47,6 +47,11 @@ internal enum ControlLines {
             "attachmentHash": .text(record.attachment?.hash.string),
             "attachmentMime": .text(record.attachment?.mime),
         ]
+        // The people it mentions, as it came or went (ADR 2026-10.nbhj), as Android's bridge reports them since A8.
+        if !record.mentions.isEmpty {
+            fields["mentions"] = .array(
+                record.mentions.map { .object(["nodeId": .string($0.nodeId), "name": .string($0.name)]) })
+        }
         // A reply's quote, as it came or went (ADR 2026-10.mn29); Android's bridge reports `replyToId` and `replyToAuthor`.
         if let reply = record.replyTo {
             fields["replyTo"] = .object([

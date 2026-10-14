@@ -19,6 +19,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-react --device SERIAL [--udid UDID]
     scripts/interop.py iphone-reply --device SERIAL [--udid UDID]
     scripts/interop.py iphone-typing --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-mention --device SERIAL [--udid UDID]
     scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
@@ -48,6 +49,8 @@ every thread, and checks a replacement, a retraction, an emoji outside the iPhon
 `iphone-reply` sends quoted replies both ways in every thread, a photo's among them (ADR 2026-10.mn29);
 `iphone-typing` sends typing cues both ways in every thread, and checks their lapse, a post ending one and a block
 (ADR 2026-10.29z9);
+`iphone-mention` sends mentions both ways in every thread, and checks that the iPhone drops one its words don't carry
+(ADR 2026-10.nbhj; the phone needs knit-next's bridge from companion change A8);
 `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
 `iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `android-keeps-iphone` checks that
 an Android phone keeps a backgrounded iPhone's link and admits its re-dial (knit-next AND-3), moving Knit away from the
@@ -5206,6 +5209,74 @@ def iphone_typing(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def iphone_mention(arguments: argparse.Namespace) -> int:
+    """Mentions both ways, in every thread (ADR 2026-10.nbhj). In Nearby, a DM and a group, the phone mentions the iPhone
+    through its bridge as its composer would, and the iPhone's message must carry the mention, by the iPhone's node id and
+    under the name the phone wrote; the iPhone mentions the phone, and the phone's `STATE` must report the mention it
+    stored. A mention whose name the iPhone's words don't carry never leaves it. The group adds a fresh ghost nobody runs,
+    as `iphone-react`'s does. The two must already hold each other's keys, and each must know only one person by the
+    other's name, so that the label each writes is the bare name. The phone needs knit-next's debug bridge from companion
+    change A8, whose `SEND` takes `mentions` and whose `STATE` reports them."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid, arguments.host)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    try:
+        state = phone.state()
+        phone_id = state["self"]["nodeId"]
+        phone_name = state["self"]["name"]
+        print(json.dumps({"run": "iphone-mention", "phone": phone_id, "iphone": ios.node_id, "nonce": nonce}))
+        run.step("link", lambda: _ios_linked(ios, phone, phone_id))
+        run.step("phone-knows-iphone", lambda: _phone_pinned(phone, ios))
+        ghost = _ghost("iphone-mention-ghost")
+        group = ios.command(cmd="group-create", members=[phone_id, ghost])["id"]
+        run.step("group-ids-agree", lambda: _agrees(group, phone.make_group([ios.node_id, ghost])))
+        # Each thread as the iPhone names it, then as the phone does.
+        threads = {"room": ("nearby", "nearby"), "dm": (phone_id, ios.node_id), "group": (group, group)}
+        for kind, (on_ios, on_phone) in threads.items():
+            body = f"@{ios.name} interop {kind} mention from the phone {nonce}"
+            phone.bridge("SEND", text=body, conv=on_phone, mentions=ios.node_id)
+            run.step(f"{kind}-phone-mention-lands", lambda on_ios=on_ios, body=body: _timed(
+                lambda: _ios_mention(ios, on_ios, body, [{"nodeId": ios.node_id, "name": ios.name}]), 60))
+            back = f"@{phone_name} interop {kind} mention from the iPhone {nonce}"
+            _ios_ok(_ios_sends(ios, kind, on_ios, back, mentions=[phone_id]))
+            run.step(f"{kind}-iphone-mention-lands", lambda on_phone=on_phone, back=back: _timed(
+                lambda: _phone_mention(phone, on_phone, back, [{"nodeId": phone_id, "name": phone_name}]), 60))
+        stray = f"interop a mention with no name in it {nonce}"
+        _ios_ok(_ios_sends(ios, "room", "nearby", stray, mentions=[phone_id]))
+        run.step("stray-mention-never-leaves", lambda: _timed(lambda: _phone_mention(phone, "nearby", stray, []), 60))
+    finally:
+        ios.stop()
+    print(json.dumps({"summary": "iphone-mention", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _ios_mention(ios: IPhone, conversation: str, body: str, expected: list) -> dict | None:
+    """The mentions the iPhone's message `body` carries, once it holds it, which must be `expected`."""
+    for message in ios.command(cmd="messages", conv=conversation, limit=50)["messages"]:
+        if message.get("body") != body:
+            continue
+        if message.get("mentions", []) != expected:
+            raise RuntimeError(f"the iPhone's {body!r} mentions {message.get('mentions')}")
+        return {"mentions": expected}
+    return None
+
+
+def _phone_mention(phone: Phone, conversation: str, body: str, expected: list) -> dict | None:
+    """The mentions the phone's message `body` carries, once its bridge reports it (A8's `mentions` in `STATE`), which must
+    be `expected`."""
+    for message in phone.state(conversation, limit=50).get("messages", []):
+        if message.get("body") != body:
+            continue
+        if "mentions" not in message:
+            raise RuntimeError("the phone's bridge reports no mentions: it needs knit-next with companion change A8")
+        if message["mentions"] != expected:
+            raise RuntimeError(f"the phone's {body!r} mentions {message['mentions']}")
+        return {"mentions": expected}
+    return None
+
+
 def _ios_typing(ios: IPhone, conversation: str) -> list:
     """Who the iPhone's mesh holds typing in `conversation`, from its `status` reply."""
     return ios.command(cmd="status").get("typing", {}).get(conversation, [])
@@ -5216,9 +5287,12 @@ def _phone_typing(phone: Phone, conversation: str) -> list:
     return phone.state().get("typing", {}).get(conversation, [])
 
 
-def _ios_sends(ios: IPhone, kind: str, conversation: str, body: str, reply_to: str | None = None) -> dict:
-    """Sends `body` from the iPhone to the room, a DM or a group, quoting message `reply_to` when it names one."""
-    quoting = {"replyTo": reply_to} if reply_to else {}
+def _ios_sends(
+    ios: IPhone, kind: str, conversation: str, body: str, reply_to: str | None = None, mentions: list | None = None
+) -> dict:
+    """Sends `body` from the iPhone to the room, a DM or a group, quoting message `reply_to` when it names one, and
+    mentioning the node ids in `mentions`, each under the iPhone's label for them."""
+    quoting = ({"replyTo": reply_to} if reply_to else {}) | ({"mentions": mentions} if mentions else {})
     if kind == "room":
         return ios.command(cmd="room", text=body, **quoting)
     if kind == "dm":
@@ -6230,6 +6304,8 @@ def main() -> int:
     ios_reply.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_typing = commands.add_parser("iphone-typing")
     ios_typing.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios_mention = commands.add_parser("iphone-mention")
+    ios_mention.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak = commands.add_parser("iphone-soak")
     ios_soak.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak.add_argument("--peer", action="store_true", help="knit-peer on hci0 joins as a third author, linked to the iPhone alone")
@@ -6338,6 +6414,8 @@ def main() -> int:
         ios_delete,
         ios_react,
         ios_reply,
+        ios_typing,
+        ios_mention,
         ios_soak,
         ios_forgets,
         commands.choices["iphone-relay"],
@@ -6358,7 +6436,7 @@ def main() -> int:
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
     if arguments.command in (
         "iphone", "iphone-wake", "android-keeps-iphone", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-delete",
-        "iphone-react", "iphone-reply", "iphone-typing", "bridge", "record-pull",
+        "iphone-react", "iphone-reply", "iphone-typing", "iphone-mention", "bridge", "record-pull",
     ):
         return {
             "iphone": iphone,
@@ -6371,6 +6449,7 @@ def main() -> int:
             "iphone-react": iphone_react,
             "iphone-reply": iphone_reply,
             "iphone-typing": iphone_typing,
+            "iphone-mention": iphone_mention,
             "bridge": bridge,
             "record-pull": record_pull,
         }[arguments.command](arguments)

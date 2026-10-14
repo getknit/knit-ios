@@ -30,6 +30,7 @@ internal enum Schema {
         ("v11", v11),
         ("v12", v12),
         ("v13", v13),
+        ("v14", v14),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -250,6 +251,13 @@ internal enum Schema {
         "ALTER TABLE messages ADD COLUMN replyToAuthor BLOB",
         "ALTER TABLE messages ADD COLUMN replyToSnippet BLOB",
         "ALTER TABLE messages ADD COLUMN replyToHasAttachment INTEGER NOT NULL DEFAULT 0",
+    ]
+
+    /// Schema v14: mentions. A message gains the people it mentions (`MessageEntity.mentions`, Android's name), as one
+    /// value: the CBOR array its frame carries them in, each a `Mention` as KnitWire writes it, or `NULL` for none.
+    /// Every row already stored mentions nobody.
+    private static let v14 = [
+        "ALTER TABLE messages ADD COLUMN mentions BLOB"
     ]
 
     /// The migrator that brings any database this build knows up to date.

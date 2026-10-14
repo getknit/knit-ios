@@ -123,6 +123,12 @@ public enum AccessibilityID {
     public static let chatReplyBar = "reply_preview"
     /// Its Cancel reply (`reply_cancel`).
     public static let chatReplyCancel = "reply_cancel"
+    /// The people an "@" in the composer offers (ADR 2026-10.nbhj). Android has no tag here.
+    public static let chatMentions = "chat_mentions"
+    /// One person it offers, `chat_mention_<node id>`.
+    public static func chatMention(_ nodeId: String) -> String {
+        "chat_mention_\(nodeId)"
+    }
 
     /// A message that carries no photo, `chat_message_<message id>`, whose value says when the content filter hides its
     /// words (ADR 2026-10.e4kz). Android has no tag here.

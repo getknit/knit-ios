@@ -241,9 +241,9 @@ import Testing
         let shown = [Neighbor(nodeId: sam.nodeId)]
         #expect(mesh.nodeId == fake.nodeId)
         await mesh.start()
-        let posted = await mesh.postToRoom("hi", photo: nil, replyTo: nil)
+        let posted = await mesh.postToRoom("hi", photo: nil, replyTo: nil, mentions: [])
         #expect(posted != nil)
-        #expect(await mesh.sendDirectMessage("hey", to: sam.nodeId, photo: nil, replyTo: nil) != nil)
+        #expect(await mesh.sendDirectMessage("hey", to: sam.nodeId, photo: nil, replyTo: nil, mentions: []) != nil)
         #expect(await mesh.deleteMessage(posted?.id ?? ""))
         #expect(await mesh.deleteChat(sam.nodeId.string))
         await mesh.accept("c1")
@@ -253,7 +253,7 @@ import Testing
         await mesh.unblock(sam.nodeId)
         let group = await mesh.createGroup(with: [sam.nodeId])
         let id = group?.id ?? ""
-        #expect(await mesh.sendGroupMessage("all", to: id, photo: nil, replyTo: nil) != nil)
+        #expect(await mesh.sendGroupMessage("all", to: id, photo: nil, replyTo: nil, mentions: []) != nil)
         #expect(await mesh.renameGroup(id, to: "Pair")?.name == "Pair")
         #expect(await mesh.leaveGroup(id))
         let expected = FakeMesh.Calls(
@@ -379,5 +379,22 @@ extension DemoTests {
         }
         #expect(room.state.typingLabel == nil)
         listening.cancel()
+    }
+}
+
+// Mentions (ADR 2026-10.nbhj), apart from the suite's body for the same reason.
+extension DemoTests {
+    @Test func theDemosMentionsAreStoredAndLit() throws {
+        // The other Sam's room post mentions Sam, and ours in the group mentions Priya, each under the stored name.
+        let identity = try #require(DemoSeed.identity)
+        let stores = MeshStores.inMemory()
+        DemoSeed.populate(stores, me: identity.nodeId, now: 10_000_000, scene: .edgeCases)
+        let room = try #require(stores.messages.message("room-2"))
+        #expect(room.mentions.map(\.name) == ["Sam"])
+        let group = try #require(stores.messages.message("group-2"))
+        #expect(group.mentions.map(\.name) == ["Priya"] && group.replyTo != nil)
+        let (session, _) = Self.session(stores, identity: identity, radio: .on, linked: [])
+        let thread = ChatModel(conversationId: group.conversationId, session: session)
+        #expect(thread.state.messages.first { $0.id == "group-2" }?.mentionSpans == [0..<6])
     }
 }

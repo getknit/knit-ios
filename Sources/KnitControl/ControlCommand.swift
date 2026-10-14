@@ -14,10 +14,14 @@ public enum ControlCommand: Equatable, Sendable {
     case links
     /// `{"cmd":"room","text":"…"}`: a Nearby post. `"photo":"<base64>"` adds a photo, of type `"mime"`, `image/jpeg`
     /// when left out, and the text may then be left out too; `"replyTo":"<message id>"` makes it a reply quoting that
-    /// message, which this node must hold (ADR 2026-10.mn29). The same goes for `dm` and `group-send`.
-    case room(String, photo: OutgoingPhoto?, replyTo: String?)
+    /// message, which this node must hold (ADR 2026-10.mn29); `"mentions":["<node id>",…]` mentions those people, each
+    /// under this node's label for them, and the text must carry each "@" and label (ADR 2026-10.nbhj). The same goes for
+    /// `dm` and `group-send`.
+    case room(String, photo: OutgoingPhoto?, replyTo: String?, mentions: [NodeId] = [])
+    // swiftlint:disable enum_case_associated_values_count - each value is one key of the command line, as `room`'s are
     /// `{"cmd":"dm","to":"<node id>","text":"…"}`: a DM.
-    case directMessage(to: NodeId, text: String, photo: OutgoingPhoto?, replyTo: String?)
+    case directMessage(to: NodeId, text: String, photo: OutgoingPhoto?, replyTo: String?, mentions: [NodeId] = [])
+    // swiftlint:enable enum_case_associated_values_count
     /// `{"cmd":"accept","conv":"<node id>"}`: accept a message request.
     case accept(String)
     /// `{"cmd":"name","name":"…","status":"…","openToChat":true}`: change our profile; what is left out stays, so
@@ -127,8 +131,10 @@ public enum GroupCommand: Equatable, Sendable {
     /// `{"cmd":"group-create","members":["<node id>",…]}`: a group of those people and us, or the one they already
     /// share. Nothing is sent until its first message.
     case create([NodeId])
+    // swiftlint:disable enum_case_associated_values_count - each value is one key of the command line, as `room`'s are
     /// `{"cmd":"group-send","conv":"<group id>","text":"…"}`: a message to a group.
-    case send(String, text: String, photo: OutgoingPhoto?, replyTo: String?)
+    case send(String, text: String, photo: OutgoingPhoto?, replyTo: String?, mentions: [NodeId] = [])
+    // swiftlint:enable enum_case_associated_values_count
     /// `{"cmd":"group-rename","conv":"<group id>","name":"…"}`: rename a group, and tell its members.
     case rename(String, name: String)
     /// `{"cmd":"group-leave","conv":"<group id>"}`: leave a group, and tell its members.
@@ -207,6 +213,7 @@ public struct ControlRequest: Equatable, Sendable {
         var clear: Bool? // swiftlint:disable:this discouraged_optional_boolean
         var emoji: String?
         var replyTo: String?
+        var mentions: [String]?
         var tag: String?
     }
 
@@ -236,12 +243,8 @@ public struct ControlRequest: Equatable, Sendable {
             .success(.start)
         case "quit":
             .success(.quit)
-        case "room":
-            message(raw).map { .room($0.text, photo: $0.photo, replyTo: raw.replyTo) }
-        case "dm":
-            message(raw).flatMap { sent in
-                nodeId(raw.to, "to").map { .directMessage(to: $0, text: sent.text, photo: sent.photo, replyTo: raw.replyTo) }
-            }
+        case "room", "dm":
+            messageCommand(from: raw)
         case "accept":
             required(raw.conv ?? raw.peer, "conv").map(ControlCommand.accept)
         case "name":
@@ -271,13 +274,31 @@ public struct ControlRequest: Equatable, Sendable {
         }
     }
 
+    /// A message to the room or a DM, with what it carries, quotes and mentions.
+    private static func messageCommand(from raw: Raw) -> Result<ControlCommand, ControlError> {
+        message(raw).flatMap { sent in
+            mentioned(raw.mentions).flatMap { mentions in
+                guard raw.cmd == "dm" else {
+                    return .success(.room(sent.text, photo: sent.photo, replyTo: raw.replyTo, mentions: mentions))
+                }
+                return nodeId(raw.to, "to").map { recipient in
+                    .directMessage(to: recipient, text: sent.text, photo: sent.photo, replyTo: raw.replyTo, mentions: mentions)
+                }
+            }
+        }
+    }
+
     private static func groupCommand(from raw: Raw) -> Result<GroupCommand, ControlError> {
         switch raw.cmd {
         case "group-create":
             members(raw.members).map(GroupCommand.create)
         case "group-send":
             required(raw.conv, "conv").flatMap { conv in
-                message(raw).map { .send(conv, text: $0.text, photo: $0.photo, replyTo: raw.replyTo) }
+                message(raw).flatMap { sent in
+                    mentioned(raw.mentions).map { mentions in
+                        .send(conv, text: sent.text, photo: sent.photo, replyTo: raw.replyTo, mentions: mentions)
+                    }
+                }
             }
         case "group-rename":
             required(raw.conv, "conv").flatMap { conv in required(raw.name, "name").map { .rename(conv, name: $0) } }
@@ -312,6 +333,11 @@ public struct ControlRequest: Equatable, Sendable {
             return Base64.decode(jpeg).map { .success(.bytes($0)) } ?? .failure(.invalid("jpeg"))
         }
         return required(raw.path, "jpeg").map(AvatarSource.file)
+    }
+
+    /// The people a message mentions, none when the line names none; one that is no node id refuses the line.
+    private static func mentioned(_ values: [String]?) -> Result<[NodeId], ControlError> {
+        values.map { members($0) } ?? .success([])
     }
 
     private static func members(_ values: [String]?) -> Result<[NodeId], ControlError> {

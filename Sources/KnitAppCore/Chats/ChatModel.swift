@@ -1,7 +1,7 @@
 import Foundation
 import KnitCrypto
 import KnitMesh
-import KnitStore
+public import KnitStore
 public import KnitWire
 public import Observation
 
@@ -35,6 +35,8 @@ public struct ChatMessage: Sendable, Equatable, Identifiable {
     public var reactions: [ReactionChip] = []
     /// The message it replies to, as its author quoted it, or `nil` (ADR 2026-10.mn29). Its words hide with the reply's.
     public var quote: ChatQuote?
+    /// Where the names it mentions sit in ``body``, in UTF-16 offsets, which the bubble sets apart (ADR 2026-10.nbhj).
+    public var mentionSpans: [Range<Int>] = []
 }
 
 /// Why a thread keeps someone else's words out of sight while the content filter is on.
@@ -124,6 +126,13 @@ public final class ChatModel {
     public internal(set) var replying: ComposerReply?
     /// How many replies were started here, so the composer's field takes focus at each.
     public internal(set) var repliesStarted = 0
+    /// The people picked in the composer since its last Send, whose names keep their chips while the draft holds them
+    /// (`pendingMentions` in `ChatScreen.kt`, ADR 2026-10.nbhj).
+    public internal(set) var pendingMentions: [MessageMention] = []
+    /// The field's selection in UTF-16 offsets, which the field keeps up to date: where the "@" word ends.
+    public var selection = 0..<0
+    /// The people the thread offers to mention, rebuilt when the session moves.
+    @ObservationIgnored var offeredCache = Cached<Int, [MentionCandidate]>()
     /// Why the last photo picked cannot be sent, which the screen says until it is dismissed.
     public var photoFailure: PhotoFailure?
     /// Whether a picked photo is being made ready to send: a GIF's frames take a moment to shrink.
@@ -151,13 +160,17 @@ public final class ChatModel {
     }
 
     /// What the composer holds, cut at the limit as it is typed. Each change that leaves words in it tells the thread we
-    /// are typing (``cueTyping()``).
+    /// are typing (``cueTyping()``). A selection past the new words' end comes back to it.
     public var draft: String {
         get { text }
         set {
             let typed = Composer.clamp(newValue)
             let changed = typed != text
             text = typed
+            let end = typed.utf16.count
+            if selection.upperBound > end {
+                selection = min(selection.lowerBound, end)..<end
+            }
             if changed {
                 cueTyping()
             }
@@ -207,15 +220,21 @@ public final class ChatModel {
         let sending = text
         let photo = staged
         let reply = replying
+        // The picks the words still hold, in the order they were picked, read from the words as typed
+        // (`ChatScreen.kt:535-540`).
+        let mentions = MessageMention.carried(pendingMentions, in: sending)
         if state.isRoom, await session.textScreening?.isAbusive(sending, inRoom: true) ?? false {
             wordsRefused = true
             return
         }
-        guard await session.send(sending, photo: photo?.photo, replyTo: reply?.reply, in: conversationId) != nil else {
+        guard await session.send(sending, photo: photo?.photo, replyTo: reply?.reply, mentions: mentions, in: conversationId) != nil
+        else {
             return
         }
         if text == sending {
             text = ""
+            pendingMentions = []
+            selection = 0..<0
         }
         if staged == photo {
             staged = nil
@@ -364,27 +383,12 @@ public final class ChatModel {
                 status: isMine ? DeliveryStatus(message) : nil,
                 authorFace: named ? directory.face(for: message.senderId) : nil,
                 attachment: message.attachment.flatMap { ChatAttachment($0, isHeld: held.contains($0.hash)) },
-                hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message.moderation) : nil
+                hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message.moderation) : nil,
+                mentionSpans: MentionText.spans(in: message.body, mentions: message.mentions)
             )
         }
         return GroupNaming.notice(message, me: me, directory: directory).map { words in
             ChatMessage(id: message.id, body: "", sentAt: message.sentAt, isMine: false, author: message.senderId, notice: words)
         }
-    }
-}
-
-extension ChatMessage {
-    /// The message with `chips` under it, unless it is a status line, which takes none.
-    func reacted(_ chips: [ReactionChip]) -> Self {
-        var copy = self
-        copy.reactions = notice == nil ? chips : []
-        return copy
-    }
-
-    /// The message with `quote` above its words, unless it is a status line, which quotes nothing.
-    func quoting(_ quote: ChatQuote?) -> Self {
-        var copy = self
-        copy.quote = notice == nil ? quote : nil
-        return copy
     }
 }

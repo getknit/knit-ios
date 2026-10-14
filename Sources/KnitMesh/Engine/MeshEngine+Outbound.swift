@@ -5,12 +5,15 @@ public import KnitWire
 extension MeshEngine {
     // MARK: Messages we write
 
-    /// Posts `text` to the Nearby room, with `photo` if one is given, quoting `replyTo` if it replies: stored, signed,
-    /// flooded and carried (`MeshManager.sendChat`). A room post is cleartext and signed, and so are its photo, kept under
-    /// its own hash for anyone who asks, and its quote. Answers the stored message, or `nil` for a blank post with no
-    /// photo, or a photo too heavy to send.
+    /// Posts `text` to the Nearby room, with `photo` if one is given, quoting `replyTo` if it replies and naming
+    /// `mentions`: stored, signed, flooded and carried (`MeshManager.sendChat`). A room post is cleartext and signed, and
+    /// so are its photo, kept under its own hash for anyone who asks, its quote and its mentions (`MeshManager.kt:1084-1090`).
+    /// Only the mentions whose token the sent body holds go (``MessageMention/carried(_:in:)``, ADR 2026-10.nbhj).
+    /// Answers the stored message, or `nil` for a blank post with no photo, or a photo too heavy to send.
     @discardableResult
-    public func postToRoom(_ text: String, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil) -> MessageRecord? {
+    public func postToRoom(
+        _ text: String, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil, mentions: [MessageMention] = []
+    ) -> MessageRecord? {
         guard let body = Self.messageBody(text, photo: photo) else {
             return nil
         }
@@ -24,22 +27,30 @@ extension MeshEngine {
             body: body,
             sentAt: sentAt,
             attachment: attachment,
-            replyTo: replyTo
+            replyTo: replyTo,
+            mentions: MessageMention.carried(mentions, in: body)
         )
         stores.messages.save(record)
         let content = ChatContent(
-            body: body, attachmentHash: attachment?.hash.string, attachmentMime: attachment?.mime, replyTo: replyTo.map(Self.wire))
+            body: body,
+            mentions: record.mentions.map(Self.wire),
+            attachmentHash: attachment?.hash.string,
+            attachmentMime: attachment?.mime,
+            replyTo: replyTo.map(Self.wire)
+        )
         originate(chatEnvelope(id: record.id, sentAt: sentAt, recipient: nil, group: nil, content: content))
         return record
     }
 
-    /// Sends `text` to `recipient` as a v1 DM, with `photo` sealed beside it if one is given, and `replyTo` sealed inside
-    /// it if it replies (`MeshManager.sendChat`). With no key pinned for the recipient it is stored as pending and sealed
-    /// once their profile arrives. Answers the stored message, or `nil` for a blank message with no photo, a photo too
-    /// heavy to send, or a message to ourselves.
+    /// Sends `text` to `recipient` as a v1 DM, with `photo` sealed beside it if one is given, and `replyTo` and `mentions`
+    /// sealed inside it (`MeshManager.sendChat`, `MeshManager.kt:1095-1106`). Only the mentions whose token the sent body
+    /// holds go (``MessageMention/carried(_:in:)``, ADR 2026-10.nbhj). With no key pinned for the recipient it is stored
+    /// as pending, mentions and all, and sealed once their profile arrives. Answers the stored message, or `nil` for a
+    /// blank message with no photo, a photo too heavy to send, or a message to ourselves.
     @discardableResult
     public func sendDirectMessage(
-        _ text: String, to recipient: NodeId, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil
+        _ text: String, to recipient: NodeId, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil,
+        mentions: [MessageMention] = []
     ) -> MessageRecord? {
         let sentAt = clock.wallMilliseconds()
         guard recipient != nodeId, let body = Self.messageBody(text, photo: photo), let attachment = sealing(photo, at: sentAt) else {
@@ -54,7 +65,8 @@ extension MeshEngine {
             body: body,
             sentAt: sentAt,
             attachment: attachment,
-            replyTo: replyTo
+            replyTo: replyTo,
+            mentions: MessageMention.carried(mentions, in: body)
         )
         let sealed = seal(Self.content(of: record), id: id, sentAt: sentAt, to: recipient)
         record.pendingKey = sealed == nil
@@ -130,12 +142,15 @@ extension MeshEngine {
         }
     }
 
-    /// The sealed content of one of our messages: its body, its attachment's hash, type, key, and a file's name and
-    /// size, and the quote of the message it replies to, which stays inside the ciphertext (`MessageContent.replyTo`).
+    /// The sealed content of one of our messages: its body and mentions, its attachment's hash, type, key, and a file's
+    /// name and size, and the quote of the message it replies to, all inside the ciphertext (`MessageContent.mentions`,
+    /// `MessageContent.replyTo`). A message that waited for a key is sealed from its stored row, so it keeps them
+    /// (`MeshManager.resealAndFlood`, `MeshManager.kt:3268-3276`).
     static func content(of message: MessageRecord) -> MessageContent {
         let attachment = message.attachment
         return MessageContent(
             body: message.body,
+            mentions: message.mentions.map(wire),
             attachmentHash: attachment?.hash.string,
             attachmentMime: attachment?.mime,
             attachmentKey: attachment?.key,
@@ -143,6 +158,11 @@ extension MeshEngine {
             attachmentSize: attachment?.size,
             replyTo: message.replyTo.map(wire)
         )
+    }
+
+    /// A mention as the wire carries it (`Mention`, `Wire.kt:394-400`).
+    static func wire(_ mention: MessageMention) -> Mention {
+        Mention(nodeId: mention.nodeId, name: mention.name)
     }
 
     /// A quote as the wire carries it (`ReplyRef`).
@@ -157,8 +177,8 @@ extension MeshEngine {
     }
 
     /// The chat frame's content for a sealed message: the envelope, and beside it in the clear only the ciphertext's
-    /// hash, so a carrier blind to the sealed fields can still pull the blob. The type, the key and any quote stay sealed
-    /// (`MeshManager.kt:1112-1128`, `Wire.kt:212-215`).
+    /// hash, so a carrier blind to the sealed fields can still pull the blob. The type, the key, any quote and any
+    /// mentions stay sealed, so the shell's body and mentions are empty (`MeshManager.kt:1112-1128`, `Wire.kt:171-193`).
     static func chat(_ sealed: EncEnvelope, carrying message: MessageRecord) -> ChatContent {
         ChatContent(attachmentHash: message.attachment?.hash.string, enc: sealed)
     }

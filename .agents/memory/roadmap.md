@@ -353,6 +353,14 @@ explicit direction.** Update this file in the change that ships an item.
     Its `IosEmittedVectorTest` decodes an iOS header and opens an iOS-sealed photo. The change is additive, and
     `0xB` stays. The same change could give the debug bridge's `state` each reachable peer's `avatarHash`: until it
     does, `interop.py check --peer-avatar` sees our photo leave whole, and the phone's screen shows whether it landed.
+- **Mentions, begun 2026-10-14** at the maintainer's direction. This is parity with Android's "@" mentions in every
+  thread: the picker, names that backspace deletes whole, the names highlighted in a bubble, and an alert of its own
+  for a message that mentions us. Nothing on the wire changes, and capabilities stay `0xF`. One companion change goes
+  with it:
+  - **A8 (mentions on the debug bridge):** a paired change that iOS leads, in knit-next's debug code only.
+    `DebugBridgeReceiver`'s `SEND` takes `--es mentions` with node ids separated by commas, each named by its label as
+    the composer names it, and `STATE` reports each message's stored `mentions`. No vector moves, and the pin stays.
+    `interop.py iphone-mention` waits on it.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
@@ -455,10 +463,12 @@ explicit direction.** Update this file in the change that ships an item.
   - a Swift doc-lint like knit-next's, which flags a symbol a persona or a doc names after the code has dropped it.
     `PersonaTests` checks only the paths and ADR ids the personas cite.
 
-- **Message features:** files and voice notes, mentions, and Android's full emoji picker for reactions. Profile photos
-  and photos in chats are in flight (ADR 2026-10.nh55), reactions are in with a fixed six (ADR 2026-10.ehe6), quoted
-  replies are in, in every thread (ADR 2026-10.mn29), and so are typing indicators, Android's row at a thread's foot
-  (ADR 2026-10.29z9). `interop.py iphone-reply` and `iphone-typing` have yet to run against a phone.
+- **Message features:** files and voice notes, and Android's full emoji picker for reactions. Profile photos and photos
+  in chats are in flight (ADR 2026-10.nh55), reactions are in with a fixed six (ADR 2026-10.ehe6), quoted replies are
+  in, in every thread (ADR 2026-10.mn29), and so are typing indicators, Android's row at a thread's foot (ADR
+  2026-10.29z9), and mentions, with Android's chips and an alert of their own (ADR 2026-10.nbhj). `interop.py
+  iphone-reply`, `iphone-typing` and `iphone-mention` have yet to run against a phone, and `iphone-mention` waits on
+  A8.
 - **Groups with forward secrecy** (knit-next's group ratchet), which comes with the DM ratchet. v1 groups are in
   flight above.
 - **Search, drafts and backups.** Search has its place already: a `.searchable` on the chat list's stack, which iOS 26

@@ -16,7 +16,8 @@ extension AppRig {
         id: String? = nil,
         sentAt: Int64 = 1000,
         arrivedAt: Int64 = 1000,
-        replyTo: MessageReply? = nil
+        replyTo: MessageReply? = nil,
+        mentions: [MessageMention] = []
     ) async -> MessageRecord {
         let wordless = TextLimits.isBlank(body) && TextLimits.isBlank(replyTo?.snippet ?? "")
         let record = MessageRecord(
@@ -28,7 +29,8 @@ extension AppRig {
             sentAt: sentAt,
             arrivedAt: arrivedAt,
             moderation: sender == me || wordless ? .clear : .waiting,
-            replyTo: replyTo
+            replyTo: replyTo,
+            mentions: mentions
         )
         stores.messages.save(record)
         let isRequest = session.threads().isRequest(record.conversationId)

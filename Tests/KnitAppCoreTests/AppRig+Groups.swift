@@ -37,7 +37,8 @@ extension AppRig {
         from sender: NodeId,
         in group: GroupRecord,
         sentAt: Int64 = 1000,
-        pendingKey: Bool = false
+        pendingKey: Bool = false,
+        mentions: [MessageMention] = []
     ) async -> MessageRecord {
         let record = MessageRecord(
             id: "\(group.id)-\(sentAt)-\(body)",
@@ -47,7 +48,8 @@ extension AppRig {
             body: body,
             sentAt: sentAt,
             arrivedAt: sender == me ? nil : sentAt,
-            pendingKey: pendingKey
+            pendingKey: pendingKey,
+            mentions: mentions
         )
         stores.messages.save(record)
         await session.handle(.received(record, isRequest: session.threads().isRequest(group.id)))

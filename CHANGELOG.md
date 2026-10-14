@@ -82,6 +82,8 @@ document:
 - See when someone is typing, at the bottom of a chat in Nearby, direct messages and groups, and let them see
   when you are, on Android phones too. Typing indicators travel unencrypted, and only to the phones linked
   directly to yours.
+- Type @ in Nearby, a direct message or a group to mention someone, including people on Android phones. Names
+  you mention stand out in the message, and a message that mentions you gets a notification of its own.
 
 ### Changed
 

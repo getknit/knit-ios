@@ -71,6 +71,10 @@
         static let swapScale: CGFloat = 0.6
         /// How far the composer grows before it scrolls.
         static let composerLines = 1...6
+        /// How many of the mention picker's rows show before it scrolls: four and a half once there are more than five, so
+        /// the cut row says there is more, as Signal's picker shows them (ADR 2026-10.nbhj).
+        static let mentionRowsShown: CGFloat = 4.5
+        static let mentionRowsWhole = 5
         /// A verify code's side, as Android shows it (200 dp).
         static let codeSide: CGFloat = 200
         /// The white margin around a verify code, which a scanner needs to find its edge.
@@ -88,6 +92,8 @@
         static let faceBubble: CGFloat = 40
         /// Someone typing's, at a thread's foot (`TypingIndicatorRow`'s 30 dp).
         static let faceTyping: CGFloat = 30
+        /// Beside a name the mention picker offers.
+        static let faceMention: CGFloat = 32
         /// A request's.
         static let faceRequest: CGFloat = 44
         /// A group member's, and a contact's in New message.

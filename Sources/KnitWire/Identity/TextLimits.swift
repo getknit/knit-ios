@@ -68,6 +68,18 @@ public enum TextLimits {
         return String(output)
     }
 
+    /// Kotlin's `indexOf(other, startIndex)`: the first UTF-16 offset at or after `start` where `needle`'s code units
+    /// occur in `text`'s, or `nil`. Kotlin compares code units. Swift's `String.contains` compares characters up to
+    /// canonical equivalence, so it misses an "@Ann" followed by a combining accent, which Kotlin finds.
+    public static func utf16Index(of needle: [UInt16], in text: [UInt16], from start: Int = 0) -> Int? {
+        guard !needle.isEmpty, start >= 0, text.count - needle.count >= start else {
+            return nil
+        }
+        return (start...(text.count - needle.count)).first { offset in
+            text[offset..<(offset + needle.count)].elementsEqual(needle)
+        }
+    }
+
     /// The name a rename sends (`GroupDetailsViewModel.kt:158-159`): normalized to one line and cut to ``groupName``
     /// units, or `nil` when that leaves nothing, since a group name is never cleared.
     public static func outgoingGroupName(_ text: String) -> String? {
@@ -127,8 +139,9 @@ public enum TextLimits {
     /// Kotlin's `Char.isWhitespace` on ART: Java's `isWhitespace` or `isSpaceChar`, which take `\u{1C}`–`\u{1F}` but not
     /// U+0085. Pinned to the set knit-next's `ArtTextSemanticsTest` reads on ART. U+180E is not whitespace, as on ART
     /// from API 37's mainline module; an older module still counts it, a residue ADR 2026-10.7uyt accepts. No code point
-    /// above the BMP is whitespace.
-    static func isKotlinWhitespace(_ scalar: Unicode.Scalar) -> Bool {
+    /// above the BMP is whitespace. Public for the composer, whose mention query stops where Android's does
+    /// (`activeMentionQuery`, `MentionText.kt`).
+    public static func isKotlinWhitespace(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar {
         case "\u{09}"..."\u{0D}", "\u{1C}"..."\u{20}", "\u{A0}", "\u{1680}", "\u{2000}"..."\u{200A}", "\u{2028}",
             "\u{2029}", "\u{202F}", "\u{205F}", "\u{3000}":

@@ -13,10 +13,10 @@ public final class SQLMessageStore: MessageStore {
         id, senderId, recipientId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind, \
         attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, moderation, attachmentWidth, \
         attachmentHeight, attachmentAnimated, attachmentPlainHash, attachmentSourceHash, replyToId, replyToAuthorId, \
-        replyToAuthor, replyToSnippet, replyToHasAttachment
+        replyToAuthor, replyToSnippet, replyToHasAttachment, mentions
         """
     private static let insert =
-        "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO messages (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
     /// The database, which the reactions' extension shares.
     let database: KnitDatabase
@@ -81,7 +81,7 @@ public final class SQLMessageStore: MessageStore {
                             THEN coalesce(excluded.attachmentSourceHash, attachmentSourceHash) ELSE excluded.attachmentSourceHash END,
                         replyToId = excluded.replyToId, replyToAuthorId = excluded.replyToAuthorId,
                         replyToAuthor = excluded.replyToAuthor, replyToSnippet = excluded.replyToSnippet,
-                        replyToHasAttachment = excluded.replyToHasAttachment
+                        replyToHasAttachment = excluded.replyToHasAttachment, mentions = excluded.mentions
                     """,
                 arguments: Self.arguments(message)
             )
@@ -259,6 +259,7 @@ public final class SQLMessageStore: MessageStore {
             attachment?.dimensions?.animated, StoredText.bytes(attachment?.plainHash?.string),
             StoredText.bytes(attachment?.sourceHash?.string), StoredText.bytes(reply?.messageId), StoredText.bytes(reply?.authorId),
             StoredText.bytes(reply?.author), StoredText.bytes(reply?.snippet), reply?.hasAttachment ?? false,
+            mentionsValue(message.mentions),
         ]
     }
 
@@ -277,7 +278,8 @@ public final class SQLMessageStore: MessageStore {
             kind: MessageKind(rawValue: try row.decode(Int.self, forColumn: "kind")),
             attachment: try attachment(row),
             moderation: MessageModeration(rawValue: try row.decode(Int.self, forColumn: "moderation")),
-            replyTo: try reply(row)
+            replyTo: try reply(row),
+            mentions: try mentions(row)
         )
     }
 }

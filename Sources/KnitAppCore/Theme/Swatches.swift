@@ -56,6 +56,10 @@ public enum Swatches {
     public static let onOwnBubble = swatch(Base.onOwnBubble)
     /// Someone else's bubble, and the capsule a thread's notices sit in, under the label color and ``secondaryText``.
     public static let incomingBubble = swatch(Base.incomingBubble)
+    /// A name a message mentions, in someone else's bubble: the tint, deepened in light, where the accent reads only
+    /// 4.4:1 on ``incomingBubble``. Android moves its primary toward black until it reads 4.5:1 on the bubble
+    /// (`readableOn`, knit-next `eafb0721`; ADR 2026-10.nbhj). In our own bubble a mention keeps ``onOwnBubble``.
+    public static let mention = swatch(Base.mention, increased: Increased.mention)
     /// A verify code's paper: white in dark mode too, because the code is drawn black on white, and many readers, zxing
     /// among them, read no inverted code (ADR 2026-10.65xx).
     public static let codePaper = 0xFFFFFF
@@ -78,6 +82,7 @@ public enum Swatches {
         static let ownBubble = (light: 0xBD4030, dark: 0xA8392A)
         static let onOwnBubble = (light: 0xFFFFFF, dark: 0xFFFFFF)
         static let incomingBubble = (light: 0xE9E9EB, dark: 0x262628)
+        static let mention = (light: 0xAA392B, dark: 0xFF8A73)
     }
 
     /// The values that change with Increase Contrast on, each at 7:1 or more where ``Base``'s is 4.5:1.
@@ -88,5 +93,6 @@ public enum Swatches {
         static let warning = (light: 0x853C00, dark: 0xFFA94D)
         static let critical = (light: 0x9E1F17, dark: 0xFF9E99)
         static let ownBubble = (light: 0x913125, dark: 0x7F2A1F)
+        static let mention = (light: 0x842C21, dark: 0xFF9F8D)
     }
 }

@@ -199,6 +199,12 @@ Kotlin wins.
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Mirrored ahead of the pin:**
+    - knit-next `d47ad76c` (2026-10-07, on its `main`), a picked mention as a chip that backspace deletes whole, and
+      `eafb0721` (2026-10-13), a mention's color moved until it reads 4.5:1 on its bubble. Both are UI only, and nothing
+      on the wire moves. They are mirrored by ADR 2026-10.nbhj as `MentionText.keepChipsWhole`, `snapOutOfChips` and
+      `edited`, and `Swatches.mention`. `3a6f5d08` and `1870384c` make a mention's alert say only that words are hidden
+      when the filter flagged them, which this port's alert already does. When the pin passes `d47ad76c`, check
+      `MentionText.kt` against `MentionTextTests`. Companion change A8, mentions on Android's debug bridge, is owed.
     - knit-next `03c4c3b1` (2026-10-10, on its `main`) counts a payload that won't decode as `PAYLOAD_DECODE_FAILED`
       and drops it. For a typing cue that means a broken group cue no longer lights the room (`InboundPipeline.kt:477`).
       The iPhone's `handleTyping` counts one `undecodable` (ADR 2026-10.29z9): `MeshEngineTypingTests`.

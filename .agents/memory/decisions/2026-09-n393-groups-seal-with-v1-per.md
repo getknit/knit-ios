@@ -114,3 +114,7 @@ mentions stay out.
 **Amended 2026-10-13, when typing came into scope (ADR 2026-10.29z9):** typing is no longer out. A group's cue names
 the group in the clear and goes one hop, to every phone linked to ours, as Android sends it. A group shows cues only from
 its roster, and the engine refuses one from off it. Mentions stay out.
+
+**Amended 2026-10-14, when mentions came into scope (ADR 2026-10.nbhj):** mentions are no longer out. A group's mentions
+travel sealed inside `MessageContent`, as a DM's do, and never in the shell. The composer offers the group's members
+before they say anything, as Android's does.

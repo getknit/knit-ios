@@ -34,14 +34,17 @@ extension MeshEngine {
         return group
     }
 
-    /// Sends `text` to group `groupId`, with `photo` sealed beside it if one is given (`MeshManager.sendChat`): sealed
-    /// to each current member whose key is pinned, with the group's roster beside it. Members without a key are
-    /// skipped, as on Android, and their keys are asked for. When nobody's key is pinned the message waits as
-    /// `pendingKey`, and goes out once one pins, which Android never does. Answers the stored message, or `nil` for a
-    /// blank message with no photo, a photo too heavy to send, a group we are not in, or one nobody else is left in.
+    /// Sends `text` to group `groupId`, with `photo` sealed beside it if one is given, and `replyTo` and `mentions` sealed
+    /// inside it (`MeshManager.sendChat`): sealed to each current member whose key is pinned, with the group's roster
+    /// beside it. Only the mentions whose token the sent body holds go (``MessageMention/carried(_:in:)``, ADR
+    /// 2026-10.nbhj). Members without a key are skipped, as on Android, and their keys are asked for. When nobody's key
+    /// is pinned the message waits as `pendingKey`, mentions and all, and goes out once one pins, which Android never
+    /// does. Answers the stored message, or `nil` for a blank message with no photo, a photo too heavy to send, a group
+    /// we are not in, or one nobody else is left in.
     @discardableResult
     public func sendGroupMessage(
-        _ text: String, to groupId: String, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil
+        _ text: String, to groupId: String, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil,
+        mentions: [MessageMention] = []
     ) -> MessageRecord? {
         let sentAt = clock.wallMilliseconds()
         guard let group = stores.groups.group(groupId), !group.hasLeft, hasOthers(group), let body = Self.messageBody(text, photo: photo),
@@ -58,7 +61,8 @@ extension MeshEngine {
             body: body,
             sentAt: sentAt,
             attachment: attachment,
-            replyTo: replyTo
+            replyTo: replyTo,
+            mentions: MessageMention.carried(mentions, in: body)
         )
         let sealed = sealGroup(Self.content(of: record), id: id, sentAt: sentAt, in: group)
         record.pendingKey = sealed.envelope == nil

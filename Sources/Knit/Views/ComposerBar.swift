@@ -3,15 +3,15 @@
     import KnitAppCore
     import SwiftUI
 
-    /// The composer: the quote it holds, the photo it holds, the field, what is left near the limit, and Send, or Add photo
-    /// while there is nothing to send (`SendAction` in knit-next). From iOS 26 it sits in a glass panel
-    /// (``SwiftUI/View/glassPanel()``), with the quote, the field and the count on opaque fills of their own. A reply started
-    /// from a message gives the field focus (ADR 2026-10.mn29).
+    /// The composer: the people an "@" offers, the quote it holds, the photo it holds, the field, what is left near the
+    /// limit, and Send, or Add photo while there is nothing to send (`SendAction` in knit-next). From iOS 26 it sits in a
+    /// glass panel (``SwiftUI/View/glassPanel()``), with the quote, the field and the count on opaque fills of their own. A
+    /// reply started from a message gives the field focus (ADR 2026-10.mn29).
     internal struct ComposerBar: View {
         @Bindable var model: ChatModel
         let demoPhoto: Data?
         @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-        @FocusState private var typing: Bool
+        @State private var typing = false
 
         /// The photo the composer holds, or a spinner while a picked one is made ready to send.
         @ViewBuilder private var held: some View {
@@ -28,6 +28,11 @@
         /// frame here kept the thread above relaying itself at the largest text size, and the accessibility audit never
         /// finished.
         @ViewBuilder private var holding: some View {
+            let candidates = model.mentionCandidates
+            if !candidates.isEmpty {
+                MentionPicker(candidates: candidates, pick: model.mention)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if let replying = model.replying {
                 ReplyBar(quote: replying.quote, cancel: model.cancelReply)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -50,7 +55,7 @@
                         .background(Color(uiColor: .systemBackground), in: .capsule)
                 }
                 HStack(alignment: .bottom, spacing: Layout.small) {
-                    ComposerField(draft: $model.draft, typing: $typing)
+                    ComposerField(model: model, typing: $typing)
                         .padding(.horizontal, Layout.medium)
                         .padding(.vertical, Layout.small)
                         .frame(minHeight: Layout.hitTarget)
@@ -63,7 +68,6 @@
                                     .strokeBorder(.separator)
                             }
                         }
-                        .accessibilityIdentifier(AccessibilityID.chatInput)
                     SendButton(model: model, demoPhoto: demoPhoto)
                         .frame(minWidth: Layout.hitTarget, minHeight: Layout.hitTarget)
                         // Add photo turns into Send, and back, with a quick swap rather than a cut.
@@ -87,40 +91,22 @@
         }
     }
 
-    /// The composer's field, a line tall until the words need more, then growing a line at a time to
-    /// ``Layout/composerLines``' last. On iOS 27 a multiline field draws three lines tall, empty or not, under any range of
-    /// limits; a whole-number limit under three holds it to one or two. So its limit is the words' own count of lines,
-    /// read off a hidden copy set in the same font and width.
+    /// The composer's field (``ComposerTextView``), with the placeholder over it while it is empty, which the text view does
+    /// not draw. VoiceOver reads the placeholder as the field's label.
     private struct ComposerField: View {
-        @Binding var draft: String
-        /// Whether the field has focus, which a reply started elsewhere asks for.
-        var typing: FocusState<Bool>.Binding
-        /// The words' height, and one line's, as the hidden copies measure them.
-        @State private var height: CGFloat = 0
-        @State private var line: CGFloat = 0
+        let model: ChatModel
+        @Binding var typing: Bool
 
         var body: some View {
-            TextField(Copy.Chat.composerPlaceholder, text: $draft, axis: .vertical)
-                .lineLimit(lines)
-                .focused(typing)
-                .background(alignment: .topLeading) {
-                    ZStack(alignment: .topLeading) {
-                        // A last line break opens a line the text alone does not measure.
-                        Text(verbatim: draft.hasSuffix("\n") || draft.isEmpty ? draft + " " : draft)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .onGeometryChange(for: CGFloat.self, of: \.size.height) { height = $0 }
-                        Text(verbatim: " ")
-                            .onGeometryChange(for: CGFloat.self, of: \.size.height) { line = $0 }
+            ComposerTextView(model: model, draft: model.draft, selection: model.selection, chips: model.chips, focused: $typing)
+                .overlay(alignment: .topLeading) {
+                    if model.draft.isEmpty {
+                        Text(Copy.Chat.composerPlaceholder)
+                            .foregroundStyle(Palette.secondaryText)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
-                    .hidden()
-                    .accessibilityHidden(true)
                 }
-        }
-
-        /// How many lines the words take, from one to the composer's most.
-        private var lines: Int {
-            let measured = line > 0 ? Int((height / line).rounded()) : 1
-            return min(max(measured, Layout.composerLines.lowerBound), Layout.composerLines.upperBound)
         }
     }
 

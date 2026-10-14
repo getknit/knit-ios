@@ -111,14 +111,16 @@ final class FakeMesh: MeshService {
         }
     }
 
-    func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?) -> MessageRecord? {
+    func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]) -> MessageRecord? {
         state.withLock { $0.calls.room.append(text) }
-        return store(text, to: nil, photo: photo, replyTo: replyTo)
+        return store(text, to: nil, photo: photo, replyTo: replyTo, mentions: mentions)
     }
 
-    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?) -> MessageRecord? {
+    func sendDirectMessage(
+        _ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
+    ) -> MessageRecord? {
         state.withLock { $0.calls.direct.append("\(recipient): \(text)") }
-        return store(text, to: recipient, photo: photo, replyTo: replyTo)
+        return store(text, to: recipient, photo: photo, replyTo: replyTo, mentions: mentions)
     }
 
     func accept(_ conversationId: String) {
@@ -160,12 +162,14 @@ final class FakeMesh: MeshService {
         return group
     }
 
-    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?) -> MessageRecord? {
+    func sendGroupMessage(
+        _ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
+    ) -> MessageRecord? {
         state.withLock { $0.calls.groups.append("send \(groupId): \(text)") }
         guard stores.groups.group(groupId)?.hasLeft == false else {
             return nil
         }
-        return store(text, to: nil, in: groupId, photo: photo, replyTo: replyTo)
+        return store(text, to: nil, in: groupId, photo: photo, replyTo: replyTo, mentions: mentions)
     }
 
     func renameGroup(_ groupId: String, to name: String) -> GroupRecord? {
@@ -230,7 +234,8 @@ final class FakeMesh: MeshService {
     }
 
     private func store(
-        _ text: String, to recipient: NodeId?, in group: String? = nil, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil
+        _ text: String, to recipient: NodeId?, in group: String? = nil, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil,
+        mentions: [MessageMention] = []
     ) -> MessageRecord {
         let index = state.withLock { state in
             defer { state.next += 1 }
@@ -245,7 +250,9 @@ final class FakeMesh: MeshService {
             sentAt: clock + Int64(index),
             pendingKey: recipient.map { stores.peers.peer($0) == nil } ?? false,
             attachment: photo.map { keep($0) },
-            replyTo: replyTo
+            replyTo: replyTo,
+            // As the engine keeps them: only those the body holds (ADR 2026-10.nbhj).
+            mentions: MessageMention.carried(mentions, in: text)
         )
         stores.messages.save(record)
         return record

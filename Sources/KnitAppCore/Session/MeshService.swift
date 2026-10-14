@@ -23,9 +23,11 @@ public protocol MeshService: AnyObject, Sendable {
     /// Stops the radio and closes every link.
     func stop() async
     /// Posts to the Nearby room, with a photo if one is given, quoting the message it replies to if it replies.
-    func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord?
+    func postToRoom(_ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]) async -> MessageRecord?
     /// Sends a DM, with a photo if one is given, quoting the message it replies to if it replies.
-    func sendDirectMessage(_ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord?
+    func sendDirectMessage(
+        _ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
+    ) async -> MessageRecord?
     /// `picked` as the picture this phone already holds it as, ready to send under that blob's identity, or `nil` when
     /// it holds no such picture (ADR 2026-10.f3mv).
     func heldPhoto(picked: [UInt8]) async -> OutgoingPhoto?
@@ -34,7 +36,9 @@ public protocol MeshService: AnyObject, Sendable {
     /// Makes a group with `others`, or opens the one they already share.
     func createGroup(with others: [NodeId]) async -> GroupRecord?
     /// Sends a message to a group, with a photo if one is given, quoting the message it replies to if it replies.
-    func sendGroupMessage(_ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?) async -> MessageRecord?
+    func sendGroupMessage(
+        _ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
+    ) async -> MessageRecord?
     /// Renames a group and floods the change.
     func renameGroup(_ groupId: String, to name: String) async -> GroupRecord?
     /// Leaves a group, telling its members.

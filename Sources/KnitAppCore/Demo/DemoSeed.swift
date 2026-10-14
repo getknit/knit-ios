@@ -222,6 +222,24 @@ public enum DemoSeed {
         cast.accepted.compactMap { nodeIds[$0]?.string }.forEach(stores.conversations.accept)
         seed(cast.reactions, after: sentAts, now: now, people: nodeIds, in: stores)
         quote(cast.lines, me: me, in: stores)
+        mention(cast.lines, people: nodeIds, me: me, in: stores)
+    }
+
+    /// Gives each line the people it mentions, each under its sender's name for them as a composer writes one: their stored
+    /// name, or their alias without one, kept only where the words carry it (``MessageMention/carried(_:in:)``).
+    private static func mention(_ lines: [DemoCast.Line], people nodeIds: [DemoCast.Slot: NodeId], me: NodeId, in stores: MeshStores) {
+        let ownName = stores.ownProfile.load().name
+        for line in lines where !line.mentions.isEmpty {
+            guard var message = stores.messages.message(line.id) else {
+                continue
+            }
+            let mentions = line.mentions.compactMap { nodeIds[$0] }.map { person in
+                let stored = person == me ? ownName : stores.peers.peer(person)?.name
+                return MessageMention(nodeId: person.string, name: Alias.displayName(stored: stored, nodeId: person.string))
+            }
+            message.mentions = MessageMention.carried(mentions, in: message.body)
+            stores.messages.save(message)
+        }
     }
 
     /// Gives each line that replies the quote of the line it answers, as Android's composer writes one

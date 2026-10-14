@@ -249,7 +249,7 @@
                 if let hidden {
                     HiddenWordsView(hidden: hidden, shape: shape, reveal: reveal)
                 } else if !message.body.isEmpty {
-                    Text(message.body)
+                    Text(MentionHighlight.body(message))
                         .foregroundStyle(message.isMine ? AnyShapeStyle(Palette.onOwnBubble) : AnyShapeStyle(.primary))
                         .padding(.horizontal, Layout.medium)
                         .padding(.vertical, Layout.small)
@@ -351,6 +351,29 @@
             }
             .font(.caption2)
             .foregroundStyle(Palette.secondaryText)
+        }
+    }
+
+    /// A bubble's words with the names its message mentions set semibold where the sender wrote them (ADR 2026-10.nbhj),
+    /// as Android's `highlightMentions` sets them: in ``Palette/mention`` in someone else's bubble, and in our own in the
+    /// bubble's own words' color, since nothing else reads on our coral. They are not buttons, as on Android, so VoiceOver
+    /// reads the words as written.
+    internal enum MentionHighlight {
+        static func body(_ message: ChatMessage) -> AttributedString {
+            var styled = AttributedString(message.body)
+            let units = message.body.utf16
+            for span in message.mentionSpans where span.upperBound <= units.count {
+                let lower = String.Index(utf16Offset: span.lowerBound, in: message.body)
+                let upper = String.Index(utf16Offset: span.upperBound, in: message.body)
+                guard let range = Range(lower..<upper, in: styled) else {
+                    continue
+                }
+                styled[range].font = .body.weight(.semibold)
+                if !message.isMine {
+                    styled[range].foregroundColor = Palette.mention
+                }
+            }
+            return styled
         }
     }
 #endif
