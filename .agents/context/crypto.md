@@ -2,7 +2,8 @@
 
 How knit-next derives identities and seals DMs at the pinned commit. The MVP implements the v1 scheme only
 (ADR router: `.agents/memory/decisions.md`); v2 and v3 are summarized at the end for the milestone after
-it.
+it. The `crypto-owner` reads it before it writes and the `crypto-reviewer` before it judges
+(`.agents/rules/owners.md`).
 
 ## Keys
 

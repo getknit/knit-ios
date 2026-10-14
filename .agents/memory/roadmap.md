@@ -446,6 +446,14 @@ explicit direction.** Update this file in the change that ships an item.
   and the mesh-lab-reviewer persona. The maintainer asked on 2026-09-25 to skip it for now, so P3 closed on
   unit tests, coverage and both sanitizers. Because the engine is synchronous, a later lab could run
   deterministically from a seed (ADR 2026-09.gq84).
+- **The rest of the owner and reviewer model** (ADR 2026-10.zjmx). Three planes have a pair: Bluetooth, blobs and
+  custody, and crypto. Each piece below waits on what it would review:
+  - the mesh-lab reviewer, with the lab above;
+  - the crypto reviewer's ratchet-era shapes (knit-next's evidence from a dropped era, a reset that makes its own
+    evidence, a send inside the peer's floor), with the DM ratchet;
+  - a Wi-Fi Aware pair, if ADR 2026-10.2c6c's spike lands;
+  - a Swift doc-lint like knit-next's, which flags a symbol a persona or a doc names after the code has dropped it.
+    `PersonaTests` checks only the paths and ADR ids the personas cite.
 
 - **Message features:** files and voice notes, mentions, and Android's full emoji picker for reactions. Profile photos
   and photos in chats are in flight (ADR 2026-10.nh55), reactions are in with a fixed six (ADR 2026-10.ehe6), quoted

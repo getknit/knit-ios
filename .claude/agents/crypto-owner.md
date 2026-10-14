@@ -1,0 +1,1 @@
+../../.agents/personas/crypto-owner.md

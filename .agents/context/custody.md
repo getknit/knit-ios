@@ -2,7 +2,8 @@
 
 How knit-next floods, deduplicates, carries and back-fills frames at the pinned commit. The numbers here
 are cross-platform law, not tuning knobs: if the iPhone bounds its carried set differently from Android,
-the two never agree on what each is missing, and every 60-second exchange re-sends frames forever.
+the two never agree on what each is missing, and every 60-second exchange re-sends frames forever. The
+`blobs-owner` reads it before it writes and the `blobs-reviewer` before it judges (`.agents/rules/owners.md`).
 
 ## Flooding
 

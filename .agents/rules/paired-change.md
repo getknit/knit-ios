@@ -23,6 +23,11 @@ prompt is the order, and it opens with "# Paired change". These rules add to the
     2026-09.g64k was. Update the four context files the pin section names in the same change.
 - **When iOS leads,** the change is a companion change. Give it its `A<n>` entry in the roadmap's Track A, and
   write the spec the contract gives the Android worker.
+- **An owner can write your half; you still run it.** Delegate a plane's work to its owner as
+  `.agents/rules/owners.md` says, with the contract in the brief. Only you message the supervisor or the
+  counterpart, never the owner.
+- **Review before you commit.** A change under a reviewer's paths gets that reviewer, and its findings applied,
+  before you commit it. The Stop hook sees only uncommitted changes, so a commit made first slips past it.
 - **Commit on the order's branch.** Never push, merge or rebase `main`: the maintainer does that.
 - **Hand off in one message** to the supervisor, and to the counterpart too when the contract says it waits
   on you. Send it once your side is committed and its checks pass. It carries:

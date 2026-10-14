@@ -22,6 +22,9 @@ for the target map and the seams.
   or `knit-peer`:** obey `.agents/rules/interop.md`, then READ the matching reference in `.agents/context/`:
   `wire-format.md`, `ble-transport.md`, `crypto.md`, `custody.md` or `linux-peer.md`. For the Kotlin behind
   them, READ `.agents/context/knit-next.md`.
+- **When changing code in the Bluetooth, blobs or crypto plane:** obey `.agents/rules/owners.md`. DELEGATE the
+  implementation to the plane's owner, then SPAWN its reviewer on the change, apply the findings and relay the trial
+  it names. A Stop hook enforces the review.
 - **When your first prompt opens with "# Paired change", or a message arrives from the `knit-pair` supervisor
   or a `knit-android-*` worker:** obey `.agents/rules/paired-change.md`. The Android half runs in its own
   session under knit-next's rules; never edit that repo.
@@ -41,6 +44,9 @@ for the target map and the seams.
 
 - RUN the skills vendored in `.agents/skills/` and surfaced through `.claude/skills/`:
   `dotagents-standard` (keep this router tidy), `humanizer`, `product-language-editor` and `upgrade-notes`.
+- DELEGATE to an owner and SPAWN a reviewer from `.agents/personas/`, surfaced through `.claude/agents/`, when
+  `.agents/rules/owners.md` says so. An owner writes and tests inside its plane and never commits; a reviewer judges
+  a change it did not write and never edits.
 - ADD a decision with `python3 scripts/adr.py new "<title>" --topics a,b`, write its body, then run
   `python3 scripts/adr.py index`. Never hand-edit `.agents/memory/decisions.md`.
 

@@ -1,7 +1,8 @@
 # Bluetooth LE transport
 
 How knit-next's `mesh/bluetooth/` and `mesh/link/` behave at the pinned commit, and what that means for an
-iPhone. The iPhone's own design decisions are ADRs; this file is the Android ground they stand on.
+iPhone. The iPhone's own design decisions are ADRs; this file is the Android ground they stand on. The
+`bluetooth-owner` reads it before it writes and the `bluetooth-reviewer` before it judges (`.agents/rules/owners.md`).
 
 ## GATT on the mesh plane: a payload and a doorbell
 
