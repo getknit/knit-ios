@@ -52,7 +52,7 @@
         }
 
         public func advertise(_ payload: AdvertPayload) {
-            core.onQueue { $0.advertise(payload.gattValue) }
+            core.onQueue { $0.advertise(payload.gattValue, psm: payload.psm) }
         }
 
         public func dial(_ address: RadioAddress, psm: UInt16) -> ChannelID {
@@ -155,14 +155,16 @@
         var gatt = GattPayloads()
         var gattTarget: UUID?
         var gattReads = 0
-        var publishing = false
         /// Whether the link manager seeks peers, so the scan asks for the `0xFE30` UUID alone (``seek(_:)``).
         var seeking = false
         /// What the scan this process started asks for, or `nil` before it starts one. A relaunch to restore Bluetooth
         /// may find iOS still running the last process's scan, with whatever filter it had.
         var scanning: ScanFilter?
-        var psm: UInt16?
+        /// The L2CAP listener: what was asked of the peripheral manager and what it answered.
+        var listener = ListenerPublication()
+        /// What the link manager last asked to advertise, and its PSM: forgotten when the link manager forgets its advert.
         var wantedValue: [UInt8]?
+        var wantedPSM: UInt16?
         var servedValue: [UInt8]?
         #if DEBUG
             var probe = ScanProbe()
@@ -210,13 +212,20 @@
             if let peripheralManager {
                 peripheralManager.stopAdvertising()
                 peripheralManager.removeAllServices()
-                if let psm {
-                    peripheralManager.unpublishL2CAPChannel(psm)
-                }
+            }
+            // The next start publishes once this is answered, or its wait runs out (``ListenerPublication``). A manager
+            // that is not powered on refuses the unpublish and never answers, so then the PSM is only forgotten.
+            if let peripheralManager, peripheralManager.state == .poweredOn, let unpublish = listener.stop() {
+                awaitUnpublish(unpublish, on: peripheralManager)
+            } else {
+                listener.forget()
             }
             // The service is gone, so the next start serves it again. iOS hands back the same PSM, so the value does
             // not change, and without this the iPhone came back serving neither its payload nor its doorbell.
             servedValue = nil
+            // The link manager forgets what it advertised at a stop, and advertises again once the listener reports.
+            wantedValue = nil
+            wantedPSM = nil
             forgetLinks()
             log.log(.info, "ble stopped")
         }
@@ -233,14 +242,14 @@
                 central.stopScan()
                 scan(with: central)
             }
-            if psm == nil, !publishing {
-                publishing = true
+            if listener.shouldPublish() {
                 peripheralManager.publishL2CAPChannel(withEncryption: false)
             }
             serve()
         }
 
-        /// The state both managers agree on: any refusal or absence wins, then off, then on.
+        /// The state both managers agree on: any refusal or absence wins, then off, then on. A manager resetting (bluetoothd
+        /// restarting) counts as off: its channels go, and it refuses a command unanswered until it is powered on again.
         func updateState() {
             let states = [central?.state, peripheralManager?.state].compactMap(\.self)
             let state: RadioState?
@@ -248,7 +257,7 @@
                 state = .unsupported
             } else if states.contains(.unauthorized) {
                 state = .unauthorized
-            } else if states.contains(.poweredOff) {
+            } else if states.contains(.poweredOff) || states.contains(.resetting) {
                 state = .off
             } else if states.count == Self.managerCount, states.allSatisfy({ $0 == .poweredOn }) {
                 state = .on
@@ -264,9 +273,11 @@
                 gatt.scanStopped(now: clock.monotonicMilliseconds())
                 scanning = nil
                 forgetLinks()
-                psm = nil
-                publishing = false
+                listener.poweredOff()
                 servedValue = nil
+                // The link manager forgets its advert too, and advertises again once the listener reports a PSM.
+                wantedValue = nil
+                wantedPSM = nil
             }
             emit(.state(state))
             resume()
@@ -289,15 +300,21 @@
 
         // MARK: The advert and its GATT payload
 
-        func advertise(_ value: [UInt8]) {
+        func advertise(_ value: [UInt8], psm: UInt16) {
             wantedValue = value
+            wantedPSM = psm
             serve()
         }
 
         /// Serves the wanted value from the `0xFE30` service, with the doorbell beside it, and advertises the UUID alone.
         /// The value is static, so the service is replaced whenever it changes, which is only with the PSM.
+        /// Only while the listener is published on the value's PSM: an advert made from a `.listening` that predates a
+        /// stop, or a debounced one racing the radio going off, may arrive before the new publish lands. The publish's
+        /// answer serves it then, as the link manager sends no new advert for an unchanged PSM.
         func serve() {
-            guard running, reported == .on, let peripheralManager, let value = wantedValue, value != servedValue else {
+            guard running, reported == .on, let peripheralManager, let value = wantedValue, value != servedValue,
+                let psm = listener.psm, psm == wantedPSM
+            else {
                 return
             }
             peripheralManager.stopAdvertising()

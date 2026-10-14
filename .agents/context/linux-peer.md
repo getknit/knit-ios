@@ -1546,16 +1546,57 @@ steps:
   😮, the way a DM sent during a block stays unseen.
 - **The relink after that restart failed for 7 minutes.** The Pixel 3, 8 and 9, which dial the iPhone, read PSM 192
   from its GATT service, and every dial failed within a second (`bt connect … failed reason=OTHER`) or ran out the
-  12 s watchdog, though the iPhone had logged `ble listening on PSM 192`. The iPhone kept the link it dials, to the
-  Pixel 7. A second `stop` and `start` cleared it: the Pixel 8 linked on its next dial, 35 s after the start, and
-  the Pixel 3 on its next, 3 min 44 s after, once its backoff ran out. Nothing on the branch touches the radio. Why
-  is not known; not yet read in btmon.
+  12 s watchdog. The iPhone kept the link it dials, to the Pixel 7. A second `stop` and `start` cleared it: the
+  Pixel 8 linked on its next dial, 35 s after the start, and the Pixel 3 on its next, 3 min 44 s after, once its
+  backoff ran out.
+- **Nothing was listening on PSM 192.** The run's logs, read again on 2026-10-14, show why. The scenario sends
+  `stop` and `start` back to back, one bridge round trip apart. `stop()` asked iOS to unpublish the channel but kept
+  the PSM until iOS answered. The start came first, found the PSM still set and published nothing. The late answer
+  then cleared it, and the GATT service went on serving 192 with no channel behind it. No iPhone log was kept from
+  the first restart, but the syslog at the second stop fits: bluetoothd got `CBMsgIdStopAdvertising` and
+  `CBMsgIdRemoveAllServices` from Knit but no `CBMsgIdUnpublishL2CAPChannel`, so the radio held no PSM by then. The
+  second start published again and got 192 back. The only `ble listening on PSM 192` logged that night came after
+  that second start. Earlier restart series paused about 4 s between the two commands, which gave iOS time to
+  answer. The radio now forgets the PSM at the stop, waits for that answer before it publishes again, and serves a
+  payload only while that payload's PSM is published ("What the restart trial showed").
 - **The first two runs found harness bugs.** `iphone-react` lacked `--udid` and `--host`. Then the Pixel's group
   message never reached the iPhone: a group's id comes from its members alone, and the Pixel held the iPhone's
   `leave` from the pair's own group, sent on 2026-10-03, so `MKGROUP` reused a group the iPhone had left. The
   scenario now adds a fresh ghost member. `iphone-delete` makes the same pair's group, so it would fail the same way.
 - **The iPhone's own screens were not looked at.** Its passcode is set, and XCUITest on the phone waits for someone
   to type it (ADR 2026-09.63em).
+
+## What the restart trial showed
+
+On 2026-10-14 from 00:57, the iPhone 12's mesh was stopped and started through the bridge, with `stop` and `start`
+sent back to back as `iphone-react` sends them, one round trip apart over USB. The Pixel 8 and 9, which dial the
+iPhone, and the Pixel 7, which it dials, were in range, and so was the Pixel 3, busy with another trial and left
+alone. The iPhone's syslog (Knit's radio lines and bluetoothd's L2CAP lines) and the Pixels' logcat were captured
+throughout.
+
+- **The old build failed on every restart that unpublished.** Over five cycles on `1.0.0 (3)`, the stops in cycles 1,
+  3 and 5 sent `CBMsgIdUnpublishL2CAPChannel`, and their starts sent no `CBMsgIdPublishL2CAPChannel` and logged no
+  `ble listening on PSM`. The Pixel 8 failed on PSM 192 in all three, two or three dials each with `reason=OTHER`,
+  and the Pixel 9 in the first. The Pixel 8 linked 66 and 73 s after the start in cycles 3 and 5, and not within
+  150 s in cycle 1, each time once the iPhone's own head-start dial got through. The stops in cycles 2 and 4 found
+  the PSM already gone and sent no unpublish, so their starts published 192, and the Pixel 8 linked on its first
+  dial, 3.5 and 11 s after the start.
+- **Publishing without waiting moved the PSM.** A build whose start published at once, counting the answer when it
+  came, got 193 on its first restart: bluetoothd took the publish while 192 was still held, and the answer for 192
+  came 0.2 s later. The PSM then flipped between 192 and 193 on every restart. The Pixels dialed the PSM they had
+  read before, so over ten cycles the Pixel 8 failed 11 dials and the Pixel 9 failed 7, and the Pixel 8 linked 25 to
+  68 s after each start. Nothing stayed down, but every restart cost each phone a failed dial.
+- **Waiting for the answer kept 192.** With the start waiting for the unpublish's answer, up to 5 s, all ten cycles
+  logged `ble stopped`, then `ble stopped listening on PSM 192` 127 to 459 ms later, then `ble listening on PSM
+  192` at once. The Pixel 8 linked on its first dial every time, 12.6 to 16.9 s after the start, and the Pixel 9 in
+  12.9 to 38.9 s. Two of the Pixel 9's 14 dials failed with `reason=OTHER` while the iPhone listened on 192 and had
+  just accepted the Pixel 8 on it. bluetoothd logged no incoming channel for either, and its next dial linked each
+  time. No wait ran out, and no answer came late.
+- **Two restarts back to back held too.** In three cycles of `stop`, `start`, `stop`, `start`, the second stop came
+  about 70 ms after the first, before the answer. The answer came 77 to 142 ms after that, and the start published
+  192. No Pixel dial failed.
+- **Not tried:** Bluetooth off and on in the iPhone's Settings, and Knit's own Stop and Start in Settings. The
+  phone's passcode keeps XCUITest from driving its screen (ADR 2026-09.63em).
 
 ## What background seeking showed
 

@@ -299,7 +299,14 @@ Android's `0xFE30` service data as a sighting, and reads the GATT payload of a p
 in its service list or its overflow area. A dial connects the peripheral and opens an L2CAP channel on the
 advertised PSM. Its peripheral publishes an insecure channel, serves the payload and advertises the UUID
 alone, and connects the far side of each channel it accepts as a peripheral too, so that a suspended Knit hears that
-link end through `didDisconnectPeripheral` (ADR 2026-10.mueg). Each channel's streams run on one run-loop thread, read in 64 KiB gulps and written 8 KiB at a time.
+link end through `didDisconnectPeripheral` (ADR 2026-10.mueg). A stop forgets the PSM at once, and a start
+publishes only once the stop's unpublish is answered, or after 5 s without an answer (`ListenerPublication`).
+Published while an unpublish was still unanswered, the iPhone 12 got 193 instead of 192, and the Pixels that dial it
+failed on the PSM they had read until they read it again. With nothing outstanding, iOS hands back 192. An answer can
+carry the next channel's PSM, so answers are matched by count, and one that comes after the 5 s is logged and
+ignored. The payload is served only while the listener is published on its PSM, and a resetting manager counts as
+off (`linux-peer.md`, "What the restart trial showed"). Each channel's streams run on one run-loop thread, read in
+64 KiB gulps and written 8 KiB at a time.
 The managers carry restoration identifiers. A restored connection is dropped, since its channels did not
 survive, but only once the central is powered on: CoreBluetooth refuses the command earlier, and a connection
 left up kept every dial to that phone waiting. It first ran on an iPhone 12 on 2026-09-26

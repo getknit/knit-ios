@@ -41,6 +41,20 @@ import Testing
         #expect(rig.radio.advertised.last?.digestCue == 8)
     }
 
+    /// iOS hands back PSM 192 after a stop and a start, so the radio reports the same PSM again, and the link manager
+    /// must advertise it again: the radio forgot what it served at the stop (``ListenerPublication``).
+    @Test func aRestartAdvertisesTheSamePSMAgainOnceTheRadioReportsIt() {
+        let rig = LinkRig(local: high)
+        _ = rig.handle(.listening(psm: 192))
+        #expect(rig.radio.advertised.count == 1)
+        _ = rig.links.stop()
+        rig.links.start()
+        #expect(rig.radio.advertised.count == 1, "nothing is advertised before the radio reports its listener")
+        _ = rig.handle(.listening(psm: 192))
+        #expect(rig.radio.advertised.count == 2)
+        #expect(rig.radio.advertised.last?.psm == 192)
+    }
+
     // MARK: Who dials
 
     @Test func theLargerIdDialsASteadyCloseEnoughPeer() {

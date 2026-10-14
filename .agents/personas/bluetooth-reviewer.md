@@ -132,12 +132,15 @@ explicitly. The commits are the evidence that each one bit this codebase.
     each new or changed one by asking what wakes the process to run it. Evidence: 55602cd (ten DMs on a live link
     waited 14 locked minutes, then arrived within a second of opening; hence the doorbell, ADR 2026-09.khjj),
     124c887 (a link the far side dialed ended unheard for four minutes, so Knit never sought; hence `attach`).
-11. **A cache that disagrees with the stack across a stop and a start.** A "serve again only if the value changed"
-    guard trusts that the value changes, and iOS hands back the same L2CAP PSM, 192, after an unpublish and
-    publish. Evidence: af87ba4 (after Settings' Stop and Start the iPhone served neither its payload nor its
-    doorbell, and the Pixel found no doorbell on 8 relinks; `stop()` now forgets the served value). Still open, so
-    give any change near it a hard look: bf171e6 (after a stop and a start, Android's dials to PSM 192 failed for
-    7 minutes, cause unknown).
+11. **A cache that disagrees with the stack across a stop and a start.** iOS hands back the same L2CAP PSM, 192,
+    after an unpublish and publish. So a "serve again only if the value changed" guard waits for a change that never
+    comes, and an unpublish's late answer names the next channel's PSM. Evidence: af87ba4 (after Settings' Stop and
+    Start the iPhone served neither its payload nor its doorbell, and the Pixel found no doorbell on 8 relinks;
+    `stop()` now forgets the served value), bf171e6 (after a back-to-back stop and start, Android's dials to PSM 192
+    failed for 7 minutes: `stop()` kept the PSM until iOS answered, the start found it and published nothing, and
+    the late answer cleared it). Publishing before that answer is no fix: iOS hands the publish 193, the PSM flips
+    each restart, and Android fails a dial on the PSM it read (2026-10-14). `ListenerPublication` forgets the PSM at
+    the stop and publishes once the answer comes, or after 5 s, and `serve()` serves only the PSM the listener holds.
 12. **Background discoverability.** A backgrounded app loses its local name, and its service UUID moves to the
     overflow area, which only an iOS scan filtered on that UUID reads: not Android, not BlueZ, not an iPhone at the
     front. A change that relies on being seen while backgrounded, or on seeing a backgrounded iPhone, is a finding
@@ -267,8 +270,10 @@ verify. `linux-peer.md` is `.agents/context/linux-peer.md`.
   accepted link ("What the iPhone's forget rules showed").
 - **A failed or stranger GATT read leaves no line in Knit's log.** A read that overlaps the peer's own read of the
   iPhone was filed as a stranger and cost ten minutes; why is not known ("What the iPhone's forget rules showed").
-- **PSM.** iOS hands back PSM 192 after an unpublish and publish ("What A4 showed"). After one stop and start,
-  Android's dials to it failed for 7 minutes, cause unknown ("What the reaction runs showed").
+- **PSM.** iOS hands back PSM 192 after an unpublish and publish ("What A4 showed"), but only once the unpublish is
+  answered. A publish sent before the answer got 193, flipping each restart, and the answer names the same PSM as
+  the next channel ("What the restart trial showed"). A start one bridge round trip behind a stop once left the
+  iPhone serving 192 with nothing listening for 7 minutes ("What the reaction runs showed").
 - **The iPhone as central** opens at 30 ms, no latency, 720 ms, then moves to LE 2M. It grants 5 s when Android
   asks ("What the walk test showed"; `ble-transport.md`).
 - **An iPhone hears an Android advert** sent about once a second every 2 to 7 s, and caught 46 % of what a raw

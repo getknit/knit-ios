@@ -85,19 +85,64 @@
             }
         }
 
-        func peripheralManager(_: CBPeripheralManager, didPublishL2CAPChannel psm: CBL2CAPPSM, error: (any Error)?) {
-            publishing = false
+        func peripheralManager(_ manager: CBPeripheralManager, didPublishL2CAPChannel psm: CBL2CAPPSM, error: (any Error)?) {
             if let error {
+                listener.publishFailed()
                 log.log(.warning, "ble could not listen: \(error)")
                 return
             }
-            self.psm = psm
-            log.log(.info, "ble listening on PSM \(psm)")
-            emit(.listening(psm: psm))
+            switch listener.published(psm, running: running) {
+            case .listening:
+                // The run notes (`.agents/context/linux-peer.md`) read this line as the listener coming up; keep its words.
+                log.log(.info, "ble listening on PSM \(psm)")
+                emit(.listening(psm: psm))
+                // An advert for this PSM may already wait here, and the link manager sends none again for an unchanged one.
+                serve()
+            case .unpublish(let unpublish):
+                // Stopped while the publish was in flight. The next start publishes anew, and reports that PSM.
+                log.log(.info, "ble published PSM \(psm) after it stopped, so unpublishes it")
+                awaitUnpublish(unpublish, on: manager)
+            }
         }
 
-        func peripheralManager(_: CBPeripheralManager, didUnpublishL2CAPChannel _: CBL2CAPPSM, error _: (any Error)?) {
-            psm = nil
+        /// Unpublishes a PSM, and bounds the wait for the answer, which holds the next publish back
+        /// (``ListenerPublication``). The deadline runs on uptime, and nothing resumes a suspended Knit to run it, so
+        /// there the publish waits until the process runs again. A stop and a start come from Settings or the bridge,
+        /// in the foreground, where it fires on time.
+        func awaitUnpublish(_ unpublish: ListenerPublication.Unpublish, on manager: CBPeripheralManager) {
+            manager.unpublishL2CAPChannel(unpublish.psm)
+            let wait = ListenerPublication.answerWaitMilliseconds
+            queue.asyncAfter(deadline: .now() + .milliseconds(wait)) { [weak self] in
+                guard let self else {
+                    return
+                }
+                let expired = listener.waitEnded(unpublish.wait)
+                guard expired > 0 else {
+                    return
+                }
+                log.log(.warning, "ble heard no answer to \(expired) unpublishes in \(wait) ms, so publishes")
+                resume()
+            }
+        }
+
+        /// The answer to an unpublish may land after the next start, one round trip behind the stop (about 0.2 s on the
+        /// iPhone 12). Until it lands, or its wait runs out, nothing is published, and once it has, a radio that runs
+        /// publishes, which reports the PSM to the link manager, which advertises it (``ListenerPublication``).
+        func peripheralManager(_: CBPeripheralManager, didUnpublishL2CAPChannel psm: CBL2CAPPSM, error: (any Error)?) {
+            let failure = error.map { ": \($0)" } ?? ""
+            switch listener.unpublished(psm) {
+            case .asked:
+                log.log(.info, "ble stopped listening on PSM \(psm)\(failure)")
+            case .late:
+                log.log(.info, "ble ignored a late answer to an unpublish of PSM \(psm)\(failure)")
+                return
+            case .dropped:
+                log.log(.warning, "ble lost its listener on PSM \(psm), unasked\(failure)")
+            case .stray:
+                log.log(.info, "ble ignored an unpublish of PSM \(psm), which it no longer listens on\(failure)")
+                return
+            }
+            resume()
         }
 
         /// A peer rang the doorbell. Data on an open link does not wake a suspended Knit, and a write does, so a peer
