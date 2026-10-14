@@ -22,9 +22,6 @@ internal struct TypingBoard {
 
     private var cues: [Key: Cue] = [:]
 
-    /// How many pairs are held.
-    var count: Int { cues.count }
-
     /// When the next cue lapses, or `nil` while nobody is typing.
     var nextDeadline: Int64? { cues.values.map(\.lapsesAt).min() }
 
