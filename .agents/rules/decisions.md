@@ -13,6 +13,7 @@ growing an explanation, that explanation belongs in the ADR.
 | If touching | READ |
 | --- | --- |
 | a radio plane, a capability bit we advertise, or anything Wi-Fi Aware, LoRa, spool or Wi-Fi Direct | [ADR 2026-09.zwdp](../memory/decisions/2026-09-zwdp-knit-for-ios-meshes-over.md) |
+| the `WiFiAware` or DeviceDiscoveryUI frameworks, the `com.apple.developer.wifi-aware` entitlement, AWDL, or a faster lane for files | [ADR 2026-10.2c6c](../memory/decisions/2026-10-2c6c-wi-fi-aware-on-the.md) |
 | `KnitWire`, `KnitCrypto`, `KnitMesh`, golden vectors, or the knit-next pin | [ADR 2026-09.2ved](../memory/decisions/2026-09-2ved-knit-next-s-code-and.md) |
 | the target layout in `Package.swift`, or a `#if canImport` / `#if os` guard | [ADR 2026-09.wde9](../memory/decisions/2026-09-wde9-the-protocol-core-is-platform.md) |
 | the deployment target, the bundle id or `App/Info.plist` | [ADR 2026-09.txqp](../memory/decisions/2026-09-txqp-ios-18-is-the-floor.md) |

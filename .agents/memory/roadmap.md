@@ -478,5 +478,6 @@ explicit direction.** Update this file in the change that ships an item.
   twin of knit-next #103, and interop-audit finding AND-2. At the front the iPhone gives the phone a 12 s head start
   past the dwell, then dials it itself (ADR 2026-10.6eyf). Android admits a dialer it has not sighted, so no Android
   change was needed, and the Track A item is closed. In the background a lonely iPhone dials it anyway (ADR 2026-10.mueg).
-- **Never on iOS:** Wi-Fi Aware, the BLE side channel, spool relays and commons, LoRa, and Wi-Fi Direct.
-  These are ADR-recorded scope decisions, not a backlog.
+- **Never on iOS:** Wi-Fi Aware as a mesh plane, the BLE side channel, spool relays and commons, LoRa, and Wi-Fi
+  Direct. A Wi-Fi Aware lane for files between paired phones is the one shape left open, and a spike comes first
+  (ADR 2026-10.2c6c). These are ADR-recorded scope decisions, not a backlog.
