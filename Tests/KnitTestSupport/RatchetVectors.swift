@@ -1,7 +1,8 @@
 /// knit-next's ratchet known answers, `vectors/ratchet-v1.json` (companion change A9): the ratchet's primitives walked
-/// through Alice's first exchange with Bob, and one group epoch of Alice's, which `RatchetVectorTests` checks; and signed
-/// ratchet profiles with the prekey pins Android's own pipeline made of them, which `RatchetProfileVectorTests` checks.
-/// Every byte string is lowercase hex, and every bundle padded standard base64.
+/// through Alice's first exchange with Bob, and one group epoch of Alice's, which `RatchetVectorTests` checks; signed
+/// ratchet profiles with the prekey pins Android's own pipeline made of them, which `RatchetProfileVectorTests` checks;
+/// and scripted DM transcripts with each party's state after every step, which `RatchetTranscriptTests` replays at the
+/// engine. Every byte string is lowercase hex, and every bundle padded standard base64.
 public enum RatchetVectors {
     /// The file's shape. Its `export` answers are not modelled: the spool's exports are not in this port (ADR
     /// 2026-10.5sk9), and the file marks them non-normative.
@@ -12,6 +13,12 @@ public enum RatchetVectors {
         public let kats: Kats
         /// The signed ratchet profiles, and the pins they leave.
         public let profiles: Profiles
+        /// DM transcripts between Alice and Bob: stage 3a's engine-layer ones, then stage 3b's session and pipeline ones.
+        public let dm: [Transcript]
+        /// Refusals, each a transcript whose last open is refused, at the engine or above it.
+        public let negative: [Transcript]
+        /// Carol, the iPhone, in races and first contacts with Alice and with Bob.
+        public let carol: [Transcript]
     }
 
     /// Ratchet profiles delivered in `sequence` to one fresh receiver, and the pin it holds for the sender after each

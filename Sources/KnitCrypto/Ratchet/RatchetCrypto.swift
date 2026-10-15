@@ -11,8 +11,9 @@ public import KnitWire
 /// the salt (`:27`, `:100`, `:127`). The zero salt is 32 zero bytes, and every label is ASCII under `knit/dm/v2/` or
 /// `knit/dm/v3/`, apart from HPKE's, so the identity's X25519 key serves v1 and X3DH and the two never derive one key.
 ///
-/// Nothing here seals or opens a frame yet: the ratchet is ported dark behind `MeshConfiguration.ratchet` (ADR
-/// 2026-10.5sk9). The spool's exports (`exportRoot`, `exportEpochSeal`, `:176-186`) are left out with the spool.
+/// ``RatchetEngine`` seals and opens frames with these, and nothing calls it yet: the ratchet is ported dark behind
+/// `MeshConfiguration.ratchet` (ADR 2026-10.5sk9). The spool's exports (`exportRoot`, `exportEpochSeal`, `:176-186`) are
+/// left out with the spool.
 public enum RatchetCrypto {
     /// A raw X25519 key's length, and a root, chain or message key's (`KEY_BYTES`, `:22`).
     public static let keyByteCount = 32
@@ -81,6 +82,13 @@ public enum RatchetCrypto {
     /// `RatchetEngine(newKeyPair)` does.
     public static func generateKeyPair() -> KeyPair {
         KeyPair(Curve25519.KeyAgreement.PrivateKey())
+    }
+
+    /// A v2 frame's 12-byte AES-GCM nonce from the system's generator, never an injected one (`AesGcm.randomIv`,
+    /// `Crypto.kt:44-45`). A v3 frame derives its nonce instead (``messageNonce(messageKey:aad:)``). ``RatchetEngine``
+    /// takes a source that defaults to this, so a vector can fix it, as A9's `RatchetEngine(newIv)` does.
+    public static func randomNonce() -> [UInt8] {
+        secureRandomBytes(nonceByteCount)
     }
 
     /// The raw X25519 shared secret (`dh`, `:56-60`).
@@ -266,8 +274,9 @@ extension RatchetCrypto.EpochKeys {
     }
 }
 
-/// Why a ratchet primitive produced nothing. A later phase maps each case as Android maps the Tink exception behind
-/// it, so the pair reads one failure the same way.
+/// Why a ratchet primitive produced nothing, mapped as Android maps the Tink exception behind it, so the pair reads one
+/// failure the same way: ``RatchetEngine`` reads an `ek` X25519 refuses as `BAD_HEADER`, and throws the rest out of
+/// `open`, `seal` and `initiate`, where Kotlin's engine throws.
 public enum RatchetCryptoError: Error, Sendable, Equatable {
     /// A raw X25519 key was not 32 bytes, which Tink refuses too (`InvalidKeyException`).
     case invalidKey

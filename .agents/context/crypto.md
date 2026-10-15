@@ -205,6 +205,7 @@ Swift must count `utf16`, not `Character`s.
 | `Conversations.groupIdFor` | `GroupId.derive(_:)` |
 | `SafetyNumber`, `Alias`, `DeviceTag` | the same names |
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
+| `RatchetEngine` | `RatchetEngine`: `initiate`, `seal`, `open`, over `SessionState`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
   ratchet's prekeys join it as a third key, `prekeys`, which `PrekeyRing` writes and an older build ignores ("Keys
@@ -222,6 +223,18 @@ Swift must count `utf16`, not `Character`s.
 - **Where the goldens come from:** `KeyedVectorTests` checks knit-next's own identities, signatures, sealed
   DM and safety number (`keyed-v1.json`). The device tag golden and two further safety numbers were
   computed in Python from the Kotlin sources, because knit-next pins no value for them.
+- **The ratchet's DM engine** is Kotlin's `RatchetEngine`, pure, with this port's types: our `IdentityKeys`, the
+  `SignedPrekey` an init names, the peer's `PublicKeyBundle` and `PeerPrekey`, and `NodeId`s. It differs from Kotlin's
+  engine in four ways (ADR 2026-10.5sk9's P4b amendment):
+  - Where Tink throws out of Kotlin's engine, it throws `RatchetCryptoError`. The caller refuses that frame with nothing
+    committed and nothing counted toward a reset.
+  - A carried nonce that is not 12 bytes is `BAD_HEADER`, which Kotlin's pipeline decides before its engine. It reads
+    a chain or skipped key only for the header's own `se` and `n`, where Kotlin trusts its caller.
+  - Its session keeps no `sendEpochExport`, the spool's half.
+  - `seal` answers `nil` both when a new epoch is due with no base and for a session missing its send chain or,
+    unconfirmed, its init, where Kotlin's `checkNotNull` throws. The second is unreachable by construction, so the
+    session store's round trip must keep every `SessionState` field. Neither `nil` means "send v1" by itself: a chat
+    falls back to v1, a ctl to its cleartext frame, and a seed waits.
 
 ## The ratchet: v2, v3 and the group form
 
@@ -589,8 +602,13 @@ knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` from a branc
 - `profiles`, signed ratchet profiles and the prekey pins Android's own pipeline made of them, which
   `RatchetProfileVectorTests` delivers to one engine in the file's order;
 - `dm` and `negative`, scripted DM transcripts with a state digest after each step, and the refusals, for the DM
-  engine and its wiring. The file's `transcriptFormat` describes every step;
-- `group` and `carol`, still to come in A9's later stages.
+  engine and its wiring. The file's `transcriptFormat` describes every step. `RatchetTranscriptTests` replays at the
+  engine every transcript the engine alone can, and names the rest: those with a reset step wait for P4c's session
+  layer, and the pipeline's own refusals for P5. Its store follows knit-next's `MemoryRatchetStore` and its digest
+  `TranscriptJson.state` (`RatchetTranscript.kt:136-232`, `TranscriptJson.kt:40-130` on the A9 branch);
+- `group`, the group form's transcripts, for P6;
+- `carol`, Carol, the iPhone, in races and first contacts with Alice and with Bob. Every opener is v3, and
+  `RatchetTranscriptTests` replays them at the engine, Carol's seals byte for byte.
 
 A10 then adds this port's own ratchet frames to `ios-emitted-v1.json`, for knit-next's `IosEmittedVectorTest` to
 open (`.agents/memory/roadmap.md`).

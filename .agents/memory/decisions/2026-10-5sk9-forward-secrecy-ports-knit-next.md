@@ -214,3 +214,43 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   blob in a unit that abandons, fails or has already failed, and in a nested unit that abandons, over memory and the SQL
   store on a pool and on a queue. `SQLBlobStoreTests` covers a removal the database refuses, a file that waits for the
   outermost commit, SQLite's own rollback, and an index the commit cannot read.
+
+**Amended 2026-10-15, phase P4b (the DM engine):**
+
+- **The engine is Kotlin's `RatchetEngine`, whole and pure** (`Sources/KnitCrypto/Ratchet/RatchetEngine.swift` and its
+  extensions). A session comes in as a value, and every change leaves as a `SealResult` or an `OpenDelta` for P4c's
+  store unit to commit. Its ephemerals and epoch keys come from a key-pair source and its v2 IVs from an IV source,
+  both the system's generator unless a test passes others, as knit-next's A9 seam does (`newIv`). Nothing calls it yet.
+- **It takes this port's types,** so the identity's and the prekeys' private keys stay inside KnitCrypto's own types:
+  our `IdentityKeys`, the `SignedPrekey` an init names, the peer's pinned `PublicKeyBundle` and verified `PeerPrekey`,
+  and `NodeId`s. Our epochs' private keys are rows the store keeps, as Android's are. A canonical id's `<` is Kotlin's
+  string order, which the race's tiebreak and the remnant guard compare by.
+- **Where Tink throws out of Kotlin's engine, it throws `RatchetCryptoError`.**
+  - `initiate` and `seal` throw on a peer key X25519 refuses. A signature does not rule one out: a peer signs what it
+    likes.
+  - `open` throws in the X3DH respond, on an `init.eph` or an identity key X25519 refuses. The caller refuses that
+    frame with nothing committed and nothing counted toward a reset, as `InboundPipeline`'s `runCatching` records
+    `DECRYPT_FAILED`.
+  - An `ek` X25519 refuses stays the typed `BAD_HEADER` (`RatchetEngine.kt:456-460`), and neither is ever
+    `AEAD_FAIL`.
+  - The alternative, a sixth typed failure beside the five the reset heuristic maps, could be counted by mistake.
+- **It is stricter than Kotlin's engine in two places, and the node's outcome is the same:**
+  - A carried nonce that is not 12 bytes is `BAD_HEADER`. Kotlin's pipeline refuses it before its engine
+    (`InboundPipeline.kt:1025-1028`), and AES-GCM here would only refuse it as `AEAD_FAIL`, which counts toward a reset.
+    The pipeline's other shape rules stay P5's: a v3 envelope's empty nonce, and no DM form addressed to a group.
+  - It reads a receive chain or a skipped key only for the header's own `se` and `n`, where Kotlin trusts its caller
+    to pass no others.
+- **The session keeps no `sendEpochExport`,** the spool's half, which Android stores and never reads back. The
+  transcripts' `sendEpochExportSha256` is not compared.
+- **`seal` answers `nil` in two cases:** a new epoch due with no base, and a session missing its send chain or,
+  unconfirmed, its init, where Kotlin's `checkNotNull` throws. The second cannot happen by construction, so P4c's
+  session store must round-trip every `SessionState` field, or a lost field would quietly turn every DM to v1. Neither
+  `nil` means "send v1" by itself: a chat falls back to v1, a ctl to its cleartext frame, and a seed waits.
+- **Open for P5:** what the iPhone does when a seal throws. Android lets the throw escape `sendChat`
+  (`MeshManager.kt:1189`, `:1295`).
+- **Guards:**
+  - `RatchetEngineTests` ports `RatchetEngineTest`'s 43 cases by name and adds this port's: the nonce rule, the throws,
+    the epoch filter, the replacement floor and a drain that runs out.
+  - `RatchetSoakTests` runs the soak's property on five seeds of this port's.
+  - `RatchetTranscriptTests` replays A9's engine-layer transcripts byte for byte, Carol's included. It names what
+    waits: the five with a reset step for P4c, the pipeline's own refusals for P5, and `group` for P6.

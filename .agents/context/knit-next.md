@@ -202,8 +202,11 @@ Kotlin wins.
     - knit-next `feat/ratchet-vectors-a9`, companion change A9 (ADR 2026-10.5sk9), not yet on `main`:
       - **What comes in:** `vectors/ratchet-v1.json`, synced alone with `scripts/sync-vectors.py --only
         ratchet-v1.json`. `Tests/Vectors/ratchet-v1.json` records the commit it came from.
-      - **Stages in:** stage 1, the known answers (`95d26b8f`); stage 2, the profiles (`bc47c7d1`); stage 3a, the
-        DM transcripts and refusals (`4bb2e816`).
+      - **Stages in:** all six. Stage 1, the known answers (`95d26b8f`); stage 2, the profiles (`bc47c7d1`); stage
+        3a, the DM transcripts and refusals (`4bb2e816`); stage 3b, the control plane, races, resets and re-seals
+        (`919f8a53`); stage 4, the group form (`a20fba4d`); stage 5, Carol's races and first contacts (`c6edf7df`).
+        The branch also aligns `docs/GROUP_FORWARD_SECRECY.md` §4 rule 5 and §6 with production's order-dependent
+        loss after a wipe re-mint, and makes `RESET_TRIGGERING_DROPS` visible to tests.
       - **The IV seam:** the branch gives `RatchetEngine` and `GroupRatchetEngine` a constructor IV source
         (`newIv`, default `AesGcm.randomIv`). It changes nothing in production, and the port's engines mirror it.
       - **When the pin passes A9's merge:** sync every file the normal way.
