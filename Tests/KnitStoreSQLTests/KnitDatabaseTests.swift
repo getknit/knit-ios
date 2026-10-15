@@ -52,7 +52,7 @@ private func carried(_ id: String, sentAt: Int64 = 1) -> CarriedFrame {
         }
     }
 
-    /// Every connection erases what it deletes (ADR 2026-09.nyya, amended 2026-10-15): the writer's and a reader's on the
+    /// Every connection zeroes what it deletes (ADR 2026-09.nyya, amended 2026-10-15): the writer's and a reader's on the
     /// file's pool, and the queue in memory. Linux's SQLite is built with `secure_delete` on, so only the Mac's run can
     /// fail this, where SQLite defaults to FAST, 2, which leaves freed pages as they were.
     @Test func everyConnectionErasesWhatItDeletes() throws {

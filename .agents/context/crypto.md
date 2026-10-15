@@ -410,10 +410,11 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   evict the same keys. The order is local, and the pair never compares it.
 
   At rest, a deleted row is zeroed in the next write of its page (`secure_delete`), which reaches the database file
-  only at a checkpoint, while the write-ahead log keeps the frames that wrote the key until it is reset. Each sweep's
-  truncating checkpoint does both once it commits, so after a sweep that finds no reader on the log neither file holds
-  a key deleted or replaced before it; between sweeps either can. Nothing calls the sweep before P5 (ADR
-  2026-09.nyya, amended 2026-10-15).
+  only at a checkpoint, while the write-ahead log keeps the frames that wrote the key until it is reset and
+  overwritten, or truncated. Each sweep's truncating checkpoint does both once it commits, unless a reader holds the
+  log then; between sweeps either file can hold a key deleted or replaced since the last one. `secure_delete` does not
+  zero an older copy of a row that a page's rebalance left in its unused space, so rarely such a copy outlives the
+  sweep, on Android's SQLCipher as here. Nothing calls the sweep before P5 (ADR 2026-09.nyya, amended 2026-10-15).
 - **Bounds and floors** (`RatchetEngine.kt:863-885`, `RatchetSessions.kt:602-631`, `IntroSync.kt:349-358`):
 
   | Bound | Value |

@@ -54,11 +54,13 @@ public protocol RatchetStore: AnyObject, Sendable {
     /// ``RatchetRetention``'s rules, which every store applies alike.
     ///
     /// On the database a deleted row is zeroed in the next write of its page (`secure_delete`), which reaches the file
-    /// only at a checkpoint, and the write-ahead log keeps the frames that wrote each key until it is reset. The
-    /// truncating checkpoint run once the sweep's outermost transaction commits does both: the file takes the zeroed
-    /// pages, and the log loses each deleted key's insert and every chain key a seal or an open has replaced (ADR
-    /// 2026-09.nyya, amended 2026-10-15). That is the whole guarantee. Between sweeps either file can hold a spent key or a
-    /// replaced chain key, and a reader holding a snapshot of the log when the sweep commits puts the truncation off to
-    /// the next sweep. Nothing calls the sweep before P5, which runs it at start and at most hourly, as Android does.
+    /// only at a checkpoint, and the write-ahead log keeps the frames that wrote each key until it is reset and
+    /// overwritten, or truncated. The truncating checkpoint run once the sweep's outermost transaction commits does both:
+    /// the file takes the zeroed pages, and the log loses each deleted key's insert and every chain key a seal or an open
+    /// has replaced (ADR 2026-09.nyya, amended 2026-10-15). Between sweeps either file can hold a spent key or a replaced
+    /// chain key, and a reader holding a snapshot of the log when the sweep commits puts the truncation off to the next
+    /// sweep. `secure_delete` does not zero an older copy of a row that a page's rebalance left in its unused space, so
+    /// rarely such a copy outlives the sweep until the space is reused. Nothing calls the sweep before P5, which runs it
+    /// at start and at most hourly, as Android does.
     func sweep(now: Int64)
 }

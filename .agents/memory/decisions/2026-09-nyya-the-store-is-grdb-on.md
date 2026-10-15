@@ -129,7 +129,7 @@ runs over both stores.
 
 **Amended 2026-10-15, for keys that must die (ADR 2026-10.5sk9, phase P4c):**
 
-- **Deleted rows are erased on every platform.** Every connection, the writer's and each reader's, sets
+- **Deleted rows are zeroed on every platform.** Every connection, the writer's and each reader's, sets
   `PRAGMA secure_delete = ON` (`KnitDatabase`), which overwrites a deleted row with zeros, and every page a deletion
   frees. Apple's SQLite defaults to FAST, measured as 2 on the Mac's 3.54.0: it zeroes a row only where that costs no
   extra write, and leaves freed pages on the freelist as they were. Linux's system SQLite is built with it on, and
@@ -158,6 +158,12 @@ runs over both stores.
     anyway, an overflow page or the pages a bulk delete empties, as custody's sweep and the ratchet's do. The blobs
     review measured a full custody sweep of maximum-size frames at about 2,000 more pages, 7 ms to 20 ms, on Linux.
     Nothing was measured on a phone.
+  - `secure_delete` zeroes a row where it lies when it goes, and every page a deletion frees, but not an older copy of
+    a cell that a page's rebalance left in its unused space (`rebuildPage`, SQLite 3.53.4's `btree.c`). Rarely, such a
+    copy outlives the sweep until the space is reused or the file is vacuumed: a probe on Linux's SQLite kept 1 or 2 of
+    about 5,840 replaced chain keys. Android's SQLCipher pages carry the same leftover on the same core. A `VACUUM` now
+    and then would close it by rewriting the whole file through the log; whether the flip needs one is the
+    maintainer's call (`.agents/memory/roadmap.md`).
   - What the flash keeps of blocks the file system frees or rewrites is beyond SQLite's reach.
   - Only `test:macos` reads the setting back on Apple's SQLite, and nothing reads it on the iPhone's. The pragma is set
     whatever the default is.

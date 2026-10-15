@@ -294,7 +294,8 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   reads the session row, then, outside it, `isLiveEvidence`, and only then the frame id joins the heuristic's ids, at
   once, and the 6 h floor reads the later of the stamp the unit read and the one held in memory. A unit that fails
   counts nothing, and so does a call inside a caller's unit: a joined open or reset clears the ids only once that unit
-  commits, where Kotlin clears them in the commit itself (`RatchetSessions.kt:207-211`).
+  commits, where Kotlin clears them as an open commits and as a reset is sealed (`RatchetSessions.kt:207-211`, `:435`,
+  `:466`).
   - Kotlin's `sessionFor` throws on a Room error, so nothing counts there either. With the gate left to the caller, over
     a read that answers none when the store fails, a frame from the era a reset abandons could enter the eight slots,
     and three such frames would re-root on that era's evidence (knit-next `d7487392`).

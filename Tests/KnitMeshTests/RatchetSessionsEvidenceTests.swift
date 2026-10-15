@@ -85,8 +85,9 @@ import Testing
     }
 
     /// Inside a caller's unit nothing counts: a joined open or reset clears the ids only once that unit commits, where
-    /// Kotlin clears them in the commit itself (`RatchetSessions.kt:207-211`), so a frame counted before then would join
-    /// the ids of the era the reset abandons. The same frames count once noted outside any unit.
+    /// Kotlin clears them as an open commits and as a reset is sealed (`RatchetSessions.kt:207-211`, `:435`, `:466`), so
+    /// a frame counted before then would join the ids of the era the reset abandons. The same frames count once noted
+    /// outside any unit.
     @Test func aCallInsideACallersUnitCountsNothing() throws {
         let (alice, bob) = try RatchetSessionSide.pair()
         var counted: [Bool] = []

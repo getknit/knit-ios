@@ -102,8 +102,9 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
 - **Keys:** the Keychain, as `…AfterFirstUnlockThisDeviceOnly`. A reinstall finds them and keeps the identity,
   and onboarding republishes its profile (ADR 2026-09.tkww).
 - **At rest:** every connection zeroes what it deletes (`secure_delete`), and the ratchet's sweep runs a truncating
-  checkpoint as it commits, so keys that must die leave the file and its log by the next sweep (ADR 2026-09.nyya,
-  amended 2026-10-15).
+  checkpoint as it commits, unless a reader holds the log then. So keys that must die leave the file and its log by
+  the next such sweep, short of a rare older copy that a page's rebalance leaves behind (ADR 2026-09.nyya, amended
+  2026-10-15).
   **SQLCipher** still waits: its key would sit under the same after-first-unlock class as the file.
 - **The Linux peer** uses the in-memory stores. The store contract tests run against both.
 

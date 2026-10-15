@@ -25,9 +25,11 @@ import Testing
     private static let expired = fixtureBytes(32, seed: 0xA2)
     private static let retired = fixtureBytes(32, seed: 0xA3)
 
-    /// What the ratchet deletes leaves the files, the sweep run alone or inside a unit. The file zeroes each key as it
-    /// goes (`secure_delete`), and the write-ahead log, which still holds the frames that wrote them, is truncated once
-    /// the sweep commits. Linux's SQLite zeroes freed pages by default, so here this catches the log; on the Mac, whose
+    /// What the ratchet deletes leaves the files once the sweep commits, the sweep run alone or inside a unit: each key is
+    /// zeroed in the next write of its page (`secure_delete`), which goes to the log, and the truncating checkpoint copies
+    /// those pages over the file and empties the log, which still held the frames that wrote them. Every page these rows
+    /// used is freed here, so no older copy a rebalance left behind survives. Linux's SQLite zeroes freed pages by
+    /// default, so here this catches the log; on the Mac, whose
     /// SQLite leaves freed pages as they were, the expired keys' pages catch the file too.
     @Test(arguments: [false, true])
     func whatTheRatchetDeletesLeavesTheFileAndItsLog(inAUnit: Bool) throws {

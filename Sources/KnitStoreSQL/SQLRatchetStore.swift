@@ -12,8 +12,9 @@ public import KnitWire
 /// Each write is one transaction of its own outside a store unit, and one savepoint inside it, so an open's rows land
 /// together or not at all either way. The sweep applies ``RatchetRetention`` in Swift over what it reads, as
 /// ``SQLCustodyStore`` applies ``CustodyRules``, so this store and ``MemoryRatchetStore`` retire the same rows. What it
-/// deletes is zeroed in the file (`secure_delete`, ``KnitDatabase``), and once it commits the write-ahead log is
-/// truncated, since the log still holds the frames that wrote every key the file has erased.
+/// deletes is zeroed in the next write of its page (`secure_delete`, ``KnitDatabase``), which goes to the write-ahead
+/// log. Once the sweep commits, a truncating checkpoint copies those pages over the file and empties the log, unless a
+/// reader holds a snapshot of the log then (``truncateLog(_:reporting:)``).
 public final class SQLRatchetStore: RatchetStore {
     private static let sessionColumns = """
         peerId, confirmed, weAreInitiator, root, prevRoot, prevRootWeAreInitiator, prevRootExpiresAt, establishedAt, \
@@ -197,8 +198,9 @@ public final class SQLRatchetStore: RatchetStore {
                 arguments: [RatchetRetention.receiveChainCutoff(now: now)]
             )
             try Self.retireLocalEpochs(now: now, in: db)
-            // The deleted rows are zeros in the file now (`secure_delete`), and the log still holds the frames that wrote
-            // them: it is truncated once the outermost transaction this write joined commits, and never on a rollback.
+            // The zeros are in the pages this write puts in the log. The file keeps the old pages, and the log the
+            // frames that wrote the keys, until the truncating checkpoint once the outermost transaction this write
+            // joined commits, never on a rollback.
             db.afterNextTransaction { db in
                 Self.truncateLog(db, reporting: database)
             }

@@ -121,8 +121,8 @@ public final class RatchetSessions {
     /// ``RatchetResetPolicy/triggeringFailures`` from an open that answered ``Answer/settled(_:)``, never
     /// ``Answer/failed``, whose verdict came from a store's fallback. P5 calls it on the drop path, outside any unit, as
     /// Kotlin does (`InboundPipeline.kt:1819-1826`). Inside a caller's unit it counts nothing: a joined open or reset
-    /// clears the ids only once that unit commits, where Kotlin clears them in the commit itself
-    /// (`RatchetSessions.kt:207-211`), so a frame counted before then would join the abandoned era's ids.
+    /// clears the ids only once that unit commits, where Kotlin clears them as an open commits and as a reset is sealed
+    /// (`RatchetSessions.kt:207-211`, `:435`, `:466`), so a frame counted before then would join the abandoned era's ids.
     public func noteUndecryptable(from peer: NodeId, frameId: String, sentAt: Int64, now: Int64) -> Bool {
         // The body answers the row or its absence, never `nil`, which would abandon the unit.
         let read = transactor.atomically { () -> RatchetSessionRecord?? in .some(store.session(peer)) }
@@ -151,10 +151,11 @@ public final class RatchetSessions {
 
     /// The retention sweep at `now`, in a unit of its own (`sweep`, `RatchetSessions.kt:543-544`), and whether it stood.
     /// On the database a deleted row is zeroed in the next write of its page, which reaches the file only at a
-    /// checkpoint, while the write-ahead log keeps the frames that wrote the key until it is reset. The sweep's
-    /// truncating checkpoint after its unit commits does both, unless a reader holds a snapshot of the log then
-    /// (``RatchetStore/sweep(now:)``): between sweeps either file can hold a key spent, or a chain key a seal or an open
-    /// replaced. Nothing calls it before P5, which runs it at start and at most hourly.
+    /// checkpoint, while the write-ahead log keeps the frames that wrote the key until it is reset and overwritten, or
+    /// truncated. The sweep's truncating checkpoint after its unit commits does both, unless a reader holds a snapshot
+    /// of the log then: between sweeps either file can hold a key spent, or a chain key a seal or an open replaced, and
+    /// rarely an older copy a page's rebalance left behind outlives the sweep (``RatchetStore/sweep(now:)``). Nothing
+    /// calls it before P5, which runs it at start and at most hourly.
     @discardableResult
     public func sweep(now: Int64) -> Bool {
         let unit = transactor.atomically { () -> Void? in

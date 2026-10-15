@@ -58,7 +58,7 @@ public final class KnitDatabase: Sendable {
         try KnitDatabase(writer: DatabaseQueue(configuration: configuration), failures: failures)
     }
 
-    /// Every connection, the writer's and each reader's, erases what it deletes (ADR 2026-09.nyya, amended 2026-10-15).
+    /// Every connection, the writer's and each reader's, zeroes what it deletes (ADR 2026-09.nyya, amended 2026-10-15).
     /// `secure_delete` ON overwrites a deleted row with zeros, and every page a deletion frees. Apple's SQLite defaults to
     /// FAST, measured as 2 on the Mac's 3.54.0, which zeroes a row only where that costs no extra write and leaves freed
     /// pages on the freelist as they were. What the ratchet spends and its sweep deletes is what a later compromise of the
@@ -66,7 +66,9 @@ public final class KnitDatabase: Sendable {
     /// SQLite is built with it on, and Android's SQLCipher turns it on itself. Over FAST it costs one more page write for
     /// each page a deletion frees that was not being written anyway: an overflow page, or the pages a bulk delete empties,
     /// as custody's sweep and the ratchet's do. The zeros reach the file only at a checkpoint, and the write-ahead log
-    /// keeps what it wrote until it is reset; the ratchet's sweep forces both (`SQLRatchetStore.sweep`).
+    /// keeps what it wrote until it is reset and overwritten, or truncated, as the ratchet's sweep does unless a reader
+    /// holds the log then (`SQLRatchetStore.sweep`). An older copy of a row that a page's rebalance left in its unused
+    /// space is not zeroed.
     private static var configuration: Configuration {
         var settings = Configuration()
         settings.label = "knit"
