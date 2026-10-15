@@ -4,9 +4,9 @@ public import KnitStore
 import KnitSync
 import KnitWire
 
-/// A peer's state directory: its identity in `identity` (mode 0600, in a 0700 directory) and its own profile in
-/// `profile.json`, including the version and publish stamp. Keeping those two across restarts matters: Android keeps
-/// the newest version it saw, so a peer that forgot its version would publish edits nobody took.
+/// A peer's state directory: its identity and its ratchet prekeys in `identity` (mode 0600, in a 0700 directory) and
+/// its own profile in `profile.json`, including the version and publish stamp. Keeping those two across restarts
+/// matters: Android keeps the newest version it saw, so a peer that forgot its version would publish edits nobody took.
 ///
 /// Everything else, custody, peers and messages, lives in memory and starts empty.
 public struct PeerState: Sendable {
@@ -26,6 +26,12 @@ public struct PeerState: Sendable {
     /// The stored identity, made and kept first if there is none.
     public func loadIdentity() throws(SecretStoreError) -> IdentityKeys.Loaded {
         try IdentityKeys.load(from: identity)
+    }
+
+    /// The ratchet prekeys `keys` keeps beside it in `identity`, read without writing anything: load the identity first
+    /// (ADR 2026-10.5sk9).
+    public func loadPrekeys(for keys: IdentityKeys) throws(SecretStoreError) -> PrekeyRing {
+        try PrekeyRing.load(for: keys, from: identity)
     }
 
     /// Keeps `keys` as this peer's identity, and forgets the old identity's profile clocks with it. The name and the
@@ -58,6 +64,8 @@ public final class FileOwnProfileStore: OwnProfileStore {
         var publishedAt: Int64
         /// Absent in a file from before photos, which reads as none.
         var avatarHash: String?
+        /// The ratchet prekey the publish carries; absent in a file from before prekeys, or when it carries none.
+        var prekeyId: Int?
     }
 
     private static let fileMode = 0o600
@@ -80,7 +88,8 @@ public final class FileOwnProfileStore: OwnProfileStore {
                 openToChat: saved.openToChat,
                 version: saved.version,
                 publishedAt: saved.publishedAt,
-                avatarHash: saved.avatarHash.flatMap(BlobHash.init)
+                avatarHash: saved.avatarHash.flatMap(BlobHash.init),
+                prekeyId: saved.prekeyId
             )
         }
         cached = Lock(profile ?? OwnProfile())
@@ -88,6 +97,12 @@ public final class FileOwnProfileStore: OwnProfileStore {
 
     public func load() -> OwnProfile {
         cached.withLock { $0 }
+    }
+
+    /// Always the profile held: the file was read once, when the store was made, and one that did not parse is a fresh
+    /// profile by design.
+    public func loadIfReadable() -> OwnProfile? {
+        load()
     }
 
     public func save(_ profile: OwnProfile) {
@@ -98,7 +113,8 @@ public final class FileOwnProfileStore: OwnProfileStore {
             openToChat: profile.openToChat,
             version: profile.version,
             publishedAt: profile.publishedAt,
-            avatarHash: profile.avatarHash?.string
+            avatarHash: profile.avatarHash?.string,
+            prekeyId: profile.prekeyId
         )
         do {
             let encoder = JSONEncoder()

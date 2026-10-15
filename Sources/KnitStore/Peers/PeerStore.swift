@@ -4,7 +4,8 @@ public import KnitWire
 /// A peer whose profile this node has pinned (`PeerEntity` in knit-next, the fields the MVP reads).
 ///
 /// The key is pinned on the first profile whose key derives to the node id, and never changes after. The
-/// presentation fields follow the newest profile, ordered by ``updatedAt``.
+/// presentation fields follow the newest profile, ordered by ``updatedAt``, and the prekey follows its own watermark,
+/// ``prekeyProfileAt``.
 public struct PeerRecord: Sendable, Equatable {
     /// The peer.
     public var nodeId: NodeId
@@ -33,6 +34,14 @@ public struct PeerRecord: Sendable, Equatable {
     /// The photo the newest signed profile names, held or not: the one to fetch while it differs from
     /// ``avatarHash``. `nil` when that profile names none, or names a hash that is not one.
     public var advertisedAvatarHash: BlobHash?
+    /// The peer's ratchet prekey (`PeerEntity.prekeyId`, `prekeyPub` and `prekeySig`), kept only once its signature
+    /// verified against the key in the same profile, and its public value was 32 bytes (`InboundPipeline.kt:3353-3368`).
+    /// `nil` when the newest profile on ``prekeyProfileAt`` carried none, or a bad one: that clears it.
+    public var prekey: PrekeyInfo?
+    /// The prekey's watermark (`PeerEntity.prekeyProfileAt`): the `version` of the profile that last set or cleared
+    /// ``prekey``, clamped as ``updatedAt`` is, or 0 before any. It moves apart from ``updatedAt``, because a sealed
+    /// profile update moves the presentation and carries no prekey (`InboundPipeline.kt:3276-3287`).
+    public var prekeyProfileAt: Int64
 
     /// Makes a record.
     public init(
@@ -47,7 +56,9 @@ public struct PeerRecord: Sendable, Equatable {
         verified: Bool = false,
         openToChat: Bool = false,
         avatarHash: BlobHash? = nil,
-        advertisedAvatarHash: BlobHash? = nil
+        advertisedAvatarHash: BlobHash? = nil,
+        prekey: PrekeyInfo? = nil,
+        prekeyProfileAt: Int64 = 0
     ) {
         self.nodeId = nodeId
         self.name = name
@@ -61,6 +72,8 @@ public struct PeerRecord: Sendable, Equatable {
         self.openToChat = openToChat
         self.avatarHash = avatarHash
         self.advertisedAvatarHash = advertisedAvatarHash
+        self.prekey = prekey
+        self.prekeyProfileAt = prekeyProfileAt
     }
 }
 

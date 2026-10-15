@@ -32,6 +32,7 @@ internal enum Schema {
         ("v13", v13),
         ("v14", v14),
         ("v15", v15),
+        ("v16", v16),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
@@ -268,6 +269,18 @@ internal enum Schema {
     private static let v15 = [
         "ALTER TABLE messages ADD COLUMN unread INTEGER NOT NULL DEFAULT 0",
         "CREATE INDEX messages_unread ON messages (conversationId) WHERE unread = 1",
+    ]
+
+    /// Schema v16: prekeys (ADR 2026-10.5sk9). A peer gains its verified ratchet prekey and that prekey's own watermark,
+    /// the version of the profile that last set or cleared it (`PeerEntity.prekeyId`, `prekeyPub`, `prekeySig` and
+    /// `prekeyProfileAt`, which Android keeps null where this keeps 0). Our own profile gains the id of the prekey it
+    /// carries. Every row already stored has none, and every peer's first profile after the update sets the watermark.
+    private static let v16 = [
+        "ALTER TABLE peers ADD COLUMN prekeyId INTEGER",
+        "ALTER TABLE peers ADD COLUMN prekeyPub BLOB",
+        "ALTER TABLE peers ADD COLUMN prekeySig BLOB",
+        "ALTER TABLE peers ADD COLUMN prekeyProfileAt INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE own_profile ADD COLUMN prekeyId INTEGER",
     ]
 
     /// The migrator that brings any database this build knows up to date.

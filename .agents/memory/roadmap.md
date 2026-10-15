@@ -381,6 +381,16 @@ explicit direction.** Update this file in the change that ships an item.
   - **P7:** companion change A10, interop runs against knit-next `main` and the release APKs, a Debug iPhone trial, the
     flip to `0x15F`, and the security claims.
 
+  Before the flip, besides the phases:
+  - **Restoring the same phone from its own backup** (ADR 2026-10.5sk9's P3 amendment). It brings back the identity
+    and the onboarded flag without the database, so our fresh prekey goes out only at version 0, which peers ignore.
+    Onboarding must follow every database that has never published. That is a product change, the maintainer's call.
+  - **Found on the way, not the ratchet's (already on `main`):** a failed read of our own profile is taken for a fresh
+    one. `updateProfile` and the photo edit then publish a blank name at a version every peer takes, and the next
+    start's sweep can delete our own photo (P3's blobs review). The fix reads with `loadIfReadable()` and does
+    nothing on a failure, in `publishEdit`, `setAvatar` and `referencedBlobs`. P3 already applied it to
+    `republishIfStale` and the prekey's sync.
+
   Two companion changes go with it:
   - **A9 (ratchet vectors):** a paired change that iOS leads. knit-next gains `vectors/ratchet-v1.json`, written by a
     new `RatchetVectorTest`. It holds:

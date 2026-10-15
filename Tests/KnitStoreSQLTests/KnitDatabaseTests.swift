@@ -104,6 +104,23 @@ private func carried(_ id: String, sentAt: Int64 = 1) -> CarriedFrame {
         #expect(failures.count == 7)
     }
 
+    @Test func anOwnProfileThatCannotBeReadIsNotTakenForAFreshOne() throws {
+        // A fresh profile is what a reinstall reads, and the mesh mints a prekey for one (ADR 2026-10.5sk9).
+        let failures = Failures()
+        let queue = try DatabaseQueue()
+        let store = SQLOwnProfileStore(try KnitDatabase(writer: queue, failures: failures.record))
+        #expect(store.loadIfReadable() == OwnProfile(), "no row yet is a fresh profile")
+        let saved = OwnProfile(name: "Alice", version: 3, publishedAt: 4, prekeyId: 2)
+        store.save(saved)
+        #expect(store.loadIfReadable() == saved)
+        try queue.write { db in
+            try db.execute(sql: "DROP TABLE own_profile")
+        }
+        #expect(store.loadIfReadable() == nil)
+        #expect(store.load() == OwnProfile(), "the fallback every other caller still reads")
+        #expect(failures.count == 2)
+    }
+
     @Test func aRowThatNoLongerReadsBackIsReportedRatherThanInvented() throws {
         let failures = Failures()
         let queue = try DatabaseQueue()

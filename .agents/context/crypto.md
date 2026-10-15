@@ -199,6 +199,7 @@ Swift must count `utf16`, not `Character`s.
 | `PublicKeyBundle` | `PublicKeyBundle`: `init?(encoded:)`, `init?(signingKey:agreementKey:)`, `nodeId`, `isValidSignature(_:for:)` |
 | `NodeId.derive` | `NodeId(deriving:)`, an extension on the `KnitWire` type |
 | `IdentityKeyStore` | `IdentityKeys` plus a `SecretStore` (a file for the peer; the Keychain in P6) |
+| `IdentityKeyStore`'s prekeys | `PrekeyRing`: `load(for:from:)`, `newest`, `prekey(id:)`, `rotateIfDue(now:)`, `rotate(now:)` |
 | `MessageCrypto` | `MessageCrypto.header`, `.seal`, `.open`; `IdentityKeys.signature(for:)` |
 | `AttachmentCrypto` | `AttachmentCrypto.seal(_:)`, `.open(_:key:)`, and `BlobHash(of:)` for the blob's name |
 | `Conversations.groupIdFor` | `GroupId.derive(_:)` |
@@ -206,8 +207,8 @@ Swift must count `utf16`, not `Character`s.
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
-  ratchet's prekeys join it as a third key, `prekeys`, which an older build ignores ("Keys and the signed
-  prekey", below). `IdentityKeys.load(from:)` makes a new identity only when the store is empty or holds
+  ratchet's prekeys join it as a third key, `prekeys`, which `PrekeyRing` writes and an older build ignores ("Keys
+  and the signed prekey", below). `IdentityKeys.load(from:)` makes a new identity only when the store is empty or holds
   something unreadable. A store that cannot answer throws instead, so a Keychain read before the first unlock
   after a reboot never mints a new node id.
 - **Low-order X25519 keys are refused on both seal and open.** RFC 9180 §7.1.4 requires it and Tink does
@@ -255,7 +256,37 @@ that an in-order chain would not survive. The session root never changes, and ea
   - verify `sig` against the bundle in the same profile, and require a 32-byte `pub`; anything else counts as no
     prekey;
   - the prekey has its own watermark, the profile's `version`;
-  - a profile newer on that watermark with no prekey, or a bad one, clears the pin.
+  - a profile newer on that watermark with no prekey, or a bad one, clears the pin;
+  - a profile older on the presentation's watermark and not on the prekey's still moves the prekey, and with it the
+    capabilities, device tag and protocol version, which follow any profile not older on both (`:3310-3318`).
+
+  This port does all of it whatever the switch says, since it sends nothing (`PeerRecord.prekey`,
+  `prekeyProfileAt`, schema v16).
+- **Our own, in this port** (`PrekeyRing`; `MeshEngine.syncPrekey` and `currentProfileEnvelope`):
+  - The identity's item grows to `{signingSeed, agreementScalar, prekeys: [{id, priv, createdAt, sig}]}`, newest
+    first. Loading never writes, and leaves out of the ring a stored prekey whose key or signature a peer would refuse.
+  - A rotation reads the item, checks that the identity in it is this one byte for byte, replaces `prekeys` alone,
+    writes and reads back. The ring changes only after all of that, so no profile names a prekey whose private half
+    is not stored.
+  - The new id is one above the highest id any stored entry names, whether or not the rest of that entry reads, since
+    a peer may hold that id under another public value (`MeshManager.kt:1011-1013`). Retention keeps the five highest
+    ids this build reads and prunes nothing else: an entry it cannot read is written back as it was stored, and does
+    not count toward the five. Android never mints over prekeys it cannot parse (`IdentityKeyStore.kt:136-137`), and
+    a `prekeys` value that is not one list is not minted over here either.
+  - `OwnProfile.prekeyId` names the prekey a publish carries, so one stamp is one payload. With the switch on, start
+    and every heal mint a due prekey and republish as an edit when the newest differs; with it off, a profile that
+    still names one is republished without it.
+  - A profile at version 0 has never been edited, and takes no edit for its prekey either. It is republished under a
+    new stamp with its version left at 0, so a peer that holds any edit of ours keeps the name and the prekey it has,
+    which the ring still holds. The first edit, onboarding's, carries the prekey with the name. A profile the store
+    cannot read (`OwnProfileStore.loadIfReadable`) changes nothing.
+  - The three bits and the prekey ride the profile together, or neither does: `CAP_RATCHET` promises a published
+    prekey. A node with no ring, or whose store refused the first mint, publishes what it would with the switch off.
+  - A start that finds prekeys over a profile never published is a reinstall, and mints a fresh one whatever the
+    newest one's age, as Android's restore does (`MeshManager.kt:1036-1047`), with no resets. Android's restore brings
+    the name back and bumps the version. A reinstall here has no name until onboarding publishes one, so its prekey
+    rides the republish at version 0: an edit would flood an empty name that every peer takes, and Android would
+    write a rename line into every thread with us (`InboundPipeline.kt:1299-1301`).
 
 ### Derivations
 
@@ -548,7 +579,8 @@ knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` from a branc
 
 - `kats`, the known answers for each derivation above, which `RatchetVectorTests` checks. Its `export` entry is marked
   non-normative and skipped, since the exports are left out;
-- `profiles`, signed ratchet profiles and the prekey pins Android's own pipeline made of them, for the prekey phase;
+- `profiles`, signed ratchet profiles and the prekey pins Android's own pipeline made of them, which
+  `RatchetProfileVectorTests` delivers to one engine in the file's order;
 - `dm` and `negative`, scripted DM transcripts with a state digest after each step, and the refusals, for the DM
   engine and its wiring. The file's `transcriptFormat` describes every step;
 - `group` and `carol`, still to come in A9's later stages.

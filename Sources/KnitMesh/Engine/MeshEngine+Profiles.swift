@@ -19,8 +19,13 @@ extension MeshEngine {
     /// Applies `change` to what we publish as an edit, and floods the result: the version moves to
     /// `max(now, version + 1)` and the publish stamp to a fresh one.
     func publishEdit(_ change: (inout OwnProfile) -> Void) {
+        publishEdit(of: stores.ownProfile.load(), change)
+    }
+
+    /// Applies `change` to `own`, our profile as just read, as an edit, and floods the result.
+    private func publishEdit(of own: OwnProfile, _ change: (inout OwnProfile) -> Void) {
         let now = clock.wallMilliseconds()
-        var own = stores.ownProfile.load()
+        var own = own
         change(&own)
         own.version = max(now, own.version + 1)
         own.publishedAt = max(now, own.publishedAt + 1)
@@ -35,13 +40,76 @@ extension MeshEngine {
     /// The fresh frame goes into custody and reaches neighbours through the next digest exchange.
     func republishIfStale() {
         let now = clock.wallMilliseconds()
-        var own = stores.ownProfile.load()
-        guard now - own.publishedAt >= configuration.republishMilliseconds else {
+        // A store that cannot be read now answers no profile, never a fresh one to save over the edited row.
+        guard let own = stores.ownProfile.loadIfReadable(), now - own.publishedAt >= configuration.republishMilliseconds else {
             return
         }
+        republish(own, now: now)
+    }
+
+    /// Saves `own` under a fresh publish stamp and signs it into custody, its version as it is, so no receiver's
+    /// watermark moves.
+    private func republish(_ own: OwnProfile, now: Int64) {
+        var own = own
         own.publishedAt = max(now, own.publishedAt + 1)
         stores.ownProfile.save(own)
         _ = ownProfile()
+    }
+
+    /// Keeps the prekey our profile carries in step with the ring and the switch, at start and on every heal
+    /// (`MeshManager.rotatePrekeyIfDue`, `MeshManager.kt:995-1003`, which the start's seeding and `heal` run, `:2550`,
+    /// `:972`). With the switch on, a due prekey is minted, the first one on demand, and kept in the identity's store before
+    /// any profile names it; then, when the newest differs from the one our profile carries, the profile is republished
+    /// as an edit, its version and stamp moved, as Android's rotation bumps its version. With the switch off, or nothing
+    /// kept, a profile that still names a prekey is republished without it. So every toggle is a new stamp, and a new
+    /// version once the profile has been edited (ADR 2026-10.5sk9), and a crash between the store's write and the publish
+    /// is mended by the next comparison.
+    ///
+    /// A profile at version 0 has never been edited, and after a reinstall its name is empty until onboarding publishes
+    /// it. An edit then would flood the empty name at a version every peer takes, and Android writes a rename line into
+    /// each thread for it (`InboundPipeline.kt:1299-1301`). So the profile is republished instead: under a fresh stamp,
+    /// so that one stamp still names one payload, and at version 0, so no peer that holds an edit of ours takes its name,
+    /// and one that pinned our prekey from an edit keeps that prekey, which the ring still holds. A first profile is
+    /// never stale, so a peer that holds none pins it. The first edit, onboarding's
+    /// (``updateProfile(name:status:openToChat:)``), carries the prekey and the name together.
+    ///
+    /// A start that finds prekeys over a profile never published is a reinstall: the Keychain kept the identity and its
+    /// prekeys, and the database is new (ADR 2026-09.tkww). As Android's restore does (`MeshManager.finishRestore`,
+    /// `:1036-1047`; `IdentityKeyStore.rotatePrekey`, `IdentityKeyStore.kt:111-120`), a fresh prekey is minted then,
+    /// whatever the newest one's age, before the first publish, and no resets follow: there is no peer list to send them
+    /// to (ADR 2026-10.5sk9). Android's restore brings the name back with the database, so it bumps the version; a
+    /// reinstall here has no name yet, so its prekey takes the republish above. A profile the store cannot read now is
+    /// neither a reinstall nor a profile to edit, so nothing is done until a heal reads it.
+    func syncPrekey(atStart: Bool) {
+        guard let own = stores.ownProfile.loadIfReadable() else {
+            log.log(.warning, "mesh left our prekey as it was: our profile could not be read")
+            return
+        }
+        var wanted: Int?
+        if configuration.ratchet, var ring = prekeyRing {
+            let now = clock.wallMilliseconds()
+            let reinstall = atStart && ring.newest != nil && own.publishedAt == 0
+            do {
+                let minted: SignedPrekey? = try reinstall ? ring.rotate(now: now) : ring.rotateIfDue(now: now)
+                if let minted {
+                    prekeyRing = ring
+                    log.log(.info, "mesh minted prekey \(minted.id)")
+                }
+            } catch {
+                log.log(.warning, "mesh kept no new prekey: \(error)")
+            }
+            wanted = prekeyRing?.newest?.id
+        }
+        guard own.prekeyId != wanted else {
+            return
+        }
+        guard own.version != 0 else {
+            var carrying = own
+            carrying.prekeyId = wanted
+            republish(carrying, now: clock.wallMilliseconds())
+            return
+        }
+        publishEdit(of: own) { $0.prekeyId = wanted }
     }
 
     /// Our profile frame for the current publish stamp (`MeshManager.ownProfile`): the carried copy when custody
@@ -65,8 +133,13 @@ extension MeshEngine {
 
     /// Our profile, as an envelope (`MeshManager.currentProfileEnvelope`). The id and `sentAt` are the publish
     /// stamp; every required field is written, `status` included, or Android would never pin our key.
+    ///
+    /// The ratchet's bits and our prekey ride together, with the switch on and the prekey this publish names still kept
+    /// (`MeshManager.kt:2963-2979`): `CAP_RATCHET` promises a published prekey, and every Android build that claims it
+    /// carries one. Otherwise the profile is byte for byte what it was before the ratchet (ADR 2026-10.5sk9).
     func currentProfileEnvelope() -> RelayEnvelope {
         let own = stores.ownProfile.load()
+        let prekey = configuration.ratchet ? own.prekeyId.flatMap { prekeyRing?.prekey(id: $0) } : nil
         let content = ProfileContent(
             name: TextLimits.truncated(TextLimits.normalizeSingleLine(own.name), toUTF16: TextLimits.displayName),
             status: TextLimits.truncated(TextLimits.normalizeSingleLine(own.status), toUTF16: TextLimits.status),
@@ -74,7 +147,8 @@ extension MeshEngine {
             pubKey: identity.bundle.encoded,
             deviceTag: deviceTag,
             protoVersion: WireProtocol.version,
-            capabilities: Capabilities.local.rawValue,
+            capabilities: (prekey == nil ? Capabilities.local : configuration.capabilities).rawValue,
+            prekey: prekey?.info,
             version: own.version,
             openToChat: own.openToChat
         )
@@ -123,10 +197,15 @@ extension MeshEngine {
         events.append(.peerUpdated(peer))
     }
 
-    /// A verified profile (`InboundPipeline.handleProfile`). Its key pins only if it derives to the sender, which
-    /// ``verify(_:)`` checked, and a pinned key never changes. The presentation follows the newest version,
-    /// clamped to five minutes past our clock. Once the key pins, our DMs that waited for it go out, the frame is kept
-    /// as the key's proof, neighbours that asked us for it are served, and frames parked for it are delivered.
+    /// A verified profile (`InboundPipeline.handleProfile` and `storeProfileRow`, `InboundPipeline.kt:3159-3345`). Its
+    /// key pins only if it derives to the sender, which ``verify(_:)`` checked, and a pinned key never changes. Two
+    /// watermarks order what it changes, each on the profile's version clamped to five minutes past our clock: the
+    /// presentation follows ``PeerRecord/updatedAt``, and the prekey ``PeerRecord/prekeyProfileAt``. A sealed profile
+    /// update (a later phase) moves the presentation and carries no prekey, so a cleartext profile older on the first can
+    /// still be newer on the second, and its prekey must land (knit-next ADR 020's fix). A profile older on both changes
+    /// nothing. Once the key pins, our DMs that waited for it go out, the frame is kept as the key's proof, neighbours that
+    /// asked us for it are served, and frames parked for it are delivered. All of it runs whatever the ratchet's switch
+    /// says, since none of it puts anything of the ratchet's on air (ADR 2026-10.5sk9).
     func handleProfile(_ wire: WireEnvelope, _ envelope: RelayEnvelope) {
         // Our own profile coming back is not a peer to pin.
         guard let sender = NodeId(envelope.senderId), sender != nodeId,
@@ -136,45 +215,35 @@ extension MeshEngine {
         }
         let existing = stores.peers.peer(sender)
         let version = clampFuture(content.version ?? envelope.sentAt)
-        if let existing {
-            guard version >= existing.updatedAt else {
-                return
-            }
-            guard existing.publicKey == key else {
-                drop(.pinChangeRefused, envelope)
-                log.log(.warning, "mesh refused a key change for pinned \(sender)")
-                return
-            }
+        let stalePresentation = existing.map { version < $0.updatedAt } ?? false
+        let stalePrekey = existing.map { version < $0.prekeyProfileAt } ?? false
+        guard !(stalePresentation && stalePrekey) else {
+            return
         }
-        let photo = photoFrom(content, existing: existing)
-        let record = PeerRecord(
-            nodeId: sender,
-            // Our own limits bound what we send, not what a peer does.
-            name: TextLimits.truncated(content.name, toUTF16: TextLimits.displayName),
-            status: TextLimits.truncated(content.status, toUTF16: TextLimits.status),
-            publicKey: key,
-            deviceTag: content.deviceTag ?? existing?.deviceTag,
-            protocolVersion: content.protoVersion ?? existing?.protocolVersion,
-            capabilities: content.capabilities ?? existing?.capabilities,
-            updatedAt: max(existing?.updatedAt ?? version, version),
-            verified: existing?.verified ?? false,
-            openToChat: content.openToChat,
-            avatarHash: photo.shown,
-            advertisedAvatarHash: photo.advertised
-        )
+        if let existing, existing.publicKey != key {
+            drop(.pinChangeRefused, envelope)
+            log.log(.warning, "mesh refused a key change for pinned \(sender)")
+            return
+        }
+        // A first profile starts from an empty row, both watermarks at 0, as `PeerEntity(senderId)` does (`:3301`).
+        let base = existing ?? PeerRecord(nodeId: sender, name: "", status: "", publicKey: key, updatedAt: 0)
+        let record = profileRecord(content, onto: base, version: version, stale: (stalePresentation, stalePrekey))
         stores.peers.upsert(record)
         // Before the waiting DMs go out and the parked frames land, so both meet a block that followed new keys. It runs
         // first, so it runs every time.
         if continueBlock(of: sender, deviceTag: content.deviceTag) || record != existing {
             events.append(.peerUpdated(sender))
         }
-        // A linked peer pushes its own photo right behind its profile, so only someone else's is asked for now; a push
-        // that never came is asked for at the next re-offer.
-        if let advertised = photo.advertised, photo.shown != advertised, !transport.isLinked(sender) {
-            wantBlob(advertised, author: sender, via: nil, asker: nil)
-        }
-        if let replaced = existing?.avatarHash, replaced != photo.shown {
-            releaseBlob(replaced)
+        // The photo moves with the presentation alone (`applyPresentationFollowUps`, `:1259-1272`). A linked peer pushes
+        // its own photo right behind its profile, so only someone else's is asked for now; a push that never came is asked
+        // for at the next re-offer.
+        if !stalePresentation {
+            if let advertised = record.advertisedAvatarHash, record.avatarHash != advertised, !transport.isLinked(sender) {
+                wantBlob(advertised, author: sender, via: nil, asker: nil)
+            }
+            if let replaced = existing?.avatarHash, replaced != record.avatarHash {
+                releaseBlob(replaced)
+            }
         }
         flushPending(to: sender)
         // Keep the frame the key pinned from beside the pin, so this node can prove the key to a newcomer after a
@@ -189,5 +258,51 @@ extension MeshEngine {
         for parked in pendingInbound.release(sender) {
             deliver(parked.frame)
         }
+    }
+
+    /// The row a profile leaves its sender with, from `base`, the row held or a fresh one under the profile's key
+    /// (`storeProfileRow`, `:3285-3343`), each field on its own watermark. The name, status, photo and open-to-chat move
+    /// only when the profile is not older than ``PeerRecord/updatedAt``, which never moves back. The prekey moves only when
+    /// it is not older than ``PeerRecord/prekeyProfileAt``: a verified one is pinned, and an absent or bad one clears the
+    /// pin, since the peer stopped serving it. The device tag, protocol version and capabilities follow any profile that
+    /// reaches here, as Android's do (`:3310-3318`): one older on the presentation's watermark is still the newest
+    /// cleartext profile on the prekey's, and the bits and the prekey ride it together.
+    private func profileRecord(
+        _ content: ProfileContent,
+        onto base: PeerRecord,
+        version: Int64,
+        stale: (presentation: Bool, prekey: Bool)
+    ) -> PeerRecord {
+        var record = base
+        if !stale.presentation {
+            // Our own limits bound what we send, not what a peer does.
+            record.name = TextLimits.truncated(content.name, toUTF16: TextLimits.displayName)
+            record.status = TextLimits.truncated(content.status, toUTF16: TextLimits.status)
+            record.openToChat = content.openToChat
+            (record.advertisedAvatarHash, record.avatarHash) = photoFrom(content, existing: base)
+        }
+        record.deviceTag = content.deviceTag ?? base.deviceTag
+        record.protocolVersion = content.protoVersion ?? base.protocolVersion
+        record.capabilities = content.capabilities ?? base.capabilities
+        record.updatedAt = max(base.updatedAt, version)
+        if !stale.prekey {
+            record.prekey = verifiedPrekey(content, of: base)
+            record.prekeyProfileAt = version
+        }
+        return record
+    }
+
+    /// The profile's prekey, or `nil` for none: its signature must verify against `peer`'s key, the one in the same
+    /// profile, and its public value must be 32 bytes (`verifiedPrekey`, `:3353-3368`). A bad one counts as none, so it
+    /// never blocks the rest of the profile.
+    private func verifiedPrekey(_ content: ProfileContent, of peer: PeerRecord) -> PrekeyInfo? {
+        guard let info = content.prekey else {
+            return nil
+        }
+        guard let bundle = PublicKeyBundle(encoded: peer.publicKey), PeerPrekey(verifying: info, signedBy: bundle) != nil else {
+            log.log(.warning, "mesh ignored a bad prekey from \(peer.nodeId)")
+            return nil
+        }
+        return info
     }
 }

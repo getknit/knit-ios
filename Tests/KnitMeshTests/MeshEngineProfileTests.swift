@@ -247,12 +247,15 @@ import Testing
     }
 
     @Test func aProfileThatPinsNothingKeepsNoProofOfKey() throws {
-        // Never our own, never one refusing a pinned key, never one older than the pin's watermark.
+        // Never our own, never one refusing a pinned key, never one older than both of the pin's watermarks: a pin made
+        // from a profile at version 100 holds 100 on each.
         let stores = MeshStores.inMemory()
         let carol = TestPeer(seed: 3)
         stores.peers.upsert(
             PeerRecord(nodeId: bob.nodeId, name: "", status: "", publicKey: TestPeer(seed: 9).keys.bundle.encoded, updatedAt: 0))
-        stores.peers.upsert(PeerRecord(nodeId: carol.nodeId, name: "", status: "", publicKey: carol.keys.bundle.encoded, updatedAt: 100))
+        stores.peers.upsert(
+            PeerRecord(
+                nodeId: carol.nodeId, name: "", status: "", publicKey: carol.keys.bundle.encoded, updatedAt: 100, prekeyProfileAt: 100))
         let fixture = EngineFixture(alice, stores: stores)
         fixture.deliver(try alice.profile(name: "Me", publishedAt: EngineFixture.start - 10), from: bob)
         fixture.deliver(try bob.profile(version: 1, publishedAt: EngineFixture.start), from: bob)

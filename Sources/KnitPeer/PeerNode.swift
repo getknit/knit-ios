@@ -17,10 +17,12 @@ public actor PeerNode {
     private let avatarPath: String?
     private var forwarding: Task<Void, Never>?
 
-    /// A node for `identity` on `radio`. Nothing runs until ``start(name:)``.
+    /// A node for `identity` on `radio`, with the ratchet prekeys `prekeys` (``PeerState/loadPrekeys(for:)``), or none.
+    /// Nothing runs until ``start(name:)``.
     @preconcurrency
     public init(
         identity: IdentityKeys,
+        prekeys: PrekeyRing? = nil,
         stores: MeshStores,
         radio: any Radio,
         radioProfile: String,
@@ -37,6 +39,7 @@ public actor PeerNode {
         self.avatarPath = avatarPath
         mesh = Mesh(
             identity: identity,
+            prekeys: prekeys,
             deviceTag: nil,
             stores: stores,
             radio: radio,

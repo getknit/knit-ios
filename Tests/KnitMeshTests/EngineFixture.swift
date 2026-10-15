@@ -17,14 +17,21 @@ struct EngineFixture {
     let log = RecordingLog()
     let engine: MeshEngine
 
-    /// An engine for `me`, started unless told otherwise.
-    init(_ me: TestPeer, stores: MeshStores = .inMemory(), configuration: MeshConfiguration = MeshConfiguration(), started: Bool = true) {
+    /// An engine for `me`, keeping `prekeys` when given, started unless told otherwise.
+    init(
+        _ me: TestPeer,
+        stores: MeshStores = .inMemory(),
+        configuration: MeshConfiguration = MeshConfiguration(),
+        prekeys: PrekeyRing? = nil,
+        started: Bool = true
+    ) {
         self.me = me
         clock = ManualClock(wall: Self.start, monotonic: 1000)
         transport = RecordingTransport()
         self.stores = stores
         engine = MeshEngine(
             identity: me.keys,
+            prekeys: prekeys,
             deviceTag: "0011223344556677",
             stores: stores,
             transport: transport,
@@ -103,7 +110,9 @@ struct TestPeer: Equatable {
         publishedAt: Int64,
         relay: Bool = true,
         avatarHash: String? = nil,
-        deviceTag: String? = nil
+        deviceTag: String? = nil,
+        capabilities: Int64 = 0xFFF,
+        prekey: PrekeyInfo? = nil
     ) throws -> TestFrame {
         let content = ProfileContent(
             name: name,
@@ -112,7 +121,8 @@ struct TestPeer: Equatable {
             pubKey: keys.bundle.encoded,
             deviceTag: deviceTag,
             protoVersion: WireProtocol.version,
-            capabilities: 0xFFF,
+            capabilities: capabilities,
+            prekey: prekey,
             version: version
         )
         let envelope = RelayEnvelope(
@@ -123,6 +133,12 @@ struct TestPeer: Equatable {
             payload: content.encoded
         )
         return try signed(envelope, relay: relay)
+    }
+
+    /// Prekey `id` as this peer would publish it, signed by its own key, its pair fixed by `id`.
+    func prekey(id: Int) throws -> PrekeyInfo {
+        let pair = try RatchetCrypto.KeyPair(privateKey: fixtureBytes(32, seed: 200 + id))
+        return try SignedPrekey.mint(id: id, signedBy: keys, createdAt: 0) { pair }.info
     }
 
     /// A room post from this peer: `body`, or the whole of `content` when it is given.

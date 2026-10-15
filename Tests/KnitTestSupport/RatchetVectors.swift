@@ -1,6 +1,7 @@
 /// knit-next's ratchet known answers, `vectors/ratchet-v1.json` (companion change A9): the ratchet's primitives walked
-/// through Alice's first exchange with Bob, and one group epoch of Alice's. Every byte string is lowercase hex, and every
-/// bundle padded standard base64. `RatchetVectorTests` checks each answer.
+/// through Alice's first exchange with Bob, and one group epoch of Alice's, which `RatchetVectorTests` checks; and signed
+/// ratchet profiles with the prekey pins Android's own pipeline made of them, which `RatchetProfileVectorTests` checks.
+/// Every byte string is lowercase hex, and every bundle padded standard base64.
 public enum RatchetVectors {
     /// The file's shape. Its `export` answers are not modelled: the spool's exports are not in this port (ADR
     /// 2026-10.5sk9), and the file marks them non-normative.
@@ -9,6 +10,75 @@ public enum RatchetVectors {
         public let identities: [String: VectorIdentity]
         /// The known answers.
         public let kats: Kats
+        /// The signed ratchet profiles, and the pins they leave.
+        public let profiles: Profiles
+    }
+
+    /// Ratchet profiles delivered in `sequence` to one fresh receiver, and the pin it holds for the sender after each
+    /// (`InboundPipelineTest.theRatchetVectorProfilesPinAsTheFileSays` in knit-next).
+    public struct Profiles: Decodable, Sendable {
+        /// The capabilities every profile here claims: `0x159`.
+        public let capabilities: Int64
+        /// The prekeys the profiles carry, from fixed keys.
+        public let prekeys: [VectorPrekey]
+        /// The signed profiles, by name.
+        public let frames: [String: ProfileFrame]
+        /// What to deliver, in order, and what the receiver pins after each.
+        public let sequence: [ProfileStep]
+    }
+
+    /// A prekey from a fixed key: `priv` is `bytes(32, seed)`, and `sig` is its owner's.
+    public struct VectorPrekey: Decodable, Sendable {
+        /// Its name, as a frame names it.
+        public let name: String
+        /// Whose prekey, by name in `identities`.
+        public let owner: String
+        /// Its id.
+        public let id: Int
+        /// The fixture seed of `priv`.
+        public let seed: Int
+        /// The private scalar.
+        public let priv: String
+        /// The public value it derives.
+        public let pub: String
+        /// The owner's signature over the prekey's signed bytes: verify it, never compare it.
+        public let sig: String
+        /// When it was minted, in epoch milliseconds.
+        public let createdAt: Int64
+    }
+
+    /// One signed profile.
+    public struct ProfileFrame: Decodable, Sendable {
+        /// Who signed it, by name in `identities`.
+        public let sender: String
+        /// The profile's version.
+        public let version: Int64
+        /// Its publish stamp, the frame's `sentAt`.
+        public let publishedAt: Int64
+        /// The prekey it carries, by name in `prekeys`, or `nil` for none.
+        public let prekey: String?
+        /// Whether that prekey's signature, as the profile carries it, verifies.
+        public let prekeySigValid: Bool
+        /// The encoded `WireEnvelope`, as hex.
+        public let wire: String
+    }
+
+    /// One delivery, and the pin it leaves.
+    public struct ProfileStep: Decodable, Sendable {
+        /// The frame delivered, by name in `frames`.
+        public let deliver: String
+        /// The sender's pin afterwards.
+        public let expect: PinnedPrekey
+    }
+
+    /// A sender's prekey pin, as the receiver holds it.
+    public struct PinnedPrekey: Decodable, Sendable {
+        /// The pinned prekey's id, or `nil` for no pin.
+        public let prekeyId: Int?
+        /// Its public value, or `nil` for no pin.
+        public let prekeyPub: String?
+        /// The prekey's watermark: the version of the profile that last set or cleared it.
+        public let prekeyProfileAt: Int64
     }
 
     /// The known answers, one per primitive.

@@ -33,9 +33,10 @@ public actor Mesh {
     /// What the radio last said of its state, or `nil` before it has said anything.
     public private(set) var radioState: RadioState?
 
-    /// A mesh node for `identity`, on `radio`.
+    /// A mesh node for `identity`, with the ratchet prekeys it keeps beside it, or none, on `radio`.
     public init(
         identity: IdentityKeys,
+        prekeys: PrekeyRing? = nil,
         deviceTag: String?,
         stores: MeshStores,
         radio: any Radio,
@@ -56,6 +57,7 @@ public actor Mesh {
         links = linkManager
         engine = MeshEngine(
             identity: identity,
+            prekeys: prekeys,
             deviceTag: deviceTag,
             stores: stores,
             transport: linkManager,

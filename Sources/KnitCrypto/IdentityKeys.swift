@@ -100,7 +100,7 @@ extension IdentityKeys {
     }
 
     /// The private keys as a store keeps them: the CBOR map `{signingSeed, agreementScalar}`. The ratchet's
-    /// signed prekeys will join it as a third key, which an older build ignores.
+    /// signed prekeys join it as a third key, `prekeys`, which ``PrekeyRing`` writes and an older build ignores.
     public var storedForm: [UInt8] {
         CBOR.map([
             CBOR.Entry(key: .text(Self.signingSeedKey), value: .bytes(signingSeed)),
@@ -109,7 +109,8 @@ extension IdentityKeys {
         .encoded
     }
 
-    /// Keys read back from ``storedForm``, or `nil` if the bytes are not that map.
+    /// Keys read back from ``storedForm``, or `nil` if the bytes are not that map. Other keys, `prekeys` among them, are
+    /// ignored.
     public init?(storedForm bytes: [UInt8]) {
         guard case .map(let entries) = try? CBOR.decode(bytes),
             let seed = Self.bytes(Self.signingSeedKey, in: entries),

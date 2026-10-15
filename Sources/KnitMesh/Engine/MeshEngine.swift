@@ -12,6 +12,9 @@ public import KnitWire
 public final class MeshEngine {
     /// This node's keys.
     public let identity: IdentityKeys
+    /// This node's ratchet prekeys, kept beside ``identity`` in its store, or `nil` for a node that keeps none, which then
+    /// publishes none whatever the switch says (ADR 2026-10.5sk9).
+    var prekeyRing: PrekeyRing?
     /// This node's key-independent device tag, published in its profile.
     let deviceTag: String?
     /// The repositories.
@@ -55,9 +58,11 @@ public final class MeshEngine {
         var heal: Int64
     }
 
-    /// A node with `identity`, its repositories, and the transport, clock and randomness it runs on.
+    /// A node with `identity` and the prekeys it keeps, its repositories, and the transport, clock and randomness it runs
+    /// on. A ring another identity signs is not this node's, and is left out.
     public init(
         identity: IdentityKeys,
+        prekeys: PrekeyRing? = nil,
         deviceTag: String?,
         stores: MeshStores,
         transport: any MeshTransport,
@@ -67,6 +72,7 @@ public final class MeshEngine {
         log: any KnitLog = SilentLog()
     ) {
         self.identity = identity
+        prekeyRing = prekeys.flatMap { $0.identity.bundle == identity.bundle ? $0 : nil }
         self.deviceTag = deviceTag
         self.stores = stores
         self.transport = transport
@@ -121,13 +127,17 @@ public final class MeshEngine {
         return ([router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline] + blobs).compactMap(\.self).min()
     }
 
-    /// Starts the node (`MeshManager.seedOwnProfileCustody`): republishes our profile if its stamp is stale, puts it
-    /// in custody, sweeps what expired while we were down, forgets deleted messages no carrier can still hold, delivers
-    /// group chats custody holds and our threads lack, and starts the timers. Idempotent.
+    /// Starts the node (`MeshManager.seedOwnProfileCustody`): brings our prekey in step with the ring and the switch,
+    /// republishes our profile if its stamp is stale, puts it in custody, sweeps what expired while we were down, forgets
+    /// deleted messages no carrier can still hold, delivers group chats custody holds and our threads lack, and starts the
+    /// timers. Idempotent.
     public func start() {
         guard !isStarted else {
             return
         }
+        // Before anything signs our profile, so the frame custody seeds already carries a due prekey
+        // (`MeshManager.kt:2548-2551`).
+        syncPrekey(atStart: true)
         republishIfStale()
         _ = ownProfile()
         sweep()
@@ -270,9 +280,11 @@ public final class MeshEngine {
         }
     }
 
-    /// The 15-minute heal pass (`MeshManager.heal`): re-ask for missing keys, and republish a stale profile.
+    /// The 15-minute heal pass (`MeshManager.heal`): re-ask for missing keys, rotate our prekey when due, and republish a
+    /// stale profile.
     func heal() {
         askForMissingKeys(to: neighborIds)
+        syncPrekey(atStart: false)
         republishIfStale()
     }
 

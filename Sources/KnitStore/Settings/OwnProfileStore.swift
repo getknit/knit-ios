@@ -18,6 +18,11 @@ public struct OwnProfile: Sendable, Equatable {
     public var publishedAt: Int64
     /// Our profile photo, whose bytes the blob store holds (`SettingsStore.ownAvatarHash`), or `nil` for none.
     public var avatarHash: BlobHash?
+    /// The id of the ratchet prekey this publish carries, or `nil` for none (ADR 2026-10.5sk9). It is part of what is
+    /// published, so a stamp names one payload: a new prekey, or the ratchet's switch turned either way, moves the stamp,
+    /// and moves the version too once the profile has been edited. Android reads its newest prekey at each signing
+    /// instead (`MeshManager.kt:2963-2965`).
+    public var prekeyId: Int?
 
     /// A profile; the defaults are a fresh identity's, nothing set and nothing published.
     public init(
@@ -26,7 +31,8 @@ public struct OwnProfile: Sendable, Equatable {
         openToChat: Bool = false,
         version: Int64 = 0,
         publishedAt: Int64 = 0,
-        avatarHash: BlobHash? = nil
+        avatarHash: BlobHash? = nil,
+        prekeyId: Int? = nil
     ) {
         self.name = name
         self.status = status
@@ -34,6 +40,7 @@ public struct OwnProfile: Sendable, Equatable {
         self.version = version
         self.publishedAt = publishedAt
         self.avatarHash = avatarHash
+        self.prekeyId = prekeyId
     }
 }
 
@@ -42,6 +49,11 @@ public struct OwnProfile: Sendable, Equatable {
 public protocol OwnProfileStore: AnyObject, Sendable {
     /// The saved profile, or a fresh one.
     func load() -> OwnProfile
+
+    /// The saved profile, a fresh one when none is saved, or `nil` when the store cannot be read now. ``load()``
+    /// answers a fresh profile then too, which a caller that acts on a fresh profile, as a reinstall's prekey does, must
+    /// not take for one (ADR 2026-10.5sk9).
+    func loadIfReadable() -> OwnProfile?
 
     /// Saves the profile.
     func save(_ profile: OwnProfile)
@@ -58,6 +70,11 @@ public final class MemoryOwnProfileStore: OwnProfileStore {
 
     public func load() -> OwnProfile {
         profile.withLock { $0 }
+    }
+
+    /// Always the profile held: memory never fails to read.
+    public func loadIfReadable() -> OwnProfile? {
+        load()
     }
 
     public func save(_ profile: OwnProfile) {

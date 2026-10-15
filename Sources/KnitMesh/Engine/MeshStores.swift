@@ -1,4 +1,5 @@
 public import KnitStore
+public import KnitWire
 
 /// Every repository the mesh reads and writes.
 public struct MeshStores: Sendable {
@@ -80,8 +81,21 @@ public struct MeshConfiguration: Sendable {
     /// How long after one of our typing cues the next may go to the same thread (`TYPING_SEND_INTERVAL_MS`,
     /// `ChatViewModel.kt:2542`): the first keystroke after a quiet spell sends one at once, and the rest wait it out.
     public var typingIntervalMilliseconds: Int64
+    /// The forward-secrecy ratchet's switch (ADR 2026-10.5sk9), off everywhere until the flip. On, our signed profile
+    /// carries our prekey and ``capabilities``' three ratchet bits, kept and rotated in the identity's store; the HELLO and
+    /// the advert stay ``Capabilities/local``, since Android reads these bits from the pinned profile alone
+    /// (`CryptoScheme.kt:11-13`). Off, the profile is what it was before the ratchet. Each phase adds what the switch
+    /// turns on. Taking peers' prekeys in runs either way, since it sends nothing.
+    public var ratchet: Bool
 
-    /// knit-next's cadences unless told otherwise: 60 s, 10 min, 15 min and 12 h, and typing's 12 s and 8 s.
+    /// What our signed profile advertises while it carries our prekey: ``Capabilities/local``, plus
+    /// ``Capabilities/ratchet``, ``Capabilities/inlineAck`` and ``Capabilities/cryptoV3`` when the switch is on (`0x15F`).
+    public var capabilities: Capabilities {
+        ratchet ? Capabilities.local.union([.ratchet, .inlineAck, .cryptoV3]) : .local
+    }
+
+    /// knit-next's cadences unless told otherwise: 60 s, 10 min, 15 min and 12 h, and typing's 12 s and 8 s. The ratchet
+    /// is off.
     public init(
         router: Router.Configuration = Router.Configuration(),
         reofferMilliseconds: Int64 = 60_000,
@@ -90,7 +104,8 @@ public struct MeshConfiguration: Sendable {
         republishMilliseconds: Int64 = 43_200_000,
         queriesBlobHolders: Bool = false,
         typingLifetimeMilliseconds: Int64 = 12_000,
-        typingIntervalMilliseconds: Int64 = 8000
+        typingIntervalMilliseconds: Int64 = 8000,
+        ratchet: Bool = false
     ) {
         self.router = router
         self.reofferMilliseconds = reofferMilliseconds
@@ -100,5 +115,6 @@ public struct MeshConfiguration: Sendable {
         self.queriesBlobHolders = queriesBlobHolders
         self.typingLifetimeMilliseconds = typingLifetimeMilliseconds
         self.typingIntervalMilliseconds = typingIntervalMilliseconds
+        self.ratchet = ratchet
     }
 }

@@ -10,10 +10,10 @@ public import KnitWire
 /// do, so the proof never outlives the pin it proves.
 public final class SQLPeerStore: PeerStore {
     /// Every column of a peer, in the order ``upsert(_:)`` binds them. `INSERT OR REPLACE` writes a whole row, so a
-    /// column missing here would be nulled by every write: the photo hashes are here for that reason.
+    /// column missing here would be nulled by every write: the photo hashes and the prekey are here for that reason.
     private static let columns =
         "nodeId, name, status, publicKey, deviceTag, protocolVersion, capabilities, updatedAt, verified, openToChat, avatarHash, "
-        + "advertisedAvatarHash"
+        + "advertisedAvatarHash, prekeyId, prekeyPub, prekeySig, prekeyProfileAt"
 
     private let database: KnitDatabase
 
@@ -35,12 +35,13 @@ public final class SQLPeerStore: PeerStore {
     public func upsert(_ peer: PeerRecord) {
         database.write(or: ()) { db in
             try db.execute(
-                sql: "INSERT OR REPLACE INTO peers (\(Self.columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                sql: "INSERT OR REPLACE INTO peers (\(Self.columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 arguments: [
                     StoredText.bytes(peer.nodeId.string), StoredText.bytes(peer.name), StoredText.bytes(peer.status),
                     StoredText.bytes(peer.publicKey), StoredText.bytes(peer.deviceTag), peer.protocolVersion, peer.capabilities,
                     peer.updatedAt, peer.verified, peer.openToChat, StoredText.bytes(peer.avatarHash?.string),
-                    StoredText.bytes(peer.advertisedAvatarHash?.string),
+                    StoredText.bytes(peer.advertisedAvatarHash?.string), peer.prekey?.id, peer.prekey.map { Data($0.pub) },
+                    peer.prekey.map { Data($0.sig) }, peer.prekeyProfileAt,
                 ]
             )
         }
@@ -97,7 +98,19 @@ public final class SQLPeerStore: PeerStore {
             verified: try row.decode(Bool.self, forColumn: "verified"),
             openToChat: try row.decode(Bool.self, forColumn: "openToChat"),
             avatarHash: try row.optionalBlobHash("avatarHash"),
-            advertisedAvatarHash: try row.optionalBlobHash("advertisedAvatarHash")
+            advertisedAvatarHash: try row.optionalBlobHash("advertisedAvatarHash"),
+            prekey: try prekey(row),
+            prekeyProfileAt: try row.decode(Int64.self, forColumn: "prekeyProfileAt")
         )
+    }
+
+    /// The peer's prekey in a row of ``columns``, or `nil` unless all three of its columns hold one.
+    private static func prekey(_ row: Row) throws -> PrekeyInfo? {
+        guard let id = try row.decode(Int?.self, forColumn: "prekeyId"), let pub = try row.decode(Data?.self, forColumn: "prekeyPub"),
+            let sig = try row.decode(Data?.self, forColumn: "prekeySig")
+        else {
+            return nil
+        }
+        return PrekeyInfo(id: id, pub: [UInt8](pub), sig: [UInt8](sig))
     }
 }

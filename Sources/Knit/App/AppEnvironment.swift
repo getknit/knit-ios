@@ -169,6 +169,8 @@
             let defaults = DefaultsPreferences()
             var parts = Parts(
                 identity: identity,
+                // The ratchet's, kept in the identity's own item (ADR 2026-10.5sk9): read, never written, throwing as above.
+                prekeys: try PrekeyRing.load(for: identity, from: keyStore),
                 stores: stores,
                 radio: BLERadio(log: log),
                 log: log,
@@ -190,6 +192,8 @@
         /// What an environment is made from.
         private struct Parts {
             let identity: IdentityKeys
+            /// The ratchet prekeys kept beside the identity; a demo keeps none.
+            var prekeys: PrekeyRing?
             let stores: MeshStores
             let radio: any Radio
             let log: any KnitLog
@@ -232,6 +236,7 @@
             let clock = SystemClock()
             let node = Mesh(
                 identity: parts.identity,
+                prekeys: parts.prekeys,
                 deviceTag: DeviceTag.derive(UIDevice.current.identifierForVendor?.uuidString),
                 stores: parts.stores,
                 radio: parts.radio,

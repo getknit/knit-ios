@@ -259,8 +259,9 @@ each one guards (`.agents/context/crypto.md`, "The ratchet").
     `CAP_RATCHET` with a prekey, and Android starts a session just to seal a receipt (`InboundPipeline.kt:2904-2948`).
     A dark iPhone that read only the peer's bits would start one-sided sessions with every Android peer, which would
     still exist at the flip. With `MeshConfiguration.ratchet` off, nothing the iPhone puts on air changes; with it on,
-    the bits and the prekey join the signed profile only; every toggle republishes under a new stamp with a version
-    bump (ADR 2026-10.5sk9).
+    the bits and the prekey join the signed profile only; every toggle republishes under a new stamp, with a version
+    bump once the profile has been edited (a never-edited profile stays at version 0, so no peer takes its blank
+    name; ADR 2026-10.5sk9, amended).
 
 Then two checks that are not shapes.
 
@@ -402,7 +403,8 @@ One line per invariant, with the ADR to read. Not exhaustive and not authoritati
 - **Pins** (`crypto.md`, "The public key bundle"). A bundle is pinned verbatim and never replaced; a node never
   pins its own, and never holds a session or a seed row with itself (knit-next 45763fb6, 8333c858).
 - **The switch** (ADR 2026-10.5sk9). Off puts the same bytes on air as before; on adds the bits and the prekey to
-  the profile only; every toggle republishes with a version bump.
+  the profile only; every toggle republishes under a new stamp, with a version bump once the profile has been
+  edited.
 - **DM sessions** (`crypto.md`, "Lifecycle"; knit-next ADRs 016, 023 and 027). The smaller node id wins a race; a
   resolved init is anchored by its ephemeral; era effects only on a fresh derivation under the active root
   (knit-next ADR 2026-09.pz9g); receive state keyed by root tag, and `DUPLICATE` outranks but never stops the ladder

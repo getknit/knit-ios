@@ -162,6 +162,19 @@ import Testing
         #expect(peers.compactMap { $0["peer"] as? String } == ids.sorted().map(\.string))
     }
 
+    @Test func peersNameThePrekeyPinnedForThemOrNull() async throws {
+        // An interop run reads it to see a peer's prekey taken in (ADR 2026-10.5sk9).
+        let rig = ControlRig()
+        let pinned = fixtureNodeId(8)
+        let bare = fixtureNodeId(9)
+        let prekey = PrekeyInfo(id: 3, pub: fixtureBytes(32, seed: 1), sig: fixtureBytes(64, seed: 2))
+        rig.stores.peers.upsert(PeerRecord(nodeId: pinned, name: "", status: "", publicKey: "", updatedAt: 1, prekey: prekey))
+        rig.stores.peers.upsert(PeerRecord(nodeId: bare, name: "", status: "", publicKey: "", updatedAt: 1))
+        let peers = try #require(try await rig.send(#"{"cmd":"peers"}"#)["peers"] as? [[String: Any]])
+        #expect(peers.first { $0["peer"] as? String == pinned.string }?["prekeyId"] as? Int == 3)
+        #expect(peers.first { $0["peer"] as? String == bare.string }?["prekeyId"] is NSNull)
+    }
+
     @Test func linkEventsNameOnlyThePeersThatChanged() async throws {
         let rig = ControlRig()
         let first = Neighbor(nodeId: fixtureNodeId(4))

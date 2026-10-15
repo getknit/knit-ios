@@ -164,7 +164,8 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   to `pullThroughs` (ADR 2026-10.6e5t in knit-next); `footprint`, the size of each table the mesh keeps in memory, blobs wanted and files queued among them; and
   `router`, what the router has admitted, relayed and refused; and `typing`, who the mesh holds typing where, as
   `{conv: [node id, …]}`, the shape of Android's `STATE.typing`), `peers` (names, aliases, safety numbers, each
-  peer's `avatarHash` shown and `advertisedAvatarHash`, and `blocked`), `links` (links and sightings), `room` (`text`), `dm` (`to`,
+  peer's `avatarHash` shown and `advertisedAvatarHash`, `blocked`, and the `prekeyId` of the ratchet prekey pinned for
+  it, or `null`), `links` (links and sightings), `room` (`text`), `dm` (`to`,
   `text`); `room`, `dm` and `group-send` also take a `photo` as base64 and its `mime`, `image/jpeg` when absent, and
   then need no `text`, and their replies name the `attachmentHash` the photo is kept under (ADR 2026-10.6cas); a
   `replyTo`, the id of a message held here, makes any of them a reply quoting it, as Android's composer would under

@@ -53,7 +53,8 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     anyway, since it sends nothing.
   - **On:** the signed profile adds `0x10`, `0x40` and `0x100` and carries our prekey. The HELLO and the advert stay
     `0xF`, because Android takes a peer's capabilities from its pinned profile alone (`CryptoScheme.kt:11-13`).
-  - **Every toggle republishes the profile** under a new stamp, with a version bump, as Android's prekey rotation does
+  - **Every toggle republishes the profile** (the P3 amendment below refines this: a never-edited profile stays at
+    version 0) under a new stamp, with a version bump, as Android's prekey rotation does
     (`MeshManager.kt:996-1003`).
   - **Who can turn it on:** knit-peer, with `--ratchet`, and a Debug build, with `-ratchet`. A release build cannot,
     until the flip.
@@ -74,7 +75,8 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     as it pins would reset strangers too.
   - The peers' next frames fail as `NO_SESSION`, the reset heuristic re-roots each pair, and the peer re-seals its
     last 24 h of DMs (`MeshManager.kt:3361-3407`).
-  - A launch that finds a stored identity over an empty database draws a fresh prekey and bumps the profile, as
+  - A launch that finds a stored identity over an empty database (refined by the P3 amendment below) draws a fresh
+    prekey and bumps the profile, as
     Android's restore does (`MeshManager.kt:1036-1047`), but without the resets that follow it there.
 - **The alternatives, and why not:**
   - **DMs first, with groups left on v1:** the one bit makes Android seal the group form toward any iPhone that
@@ -98,3 +100,50 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   - `PersonaTests` keeps the review gates in step with the paths.
 - **The guards to come:** the DM phase adds a test that the switch off puts the same bytes on air, and the flip
   changes the pins above in the same change.
+
+**Amended 2026-10-15, phase P3 (prekeys):**
+
+- **Our prekeys live in the identity's own item** (`PrekeyRing`), as `{signingSeed, agreementScalar, prekeys: [{id,
+  priv, createdAt, sig}]}`, so an older build still reads its identity and a reinstall keeps them. Each signature is
+  kept from its mint, since CryptoKit's Ed25519 is randomized. A rotation reads the item, checks the identity in it,
+  replaces `prekeys` alone, writes and reads back, and the ring changes only after that.
+- **A rotation never reuses an id or drops what it cannot read.** It mints one above the highest id any stored entry
+  names, read or not. Android's restore mints `max(stored) + 1` too, and its profile bump makes peers take the new key
+  (`IdentityKeyStore.kt:195`, `MeshManager.kt:1011-1016`). It prunes only entries it
+  reads, keeping the five highest ids, and writes every other entry back as it was stored without counting it toward
+  the five: Android never mints over prekeys it cannot parse (`IdentityKeyStore.kt:136-137`), and such an entry may be
+  a newer build's prekey that a peer's init names.
+- **A publish names its prekey** (`OwnProfile.prekeyId`, schema v16), so one stamp is one payload. Start and every heal
+  mint a due prekey with the switch on and republish as an edit when the newest differs, and a profile that still
+  names one with the switch off is republished without it. A profile never edited, at version 0, is republished
+  instead: a new stamp, its version left at 0. So every toggle moves the stamp, and moves the version once the profile
+  has been edited.
+- **The bits and the prekey ride together, or neither does.** `CAP_RATCHET` promises a published prekey, so a node with
+  no ring, or whose store refused the first mint, publishes what it would with the switch off. The alternative, the
+  bits whenever the switch is on, would claim a promise no Android build ever claims without a prekey.
+- **Peers' prekeys pin on their own watermark** (`PeerRecord.prekey` and `prekeyProfileAt`), whatever the switch says,
+  as `InboundPipeline.kt:3276-3345` does, capabilities included.
+- **A reinstall** with the switch on mints a fresh prekey before its first publish, and that publish is not an edit.
+  The mesh starts on onboarding's permissions page, before onboarding publishes the name (`OnboardingModel`), so the
+  profile is at version 0 with no name. An edit would flood the empty name at a version every peer takes, and Android
+  would write a rename line into every thread with us (`InboundPipeline.kt:1299-1301`). The republish at version 0
+  leaves a peer that holds any edit of ours on the name and the prekey it has, which the ring still holds, and
+  onboarding's edit then carries the fresh prekey with the name. Android's restore can bump the version because it
+  brings the name back. A profile the store cannot read is neither a reinstall nor a profile to edit
+  (`OwnProfileStore.loadIfReadable`), so nothing is minted or published until a heal reads it.
+- **Not yet wired:** knit-peer's `main` loads no ring; P5's `--ratchet` must load one with `PeerState.loadPrekeys`.
+- **Open before the flip: restoring the same phone from its own backup.**
+  - **What comes back:** the `…ThisDeviceOnly` identity item and the onboarded flag. The database does not, because
+    it is excluded from backups.
+  - **What happens:** the mesh then starts with no onboarding and mints `max(stored) + 1`, which may be an id the lost
+    item minted after the backup under another key. It publishes that prekey only at version 0, and every peer
+    holding an edit of ours ignores it. Their inits would then name a prekey our ring lacks until the user next
+    edits the profile.
+  - **The fix:** onboarding's edit must follow every database that has never published, either by gating onboarding
+    on the database or by keeping the onboarded flag in it. That is a product change outside P3, and it lands before
+    the flip. While the switch is off, nothing changes on air.
+- **Guards:** `MeshEnginePrekeyTests.withTheSwitchOffOurProfileIsTheBytesItWasAndNothingIsMinted` pins the profile's
+  bytes with the switch off; `RatchetProfileVectorTests` feeds A9's `profiles` to one engine;
+  `MeshEnginePrekeyReinstallTests` delivers a reinstall to a peer that pinned the first life, in both orders;
+  `PrekeyRingTests`, `MeshEnginePrekeyIntakeTests`, `PrekeyStoreTests` and
+  `SchemaTests.v16KeepsEveryPeerWithNoPrekeyAndOurProfileCarryingNone` keep the rest.

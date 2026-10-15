@@ -51,12 +51,41 @@ import Testing
         #expect(state.profileStore().load() == OwnProfile(name: "Peer", avatarHash: photo), "the name and the photo stay")
     }
 
+    @Test func thePrekeysLiveBesideTheIdentityAndTheProfileNamesTheOneItCarries() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let state = PeerState(directory: directory)
+        let keys = try state.loadIdentity().keys
+        var ring = try state.loadPrekeys(for: keys)
+        #expect(ring.prekeys.isEmpty)
+        try ring.rotate(now: 1)
+        #expect(try state.loadPrekeys(for: keys).newest?.id == 1)
+        #expect(try state.loadIdentity().keys.nodeId == keys.nodeId, "the grown file still loads the identity")
+        state.profileStore().save(OwnProfile(name: "Peer", version: 5, publishedAt: 6, prekeyId: 1))
+        #expect(PeerState(directory: directory).profileStore().load().prekeyId == 1)
+        // A new identity starts with no prekeys, and its profile names none.
+        try state.replaceIdentity(with: identity(5))
+        #expect(try state.loadPrekeys(for: identity(5)).prekeys.isEmpty)
+        #expect(state.profileStore().load().prekeyId == nil)
+    }
+
+    @Test func aProfileFileFromBeforePrekeysCarriesNone() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        let older = #"{"name":"Peer","openToChat":false,"publishedAt":6,"status":"","version":5}"#
+        try Data(older.utf8).write(to: URL(fileURLWithPath: directory + "/profile.json"))
+        #expect(PeerState(directory: directory).profileStore().load() == OwnProfile(name: "Peer", version: 5, publishedAt: 6))
+    }
+
     @Test func anUnreadableProfileIsAFreshOne() throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(atPath: directory) }
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         try Data("{not json".utf8).write(to: URL(fileURLWithPath: directory + "/profile.json"))
-        #expect(PeerState(directory: directory).profileStore().load() == OwnProfile())
+        let store = PeerState(directory: directory).profileStore()
+        #expect(store.load() == OwnProfile())
+        #expect(store.loadIfReadable() == OwnProfile(), "read once, as a fresh profile by design, so never unreadable later")
     }
 
     @Test func aProfileThatCannotBeWrittenSaysWhy() {

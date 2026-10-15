@@ -19,7 +19,7 @@ public struct ProfileContent: CBORRepresentable, Equatable {
     public var protoVersion: Int?
     /// The signed capability bits, the copy every send-time gate reads.
     public var capabilities: Int64?
-    /// The v2 signed prekey. This build publishes none.
+    /// The v2 signed prekey. This build publishes one only with the ratchet's switch on (ADR 2026-10.5sk9).
     public var prekey: PrekeyInfo?
     /// The edit clock: last writer wins on it.
     public var version: Int64?
@@ -95,8 +95,8 @@ public struct ProfileContent: CBORRepresentable, Equatable {
     }
 }
 
-/// A v2 signed prekey (`PrekeyInfo` in knit-next's `Wire.kt`). Decoded so profiles round-trip; the MVP
-/// never publishes one.
+/// A v2 signed prekey (`PrekeyInfo` in knit-next's `Wire.kt`). Decoded so profiles round-trip, and pinned once its
+/// signature verifies; published only with the ratchet's switch on (ADR 2026-10.5sk9).
 public struct PrekeyInfo: CBORRepresentable, Equatable {
     /// The prekey's id, counting up from 1.
     public var id: Int
