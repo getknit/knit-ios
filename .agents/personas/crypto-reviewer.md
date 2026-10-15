@@ -48,6 +48,8 @@ The caller names the changed files. If it doesn't, find them:
 ```bash
 git status --porcelain -- Sources/KnitCrypto Sources/KnitWire/Envelope Sources/KnitWire/Payload/EncEnvelope.swift \
   Sources/KnitWire/Payload/RatchetHeader.swift Sources/KnitWire/Payload/MessageContent.swift \
+  Sources/KnitWire/Payload/MessageContentV2.swift Sources/KnitWire/Identity/CanonicalText.swift \
+  Sources/KnitWire/CBOR/CBORLabeledFields.swift \
   Sources/KnitWire/Payload/ProfileContent.swift Sources/KnitWire/Registry/Capabilities.swift \
   Sources/KnitWire/Identity/PublicKeyBundleProto.swift \
   Sources/KnitMesh/Groups Sources/KnitMesh/Engine/MeshEngine+Groups.swift Sources/KnitStore/Groups \

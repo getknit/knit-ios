@@ -56,6 +56,27 @@ private let wrapped = WrappedKey(to: "bob", wk: fixtureBytes(80, seed: 4))
 private let loraKey = "oR62IJmFUE0Tgcw0GcypU5ZqUFCQllVBy2snB/BKQA4="
 private let profileVersion: Int64 = 1_700_000_000_000
 private let loraNode: Int64 = 0xDEAD_BEEF
+private let groupSeed = GroupSeed(epoch: 3, seed: fixtureBytes(32, seed: 7), mintedAt: 1234)
+private let groupRoot = GroupRootPayload(root: fixtureBytes(32, seed: 13), version: 2, minter: "aa")
+
+/// The sealed profile update's fixtures all share these, as `GoldenVectorTest`'s do.
+private func profileUpdate(
+    status: String = "hiking",
+    avatarHash: String? = "av1",
+    openToChat: Bool = false,
+    loraNode: Int64? = nil,
+    loraKey: String? = nil
+) -> ProfilePayload {
+    ProfilePayload(
+        name: "Ann",
+        status: status,
+        avatarHash: avatarHash,
+        version: 1700,
+        openToChat: openToChat,
+        loraNode: loraNode,
+        loraKey: loraKey
+    )
+}
 
 private func profile(
     capabilities: Int64 = 15,
@@ -204,6 +225,17 @@ let typedFixtures: [TypedFixture] = [
         RatchetHeader(se: 2, ek: fixtureBytes(32, seed: 8), pe: 1, n: 5, initial: initial, flags: RatchetHeader.resetFlag)
     ),
     TypedFixture("prekeyInfo", prekey),
+    // The ratchet's sealed payloads (`Wire.kt:598-709`): the group seed and its distribution, the spool's root, and the
+    // sealed profile update (ADR 2026-10.5sk9). The two distributions that carry a root raw are `SealedPayloadTests`',
+    // outside this list: a `CBOR` value in a parameterized argument leaks under ASan (`scripts/lsan-suppressions.txt`).
+    TypedFixture("groupSeed", groupSeed),
+    TypedFixture("groupKeyPayload", GroupKeyPayload(groupId: "g-1", keys: [groupSeed])),
+    TypedFixture("groupRootPayload", groupRoot),
+    TypedFixture("profilePayload", profileUpdate()),
+    TypedFixture("profilePayloadNoAvatar", profileUpdate(status: "", avatarHash: nil)),
+    TypedFixture("profilePayloadOpenToChat", profileUpdate(openToChat: true)),
+    TypedFixture("profilePayloadLoraNode", profileUpdate(loraNode: loraNode)),
+    TypedFixture("profilePayloadLoraKey", profileUpdate(loraNode: loraNode, loraKey: loraKey)),
     TypedFixture("messageContentReceipt", MessageContent(body: "", ctl: MessageContent.Control.receipt, ack: "m1")),
     TypedFixture(
         "messageContentReceiptBatch",

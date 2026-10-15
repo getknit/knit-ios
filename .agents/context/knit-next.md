@@ -199,6 +199,14 @@ Kotlin wins.
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Mirrored ahead of the pin:**
+    - knit-next `feat/ratchet-vectors-a9`, companion change A9 (ADR 2026-10.5sk9), not yet on `main`:
+      - **What comes in:** `vectors/ratchet-v1.json`, synced alone with `scripts/sync-vectors.py --only
+        ratchet-v1.json`. `Tests/Vectors/ratchet-v1.json` records the commit it came from.
+      - **Stages in:** stage 1, the known answers (`95d26b8f`); stage 2, the profiles (`bc47c7d1`); stage 3a, the
+        DM transcripts and refusals (`4bb2e816`).
+      - **The IV seam:** the branch gives `RatchetEngine` and `GroupRatchetEngine` a constructor IV source
+        (`newIv`, default `AesGcm.randomIv`). It changes nothing in production, and the port's engines mirror it.
+      - **When the pin passes A9's merge:** sync every file the normal way.
     - knit-next `d47ad76c` (2026-10-07, on its `main`), a picked mention as a chip that backspace deletes whole, and
       `eafb0721` (2026-10-13), a mention's color moved until it reads 4.5:1 on its bubble. Both are UI only, and nothing
       on the wire moves. They are mirrored by ADR 2026-10.nbhj as `MentionText.keepChipsWhole`, `snapOutOfChips` and

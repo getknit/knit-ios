@@ -4,11 +4,17 @@
     python3 scripts/sync-vectors.py                  # copy from ~/source/knit-next
     python3 scripts/sync-vectors.py --check          # exit 1 if a committed copy is stale
     python3 scripts/sync-vectors.py --knit-next PATH # another checkout or worktree
+    python3 scripts/sync-vectors.py --only NAME      # one vector file alone, from a checkout past the pin
     python3 scripts/sync-vectors.py --export         # copy Tests/Vectors/ios-emitted-v1.json into knit-next
 
 knit-next keeps its vectors in `vectors/` (its ADR 2026-09.fzh7). `wire-v1.json` holds the codec fixtures and
 the bundle probe, and `keyed-v1.json` holds fixed identities, their signed frames, a sealed DM, the safety
 number, the link records and an advert. Both are copied into `Tests/Vectors/` under the same names.
+`ratchet-v1.json` (companion change A9, ADR 2026-10.5sk9) holds the ratchet's known answers and transcripts. A
+checkout from before A9 has none, so it is copied and checked only where it exists.
+
+`--only` copies or checks the files it names and nothing else, and leaves the alias words alone. It is for a
+file that lands on a knit-next branch before the pin moves: the other copies keep the provenance they have.
 
 `Sources/KnitCrypto/AliasWords.swift` is generated from `identity/AliasWords.kt`. If the lists differ by one
 word, the two platforms show different names for the same person.
@@ -33,6 +39,9 @@ VECTORS = ROOT / "Tests" / "Vectors"
 WIRE = "wire-v1.json"
 KEYED = "keyed-v1.json"
 EMITTED = "ios-emitted-v1.json"
+RATCHET = "ratchet-v1.json"
+# Copied where the knit-next checkout has them; a checkout from before the change that added one has none.
+OPTIONAL = (RATCHET,)
 ALIAS_OUTPUT = ROOT / "Sources" / "KnitCrypto" / "AliasWords.swift"
 ALIAS_SOURCE = Path("app/src/main/java/app/getknit/knit/identity/AliasWords.kt")
 ALIAS_LISTS = (("ALIAS_ADVERBS", "adverbs"), ("ALIAS_ADJECTIVES", "adjectives"), ("ALIAS_NOUNS", "nouns"))
@@ -59,6 +68,13 @@ def copied(knit_next: Path, name: str) -> dict:
         sys.exit(f"sync-vectors: {knit_next / path} is missing; is {knit_next} a knit-next checkout from 1f3befcd on?")
     content = json.loads((knit_next / path).read_text(encoding="utf-8"))
     return {"source": provenance(knit_next, path), **content}
+
+
+def copied_if_present(knit_next: Path, name: str) -> dict | None:
+    """An optional file from knit-next's `vectors/`, or `None` when this checkout predates it."""
+    if not (knit_next / "vectors" / name).is_file():
+        return None
+    return copied(knit_next, name)
 
 
 def alias_words(knit_next: Path) -> str:
@@ -117,6 +133,12 @@ def main() -> int:
     parser.add_argument("--knit-next", type=Path, default=Path.home() / "source" / "knit-next")
     parser.add_argument("--check", action="store_true", help="fail if a committed copy is stale")
     parser.add_argument("--export", action="store_true", help=f"copy Tests/Vectors/{EMITTED} into knit-next")
+    parser.add_argument(
+        "--only",
+        action="append",
+        choices=(WIRE, KEYED, RATCHET),
+        help="copy or check only this vector file (repeatable); the alias words are left alone",
+    )
     args = parser.parse_args()
 
     if args.export:
@@ -127,32 +149,44 @@ def main() -> int:
         print(f"sync-vectors: copied {EMITTED} to {target}")
         return 0
 
-    wire = copied(args.knit_next, WIRE)
-    if not wire["vectors"]:
+    names = args.only or [WIRE, KEYED, RATCHET]
+    files: dict[str, dict] = {}
+    absent: list[str] = []
+    for name in names:
+        content = copied_if_present(args.knit_next, name) if name in OPTIONAL else copied(args.knit_next, name)
+        if content is None:
+            if args.only:
+                sys.exit(f"sync-vectors: {args.knit_next / 'vectors' / name} is missing")
+            absent.append(name)
+        else:
+            files[name] = content
+    if WIRE in files and not files[WIRE]["vectors"]:
         sys.exit("sync-vectors: found no codec vectors; has knit-next changed shape?")
-    keyed = copied(args.knit_next, KEYED)
-    words = alias_words(args.knit_next)
-    commit = wire["source"]["commit"][:8]
+    words = None if args.only else alias_words(args.knit_next)
+    commit = git(args.knit_next, "rev-parse", "HEAD")[:8]
+    skipped = f"; {', '.join(absent)} not in that checkout, so not compared" if absent else ""
 
     if args.check:
-        stale = [name for name, fresh in ((WIRE, wire), (KEYED, keyed)) if is_stale(name, fresh)]
+        stale = [name for name, fresh in files.items() if is_stale(name, fresh)]
         # The generated header names a commit; compare the lists, not the stamp.
-        if ALIAS_OUTPUT.read_text(encoding="utf-8").split("\n", 1)[1] != words.split("\n", 1)[1]:
+        if words is not None and ALIAS_OUTPUT.read_text(encoding="utf-8").split("\n", 1)[1] != words.split("\n", 1)[1]:
             stale.append(ALIAS_OUTPUT.name)
         if stale:
             print(f"sync-vectors: stale against knit-next {commit}: {', '.join(stale)}; rerun without --check", file=sys.stderr)
             return 1
-        print(f"sync-vectors: every copy matches knit-next {commit}")
+        print(f"sync-vectors: every copy matches knit-next {commit}{skipped}")
         return 0
 
     VECTORS.mkdir(parents=True, exist_ok=True)
-    for name, content in ((WIRE, wire), (KEYED, keyed)):
+    for name, content in files.items():
         (VECTORS / name).write_text(render(content), encoding="utf-8")
-    ALIAS_OUTPUT.write_text(words, encoding="utf-8")
-    written = [WIRE, KEYED, ALIAS_OUTPUT.name]
-    uncommitted = [name for name, content in ((WIRE, wire), (KEYED, keyed)) if content["source"]["uncommitted"]]
+    written = list(files)
+    if words is not None:
+        ALIAS_OUTPUT.write_text(words, encoding="utf-8")
+        written.append(ALIAS_OUTPUT.name)
+    uncommitted = [name for name, content in files.items() if content["source"]["uncommitted"]]
     note = f" (uncommitted there: {', '.join(uncommitted)})" if uncommitted else ""
-    print(f"sync-vectors: wrote {', '.join(written)} from knit-next {commit}{note}")
+    print(f"sync-vectors: wrote {', '.join(written)} from knit-next {commit}{note}{skipped}")
     return 0
 
 

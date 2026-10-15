@@ -216,8 +216,8 @@ Swift must count `utf16`, not `Character`s.
   on Android, so the profile frame is relayed and carried like any other.
 - **Where parsing is stricter than knit-next,** the outcome is the same. A bundle whose keys are not 32
   bytes is refused at parse, where Android fails later at verify or seal. A bundle with trailing CBOR bytes
-  is refused, where kotlinx ignores them. Base64 padding follows `java.util.Base64`: optional, but exact when
-  present.
+  is refused on both sides: kotlinx-serialization-cbor 1.11.0 refuses them too (`Cbor.kt:90-94`). Base64 padding
+  follows `java.util.Base64`: optional, but exact when present.
 - **Where the goldens come from:** `KeyedVectorTests` checks knit-next's own identities, signatures, sealed
   DM and safety number (`keyed-v1.json`). The device tag golden and two further safety numbers were
   computed in Python from the Kotlin sources, because knit-next pins no value for them.
@@ -542,14 +542,16 @@ next epoch on a rotated prekey while its init still names the old `pkid`. Its fr
 
 ### Vectors
 
-No keyed ratchet vectors exist yet; `wire-v1.json` pins only the shapes. Companion change A9 adds
-`vectors/ratchet-v1.json` to knit-next with:
+`wire-v1.json` pins only the ratchet's shapes. The keyed answers come from companion change A9:
+knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` from a branch ahead of the pin
+(`.agents/context/knit-next.md`, "Mirrored ahead of the pin"). Each section serves one phase:
 
-- known answers for each derivation above;
-- ratchet profiles;
-- a scripted DM conversation, with a state digest after each step;
-- group seeds and frames;
-- the negative cases.
+- `kats`, the known answers for each derivation above, which `RatchetVectorTests` checks. Its `export` entry is marked
+  non-normative and skipped, since the exports are left out;
+- `profiles`, signed ratchet profiles and the prekey pins Android's own pipeline made of them, for the prekey phase;
+- `dm` and `negative`, scripted DM transcripts with a state digest after each step, and the refusals, for the DM
+  engine and its wiring. The file's `transcriptFormat` describes every step;
+- `group` and `carol`, still to come in A9's later stages.
 
 A10 then adds this port's own ratchet frames to `ios-emitted-v1.json`, for knit-next's `IosEmittedVectorTest` to
 open (`.agents/memory/roadmap.md`).

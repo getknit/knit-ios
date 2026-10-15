@@ -81,7 +81,7 @@ public enum MessageCrypto {
         }
         do {
             let encapsulated = Array(wrapped.wk.prefix(encapsulatedKeyByteCount))
-            guard try !isLowOrder(Curve25519.KeyAgreement.PublicKey(rawRepresentation: encapsulated)) else {
+            guard try !Curve25519.KeyAgreement.PublicKey(rawRepresentation: encapsulated).isLowOrder() else {
                 return nil
             }
             var recipient = try HPKE.Recipient(
@@ -103,24 +103,17 @@ public enum MessageCrypto {
     }
 
     /// `key` wrapped to one recipient: the encapsulated key, then the sealed key and its tag (80 bytes).
+    ///
+    /// A recipient key that is a low-order point is refused (`SharedSecret+LowOrder.swift`): RFC 9180 §7.1.4 says both
+    /// sides must abort on an all-zero X25519 output, and Tink refuses these keys, so Android can never seal to one or
+    /// open from one.
     private static func wrap(_ key: [UInt8], to bundle: PublicKeyBundle, header: [UInt8]) throws -> [UInt8] {
         let recipientKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: bundle.agreementKey)
-        guard try !isLowOrder(recipientKey) else {
+        guard try !recipientKey.isLowOrder() else {
             throw CryptoFailure.sealing
         }
         var sender = try HPKE.Sender(recipientKey: recipientKey, ciphersuite: ciphersuite, info: Data(header))
         let sealed = try sender.seal(key)
         return Array(sender.encapsulatedKey) + Array(sealed)
-    }
-
-    /// Whether `key` is a low-order point, which sends every exchange to zero.
-    ///
-    /// RFC 9180 §7.1.4 says both sides must abort on an all-zero X25519 output, and Tink refuses these keys, so
-    /// Android can never seal to one or open from one. swift-crypto and CryptoKit skip the check on purpose (see
-    /// `X25519Keys_boring.swift`), so this makes it. A low-order point sends every clamped scalar to zero and no
-    /// other point sends any there, so one exchange with a throwaway key tells them apart.
-    private static func isLowOrder(_ key: Curve25519.KeyAgreement.PublicKey) throws -> Bool {
-        try Curve25519.KeyAgreement.PrivateKey().sharedSecretFromKeyAgreement(with: key)
-            == [UInt8](repeating: 0, count: encapsulatedKeyByteCount)
     }
 }

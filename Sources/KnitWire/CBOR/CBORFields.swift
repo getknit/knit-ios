@@ -144,6 +144,15 @@ extension FieldKind where Value == CBOR {
     static var raw: Self {
         Self { item in item }
     }
+
+    /// An item kept undecoded once it reads as `Shape`: a field this build carries but never acts on, refused where
+    /// kotlinx's typed decoder would refuse it, so a payload Android drops is one we drop too.
+    static func checked<Shape: CBORRepresentable>(as _: Shape.Type) -> Self {
+        Self { item throws(WireDecodingError) in
+            _ = try Shape(cbor: item)
+            return item
+        }
+    }
 }
 
 extension FieldKind where Value: CBORRepresentable {

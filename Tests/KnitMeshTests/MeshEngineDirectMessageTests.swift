@@ -201,6 +201,34 @@ import Testing
         #expect(fixture.transport.written(.receipt).isEmpty)
     }
 
+    /// A sealed plaintext whose `pr` or `gk` is not the payload Android reads (`Wire.kt`'s `ProfilePayload`,
+    /// `GroupKeyPayload`) does not decode on Android, so it does not open here either: no message, no receipt, and
+    /// the frame is still carried. No honest build puts either in a v1 plaintext, since a ctl is never v1-wrapped.
+    @Test(arguments: ["pr", "gk"]) func aSealedPayloadAndroidCannotReadDropsAsUnopenable(field: String) throws {
+        let fixture = EngineFixture(alice)
+        try fixture.pin(bob)
+        _ = fixture.engine.drainEvents()
+        fixture.transport.clear()
+        let id = "dm-bad-\(field)"
+        let header = MessageCrypto.header(id: id, senderId: bob.nodeId.string, sentAt: EngineFixture.start, thread: alice.nodeId.string)
+        // {"body": "hi", "<field>": 7}: a number where the payload's map belongs.
+        let plaintext: [UInt8] = [0xA2, 0x64] + Array("body".utf8) + [0x62] + Array("hi".utf8) + [0x62] + Array(field.utf8) + [0x07]
+        let sealed = try #require(try MessageCrypto.seal(plaintext, header: header, to: [alice.nodeId: alice.keys.bundle]))
+        let envelope = RelayEnvelope(
+            type: .chat,
+            id: id,
+            senderId: bob.nodeId.string,
+            sentAt: EngineFixture.start,
+            recipientId: alice.nodeId.string,
+            payload: ChatContent(enc: sealed).encoded
+        )
+        fixture.deliver(try bob.signed(envelope), from: bob)
+        #expect(fixture.engine.dropped[.cannotOpen] == 1)
+        #expect(receivedRecords(fixture.engine.drainEvents()).isEmpty)
+        #expect(fixture.transport.written(.receipt).isEmpty)
+        #expect(fixture.stores.custody.contains(id))
+    }
+
     @Test func aReceiptFromTheRecipientMarksOurDMDeliveredAndPurgesIt() throws {
         let fixture = EngineFixture(alice)
         try fixture.pin(bob)

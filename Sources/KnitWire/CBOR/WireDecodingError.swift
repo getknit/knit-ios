@@ -7,7 +7,8 @@ public enum WireDecodingError: Error, Sendable, Equatable {
     case cbor(CBORError)
     /// A named-layout type was not encoded as a map.
     case notAMap(type: String)
-    /// A named-layout map had a key that is not text.
+    /// A named-layout map had a key that is not text, or a labelled one (``MessageContentV2``) a key that is neither
+    /// text nor an unsigned label.
     case nonTextKey(type: String)
     /// A field with no default was absent.
     case missingField(type: String, field: String)

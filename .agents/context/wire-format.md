@@ -16,8 +16,8 @@ knit-next uses kotlinx-serialization-cbor 1.11.0 with `useDefiniteLengthEncoding
 - **Byte arrays are byte strings** (major type 2). Integers use the shortest encoding, booleans are `F4` and
   `F5`, and there are no tags.
 - **Unknown keys are ignored** on decode. That is how the wire grows.
-- **The exception is the v3 DM plaintext** (`MessageContentV2`), which uses integer keys and raw ids. We
-  decode it for carrying only.
+- **The exception is the v3 DM plaintext** (`MessageContentV2`), which uses integer keys and raw ids. KnitWire
+  has its codec, but nothing seals or opens v3 yet: the ratchet is dark (ADR 2026-10.5sk9).
 
 A required field that is missing makes Android's decode fail, and the frame is neither delivered nor
 carried. The frame is dropped with no error sent back. These fields must always be written, even when empty:
