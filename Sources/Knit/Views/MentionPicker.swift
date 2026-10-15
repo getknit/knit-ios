@@ -26,7 +26,7 @@
                                 .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(candidate.label.text)
+                        .accessibilityLabel(candidate.isEveryone ? Copy.Mentions.everyone : candidate.label.text)
                         .accessibilityIdentifier(AccessibilityID.chatMention(candidate.id))
                     }
                 }
@@ -52,16 +52,33 @@
         }
     }
 
-    /// One person the picker offers: their face and their label.
+    /// One row the picker offers: a person's face and label, or the `@everyone` row's glyph, token and note.
     private struct MentionRow: View {
         let candidate: MentionCandidate
 
         var body: some View {
             HStack(spacing: Layout.small) {
-                AvatarView(face: candidate.face, size: Layout.faceMention)
-                Text(verbatim: candidate.label.text)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                if candidate.isEveryone {
+                    Image(systemName: "person.3.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.secondaryText)
+                        .frame(width: Layout.faceMention, height: Layout.faceMention)
+                        .background(Palette.incomingBubble, in: .circle)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(verbatim: "@" + candidate.label.text)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Text(Copy.Mentions.everyoneNote)
+                            .font(.caption)
+                            .foregroundStyle(Palette.secondaryText)
+                    }
+                } else {
+                    AvatarView(face: candidate.face, size: Layout.faceMention)
+                    Text(verbatim: candidate.label.text)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
         }
     }

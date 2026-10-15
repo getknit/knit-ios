@@ -52,7 +52,7 @@ import Testing
         #expect(thread.mentionQuery == MentionQuery(start: 3, end: 7, query: "pri"))
         #expect(thread.mentionCandidates.map(\.label.text) == ["Priya"])
         thread.draft = "hi @"
-        #expect(thread.mentionCandidates.map(\.label.text) == ["Priya", "Sam"])
+        #expect(thread.mentionCandidates.map(\.label.text) == ["everyone", "Priya", "Sam"], "a group's row comes first")
     }
 
     /// A DM offers its peer once they have written in it, as Android's senders do; a fresh one offers nobody, so the

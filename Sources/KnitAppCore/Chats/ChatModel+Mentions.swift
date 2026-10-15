@@ -20,9 +20,11 @@ extension ChatModel {
             return []
         }
         let offered = offeredCache.value(for: session.revision) {
-            MentionCandidate.offered(
+            let group = session.threads().group(conversationId)
+            return MentionCandidate.offered(
                 senders: session.stores.messages.senders(in: conversationId),
-                members: session.threads().group(conversationId)?.members ?? [],
+                members: group?.members ?? [],
+                isGroup: group != nil,
                 directory: session.directory
             )
         }
@@ -35,7 +37,8 @@ extension ChatModel {
     }
 
     /// Mentions `candidate`: the "@" word becomes "@", their label and a space, the cursor goes past it, and the pick is
-    /// kept for Send (`ChatScreen.kt:3799-3810`). A second pick of the same person adds nothing more.
+    /// kept for Send (`ChatScreen.kt:3799-3810`). A second pick of the same person adds nothing more. The `@everyone` row
+    /// keeps one mention for each member it stands for, and a second pick of it adds none.
     public func mention(_ candidate: MentionCandidate) {
         guard let query = mentionQuery else {
             return
@@ -46,10 +49,11 @@ extension ChatModel {
         draft = String(decoding: edited, as: UTF16.self)
         let cursor = min(query.start + insertion.utf16.count, draft.utf16.count)
         selection = cursor..<cursor
-        let picked = candidate.mention
-        let key = [ExactKey(picked.nodeId), ExactKey(picked.name)]
-        if !pendingMentions.contains(where: { [ExactKey($0.nodeId), ExactKey($0.name)] == key }) {
-            pendingMentions.append(picked)
+        for picked in candidate.mentions {
+            let key = [ExactKey(picked.nodeId), ExactKey(picked.name)]
+            if !pendingMentions.contains(where: { [ExactKey($0.nodeId), ExactKey($0.name)] == key }) {
+                pendingMentions.append(picked)
+            }
         }
     }
 

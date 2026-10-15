@@ -84,6 +84,8 @@ document:
   directly to yours.
 - Type @ in Nearby, a direct message or a group to mention someone, including people on Android phones. Names
   you mention stand out in the message, and a message that mentions you gets a notification of its own.
+- Pick @everyone when you type @ in a group to mention every other member at once. Each of them sees the name
+  stand out and gets a mention notification, on Android phones too.
 - Each chat in your list now shows how many messages you haven't read, and opening the chat clears the count.
   Knit's icon adds up your direct messages and groups, while Nearby keeps its count on its own row.
 

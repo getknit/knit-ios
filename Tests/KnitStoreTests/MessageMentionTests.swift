@@ -16,6 +16,15 @@ import Testing
             id: id, senderId: bob, recipientId: nil, conversationId: Conversations.nearby, body: body, sentAt: 1, mentions: mentions)
     }
 
+    /// `@everyone` in a full group of eight is seven entries of one name, and `carried` keeps all of them: the distinct
+    /// token counts once against the body's bound (ADR 2026-10.jwst).
+    @Test func sevenEveryoneEntriesAreCarriedWhole() {
+        let everyone = (1...7).map { MessageMention(nodeId: fixtureNodeId($0).string, name: "everyone") }
+        #expect(MessageMention.carried(everyone, in: "@everyone hi") == everyone)
+        #expect(MessageMention.carried(everyone + everyone, in: "@everyone hi") == everyone, "a repeat adds nothing")
+        #expect(MessageMention.carried(everyone, in: "hi everyone").isEmpty, "the token went from the text")
+    }
+
     // MARK: The stores
 
     /// `mentionStoreRoundTrips`: names with spaces and an alias in parentheses come back whole, in their order.

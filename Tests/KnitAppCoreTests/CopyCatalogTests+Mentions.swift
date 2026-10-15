@@ -8,11 +8,18 @@ extension CopyCatalogTests {
             Copy.Mentions.picker,
             Copy.Mentions.offered(1),
             Copy.Mentions.offered(3),
+            Copy.Mentions.everyoneNote,
+            Copy.Mentions.everyone,
         ]
     }
 
     @Test func theMentionCountReadsInTheRightNumber() {
         #expect(Copy.Mentions.offered(1) == "1 person to mention")
         #expect(Copy.Mentions.offered(3) == "3 people to mention")
+    }
+
+    @Test func theEveryoneRowSaysWhomItNotifies() {
+        #expect(Copy.Mentions.everyoneNote == "Notifies everyone else in the group")
+        #expect(Copy.Mentions.everyone == "Mention everyone. Notifies everyone else in the group")
     }
 }

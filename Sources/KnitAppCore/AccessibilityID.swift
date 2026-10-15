@@ -129,6 +129,8 @@ public enum AccessibilityID {
     public static func chatMention(_ nodeId: String) -> String {
         "chat_mention_\(nodeId)"
     }
+    /// The `@everyone` row of a group's picker, `chat_mention_everyone` (ADR 2026-10.jwst). Android has no tag here.
+    public static let chatMentionEveryone = chatMention("everyone")
 
     /// A message that carries no photo, `chat_message_<message id>`, whose value says when the content filter hides its
     /// words (ADR 2026-10.e4kz). Android has no tag here.

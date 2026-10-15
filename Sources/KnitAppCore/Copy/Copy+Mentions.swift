@@ -32,5 +32,26 @@ extension Copy {
                 )
             )
         }
+
+        /// The `@everyone` row's line under its title, in a group's picker (ADR 2026-10.jwst). The title is the token itself,
+        /// "@everyone", which is never localized: the sender's body keeps it as written.
+        public static var everyoneNote: String {
+            NSLocalizedString(
+                "mentions.everyone.note",
+                bundle: .main,
+                value: "Notifies everyone else in the group",
+                comment: "Composer: the line under the @everyone row of the people an @ offers in a group"
+            )
+        }
+
+        /// What VoiceOver reads for the `@everyone` row.
+        public static var everyone: String {
+            NSLocalizedString(
+                "mentions.everyone",
+                bundle: .main,
+                value: "Mention everyone. Notifies everyone else in the group",
+                comment: "Composer: VoiceOver label of the @everyone row of the people an @ offers in a group"
+            )
+        }
     }
 }

@@ -44,6 +44,26 @@ extension KnitUITests {
         wait(for: sent, until: "isHittable == true")
         app.terminate()
     }
+
+    /// A group's "@" offers `@everyone` first, with the people below it, audited; a pick writes the token and closes the
+    /// picker (ADR 2026-10.jwst).
+    func testAnAtInAGroupOffersEveryone() throws {
+        let app = launch([])
+        let group = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", AccessibilityID.chatRow("g-")))
+        try app.reveal(group.firstMatch, "a group").tap()
+        try app.appear(AccessibilityID.chatThread)
+        let input = try app.appear(AccessibilityID.chatInput)
+        input.tap()
+        input.typeText("@")
+        let picker = try app.element(AccessibilityID.chatMentions).appear("the people to mention")
+        let row = try app.element(AccessibilityID.chatMentionEveryone).appear("the @everyone row")
+        settle(picker)
+        audit(app, screen: "a group's composer offering @everyone")
+        row.tap()
+        XCTAssert(picker.waitForNonExistence(timeout: Walking.appears), "a pick left the picker open")
+        XCTAssertEqual(input.value as? String, "@everyone ", "the pick wrote something else")
+        app.terminate()
+    }
 }
 
 // swiftlint:enable prefer_nimble

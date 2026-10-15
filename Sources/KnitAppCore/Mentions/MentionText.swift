@@ -71,12 +71,16 @@ public enum MentionText {
         guard !wanted.isEmpty else {
             return candidates
         }
+        // The `@everyone` row matches when "everyone" starts with the query, never by what it holds.
+        let everyone = Array(MentionCandidate.everyoneName.utf16)
         func holds(_ text: String) -> Bool {
             // Kotlin's `replace(" ", "")` takes out U+0020 alone, scalar by scalar.
             let spaceless = String(String.UnicodeScalarView(text.unicodeScalars.filter { $0 != " " }))
             return TextLimits.utf16Index(of: wanted, in: Array(spaceless.lowercased().utf16)) != nil
         }
-        return candidates.filter { holds($0.label.text) || holds($0.label.alias) }
+        return candidates.filter { candidate in
+            candidate.isEveryone ? everyone.starts(with: wanted) : holds(candidate.label.text) || holds(candidate.label.alias)
+        }
     }
 
     /// Where each of `mentions` sits in `text`, sorted by start (`mentionSpans`, `MentionText.kt:94-119`): every

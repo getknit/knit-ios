@@ -205,6 +205,11 @@ Kotlin wins.
       `edited`, and `Swatches.mention`. `3a6f5d08` and `1870384c` make a mention's alert say only that words are hidden
       when the filter flagged them, which this port's alert already does. When the pin passes `d47ad76c`, check
       `MentionText.kt` against `MentionTextTests`. Companion change A8, mentions on Android's debug bridge, is owed.
+    - knit-next branch `feat/everyone-mention` at `ac491f4c` (2026-10-14, not on `main`; ADR 2026-10.6h2g), `@everyone`
+      in a group: the picker's first row, and a pick that writes one `Mention{nodeId, name: "everyone"}` for each
+      roster member but us and the blocked. No wire byte moves, so the pin doesn't either. It is mirrored by ADR
+      2026-10.jwst as `MentionCandidate.everyone` and `MentionText.filter`: `MentionEveryoneTests`. When the pin passes
+      it, check `MentionText.kt`'s `matchesEveryone` and `everyoneMentions` against them.
     - knit-next `03c4c3b1` (2026-10-10, on its `main`) counts a payload that won't decode as `PAYLOAD_DECODE_FAILED`
       and drops it. For a typing cue that means a broken group cue no longer lights the room (`InboundPipeline.kt:477`).
       The iPhone's `handleTyping` counts one `undecodable` (ADR 2026-10.29z9): `MeshEngineTypingTests`.
