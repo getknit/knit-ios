@@ -365,6 +365,36 @@ explicit direction.** Update this file in the change that ships an item.
     `DebugBridgeReceiver`'s `SEND` takes `--es mentions` with node ids separated by commas, each named by its label as
     the composer names it, and `STATE` reports each message's stored `mentions`. No vector moves, and the pin stays.
     `interop.py iphone-mention` waits on it.
+- **Forward secrecy, begun 2026-10-15** at the maintainer's direction (ADR 2026-10.5sk9). This ports knit-next's whole
+  ratchet: v2 and v3 DMs, the group form both ways, the sealed control plane and inline acks. It ports dark, behind
+  `MeshConfiguration.ratchet`, one phase per change, and turns `CAP_RATCHET`, `CAP_INLINE_ACK` and `CAP_CRYPTO_V3` on
+  once, at the end. It comes before any public build.
+  - **P0, decisions and tooling:** written on 2026-10-15 on `feat/ratchet-p0`. That covers the scope ADR, amendments to
+    ADR 2026-09.2ved and ADR 2026-09.p6nb, the ratchet's shapes in the crypto reviewer, and the ratchet reference in
+    `.agents/context/crypto.md`. The held `ios-pin-move` order runs from knit-pair before A9.
+  - **P1, companion change A9:** keyed ratchet vectors in knit-next (below). The pin moves to its merge.
+  - **P2:** the v3 plaintext codec and the ratchet's primitives, alongside P1.
+  - **P3:** prekeys, ours in the Keychain beside the identity and our peers' pinned from their profiles.
+  - **P4:** a store unit that fails closed, then the DM engine and its store.
+  - **P5:** DMs in the mesh, checked by knit-peer with the switch on against an Android emulator, then the Pixels.
+  - **P6:** the group form received, which the flip waits on, then the group form sent.
+  - **P7:** companion change A10, interop runs against knit-next `main` and the release APKs, a Debug iPhone trial, the
+    flip to `0x15F`, and the security claims.
+
+  Two companion changes go with it:
+  - **A9 (ratchet vectors):** a paired change that iOS leads. knit-next gains `vectors/ratchet-v1.json`, written by a
+    new `RatchetVectorTest`. It holds:
+    - known answers for every derivation;
+    - ratchet profiles for Alice, Bob and Carol;
+    - a scripted DM conversation with a state digest after each step: races, resets, eras and the re-seal;
+    - group seeds and frames;
+    - the negative cases.
+
+    Key draws come from fixed seeds through the engines' injected sources (`RatchetEngine(newKeyPair)`,
+    `GroupRatchetEngine(newSeed)`). It is additive: `keyed-v1.json` and every vector in it stay as they are.
+  - **A10 (the iPhone's ratchet frames):** `ios-emitted-v1.json` gains Carol's ratchet profile and frames, which
+    knit-next's `IosEmittedVectorTest` opens as Bob. First, Carol's existing profile takes a literal `0xF` in place of
+    `Capabilities.local`, so the flip needs no Android change.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
@@ -385,9 +415,7 @@ explicit direction.** Update this file in the change that ships an item.
 
 ## Next, after the MVP
 
-- **DM forward secrecy:** the v2/v3 epoch ratchet, with `CAP_RATCHET`, `CAP_CRYPTO_V3` and `CAP_INLINE_ACK`,
-  and sealed receipts, reactions and profile updates. It comes before any public build. Keyed vectors come
-  first (`.agents/context/crypto.md`).
+- **DM forward secrecy:** in flight since 2026-10-15, with the group ratchet ("Forward secrecy", above).
 - **Contacts:** contact links at a distance (`docs/CONTACT_CARD.md` in knit-next), and Android's Add contact,
   which pins a key from a scanned code. QR verification in person is in on a peer's profile (ADR 2026-10.65xx):
   the profile shows our code and scans theirs, and compares only, as Android's profile does. It passes in the
@@ -461,8 +489,6 @@ explicit direction.** Update this file in the change that ships an item.
 - **The rest of the owner and reviewer model** (ADR 2026-10.zjmx). Three planes have a pair: Bluetooth, blobs and
   custody, and crypto. Each piece below waits on what it would review:
   - the mesh-lab reviewer, with the lab above;
-  - the crypto reviewer's ratchet-era shapes (knit-next's evidence from a dropped era, a reset that makes its own
-    evidence, a send inside the peer's floor), with the DM ratchet;
   - a Wi-Fi Aware pair, if ADR 2026-10.2c6c's spike lands;
   - a Swift doc-lint like knit-next's, which flags a symbol a persona or a doc names after the code has dropped it.
     `PersonaTests` checks only the paths and ADR ids the personas cite.
@@ -473,8 +499,6 @@ explicit direction.** Update this file in the change that ships an item.
   2026-10.29z9), and mentions, with Android's chips and an alert of their own (ADR 2026-10.nbhj). `interop.py
   iphone-reply`, `iphone-typing` and `iphone-mention` have yet to run against a phone, and `iphone-mention` waits on
   A8.
-- **Groups with forward secrecy** (knit-next's group ratchet), which comes with the DM ratchet. v1 groups are in
-  flight above.
 - **Search, drafts and backups.** Search has its place already: a `.searchable` on the chat list's stack, which iOS 26
   puts at the bottom on the iPhone, with Android's sections for results (Chats, People, Messages; ADR 2026-10.5waw).
 - **Moderation and report.** App Store rule 1.2 requires them before a store build. Block is in (ADR 2026-10.5wgg),

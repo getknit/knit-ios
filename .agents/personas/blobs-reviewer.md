@@ -120,8 +120,11 @@ explicitly. The commits are the evidence that each one bit this codebase or the 
    and the digest must be the same on every node and on Android: frame-global `(sentAt ASC, id ASC)` with ids
    compared by their bytes (`ExactKey`, ADR 2026-09.jc2x), live rows only, and the same `CustodyRules` in both
    stores. Receive time, origin, the block list (ADR 2026-10.5wgg), a deletion (ADR 2026-10.u7cq) or a setting there
-   is a digest no peer can match. Evidence: knit-next bc4ba0a5 (own frames out of the quota: 117 against 100),
-   cf0b6e00 (TTL on receive time), daffbc82 (expired rows folded), e7528cb7 (the block list in the carry gate).
+   is a digest no peer can match. With the ratchet on, a sealed receipt purges nothing anywhere, ours included, while
+   a cleartext one still purges and self-vaccinates (ADR 2026-09.p6nb, amended; `InboundPipeline.kt:2819-2830` at
+   knit-next `ac491f4c`): a node that purges on a sealed receipt keeps a digest no Android peer can match.
+   Evidence: knit-next bc4ba0a5 (own frames out of the quota: 117 against 100), cf0b6e00 (TTL on receive time),
+   daffbc82 (expired rows folded), e7528cb7 (the block list in the carry gate).
 8. **Arrival order deciding what is kept.** A receipt before its DM, a sender's chat served before the profile that
    lets a newcomer read it, an own frame flooded before it is custodied: each leaves custody depending on which copy
    came first. Evidence: 1451eeb (a receipt that landed first purged nothing, so the iPhone carried a purged DM to
@@ -162,8 +165,9 @@ explicitly. The commits are the evidence that each one bit this codebase or the 
     events in one loop (`Mesh.start`). Nothing may end that loop, and a file handler that gives up on one bad file
     must leave its state so the next file is taken. A SQL store answers as if nothing were there on an error and
     reports it to the closure the app hands `KnitDatabase` (architecture.md, "Storage"), so "not found" can mean
-    "failed": a decision that asks again or serves again on absence does it on every error too. Evidence: knit-next
-    512b72bc (a collector that died on one bad file stopped every later attachment).
+    "failed": a decision that asks again or serves again on absence does it on every error too. Inside the ratchet's
+    store unit an error fails the whole unit instead, and nothing is delivered, sent or remembered (ADR 2026-10.5sk9).
+    Evidence: knit-next 512b72bc (a collector that died on one bad file stopped every later attachment).
 15. **A rule that drifted from the pinned Kotlin.** This plane ports Android rule for rule, so both phones log the
     same steps (ADR 2026-10.m9uq). A rule written from a doc, from memory or "a little simpler" diverges, and an
     Android sender pays for it. A difference on purpose is written down in the ADR with its reason, and a port cites
@@ -259,6 +263,12 @@ verify.
 - **Receipts** (`custody.md`, "Custody" and "Receipts and ticks"). A cleartext receipt from a DM's recipient purges
   the DM and tombstones its id for 24 h. Every receipt is also remembered as `(ackId, acker)` for 24 h, at most
   4,096 (`earlyReceipts`), so a DM that arrives later is refused. Room and group ticks are never custodied.
+- **Sealed receipts and ticks,** once the ratchet's switch is on (ADR 2026-09.p6nb, amended):
+  - A DM's receipt toward a peer that can read one is a sealed ctl frame, flooded and custodied, and it purges
+    nothing anywhere.
+  - A sealed tick is sealed once and re-sent verbatim on a doubling backoff.
+  - A group tick toward an absent author who can open a sealed one escalates into one sealed, custodied batch
+    (knit-next ADR 033).
 - **Flooding** (`custody.md`, "Flooding"). The SeenSet keeps 4,096 ids for 10 minutes, and a frame is marked seen
   before it is verified. `LinkCrossings` lets a frame cross one link once in 10 minutes, 1,024 entries a link. Room
   posts pass an ingress budget of 240, then 30 a minute per link.
@@ -298,7 +308,8 @@ One line per invariant, with the ADR to read. Not exhaustive and not authoritati
 - **Report.** Every kept or skipped file is reported at the receiver's cadence, only to a neighbour whose HELLO
   carries `CAP_BLOB_HAVE` (ds45, xwjc).
 - **Custody.** One `CustodyRules` in both stores; ids by their bytes; nothing per node in the carry gate, the
-  quotas or the digest (p6nb, jc2x, nyya); profiles served first and a whole quota parked per sender (1e82eb1); a
-  carrier keeps each pin's proof (18e788b); an early receipt keeps its DM out (1451eeb).
+  quotas or the digest (p6nb, jc2x, nyya); a sealed receipt purges nothing (p6nb, amended); profiles served first
+  and a whole quota parked per sender (1e82eb1); a carrier keeps each pin's proof (18e788b); an early receipt keeps
+  its DM out (1451eeb).
 - **What custody never reads.** The block list (5wgg) and deletions (u7cq).
 - **Schema.** Append-only migrations, `STRICT` tables, UTF-8 `BLOB` strings (nyya).

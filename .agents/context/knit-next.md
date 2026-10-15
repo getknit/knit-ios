@@ -359,3 +359,18 @@ gate, mesh-lab rules and wire-compatibility rules. Status lives in `.agents/memo
   - **The test:** `IosEmittedVectorTest` decodes an iOS header and opens an iOS-sealed photo.
   - **The bridge:** `state` could name each reachable peer's `avatarHash`, so `interop.py` can see a photo land.
   - **Additive only:** `0xF` stays.
+- **A9** (planned; a paired change iOS leads, ADR 2026-10.5sk9): keyed ratchet vectors.
+  - **Vectors:** a new `vectors/ratchet-v1.json`, written by a new `RatchetVectorTest`. It holds:
+    - known answers for every derivation in `crypto.md`'s ratchet section;
+    - ratchet profiles for Alice, Bob and Carol;
+    - a scripted DM conversation with a state digest after each step;
+    - group seeds and frames;
+    - the negative cases.
+
+    Key draws come from fixed seeds through `RatchetEngine(newKeyPair)` and `GroupRatchetEngine(newSeed)`.
+  - **This side:** `scripts/sync-vectors.py` learns the file, and the pin moves to A9's merge.
+  - **Additive only:** `keyed-v1.json` and `0xF` stay.
+- **A10** (planned; a paired change iOS leads, ADR 2026-10.5sk9): the iPhone's ratchet frames.
+  - **Vectors:** `ios-emitted-v1.json` gains Carol's ratchet profile and her v2, v3, ctl and group frames.
+  - **The test:** `IosEmittedVectorTest` opens them as Bob.
+  - **Decoupled first:** Carol's existing profile takes a literal `0xF`, so the iPhone's flip moves no Android test.

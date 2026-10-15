@@ -8,7 +8,9 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   line in a comment.
 - **Keep `signed` bytes verbatim.** Relays rewrite only `ttl` and `hops`. Never decode and re-encode signed
   bytes, and never round-trip them through `Codable`.
-- **Sign each frame id once and store the bytes.** Verify signatures; never compare them.
+- **Sign each frame id once and store the bytes.** Verify signatures; never compare them. The one exception is the
+  ratchet's re-seal after a peer's reset, which keeps the original id and never replaces custodied bytes (ADR
+  2026-09.2ved, amended).
 - **Emit every required field, even when empty.** A missing `ProfileContent.status` fails Android's decode
   silently, and our key is never pinned (`.agents/context/wire-format.md` has the table). Every emitted
   type has an encoder test against its golden value.
@@ -18,8 +20,9 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
 - **Never write a link record tag outside 1..7.** Android drops the link on an unknown tag.
 - **Advertise only what is implemented.** This build sends capabilities `0xF`: E2E, GROUPS, REACTIONS and
   STORE_FORWARD (ADR 2026-10.ehe6). Builds before reactions sent `0xB` (ADR 2026-09.n393), and the MVP `0x9`.
-  `CAP_RATCHET` is a promise to handle v2 DMs, their ctl codes and resets; it stays off until the ratchet
-  milestone ships.
+  `CAP_RATCHET` is a promise to handle v2 DMs, the group form, their ctl codes and resets. It stays off until the
+  ratchet milestone ships, and the port's ratchet stays dark behind `MeshConfiguration.ratchet` until then (ADR
+  2026-10.5sk9).
 - **`CAP_DOORBELL` (`0x1000`) lives in the HELLO alone.** The HELLO adds it, reading `300f`, when the radio
   serves the doorbell (`Radio.servesDoorbell`). Nothing else ever advertises it: not `Capabilities.local`, not the
   signed profile, not the advert, and never the Linux peer's `android` profile, which serves no GATT.

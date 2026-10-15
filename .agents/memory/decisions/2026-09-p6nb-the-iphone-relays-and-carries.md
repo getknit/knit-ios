@@ -33,3 +33,15 @@ for the whole mesh. The iPhone refuses to show a cleartext DM, where Android wou
 build sends one, and one in the clear would pass for private. `CustodyStoreTests` runs every store
 implementation against the ported `ForwardRepositoryTest` and `ForwardDaoTest` cases. `CustodySyncTests`,
 `RouterTests` and the `MeshEngine*Tests` pin the rest.
+
+**Amended 2026-10-15:** with the ratchet on (ADR 2026-10.5sk9), receipts take Android's sealed form toward a peer
+that can read one, and two custody rules follow it (`InboundPipeline.kt:2819-2830` and `:2894-2957`, `AckSync.kt`,
+at knit-next `ac491f4c`):
+
+- **A sealed DM receipt purges nothing, anywhere.** It is a ratchet chat frame, flooded and custodied like any other.
+  Carriers cannot read it, so the delivered DM leaves every custody, ours included, on its TTL.
+- **A sealed tick is sealed once.** Its bytes are re-sent verbatim on a doubling backoff (knit-next ADR 053), where
+  the cleartext tick takes a fresh id at each attempt.
+
+A cleartext receipt, still the form toward a peer without the ratchet, purges and self-vaccinates as before. Both
+rules land with the ratchet's DM phase, and until then every receipt and tick stays cleartext.

@@ -1,15 +1,16 @@
 # Identity and end-to-end crypto
 
-How knit-next derives identities and seals DMs at the pinned commit. The MVP implements the v1 scheme only
-(ADR router: `.agents/memory/decisions.md`); v2 and v3 are summarized at the end for the milestone after
-it. The `crypto-owner` reads it before it writes and the `crypto-reviewer` before it judges
-(`.agents/rules/owners.md`).
+How knit-next derives identities and seals DMs at the pinned commit. This port seals the v1 scheme only
+(ADR router: `.agents/memory/decisions.md`). The ratchet (v2, v3 and the group form) is being ported dark behind a
+switch, and the last section is its reference (ADR 2026-10.5sk9). The `crypto-owner` reads it before it writes and
+the `crypto-reviewer` before it judges (`.agents/rules/owners.md`).
 
 ## Keys
 
 - **X25519 identity key** (`hpkePub`): v1 HPKE, and later the X3DH identity key.
 - **Ed25519 signing key** (`sigPub`): every frame signature, and the signed prekey's signature.
-- **Signed prekey:** v2 only; it rides `ProfileContent.prekey`. The MVP publishes none.
+- **Signed prekey:** the ratchet's only; it rides `ProfileContent.prekey`. This port publishes none while the
+  ratchet's switch is off ("The ratchet", below).
 
 Android keeps the private keys in a file wrapped by AndroidKeyStore, outside the database, so a database
 wipe keeps the identity. On iOS they live in the Keychain as `…AfterFirstUnlockThisDeviceOnly`.
@@ -50,7 +51,9 @@ signatures, and swift-crypto on Linux does not. Both verify anywhere, but two co
 - **Tests verify signatures and never compare them.** A byte comparison passes on Linux and fails on the
   Mac runner.
 - **Each frame id is signed exactly once and its bytes are stored.** Re-signing makes a second, different
-  set of bytes for the same id, and knit-next's custody treats a frame id as one set of bytes.
+  set of bytes for the same id, and knit-next's custody treats a frame id as one set of bytes. The ratchet's
+  re-seal after a peer's reset is the one exception: it flies live under the original id and never replaces
+  custodied bytes (ADR 2026-09.2ved, amended).
 
 ## v1 DM sealing
 
@@ -203,9 +206,10 @@ Swift must count `utf16`, not `Character`s.
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
-  ratchet's prekeys will join it as a third key. `IdentityKeys.load(from:)` makes a new identity only when
-  the store is empty or holds something unreadable. A store that cannot answer throws instead, so a
-  Keychain read before the first unlock after a reboot never mints a new node id.
+  ratchet's prekeys join it as a third key, `prekeys`, which an older build ignores ("Keys and the signed
+  prekey", below). `IdentityKeys.load(from:)` makes a new identity only when the store is empty or holds
+  something unreadable. A store that cannot answer throws instead, so a Keychain read before the first unlock
+  after a reboot never mints a new node id.
 - **Low-order X25519 keys are refused on both seal and open.** RFC 9180 §7.1.4 requires it and Tink does
   it, but swift-crypto and CryptoKit skip the all-zero check on purpose (`X25519Keys_boring.swift`).
   `MessageCrypto` runs one throwaway exchange to find such a key. The bundle itself still parses, as it does
@@ -218,18 +222,334 @@ Swift must count `utf16`, not `Character`s.
   DM and safety number (`keyed-v1.json`). The device tag golden and two further safety numbers were
   computed in Python from the Kotlin sources, because knit-next pins no value for them.
 
-## After the MVP: v2 and v3
+## The ratchet: v2, v3 and the group form
 
-knit-next's forward secrecy (`docs/FORWARD_SECRECY_RATCHET.md`, ADR 016) is an epoch-rekey ratchet with an
-X3DH bootstrap. It is not Signal's Double Ratchet: custody leaves permanent holes an in-order chain would
-not survive.
+knit-next's forward secrecy, which this port carries but does not yet open. ADR 2026-10.5sk9 ports all of it dark,
+behind `MeshConfiguration.ratchet`, phase by phase, and turns the capability bits on once, at the end. Kotlin lines
+in this section are at knit-next `ac491f4c`, past the pin. The DM side is under `mesh/crypto/ratchet/`
+(`RatchetCrypto.kt`, `RatchetEngine.kt`, `RatchetSessions.kt`), `data/ratchet/` and
+`data/crypto/IdentityKeyStore.kt`. The rest is in `InboundPipeline.kt`, `MeshManager.kt`, `IntroSync.kt`,
+`CryptoScheme.kt` and `MessageContentV2.kt`. Where `docs/FORWARD_SECRECY_RATCHET.md` or
+`docs/GROUP_FORWARD_SECRECY.md` disagree with the Kotlin, this port follows the Kotlin ("Where the docs lag the
+Kotlin", below).
 
-- **Labels:** `knit/dm/v2/x3dh`, `/epoch`, `/mk`, `/ck`, `/spk`, `/export/root`, `/export/epoch`,
-  `knit/dm/v3/nonce` and `knit/dm/v3/hdr`.
-- **What it adds:** session races, resets and retention rules, plus 31 behavioural scenarios in
-  `RatchetEngineTest`.
-- **What a peer commits to** once it advertises `CAP_RATCHET`: handle ctl codes 1, 5, 6 and 8, commit a
-  chain advance even for an unknown ctl, and keep the exists-gate.
-- **v3** adds a derived nonce, an integer-keyed plaintext and an unsigned live-link tick (ADR 059).
+It is an epoch-rekey ratchet with an X3DH bootstrap, not Signal's Double Ratchet: custody leaves permanent holes
+that an in-order chain would not survive. The session root never changes, and each epoch derives from it on its own.
 
-None of it has keyed vectors in knit-next today. The milestone that ports it starts by adding them.
+### Keys and the signed prekey
+
+- **IK** is the v1 X25519 identity key (`hpkePub`). The bundle, the node id and the safety number do not change.
+- **The signed prekey (SPK)** is a fresh X25519 pair:
+  - its id is the newest id plus 1, starting at 1;
+  - it rotates once the newest is 7 days old, checked at start and on every heal;
+  - five private keys are kept, the current one and four more, beside the identity and outside the database
+    (`IdentityKeyStore.kt:189-202`, `:273-276`).
+  - A rotation republishes the profile with a version bump (`MeshManager.kt:996-1003`).
+- **Signed bytes:** `"knit/dm/v2/spk" ‖ u32be(id) ‖ pub`, 50 bytes, signed with the identity's Ed25519 key
+  (`RatchetCrypto.kt:171-174`). Tink's Ed25519 is deterministic and CryptoKit's is not, so this port keeps each
+  prekey's signature from its mint.
+- **On the wire:** `ProfileContent.prekey = {id, pub, sig}`, with a 32-byte `pub` and a 64-byte `sig`. It is
+  the eighth field, after `capabilities`. It rides the cleartext profile only, never the sealed `CTL_PROFILE`
+  (`Wire.kt:576-581`, `:682-686`).
+- **Taking a peer's prekey in** (`InboundPipeline.kt:3281-3368`):
+  - verify `sig` against the bundle in the same profile, and require a 32-byte `pub`; anything else counts as no
+    prekey;
+  - the prekey has its own watermark, the profile's `version`;
+  - a profile newer on that watermark with no prekey, or a bad one, clears the pin.
+
+### Derivations
+
+All HKDF here is HKDF-SHA256 called as Tink calls it: input key material first, then salt (`RatchetCrypto.kt:27`).
+The zero salt is 32 zero bytes, and labels are ASCII.
+
+```text
+X3DH, initiator          DH1 = X25519(IK_a, SPK_b)   DH2 = X25519(EK_a, IK_b)   DH3 = X25519(EK_a, SPK_b)
+X3DH, responder          the same three, from the other side's private keys
+root                     HKDF(ikm = 0xFF×32 ‖ DH1 ‖ DH2 ‖ DH3, salt = zero, info = "knit/dm/v2/x3dh", 32)
+epoch                    okm = HKDF(ikm = X25519(epoch or base private, the other's public), salt = root,
+                                    info = "knit/dm/v2/epoch" ‖ dir ‖ u32be(se) ‖ u32be(pe), 64)
+                         chainKey0 = okm[0..<32]; export = okm[32..<64]
+message key              mk(n)   = HKDF(ikm = ck(n), salt = zero, info = "knit/dm/v2/mk", 32)
+next chain key           ck(n+1) = HKDF(ikm = ck(n), salt = zero, info = "knit/dm/v2/ck", 32)
+v3 nonce                 HKDF(ikm = mk(n), salt = zero, info = "knit/dm/v3/nonce" ‖ boundAad, 12)
+v3 header binding        "knit/dm/v3/hdr" ‖ u32be(se) ‖ ek ‖ u32be(pe) ‖ u32be(n) ‖ u8(flags)
+                           ‖ (no init: 0x00 | init: 0x01 ‖ eph ‖ u32be(pkid) ‖ u64be(at))      60 or 104 bytes
+root tag                 HKDF(ikm = root, salt = zero, info = "knit/dm/v2/root-tag", 8), read as a big-endian
+                           Int64 and kept locally
+exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool's alone; this port leaves them out
+```
+
+- **`dir`** is `'i'` (0x69) when the epoch's sender initiated the session, else `'r'` (0x72)
+  (`RatchetCrypto.kt:116-129`).
+- **The sender's DH base** is the peer's newest epoch it has seen (`peerBasePub`), or the peer's pinned SPK when
+  `pe = 0`.
+- **The receiver's DH base** is our SPK for `init.pkid` when `pe = 0`, and otherwise our own local epoch numbered
+  `pe`. The lookup is by number alone (`RatchetEngine.kt:451`, `RatchetSessions.kt:134-140`).
+- **No one-time prekeys.** The EK private key is used once for the root and never stored.
+- **A new send epoch starts** at any of: no epoch or no chain yet; the peer has contributed a newer epoch; 200
+  messages; or 24 h. Its number is the last one plus 1 (`RatchetEngine.kt:300-311`, `:830-859`).
+
+### The envelope
+
+- **v2:** `{v: 2, nonce: 12 random bytes, ct, keys: [], r: {se, ek, pe, n, init?, flags?}}`.
+  - The AAD is the v1 header, `"{id}|{senderId}|{sentAt}|{recipientId}"`.
+  - `flags` is written onto the header after sealing, so it is not in v2's AAD.
+  - `init = {eph, pkid, at}` rides every frame until the session confirms.
+- **v3:** the same header, with `nonce` present and empty and `flags` always 0.
+  - The AAD is the header string followed by the header binding, and the nonce derives from the message key and
+    that AAD.
+  - The plaintext is `MessageContentV2`.
+- **Header bounds** (`RatchetEngine.kt:346-349`): a frame outside these is `BAD_HEADER`.
+  - `se` is in `[1, 2^24]`, `n` in `[0, 199]` and `pe` in `[0, 2^24]`;
+  - `ek` is 32 bytes;
+  - and `pe ≥ 1` or an init rides.
+- **Receive gates** (`InboundPipeline.kt:975-983`, `:1008-1028`):
+  - a missing `r`, or a v2/v3 DM addressed to a group, is `BAD_HEADER`;
+  - so is a v3 `nonce` that is not empty, or a v2 one that is not 12 bytes;
+  - `v > 3` is dropped, counted, and still relayed.
+- **Low-order keys.** Tink throws on a low-order public value (`RatchetCrypto.kt:56-60`).
+  - A bad `ek` is `BAD_HEADER`.
+  - A bad `init.eph` falls to the pipeline's catch-all, which never triggers a reset.
+  - CryptoKit returns zeros instead, so this port must refuse an all-zero DH result itself and map it the same way.
+    Read as `AEAD_FAIL`, it would trigger a reset Tink never would.
+
+### Plaintexts
+
+- **v2** uses the named `MessageContent`. `body` is required, and a ctl sends `""`.
+- **v3** uses `MessageContentV2`, with integer labels. An id or hash is raw bytes, and unknown labels are skipped.
+
+  | Label | Field | Label | Field |
+  | --- | --- | --- | --- |
+  | 0 | `v`, omitted while 1 | 8 | `ack`, a 16-byte frame id |
+  | 1 | `body` | 9 | `acks` |
+  | 2 | `mentions` | 10 | `rp` |
+  | 3 | `attachmentHash`, 32 bytes | 11 | `pr` |
+  | 4 | `attachmentMime` | 12 | reserved (`pad`) |
+  | 5 | `attachmentKey` | 13 | reserved (`gk`) |
+  | 6 | `replyTo` | 14 | `attachmentName` |
+  | 7 | `ctl` | 15 | `attachmentSize` |
+
+  A content the compact codec cannot carry canonically seals as v2 instead: a non-canonical id, hash or key, any
+  `gk` or `xf`, or `v ≠ 1` (`MessageContentV2.kt:53-60`, `:102-108`). The nine `messageContentV2*` fixtures are in
+  `wire-v1.json` already.
+
+### Sessions
+
+- **Per peer:**
+  - `root`, `confirmed`, `weAreInitiator`, `establishedAt` (our clock exactly when we initiated, else the peer's
+    `init.at`);
+  - the pending init (`initEphPub`, `initPkid`) and the peer's init anchor (`peerInitEphPub`);
+  - `prevRoot` with its role and expiry;
+  - the DH base (`peerBasePub`, `peerBaseEpoch`);
+  - the send chain (`sendEpoch`, its key pair, `sendChainKey`, `sendCount`, when it started, its base);
+  - `highestPeAcked` and `lastResetSentAt`.
+- **Four tables:**
+  - `ratchet_sessions`;
+  - `ratchet_local_epochs` (peer, epoch);
+  - `ratchet_recv_epochs` (peer, epoch, root tag);
+  - `ratchet_skipped_keys` (peer, epoch, index, root tag).
+
+  Skipped keys are inserted with IGNORE. A local epoch whose number is minted again replaces the dead era's key
+  (knit-next ADR 027).
+- **Retention,** swept at start and then at most hourly (`RatchetRepository.kt:121-157`, `:213-224`):
+  - skipped keys are dropped once 48 h old, and the oldest go first past 2,000 in all;
+  - receive rows go after 48 h unused;
+  - local epochs are ordered by mint time and the newest three always stay. The rest go past 16, at 30 days, or
+    once acked and 48 h old.
+  - Sessions are never swept.
+- **Bounds and floors** (`RatchetEngine.kt:863-885`, `RatchetSessions.kt:602-631`, `IntroSync.kt:349-358`):
+
+  | Bound | Value |
+  | --- | --- |
+  | messages per epoch | 200 |
+  | epoch number | 2^24 |
+  | epoch jump adopted, once anchored | 1,024 |
+  | epoch age | 24 h |
+  | `prevRoot` drain | 48 h |
+  | reset evidence | 3 distinct frame ids, from an LRU of 8 |
+  | our heuristic resets | one per 6 h |
+  | a stranded tail | 48 h |
+  | adopting a replacement | once an hour, or once a minute when `FLAG_RESET` is set |
+  | re-sending an intro | 20 h |
+  | answering one init again | 60 min |
+
+### Lifecycle
+
+- **First contact.** The first seal with no session runs X3DH against the pinned SPK. The session starts
+  unconfirmed, with epoch 1 based on the SPK (`pe = 0`).
+- **The responder** establishes a confirmed session from the init, and anchors on its `eph`.
+- **An initiator confirms** on an open that moves the era, when `pe ≥ 1` names an epoch whose private key we hold.
+- **Races.** When both sides initiate, the init from the smaller node id wins, compared as ASCII and never by clock
+  (`RatchetEngine.kt:653-705`).
+  - The loser adopts the winner's root.
+  - The winner stays unconfirmed, keeps sealing against the loser's SPK, and reads the loser's root read-only.
+  - The loser's late opening DM gets a read-only candidate and is never anchored (#83).
+- **Opening, in three passes, per candidate root:**
+  1. the skipped key;
+  2. the live chain;
+  3. a fresh derivation, with one DH shared across candidates.
+
+  Each candidate stops at the first pass where it holds something of its own.
+  - **The verdict** when nothing opens: `DUPLICATE`, then `AEAD_FAIL`, then `BAD_HEADER`, then `EPOCH_GONE`.
+    `DUPLICATE` never stops the ladder early.
+  - **A resolution that purges** reads nothing stored.
+- **Era effects** apply only on a fresh derivation under the active root (knit-next ADR 2026-09.pz9g): adopting the
+  peer's epoch as our base, raising `highestPeAcked`, and confirming an initiator.
+- **Receive rows and skipped keys** carry the tag of the root that derived them, and a candidate reads only its own
+  (knit-next ADR 2026-10.gcrd).
+- **The exists-gate** acknowledges a signed frame whose id is a stored message and never opens it. That is what
+  makes deleting spent keys safe under custody's re-serves. A ctl frame has no row, so its re-serves reach the
+  ratchet.
+- **The reset heuristic** (`InboundPipeline.kt:1816-1900`, `RatchetSessions.kt:295-311`):
+  - It counts authenticated `NO_SESSION`, `EPOCH_GONE` and `AEAD_FAIL` only, never `DUPLICATE` or `BAD_HEADER`.
+  - It needs three distinct ids from the era it would abandon, and 6 h since our last reset.
+  - Each counted frame gets one copy past the router's dedup (`reopen`).
+- **Reset plans** (knit-next ADR 2026-09.qerd; `RatchetSessions.kt:393-469`):
+  - **Re-root:** a fresh init flagged `FLAG_RESET`, numbering again from 1.
+  - **Mark:** flag our own init that is still unanswered.
+  - **Decline:** inside the peer's 60 s floor.
+
+  A reset is always v2, with the plaintext `{"body": "", "ctl": 1}`.
+- **After a reset we receive,** we re-seal our unacked DMs of the last 24 h under their original id and `sentAt`,
+  keeping an attachment's name and size, and force a group seed flush (`MeshManager.kt:3361-3407`). That re-seal is
+  the one exception to "signed once" (ADR 2026-09.2ved, amended).
+- **Init answers** (IntroSync's answer half, `IntroSync.kt:185-240`):
+  - each new init from a peer gets one sealed answer, then none again for 60 min, and a reset-marked init gets one
+    more;
+  - an init that opened before the peer's prekey and `CAP_RATCHET` pinned is owed an answer once they pin (knit-next
+    `937cf785`).
+
+### Control codes
+
+| ctl | Name | Carries | Here |
+| --- | --- | --- | --- |
+| 1 | session reset | nothing; `flags` bit 0 on the header | handle and send |
+| 2 | group key | `gk`: `{groupId, keys: [{epoch, seed, mintedAt}], ackEpoch?, gr?, group?}` | handle and send |
+| 3 | group key request | `gk{groupId}` | answer, and send when a group frame will not open |
+| 4 | group key ack | `gk{groupId, ackEpoch}` | send and handle |
+| 5 | receipt | `ack` and/or `acks`, at most 128 ids, the forged-ack guard | handle and send |
+| 6 | reaction | `rp{messageId, emoji?}`; no emoji retracts; last writer wins on `sentAt` | handle and send, in DM and group form |
+| 7 | reserved | never reused | — |
+| 8 | profile | `pr{name, status, avatarHash?, version, openToChat, loraNode?, loraKey?}`, no prekey | handle and send, presentation only |
+| 9 | transfer | `xf`, only toward `CAP_DIRECT_TRANSFER` | unknown here |
+
+- **A ctl is machinery:** never stored as a message, notified or acknowledged.
+- **An unknown code** still commits the chain advance and does nothing else (`InboundPipeline.kt:1191-1196`).
+- **A ctl is never v1-wrapped.** Toward a peer without the ratchet, a receipt or reaction falls back to the
+  cleartext frame, and a seed has no fallback: the group goes v1.
+- **In the group form,** only ctl 6 is applied (`InboundPipeline.kt:1636-1646`).
+- **A sealed receipt purges nothing,** anywhere, and a sealed tick is sealed once and re-sent verbatim with backoff
+  (ADR 2026-09.p6nb, amended).
+- **Inline acks** (`CAP_INLINE_ACK`): up to four `acks` ride a plain sealed DM to an author whose profile has
+  `0x40`, and are applied in the same commit as the message (`InboundPipeline.kt:1088-1116`).
+
+### Which scheme a send takes
+
+- **A DM** is sealed with the ratchet when the peer's pinned profile carries `CAP_RATCHET` and a bundle is pinned
+  (`MeshManager.kt:1287-1308`). It is v3 when the profile also has `CAP_CRYPTO_V3` and the content encodes
+  compactly, and v2 otherwise.
+  - `sealDm` returns nothing when there is no session and no prekey, or when a new epoch is due with no base. The DM
+    then goes v1, counted.
+  - A DM waits only for a bundle (`pendingKey`), so a peer pinned without a prekey gets v1 at once, and that DM is
+    never upgraded.
+  - In this port the switch comes first: off, nothing takes the ratchet.
+- **A group message** takes the group form only when every other member has a bundle, `CAP_RATCHET` and a prekey,
+  and the epoch's seed seals to all of them (`MeshManager.kt:1319-1353`). Any shortfall sends that message as v1.
+- **Resets, seeds and the group form** are always v2.
+
+### The group form
+
+- **Seeds.** Each member mints a random 32-byte seed per group epoch, with no DH (`GroupRatchetCrypto.kt:30-76`):
+
+  ```text
+  epoch      okm = HKDF(ikm = seed, salt = zero,
+                        info = "knit/group/v1/epoch" ‖ "{groupId}|{senderId}|" ‖ u32be(e), 64)
+             chainKey0 = okm[0..<32]; export = okm[32..<64]
+  chain      mk = HKDF(ck, zero, "knit/group/v1/mk", 32);  next ck = HKDF(ck, zero, "knit/group/v1/ck", 32)
+  ```
+
+- **The frame** is `{v: 2, nonce, ct, keys: [], g: {se, n}}`, with the AAD `"{id}|{senderId}|{sentAt}|{groupId}"`.
+- **Seeds travel only as v2 `CTL_GROUP_KEY` DMs**, through an outbox that is the truth, not custody.
+  - They are acked with ctl 4, and re-sent no more than every 15 min per group, member and pairwise root.
+  - A reset forces the flush.
+  - A request (ctl 3) is answered (`MeshManager.kt:1444-1484`).
+- **Adoption** goes by `(epoch, mintedAt)`, at most four a day per group and sender
+  (`GroupRatchetEngine.kt:204-229`, `GroupRatchetSessions.kt:274`).
+  - A seed for a group we don't know pins the roster from `gk.group`, or parks before the commit. The park holds
+    1 h, 64 frames, 16 per group.
+  - Custody is replayed after an adoption, at a group's first sight, and hourly (`InboundPipeline.kt:1151-1156`,
+    `MeshManager.kt:1739-1800`).
+- **A send epoch advances** at 200 messages, at 24 h, and on a leave or a rejoin.
+- **A retired chain never reuses its epoch number** (knit-next `0f519d71`, knit-next ADR 2026-10.xgwj).
+
+### Threading and the store
+
+- **Android** opens in two phases: a peek with no lock feeds moderation, then a commit under the one ratchet mutex,
+  inside a database transaction, writes the session and the message row together (`RatchetSessions.kt:166-236`,
+  `SessionTransactor.kt`). The transaction is outside and the mutex inside, on every path.
+- **This port's engine** is one synchronous actor, and moderation runs after the row is stored, so one phase is
+  enough.
+  - The store unit is outermost. The ratchet's change commits together with the row, the inline acks, a seed's
+    adoption and the rest, or nothing does.
+  - On a failure nothing is delivered and nothing is sent. A send persists its advanced chain before the frame
+    leaves.
+
+### The promise behind the bits
+
+- **`CAP_RATCHET` (0x10):**
+  - the open path above, races and replacement included;
+  - ctl 1, 2, 5, 6 and 8 handled, and 4 sent;
+  - the reset heuristic and plans;
+  - init answers;
+  - the group form received in full;
+  - our prekey published, signed, rotated and kept.
+- **`CAP_INLINE_ACK` (0x40):** inline `acks` applied in the message's commit.
+- **`CAP_CRYPTO_V3` (0x100):**
+  - v3 opened;
+  - the unsigned live-link tick admitted. It must be a `relay = false` DM-form chat to us from a pinned peer. It is
+    checked ahead of the exists-gate, must open as a v3 `CTL_RECEIPT` before anything commits, and is never
+    custodied and never counted toward a reset (`InboundPipeline.kt:592-598`, `:1739-1768`).
+- **Android reads these bits from the pinned profile alone** (`CryptoScheme.kt:11-13`). That is why the dark phases
+  can carry them on a Debug build's profile while the HELLO and the advert stay `0xF`.
+
+### What this port leaves out
+
+- **The spool's exports and its root gossip.** `gr` is decoded and kept raw, and never sent. Its cost is bounded
+  (ADR 2026-10.5sk9).
+- **Sending contact-card intros.**
+- **`CTL_TRANSFER`.**
+- **Unsigned tick sends:** a signed tick costs 64 bytes and verifies the normal way.
+- **The LoRa and spool tick paths.**
+
+### Where the docs lag the Kotlin
+
+This port follows the Kotlin in each case, and each one is a doc fix owed to knit-next.
+
+- **Numbering:** a reset restarts our own epoch numbering at 1, not only a wipe.
+- **Replacement floors:** 60 min unflagged and 60 s with `FLAG_RESET`, both held in memory, not one an hour.
+- **`DUPLICATE`** never triggers a reset (knit-next ADR 024 over ADR 023).
+- **The era gate** is knit-next ADR 026's.
+- **The sweep** runs at most hourly.
+- **Timing of the 48 h rules:** a local epoch's 48 h counts from its mint, and skipped keys age from creation.
+- **Prekey pins:** an invalid prekey also clears the pin, and the watermark is the profile `version`, not `sentAt`.
+- **`flags`** is read whether or not an init rides.
+- **Race candidates:** a race rebuilds the candidate list rather than adding to it.
+- **The 6 h reset floor** applies to the heuristic alone.
+
+One rule to port as it is and report rather than fix: a session left unconfirmed past 24 h or 200 frames bases its
+next epoch on a rotated prekey while its init still names the old `pkid`. Its frames then fail until a reset
+(`RatchetEngine.kt:260`, `:277`).
+
+### Vectors
+
+No keyed ratchet vectors exist yet; `wire-v1.json` pins only the shapes. Companion change A9 adds
+`vectors/ratchet-v1.json` to knit-next with:
+
+- known answers for each derivation above;
+- ratchet profiles;
+- a scripted DM conversation, with a state digest after each step;
+- group seeds and frames;
+- the negative cases.
+
+A10 then adds this port's own ratchet frames to `ios-emitted-v1.json`, for knit-next's `IosEmittedVectorTest` to
+open (`.agents/memory/roadmap.md`).
