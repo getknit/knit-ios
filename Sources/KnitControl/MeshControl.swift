@@ -74,7 +74,7 @@ public actor MeshControl {
     /// This node's id.
     nonisolated public let nodeId: NodeId
     private let bundle: PublicKeyBundle
-    private let mesh: Mesh
+    let mesh: Mesh
     let actions: any ControlActions
     let stores: MeshStores
     private let clock: any MeshClock
@@ -220,6 +220,8 @@ public actor MeshControl {
             return .success(["conv": .string(conversation), "sent": .bool(await actions.noteTyping(in: conversation))])
         case .group(let command):
             return await answer(command)
+        case .ratchet(let reset):
+            return .success(await ratchet(resetting: reset))
         case .stop, .start:
             await (command == .stop ? actions.stop() : actions.start())
             return .success(["running": .bool(await mesh.isRunning)])
@@ -375,26 +377,5 @@ extension MeshControl {
         let ids = stores.custody.liveIds(now: now).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
         let fingerprint = Hex.encode(withUnsafeBytes(of: stores.custody.fingerprint(now: now).bigEndian, Array.init))
         return ["ids": .array(ids.map(JSONValue.string)), "count": .int(Int64(ids.count)), "fingerprint": .string(fingerprint)]
-    }
-
-    private func links() async -> [String: JSONValue] {
-        let links = await mesh.neighbors.map { neighbor -> JSONValue in
-            [
-                "peer": .string(neighbor.nodeId.string),
-                "version": .int(Int64(neighbor.protocolVersion)),
-                "capabilities": .string(neighbor.capabilities.hex),
-            ]
-        }
-        let sightings = await mesh.sightings.map { sighting -> JSONValue in
-            [
-                "peer": .string(sighting.nodeId.string),
-                "rssi": .int(Int64(sighting.smoothedRssi.rounded())),
-                "dwellMs": .int(sighting.dwellMilliseconds),
-                "lastSeenMs": .int(sighting.lastSeenAgoMilliseconds),
-                "psm": .int(Int64(sighting.advert.psm)),
-                "flags": .int(Int64(sighting.advert.flags)),
-            ]
-        }
-        return ["links": .array(links), "sightings": .array(sightings)]
     }
 }

@@ -18,7 +18,8 @@ public actor Mesh {
     /// This node's id.
     nonisolated public let nodeId: NodeId
 
-    private let engine: MeshEngine
+    /// The engine, reached by this actor's extensions in other files (`Mesh+Ratchet.swift`).
+    let engine: MeshEngine
     private let links: LinkManager
     private let radio: any Radio
     private let clock: any MeshClock

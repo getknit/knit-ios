@@ -11,9 +11,9 @@ code that builds and tests on Linux, or a thin radio adapter for one platform. T
 | `KnitSync` | all | `Lock`, the lock every target uses in place of `Synchronization.Mutex` (ADR 2026-09.ahrr) | P6 |
 | `KnitWire` | all | CBOR (kotlinx profile), wire types, registries, link records, HELLO/DIGEST, advert, NodeId/FrameId/FrameKey, UTF-16 limits, FNV fold | P1 |
 | `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM and group seal/open, a chat photo's seal/open (ADR 2026-10.6cas), group ids, safety number, the verify code, alias words, identities minted inside a node id window | P2 |
-| `KnitStore` | all | repository protocols and in-memory stores (messages and their status lines and reactions, groups and their rosters among them, blobs, the people blocked, and the ids of deleted messages, ADR 2026-10.u7cq), the ratchet's store unit and its form in memory (ADR 2026-10.5sk9), and the custody rules every store applies | P3 |
+| `KnitStore` | all | repository protocols and in-memory stores (messages and their status lines and reactions, groups and their rosters among them, blobs, the people blocked, and the ids of deleted messages, ADR 2026-10.u7cq), the ratchet's store unit and its form in memory, the ratchet's session store in memory and the retention rules every ratchet store applies (ADR 2026-10.5sk9), and the custody rules every store applies | P3 |
 | `KnitStoreSQL` | all | the `KnitStore` protocols on SQLite through GRDB: the frozen schema, its migrations and the SQL stores, the store unit on the database, and the blob store's files beside the database | P5 |
-| `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol and its FILE records both ways, router, SeenSet, custody, sync, receipts, reactions (ADR 2026-10.ehe6), typing cues (ADR 2026-10.29z9), mentions (ADR 2026-10.nbhj), key recovery, blob exchange, profiles and their photos, photos in chats, conversations, groups and their roster rules, policies, the system clock | P3 |
+| `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol and its FILE records both ways, router, SeenSet, custody, sync, receipts, reactions (ADR 2026-10.ehe6), typing cues (ADR 2026-10.29z9), mentions (ADR 2026-10.nbhj), key recovery, blob exchange, profiles and their photos, photos in chats, conversations, groups and their roster rules, the DM ratchet's session facade, `RatchetSessions` (ADR 2026-10.5sk9), policies, the system clock | P3 |
 | `KnitAppCore` | all | one `AppSession` over the mesh, the `@Observable` view models each screen reads, collision-aware labels, faces and the profile photo's crop (ADR 2026-10.sepc), what a message carries and the photo the composer holds (ADR 2026-10.6cas), the quote a reply carries and how a thread shows one (ADR 2026-10.mn29), who a thread shows typing and the cue a keystroke sends (ADR 2026-10.29z9), the composer's mentions, their chips and where a thread's names sit (ADR 2026-10.nbhj), unread counts on the chat list and Knit's icon (ADR 2026-10.frmj), the content filter's policy and verdicts, for photos (ADR 2026-10.rpmq) and words, with the tokenizer and the room's word list (ADR 2026-10.e4kz), the notification policy, the copy catalog (ADR 2026-09.ycza), the swatches every color comes from, Knit's mark parsed from Android's path data and how a thread's messages cluster (ADR 2026-10.5waw), and `-seedDemo`'s scenes, radio, shown links and typists | P6 |
 | `KnitWebP` | all | libwebp behind a small Swift API: a lossy still and an animated WebP written a frame at a time, which ImageIO cannot write (ADR 2026-10.m4ah) | P6 |
 | `KnitBLE` | Apple | the CoreBluetooth `Radio`: central and GATT reads, peripheral with the GATT payload, L2CAP streams on one thread, restoration | P6 |
@@ -82,13 +82,15 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
 - **Database:** GRDB over SQLite, one `knit.sqlite` in a directory of its own, with file protection
   `completeUntilFirstUserAuthentication` (the mesh runs while the phone is locked), excluded from backups
   (ADR 2026-09.nyya).
-- **Schema:** an append-only list of literal SQL migrations; v1 to v15 are frozen, v3 adding groups and the
+- **Schema:** an append-only list of literal SQL migrations; v1 to v17 are frozen, v3 adding groups and the
   status lines' `kind`, v4 the blob index and the photo hashes, v5 what a message carries, v6 the people
   blocked (ADR 2026-10.5wgg), v7 what the content filter made of a message (ADR 2026-10.e4kz), v8 the ids of
   deleted messages and the photos they carried (ADR 2026-10.u7cq), v9 reactions (ADR 2026-10.ehe6), v10 to v12 a
   photo's size, frames and names (ADR 2026-10.6cas, ADR 2026-10.f3mv), v13 the quote a reply carries (ADR
-  2026-10.mn29), v14 the people a message mentions (ADR 2026-10.nbhj), and v15 which messages nobody has read (ADR 2026-10.frmj). Every table
-  is `STRICT` and every string is a UTF-8 `BLOB`, because GRDB cuts a bound `String` at its first NUL.
+  2026-10.mn29), v14 the people a message mentions (ADR 2026-10.nbhj), v15 which messages nobody has read (ADR
+  2026-10.frmj), v16 a peer's ratchet prekey and the one our profile names, and v17 the DM ratchet's sessions (ADR
+  2026-10.5sk9). Every table is `STRICT` and every string is a UTF-8 `BLOB`, because GRDB cuts a bound `String` at its
+  first NUL.
 - **Blobs:** photos are files named by their hash in `Blobs/`, inside the database's directory, so they share its
   protection and backup exclusion. The `blobs` table indexes them, and the sweep when the store opens squares the
   two (ADR 2026-09.nyya, amended 2026-10-03). A removal deletes a file only once the row's removal commits (amended
@@ -99,7 +101,10 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
   queue, so it never blocks on the main actor or touches the database.
 - **Keys:** the Keychain, as `…AfterFirstUnlockThisDeviceOnly`. A reinstall finds them and keeps the identity,
   and onboarding republishes its profile (ADR 2026-09.tkww).
-- **SQLCipher** waits until there is a reason beyond iOS's own file protection.
+- **At rest:** every connection zeroes what it deletes (`secure_delete`), and the ratchet's sweep runs a truncating
+  checkpoint as it commits, so keys that must die leave the file and its log by the next sweep (ADR 2026-09.nyya,
+  amended 2026-10-15).
+  **SQLCipher** still waits: its key would sit under the same after-first-unlock class as the file.
 - **The Linux peer** uses the in-memory stores. The store contract tests run against both.
 
 ## Dependencies

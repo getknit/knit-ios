@@ -22,9 +22,11 @@ public struct MeshStores: Sendable {
     public let ownProfile: any OwnProfileStore
     /// The photos held: ours, other people's, and the ones carried for others.
     public let blobs: any BlobStore
+    /// The DM ratchet's sessions, our epochs, receive chains and skipped keys (ADR 2026-10.5sk9), which ``RatchetSessions``
+    /// alone writes, inside ``transactor``'s units.
+    public let ratchet: any RatchetStore
     /// The store unit a ratchet change commits in with everything it carries, or not at all (ADR 2026-10.5sk9): the
-    /// database itself under the SQL stores, or a ``MemoryTransactor`` over the memory ones. Nothing opens a unit before
-    /// the DM engine's phase.
+    /// database itself under the SQL stores, or a ``MemoryTransactor`` over the memory ones.
     public let transactor: any StoreTransactor
 
     /// Bundles the repositories with the unit they commit in, which must cover every one of them.
@@ -37,6 +39,7 @@ public struct MeshStores: Sendable {
         groups: any GroupStore,
         ownProfile: any OwnProfileStore,
         blobs: any BlobStore,
+        ratchet: any RatchetStore,
         transactor: any StoreTransactor
     ) {
         self.custody = custody
@@ -47,6 +50,7 @@ public struct MeshStores: Sendable {
         self.groups = groups
         self.ownProfile = ownProfile
         self.blobs = blobs
+        self.ratchet = ratchet
         self.transactor = transactor
     }
 
@@ -68,6 +72,7 @@ public struct MeshStores: Sendable {
         let memoryBlocks = MemoryBlockStore()
         let memoryGroups = MemoryGroupStore()
         let memoryBlobs = MemoryBlobStore()
+        let memoryRatchet = MemoryRatchetStore()
         return Self(
             custody: memoryCustody,
             peers: memoryPeers,
@@ -77,8 +82,10 @@ public struct MeshStores: Sendable {
             groups: memoryGroups,
             ownProfile: ownProfileStore,
             blobs: memoryBlobs,
+            ratchet: memoryRatchet,
             transactor: MemoryTransactor(stores: [
                 memoryCustody, memoryPeers, memoryMessages, memoryConversations, memoryBlocks, memoryGroups, ownProfileStore, memoryBlobs,
+                memoryRatchet,
             ])
         )
     }

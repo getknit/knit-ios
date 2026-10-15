@@ -190,7 +190,11 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   again takes it back, and the reply's `emoji` is what we hold now, `null` once taken back; it goes out in the clear,
   ADR 2026-10.ehe6), `typing` (`conv`, or `to` for a DM's peer as Android's bridge takes it, the room when both are
   left out; one cue, one hop and in the clear, at most once every 8 s a thread, and the reply's `sent` says whether
-  this one went, ADR 2026-10.29z9), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the peer
+  this one went, ADR 2026-10.29z9), `ratchet` (every pinned peer's DM ratchet state under the keys of Android's
+  `RATCHET` dump, `peers`, and `prekeyId`, the prekey our profile names; with `reset`, a peer's node id, it first seals
+  a reset toward that peer past the heuristic and says `forcedReset`, `declined` with Android's reason or `null`, and
+  `reRooted`. Until P5 the reset is sealed and persisted and never sent, and with the ratchet's switch off it is
+  declined; ADR 2026-10.5sk9), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the peer
   exits; the app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):
   - `group-create` (`members`, the others' node ids) makes a group, or opens the one they already share. Nothing

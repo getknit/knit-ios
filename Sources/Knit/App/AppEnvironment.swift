@@ -163,8 +163,8 @@
                 ownProfile: SQLOwnProfileStore(database),
                 blobs: try SQLBlobStore(
                     database, directory: directory.appending(path: SQLBlobStore.directoryName, directoryHint: .isDirectory)),
-                // The store unit is the database itself, under every SQL store above (ADR 2026-10.5sk9).
-                transactor: database
+                ratchet: SQLRatchetStore(database),
+                transactor: database // The store unit is the database itself, under every SQL store above (ADR 2026-10.5sk9).
             )
             let defaults = DefaultsPreferences()
             var parts = Parts(

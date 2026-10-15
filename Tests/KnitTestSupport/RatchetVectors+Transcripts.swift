@@ -44,7 +44,8 @@ extension RatchetVectors {
     }
 
     /// One step. Which fields it carries depends on `op`: `seal`, `open`, `advance`, and stage 3b's `reset` and `skip`.
-    /// Only what the engine's replay reads is modelled: not the signed `wire`, the pipeline's drop flags or `applies`.
+    /// Only what the engine's and the session layer's replays read is modelled: not the signed `wire`, the pipeline's
+    /// drop flags or `applies`.
     public struct TranscriptStep: Decodable, Sendable {
         /// Its index.
         public let step: Int
@@ -96,6 +97,14 @@ extension RatchetVectors {
         public let fromN: Int?
         /// A reset's plan: `REROOT`, `MARK`, `DECLINED` or `NO_PREKEY`.
         public let result: String?
+        /// Why a reset was asked for: `ON_DEMAND`, `UNREADABLE` or `AFTER_WIPE`.
+        public let cause: String?
+        /// Why a reset was declined.
+        public let reason: String?
+        /// The field and floor that decided a reset's plan.
+        public let decidedBy: String?
+        /// The floors the actor's session layer held in memory for its peer as the step began (stage 3b).
+        public let floorsBefore: TranscriptFloors?
         /// The actor's state for its peer after the step.
         public let state: TranscriptState?
 
@@ -125,7 +134,32 @@ extension RatchetVectors {
             case count = "count"
             case fromN = "fromN"
             case result = "result"
+            case cause = "cause"
+            case reason = "reason"
+            case decidedBy = "decidedBy"
+            case floorsBefore = "floorsBefore"
             case state = "state"
+        }
+    }
+
+    /// The in-memory floors a session layer holds for one peer (`floorsBefore`), `nil` where it holds none. A restart
+    /// forgets all four.
+    public struct TranscriptFloors: Decodable, Sendable, Equatable {
+        /// When it last adopted a replacement from the peer, or lost a race to it.
+        public let lastReplacementAt: Int64?
+        /// When the peer answered its own init.
+        public let confirmedAt: Int64?
+        /// When it last sealed a reset, held for a peer with no session row.
+        public let lastResetSentAtInMemory: Int64?
+        /// How many distinct undecryptable frame ids it holds.
+        public let undecryptableIds: Int
+
+        /// Floors as a replay holds them.
+        public init(lastReplacementAt: Int64?, confirmedAt: Int64?, lastResetSentAtInMemory: Int64?, undecryptableIds: Int) {
+            self.lastReplacementAt = lastReplacementAt
+            self.confirmedAt = confirmedAt
+            self.lastResetSentAtInMemory = lastResetSentAtInMemory
+            self.undecryptableIds = undecryptableIds
         }
     }
 

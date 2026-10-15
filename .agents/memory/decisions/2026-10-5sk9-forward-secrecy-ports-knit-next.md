@@ -254,3 +254,76 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   - `RatchetSoakTests` runs the soak's property on five seeds of this port's.
   - `RatchetTranscriptTests` replays A9's engine-layer transcripts byte for byte, Carol's included. It names what
     waits: the five with a reset step for P4c, the pipeline's own refusals for P5, and `group` for P6.
+
+**Amended 2026-10-15, phase P4c (the session store and facade):**
+
+- **The store is `RatchetStore`** (KnitStore), knit-next's seam, with records of bytes, numbers, flags and node ids, since
+  KnitStore does not depend on KnitCrypto. `RatchetRecords` (KnitMesh) is the one place they meet the engine's types.
+  - `MemoryRatchetStore` is `Checkpointing`, so the memory unit undoes it with the rest.
+  - `SQLRatchetStore` keeps schema v17: Android's four `ratchet_*` tables as its database v21 has them, `STRICT`, every
+    string a UTF-8 `BLOB`. The session leaves out `sendEpochExport`, the spool's, and `updatedAt`, which nothing reads.
+  - The row rules are `RatchetDao`'s: the session, a chain and a local epoch replace, a skipped key is inserted if absent,
+    and a spent key goes by its full key, root tag included.
+  - A deleted row is zeroed in the next write of its page, which reaches the file at a checkpoint, and each sweep runs
+    a truncating checkpoint as it commits, unless a reader holds the log then (ADR 2026-09.nyya, amended 2026-10-15).
+    Nothing calls the sweep before P5.
+- **Retention is pure code** (`RatchetRetention`), which both stores apply, as `CustodyRules` serves custody. Android
+  orders the cap's eviction by `createdAt` alone and leaves a tie to SQLite. Here a tie goes by peer, epoch, index and
+  root tag, so the two stores evict the same keys. The order is local, and the pair never compares it.
+- **The facade is `RatchetSessions`** (KnitMesh), which the engine owns.
+  - Each call decides and writes inside one unit, and reads the store inside it too, so a store that cannot answer
+    fails the unit rather than deciding on its fallback.
+  - An open runs in one phase. Its changes commit with what the caller writes in `alongside` (P5's message row), or
+    none do.
+  - Each call answers `settled`, `joined` or `failed`. A joined answer hands its floor changes up as a `Settlement`,
+    which the caller applies once its outermost unit commits; before then nothing it made is sent or delivered.
+  - The floors held in memory (replacements adopted, our init's answer, our resets with no session row, the heuristic's
+    frame ids, compared by their bytes) die with the process, as Android's do. Each moves only after a commit, save that
+    a frame the heuristic counts joins its ids at once, as on Android: only their clearing waits for a commit.
+- **It takes the peer's pinned bundle,** whose node id keys the rows, where Kotlin passes a peer id and an identity key
+  apart: one value cannot name two peers.
+- **The init's prekey is the one its `pkid` names** (`RatchetSessions.kt:140`). One under another id counts as none:
+  the engine trusts what it is handed, and a wrong prekey would derive a wrong root whose `AEAD_FAIL` counts toward a
+  reset.
+- **A key X25519 refuses commits nothing and counts toward nothing.** A seal answers `refusedKey`, which a chat treats as
+  having no session (v1), a ctl as its cleartext frame and a seed as a wait (P5). An open answers `rejected`, as
+  `InboundPipeline`'s `runCatching` records `DECRYPT_FAILED`.
+- **The reset's pure rules are `RatchetResetPolicy`'s:** the evidence that counts, the era gate (`isLiveEvidence`), the
+  replacement floors and the plan, with the rule that decided it. Every reset seals v2, as `{"body": "", "ctl": 1}`.
+- **`noteUndecryptable` runs the era gate itself, in Kotlin's order** (`InboundPipeline.kt:1835-1856`): a unit that only
+  reads the session row, then, outside it, `isLiveEvidence`, and only then the frame id joins the heuristic's ids, at
+  once, and the 6 h floor reads the later of the stamp the unit read and the one held in memory. A unit that fails
+  counts nothing, and so does a call inside a caller's unit: a joined open or reset clears the ids only once that unit
+  commits, where Kotlin clears them in the commit itself (`RatchetSessions.kt:207-211`).
+  - Kotlin's `sessionFor` throws on a Room error, so nothing counts there either. With the gate left to the caller, over
+    a read that answers none when the store fails, a frame from the era a reset abandons could enter the eight slots,
+    and three such frames would re-root on that era's evidence (knit-next `d7487392`).
+  - `sentAt` is the envelope's signed stamp as it arrived, never clamped to our clock (`InboundPipeline.kt:1897-1899`). A
+    responder's `establishedAt` is the peer's own `init.at`, so a clamped stamp would class every live failure from a
+    peer whose clock runs fast as pre-era (knit-next `cf447a9b`).
+- **The control surface's `ratchet` command** dumps every pinned peer under the keys of Android's `RATCHET`, plus the
+  prekey our profile names. With `reset` it seals one past the heuristic. Before P5 that reset is persisted and never
+  sent, and with the switch off it is declined, so no session starts that would outlive the flip.
+- **The alternatives, and why not:**
+  - **Android's two phases,** a peek with no lock and then a commit: moderation runs after the row here, so nothing
+    needs the peek, and one phase cannot race itself.
+  - **A facade that refuses to run inside a caller's unit:** nothing can enforce it, so a joined answer carries its
+    floors up instead.
+  - **Android's eviction order:** the memory and SQL stores could evict different keys.
+  - **The era gate in the caller, where Kotlin's pipeline keeps it:** the only session read the facade offered outside a
+    unit answers none when the store fails, so that gate would fail open.
+- **Limits:**
+  - The facade serves one caller at a time, the engine's actor, as `MemoryTransactor` does.
+  - A restart forgets the floors held in memory, as Android's do. The persisted `lastResetSentAt` is what survives.
+  - A reset the control surface seals before P5 moves our session without the peer hearing of it. Our next frame
+    carries the new init, and the peer adopts it as an unflagged replacement, past its hour.
+  - Replaying an inbound frame whose open failed, from our own custody, is P5's, and so are the two-engine tests the P4a
+    reviews owe.
+- **Guards:** `RatchetStoreTests` (knit-next's ten `RatchetRepositoryTest` cases, the unit and the eviction order, over
+  both store kinds), `SQLRatchetStoreTests` (a refusing trigger, and what a deletion leaves in the files),
+  `RatchetRetentionTests`, `RatchetRecordsTests`, `RatchetSessionsResetTests` (knit-next's twelve
+  `RatchetSessionsResetTest` cases), `RatchetSessionsTests`, `RatchetSessionsDatabaseTests` (the facade over the
+  database), `RatchetSessionsFloorTests`, `RatchetSessionsEvidenceTests` (the era gate inside the facade: a session it
+  cannot read, a frame from before the era, a peer whose clock runs fast, an initiator's skew and its 48 h),
+  `RatchetResetPolicyTests`, `RatchetTranscriptSessionTests` (A9's six session-layer transcripts),
+  `MeshEngineRatchetTests`, `MeshControlRatchetTests` and `SchemaTests.v17KeepsEveryPeerAndStartsWithNoRatchetState`.

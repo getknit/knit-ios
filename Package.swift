@@ -130,9 +130,10 @@ let package = Package(
 
         .testTarget(name: "KnitSyncTests", dependencies: ["KnitSync"], swiftSettings: strict),
         .testTarget(name: "KnitWireTests", dependencies: ["KnitWire", "KnitTestSupport"], swiftSettings: strict),
+        // The ratchet's transcripts replay through the session layer too, so these reach KnitMesh's facade and its stores.
         .testTarget(
             name: "KnitCryptoTests",
-            dependencies: ["KnitSync", "KnitCrypto", "KnitWire", "KnitTestSupport", crypto],
+            dependencies: ["KnitSync", "KnitCrypto", "KnitMesh", "KnitStore", "KnitWire", "KnitTestSupport", crypto],
             swiftSettings: strict
         ),
         // The store contract tests run against every implementation, the SQL one included.
@@ -146,9 +147,10 @@ let package = Package(
             dependencies: ["KnitSync", "KnitStoreSQL", "KnitStore", "KnitWire", "KnitTestSupport", grdb],
             swiftSettings: strict
         ),
+        // The ratchet's session layer runs over the SQL stores as well as the memory ones.
         .testTarget(
             name: "KnitMeshTests",
-            dependencies: ["KnitSync", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", "KnitTestSupport"],
+            dependencies: ["KnitSync", "KnitMesh", "KnitCrypto", "KnitStore", "KnitStoreSQL", "KnitWire", "KnitTestSupport"],
             swiftSettings: strict
         ),
         .testTarget(

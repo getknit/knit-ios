@@ -19,6 +19,9 @@ public final class MeshEngine {
     let deviceTag: String?
     /// The repositories.
     public let stores: MeshStores
+    /// The DM ratchet's sessions over ``stores``' ratchet store, and the floors it holds in memory (ADR 2026-10.5sk9). Only
+    /// the control surface's forced reset reaches it before P5 wires DMs.
+    let ratchet: RatchetSessions
     let transport: any MeshTransport
     let clock: any MeshClock
     let configuration: MeshConfiguration
@@ -75,6 +78,7 @@ public final class MeshEngine {
         prekeyRing = prekeys.flatMap { $0.identity.bundle == identity.bundle ? $0 : nil }
         self.deviceTag = deviceTag
         self.stores = stores
+        ratchet = RatchetSessions(identity: identity, store: stores.ratchet, transactor: stores.transactor)
         self.transport = transport
         self.clock = clock
         self.random = random

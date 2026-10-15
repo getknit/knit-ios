@@ -206,6 +206,8 @@ Swift must count `utf16`, not `Character`s.
 | `SafetyNumber`, `Alias`, `DeviceTag` | the same names |
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
 | `RatchetEngine` | `RatchetEngine`: `initiate`, `seal`, `open`, over `SessionState`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
+| `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `sealResetDm`, `sweep`, `forget`, `settle`; the reset's pure rules in `RatchetResetPolicy` |
+| `RatchetStore`, `RatchetRepository` | KnitStore's `RatchetStore`, `MemoryRatchetStore` and `RatchetRetention`; KnitStoreSQL's `SQLRatchetStore` (schema v17); `RatchetRecords` maps the rows to the engine's types |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
   ratchet's prekeys join it as a third key, `prekeys`, which `PrekeyRing` writes and an older build ignores ("Keys
@@ -394,13 +396,24 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   - `ratchet_skipped_keys` (peer, epoch, index, root tag).
 
   Skipped keys are inserted with IGNORE. A local epoch whose number is minted again replaces the dead era's key
-  (knit-next ADR 027).
+  (knit-next ADR 027). This port's schema v17 keeps them as Android's database v21 does, less the session's
+  `sendEpochExport` (the spool's) and `updatedAt` (never read).
 - **Retention,** swept at start and then at most hourly (`RatchetRepository.kt:121-157`, `:213-224`):
   - skipped keys are dropped once 48 h old, and the oldest go first past 2,000 in all;
   - receive rows go after 48 h unused;
   - local epochs are ordered by mint time and the newest three always stay. The rest go past 16, at 30 days, or
     once acked and 48 h old.
   - Sessions are never swept.
+
+  The rules are pure code both stores apply (`RatchetRetention`). Android orders the cap's eviction by `createdAt`
+  alone and leaves a tie to SQLite; here a tie goes by peer, epoch, index and root tag, so the memory and SQL stores
+  evict the same keys. The order is local, and the pair never compares it.
+
+  At rest, a deleted row is zeroed in the next write of its page (`secure_delete`), which reaches the database file
+  only at a checkpoint, while the write-ahead log keeps the frames that wrote the key until it is reset. Each sweep's
+  truncating checkpoint does both once it commits, so after a sweep that finds no reader on the log neither file holds
+  a key deleted or replaced before it; between sweeps either can. Nothing calls the sweep before P5 (ADR
+  2026-09.nyya, amended 2026-10-15).
 - **Bounds and floors** (`RatchetEngine.kt:863-885`, `RatchetSessions.kt:602-631`, `IntroSync.kt:349-358`):
 
   | Bound | Value |
@@ -544,6 +557,27 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     `notePlainHash` does), never a decision.
   - Only the outermost unit's `.committed` lets the work after the commit run. A nested unit answers `.joined`, and
     its caller hands that work up through the outer body.
+- **The session facade, `RatchetSessions`** (KnitMesh), decides and writes inside one unit per call, and reads the
+  store inside it too, so a store that cannot answer fails the unit rather than deciding on its fallback.
+  - An open's changes commit with whatever its caller writes in `alongside` (the message row, P5's), or none do.
+  - Each call answers `settled` (its unit committed as the outermost, or changed nothing), `joined` (it ran inside a
+    caller's unit: what it made stands, may be sent or delivered, and moves the floors through `settle` only once the
+    caller's outermost unit commits) or `failed` (nothing persisted, nothing used, and an inbound frame is replayed
+    from our own custody, P5's).
+  - Its floors live in memory: the replacements adopted, our init's answer, our resets for a peer with no session row,
+    and the heuristic's ids, which compare by their bytes. They die with the process, and each moves only after a
+    commit, save that a frame the heuristic counts joins its ids at once, as on Android; only their clearing waits for
+    a commit. `sealResetDm`'s decline reads the persisted `lastResetSentAt`.
+  - `noteUndecryptable` runs the era gate itself (`InboundPipeline.kt:1835-1856`): a unit that only reads the session
+    row, then `isLiveEvidence` on the frame's signed `sentAt`, as it arrived and never clamped, then the ids and the
+    6 h floor, from the later of the stamp the unit read and the one held in memory. A unit that fails counts nothing,
+    so a store that cannot answer neither lets a frame of an era left behind into the ids nor buys a reset (knit-next
+    `d7487392`, `cf447a9b`). Nor does a call inside a caller's unit, whose joined open or reset clears the ids only
+    once that unit commits.
+  - The init's prekey is looked up by the id the init names, and one under another id counts as none
+    (`RatchetSessions.kt:140`).
+  - A key X25519 refuses, from a peer's signed prekey or an init's ephemeral, commits nothing and counts toward no
+    reset: a seal answers `refusedKey`, and an open `rejected`.
 
 ### The promise behind the bits
 
@@ -603,9 +637,11 @@ knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` from a branc
   `RatchetProfileVectorTests` delivers to one engine in the file's order;
 - `dm` and `negative`, scripted DM transcripts with a state digest after each step, and the refusals, for the DM
   engine and its wiring. The file's `transcriptFormat` describes every step. `RatchetTranscriptTests` replays at the
-  engine every transcript the engine alone can, and names the rest: those with a reset step wait for P4c's session
-  layer, and the pipeline's own refusals for P5. Its store follows knit-next's `MemoryRatchetStore` and its digest
-  `TranscriptJson.state` (`RatchetTranscript.kt:136-232`, `TranscriptJson.kt:40-130` on the A9 branch);
+  engine every transcript the engine alone can, and names the rest. Its store follows knit-next's `MemoryRatchetStore`
+  and its digest `TranscriptJson.state` (`RatchetTranscript.kt:136-232`, `TranscriptJson.kt:40-130` on the A9 branch).
+  `RatchetTranscriptSessionTests` replays the six that need the session layer through `RatchetSessions` (the races,
+  the late loser, the re-root, the era gate and the reset plans), checking each step's floors held in memory and the
+  rule that decided a plan. The control plane and the re-seals wait for P5's pipeline, and so do its own refusals;
 - `group`, the group form's transcripts, for P6;
 - `carol`, Carol, the iPhone, in races and first contacts with Alice and with Bob. Every opener is v3, and
   `RatchetTranscriptTests` replays them at the engine, Carol's seals byte for byte.

@@ -58,62 +58,18 @@ public enum ControlCommand: Equatable, Sendable {
     case typing(String)
     /// One of the group commands.
     case group(GroupCommand)
+    /// `{"cmd":"ratchet"}`: every pinned peer's DM ratchet state in the keys of Android's debug bridge `RATCHET`, and the
+    /// id of the prekey our profile names. With `"reset":"<node id>"` it first seals a session reset toward that peer past
+    /// the heuristic, as the bridge's `--es reset <peer>` does, and says `forcedReset` and why it `declined`, or `null`
+    /// (ADR 2026-10.5sk9). Until P5 wires the ratchet into the mesh the reset is sealed and persisted and never sent, and
+    /// with the ratchet's switch off it is declined.
+    case ratchet(reset: NodeId?)
     /// `{"cmd":"stop"}`: stop the mesh, closing every link, as Settings' Stop does.
     case stop
     /// `{"cmd":"start"}`: start it again.
     case start
     /// `{"cmd":"quit"}`: `knit-peer` stops and exits; the app's bridge closes the connection and runs on.
     case quit
-
-    /// The name a reply carries back.
-    public var name: String {
-        switch self {
-        case .status:
-            "status"
-        case .peers:
-            "peers"
-        case .links:
-            "links"
-        case .room:
-            "room"
-        case .directMessage:
-            "dm"
-        case .accept:
-            "accept"
-        case .name:
-            "name"
-        case .avatar:
-            "avatar"
-        case .denyLink:
-            "deny-link"
-        case .allowLink:
-            "allow-link"
-        case .block:
-            "block"
-        case .unblock:
-            "unblock"
-        case .digest:
-            "digest"
-        case .custody:
-            "custody"
-        case .messages:
-            "messages"
-        case .delete(let command):
-            command.name
-        case .react:
-            "react"
-        case .typing:
-            "typing"
-        case .group(let command):
-            command.name
-        case .stop:
-            "stop"
-        case .start:
-            "start"
-        case .quit:
-            "quit"
-        }
-    }
 }
 
 /// Where an `avatar` command's photo comes from.
@@ -214,6 +170,7 @@ public struct ControlRequest: Equatable, Sendable {
         var emoji: String?
         var replyTo: String?
         var mentions: [String]?
+        var reset: String?
         var tag: String?
     }
 
@@ -269,6 +226,8 @@ public struct ControlRequest: Equatable, Sendable {
             required(raw.id, "id").flatMap { id in required(raw.emoji, "emoji").map { .react(id: id, emoji: $0) } }
         case "typing":
             .success(.typing(raw.conv ?? raw.to ?? Conversations.nearby))
+        case "ratchet":
+            ratchetCommand(from: raw)
         default:
             groupCommand(from: raw).map(ControlCommand.group)
         }
@@ -286,6 +245,16 @@ public struct ControlRequest: Equatable, Sendable {
                 }
             }
         }
+    }
+
+    /// The state dump, or a forced reset first. A blank `reset` asks for none, as the bridge's `takeIf { it.isNotBlank() }`
+    /// takes it (`DebugBridgeReceiver.kt:1462`).
+    private static func ratchetCommand(from raw: Raw) -> Result<ControlCommand, ControlError> {
+        let peer = raw.reset?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let peer, !peer.isEmpty else {
+            return .success(.ratchet(reset: nil))
+        }
+        return nodeId(peer, "reset").map { .ratchet(reset: $0) }
     }
 
     private static func groupCommand(from raw: Raw) -> Result<GroupCommand, ControlError> {

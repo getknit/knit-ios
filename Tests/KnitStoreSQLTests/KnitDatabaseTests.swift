@@ -52,6 +52,24 @@ private func carried(_ id: String, sentAt: Int64 = 1) -> CarriedFrame {
         }
     }
 
+    /// Every connection erases what it deletes (ADR 2026-09.nyya, amended 2026-10-15): the writer's and a reader's on the
+    /// file's pool, and the queue in memory. Linux's SQLite is built with `secure_delete` on, so only the Mac's run can
+    /// fail this, where SQLite defaults to FAST, 2, which leaves freed pages as they were.
+    @Test func everyConnectionErasesWhatItDeletes() throws {
+        try withTemporaryDirectory { directory in
+            let database = try KnitDatabase.open(in: directory, failures: recordFailure)
+            let writer = try database.writer.writeWithoutTransaction { try Int.fetchOne($0, sql: "PRAGMA secure_delete") }
+            let reader = try database.writer.read { db in
+                let setting = try Int.fetchOne(db, sql: "PRAGMA secure_delete")
+                return (isReader: db.configuration.readonly, setting: setting)
+            }
+            #expect(writer == 1)
+            #expect(reader.isReader && reader.setting == 1, "a reader of the pool")
+        }
+        let memory = try KnitDatabase.inMemory(failures: recordFailure)
+        #expect(try memory.writer.read { try Int.fetchOne($0, sql: "PRAGMA secure_delete") } == 1)
+    }
+
     @Test func whatWasStoredIsThereAfterAReopen() throws {
         try withTemporaryDirectory { directory in
             let alice = fixtureNodeId(1)

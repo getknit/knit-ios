@@ -42,6 +42,11 @@ extension Row {
         try [UInt8](decode(Data.self, forColumn: column))
     }
 
+    /// The bytes in `column`, or `nil` for `NULL`.
+    func optionalBytes(_ column: String) throws -> [UInt8]? {
+        try decode(Data?.self, forColumn: column).map { [UInt8]($0) }
+    }
+
     /// The node id in `column`. It throws when the bytes are not one, rather than inventing a peer.
     func nodeId(_ column: String) throws -> NodeId {
         guard let nodeId = NodeId(try text(column)) else {

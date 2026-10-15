@@ -11,18 +11,19 @@ import Testing
 /// store with `RatchetRepository`'s rules, which ``RatchetRows`` plays. Signatures are not compared, and the signed
 /// `wire` is not read: the engine seals no frame of its own.
 ///
-/// What needs more than the engine is left to its phase, by name (``deferred`` and ``aboveTheEngine``): a reset's plan
-/// is `RatchetSessions`' (P4c), and the exists-gate and the pipeline's own refusals are `InboundPipeline`'s (P5).
+/// What needs more than the engine is left to the layer that has it, by name (``deferred`` and ``aboveTheEngine``): a
+/// reset's plan is `RatchetSessions`', which ``RatchetTranscriptSessionTests`` replays, and the exists-gate and the
+/// pipeline's own refusals are `InboundPipeline`'s (P5).
 @Suite struct RatchetTranscriptTests {
     static let file = RatchetVectors.file
 
-    /// The transcripts left to a later phase, with the step that needs it.
+    /// The transcripts left to another layer, with the step that needs it.
     static let deferred: [String: String] = [
-        "reRootReset": "a reset step: RatchetSessions.sealResetDm's plan and re-root (P4c)",
-        "confirmEra": "a reset step: RatchetSessions.sealResetDm's plan and re-root (P4c)",
-        "resetPlans": "reset steps: RatchetSessions.sealResetDm's Mark and Decline (P4c)",
-        "resealNewFirst": "a reset step (P4c), and a skip at InboundPipeline's exists-gate (P5)",
-        "resealOldFirst": "a reset step (P4c), and a skip at InboundPipeline's exists-gate (P5)",
+        "reRootReset": "a reset step: RatchetSessions.sealResetDm's re-root, which RatchetTranscriptSessionTests replays",
+        "confirmEra": "a reset step: RatchetSessions.sealResetDm's re-root, which RatchetTranscriptSessionTests replays",
+        "resetPlans": "reset steps: RatchetSessions.sealResetDm's Mark and Decline, which RatchetTranscriptSessionTests replays",
+        "resealNewFirst": "a reset step, and a skip at InboundPipeline's exists-gate (P5)",
+        "resealOldFirst": "a reset step, and a skip at InboundPipeline's exists-gate (P5)",
     ]
 
     /// What this phase does with a frame `InboundPipeline` refuses before or around the engine.

@@ -126,3 +126,44 @@ runs over both stores.
   a write commits, so it must never block on the main actor or touch the database.
 - Outside a unit nothing else changes. `KnitDatabaseUnitTests` keeps both halves, and `BlobStoreTests` and
   `SQLBlobStoreTests` keep the files.
+
+**Amended 2026-10-15, for keys that must die (ADR 2026-10.5sk9, phase P4c):**
+
+- **Deleted rows are erased on every platform.** Every connection, the writer's and each reader's, sets
+  `PRAGMA secure_delete = ON` (`KnitDatabase`), which overwrites a deleted row with zeros, and every page a deletion
+  frees. Apple's SQLite defaults to FAST, measured as 2 on the Mac's 3.54.0: it zeroes a row only where that costs no
+  extra write, and leaves freed pages on the freelist as they were. Linux's system SQLite is built with it on, and
+  Android's database is SQLCipher (sqlcipher-android 4.19.1, knit-next `gradle/libs.versions.toml:43`, on core
+  4.19.0), whose `sqlcipherCodecAttach` forces it. In WAL mode the zeroed page goes to the log, and the file keeps the
+  old page until a checkpoint copies the new one over it.
+- **The write-ahead log is truncated after the ratchet's sweep.** The log keeps the frames that wrote a row, its keys
+  included, until it is reset and overwritten. `SQLRatchetStore.sweep` truncates it with
+  `PRAGMA wal_checkpoint(TRUNCATE)`, which also copies the zeroed pages over the file, once the outermost transaction
+  it wrote in commits, through GRDB's
+  `afterNextTransaction`, as a blob's file waits for its row's removal: never on a rollback, never inside a
+  transaction, whether the sweep runs alone or inside a unit. A reader holding a snapshot of the log makes the
+  checkpoint answer `SQLITE_BUSY`, which is expected, and the next sweep truncates. Any other error is reported and
+  fails nothing.
+- **Why now:** the ratchet keeps keys that must die. What its sweep retires and what an open spends is the forward
+  secrecy window (`RatchetRetention`), so it must leave the file, and not only the tables.
+- **SQLCipher still waits.** Its key would sit in the Keychain under the same after-first-unlock class the mesh needs,
+  so it would guard the file no better than Data Protection does. The reason it now has, keys that must die, is met by
+  these two.
+- **Limits:**
+  - Between sweeps either file can hold a key deleted or replaced since the last one: the log its insert and every
+    chain key a seal or an open replaced, the file the page an earlier checkpoint wrote. Nothing calls the sweep before
+    P5, which runs it at start and at most hourly, as Android does, and a reader on the log when it commits puts the
+    truncation off to the next sweep.
+  - The zeros cost writes: over FAST, one more page write for each page a deletion frees that was not being written
+    anyway, an overflow page or the pages a bulk delete empties, as custody's sweep and the ratchet's do. The blobs
+    review measured a full custody sweep of maximum-size frames at about 2,000 more pages, 7 ms to 20 ms, on Linux.
+    Nothing was measured on a phone.
+  - What the flash keeps of blocks the file system frees or rewrites is beyond SQLite's reach.
+  - Only `test:macos` reads the setting back on Apple's SQLite, and nothing reads it on the iPhone's. The pragma is set
+    whatever the default is.
+- **Guards:** `KnitDatabaseTests.everyConnectionErasesWhatItDeletes` reads `secure_delete` on a pool's writer and
+  reader and on the queue in memory, which only the Mac's run can fail. `SQLRatchetStoreTests`'
+  `whatTheRatchetDeletesLeavesTheFileAndItsLog` searches the database's files for a spent key, keys the sweep expired
+  and a retired epoch's private key, after a sweep alone and one in a unit, and fails without the truncation.
+  `theLogIsTruncatedOnlyAsTheOutermostUnitCommits`, `aReaderOnTheLogPutsTheTruncationOffToTheNextSweep` and
+  `anyOtherCheckpointErrorIsReportedAndFailsNothing` keep the rest.

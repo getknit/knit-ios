@@ -375,13 +375,18 @@ explicit direction.** Update this file in the change that ships an item.
   - **P1, companion change A9:** keyed ratchet vectors in knit-next (below). The pin moves to its merge.
   - **P2:** the v3 plaintext codec and the ratchet's primitives, alongside P1.
   - **P3:** prekeys, ours in the Keychain beside the identity and our peers' pinned from their profiles.
-  - **P4:** a store unit that fails closed, then the DM engine and its store.
-  - **P5:** DMs in the mesh, checked by knit-peer with the switch on against an Android emulator, then the Pixels.
+  - **P4:** a store unit that fails closed, then the DM engine and its store. Written on 2026-10-15 on
+    `feat/ratchet-p4a`, `-p4b` and `-p4c`. The database now zeroes what it deletes and truncates its log after the
+    ratchet's sweep (ADR 2026-09.nyya, amended 2026-10-15).
+  - **P5:** DMs in the mesh, in three parts: P5a receives and recovers, P5b sends chats, and P5c sends the sealed
+    control plane. knit-peer checks it with the switch on against an Android emulator, then the Pixels.
   - **P6:** the group form received, which the flip waits on, then the group form sent.
   - **P7:** companion change A10, interop runs against knit-next `main` and the release APKs, a Debug iPhone trial, the
     flip to `0x15F`, and the security claims.
 
   Before the flip, besides the phases:
+  - **Read `PRAGMA secure_delete` once on the lab iPhone's Debug build.** Pass is 1. Only the Mac's run reads Apple's
+    SQLite today, and nothing reads the iPhone's (ADR 2026-09.nyya, amended 2026-10-15).
   - **Restoring the same phone from its own backup** (ADR 2026-10.5sk9's P3 amendment). It brings back the identity
     and the onboarded flag without the database, so our fresh prekey goes out only at version 0, which peers ignore.
     Onboarding must follow every database that has never published. That is a product change, the maintainer's call.

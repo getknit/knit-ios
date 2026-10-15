@@ -234,7 +234,11 @@ struct ControlRig {
     let mesh: Mesh
     let control: MeshControl
 
-    init(actions: (any ControlActions)? = nil, sample: (@Sendable () -> [String: JSONValue])? = nil) {
+    init(
+        actions: (any ControlActions)? = nil,
+        sample: (@Sendable () -> [String: JSONValue])? = nil,
+        configuration: MeshConfiguration = MeshConfiguration()
+    ) {
         guard let made = IdentityKeys(signingSeed: fixtureBytes(32, seed: 1), agreementScalar: fixtureBytes(32, seed: 101)) else {
             fatalError("fixed seeds make valid keys")
         }
@@ -247,6 +251,7 @@ struct ControlRig {
             radio: QuietRadio(),
             clock: clock,
             random: SystemRandomNumberGenerator(),
+            configuration: configuration,
             log: SilentLog()
         )
         control = MeshControl(
