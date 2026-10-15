@@ -5,7 +5,8 @@ description: >-
   whenever a file in the plane's gate is created or modified (Sources/KnitMesh/Router/, Custody/, Receipts/,
   Recovery/, MeshEngine+Blobs, +BlobParking, +BlobQueries, +Identities, OutgoingPhoto, Sources/KnitStore/Custody/ and
   Blobs/, SQLCustodyStore, SQLBlobStore, SQLMessageStore+Attachments, KnitWire's FileIntake, FeedMeter,
-  LinkManager+Files), before the change is reported done or committed; the Stop hook .claude/hooks/review-gate.sh
+  LinkManager+Files, and the store unit: Sources/KnitStore/Units/, KnitDatabase and KnitDatabase+Units), before the
+  change is reported done or committed; the Stop hook .claude/hooks/review-gate.sh
   enforces it. Also use it for a change to the custody, block or delete paths of MeshEngine+Inbound, +Outbound,
   +Deletes or +Blocks, which the hook cannot see. Reads the diff for the shapes that have passed single-engine tests
   and cost the mesh (a serve nobody asked for, a memo standing in for the link, a cache standing in for the
@@ -44,7 +45,8 @@ git status --porcelain -- Sources/KnitMesh/Router Sources/KnitMesh/Custody Sourc
   Sources/KnitStore/Custody Sources/KnitStore/Blobs Sources/KnitStoreSQL/SQLCustodyStore.swift \
   Sources/KnitStoreSQL/SQLBlobStore.swift Sources/KnitStoreSQL/SQLMessageStore+Attachments.swift \
   Sources/KnitWire/Link/FileIntake.swift Sources/KnitMesh/Link/FeedMeter.swift \
-  Sources/KnitMesh/Link/LinkManager+Files.swift
+  Sources/KnitMesh/Link/LinkManager+Files.swift Sources/KnitStore/Units Sources/KnitStoreSQL/KnitDatabase.swift \
+  Sources/KnitStoreSQL/KnitDatabase+Units.swift
 git diff HEAD -- <those paths>
 ```
 
@@ -166,7 +168,11 @@ explicitly. The commits are the evidence that each one bit this codebase or the 
     must leave its state so the next file is taken. A SQL store answers as if nothing were there on an error and
     reports it to the closure the app hands `KnitDatabase` (architecture.md, "Storage"), so "not found" can mean
     "failed": a decision that asks again or serves again on absence does it on every error too. Inside the ratchet's
-    store unit an error fails the whole unit instead, and nothing is delivered, sent or remembered (ADR 2026-10.5sk9).
+    store unit an error fails the whole unit instead, and nothing is delivered, sent or remembered. A blob's file
+    error is the exception: the file is no part of the transaction, so its error is reported and fails nothing, and a
+    `nil` or `false` from a blob's bytes there may only mean doing nothing, never a decision (ADR 2026-10.5sk9). A
+    blob's file goes only when its row's removal commits, and only if no row names the hash by then, so a removal
+    refused or undone keeps both (GRDB tells a commit callback of neither a savepoint's rollback nor SQLite's own).
     Evidence: knit-next 512b72bc (a collector that died on one bad file stopped every later attachment).
 15. **A rule that drifted from the pinned Kotlin.** This plane ports Android rule for rule, so both phones log the
     same steps (ADR 2026-10.m9uq). A rule written from a doc, from memory or "a little simpler" diverges, and an

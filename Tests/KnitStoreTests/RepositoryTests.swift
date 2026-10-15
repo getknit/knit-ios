@@ -5,12 +5,13 @@ import KnitWire
 import Testing
 
 /// Every implementation of the peer, message, conversation, block, group and own-profile stores. Each runs the whole
-/// ``RepositoryTests``, ``BlockStoreTests`` and ``GroupStoreTests`` suites.
+/// ``RepositoryTests``, ``BlockStoreTests`` and ``GroupStoreTests`` suites, and with custody, the whole
+/// ``StoreTransactorTests``.
 enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
     case memory
     case sql
 
-    /// One set of stores, sharing one database where the kind has one.
+    /// One set of stores, sharing one database where the kind has one, and the store unit they all commit in.
     struct Stores {
         var peers: any PeerStore
         var messages: any MessageStore
@@ -18,6 +19,8 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
         var blocks: any BlockStore
         var groups: any GroupStore
         var ownProfile: any OwnProfileStore
+        var custody: any CustodyStore
+        var transactor: any StoreTransactor
     }
 
     var testDescription: String {
@@ -29,26 +32,39 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
         }
     }
 
-    func make() throws -> Stores {
+    /// Fresh stores, whose database, where there is one, hands its errors to `failures`: by default, every one fails the
+    /// test.
+    func make(failures: @escaping @Sendable (any Error) -> Void = recordFailure) throws -> Stores {
         switch self {
         case .memory:
+            let peers = MemoryPeerStore()
+            let messages = MemoryMessageStore()
+            let conversations = MemoryConversationStore()
+            let blocks = MemoryBlockStore()
+            let groups = MemoryGroupStore()
+            let ownProfile = MemoryOwnProfileStore()
+            let custody = MemoryCustodyStore()
             return Stores(
-                peers: MemoryPeerStore(),
-                messages: MemoryMessageStore(),
-                conversations: MemoryConversationStore(),
-                blocks: MemoryBlockStore(),
-                groups: MemoryGroupStore(),
-                ownProfile: MemoryOwnProfileStore()
+                peers: peers,
+                messages: messages,
+                conversations: conversations,
+                blocks: blocks,
+                groups: groups,
+                ownProfile: ownProfile,
+                custody: custody,
+                transactor: MemoryTransactor(stores: [peers, messages, conversations, blocks, groups, ownProfile, custody])
             )
         case .sql:
-            let database = try KnitDatabase.inMemory(failures: recordFailure)
+            let database = try KnitDatabase.inMemory(failures: failures)
             return Stores(
                 peers: SQLPeerStore(database),
                 messages: SQLMessageStore(database),
                 conversations: SQLConversationStore(database),
                 blocks: SQLBlockStore(database),
                 groups: SQLGroupStore(database),
-                ownProfile: SQLOwnProfileStore(database)
+                ownProfile: SQLOwnProfileStore(database),
+                custody: SQLCustodyStore(database),
+                transactor: database
             )
         }
     }

@@ -524,6 +524,13 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     adoption and the rest, or nothing does.
   - On a failure nothing is delivered and nothing is sent. A send persists its advanced chain before the frame
     leaves.
+  - In Swift the unit is `StoreTransactor.atomically` on `MeshStores.transactor`: the `KnitDatabase` itself, or a
+    `MemoryTransactor` over the memory stores (ADR 2026-10.5sk9's P4a amendment).
+  - Any store error fails the unit, a read's as well as a write's, except a blob's file error, which is reported and
+    fails nothing. A `nil` or `false` from a blob's bytes inside a unit may only mean doing nothing (as
+    `notePlainHash` does), never a decision.
+  - Only the outermost unit's `.committed` lets the work after the commit run. A nested unit answers `.joined`, and
+    its caller hands that work up through the outer body.
 
 ### The promise behind the bits
 

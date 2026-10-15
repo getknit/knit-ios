@@ -152,9 +152,7 @@
             let identity = try IdentityKeys.load(from: keyStore).keys
             let log = UnifiedLog(clock: SystemClock())
             let directory = try databaseDirectory()
-            let database = try KnitDatabase.open(in: directory) { error in
-                log.log(.warning, "store failed: \(error)")
-            }
+            let database = try KnitDatabase.open(in: directory) { error in log.log(.warning, "store failed: \(error)") }
             let stores = MeshStores(
                 custody: SQLCustodyStore(database),
                 peers: SQLPeerStore(database),
@@ -164,7 +162,9 @@
                 groups: SQLGroupStore(database),
                 ownProfile: SQLOwnProfileStore(database),
                 blobs: try SQLBlobStore(
-                    database, directory: directory.appending(path: SQLBlobStore.directoryName, directoryHint: .isDirectory))
+                    database, directory: directory.appending(path: SQLBlobStore.directoryName, directoryHint: .isDirectory)),
+                // The store unit is the database itself, under every SQL store above (ADR 2026-10.5sk9).
+                transactor: database
             )
             let defaults = DefaultsPreferences()
             var parts = Parts(

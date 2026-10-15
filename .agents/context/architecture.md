@@ -11,8 +11,8 @@ code that builds and tests on Linux, or a thin radio adapter for one platform. T
 | `KnitSync` | all | `Lock`, the lock every target uses in place of `Synchronization.Mutex` (ADR 2026-09.ahrr) | P6 |
 | `KnitWire` | all | CBOR (kotlinx profile), wire types, registries, link records, HELLO/DIGEST, advert, NodeId/FrameId/FrameKey, UTF-16 limits, FNV fold | P1 |
 | `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM and group seal/open, a chat photo's seal/open (ADR 2026-10.6cas), group ids, safety number, the verify code, alias words, identities minted inside a node id window | P2 |
-| `KnitStore` | all | repository protocols and in-memory stores (messages and their status lines and reactions, groups and their rosters among them, blobs, the people blocked, and the ids of deleted messages, ADR 2026-10.u7cq), and the custody rules every store applies | P3 |
-| `KnitStoreSQL` | all | the `KnitStore` protocols on SQLite through GRDB: the frozen schema, its migrations and the SQL stores, and the blob store's files beside the database | P5 |
+| `KnitStore` | all | repository protocols and in-memory stores (messages and their status lines and reactions, groups and their rosters among them, blobs, the people blocked, and the ids of deleted messages, ADR 2026-10.u7cq), the ratchet's store unit and its form in memory (ADR 2026-10.5sk9), and the custody rules every store applies | P3 |
+| `KnitStoreSQL` | all | the `KnitStore` protocols on SQLite through GRDB: the frozen schema, its migrations and the SQL stores, the store unit on the database, and the blob store's files beside the database | P5 |
 | `KnitMesh` | all | `MeshTransport`, `LinkManager` behind a `Radio` protocol and its FILE records both ways, router, SeenSet, custody, sync, receipts, reactions (ADR 2026-10.ehe6), typing cues (ADR 2026-10.29z9), mentions (ADR 2026-10.nbhj), key recovery, blob exchange, profiles and their photos, photos in chats, conversations, groups and their roster rules, policies, the system clock | P3 |
 | `KnitAppCore` | all | one `AppSession` over the mesh, the `@Observable` view models each screen reads, collision-aware labels, faces and the profile photo's crop (ADR 2026-10.sepc), what a message carries and the photo the composer holds (ADR 2026-10.6cas), the quote a reply carries and how a thread shows one (ADR 2026-10.mn29), who a thread shows typing and the cue a keystroke sends (ADR 2026-10.29z9), the composer's mentions, their chips and where a thread's names sit (ADR 2026-10.nbhj), unread counts on the chat list and Knit's icon (ADR 2026-10.frmj), the content filter's policy and verdicts, for photos (ADR 2026-10.rpmq) and words, with the tokenizer and the room's word list (ADR 2026-10.e4kz), the notification policy, the copy catalog (ADR 2026-09.ycza), the swatches every color comes from, Knit's mark parsed from Android's path data and how a thread's messages cluster (ADR 2026-10.5waw), and `-seedDemo`'s scenes, radio, shown links and typists | P6 |
 | `KnitWebP` | all | libwebp behind a small Swift API: a lossy still and an animated WebP written a frame at a time, which ImageIO cannot write (ADR 2026-10.m4ah) | P6 |
@@ -91,9 +91,12 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
   is `STRICT` and every string is a UTF-8 `BLOB`, because GRDB cuts a bound `String` at its first NUL.
 - **Blobs:** photos are files named by their hash in `Blobs/`, inside the database's directory, so they share its
   protection and backup exclusion. The `blobs` table indexes them, and the sweep when the store opens squares the
-  two (ADR 2026-09.nyya, amended 2026-10-03).
+  two (ADR 2026-09.nyya, amended 2026-10-03). A removal deletes a file only once the row's removal commits (amended
+  2026-10-15).
 - **Errors:** a SQL store answers as if nothing were there and reports the error to the closure the app hands
-  `KnitDatabase`, because the store protocols cannot throw.
+  `KnitDatabase`, because the store protocols cannot throw. Inside the ratchet's store unit the error also fails the
+  whole unit, except a blob's file error, which fails nothing (ADR 2026-10.5sk9). The closure can run on the writer's
+  queue, so it never blocks on the main actor or touches the database.
 - **Keys:** the Keychain, as `…AfterFirstUnlockThisDeviceOnly`. A reinstall finds them and keeps the identity,
   and onboarding republishes its profile (ADR 2026-09.tkww).
 - **SQLCipher** waits until there is a reason beyond iOS's own file protection.

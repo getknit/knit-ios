@@ -51,7 +51,8 @@ git status --porcelain -- Sources/KnitCrypto Sources/KnitWire/Envelope Sources/K
   Sources/KnitWire/Payload/MessageContentV2.swift Sources/KnitWire/Identity/CanonicalText.swift \
   Sources/KnitWire/CBOR/CBORLabeledFields.swift \
   Sources/KnitWire/Payload/ProfileContent.swift Sources/KnitWire/Registry/Capabilities.swift \
-  Sources/KnitWire/Identity/PublicKeyBundleProto.swift \
+  Sources/KnitWire/Identity/PublicKeyBundleProto.swift Sources/KnitStore/Units \
+  Sources/KnitStoreSQL/KnitDatabase.swift Sources/KnitStoreSQL/KnitDatabase+Units.swift \
   Sources/KnitMesh/Groups Sources/KnitMesh/Engine/MeshEngine+Groups.swift Sources/KnitStore/Groups \
   Sources/KnitStore/Peers Sources/KnitStoreSQL/SQLGroupStore.swift Sources/KnitStoreSQL/SQLPeerStore.swift \
   Sources/Knit/Platform/KeychainSecretStore.swift
@@ -253,7 +254,12 @@ each one guards (`.agents/context/crypto.md`, "The ratchet").
     inside the unit (a send, an event, a floor or an LRU in memory), or a delivery after the unit failed leaves a
     chain advanced past a message nobody holds, or a key spent twice. A send persists its advanced chain before the
     frame leaves. A frame whose unit failed is replayed from our own custody, because our digest hides it from every
-    re-serve (shape 3). Evidence: `KnitDatabase.write(or:)` answers a fallback on any error by design (ADR
+    re-serve (shape 3). Any store error inside a unit fails it, a read's as well as a write's, except a blob's file
+    error, which is reported and fails nothing; a nil or false from a blob's bytes inside a unit may only mean doing
+    nothing, never a decision. Only the outermost `.committed` releases the work after the commit: a nested unit
+    answers `.joined`, and its caller hands the work up through the outer body. A helper that sends on a nested
+    answer while the outer unit then fails has put a frame on air whose chain advance rolled back, so the next seal
+    reuses that message key. Evidence: `KnitDatabase.write(or:)` answers a fallback on any error by design (ADR
     2026-09.nyya), which a unit must not inherit; knit-next 051284eb (the order the unit stands in for).
 19. **A switch that gates what we advertise but not what we seal.** Every Android build since 2.3.0 advertises
     `CAP_RATCHET` with a prekey, and Android starts a session just to seal a receipt (`InboundPipeline.kt:2904-2948`).
@@ -402,6 +408,8 @@ One line per invariant, with the ADR to read. Not exhaustive and not authoritati
   header as `info`, wraps sorted by `to`. While the switch is off, a v2 or v3 envelope is carried and dropped.
 - **Pins** (`crypto.md`, "The public key bundle"). A bundle is pinned verbatim and never replaced; a node never
   pins its own, and never holds a session or a seed row with itself (knit-next 45763fb6, 8333c858).
+- **Store unit** (ADR 2026-10.5sk9, P4a). The ratchet's state commits with what it carries or nothing does; any
+  store error fails the unit except a blob's file error; only the outermost `.committed` releases post-commit work.
 - **The switch** (ADR 2026-10.5sk9). Off puts the same bytes on air as before; on adds the bits and the prekey to
   the profile only; every toggle republishes under a new stamp, with a version bump once the profile has been
   edited.

@@ -62,3 +62,11 @@ public final class MemoryBlockStore: BlockStore {
         }
     }
 }
+
+extension MemoryBlockStore: Checkpointing {
+    /// Everyone blocked, by node id and by device tag.
+    public func checkpoint() -> StoreCheckpoint {
+        let held = state.withLock { $0 }
+        return StoreCheckpoint { [self] in state.withLock { $0 = held } }
+    }
+}

@@ -135,3 +135,11 @@ public final class MemoryGroupStore: GroupStore {
         rows.withLock { $0[ExactKey(group.id)] = group }
     }
 }
+
+extension MemoryGroupStore: Checkpointing {
+    /// Every group, its roster with it.
+    public func checkpoint() -> StoreCheckpoint {
+        let held = rows.withLock { $0 }
+        return StoreCheckpoint { [self] in rows.withLock { $0 = held } }
+    }
+}

@@ -107,3 +107,12 @@ public final class MemoryCustodyStore: CustodyStore {
         }
     }
 }
+
+extension MemoryCustodyStore: Checkpointing {
+    /// Every row and the next insertion order: undoing a unit removes the frames it stored and brings back the ones they
+    /// evicted.
+    public func checkpoint() -> StoreCheckpoint {
+        let held = state.withLock { $0 }
+        return StoreCheckpoint { [self] in state.withLock { $0 = held } }
+    }
+}

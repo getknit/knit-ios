@@ -129,3 +129,17 @@ public final class FileOwnProfileStore: OwnProfileStore {
         }
     }
 }
+
+extension FileOwnProfileStore: Checkpointing {
+    /// The profile held. Putting it back rewrites the file, and only when a unit changed the profile, so a unit that is
+    /// undone leaves the file as it found it. A peer stopped between a unit's save and its undoing keeps the unit's
+    /// profile in the file, as it keeps any save.
+    public func checkpoint() -> StoreCheckpoint {
+        let held = load()
+        return StoreCheckpoint { [self] in
+            if load() != held {
+                save(held)
+            }
+        }
+    }
+}

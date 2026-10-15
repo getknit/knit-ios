@@ -33,7 +33,8 @@ public protocol BlobStore: AnyObject, Sendable {
     @discardableResult
     func insert(_ bytes: [UInt8], hash: BlobHash, mime: String, storedAt: Int64) -> Bool
 
-    /// Forgets the blob, if held.
+    /// Forgets the blob, if held. Inside a store unit the removal is undone with the unit, bytes and all, so the blob is
+    /// held whole again if the unit abandons or fails (``StoreTransactor``).
     func remove(_ hash: BlobHash)
 
     /// Every held hash, in byte order, for the sweep that removes blobs nothing names.
@@ -107,5 +108,15 @@ public final class MemoryBlobStore: BlobStore {
 
     public func totalBytes(among hashes: Set<BlobHash>) -> Int {
         blobs.withLock { held in hashes.reduce(0) { $0 + (held[$1]?.bytes.count ?? 0) } }
+    }
+}
+
+extension MemoryBlobStore: Checkpointing {
+    /// Every blob held, bytes and all. A unit's body leaves blobs to the work after its commit (``StoreTransactor``), but
+    /// one written or removed inside a unit is undone here with the rest, as on the database: there the index row is
+    /// undone, and the SQL store keeps a removed blob's file until the row's removal commits.
+    public func checkpoint() -> StoreCheckpoint {
+        let held = blobs.withLock { $0 }
+        return StoreCheckpoint { [self] in blobs.withLock { $0 = held } }
     }
 }

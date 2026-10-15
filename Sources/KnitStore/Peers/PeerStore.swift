@@ -140,3 +140,15 @@ public final class MemoryPeerStore: PeerStore {
         profiles.withLock { $0[nodeId]?.frame }
     }
 }
+
+extension MemoryPeerStore: Checkpointing {
+    /// Every pin and every kept proof of key, together.
+    public func checkpoint() -> StoreCheckpoint {
+        let pinned = peers.withLock { $0 }
+        let proofs = profiles.withLock { $0 }
+        return StoreCheckpoint { [self] in
+            peers.withLock { $0 = pinned }
+            profiles.withLock { $0 = proofs }
+        }
+    }
+}

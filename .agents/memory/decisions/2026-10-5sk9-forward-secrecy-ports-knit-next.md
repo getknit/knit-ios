@@ -147,3 +147,70 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   `MeshEnginePrekeyReinstallTests` delivers a reinstall to a peer that pinned the first life, in both orders;
   `PrekeyRingTests`, `MeshEnginePrekeyIntakeTests`, `PrekeyStoreTests` and
   `SchemaTests.v16KeepsEveryPeerWithNoPrekeyAndOurProfileCarryingNone` keep the rest.
+
+**Amended 2026-10-15, phase P4a (the store unit):**
+
+- **The unit is `StoreTransactor.atomically`, on `MeshStores.transactor`.** Its body reads and writes stores and
+  nothing else, and answers the work for after the commit as a value, or `nil` to abandon. The unit answers
+  `.committed`, `.joined`, `.abandoned` or `.failed` (`Transacted`).
+  - A unit opened inside another joins it, and a failure anywhere in it fails the outermost. A nested unit that
+    abandons undoes only its own writes, as a savepoint does. A unit opened inside one that has already failed answers
+    `.failed` without running its body.
+  - Only the outermost unit answers `.committed`, and only that answer lets the work after the commit run. A nested
+    unit's writes stand only if the outermost commits, so it answers `.joined` with its work, and its caller hands the
+    work up through the outer body. A nested `.committed` would let a helper send on it, and if the outer unit then
+    failed, the send's chain would be undone and its message key used again.
+  - A unit in which a store failed answers `.failed` at every depth that sees the failure, whatever its body answered:
+    a `nil` after a failure is no abandon.
+  - Nothing opens a unit before P4c.
+- **On the database the unit is the `KnitDatabase` itself** (`KnitDatabase+Units.swift`): one IMMEDIATE transaction on
+  the writer's connection, with a savepoint for each nested unit and for each store write inside it.
+  - GRDB's `write` traps when nested, so the unit and the stores inside it reach the connection through
+    `unsafeReentrantWrite`, and `inSavepoint` opens the transaction or the savepoint. The file cites GRDB 7.11.1's
+    lines.
+  - A store's read inside the unit runs on the same connection, through `unsafeReentrantRead`, so it sees the unit's
+    writes. A pool reader's snapshot would miss them, and the queue's `read` would trap.
+  - A write decides whether it is inside the unit on the writer's queue. A write from another thread waits for that
+    queue and runs after the unit, in its own transaction, so it never joins the unit or fails it. A read goes by its
+    thread: only the unit's own thread reads inside it.
+  - The closure the app hands `KnitDatabase` hears a unit's errors on the writer's queue, and so does the check a blob's
+    removal makes as it commits, so it must never block on the main actor or touch the database. The app's only logs.
+- **Any store error inside a unit fails it, a read's as well as a write's, except a blob's file error, which is
+  reported and fails nothing.** The body may have decided on a store's fallback. An exception inside Room's transaction
+  aborts it the same way on Android.
+  - The store still answers its fallback and reports the error, once. After that nothing more in the unit runs or
+    reports.
+  - A commit that fails, and a BEGIN that cannot take the write lock, answer `.failed` too.
+  - A blob's file is no part of the transaction: `SQLBlobStore` reports an error reading one, or writing the one
+    `insert` keeps, and fails nothing. Failing a DM's unit on an unreadable photo would leave the DM undelivered, and
+    fail it again at every re-serve. So a `nil` or `false` from a blob's bytes inside a unit may only mean doing nothing
+    (as `notePlainHash` does), never a decision.
+  - Outside a unit every store behaves as before (ADR 2026-09.nyya), save that a removed blob's file now waits for its
+    row's removal to commit (Limits, below).
+- **In memory the unit is a `MemoryTransactor`** over every memory store, each one `Checkpointing`: every unit copies
+  the stores as it opens and puts them back if it abandons or fails. knit-peer's `FileOwnProfileStore` joins it, and
+  rewrites its file only when a unit changed the profile. `MeshStores`' stores are `let` now, so none can be swapped out
+  from under the unit made over them.
+- **The alternatives, and why not:**
+  - **Stores that throw:** every store protocol and caller would change, where ADR 2026-09.nyya keeps them synchronous,
+    answering a fallback instead.
+  - **Deciding "inside a unit" before reaching GRDB's queue:** another thread's write would see the open unit, and its
+    error would fail a unit it never joined.
+  - **Checkpoints at the outermost unit only:** a nested unit that abandons could not undo just its own writes.
+- **Limits:**
+  - A unit holds the database's writer from BEGIN to COMMIT, the ratchet's derivations included, as Room's transaction
+    does on Android. Its body has to stay short.
+  - `MemoryTransactor` serves one caller at a time. A memory store written from another thread while a unit is open
+    loses that write if the unit is undone.
+  - A blob's file is no part of the transaction, so a body leaves writing or removing a blob to the work after the
+    commit. The blob stores stay whole if one does. `SQLBlobStore` writes a file before its row, and deletes one only
+    when the row's removal commits (GRDB's `afterNextTransaction`), and only if no row names it by then: a nested unit
+    that abandoned brings its row back. An undone unit so leaves at worst a file no row names, which reads as not held
+    and goes at the next open's sweep. `MemoryBlobStore` is undone with the rest.
+  - knit-peer stopped between a unit's save and its undoing keeps the unit's profile in its file.
+- **Guards:** `StoreTransactorTests` runs the rules above over both store kinds. `KnitDatabaseUnitTests` covers other
+  threads, a commit that fails, a transaction SQLite rolls back by itself and a BEGIN that cannot start, on a pool and
+  on a queue. `PeerPartsTests.aUnitThatIsUndonePutsTheProfileAndItsFileBack` covers the file. `BlobStoreTests` removes a
+  blob in a unit that abandons, fails or has already failed, and in a nested unit that abandons, over memory and the SQL
+  store on a pool and on a queue. `SQLBlobStoreTests` covers a removal the database refuses, a file that waits for the
+  outermost commit, SQLite's own rollback, and an index the commit cannot read.

@@ -249,11 +249,8 @@ struct PeerRig {
 
     /// A peer on fresh stores in memory, its own profile in `ownProfile` when given, keeping its photo at `avatarPath`
     /// when given: a restart is a second rig on the same two.
-    init(ownProfile: (any OwnProfileStore)? = nil, avatarPath: String? = nil) {
-        var made = MeshStores.inMemory()
-        if let ownProfile {
-            made.ownProfile = ownProfile
-        }
+    init(ownProfile: (any OwnProfileStore & Checkpointing)? = nil, avatarPath: String? = nil) {
+        let made = ownProfile.map { MeshStores.inMemory(ownProfileStore: $0) } ?? .inMemory()
         stores = made
         node = PeerNode(
             identity: keys,

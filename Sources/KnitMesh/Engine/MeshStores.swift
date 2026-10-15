@@ -1,26 +1,33 @@
 public import KnitStore
 public import KnitWire
 
-/// Every repository the mesh reads and writes.
+/// Every repository the mesh reads and writes, and the store unit they commit in.
+///
+/// The repositories are fixed once bundled, because ``transactor`` was made over these: a store swapped in later would
+/// keep its writes when a unit is undone.
 public struct MeshStores: Sendable {
     /// The frames carried for store-and-forward.
-    public var custody: any CustodyStore
+    public let custody: any CustodyStore
     /// The pinned peers.
-    public var peers: any PeerStore
+    public let peers: any PeerStore
     /// The message threads.
-    public var messages: any MessageStore
+    public let messages: any MessageStore
     /// The accepted conversations.
-    public var conversations: any ConversationStore
+    public let conversations: any ConversationStore
     /// The people the user blocked: read on the delivery path only, never by custody or relaying (ADR 2026-10.5wgg).
-    public var blocks: any BlockStore
+    public let blocks: any BlockStore
     /// The groups we are in, or left.
-    public var groups: any GroupStore
+    public let groups: any GroupStore
     /// This node's own profile and its clocks.
-    public var ownProfile: any OwnProfileStore
+    public let ownProfile: any OwnProfileStore
     /// The photos held: ours, other people's, and the ones carried for others.
-    public var blobs: any BlobStore
+    public let blobs: any BlobStore
+    /// The store unit a ratchet change commits in with everything it carries, or not at all (ADR 2026-10.5sk9): the
+    /// database itself under the SQL stores, or a ``MemoryTransactor`` over the memory ones. Nothing opens a unit before
+    /// the DM engine's phase.
+    public let transactor: any StoreTransactor
 
-    /// Bundles the repositories.
+    /// Bundles the repositories with the unit they commit in, which must cover every one of them.
     public init(
         custody: any CustodyStore,
         peers: any PeerStore,
@@ -29,7 +36,8 @@ public struct MeshStores: Sendable {
         blocks: any BlockStore,
         groups: any GroupStore,
         ownProfile: any OwnProfileStore,
-        blobs: any BlobStore
+        blobs: any BlobStore,
+        transactor: any StoreTransactor
     ) {
         self.custody = custody
         self.peers = peers
@@ -39,19 +47,39 @@ public struct MeshStores: Sendable {
         self.groups = groups
         self.ownProfile = ownProfile
         self.blobs = blobs
+        self.transactor = transactor
     }
 
-    /// Fresh in-memory repositories, for the Linux peer and the tests.
+    /// Fresh in-memory repositories under one ``MemoryTransactor``, for the tests and the demo.
     public static func inMemory(ownProfile: OwnProfile = OwnProfile(), custodyLimits: CustodyLimits = CustodyLimits()) -> Self {
-        Self(
-            custody: MemoryCustodyStore(limits: custodyLimits),
-            peers: MemoryPeerStore(),
-            messages: MemoryMessageStore(),
-            conversations: MemoryConversationStore(),
-            blocks: MemoryBlockStore(),
-            groups: MemoryGroupStore(),
-            ownProfile: MemoryOwnProfileStore(ownProfile),
-            blobs: MemoryBlobStore()
+        inMemory(ownProfileStore: MemoryOwnProfileStore(ownProfile), custodyLimits: custodyLimits)
+    }
+
+    /// Fresh in-memory repositories around `ownProfileStore`, the Linux peer's file or a test's double, under one
+    /// ``MemoryTransactor`` that covers it with the rest.
+    public static func inMemory(
+        ownProfileStore: some OwnProfileStore & Checkpointing,
+        custodyLimits: CustodyLimits = CustodyLimits()
+    ) -> Self {
+        let memoryCustody = MemoryCustodyStore(limits: custodyLimits)
+        let memoryPeers = MemoryPeerStore()
+        let memoryMessages = MemoryMessageStore()
+        let memoryConversations = MemoryConversationStore()
+        let memoryBlocks = MemoryBlockStore()
+        let memoryGroups = MemoryGroupStore()
+        let memoryBlobs = MemoryBlobStore()
+        return Self(
+            custody: memoryCustody,
+            peers: memoryPeers,
+            messages: memoryMessages,
+            conversations: memoryConversations,
+            blocks: memoryBlocks,
+            groups: memoryGroups,
+            ownProfile: ownProfileStore,
+            blobs: memoryBlobs,
+            transactor: MemoryTransactor(stores: [
+                memoryCustody, memoryPeers, memoryMessages, memoryConversations, memoryBlocks, memoryGroups, ownProfileStore, memoryBlobs,
+            ])
         )
     }
 }

@@ -19,6 +19,9 @@ final class Failures: Sendable {
 
     var count: Int { errors.withLock(\.count) }
 
+    /// What each error said, in the order reported.
+    var descriptions: [String] { errors.withLock { $0.map { "\($0)" } } }
+
     @Sendable func record(_ error: any Error) {
         errors.withLock { $0.append(error) }
     }

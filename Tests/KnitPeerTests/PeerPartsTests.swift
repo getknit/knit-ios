@@ -88,6 +88,23 @@ import Testing
         #expect(store.loadIfReadable() == OwnProfile(), "read once, as a fresh profile by design, so never unreadable later")
     }
 
+    @Test func aUnitThatIsUndonePutsTheProfileAndItsFileBack() throws {
+        // knit-peer's profile file joins the memory stores' unit (ADR 2026-10.5sk9).
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let store = PeerState(directory: directory).profileStore()
+        let kept = OwnProfile(name: "Peer", version: 5, publishedAt: 6)
+        store.save(kept)
+        let checkpoint = store.checkpoint()
+        store.save(OwnProfile(name: "Undone", version: 7, publishedAt: 8))
+        checkpoint.restore()
+        #expect(store.load() == kept)
+        #expect(PeerState(directory: directory).profileStore().load() == kept, "the file holds it again")
+        try FileManager.default.removeItem(atPath: directory + "/profile.json")
+        checkpoint.restore()
+        #expect(!FileManager.default.fileExists(atPath: directory + "/profile.json"), "a unit that left the profile alone writes nothing")
+    }
+
     @Test func aProfileThatCannotBeWrittenSaysWhy() {
         let store = FileOwnProfileStore(path: "/proc/knit-peer/profile.json")
         store.save(OwnProfile(name: "x"))

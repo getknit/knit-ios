@@ -46,6 +46,14 @@ private final class LockedOwnProfileStore: OwnProfileStore {
     }
 }
 
+extension LockedOwnProfileStore: Checkpointing {
+    /// The database's row and its lock, as a unit that is undone would find them.
+    func checkpoint() -> StoreCheckpoint {
+        let held = state.withLock { $0 }
+        return StoreCheckpoint { [self] in state.withLock { $0 = held } }
+    }
+}
+
 /// Our prekey on a profile never edited: a reinstall's, before onboarding publishes the name, or a node's that never
 /// set one. It rides a republish at version 0, never an edit, so no peer is shown an empty name, and a profile the
 /// store cannot read changes nothing (ADR 2026-10.5sk9, ADR 2026-09.tkww).
@@ -124,9 +132,7 @@ private final class LockedOwnProfileStore: OwnProfileStore {
         // save a blank, version-0 row over the edited one, and every later prekey would ride version 0.
         let own = OwnProfile(name: "Alice", version: 5, publishedAt: EngineFixture.start - 13 * hour)
         let store = LockedOwnProfileStore(own, refusesWrites: false)
-        var stores = MeshStores.inMemory()
-        stores.ownProfile = store
-        let fixture = EngineFixture(alice, stores: stores)
+        let fixture = EngineFixture(alice, stores: .inMemory(ownProfileStore: store))
         #expect(store.held == own, "the start's republish read nothing, so it saved nothing")
         store.locked = false
         fixture.advance(heal)
@@ -143,9 +149,7 @@ private final class LockedOwnProfileStore: OwnProfileStore {
         let kept = keychain.contents
         let own = OwnProfile(name: "Alice", version: 5, publishedAt: EngineFixture.start - 1000)
         let locked = LockedOwnProfileStore(own)
-        var stores = MeshStores.inMemory()
-        stores.ownProfile = locked
-        let fixture = EngineFixture(alice, stores: stores, configuration: ratchetOn, prekeys: ring)
+        let fixture = EngineFixture(alice, stores: .inMemory(ownProfileStore: locked), configuration: ratchetOn, prekeys: ring)
         #expect(keychain.contents == kept, "no reinstall's mint")
         #expect(locked.held == own)
         #expect(fixture.transport.written.isEmpty, "nothing flooded")

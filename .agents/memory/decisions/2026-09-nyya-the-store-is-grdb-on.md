@@ -110,3 +110,19 @@ engine stored and the app has yet to screen. A partial index on `seq` where it i
 is written into that query, since SQLite uses a partial index only for a term it can see matches. Every row stored
 before v7 reads as clear. `SchemaTests.v7ShowsEveryMessageAsItWas` migrates a v6 row, and `MessageModerationTests`
 runs over both stores.
+
+**Amended 2026-10-15, for the ratchet's store unit (ADR 2026-10.5sk9, amended for P4a):**
+
+- **The database is also the unit a ratchet change commits in.** Inside a unit a store's error still answers the
+  fallback and is still reported, once, and it also fails the whole unit, which undoes every write in it. A session's
+  advance kept without the message row it carried would have spent that message's key for good.
+- **A blob's file error is the exception.** The file is no part of the transaction, so the error is reported and fails
+  nothing. A `nil` or `false` from a blob's bytes inside a unit may only mean doing nothing (as `notePlainHash` does),
+  never a decision.
+- **A blob's file goes only when its row's removal commits:** at once outside a unit, at the outermost commit inside
+  one, and only if no row names the hash by then. Before, `SQLBlobStore.remove` took the file whatever became of the
+  row, so a removal the database refused or a unit undid left a row that read as held with no bytes behind it.
+- **The closure the app hands `KnitDatabase`** can run on the writer's queue, for an error inside a unit or one met as
+  a write commits, so it must never block on the main actor or touch the database.
+- Outside a unit nothing else changes. `KnitDatabaseUnitTests` keeps both halves, and `BlobStoreTests` and
+  `SQLBlobStoreTests` keep the files.

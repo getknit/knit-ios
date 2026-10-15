@@ -7,7 +7,8 @@ import Testing
 @testable import KnitStoreSQL
 
 /// What the SQL blob store adds to the contract in `BlobStoreTests`: its bytes are files beside the database, named
-/// by hash, and kept across a reopen, and the sweep at open clears what a crash left (ADR 2026-10.nh55).
+/// by hash, and kept across a reopen, and the sweep at open clears what a crash left (ADR 2026-10.nh55). A file goes
+/// only once its row's removal commits, outside a store unit or at the outermost one's commit (ADR 2026-10.5sk9).
 @Suite struct SQLBlobStoreTests {
     private let first = BlobHash.empty
     private let second = BlobHash(String(repeating: "2", count: 64)) ?? .empty
@@ -19,6 +20,15 @@ import Testing
 
     private func names(in directory: URL) throws -> [String] {
         try FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)).sorted()
+    }
+
+    /// A TEMP trigger on the writer's connection, where every store writes, that refuses `event` as a full disk would:
+    /// `action` is `ABORT` for that statement alone, or `ROLLBACK` for the whole transaction, as SQLite does by itself on
+    /// some I/O errors.
+    private func trigger(_ name: String, _ event: String, raising action: String, in database: KnitDatabase) throws {
+        try database.writer.writeWithoutTransaction { db in
+            try db.execute(sql: "CREATE TEMP TRIGGER \"\(name)\" \(event) BEGIN SELECT RAISE(\(action), 'disk full'); END")
+        }
     }
 
     @Test func eachBlobIsOneFileNamedByItsHash() throws {
@@ -126,5 +136,97 @@ import Testing
         #expect(reopened.allHashes() == [first])
         #expect(reopened.bytes(of: first) == [1, 2])
         #expect(failures.count == 1)
+    }
+
+    @Test(arguments: WriterKind.allCases)
+    func aRemovalTheDatabaseRefusesKeepsTheBlobAndItsFile(kind: WriterKind) throws {
+        // A full disk refuses the DELETE: the row stands, so the file must too, or the blob would read as held with no
+        // bytes behind it.
+        let blobs = scratch()
+        defer { try? FileManager.default.removeItem(at: blobs) }
+        let failures = Failures()
+        try kind.withDatabase(failures: failures.record) { database in
+            let store = try SQLBlobStore(database, directory: blobs)
+            store.insert([1, 2], hash: first, mime: "image/jpeg", storedAt: 1)
+            try trigger("refuse", "BEFORE DELETE ON main.blobs", raising: "ABORT", in: database)
+            store.remove(first)
+            #expect(failures.count == 1)
+            #expect(store.contains(first))
+            #expect(store.bytes(of: first) == [1, 2])
+            #expect(try names(in: blobs) == [first.string])
+        }
+    }
+
+    @Test(arguments: WriterKind.allCases)
+    func aRemovedBlobsFileGoesOnlyWhenTheOutermostUnitCommits(kind: WriterKind) throws {
+        let blobs = scratch()
+        defer { try? FileManager.default.removeItem(at: blobs) }
+        try kind.withDatabase(failures: recordFailure) { database in
+            let store = try SQLBlobStore(database, directory: blobs)
+            store.insert([1, 2], hash: first, mime: "image/jpeg", storedAt: 1)
+            var inner: Transacted<Int>?
+            let outcome = database.atomically { () -> Int? in
+                inner = database.atomically { () -> Int? in
+                    store.remove(first)
+                    return 2
+                }
+                #expect((try? names(in: blobs)) == [first.string], "the nested unit's removal waits on the outermost")
+                return 1
+            }
+            #expect(inner == .joined(2))
+            #expect(outcome == .committed(1))
+            #expect(try names(in: blobs).isEmpty)
+        }
+    }
+
+    @Test(arguments: WriterKind.allCases)
+    func aRemovalInAUnitSQLiteRollsBackKeepsTheFileThroughTheNextCommit(kind: WriterKind) throws {
+        // GRDB tells the removal nothing of a rollback SQLite made by itself, so it hears the next commit instead: by
+        // then the rollback has brought the row back, and the file must stay with it.
+        let blobs = scratch()
+        defer { try? FileManager.default.removeItem(at: blobs) }
+        let failures = Failures()
+        try kind.withDatabase(failures: failures.record) { database in
+            let store = try SQLBlobStore(database, directory: blobs)
+            let conversations = SQLConversationStore(database)
+            store.insert([1, 2], hash: first, mime: "image/jpeg", storedAt: 1)
+            try trigger(
+                "rolls back",
+                "BEFORE INSERT ON main.accepted_conversations WHEN NEW.conversationId = CAST('rolls back' AS BLOB)",
+                raising: "ROLLBACK",
+                in: database
+            )
+            let outcome = database.atomically { () -> Int? in
+                store.remove(first)
+                conversations.accept("rolls back")
+                return nil
+            }
+            #expect(outcome == .failed)
+            conversations.accept("next")
+            #expect(conversations.acceptedConversations() == ["next"], "the next commit")
+            #expect(failures.count == 1)
+            #expect(store.bytes(of: first) == [1, 2])
+            #expect(try names(in: blobs) == [first.string])
+        }
+    }
+
+    @Test(arguments: WriterKind.allCases)
+    func aRemovalThatCannotReadTheIndexAsItCommitsKeepsTheFileAndSaysWhy(kind: WriterKind) throws {
+        // Taking a failed read for "no row names it" would leave a row with no file whenever the row was in fact back.
+        let blobs = scratch()
+        defer { try? FileManager.default.removeItem(at: blobs) }
+        let failures = Failures()
+        try kind.withDatabase(failures: failures.record) { database in
+            let store = try SQLBlobStore(database, directory: blobs)
+            store.insert([1, 2], hash: first, mime: "image/jpeg", storedAt: 1)
+            let outcome = database.atomically { () -> Int? in
+                store.remove(first)
+                database.write(or: ()) { db in try db.execute(sql: "DROP TABLE blobs") }
+                return 1
+            }
+            #expect(outcome == .committed(1))
+            #expect(failures.count == 1, "the check's error, which fails nothing: the unit had committed")
+            #expect(try names(in: blobs) == [first.string])
+        }
     }
 }

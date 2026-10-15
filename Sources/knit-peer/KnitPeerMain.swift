@@ -6,7 +6,6 @@ import Foundation
     import KnitCrypto
     import KnitMesh
     import KnitPeer
-    import KnitStore
     import KnitWire
     import KnitSync
     #if os(Linux)
@@ -108,16 +107,8 @@ import Foundation
             } catch {
                 fail("cannot load the identity in \(options.stateDirectory): \(error)")
             }
-            let stores = MeshStores(
-                custody: MemoryCustodyStore(),
-                peers: MemoryPeerStore(),
-                messages: MemoryMessageStore(),
-                conversations: MemoryConversationStore(),
-                blocks: MemoryBlockStore(),
-                groups: MemoryGroupStore(),
-                ownProfile: state.profileStore(),
-                blobs: MemoryBlobStore()
-            )
+            // The profile's file joins the memory stores' unit, which puts it back with them when a unit is undone.
+            let stores = MeshStores.inMemory(ownProfileStore: state.profileStore())
             return PeerNode(
                 identity: identity.keys,
                 stores: stores,

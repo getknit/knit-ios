@@ -27,3 +27,11 @@ public final class MemoryConversationStore: ConversationStore {
         accepted.withLock { _ = $0.insert(conversationId) }
     }
 }
+
+extension MemoryConversationStore: Checkpointing {
+    /// Every accepted conversation.
+    public func checkpoint() -> StoreCheckpoint {
+        let held = accepted.withLock { $0 }
+        return StoreCheckpoint { [self] in accepted.withLock { $0 = held } }
+    }
+}

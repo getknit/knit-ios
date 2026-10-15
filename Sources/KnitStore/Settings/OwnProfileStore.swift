@@ -81,3 +81,11 @@ public final class MemoryOwnProfileStore: OwnProfileStore {
         self.profile.withLock { $0 = profile }
     }
 }
+
+extension MemoryOwnProfileStore: Checkpointing {
+    /// The profile held.
+    public func checkpoint() -> StoreCheckpoint {
+        let held = load()
+        return StoreCheckpoint { [self] in save(held) }
+    }
+}

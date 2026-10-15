@@ -11,8 +11,12 @@ public import KnitWire
 /// 128 MiB for good. A file also streams out in chunks without loading the whole blob.
 ///
 /// The directory takes the database's protection class and backup exclusion (``StorageDirectory``). A blob's file is
-/// written whole before its row, so a crash leaves at worst a file with no row. The sweep when the store opens
+/// written whole before its row, and deleted only once the row's removal commits, so a crash, a refused write or an
+/// undone store unit leaves at worst a file with no row, which reads as not held. The sweep when the store opens
 /// removes that file, and any row whose file is gone.
+///
+/// A file is no part of the database's transaction, so its error is reported and fails no store unit
+/// (``StoreTransactor``).
 public final class SQLBlobStore: BlobStore {
     /// The directory's name beside the database.
     public static let directoryName = "Blobs"
@@ -92,7 +96,7 @@ public final class SQLBlobStore: BlobStore {
             database.report(error)
             return false
         }
-        // A row that does not go in leaves a file nothing names, which the next sweep removes.
+        // A row that does not go in, or that a store unit undoes, leaves a file nothing names, which the next sweep removes.
         return database.write(or: false) { db in
             try db.execute(
                 sql: "INSERT OR IGNORE INTO blobs (hash, mime, size, storedAt) VALUES (?, ?, ?, ?)",
@@ -103,11 +107,36 @@ public final class SQLBlobStore: BlobStore {
     }
 
     public func remove(_ hash: BlobHash) {
-        database.write(or: ()) { db in
-            try db.execute(sql: "DELETE FROM blobs WHERE hash = ?", arguments: [StoredText.bytes(hash.string)])
+        let key = StoredText.bytes(hash.string)
+        let url = file(hash)
+        database.write(or: ()) { [database] db in
+            try db.execute(sql: "DELETE FROM blobs WHERE hash = ?", arguments: [key])
+            // The file goes when the row's removal commits: at once outside a store unit, and at the outermost commit
+            // inside one (`afterNextTransaction`, TransactionObserver.swift:72-150 in GRDB 7.11.1), so a unit abandoned or
+            // failed keeps both. A DELETE refused, or one in a unit that has already failed, never gets here and keeps
+            // both too.
+            db.afterNextTransaction { db in
+                Self.removeFile(at: url, unlessIndexed: key, in: db, reporting: database)
+            }
+        }
+    }
+
+    /// Deletes a removed blob's file as its row's removal commits, unless a row names `key` again by then. A unit nested
+    /// in the one that removed it may have abandoned and brought its row back, and GRDB tells this observer nothing of a
+    /// transaction SQLite rolled back by itself, so it fires at the next commit instead, with the row back
+    /// (TransactionObserver.swift:354-376 and 589-600). When the index cannot be read the file stays and the error is
+    /// reported: a file no row names is the next sweep's, where a row whose file is gone would read as held.
+    private static func removeFile(at url: URL, unlessIndexed key: Data, in db: Database, reporting database: KnitDatabase) {
+        do {
+            guard try Bool.fetchOne(db, sql: "SELECT EXISTS (SELECT 1 FROM blobs WHERE hash = ?)", arguments: [key]) == false else {
+                return
+            }
+        } catch {
+            database.report(error)
+            return
         }
         // A file that will not go has no row now, so the next sweep removes it.
-        try? FileManager.default.removeItem(at: file(hash))
+        try? FileManager.default.removeItem(at: url)
     }
 
     public func allHashes() -> [BlobHash] {
