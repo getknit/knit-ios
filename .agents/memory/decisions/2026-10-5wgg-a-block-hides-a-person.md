@@ -78,3 +78,10 @@ block list out of everything but delivery:
   - `SchemaTests`' v6 pin and `v6BlocksNobody`.
   - `BlockTests` in KnitAppCore, `MeshControlTests`' `peersAndProfilesSayWhoIsBlocked`, `KnitUITests`' two block
     walks, and `interop.py iphone-block` on the phones.
+
+**Amended 2026-10-15, with phase P5c of ADR 2026-10.5sk9:** the tick a blocked sender still earns is owed as anyone's
+is. A room post's never takes a custody row of its own: it goes over the link, or rides a sealed frame toward its
+author, that author's group batch among them. A group post's, toward an absent author who can read a sealed tick,
+joins that author's batch and escalates like any other once P5d seals (`ackBlockedRoomChat`, `InboundPipeline.kt:903-915`
+at knit-next `cbf2a487`; the seal has no blocked gate, `MeshManager.kt:1863-1865` at `cbf2a487`). It then goes as one sealed
+frame that every carrier holds in custody for a day, as on Android. The block list is still read only at delivery.

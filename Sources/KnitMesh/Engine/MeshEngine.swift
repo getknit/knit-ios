@@ -41,6 +41,9 @@ public final class MeshEngine {
     /// The photo each neighbour has had from us whole, this run (``pushAvatar(to:)``).
     var avatarPushes: [NodeId: BlobHash] = [:]
     var ackSync = AckSync()
+    /// What a sealed tick needs from us, which phase P5d fills (ADR 2026-10.5sk9). Until then no author can read one, so
+    /// every tick ``ackSync`` owes is cleartext, whatever the ratchet's switch says.
+    var tickSeals: any TickSealing = NoTickSealing()
     /// Who is typing where (``MeshEngine/handleTyping(_:)``).
     var typing = TypingBoard()
     /// When our last typing cue went to each thread, on the monotonic clock (``MeshEngine/noteTyping(in:)``).
@@ -139,7 +142,8 @@ public final class MeshEngine {
         }
         let blobs = [blobExchange.nextDeadline, blobExchange.parkPollAt]
         let ratchetSweep = configuration.ratchet ? timers.ratchetSweep : nil
-        return ([router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ratchetSweep] + blobs)
+        let ticks = ackSync.nextBatchDue
+        return ([router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ticks, ratchetSweep] + blobs)
             .compactMap(\.self).min()
     }
 
@@ -254,6 +258,7 @@ public final class MeshEngine {
         stepDueBlobs(now: now)
         pollParkedAsks(now: now)
         lapseTyping(now: now)
+        flushDueTickBatches(now: now)
         if now >= due.reoffer {
             reoffer()
             due.reoffer = now + configuration.reofferMilliseconds
@@ -306,10 +311,12 @@ public final class MeshEngine {
         replayFailedRatchetOpens()
     }
 
-    /// The 15-minute heal pass (`MeshManager.heal`): re-ask for missing keys, rotate our prekey when due, republish a
-    /// stale profile, and, with the ratchet's switch on, seal again the DMs a store failure left waiting.
+    /// The 15-minute heal pass (`MeshManager.heal`): re-ask for missing keys, go over the ticks we owe, rotate our prekey
+    /// when due, republish a stale profile, and, with the ratchet's switch on, seal again the DMs a store failure left
+    /// waiting.
     func heal() {
         askForMissingKeys(to: neighborIds)
+        retryOwedTicks()
         syncPrekey(atStart: false)
         republishIfStale()
         retryWaitingDirectMessages()

@@ -16,9 +16,10 @@ spawns them by name.
 | Blobs and custody | `blobs-owner`, `blobs-reviewer` | the router, custody, receipts, recovery and blob exchange, their stores, `FileIntake`, `FeedMeter` and `LinkManager+Files`, and the store unit (`StoreTransactor`, `KnitDatabase+Units`), which both reviewers judge | the custody, block and delete paths of `MeshEngine+Inbound`, `MeshEngine+Outbound`, `MeshEngine+Deletes` and `MeshEngine+Blocks` | `.agents/context/custody.md` |
 | Crypto | `crypto-owner`, `crypto-reviewer` | `KnitCrypto`, the envelopes, the sealed plaintexts and the capability bits, groups and their roster, pinned keys, the Keychain store, the store unit, and the ratchet's own files as each phase adds them (ADR 2026-10.5sk9) | the verify and open paths of `MeshEngine+Inbound`, the seal paths of `MeshEngine+Outbound`, and, once the ratchet seals them, the receipt, reaction and profile paths of `MeshEngine+Outbound`, `MeshEngine+Reactions` and `MeshEngine+Profiles` | `.agents/context/crypto.md` |
 
-The exact paths are each reviewer's line in `.claude/hooks/review-gate.conf`. `FeedMeter`, `LinkManager+Files` and
-`MeshEngine+Delivery` sit in two planes on purpose: a change there owes both reviewers. `MeshEngine+Delivery` writes a
-delivered message's row inside a ratchet open's store unit, and fetches its photo and sends its receipt after it.
+The exact paths are each reviewer's line in `.claude/hooks/review-gate.conf`. `FeedMeter`, `LinkManager+Files`,
+`MeshEngine+Delivery` and `TickSealing` sit in two planes on purpose: a change there owes both reviewers.
+`MeshEngine+Delivery` writes a delivered message's row inside a ratchet open's store unit, and fetches its photo and
+sends its receipt after it. `TickSealing` is the delivery-tick ledger's protocol, whose seams seal.
 
 A change in a hub file that the hook gates for no one (`Mesh.swift`, `MeshEngine.swift`, the `MeshEngine+Inbound`
 family) still owes the reviewer whose plane the changed lines belong to. The "Adopt" column names those paths,

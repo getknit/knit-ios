@@ -56,7 +56,7 @@ git status --porcelain -- Sources/KnitCrypto Sources/KnitWire/Envelope Sources/K
   Sources/KnitStore/Ratchet Sources/KnitMesh/Ratchet Sources/KnitStoreSQL/SQLRatchetStore.swift \
   Sources/KnitStoreSQL/Schema+V17.swift \
   Sources/KnitMesh/Groups Sources/KnitMesh/Engine/MeshEngine+Groups.swift Sources/KnitStore/Groups \
-  Sources/KnitMesh/Engine/MeshEngine+Delivery.swift \
+  Sources/KnitMesh/Engine/MeshEngine+Delivery.swift Sources/KnitMesh/Receipts/TickSealing.swift \
   Sources/KnitStore/Peers Sources/KnitStoreSQL/SQLGroupStore.swift Sources/KnitStoreSQL/SQLPeerStore.swift \
   Sources/Knit/Platform/KeychainSecretStore.swift
 git diff HEAD -- <those paths>
@@ -126,8 +126,8 @@ people, or leaks what the seal hides. Check each shape explicitly.
    Android's custody treats as one. Each frame id is signed once and its bytes are stored. A picture is sealed once
    and sent again under the hash and key it already has (ADR 2026-10.f3mv). A `pendingKey` message is signed only
    when it is finally sealed. A verbatim re-send inside the `SeenSet`'s ten minutes is absorbed; outside them it
-   lands as a duplicate. A ratchet seal consumes a chain key; a sealed tick is sealed once and re-sent verbatim on a
-   doubling backoff; the one exception to signing once is the re-seal after a peer's reset, one more signature per
+   lands as a duplicate. A ratchet seal consumes a chain key; a sealed tick is sealed once and re-sent verbatim, only
+   over a live link; the one exception to signing once is the re-seal after a peer's reset, one more signature per
    committed first verdict of a reset, unguarded per id as in Kotlin (ADR 2026-09.2ved, amended); a v3 nonce
    derives from the message key and the AAD, never from a counter (knit-next dd68d9fd).
    Evidence: c7efff6 (every send sealed a picture under a fresh key, so one picture became N

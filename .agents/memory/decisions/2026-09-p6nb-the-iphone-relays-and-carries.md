@@ -47,3 +47,9 @@ A cleartext receipt, still the form toward a peer without the ratchet, purges an
 rules land with the ratchet's DM phase, in two steps. Receiving is P5a's: with the switch on, a sealed receipt or a
 sealed tick batch opens here and purges nothing. Sending is P5c's: until then every receipt and tick this iPhone sends
 stays cleartext, a ratchet DM's receipt included.
+
+**Amended 2026-10-15, phase P5c:** sending the sealed form moved to phase P5d. P5c ports the ledger that will send it,
+`AckSync`, with seams that cannot seal yet (ADR 2026-10.5sk9's P5c amendment). Where the amendment above has a sealed
+tick re-sent on a doubling backoff, this port re-sends nothing between links. Kotlin's best-effort re-sends ride the fast
+plane, so here a sealed tick's bytes go once, over the live link that ends its entry. A group's batch still escalates
+into custody as one sealed DM-form frame, carried for a day, which nothing purges.

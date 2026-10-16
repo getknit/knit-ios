@@ -508,8 +508,8 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 - **A ctl is never v1-wrapped.** Toward a peer without the ratchet, a receipt or reaction falls back to the
   cleartext frame, and a seed has no fallback: the group goes v1.
 - **In the group form,** only ctl 6 is applied (`InboundPipeline.kt:1636-1646`).
-- **A sealed receipt purges nothing,** anywhere, and a sealed tick is sealed once and re-sent verbatim with backoff
-  (ADR 2026-09.p6nb, amended).
+- **A sealed receipt purges nothing,** anywhere, and a sealed tick is sealed once and re-sent verbatim, only over a
+  live link, with a group's batch carried by custody (ADR 2026-09.p6nb, amended twice).
 - **Inline acks** (`CAP_INLINE_ACK`): up to four `acks` ride a plain sealed DM to an author whose profile has
   `0x40`, and are applied in the same commit as the message (`InboundPipeline.kt:1088-1116`).
 
@@ -605,7 +605,7 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     abandons the open, so the chain index stays unspent, as Kotlin's peek leaves it.
   - Everything that is not a store write waits for the unit's commit (`RatchetArrival`): the events, a refused
     reaction's count, a photo's fetch or local copy, and the acknowledgement, which stays this build's cleartext receipt
-    until P5c seals it.
+    until P5d seals it.
   - A typed failure from a signed frame that counts gets one copy past the router (`Router.reopen`) and goes to
     `noteUndecryptable` outside any unit; when the heuristic fires, the reset goes out as Kotlin's `originate` sends a
     frame, signed once, carried in our own custody and flooded, with no row (`sendSessionReset`).
@@ -737,7 +737,7 @@ knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` from a branc
 - `carol`, Carol, the iPhone, in races and first contacts with Alice and with Bob. Every opener is v3, and
   `RatchetTranscriptTests` replays them at the engine, Carol's seals byte for byte. `RatchetCarolVectorTests` delivers
   every frame Carol opens through her engine's inbound path, against the state and floors Android's own pipeline left.
-  Her DMs go through her engine's send path, and her ticks through its facade, from her draws, until P5c seals them.
+  Her DMs go through her engine's send path, and her ticks through its facade, from her draws, until P5d seals them.
 
 A10 then adds this port's own ratchet frames to `ios-emitted-v1.json`, for knit-next's `IosEmittedVectorTest` to
 open (`.agents/memory/roadmap.md`).

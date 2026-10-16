@@ -27,19 +27,19 @@ extension MeshEngine {
         stores.blocks.blockedNodeIds().contains(sender)
     }
 
-    /// Drops a chat frame from a blocked sender, with what it still earns (`InboundPipeline.ackBlockedRoomChat`): a room
-    /// post its tick, and a group message one when the group is ours and we have not left it. That tick goes point to
-    /// point and is never carried, so withholding it could strand the sender's ✓✓ when we are their only acker, and
-    /// would tell them they are blocked (knit-next ADR 010). A DM gets nothing: its receipt floods and is carried, and
-    /// would purge the DM from every carrier's custody.
+    /// Drops a chat frame from a blocked sender, with what it still earns (`InboundPipeline.ackBlockedRoomChat`,
+    /// `InboundPipeline.kt:903-915`): a room post its tick, and a group message one when the group is ours and we have not
+    /// left it, owed as any other's is, the group's free to go into custody. That tick is fragile, so withholding it could
+    /// strand the sender's ✓✓ when we are their only acker, and would tell them they are blocked (knit-next ADR 010). A DM
+    /// gets nothing: its receipt floods and is carried, and would purge the DM from every carrier's custody.
     func dropBlocked(_ envelope: RelayEnvelope, sender: NodeId) {
         drop(.blocked, envelope)
         if let group = envelope.group {
             if let held = stores.groups.group(group.id), !held.hasLeft {
-                tickRoomPost(envelope.id, author: sender)
+                tickPost(envelope.id, author: sender, escalatable: true)
             }
         } else if envelope.recipientId == nil {
-            tickRoomPost(envelope.id, author: sender)
+            tickPost(envelope.id, author: sender, escalatable: false)
         }
     }
 

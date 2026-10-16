@@ -272,7 +272,7 @@ verify.
 - **Sealed receipts and ticks,** once the ratchet's switch is on (ADR 2026-09.p6nb, amended):
   - A DM's receipt toward a peer that can read one is a sealed ctl frame, flooded and custodied, and it purges
     nothing anywhere.
-  - A sealed tick is sealed once and re-sent verbatim on a doubling backoff.
+  - A sealed tick is sealed once and re-sent verbatim, only over a live link (no back-off here: ADR 2026-10.5sk9, P5c).
   - A group tick toward an absent author who can open a sealed one escalates into one sealed, custodied batch
     (knit-next ADR 033).
 - **Flooding** (`custody.md`, "Flooding"). The SeenSet keeps 4,096 ids for 10 minutes, and a frame is marked seen

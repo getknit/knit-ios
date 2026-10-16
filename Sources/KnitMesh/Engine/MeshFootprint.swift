@@ -11,7 +11,8 @@ public struct MeshFootprint: Sendable, Equatable {
     public var earlyReceipts: Int
     /// Frames parked until their sender's key arrives.
     public var parked: Int
-    /// Room ticks owed to authors who are not linked now.
+    /// Room and group ticks owed to authors who are not linked now: the owed entries, and the ids waiting in a batch or a
+    /// ride hold (``AckSync/count``).
     public var owedTicks: Int
     /// Signed profiles kept to answer key requests.
     public var cachedProfiles: Int

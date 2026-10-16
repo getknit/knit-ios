@@ -276,11 +276,13 @@ extension MeshEngine {
 
     // MARK: Receipts
 
-    /// Acknowledges a message delivered to us (`InboundPipeline.acknowledge`): a DM earns a receipt that floods
-    /// and is carried, a room post or a group message a tick owed to its author.
+    /// Acknowledges a message delivered to us (`InboundPipeline.acknowledge`, `InboundPipeline.kt:2831-2859`): a DM earns a
+    /// receipt that floods and is carried, a room post or a group message a tick owed to its author. Only a group's tick
+    /// may go into custody, for an absent author who could read a sealed one (`escalatable`); a room's never does. Kotlin
+    /// lets a commons post's escalate too, and no radio delivers one (``FrameType/commons``).
     func acknowledge(_ envelope: RelayEnvelope, sender: NodeId) {
         if envelope.recipientId == nil {
-            tickRoomPost(envelope.id, author: sender)
+            tickPost(envelope.id, author: sender, escalatable: envelope.group != nil)
         } else {
             sendReceipt(for: envelope.id)
         }
@@ -300,31 +302,6 @@ extension MeshEngine {
         originate(receipt)
         if custody.acknowledge(ackId, from: nodeId.string, in: stores.custody, now: clock.wallMilliseconds()) {
             noteCustodyChanged()
-        }
-    }
-
-    /// Owes the author of room post `id` a tick, and sends it now if the author is linked.
-    func tickRoomPost(_ id: String, author: NodeId) {
-        let now = clock.monotonicMilliseconds()
-        guard ackSync.owe(id, author: author, me: nodeId, authorLinked: transport.isLinked(author), now: now) else {
-            return
-        }
-        sendTick(for: id, to: author)
-    }
-
-    /// Sends every tick owed to `peer`, now that it is linked.
-    func sendOwedTicks(to peer: NodeId) {
-        for id in ackSync.linked(to: peer, now: clock.monotonicMilliseconds()) {
-            sendTick(for: id, to: peer)
-        }
-    }
-
-    /// A room tick (`AckSync.receipt`): signed, point to point, no `sentAt`, and a fresh id every time, so the
-    /// author's seen set never swallows a retry.
-    func sendTick(for ackId: String, to author: NodeId) {
-        let tick = RelayEnvelope(type: .receipt, id: newFrameId(), senderId: nodeId.string, payload: ReceiptContent(ackId: ackId).encoded)
-        if let wire = sign(tick, relay: false) {
-            transport.send(wire, to: author)
         }
     }
 

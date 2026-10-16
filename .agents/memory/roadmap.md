@@ -378,8 +378,10 @@ explicit direction.** Update this file in the change that ships an item.
   - **P4:** a store unit that fails closed, then the DM engine and its store. Written on 2026-10-15 on
     `feat/ratchet-p4a`, `-p4b` and `-p4c`. The database now zeroes what it deletes and truncates its log after the
     ratchet's sweep (ADR 2026-09.nyya, amended 2026-10-15).
-  - **P5:** DMs in the mesh, in three parts: P5a receives and recovers, P5b sends chats, and P5c sends the sealed
-    control plane. knit-peer checks it with the switch on against an Android emulator, then the Pixels.
+  - **P5:** DMs in the mesh, in five parts: P5a receives and recovers, P5b sends chats, and the sealed control plane
+    takes three. P5c ports the tick ledger's sealed form behind seams that cannot seal yet; P5d seals the seams, the DM
+    receipt and inline acks; P5e seals reactions, `CTL_PROFILE` and an init's answer. knit-peer checks it with the
+    switch on against an Android emulator, then the Pixels.
   - **P6:** the group form received, which the flip waits on, then the group form sent.
   - **P7:** companion change A10, interop runs against knit-next `main` and the release APKs, a Debug iPhone trial, the
     flip to `0x15F`, and the security claims.

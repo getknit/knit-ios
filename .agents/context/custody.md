@@ -93,7 +93,7 @@ publish it honestly.
   a group tick into custody, as one sealed batch, only for an author who can open a sealed one (`canSealTickTo`,
   `MeshManager.kt:2066-2068`; `AckSync.kt`): an iPhone with the ratchet's switch on has opened it since P5a. The
   batch is a DM-form ctl 5 frame that every node carries for 24 h and nothing purges. Our own ticks stay cleartext
-  until P5c.
+  until P5d: P5c ported the ledger that sends the sealed form, and its seams cannot seal yet.
 - **The forged-ack guard:** apply an ack only if the acknowledged message is a room or group message, or if
   the receipt comes from that DM's recipient. At most 128 ids per receipt.
 - **There are no read receipts on the wire.** Delivery is the last state a sender sees.
@@ -139,8 +139,9 @@ publish it honestly.
 
 - **Where it lives:** the router is `KnitMesh/Router/Router.swift`, and the custody rules are
   `KnitStore/Custody/CustodyRules.swift`, which every store applies. `KnitMesh/Custody/CustodySync.swift`
-  decides what to carry and serve, `KnitMesh/Receipts/AckSync.swift` owes the room and group ticks, and
-  `KnitMesh/Recovery/` holds key requests and parked frames (ADR 2026-09.p6nb).
+  decides what to carry and serve, and `KnitMesh/Receipts/` owes the room and group ticks: `AckSync` and its
+  holds, its seams in `TickSealing`, and the engine's wiring in `MeshEngine+Ticks.swift`. `KnitMesh/Recovery/`
+  holds key requests and parked frames (ADR 2026-09.p6nb).
 - **Two stores apply them:** `MemoryCustodyStore` for the Linux peer and the tests, and `SQLCustodyStore`
   (`KnitStoreSQL`) for the app. Both run `CustodyRules` over their live rows and the same `CustodyStoreTests`
   (ADR 2026-09.nyya).
@@ -154,8 +155,11 @@ publish it honestly.
   - a cleartext DM or group message is dropped, not shown;
   - a `blobreq` is never flooded, even one marked `relay = true`, where Android would flood it; it is answered or
     asked onward as Android's `BlobExchange` does (ADR 2026-10.ym9y);
-  - every receipt and tick, room or group, is cleartext, because this build cannot seal one, a ratchet DM's receipt
-    included until P5c;
+  - every receipt and tick, room or group, is cleartext, because this build cannot seal one yet, a ratchet DM's receipt
+    included, until P5d seals receipts and fills `AckSync`'s seams;
+  - an owed tick, sealed or cleartext, goes only over a live link, at link-up, the 60 s re-offer or the heal. Kotlin's
+    best-effort re-sends between, on a doubling back-off, ride the fast plane, and a room tick's ride deadline routes
+    only to the spool or the fast plane, so a due ride waits for a link or a carrier (ADR 2026-10.5sk9's P5c amendment);
   - with the ratchet's switch on, a DM ratchet frame to us whose store unit failed is opened again at the next sweep
     from the copy that failed, kept in memory, since custody keeps the first bytes stored under an id and a peer's
     re-seal reuses its id; the copy goes once any copy of its id commits, or once the frame's row exists, read inside

@@ -625,3 +625,89 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     engine, and the re-seal pair through two engines. `RatchetCarolVectorTests` sends Carol's DMs through hers.
   - `PeerRatchetTests`, `LaunchRatchetTests` and `MeshControlRatchetTests.theDumpCountsHowOurDMsWereSealed` cover the
     launch paths, the kept choice and the counts.
+
+**Amended 2026-10-15, phase P5c (the tick ledger's sealed form):**
+
+- **`AckSync` is knit-next's ledger whole** (`AckSync.kt` at `cbf2a487`), without the spool, the fast plane and
+  `onReachable`. It stays a value that decides, while the engine sends (`MeshEngine+Ticks.swift`).
+  - `owe`'s three-way rule is Kotlin's, keyed on `escalatable` (`InboundPipeline.kt:2857`). A linked author gets one
+    tick over its link. An absent author who could read a sealed one gets the escalation batch for a group's tick, or
+    the ride hold for a room's. Any other keeps the cleartext entry it had. A commons post would escalate too, and no
+    radio delivers one here.
+  - The caps, the 24 h TTL and the eviction are Kotlin's (`OWED_CAP`, `PENDING_CAP`, `ESCALATED_CAP`,
+    `MAX_BATCH_ACKS`). Where Kotlin's hash maps leave an order to chance, the oldest stamp goes first, and ties go by
+    arrival or by node id, so every run repeats.
+  - One difference from the ledger before P5c, and one from Kotlin's. First, `owe` makes room at the cap before it
+    takes any fresh entry, a linked author's included, as Kotlin does (`AckSync.kt:184-188`); the old ledger sent a
+    linked author's tick and kept nothing. So at 500 owed entries, a tick to a linked author drops an absent author's
+    oldest owed tick, as on Android. That is the one change on the air with the seams as shipped. Second, the four
+    entry points that send (`owe`, `linked`, `retryPending`, `flushDueBatches`) sweep first, as the old ledger's two
+    did, where Kotlin's `onNeighborAdded` and its debounce wake do not, so a tick past its day never goes. The riders'
+    `takeRiding`, `giveBackRiding` and `rode` sweep nothing, as in Kotlin; the engine's ten-minute sweep bounds them.
+- **The seams are `TickSealing`'s three**, which the engine holds as `tickSeals` (`MeshManager.kt:380-382`):
+  - `canSeal`, whether an author could read a sealed tick (`:2066-2069`);
+  - `sealTick`, one sealed tick signed `relay = false` for a live link (`:1925-1931`);
+  - `originateTick`, one sealed tick flooded and carried, answering whether it went (`:1939-1959`).
+
+  This build's are `NoTickSealing`: no author can read a sealed tick, so with the switch off or on every tick on the
+  air is today's, but for the cap's edge above. P5d fills them under the contract the protocol's doc sets:
+  - each answers "cannot seal" by itself with the switch off, since the ledger asks `sealTick` without `canSeal`;
+  - each seals in a store unit of its own, the outermost, and answers only once that unit commits;
+  - the fallback is the cleartext tick, never v1;
+  - no seam touches the ledger, and `originateTick` takes no riders.
+- **The riders are the ledger's to take.** A sealed batch carries its author's waiting room ticks, up to 64 ids in
+  all, as `originateDeliveryTick` does (`MeshManager.kt:1948-1957`). The ledger takes them before it calls the seam, and
+  gives them back if the seal fails. A seam that called back into the ledger would overlap the ledger's own access.
+- **No back-off.** Kotlin's send toward an author with no link is `fastSend`, which on Bluetooth writes only to that
+  author's own link (`BluetoothMeshTransport.kt:706-716`).
+  - So here an owed tick, sealed or cleartext, goes only over a live link: at link-up, at the 60 s re-offer or at the
+    heal. A sealed entry's bytes go once, over the link that ends it.
+  - The doubling back-off that paces Kotlin's best-effort re-sends (knit-next ADRs 053 and 2026-09.6gk8) has nothing to
+    pace here. On a phone with Bluetooth alone, Android's paces nothing on the air either.
+- **The debounce is an engine deadline** (`AckSync.nextBatchDue`, ADR 2026-09.gq84). Kotlin arms a coroutine, and keeps
+  the heal for a wake that died.
+  - The heal alone would hold a batch out of custody for up to 15 minutes, where Kotlin's goes in 45 s. The ride hold's
+    60 s is set above the batch's 45 s debounce (Kotlin's LoRa DM hold is the other 45 s hold it clears), so that a
+    batch sealed in the same minute carries the room's ticks first
+    (`AckSync.kt:772-777`).
+  - The deadline costs nothing while no batch waits, which is always until P5d.
+  - The ride hold has no deadline here. Its routes are the spool and the fast plane, so a due ride keeps waiting for a
+    link or a carrier, and the heal's pass sends one over a link it finds.
+- **The alternatives, and why not:**
+  - **The seams as closures the ledger stores:** the ledger would capture the engine, a cycle, and stop being a value.
+  - **A two-phase ledger that decides, then hears what the seal did:** each decision Kotlin makes around a seal would
+    split in two, and the port would no longer read line for line against `AckSync.kt`.
+  - **The back-off kept as state:** it would gate an attempt that sends nothing, and no test could see it.
+  - **The heal alone for the debounce:** above.
+- **Decided at review (2026-10-15):** the blobs and crypto reviews confirmed the four decisions above: the back-off left
+  out, the debounce as an engine deadline, no deadline on the ride hold, and the riders the ledger's. They also settled
+  two questions:
+  - A ride hold that goes over a link stays one tick, as in Kotlin (Limits, below). Cutting it into ticks is a change on
+    the sender alone, for knit-next to make and both platforms to take.
+  - The footprint keeps its keys. `owedTicks` counts the owed entries and both holds. The escalated ids, trimmed to
+    1,000, and the lent stamps, bounded by the holds, stay out of it, since a new key would break `PeerNodeTests`'
+    pinned list.
+- **Limits:**
+  - A ride hold that goes over a link goes as one sealed tick, however many ids it holds, as Kotlin's
+    `flushBatchOverLink` does, and a receiver applies at most 128 ids from one. A hold of more loses the rest of its
+    ticks at the author, on both platforms. Kotlin cuts a hold into ticks only on the deadline's routes.
+  - The ledger lives in memory, as Kotlin's does. A restart forgets its holds and its escalated ids, so a message
+    re-served after one owes again, and may cost one more batch, which the author applies idempotently.
+  - knit-next #96 still applies: a tick written to a link that died before the write is lost, not owed again.
+  - The sealing that the P5a and P5b amendments name for P5c is now P5d's: the seams' seals, the sealed DM receipt,
+    which drops our self-purge, and inline acks. P5e seals reactions, `CTL_PROFILE` and an init's answer.
+- **Guards:**
+  - `AckSyncTests` and `AckSyncRideDeadlineTests` account for `AckSyncTest`'s 26 cases and
+    `AckSyncRideDeadlineTest`'s 10 by name. They port 24 and 3, and each suite's doc names the cases left to the spool
+    and the fast plane: two of the first, seven of the second.
+  - `AckSyncOwedTests` and `AckSyncBoundsTests` hold this port's: the riders, the caps and the order they evict in, with
+    a linked author's tick at the cap among them.
+  - `MeshEngineTickTests.withTheSeamsAsShippedEveryTickIsTodaysCleartext` pins today's bytes with the switch off and on.
+    The rest of the suite runs the seams faked to seal over the engine (`EngineSeals`).
+  - `TickLabTests` runs three engines in a line:
+    - a group's tick reaching an absent author from a carrier's custody, at the link-up after it went;
+    - the same tick relayed by the carrier while the author is linked to it;
+    - a room's tick never carried;
+    - with the shipped seams, every tick waiting for the link.
+  - A group open keeps `acknowledge` in its post-commit half, as `announce` does: a standing rule for P6, which opens
+    group messages inside a unit.
