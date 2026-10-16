@@ -265,4 +265,22 @@ extension EngineLab {
             #expect(seals(from: from, to: to, id: id) == 2, "\(id): the original and one re-seal", sourceLocation: sourceLocation)
         }
     }
+
+    /// The same check across `nodes` when nothing was re-sealed: every custody holds the same ids, and each id in `ids`,
+    /// which node `from` sealed to node `to` once, is held in each of them as that one seal's bytes.
+    func expectCustodyAgrees(
+        _ nodes: [Int], sealedOnce ids: [String], from: Int, to: Int, sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        let held = nodes.map { Set(liveIds($0)) }
+        let agree = held.allSatisfy { $0 == held[0] }
+        #expect(!held[0].isEmpty && agree, "the same ids in every custody", sourceLocation: sourceLocation)
+        for id in ids {
+            let sealed = Set(chats(from: from, to: to, id: id).map(\.wire.signed))
+            #expect(sealed.count == 1, "\(id): sealed once", sourceLocation: sourceLocation)
+            for node in nodes {
+                let bytes = self[node].stores.custody.frame(id, now: self[node].clock.wallMilliseconds())?.signed
+                #expect(bytes.map(sealed.contains) == true, "\(id): node \(node) holds its one seal", sourceLocation: sourceLocation)
+            }
+        }
+    }
 }

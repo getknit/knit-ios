@@ -747,7 +747,7 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   holder next to us serves it. Or a node that lacks it and links to two holders (a returning phone's or a newcomer's
   back-fill, or a carrier whose quota evicted it) relays the first copy it gets to the other holder before that holder's
   own copy crosses: a served frame floods on (`ForwardSync.kt:14-15`), a serve stamps nothing in the server's seen set,
-  and every node it reaches past its router window relays it on, holders included (`MeshEngine.swift:221-233`,
+  and every node it reaches past its router window relays it on, holders included (`MeshEngine.swift:225-237`,
   `MeshRouter.kt:113-114`). So the recipient answers that copy wherever the re-flood finds it, though it still holds the
   DM. The P5c crypto review traced the alternative: our custody purging a DM every carrier keeps would have our digest
   omit it for its whole day, a carrier re-serve it every ten minutes past the router, and the exists-gate answer each
@@ -884,3 +884,211 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     one in both node-id orders, with and without a room post the node ticks before the opener lands.
   - `RatchetCarolVectorTests`: A9's Carol ticks byte for byte.
   - `MeshControlRatchetTests.theDumpCountsOurReceiptsUnderAndroidsNames`: the reply's keys.
+
+**Amended 2026-10-16, phase P5e (the presentation plane sealed):**
+
+- **With the switch on, the rest of the DM ctl plane we send is sealed** (`MeshEngine+RatchetPresentation.swift`, at knit-next
+  `cbf2a487`: `sendReaction`, `sealReaction` and `sealDmReaction`, `MeshManager.kt:2174-2276`; `broadcastSealedProfile`,
+  `currentProfilePayload` and `sendCtlDm`, `:2812-2951`; IntroSync's answer half, `IntroSync.kt:97-115`, `:185-196`,
+  `:221-240` and `:352`, wired at `MeshManager.kt:345-355` and `:517-519`).
+  - **A reaction in a DM** with a peer whose pinned row carries `CAP_RATCHET` and a bundle goes as a `CTL_REACTION`, never
+    the cleartext frame and never v1. The row is applied first, as today, and the frame carries the row's stamp, which last
+    writer wins compares on both phones. The room's reaction always goes as the cleartext frame. Toward a peer who cannot
+    read one, and when the facade cannot seal, the cleartext frame goes, counted. A store that fails sends neither, as
+    Kotlin's throw sends neither, and the row stays applied.
+  - **Our sealed profile,** the presentation at our version and never the key or the prekey, goes beside the cleartext
+    profile, never instead of it, to every peer we hold a confirmed session with. It goes after each edit of what we present
+    (`publishEdit`, as `watchProfileChanges` follows `broadcastProfile`, `:2687-2688`) and at each heal, after the republish
+    (`:974`). It is deduped per peer and version in memory, seeded at start and marked by a sealed answer (decided 11 and
+    12), goes to nobody at version 0, and carries our photo's hash beside the seal, the hash alone (knit-next ADR 035). A
+    photo's edit queues the photo's push on every link before it (decided 13).
+  - **The answer an init is owed.** A frame whose header still carries its sender's init, opened and committed as its first
+    verdict, is answered with our sealed profile at our current version, version 0 included: once per init, again only after
+    an hour, and once more for an init marked as a reset (knit-next #87). The answer needs a verified prekey pinned beside
+    the bits (`canSeal`, `:345`), so an init that opens before one pins is owed. The answer goes when such a profile pins,
+    before the frames parked for it land, and a profile without the ratchet forgives the debt (knit-next `937cf785`). It
+    bypasses the fan-out's dedupe, as `sendIntroTo` does, and once sealed marks it (decided 12). The intro send half
+    (contact cards, `pending`, `grace`, the spool's pair scopes) waits for Contacts.
+- **Every ctl of ours takes one seal** (`sealControl`, `MeshEngine+RatchetControlSeal.swift`): P5d's, lifted, with a stamp
+  and a cleartext hash added. It runs in a store unit of its own, the outermost. The peer's row is read inside it, `sealDm`
+  joins it, and the frame is signed once and carried inside it, then marked and flooded after `.committed`. `.joined`,
+  `.failed` and `.abandoned` put nothing on the air. A9's Carol ticks still seal byte for byte.
+- **The target set** is the confirmed sessions, which `RatchetSessions.confirmedPeers` reads in a unit of its own over
+  `RatchetStore.sessionPeerIds`, Kotlin's (`RatchetStore.kt:20`, `RatchetDao.kt:24-25`), in node id order on both stores.
+  There is no schema change.
+- **The counts** are Android's. `reactionsSealed` and `reactionsSealedFallback` join `RatchetSealCounts`, which now holds all
+  five of `MeshMetrics.Seals`. `introsAnswered`, the one of `MeshMetrics.Keys` this port counts, is `RatchetAnswerCounts`. The
+  control surface's `ratchet` reply carries them in `seals` and in a new `answers`.
+- **Decided:**
+  1. Only a first verdict is answered, never the start's replay, which only delivers, as Kotlin answers only in its
+     commit and never re-opens its custody. A frame from the era we hold whose first verdict committed drops at the
+     start's replay as `DUPLICATE`, so none is answered twice. The frames that open there and deliver are the ones a
+     failed unit or a closed switch left unread: their first verdict never committed, and none was answered. Each is
+     left to its sender's next frame or to our first frame under the session, so the initiator stays unconfirmed that
+     much longer, up to its re-send floor when its only frame was a ctl (an Android contact card's is 20 h,
+     `IntroSync.kt:349`, which reaches this port only after the flip). That is no worse than Kotlin. An answer owed when
+     the process ends dies with it, as Kotlin's floors and debts do (`IntroSync.kt:97-115`).
+  2. A store that fails, and a seal asked for inside a caller's unit, send nothing and keep the debt owed with no floor.
+     Kotlin keeps the debt when its `canSeal` throws, but a throw out of `sendIntro` sets the floor and loses the answer
+     for the hour. One unit that reads and seals cannot tell the two apart, so the debt is kept. A seal the facade could
+     not make toward a peer who could read one drops the debt and the floor together, as Kotlin's failed send does
+     (`IntroSync.kt:239`).
+  3. The answer's floor runs on our monotonic clock, where Kotlin's reads the wall clock. It compares only our own stamps.
+  4. A group's reaction goes in the clear and counts nothing until P6b seals the group form. That is a drift from
+     Kotlin, which seals it when every member can read one and counts a fallback when not (`:2189`, `:2227-2247`).
+  5. `dmSealedV3` stays the DMs' count. Kotlin counts a v3 reaction or profile there too (`:2263`, `:2930`), so a trial's
+     `dmSealedV3 >= 1` still means a v3 DM.
+  6. The fan-out runs after an edit of what we present and at each heal. A prekey's edit waits for the next heal, which
+     is how Kotlin's rotation reaches its sessions too.
+  7. `sessionPeerIds` is ported, for the fan-out alone.
+  8. `MeshEngine.presentation.answersInits` is the A9 replays' seam: internal, on by default, as the internal
+     `ratchetEngine:` initializer is. The file comes from Kotlin's pipeline alone, which wires no answer
+     (`onPeerFrameOpened`'s default, `InboundPipeline.kt:206`), so a replay turns it off to seal the file's frames byte for
+     byte. Nothing outside KnitMesh can turn answers off.
+  9. The reply's `seals` keys and its `answers` are additive.
+  10. A reaction's frame carries its row's stamp while its seal runs on our clock, as a re-seal keeps its frame's `sentAt`
+      (P5b).
+  11. A relaunch re-sends nothing, a deliberate difference from Kotlin. `start()` seeds the fan-out's dedupe with our
+      profile's version as the last run left it, for every confirmed session (`seedSealedProfileVersions`), before the
+      prekey's sync, so a rotation due at start is still sent at the next heal. Kotlin's `sentProfileVersions` starts
+      empty, so its first heal after a restart sends the version to every session once more (`MeshManager.kt:2836-2838`),
+      and the iPhone relaunches to restore Bluetooth far more often than Android's foreground service restarts (ADR
+      2026-10.mueg). The seed forgoes a sealed copy for a session that confirmed after the last fan-out to it, or that a
+      failed seal left owed. That session takes the version from the cleartext profile, which reaches everyone and which
+      both writers order on the version alone (`InboundPipeline.kt:1346-1349`, `:3285-3287`), and this port has no spool
+      where only the sealed copy would reach. A store that cannot list the sessions seeds nothing, and the first heal
+      sends the version once more, as Kotlin's does. This cut and 12 give up Kotlin's heal copy as a second confirmer of
+      an unconfirmed initiator, so such an initiator confirms on our answer to its next init-bearing frame: after the
+      floor within a run, at once after a relaunch.
+  12. A sealed answer marks the fan-out's dedupe with the version it carried. Kotlin's `sendIntroTo` leaves it alone
+      (`:2883`), so its next heal sends the same version again; the answer is that version's sealed profile, so here the
+      heal owes the peer nothing more of it. An answer that is lost is given again at the init's floor while the init
+      still rides. A deliberate difference, for the reason 11 gives.
+  13. A photo's edit pushes before the sealed copies, as Kotlin's `broadcastProfile` pushes before
+      `watchProfileChanges` runs `broadcastSealedProfile` (`:2787`, `:2687-2688`). `setAvatar` floods the cleartext
+      profile, queues the photo's push on every link, and only then fans out the sealed profile. A link sends a file
+      behind the frames written before it, so on a link with no file streaming each neighbour has the push's header
+      before a sealed copy names the hash in the clear, which an Android carrier would otherwise want and query for while
+      the push sat queued (`InboundPipeline.onCarriedFrame`, `:2050-2067`). Behind a file already streaming, the push
+      waits for that file's END while the sealed copy goes between its chunks, as on Android, and the carrier's query is
+      answered SENDING from the queue. The first cut of P5e fanned out inside the edit, ahead of the push.
+- **With the switch off** nothing changes on the air: a reaction is today's cleartext frame from the same draws, and nothing
+  seals, answers or reads the ratchet's tables.
+- **Claims.** With the switch on, a DM's reaction leaves the clear. Our presentation also goes sealed to each confirmed
+  session, but the cleartext profile still floods our name, status and photo's hash to everyone, that session's peer
+  included, so none of it leaves the clear. Kotlin's doc says the sealed copy takes them off the cleartext plane
+  (`MeshManager.kt:2819-2820`), which over-claims in the same way. A sealed profile carries our photo's hash beside the
+  seal, as Android's does, so a carrier can tell it from other sealed frames when we have a photo. Every shipped build
+  still sends its reactions in the clear, as ADR 2026-10.ehe6 says, until the flip.
+- **The alternatives, and why not:**
+  - **Answering from the start's replay as well:** frames from the era we hold drop there as `DUPLICATE`, so it would
+    answer the inits a failed unit or a closed switch left unread, and add at most one answer per init from an era the
+    pair has since left, under the floor. Neither rule is worse than Kotlin's; this one keeps the replay a delivery, as
+    Kotlin answers in its commit alone.
+  - **Kotlin's dedupe as it is,** empty at each start and left alone by an answer: each relaunch's first heal would add
+    a row of ours per confirmed session to every custody in reach, and each new session one more.
+  - **The dedupe kept in the database:** it would send only the copies the seed forgoes, which present nothing the
+    cleartext profile does not, at the cost of a table on both store kinds and a write in every seal's unit.
+  - **The debt dropped on a store failure, as Kotlin's `sendIntro` throw drops it:** a store that fails for a moment would
+    cost the answer for the hour.
+  - **The fan-out over every pinned ratchet peer:** a unit for each at every heal, where one read lists the sessions.
+  - **A group's cleartext reaction counted as a fallback now:** the count would say a seal was tried, and none is until P6b.
+- **Limits:**
+  - **The reinstall race fails another way** (the P5d limits). With a room post between and the node's id the larger,
+    `RatchetRestoreLabTests` still records the known issue, since its pin is the fix's oracle, but answers change how the
+    pair fails. The node answers the stale opener's init, which drops at the peer as a duplicate and shifts the node's next
+    frames one index, so its receipt and its two DMs are three `AEAD_FAIL`s and the peer resets. The node drops the peer's
+    reset as `DUPLICATE`: it lands inside the node's flagged-replacement floor and is read under the held root, where se=1
+    n=0 is spent (the crypto reviewer's shape 17). The peer answers the node's tick init, one more failure at the node,
+    whose heuristic resets. The peer takes that reset's first verdict, keeping its own reset's root, which wins the race as
+    the smaller id, and re-seals its DMs, which the node reads once it adopts that root. The sessions agree on the peer's
+    new root, but the node's two DMs are lost, since nothing re-seals them. Of the pin's expectations, `:207` now passes,
+    `:215` now fails, and `:206` fails as before (`.agents/memory/roadmap.md`).
+  - **Two resets apart, in two orders, are knit-next #89's.** Both rules are Kotlin's, the fix is knit-next's to choose,
+    and the port follows. `RatchetSessionLabTests.bothResetWithinASecondAndEachAnswersTheOthersFlaggedInit` pins both
+    orders as known issues (`.agents/memory/roadmap.md`). A meeting where both resets come by back-fill converges in both
+    orders.
+    - **The larger id's reset dated first and landing last loses the smaller id's pre-reset DMs** (the order the
+      maintainer's note_766 posts on #89). The smaller id's reset, written just before they meet, crosses the new link
+      live, while the larger id's comes by back-fill. The larger id loses the race, and its `prevRoot` becomes its own
+      reset's root (`RatchetEngine.kt:655-700`, `:668-670`), so it can no longer open the smaller id's DMs sealed before
+      the resets. Its answer and re-seals reach the smaller id first and confirm it in its newer era. The larger id's
+      reset, whose init is older than that era, then gets no first verdict (`RatchetEngine.kt:547-549`), so the smaller
+      id never re-seals those DMs: they are lost for their day, with no ✓✓. The pair still agrees on the smaller id's
+      root, each side sent one reset, and nothing resets again. The candidate remedies are a reset's sender re-sealing
+      once its reset is answered, or a flagged init we cannot open counting as the peer's reset for re-sealing.
+    - **The smaller id's reset dated first splits the pair** (#89's own order, the defection). Both reset while apart,
+      the smaller id's reset dated first. The larger id loses the race on it and answers at once, and the smaller id
+      confirms on that answer. The larger id's reset then lands, newer than the smaller id's era, and `FLAG_RESET`
+      exempts it from the remnant guard (`RatchetEngine.kt:560-570`, `:574-594`; the port's
+      `RatchetEngine+Resolve.swift:72`, `:137-140`). So the smaller id adopts it as a replacement, onto the root the
+      larger id has left. The pair splits onto two roots, both confirmed and both responders, each reading the other only
+      through the root it drains, for 48 h, then dark until a heuristic reset. This is the lab repro #89 asks for.
+
+    P5e's answers cause neither order, but they widen both to every pair whose larger id answers before its own reset
+    arrives, as Kotlin's IntroSync does. Without an answer, each order needs a frame of the larger id's under the new root
+    that the smaller id opens before that reset, such as a re-seal of a DM it has not read yet. With answers off, the lab
+    converges in both orders when neither side holds unacked DMs, and in #89's own order even when both do, since the
+    larger id's re-seals are copies of DMs the smaller id has already read, which it never opens again.
+  - **The photo's hash beside the seal acts on Android alone** (the Claims above). Nothing here reads it: this port has
+    no carrier pull yet (ADR 2026-10.ym9y). On Android a carried CHAT frame's cleartext `attachmentHash` feeds the
+    carrier pull (`ForwardRepository.kt:95-99`, `MeshManager.kt:2351-2372`) and keeps the bytes while any carried frame
+    names them (`BlobRepository.kt:100-112`). So after a photo change our old sealed profiles keep the superseded hash
+    named for their day: every Android node keeps that photo, and an Android newcomer back-filled with them pulls it.
+    This port drops a replaced photo at once (`releaseBlob(replaced)`; `referencedBlobs()` counts no carried frame), so
+    we answer NONE where an Android author would serve, and an Android asker with no Android holder in reach re-asks
+    for the day (ADR 2026-10.m9uq). With the switch off nothing names it. Keeping the photo while our custody carries a
+    live frame of ours naming it is the blobs plane's change, before the flip (`.agents/memory/roadmap.md`).
+  - **What each event adds to every custody in reach.** Every sealed profile and answer is originated, so each is a row
+    of ours for its day, counted in our 200 and in each node's 1,000, and purged by nothing: a ctl earns no receipt on
+    either platform, and a sealed receipt purges nothing (ADR 2026-09.p6nb, amended). N is our confirmed sessions:
+    - a reaction or a retraction: 1, in place of the cleartext reaction, which was carried too;
+    - an edit: N;
+    - each weekly prekey rotation: N, at the next heal, though the copy presents nothing new, since the sealed profile
+      carries no prekey;
+    - a new session: the responder's answer and the initiator's copy at its next heal. When we answer, our next heal adds
+      nothing, one row less than Kotlin's (decided 12);
+    - a reset, a flagged reset, each hour an init keeps riding, and each relaunch while one rides: 1, our answer;
+    - a relaunch: nothing more (decided 11).
+
+    Nothing bounds N by recency, here or in Kotlin (`exportedRoots`, `RatchetSessions.kt:576-591`), and this port
+    sweeps no session: the ratchet's sweep drops keys, chains and epochs only, and `RatchetSessions.forget` has no
+    caller. Sessions grow through P5d's sealed live ticks, which open one with every linked ratchet author whose room
+    post we tick and every one that ticks ours. So if every pair in a room of M ratchet phones links within a day, the
+    sessions alone add about M(M−1) rows to each node's custody among iPhones, past its 1,000 near M = 33, and up to
+    1.5·M(M−1) where Kotlin answers, since its next heal sends the version its answer carried again (past 1,000 near
+    M = 27). That comes before any edit, rotation or Android restart's N. The sessions and the relaunches are unmeasured.
+    Once our 200 fills, our oldest frames go from every custody at once, undelivered DMs to an absent contact among
+    them. An answer to an init that came over the initiator's own link could go point to point (`relay = false`), as
+    the live tick it answers did; that changes the frame's form, so it is a knit-next suggestion for the maintainer.
+  - A reaction whose store failed leaves its row applied and the peer unaware until our next reaction there, as Kotlin's
+    optimistic row does after its throw.
+  - A peer whose pinned profile dropped the bit keeps the fan-out trying it at every heal, one read each, as Kotlin's
+    refusal in `sendCtlDm` keeps it unmarked.
+  - The sealed profile carries no board, since this port binds none.
+- **Guards:**
+  - `RatchetAnswersTests`: `IntroSyncTest`'s answer cases by name, and its intro-send cases accounted for as deferred.
+  - `MeshEngineSealedReactionTests`: `MeshManagerTest`'s DM reaction cases by name, the group's drift, a non-canonical id,
+    a store failure in the seal's unit and in the row's read over both store kinds, and the seal inside a unit that is
+    abandoned and one that commits.
+  - `MeshEngineSealedProfileTests`: the confirmed target set, the heal's catch-up, version 0, the photo's hash, a
+    relaunch sending nothing, a rotation due at the relaunch still sent, a seed whose store failed, the answer marking
+    the dedupe, the photo's push before the sealed copy, a peer whose profile dropped the bit, a store failure over both
+    store kinds, and the fan-out inside a unit.
+  - `MeshEngineInitAnswerTests`: an Android initiator confirmed by the answer, the floor, a reset's new init, a marked
+    init, an owed and a forgiven debt, the start's replay, a store failure over both store kinds, our profile unreadable,
+    a seal the facade cannot make, and an answer inside a unit.
+  - `RatchetPresentationLabTests`: an answer alone confirming its initiator, a sealed reaction and its retraction applied,
+    `ProfileUpdateLabTest`'s cases by name, the sealed copy alone among them, and the blobs review's custody: three
+    custodies agreeing with a carrier without the switch among them, each sealed frame held once in each, and the rows
+    a relaunch and a new session add in two custodies.
+  - `SealedControlUndoTests`: a reaction, a profile and an answer, each in a unit that fails and in one its caller
+    abandons, over both store kinds, leave our custody as it was.
+  - `RatchetSessionLabTests.bothResetWithinASecondAndEachAnswersTheOthersFlaggedInit`: both sides resetting within a
+    second and answering each other's flagged init, in five meetings: linked and apart in both orders, and #89's own.
+    #89's two orders are pinned as known issues, the lost DMs' with the sessions' agreement asserted outside the pin.
+  - `MeshEngineRatchetSwitchTests.withTheSwitchOffReactionsProfilesAndAnswersTowardARatchetAndroidAreTodays`: the switch
+    off, the real seals, an Android peer with `0x15F` and a signed prekey, frame for frame against today's.
+  - `RatchetOutboundTests`' P5e cases, `RatchetStoreSessionPeerIdsTests.sessionPeerIdsListEveryPeerHeldInNodeIdOrder`,
+    `RatchetSessionsTests.confirmedPeersAreTheSessionsThatConfirmed` and
+    `MeshControlRatchetTests.theDumpCountsOurInitAnswersUnderAndroidsName`.

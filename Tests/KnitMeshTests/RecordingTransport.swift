@@ -23,8 +23,16 @@ struct FedCopy {
 
 /// A transport that records every write.
 final class RecordingTransport: MeshTransport {
+    /// One write, a frame or a file.
+    enum Write {
+        case frame(Written)
+        case file(SentFile)
+    }
+
     var neighbors: [Neighbor] = []
     private(set) var written: [Written] = []
+    /// Every frame and file written, in one sequence, in the order the engine wrote them: the order a link queues them in.
+    private(set) var sequence: [Write] = []
     private(set) var digests: [(ids: [String], to: NodeId)] = []
     /// Every file streamed, in order. A file to a peer that is not a neighbour goes nowhere, as on a link.
     private(set) var files: [SentFile] = []
@@ -58,7 +66,9 @@ final class RecordingTransport: MeshTransport {
         guard let envelope = try? RelayEnvelope(decoding: wire.signed) else {
             fatalError("the engine wrote a frame that does not decode")
         }
-        written.append(Written(wire: wire, envelope: envelope, to: peer))
+        let frame = Written(wire: wire, envelope: envelope, to: peer)
+        written.append(frame)
+        sequence.append(.frame(frame))
     }
 
     func sendDigest(_ ids: [String], to peer: NodeId) {
@@ -69,7 +79,9 @@ final class RecordingTransport: MeshTransport {
         guard isLinked(peer) else {
             return false
         }
-        files.append(SentFile(kind: file.kind, hash: file.hash, mime: file.mime, bytes: file.read(0, file.size) ?? [], to: peer))
+        let sent = SentFile(kind: file.kind, hash: file.hash, mime: file.mime, bytes: file.read(0, file.size) ?? [], to: peer)
+        files.append(sent)
+        sequence.append(.file(sent))
         return true
     }
 
@@ -118,6 +130,7 @@ final class RecordingTransport: MeshTransport {
     /// Forgets what was written so far.
     func clear() {
         written.removeAll()
+        sequence.removeAll()
         digests.removeAll()
         files.removeAll()
     }

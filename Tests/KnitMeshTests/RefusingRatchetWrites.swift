@@ -32,6 +32,7 @@ final class RefusingRatchetWrites: RatchetStore {
     }
 
     func session(_ peer: NodeId) -> RatchetSessionRecord? { held.session(peer) }
+    func sessionPeerIds() -> [NodeId] { held.sessionPeerIds() }
     func localEpochPrivateKey(_ peer: NodeId, epoch: Int) -> [UInt8]? { held.localEpochPrivateKey(peer, epoch: epoch) }
     func recvEpochs(_ peer: NodeId, epoch: Int) -> [RatchetRecvEpochRecord] { held.recvEpochs(peer, epoch: epoch) }
     func skippedKeys(_ peer: NodeId, epoch: Int, index: Int) -> [RatchetSkippedKeyRecord] {

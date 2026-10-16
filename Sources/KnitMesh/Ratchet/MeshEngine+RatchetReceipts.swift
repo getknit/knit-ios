@@ -20,7 +20,8 @@ import KnitWire
 /// (``sendRatchet(_:to:_:purpose:riders:)``). The frame id and the clock are drawn inside it once the author's row has
 /// been read, as Kotlin draws them after its read and before its seal. Nothing leaves before that unit commits: the
 /// seal's settlement, the router's mark and the flood all wait for it. A seal asked for inside a unit its caller opened
-/// joins that unit instead, and what it leaves behind stands or falls with it (``ReceiptSealing/joined``).
+/// joins that unit instead, and what it leaves behind stands or falls with it (``ControlSealing/joined``). Every ctl of ours
+/// takes this seal (``sealControl(_:to:in:plan:)``), phase P5e's reactions and profiles included.
 ///
 /// **The fallbacks.** The cleartext form, never v1, goes where the store works and no seal can be made: toward an author
 /// who cannot read a sealed one, and when the facade cannot seal (no session and no usable prekey, a new epoch due with no
@@ -64,7 +65,7 @@ extension MeshEngine {
         guard !ids.isEmpty, let plan = receiptPlan(to: author) else {
             return nil
         }
-        let sealing = sealReceipt(RatchetOutbound.tick(acking: ids), to: author, relay: false) { plan }
+        let sealing = sealControl(RatchetOutbound.tick(acking: ids), to: author, in: .receipt(relay: false)) { plan }
         switch sealing {
         case .sealed(let tick):
             ratchet.settle(tick.settlement)
@@ -90,7 +91,7 @@ extension MeshEngine {
         guard !ids.isEmpty, let plan = receiptPlan(to: author) else {
             return false
         }
-        let sealing = sealReceipt(RatchetOutbound.tick(acking: ids), to: author, relay: true) { plan }
+        let sealing = sealControl(RatchetOutbound.tick(acking: ids), to: author, in: .receipt(relay: true)) { plan }
         switch sealing {
         case .sealed(let tick):
             originateSealed(tick)
@@ -120,7 +121,7 @@ extension MeshEngine {
         // Taken before the unit, and settled within this call either way (`InboundPipeline.kt:2924`, `:2938`, `:2955`).
         let riders = ackSync.takeRiding(author, limit: RatchetOutbound.maxReceiptRiders)
         let content = RatchetOutbound.dmReceipt(acking: ackId, riders: riders)
-        let sealing = sealReceipt(content, to: author, relay: true) {
+        let sealing = sealControl(content, to: author, in: .receipt(relay: true)) {
             RatchetOutbound.receiptPlan(to: stores.peers.peer(author), ratchet: true)
         }
         guard case .sealed(let receipt) = sealing else {
@@ -134,7 +135,7 @@ extension MeshEngine {
     }
 
     /// What a DM's receipt whose seal did not commit comes to, its riders already given back.
-    private func attempt(_ sealing: ReceiptSealing, for ackId: String) -> SealedReceiptAttempt {
+    private func attempt(_ sealing: ControlSealing, for ackId: String) -> SealedReceiptAttempt {
         switch sealing {
         case .unsealable:
             receiptCounts.receiptsSealedFallback += 1
@@ -158,70 +159,6 @@ extension MeshEngine {
         }
         return RatchetOutbound.receiptPlan(to: stores.peers.peer(author), ratchet: true)
     }
-
-    /// `content`, a `CTL_RECEIPT`, sealed to `author` in a store unit of its own, as the plan `readPlan` answers inside it
-    /// says: under a fresh frame id and `sentAt` now, drawn once the plan is read, the facade's seal joined to the unit, the
-    /// frame signed once with `relay`, and an originated one taken into our custody, all inside it
-    /// (`sealDeliveryTickEnvelope`, `MeshManager.kt:1868-1905`). Only a ratchet seal goes: a plan of `nil` or a facade that
-    /// cannot seal abandons the unit, never wraps the ctl in v1, and a signature that fails abandons it too.
-    private func sealReceipt(
-        _ content: MessageContent, to author: NodeId, relay: Bool, plan readPlan: () -> RatchetOutbound.ReceiptPlan?
-    ) -> ReceiptSealing {
-        var readable = false
-        let unit = stores.transactor.atomically { () -> SealedReceipt? in
-            guard let plan = readPlan() else {
-                return nil
-            }
-            readable = true
-            // The id and the clock after the read and before the seal, as Kotlin draws them (`:1876-1878`): the AAD names both.
-            let id = newFrameId()
-            let now = clock.wallMilliseconds()
-            let aad = MessageCrypto.header(id: id, senderId: nodeId.string, sentAt: now, thread: author.string)
-            let bytes = content.sealBytes(v3: plan.readsCryptoV3)
-            let sealing = ratchet.sealDm(
-                to: plan.bundle,
-                prekey: plan.prekey,
-                plaintext: bytes.plaintext,
-                aad: aad,
-                now: now,
-                v3: bytes.scheme == EncEnvelope.Version.compactRatchet
-            )
-            // Joined is the one answer a seal inside our unit gives that may go, once our unit commits. The facade's
-            // `unavailable` and `refusedKey` abandon it, and a store that failed has failed it already.
-            guard case .joined(.sealed(let enc), let settlement) = sealing else {
-                return nil
-            }
-            let envelope = chatEnvelope(id: id, sentAt: now, recipient: author, group: nil, content: ChatContent(enc: enc))
-            return sign(envelope, relay: relay).map { wire in
-                // Custody keeps the first bytes stored under an id, and this id is fresh.
-                let carried =
-                    relay
-                    && custody.carryOwn(CarriedFrame(envelope: envelope, sig: wire.sig, signed: wire.signed), in: stores.custody, now: now)
-                return SealedReceipt(frame: SignedFrame(wire: wire, envelope: envelope), settlement: settlement, carried: carried)
-            }
-        }
-        switch unit {
-        case .committed(let receipt):
-            return .sealed(receipt)
-        case .joined:
-            return .joined
-        case .failed:
-            return .failed
-        case .abandoned:
-            return readable ? .unsealable : .unreadable
-        }
-    }
-
-    /// After an originated receipt's unit committed: the floors its seal settles move, and it goes on the air at once to
-    /// every neighbour, marked seen so its echo is ignored (`originateSigned`, `MeshManager.kt:3032-3062`, custody first).
-    private func originateSealed(_ receipt: SealedReceipt) {
-        ratchet.settle(receipt.settlement)
-        router.markOwn(receipt.frame.envelope.id, now: clock.monotonicMilliseconds())
-        transport.send(receipt.frame.wire, to: nil)
-        if receipt.carried {
-            noteCustodyChanged()
-        }
-    }
 }
 
 /// What our sealed receipt for a DM came to (``MeshEngine/sendSealedReceipt(for:to:)``).
@@ -232,7 +169,7 @@ internal enum SealedReceiptAttempt: Equatable {
     /// not seal. Nothing of it went, and the cleartext receipt goes in its place, with its self-purge.
     case unsealed
     /// Asked for inside a caller's store unit, where no frame may go, so nothing goes now, sealed or cleartext, and the
-    /// riders go back. Not "nothing sent" for good: the seal joined that unit (``ReceiptSealing/joined``), and if the unit
+    /// riders go back. Not "nothing sent" for good: the seal joined that unit (``ControlSealing/joined``), and if the unit
     /// commits, the receipt stands in our custody and goes at the next exchange, carrying the riders it also gave back,
     /// which the author then applies twice, idempotently.
     case heldBack
@@ -242,36 +179,6 @@ internal enum SealedReceiptAttempt: Equatable {
     /// re-flood of a copy some node took from one holder while linked to another, through whatever neighbour relays it
     /// (ADR 2026-10.5sk9's P5d amendment).
     case failed
-}
-
-/// What one receipt's or tick's seal came to (``MeshEngine/sealReceipt(_:to:relay:plan:)``).
-private enum ReceiptSealing {
-    /// The unit committed: the frame is signed and, when originated, carried.
-    case sealed(SealedReceipt)
-    /// The plan said the author cannot read one: nothing was sealed.
-    case unreadable
-    /// The facade could not seal toward an author who could read one, or the signature failed: nothing was written.
-    case unsealable
-    /// The seal joined a unit its caller opened, and what it wrote stays in that unit: the chain's advance and, for an
-    /// originated frame, its custody row. If that unit commits, an originated frame stands in our custody unflooded and
-    /// unmarked, and the next custody exchange serves it, so it reaches the author after all. A joined `originateTick`
-    /// answers `false` all the same, so the ledger also keeps its ids as cleartext entries, and that tick goes in both
-    /// forms. A live-link tick, never carried, leaves only the advance. No key is used twice, since the advance commits
-    /// with the frame. Nothing opens a unit around these calls today, and the standing rule for P6 keeps `acknowledge` out
-    /// of one.
-    case joined
-    /// A store failed, a read's or a write's: everything the unit wrote is undone.
-    case failed
-}
-
-/// A receipt or tick sealed inside its unit, and what the seal leaves for after the commit.
-internal struct SealedReceipt {
-    /// The frame as signed.
-    let frame: SignedFrame
-    /// The floors the joined seal moves once the unit commits.
-    let settlement: RatchetSessions.Settlement
-    /// Whether our custody stored it just now: an originated one, which is fresh.
-    let carried: Bool
 }
 
 /// How our receipts and ticks went, under the names of Android's metrics (`MeshMetrics.Receipts`, `MeshMetrics.kt:1489-1498`,

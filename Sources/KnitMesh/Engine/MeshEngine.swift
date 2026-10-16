@@ -20,11 +20,13 @@ public final class MeshEngine {
     /// The repositories.
     public let stores: MeshStores
     /// The DM ratchet's sessions over ``stores``' ratchet store, and the floors it holds in memory (ADR 2026-10.5sk9). With
-    /// the switch on, DM-form v2 and v3 frames to us open through it, and its resets go out (phase P5a), and our DMs to a
-    /// peer whose pinned profile carries `CAP_RATCHET` are sealed through it (phase P5b).
+    /// the switch on, DM-form v2 and v3 frames to us open through it and its resets go out (phase P5a), and what we seal to
+    /// a peer whose pinned profile carries `CAP_RATCHET` is sealed through it (phases P5b to P5e).
     let ratchet: RatchetSessions
     /// The copies of the ratchet frames whose open's unit failed, opened again at the next sweep.
     var ratchetReplay = RatchetReplay()
+    /// What our reactions, sealed profile and init answers keep in memory (phase P5e, ``RatchetPresentationState``).
+    var presentation = RatchetPresentationState()
     let transport: any MeshTransport
     let clock: any MeshClock
     let configuration: MeshConfiguration
@@ -151,15 +153,17 @@ public final class MeshEngine {
             .compactMap(\.self).min()
     }
 
-    /// Starts the node (`MeshManager.seedOwnProfileCustody`): brings our prekey in step with the ring and the switch,
-    /// republishes our profile if its stamp is stale, puts it in custody, sweeps what expired while we were down, the
-    /// ratchet's retention included, forgets deleted messages no carrier can still hold, delivers group chats custody
-    /// holds and our threads lack, opens again the ratchet DMs to us custody holds with no row, and starts the timers.
-    /// Idempotent.
+    /// Starts the node (`MeshManager.seedOwnProfileCustody`): seeds our sealed profile's dedupe, brings our prekey in step
+    /// with the ring and the switch, republishes our profile if its stamp is stale, puts it in custody, sweeps what
+    /// expired while we were down, the ratchet's retention included, forgets deleted messages no carrier can still hold,
+    /// delivers group chats custody holds and our threads lack, opens again the ratchet DMs to us custody holds with no
+    /// row, and starts the timers. Idempotent.
     public func start() {
         guard !isStarted else {
             return
         }
+        // Before the prekey's sync, so a rotation due now is a version the next heal still sends (phase P5e).
+        seedSealedProfileVersions()
         // Before anything signs our profile, so the frame custody seeds already carries a due prekey
         // (`MeshManager.kt:2548-2551`).
         syncPrekey(atStart: true)
@@ -280,50 +284,6 @@ public final class MeshEngine {
             due.ratchetSweep = now + RatchetSessions.sweepMilliseconds
         }
         timers = due
-    }
-
-    /// The 60-second re-offer to every linked neighbour (`MeshManager.reofferToNeighborsPeriodically`): the blobs and
-    /// keys we still lack, our digest, and any ticks owed. A Bluetooth link stays up, so this is what reconciles
-    /// custody that drifts after link-up, and what opens a blob's next cycle, which moves it one hop nearer.
-    func reoffer() {
-        let neighbors = neighborIds
-        rewantMissingBlobs(sparing: [])
-        stepBlobs()
-        askForMissingKeys(to: neighbors)
-        let ids = stores.custody.liveIds(now: clock.wallMilliseconds())
-        for peer in neighbors {
-            transport.sendDigest(ids, to: peer)
-            sendOwedTicks(to: peer)
-        }
-    }
-
-    /// Expired custody, parked frames, stale key wants, aged-out ticks and reactions left with no message
-    /// (`MeshManager.sweepExpired`), then the ratchet frames whose unit failed, opened again from the copies kept.
-    func sweep() {
-        let now = clock.monotonicMilliseconds()
-        if stores.custody.sweepExpired(now: clock.wallMilliseconds()) > 0 {
-            custodyRevision += 1
-        }
-        releaseDeletedPhotos()
-        pruneOrphanReactions()
-        pendingInbound.sweep(now: now)
-        keyExchange.sweep(now: now)
-        ackSync.sweep(now: now)
-        if blobExchange.sweep(now: now) > 0 {
-            syncAcceptedFiles()
-        }
-        replayFailedRatchetOpens()
-    }
-
-    /// The 15-minute heal pass (`MeshManager.heal`): re-ask for missing keys, go over the ticks we owe, rotate our prekey
-    /// when due, republish a stale profile, and, with the ratchet's switch on, seal again the DMs a store failure left
-    /// waiting.
-    func heal() {
-        askForMissingKeys(to: neighborIds)
-        retryOwedTicks()
-        syncPrekey(atStart: false)
-        republishIfStale()
-        retryWaitingDirectMessages()
     }
 
     // MARK: Shared helpers

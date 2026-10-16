@@ -26,13 +26,22 @@ extension ControlLines {
         ]
     }
 
-    /// How our DMs were sealed, under the names of Android's metrics (`MeshMetrics.Seals`, `MeshMetrics.kt:1476-1482`).
+    /// How our DMs and reactions were sealed, under the names of Android's metrics (`MeshMetrics.Seals`,
+    /// `MeshMetrics.kt:1476-1482`), all five of them.
     static func describe(_ seals: RatchetSealCounts) -> JSONValue {
         [
             "dmSealedV2": .int(Int64(seals.dmSealedV2)),
             "dmSealedV3": .int(Int64(seals.dmSealedV3)),
             "dmSealedV1Fallback": .int(Int64(seals.dmSealedV1Fallback)),
+            "reactionsSealed": .int(Int64(seals.reactionsSealed)),
+            "reactionsSealedFallback": .int(Int64(seals.reactionsSealedFallback)),
         ]
+    }
+
+    /// How many inits our sealed profile answered, under the name of Android's metric (`introsAnswered`, in
+    /// `MeshMetrics.Keys`, `MeshMetrics.kt:1466-1474`): the one of that group this port counts.
+    static func describe(_ answers: RatchetAnswerCounts) -> JSONValue {
+        ["introsAnswered": .int(Int64(answers.introsAnswered))]
     }
 
     /// How our receipts and ticks were sealed and how many room ticks rode, under the names of Android's metrics

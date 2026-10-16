@@ -64,7 +64,12 @@ import Testing
         #expect(fixture.engine.dropped[.unsigned] == nil && fixture.engine.dropped[.badSignature] == nil)
         #expect(fixture.stores.messages.message("tick-1") == nil)
         #expect(!fixture.stores.custody.contains("tick-1"), "point to point, so never carried")
-        #expect(fixture.transport.written(.chat).isEmpty && fixture.transport.written(.receipt).isEmpty, "never acknowledged or relayed")
+        // The tick carried Android's init, and its open committed, so our sealed profile answers that init, as Kotlin's commit
+        // does for any frame that opens (`InboundPipeline.kt:1059-1067`, phase P5e). The tick itself earns nothing.
+        let chats = fixture.transport.written(.chat)
+        #expect(chats.count == 1 && fixture.transport.written(.receipt).isEmpty, "never acknowledged or relayed")
+        #expect(chats.first.flatMap { android.peek($0, from: me) }?.ctl == MessageContent.Control.profile, "the one frame answers the init")
+        #expect(fixture.engine.answers.introsAnswered == 1)
     }
 
     @Test func theUnsignedDoorRefusesEveryOtherShape() throws {

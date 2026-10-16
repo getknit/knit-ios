@@ -106,8 +106,12 @@ import Testing
         #expect(lab[0].stores.messages.message(second.id)?.delivered == true, "and the second")
         #expect(Set(deliveredIds(in: lab[0].engine.drainEvents())) == [first.id, second.id])
         #expect(lab[0].ratchetRecords(of: alice).session?.confirmed == true, "Bob holds the session Alice's tick began")
-        let answers = lab[0].transport.written(.chat).filter { $0.envelope.senderId == bob.nodeId.string && $0.envelope.isDirect }
-        #expect(answers.isEmpty && lab[0].transport.written(.receipt).isEmpty, "a ctl frame is never acknowledged")
+        // Bob's one DM-form frame is his answer to the init Alice's batch carried (phase P5e): never an acknowledgement.
+        let fromBob = EngineFixture.once(lab[0].transport.written(.chat)).filter { written in
+            written.envelope.senderId == bob.nodeId.string && written.envelope.isDirect
+        }
+        #expect(fromBob.count == 1 && Set(fromBob.map { ExactKey($0.envelope.id) }) == lab[0].answerIds, "his answer to her init")
+        #expect(lab[0].transport.written(.receipt).isEmpty, "a ctl frame is never acknowledged")
 
         let original = try #require(lab[0].transport.written(.chat).first { $0.envelope.id == first.id })
         lab.advance(SeenSetWindow.milliseconds)

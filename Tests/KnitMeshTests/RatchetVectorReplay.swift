@@ -33,7 +33,9 @@ enum RatchetVectorReplay {
 
     /// `name`'s engine in `transcript`: the switch on, its clock at `wall`, the prekey the file says it holds minted at
     /// start from the listed private key, and `peer` pinned with the prekey `name` pins for it and the file's capabilities.
-    /// Its ratchet draws `draws` when given, so what it seals is the file's byte for byte, and the system's otherwise.
+    /// Its ratchet draws `draws` when given, so what it seals is the file's byte for byte, and the system's otherwise. It
+    /// answers no init (phase P5e): the file comes from Kotlin's pipeline alone, which wires no IntroSync
+    /// (`onPeerFrameOpened`'s default, `InboundPipeline.kt:206`), so an answer would be a seal the file never lists.
     static func receiver(
         _ transcript: RatchetVectors.Transcript, as name: String, peer: String, wall: Int64, draws: VectorDraws? = nil
     ) throws -> EngineFixture {
@@ -52,6 +54,7 @@ enum RatchetVectorReplay {
             seed: seed,
             ratchetEngine: draws?.engine ?? RatchetEngine()
         )
+        fixture.engine.presentation.answersInits = false
         #expect(fixture.engine.prekeyRing?.newest?.id == held.info.id, "the start minted the file's prekey")
         let other = try #require(transcript.parties[peer])
         let otherKeys = try identity(other.identity)

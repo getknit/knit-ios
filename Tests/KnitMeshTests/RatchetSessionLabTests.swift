@@ -9,8 +9,9 @@ import Testing
 /// knit-next's `SessionLabTest` (`mesh/lab/SessionLabTest.kt`, at `cbf2a487`) on two engines of this port with the switch
 /// on (ADR 2026-10.5sk9, phase P5b): the both-initiate race in either order, the race's loser answering before its own
 /// opener lands, a forced reset that heals without a storm while the other side's unacked DM is sealed again, the era a
-/// reset retires read after it, and DMs a carrier brings from an era the reset retired. Each is checked by the lab's oracle:
-/// both threads the same, and both sessions confirmed on one root and era with opposite roles (`MeshLab.kt:551-558`).
+/// reset retires read after it, and DMs a carrier brings from an era the reset retired. Since phase P5e, which answers an
+/// init, also both sides resetting within a second, each answering the other's flagged init. Each is checked by the lab's
+/// oracle: both threads the same, and both sessions confirmed on one root and era with opposite roles (`MeshLab.kt:551-558`).
 ///
 /// Kotlin's loser or receiver answers with a sealed tick, and since phase P5d so does this build: each DM's receipt is a
 /// sealed `CTL_RECEIPT` that seals an epoch on the other's. The DM of each side's own that P5b's lab sent in its stead, once
@@ -228,5 +229,170 @@ import Testing
         lab.expectConverged(0, 1, atLeast: 9, "back together")
         #expect(lab[1].ratchetRecords(of: alice).session?.lastResetSentAt == 0, "bob never reset back")
         #expect(lab[1].engine.dropped[.ratchetAeadFail] == nil && lab[1].engine.dropped[.ratchetNoSession] == nil)
+    }
+}
+
+/// Both resetting within a second (the crypto review's missing case, phase P5e), and knit-next #89's two orders, pinned.
+extension RatchetSessionLabTests {
+    /// What each of two resets left on its own side, by node index: its stamp, its root, and the frame id it went under.
+    private struct Resets {
+        var stamps: [Int: Int64] = [:]
+        var roots: [Int: [UInt8]] = [:]
+        var ids: [Int: String] = [:]
+    }
+
+    /// How the two resets of ``bothResetWithinASecondAndEachAnswersTheOthersFlaggedInit(_:)`` meet.
+    struct Meeting: Sendable, CustomTestStringConvertible {
+        /// Apart, then meeting: the first reset comes by back-fill, and the second, written just before, crosses the new
+        /// link live (``EngineLab/link(_:_:holding:)`` carries what is undrained). Linked, every frame is in flight in order.
+        let apart: Bool
+        /// The smaller id resets first.
+        let smallerFirst: Bool
+        /// The larger id's frames to the smaller are held at the meeting, then released with its reset last (#89's order).
+        let largerResetLast: Bool
+
+        var testDescription: String {
+            let held = largerResetLast ? ", the larger id's reset last" : ""
+            return "\(apart ? "apart" : "linked"), the \(smallerFirst ? "smaller" : "larger") id first\(held)"
+        }
+
+        /// The four plain meetings, then #89's.
+        static let all =
+            [true, false].flatMap { apart in [true, false].map { Self(apart: apart, smallerFirst: $0, largerResetLast: false) } }
+            + [Self(apart: true, smallerFirst: true, largerResetLast: true)]
+    }
+
+    /// Both reset re-rooted, `order[0]` first and `order[1]` half a second after it, and what each reset left.
+    private func bothReset(_ lab: EngineLab, in order: [Int]) throws -> Resets {
+        var resets = Resets()
+        for index in order {
+            if !resets.stamps.isEmpty {
+                lab.advance(500)
+            }
+            let peer = lab[1 - index].me
+            guard case .sent(_, reRooted: true) = lab[index].engine.sendRatchetReset(to: peer.nodeId) else {
+                Issue.record("node \(index)'s reset went out, re-rooted")
+                throw RatchetSessionSide.Unexpected()
+            }
+            let held = try #require(lab[index].ratchetRecords(of: peer).session)
+            resets.stamps[index] = held.lastResetSentAt
+            resets.roots[index] = held.root
+            resets.ids[index] = lab[index].resetsSent(to: peer).last?.envelope.id
+        }
+        return resets
+    }
+
+    /// The two meet as `meeting` says, after both reset in `order`; `largerReset` is the larger id's reset's frame id.
+    private func meet(_ lab: EngineLab, _ meeting: Meeting, order: [Int], large: Int, largerReset: String?) throws {
+        if meeting.largerResetLast {
+            let last = try #require(largerReset)
+            lab.link(0, 1, holding: [(from: large, to: 1 - large)])
+            lab.release(from: large, to: 1 - large) { items in items.filter { $0.id != last } + items.filter { $0.id == last } }
+        } else if meeting.apart {
+            lab.link(0, 1)
+        } else {
+            lab.release(from: order[0], to: order[1])
+            lab.release(from: order[1], to: order[0])
+        }
+    }
+
+    /// Node `index`'s `lastResetSentAt` is `stamp`, its own reset's, on the row and in memory, and it sent no other reset.
+    private func expectResetOnce(_ lab: EngineLab, _ index: Int, stamp: Int64?) throws {
+        let peer = lab[1 - index].me
+        let ours = try #require(stamp)
+        let floors = lab[index].engine.ratchet.floors(for: peer.nodeId)
+        let persisted = lab[index].ratchetRecords(of: peer).session?.lastResetSentAt
+        let once = ours > 0 && floors.lastResetSentAt == ours && persisted == ours
+        #expect(once, "node \(index)'s stamp moved once, at its own reset")
+        let resets = Set(lab[index].resetsSent(to: peer).map { ExactKey($0.envelope.id) })
+        #expect(resets.count == 1, "node \(index) reset once, and no third reset: \(lab[index].engine.dropped)")
+    }
+
+    /// Each of node `index`'s DMs `unacked` was read once by the other node, whose events `received` announced it once.
+    private func expectReadOnce(_ lab: EngineLab, _ index: Int, unacked: [String], received: [ExactKey]) {
+        for id in unacked {
+            let read = lab.thread(1 - index, with: index).filter { $0.hasPrefix(id) }
+            let announced = received.filter { $0 == ExactKey(id) }
+            #expect(read.count == 1 && announced.count == 1, "\(id), unacked at the resets, read once by node \(1 - index)")
+        }
+    }
+
+    /// The order knit-next #89 tracks beside its defection (the maintainer's note_766): both reset apart, the larger id's
+    /// first. The smaller id's reset crosses the new link live, so the larger id loses the race, its `prevRoot` becomes its
+    /// own reset's root, and it can no longer open the smaller id's pre-reset DMs; its own reset comes by back-fill, after
+    /// its answer confirmed the smaller id in a newer era, so the smaller id never takes its first verdict and never
+    /// re-seals them: lost for their day (ADR 2026-10.5sk9's P5e limits). The pin fails once the fix lands.
+    private static let twoResetsApart: Comment = "two resets apart lose the smaller id's pre-reset DMs (knit-next #89)"
+
+    /// knit-next #89's own order, the defection, and the lab repro it asks for: both reset apart, the smaller id's first.
+    /// The larger id loses the race on it and answers at once, and the smaller id confirms on that answer. The larger id's
+    /// reset then lands, newer than the smaller id's era, and `FLAG_RESET` exempts it from the remnant guard, so the smaller
+    /// id adopts it, onto the root the larger id has left: two roots, both confirmed, both responders, each reading the
+    /// other only through the root it drains, for 48 h (ADR 2026-10.5sk9's P5e limits). The pin fails once the fix lands.
+    private static let defection: Comment = "two resets apart split the pair onto two roots (knit-next #89)"
+
+    /// The lab's convergence check, `expected` as a known issue where `known` says (knit-next #89's two orders), with the
+    /// sessions' agreement asserted outside it when `agreeing`: the order that loses DMs keeps one session, so a split
+    /// there is a failure of its own, never the known issue.
+    private func expectConverged(_ lab: EngineLab, atLeast count: Int, _ label: Comment, known: Comment?, agreeing: Bool) {
+        withKnownIssue(known, isIntermittent: false) {
+            lab.expectConverged(0, 1, atLeast: count, label)
+        } when: {
+            known != nil
+        }
+        if agreeing {
+            #expect(lab.sessionsAgree(0, 1), "\(label): one session still, \(lab.describe(0, 1))")
+        }
+    }
+
+    /// The crypto review's missing case (phase P5e): both reset within a second, before either hears the other's, so each
+    /// answers the other's flagged init. Two DMs of each side wait unacked when they do, and the two meet as `meeting`
+    /// says. The race between the two inits goes to the smaller node id, as the both-initiate race does, and each re-seals
+    /// its unacked DMs on the other's reset. Pass: one root, the smaller id's reset's; each side's `lastResetSentAt` stamped
+    /// by its own reset and never again; no third reset; each side's unacked DMs read once. Two meetings fail it, both
+    /// knit-next #89's and pinned as known issues: apart with the larger id first, the smaller id's DMs are lost
+    /// (``twoResetsApart``), and with the larger id's reset released last, the pair splits (``defection``). A meeting where
+    /// both resets come by back-fill converges in both orders.
+    @Test(arguments: Meeting.all)
+    func bothResetWithinASecondAndEachAnswersTheOthersFlaggedInit(_ meeting: Meeting) throws {
+        let lab = try greeted()
+        let (small, large) = alice.nodeId < bob.nodeId ? (0, 1) : (1, 0)
+        if meeting.apart {
+            lab.unlink(0, 1)
+        } else {
+            lab.hold(from: 0, to: 1)
+            lab.hold(from: 1, to: 0)
+        }
+        let unacked = try [0, 1].map { from in try (1...2).map { try send(lab, from, 1 - from, "unacked \(from).\($0)") } }
+        lab.advance(Self.minute)
+        let order = meeting.smallerFirst ? [small, large] : [large, small]
+        let reset = try bothReset(lab, in: order)
+        try meet(lab, meeting, order: order, large: large, largerReset: reset.ids[large])
+        let split = meeting.largerResetLast
+        let lost = meeting.apart && !meeting.smallerFirst
+        let known = split ? Self.defection : lost ? Self.twoResetsApart : nil
+        try turnaround(lab, "after both resets")
+        expectConverged(lab, atLeast: 10, "after both resets", known: known, agreeing: lost)
+        let root = try #require(reset.roots[small])
+        let held = [lab[0].ratchetRecords(of: bob).session?.root, lab[1].ratchetRecords(of: alice).session?.root]
+        withKnownIssue(Self.defection, isIntermittent: false) {
+            #expect(held == [root, root], "one root, the smaller id's reset's: \(lab.describe(0, 1))")
+        } when: {
+            split
+        }
+
+        // An hour on, past every floor, heals and sweeps included: nothing resets again.
+        lab.advance(RatchetAnswers.floorMilliseconds)
+        try turnaround(lab, "an hour on")
+        expectConverged(lab, atLeast: 12, "an hour on", known: known, agreeing: lost)
+        let received = [0, 1].map { receivedRecords(in: lab[$0].engine.drainEvents()).map { ExactKey($0.id) } }
+        for index in [0, 1] {
+            try expectResetOnce(lab, index, stamp: reset.stamps[index])
+            withKnownIssue(Self.twoResetsApart, isIntermittent: false) {
+                expectReadOnce(lab, index, unacked: unacked[index], received: received[1 - index])
+            } when: {
+                lost && index == small
+            }
+        }
     }
 }

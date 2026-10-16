@@ -11,11 +11,14 @@ import KnitWire
 /// outermost and fails closed, so nothing is announced, fetched, acknowledged or sent before it commits, and after a
 /// failure nothing is at all: the copy that failed is kept and opened again at the next sweep (``RatchetReplay``).
 ///
+/// A frame that opened and committed as its first verdict, its header still carrying the sender's init, is answered
+/// with our sealed profile (``answerInit(in:from:)``, phase P5e), the frame that confirms the sender's side.
+///
 /// A frame our own custody hands back at start is only delivered (``RatchetInbound/Origin/startReplay``):
 /// its verdict, if it had one, came before the restart, and the floors that judged it died with the process. Its failure
-/// is counted under its reason alone, an init the held session has not resolved moves no era, and a reaction or a
-/// profile applies nothing, since the clamp its first open met cannot be reproduced. Kotlin replays nothing from its own
-/// custody, so it never meets such a frame.
+/// is counted under its reason alone, an init the held session has not resolved moves no era, a reaction or a profile
+/// applies nothing, since the clamp its first open met cannot be reproduced, and an init it carries is not answered
+/// again. Kotlin replays nothing from its own custody, so it never meets such a frame.
 ///
 /// Kotlin opens in two phases, a peek and then a commit. This port's open is one phase, so what Kotlin decides on the
 /// peek before its commit (the plaintext's decode and version, and the unsigned door's last check) is decided inside the
@@ -70,6 +73,11 @@ extension MeshEngine {
             // Any copy of this id that commits ends the copy a failed unit kept, whatever its origin: a ctl frame has no
             // row for the sweep to find, and opened again past an era change it would apply a second time.
             ratchetReplay.forget(envelope.id)
+            // An init the header still carries is answered first, once the open has committed, as Kotlin's commit calls
+            // `onPeerFrameOpened` before the work after it (`:1059-1067`); never from the start's replay (phase P5e).
+            if route.origin == .firstVerdict {
+                answerInit(in: frame.header, from: sender)
+            }
             finish(arrival, envelope, from: sender, via: route.hop)
         case .settled(.refused(let failure)):
             refused(envelope, failure, header: frame.header)

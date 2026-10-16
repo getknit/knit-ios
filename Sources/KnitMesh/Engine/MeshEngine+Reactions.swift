@@ -3,16 +3,19 @@ import KnitWire
 
 /// Reactions (ADR 2026-10.ehe6, after `MeshManager.sendReaction` and `InboundPipeline.handleReaction` in knit-next).
 ///
-/// This build never advertises `CAP_RATCHET`, so no Android phone seals a reaction toward it, and it seals none:
-/// every reaction is a signed, cleartext `reaction` frame naming no recipient and no group, flooded and carried like
-/// any custodial frame for 24 hours. A reaction is applied last writer wins per message and reactor, never acknowledged
-/// and never notified. Like a delete or a block, nothing here is read by custody: the carry above the handler has
-/// already run, so every node's digest agrees whatever this one shows.
+/// With the ratchet's switch off, which every build ships with, this build advertises no `CAP_RATCHET`, so no Android
+/// phone seals a reaction toward it, and it seals none: every reaction is a signed, cleartext `reaction` frame naming no
+/// recipient and no group, flooded and carried like any custodial frame for 24 hours. With the switch on, a reaction in a
+/// DM with a peer who can read one goes sealed instead (``sendReaction(_:in:)``, ADR 2026-10.5sk9's phase P5e), and one
+/// sealed toward us is applied by the ratchet's arm (phase P5a). A reaction is applied last writer wins per message and
+/// reactor, never acknowledged and never notified. Like a delete or a block, nothing here is read by custody: the carry
+/// above the handler has already run, so every node's digest agrees whatever this one shows.
 extension MeshEngine {
     /// Reacts to message `messageId` with `emoji`, or takes our reaction back when `emoji` is the one we hold, and
     /// answers what we now hold: a reaction whose ``ReactionRecord/emoji`` is `nil` once taken back, or `nil` when
     /// nothing changed. Only a held ordinary message takes one, and only an emoji this build accepts
-    /// (``TextLimits/isAcceptedReaction(_:)``). Applied here first, then flooded (`MeshManager.sendReaction`).
+    /// (``TextLimits/isAcceptedReaction(_:)``). Applied here first, then sent as the message's thread decides
+    /// (``sendReaction(_:in:)``, `MeshManager.sendReaction`).
     @discardableResult
     public func react(to messageId: String, with emoji: String) -> ReactionRecord? {
         guard TextLimits.isAcceptedReaction(emoji), let message = stores.messages.message(messageId), message.kind == .message
@@ -28,15 +31,7 @@ extension MeshEngine {
             return nil
         }
         // One clock for the row and the frame, so our own frame coming back ties and changes nothing.
-        originate(
-            RelayEnvelope(
-                type: .reaction,
-                id: newFrameId(),
-                senderId: nodeId.string,
-                sentAt: reaction.updatedAt,
-                payload: ReactionContent(messageId: messageId, emoji: next).encoded
-            )
-        )
+        sendReaction(reaction, in: message.conversationId)
         return reaction
     }
 

@@ -29,6 +29,35 @@ import Testing
         #expect(plaintext(try bob.open(compact, now: Self.now)) == Array("two".utf8))
     }
 
+    /// The filter of `exportedRoots` without the spool's roots (`RatchetSessions.kt:576-591`), the sealed profile's target set
+    /// (phase P5e): a session only once it is confirmed, read in a unit of its own, so a store that cannot read answers
+    /// none, and so does a call inside a caller's unit, whose fan-out could not go before that unit commits.
+    @Test func confirmedPeersAreTheSessionsThatConfirmed() throws {
+        let refusing = RefusingRatchetStore()
+        let (alice, bob) = try RatchetSessionSide.pair(refusing: refusing)
+        #expect(alice.sessions.confirmedPeers()?.isEmpty == true)
+        let first = try alice.seal("one", now: Self.now)
+        #expect(alice.sessions.confirmedPeers()?.isEmpty == true, "an initiator waits for its answer")
+        #expect(plaintext(try bob.open(first, now: Self.now)) != nil)
+        #expect(bob.sessions.confirmedPeers() == [alice.nodeId], "a responder is confirmed from its first open")
+        #expect(plaintext(try alice.open(try bob.seal("back", now: Self.now), now: Self.now)) != nil)
+        #expect(alice.sessions.confirmedPeers() == [bob.nodeId], "and the initiator once the answer opens")
+
+        refusing.refuse(.reads)
+        #expect(alice.sessions.confirmedPeers() == nil, "a store that cannot read answers none")
+        refusing.refuse([])
+        var inside: [NodeId]?? = .none
+        let outer = alice.transactor.atomically { () -> Void? in
+            inside = .some(alice.sessions.confirmedPeers())
+            return ()
+        }
+        guard case .committed = outer else {
+            Issue.record("the outer unit commits: \(outer)")
+            return
+        }
+        #expect(inside == .some(nil), "inside a caller's unit it answers none")
+    }
+
     @Test func withNoSessionAndNoPrekeyNothingIsSealed() throws {
         let (alice, bob) = try RatchetSessionSide.pair()
         let answer = alice.sessions.sealDm(to: bob.identity.bundle, prekey: nil, plaintext: [1], aad: Self.aad, now: Self.now)

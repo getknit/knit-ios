@@ -41,6 +41,13 @@ public final class SQLRatchetStore: RatchetStore {
         }
     }
 
+    public func sessionPeerIds() -> [NodeId] {
+        // A peer id is its UTF-8 bytes in a BLOB, which SQLite orders as memcmp does: ASCII order for a node id.
+        database.read(or: []) { db in
+            try Row.fetchAll(db, sql: "SELECT peerId FROM ratchet_sessions ORDER BY peerId").map { try $0.nodeId("peerId") }
+        }
+    }
+
     public func upsertSession(_ session: RatchetSessionRecord) {
         database.write(or: ()) { db in
             try Self.upsert(session, in: db)

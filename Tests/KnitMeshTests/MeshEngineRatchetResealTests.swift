@@ -238,8 +238,13 @@ import Testing
         iphone.transport.clear()
 
         iphone.deliver(try android.resetDm(to: me, prekey: try iphone.ourPrekey(), id: "reset", at: now), from: android)
-        #expect(iphone.transport.written(.chat).map(\.envelope.id) == ["file"])
-        let resealed = try #require(iphone.transport.written(.chat).first)
+        // The reset carries Android's init, which our sealed profile answers first, as Kotlin's commit runs the answer before
+        // the re-seal (`InboundPipeline.kt:1059-1067`, `:1140-1147`; phase P5e).
+        let chats = iphone.transport.written(.chat)
+        let answers = iphone.answerIds
+        #expect(answers.count == 1 && chats.first.map { answers.contains(ExactKey($0.envelope.id)) } == true, "the answer first")
+        #expect(chats.map(\.envelope.id).filter { !answers.contains(ExactKey($0)) } == ["file"])
+        let resealed = try #require(chats.first { $0.envelope.id == "file" })
         #expect(try ChatContent(decoding: resealed.envelope.payload).attachmentHash == blob.string, "only the hash in the clear")
         let bytes = try #require(plaintext(try android.open(resealed, from: me, now: now)))
         let content = try #require(MessageContentV2.decode(bytes))

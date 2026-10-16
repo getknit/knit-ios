@@ -278,6 +278,32 @@ extension EngineFixture {
         }
     }
 
+    /// The ids our init answers went as, each as the engine logged it (phase P5e): a sealed profile only its peer could open,
+    /// told apart from our sealed receipts and ticks without opening it.
+    var answerIds: Set<ExactKey> {
+        // "info mesh answered <peer>'s init as <id>", ids having no spaces.
+        Set(
+            log.all.compactMap { line -> ExactKey? in
+                let words = line.split(separator: " ")
+                guard words.count == 7, words[0] == "info", words[1] == "mesh", words[2] == "answered", words[4] == "init",
+                    words[5] == "as"
+                else {
+                    return nil
+                }
+                return ExactKey(String(words[6]))
+            }
+        )
+    }
+
+    /// Our answers to the inits of `android`'s frames, each once, as the phone reads them: DM-form chats of ours that it
+    /// reads as a `CTL_PROFILE` (phase P5e). Reading one moves nothing the phone holds (``AndroidPeer/peek(_:from:)``).
+    func answers(to android: AndroidPeer) -> [Written] {
+        let me = ExactKey(self.me.nodeId.string)
+        return Self.once(transport.written(.chat)).filter { written in
+            ExactKey(written.envelope.senderId) == me && android.peek(written, from: self.me)?.ctl == MessageContent.Control.profile
+        }
+    }
+
     /// `written` with each frame id once, the first copy kept: custody's back-fill writes a frame we sent again, which is the
     /// same receipt, not another one.
     static func once(_ written: [Written]) -> [Written] {

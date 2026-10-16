@@ -48,6 +48,10 @@ final class RefusingRatchetStore: RatchetStore {
         read(nil) { held.session(peer) }
     }
 
+    func sessionPeerIds() -> [NodeId] {
+        read([]) { held.sessionPeerIds() }
+    }
+
     func upsertSession(_ session: RatchetSessionRecord) {
         write { held.upsertSession(session) }
     }

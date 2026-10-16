@@ -5,7 +5,8 @@ public import KnitWire
 /// The DM ratchet's session service (`RatchetSessions` in knit-next's `mesh/crypto/ratchet/RatchetSessions.kt`, at
 /// `ac491f4c`): the pure ``RatchetEngine`` over a ``RatchetStore``, our identity, and the per-peer floors held in memory
 /// (ADR 2026-10.5sk9). With the switch on, the engine opens DM frames through it and sends the resets it seals (phase
-/// P5a), seals our DMs through it (phase P5b), and our receipts and ticks (phase P5d); reactions and profiles are P5e's.
+/// P5a), seals our DMs through it (phase P5b), our receipts and ticks (phase P5d), and our DM reactions, our sealed
+/// profile and the answer a peer's init is owed (phase P5e).
 ///
 /// **One phase, in a store unit.** Android opens in two phases: a peek with no lock feeds moderation, then a commit under
 /// its one ratchet mutex, inside a Room transaction, re-runs the engine and writes the session with the message row
@@ -28,7 +29,8 @@ public import KnitWire
 /// waits for a commit. `sealResetDm`'s decline reads the persisted `lastResetSentAt`, which survives a restart; the stamp
 /// held here is only ``noteUndecryptable(from:frameId:sentAt:now:)``'s fallback for a peer with no session.
 ///
-/// Left out: the spool's `exportedRoots` and `rootChanges`, since there is no spool here (ADR 2026-10.5sk9).
+/// Left out: the spool's `exportedRoots` and `rootChanges`, since there is no spool here (ADR 2026-10.5sk9), but for the
+/// filter `exportedRoots` applies, which ``confirmedPeers()`` keeps for the sealed profile's fan-out.
 public final class RatchetSessions {
     let identity: IdentityKeys
     let store: any RatchetStore
@@ -67,6 +69,20 @@ public final class RatchetSessions {
     /// `EPOCH_GONE` diagnosis (`debugLocalEpochs`, `RatchetSessions.kt:540-541`).
     public func localEpochs(of peer: NodeId) -> [(epoch: Int, createdAt: Int64)] {
         store.records(of: peer).localEpochs.map { (epoch: $0.epoch, createdAt: $0.createdAt) }
+    }
+
+    /// The peers we hold a confirmed session with, in node id order, read in a unit of its own: the filter of
+    /// `exportedRoots` (`RatchetSessions.kt:576-591`) without the spool's roots, which is the target set of the sealed
+    /// profile's fan-out (`broadcastSealedProfile`, `MeshManager.kt:2845`; phase P5e). `nil` when a store failed, and when
+    /// asked inside a caller's unit, where nothing fanned out could go before that unit commits.
+    public func confirmedPeers() -> [NodeId]? {
+        let unit = transactor.atomically { () -> [NodeId]? in
+            store.sessionPeerIds().filter { store.session($0)?.confirmed == true }
+        }
+        guard case .committed(let peers) = unit else {
+            return nil
+        }
+        return peers
     }
 
     /// The floors held in memory for `peer`, `nil` where none is held.

@@ -380,8 +380,9 @@ explicit direction.** Update this file in the change that ships an item.
     ratchet's sweep (ADR 2026-09.nyya, amended 2026-10-15).
   - **P5:** DMs in the mesh, in five parts: P5a receives and recovers, P5b sends chats, and the sealed control plane
     takes three. P5c ports the tick ledger's sealed form behind seams that cannot seal yet; P5d seals the seams, the DM
-    receipt and inline acks (written on 2026-10-16 on `feat/ratchet-p5d`); P5e seals reactions, `CTL_PROFILE` and an
-    init's answer. knit-peer checks it with the switch on against an Android emulator, then the Pixels.
+    receipt and inline acks (written on 2026-10-16 on `feat/ratchet-p5d`); P5e seals our DM reactions, fans our sealed
+    profile to our confirmed sessions and answers an init (written on 2026-10-16 on `feat/ratchet-p5e`). knit-peer checks it
+    with the switch on against an Android emulator, then the Pixels.
   - **Open before the flip, from P5d, and blocking it: a reinstalled responder's opener.** A reinstalled iPhone that
     answered a peer's opener within the day gets that opener back from custody, since no sealed receipt purges it, and
     it breaks the pair in either order it comes in (ADR 2026-10.5sk9's P5d limits). `RatchetRestoreLabTests` pins both
@@ -396,13 +397,23 @@ explicit direction.** Update this file in the change that ships an item.
       nothing and the peer's custody holds the copy it cannot open. If the node resets first, nothing re-seals its own
       DMs, and every one the peer dropped is lost for its day;
     - **after the reset**, after a longer history: the opener wins the init race when the peer's node id is the
-      smaller, and the pair splits onto two roots until they expire after two days.
+      smaller, and the pair splits onto two roots until they expire after two days;
+    - **since P5e's init answers**, with a room post between and the node's id the larger, the pair fails another way,
+      and the pin, the fix's oracle, still records the known issue (ADR 2026-10.5sk9's P5e limits). The node answers the
+      stale opener's init, which drops at the peer as a duplicate and shifts the node's next frames one index, so its
+      receipt and its two DMs are three `AEAD_FAIL`s and the peer resets. The node drops the peer's reset as `DUPLICATE`:
+      it lands inside the node's flagged-replacement floor and is read under the held root, where se=1 n=0 is spent (the
+      crypto reviewer's shape 17). The peer answers the node's tick init, one more failure at the node, whose heuristic
+      resets. The peer takes that reset's first verdict, keeping its own reset's root, which wins the race as the smaller
+      id, and re-seals its DMs, which the node reads once it adopts that root. The sessions agree on the peer's new root,
+      but the node's two DMs are lost, since nothing re-seals them.
 
     The candidate fix, from the P5d crypto reviews, is the maintainer's to decide. It comes in two halves:
     - **Kept ephemerals.** Keep the ephemerals of the inits this node answered, for custody's day, in the identity's
       Keychain item beside the prekeys, written once the answering open commits. After a reinstall, a frame whose init
-      is one of them is resolved: it establishes, races and replaces nothing, and it counts as `NO_SESSION` only while
-      no session is held. That is Kotlin's own idempotence check (`RatchetEngine.kt:543`), keyed by the ephemeral
+      is one of them is resolved: it establishes, races and replaces nothing, it counts as `NO_SESSION` only while no
+      session is held, and it is never answered, since the answer is what moves the node's indexes at the peer (P5e,
+      above). That is Kotlin's own idempotence check (`RatchetEngine.kt:543`), keyed by the ephemeral
       rather than a stamp, with no clock, no wire change and no paired change. It closes the race, and in the
       opener-first ordering it stops the lost DMs, but, when the node's id is the larger, not the split: the node then
       holds no session and starts one with an unflagged init, which the peer's remnant guard refuses, reading the
@@ -449,6 +460,18 @@ explicit direction.** Update this file in the change that ships an item.
       the window, at a privacy cost.
 
     Take it to knit-next as well: the rules are shared, and its restore should be checked.
+  - **Open before the flip, from P5e, and not blocking it on its own: two resets apart, in knit-next #89's two orders**
+    (ADR 2026-10.5sk9's P5e limits). Both sides reset while apart:
+    - the larger id's reset dated first and reaching the smaller id last (the order the maintainer's note_766 posts on
+      #89): the smaller id's DMs sealed before the resets are lost for their day;
+    - the smaller id's reset dated first, the larger id answering it before its own reset lands (#89's own order, the
+      defection): the smaller id adopts that reset onto the root the larger id has left, and the pair splits onto two
+      roots, readable only through the roots they drain, for 48 h, then dark until a heuristic reset.
+
+    `RatchetSessionLabTests.bothResetWithinASecondAndEachAnswersTheOthersFlaggedInit` pins both as known issues, and each
+    pin fails once the fix lands; the second is the lab repro #89 asks for. The rules are Kotlin's, so the fix is
+    knit-next's to choose; port it when it lands. P5e's answers widen both orders, as Kotlin's IntroSync does. It does not
+    block the flip on its own, since Kotlin behaves the same, but it stays with the flip's open items.
   - **knit-next #176, the iOS half, from P5d:** a delivered DM earns one more sealed receipt in each router window in
     which a copy reaches its recipient: from the recipient's own quota eviction, or from a re-flood. Any node that takes
     a served copy from one holder while linked to another sends it on, and every holder past its window relays it, so
@@ -469,6 +492,12 @@ explicit direction.** Update this file in the change that ships an item.
   - **Restoring the same phone from its own backup** (ADR 2026-10.5sk9's P3 amendment). It brings back the identity
     and the onboarded flag without the database, so our fresh prekey goes out only at version 0, which peers ignore.
     Onboarding must follow every database that has never published. That is a product change, the maintainer's call.
+  - **Serve the photo our sealed profiles still name** (ADR 2026-10.5sk9's P5e limits). An Android carrier pulls and
+    keeps the photo a carried CHAT frame's cleartext hash names, for the frame's day, so after our photo changes an
+    Android newcomer back-filled with our old sealed profiles asks for the superseded one. This port drops a replaced
+    photo at once and answers NONE, where an Android author would serve it. Keep our replaced photo while our custody
+    carries a live frame of ours naming it, as Kotlin's `forward.countByAttachmentHash` does (`BlobRepository.kt:100-112`).
+    It is the blobs plane's change, not P5e's.
   - **Found on the way, not the ratchet's (already on `main`):** a failed read of our own profile is taken for a fresh
     one. `updateProfile` and the photo edit then publish a blank name at a version every peer takes, and the next
     start's sweep can delete our own photo (P3's blobs review). The fix reads with `loadIfReadable()` and does

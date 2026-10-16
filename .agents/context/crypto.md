@@ -207,10 +207,12 @@ Swift must count `utf16`, not `Character`s.
 | `SafetyNumber`, `Alias`, `DeviceTag` | the same names |
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
 | `RatchetEngine` | `RatchetEngine`: `initiate`, `seal`, `open`, over `SessionState`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
-| `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `sealResetDm`, `sweep`, `forget`, `settle`; the reset's pure rules in `RatchetResetPolicy` |
+| `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `sealResetDm`, `sweep`, `forget`, `settle`, and `confirmedPeers`, `exportedRoots`' filter; the reset's pure rules in `RatchetResetPolicy` |
 | `InboundPipeline`'s ratchet arm, `sendSessionReset` | `MeshEngine.handleRatchetDirect` and `sendSessionReset`, over `RatchetInbound`'s pure rules; the replay of a failed open in `RatchetReplay` |
 | `MeshManager.sealEnvelopeFor`'s DM arm, `flushPendingFor`, `resealRecentDmsTo` | `MeshEngine.sendRatchet`, `flushPendingDirect` and `resealRecentDirectMessages`, over `RatchetOutbound`'s pure rules; Android's seal counts in `RatchetSealCounts` |
 | `InboundPipeline.sealDmReceipt`, `MeshManager.sealDeliveryTick`, `originateDeliveryTick`, `canSealTickTo`, `inlineAcksFor` | `MeshEngine.sendSealedReceipt`, `sealLiveTick`, `originateTick` and `canSealTick` behind `RatchetTickSeals`, and `sendRatchet`'s riders, over `RatchetOutbound.receiptPlan` and `inlineAckRoom` |
+| `MeshManager.sendReaction`, `sealDmReaction`, `broadcastSealedProfile`, `currentProfilePayload`, `sendCtlDm`, `sendIntroTo` | `MeshEngine.sendReaction`, `broadcastSealedProfile` and `answerInit` over `sealControl`, every ctl's one seal, with `RatchetOutbound`'s `reactionTarget`, `profile(of:)` and `answerPlan` |
+| `IntroSync`'s answer half (`lastAnswered`, `owed`, `onPeerFrameOpened`, `onProfilePinned`) | `RatchetAnswers`, which `MeshEngine.answerInit` and `answerOwedInit` ask; the intro send half is not ported |
 | `RatchetStore`, `RatchetRepository` | KnitStore's `RatchetStore`, `MemoryRatchetStore` and `RatchetRetention`; KnitStoreSQL's `SQLRatchetStore` (schema v17); `RatchetRecords` maps the rows to the engine's types |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
@@ -484,11 +486,20 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   peer within the day signs each DM still unacked once more, with no per-id guard, in Kotlin as here. This port
   re-seals from phase P5b, once the reset's first verdict commits and never from the start's replay; the seed flush is
   P6's.
-- **Init answers** (IntroSync's answer half, `IntroSync.kt:185-240`):
-  - each new init from a peer gets one sealed answer, then none again for 60 min, and a reset-marked init gets one
-    more;
-  - an init that opened before the peer's prekey and `CAP_RATCHET` pinned is owed an answer once they pin (knit-next
-    `937cf785`).
+- **Init answers** (IntroSync's answer half, `IntroSync.kt:185-240`; phase P5e, `MeshEngine+RatchetPresentation.swift`):
+  - a frame whose header still carries its sender's init, opened and committed as its first verdict, gets one sealed
+    `CTL_PROFILE` at our current version, version 0 included, then none again for that init for 60 min, and a
+    reset-marked init gets one more (knit-next #87). The floor is per init, held in memory on our monotonic clock;
+  - an init that opened before the peer's prekey and `CAP_RATCHET` pinned is owed an answer, which goes once they pin,
+    before the frames parked for it land; a profile without the ratchet forgives it (knit-next `937cf785`);
+  - the start's replay answers nothing, as Kotlin answers only in its commit and never re-opens its custody. A frame
+    from the era we hold whose first verdict committed drops there as `DUPLICATE`, so none is answered twice; the frames
+    that open there and deliver are the ones a failed unit or a closed switch left unread, never answered, and each is
+    left to its sender's next frame or to our first frame under the session. A debt owed when the process ends dies with
+    it. A store that fails, or a unit a caller opened, sends nothing and keeps the debt owed with no floor. A seal the
+    facade could not make drops both, as Kotlin's failed send does;
+  - a sealed answer marks the sealed profile's dedupe with the version it carried, which Kotlin's leaves alone, so the
+    next heal sends that peer nothing more of it (ADR 2026-10.5sk9's P5e, decided 12).
 
 ### Control codes
 
@@ -499,7 +510,7 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 | 3 | group key request | `gk{groupId}` | answer, and send when a group frame will not open |
 | 4 | group key ack | `gk{groupId, ackEpoch}` | send and handle |
 | 5 | receipt | `ack` and/or `acks`, at most 128 ids, the forged-ack guard | handle and send |
-| 6 | reaction | `rp{messageId, emoji?}`; no emoji retracts; last writer wins on `sentAt` | handle and send, in DM and group form |
+| 6 | reaction | `rp{messageId, emoji?}`; no emoji retracts; last writer wins on `sentAt` | handle in DM and group form; send in DM form (P5e), the group form P6b's |
 | 7 | reserved | never reused | — |
 | 8 | profile | `pr{name, status, avatarHash?, version, openToChat, loraNode?, loraKey?}`, no prekey | handle and send, presentation only |
 | 9 | transfer | `xf`, only toward `CAP_DIRECT_TRANSFER` | unknown here |
@@ -699,6 +710,28 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     `MeshManager.kt:2004-2026`). A carrier takes them before its unit and, within the same call, says they rode once
     its unit commits with a ratchet seal, or gives them back with their stamps.
   - With the switch off, the seams answer "cannot seal" by themselves, so every receipt and tick is today's.
+- **Our reactions, our sealed profile and init answers** (`MeshEngine+RatchetPresentation.swift`, phase P5e), with the switch
+  on, each a ctl DM through the one seal every ctl of ours takes (`sealControl`): a unit of its own, the outermost, the
+  peer's row read inside it, signed once and carried in our custody inside it, marked and flooded after it commits.
+  - A reaction to a message in a DM with a peer whose pinned row carries `CAP_RATCHET` and a bundle goes as a
+    `CTL_REACTION` dated by its row's stamp (`sealDmReaction`, `MeshManager.kt:2249-2276`). The room's goes in the clear
+    always, and a group's until P6b, uncounted, a drift from Kotlin, which counts a group that cannot seal as a fallback.
+    A peer who cannot read one, and a facade that cannot seal, get the cleartext frame, counted as
+    `reactionsSealedFallback`; a store that fails sends neither, and the row stays applied.
+  - Our sealed profile goes beside the cleartext profile to every confirmed session (`RatchetSessions.confirmedPeers`,
+    over `RatchetStore.sessionPeerIds`): after each edit of what we present, and at each heal (`broadcastSealedProfile`,
+    `:2812-2853`). It is deduped per peer and version in memory, sent to nobody at version 0, and carries our photo's
+    hash beside the seal in the clear, the hash alone (`sendCtlDm`, `:2901-2951`). Two things mark the dedupe that
+    Kotlin's leaves alone, deliberate differences, since the iPhone relaunches to restore Bluetooth (ADR 2026-10.mueg):
+    the start seeds it with our version for every confirmed session (`seedSealedProfileVersions`), so a relaunch re-sends
+    nothing, and a sealed answer marks it. A photo's edit queues the photo's push on every link before the fan-out, as
+    Kotlin's `broadcastProfile` pushes before `broadcastSealedProfile` runs (`:2787`, `:2687-2688`).
+  - The answer an init is owed is the same sealed profile (`sendIntroTo`, `:2877-2889`), above in "Lifecycle".
+  - The counts are `MeshMetrics.Seals`' `reactionsSealed` and `reactionsSealedFallback`, and `MeshMetrics.Keys`'
+    `introsAnswered`, in the `ratchet` reply's `seals` and `answers`. `dmSealedV3` stays the DMs'.
+  - A9's replays turn the answers off (`presentation.answersInits`, internal), since the file comes from Kotlin's pipeline
+    alone, which wires no answer (`InboundPipeline.kt:206`).
+  - With the switch off, a reaction is today's cleartext frame from the same draws, and nothing is sealed or answered.
 
 ### The promise behind the bits
 

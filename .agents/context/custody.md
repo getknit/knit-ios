@@ -49,7 +49,7 @@ A node carries frames for people who are not in range yet. This is store-and-for
   Or a node that lacks it and links to two holders (a returning phone's or a newcomer's back-fill, or a carrier whose
   quota evicted it) relays the first copy it gets to the other holder before that holder's own copy crosses: a served
   frame floods on (`ForwardSync.kt:14-15`), a serve stamps nothing in the server's seen set, and every node it reaches
-  past its router window relays it on, holders included (`MeshEngine.swift:221-233`, `MeshRouter.kt:113-114`). So the
+  past its router window relays it on, holders included (`MeshEngine.swift:225-237`, `MeshRouter.kt:113-114`). So the
   recipient answers that copy wherever the re-flood finds it, though it still holds the DM.
 - **Expiry:** `sentAt + 24 h`, or 6 h for room *chat*. Room receipts, reactions and profiles keep 24 h.
   Frames already dead on arrival, or dated more than 5 minutes ahead, are refused.

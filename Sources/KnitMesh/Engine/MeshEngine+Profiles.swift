@@ -16,14 +16,20 @@ extension MeshEngine {
         }
     }
 
-    /// Applies `change` to what we publish as an edit, and floods the result: the version moves to
-    /// `max(now, version + 1)` and the publish stamp to a fresh one.
+    /// Applies `change` to what we present as an edit, and floods the result: the version moves to
+    /// `max(now, version + 1)` and the publish stamp to a fresh one. With the ratchet's switch on, the sealed profile then
+    /// goes to every peer we hold a confirmed session with, as `watchProfileChanges` follows `broadcastProfile` with
+    /// `broadcastSealedProfile` (`MeshManager.kt:2687-2688`; ``broadcastSealedProfile()``, phase P5e). A prekey's edit
+    /// (``syncPrekey(atStart:)``) changes nothing presented, so it waits for the heal's fan-out, as a rotation does in Kotlin.
+    /// A photo's edit pushes the photo between the two (``setAvatar(_:)``).
     func publishEdit(_ change: (inout OwnProfile) -> Void) {
         publishEdit(of: stores.ownProfile.load(), change)
+        broadcastSealedProfile()
     }
 
-    /// Applies `change` to `own`, our profile as just read, as an edit, and floods the result.
-    private func publishEdit(of own: OwnProfile, _ change: (inout OwnProfile) -> Void) {
+    /// Applies `change` to `own`, our profile as just read, as an edit, and floods the result: the cleartext profile
+    /// alone, nothing sealed.
+    func publishEdit(of own: OwnProfile, _ change: (inout OwnProfile) -> Void) {
         let now = clock.wallMilliseconds()
         var own = own
         change(&own)
@@ -201,11 +207,12 @@ extension MeshEngine {
     /// key pins only if it derives to the sender, which ``verify(_:)`` checked, and a pinned key never changes. Two
     /// watermarks order what it changes, each on the profile's version clamped to five minutes past our clock: the
     /// presentation follows ``PeerRecord/updatedAt``, and the prekey ``PeerRecord/prekeyProfileAt``. A sealed profile
-    /// update (a later phase) moves the presentation and carries no prekey, so a cleartext profile older on the first can
+    /// update (phase P5a) moves the presentation and carries no prekey, so a cleartext profile older on the first can
     /// still be newer on the second, and its prekey must land (knit-next ADR 020's fix). A profile older on both changes
     /// nothing. Once the key pins, our DMs that waited for it go out, the frame is kept as the key's proof, neighbours that
     /// asked us for it are served, and frames parked for it are delivered. All of it runs whatever the ratchet's switch
-    /// says, since none of it puts anything of the ratchet's on air (ADR 2026-10.5sk9).
+    /// says, since none of it puts anything of the ratchet's on air (ADR 2026-10.5sk9), but for the answer an init of the
+    /// peer's is owed, which goes with the switch on once the profile pins the bits and a prekey (phase P5e).
     func handleProfile(_ wire: WireEnvelope, _ envelope: RelayEnvelope) {
         // Our own profile coming back is not a peer to pin.
         guard let sender = NodeId(envelope.senderId), sender != nodeId,
@@ -253,6 +260,10 @@ extension MeshEngine {
         for neighbor in keyExchange.onProfilePinned(sender, wire: wire) {
             transport.send(KeyExchange.served(wire), to: neighbor)
         }
+        // An init of theirs that opened before we could seal to them is answered now, before the parked frames land, as
+        // Kotlin calls `onProfilePinned` ahead of its release (`InboundPipeline.kt:3229-3236`), so one of them carrying the
+        // same init meets the floor.
+        answerOwedInit(of: sender, pinned: record)
         // Last, so the replayed frames verify against the key just pinned. Replay skips the router: each was
         // admitted, and its relay scheduled, when it first arrived.
         for parked in pendingInbound.release(sender) {

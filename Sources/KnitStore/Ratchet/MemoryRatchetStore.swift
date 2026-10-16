@@ -44,6 +44,10 @@ public final class MemoryRatchetStore: RatchetStore {
         peers.withLock { $0[peer]?.session }
     }
 
+    public func sessionPeerIds() -> [NodeId] {
+        peers.withLock { peers in peers.filter { $0.value.session != nil }.keys.sorted() }
+    }
+
     public func upsertSession(_ session: RatchetSessionRecord) {
         peers.withLock { $0[session.peerId, default: Rows()].session = session }
     }

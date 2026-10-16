@@ -9,7 +9,9 @@ import Testing
 /// P5d), on links a test makes and breaks (``EngineLab``): Bob (0), Carol (1), a carrier without the switch, and Alice (2).
 /// A DM's receipt is a sealed `CTL_RECEIPT` that the author's own open reads, flipping its tick, and that purges nothing, so
 /// every custody keeps the DM to its TTL and the digests still agree. A room tick waiting for a ride toward its author
-/// crosses on a frame sealed to that author anyway: the receipt for that author's DM, or our next DM to it.
+/// crosses on a frame sealed to that author anyway: the receipt for that author's DM, or our next DM to it. Since phase
+/// P5e the recipient also answers the init Bob's first DM carries, once, with its sealed profile, which these counts set
+/// aside: it is no receipt.
 @Suite struct SealedReceiptLabTests {
     private let bob = TestPeer(seed: 2)
     private let carol = TestPeer(seed: 3)
@@ -36,12 +38,14 @@ import Testing
         lab.advance(jitter)
     }
 
-    /// The DM-form chats node `from` wrote toward node `to` that are no message of its own: its sealed receipts and ticks.
+    /// The DM-form chats node `from` wrote toward node `to` that are no message of its own and no answer to an init: its
+    /// sealed receipts and ticks.
     private func sealed(from: Int, to: Int, in lab: EngineLab) -> [Written] {
         let peer = lab[to].me.nodeId.string
+        let answers = lab[from].answerIds
         return EngineFixture.once(lab[from].transport.written(.chat)).filter { written in
             written.envelope.senderId == lab[from].me.nodeId.string && written.envelope.recipientId == peer
-                && lab[from].stores.messages.message(written.envelope.id) == nil
+                && lab[from].stores.messages.message(written.envelope.id) == nil && !answers.contains(ExactKey(written.envelope.id))
         }
     }
 
@@ -59,6 +63,9 @@ import Testing
         #expect(lab[2].transport.written(.receipt).isEmpty, "never a cleartext receipt")
         let receipt = try #require(sealed(from: 2, to: 0, in: lab).first)
         #expect(sealed(from: 2, to: 0, in: lab).count == 1)
+        #expect(
+            lab[2].engine.answers.introsAnswered == 1 && lab[0].ratchetRecords(of: alice).session?.confirmed == true,
+            "her answer confirmed Bob")
         for node in 0...2 {
             #expect(lab[node].stores.custody.contains(dm.id), "node \(node) keeps the DM: the receipt purges nothing")
             #expect(lab[node].stores.custody.contains(receipt.envelope.id), "and carries the receipt")
@@ -137,7 +144,7 @@ import Testing
     }
 
     /// The blobs re-review's two-hop pin, at Kotlin's level: a served copy is a fresh flood, a serve stamps nothing in the
-    /// server's seen set, and every node past its router window relays it on, holders included (`MeshEngine.swift:221-233`,
+    /// server's seen set, and every node past its router window relays it on, holders included (`MeshEngine.swift:225-237`,
     /// `MeshRouter.kt:113-114`). Dave (3), new, links to Bob, whose frames to him are held, and then to Carol, and never
     /// to Alice. Carol's back-fill brings him Bob's DM; he relays it to Bob, Bob to Carol and Carol to Alice, each past its
     /// window, and Alice, though every custody holds the DM, answers it with one more sealed receipt. Released, Bob's own

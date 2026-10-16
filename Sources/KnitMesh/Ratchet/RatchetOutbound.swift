@@ -6,7 +6,9 @@ import KnitWire
 /// knit-next's `MeshManager.kt`, at `cbf2a487`, `:1267-1308`, `:1851-1856` and `:3361-3371`): which scheme one of our DMs
 /// takes toward a peer, and which of our DMs a peer's reset has us seal again. ``MeshEngine``'s send arm applies them
 /// (ADR 2026-10.5sk9, phase P5b). Phase P5d adds what our sealed receipts and ticks take (`canSealTickTo`,
-/// `sealDeliveryTickEnvelope` and `sealDmReceipt`), and the room ticks a DM carries inline (`inlineAcksFor`).
+/// `sealDeliveryTickEnvelope` and `sealDmReceipt`), and the room ticks a DM carries inline (`inlineAcksFor`). Phase P5e adds
+/// where a reaction of ours goes and what it carries (`sealReaction`), our sealed profile (`currentProfilePayload`), and
+/// what an init's answer needs (IntroSync's `canSeal`).
 internal enum RatchetOutbound {
     /// How far back a peer's reset has us seal our unacked DMs again: custody's day, past which no copy of ours is left on
     /// the mesh to recover (`RESEAL_WINDOW_MS`, `MeshManager.kt:3481`).
@@ -171,6 +173,66 @@ internal enum RatchetOutbound {
         MessageContent(body: "", ctl: MessageContent.Control.receipt, ack: ackId, acks: riders.isEmpty ? nil : riders)
     }
 
+    /// What an init's answer toward `peer`, the row pinned for it (`nil` for none), takes with the switch at `ratchet`, or
+    /// `nil` when we cannot seal one yet: ``receiptPlan(to:ratchet:)``'s gate and a verified prekey pinned beside it, as
+    /// IntroSync's `canSeal` asks (`canSealTickTo(peerId) && ratchetPrekeyOf(peers.find(peerId)) != null`,
+    /// `MeshManager.kt:345`). Kotlin's `ratchetPrekeyOf` decodes the pinned prekey; this one verifies it against the bundle
+    /// too, as every pinned prekey here is read (``pinnedPrekey(of:signedBy:)``).
+    static func answerPlan(to peer: PeerRecord?, ratchet: Bool) -> ReceiptPlan? {
+        receiptPlan(to: peer, ratchet: ratchet).flatMap { $0.prekey == nil ? nil : $0 }
+    }
+
+    /// Whether `peer`'s pinned row comes from a profile, which carries a protocol version or capabilities, and lacks
+    /// `CAP_RATCHET` (`ratchetless`, `MeshManager.kt:348-355`): a build without the ratchet, which no answer can reach, so a
+    /// debt owed to it is forgiven when such a profile pins (`IntroSync.kt:186-188`). A row with neither is not judged.
+    static func isRatchetless(_ peer: PeerRecord) -> Bool {
+        (peer.protocolVersion != nil || peer.capabilities != nil) && !Capabilities(rawValue: peer.capabilities ?? 0).contains(.ratchet)
+    }
+
+    /// Where one of our reactions goes, by the thread of the message it names (`sealReaction`, `MeshManager.kt:2219-2224`).
+    enum ReactionTarget: Equatable {
+        /// The Nearby room, plaintext by design: the cleartext `reaction` frame, always, counted as nothing.
+        case room
+        /// A group: its sealed form is the group ratchet's (`sealGroupReaction`, `:2227-2247`), which phase P6b ports, so
+        /// until then the cleartext frame, counted as nothing, since nothing tried to seal it.
+        case group
+        /// A DM with this peer: sealed as a `CTL_REACTION` when it can read one, else the cleartext frame, counted.
+        case direct(NodeId)
+    }
+
+    /// Where a reaction to a message in thread `conversationId` goes, for `me` (``Conversations``): the room, a group, or
+    /// the DM's other party. A thread id that names no other party, which no DM of ours has, goes as the room's does.
+    static func reactionTarget(in conversationId: String, me: NodeId) -> ReactionTarget {
+        if Conversations.isGroup(conversationId) {
+            return .group
+        }
+        guard let peer = NodeId(conversationId), peer != me else {
+            return .room
+        }
+        return .direct(peer)
+    }
+
+    /// A sealed reaction's plaintext (`sealReaction`, `MeshManager.kt:2219`): the message it names and the emoji, none for
+    /// a retraction.
+    static func reaction(on messageId: String, emoji: String?) -> MessageContent {
+        MessageContent(body: "", ctl: MessageContent.Control.reaction, rp: ReactionContent(messageId: messageId, emoji: emoji))
+    }
+
+    /// Our sealed profile's plaintext for `own` (`currentProfilePayload`, `MeshManager.kt:2856-2875`): the presentation as
+    /// our cleartext profile presents it, the name and status normalized to one line and cut to their limits, the photo by
+    /// its hash, at our profile's version, and the open-to-chat flag. Never the key or the prekey, which ride the cleartext
+    /// profile alone (`Wire.kt:682-686`), and no board, which this port never binds.
+    static func profile(of own: OwnProfile) -> MessageContent {
+        let payload = ProfilePayload(
+            name: TextLimits.truncated(TextLimits.normalizeSingleLine(own.name), toUTF16: TextLimits.displayName),
+            status: TextLimits.truncated(TextLimits.normalizeSingleLine(own.status), toUTF16: TextLimits.status),
+            avatarHash: own.avatarHash?.string,
+            version: own.version,
+            openToChat: own.openToChat
+        )
+        return MessageContent(body: "", ctl: MessageContent.Control.profile, pr: payload)
+    }
+
     /// Whether `message` is one of our DMs, from `me`, that a reset from `peer` has us seal again: an ordinary message to
     /// that peer, sent no earlier than `since`, never acknowledged, and not still waiting for a key, which goes out by
     /// itself once one pins (`unackedDmsTo`, `MessageDao.kt:179-187`).
@@ -180,8 +242,10 @@ internal enum RatchetOutbound {
     }
 }
 
-/// How our DMs were sealed so far, under the names of Android's metrics (`MeshMetrics.Seals`, `MeshMetrics.kt:1476-1482`,
-/// at `cbf2a487`). A v3 seal is a ratchet seal too, so it counts in both, as Android's does (`MeshManager.kt:1296-1298`).
+/// How our DMs and reactions were sealed so far, under the names of Android's metrics (`MeshMetrics.Seals`,
+/// `MeshMetrics.kt:1476-1482`, at `cbf2a487`), all five of them. A v3 seal is a ratchet seal too, so it counts in both, as
+/// Android's does (`MeshManager.kt:1296-1298`). The two `dmSealed` counts are our DMs': Kotlin also counts a v3 ctl in
+/// `dmSealedV3` (`:2263`, `:2930`), and this port does not, so a trial's `dmSealedV3 >= 1` still means a v3 DM.
 public struct RatchetSealCounts: Sendable, Equatable {
     /// DMs sealed with the ratchet, v2 and v3 alike (`dmSealedV2`).
     public internal(set) var dmSealedV2 = 0
@@ -190,11 +254,37 @@ public struct RatchetSealCounts: Sendable, Equatable {
     /// DMs to a peer whose pinned profile carries `CAP_RATCHET` that went v1 instead (`dmSealedV1Fallback`): no session
     /// and no usable prekey, a new epoch due with no base, or a key X25519 refuses. A persistent count is worth a look.
     public internal(set) var dmSealedV1Fallback = 0
+    /// Our reactions sealed as a `CTL_REACTION` (`reactionsSealed`, `onReactionSealed`, `MeshManager.kt:2274`): a DM's, since
+    /// phase P5e. A group's waits for P6b.
+    public internal(set) var reactionsSealed = 0
+    /// Our DM reactions that went as the cleartext `reaction` frame instead (`reactionsSealedFallback`,
+    /// `onReactionSealedFallback`, `MeshManager.kt:2189`): a peer who cannot read one, or a seal the facade could not make. A
+    /// store that failed counts nothing and sends nothing, as Kotlin's throw does; a room's reaction is never counted, and a
+    /// group's not until P6b seals one.
+    public internal(set) var reactionsSealedFallback = 0
 
     /// Counts as stated, each zero unless given: nothing sealed yet.
-    public init(dmSealedV2: Int = 0, dmSealedV3: Int = 0, dmSealedV1Fallback: Int = 0) {
+    public init(
+        dmSealedV2: Int = 0, dmSealedV3: Int = 0, dmSealedV1Fallback: Int = 0, reactionsSealed: Int = 0, reactionsSealedFallback: Int = 0
+    ) {
         self.dmSealedV2 = dmSealedV2
         self.dmSealedV3 = dmSealedV3
         self.dmSealedV1Fallback = dmSealedV1Fallback
+        self.reactionsSealed = reactionsSealed
+        self.reactionsSealedFallback = reactionsSealedFallback
+    }
+}
+
+/// The init answers we sent, under the name of Android's metric (`introsAnswered`, `MeshMetrics.Keys`, `MeshMetrics.kt:1466-1474`,
+/// at `cbf2a487`): the one of that group's seven this port counts, since it sends no contact-card intro and reports its
+/// key recovery elsewhere (phase P5e).
+public struct RatchetAnswerCounts: Sendable, Equatable {
+    /// Sealed frames we sent to confirm a still-unconfirmed peer's session, each an answer to an init its frame carried
+    /// (`introsAnswered`, `onIntroAnswered`, `IntroSync.kt:239`).
+    public internal(set) var introsAnswered = 0
+
+    /// Counts as stated, zero unless given: nothing answered yet.
+    public init(introsAnswered: Int = 0) {
+        self.introsAnswered = introsAnswered
     }
 }

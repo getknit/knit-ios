@@ -8,7 +8,8 @@ import Testing
 
 /// The DM ratchet's send rules above the engine (`sealEnvelopeFor`, `MeshManager.kt:1287-1308`, and `unackedDmsTo`,
 /// `MessageDao.kt:179-187`, at knit-next `cbf2a487`): the switch first, then the pinned profile's bits and bundle, and the
-/// content's compact form; and which of our DMs a peer's reset seals again (ADR 2026-10.5sk9, phase P5b).
+/// content's compact form; and which of our DMs a peer's reset seals again (ADR 2026-10.5sk9, phase P5b). Phase P5e adds
+/// where a reaction goes, the sealed profile's plaintext, and what an init's answer and a ratchetless pin read.
 @Suite struct RatchetOutboundTests {
     private let me = TestPeer(seed: 1)
     private let alice = TestPeer(seed: 2)
@@ -217,5 +218,74 @@ import Testing
         }
         #expect(reads.readsInlineAcks && reads.readsCryptoV3)
         #expect(!deaf.readsInlineAcks && deaf.readsCryptoV3)
+    }
+
+    // MARK: Phase P5e
+
+    /// IntroSync's `canSeal` (`MeshManager.kt:345`): a receipt's gate and a verified prekey beside it, so a peer that claims
+    /// the bits with no prekey, or a bad one, cannot be answered yet, and with the switch off nobody can.
+    @Test func anInitsAnswerNeedsTheBitsABundleAndAVerifiedPrekey() throws {
+        let prekey = try alice.prekey(id: 1)
+        #expect(RatchetOutbound.answerPlan(to: pinned(0x15F, prekey: prekey), ratchet: true)?.prekey?.id == 1)
+        #expect(RatchetOutbound.answerPlan(to: pinned(0x15F), ratchet: true) == nil, "no prekey pinned")
+        #expect(RatchetOutbound.receiptPlan(to: pinned(0x15F), ratchet: true) != nil, "where a receipt still seals")
+        let forged = PrekeyInfo(id: 1, pub: prekey.pub, sig: [UInt8](repeating: 1, count: 64))
+        #expect(RatchetOutbound.answerPlan(to: pinned(0x15F, prekey: forged), ratchet: true) == nil, "a prekey that will not verify")
+        #expect(RatchetOutbound.answerPlan(to: pinned(0xF, prekey: prekey), ratchet: true) == nil, "no bit")
+        #expect(RatchetOutbound.answerPlan(to: pinned(0x15F, prekey: prekey), ratchet: false) == nil, "the switch off")
+    }
+
+    /// `ratchetless` (`MeshManager.kt:348-355`): a row a profile wrote, which names a protocol version or capabilities, and
+    /// lacks the bit. A row with neither is not judged.
+    @Test func aRatchetlessRowIsOneAProfileWroteWithoutTheBit() {
+        #expect(RatchetOutbound.isRatchetless(pinned(0xF)))
+        #expect(!RatchetOutbound.isRatchetless(pinned(0x15F)))
+        #expect(!RatchetOutbound.isRatchetless(pinned(nil)), "neither a version nor the bits: not judged")
+        var versioned = pinned(nil)
+        versioned.protocolVersion = WireProtocol.version
+        #expect(RatchetOutbound.isRatchetless(versioned), "a version and no bits")
+    }
+
+    /// `sealReaction`'s three targets (`MeshManager.kt:2219-2224`): the DM's other party, a group, and the room, read from
+    /// the thread the message names.
+    @Test func aReactionGoesByTheThreadOfTheMessageItNames() {
+        #expect(RatchetOutbound.reactionTarget(in: alice.nodeId.string, me: me.nodeId) == .direct(alice.nodeId))
+        #expect(RatchetOutbound.reactionTarget(in: "g-0fcb434512afea55af84f0a5", me: me.nodeId) == .group)
+        #expect(RatchetOutbound.reactionTarget(in: Conversations.nearby, me: me.nodeId) == .room)
+        #expect(RatchetOutbound.reactionTarget(in: me.nodeId.string, me: me.nodeId) == .room, "no DM of ours names us")
+    }
+
+    /// A sealed reaction's plaintext (`MessageContent(body = "", ctl = CTL_REACTION, rp = ...)`, `MeshManager.kt:2219`): a
+    /// canonical message id lays it out compactly, and a retraction carries no emoji.
+    @Test func aSealedReactionNamesTheMessageAndTheEmoji() throws {
+        var generator = SeededGenerator(seed: 3)
+        let id = FrameId.generate(using: &generator)
+        let reaction = RatchetOutbound.reaction(on: id, emoji: "👍")
+        #expect(reaction.ctl == MessageContent.Control.reaction && reaction.body.isEmpty)
+        let compact = reaction.sealBytes(v3: true)
+        #expect(compact.scheme == EncEnvelope.Version.compactRatchet)
+        let decoded = try #require(MessageContentV2.decode(compact.plaintext))
+        #expect(decoded.rp == ReactionContent(messageId: id, emoji: "👍"))
+        #expect(RatchetOutbound.reaction(on: id, emoji: nil).rp == ReactionContent(messageId: id, emoji: nil), "a retraction")
+        #expect(RatchetOutbound.reaction(on: "not-a-frame-id", emoji: "👍").sealBytes(v3: true).scheme == EncEnvelope.Version.ratchet)
+    }
+
+    /// `currentProfilePayload` (`MeshManager.kt:2856-2875`): the presentation as the cleartext profile presents it, on one
+    /// line and within its limits, at our profile's version, with no key and no prekey.
+    @Test func ourSealedProfilePresentsWhatTheCleartextOneDoes() throws {
+        var own = OwnProfile()
+        own.name = "  Dana \n  Lee  " + String(repeating: "x", count: 40)
+        own.status = "out\twalking"
+        own.avatarHash = BlobHash(of: [1, 2, 3])
+        own.version = 42
+        own.openToChat = true
+        let sealed = RatchetOutbound.profile(of: own)
+        #expect(sealed.ctl == MessageContent.Control.profile && sealed.body.isEmpty)
+        let payload = try #require(sealed.pr)
+        let name = TextLimits.truncated(TextLimits.normalizeSingleLine(own.name), toUTF16: TextLimits.displayName)
+        #expect(payload.name == name && payload.name.utf16.count <= TextLimits.displayName)
+        #expect(payload.status == TextLimits.normalizeSingleLine(own.status))
+        #expect(payload.avatarHash == own.avatarHash?.string && payload.version == 42 && payload.openToChat)
+        #expect(payload.loraNode == nil && payload.loraKey == nil, "no board is ever bound here")
     }
 }

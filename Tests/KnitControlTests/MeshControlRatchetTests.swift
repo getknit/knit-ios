@@ -89,8 +89,9 @@ import Testing
         #expect(again["reRooted"] == nil)
     }
 
-    /// The reply's `seals`, under Android's metric names (phase P5b): a DM to the pinned peer goes with the ratchet, compact
-    /// to a v3 reader, and with the switch off goes v1 and counts nothing.
+    /// The reply's `seals`, under Android's metric names (phases P5b and P5e), all five of `MeshMetrics.Seals`: a DM to the
+    /// pinned peer goes with the ratchet, compact to a v3 reader, and with the switch off goes v1 and counts nothing; no
+    /// reaction was sent, so both of its counts read zero.
     @Test func theDumpCountsHowOurDMsWereSealed() async throws {
         for on in [true, false] {
             let rig = ControlRig(configuration: MeshConfiguration(ratchet: on))
@@ -99,7 +100,12 @@ import Testing
             #expect(sent["pendingKey"] as? Bool == false)
             let seals = try #require(try await rig.send(#"{"cmd":"ratchet"}"#)["seals"] as? [String: Int])
             let counted = on ? 1 : 0
-            #expect(seals == ["dmSealedV2": counted, "dmSealedV3": counted, "dmSealedV1Fallback": 0], "switch \(on)")
+            #expect(
+                seals == [
+                    "dmSealedV2": counted, "dmSealedV3": counted, "dmSealedV1Fallback": 0, "reactionsSealed": 0,
+                    "reactionsSealedFallback": 0,
+                ],
+                "switch \(on)")
         }
     }
 
@@ -113,6 +119,17 @@ import Testing
             #expect(
                 receipts == ["receiptsSealed": 0, "receiptsSealedFallback": 0, "receiptsCustodied": 0, "receiptsRidden": 0],
                 "switch \(on)")
+        }
+    }
+
+    /// The reply's `answers`, beside `seals` and `receipts`, under the name of Android's metric (`introsAnswered`, in
+    /// `MeshMetrics.Keys`; phase P5e): zero before any init was answered, with the switch on or off. The engine's tests count
+    /// it (`MeshEngineInitAnswerTests`).
+    @Test func theDumpCountsOurInitAnswersUnderAndroidsName() async throws {
+        for on in [true, false] {
+            let rig = ControlRig(configuration: MeshConfiguration(ratchet: on))
+            let answers = try #require(try await rig.send(#"{"cmd":"ratchet"}"#)["answers"] as? [String: Int])
+            #expect(answers == ["introsAnswered": 0], "switch \(on)")
         }
     }
 

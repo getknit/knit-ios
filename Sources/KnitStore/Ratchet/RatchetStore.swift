@@ -18,6 +18,11 @@ public protocol RatchetStore: AnyObject, Sendable {
     /// The session held with `peer`, or `nil`.
     func session(_ peer: NodeId) -> RatchetSessionRecord?
 
+    /// Every peer a session is held with, in node id order (`sessionPeerIds`, `RatchetStore.kt:20`, `RatchetDao.kt:24-25`):
+    /// the whole set, which only the sealed profile's fan-out to our confirmed sessions reads (phase P5e). Kotlin's query
+    /// names no order; this one does, so both stores fan out alike.
+    func sessionPeerIds() -> [NodeId]
+
     /// Stores `session` whole, replacing any held with its peer.
     func upsertSession(_ session: RatchetSessionRecord)
 

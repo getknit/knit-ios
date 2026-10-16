@@ -119,6 +119,48 @@ import Testing
         #expect(!switchedOff.stores.custody.contains("dm-1") && !switchedOff.stores.custody.contains("dm-2"), "purged, as today")
     }
 
+    /// The presentation plane's leg of the guard (phase P5e), with the real seals: toward an Android phone whose profile
+    /// carries `0x15F` and a signed prekey, a reaction and its retraction, a profile edit and the heal after it, and a ratchet
+    /// DM carrying Android's init are, frame for frame from the same draws, what a pre-ratchet peer gets today. Nothing of
+    /// ours is DM-form, the ratchet DM drops unopened, so no init is answered, and nothing reaches the ratchet's tables.
+    @Test func withTheSwitchOffReactionsProfilesAndAnswersTowardARatchetAndroidAreTodays() throws {
+        let switchedOff = try off()
+        let today = EngineFixture(me)
+        let android = try AndroidPeer(alice)
+        switchedOff.deliver(try android.profile(publishedAt: now), from: alice)
+        today.deliver(try alice.profile(publishedAt: now, capabilities: 0xF), from: alice)
+        // The same frames to both: a v1 DM to react to, and a ratchet DM whose init rides, sealed to a prekey of ours.
+        let prekey = try #require(PeerPrekey(verifying: try me.prekey(id: 1), signedBy: me.keys.bundle))
+        let frames = [
+            try alice.directMessage("hi", to: me, id: "dm-1", sentAt: now),
+            try android.dm("sealed", to: me, prekey: prekey, id: "dm-2", sentAt: now),
+        ]
+        for fixture in [switchedOff, today] {
+            fixture.transport.clear()
+            for frame in frames {
+                fixture.deliver(frame, from: alice)
+            }
+            _ = fixture.engine.react(to: "dm-1", with: "👍")
+            _ = fixture.engine.react(to: "dm-1", with: "👍")
+            fixture.engine.updateProfile(name: "Dana", status: "", openToChat: false)
+            fixture.advance(MeshConfiguration().healMilliseconds)
+        }
+
+        let mine = ExactKey(me.nodeId.string)
+        let ours = switchedOff.transport.written.filter { ExactKey($0.envelope.senderId) == mine }
+        let theirs = today.transport.written.filter { ExactKey($0.envelope.senderId) == mine }
+        #expect(ours.map(\.envelope.id) == theirs.map(\.envelope.id), "the same draws, so the same frame ids")
+        for (sent, before) in zip(ours, theirs) {
+            #expect(sent.envelope.type == before.envelope.type && sent.to == before.to && sent.wire.relay == before.wire.relay)
+            #expect(sent.wire.signed == before.wire.signed, "\(sent.envelope.type.rawValue) \(sent.envelope.id): today's bytes")
+        }
+        #expect(ours.allSatisfy { $0.envelope.type != .chat }, "no DM-form chat of ours: no sealed reaction, profile or answer")
+        #expect(switchedOff.transport.written(.reaction).count == 2 && switchedOff.transport.written(.profile).count >= 1)
+        #expect(switchedOff.engine.dropped[.cannotOpen] == 1, "the ratchet DM drops unopened, as today")
+        #expect(switchedOff.ratchetRecords(of: alice) == RatchetPeerRecords(session: nil, localEpochs: [], recvEpochs: [], skippedKeys: []))
+        #expect(switchedOff.engine.seals == RatchetSealCounts() && switchedOff.engine.answers == RatchetAnswerCounts())
+    }
+
     /// With the switch off, a peer's reset never reaches the ratchet, so nothing is sealed again: the re-seal's v1 arm,
     /// which a peer pinned without the bit takes with the switch on, cannot sign an id a second time here (the P5b crypto
     /// review). The reset is sealed to a prekey of ours, which the engine never even looks for.

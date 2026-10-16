@@ -6,8 +6,8 @@ import KnitWire
 import Testing
 
 /// Our profile's store with its database locked: reads and writes fail, and ``load()`` answers a fresh profile, as
-/// `SQLOwnProfileStore`'s fallback does.
-private final class LockedOwnProfileStore: OwnProfileStore {
+/// `SQLOwnProfileStore`'s fallback does. `MeshEngineInitAnswerTests` locks it too.
+final class LockedOwnProfileStore: OwnProfileStore {
     private struct State {
         var profile: OwnProfile
         var locked = true
