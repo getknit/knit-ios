@@ -21,6 +21,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
         var ownProfile: any OwnProfileStore
         var custody: any CustodyStore
         var ratchet: any RatchetStore
+        var groupRatchet: any GroupRatchetStore
         var transactor: any StoreTransactor
     }
 
@@ -46,6 +47,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
             let ownProfile = MemoryOwnProfileStore()
             let custody = MemoryCustodyStore()
             let ratchet = MemoryRatchetStore()
+            let groupRatchet = MemoryGroupRatchetStore()
             return Stores(
                 peers: peers,
                 messages: messages,
@@ -55,7 +57,10 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
                 ownProfile: ownProfile,
                 custody: custody,
                 ratchet: ratchet,
-                transactor: MemoryTransactor(stores: [peers, messages, conversations, blocks, groups, ownProfile, custody, ratchet])
+                groupRatchet: groupRatchet,
+                transactor: MemoryTransactor(stores: [
+                    peers, messages, conversations, blocks, groups, ownProfile, custody, ratchet, groupRatchet,
+                ])
             )
         case .sql:
             let database = try KnitDatabase.inMemory(failures: failures)
@@ -68,6 +73,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
                 ownProfile: SQLOwnProfileStore(database),
                 custody: SQLCustodyStore(database),
                 ratchet: SQLRatchetStore(database),
+                groupRatchet: SQLGroupRatchetStore(database),
                 transactor: database
             )
         }

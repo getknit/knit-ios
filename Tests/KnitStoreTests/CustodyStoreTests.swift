@@ -348,14 +348,19 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
 @Suite struct CustodyStoreByteKeyTests {
     @Test(arguments: CustodyStoreKind.allCases)
     func anIdWithANulIsNotItsOwnPrefix(kind: CustodyStoreKind) throws {
-        // A C string ends at the NUL, which would make these one row; on Android they are two frames.
+        // A C string ends at the NUL, which would make these one row; on Android they are two frames. So is an id that
+        // starts with U+FEFF, which a decode that drops it as a byte order mark would read back as "a": the digest would
+        // then list "a" twice and the marked frame never, and peers would send it again at every exchange.
         let store = try kind.make()
         store.store(carried("a"), origin: .relayed, now: 0)
         store.store(carried("a\u{0}b"), origin: .relayed, now: 0)
-        #expect(Set(store.liveIds(now: 0).map { Array($0.utf8) }) == [Array("a".utf8), [0x61, 0, 0x62]])
+        store.store(carried("\u{FEFF}a"), origin: .relayed, now: 0)
+        #expect(Set(store.liveIds(now: 0).map { Array($0.utf8) }) == [Array("a".utf8), [0x61, 0, 0x62], [0xEF, 0xBB, 0xBF, 0x61]])
         #expect(store.frame("a\u{0}b", now: 0)?.envelope.id.utf8.count == 3)
+        #expect(store.frame("\u{FEFF}a", now: 0)?.envelope.id.utf8.count == 4)
         store.remove("a")
         #expect(store.contains("a\u{0}b"))
+        #expect(store.contains("\u{FEFF}a"))
         #expect(!store.contains("a"))
     }
 }

@@ -1,6 +1,6 @@
 extension RatchetVectors {
     /// One scripted transcript (the file's `transcriptFormat`): the parties, every value each one's engine draws, in
-    /// order, and the steps. The `group` section's transcripts are not modelled here: they are the group form's (P6).
+    /// order, and the steps. The `group` section's transcripts are ``GroupTranscript``s.
     public struct Transcript: Decodable, Sendable {
         /// Its name.
         public let name: String
@@ -108,8 +108,8 @@ extension RatchetVectors {
         public let pins: [String: String]
     }
 
-    /// One injected value: an X25519 pair (`keyPair`, `priv` from `fixtureBytes(32, seed)`), or a v2 IV (`iv`). v3
-    /// draws no IV.
+    /// One injected value: an X25519 pair (`keyPair`, `priv` from `fixtureBytes(32, seed)`), a v2 IV (`iv`), or a group
+    /// epoch seed (`groupSeed`, `fixtureBytes(32, seed)`). v3 draws no IV.
     public struct TranscriptDraw: Decodable, Sendable {
         /// Its place in the party's plan.
         public let index: Int
@@ -123,6 +123,8 @@ extension RatchetVectors {
         public let pub: String?
         /// An IV's 12 bytes.
         public let iv: String?
+        /// A group seed's 32 bytes.
+        public let groupSeed: String?
     }
 
     /// One step. Which fields it carries depends on `op`: `seal`, `open`, `advance`, and stage 3b's `reset` and `skip`.

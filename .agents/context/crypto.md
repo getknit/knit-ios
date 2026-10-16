@@ -214,6 +214,9 @@ Swift must count `utf16`, not `Character`s.
 | `MeshManager.sendReaction`, `sealDmReaction`, `broadcastSealedProfile`, `currentProfilePayload`, `sendCtlDm`, `sendIntroTo` | `MeshEngine.sendReaction`, `broadcastSealedProfile` and `answerInit` over `sealControl`, every ctl's one seal, with `RatchetOutbound`'s `reactionTarget`, `profile(of:)` and `answerPlan` |
 | `IntroSync`'s answer half (`lastAnswered`, `owed`, `onPeerFrameOpened`, `onProfilePinned`) | `RatchetAnswers`, which `MeshEngine.answerInit` and `answerOwedInit` ask; the intro send half is not ported |
 | `RatchetStore`, `RatchetRepository` | KnitStore's `RatchetStore`, `MemoryRatchetStore` and `RatchetRetention`; KnitStoreSQL's `SQLRatchetStore` (schema v17); `RatchetRecords` maps the rows to the engine's types |
+| `GroupRatchetEngine` | `GroupRatchetEngine`: `mint`, `needsNewEpoch`, `seal`, `adoptSeed`, `open`, over `SendChain` (and its `retired()`), `RecvChain`, `SkippedKey`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
+| `GroupRatchetSessions` | KnitMesh's `GroupRatchetSessions`: `open`, `adoptSeeds`, `sealGroup`, `currentSeeds`, `markKeySent`, `keySend`, `onKeyAck`, `noteUndecryptable`, `markKeyRequested`, `floors`, `settle` and `sweep` (phase P6a1: nothing in the mesh calls it yet) |
+| `GroupRatchetStore`, `GroupRatchetRepository` | KnitStore's `GroupRatchetStore`, `MemoryGroupRatchetStore` and `GroupRatchetRetention`; KnitStoreSQL's `SQLGroupRatchetStore` (schema v18); `GroupRatchetRecords` maps the rows to the engine's types |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
   ratchet's prekeys join it as a third key, `prekeys`, which `PrekeyRing` writes and an older build ignores ("Keys
@@ -243,6 +246,22 @@ Swift must count `utf16`, not `Character`s.
     unconfirmed, its init, where Kotlin's `checkNotNull` throws. The second is unreachable by construction, so the
     session store's round trip must keep every `SessionState` field. Neither `nil` means "send v1" by itself: a chat
     falls back to v1, a ctl to its cleartext frame, and a seed waits.
+- **The group engine** is Kotlin's `GroupRatchetEngine`, pure, and differs from it in four ways (ADR 2026-10.5sk9's
+  P6a1 amendment):
+  - The group id is a parameter of each call, and no chain carries it or the epoch's `export`, the spool's half.
+  - Its seeds come from a seed source and its IVs from an IV source, the system's generator unless a test or a replay
+    passes others, as A9's `newIv` seam does. An IV source that is not 12 bytes, only a test's, throws
+    `RatchetCryptoError.sealing` out of the seal, where the JVM's GCM seals under any IV that is not empty.
+  - `open` reads a chain or a stored key only for the header's own `se` and `n`, and tries the chains newest mint
+    first, where Kotlin trusts its caller to pass no others. The outcome is the same.
+  - A stored key is spent by its full key, `(group, sender, epoch, mintedAt, index)`: the delta names the mint of the
+    key that opened the frame, as the DM delta names its root tag. Kotlin's names the index, and its store deletes every
+    mint's key there, so a receiver holding both eras of a wiped sender's epoch loses one frame per index they share,
+    as `DUPLICATE` at every re-serve (knit-next #177).
+
+  The group form has no shape rule for a carried nonce, as Kotlin's group arm has none: one that is not 12 bytes fails
+  as any AEAD refusal does, `AEAD_FAIL` where a chain is held, never `BAD_HEADER`. The JVM's GCM would open a frame
+  sealed under an IV of another length, which no Kotlin sender makes, and this port's 12-byte guard refuses it.
 
 ## The ratchet: v2, v3 and the group form
 
@@ -566,6 +585,23 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     `MeshManager.kt:1739-1800`).
 - **A send epoch advances** at 200 messages, at 24 h, and on a leave or a rejoin.
 - **A retired chain never reuses its epoch number** (knit-next `0f519d71`, knit-next ADR 2026-10.xgwj).
+- **This port, as of phase P6a1,** has the engine, the store and the facade, and nothing in the mesh calls them, so
+  nothing changes on the air with the switch on or off. P6a2 adds the receive path and P6b the send path.
+  - The store is `GroupRatchetStore`, schema v18: Android's four `group_*` tables as its database v23 has them,
+    `STRICT`, every id a UTF-8 `BLOB`, without `export` and `updatedAt`. Our send chains are keyed by group and epoch,
+    a sender's receive chains and skipped keys by group, sender, epoch and mint, and the seed outbox by group and
+    member.
+  - A retired chain is a row whose seed and chain key are empty and whose count is at the cap, so the next mint numbers
+    past it and no re-distribution serves it (`GroupRatchetRetention.retired`). The store's `retireSendChains`,
+    `deleteKeySend` and `purgeGroup` are for the roster's units in P6a2 and P6b, as Kotlin's `GroupRepository` calls the
+    store directly (`GroupRepository.kt:133-134`, `:163`, `:191`, `:211`).
+  - Retention is `GroupRatchetRetention`'s, which both stores apply. A skipped key lives 48 h from its creation and a
+    receive chain 48 h unused. The group's skipped keys are capped at 2,000 apart from the DM's, oldest first, a tie
+    going by group bytes, sender, epoch, mint and index where Android leaves it to SQLite, and the SQL store deletes
+    each by the column bytes it read. Our newest send chain always stays, retired or not, and the previous one drains
+    48 h past the newest's mint.
+  - A wiped sender's two eras both open only at a receiver that adopted the old seed first. One that meets the re-mint's
+    seed first refuses the old one as `stale` and drops that era's unopened frames, as A9's `groupRestoreRemint` pins.
 
 ### Threading and the store
 
@@ -607,6 +643,26 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     (`RatchetSessions.kt:140`).
   - A key X25519 refuses, from a peer's signed prekey or an init's ephemeral, commits nothing and counts toward no
     reset: a seal answers `refusedKey`, and an open `rejected`.
+- **The group facade, `GroupRatchetSessions`** (KnitMesh, phase P6a1), runs as `RatchetSessions` does: one unit for each
+  call on the store, the store read inside it, joined to a caller's unit when one is open, and `settled`, `joined` or
+  `failed`.
+  - An open's changes commit with what `alongside` writes, or none do. An open moves no floor.
+  - An adoption belongs inside the open of the `CTL_GROUP_KEY` DM that carried it, as Kotlin's `adoptSeeds` runs inside
+    the DM's commit (`GroupRatchetSessions.kt:115-118`), and answers `joined` there. Each seed goes by
+    `(epoch, mintedAt)` against the newest mint held, so a re-serve is acknowledged again with no chain moved. The roster
+    gate is the caller's.
+  - A seal reads, mints when the advance rules say, seals and persists in one unit, so the chain is stored before the
+    envelope is answered. A minted seed comes back for the caller to distribute, and the outbox rows to record, before
+    the frame floods.
+  - Its floors live in memory and die with the process, as Kotlin's do (`:36-43`). Fresh adoptions per group and sender
+    stop at four a day (`:274`), and that floor moves only once the outermost unit commits, where Kotlin stamps it inside
+    the transaction. It reads only what has settled, so the caller settles each DM's open before the next one opens.
+  - The key-request heuristic counts three distinct frame ids of the last eight, under a floor of one request an hour
+    per group and sender. Its ids join at once, on the drop path outside any unit, as Kotlin's do, behind the 48 h age
+    gate on the frame's own signed `sentAt` (`InboundPipeline.kt:1700-1701`). `markKeyRequested` is the caller's, once
+    its request's unit commits.
+  - Its sweep runs in a unit of its own. The engine is to run it beside `RatchetSessions.sweep`, at start and every
+    hour, as Android's `sweepKeyRetention` runs both (`MeshManager.kt:988-993`). Nothing schedules it before P6a2.
 - **The engine's receive arm** (`MeshEngine+RatchetInbound.swift`, phase P5a), with the switch on, takes a DM-form v2 or
   v3 frame addressed to us (`decryptAndDeliverV2`, `InboundPipeline.kt:1008-1104`):
   - It refuses before the engine what Kotlin's pipeline refuses there (`RatchetInbound`): no header, the DM form
@@ -799,7 +855,12 @@ knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` from a branc
   pipeline's own refusals through a whole engine's inbound path, each open's drop, `applies` and state.
   `RatchetSendVectorTests` sends every seal of Alice's that the pipeline makes by its own rules through her engine, byte
   for byte, the re-seal included, and runs the re-seal pair through two engines;
-- `group`, the group form's transcripts, for P6;
+- `group`, the group form's six transcripts. `RatchetGroupTranscriptTests` replays each at the engine alone, every
+  seal byte for byte and every state digest. `RatchetGroupVectorTests` replays each through both parties' session layers,
+  `RatchetSessions` for the seed DMs and `GroupRatchetSessions` for the group frames, over memory and SQL stores, with
+  the outbox and the heuristic's verdicts. The file's `groupSeal.minted` is always `null`: A9's `GroupTranscript.kt:205`
+  writes the seed and then overwrites it, since `JsonObjectBuilder.put` answers the previous value. So the replays
+  read a mint from the seal's `groupSeed` draw, and the generator's fix is owed to knit-next;
 - `carol`, Carol, the iPhone, in races and first contacts with Alice and with Bob. Every opener is v3, and
   `RatchetTranscriptTests` replays them at the engine, Carol's seals byte for byte. `RatchetCarolVectorTests` delivers
   every frame Carol opens through her engine's inbound path, against the state and floors Android's own pipeline left.

@@ -88,9 +88,10 @@ Linux. The Linux build is therefore the proof that the platform-free targets imp
   deleted messages and the photos they carried (ADR 2026-10.u7cq), v9 reactions (ADR 2026-10.ehe6), v10 to v12 a
   photo's size, frames and names (ADR 2026-10.6cas, ADR 2026-10.f3mv), v13 the quote a reply carries (ADR
   2026-10.mn29), v14 the people a message mentions (ADR 2026-10.nbhj), v15 which messages nobody has read (ADR
-  2026-10.frmj), v16 a peer's ratchet prekey and the one our profile names, and v17 the DM ratchet's sessions (ADR
-  2026-10.5sk9). Every table is `STRICT` and every string is a UTF-8 `BLOB`, because GRDB cuts a bound `String` at its
-  first NUL.
+  2026-10.frmj), v16 a peer's ratchet prekey and the one our profile names, v17 the DM ratchet's sessions, and v18 the
+  group form's chains, keys and seed outbox (ADR 2026-10.5sk9). Every table is `STRICT` and every string is a UTF-8
+  `BLOB`, because GRDB cuts a bound `String` at its first NUL, and reads back with every byte, a leading U+FEFF
+  included (`Row.text`, ADR 2026-09.jc2x).
 - **Blobs:** photos are files named by their hash in `Blobs/`, inside the database's directory, so they share its
   protection and backup exclusion. The `blobs` table indexes them, and the sweep when the store opens squares the
   two (ADR 2026-09.nyya, amended 2026-10-03). A removal deletes a file only once the row's removal commits (amended

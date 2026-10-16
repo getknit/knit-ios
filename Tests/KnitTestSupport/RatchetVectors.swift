@@ -19,6 +19,8 @@ public enum RatchetVectors {
         public let negative: [Transcript]
         /// Carol, the iPhone, in races and first contacts with Alice and with Bob.
         public let carol: [Transcript]
+        /// The group form's transcripts, over one group of Alice, Bob and Carol.
+        public let group: [GroupTranscript]
     }
 
     /// Ratchet profiles delivered in `sequence` to one fresh receiver, and the pin it holds for the sender after each

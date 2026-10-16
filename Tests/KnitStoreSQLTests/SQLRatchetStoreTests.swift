@@ -240,7 +240,7 @@ import Testing
 }
 
 /// A database on a pool in a fresh directory, as the app opens it, and that directory, for as long as `body` runs.
-private func withDatabaseFile(
+func withDatabaseFile(
     failures: @escaping @Sendable (any Error) -> Void,
     _ body: (KnitDatabase, URL) throws -> Void
 ) throws {
@@ -251,7 +251,7 @@ private func withDatabaseFile(
 
 /// Whether `pattern` occurs in any file in `directory`: the database, its write-ahead log and the log's index. An empty
 /// file holds nothing, and is not read, since `Data(contentsOf:)` on Linux leaks its buffer reading one.
-private func occurs(_ pattern: [UInt8], in directory: URL) throws -> Bool {
+func occurs(_ pattern: [UInt8], in directory: URL) throws -> Bool {
     try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).contains { file in
         let size = try FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false))[.size] as? Int ?? 0
         return try size > 0 && Data(contentsOf: file).contains(Data(pattern))
@@ -259,7 +259,7 @@ private func occurs(_ pattern: [UInt8], in directory: URL) throws -> Bool {
 }
 
 /// The size of the database's write-ahead log in `directory`, in bytes.
-private func logSize(in directory: URL) throws -> Int {
+func logSize(in directory: URL) throws -> Int {
     let log = directory.appending(path: KnitDatabase.fileName + "-wal").path(percentEncoded: false)
     return try FileManager.default.attributesOfItem(atPath: log)[.size] as? Int ?? 0
 }

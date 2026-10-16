@@ -205,9 +205,25 @@ final class VectorDraws: Sendable {
     /// Whether every draw was taken.
     var spent: Bool { taken.withLock { $0 } == plan.count }
 
+    /// How many draws were taken.
+    var count: Int { taken.withLock { $0 } }
+
     /// An engine on this plan.
     var engine: RatchetEngine {
         RatchetEngine(keyPair: { self.keyPair() }, iv: { self.iv() })
+    }
+
+    /// A group engine on this plan, sharing it with ``engine`` as A9's parties' two engines share one source
+    /// (`TranscriptParty`, `RatchetTranscript.kt:272` on the A9 branch).
+    var groupEngine: GroupRatchetEngine {
+        GroupRatchetEngine(seed: { self.groupSeed() }, iv: { self.iv() })
+    }
+
+    private func groupSeed() -> [UInt8] {
+        guard let draw = next("groupSeed"), let seed = draw.groupSeed, let bytes = Hex.decode(seed) else {
+            return GroupRatchetCrypto.newSeed()
+        }
+        return bytes
     }
 
     private func keyPair() -> RatchetCrypto.KeyPair {

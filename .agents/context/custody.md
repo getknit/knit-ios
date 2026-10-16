@@ -164,11 +164,19 @@ publish it honestly.
   (ADR 2026-09.nyya).
 - **Ids compare by their bytes** (`ExactKey`), never by Swift's `String` equality (ADR 2026-09.jc2x). That
   includes the sender and group buckets and the ids an eviction removes. The SQL store keeps every id as a
-  UTF-8 `BLOB`, which SQLite orders exactly as BINARY orders text.
+  UTF-8 `BLOB`, which SQLite orders exactly as BINARY orders text, and reads it back with every byte. Before
+  2026-10-16 it dropped a leading U+FEFF: our digest listed such a frame without it, a crafted id could stand in for
+  the real frame it then named, and the quota's eviction missed the row (ADR 2026-09.jc2x, amended).
+- **Android drops that mark,** a custody difference this port keeps on purpose (knit-next #178). knit-next binds ids
+  as UTF-16, and SQLite drops a leading U+FEFF there (and byte-swaps the rest after a leading U+FFFE), so on Android
+  such an id is one row with its unmarked twin, and its digest lists it unmarked. Dropping it here would port the
+  collision. Until knit-next binds ids whole, or both platforms refuse such ids (a paired change), an iPhone sends
+  such a frame again to each Android neighbour at every exchange, and a soak that compares custody sets those ids
+  aside.
 - **The early-receipt memo** is `CustodySync`'s `earlyReceipts`, counted in the `status` footprint as
   `earlyReceipts`. knit-next checks it again after the custody write, for a receipt handled on another dispatcher
   meanwhile; the engine here is synchronous (ADR 2026-09.gq84), so it checks once.
-- **Where the iPhone differs from Android, all of it delivery-side, none of it custody:**
+- **Where the iPhone otherwise differs from Android, all of it delivery-side, none of it custody:**
   - a cleartext DM or group message is dropped, not shown;
   - a `blobreq` is never flooded, even one marked `relay = true`, where Android would flood it; it is answered or
     asked onward as Android's `BlobExchange` does (ADR 2026-10.ym9y);

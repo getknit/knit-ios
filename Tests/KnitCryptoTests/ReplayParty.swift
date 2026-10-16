@@ -103,6 +103,23 @@ final class DrawPlan: Sendable {
         return hexBytes(iv)
     }
 
+    /// A group epoch seed, as A9's group engine draws one from the same plan as the DM engine.
+    func groupSeed() -> [UInt8] {
+        guard let draw = next("groupSeed"), let seed = draw.groupSeed else {
+            return GroupRatchetCrypto.newSeed()
+        }
+        return hexBytes(seed)
+    }
+
+    /// Passes over `indices`, the next draws in the plan, which a step this replay does not run took: a DM seal, for a
+    /// replay of the group engine alone.
+    func skip(_ indices: [Int]) {
+        taken.withLock { taken in
+            #expect(indices == Array(taken..<(taken + indices.count)), "\(owner) skips the draws it is at")
+            taken += indices.count
+        }
+    }
+
     private func next(_ kind: String) -> RatchetVectors.TranscriptDraw? {
         let index = taken.withLock { taken in
             defer { taken += 1 }

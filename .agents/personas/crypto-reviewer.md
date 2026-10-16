@@ -55,6 +55,8 @@ git status --porcelain -- Sources/KnitCrypto Sources/KnitWire/Envelope Sources/K
   Sources/KnitStoreSQL/KnitDatabase.swift Sources/KnitStoreSQL/KnitDatabase+Units.swift \
   Sources/KnitStore/Ratchet Sources/KnitMesh/Ratchet Sources/KnitStoreSQL/SQLRatchetStore.swift \
   Sources/KnitStoreSQL/Schema+V17.swift \
+  Sources/KnitStoreSQL/SQLGroupRatchetStore.swift Sources/KnitStoreSQL/Schema+V18.swift \
+  Sources/KnitStoreSQL/StoredText.swift \
   Sources/KnitMesh/Groups Sources/KnitMesh/Engine/MeshEngine+Groups.swift Sources/KnitStore/Groups \
   Sources/KnitMesh/Engine/MeshEngine+Delivery.swift Sources/KnitMesh/Receipts/TickSealing.swift \
   Sources/KnitStore/Peers Sources/KnitStoreSQL/SQLGroupStore.swift Sources/KnitStoreSQL/SQLPeerStore.swift \

@@ -1092,3 +1092,145 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   - `RatchetOutboundTests`' P5e cases, `RatchetStoreSessionPeerIdsTests.sessionPeerIdsListEveryPeerHeldInNodeIdOrder`,
     `RatchetSessionsTests.confirmedPeersAreTheSessionsThatConfirmed` and
     `MeshControlRatchetTests.theDumpCountsOurInitAnswersUnderAndroidsName`.
+
+**Amended 2026-10-16, phase P6a1 (the group form's engine, store and facade):**
+
+- **The engine is Kotlin's `GroupRatchetEngine`, whole and pure** (`Sources/KnitCrypto/Ratchet/GroupRatchetEngine.swift`
+  and `+Types`, at knit-next `cbf2a487`). A chain comes in as a value, and every change leaves as a `SealResult`, an
+  `AdoptOutcome` or an `OpenDelta` for the facade's unit to commit. Its seeds come from a seed source, as Kotlin's
+  `GroupRatchetEngine(newSeed)` (`GroupRatchetEngine.kt:26-28`), and its IVs from an IV source, A9's `newIv`: the
+  system's generator unless a test or a replay passes others, never the mesh's injected `random`. It holds no
+  key-request state, which is the facade's. Nothing in the mesh calls it, so nothing changes on the air, switch on or
+  off.
+- **It differs from Kotlin's engine in four places.** The first three change nothing a node does, and the fourth keeps
+  a frame Kotlin loses:
+  - The group id is a parameter of each call. No chain carries it, nor the epoch's `export`, the spool's half, as P4b's
+    session keeps no `sendEpochExport`.
+  - `open` reads a receive chain or a stored key only for the header's own `se` and `n`, and tries the chains newest
+    mint first, where Kotlin trusts its caller to pass no others.
+  - An IV source that is not 12 bytes throws `RatchetCryptoError.sealing` out of the seal: this port's 12-byte guard
+    refuses it (`RatchetCrypto.seal`), where the JVM's GCM accepts any IV that is not empty and a JVM receiver opens the
+    frame with the IV it carries. Only a test passes one, since Kotlin's own seal draws 12 bytes (`AesGcm.randomIv`,
+    `Crypto.kt:45`), and the facade then answers `unavailable` with nothing written.
+  - **A stored key is spent by its full key,** `(group, sender, epoch, mintedAt, index)`. The open's delta names the
+    mint of the key that opened the frame (`consumedSkippedMintedAt`), as P4c's DM delta names its root tag. Kotlin's
+    names the index alone (`consumedSkippedIdx`), and its store deletes every mint's key there
+    (`GroupRatchetRepository.kt:97`, `GroupRatchetDao.kt:77-84`). So a receiver holding both mints of one epoch, a wiped
+    sender's two eras with the old seed adopted first, loses for good one frame per index the eras share: that frame
+    finds no key, both chains are past its index, and it drops as `DUPLICATE` at every re-serve for its 24 h. Kotlin's
+    doc prices the loss as a benign `AEAD_FAIL` and a key request (`GroupRatchetStore.kt:76-78`), but `DUPLICATE` never
+    feeds the heuristic, and a re-sent seed is `alreadyKnown` and never rewinds a chain. Filed as knit-next #177. The
+    difference is the receiver's own: nothing changes on the wire, and no vector moves, since no A9 state holds two mints
+    of one epoch.
+- **Unlike P4b's DM engine, it has no shape rule for a carried nonce, as Kotlin's group arm has none**
+  (`InboundPipeline.kt:961-962`; the DM arm's rule is `:1025`). A nonce that is not 12 bytes fails as any AEAD refusal
+  does, `AEAD_FAIL` where a chain is held, never `BAD_HEADER` (`GroupRatchetEngine.kt:273-277`, `:320-321`), and an
+  `AEAD_FAIL` feeds the key-request heuristic, which costs at most one request an hour. The JVM's GCM fails a 12-byte
+  frame's nonce cut or lengthened the same way, but opens a frame sealed under an IV of another length, which this
+  port's 12-byte guard refuses (`RatchetCrypto.open`). No Kotlin sender seals one, so only a member's crafted frame
+  meets the difference.
+- **The store is `GroupRatchetStore`** (KnitStore), with records of bytes, numbers, flags and node ids, the group id and
+  the sender passed beside them. `GroupRatchetRecords` (KnitMesh) is the one place they meet the engine's types.
+  - `MemoryGroupRatchetStore` is `Checkpointing`, so the memory unit undoes it with the rest.
+  - `SQLGroupRatchetStore` keeps schema v18: Android's four tables as its database v23 has them (`group_send_chains`,
+    `group_recv_chains`, `group_skipped_keys`, `group_key_sends`, `GroupRatchetEntities.kt`), `STRICT`, every id a UTF-8
+    `BLOB`, with Android's indexes. The send chain leaves out `export` and `updatedAt`, as v17's session does.
+  - The row rules are `GroupRatchetDao`'s and `GroupRatchetRepository`'s: a send chain and a receive chain replace, a
+    skipped key is inserted if absent, and the outbox never lowers a sent or an acked epoch (`GroupRatchetDao.kt:28-29`,
+    `:52-53`, `:74-75`; `GroupRatchetRepository.kt:117-145`). A spent key goes by its full key, above, where Kotlin's
+    takes every mint's key at its index.
+  - A retired chain is a row with an empty seed and chain key and its count at the cap, its number and mint kept
+    (`GroupRatchetRetention.retired`, knit-next ADR 2026-10.xgwj). `retireSendChains`, `deleteKeySend` and `purgeGroup`
+    stay on the store for the roster's units in P6a2 and P6b, as Kotlin's `GroupRepository` calls the store directly
+    (`GroupRepository.kt:133-134`, `:163`, `:191`, `:211`).
+- **Retention is pure code** (`GroupRatchetRetention`), which both stores apply. A skipped key lives 48 h from its
+  creation and a receive chain 48 h unused. Our newest send chain always stays, retired or not, so the numbering only
+  rises but after a wipe, and the previous one drains 48 h past the newest's mint. The group's skipped keys are capped at
+  2,000, apart from the DM's. Android orders the cap's eviction by `createdAt` alone; here a tie goes by group, as bytes,
+  then sender, epoch, mint and index, so the two stores evict the same keys, now that the SQL store reads a group id
+  back whole (below). The SQL sweep runs a truncating checkpoint as it commits, as the DM's does.
+- **The SQL stores read a string back with every byte it was stored with.** `Row.text` decoded with
+  `String(bytes:encoding: .utf8)`, which drops a leading U+FEFF as a byte order mark (measured on this toolchain), so an
+  id stored as `EF BB BF` and X read back as X. It now decodes with `String(validating:as: UTF8.self)`, as KnitWire's
+  CBOR decoder does, and still throws on bytes that are not UTF-8. The cap's eviction also deletes each key by the
+  column bytes it read, never a string made of them again. Before, the SQL store ordered and deleted a U+FEFF group's
+  keys under another group's id: the two stores evicted different keys, the delete matched nothing or another group's
+  key, and the store stayed over the cap. The same decode fixes a bug already on `main` in custody: a frame whose id
+  starts with U+FEFF was listed in our digest without it, so every neighbour sent it again at each exchange, and the
+  quota evicted by the read-back id and missed the row. A crafted id, U+FEFF and then a real frame's id, could stand in
+  for that frame: our digest named it, so no neighbour offered us the real one, and the quota could delete the real one
+  in the crafted one's place (ADR 2026-09.jc2x, amended 2026-10-16).
+- **Android still drops the mark, and this port keeps it on purpose.** knit-next's database driver binds every string
+  as UTF-16, and SQLite drops a leading U+FEFF there and byte-swaps the rest after a leading U+FFFE, so on Android such
+  an id is one custody row with its unmarked twin, and its digest lists it unmarked. Dropping the mark here would port
+  the collision. Until knit-next binds ids whole, or both platforms refuse such ids (a paired change), an iPhone sends
+  such a frame again to each Android neighbour at every exchange, and a soak that compares custody sets those ids aside
+  (knit-next #178).
+- **The facade is `GroupRatchetSessions`** (KnitMesh), shaped as P4c's `RatchetSessions`.
+  - Each call on the store decides and writes inside one unit, reads the store inside it, and answers `settled`,
+    `joined` or `failed`. An open's changes commit with what `alongside` writes, or none do.
+  - An adoption belongs inside the open of the `CTL_GROUP_KEY` DM that carried it, as Kotlin's `adoptSeeds` runs inside
+    the DM's commit (`GroupRatchetSessions.kt:115-118`), and answers `joined` there. Each seed goes by
+    `(epoch, mintedAt)` against the newest mint held, so a re-serve is acknowledged again with no chain moved. The
+    roster gate is the caller's, which holds the group's rows.
+  - A seal reads, mints when the advance rules say, seals and persists in one unit. A minted seed comes back for the
+    caller to distribute and record in the outbox before the frame floods, which is P6b's.
+- **The floors are held in memory, as Kotlin holds them** (`GroupRatchetSessions.kt:36-43`), and die with the process:
+  - At most four fresh adoptions a day per group and sender (`:274`), the bound on the skipped keys a sender can make us
+    bank. The floor moves only on `settle`, after the outermost commit, where Kotlin stamps it inside the transaction, so
+    a rollback here costs none of the day's four. It reads only what has settled: the caller settles each DM's open
+    before the next one opens.
+  - The key-request heuristic: three distinct frame ids of the last eight, and one request an hour per group and sender.
+    The ids join at once, on the drop path outside any unit, as Kotlin's do. `markKeyRequested` is the caller's, once its
+    request's unit commits.
+- **`noteUndecryptable` runs the 48 h age gate itself,** on the frame's signed `sentAt` against our clock, before the
+  ids, where Kotlin's pipeline runs it just before the call (`InboundPipeline.kt:1700-1701`), as P4c moved the DM's era
+  gate into its facade. The comparison is loose, as custody's dead-on-arrival guard is: an ancient replay never spends
+  the request budget.
+- **The sweep runs in a unit of its own,** and nothing schedules it yet. The engine is to run it beside
+  `RatchetSessions.sweep`, at start and every hour, as Android's `sweepKeyRetention` runs both (`MeshManager.kt:988-993`),
+  which P6a2 wires with the group store in `MeshStores`.
+- **The alternatives, and why not:**
+  - **Kotlin's in-transaction stamp of the adoption floor:** a joined adoption whose outer unit fails would spend a floor
+    for chains that were never stored.
+  - **A facade wrapper for every store write:** the roster's retirements and purges belong in the roster's units, which
+    call the store as Kotlin's do.
+  - **Android's eviction order:** the memory and SQL stores could evict different keys.
+- **Limits:**
+  - The facade serves one caller at a time, the engine's actor.
+  - A restart forgets the floors, as Android's do: a sender can be adopted four more times that day.
+  - A wiped sender's old era is lost at a receiver that meets the re-mint's seed first, at Kotlin's level, and A9's
+    `groupRestoreRemint` pins it. The old seed is `stale`, refused and not acked, and that era's unopened frames drop:
+    as `DUPLICATE` where the new era's chain has passed their index, and as `AEAD_FAIL` where it has not. Both eras open
+    only at a receiver that adopted the old seed first, and there, since the fourth difference above, every frame of
+    both opens.
+  - A sender that lost its state and re-mints under a clock set back before its old mint is `stale` at every receiver
+    that still holds the old era, until that era's chains go unused for 48 h, at Kotlin's level.
+  - A9's `groupSeal.minted` is always `null`: `GroupTranscript.kt:205` writes the seed and then overwrites it, since
+    `JsonObjectBuilder.put` answers the previous value. The replays read a mint from the seal's `groupSeed` draw, and
+    the generator's fix goes to knit-next.
+  - Kotlin's soak still models a departure by deleting the leaver's chains, from before `0f519d71`. This port's soak
+    retires them, as production does.
+- **Guards:**
+  - `GroupRatchetEngineTests`: knit-next's fifteen `GroupRatchetEngineTest` cases by name, and this port's: the header's
+    own chains and keys, the nonce, the IV source, the mint, and a wiped sender's two eras keeping their own keys at an
+    index they share (`bothErasOfAWipedSenderKeepTheirOwnKeysAtAnIndexTheyShare`).
+  - `GroupRatchetSoakTests`: the soak's property on Kotlin's six seeds, drawn through this port's generator, one run at
+    the roster cap of eight.
+  - `GroupRatchetStoreTests`: twelve of knit-next's fifteen `GroupRatchetRepositoryTest` cases by name, over both store
+    kinds, and this port's: the unit, group ids compared by their bytes, the holdings, a retirement where we never
+    sealed, the insert-if-absent rule and the spend by the full key
+    (`aKeyIsInsertedOnlyWhereNoneIsStoredAndASpendTakesItsOwnMintsKeyAlone`), the outbox, and the eviction order both
+    stores agree on, a group id that starts with U+FEFF included (`bothStoresEvictTheSameKeysAtTheCap`).
+    `GroupRatchetSessionsStoreTests` has the other three, which seal through the facade.
+  - `GroupRatchetRetentionTests`, and `SQLGroupRatchetStoreTests`: a write the database refuses, an open outside a unit,
+    the retired row's empty blobs, and what a deletion leaves in the file and its log.
+  - `GroupRatchetSessionsTests`, with two eras' opens at the indices they share over both store kinds (old n 5, new n 5,
+    new n 3, then old n 3: `aSpendLeavesTheOtherErasKeyAtTheIndexTheyShare`), `GroupRatchetSessionsUnitTests` (a joined
+    adoption, seal and open, an outer unit that fails, a store that fails, the sweep's unit) and
+    `GroupRatchetSessionsFloorTests` (four adoptions a day, the key-request heuristic and its age gate).
+  - `RatchetGroupTranscriptTests` replays A9's six group transcripts at the engine, and `RatchetGroupVectorTests` the
+    same six through both session layers, over both store kinds.
+  - `SchemaTests.v18KeepsEveryGroupAndSessionAndStartsWithNoGroupRatchetState`.
+  - `CustodyStoreByteKeyTests.anIdWithANulIsNotItsOwnPrefix`, over both store kinds: a frame id that starts with U+FEFF
+    is listed, read and kept as itself.

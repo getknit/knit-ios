@@ -22,11 +22,12 @@ internal enum StoredText {
 }
 
 extension Row {
-    /// The string in `column`, stored by ``StoredText``. Throws on anything but UTF-8 in a BLOB, which only a
-    /// damaged file holds.
+    /// The string in `column`, stored by ``StoredText``, with every byte it was stored with. `String(bytes:encoding:)`
+    /// drops a leading U+FEFF as a byte order mark, so an id read back would name another row, or none (ADR
+    /// 2026-09.jc2x, amended 2026-10-16). Throws on anything but UTF-8 in a BLOB, which only a damaged file holds.
     func text(_ column: String) throws -> String {
         let data = try decode(Data.self, forColumn: column)
-        guard let text = String(bytes: data, encoding: .utf8) else {
+        guard let text = String(validating: data, as: UTF8.self) else {
             throw StoredValueError(column: column)
         }
         return text
