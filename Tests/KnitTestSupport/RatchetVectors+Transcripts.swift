@@ -12,6 +12,88 @@ extension RatchetVectors {
         public let draws: [String: [TranscriptDraw]]
         /// The steps, in order.
         public let steps: [TranscriptStep]
+        /// Whether knit-next's `InboundPipelineTest` replays it through the real pipeline (stage 3b's and `carol`'s).
+        public let pipelineReplay: Bool? // swiftlint:disable:this discouraged_optional_boolean - absent in the file means its default
+        /// Rows the receiver holds before it starts.
+        public let fixtures: TranscriptFixtures?
+        /// The group a group-addressed negative is addressed to, by party name.
+        public let groupMembers: [String]?
+    }
+
+    /// Rows a pipeline replay's receiver holds before it starts.
+    public struct TranscriptFixtures: Decodable, Sendable {
+        /// Bob's own DMs to Alice: what her receipts and reactions name.
+        public let bobSent: [TranscriptSentMessage]?
+    }
+
+    /// One DM a party sent, by id.
+    public struct TranscriptSentMessage: Decodable, Sendable {
+        /// Its frame id.
+        public let id: String
+        /// Who sent it, by party name.
+        public let sender: String
+        /// To whom, by party name.
+        public let recipient: String
+    }
+
+    /// What the pipeline does with a frame that opened (`applies`): exactly these, and nothing else.
+    public struct TranscriptApplies: Decodable, Sendable {
+        /// The message row it stores.
+        public let message: TranscriptMessage?
+        /// The receipts it records.
+        public let receipts: [TranscriptReceipt]?
+        /// The reaction it applies.
+        public let reaction: TranscriptReaction?
+        /// The presentation a sealed profile writes.
+        public let profile: TranscriptProfile?
+        /// Whether the receiver acknowledges the frame.
+        public let acksBack: Bool
+        /// In `carol`, the index of the seal step that is the receiver's tick.
+        public let tickStep: Int?
+    }
+
+    /// A stored message.
+    public struct TranscriptMessage: Decodable, Sendable {
+        /// Its id.
+        public let id: String
+        /// Its text.
+        public let body: String
+    }
+
+    /// A recorded receipt.
+    public struct TranscriptReceipt: Decodable, Sendable {
+        /// The acknowledged message's id.
+        public let id: String
+        /// Who acknowledged it, by party name.
+        public let acker: String
+    }
+
+    /// An applied reaction.
+    public struct TranscriptReaction: Decodable, Sendable {
+        /// The message reacted to.
+        public let messageId: String
+        /// Who reacted, by party name.
+        public let reactor: String
+        /// The emoji, or `nil` for a retraction.
+        public let emoji: String?
+        /// The last-writer-wins clock: the frame's `sentAt`.
+        public let at: Int64
+    }
+
+    /// A sealed profile's presentation.
+    public struct TranscriptProfile: Decodable, Sendable {
+        /// Whose, by party name.
+        public let of: String
+        /// The name.
+        public let name: String
+        /// The status.
+        public let status: String
+        /// The avatar's hash.
+        public let avatarHash: String?
+        /// The profile's version.
+        public let version: Int64
+        /// Whether the sender is open to chat.
+        public let openToChat: Bool
     }
 
     /// One party: an identity, the prekeys it holds privately, and the peer prekey it seals against.
@@ -107,6 +189,18 @@ extension RatchetVectors {
         public let floorsBefore: TranscriptFloors?
         /// The actor's state for its peer after the step.
         public let state: TranscriptState?
+        /// The signed `WireEnvelope` carrying the frame, as hex: what a pipeline replay delivers.
+        public let wire: String?
+        /// `false` on a frame in the unsigned point-to-point form; absent means signed.
+        public let signed: Bool? // swiftlint:disable:this discouraged_optional_boolean - absent in the file means its default
+        /// What the pipeline does with an open that succeeded.
+        public let applies: TranscriptApplies?
+        /// Whether the drop feeds the reset heuristic.
+        public let resetTriggering: Bool? // swiftlint:disable:this discouraged_optional_boolean - absent in the file means its default
+        /// Whether a port must record that exact drop, or only refuse the frame the same way.
+        public let dropNormative: Bool? // swiftlint:disable:this discouraged_optional_boolean - absent in the file means its default
+        /// The group a group-addressed negative names.
+        public let groupId: String?
 
         private enum CodingKeys: String, CodingKey {
             case step = "step"
@@ -139,6 +233,12 @@ extension RatchetVectors {
             case decidedBy = "decidedBy"
             case floorsBefore = "floorsBefore"
             case state = "state"
+            case wire = "wire"
+            case signed = "signed"
+            case applies = "applies"
+            case resetTriggering = "resetTriggering"
+            case dropNormative = "dropNormative"
+            case groupId = "groupId"
         }
     }
 

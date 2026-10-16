@@ -40,8 +40,10 @@ at knit-next `ac491f4c`):
 
 - **A sealed DM receipt purges nothing, anywhere.** It is a ratchet chat frame, flooded and custodied like any other.
   Carriers cannot read it, so the delivered DM leaves every custody, ours included, on its TTL.
-- **A sealed tick is sealed once.** Its bytes are re-sent verbatim on a doubling backoff (knit-next ADR 053), where
-  the cleartext tick takes a fresh id at each attempt.
+- **A sealed tick is sealed once.** Its bytes are re-sent verbatim on a doubling backoff until a live link carries
+  them (knit-next ADR 053), where the cleartext tick takes a fresh id at each attempt.
 
 A cleartext receipt, still the form toward a peer without the ratchet, purges and self-vaccinates as before. Both
-rules land with the ratchet's DM phase, and until then every receipt and tick stays cleartext.
+rules land with the ratchet's DM phase, in two steps. Receiving is P5a's: with the switch on, a sealed receipt or a
+sealed tick batch opens here and purges nothing. Sending is P5c's: until then every receipt and tick this iPhone sends
+stays cleartext, a ratchet DM's receipt included.

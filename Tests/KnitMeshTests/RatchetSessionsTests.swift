@@ -163,7 +163,7 @@ import Testing
         #expect(bob.session == held, "the session, chain and purge went with the unit")
         #expect(bob.sessions.floors(for: alice.nodeId).lastReplacementAt == nil, "no floor moved")
 
-        // The frame is in our own custody, so P5 replays it from there: it opens, and only now the floor starts.
+        // The engine keeps the copy that failed and opens it again at its sweep (P5a): it opens, and only now the floor starts.
         #expect(plaintext(try bob.open(replacement, now: Self.now + 30)) == Array("again".utf8))
         #expect(bob.sessions.floors(for: alice.nodeId).lastReplacementAt == Self.now + 30)
     }

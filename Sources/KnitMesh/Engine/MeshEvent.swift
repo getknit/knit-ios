@@ -37,11 +37,15 @@ public enum DropReason: Sendable, Hashable, CaseIterable {
     case keyMismatch
     /// The signature does not verify.
     case badSignature
-    /// Unsigned, and not one of the two unsigned shapes, or one this build cannot open.
+    /// Unsigned, and not one of the two unsigned shapes, or a v3 live-link tick that opened as anything but a receipt
+    /// (`UNSIGNED_REFUSED`, `InboundPipeline.kt:664-667`, `:938-941`, `:1761-1768`). With the ratchet's switch off, the
+    /// tick is refused here too.
     case unsigned
     /// The payload does not decode.
     case undecodable
-    /// A sealed DM this build could not open: not addressed to us, a bad tag, or v2 and v3, which need the ratchet.
+    /// A sealed DM this build could not open: not addressed to us or a bad tag, v2 and v3 while the ratchet's switch is
+    /// off, a ratchet frame whose init X25519 refused, or a plaintext that opened and will not decode or is newer than
+    /// this build reads (`DECRYPT_FAILED` and `UNKNOWN_CONTENT_VERSION`). None of it counts toward a session reset.
     case cannotOpen
     /// A DM with no encryption. Android never sends one, so it is not shown as one.
     case cleartextDirect
@@ -58,4 +62,22 @@ public enum DropReason: Sendable, Hashable, CaseIterable {
     /// A reaction that is not one emoji of at most 32 UTF-16 units (`REACTION_REFUSED`, ADR 2026-10.ehe6). Android
     /// refuses only the length; this port refuses words too.
     case reactionRefused
+    /// A DM ratchet frame we hold no session for, with no init to start one (`RATCHET_NO_SESSION`): the peer holds
+    /// state we lost. From a signed frame, at its first verdict, it counts toward a session reset (ADR 2026-10.5sk9).
+    case ratchetNoSession
+    /// A DM ratchet frame naming one of our epochs or prekeys we no longer hold, or never did (`RATCHET_EPOCH_GONE`).
+    /// From a signed frame, at its first verdict, it counts toward a session reset.
+    case ratchetEpochGone
+    /// A DM ratchet frame whose key is already spent: our own delivered history coming back (`RATCHET_DUPLICATE`). It
+    /// never counts toward a reset (knit-next ADR 024).
+    case ratchetDuplicate
+    /// A DM ratchet frame malformed before or inside the engine (`RATCHET_BAD_HEADER`): no header, the DM form addressed
+    /// to a group, a nonce of the wrong shape for its version, or a header out of bounds. It never counts toward a reset.
+    case ratchetBadHeader
+    /// A DM ratchet frame whose keys resolved and whose tag refused (`RATCHET_AEAD_FAIL`): the pair's roots disagree.
+    /// From a signed frame, at its first verdict, it counts toward a session reset.
+    case ratchetAeadFail
+    /// A store failed inside the unit a ratchet frame's open commits in: nothing was delivered or acknowledged, and the
+    /// copy that failed is opened again at the next sweep (ADR 2026-10.5sk9).
+    case storeRefused
 }

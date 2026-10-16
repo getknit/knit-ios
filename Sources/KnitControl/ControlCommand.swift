@@ -60,9 +60,8 @@ public enum ControlCommand: Equatable, Sendable {
     case group(GroupCommand)
     /// `{"cmd":"ratchet"}`: every pinned peer's DM ratchet state in the keys of Android's debug bridge `RATCHET`, and the
     /// id of the prekey our profile names. With `"reset":"<node id>"` it first seals a session reset toward that peer past
-    /// the heuristic, as the bridge's `--es reset <peer>` does, and says `forcedReset` and why it `declined`, or `null`
-    /// (ADR 2026-10.5sk9). Until P5 wires the ratchet into the mesh the reset is sealed and persisted and never sent, and
-    /// with the ratchet's switch off it is declined.
+    /// the heuristic and floods it, as the bridge's `--es reset <peer>` does, and says `forcedReset` and why it
+    /// `declined`, or `null` (ADR 2026-10.5sk9). With the ratchet's switch off it is declined, and nothing is sealed.
     case ratchet(reset: NodeId?)
     /// `{"cmd":"stop"}`: stop the mesh, closing every link, as Settings' Stop does.
     case stop

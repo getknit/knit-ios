@@ -6,8 +6,8 @@ import Testing
 
 @testable import KnitMesh
 
-/// What the engine gives the control surface of the ratchet before P5 (ADR 2026-10.5sk9): every pinned peer's state in
-/// the shape of Android's `RATCHET` dump, and a forced reset that is sealed and persisted, never sent, behind the gates
+/// What the engine gives the control surface of the ratchet (ADR 2026-10.5sk9): every pinned peer's state in the shape of
+/// Android's `RATCHET` dump, and a forced reset, sealed, persisted and then flooded since phase P5a, behind the gates
 /// Android's `sendSessionReset` names (`MeshManager.kt:906-929`, `InboundPipeline.kt:1902-1961`).
 @Suite struct MeshEngineRatchetTests {
     private let me = TestPeer(seed: 1)
@@ -37,7 +37,7 @@ import Testing
         let fixture = ratchetEngine()
         pin(bob, in: fixture.stores, prekey: try bob.prekey(id: 3))
         pin(carol, in: fixture.stores, capabilities: 0xF, prekey: nil)
-        guard case .sealed(_, reRooted: true) = fixture.engine.sealRatchetReset(to: bob.nodeId) else {
+        guard case .sent(_, reRooted: true) = fixture.engine.sendRatchetReset(to: bob.nodeId) else {
             Issue.record("a reset toward a capable peer with a prekey seals a fresh root")
             return
         }
@@ -55,7 +55,7 @@ import Testing
         let withCarol = try #require(peers.first { $0.peer == carol.nodeId })
         #expect(!withCarol.capRatchet && withCarol.peerPrekeyId == nil && !withCarol.peerPrekeyPinned && !withCarol.hasSession)
         #expect(withCarol.rootHash == nil && withCarol.localEpochs.isEmpty && withCarol.sendEpoch == 0)
-        #expect(fixture.transport.written.isEmpty, "nothing goes on air before P5")
+        #expect(fixture.transport.written(.chat).map(\.envelope.recipientId) == [bob.nodeId.string], "the reset, flooded")
     }
 
     /// The root goes out only as the first eight hex digits of its SHA-256 (`ROOT_HASH_HEX_CHARS`, `MeshManager.kt:3447`).
@@ -82,37 +82,44 @@ import Testing
     @Test func aForcedResetIsRefusedInAndroidsWordsAtEachGate() throws {
         let off = EngineFixture(me, started: false)
         pin(bob, in: off.stores, prekey: try bob.prekey(id: 1))
-        #expect(off.engine.sealRatchetReset(to: bob.nodeId) == .declined("the ratchet is off"))
+        #expect(off.engine.sendRatchetReset(to: bob.nodeId) == .declined("the ratchet is off"))
         #expect(off.stores.ratchet.session(bob.nodeId) == nil, "the switch keeps every peer from the ratchet")
 
         let fixture = ratchetEngine()
         let stores = fixture.stores
-        #expect(fixture.engine.sealRatchetReset(to: bob.nodeId) == .declined("no peer row"))
+        #expect(fixture.engine.sendRatchetReset(to: bob.nodeId) == .declined("no peer row"))
         pin(bob, in: stores, capabilities: 0xF, prekey: try bob.prekey(id: 1))
-        #expect(fixture.engine.sealRatchetReset(to: bob.nodeId) == .declined("peer is not ratchet-capable"))
+        #expect(fixture.engine.sendRatchetReset(to: bob.nodeId) == .declined("peer is not ratchet-capable"))
         pin(bob, in: stores, capabilities: nil, prekey: try bob.prekey(id: 1))
-        #expect(fixture.engine.sealRatchetReset(to: bob.nodeId) == .declined("peer is not ratchet-capable"))
+        #expect(fixture.engine.sendRatchetReset(to: bob.nodeId) == .declined("peer is not ratchet-capable"))
         pin(bob, in: stores, prekey: try bob.prekey(id: 1), publicKey: "not a bundle")
-        #expect(fixture.engine.sealRatchetReset(to: bob.nodeId) == .declined("no pinned pubKey"))
+        #expect(fixture.engine.sendRatchetReset(to: bob.nodeId) == .declined("no pinned pubKey"))
         pin(bob, in: stores, prekey: nil)
-        #expect(fixture.engine.sealRatchetReset(to: bob.nodeId) == .declined("no pinned prekey id"))
+        #expect(fixture.engine.sendRatchetReset(to: bob.nodeId) == .declined("no pinned prekey id"))
         pin(bob, in: stores, prekey: try carol.prekey(id: 1))
-        #expect(fixture.engine.sealRatchetReset(to: bob.nodeId) == .declined("no pinned prekey pub"), "signed by someone else")
+        #expect(fixture.engine.sendRatchetReset(to: bob.nodeId) == .declined("no pinned prekey pub"), "signed by someone else")
         let lowOrder = [UInt8](repeating: 0, count: RatchetCrypto.keyByteCount)
         let signature = try bob.keys.signature(for: RatchetCrypto.spkSigningBytes(id: 1, pub: lowOrder))
         pin(bob, in: stores, prekey: PrekeyInfo(id: 1, pub: lowOrder, sig: signature))
-        #expect(fixture.engine.sealRatchetReset(to: bob.nodeId) == .declined("sealResetDm refused (unusable prekey)"))
+        #expect(fixture.engine.sendRatchetReset(to: bob.nodeId) == .declined("sealResetDm refused (unusable prekey)"))
         #expect(stores.ratchet.session(bob.nodeId) == nil)
 
         pin(bob, in: stores, prekey: try bob.prekey(id: 1))
-        guard case .sealed(let envelope, reRooted: true) = fixture.engine.sealRatchetReset(to: bob.nodeId) else {
+        guard case .sent(let envelope, reRooted: true) = fixture.engine.sendRatchetReset(to: bob.nodeId) else {
             Issue.record("past the gates it seals")
             return
         }
         #expect(envelope.version == EncEnvelope.Version.ratchet && envelope.ratchet?.flags == RatchetHeader.resetFlag)
-        #expect(fixture.engine.sealRatchetReset(to: bob.nodeId) == .declined("our reset is still on its way"))
-        #expect(fixture.transport.written.isEmpty)
-        #expect(fixture.log.all.contains { $0.contains("ratchet reset to \(bob.nodeId) sealed under a fresh root") })
+        #expect(fixture.engine.sendRatchetReset(to: bob.nodeId) == .declined("our reset is still on its way"))
+        let sent = try #require(fixture.transport.written(.chat).first)
+        #expect(fixture.transport.written(.chat).count == 1, "a decline sends nothing")
+        #expect(sent.envelope.recipientId == bob.nodeId.string && sent.wire.relay)
+        #expect(try ChatContent(decoding: sent.envelope.payload).enc == envelope, "the envelope it sealed, as it sealed it")
+        #expect(bob.keys.bundle.isValidSignature(sent.wire.sig, for: sent.wire.signed) == false, "signed by us, not the peer")
+        #expect(me.keys.bundle.isValidSignature(sent.wire.sig, for: sent.wire.signed))
+        #expect(fixture.stores.custody.contains(sent.envelope.id), "carried as our own frame")
+        #expect(fixture.stores.messages.message(sent.envelope.id) == nil, "a reset has no row")
+        #expect(fixture.log.all.contains { $0.contains("ratchet reset to \(bob.nodeId) sent under a fresh root") })
     }
 
     @Test func aForcedResetWhoseStoreFailsSealsNothing() throws {
@@ -133,7 +140,7 @@ import Testing
         let fixture = ratchetEngine(stores: stores)
         pin(bob, in: stores, prekey: try bob.prekey(id: 1))
         refusing.refuse(.writes)
-        #expect(fixture.engine.sealRatchetReset(to: bob.nodeId) == .declined("the store failed"))
+        #expect(fixture.engine.sendRatchetReset(to: bob.nodeId) == .declined("the store failed"))
         refusing.refuse([])
         #expect(stores.ratchet.session(bob.nodeId) == nil)
     }

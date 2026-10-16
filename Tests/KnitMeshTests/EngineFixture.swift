@@ -17,16 +17,17 @@ struct EngineFixture {
     let log = RecordingLog()
     let engine: MeshEngine
 
-    /// An engine for `me`, keeping `prekeys` when given, started unless told otherwise.
+    /// An engine for `me`, keeping `prekeys` when given, its wall clock at `wall`, started unless told otherwise.
     init(
         _ me: TestPeer,
         stores: MeshStores = .inMemory(),
         configuration: MeshConfiguration = MeshConfiguration(),
         prekeys: PrekeyRing? = nil,
+        wall: Int64 = Self.start,
         started: Bool = true
     ) {
         self.me = me
-        clock = ManualClock(wall: Self.start, monotonic: 1000)
+        clock = ManualClock(wall: wall, monotonic: 1000)
         transport = RecordingTransport()
         self.stores = stores
         engine = MeshEngine(
@@ -93,6 +94,11 @@ struct TestPeer: Equatable {
             fatalError("fixed seeds make valid keys")
         }
         keys = made
+    }
+
+    /// A peer with `keys`, such as a vector's identity.
+    init(keys: IdentityKeys) {
+        self.keys = keys
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.nodeId == rhs.nodeId }

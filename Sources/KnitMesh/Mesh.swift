@@ -289,8 +289,8 @@ public actor Mesh {
     // MARK: Plumbing
 
     /// After any work: hand on the engine's events, re-advertise a changed digest cue, and aim the timer at the
-    /// next deadline.
-    private func settle() {
+    /// next deadline. Not private, so a send in an extension in another file settles too (`Mesh+Ratchet.swift`).
+    func settle() {
         // A feed's reading moved under whatever just ran: the holder re-reads its parked asks on the edge.
         if links.takeFeedsChanged() {
             engine.fileFeedsChanged()

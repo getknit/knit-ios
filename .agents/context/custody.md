@@ -90,8 +90,10 @@ publish it honestly.
   on every delivery, repeats included.
 - **Room and group ticks:** `relay = false`, no `sentAt`, a fresh id each attempt, never custodied, sent
   only over a live link. Android sends them to a non-ratchet author for up to 24 h, one per link-up. It moves
-  a group tick into custody only for an author who can open a sealed one, which no iPhone can yet
-  (`AckSync.kt`).
+  a group tick into custody, as one sealed batch, only for an author who can open a sealed one (`canSealTickTo`,
+  `MeshManager.kt:2066-2068`; `AckSync.kt`): an iPhone with the ratchet's switch on has opened it since P5a. The
+  batch is a DM-form ctl 5 frame that every node carries for 24 h and nothing purges. Our own ticks stay cleartext
+  until P5c.
 - **The forged-ack guard:** apply an ack only if the acknowledged message is a room or group message, or if
   the receipt comes from that DM's recipient. At most 128 ids per receipt.
 - **There are no read receipts on the wire.** Delivery is the last state a sender sees.
@@ -152,7 +154,18 @@ publish it honestly.
   - a cleartext DM or group message is dropped, not shown;
   - a `blobreq` is never flooded, even one marked `relay = true`, where Android would flood it; it is answered or
     asked onward as Android's `BlobExchange` does (ADR 2026-10.ym9y);
-  - every receipt and tick, room or group, is cleartext, because this build cannot seal one.
+  - every receipt and tick, room or group, is cleartext, because this build cannot seal one, a ratchet DM's receipt
+    included until P5c;
+  - with the ratchet's switch on, a DM ratchet frame to us whose store unit failed is opened again at the next sweep
+    from the copy that failed, kept in memory, since custody keeps the first bytes stored under an id and a peer's
+    re-seal reuses its id; the copy goes once any copy of its id commits, or once the frame's row exists, read inside
+    a store unit, so a failed read keeps it; a first verdict's id is let past the router's dedup once, for a copy a
+    neighbour's back-fill brings first (ADR 2026-10.5sk9's P5a amendment);
+  - at start, every custodied ratchet DM to us with no row is opened again, where Android leaves such a frame to
+    expire, and only to deliver it: a failure is counted under its reason, never toward a reset, and lets nothing past
+    the router; a ctl frame from the era the pair holds drops as `DUPLICATE`, and one from an era it has since left can
+    open again under that era's draining root for as long as custody keeps it, where a reaction or a profile applies
+    nothing.
 - **Group messages carried before groups showed** are delivered at start-up: the engine replays each live
   group `chat` in custody that has no message row, oldest first, as Android's `replayCustodiedGroupFrames`
   does (`MeshEngine+Groups.swift`, ADR 2026-09.n393). One already delivered is skipped, so it is not ticked

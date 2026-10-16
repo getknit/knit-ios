@@ -207,6 +207,7 @@ Swift must count `utf16`, not `Character`s.
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
 | `RatchetEngine` | `RatchetEngine`: `initiate`, `seal`, `open`, over `SessionState`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
 | `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `sealResetDm`, `sweep`, `forget`, `settle`; the reset's pure rules in `RatchetResetPolicy` |
+| `InboundPipeline`'s ratchet arm, `sendSessionReset` | `MeshEngine.handleRatchetDirect` and `sendSessionReset`, over `RatchetInbound`'s pure rules; the replay of a failed open in `RatchetReplay` |
 | `RatchetStore`, `RatchetRepository` | KnitStore's `RatchetStore`, `MemoryRatchetStore` and `RatchetRetention`; KnitStoreSQL's `SQLRatchetStore` (schema v17); `RatchetRecords` maps the rows to the engine's types |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
@@ -414,7 +415,9 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   overwritten, or truncated. Each sweep's truncating checkpoint does both once it commits, unless a reader holds the
   log then; between sweeps either file can hold a key deleted or replaced since the last one. `secure_delete` does not
   zero an older copy of a row that a page's rebalance left in its unused space, so rarely such a copy outlives the
-  sweep, on Android's SQLCipher as here. Nothing calls the sweep before P5 (ADR 2026-09.nyya, amended 2026-10-15).
+  sweep, on Android's SQLCipher as here. With the switch on, the engine runs the sweep at start and then hourly, in a
+  unit of its own, never inside a DM's; with it off, never (ADR 2026-09.nyya, amended 2026-10-15; ADR 2026-10.5sk9's P5a
+  amendment).
 - **Bounds and floors** (`RatchetEngine.kt:863-885`, `RatchetSessions.kt:602-631`, `IntroSync.kt:349-358`):
 
   | Bound | Value |
@@ -442,6 +445,10 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   - The loser adopts the winner's root.
   - The winner stays unconfirmed, keeps sealing against the loser's SPK, and reads the loser's root read-only.
   - The loser's late opening DM gets a read-only candidate and is never anchored (#83).
+- **An open that holds the era** is this port's own (`OpenContext.allowEraChange`, phase P5a), for the start's replay
+  out of our own custody: an init the session has not resolved neither races nor replaces it, flagged or not, and the
+  frame reads under the roots held, the read-only remnant included. With no session, an init still establishes one.
+  Kotlin replays nothing from its own custody, so it has no such open.
 - **Opening, in three passes, per candidate root:**
   1. the skipped key;
   2. the live chain;
@@ -560,11 +567,12 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     its caller hands that work up through the outer body.
 - **The session facade, `RatchetSessions`** (KnitMesh), decides and writes inside one unit per call, and reads the
   store inside it too, so a store that cannot answer fails the unit rather than deciding on its fallback.
-  - An open's changes commit with whatever its caller writes in `alongside` (the message row, P5's), or none do.
+  - An open's changes commit with whatever its caller writes in `alongside` (the message row and its inline acks, or a
+    ctl's effects), or none do.
   - Each call answers `settled` (its unit committed as the outermost, or changed nothing), `joined` (it ran inside a
     caller's unit: what it made stands, may be sent or delivered, and moves the floors through `settle` only once the
-    caller's outermost unit commits) or `failed` (nothing persisted, nothing used, and an inbound frame is replayed
-    from our own custody, P5's).
+    caller's outermost unit commits) or `failed` (nothing persisted, nothing used, and an inbound frame is kept in
+    memory as the copy that failed, and opened again at the next sweep: `RatchetReplay`).
   - Its floors live in memory: the replacements adopted, our init's answer, our resets for a peer with no session row,
     and the heuristic's ids, which compare by their bytes. They die with the process, and each moves only after a
     commit, save that a frame the heuristic counts joins its ids at once, as on Android; only their clearing waits for
@@ -579,6 +587,54 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     (`RatchetSessions.kt:140`).
   - A key X25519 refuses, from a peer's signed prekey or an init's ephemeral, commits nothing and counts toward no
     reset: a seal answers `refusedKey`, and an open `rejected`.
+- **The engine's receive arm** (`MeshEngine+RatchetInbound.swift`, phase P5a), with the switch on, takes a DM-form v2 or
+  v3 frame addressed to us (`decryptAndDeliverV2`, `InboundPipeline.kt:1008-1104`):
+  - It refuses before the engine what Kotlin's pipeline refuses there (`RatchetInbound`): no header, the DM form
+    addressed to a group, a v3 nonce that is not empty, a v2 nonce that is not 12 bytes. All are `BAD_HEADER`, and none
+    counts.
+  - The open's `alongside` decodes the plaintext by version and writes, in the open's unit, the message row with its
+    inline acks, or what a ctl applies: receipts under the forged-ack guard, a DM-form reaction, a sealed profile's
+    presentation. A plaintext that will not decode, or an unsigned frame that is not a receipt, answers `nil` and
+    abandons the open, so the chain index stays unspent, as Kotlin's peek leaves it.
+  - Everything that is not a store write waits for the unit's commit (`RatchetArrival`): the events, a refused
+    reaction's count, a photo's fetch or local copy, and the acknowledgement, which stays this build's cleartext receipt
+    until P5c seals it.
+  - A typed failure from a signed frame that counts gets one copy past the router (`Router.reopen`) and goes to
+    `noteUndecryptable` outside any unit; when the heuristic fires, the reset goes out as Kotlin's `originate` sends a
+    frame, signed once, carried in our own custody and flooded, with no row (`sendSessionReset`).
+  - A unit that fails counts `storeRefused`. The copy that failed is kept in memory, with the route it came by, and
+    opened again at the next sweep (`RatchetReplay`): custody keeps the first bytes stored under an id, which for a
+    peer's re-seal after our reset is the seal that could not open, and it lists the id in our digest, so no neighbour
+    serves it again. A first verdict's id is also let past the router once, for a copy a neighbour's back-fill brings
+    before the sweep. Kotlin replays nothing.
+    - A copy goes as soon as any copy of its id opens and commits, whatever its origin (`forget`): a ctl frame never
+      has a row, and opened again past an era change it would apply a second time.
+    - The sweep decides the rest by the row, read in a unit of its own: a row lets the copy go, so a DM delivered
+      before its copy failed, or deleted, is not acknowledged again; a read the store fails keeps the copy; with no row
+      it opens. For a ctl frame it does nothing, and only `forget` lets one go, once another copy commits after it was
+      kept: a copy kept after its frame had committed, opened past an era change, applies again (the ADR's limits).
+    - An id kept twice keeps the later copy, but an unsigned copy never displaces a signed one: an unsigned twin of a
+      signed frame is a stripped capture.
+    - The copies stop at 1,000 and 4 MiB, a memory bound in custody's and the parking lot's units, oldest dropped
+      first. A copy that leaves memory, by the cap or with the process, fares by what custody holds: the frame as it
+      came opens at the next start with the era held and its first verdict lost; a re-seal is lost, at Kotlin's level,
+      since custody holds only the old seal; a frame custody never stored comes back by back-fill as a first verdict;
+      a live-link tick is lost, at Kotlin's level, since its author sends it over the link once and drops it
+      (`AckSync.kt:212`, `:648`).
+  - At start, every custodied ratchet DM to us with no row is opened again, only to deliver it
+    (`RatchetInbound.Origin.startReplay`): its first verdict, if it had one, came before the restart. A failure counts
+    under its reason alone, never toward a reset and with no copy past the router, and the open holds the era. It
+    applies no reaction (ctl 6) and no profile (ctl 8): both are ordered by a stamp `clampFuture` set at the first
+    open, and one first opened from a peer more than five minutes fast would apply again higher and outrank a newer
+    one. A ctl frame from the era we hold drops as `DUPLICATE`; one from an era the pair has since left can open again
+    under that era's draining root, since leaving it purged the receive state that spent it, for as long as custody
+    keeps it (24 h), and there a receipt applied before flips nothing new and a reset's marker applies nothing.
+  - A failed unit's frame whose process dies before the sweep loses its first verdict, Kotlin's level. Where custody
+    holds it as it came, the start opens it with the era held, so one that would have moved the era waits for a start
+    after the peer's next live frame has; a re-seal is lost outright.
+  - P5b re-seals our unacked DMs after a reset's committed first verdict, however it opened (a root adopted, a race
+    won or lost, a marker under the session held), as Kotlin does (`InboundPipeline.kt:1137-1148`); never from the
+    start's replay.
 
 ### The promise behind the bits
 
@@ -642,10 +698,14 @@ knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` from a branc
   and its digest `TranscriptJson.state` (`RatchetTranscript.kt:136-232`, `TranscriptJson.kt:40-130` on the A9 branch).
   `RatchetTranscriptSessionTests` replays the six that need the session layer through `RatchetSessions` (the races,
   the late loser, the re-root, the era gate and the reset plans), checking each step's floors held in memory and the
-  rule that decided a plan. The control plane and the re-seals wait for P5's pipeline, and so do its own refusals;
+  rule that decided a plan. `RatchetPipelineVectorTests` replays the control plane (`ctlPlane`, as Bob) and the
+  pipeline's own refusals through a whole engine's inbound path, each open's drop, `applies` and state; the re-seals
+  wait for P5b;
 - `group`, the group form's transcripts, for P6;
 - `carol`, Carol, the iPhone, in races and first contacts with Alice and with Bob. Every opener is v3, and
-  `RatchetTranscriptTests` replays them at the engine, Carol's seals byte for byte.
+  `RatchetTranscriptTests` replays them at the engine, Carol's seals byte for byte. `RatchetCarolVectorTests` delivers
+  every frame Carol opens through her engine's inbound path, against the state and floors Android's own pipeline left,
+  her own seals made by a second facade from her draws until P5b and P5c send them.
 
 A10 then adds this port's own ratchet frames to `ios-emitted-v1.json`, for knit-next's `IosEmittedVectorTest` to
 open (`.agents/memory/roadmap.md`).

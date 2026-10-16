@@ -17,10 +17,15 @@ extension RatchetSessions {
     /// and answers the work for after the commit, or `nil` to abandon the unit with the open. An init that replaces the
     /// session is adopted only past the replacement floor this keeps per peer (``RatchetResetPolicy/replacementFloor(flags:)``),
     /// and that floor starts, and the heuristic's ids are dropped, only once the unit commits.
+    ///
+    /// `allowEraChange` is `false` for a frame the engine's own custody hands back at start (phase P5a): an init the held
+    /// session has not resolved then neither races nor replaces it, whatever the floors say, and the frame is read under
+    /// the roots held (``RatchetEngine/OpenContext/allowEraChange``). With no session held, an init still establishes one.
     public func open<Work>(
         _ frame: Frame,
         from peer: PublicKeyBundle,
         now: Int64,
+        allowEraChange: Bool = true,
         prekeys: (Int) -> SignedPrekey?,
         alongside: (RatchetEngine.OpenOutcome.Opened) -> Work?
     ) -> Answer<Opening<Work>> {
@@ -28,7 +33,8 @@ extension RatchetSessions {
         var settlement = Settlement.unchanged(peer.nodeId)
         let unit = transactor.atomically { () -> Opening<Work>? in
             let held = store.session(peer.nodeId).map(RatchetRecords.session)
-            let context = context(for: frame.header, from: peer, held: held, now: now, prekeys: prekeys)
+            var context = context(for: frame.header, from: peer, held: held, now: now, prekeys: prekeys)
+            context.allowEraChange = allowEraChange
             let outcome: RatchetEngine.OpenOutcome
             do {
                 outcome = try engine.open(context, header: frame.header, nonce: frame.nonce, ct: frame.ct, aad: frame.aad, now: now)

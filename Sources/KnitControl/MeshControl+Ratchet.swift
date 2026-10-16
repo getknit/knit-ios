@@ -4,14 +4,15 @@ import KnitWire
 
 extension MeshControl {
     /// Android's `RATCHET` reply (`DebugBridgeReceiver.handleRatchet`, `DebugBridgeReceiver.kt:1450-1502`): a forced reset
-    /// first when one is asked for, then every pinned peer's state, after the reset so the dump shows what it did, and the
-    /// prekey our profile names, which the peer's dump shows as its `peerPrekeyId`.
+    /// first when one is asked for, sealed and flooded as Android's bridge sends one (`MeshManager.forceRatchetReset`), then
+    /// every pinned peer's state, after the reset so the dump shows what it did, and the prekey our profile names, which
+    /// the peer's dump shows as its `peerPrekeyId`.
     func ratchet(resetting peer: NodeId?) async -> [String: JSONValue] {
         var reply: [String: JSONValue] = [:]
         if let peer {
             reply["forcedReset"] = .string(peer.string)
-            switch await mesh.sealRatchetReset(to: peer) {
-            case .sealed(_, let reRooted):
+            switch await mesh.sendRatchetReset(to: peer) {
+            case .sent(_, let reRooted):
                 reply["declined"] = .null
                 reply["reRooted"] = .bool(reRooted)
             case .declined(let reason):

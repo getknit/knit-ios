@@ -193,9 +193,9 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   this one went, ADR 2026-10.29z9), `ratchet` (every pinned peer's DM ratchet state under the keys of Android's
   `RATCHET` dump, `peers`, and `prekeyId`, the prekey our profile names; with `reset`, a peer's node id, it first seals
   a reset toward that peer past the heuristic and says `forcedReset`, `declined` with Android's reason or `null`, and
-  `reRooted`. Until P5 the reset is sealed and persisted and never sent, and with the ratchet's switch off it is
-  declined; ADR 2026-10.5sk9), `stop` and `start` (the mesh, as Settings' Stop and Start do), and `quit` (the peer
-  exits; the app's bridge only closes the connection).
+  `reRooted`. Since P5a the reset goes out signed and flooded, as Android's bridge sends one, and with the ratchet's
+  switch off it is declined; ADR 2026-10.5sk9), `stop` and `start` (the mesh, as Settings' Stop and Start do), and
+  `quit` (the peer exits; the app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):
   - `group-create` (`members`, the others' node ids) makes a group, or opens the one they already share. Nothing
     is sent until its first message.

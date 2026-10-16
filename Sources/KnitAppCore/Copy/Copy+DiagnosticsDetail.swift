@@ -50,6 +50,56 @@ extension Copy {
                 )
             case .cleartextGroup, .rosterRefused, .blocked, .reactionRefused:
                 laterReason(reason)
+            case .ratchetNoSession, .ratchetEpochGone, .ratchetDuplicate, .ratchetBadHeader, .ratchetAeadFail, .storeRefused:
+                ratchetReason(reason)
+            }
+        }
+
+        /// The labels for the drops the forward-secrecy ratchet brought (ADR 2026-10.5sk9).
+        private static func ratchetReason(_ reason: DropReason) -> String {
+            switch reason {
+            case .ratchetNoSession:
+                NSLocalizedString(
+                    "diagnostics.drop.ratchet-no-session",
+                    bundle: .main,
+                    value: "Dropped: no session with sender",
+                    comment: "A drop counter: a forward-secret DM from someone this phone holds no encryption session with"
+                )
+            case .ratchetEpochGone:
+                NSLocalizedString(
+                    "diagnostics.drop.ratchet-epoch-gone",
+                    bundle: .main,
+                    value: "Dropped: key no longer kept",
+                    comment: "A drop counter: a forward-secret DM that needs a key this phone has already deleted, or never had"
+                )
+            case .ratchetDuplicate:
+                NSLocalizedString(
+                    "diagnostics.drop.ratchet-duplicate",
+                    bundle: .main,
+                    value: "Dropped: duplicate",
+                    comment: "A drop counter: another copy of a forward-secret DM this phone already opened"
+                )
+            case .ratchetBadHeader:
+                NSLocalizedString(
+                    "diagnostics.drop.ratchet-bad-header",
+                    bundle: .main,
+                    value: "Dropped: bad session header",
+                    comment: "A drop counter: a forward-secret DM whose encryption header is malformed"
+                )
+            case .ratchetAeadFail:
+                NSLocalizedString(
+                    "diagnostics.drop.ratchet-aead-fail",
+                    bundle: .main,
+                    value: "Dropped: sessions out of step",
+                    comment: "A drop counter: a forward-secret DM that failed to decrypt because the two phones' sessions disagree"
+                )
+            default:
+                NSLocalizedString(
+                    "diagnostics.drop.store-refused",
+                    bundle: .main,
+                    value: "Dropped: couldn't be saved",
+                    comment: "A drop counter: a message the phone's storage failed to save; it is opened again from the phone's own copy"
+                )
             }
         }
 

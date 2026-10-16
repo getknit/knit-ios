@@ -13,8 +13,8 @@ extension RatchetSessions {
         /// chain advance rolled back, and the next seal would reuse its message key.
         case joined(Result, Settlement)
         /// A store failed: nothing persisted, no floor moved, and nothing in the call may be used. An inbound frame whose
-        /// open failed this way is in our own custody already, which our digest hides from every re-serve, so it is
-        /// replayed from there (P5's).
+        /// open failed this way is kept in memory as the copy that failed, and the engine opens it again at the next sweep
+        /// (``RatchetReplay``).
         case failed
     }
 
@@ -82,7 +82,8 @@ extension RatchetSessions {
 
         /// The frame a v2 or v3 envelope carries, or `nil` for any other. A v3 envelope's nonce is not read, since the
         /// nonce derives (`decryptAndDeliverV2`'s `enc.nonce.takeIf { !v3 }`); that it is empty, and that a v2 one is 12
-        /// bytes, is the pipeline's to check first (`InboundPipeline.kt:1025-1028`, P5's).
+        /// bytes, is the pipeline's to check first (`InboundPipeline.kt:1025-1028`), which the engine's inbound path does
+        /// with `RatchetInbound.frame(_:aad:)`.
         public init?(envelope: EncEnvelope, aad: [UInt8]) {
             let v3 = envelope.version == EncEnvelope.Version.compactRatchet
             guard let ratchet = envelope.ratchet, v3 || envelope.version == EncEnvelope.Version.ratchet else {

@@ -95,7 +95,8 @@ final class RatchetSide {
         _ frame: RatchetFrame,
         now: Int64,
         resetRequested: Bool = false,
-        allowReplacement: Bool = true
+        allowReplacement: Bool = true,
+        allowEraChange: Bool = true
     ) throws -> RatchetEngine.OpenOutcome {
         let header = frame.header
         let context = RatchetEngine.OpenContext(
@@ -109,7 +110,8 @@ final class RatchetSide {
             peerIdentity: other.identity.bundle,
             prekeyForInit: header.initial.flatMap { initial in prekeyResolvable && initial.pkid == prekey.id ? prekey : nil },
             allowReplacement: allowReplacement,
-            resetRequested: resetRequested
+            resetRequested: resetRequested,
+            allowEraChange: allowEraChange
         )
         let outcome = try engine.open(context, header: header, nonce: frame.nonce, ct: frame.ct, aad: Self.aad, now: now)
         if let opened = outcome.opened {

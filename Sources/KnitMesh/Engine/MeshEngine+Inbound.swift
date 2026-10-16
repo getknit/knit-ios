@@ -26,7 +26,7 @@ extension MeshEngine {
         }
         switch envelope.type {
         case .chat:
-            handleChat(envelope, via: frame.from)
+            handleChat(envelope, via: frame.from, signed: !frame.wire.sig.isEmpty, origin: .firstVerdict)
         case .profile:
             handleProfile(frame.wire, envelope)
         case .receipt:
@@ -81,8 +81,13 @@ extension MeshEngine {
             drop(.keyMismatch, envelope)
             return false
         }
-        // The only other unsigned shape is the v3 live-link tick, which only the ratchet can open.
         guard !frame.wire.sig.isEmpty else {
+            // The other unsigned shape (`InboundPipeline.kt:664-667`), with the ratchet on: the v3 live-link tick, judged
+            // here by its shape alone. Its AEAD authenticates it, so nothing acts on it before it opens as a receipt, and
+            // its sender's pinned key is still required above: the session that key names is what opens it.
+            if configuration.ratchet, isUnsignedTickShape(frame) {
+                return true
+            }
             drop(.unsigned, envelope)
             return false
         }
@@ -91,6 +96,18 @@ extension MeshEngine {
             return false
         }
         return true
+    }
+
+    /// The one frame that may arrive unsigned, with the ratchet on (`isUnsignedTickShape`, `InboundPipeline.kt:592-598`,
+    /// knit-next ADR 059): a `relay = false` chat in DM form, addressed to us by someone else. Whatever a flooded frame's
+    /// signature protects is fixed by this shape or bound into the tick's AEAD (the id, sender, `sentAt`, recipient and
+    /// ratchet header), so the shape and an open as a receipt are the whole check. It is never carried, since it is
+    /// point to point, and never relayed, since it is ours.
+    func isUnsignedTickShape(_ frame: InboundFrame) -> Bool {
+        let envelope = frame.envelope
+        let me = ExactKey(nodeId.string)
+        return envelope.type == .chat && !frame.wire.relay && envelope.group == nil
+            && envelope.recipientId.map(ExactKey.init) == me && ExactKey(envelope.senderId) != me
     }
 
     /// The key a frame must verify against (`InboundPipeline.verifierBundle`): ours for our own frame coming back,
@@ -122,8 +139,11 @@ extension MeshEngine {
     }
 
     /// A chat frame (`InboundPipeline.handleChat` and `decryptAndDeliver`): a room post, a DM addressed to us, or a
-    /// group message (``handleGroupChat(_:group:sender:)``). Someone else's DM is only relayed.
-    func handleChat(_ envelope: RelayEnvelope, via hop: NodeId?) {
+    /// group message (``handleGroupChat(_:group:sender:)``). Someone else's DM is only relayed. `signed` is false only for
+    /// the v3 live-link tick ``verify(_:)`` admitted unsigned: its AEAD is what authenticates it, so it takes no branch
+    /// before its open. `origin` is the ratchet's alone: whether a DM-form frame's open is its first verdict, or the
+    /// start's replay out of our own custody (``RatchetInbound/Origin``).
+    func handleChat(_ envelope: RelayEnvelope, via hop: NodeId?, signed: Bool, origin: RatchetInbound.Origin) {
         guard let sender = NodeId(envelope.senderId) else {
             return
         }
@@ -149,6 +169,12 @@ extension MeshEngine {
             drop(.undecodable, envelope)
             return
         }
+        // The unsigned door's second half (`decryptAndDeliver`, `InboundPipeline.kt:933-941`): ahead of the clear branch
+        // and the exists-gate, or anyone who overheard a DM's id on the air could make us acknowledge it.
+        guard signed || RatchetInbound.admitsUnsigned(chat.enc) else {
+            drop(.unsigned, envelope)
+            return
+        }
         guard let enc = chat.enc else {
             guard recipient == nil else {
                 // Android always seals a DM; one in the clear would read as private and is not.
@@ -158,23 +184,41 @@ extension MeshEngine {
             deliverChat(envelope, Self.delivered(chat), sender: sender, recipient: nil, via: hop)
             return
         }
-        // Custody re-serves the same ciphertext routinely; once the row exists, only the receipt is owed.
-        if stores.messages.contains(envelope.id) {
+        receiveSealed(envelope, enc, sender: sender, route: RatchetInbound.Route(hop: hop, signed: signed, origin: origin))
+    }
+
+    /// A sealed chat that is no group's: a DM to us, or a sealed room post, which nothing opens (`decryptAndDeliver`,
+    /// `InboundPipeline.kt:942-984`).
+    private func receiveSealed(_ envelope: RelayEnvelope, _ enc: EncEnvelope, sender: NodeId, route: RatchetInbound.Route) {
+        let recipient = envelope.recipientId.flatMap(NodeId.init)
+        // Custody re-serves the same ciphertext routinely; once the row exists, only the receipt is owed. A signed frame's
+        // only (`:950`): this gate never opens, so it is what lets the ratchet delete a spent key, and an unsigned frame
+        // proves nothing until it opens.
+        if route.signed, stores.messages.contains(envelope.id) {
             acknowledge(envelope, sender: sender)
+            return
+        }
+        // With the ratchet's switch on, DM-form v2 and v3 frames to us open through it (`:966-971`); off, they drop in
+        // `open` below as they always have (ADR 2026-10.5sk9).
+        if configuration.ratchet, recipient == nodeId, RatchetInbound.isDirectRatchet(enc) {
+            handleRatchetDirect(envelope, enc, sender: sender, route: route)
             return
         }
         // A control message is machinery: never shown, notified or acknowledged.
         guard let content = open(enc, envelope), content.ctl == nil else {
             return
         }
-        deliverChat(envelope, Self.delivered(content), sender: sender, recipient: recipient, via: hop)
+        deliverChat(envelope, Self.delivered(content), sender: sender, recipient: recipient, via: route.hop)
     }
 
-    /// Opens a v1 envelope addressed to us (`InboundPipeline.decrypt`). Versions 2 and 3 need the ratchet: they are
-    /// carried and relayed, and dropped here.
+    /// Opens a v1 envelope addressed to us (`InboundPipeline.decrypt`). Every v2 and v3 that reaches here is carried and
+    /// relayed, and dropped here: all of them with the ratchet's switch off; with it on, a sealed room post, a v2 group
+    /// frame, which waits for the group form (P6), and a v3 group frame, refused as `RATCHET_BAD_HEADER` since v3 is the DM
+    /// form by rule and its DM arm refuses one addressed to a group (`InboundPipeline.kt:966-971`, `:1017-1022`).
     func open(_ enc: EncEnvelope, _ envelope: RelayEnvelope) -> MessageContent? {
         guard enc.version == EncEnvelope.Version.staticKeys else {
-            drop(.cannotOpen, envelope)
+            let toGroupAsV3 = configuration.ratchet && envelope.group != nil && enc.version == EncEnvelope.Version.compactRatchet
+            drop(toGroupAsV3 ? .ratchetBadHeader : .cannotOpen, envelope)
             return nil
         }
         let thread = envelope.group?.id ?? envelope.recipientId ?? ""
@@ -184,67 +228,6 @@ extension MeshEngine {
             return nil
         }
         return content
-    }
-
-    /// Stores a delivered message and acknowledges it (`InboundPipeline.deliverChat`). A re-served frame leaves the
-    /// row as it was and is not announced again, and the receipt goes out every time. A photo the message carries is
-    /// fetched at once unless its bytes are already here, as they are when they were carried for someone else: asked of
-    /// its author first, then of `hop`, the neighbour the frame came from, which `nil` leaves unnamed (knit-next ADR
-    /// 2026-10.f7gg).
-    ///
-    /// Someone else's words are stored waiting for the content filter (ADR 2026-10.e4kz). Android classifies them
-    /// before the row is written (`InboundPipeline.inboundModeration`); here the app screens them as it hears the
-    /// event, off this actor, and nothing shows them until it has.
-    func deliverChat(_ envelope: RelayEnvelope, _ delivered: DeliveredChat, sender: NodeId, recipient: NodeId?, via hop: NodeId?) {
-        // A group's thread is the group; a DM's and the room's follow from who sent it to whom.
-        let conversation = envelope.group?.id ?? Conversations.id(sender: sender, recipient: recipient, me: nodeId)
-        let attachment = delivered.attachment
-        let isNew = !stores.messages.contains(envelope.id)
-        // Our own limit bounds what we send, not what a peer floods.
-        let body = TextLimits.truncated(delivered.body, toUTF16: TextLimits.message)
-        // A quote is someone's words too, and the filter reads them with the reply's (ADR 2026-10.mn29).
-        let wordless = TextLimits.isBlank(body) && TextLimits.isBlank(delivered.replyTo?.snippet ?? "")
-        let record = MessageRecord(
-            id: envelope.id,
-            senderId: sender,
-            recipientId: recipient,
-            conversationId: conversation,
-            body: body,
-            sentAt: clampFuture(envelope.sentAt),
-            arrivedAt: sender == nodeId ? nil : clock.wallMilliseconds(),
-            attachment: attachment,
-            moderation: sender == nodeId || wordless ? .clear : .waiting,
-            replyTo: delivered.replyTo,
-            // Only the mentions the kept body still holds: that bounds a peer's list, where Android keeps any
-            // (`InboundPipeline.kt:2660`, ADR 2026-10.nbhj).
-            mentions: MessageMention.carried(delivered.mentions, in: body)
-        )
-        stores.messages.insertIfAbsent(record)
-        // Every delivery ends the sender's cue in the thread, a re-delivery too (`InboundPipeline.kt:2728`), and before
-        // the message is announced, so no screen shows both.
-        clearTyping(sender, in: conversation)
-        if isNew, sender != nodeId {
-            events.append(.received(record, isRequest: !isAccepted(conversation)))
-        }
-        if let attachment {
-            receiveAttachment(attachment, author: sender, via: hop)
-        }
-        acknowledge(envelope, sender: sender)
-    }
-
-    /// Fetches what a delivered message carries, unless its bytes are here already, when a sealed one learns its
-    /// plaintext's name. A key-less picture, a room post's or one forwarded under its public name, is held from our own
-    /// sealed copy instead when its author was party to the conversation that copy came through (ADR 2026-10.f3mv);
-    /// this is the one door to that copy.
-    private func receiveAttachment(_ attachment: MessageAttachment, author: NodeId, via hop: NodeId?) {
-        let hash = attachment.hash
-        if stores.blobs.contains(hash) {
-            notePlainHash(hash)
-        } else if attachment.key == nil, !transport.arrivingFileKeys.contains(hash), copyFromOwnStore(hash, author: author) {
-            events.append(.attachmentArrived(hash))
-            return
-        }
-        wantBlob(hash, author: author, via: hop, asker: nil)
     }
 
     /// The longest text an attachment's type, key or file name keeps: a peer's frame bounds nothing on its own.

@@ -8,8 +8,8 @@ import KnitWire
 import Testing
 
 /// `{"cmd":"ratchet"}`: every pinned peer's DM ratchet state under the keys of Android's debug bridge `RATCHET`
-/// (`DebugBridgeReceiver.kt:1450-1502`), and with `reset` a forced reset first, sealed and persisted and not sent before
-/// P5 (ADR 2026-10.5sk9).
+/// (`DebugBridgeReceiver.kt:1450-1502`), and with `reset` a forced reset first, sealed, persisted and flooded, as the
+/// bridge's `--es reset <peer>` sends one (ADR 2026-10.5sk9, phase P5a).
 @Suite(.timeLimit(.minutes(1))) struct MeshControlRatchetTests {
     private let peer = TestKeys(seed: 4)
 
@@ -71,7 +71,7 @@ import Testing
         #expect(peers.first?["hasSession"] as? Bool == false)
     }
 
-    @Test func aForcedResetIsSealedAndShownInTheDumpThatFollows() async throws {
+    @Test func aForcedResetIsSentAndShownInTheDumpThatFollows() async throws {
         let rig = ControlRig(configuration: MeshConfiguration(ratchet: true))
         pin(peer, in: rig.stores)
         let reply = try await rig.send(#"{"cmd":"ratchet","reset":"\#(peer.keys.nodeId)"}"#)
@@ -82,6 +82,8 @@ import Testing
         #expect((dana["rootHash"] as? String)?.count == RatchetPeerState.rootHashLength)
         let stamp = try #require(dana["lastResetSentAt"] as? Int)
         #expect(dana["localEpochs"] as? [String] == ["1@\(stamp)"])
+        let carried = rig.stores.custody.liveFrames(now: Int64(stamp)).filter { $0.envelope.type == .chat }
+        #expect(carried.map(\.envelope.recipientId) == [peer.keys.nodeId.string], "the reset went out, and we carry it as our own")
         let again = try await rig.send(#"{"cmd":"ratchet","reset":"\#(peer.keys.nodeId)"}"#)
         #expect(again["declined"] as? String == "our reset is still on its way")
         #expect(again["reRooted"] == nil)

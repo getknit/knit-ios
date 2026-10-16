@@ -225,8 +225,14 @@ extension RatchetEngine {
         /// race-remnant guard and keeps it out of the read-only remnant candidate, since a reset is minted fresh and is
         /// adopted or refused, never read without adoption (knit-next ADR 024).
         public var resetRequested: Bool
+        /// Whether an init the held session has not resolved may move its era at all, by a race or a replacement. `false`
+        /// only for a frame this port's own custody hands back at start (ADR 2026-10.5sk9, phase P5a), which is read
+        /// under the roots already held: its first verdict came before the restart, and an era it would move to may be
+        /// one the pair has since left. Kotlin replays nothing from its own custody, so it has no such open. With no
+        /// session held, an init still establishes one.
+        public var allowEraChange: Bool
 
-        /// A context; replacement allowed and no reset requested unless said.
+        /// A context; replacement and era changes allowed and no reset requested unless said.
         public init(
             selfNodeId: NodeId,
             peerId: NodeId,
@@ -238,7 +244,8 @@ extension RatchetEngine {
             peerIdentity: PublicKeyBundle,
             prekeyForInit: SignedPrekey?,
             allowReplacement: Bool = true,
-            resetRequested: Bool = false
+            resetRequested: Bool = false,
+            allowEraChange: Bool = true
         ) {
             self.selfNodeId = selfNodeId
             self.peerId = peerId
@@ -251,6 +258,7 @@ extension RatchetEngine {
             self.prekeyForInit = prekeyForInit
             self.allowReplacement = allowReplacement
             self.resetRequested = resetRequested
+            self.allowEraChange = allowEraChange
         }
     }
 

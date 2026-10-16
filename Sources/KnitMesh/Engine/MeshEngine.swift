@@ -19,9 +19,11 @@ public final class MeshEngine {
     let deviceTag: String?
     /// The repositories.
     public let stores: MeshStores
-    /// The DM ratchet's sessions over ``stores``' ratchet store, and the floors it holds in memory (ADR 2026-10.5sk9). Only
-    /// the control surface's forced reset reaches it before P5 wires DMs.
+    /// The DM ratchet's sessions over ``stores``' ratchet store, and the floors it holds in memory (ADR 2026-10.5sk9). With
+    /// the switch on, DM-form v2 and v3 frames to us open through it, and its resets go out (phase P5a).
     let ratchet: RatchetSessions
+    /// The copies of the ratchet frames whose open's unit failed, opened again at the next sweep.
+    var ratchetReplay = RatchetReplay()
     let transport: any MeshTransport
     let clock: any MeshClock
     let configuration: MeshConfiguration
@@ -59,6 +61,8 @@ public final class MeshEngine {
         var reoffer: Int64
         var sweep: Int64
         var heal: Int64
+        /// When the ratchet's retention sweep is next due, read only with the switch on.
+        var ratchetSweep: Int64
     }
 
     /// A node with `identity` and the prekeys it keeps, its repositories, and the transport, clock and randomness it runs
@@ -128,13 +132,16 @@ public final class MeshEngine {
             return nil
         }
         let blobs = [blobExchange.nextDeadline, blobExchange.parkPollAt]
-        return ([router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline] + blobs).compactMap(\.self).min()
+        let ratchetSweep = configuration.ratchet ? timers.ratchetSweep : nil
+        return ([router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ratchetSweep] + blobs)
+            .compactMap(\.self).min()
     }
 
     /// Starts the node (`MeshManager.seedOwnProfileCustody`): brings our prekey in step with the ring and the switch,
-    /// republishes our profile if its stamp is stale, puts it in custody, sweeps what expired while we were down, forgets
-    /// deleted messages no carrier can still hold, delivers group chats custody holds and our threads lack, and starts the
-    /// timers. Idempotent.
+    /// republishes our profile if its stamp is stale, puts it in custody, sweeps what expired while we were down, the
+    /// ratchet's retention included, forgets deleted messages no carrier can still hold, delivers group chats custody
+    /// holds and our threads lack, opens again the ratchet DMs to us custody holds with no row, and starts the timers.
+    /// Idempotent.
     public func start() {
         guard !isStarted else {
             return
@@ -145,15 +152,19 @@ public final class MeshEngine {
         republishIfStale()
         _ = ownProfile()
         sweep()
+        // Before anything opens a frame, as Android's start sweeps the ratchet before its replay (`MeshManager.kt:2552`).
+        sweepRatchet()
         stores.messages.pruneDeleted(before: clock.wallMilliseconds())
         replayCustodiedGroupChats()
+        replayCustodiedRatchetMessages()
         sweepUnreferencedBlobs()
         rewantMissingBlobs(sparing: [])
         let now = clock.monotonicMilliseconds()
         timers = Timers(
             reoffer: now + configuration.reofferMilliseconds,
             sweep: now + configuration.sweepMilliseconds,
-            heal: now + configuration.healMilliseconds
+            heal: now + configuration.healMilliseconds,
+            ratchetSweep: now + RatchetSessions.sweepMilliseconds
         )
     }
 
@@ -249,6 +260,10 @@ public final class MeshEngine {
             heal()
             due.heal = now + configuration.healMilliseconds
         }
+        if configuration.ratchet, now >= due.ratchetSweep {
+            sweepRatchet()
+            due.ratchetSweep = now + RatchetSessions.sweepMilliseconds
+        }
         timers = due
     }
 
@@ -268,7 +283,7 @@ public final class MeshEngine {
     }
 
     /// Expired custody, parked frames, stale key wants, aged-out ticks and reactions left with no message
-    /// (`MeshManager.sweepExpired`).
+    /// (`MeshManager.sweepExpired`), then the ratchet frames whose unit failed, opened again from the copies kept.
     func sweep() {
         let now = clock.monotonicMilliseconds()
         if stores.custody.sweepExpired(now: clock.wallMilliseconds()) > 0 {
@@ -282,6 +297,7 @@ public final class MeshEngine {
         if blobExchange.sweep(now: now) > 0 {
             syncAcceptedFiles()
         }
+        replayFailedRatchetOpens()
     }
 
     /// The 15-minute heal pass (`MeshManager.heal`): re-ask for missing keys, rotate our prekey when due, and republish a

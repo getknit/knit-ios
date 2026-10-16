@@ -387,12 +387,6 @@ explicit direction.** Update this file in the change that ships an item.
   Before the flip, besides the phases:
   - **Read `PRAGMA secure_delete` once on the lab iPhone's Debug build.** Pass is 1. Only the Mac's run reads Apple's
     SQLite today, and nothing reads the iPhone's (ADR 2026-09.nyya, amended 2026-10-15).
-  - **Whether the database needs a `VACUUM` now and then,** the maintainer's call (ADR 2026-09.nyya, amended
-    2026-10-15). `secure_delete` misses an older copy of a row that a page's rebalance leaves in its unused space, so
-    rarely a key outlives the sweep that should have taken it. A low-cadence `VACUUM` closes that, at the cost of
-    rewriting the whole file through the log, and only outside a transaction. A cheaper way runs inside the sweep's
-    unit: read the four ratchet tables, delete every row, and insert them again, which frees and zeroes every page they
-    used (a probe wrote 24 pages of log for it against `VACUUM`'s 122). Android's SQLCipher has the same leftover.
   - **Restoring the same phone from its own backup** (ADR 2026-10.5sk9's P3 amendment). It brings back the identity
     and the onboarded flag without the database, so our fresh prekey goes out only at version 0, which peers ignore.
     Onboarding must follow every database that has never published. That is a product change, the maintainer's call.
@@ -503,6 +497,13 @@ explicit direction.** Update this file in the change that ships an item.
 
 ## Deferred by design
 
+- **Erasing what a page's rebalance leaves behind** (ADR 2026-09.nyya, amended 2026-10-15). `secure_delete` misses an
+  older copy of a row that a rebalance leaves in a page's unused space, so rarely a ratchet key outlives the sweep
+  that should have taken it. Android's SQLCipher has the same leftover. On 2026-10-15 the maintainer held it for a
+  paired change with knit-next, so both platforms close it the same way; it becomes a Track A item when that is
+  planned. The options so far: a low-cadence `VACUUM`, which rewrites the whole file through the log and runs only
+  outside a transaction, or rewriting the four ratchet tables inside the sweep's unit, which frees and zeroes every
+  page they used (a probe wrote 24 pages of log for it against `VACUUM`'s 122).
 - **The mesh lab:** multi-node scenarios over a lab transport and radio, `assertConverged`, seeded chaos runs
   and the mesh-lab-reviewer persona. The maintainer asked on 2026-09-25 to skip it for now, so P3 closed on
   unit tests, coverage and both sanitizers. Because the engine is synchronous, a later lab could run

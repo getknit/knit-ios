@@ -275,7 +275,7 @@ extension MeshEngine {
         for frame in frames where frame.envelope.type == .chat && frame.envelope.group != nil {
             if !stores.messages.contains(frame.envelope.id) {
                 // Custody kept no hop, so the photo it carries is asked of its author first.
-                handleChat(frame.envelope, via: nil)
+                handleChat(frame.envelope, via: nil, signed: true, origin: .startReplay)
             }
         }
     }

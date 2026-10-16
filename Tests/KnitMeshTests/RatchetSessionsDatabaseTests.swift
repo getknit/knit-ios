@@ -9,7 +9,7 @@ import Testing
 
 /// The session facade over the database, whose unit is the `KnitDatabase` itself, since the memory and SQL transactors
 /// once disagreed (ADR 2026-10.5sk9's P4a amendment): a row the database refuses inside an open's unit takes the open
-/// with it, no floor moves, and the same frame opens once the store heals, as P5's replay from our own custody will; and
+/// with it, no floor moves, and the same frame opens once the store heals, as P5a's sweep opens the copy that failed; and
 /// the era gate's unit, failed by the database, counts nothing.
 @Suite struct RatchetSessionsDatabaseTests {
     static let now: Int64 = 1_700_000_000_000

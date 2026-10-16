@@ -49,6 +49,13 @@ extension RatchetEngine {
         if session.peerInitEphPub == initial.eph {
             return ResolvedSession(session: session, candidates: candidates, purge: false)
         }
+        // A frame that may not move the era, this port's start replay out of its own custody: an init the session has not
+        // resolved neither races nor replaces it, and the frame is read under the roots held, the read-only remnant
+        // included (``OpenContext/allowEraChange``).
+        guard context.allowEraChange else {
+            let remnants = try remnantCandidates(session, header: header, initial: initial, context: context)
+            return ResolvedSession(session: session, candidates: candidates + remnants, purge: false)
+        }
         // Both sides initiated: we hold an unconfirmed session we started, and the peer's own init just arrived.
         // Decided by node id, never by `init.at`: two inits can carry one stamp, and both sides must pick one winner
         // (`:544-547`).

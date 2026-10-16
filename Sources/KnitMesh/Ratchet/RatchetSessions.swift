@@ -4,8 +4,8 @@ public import KnitWire
 
 /// The DM ratchet's session service (`RatchetSessions` in knit-next's `mesh/crypto/ratchet/RatchetSessions.kt`, at
 /// `ac491f4c`): the pure ``RatchetEngine`` over a ``RatchetStore``, our identity, and the per-peer floors held in memory
-/// (ADR 2026-10.5sk9). P5 wires it into the mesh; until then only the control surface's reset reaches it, and nothing it
-/// seals goes on air.
+/// (ADR 2026-10.5sk9). With the switch on, the engine opens DM frames through it and sends the resets it seals (phase
+/// P5a); no chat or receipt is sealed through it before P5b and P5c.
 ///
 /// **One phase, in a store unit.** Android opens in two phases: a peek with no lock feeds moderation, then a commit under
 /// its one ratchet mutex, inside a Room transaction, re-runs the engine and writes the session with the message row
@@ -119,8 +119,8 @@ public final class RatchetSessions {
     ///
     /// The caller gates on what the facade cannot see: an authenticated frame, and a failure in
     /// ``RatchetResetPolicy/triggeringFailures`` from an open that answered ``Answer/settled(_:)``, never
-    /// ``Answer/failed``, whose verdict came from a store's fallback. P5 calls it on the drop path, outside any unit, as
-    /// Kotlin does (`InboundPipeline.kt:1819-1826`). Inside a caller's unit it counts nothing: a joined open or reset
+    /// ``Answer/failed``, whose verdict came from a store's fallback. The engine calls it on the drop path, outside any
+    /// unit, as Kotlin does (`InboundPipeline.kt:1819-1826`). Inside a caller's unit it counts nothing: a joined open or reset
     /// clears the ids only once that unit commits, where Kotlin clears them as an open commits and as a reset is sealed
     /// (`RatchetSessions.kt:207-211`, `:435`, `:466`), so a frame counted before then would join the abandoned era's ids.
     public func noteUndecryptable(from peer: NodeId, frameId: String, sentAt: Int64, now: Int64) -> Bool {
@@ -149,13 +149,18 @@ public final class RatchetSessions {
         return now &- max(held?.lastResetSentAt ?? 0, lastResetSentAt[peer] ?? 0) >= RatchetResetPolicy.resetMilliseconds
     }
 
+    /// How often the engine runs ``sweep(now:)`` after the one at start: hourly, since every retention window is 48 h or
+    /// more (`HealFloors.RETENTION_SWEEP_MS`, `MeshManager.kt:3510`, which `heal` runs at most this often, `:970`).
+    public static let sweepMilliseconds: Int64 = 3_600_000
+
     /// The retention sweep at `now`, in a unit of its own (`sweep`, `RatchetSessions.kt:543-544`), and whether it stood.
     /// On the database a deleted row is zeroed in the next write of its page, which reaches the file only at a
     /// checkpoint, while the write-ahead log keeps the frames that wrote the key until it is reset and overwritten, or
     /// truncated. The sweep's truncating checkpoint after its unit commits does both, unless a reader holds a snapshot
     /// of the log then: between sweeps either file can hold a key spent, or a chain key a seal or an open replaced, and
-    /// rarely an older copy a page's rebalance left behind outlives the sweep (``RatchetStore/sweep(now:)``). Nothing
-    /// calls it before P5, which runs it at start and at most hourly.
+    /// rarely an older copy a page's rebalance left behind outlives the sweep (``RatchetStore/sweep(now:)``). The engine
+    /// runs it at start and then every ``sweepMilliseconds``, never inside a DM's unit, so no send waits behind the
+    /// checkpoint (phase P5a).
     @discardableResult
     public func sweep(now: Int64) -> Bool {
         let unit = transactor.atomically { () -> Void? in
