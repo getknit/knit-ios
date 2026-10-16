@@ -52,6 +52,8 @@ extension Copy {
                 laterReason(reason)
             case .ratchetNoSession, .ratchetEpochGone, .ratchetDuplicate, .ratchetBadHeader, .ratchetAeadFail, .storeRefused:
                 ratchetReason(reason)
+            case .groupRatchetNoKey, .groupRatchetDuplicate, .groupRatchetBadHeader, .groupRatchetAeadFail:
+                groupRatchetReason(reason)
             }
         }
 
@@ -99,6 +101,40 @@ extension Copy {
                     bundle: .main,
                     value: "Dropped: couldn't be saved",
                     comment: "A drop counter: a message the phone's storage failed to save; it is opened again from the phone's own copy"
+                )
+            }
+        }
+
+        /// The labels for the drops the group form of the forward-secrecy ratchet brought (ADR 2026-10.5sk9, phase P6a2).
+        private static func groupRatchetReason(_ reason: DropReason) -> String {
+            switch reason {
+            case .groupRatchetNoKey:
+                NSLocalizedString(
+                    "diagnostics.drop.group-ratchet-no-key",
+                    bundle: .main,
+                    value: "Dropped: missing group key",
+                    comment: "A drop counter: a forward-secret group message whose key this phone hasn't received or no longer keeps"
+                )
+            case .groupRatchetDuplicate:
+                NSLocalizedString(
+                    "diagnostics.drop.group-ratchet-duplicate",
+                    bundle: .main,
+                    value: "Dropped: duplicate group message",
+                    comment: "A drop counter: another copy of a forward-secret group message this phone already opened"
+                )
+            case .groupRatchetBadHeader:
+                NSLocalizedString(
+                    "diagnostics.drop.group-ratchet-bad-header",
+                    bundle: .main,
+                    value: "Dropped: bad group header",
+                    comment: "A drop counter: a forward-secret group message whose encryption header is malformed"
+                )
+            default:
+                NSLocalizedString(
+                    "diagnostics.drop.group-ratchet-aead-fail",
+                    bundle: .main,
+                    value: "Dropped: group keys out of step",
+                    comment: "A drop counter: a forward-secret group message that failed to decrypt because the sender's keys disagree"
                 )
             }
         }

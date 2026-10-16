@@ -29,7 +29,17 @@ extension MeshEngine {
     /// along `route`, which is signed unless it is the unsigned live-link tick. Refused before the engine when malformed,
     /// opened in one unit with what it carries, and on a typed failure counted, and fed to the reset heuristic when it is
     /// evidence.
+    ///
+    /// A group key for a group we hold no row for, or from a sender we hold as departed, is decided before anything commits,
+    /// as Kotlin decides it on its peek (`holdGroupKeyForUnknownGroup`, `:1058`; phase P6a2): the open is abandoned with the
+    /// chain where it was, and the seed pins the roster it carries or parks (``seedAwaitsRoster(_:_:_:sender:route:)``).
     func handleRatchetDirect(_ envelope: RelayEnvelope, _ enc: EncEnvelope, sender: NodeId, route: RatchetInbound.Route) {
+        openRatchetDirect(envelope, enc, sender: sender, route: route, parksSeeds: true)
+    }
+
+    /// ``handleRatchetDirect(_:_:sender:route:)``'s open. `parksSeeds` is false for the open that follows a seed's wait,
+    /// which takes the ordinary path whatever the roster then says.
+    func openRatchetDirect(_ envelope: RelayEnvelope, _ enc: EncEnvelope, sender: NodeId, route: RatchetInbound.Route, parksSeeds: Bool) {
         // Only a frame addressed to us comes here, so its thread, `env.recipientId.orEmpty()` (`:1036`), is our own id:
         // a canonical id's bytes, the same ones the envelope carries.
         let aad = MessageCrypto.header(id: envelope.id, senderId: envelope.senderId, sentAt: envelope.sentAt, thread: nodeId.string)
@@ -44,41 +54,26 @@ extension MeshEngine {
             return
         }
         let v3 = enc.version == EncEnvelope.Version.compactRatchet
-        let ring = prekeyRing
         let now = clock.wallMilliseconds()
-        var refusal = DropReason.cannotOpen
+        var decided = DirectArrival.refused(.cannotOpen)
         let answer = ratchet.open(
             frame,
             from: bundle,
             now: now,
             allowEraChange: route.origin == .firstVerdict,
-            prekeys: { ring?.prekey(id: $0) },
+            prekeys: { [ring = prekeyRing] in ring?.prekey(id: $0) },
             alongside: { opened -> RatchetArrival? in
-                // Will not decode, or is newer than this build reads: dropped before the commit (`:1043-1052`).
-                guard let content = RatchetInbound.content(of: opened.plaintext, v3: v3) else {
+                let content = RatchetInbound.content(of: opened.plaintext, v3: v3)
+                decided = directArrival(content, envelope, from: sender, route: route, parksSeeds: parksSeeds)
+                guard case .arrival(let arrival) = decided else {
                     return nil
                 }
-                // An unsigned frame is a tick or nothing (`unsignedButNotATick`, `:1761-1768`): a signature stripped off a
-                // captured plain DM and sent point to point opens just as well, and must not deliver through this door,
-                // which dodges custody and would leave the flooded copy deduplicated away.
-                guard route.signed || content.ctl == MessageContent.Control.receipt else {
-                    refusal = .unsigned
-                    return nil
-                }
-                return arrival(of: content, envelope, from: sender, origin: route.origin)
+                return arrival
             }
         )
         switch answer {
         case .settled(.opened(_, let arrival)):
-            // Any copy of this id that commits ends the copy a failed unit kept, whatever its origin: a ctl frame has no
-            // row for the sweep to find, and opened again past an era change it would apply a second time.
-            ratchetReplay.forget(envelope.id)
-            // An init the header still carries is answered first, once the open has committed, as Kotlin's commit calls
-            // `onPeerFrameOpened` before the work after it (`:1059-1067`); never from the start's replay (phase P5e).
-            if route.origin == .firstVerdict {
-                answerInit(in: frame.header, from: sender)
-            }
-            finish(arrival, envelope, from: sender, via: route.hop)
+            committed(arrival, envelope, header: frame.header, from: sender, route: route)
         case .settled(.refused(let failure)):
             refused(envelope, failure, header: frame.header)
             if RatchetInbound.countsTowardReset(failure, route: route) {
@@ -89,12 +84,62 @@ extension MeshEngine {
             // nothing counts toward a reset (`:976-980`).
             drop(.cannotOpen, envelope)
         case .settled(.abandoned):
-            drop(refusal, envelope)
+            if case .awaitsRoster(let seeds) = decided {
+                seedAwaitsRoster(envelope, enc, seeds, sender: sender, route: route)
+            } else if case .refused(let reason) = decided {
+                drop(reason, envelope)
+            }
         case .joined, .failed:
             // Nothing opens a unit around the inbound path, so a joined answer cannot happen here; were it to, its work
             // could not run before an outer commit this path never sees, so it waits for the replay like a failure.
             failedOpen(envelope, route: route)
         }
+    }
+
+    /// The work after a DM ratchet frame's unit committed: the copy a failed unit kept goes, the group facade settles, an
+    /// init the header still carries is answered, and what the frame carried follows.
+    private func committed(
+        _ arrival: RatchetArrival, _ envelope: RelayEnvelope, header: RatchetHeader, from sender: NodeId, route: RatchetInbound.Route
+    ) {
+        // Any copy of this id that commits ends the copy a failed unit kept, whatever its origin: a ctl frame has no row for
+        // the sweep to find, and opened again past an era change it would apply a second time.
+        ratchetReplay.forget(envelope.id)
+        // Each DM's open settles before anything else opens, since the group facade's floor reads only what settled.
+        settleSeeds(arrival.seeds)
+        // An init the header still carries is answered first, once the open has committed, as Kotlin's commit calls
+        // `onPeerFrameOpened` before the work after it (`:1059-1067`); never from the start's replay (phase P5e).
+        if route.origin == .firstVerdict {
+            answerInit(in: header, from: sender)
+        }
+        finish(arrival, envelope, from: sender, via: route.hop)
+    }
+
+    /// What a DM ratchet frame that opened as `content` comes to inside its open's unit (`decryptAndDeliverV2`'s peek,
+    /// `InboundPipeline.kt:1043-1058`): what it applies, or why the open is abandoned with its chain index unspent.
+    private func directArrival(
+        _ content: MessageContent?, _ envelope: RelayEnvelope, from sender: NodeId, route: RatchetInbound.Route, parksSeeds: Bool
+    ) -> DirectArrival {
+        // Will not decode, or is newer than this build reads: dropped before the commit (`:1043-1052`).
+        guard let content else {
+            return .refused(.cannotOpen)
+        }
+        // An unsigned frame is a tick or nothing (`unsignedButNotATick`, `:1761-1768`): a signature stripped off a captured
+        // plain DM and sent point to point opens just as well, and must not deliver through this door, which dodges custody
+        // and would leave the flooded copy deduplicated away.
+        guard route.signed || content.ctl == MessageContent.Control.receipt else {
+            return .refused(.unsigned)
+        }
+        // The roster gate, read inside the unit: a seed that must wait leaves the chain where it was (`:1058`, phase P6a2).
+        if parksSeeds, let seeds = GroupRatchetInbound.seeds(in: content), waitsForRoster(seeds, from: sender) {
+            return .awaitsRoster(seeds)
+        }
+        return .arrival(arrival(of: content, envelope, from: sender, origin: route.origin))
+    }
+
+    /// Whether `seeds` from `sender` must wait for a roster, read inside the open's unit, so a store that cannot answer fails
+    /// the unit.
+    private func waitsForRoster(_ seeds: GroupKeyPayload, from sender: NodeId) -> Bool {
+        GroupRatchetInbound.awaitsRoster(stores.groups.group(seeds.groupId), from: sender)
     }
 
     /// A typed failure (`onRatchetFailure`, `InboundPipeline.kt:1775-1797`), counted under its reason. The header's
@@ -192,14 +237,29 @@ extension MeshEngine {
         }
     }
 
-    /// The ratchet's retention sweep, at start and then hourly, with the switch on: in a unit of its own, never inside a
-    /// DM's, since on the database it truncates the write-ahead log once it commits, and no send may wait behind that.
+    /// The ratchet's retention sweeps, the DM ratchet's and then the group form's, at start and then hourly, with the switch
+    /// on, as Android's `sweepKeyRetention` runs both (`MeshManager.kt:988-993`): each in a unit of its own, never inside a
+    /// DM's, since on the database each truncates the write-ahead log once it commits, and no send may wait behind that.
     func sweepRatchet() {
         guard configuration.ratchet else {
             return
         }
-        if !ratchet.sweep(now: clock.wallMilliseconds()) {
+        let now = clock.wallMilliseconds()
+        if !ratchet.sweep(now: now) {
             log.log(.warning, "mesh ratchet sweep failed: a store failed")
         }
+        if !groupRatchet.sweep(now: now) {
+            log.log(.warning, "mesh group ratchet sweep failed: a store failed")
+        }
     }
+}
+
+/// What a DM ratchet frame that opened comes to inside its open's unit.
+private enum DirectArrival {
+    /// What it applies, and the work for after the commit.
+    case arrival(RatchetArrival)
+    /// Abandoned, counted under this reason.
+    case refused(DropReason)
+    /// Abandoned until a roster lets its seeds in (phase P6a2).
+    case awaitsRoster(GroupKeyPayload)
 }

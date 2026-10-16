@@ -46,7 +46,8 @@ git status --porcelain -- Sources/KnitMesh/Router Sources/KnitMesh/Custody Sourc
   Sources/KnitStoreSQL/SQLBlobStore.swift Sources/KnitStoreSQL/SQLMessageStore+Attachments.swift \
   Sources/KnitWire/Link/FileIntake.swift Sources/KnitMesh/Link/FeedMeter.swift \
   Sources/KnitMesh/Link/LinkManager+Files.swift Sources/KnitStore/Units Sources/KnitStoreSQL/KnitDatabase.swift \
-  Sources/KnitStoreSQL/KnitDatabase+Units.swift $E/MeshEngine+Delivery.swift Sources/KnitStoreSQL/StoredText.swift
+  Sources/KnitStoreSQL/KnitDatabase+Units.swift $E/MeshEngine+Delivery.swift Sources/KnitStoreSQL/StoredText.swift \
+  $E/MeshStores.swift $E/MeshEngine+Passes.swift Sources/KnitMesh/Ratchet/MeshEngine+GroupRatchetInbound.swift
 git diff HEAD -- <those paths>
 ```
 

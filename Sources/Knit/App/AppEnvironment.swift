@@ -41,8 +41,7 @@
         let replaceIdentity: IdentityReplacer?
         /// The CoreBluetooth radio, which a demo has none of.
         private let radio: BLERadio?
-        /// The mesh, which hears whether Knit is in the background so that its links seek peers there
-        /// (ADR 2026-10.mueg).
+        /// The mesh, which hears whether Knit is in the background so its links seek peers there (ADR 2026-10.mueg).
         private let mesh: Mesh
         /// Knit going to the background and coming back, in order: one task hands each to the mesh, so a quick toggle
         /// cannot overtake the one before it.
@@ -164,6 +163,7 @@
                 blobs: try SQLBlobStore(
                     database, directory: directory.appending(path: SQLBlobStore.directoryName, directoryHint: .isDirectory)),
                 ratchet: SQLRatchetStore(database),
+                groupRatchet: SQLGroupRatchetStore(database),
                 transactor: database // The store unit is the database itself, under every SQL store above (ADR 2026-10.5sk9).
             )
             let defaults = DefaultsPreferences()

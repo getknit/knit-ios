@@ -60,8 +60,10 @@ block list out of everything but delivery:
 **Consequences / limits:**
 
 - **A group message can surface after an unblock.** Our own custody holds a group message sent during the block for
-  up to 24 hours, and `replayCustodiedGroupChats` delivers it at the next start after the unblock. Android replays the
-  same way at start-up and at heal (`MeshManager.kt:1622-1654`), so the two agree, though bts9's corollary speaks only
+  up to 24 hours, and the custody replay (`replayCustodiedGroupFrames`, before 2026-10-16 `replayCustodiedGroupChats`)
+  delivers it at the next start after the unblock, and with the ratchet's switch on within the hour (ADR 2026-10.5sk9,
+  phase P6a2). Android replays at start-up and at heal (`MeshManager.kt:1622-1654`; the heal's hourly floor is
+  `MeshManager.kt:970-971` at `cbf2a487`), so the two agree once the switch is on, though bts9's corollary speaks only
   of DMs. A DM or a room post never comes back. The copy therefore promises nothing about what was sent during a
   block: the confirmation says what stops while it stands, and the list says an unblock brings back what came before
   it.

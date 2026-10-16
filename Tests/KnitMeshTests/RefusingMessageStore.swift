@@ -133,6 +133,7 @@ enum StoreKind: CaseIterable, Sendable {
                 ownProfile: memory.ownProfile,
                 blobs: memory.blobs,
                 ratchet: ratchet,
+                groupRatchet: memory.groupRatchet,
                 transactor: memory.transactor
             )
             return RefusingStores(stores: stores, messages: messages, ratchet: ratchet, peers: peers)
@@ -157,6 +158,7 @@ enum StoreKind: CaseIterable, Sendable {
                 ownProfile: SQLOwnProfileStore(database),
                 blobs: try SQLBlobStore(database, directory: blobs),
                 ratchet: ratchet,
+                groupRatchet: SQLGroupRatchetStore(database),
                 transactor: database
             )
             return RefusingStores(stores: stores, messages: messages, ratchet: ratchet, peers: peers)

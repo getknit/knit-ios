@@ -295,6 +295,9 @@ extension StoreTransactorTests {
         var groups: [GroupRecord]
         var ownProfile: OwnProfile
         var custody: [String]
+        /// The DM ratchet's rows with Bob, and the group form's rows in the group: both ratchet stores join the unit.
+        var ratchet: RatchetPeerRecords
+        var groupRatchet: GroupRatchetHoldings
     }
 
     private var thread: String { Conversations.id(sender: bob, recipient: alice, me: alice) }
@@ -307,7 +310,9 @@ extension StoreTransactorTests {
             blocked: stores.blocks.blockedNodeIds(),
             groups: stores.groups.groups(),
             ownProfile: stores.ownProfile.load(),
-            custody: stores.custody.liveIds(now: 0).sorted()
+            custody: stores.custody.liveIds(now: 0).sorted(),
+            ratchet: stores.ratchet.records(of: bob),
+            groupRatchet: stores.groupRatchet.holdings(of: groupId)
         )
     }
 
@@ -339,6 +344,8 @@ extension StoreTransactorTests {
         stores.groups.save(group(named: "Before"))
         stores.ownProfile.save(OwnProfile(name: "Alice", version: 1, publishedAt: 1))
         stores.custody.store(frame("f1"), origin: .relayed, now: 0)
+        stores.ratchet.upsertSession(.plain(with: bob, root: 1))
+        stores.groupRatchet.insertRecvChain(.plain(mintedAt: 1), in: groupId, from: bob)
     }
 
     /// The part of a change that pins, stores and accepts: a replacement and an insert in each store it writes.
@@ -357,10 +364,12 @@ extension StoreTransactorTests {
         stores.ownProfile.save(OwnProfile(name: "Alice", status: "here", version: 2, publishedAt: 2))
     }
 
-    /// The part of a change that carries one frame and drops another.
+    /// The part of a change that carries one frame and drops another, and moves both ratchets: a session replaced, a seed added.
     private func changeCustody(_ stores: RepositoryKind.Stores) {
         stores.custody.store(frame("f2"), origin: .own, now: 0)
         stores.custody.remove("f1")
+        stores.ratchet.upsertSession(.plain(with: bob, root: 2))
+        stores.groupRatchet.insertRecvChain(.plain(mintedAt: 2), in: groupId, from: bob)
     }
 
     /// What the stores hold after the seed and `parts` with no unit at all: what a unit that commits them must leave.

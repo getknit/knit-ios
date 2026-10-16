@@ -18,9 +18,16 @@ extension MeshEngine {
     /// - a profile (8): its presentation, never its prekey, at its first verdict;
     /// - a reset (1): nothing beyond the open, whose own delta adopted it; at its first verdict, our unacked DMs to the
     ///   sender are sealed again once the unit commits (phase P5b, ``resealRecentDirectMessages(to:)``), and flushing our
-    ///   group seeds is P6's;
-    /// - the group form's codes (2, 3, 4) until P6, and every code this build does not know: nothing beyond the chain's
-    ///   advance, which still commits (`:1191-1196`).
+    ///   group seeds is P6b's;
+    /// - a group key (2): its seeds adopted into the group form's store, joined to this unit, when the roster admits the
+    ///   sender (phase P6a2, ``adoptGroupSeeds(_:from:)``), the ack and the custody replay after the commit;
+    /// - a group key's ack (4): the seed outbox's row moved (``recordSeedAck(_:from:)``);
+    /// - a key request (3), which P6b answers, and every code this build does not know: nothing beyond the chain's advance,
+    ///   which still commits (`:1191-1196`).
+    ///
+    /// A group key and its ack apply at every origin, the start's replay included: an adoption goes by the sender's own
+    /// `(epoch, mintedAt)` against the newest mint held, never a stamp of ours, so a seed opened again is acknowledged
+    /// again with no chain moved, and an ack only ever raises the outbox's epoch.
     ///
     /// The start's replay (`origin`) applies no reaction and no profile, and commits only the chain's advance for them.
     /// Both are ordered by a stamp clamped to our clock at the first open (``clampFuture(_:)``), which a later open cannot
@@ -44,6 +51,10 @@ extension MeshEngine {
             (arrival.reacted, arrival.refusedReaction) = applySealedReaction(content.rp, from: sender, sentAt: envelope.sentAt)
         case MessageContent.Control.profile where origin == .firstVerdict:
             arrival.presentation = applySealedPresentation(content.pr, from: sender)
+        case MessageContent.Control.groupKey:
+            arrival.seeds = adoptGroupSeeds(content.gk, from: sender)
+        case MessageContent.Control.groupKeyAck:
+            recordSeedAck(content.gk, from: sender)
         case MessageContent.Control.sessionReset where origin == .firstVerdict:
             // However its open went: a root adopted, a race won or lost, or a marker under the session held
             // (`InboundPipeline.kt:1137-1148`). The re-seal is a send, so it waits for the commit.
@@ -56,8 +67,10 @@ extension MeshEngine {
 
     /// The work an opened frame left, once its unit has committed: the ticks it flipped and the reaction it applied are
     /// announced, a refused reaction counted, a moved profile's photo fetched or let go, a message delivered as
-    /// ``deliverChat(_:_:sender:recipient:via:)``'s second half delivers one, its acknowledgement included, and a reset's
-    /// first verdict answered with our unacked DMs sealed again (`handleCtlDm`'s follow-up, `InboundPipeline.kt:1140-1147`).
+    /// ``deliverChat(_:_:sender:recipient:via:)``'s second half delivers one, its acknowledgement included, a reset's
+    /// first verdict answered with our unacked DMs sealed again (`handleCtlDm`'s follow-up, `InboundPipeline.kt:1140-1147`),
+    /// and a seed worth acknowledging acknowledged, then the sender's frames in that group our custody holds opened again
+    /// (`:1150-1156`). The group facade's floor moved before this ran (``settleSeeds(_:)``).
     func finish(_ arrival: RatchetArrival, _ envelope: RelayEnvelope, from sender: NodeId, via hop: NodeId?) {
         for id in arrival.delivered {
             events.append(.delivered(messageId: id))
@@ -77,6 +90,11 @@ extension MeshEngine {
         if arrival.resealsUnacked {
             resealRecentDirectMessages(to: sender)
         }
+        if let seeds = arrival.seeds, let epoch = seeds.ackEpoch {
+            acknowledgeSeeds(epoch, in: seeds.group, to: sender)
+            // The seed, or its re-distribution, may open frames we already carry, which nobody serves us again.
+            replayCustodiedGroupFrames(in: seeds.group, from: sender)
+        }
     }
 
     /// Sealed receipts, inside the unit (`applySealedReceipt`, `InboundPipeline.kt:1408-1418`): each id flips our tick
@@ -91,7 +109,7 @@ extension MeshEngine {
     /// writer wins on the frame's signed `sentAt`, clamped, with the authenticated sender as the reactor, under the rule
     /// the cleartext frame meets here, one emoji of at most 32 UTF-16 units (ADR 2026-10.ehe6), which the chain's advance
     /// never waits on. Answers the reaction to announce, for a held message, and whether it was refused.
-    private func applySealedReaction(_ payload: ReactionContent?, from sender: NodeId, sentAt: Int64) -> (ReactionRecord?, Bool) {
+    func applySealedReaction(_ payload: ReactionContent?, from sender: NodeId, sentAt: Int64) -> (ReactionRecord?, Bool) {
         guard let payload else {
             return (nil, false)
         }
@@ -183,4 +201,18 @@ internal struct RatchetArrival {
     var presentation: Presentation?
     /// Whether it was a reset's first verdict, which has us seal our unacked DMs to its sender again.
     var resealsUnacked = false
+    /// The seeds a group key adopted, joined to the unit, whose floor settles and whose ack goes once it commits.
+    var seeds: SeedAdoption?
+}
+
+/// What one `CTL_GROUP_KEY` adopted inside its DM's unit (phase P6a2), for after that unit commits.
+internal struct SeedAdoption {
+    /// The group its seeds are for, as the payload names it.
+    let group: String
+    /// The highest epoch worth acknowledging, or `nil` for none: a seed refused as stale or past the floor earns no ack.
+    let ackEpoch: Int?
+    /// How many chains were freshly adopted, to count.
+    let freshChains: Int
+    /// The group facade's floor, moved once the unit commits.
+    let settlement: GroupRatchetSessions.Settlement
 }

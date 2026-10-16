@@ -108,6 +108,11 @@ internal struct ControlFrame {
         Self(relay: true, sentAt: stamp, attachmentHash: nil)
     }
 
+    /// The group form's machinery (phase P6a2): a seed's ack and a key request, originated and dated now with nothing beside
+    /// the seal, as Kotlin's `ackGroupSeed` and `maybeRequestGroupKey` originate theirs (`InboundPipeline.kt:1576-1584`,
+    /// `:1719-1728`).
+    static let machinery = Self(relay: true, sentAt: nil, attachmentHash: nil)
+
     /// Our sealed profile's (phase P5e): originated, dated now, with our `photo`'s hash beside the seal, so a carrier that
     /// cannot read the frame can still pull the photo (`MeshManager.kt:2901-2911`).
     static func profile(photo: BlobHash?) -> Self {

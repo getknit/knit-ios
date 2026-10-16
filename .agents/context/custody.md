@@ -205,6 +205,15 @@ publish it honestly.
   relay within ten minutes before its reset (`RatchetResealReachTests`). The unit's one write in memory, a tombstone
   `CustodySync.admits` may set, is idempotent (`StoreTransactor`'s contract), so custody's copy stays in the unit.
 - **Group messages carried before groups showed** are delivered at start-up: the engine replays each live
-  group `chat` in custody that has no message row, oldest first, as Android's `replayCustodiedGroupFrames`
-  does (`MeshEngine+Groups.swift`, ADR 2026-09.n393). One already delivered is skipped, so it is not ticked
-  again.
+  group `chat` in custody from someone else that has no message row, oldest first, as Android's
+  `replayCustodiedGroupFrames` does (`MeshEngine+GroupRatchetInbound.swift`, ADR 2026-09.n393). One already delivered
+  is skipped, so it is not ticked again; its row is read in a store unit of its own, and a read that fails skips the
+  frame until the next replay.
+- **With the ratchet's switch on, the same replay runs twice more** (ADR 2026-10.5sk9, phase P6a2): every hour, as the
+  net under the rest (`replayUndeliveredGroupCustody`, `MeshManager.kt:971`), and at once for one sender's frames in one
+  group once that sender's seed is adopted. A group frame that came before its seed is in our custody and our digest, so
+  no neighbour serves it again; only these open it. At a group's first sight the ratchet DMs our custody holds from its
+  roster open again too, a seed whose park died with the process among them (`replayCustodiedSeedDms`,
+  `MeshManager.kt:1772-1830`). Each replay goes past the router, reads custody and writes nothing to it. Custody never
+  reads group-ratchet state: a group frame's `NO_KEY`, `AEAD_FAIL`, `BAD_HEADER` or failed unit changes what we deliver,
+  never what we carry, and a seed's ack and a key request are ordinary sealed DMs that purge nothing.

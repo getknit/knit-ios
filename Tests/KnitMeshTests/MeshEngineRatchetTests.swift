@@ -135,6 +135,7 @@ import Testing
             ownProfile: memory.ownProfile,
             blobs: memory.blobs,
             ratchet: refusing,
+            groupRatchet: memory.groupRatchet,
             transactor: refusing.transactor
         )
         let fixture = ratchetEngine(stores: stores)

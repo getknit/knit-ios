@@ -25,6 +25,9 @@ public struct MeshStores: Sendable {
     /// The DM ratchet's sessions, our epochs, receive chains and skipped keys (ADR 2026-10.5sk9), which ``RatchetSessions``
     /// alone writes, inside ``transactor``'s units.
     public let ratchet: any RatchetStore
+    /// The group form's chains, skipped keys and seed outbox (ADR 2026-10.5sk9, phase P6a1), which ``GroupRatchetSessions``
+    /// alone writes, inside ``transactor``'s units. Nothing reads or writes it with the switch off.
+    public let groupRatchet: any GroupRatchetStore
     /// The store unit a ratchet change commits in with everything it carries, or not at all (ADR 2026-10.5sk9): the
     /// database itself under the SQL stores, or a ``MemoryTransactor`` over the memory ones.
     public let transactor: any StoreTransactor
@@ -40,6 +43,7 @@ public struct MeshStores: Sendable {
         ownProfile: any OwnProfileStore,
         blobs: any BlobStore,
         ratchet: any RatchetStore,
+        groupRatchet: any GroupRatchetStore,
         transactor: any StoreTransactor
     ) {
         self.custody = custody
@@ -51,6 +55,7 @@ public struct MeshStores: Sendable {
         self.ownProfile = ownProfile
         self.blobs = blobs
         self.ratchet = ratchet
+        self.groupRatchet = groupRatchet
         self.transactor = transactor
     }
 
@@ -73,6 +78,7 @@ public struct MeshStores: Sendable {
         let memoryGroups = MemoryGroupStore()
         let memoryBlobs = MemoryBlobStore()
         let memoryRatchet = MemoryRatchetStore()
+        let memoryGroupRatchet = MemoryGroupRatchetStore()
         return Self(
             custody: memoryCustody,
             peers: memoryPeers,
@@ -83,9 +89,10 @@ public struct MeshStores: Sendable {
             ownProfile: ownProfileStore,
             blobs: memoryBlobs,
             ratchet: memoryRatchet,
+            groupRatchet: memoryGroupRatchet,
             transactor: MemoryTransactor(stores: [
                 memoryCustody, memoryPeers, memoryMessages, memoryConversations, memoryBlocks, memoryGroups, ownProfileStore, memoryBlobs,
-                memoryRatchet,
+                memoryRatchet, memoryGroupRatchet,
             ])
         )
     }

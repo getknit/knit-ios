@@ -212,9 +212,10 @@ extension MeshEngine {
     }
 
     /// Opens a v1 envelope addressed to us (`InboundPipeline.decrypt`). Every v2 and v3 that reaches here is carried and
-    /// relayed, and dropped here: all of them with the ratchet's switch off; with it on, a sealed room post, a v2 group
-    /// frame, which waits for the group form (P6), and a v3 group frame, refused as `RATCHET_BAD_HEADER` since v3 is the DM
-    /// form by rule and its DM arm refuses one addressed to a group (`InboundPipeline.kt:966-971`, `:1017-1022`).
+    /// relayed, and dropped here: all of them with the ratchet's switch off; with it on, a sealed room post, and a v3 group
+    /// frame, refused as `RATCHET_BAD_HEADER` since v3 is the DM form by rule and its DM arm refuses one addressed to a group
+    /// (`InboundPipeline.kt:966-971`, `:1017-1022`). A v2 group frame takes the group form's arm before this with the switch
+    /// on (phase P6a2).
     func open(_ enc: EncEnvelope, _ envelope: RelayEnvelope) -> MessageContent? {
         guard enc.version == EncEnvelope.Version.staticKeys else {
             let toGroupAsV3 = configuration.ratchet && envelope.group != nil && enc.version == EncEnvelope.Version.compactRatchet

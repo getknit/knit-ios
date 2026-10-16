@@ -17,7 +17,8 @@ extension MeshEngine {
 
     /// Unblocks `peer`, and the device tag their profile carried (`SettingsStore.unblock`). What they sent before the
     /// block shows again. What they sent during it was never stored: a DM or room post stays unseen, and a group
-    /// message our custody still holds is delivered at the next start (``replayCustodiedGroupChats()``), as on Android.
+    /// message our custody still holds is delivered at the next start (``replayCustodiedGroupFrames(in:from:)``), and with
+    /// the ratchet's switch on within the hour, as Android's heal delivers it (ADR 2026-10.5sk9).
     public func unblock(_ peer: NodeId) {
         stores.blocks.unblock(peer, deviceTag: stores.peers.peer(peer)?.deviceTag)
     }

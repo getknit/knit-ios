@@ -18,7 +18,7 @@ Delete. Custody is never touched. No frame deletes for
 everyone; the wire has no such type.
 
 A straight port would not stay deleted. The `messages` row was this port's only lasting dedup record:
-`stores.messages.contains` gates `handleChat`, `handleGroupChat`, `deliverChat` and `replayCustodiedGroupChats`.
+`stores.messages.contains` gates `handleChat`, `handleGroupChat`, `deliverChat` and `replayCustodiedGroupFrames` (then `replayCustodiedGroupChats`).
 Remove the row and the message comes back three ways:
 
 - **A group message** comes back at the next launch. Our own custody holds it for 24 hours, and the start-up replay

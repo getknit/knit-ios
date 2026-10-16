@@ -213,6 +213,7 @@ extension MeshStores {
             ownProfile: ownProfile,
             blobs: blobs,
             ratchet: ratchet,
+            groupRatchet: groupRatchet,
             transactor: transactor
         )
     }

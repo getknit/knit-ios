@@ -23,8 +23,13 @@ public final class MeshEngine {
     /// the switch on, DM-form v2 and v3 frames to us open through it and its resets go out (phase P5a), and what we seal to
     /// a peer whose pinned profile carries `CAP_RATCHET` is sealed through it (phases P5b to P5e).
     let ratchet: RatchetSessions
+    /// The group form's sessions over ``stores``' group store, and the floors it holds in memory (ADR 2026-10.5sk9). With the
+    /// switch on, group-form frames open through it and the seeds our ratchet DMs carry are adopted into it (phase P6a2).
+    let groupRatchet: GroupRatchetSessions
     /// The copies of the ratchet frames whose open's unit failed, opened again at the next sweep.
     var ratchetReplay = RatchetReplay()
+    /// The seeds held back for a roster we do not hold yet, or a sender we hold as departed (phase P6a2).
+    var pendingGroupKeys = PendingGroupKeys()
     /// What our reactions, sealed profile and init answers keep in memory (phase P5e, ``RatchetPresentationState``).
     var presentation = RatchetPresentationState()
     let transport: any MeshTransport
@@ -63,6 +68,8 @@ public final class MeshEngine {
     /// How our receipts and ticks were sealed so far (phase P5d), all but the room ticks that rode, which ``ackSync``
     /// counts: ``receipts`` reads both.
     var receiptCounts = RatchetReceiptCounts()
+    /// How the group form's receive side went so far (phase P6a2).
+    public internal(set) var groupCounts = RatchetGroupCounts()
     /// Bumped whenever custody may have changed, so the driver knows to re-read ``digestCue``.
     public private(set) var custodyRevision = 0
     /// Whole files dropped here: their bytes did not match their hash, a pushed photo was not the one its pusher's
@@ -73,7 +80,7 @@ public final class MeshEngine {
         var reoffer: Int64
         var sweep: Int64
         var heal: Int64
-        /// When the ratchet's retention sweep is next due, read only with the switch on.
+        /// When the ratchet's retention sweeps and the group custody replay are next due, read only with the switch on.
         var ratchetSweep: Int64
     }
 
@@ -98,6 +105,8 @@ public final class MeshEngine {
         self.deviceTag = deviceTag
         self.stores = stores
         ratchet = RatchetSessions(identity: identity, store: stores.ratchet, transactor: stores.transactor, engine: ratchetEngine)
+        // Its seeds and IVs come from the system's generator, as the DM engine's keys do, never the injected `random`.
+        groupRatchet = GroupRatchetSessions(nodeId: identity.nodeId, store: stores.groupRatchet, transactor: stores.transactor)
         self.transport = transport
         self.clock = clock
         self.random = random
@@ -156,8 +165,8 @@ public final class MeshEngine {
     /// Starts the node (`MeshManager.seedOwnProfileCustody`): seeds our sealed profile's dedupe, brings our prekey in step
     /// with the ring and the switch, republishes our profile if its stamp is stale, puts it in custody, sweeps what
     /// expired while we were down, the ratchet's retention included, forgets deleted messages no carrier can still hold,
-    /// delivers group chats custody holds and our threads lack, opens again the ratchet DMs to us custody holds with no
-    /// row, and starts the timers. Idempotent.
+    /// opens again the ratchet DMs to us custody holds with no row, delivers group chats custody holds and our threads lack,
+    /// and starts the timers. Idempotent.
     public func start() {
         guard !isStarted else {
             return
@@ -173,8 +182,10 @@ public final class MeshEngine {
         // Before anything opens a frame, as Android's start sweeps the ratchet before its replay (`MeshManager.kt:2552`).
         sweepRatchet()
         stores.messages.pruneDeleted(before: clock.wallMilliseconds())
-        replayCustodiedGroupChats()
+        // The DMs first: a seed whose unit failed before we stopped adopts here, and its instant replay opens that sender's
+        // group frames, which the group replay would otherwise count as keyless and ask for again.
         replayCustodiedRatchetMessages()
+        replayCustodiedGroupFrames(in: nil, from: nil)
         sweepUnreferencedBlobs()
         rewantMissingBlobs(sparing: [])
         let now = clock.monotonicMilliseconds()
@@ -281,6 +292,9 @@ public final class MeshEngine {
         }
         if configuration.ratchet, now >= due.ratchetSweep {
             sweepRatchet()
+            // The net under the instant replays (`replayUndeliveredGroupCustody`, `MeshManager.kt:971`), once an hour as
+            // Android's heal runs it (`GROUP_REPLAY_MS`, `:3511`), after the sweeps as there.
+            replayCustodiedGroupFrames(in: nil, from: nil)
             due.ratchetSweep = now + RatchetSessions.sweepMilliseconds
         }
         timers = due

@@ -1234,3 +1234,124 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   - `SchemaTests.v18KeepsEveryGroupAndSessionAndStartsWithNoGroupRatchetState`.
   - `CustodyStoreByteKeyTests.anIdWithANulIsNotItsOwnPrefix`, over both store kinds: a frame id that starts with U+FEFF
     is listed, read and kept as itself.
+
+**Amended 2026-10-16, phase P6a2 (the group form received in the mesh):**
+
+- **With the switch on, the iPhone opens what fielded Android seals to a group whose other members all advertise
+  `CAP_RATCHET` with a prekey** (`MeshManager.kt:1344-1353`), and adopts the seeds those members send it. It seals
+  nothing in the group form: every group message of ours stays v1 until P6b. Kotlin lines here are at knit-next
+  `cbf2a487`.
+- **Wiring.** `MeshStores` carries the group store: `MemoryGroupRatchetStore` inside the memory unit, and
+  `SQLGroupRatchetStore` on the iPhone's `KnitDatabase`. The engine holds a `GroupRatchetSessions` over it, whose seeds
+  and IVs come from the system's generator. knit-peer is untouched, since it builds `MeshStores.inMemory`.
+- **The sweeps.** The group store's retention sweep runs beside the DM ratchet's, at start before the replays and then
+  hourly, each in a unit of its own, on the wall clock (`sweepKeyRetention`, `MeshManager.kt:988-993`). The seed park
+  expires in the 10-minute sweep beside the key-wait park (`sweepExpired`, `:2333-2334`).
+- **A seed rides a `CTL_GROUP_KEY` DM and is adopted in that DM's open unit,** for a group we hold, have not left, and
+  whose effective roster has the sender, and only when it carries keys (`adoptGroupSeeds`, `InboundPipeline.kt:1535-1548`).
+  A root-only seed commits the chain's advance alone, its `gr` kept raw. Once the outermost unit commits, the facade
+  settles before anything else opens (the next DM's adoption reads the floor as it stands), then a `CTL_GROUP_KEY_ACK`,
+  always v2, goes in a seal of its own, best effort (`ackGroupSeed`, `:1554-1585`), then the sender's group frames in our
+  custody open again. A `CTL_GROUP_KEY_ACK` moves the outbox's row in its own DM's unit (`:1213-1217`). A key request
+  (ctl 3) commits the advance alone: its answer re-seals our current seeds, which needs P6b's send chain.
+- **The roster gate decides before anything commits,** as Kotlin's peek does (`holdGroupKeyForUnknownGroup`, `:1058`,
+  `:1454-1478`). This port opens in one phase, so a seed for a group we hold no row for, or from a sender we hold as
+  departed, abandons its open, the chain index unspent, and is then decided outside any unit:
+  - At its first verdict it pins the roster it carries through `reconcile`, the one door every roster takes, with
+    Kotlin's checks (the id derives from the founding set, we and the sender are in it, the cap, the rejoin guard;
+    `pinRosterFromSeed`, `:1490-1497`), and opens again on the ordinary path once that row admits the sender. Otherwise
+    it parks in `PendingGroupKeys` (1 h, 64 seeds, 16 a group, in memory, as Kotlin's), and a group whose park is full
+    takes the ordinary path, where the frame commits with nothing adopted, as Kotlin's does. The second open costs one
+    more decryption on this path alone.
+  - Every roster that lands releases the parked seeds whose sender the row admits, past the router, each opened again as
+    it came (`replayHeldGroupKeys`, `:1505-1527`). A departed sender's seed waits for that sender's own rejoin, in place,
+    its clock untouched.
+  - Out of our own custody at start, such a seed is left unopened rather than parked: the park is in memory and the
+    frame is in custody, and the group's first sight opens it (below). That is how the park meets P5a's start replay.
+    That replay runs before the start's group replay, so a seed whose unit failed before a stop adopts first, and its
+    instant replay opens the frames it keys. The other order would count those frames as keyless again, and three of
+    them would ask for a key the sender already sent.
+- **Seeds and acks apply at every origin,** the start's replay included, unlike a reaction or a profile there (P5a): an
+  adoption goes by the sender's own `(epoch, mintedAt)` against the newest mint held, never a stamp of ours, so a seed
+  opened again is acknowledged again with no chain moved, and an ack only raises the outbox's epoch.
+- **A group's first sight opens again every ratchet DM our custody holds from its effective roster,** oldest first
+  (`replayCustodiedSeedDms`, `MeshManager.kt:1772-1830`), except the seed whose own roster is making the row and, by a
+  rule of this port's own, the seeds that same landing just released, which Kotlin's replay would open a second time,
+  to a `DUPLICATE`.
+  It holds the era, as the start's replay does, where Kotlin's opens them as first verdicts: our custody keeps a day of
+  these frames, and one whose first verdict committed in an era the pair has since left would open under its draining
+  root and, as a first verdict, apply a reaction or a profile again, re-seal for a reset, or race the session with its
+  old init. A seed that never committed opens all the same, unless it carries an init the held session has not resolved;
+  with no session held, its init founds one.
+- **A v2 frame addressed to a group opens after its roster's reconcile, through `GroupRatchetSessions`, in one unit with
+  its message row or, of the ctls, a group reaction (6) alone; every other ctl commits the advance** (`:1598-1663`).
+  - A frame with no group header is `GROUP_RATCHET_BAD_HEADER`. A v3 frame addressed to a group stays
+    `RATCHET_BAD_HEADER`, and so does a DM-addressed one with only `g`, as P5a made them.
+  - Our own frame, which custody serves back after a reinstall, drops as `GROUP_RATCHET_NO_KEY` before the open and asks
+    nobody: we hold no receive chain of ours, and Kotlin's request goes nowhere since we never pin ourselves (`:1702`). A
+    departed member's frames open and feed the heuristic, as Kotlin's do; a non-member's never pass the roster.
+  - A group reaction applies at every origin: a group key is spent by its full key, and a chain is swept only after 48
+    hours unused, by when every frame it opened has left custody (a day past its stamp), so only a frame's first open
+    can apply it.
+  - The four refusals have drop reasons and words of their own. `NO_KEY` and `AEAD_FAIL` feed the key-request heuristic
+    outside any unit, on the frame's signed `sentAt` as it arrived. When it fires, a `CTL_GROUP_KEY_REQ` to a pinned peer
+    with `CAP_RATCHET`, v2, with its prekey where no session is held, goes in a seal of its own, and `markKeyRequested`
+    follows its commit (`maybeRequestGroupKey`, `:1694-1730`).
+  - A unit that fails counts `storeRefused` and delivers nothing. The frame stays in custody, where the hourly replay
+    opens it. No copy is kept in memory as P5a keeps a DM's: nobody seals a group frame twice under one id, so custody's
+    first bytes are the frame.
+- **The three custody replays** (`replayCustodiedGroupFrames`, `MeshManager.kt:1739-1770`): the sender's group frames
+  after its seed is adopted, every DM above at a group's first sight, and every undelivered group frame at start and,
+  with the switch on, every hour (`GROUP_REPLAY_MS`, `:3511`). Each runs after the outermost commit and settle, goes past
+  the router, reads each frame's row in a unit of its own first (a read that fails skips the frame until the next
+  replay), and reads custody without writing it. Only other members' group frames are replayed, as Kotlin's
+  `liveGroupChatFrames(me)` reads them. That now holds at start with the switch off too, where our own frame used to
+  meet the exists-gate or drop as `.cannotOpen`. Kotlin runs the hourly replay on every build; here it waits for the
+  switch, so nothing changes with the switch off, and the flip ends the difference. Custody never reads group-ratchet
+  state: a refusal and a failed unit change what we deliver, never what we carry, and ctl 3 and 4 are ordinary sealed
+  DMs that purge nothing.
+- **Android's counts** (`groupSeedsHeld`, `groupSeedsReplayed`, `groupSeedsAdopted`, `groupKeyRequestsSent`) are
+  `MeshEngine.groupCounts`. The control surface's `ratchet` reply carries no group state yet.
+- **With the switch off nothing changes:** a seed DM and a group-form frame drop as `.cannotOpen`, nothing reaches the
+  group store, the park stays empty, and nothing goes on the air. The hourly replay and the group sweep do not run.
+- **The alternatives, and why not:**
+  - **Kotlin's two phases for the seed's gate:** one phase opens and commits in one unit; a second open on the rare
+    path costs a decryption, not a second code path for every DM.
+  - **Parking at the start's replay:** the park would be filled at every start from custody, and released as first
+    verdicts frames whose first verdict may have committed before the restart.
+  - **The first sight's replay as first verdicts, as Kotlin's:** above.
+  - **A kept copy for a group frame whose unit failed:** custody holds the same bytes, so the hourly replay suffices.
+- **Limits:**
+  - A departed sender's parked seed lost to a restart waits for that sender's re-send or a key request, since a rejoin is
+    no first sight, at Kotlin's level.
+  - A seed carrying an init the held session has not resolved, met only by the first sight's replay, waits for the
+    sender's re-send.
+  - A group frame delivered by the instant replay inside the roster's reconcile is acknowledged a second time by the
+    exists-gate when the outer pass reaches it, as in Kotlin.
+  - A group's first sight opens again every consumed ctl DM its members' custody copies hold, each dropping as
+    `DUPLICATE`, and the hourly replay opens every undelivered group ctl frame again the same way, as Kotlin's do.
+  - A restart forgets the adoption floor, the heuristic's ids and the park, as Android's do.
+  - P6b owes the send path: the group seal, the seed outbox and its flush (15 min per group, member and pairwise root;
+    a reset forces it), the answer to a key request, the rejoin rekey and its hourly floor, and `retireSendChains`,
+    `deleteKeySend` and `purgeGroup` in the roster's units.
+  - knit-next's `InboundPipelineTest` rig records the two custody replays as calls (`custodyReplays`,
+    `seedCustodyReplays`), so its `aSeedThatOutransItsGroupsFirstFrameIsParkedAndAdoptedWhenTheRosterLands` and
+    `aParkedSeedLeavesTheChainWhereItWasSoItsReServeStillOpens` do not run them. With the real replays, the first would
+    meet the released seed again at the first sight (a `RATCHET_DUPLICATE` this port avoids) and the second would open
+    the group's first frame at once from the custodied seed. The ports here read what the real replays do.
+- **Guards:** `PendingGroupKeysTests` (knit-next's seven `PendingGroupKeysTest` cases by name, and two of this port's);
+  `GroupRatchetInboundTests` (the pure rules); `MeshEngineGroupRatchetTests` and `MeshEngineGroupSeedTests` (knit-next's
+  `InboundPipelineTest` group-form receive cases by name, `:4208`, `:5735`, `:6415-6905`, `:6963-7471`, with `:6926` as
+  P6b's half and `:6943` left to P6b); `MeshEngineGroupRatchetEdgeTests`, `MeshEngineGroupSeedParkTests` and
+  `MeshEngineGroupKeyRequestTests` (this port's own: an ack moving the outbox, our own frames coming back, a plaintext
+  that will not decode, a seed the start's replay leaves in custody, a parked seed served again, a full park, a request
+  toward a member without the ratchet and one whose unit fails);
+  `MeshEngineGroupRatchetPairTests` (the reviews' trials over the database: a group frame before its seed, a refused
+  row and the hourly replay, the memory unit restoring the group store, a frame id led by U+FEFF, a wiped sender's two
+  eras in both orders, each replay sending no copy of its own; a seed DM whose unit fails, a replay whose row read
+  fails); `MeshEngineGroupRatchetRestartTests` (a restart with a parked seed, one whose seed was the first contact, and
+  the start's order);
+  `MeshEngineGroupRatchetScheduleTests` (the switch off, a group sweep the store refuses, and `MeshManagerTest`'s
+  `healRunsTheRetentionSweepsAndTheCustodyReplayOncePastTheirHourNotOnEveryCall`); `GroupRatchetLabTests` (the receive
+  half of `GroupFirstMessageLabTest`, `SessionLabTest.aMemberWhoMissedTheSeedAsksAfterThreeUnreadableFrames` and
+  `GroupMembershipLabTest`'s overtaking seeds); `StoreTransactorTests`, whose contents now read both ratchet stores.

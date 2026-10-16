@@ -78,6 +78,19 @@ public enum DropReason: Sendable, Hashable, CaseIterable {
     /// A DM ratchet frame whose keys resolved and whose tag refused (`RATCHET_AEAD_FAIL`): the pair's roots disagree.
     /// From a signed frame, at its first verdict, it counts toward a session reset.
     case ratchetAeadFail
+    /// A group-form frame whose sender's chain for its epoch we do not hold (`GROUP_RATCHET_NO_KEY`): its seed has not
+    /// arrived, or was swept. It feeds the key-request heuristic, and custody keeps it for the replay after the seed lands
+    /// (ADR 2026-10.5sk9, phase P6a2).
+    case groupRatchetNoKey
+    /// A group-form frame whose key is already spent (`GROUP_RATCHET_DUPLICATE`): a re-serve. It never feeds the
+    /// key-request heuristic.
+    case groupRatchetDuplicate
+    /// A group-form frame malformed (`GROUP_RATCHET_BAD_HEADER`): a v2 group frame with no group header, or a header out
+    /// of bounds.
+    case groupRatchetBadHeader
+    /// A group-form frame whose chain resolved and whose tag refused (`GROUP_RATCHET_AEAD_FAIL`): the sender's state and
+    /// ours disagree, as after a wipe we have not heard of. It feeds the key-request heuristic.
+    case groupRatchetAeadFail
     /// A store failed inside the unit a ratchet frame's open commits in: nothing was delivered or acknowledged, and the
     /// copy that failed is opened again at the next sweep (ADR 2026-10.5sk9).
     case storeRefused

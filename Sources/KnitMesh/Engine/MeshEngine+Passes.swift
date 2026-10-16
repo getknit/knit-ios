@@ -29,6 +29,8 @@ extension MeshEngine {
         releaseDeletedPhotos()
         pruneOrphanReactions()
         pendingInbound.sweep(now: now)
+        // Beside the key-wait park, as Android sweeps both (`sweepExpired`, `MeshManager.kt:2333-2334`).
+        pendingGroupKeys.sweep(now: now)
         keyExchange.sweep(now: now)
         ackSync.sweep(now: now)
         if blobExchange.sweep(now: now) > 0 {

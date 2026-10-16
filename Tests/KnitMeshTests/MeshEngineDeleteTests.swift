@@ -30,7 +30,7 @@ import Testing
     // MARK: Staying gone
 
     @Test func aDeletedGroupMessageIsNotReplayedFromOurCustodyAtTheNextStart() throws {
-        // Without the remembered id, `replayCustodiedGroupChats` would deliver it again, notification and all, for as
+        // Without the remembered id, `replayCustodiedGroupFrames` would deliver it again, notification and all, for as
         // long as our custody holds it: knit-next's own roadmap names this gap.
         let fixture = try linked()
         let info = roster([carol, bob, alice], createdBy: carol)

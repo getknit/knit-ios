@@ -181,13 +181,14 @@ extension MeshEngine {
 
     /// A group chat (`InboundPipeline.handleChat`, `:675-683`, and `decryptAndDeliver`). The roster is reconciled
     /// first, so a member's verified frame makes the group even when we cannot open it, then the message is opened
-    /// and delivered into the group's thread.
+    /// and delivered into the group's thread: v1 here, and with the ratchet's switch on, the group form through its own
+    /// arm (``handleGroupRatchet(_:_:group:sender:via:)``, `InboundPipeline.kt:961-966`, phase P6a2).
     func handleGroupChat(_ envelope: RelayEnvelope, group info: GroupInfo, sender: NodeId, via hop: NodeId?) {
         guard let chat = try? ChatContent(decoding: envelope.payload) else {
             drop(.undecodable, envelope)
             return
         }
-        guard reconcile(info, from: sender, envelope) else {
+        guard reconcile(info, from: sender, envelope, seedPinning: nil) else {
             return
         }
         guard let enc = chat.enc else {
@@ -198,6 +199,11 @@ extension MeshEngine {
         // Custody re-serves the same ciphertext routinely; once the row exists, only the tick is owed.
         if stores.messages.contains(envelope.id) {
             acknowledge(envelope, sender: sender)
+            return
+        }
+        // v2 addressed to a group is the group form whatever headers it carries; off, it drops in `open` as it always has.
+        if configuration.ratchet, enc.version == EncEnvelope.Version.ratchet {
+            handleGroupRatchet(envelope, enc, group: info, sender: sender, via: hop)
             return
         }
         guard let content = open(enc, envelope), content.ctl == nil else {
@@ -212,7 +218,7 @@ extension MeshEngine {
         guard let info = envelope.group, let sender = NodeId(envelope.senderId) else {
             return
         }
-        reconcile(info, from: sender, envelope)
+        reconcile(info, from: sender, envelope, seedPinning: nil)
     }
 
     /// A member's departure (`handleGroupLeave`, `:1989-1995`). The frame is signed by the key its sender derives
@@ -239,8 +245,13 @@ extension MeshEngine {
 
     /// Brings our row in line with a roster from `sender`'s frame, and writes the status lines it earns. Answers
     /// whether the group is ours and active, so a chat frame should be delivered.
+    ///
+    /// With the ratchet's switch on, a roster that lands then lets in the seeds that waited for it
+    /// (`reconcileGroup`'s second half, `InboundPipeline.kt:2167-2178`, phase P6a2): the parked seeds whose sender the row
+    /// now admits open again, and at a group's first sight the ratchet DMs our custody holds from its roster open again
+    /// too, all but `seedPinning`, the seed whose own roster is making the row and is still being handled.
     @discardableResult
-    func reconcile(_ info: GroupInfo, from sender: NodeId, _ envelope: RelayEnvelope) -> Bool {
+    func reconcile(_ info: GroupInfo, from sender: NodeId, _ envelope: RelayEnvelope, seedPinning: String?) -> Bool {
         let existing = stores.groups.group(info.id)
         if isBlockedGroupFrame(info, from: sender, existing: existing) {
             drop(.blocked, envelope)
@@ -262,21 +273,10 @@ extension MeshEngine {
             for notice in notices {
                 stores.messages.save(notice)
             }
-            return true
-        }
-    }
-
-    /// Delivers the group chats our own custody holds and our threads lack (`MeshManager.replayCustodiedGroupFrames`,
-    /// `MeshManager.kt:1600-1632`), oldest first: those carried before this build showed groups, and any whose
-    /// delivery was cut short. Each was verified when it was carried; one already delivered is skipped here, so it is
-    /// not ticked again.
-    func replayCustodiedGroupChats() {
-        let frames = stores.custody.liveFrames(now: clock.wallMilliseconds()).reversed()
-        for frame in frames where frame.envelope.type == .chat && frame.envelope.group != nil {
-            if !stores.messages.contains(frame.envelope.id) {
-                // Custody kept no hop, so the photo it carries is asked of its author first.
-                handleChat(frame.envelope, via: nil, signed: true, origin: .startReplay)
+            if configuration.ratchet {
+                seedsMayLand(in: group, firstSight: existing == nil, except: seedPinning)
             }
+            return true
         }
     }
 }
