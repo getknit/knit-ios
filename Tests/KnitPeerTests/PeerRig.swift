@@ -248,12 +248,18 @@ struct PeerRig {
     let farEngine: MeshEngine
 
     /// A peer on fresh stores in memory, its own profile in `ownProfile` when given, keeping its photo at `avatarPath`
-    /// when given: a restart is a second rig on the same two.
-    init(ownProfile: (any OwnProfileStore & Checkpointing)? = nil, avatarPath: String? = nil) {
+    /// when given: a restart is a second rig on the same two. `ratchet` and `prekeys` are `--ratchet`'s switch and the ring
+    /// its `main` loads.
+    init(
+        ownProfile: (any OwnProfileStore & Checkpointing)? = nil, avatarPath: String? = nil, ratchet: Bool = false,
+        prekeys: PrekeyRing? = nil
+    ) {
         let made = ownProfile.map { MeshStores.inMemory(ownProfileStore: $0) } ?? .inMemory()
         stores = made
         node = PeerNode(
             identity: keys,
+            prekeys: prekeys,
+            ratchet: ratchet,
             stores: made,
             radio: radio,
             radioProfile: "android",

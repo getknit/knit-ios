@@ -42,11 +42,16 @@ extension MeshEngine {
         return record
     }
 
-    /// Sends `text` to `recipient` as a v1 DM, with `photo` sealed beside it if one is given, and `replyTo` and `mentions`
+    /// Sends `text` to `recipient` as a DM, with `photo` sealed beside it if one is given, and `replyTo` and `mentions`
     /// sealed inside it (`MeshManager.sendChat`, `MeshManager.kt:1095-1106`). Only the mentions whose token the sent body
     /// holds go (``MessageMention/carried(_:in:)``, ADR 2026-10.nbhj). With no key pinned for the recipient it is stored
     /// as pending, mentions and all, and sealed once their profile arrives. Answers the stored message, or `nil` for a
     /// blank message with no photo, a photo too heavy to send, or a message to ourselves.
+    ///
+    /// It is sealed v1, as it always was, unless the ratchet's switch is on: then one read of the recipient's pinned row
+    /// decides (``sendDirect(_:to:as:)``), and a DM to a peer whose profile carries `CAP_RATCHET` is stored waiting and
+    /// sealed with the ratchet in a store unit of its own, which clears the wait as it commits (ADR 2026-10.5sk9, phase
+    /// P5b).
     @discardableResult
     public func sendDirectMessage(
         _ text: String, to recipient: NodeId, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil,
@@ -68,6 +73,9 @@ extension MeshEngine {
             replyTo: replyTo,
             mentions: MessageMention.carried(mentions, in: body)
         )
+        if configuration.ratchet {
+            return sendDirect(record, to: recipient, as: directScheme(for: record, to: stores.peers.peer(recipient)))
+        }
         let sealed = seal(Self.content(of: record), id: id, sentAt: sentAt, to: recipient)
         record.pendingKey = sealed == nil
         stores.messages.save(record)
@@ -195,8 +203,8 @@ extension MeshEngine {
         )
     }
 
-    /// Seals `content` to `recipient`'s pinned key, or `nil` when none is pinned. v1 only: our capabilities never
-    /// promise the ratchet, so Android seals v1 back (ADR 2026-09.qsd9).
+    /// Seals `content` to `recipient`'s pinned key with v1, or `nil` when none is pinned (ADR 2026-09.qsd9): every DM
+    /// with the ratchet's switch off. With it on, the read that chose the scheme gives the bundle (``sendDirect(_:to:as:)``).
     func seal(_ content: MessageContent, id: String, sentAt: Int64, to recipient: NodeId) -> EncEnvelope? {
         guard let peer = stores.peers.peer(recipient), let bundle = PublicKeyBundle(encoded: peer.publicKey) else {
             return nil
@@ -207,9 +215,23 @@ extension MeshEngine {
 
     /// Our messages that waited for `recipient`'s key, sealed and flooded under their original id and clock now that
     /// the key has pinned (`MeshManager.flushPendingFor`): DMs to them, and group messages in groups they are in. A DM
-    /// to someone blocked waits on, as on Android, until an unblock and their next profile.
+    /// to someone blocked waits on, as on Android, until an unblock and their next profile; with the ratchet's switch on,
+    /// one to a peer whose profile carries `CAP_RATCHET` goes at the first heal after the unblock instead
+    /// (``retryWaitingDirectMessages()``), the frame Android sends at that peer's next profile.
     func flushPending(to recipient: NodeId) {
+        flushPendingDirect(to: recipient)
+        flushPendingGroups(for: recipient)
+    }
+
+    /// Our DMs to `recipient` still waiting, sealed and sent, each as ``sendDirectMessage(_:to:photo:replyTo:mentions:)``
+    /// would seal it now: with the switch on, as one read of the peer's row decides (``flushWaitingDirect(_:to:)``,
+    /// `resealAndFlood` through `sealEnvelopeFor`, `MeshManager.kt:3345-3352`), else v1 as before.
+    func flushPendingDirect(to recipient: NodeId) {
         let waiting = isBlocked(recipient) ? [] : stores.messages.pendingKey(to: recipient)
+        if configuration.ratchet {
+            flushWaitingDirect(waiting, to: recipient)
+            return
+        }
         for message in waiting {
             if let sealed = seal(Self.content(of: message), id: message.id, sentAt: message.sentAt, to: recipient) {
                 originate(
@@ -225,7 +247,6 @@ extension MeshEngine {
                 events.append(.sent(messageId: message.id))
             }
         }
-        flushPendingGroups(for: recipient)
     }
 
     // MARK: Origination

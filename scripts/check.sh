@@ -259,8 +259,9 @@ check_release_app() {
 	local app=$1 marker
 	check_xcode_app "$app"
 	# Strings only debug code holds, each long enough to be stored whole rather than inline: the bridge's queue label
-	# (Sources/Knit/Debug/) and the demo's launch line (AppEnvironment.demo). Either one here means a debug path ships.
-	for marker in app.getknit.knit.bridge "running the demo on seeded stores in memory"; do
+	# (Sources/Knit/Debug/), the demo's launch line (AppEnvironment.demo) and the defaults key that keeps a debug build's
+	# ratchet switch (Launch.options, ADR 2026-10.5sk9). Any one here means a debug path ships.
+	for marker in app.getknit.knit.bridge "running the demo on seeded stores in memory" debug.launch.ratchet; do
 		if grep -q -a -F "$marker" "$app/Knit"; then
 			echo "$app/Knit holds debug-only code: it contains \"$marker\"" >&2
 			return 1

@@ -51,16 +51,27 @@
         /// Whether a tapped notification asked for the message requests.
         var requestedRequests = false
 
-        @ObservationIgnored private let options = LaunchOptions(arguments: Launch.arguments)
         @ObservationIgnored private var history = History(startedAt: SystemClock().wallMilliseconds())
 
-        /// The arguments `-seedDemo` and the `-demo…` flags are read from: the process's own in a debug build, and none in
-        /// a release one, which always runs live (ADR 2026-10.8cy5).
-        nonisolated private static var arguments: [String] {
+        /// The launch's options, read as each try builds the environment, once protected data can be read: from the
+        /// process's own arguments in a debug build (`-seedDemo`, the `-demo…` flags and `-ratchet on|off`), and from none
+        /// in a release one, which always runs live (ADR 2026-10.8cy5). A debug build also keeps `-ratchet`'s choice in its
+        /// defaults for every launch after it that names none (ADR 2026-10.5sk9), the ones iOS makes by itself after an
+        /// install or a reboot among them. A running process keeps what its own start read, so a `devicectl` launch that
+        /// brings it forward without `--terminate-existing` changes nothing. A release build reads and keeps nothing.
+        nonisolated private static func options() -> LaunchOptions {
             #if DEBUG
-                ProcessInfo.processInfo.arguments
+                let defaults = UserDefaults.standard
+                // `scripts/check.sh release` fails when a release build holds this key: it would mean the kept switch ships.
+                let key = "debug.launch.ratchet"
+                let stored = defaults.string(forKey: key).flatMap(LaunchOptions.Choice.init(word:))
+                let read = LaunchOptions(arguments: ProcessInfo.processInfo.arguments, storedRatchet: stored)
+                if let choice = read.ratchetChoice {
+                    defaults.set(choice.word, forKey: key)
+                }
+                return read
             #else
-                []
+                return LaunchOptions(arguments: [])
             #endif
         }
 
@@ -71,7 +82,7 @@
                 return
             }
             do {
-                let environment = try AppEnvironment.make(options, launch: history.started(by: trigger))
+                let environment = try AppEnvironment.make(Self.options(), launch: history.started(by: trigger))
                 stage = .ready(environment)
                 environment.run()
             } catch {

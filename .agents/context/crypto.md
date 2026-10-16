@@ -1,9 +1,10 @@
 # Identity and end-to-end crypto
 
-How knit-next derives identities and seals DMs at the pinned commit. This port seals the v1 scheme only
-(ADR router: `.agents/memory/decisions.md`). The ratchet (v2, v3 and the group form) is being ported dark behind a
-switch, and the last section is its reference (ADR 2026-10.5sk9). The `crypto-owner` reads it before it writes and
-the `crypto-reviewer` before it judges (`.agents/rules/owners.md`).
+How knit-next derives identities and seals DMs at the pinned commit. This port seals the v1 scheme on air (ADR
+router: `.agents/memory/decisions.md`). The ratchet (v2, v3 and the group form) is being ported dark behind a switch,
+which a Debug build's `-ratchet on` and knit-peer's `--ratchet` turn on; the last section is its reference (ADR
+2026-10.5sk9). The `crypto-owner` reads it before it writes and the `crypto-reviewer` before it judges
+(`.agents/rules/owners.md`).
 
 ## Keys
 
@@ -208,6 +209,7 @@ Swift must count `utf16`, not `Character`s.
 | `RatchetEngine` | `RatchetEngine`: `initiate`, `seal`, `open`, over `SessionState`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
 | `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `sealResetDm`, `sweep`, `forget`, `settle`; the reset's pure rules in `RatchetResetPolicy` |
 | `InboundPipeline`'s ratchet arm, `sendSessionReset` | `MeshEngine.handleRatchetDirect` and `sendSessionReset`, over `RatchetInbound`'s pure rules; the replay of a failed open in `RatchetReplay` |
+| `MeshManager.sealEnvelopeFor`'s DM arm, `flushPendingFor`, `resealRecentDmsTo` | `MeshEngine.sendRatchet`, `flushPendingDirect` and `resealRecentDirectMessages`, over `RatchetOutbound`'s pure rules; Android's seal counts in `RatchetSealCounts` |
 | `RatchetStore`, `RatchetRepository` | KnitStore's `RatchetStore`, `MemoryRatchetStore` and `RatchetRetention`; KnitStoreSQL's `SQLRatchetStore` (schema v17); `RatchetRecords` maps the rows to the engine's types |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
@@ -477,7 +479,10 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   A reset is always v2, with the plaintext `{"body": "", "ctl": 1}`.
 - **After a reset we receive,** we re-seal our unacked DMs of the last 24 h under their original id and `sentAt`,
   keeping an attachment's name and size, and force a group seed flush (`MeshManager.kt:3361-3407`). That re-seal is
-  the one exception to "signed once" (ADR 2026-09.2ved, amended).
+  the one exception to "signed once" (ADR 2026-09.2ved, amended): each committed first verdict of a reset from that
+  peer within the day signs each DM still unacked once more, with no per-id guard, in Kotlin as here. This port
+  re-seals from phase P5b, once the reset's first verdict commits and never from the start's replay; the seed flush is
+  P6's.
 - **Init answers** (IntroSync's answer half, `IntroSync.kt:185-240`):
   - each new init from a peer gets one sealed answer, then none again for 60 min, and a reset-marked init gets one
     more;
@@ -517,7 +522,9 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     then goes v1, counted.
   - A DM waits only for a bundle (`pendingKey`), so a peer pinned without a prekey gets v1 at once, and that DM is
     never upgraded.
-  - In this port the switch comes first: off, nothing takes the ratchet.
+  - In this port the switch comes first: off, nothing takes the ratchet. On, `RatchetOutbound.scheme` makes the choice
+    above (phase P5b). A prekey X25519 refuses, which Kotlin throws on out of `sendChat` (`:1189`, `:1295`), sends the DM
+    v1 as `sealDm`'s `nil` does, counted with it as `dmSealedV1Fallback`.
 - **A group message** takes the group form only when every other member has a bundle, `CAP_RATCHET` and a prekey,
   and the epoch's seed seals to all of them (`MeshManager.kt:1319-1353`). Any shortfall sends that message as v1.
 - **Resets, seeds and the group form** are always v2.
@@ -632,9 +639,33 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   - A failed unit's frame whose process dies before the sweep loses its first verdict, Kotlin's level. Where custody
     holds it as it came, the start opens it with the era held, so one that would have moved the era waits for a start
     after the peer's next live frame has; a re-seal is lost outright.
-  - P5b re-seals our unacked DMs after a reset's committed first verdict, however it opened (a root adopted, a race
-    won or lost, a marker under the session held), as Kotlin does (`InboundPipeline.kt:1137-1148`); never from the
-    start's replay.
+  - Once a reset's first verdict commits, however it opened (a root adopted, a race won or lost, a marker under the
+    session held), our unacked DMs to its sender are re-sealed, as Kotlin does (`InboundPipeline.kt:1137-1148`), through
+    the send arm below. A kept copy whose unit failed re-seals when the sweep's open of it commits, which is that
+    reset's first committed verdict. Never from the start's replay.
+- **The engine's send arm** (`MeshEngine+RatchetOutbound.swift`, phase P5b), with the switch on, takes a DM to a peer whose
+  pinned profile carries `CAP_RATCHET` and a bundle (`sealEnvelopeFor`, `MeshManager.kt:1267-1308`):
+  - One read of the peer's pinned row decides the scheme, and the v1 arm seals to the bundle that read gave. A read
+    that fails leaves the DM waiting, and a flush whose read fails leaves every waiting DM waiting: a second read could
+    find the row and send a ratchet peer v1, uncounted and never upgraded. Kotlin's read throws when it fails, and
+    nothing is sealed (`MeshManager.kt:1290`, `PeerRepository.kt:138`).
+  - The row is saved waiting first. One store unit, the outermost, then seals through `sealDm` joined to it, signs the
+    frame once, clears `pendingKey` and takes the frame into our own custody. The settlement, the router's mark, the
+    transport's send, the count and `.sent` wait for the commit. A frame whose unit committed survives a crash before
+    its send when custody keeps it: custody keeps no DM that waited more than a day, none past our 200 newest frames,
+    and none past its 1,000 newest.
+  - The facade's `unavailable` and `refusedKey` seal the same content v1 to the pinned bundle inside the same unit,
+    counted as `dmSealedV1Fallback`. An identity key that v1 refuses too, a low-order point, abandons the unit, and the
+    DM waits, as today's v1 send leaves it.
+  - A unit that fails leaves the row waiting and nothing on the air, and the heal seals it again
+    (`retryWaitingDirectMessages`).
+  - A re-seal after a reset takes the same unit under the message's own id and `sentAt`, from its row, and flies live.
+    Custody keeps the first bytes stored under an id, so it is carried only where custody lost the original.
+  - A re-seal reaches only the nodes it meets live whose router has not seen its id within ten minutes. The reopen is
+    the failing peer's alone, a relay that carried the original inside that window drops it, and every custody, the
+    peer's included, keeps only the original, as in Kotlin. So a peer two hops away does not read DMs that crossed a
+    relay within ten minutes before its reset (`RatchetResealReachTests`).
+  - The v1 path is as it was, from the same draws, with the switch off and toward a peer without the bit.
 
 ### The promise behind the bits
 
@@ -699,13 +730,14 @@ knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` from a branc
   `RatchetTranscriptSessionTests` replays the six that need the session layer through `RatchetSessions` (the races,
   the late loser, the re-root, the era gate and the reset plans), checking each step's floors held in memory and the
   rule that decided a plan. `RatchetPipelineVectorTests` replays the control plane (`ctlPlane`, as Bob) and the
-  pipeline's own refusals through a whole engine's inbound path, each open's drop, `applies` and state; the re-seals
-  wait for P5b;
+  pipeline's own refusals through a whole engine's inbound path, each open's drop, `applies` and state.
+  `RatchetSendVectorTests` sends every seal of Alice's that the pipeline makes by its own rules through her engine, byte
+  for byte, the re-seal included, and runs the re-seal pair through two engines;
 - `group`, the group form's transcripts, for P6;
 - `carol`, Carol, the iPhone, in races and first contacts with Alice and with Bob. Every opener is v3, and
   `RatchetTranscriptTests` replays them at the engine, Carol's seals byte for byte. `RatchetCarolVectorTests` delivers
-  every frame Carol opens through her engine's inbound path, against the state and floors Android's own pipeline left,
-  her own seals made by a second facade from her draws until P5b and P5c send them.
+  every frame Carol opens through her engine's inbound path, against the state and floors Android's own pipeline left.
+  Her DMs go through her engine's send path, and her ticks through its facade, from her draws, until P5c seals them.
 
 A10 then adds this port's own ratchet frames to `ios-emitted-v1.json`, for knit-next's `IosEmittedVectorTest` to
 open (`.agents/memory/roadmap.md`).

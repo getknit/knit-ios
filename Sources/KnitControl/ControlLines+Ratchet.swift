@@ -25,4 +25,13 @@ extension ControlLines {
             "localEpochs": .array(state.localEpochs.map { .string("\($0.epoch)@\($0.createdAt)") }),
         ]
     }
+
+    /// How our DMs were sealed, under the names of Android's metrics (`MeshMetrics.Seals`, `MeshMetrics.kt:1476-1482`).
+    static func describe(_ seals: RatchetSealCounts) -> JSONValue {
+        [
+            "dmSealedV2": .int(Int64(seals.dmSealedV2)),
+            "dmSealedV3": .int(Int64(seals.dmSealedV3)),
+            "dmSealedV1Fallback": .int(Int64(seals.dmSealedV1Fallback)),
+        ]
+    }
 }

@@ -110,10 +110,12 @@ import Testing
         // unspent, so the signed copy, past the router's window, still opens.
         let plain = try android.dm(MessageContent(body: "a real message"), to: me, prekey: prekey, id: "u-plain", sentAt: now, v3: true)
         let stripped = TestFrame(wire: WireEnvelope(relay: false, sig: [], signed: plain.envelope.encoded), envelope: plain.envelope)
+        // Our DM above started a session of ours (phase P5b): the refused open must leave it as it was.
+        let held = fixture.ratchetRecords(of: alice)
         fixture.deliver(stripped, from: android)
         #expect(fixture.engine.dropped[.unsigned] == 5)
         #expect(fixture.stores.messages.message("u-plain") == nil)
-        #expect(fixture.ratchetRecords(of: alice).session == nil, "nothing committed")
+        #expect(fixture.ratchetRecords(of: alice) == held, "nothing committed")
         fixture.advance(SeenSet.defaultWindowMilliseconds + 1000)
         fixture.deliver(plain, from: android)
         #expect(fixture.stores.messages.message("u-plain")?.body == "a real message")

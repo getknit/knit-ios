@@ -16,8 +16,9 @@ extension MeshEngine {
     /// - a receipt (5): our ticks flipped;
     /// - a reaction (6): applied last writer wins, at its first verdict;
     /// - a profile (8): its presentation, never its prekey, at its first verdict;
-    /// - a reset (1): nothing beyond the open, whose own delta adopted it. Re-sealing our unacked DMs under the new session
-    ///   is P5b's, since nothing seals with the ratchet before it, and flushing our group seeds is P6's;
+    /// - a reset (1): nothing beyond the open, whose own delta adopted it; at its first verdict, our unacked DMs to the
+    ///   sender are sealed again once the unit commits (phase P5b, ``resealRecentDirectMessages(to:)``), and flushing our
+    ///   group seeds is P6's;
     /// - the group form's codes (2, 3, 4) until P6, and every code this build does not know: nothing beyond the chain's
     ///   advance, which still commits (`:1191-1196`).
     ///
@@ -25,7 +26,8 @@ extension MeshEngine {
     /// Both are ordered by a stamp clamped to our clock at the first open (``clampFuture(_:)``), which a later open cannot
     /// reproduce: a reaction or presentation first opened from a peer running more than five minutes fast would apply
     /// again higher and outrank a newer one. Only one whose first verdict never committed is lost that way, as it is in
-    /// Kotlin, which re-opens nothing from its own custody.
+    /// Kotlin, which re-opens nothing from its own custody. Nor does it re-seal for a reset: that reset's first verdict,
+    /// if it had one, came before the restart and re-sealed then, and the replay meets it again for a day.
     func arrival(
         of content: MessageContent, _ envelope: RelayEnvelope, from sender: NodeId, origin: RatchetInbound.Origin
     ) -> RatchetArrival {
@@ -42,6 +44,10 @@ extension MeshEngine {
             (arrival.reacted, arrival.refusedReaction) = applySealedReaction(content.rp, from: sender, sentAt: envelope.sentAt)
         case MessageContent.Control.profile where origin == .firstVerdict:
             arrival.presentation = applySealedPresentation(content.pr, from: sender)
+        case MessageContent.Control.sessionReset where origin == .firstVerdict:
+            // However its open went: a root adopted, a race won or lost, or a marker under the session held
+            // (`InboundPipeline.kt:1137-1148`). The re-seal is a send, so it waits for the commit.
+            arrival.resealsUnacked = true
         default:
             break
         }
@@ -49,8 +55,9 @@ extension MeshEngine {
     }
 
     /// The work an opened frame left, once its unit has committed: the ticks it flipped and the reaction it applied are
-    /// announced, a refused reaction counted, a moved profile's photo fetched or let go, and a message delivered as
-    /// ``deliverChat(_:_:sender:recipient:via:)``'s second half delivers one, its acknowledgement included.
+    /// announced, a refused reaction counted, a moved profile's photo fetched or let go, a message delivered as
+    /// ``deliverChat(_:_:sender:recipient:via:)``'s second half delivers one, its acknowledgement included, and a reset's
+    /// first verdict answered with our unacked DMs sealed again (`handleCtlDm`'s follow-up, `InboundPipeline.kt:1140-1147`).
     func finish(_ arrival: RatchetArrival, _ envelope: RelayEnvelope, from sender: NodeId, via hop: NodeId?) {
         for id in arrival.delivered {
             events.append(.delivered(messageId: id))
@@ -66,6 +73,9 @@ extension MeshEngine {
         }
         if let message = arrival.message {
             announce(message, envelope, sender: sender, via: hop)
+        }
+        if arrival.resealsUnacked {
+            resealRecentDirectMessages(to: sender)
         }
     }
 
@@ -171,4 +181,6 @@ internal struct RatchetArrival {
     var refusedReaction = false
     /// The presentation a sealed profile moved.
     var presentation: Presentation?
+    /// Whether it was a reset's first verdict, which has us seal our unacked DMs to its sender again.
+    var resealsUnacked = false
 }

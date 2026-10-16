@@ -32,8 +32,8 @@ honest.
 **Amended 2026-10-15:** the ratchet brings one exception to "signed once" (ADR 2026-10.5sk9).
 
 - **What Android does:** after a peer's reset, it re-seals its unacked DMs of the last 24 h under their original
-  id and `sentAt`. Those ids each get a second set of signed bytes (`MeshManager.kt:3361-3407` at knit-next
-  `ac491f4c`).
+  id and `sentAt`. Each reset gives those ids one more set of signed bytes, with no per-id guard
+  (`MeshManager.kt:3361-3407` at knit-next `ac491f4c`).
 - **What this port does:** the same, once its ratchet is on.
 - **Why custody still holds one set of bytes per id:** the re-seal flies live and never replaces the bytes custody
   holds. Custody keeps the first bytes it stored for an id, here (`CustodySync`) as on Android (`ForwardSync.kt:75`).

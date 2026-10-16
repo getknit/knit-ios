@@ -20,7 +20,8 @@ public final class MeshEngine {
     /// The repositories.
     public let stores: MeshStores
     /// The DM ratchet's sessions over ``stores``' ratchet store, and the floors it holds in memory (ADR 2026-10.5sk9). With
-    /// the switch on, DM-form v2 and v3 frames to us open through it, and its resets go out (phase P5a).
+    /// the switch on, DM-form v2 and v3 frames to us open through it, and its resets go out (phase P5a), and our DMs to a
+    /// peer whose pinned profile carries `CAP_RATCHET` are sealed through it (phase P5b).
     let ratchet: RatchetSessions
     /// The copies of the ratchet frames whose open's unit failed, opened again at the next sweep.
     var ratchetReplay = RatchetReplay()
@@ -51,6 +52,8 @@ public final class MeshEngine {
 
     /// Why frames were dropped so far, by reason.
     public private(set) var dropped: [DropReason: Int] = [:]
+    /// How our DMs were sealed so far, with the ratchet or v1 in its stead (``RatchetSealCounts``, phase P5b).
+    public internal(set) var seals = RatchetSealCounts()
     /// Bumped whenever custody may have changed, so the driver knows to re-read ``digestCue``.
     public private(set) var custodyRevision = 0
     /// Whole files dropped here: their bytes did not match their hash, a pushed photo was not the one its pusher's
@@ -66,23 +69,26 @@ public final class MeshEngine {
     }
 
     /// A node with `identity` and the prekeys it keeps, its repositories, and the transport, clock and randomness it runs
-    /// on. A ring another identity signs is not this node's, and is left out.
-    public init(
+    /// on, whose ratchet draws its ephemerals, epoch keys and v2 IVs from `ratchetEngine`: the system's generator but for a
+    /// vector replay, which passes A9's draws. Never the injected `random`, which a seed fixes (`crypto.md`, ADR
+    /// 2026-10.5sk9's P4b amendment). A ring another identity signs is not this node's, and is left out.
+    init(
         identity: IdentityKeys,
-        prekeys: PrekeyRing? = nil,
+        prekeys: PrekeyRing?,
         deviceTag: String?,
         stores: MeshStores,
         transport: any MeshTransport,
         clock: any MeshClock,
         random: some RandomNumberGenerator,
-        configuration: MeshConfiguration = MeshConfiguration(),
-        log: any KnitLog = SilentLog()
+        configuration: MeshConfiguration,
+        log: any KnitLog,
+        ratchetEngine: RatchetEngine
     ) {
         self.identity = identity
         prekeyRing = prekeys.flatMap { $0.identity.bundle == identity.bundle ? $0 : nil }
         self.deviceTag = deviceTag
         self.stores = stores
-        ratchet = RatchetSessions(identity: identity, store: stores.ratchet, transactor: stores.transactor)
+        ratchet = RatchetSessions(identity: identity, store: stores.ratchet, transactor: stores.transactor, engine: ratchetEngine)
         self.transport = transport
         self.clock = clock
         self.random = random
@@ -300,12 +306,13 @@ public final class MeshEngine {
         replayFailedRatchetOpens()
     }
 
-    /// The 15-minute heal pass (`MeshManager.heal`): re-ask for missing keys, rotate our prekey when due, and republish a
-    /// stale profile.
+    /// The 15-minute heal pass (`MeshManager.heal`): re-ask for missing keys, rotate our prekey when due, republish a
+    /// stale profile, and, with the ratchet's switch on, seal again the DMs a store failure left waiting.
     func heal() {
         askForMissingKeys(to: neighborIds)
         syncPrekey(atStart: false)
         republishIfStale()
+        retryWaitingDirectMessages()
     }
 
     // MARK: Shared helpers
@@ -349,5 +356,34 @@ public final class MeshEngine {
     func sign(_ envelope: RelayEnvelope, relay: Bool) -> WireEnvelope? {
         let signed = envelope.encoded
         return (try? identity.signature(for: signed)).map { WireEnvelope(relay: relay, sig: $0, signed: signed) }
+    }
+}
+
+extension MeshEngine {
+    /// A node with `identity` and the prekeys it keeps, its repositories, and the transport, clock and randomness it runs
+    /// on. A ring another identity signs is not this node's, and is left out.
+    public convenience init(
+        identity: IdentityKeys,
+        prekeys: PrekeyRing? = nil,
+        deviceTag: String?,
+        stores: MeshStores,
+        transport: any MeshTransport,
+        clock: any MeshClock,
+        random: some RandomNumberGenerator,
+        configuration: MeshConfiguration = MeshConfiguration(),
+        log: any KnitLog = SilentLog()
+    ) {
+        self.init(
+            identity: identity,
+            prekeys: prekeys,
+            deviceTag: deviceTag,
+            stores: stores,
+            transport: transport,
+            clock: clock,
+            random: random,
+            configuration: configuration,
+            log: log,
+            ratchetEngine: RatchetEngine()
+        )
     }
 }

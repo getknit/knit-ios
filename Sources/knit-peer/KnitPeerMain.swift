@@ -93,7 +93,8 @@ import Foundation
             }
         }
 
-        /// The node, on the identity and profile kept in the state directory, with everything else in memory.
+        /// The node, on the identity and profile kept in the state directory, with everything else in memory. With
+        /// `--ratchet`, the prekeys kept beside the identity too (ADR 2026-10.5sk9).
         private static func makeNode(
             _ options: RunOptions,
             host: any PeerRadioHost,
@@ -107,10 +108,19 @@ import Foundation
             } catch {
                 fail("cannot load the identity in \(options.stateDirectory): \(error)")
             }
+            let prekeys: PrekeyRing?
+            do {
+                // Read only: the start mints the first one into the identity's file, and publishes it.
+                prekeys = options.ratchet ? try state.loadPrekeys(for: identity.keys) : nil
+            } catch {
+                fail("cannot load the prekeys in \(options.stateDirectory): \(error)")
+            }
             // The profile's file joins the memory stores' unit, which puts it back with them when a unit is undone.
             let stores = MeshStores.inMemory(ownProfileStore: state.profileStore())
             return PeerNode(
                 identity: identity.keys,
+                prekeys: prekeys,
+                ratchet: options.ratchet,
                 stores: stores,
                 radio: host.radio,
                 radioProfile: host.profile,

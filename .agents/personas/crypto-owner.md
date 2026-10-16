@@ -134,7 +134,8 @@ Before you edit, write down for yourself, for each behaviour the change adds or 
 - **What a re-send costs.** A frame id is signed once and its bytes stored, because CryptoKit's Ed25519 signatures
   are randomized; a picture is sealed once; a re-seal under a new id is a new message to the recipient. A ratchet
   seal consumes a chain key, a sealed tick is sealed once and re-sent verbatim, and the re-seal after a peer's reset
-  is the one second signature for an id.
+  is the one exception to signing once: each committed first verdict of a reset adds one signature, with no per-id
+  guard, as in Kotlin.
 - **Which era.** With the ratchet, a frame may come from a root the pair has since left: a race's other root, the
   previous root draining, or an era a reset abandoned. Only a fresh derivation under the active root may move the
   era (adopt a base, raise `highestPeAcked`, confirm). Receive state carries its root's tag, and whoever abandons an

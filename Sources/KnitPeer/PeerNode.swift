@@ -17,12 +17,14 @@ public actor PeerNode {
     private let avatarPath: String?
     private var forwarding: Task<Void, Never>?
 
-    /// A node for `identity` on `radio`, with the ratchet prekeys `prekeys` (``PeerState/loadPrekeys(for:)``), or none.
+    /// A node for `identity` on `radio`, with the ratchet prekeys `prekeys` (``PeerState/loadPrekeys(for:)``), or none,
+    /// and the ratchet's switch at `ratchet` (`--ratchet`), which publishes the newest prekey only when `prekeys` keeps one.
     /// Nothing runs until ``start(name:)``.
     @preconcurrency
     public init(
         identity: IdentityKeys,
         prekeys: PrekeyRing? = nil,
+        ratchet: Bool = false,
         stores: MeshStores,
         radio: any Radio,
         radioProfile: String,
@@ -46,7 +48,7 @@ public actor PeerNode {
             clock: clock,
             random: random,
             // The peer is a test bench, so it queries a blob's holders as a debug build does (knit-next ADR 2026-10.6e5t).
-            configuration: MeshConfiguration(queriesBlobHolders: true),
+            configuration: MeshConfiguration(queriesBlobHolders: true, ratchet: ratchet),
             linkConfiguration: linkConfiguration,
             log: log
         )

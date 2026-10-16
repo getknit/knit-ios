@@ -201,6 +201,8 @@ extension RatchetVectors {
         public let dropNormative: Bool? // swiftlint:disable:this discouraged_optional_boolean - absent in the file means its default
         /// The group a group-addressed negative names.
         public let groupId: String?
+        /// The seal step whose message a re-seal after a reset seals again under its own id and `sentAt` (stage 3b).
+        public let resealOf: Int?
 
         private enum CodingKeys: String, CodingKey {
             case step = "step"
@@ -239,6 +241,7 @@ extension RatchetVectors {
             case resetTriggering = "resetTriggering"
             case dropNormative = "dropNormative"
             case groupId = "groupId"
+            case resealOf = "resealOf"
         }
     }
 

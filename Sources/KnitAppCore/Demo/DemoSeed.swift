@@ -33,9 +33,15 @@ public struct LaunchOptions: Sendable, Equatable {
     /// the content filter hides, asks and refuses; otherwise they find none so. Nothing in the repository is explicit or
     /// abusive to test with.
     public var demoSensitive = false
+    /// Whether a live launch turns the forward-secrecy ratchet's switch on (`MeshConfiguration.ratchet`, ADR 2026-10.5sk9):
+    /// `-ratchet on|off`, or the choice an earlier launch kept, else off (``Choice``). A release build never turns it on.
+    public var ratchet = false
+    /// What this launch's `-ratchet` chose, for the app to keep, or `nil` when it chose nothing.
+    public var ratchetChoice: Choice?
 
-    /// The options in `arguments`, the process's own. Anything unknown is left for the system.
-    public init(arguments: [String]) {
+    /// The options in `arguments`, the process's own, with `storedRatchet` the choice an earlier `-ratchet` kept, or `nil`
+    /// for none. Anything unknown is left for the system.
+    public init(arguments: [String], storedRatchet: Choice? = nil) {
         seedDemo = arguments.contains("-seedDemo")
         if let flag = arguments.firstIndex(of: "-demoRadio"), arguments.indices.contains(flag + 1) {
             demoRadio = Self.radioStates[arguments[flag + 1]] ?? .on
@@ -53,6 +59,8 @@ public struct LaunchOptions: Sendable, Equatable {
         }
         demoNotification = arguments.contains("-demoNotification")
         demoSensitive = arguments.contains("-demoSensitive")
+        ratchetChoice = Choice(after: "-ratchet", in: arguments)
+        ratchet = (ratchetChoice ?? storedRatchet) == .on
     }
 
     private static let radioStates: [String: RadioState] = [

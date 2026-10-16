@@ -147,10 +147,11 @@ extension EngineFixture {
         stores: MeshStores = .inMemory(),
         keychain: KeptSecretStore? = nil,
         wall: Int64 = start,
-        configuration: MeshConfiguration = MeshConfiguration(ratchet: true)
+        configuration: MeshConfiguration = MeshConfiguration(ratchet: true),
+        seed: UInt64 = 7
     ) throws -> EngineFixture {
         let ring = try PrekeyRing.load(for: me.keys, from: keychain ?? KeptSecretStore(me.keys.storedForm))
-        return EngineFixture(me, stores: stores, configuration: configuration, prekeys: ring, wall: wall)
+        return EngineFixture(me, stores: stores, configuration: configuration, prekeys: ring, wall: wall, seed: seed)
     }
 
     /// Our newest prekey, as a peer pins it from our profile.

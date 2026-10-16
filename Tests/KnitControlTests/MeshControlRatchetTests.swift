@@ -89,6 +89,20 @@ import Testing
         #expect(again["reRooted"] == nil)
     }
 
+    /// The reply's `seals`, under Android's metric names (phase P5b): a DM to the pinned peer goes with the ratchet, compact
+    /// to a v3 reader, and with the switch off goes v1 and counts nothing.
+    @Test func theDumpCountsHowOurDMsWereSealed() async throws {
+        for on in [true, false] {
+            let rig = ControlRig(configuration: MeshConfiguration(ratchet: on))
+            pin(peer, in: rig.stores)
+            let sent = try await rig.send(#"{"cmd":"dm","to":"\#(peer.keys.nodeId)","text":"hi"}"#)
+            #expect(sent["pendingKey"] as? Bool == false)
+            let seals = try #require(try await rig.send(#"{"cmd":"ratchet"}"#)["seals"] as? [String: Int])
+            let counted = on ? 1 : 0
+            #expect(seals == ["dmSealedV2": counted, "dmSealedV3": counted, "dmSealedV1Fallback": 0], "switch \(on)")
+        }
+    }
+
     private func pin(_ peer: TestKeys, in stores: MeshStores) {
         stores.peers.upsert(
             PeerRecord(

@@ -8,7 +8,8 @@ public enum MeshEvent: Sendable, Equatable {
     case received(MessageRecord, isRequest: Bool)
     /// A receipt came back for one of our messages: ✓✓.
     case delivered(messageId: String)
-    /// One of our messages that waited for a key was sealed and sent: ✓.
+    /// One of our messages that waited was sealed and sent: ✓. It waited for a key, or, with the ratchet's switch on, for
+    /// the store unit its ratchet seal commits in (phase P5b).
     case sent(messageId: String)
     /// Someone's reaction to a message we hold was added, replaced or taken back (ADR 2026-10.ehe6). Our own reactions
     /// are not announced: whoever made one already has the answer.

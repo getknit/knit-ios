@@ -183,7 +183,7 @@
                     nodeId: identity.nodeId, keyStore: keyStore, directory: directory, preferences: defaults, launch: launch)
                 // The device tests pick a demo photo too: the system's picker is out of their reach.
                 parts.demoPhoto = options.demoPhoto ? DemoPictures.picked(moving: options.demoPhotoMoves) : nil
-                return compose(parts) { keys in try keyStore.write(keys.storedForm) }
+                return compose(parts, ratchet: options.ratchet) { keys in try keyStore.write(keys.storedForm) }
             #else
                 return compose(parts, replace: nil)
             #endif
@@ -232,7 +232,7 @@
             )
         }
 
-        private static func compose(_ parts: Parts, replace: IdentityReplacer?) -> AppEnvironment {
+        private static func compose(_ parts: Parts, ratchet: Bool = false, replace: IdentityReplacer?) -> AppEnvironment {
             let clock = SystemClock()
             let node = Mesh(
                 identity: parts.identity,
@@ -243,8 +243,8 @@
                 clock: clock,
                 random: SystemRandomNumberGenerator(),
                 // Every build queries a blob's holders before it asks, as Android's does since its `BLOB_QUERY` shipped
-                // on in release (knit-next `713b29d6`, ADR 2026-10.m9uq's amendment).
-                configuration: MeshConfiguration(queriesBlobHolders: true),
+                // on in release (knit-next `713b29d6`, ADR 2026-10.m9uq's amendment); the ratchet only on a debug `-ratchet on`.
+                configuration: MeshConfiguration(queriesBlobHolders: true, ratchet: ratchet),
                 log: parts.log
             )
             let alerts = LocalNotifier()

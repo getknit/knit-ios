@@ -210,6 +210,25 @@ is the tick.
 
 Launch arguments, set in the scheme on the Mac (P7):
 
+- `-ratchet on` or `-ratchet off` sets the forward-secrecy ratchet's switch for a live launch (ADR 2026-10.5sk9). With
+  it on, the profile carries our prekey and the ratchet's bits, and DMs to a peer that advertises them seal and open
+  with the ratchet. A debug build keeps the choice for every launch after it that names none, iOS's own and the device
+  tests' included, until `-ratchet off`; with no choice kept it is off, and `-ratchet` with no value or another value
+  changes nothing. It is for a device trial, with the go-ahead. Turning it off republishes the profile without them.
+  - Knit is nearly always running already: iOS starts it by itself after every install, and `check.sh devicetest`
+    reopens it. A running Knit reads no argument, since `devicectl` only brings it forward, so give every
+    `-ratchet on` and every `-ratchet off` `--terminate-existing`:
+    `xcrun devicectl device process launch --terminate-existing --device <id> app.getknit.knit.dev -ratchet on`.
+  - Before judging anything in a trial, check that the bridge's `{"cmd":"ratchet"}` reply shows a non-null `prekeyId`
+    and, once a DM went, `seals.dmSealedV2 > 0`. A switch that is off passes "no fallback" and "no reset" without
+    testing anything.
+  - While it is on, keep the phone out of groups whose other members are all Android phones running the ratchet:
+    Android seals those in the group form, which this build drops until P6, its seeds included.
+  - End every trial with the same launch and `-ratchet off`, then check that the reply shows `prekeyId: null` once the
+    mesh has started. A kept "on" otherwise runs every later run with the ratchet: `check.sh devicetest` and each
+    `interop.py` leg run whatever is kept, and `iphone-react`'s DM leg would take the sealed reaction for the cleartext
+    one it means to test.
+
 - `-seedDemo` runs the app on seeded stores in memory, a fixed identity and a radio that goes nowhere: four
   people, a room conversation, an accepted DM and a message request.
 - `-demoRadio on|off|unauthorized|unsupported` (with `-seedDemo`) is the state that radio reports, which is how

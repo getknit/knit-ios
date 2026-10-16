@@ -42,7 +42,9 @@ extension Transacted: Equatable where Value: Equatable {}
 /// The body's contract, which the engine keeps and the crypto reviewer's shape 18 checks:
 /// - It reads and writes stores and nothing else. It never sends, emits an event, touches the Keychain or changes policy
 ///   kept in memory, and it leaves writing or removing a blob to the work after the commit, since a blob's file is no
-///   part of the transaction (``BlobStore``).
+///   part of the transaction (``BlobStore``). The one write in memory a unit may make is the tombstone `CustodySync.admits`
+///   sets for a DM whose recipient's receipt came first: idempotent, and the verdict a later `carry` reaches anyway, so
+///   the ratchet's send unit keeps our custody's copy inside it.
 /// - It answers the work for after the commit as a value, or `nil` to abandon the unit. That work runs only once the
 ///   outermost unit answers ``Transacted/committed(_:)``. A unit nested in another answers ``Transacted/joined(_:)``,
 ///   and its caller hands the work up through its own body's answer. After ``Transacted/failed`` nothing is delivered

@@ -1,9 +1,10 @@
 import KnitCrypto
-import KnitMesh
 import KnitStore
 import KnitSync
 import KnitTestSupport
 import KnitWire
+
+@testable import KnitMesh
 
 /// One engine under test, on a clock and a transport the test controls.
 struct EngineFixture {
@@ -17,14 +18,18 @@ struct EngineFixture {
     let log = RecordingLog()
     let engine: MeshEngine
 
-    /// An engine for `me`, keeping `prekeys` when given, its wall clock at `wall`, started unless told otherwise.
+    /// An engine for `me`, keeping `prekeys` when given, its wall clock at `wall`, started unless told otherwise. It draws
+    /// frame ids and jitter from `seed`, which two engines that talk to each other must not share, or their ids collide.
+    /// Its ratchet draws from `ratchetEngine` when a vector replay passes one, and from the system's generator otherwise.
     init(
         _ me: TestPeer,
         stores: MeshStores = .inMemory(),
         configuration: MeshConfiguration = MeshConfiguration(),
         prekeys: PrekeyRing? = nil,
         wall: Int64 = Self.start,
-        started: Bool = true
+        started: Bool = true,
+        seed: UInt64 = 7,
+        ratchetEngine: RatchetEngine = RatchetEngine()
     ) {
         self.me = me
         clock = ManualClock(wall: wall, monotonic: 1000)
@@ -37,9 +42,10 @@ struct EngineFixture {
             stores: stores,
             transport: transport,
             clock: clock,
-            random: SeededGenerator(seed: 7),
+            random: SeededGenerator(seed: seed),
             configuration: configuration,
-            log: log
+            log: log,
+            ratchetEngine: ratchetEngine
         )
         if started {
             engine.start()

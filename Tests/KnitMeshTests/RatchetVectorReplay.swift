@@ -33,13 +33,25 @@ enum RatchetVectorReplay {
 
     /// `name`'s engine in `transcript`: the switch on, its clock at `wall`, the prekey the file says it holds minted at
     /// start from the listed private key, and `peer` pinned with the prekey `name` pins for it and the file's capabilities.
-    static func receiver(_ transcript: RatchetVectors.Transcript, as name: String, peer: String, wall: Int64) throws -> EngineFixture {
+    /// Its ratchet draws `draws` when given, so what it seals is the file's byte for byte, and the system's otherwise.
+    static func receiver(
+        _ transcript: RatchetVectors.Transcript, as name: String, peer: String, wall: Int64, draws: VectorDraws? = nil
+    ) throws -> EngineFixture {
         let party = try #require(transcript.parties[name])
         let keys = try identity(party.identity)
         let held = try prekey(try #require(party.holdsPrekeys.first))
         let pair = held.pair
         let ring = try PrekeyRing.load(for: keys, from: KeptSecretStore(keys.storedForm)) { pair }
-        let fixture = EngineFixture(TestPeer(keys: keys), configuration: MeshConfiguration(ratchet: true), prekeys: ring, wall: wall)
+        // A seed of the party's own, so two engines in one replay never draw the same frame ids.
+        let seed = UInt64(truncatingIfNeeded: keys.nodeId.string.utf8.reduce(7) { $0 &* 31 &+ Int($1) })
+        let fixture = EngineFixture(
+            TestPeer(keys: keys),
+            configuration: MeshConfiguration(ratchet: true),
+            prekeys: ring,
+            wall: wall,
+            seed: seed,
+            ratchetEngine: draws?.engine ?? RatchetEngine()
+        )
         #expect(fixture.engine.prekeyRing?.newest?.id == held.info.id, "the start minted the file's prekey")
         let other = try #require(transcript.parties[peer])
         let otherKeys = try identity(other.identity)

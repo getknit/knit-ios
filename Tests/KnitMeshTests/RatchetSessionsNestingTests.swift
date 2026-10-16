@@ -88,6 +88,40 @@ import Testing
         #expect(bob.session?.root != before.root)
     }
 
+    /// Owed since the P4c review, for the seal a send unit nests (phase P5b): a DM sealed inside the caller's unit answers
+    /// `.joined`, its chain stands only once that unit commits, and its settlement moves nothing, even applied after the
+    /// commit. A seal whose outer unit fails leaves no session, and the next one starts again from nothing.
+    @Test func aSealInsideTheCallersUnitIsJoinedAndStandsOnlyWithIt() throws {
+        let (alice, bob) = try RatchetSessionSide.pair()
+        let prekey = try bob.prekey()
+        let bundle = alice.identity.bundle
+        for fails in [true, false] {
+            let outer = bob.transactor.atomically { () -> RatchetSessions.Answer<RatchetSessions.Sealing>? in
+                let answer = bob.sessions.sealDm(
+                    to: bundle, prekey: prekey, plaintext: Array("hi".utf8), aad: RatchetSessionSide.aad, now: Self.now)
+                if fails {
+                    bob.transactor.failCurrentUnit()
+                }
+                return answer
+            }
+            guard !fails else {
+                #expect(outer == .failed)
+                #expect(bob.session == nil, "the initiation rolled back with the unit")
+                continue
+            }
+            guard case .committed(.joined(.sealed(let envelope), let settlement)) = outer else {
+                Issue.record("a seal inside the caller's unit joins it: \(outer)")
+                return
+            }
+            #expect(settlement == .unchanged(alice.nodeId))
+            let floors = bob.sessions.floors(for: alice.nodeId)
+            bob.sessions.settle(settlement)
+            #expect(bob.sessions.floors(for: alice.nodeId) == floors, "a seal moves no floor")
+            #expect(bob.session?.weAreInitiator == true)
+            #expect(plaintext(try alice.open(envelope, now: Self.now)) == Array("hi".utf8), "the seal that stood opens")
+        }
+    }
+
     @Test func aReplacementWhoseOuterUnitFailsStartsNoFloorAndKeepsTheSession() throws {
         let (alice, bob) = try RatchetSessionSide.pair()
         _ = try bob.open(alice.seal("first", now: Self.now), now: Self.now)

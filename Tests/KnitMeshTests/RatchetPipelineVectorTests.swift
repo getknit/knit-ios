@@ -77,10 +77,10 @@ import Testing
     }
 }
 
-/// A9's `carol` section through the iPhone's engine (ADR 2026-10.5sk9, phase P5a): every step where Carol, the iPhone,
-/// opens what Android sends her, races and first contacts both ways, each against the state Android's own pipeline left.
-/// Carol's own seals, her openers and her ticks, are P5b's and P5c's: here a second facade over her store seals them from
-/// her draws, byte for byte as the file lists them, so the state her opens meet is the file's.
+/// A9's `carol` section through the iPhone's engine (ADR 2026-10.5sk9, phases P5a and P5b): every step where Carol, the
+/// iPhone, opens what Android sends her, races and first contacts both ways, each against the state Android's own pipeline
+/// left, and every DM she writes, sent through her engine from a waiting row, byte for byte as the file lists it. Her
+/// ticks are P5c's: her engine's own facade seals them from her draws, so the state her opens meet is the file's.
 @Suite struct RatchetCarolVectorTests {
     private typealias Replay = RatchetVectorReplay
 
@@ -91,22 +91,13 @@ import Testing
         let transcript = try #require(Replay.file.carol.first { $0.name == name })
         let peer = try #require(transcript.parties.keys.first { $0 != "carol" })
         let first = try #require(transcript.steps.first)
-        let carol = try Replay.receiver(transcript, as: "carol", peer: peer, wall: first.now)
+        let draws = VectorDraws(owner: "carol", plan: transcript.draws["carol"] ?? [])
+        let carol = try Replay.receiver(transcript, as: "carol", peer: peer, wall: first.now, draws: draws)
         let peerKeys = try Replay.identity(peer)
         let pinnedName = try #require(transcript.parties["carol"]?.pins[peer])
         let pinned = try Replay.prekey(pinnedName)
-        let draws = VectorDraws(owner: "carol", plan: transcript.draws["carol"] ?? [])
         let seals = CarolSeals(
-            sealer: RatchetSessions(
-                identity: carol.engine.identity,
-                store: carol.stores.ratchet,
-                transactor: carol.stores.transactor,
-                engine: draws.engine
-            ),
-            carol: carol,
-            peer: peerKeys,
-            prekey: try #require(PeerPrekey(verifying: pinned.info, signedBy: peerKeys.bundle))
-        )
+            carol: carol, peer: peerKeys, prekey: try #require(PeerPrekey(verifying: pinned.info, signedBy: peerKeys.bundle)))
         let names = ["carol": carol.me.nodeId, peer: peerKeys.nodeId]
 
         for step in transcript.steps where step.actor == "carol" {
@@ -128,46 +119,61 @@ import Testing
             try Replay.expectState(step, in: carol, for: peerKeys.nodeId, label)
         }
         #expect(draws.spent, "\(name): Carol took every draw her plan lists")
+        let sealSteps = transcript.steps.filter { $0.actor == "carol" && $0.op == "seal" }.count
+        #expect(!seals.sent.isEmpty && seals.sent.count + seals.ticks == sealSteps, "\(name): every DM of hers through her engine")
     }
 }
 
-/// Carol's own seals in a replay: a second facade over her engine's store, on her draws, which seals each as the file
-/// lists its bytes. A DM she writes is stored as her send will store it (P5b), so the tick that later acknowledges it has
-/// a row to flip.
-private struct CarolSeals {
-    let sealer: RatchetSessions
+/// Carol's own seals in a replay, on her draws, each checked against the bytes the file lists. A DM she writes goes
+/// through her engine's send path from a waiting row (P5b), which leaves the row a later tick flips; a tick goes through
+/// her engine's own facade until P5c seals one.
+private final class CarolSeals {
     let carol: EngineFixture
     let peer: IdentityKeys
     let prekey: PeerPrekey
+    /// The DMs her engine sent, by id.
+    private(set) var sent: [String] = []
+    /// How many ticks her facade sealed.
+    private(set) var ticks = 0
+
+    init(carol: EngineFixture, peer: IdentityKeys, prekey: PeerPrekey) {
+        self.carol = carol
+        self.peer = peer
+        self.prekey = prekey
+    }
 
     func seal(_ step: RatchetVectors.TranscriptStep, _ label: String) throws {
-        let plaintext = try RatchetVectorReplay.bytes(try #require(step.plaintext))
+        let hex = try #require(step.plaintext)
+        let plaintext = try RatchetVectorReplay.bytes(hex)
         let v3 = step.version == EncEnvelope.Version.compactRatchet
-        let answer = sealer.sealDm(
-            to: peer.bundle,
-            prekey: prekey,
-            plaintext: plaintext,
-            aad: try RatchetVectorReplay.bytes(try #require(step.aad)),
-            now: step.now,
-            v3: v3
-        )
-        guard case .settled(.sealed(let envelope)) = answer else {
-            Issue.record("\(label): Carol's seal \(answer)")
-            return
-        }
-        #expect(Hex.encode(envelope.encoded) == step.encEnvelope, "\(label): the envelope, byte for byte")
         let content = v3 ? MessageContentV2.decode(plaintext) : try MessageContent(decoding: plaintext)
-        guard let content, content.ctl == nil, let id = step.frameId, let sentAt = step.sentAt else {
+        if let content, content.ctl == nil, let id = step.frameId, let sentAt = step.sentAt {
+            let row = MessageRecord(
+                id: id,
+                senderId: carol.me.nodeId,
+                recipientId: peer.nodeId,
+                conversationId: peer.nodeId.string,
+                body: content.body,
+                sentAt: sentAt,
+                pendingKey: true
+            )
+            #expect(MeshEngine.content(of: row).sealBytes(v3: true).plaintext == plaintext, "\(label): the row seals the file's plaintext")
+            carol.stores.messages.save(row)
+            let before = carol.transport.written.count
+            carol.engine.flushPendingDirect(to: peer.nodeId)
+            let written = carol.transport.written.dropFirst(before).last { $0.envelope.id == id }
+            let enc = try #require(written.flatMap { try? ChatContent(decoding: $0.envelope.payload).enc }, "\(label): sent")
+            #expect(Hex.encode(enc.encoded) == step.encEnvelope, "\(label): the envelope her engine sent, byte for byte")
+            sent.append(id)
             return
         }
-        let record = MessageRecord(
-            id: id,
-            senderId: carol.me.nodeId,
-            recipientId: peer.nodeId,
-            conversationId: peer.nodeId.string,
-            body: content.body,
-            sentAt: sentAt
-        )
-        carol.stores.messages.save(record)
+        let aad = try RatchetVectorReplay.bytes(step.aad ?? "")
+        let answer = carol.engine.ratchet.sealDm(to: peer.bundle, prekey: prekey, plaintext: plaintext, aad: aad, now: step.now, v3: v3)
+        guard case .settled(.sealed(let envelope)) = answer else {
+            Issue.record("\(label): Carol's tick \(answer)")
+            return
+        }
+        #expect(Hex.encode(envelope.encoded) == step.encEnvelope, "\(label): the tick, byte for byte")
+        ticks += 1
     }
 }

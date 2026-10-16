@@ -77,3 +77,9 @@ instructions that use it, so `-seedDemo` never shows in the binary even while it
 
 **Amended 2026-10-11:** the export answer is now `ITSAppUsesNonExemptEncryption` = NO (ADR 2026-10.nwt2). Knit's
 encryption is CryptoKit's, which needs no export documentation, and the YES above failed the first upload.
+
+**Amended 2026-10-15:** `Launch.options()` replaces `Launch.arguments`. A release build still reads no argument, and it
+reads and keeps no defaults either: outside `DEBUG`, `options()` answers `LaunchOptions(arguments: [])`. A debug build
+keeps `-ratchet on|off`'s choice under the defaults key `debug.launch.ratchet` (ADR 2026-10.5sk9, phase P5b), and
+`check_release_app` checks that key as a third marker string, with the same comment at its place. On 2026-10-15 all
+three markers were in the Debug build's `Knit.debug.dylib` and none was in the Release `Knit`.

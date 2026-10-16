@@ -166,6 +166,15 @@ publish it honestly.
     the router; a ctl frame from the era the pair holds drops as `DUPLICATE`, and one from an era it has since left can
     open again under that era's draining root for as long as custody keeps it, where a reaction or a profile applies
     nothing.
+- **Our own ratchet DM is custodied inside its send unit,** with the switch on (ADR 2026-10.5sk9, phase P5b): the seal,
+  the cleared wait and our custody's copy commit together, before the frame goes on the air, which is Android's order
+  too (`originateWire`, custody first). A re-seal after a peer's reset flies live and is carried only where custody holds
+  no bytes under its id, so custody keeps the first bytes stored under an id here as on Android (`ForwardSync.kt:75`).
+  A re-seal reaches only the nodes it meets live whose router has not seen its id within ten minutes. The reopen is
+  the failing peer's alone, a relay that carried the original inside that window drops it, and every custody, the
+  peer's included, keeps only the original, as in Kotlin. So a peer two hops away does not read DMs that crossed a
+  relay within ten minutes before its reset (`RatchetResealReachTests`). The unit's one write in memory, a tombstone
+  `CustodySync.admits` may set, is idempotent (`StoreTransactor`'s contract), so custody's copy stays in the unit.
 - **Group messages carried before groups showed** are delivered at start-up: the engine replays each live
   group `chat` in custody that has no message row, oldest first, as Android's `replayCustodiedGroupFrames`
   does (`MeshEngine+Groups.swift`, ADR 2026-09.n393). One already delivered is skipped, so it is not ticked
