@@ -9,6 +9,10 @@ extension Mesh {
     /// How our DMs were sealed so far, with the ratchet or v1 in its stead, under Android's metric names (phase P5b).
     public var seals: RatchetSealCounts { engine.seals }
 
+    /// How our receipts and ticks were sealed so far, and how many room ticks rode, under Android's metric names (phase
+    /// P5d).
+    public var receipts: RatchetReceiptCounts { engine.receipts }
+
     /// Seals a DM ratchet reset toward `peer` past the heuristic and floods it, for the control surface's `ratchet` with
     /// `reset`, as Android's debug bridge does (``MeshEngine/sendSessionReset(to:now:cause:)``). The reset is carried as
     /// our own, so it settles the mesh as every other send does, and the advert's digest cue moves with it.

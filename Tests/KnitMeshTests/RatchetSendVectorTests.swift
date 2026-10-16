@@ -11,7 +11,14 @@ import Testing
 /// hers the pipeline makes by its own rules goes through her engine, from a waiting row, byte for byte as the file lists
 /// it, and so does the re-seal her engine makes when she opens Bob's reset. The rest of her seals, which the pipeline does
 /// not make here, her engine's own facade makes from her draws: the v2 opener toward a v3 reader (`dm`'s inbound form),
-/// the ctl frames (P5c's), an unsigned frame, the `advance`'s discarded frames, and resets under the file's ids.
+/// the ctl frames the file's Alice sends Bob, an unsigned frame, the `advance`'s discarded frames, and resets under the
+/// file's ids.
+///
+/// The file lists no receiver's ack-back ("Neither layer lists the receiver's own ack-backs", `transcriptFormat`), where an
+/// engine since P5d answers a plain DM with a sealed receipt that spends a key of its chain and, for a new epoch, a draw.
+/// So while an engine opens a plain DM, or meets one at its exists-gate, the peer's pinned row reads as a build without the
+/// ratchet, and the receipt goes in the clear, spending nothing the file does not list. Carol's replay checks the sealed
+/// receipt itself, where the file does list it.
 ///
 /// `resealNewFirst` and `resealOldFirst` also run with Bob as an engine, so his open of the engine's re-seal and the
 /// exists-gate that meets the second copy run through his inbound path.
@@ -253,7 +260,11 @@ private final class SendReplay {
         let before = actor.transport.written.count
         let drops = actor.engine.dropped
         let held = actor.stores.messages.contains(frame.envelope.id)
-        actor.engine.receive(frame)
+        if acknowledgesBack(index) {
+            unlisted(ackBackOf: frame, by: actor, from: peer)
+        } else {
+            actor.engine.receive(frame)
+        }
         if step.expect == "OPENED" {
             #expect(actor.engine.dropped == drops, "\(label): opened with no drop")
             #expect(actor.stores.messages.contains(frame.envelope.id) || opensAReset || held, "\(label): delivered")
@@ -274,6 +285,33 @@ private final class SendReplay {
         if resealed.isEmpty {
             try Replay.expectState(step, in: actor, for: peer.nodeId, label)
         }
+    }
+
+    /// Whether the frame step `index` sealed is a plain DM, which its receiver acknowledges: anything but machinery.
+    private func acknowledgesBack(_ index: Int) -> Bool {
+        guard let source = transcript.steps.first(where: { $0.step == index }), source.op == "seal",
+            let bytes = source.plaintext.flatMap(Hex.decode)
+        else {
+            return false
+        }
+        let compact = source.version == EncEnvelope.Version.compactRatchet
+        let content = compact ? MessageContentV2.decode(bytes) : try? MessageContent(decoding: bytes)
+        return content != nil && content?.ctl == nil
+    }
+
+    /// `actor` takes in `frame`, a plain DM from `peer`, with its pinned row for `peer` reading as a build without the
+    /// ratchet, so the receipt it answers with goes in the clear: the file lists no ack-back, and a sealed one would spend a
+    /// key and a draw it does not list. The open itself reads only the row's bundle, and the row is put back as it was.
+    private func unlisted(ackBackOf frame: InboundFrame, by actor: EngineFixture, from peer: IdentityKeys) {
+        guard let pinned = actor.stores.peers.peer(peer.nodeId) else {
+            actor.engine.receive(frame)
+            return
+        }
+        var plain = pinned
+        plain.capabilities = Capabilities(rawValue: pinned.capabilities ?? 0).subtracting(.ratchet).rawValue
+        actor.stores.peers.upsert(plain)
+        actor.engine.receive(frame)
+        actor.stores.peers.upsert(pinned)
     }
 
     /// Bob's receipts for every DM of Alice's he opened before his reset, so only the one the file seals again is unacked:

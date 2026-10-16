@@ -124,7 +124,7 @@ import Testing
         #expect(fixture.stores.messages.message(out)?.delivered == true)
         #expect(fixture.stores.messages.message(toCarol)?.delivered == false)
         #expect(deliveredIds(in: fixture.engine.drainEvents()) == [out])
-        #expect(fixture.acknowledged == ["reply-1"])
+        #expect(fixture.acknowledged(by: android) == ["reply-1"])
         // A copy re-served later stops at the exists-gate, so nothing re-applies.
         fixture.deliverPastRouter(frame, from: alice)
         #expect(deliveredIds(in: fixture.engine.drainEvents()).isEmpty)
@@ -141,7 +141,7 @@ import Testing
         fixture.deliver(frame, from: android)
         #expect(fixture.stores.messages.message(id)?.body == "compact hello")
         #expect(Set(deliveredIds(in: fixture.engine.drainEvents())) == [first, second])
-        #expect(fixture.acknowledged == [id], "the receipt back stays cleartext until P5c seals it")
+        #expect(fixture.acknowledged(by: android) == [id], "the receipt back, sealed since P5d")
     }
 
     @Test func aSealedDmReactionAppliesAndRetractsWithTheFramesSentAtAsTheLwwClock() throws {

@@ -113,7 +113,9 @@ enum RatchetVectorReplay {
     }
 
     /// What an open the file says succeeded applied: the row, the receipts, the reaction and the profile, and whether it
-    /// was acknowledged. The acknowledgement goes out in the clear until P5c seals it, so it is read off the receipts.
+    /// was acknowledged. Since P5d the acknowledgement to a reader of sealed receipts is sealed, `acksBack`'s "a sealed
+    /// `CTL_RECEIPT`": one DM-form chat to the sender that is no message of ours, and nothing in the clear. What it says
+    /// is the caller's to check where the file lists it (Carol's ticks).
     static func expectApplies(_ step: RatchetVectors.TranscriptStep, in fixture: EngineFixture, names: [String: NodeId], _ label: String) {
         guard let applies = step.applies else {
             return
@@ -134,14 +136,54 @@ enum RatchetVectorReplay {
             #expect(held?.updatedAt == profile.version && held?.openToChat == profile.openToChat, "\(label): its watermark")
             #expect(held?.advertisedAvatarHash?.string == profile.avatarHash, "\(label): its photo")
         }
-        let acknowledged = fixture.acknowledged
-        #expect(acknowledged == (applies.acksBack ? [step.frameId ?? ""] : []), "\(label): acknowledged \(acknowledged)")
+        #expect(fixture.acknowledged.isEmpty, "\(label): nothing acknowledged in the clear")
+        let backs = names[step.peer].map { ackBacks(in: fixture, to: $0) } ?? []
+        #expect(backs.count == (applies.acksBack ? 1 : 0), "\(label): acknowledged back \(backs.count) times")
     }
 
-    /// The actor's ratchet state for `peer` as the file states it and as `fixture`'s store holds it, digested alike.
-    static func expectState(_ step: RatchetVectors.TranscriptStep, in fixture: EngineFixture, for peer: NodeId, _ label: String) throws {
-        let stated = try #require(step.state, "\(label) lists a state")
-        #expect(StoredStateDigest(fixture.stores.ratchet.records(of: peer)) == StoredStateDigest(stated), "\(label): the state")
+    /// The sealed receipts `fixture` wrote to `peer` since its transport was cleared: DM-form chats of its own that are no
+    /// message of its own, which a re-seal of a DM would be.
+    static func ackBacks(in fixture: EngineFixture, to peer: NodeId) -> [Written] {
+        let me = ExactKey(fixture.me.nodeId.string)
+        return EngineFixture.once(fixture.transport.written(.chat)).filter { written in
+            ExactKey(written.envelope.senderId) == me && written.envelope.recipientId.map(ExactKey.init) == ExactKey(peer.string)
+                && fixture.stores.messages.message(written.envelope.id) == nil
+        }
+    }
+
+    /// The actor's ratchet state for `peer` as the file states it and as `fixture`'s store holds it, digested alike: all
+    /// of it, or with `receiveSide` only what the actor's opens move, for an actor whose sealed receipts, which the file
+    /// lists nowhere, moved its send chain (`dm`'s `ctlPlane`, "Bob's own receipts for her plain DMs ... are not listed").
+    static func expectState(
+        _ step: RatchetVectors.TranscriptStep, in fixture: EngineFixture, for peer: NodeId, _ label: String, receiveSide: Bool = false
+    ) throws {
+        let stated = StoredStateDigest(try #require(step.state, "\(label) lists a state"))
+        let held = StoredStateDigest(fixture.stores.ratchet.records(of: peer))
+        if receiveSide {
+            #expect(held.receiveSide == stated.receiveSide, "\(label): the state its opens leave")
+        } else {
+            #expect(held == stated, "\(label): the state")
+        }
+    }
+}
+
+/// A generator whose first draws are the 16 bytes of `id`, a canonical frame id, so the next ``FrameId`` the engine mints is
+/// that id (``FrameId/generate(using:)`` reads two words, low byte first), and the rest come from `then`: how a replay
+/// hands an engine the frame id Kotlin's pipeline minted for a seal the file lists.
+struct ScriptedFrameIds: RandomNumberGenerator {
+    private var words: [UInt64]
+    private var then: SeededGenerator
+
+    init(_ id: String, then: SeededGenerator) throws {
+        let bytes = try #require(FrameId.bytes(of: id), "\(id) is a canonical frame id")
+        words = [bytes[0..<8], bytes[8..<16]].map { half in
+            half.enumerated().reduce(UInt64(0)) { $0 | UInt64($1.element) << UInt64(8 * $1.offset) }
+        }
+        self.then = then
+    }
+
+    mutating func next() -> UInt64 {
+        words.isEmpty ? then.next() : words.removeFirst()
     }
 }
 
@@ -251,6 +293,20 @@ struct StoredStateDigest: Equatable {
         skippedKeyCount = state.skippedKeyCount
         skippedRuns = state.skippedKeys.map { "\($0.epoch)/\($0.rootTag)/\($0.fromIdx)-\($0.toIdx)" }
         localEpochs = state.localEpochs.map { "\($0.epoch)/\($0.createdAt)/\($0.pub)" }
+    }
+
+    /// The digest less what a seal of the actor's own moves, the send chain's six fields and the actor's own epochs: what
+    /// its opens leave, for a replay whose actor sealed what the file does not list.
+    var receiveSide: Self {
+        var digest = self
+        if var held = digest.session {
+            for index in 9...14 {
+                held[index] = "-"
+            }
+            digest.session = held
+        }
+        digest.localEpochs = []
+        return digest
     }
 
     /// Skipped keys of one epoch and root, at contiguous indices.

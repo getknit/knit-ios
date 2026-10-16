@@ -12,11 +12,12 @@ import Testing
 /// reset retires read after it, and DMs a carrier brings from an era the reset retired. Each is checked by the lab's oracle:
 /// both threads the same, and both sessions confirmed on one root and era with opposite roles (`MeshLab.kt:551-558`).
 ///
-/// Where Kotlin's loser or receiver answers with a sealed tick, this build still acknowledges in the clear until P5c, so a
-/// DM of its own stands in for the tick: once before the oracle reads the sessions, and once in the greeting, where
-/// Kotlin's ticks have each side seal an epoch on the other's before anyone resets. Kotlin's lab runs on wall clocks, so a
-/// reset there is always newer than the era it replaces; here the lab moves its clocks on a minute before each one. The
-/// group cases are P6's, and `aGroupTickLostWithItsLinkIsSentAgainOnTheNextLink` is `@Ignore`d in knit-next (#96).
+/// Kotlin's loser or receiver answers with a sealed tick, and since phase P5d so does this build: each DM's receipt is a
+/// sealed `CTL_RECEIPT` that seals an epoch on the other's. The DM of each side's own that P5b's lab sent in its stead, once
+/// before the oracle reads the sessions and once in the greeting, stays as one more round. Kotlin's lab runs on wall
+/// clocks, so a reset there is always newer than the era it replaces; here the lab moves its clocks on a minute before
+/// each one. The group cases are P6's, and `aGroupTickLostWithItsLinkIsSentAgainOnTheNextLink` is `@Ignore`d in knit-next
+/// (#96).
 @Suite struct RatchetSessionLabTests {
     private let alice = TestPeer(seed: 1)
     private let bob = TestPeer(seed: 2)
@@ -40,13 +41,14 @@ import Testing
         return record.id
     }
 
-    /// A DM each way, which confirms whatever session either side still waits on: the stand-in for P5c's sealed tick.
+    /// A DM each way, which confirms whatever session either side still waits on: P5b's stand-in for the sealed tick, which
+    /// each receipt now is too.
     private func turnaround(_ lab: EngineLab, _ label: String) throws {
         try send(lab, 0, 1, "alice, \(label)")
         try send(lab, 1, 0, "bob, \(label)")
     }
 
-    /// "hello" one way and "hi" the other, and the turnaround that stands in for their ticks, converged.
+    /// "hello" one way and "hi" the other, their sealed receipts, and one more round, converged.
     private func greeted() throws -> EngineLab {
         let lab = try acquainted()
         try send(lab, 0, 1, "hello")
@@ -133,7 +135,8 @@ import Testing
 
     /// The #87 pinning (`tickAfterReset`): Alice reads Bob's while-apart DMs under the root her reset retired, and her next
     /// frame reaches Bob before her custodied reset does. That open must not confirm the replacement, so her next frame
-    /// still carries the init Bob adopts the reset from. Kotlin's next frame is her sealed tick; here it is a DM.
+    /// still carries the init Bob adopts the reset from. Kotlin's next frame is her sealed tick, and since P5d so is this
+    /// build's: her sealed receipts for what she read, then the DM P5b's lab sent in their stead.
     private func aFrameAfterAResetReachesAPeerThatHasNotSeenIt(apart count: Int) throws {
         let lab = try greeted()
         lab.unlink(0, 1)

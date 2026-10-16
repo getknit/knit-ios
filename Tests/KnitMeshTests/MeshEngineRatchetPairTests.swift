@@ -79,7 +79,7 @@ import Testing
         #expect(fixture.ratchetRecords(of: alice).session?.root == root, "the same session")
         #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [2], "its chain advanced")
         #expect(fixture.stores.messages.message("mark") == nil)
-        #expect(fixture.acknowledged == ["first"], "a reset is machinery, never acknowledged")
+        #expect(fixture.acknowledged(by: android) == ["first"], "a reset is machinery, never acknowledged")
     }
 
     /// knit-next's `anInboundResetReplacesTheSessionAndTriggersTheUnackedReseal` (`InboundPipelineTest.kt:5310-5339`):
@@ -99,7 +99,7 @@ import Testing
         let after = try #require(fixture.ratchetRecords(of: alice).session)
         #expect(after.root != before.root && after.establishedAt == now + Self.minute, "the flagged init replaced the session")
         #expect(fixture.engine.ratchet.floors(for: alice.nodeId).lastReplacementAt == now + Self.minute, "settled after its commit")
-        #expect(fixture.stores.messages.message("reset") == nil && fixture.acknowledged == ["first"])
+        #expect(fixture.stores.messages.message("reset") == nil && fixture.acknowledged(by: android) == ["first"])
 
         fixture.deliver(try reborn.dm("again", to: me, prekey: prekey, id: "second", sentAt: now + Self.minute + 1), from: reborn)
         #expect(fixture.stores.messages.message("second")?.body == "again")
@@ -193,7 +193,7 @@ import Testing
 
         reinstalled.advance(MeshConfiguration().sweepMilliseconds)
         #expect(reinstalled.stores.messages.message("lost-0")?.body == "lost")
-        #expect(reinstalled.acknowledged.filter { $0 == "lost-0" }.count == 1)
+        #expect(reinstalled.acknowledged(by: android).filter { $0 == "lost-0" }.count == 1)
         #expect(reinstalled.resetsSent(to: alice).count == 1)
     }
 
@@ -222,7 +222,7 @@ import Testing
         let on = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain)
         #expect(stores.messages.message("while-off")?.body == "while off")
         #expect(receivedRecords(in: on.engine.drainEvents()).map(\.id) == ["while-off"])
-        #expect(on.acknowledged == ["while-off"])
+        #expect(on.acknowledged(by: android) == ["while-off"])
         #expect(on.engine.dropped[.noSenderKey] == 1, "a pin that cannot be read opens nothing")
 
         // A third start finds the reset marker spent: a duplicate, and nothing else.
@@ -232,7 +232,7 @@ import Testing
         let again = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain)
         #expect(again.engine.dropped[.ratchetDuplicate] == 1)
         #expect(receivedRecords(in: again.engine.drainEvents()).isEmpty)
-        #expect(again.transport.written(.receipt).isEmpty)
+        #expect(again.transport.written(.receipt).isEmpty && again.sealedReceipts(to: android).isEmpty)
     }
 
     @Test func theRatchetsSweepRunsAtStartAndHourlyWithTheSwitchOnAndNeverOff() throws {

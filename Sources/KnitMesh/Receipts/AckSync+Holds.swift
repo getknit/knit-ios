@@ -61,11 +61,12 @@ extension AckSync {
     }
 
     /// A carrier sealed `ids` toward their author (`rode`, `AckSync.kt:384-392`): they are done, and remembered as escalated
-    /// ids are, so a re-serve of the room post owes nothing more.
+    /// ids are, so a re-serve of the room post owes nothing more. They count toward ``ridden``.
     public mutating func rode(_ ids: [String], now: Int64) {
         guard !ids.isEmpty else {
             return
         }
+        ridden += ids.count
         for id in ids {
             lent[ExactKey(id)] = nil
         }

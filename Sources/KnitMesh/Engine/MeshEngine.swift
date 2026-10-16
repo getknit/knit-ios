@@ -41,9 +41,10 @@ public final class MeshEngine {
     /// The photo each neighbour has had from us whole, this run (``pushAvatar(to:)``).
     var avatarPushes: [NodeId: BlobHash] = [:]
     var ackSync = AckSync()
-    /// What a sealed tick needs from us, which phase P5d fills (ADR 2026-10.5sk9). Until then no author can read one, so
-    /// every tick ``ackSync`` owes is cleartext, whatever the ratchet's switch says.
-    var tickSeals: any TickSealing = NoTickSealing()
+    /// What a sealed tick needs from us (ADR 2026-10.5sk9, phase P5d): seals made with the ratchet toward an author who can
+    /// read one, which answer "cannot seal" by themselves with the switch off, so every tick ``ackSync`` owes is then
+    /// today's cleartext one. A test may hand the ledger others.
+    lazy var tickSeals: any TickSealing = RatchetTickSeals(engine: self)
     /// Who is typing where (``MeshEngine/handleTyping(_:)``).
     var typing = TypingBoard()
     /// When our last typing cue went to each thread, on the monotonic clock (``MeshEngine/noteTyping(in:)``).
@@ -57,6 +58,9 @@ public final class MeshEngine {
     public private(set) var dropped: [DropReason: Int] = [:]
     /// How our DMs were sealed so far, with the ratchet or v1 in its stead (``RatchetSealCounts``, phase P5b).
     public internal(set) var seals = RatchetSealCounts()
+    /// How our receipts and ticks were sealed so far (phase P5d), all but the room ticks that rode, which ``ackSync``
+    /// counts: ``receipts`` reads both.
+    var receiptCounts = RatchetReceiptCounts()
     /// Bumped whenever custody may have changed, so the driver knows to re-read ``digestCue``.
     public private(set) var custodyRevision = 0
     /// Whole files dropped here: their bytes did not match their hash, a pushed photo was not the one its pusher's

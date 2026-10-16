@@ -203,6 +203,9 @@ extension RatchetVectors {
         public let groupId: String?
         /// The seal step whose message a re-seal after a reset seals again under its own id and `sentAt` (stage 3b).
         public let resealOf: Int?
+        /// In `carol`, `true` on a seal the sealing party's own pipeline makes in answer to the open before it (its
+        /// `sealDmReceipt` tick), not one its user sends: checked through that open, never sealed on its own.
+        public let sealedByPipeline: Bool? // swiftlint:disable:this discouraged_optional_boolean - absent in the file means false
 
         private enum CodingKeys: String, CodingKey {
             case step = "step"
@@ -242,6 +245,7 @@ extension RatchetVectors {
             case dropNormative = "dropNormative"
             case groupId = "groupId"
             case resealOf = "resealOf"
+            case sealedByPipeline = "sealedByPipeline"
         }
     }
 

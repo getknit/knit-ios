@@ -380,8 +380,85 @@ explicit direction.** Update this file in the change that ships an item.
     ratchet's sweep (ADR 2026-09.nyya, amended 2026-10-15).
   - **P5:** DMs in the mesh, in five parts: P5a receives and recovers, P5b sends chats, and the sealed control plane
     takes three. P5c ports the tick ledger's sealed form behind seams that cannot seal yet; P5d seals the seams, the DM
-    receipt and inline acks; P5e seals reactions, `CTL_PROFILE` and an init's answer. knit-peer checks it with the
-    switch on against an Android emulator, then the Pixels.
+    receipt and inline acks (written on 2026-10-16 on `feat/ratchet-p5d`); P5e seals reactions, `CTL_PROFILE` and an
+    init's answer. knit-peer checks it with the switch on against an Android emulator, then the Pixels.
+  - **Open before the flip, from P5d, and blocking it: a reinstalled responder's opener.** A reinstalled iPhone that
+    answered a peer's opener within the day gets that opener back from custody, since no sealed receipt purges it, and
+    it breaks the pair in either order it comes in (ADR 2026-10.5sk9's P5d limits). `RatchetRestoreLabTests` pins both
+    as known issues: the first in both node-id orders, and, with a room post the node ticks before the opener lands,
+    when the node's id is the larger (the smaller heals today and is pinned plainly). The known-issue pins fail once the
+    fix lands:
+    - **before the reinstall's reset**, after a short history: the node rebuilds the old root and mints its first epoch
+      again under a new key, so the peer drops the node's next frames as duplicates, never counted, or fails them on
+      the old chain. The pair heals only through a reset at either side's third failure, after silent drops: the peer's
+      frames fail at the node too. Only the reset's receiver re-seals. If the peer resets, a DM it dropped as a
+      duplicate is lost when the re-seal comes within the router's ten minutes of it, since a `DUPLICATE` reopens
+      nothing and the peer's custody holds the copy it cannot open. If the node resets first, nothing re-seals its own
+      DMs, and every one the peer dropped is lost for its day;
+    - **after the reset**, after a longer history: the opener wins the init race when the peer's node id is the
+      smaller, and the pair splits onto two roots until they expire after two days.
+
+    The candidate fix, from the P5d crypto reviews, is the maintainer's to decide. It comes in two halves:
+    - **Kept ephemerals.** Keep the ephemerals of the inits this node answered, for custody's day, in the identity's
+      Keychain item beside the prekeys, written once the answering open commits. After a reinstall, a frame whose init
+      is one of them is resolved: it establishes, races and replaces nothing, and it counts as `NO_SESSION` only while
+      no session is held. That is Kotlin's own idempotence check (`RatchetEngine.kt:543`), keyed by the ephemeral
+      rather than a stamp, with no clock, no wire change and no paired change. It closes the race, and in the
+      opener-first ordering it stops the lost DMs, but, when the node's id is the larger, not the split: the node then
+      holds no session and starts one with an unflagged init, which the peer's remnant guard refuses, reading the
+      node's frames read-only, while the peer's own frames fail at the node until the node's reset re-roots the pair
+      (`RatchetEngine.kt:570`, `:602-607`, `:625-637`). When the node's id is the smaller, the peer adopts that init and
+      nothing resets.
+    - **A flagged reset at once.** A frame resolved by a kept ephemeral proves the session was lost, which three
+      `NO_SESSION`s only suggest, so while no session is held the node seals a flagged reset to its sender at once. The
+      flag exempts it from the remnant guard (`:560-570`), so the peer adopts it in either id order at its one-minute
+      floor, and it makes the peer re-seal its unacked DMs. "Only while no session is held" is its loop guard. It also
+      answers both reasons below for setting aside a reset sent at start: the kept ephemerals, keyed by peer, are the
+      peer list, and the opener they resolve races nothing.
+
+      A room post can disarm that guard. A peer that posted in the room after its opener gets a sealed live tick from
+      the reinstalled node before the opener lands, since the back-fill serves profiles and then newest first, and
+      that tick's seal starts a session with a plain init (`acknowledge`, `tickPost`, `owe`, `sealLiveTick`, `sealDm`).
+      So when the opener lands a session is held, the guard keeps the reset back, and when the node's id is the larger
+      the peer's remnant guard refuses the tick's init and the pair takes the alternative's path below. The maintainer
+      has two options:
+      - (i) widen the guard to "while no session is held, or the one held is our own unanswered init and no reset has
+        gone since it": `RatchetResetPolicy.plan` already answers that state with `.mark` (`plainInit`), which flags the
+        init those frames ride, and the persisted `lastResetSentAt` stays the loop guard;
+      - (ii) seal the reset when the peer's profile pins and a kept ephemeral names that peer. The back-fill serves
+        profiles ahead of every post, so this is the reset sent at start, below, timed at the pin.
+
+    The alternative to the second half is to keep the first as written and accept, when the node's id is the larger,
+    its one heuristic reset. Until that reset, the peer's DMs wait for their re-seal. The peer's receipts for the node's
+    DMs are lost, since nothing re-seals a ctl frame, so those DMs show no ✓✓ for their day, though they were read.
+    When the node's id is the smaller, the peer adopts the node's init and nothing resets. The lab's pins allow one
+    flagged reset from the node, so they serve either choice. Once the maintainer chooses, they tighten: with the second
+    half, exactly one reset in both orders and every receipt for the node's DMs read at the node; with the first half
+    alone, one reset when the node's id is the larger and none when it is the smaller. The reviews weighed and set
+    aside:
+    - holding era moves for frames from before the reinstall, worded as a stamp against our install time: two clocks
+      compared;
+    - a flagged reset beating an unflagged init in the race: a paired change, which needs the flag on every frame that
+      carries a reset's init and closes only the second ordering;
+    - a reset sent at start, on its own: the reset is still unanswered when the opener lands, and a reinstall has no
+      peer list, both of which the second half above answers;
+    - dropping the prekeys from before the reinstall: a genuine init against our old pinned prekey goes unanswered, and
+      a smaller-id peer's then wins the race at the peer, darkening that direction for its two-day drain;
+    - custody serving oldest first, holding pre-reinstall frames out of custody, or a cleartext receipt for the opener
+      alone: none promises an order, the second puts the install time into the carry gate, and the third only narrows
+      the window, at a privacy cost.
+
+    Take it to knit-next as well: the rules are shared, and its restore should be checked.
+  - **knit-next #176, the iOS half, from P5d:** a delivered DM earns one more sealed receipt in each router window in
+    which a copy reaches its recipient: from the recipient's own quota eviction, or from a re-flood. Any node that takes
+    a served copy from one holder while linked to another sends it on, and every holder past its window relays it, so
+    a phone returning next to two holders can buy one more receipt for each delivered DM it takes, from that DM's
+    recipient anywhere the flood reaches. That is up to about 144 in a DM's day, more if 4,096 ids churn through a seen
+    set first, each flooded, carried for a day and taking a row in the acker's 200, as in Kotlin (ADR 2026-10.5sk9's P5d
+    limits). #176 bounds the re-ack on both platforms. When it lands in knit-next, this port takes the same rule, and
+    `SealedReceiptLabTests`' re-ack pins move with it: the back-fill and two-hop pins drop to one receipt under #176's
+    option 1 or 3, and option 2 leaves them at two. It is Kotlin's level, so it is tracked here rather than pinned as a
+    known issue.
   - **P6:** the group form received, which the flip waits on, then the group form sent.
   - **P7:** companion change A10, interop runs against knit-next `main` and the release APKs, a Debug iPhone trial, the
     flip to `0x15F`, and the security claims.

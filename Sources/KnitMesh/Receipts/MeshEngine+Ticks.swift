@@ -2,8 +2,8 @@ import KnitWire
 
 /// The ticks we owe the authors of room posts and group messages, sent as ``AckSync`` decides them (`AckSync.kt` and its
 /// wiring in `MeshManager.kt:373-389`, at knit-next `cbf2a487`): at a delivery, at a link-up and the 60 s re-offer, at the
-/// heal, and at the deadline a batch's debounce sets. The ledger asks ``MeshEngine/tickSeals`` for a sealed tick; until
-/// phase P5d fills the seams, every tick is the cleartext one, signed here under a fresh id.
+/// heal, and at the deadline a batch's debounce sets. The ledger asks ``MeshEngine/tickSeals`` for a sealed tick, which the
+/// ratchet seals with its switch on (phase P5d); any other tick is the cleartext one, signed here under a fresh id.
 extension MeshEngine {
     /// Owes the author of room post or group message `id` a tick (`AckSync.owe`), and sends what is due now: the tick
     /// itself when the author is linked, or what a batch that went into custody leaves to send.
@@ -25,7 +25,7 @@ extension MeshEngine {
     }
 
     /// The batches whose debounce has ended go into custody (`AckSync`'s wake, `AckSync.kt:429-433`): the engine's deadline,
-    /// ``AckSync/nextBatchDue``, never set before phase P5d's seams seal.
+    /// ``AckSync/nextBatchDue``, set only while a batch waits, which takes the ratchet's switch on.
     func flushDueTickBatches(now: Int64) {
         guard let due = ackSync.nextBatchDue, now >= due else {
             return

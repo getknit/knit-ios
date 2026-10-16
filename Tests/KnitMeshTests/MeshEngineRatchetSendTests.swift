@@ -8,7 +8,8 @@ import Testing
 
 /// Our DMs sealed with the ratchet, with the switch on (ADR 2026-10.5sk9, phase P5b): `MeshManagerTest`'s dispatch and
 /// fallback cases by name (`MeshManagerTest.kt:1947-2259`, at knit-next `cbf2a487`), each sent through the engine and opened
-/// by Android's own session layer (``AndroidPeer``). Their inline-ack halves are P5c's, and the group cases P6's.
+/// by Android's own session layer (``AndroidPeer``). Their inline-ack halves are `MeshEngineInlineAckTests`' (phase P5d), and
+/// the group cases P6's.
 @Suite struct MeshEngineRatchetSendTests {
     private let me = TestPeer(seed: 1)
     private let alice = TestPeer(seed: 2)

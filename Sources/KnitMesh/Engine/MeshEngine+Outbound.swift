@@ -280,17 +280,24 @@ extension MeshEngine {
     /// receipt that floods and is carried, a room post or a group message a tick owed to its author. Only a group's tick
     /// may go into custody, for an absent author who could read a sealed one (`escalatable`); a room's never does. Kotlin
     /// lets a commons post's escalate too, and no radio delivers one (``FrameType/commons``).
+    ///
+    /// With the ratchet's switch on, a DM's receipt goes sealed toward an author who can read one, and purges nothing
+    /// (``sendSealedReceipt(for:to:)``, phase P5d). Toward any other author, and when the facade cannot seal, it is the
+    /// cleartext receipt, which purges the DM here as at every carrier. A store that fails sends neither, and purges
+    /// nothing, as Kotlin's throw does. Kotlin's LoRa hold of a DM's receipt (`DmAckCoalescer`, `:2836-2845`) is not this
+    /// port's: every receipt goes at once. It runs only in a delivery's second half, after the unit that stored the row, as
+    /// a group open in a unit must keep it (phase P6).
     func acknowledge(_ envelope: RelayEnvelope, sender: NodeId) {
         if envelope.recipientId == nil {
             tickPost(envelope.id, author: sender, escalatable: envelope.group != nil)
-        } else {
+        } else if sendSealedReceipt(for: envelope.id, to: sender) == .unsealed {
             sendReceipt(for: envelope.id)
         }
     }
 
-    /// Our receipt for a DM (`InboundPipeline.ackCleartext`): cleartext, since this build cannot seal one, with
-    /// `sentAt` set so every carrier derives the same expiry. It then purges the DM from our own custody, the way it
-    /// purges it from every carrier's.
+    /// Our cleartext receipt for a DM (`InboundPipeline.ackCleartext`, `InboundPipeline.kt:2868-2890`): what an author who
+    /// cannot read a sealed one gets, and every author with the ratchet's switch off, with `sentAt` set so every carrier
+    /// derives the same expiry. It then purges the DM from our own custody, the way it purges it from every carrier's.
     func sendReceipt(for ackId: String) {
         let receipt = RelayEnvelope(
             type: .receipt,

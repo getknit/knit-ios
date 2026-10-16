@@ -196,7 +196,10 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   a reset toward that peer past the heuristic and says `forcedReset`, `declined` with Android's reason or `null`, and
   `reRooted`. Since P5a the reset goes out signed and flooded, as Android's bridge sends one, and with the ratchet's
   switch off it is declined. `seals` counts how our DMs were sealed, under Android's metric names: `dmSealedV2` for
-  every ratchet seal, `dmSealedV3` for the compact ones, and `dmSealedV1Fallback`; ADR 2026-10.5sk9), `stop` and `start` (the mesh, as Settings' Stop and Start do), and
+  every ratchet seal, `dmSealedV3` for the compact ones, and `dmSealedV1Fallback`. `receipts` counts our receipts and
+  ticks, under `MeshMetrics.Receipts`' names, since P5d: `receiptsSealed`, `receiptsSealedFallback`,
+  `receiptsCustodied` for escalated batches, and `receiptsRidden` for the room ticks that rode; ADR 2026-10.5sk9),
+  `stop` and `start` (the mesh, as Settings' Stop and Start do), and
   `quit` (the peer exits; the app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):
   - `group-create` (`members`, the others' node ids) makes a group, or opens the one they already share. Nothing

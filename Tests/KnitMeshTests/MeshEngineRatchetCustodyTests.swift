@@ -19,8 +19,9 @@ import Testing
     private var sweep: Int64 { MeshConfiguration().sweepMilliseconds }
 
     /// The common case of shape 11: the iPhone and a carrier both carry the flooded copy, and the iPhone's row is refused.
-    /// Linked, their digests agree, so the carrier serves nothing; the sweep delivers the DM from the copy the iPhone kept,
-    /// and our cleartext receipt purges it from both.
+    /// Linked, their digests agree, so the carrier serves nothing; the sweep delivers the DM from the copy the iPhone kept.
+    /// Our receipt is sealed (phase P5d) and purges nothing, ours included, so both keep the DM to its TTL, and the carrier
+    /// carries the receipt too.
     @Test func aFloodedCopyWhoseRowWasRefusedIsDeliveredFromTheCopyKeptAndBothCustodiesConverge() throws {
         let directory = scratchDirectory("flooded-copy")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -58,7 +59,8 @@ import Testing
         let ours = Set(iphone.stores.custody.liveIds(now: iphone.clock.wallMilliseconds()))
         let theirs = Set(carrier.stores.custody.liveIds(now: carrier.clock.wallMilliseconds()))
         #expect(ours == theirs, "the custodies differ by \(ours.symmetricDifference(theirs).sorted())")
-        #expect(!ours.contains("dm-1") && !theirs.contains("dm-1"), "our cleartext receipt purged it on both")
+        #expect(ours.contains("dm-1") && theirs.contains("dm-1"), "our sealed receipt purged it nowhere, ours included")
+        #expect(ours.count == theirs.count && iphone.transport.written(.receipt).isEmpty, "and nothing went in the clear")
     }
 
     /// The blobs reviews' sweep: whether a kept copy is let go is read from its row, in a unit of its own. A read the store
@@ -89,12 +91,14 @@ import Testing
         iphone.advance(sweep)
         #expect(iphone.stores.messages.message("dm-1")?.body == "hello", "the next sweep delivers it")
         #expect(receivedRecords(in: iphone.engine.drainEvents()).map(\.id) == ["dm-1"])
-        #expect(iphone.acknowledged == ["dm-1"])
+        #expect(iphone.acknowledged(by: android) == ["dm-1"])
     }
 
     /// A kept frame delivered another way before the sweep, here the copy the router let past once, is delivered and
     /// acknowledged once: that copy's commit lets the kept one go (``RatchetReplay/forget(_:)``), so the sweep opens
-    /// nothing.
+    /// nothing. The keep-and-drop rule, revisited with the receipt sealed (phase P5d): the receipt purges nothing, so our
+    /// custody keeps the DM to its TTL, and neither the sweep nor a restart's replay of our custody acknowledges it again,
+    /// since both go by the row it now has.
     @Test(arguments: StoreKind.allCases)
     func aKeptFrameDeliveredBeforeTheSweepIsDeliveredOnce(kind: StoreKind) throws {
         let directory = scratchDirectory("kept-delivered")
@@ -113,7 +117,12 @@ import Testing
         #expect(receivedRecords(in: iphone.engine.drainEvents()).map(\.id) == ["dm-1"])
         iphone.advance(sweep)
         #expect(receivedRecords(in: iphone.engine.drainEvents()).isEmpty)
-        #expect(iphone.acknowledged == ["dm-1"])
+        #expect(iphone.acknowledged(by: android) == ["dm-1"])
+        #expect(iphone.stores.custody.contains("dm-1"), "the sealed receipt purged nothing of ours")
+
+        let restarted = try EngineFixture.ratcheting(me, stores: stores)
+        #expect(receivedRecords(in: restarted.engine.drainEvents()).isEmpty)
+        #expect(restarted.acknowledged(by: android).isEmpty, "the start's replay goes by the row too")
     }
 
     /// A ratchet DM naming a photo only the carrier holds: nothing is asked for while its unit fails, since the ask is work

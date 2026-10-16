@@ -101,7 +101,7 @@ import Testing
 
         iphone.advance(sweep)
         #expect(stores.messages.message("dm-1")?.body == "hello")
-        #expect(iphone.acknowledged == ["dm-1"])
+        #expect(iphone.acknowledged(by: android) == ["dm-1"])
         #expect(iphone.engine.dropped[.unsigned] == nil)
     }
 
@@ -155,7 +155,7 @@ import Testing
         try iphone.pin(android)
         let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: "dm-1", sentAt: now)
         iphone.deliver(frame, from: android)
-        #expect(iphone.acknowledged == ["dm-1"])
+        #expect(iphone.acknowledged(by: android) == ["dm-1"])
         _ = iphone.engine.drainEvents()
         guard case .sent = iphone.engine.sendRatchetReset(to: alice.nodeId) else {
             Issue.record("our reset goes")
@@ -169,7 +169,8 @@ import Testing
 
         iphone.advance(sweep)
         #expect(receivedRecords(in: iphone.engine.drainEvents()).isEmpty)
-        #expect(iphone.acknowledged == ["dm-1"], "its row let the copy go, unopened and unacknowledged")
+        #expect(iphone.acknowledged(by: android) == ["dm-1"], "its row let the copy go, unopened and unacknowledged")
+        #expect(iphone.stores.custody.contains("dm-1"), "our sealed receipt purged nothing of ours (phase P5d)")
     }
 
     /// A sealed receipt, which has no row, whose unit fails: the sweep applies it once, and the next sweep opens nothing.

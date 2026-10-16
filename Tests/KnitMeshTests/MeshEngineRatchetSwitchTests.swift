@@ -6,9 +6,9 @@ import Testing
 
 @testable import KnitMesh
 
-/// With the ratchet's switch off, every DM seal is today's v1, whatever the peer advertises (ADR 2026-10.5sk9, the guard
-/// the DM phase owes): the same draws from the injected generator, the same frames but for the seal's own random key and
-/// nonce, the same plaintext, and nothing in the ratchet's tables.
+/// With the ratchet's switch off, every DM seal is today's v1, and every receipt and tick today's cleartext one, whatever the
+/// peer advertises (ADR 2026-10.5sk9, the guard the DM phase owes): the same draws from the injected generator, the same
+/// frames but for a seal's own random key and nonce, the same plaintext, and nothing in the ratchet's tables.
 @Suite struct MeshEngineRatchetSwitchTests {
     private let me = TestPeer(seed: 1)
     private let alice = TestPeer(seed: 2)
@@ -62,6 +62,61 @@ import Testing
                 switchedOff.ratchetRecords(of: peer) == RatchetPeerRecords(session: nil, localEpochs: [], recvEpochs: [], skippedKeys: []))
         }
         #expect(switchedOff.engine.seals == RatchetSealCounts())
+    }
+
+    /// The receipts' and ticks' leg of the guard, with the seams P5d ships (the P5c crypto review's finding 1): toward an
+    /// Android phone whose profile carries `0x15F` and a signed prekey, linked, then away through a carrier, past the batch's
+    /// debounce, a heal and the link-up, every receipt and tick is the one a pre-ratchet peer gets today, frame for frame from
+    /// the same draws. Nothing is sealed toward it, nothing reaches the ratchet's tables, and our cleartext receipts purge
+    /// both DMs from our custody, as they always have.
+    @Test func withTheSwitchOffReceiptsAndTicksTowardARatchetAndroidAreTodays() throws {
+        let switchedOff = try off()
+        let today = EngineFixture(me)
+        let android = try AndroidPeer(alice)
+        switchedOff.deliver(try android.profile(publishedAt: now), from: alice)
+        today.deliver(try alice.profile(publishedAt: now, capabilities: 0xF), from: alice)
+        let group = roster([alice, bob, me], createdBy: alice)
+        // The same frames to both: a v1 seal draws its own key, so each is sealed once.
+        let linked = [
+            try alice.directMessage("hi", to: me, id: "dm-1", sentAt: now),
+            try alice.roomPost("room", id: "post-1", sentAt: now),
+            try alice.groupMessage("group", in: group, to: [bob, me], id: "gm-1", sentAt: now),
+        ]
+        let away = [
+            try alice.directMessage("again", to: me, id: "dm-2", sentAt: now + 1),
+            try alice.roomPost("room again", id: "post-2", sentAt: now + 1),
+            try alice.groupMessage("group again", in: group, to: [bob, me], id: "gm-2", sentAt: now + 1),
+        ]
+        for fixture in [switchedOff, today] {
+            fixture.link(bob)
+            fixture.link(alice)
+            fixture.transport.clear()
+            for frame in linked {
+                fixture.deliver(frame, from: alice)
+            }
+            fixture.unlink(alice)
+            for frame in away {
+                fixture.deliver(frame, from: bob)
+            }
+            fixture.advance(AckSync.batchDebounceMilliseconds)
+            fixture.advance(MeshConfiguration().healMilliseconds)
+            fixture.link(alice)
+        }
+
+        // Ours: what each engine signed. Alice's profile, which differs on purpose, is relayed as it came.
+        let mine = ExactKey(me.nodeId.string)
+        let ours = switchedOff.transport.written.filter { ExactKey($0.envelope.senderId) == mine }
+        let theirs = today.transport.written.filter { ExactKey($0.envelope.senderId) == mine }
+        #expect(ours.map(\.envelope.id) == theirs.map(\.envelope.id), "the same draws, so the same frame ids")
+        for (sent, before) in zip(ours, theirs) {
+            #expect(sent.envelope.type == before.envelope.type && sent.to == before.to && sent.wire.relay == before.wire.relay)
+            #expect(sent.wire.signed == before.wire.signed, "\(sent.envelope.type.rawValue) \(sent.envelope.id): today's bytes")
+        }
+        let acked = try switchedOff.transport.written(.receipt).map { try ReceiptContent(decoding: $0.envelope.payload).ackId }
+        #expect(Set(acked) == ["dm-1", "post-1", "gm-1", "dm-2", "post-2", "gm-2"] && acked.count == 6)
+        #expect(ours.allSatisfy { $0.envelope.type != .chat }, "no DM-form chat of ours")
+        #expect(switchedOff.ratchetRecords(of: alice) == RatchetPeerRecords(session: nil, localEpochs: [], recvEpochs: [], skippedKeys: []))
+        #expect(!switchedOff.stores.custody.contains("dm-1") && !switchedOff.stores.custody.contains("dm-2"), "purged, as today")
     }
 
     /// With the switch off, a peer's reset never reaches the ratchet, so nothing is sealed again: the re-seal's v1 arm,

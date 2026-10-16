@@ -5,7 +5,7 @@ public import KnitWire
 /// The DM ratchet's session service (`RatchetSessions` in knit-next's `mesh/crypto/ratchet/RatchetSessions.kt`, at
 /// `ac491f4c`): the pure ``RatchetEngine`` over a ``RatchetStore``, our identity, and the per-peer floors held in memory
 /// (ADR 2026-10.5sk9). With the switch on, the engine opens DM frames through it and sends the resets it seals (phase
-/// P5a), and seals our DMs through it (phase P5b); no receipt, reaction or profile is sealed through it before P5c.
+/// P5a), seals our DMs through it (phase P5b), and our receipts and ticks (phase P5d); reactions and profiles are P5e's.
 ///
 /// **One phase, in a store unit.** Android opens in two phases: a peek with no lock feeds moderation, then a commit under
 /// its one ratchet mutex, inside a Room transaction, re-runs the engine and writes the session with the message row

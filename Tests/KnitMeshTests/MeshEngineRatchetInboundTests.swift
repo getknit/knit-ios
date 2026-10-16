@@ -35,7 +35,8 @@ import Testing
         #expect(session.confirmed && !session.weAreInitiator)
         #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [1])
         #expect(receivedRecords(in: fixture.engine.drainEvents()).map(\.id) == ["v2-1"])
-        #expect(fixture.acknowledged == ["v2-1"], "the DM's receipt goes out, in the clear until P5c seals it")
+        #expect(fixture.acknowledged(by: android) == ["v2-1"], "the DM's receipt goes out, sealed (phase P5d)")
+        #expect(fixture.acknowledged.isEmpty, "and never in the clear toward an author who reads a sealed one")
 
         fixture.deliver(try android.dm("still here", to: me, prekey: prekey, id: "v2-2", sentAt: now + 1), from: android)
         #expect(fixture.stores.messages.message("v2-2")?.body == "still here")
@@ -65,7 +66,7 @@ import Testing
         fixture.stores.ratchet.deletePeer(alice.nodeId)
         fixture.deliverPastRouter(frame, from: alice)
         #expect(fixture.stores.messages.message("v2-r")?.body == "once")
-        #expect(fixture.acknowledged == ["v2-r", "v2-r"], "each copy is acknowledged")
+        #expect(fixture.acknowledged(by: android) == ["v2-r", "v2-r"], "each copy is acknowledged")
         #expect(fixture.engine.dropped[.ratchetNoSession] == nil)
         #expect(fixture.engine.dropped[.cannotOpen] == nil)
     }
@@ -147,7 +148,7 @@ import Testing
         #expect(fixture.stores.messages.message("dm-after")?.body == "still alive")
         #expect(fixture.stores.messages.messages(in: alice.nodeId.string).map(\.id) == ["dm-after"])
         #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [4])
-        #expect(fixture.acknowledged == ["dm-after"])
+        #expect(fixture.acknowledged(by: android) == ["dm-after"])
     }
 
     @Test func aBlockedPeersSealedCtlDiesAtTheBlockedGate() throws {
@@ -169,7 +170,7 @@ import Testing
         #expect(enc.version == EncEnvelope.Version.compactRatchet && enc.nonce.isEmpty)
         fixture.deliver(frame, from: android)
         #expect(fixture.stores.messages.message("v3-1")?.body == "compact hello")
-        #expect(fixture.acknowledged == ["v3-1"])
+        #expect(fixture.acknowledged(by: android) == ["v3-1"])
     }
 
     @Test func aPlaintextThatOpensAndWillNotDecodeCommitsNothing() throws {

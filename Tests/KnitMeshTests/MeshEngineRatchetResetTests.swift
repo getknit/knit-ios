@@ -86,7 +86,7 @@ import Testing
             fixture.deliverPastRouter(once, from: alice)
         }
         #expect(fixture.resetsSent(to: alice).isEmpty)
-        #expect(fixture.acknowledged.count == 9)
+        #expect(fixture.acknowledged(by: android).count == 9, "each copy acknowledged, sealed, as Kotlin re-acks each")
     }
 
     @Test func repeatedUndecryptableFramesTriggerExactlyOneRateLimitedResetRequest() throws {

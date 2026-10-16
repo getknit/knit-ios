@@ -103,6 +103,19 @@ import Testing
         }
     }
 
+    /// The reply's `receipts`, beside `seals`, under the names of Android's `MeshMetrics.Receipts` (phase P5d): the four
+    /// this port counts, each zero before anything was acknowledged, with the switch on or off. The engine's tests count
+    /// them (`MeshEngineSealedReceiptTests`, `MeshEngineSealedTickTests`, `MeshEngineInlineAckTests`).
+    @Test func theDumpCountsOurReceiptsUnderAndroidsNames() async throws {
+        for on in [true, false] {
+            let rig = ControlRig(configuration: MeshConfiguration(ratchet: on))
+            let receipts = try #require(try await rig.send(#"{"cmd":"ratchet"}"#)["receipts"] as? [String: Int])
+            #expect(
+                receipts == ["receiptsSealed": 0, "receiptsSealedFallback": 0, "receiptsCustodied": 0, "receiptsRidden": 0],
+                "switch \(on)")
+        }
+    }
+
     private func pin(_ peer: TestKeys, in stores: MeshStores) {
         stores.peers.upsert(
             PeerRecord(

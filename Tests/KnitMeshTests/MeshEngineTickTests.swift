@@ -5,10 +5,11 @@ import Testing
 
 @testable import KnitMesh
 
-/// The ticks the engine owes, over ``AckSync`` (phase P5c of ADR 2026-10.5sk9): with the seams as this build ships them,
-/// every tick is today's cleartext one, byte for byte; with the seams faked to seal (``EngineSeals``), a group's tick toward
-/// an absent author escalates into custody as one originated frame, a room's waits for a carrier and is never carried,
-/// and a live link ends each hold as one tick. Bob is the author, Carol the neighbour his frames come through.
+/// The ticks the engine owes, over ``AckSync`` (phase P5c of ADR 2026-10.5sk9): with the switch off, the seams this build
+/// ships seal nothing, and every tick is today's cleartext one, byte for byte, an Android author's included; with the seams
+/// faked to seal (``EngineSeals``), a group's tick toward an absent author escalates into custody as one originated frame,
+/// a room's waits for a carrier and is never carried, and a live link ends each hold as one tick. The real seals are
+/// `MeshEngineSealedTickTests`' (phase P5d). Bob is the author, Carol the neighbour his frames come through.
 @Suite struct MeshEngineTickTests {
     private let alice = TestPeer(seed: 1)
     private let bob = TestPeer(seed: 2)
@@ -18,9 +19,9 @@ import Testing
 
     private var bobsGroup: GroupInfo { roster([bob, carol, alice], createdBy: bob) }
 
-    /// Alice's engine, linked to Carol, with Bob's key pinned and Bob unlinked.
-    private func fixture(ratchet: Bool = false) throws -> EngineFixture {
-        let fixture = EngineFixture(alice, configuration: MeshConfiguration(ratchet: ratchet))
+    /// Alice's engine, the switch off, linked to Carol, with Bob's key pinned and Bob unlinked.
+    private func fixture() throws -> EngineFixture {
+        let fixture = EngineFixture(alice)
         fixture.link(carol)
         try fixture.pin(bob)
         fixture.transport.clear()
@@ -38,15 +39,15 @@ import Testing
         }
     }
 
-    // MARK: The seams as shipped
+    // MARK: The seams as shipped, with the switch off
 
-    /// The guard P5c owes: until P5d's seals, a tick on the air is today's, whatever the switch says. Point to point,
-    /// signed, no `sentAt`, a fresh id each attempt, only over a live link, never carried, toward an author whose profile
-    /// advertises the ratchet too.
-    @Test(arguments: [false, true])
-    func withTheSeamsAsShippedEveryTickIsTodaysCleartext(ratchet: Bool) throws {
-        let fixture = try fixture(ratchet: ratchet)
-        #expect(fixture.engine.tickSeals is NoTickSealing)
+    /// The guard P5c owed, held by the seams P5d ships (`RatchetTickSeals`): with the switch off, a tick on the air is
+    /// today's, toward an author whose profile advertises the ratchet too. Point to point, signed, no `sentAt`, a fresh id
+    /// each attempt, only over a live link, never carried. The pin toward an Android phone with a signed prekey is
+    /// ``withTheSwitchOffEveryTickTowardARatchetAndroidIsTodaysCleartext()``.
+    @Test func withTheSeamsAsShippedEveryTickIsTodaysCleartext() throws {
+        let fixture = try fixture()
+        #expect(fixture.engine.tickSeals is RatchetTickSeals, "the seams this build ships")
         fixture.link(bob)
         fixture.transport.clear()
         fixture.deliver(try bob.roomPost("Linked", id: "post-1", sentAt: start), from: bob)
@@ -80,11 +81,62 @@ import Testing
         #expect(fixture.engine.footprint.owedTicks == 0)
     }
 
-    @Test func theSeamsAsShippedCannotSeal() {
-        let seals = NoTickSealing()
-        #expect(!seals.canSeal(bob.nodeId))
-        #expect(seals.sealTick(to: bob.nodeId, acks: ["m1"]) == nil)
-        #expect(!seals.originateTick(to: bob.nodeId, acks: ["m1", "m2"]))
+    /// Finding 1 of the P5c crypto review: the ledger asks `sealTick` without `canSeal`, so each seam must refuse by itself
+    /// with the switch off, here toward an Android phone pinned with the ratchet's bits and a signed prekey, linked or not.
+    /// Nothing seals, nothing reaches the ratchet's tables, and nothing goes on the air.
+    @Test func withTheSwitchOffTheSeamsAsShippedCannotSealByThemselves() throws {
+        let fixture = try EngineFixture.ratcheting(alice, configuration: MeshConfiguration())
+        let android = try AndroidPeer(bob)
+        try fixture.pin(android)
+        fixture.transport.clear()
+        let seals = RatchetTickSeals(engine: fixture.engine)
+        for linked in [false, true] {
+            if linked {
+                fixture.link(bob)
+                fixture.transport.clear()
+            }
+            #expect(!seals.canSeal(bob.nodeId))
+            #expect(seals.sealTick(to: bob.nodeId, acks: ["m1"]) == nil)
+            #expect(seals.sealTick(to: bob.nodeId, acks: ["m1", "m2"]) == nil)
+            #expect(!seals.originateTick(to: bob.nodeId, acks: ["m1", "m2"]))
+        }
+        #expect(fixture.transport.written.isEmpty)
+        #expect(fixture.ratchetRecords(of: bob) == RatchetPeerRecords(session: nil, localEpochs: [], recvEpochs: [], skippedKeys: []))
+    }
+
+    /// The switch-off pin with the real seams toward an Android phone, which every build since 2.3.0 is: its profile
+    /// carries `0x15F` and a signed prekey, so only the switch keeps a seal off the air (the P5c crypto review's finding 1).
+    /// Linked, then absent, through the batch's debounce, a heal and the link-up: no DM-form chat toward it, no row for it
+    /// in the ratchet's tables, and each tick today's bytes.
+    @Test func withTheSwitchOffEveryTickTowardARatchetAndroidIsTodaysCleartext() throws {
+        let fixture = try EngineFixture.ratcheting(alice, configuration: MeshConfiguration())
+        let android = try AndroidPeer(bob)
+        try fixture.pin(android)
+        fixture.link(carol)
+        fixture.link(bob)
+        fixture.transport.clear()
+        fixture.deliver(try bob.roomPost("Linked", id: "post-1", sentAt: start), from: bob)
+        fixture.deliver(try groupMessage("gm-1"), from: bob)
+        fixture.unlink(bob)
+        fixture.deliver(try bob.roomPost("Absent", id: "post-2", sentAt: start + 1), from: carol)
+        fixture.deliver(try groupMessage("gm-2", at: 1), from: carol)
+        #expect(fixture.engine.ackSync.nextBatchDue == nil, "no batch waits: nothing can seal one")
+        fixture.advance(debounce)
+        fixture.advance(fixture.engine.configuration.healMilliseconds)
+        fixture.link(bob)
+
+        let ticks = fixture.transport.written(.receipt)
+        let acked = try ticks.map { try ReceiptContent(decoding: $0.envelope.payload).ackId }
+        #expect(acked == ["post-1", "gm-1", "post-2", "gm-2"], "two at once over the link, two at the link-up")
+        for (tick, ackId) in zip(ticks, acked) {
+            let today = RelayEnvelope(
+                type: .receipt, id: tick.envelope.id, senderId: alice.nodeId.string, payload: ReceiptContent(ackId: ackId).encoded)
+            #expect(tick.to == bob.nodeId && !tick.wire.relay && tick.wire.signed == today.encoded, "today's bytes")
+            #expect(alice.keys.bundle.isValidSignature(tick.wire.sig, for: tick.wire.signed))
+        }
+        #expect(sealedTicks(fixture).isEmpty, "no DM-form chat toward Bob")
+        #expect(fixture.ratchetRecords(of: bob) == RatchetPeerRecords(session: nil, localEpochs: [], recvEpochs: [], skippedKeys: []))
+        #expect(fixture.engine.footprint.owedTicks == 0)
     }
 
     // MARK: The seams faked to seal
@@ -135,7 +187,7 @@ import Testing
         let now = Set(fixture.stores.custody.liveIds(now: fixture.clock.wallMilliseconds()))
         #expect(now.subtracting(carried) == ["post-1"], "the post is carried, and no row for its tick")
 
-        // A frame sealed toward Bob anyway carries it, as P5d's will: the stand-in takes it and says it rode.
+        // A frame sealed toward Bob anyway carries it, as P5d's do: the stand-in takes it and says it rode.
         let riders = fixture.engine.ackSync.takeRiding(bob.nodeId, limit: 4)
         #expect(riders == ["post-1"])
         fixture.engine.ackSync.rode(riders, now: fixture.clock.monotonicMilliseconds())

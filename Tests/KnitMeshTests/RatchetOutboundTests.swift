@@ -137,4 +137,85 @@ import Testing
     @Test func theResealWindowIsAndroidsDay() {
         #expect(RatchetOutbound.resealMilliseconds == 24 * 60 * 60 * 1000)
     }
+
+    // MARK: Receipts, ticks and inline acks (phase P5d)
+
+    /// `canSealTickTo` and the gates of `sealDeliveryTickEnvelope` and `sealDmReceipt` (`MeshManager.kt:2066-2069`,
+    /// `:1868-1870`; `InboundPipeline.kt:2904-2906`): the switch, `CAP_RATCHET`, and a bundle that decodes, and no prekey,
+    /// which IntroSync's gate adds and this one does not.
+    @Test func aReceiptOrTickSealsTowardTheRatchetsBitAndABundleAlone() throws {
+        let prekey = try alice.prekey(id: 1)
+        let plan = try #require(RatchetOutbound.receiptPlan(to: pinned(0x15F, prekey: prekey), ratchet: true))
+        #expect(plan.bundle == alice.keys.bundle && plan.prekey == PeerPrekey(verifying: prekey, signedBy: alice.keys.bundle))
+        #expect(plan.readsCryptoV3)
+        #expect(RatchetOutbound.receiptPlan(to: pinned(0x5F), ratchet: true)?.prekey == nil, "no prekey still plans: a session seals")
+        #expect(RatchetOutbound.receiptPlan(to: pinned(0x5F), ratchet: true)?.readsCryptoV3 == false)
+        #expect(RatchetOutbound.receiptPlan(to: pinned(0x15F, prekey: prekey), ratchet: false) == nil, "the switch comes first")
+        #expect(RatchetOutbound.receiptPlan(to: pinned(0xF), ratchet: true) == nil, "a pre-ratchet build")
+        #expect(RatchetOutbound.receiptPlan(to: pinned(nil), ratchet: true) == nil)
+        #expect(RatchetOutbound.receiptPlan(to: pinned(0x15F, key: "not a bundle"), ratchet: true) == nil)
+        #expect(RatchetOutbound.receiptPlan(to: nil, ratchet: true) == nil, "nobody pinned")
+    }
+
+    /// `sealDeliveryTickEnvelope`'s plaintext (`MeshManager.kt:1880-1883`): one id in `ack`, a batch in `acks`; and
+    /// `sealDmReceipt`'s (`InboundPipeline.kt:2925`): the DM's `ack`, its riders in `acks`, absent when none ride.
+    @Test func aTickCarriesOneIdInAckAndABatchInAcks() {
+        let one = RatchetOutbound.tick(acking: ["m1"])
+        #expect(one == MessageContent(body: "", ctl: MessageContent.Control.receipt, ack: "m1"))
+        let batch = RatchetOutbound.tick(acking: ["m1", "m2"])
+        #expect(batch == MessageContent(body: "", ctl: MessageContent.Control.receipt, acks: ["m1", "m2"]))
+        let receipt = RatchetOutbound.dmReceipt(acking: "dm", riders: [])
+        #expect(receipt == MessageContent(body: "", ctl: MessageContent.Control.receipt, ack: "dm"))
+        #expect(RatchetOutbound.dmReceipt(acking: "dm", riders: ["r1"]).acks == ["r1"])
+    }
+
+    /// `inlineAcksFor`'s room (`MeshManager.kt:2015-2017`, `LoraSizeHint.budget`): 320 bytes of body budget, less 260 for a
+    /// quote and 170 for an attachment, less the body's UTF-8 bytes, at 23 bytes an ack, from none to four.
+    @Test func inlineAcksFitKotlinsLoraBudgetForTheDM() {
+        func room(_ body: String, replying: Bool = false, attached: Bool = false) -> Int {
+            let message = MessageRecord(
+                id: "m",
+                senderId: me.nodeId,
+                recipientId: alice.nodeId,
+                conversationId: alice.nodeId.string,
+                body: body,
+                sentAt: 1,
+                attachment: attached ? MessageAttachment(hash: BlobHash(of: [1]), mime: "image/jpeg") : nil,
+                replyTo: replying ? MessageReply(messageId: "q", authorId: alice.nodeId.string, author: "Ann", snippet: "s") : nil
+            )
+            return RatchetOutbound.inlineAckRoom(for: message)
+        }
+        #expect(room("") == 4 && room("hi") == 4, "at most four")
+        #expect(room(String(repeating: "a", count: 270)) == 2, "50 bytes left: two")
+        #expect(room(String(repeating: "a", count: 320)) == 0 && room(String(repeating: "a", count: 400)) == 0, "none past the budget")
+        #expect(room("é", replying: true) == 2, "60 bytes less a two-byte body: 58, two")
+        #expect(room("", attached: true) == 4, "150 bytes with a photo")
+        #expect(room("", replying: true, attached: true) == 0, "nothing left with both")
+        #expect(room(String(repeating: "😀", count: 10), replying: true) == 0, "four bytes each: 40 of 60 gone")
+    }
+
+    /// The plaintext of a DM carrying acks (`content.copy(acks = ...)`, `MeshManager.kt:1295`): compact to a v3 reader, and
+    /// named under v2 once an ack has no canonical compact form, rather than losing the tick.
+    @Test func inlineAcksMoveTheDMToV2WhenTheCompactCodecCannotCarryThem() {
+        var generator = SeededGenerator(seed: 1)
+        let canonical = FrameId.generate(using: &generator)
+        let compact = RatchetOutbound.sealBytes(of: content, carrying: [canonical], readsCryptoV3: true)
+        #expect(compact.scheme == EncEnvelope.Version.compactRatchet && MessageContentV2.decode(compact.plaintext)?.acks == [canonical])
+        let named = RatchetOutbound.sealBytes(of: content, carrying: ["not-a-frame-id"], readsCryptoV3: true)
+        #expect(named.scheme == EncEnvelope.Version.ratchet && (try? MessageContent(decoding: named.plaintext))?.acks == ["not-a-frame-id"])
+        #expect(RatchetOutbound.sealBytes(of: content, carrying: [], readsCryptoV3: true) == content.sealBytes(v3: true), "none: as it was")
+    }
+
+    /// `inlineAcksFor`'s gate is the pinned profile's `CAP_INLINE_ACK`, read with the rest of the scheme.
+    @Test func theSchemeReadsTheInlineAckBit() throws {
+        let prekey = try alice.prekey(id: 1)
+        guard case .ratchet(let reads) = RatchetOutbound.scheme(for: content, to: pinned(0x15F, prekey: prekey), ratchet: true),
+            case .ratchet(let deaf) = RatchetOutbound.scheme(for: content, to: pinned(0x15F & ~0x40, prekey: prekey), ratchet: true)
+        else {
+            Issue.record("both take the ratchet")
+            return
+        }
+        #expect(reads.readsInlineAcks && reads.readsCryptoV3)
+        #expect(!deaf.readsInlineAcks && deaf.readsCryptoV3)
+    }
 }

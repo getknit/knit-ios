@@ -4,7 +4,7 @@ import KnitWire
 
 @testable import KnitMesh
 
-/// The seams faked to seal over the engine they serve, as phase P5d will fill them: a v1 seal of a `CTL_RECEIPT` stands in
+/// The seams faked to seal over the engine they serve, as phase P5d's real ones do: a v1 seal of a `CTL_RECEIPT` stands in
 /// for the ratchet's, so each tick is a DM-form chat to its author, under a fresh id and `sentAt` now
 /// (`sealDeliveryTickEnvelope`, `MeshManager.kt:1868-1905`), that custody carries and a test opens. A live-link tick is
 /// signed `relay = false`; an originated one is signed once and goes out through the engine's `originate(_:)`, flooded and

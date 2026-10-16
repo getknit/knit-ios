@@ -34,4 +34,15 @@ extension ControlLines {
             "dmSealedV1Fallback": .int(Int64(seals.dmSealedV1Fallback)),
         ]
     }
+
+    /// How our receipts and ticks were sealed and how many room ticks rode, under the names of Android's metrics
+    /// (`MeshMetrics.Receipts`, `MeshMetrics.kt:1489-1498`): the four this port counts.
+    static func describe(_ receipts: RatchetReceiptCounts) -> JSONValue {
+        [
+            "receiptsSealed": .int(Int64(receipts.receiptsSealed)),
+            "receiptsSealedFallback": .int(Int64(receipts.receiptsSealedFallback)),
+            "receiptsCustodied": .int(Int64(receipts.receiptsCustodied)),
+            "receiptsRidden": .int(Int64(receipts.receiptsRidden)),
+        ]
+    }
 }

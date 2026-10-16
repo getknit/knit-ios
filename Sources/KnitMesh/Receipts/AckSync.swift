@@ -119,6 +119,11 @@ public struct AckSync: Sendable {
     var lent: [ExactKey: Int64] = [:]
     /// The next ``Done/order``.
     var nextOrder = 0
+    /// How many room ticks rode a frame sealed toward their author, every carrier's together: a batch, a DM's receipt and
+    /// our DM's inline acks. Each carrier tells ``rode(_:now:)`` what rode, where Kotlin counts `onReceiptRidden` beside
+    /// each `rode` (`MeshMetrics.kt:556-558`; `MeshManager.kt:1194`, `:1957`, `InboundPipeline.kt:2955`), so this is
+    /// Android's `receiptsRidden`.
+    public internal(set) var ridden = 0
 
     /// A ledger with knit-next's bounds unless told otherwise.
     public init(owedMilliseconds: Int64 = Self.owedMilliseconds, capacity: Int = Self.owedCapacity) {

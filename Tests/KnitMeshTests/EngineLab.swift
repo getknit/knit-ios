@@ -247,18 +247,21 @@ extension EngineLab {
     }
 
     /// The blobs review's custody check after a re-seal, once the exchange has settled: both custodies hold the same ids,
-    /// and node `from` wrote node `to` two seals of each id in `resealed`, the original and one re-seal. Our receipts are
-    /// cleartext until P5c, so `to`'s receipt for each purged it from both custodies and tombstoned it (`CustodySync`'s
-    /// purge, `ForwardSync.onAck`): neither holds it, where P5c's sealed receipt, which purges nothing, would leave it held
-    /// once on each side.
+    /// and node `from` wrote node `to` two seals of each id in `resealed`, the original and one re-seal. `to`'s receipt for
+    /// each is sealed (phase P5d) and purges nothing, ours included (ADR 2026-09.p6nb, amended), so each id is held once on
+    /// each side until its day ends. Custody keeps the first bytes stored under an id (`ForwardSync.kt:75`): `from` its
+    /// original, taken in its send unit, and `to` whichever of the two seals reached it first, never a third. The digests
+    /// compare ids alone, so the two agree either way.
     func expectCustodyAgrees(
         _ first: Int, _ second: Int, resealed ids: [String], from: Int, to: Int, sourceLocation: SourceLocation = #_sourceLocation
     ) {
         let mine = Set(liveIds(first))
         #expect(!mine.isEmpty && mine == Set(liveIds(second)), "the same ids in both custodies", sourceLocation: sourceLocation)
         for id in ids {
-            let held = [first, second].filter { self[$0].stores.custody.contains(id) }
-            #expect(held.isEmpty, "\(id): purged on both sides by its receipt, held by \(held)", sourceLocation: sourceLocation)
+            let sealed = chats(from: from, to: to, id: id).map(\.wire.signed)
+            let held = [from, to].map { self[$0].stores.custody.frame(id, now: self[$0].clock.wallMilliseconds())?.signed }
+            #expect(held[0] != nil && held[0] == sealed.first, "\(id): \(from) holds its original", sourceLocation: sourceLocation)
+            #expect(held[1].map(sealed.contains) == true, "\(id): \(to) holds one of its seals", sourceLocation: sourceLocation)
             #expect(seals(from: from, to: to, id: id) == 2, "\(id): the original and one re-seal", sourceLocation: sourceLocation)
         }
     }

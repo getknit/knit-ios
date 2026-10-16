@@ -130,7 +130,7 @@ import Testing
         let real = canonicalId(1)
         fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: real, sentAt: now, v3: true), from: android)
         #expect(fixture.stores.messages.message(real)?.body == "hello")
-        #expect(fixture.acknowledged == [real])
+        #expect(fixture.acknowledged(by: android) == [real])
 
         for index in 0..<RatchetResetPolicy.distinctFrames {
             let frame = try android.dm(
@@ -154,7 +154,7 @@ import Testing
         let oracle = try android.dm(
             tick(acking: real), to: me, prekey: prekey, id: real, sentAt: now, v3: true, signed: false, relay: false, edit: forged)
         fixture.deliverPastRouter(oracle, from: alice)
-        #expect(fixture.acknowledged == [real])
+        #expect(fixture.acknowledged(by: android) == [real])
 
         fixture.deliver(try android.dm("still here", to: me, prekey: prekey, id: "real-2", sentAt: now + 1, v3: true), from: android)
         #expect(fixture.stores.messages.message("real-2")?.body == "still here", "the genuine session is unharmed")

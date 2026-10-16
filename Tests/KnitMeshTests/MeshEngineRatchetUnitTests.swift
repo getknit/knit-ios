@@ -50,12 +50,12 @@ import Testing
         fixture.advance(MeshConfiguration().sweepMilliseconds)
         #expect(fixture.stores.messages.message("dm-1")?.body == "hello")
         #expect(receivedRecords(in: fixture.engine.drainEvents()).map(\.id) == ["dm-1"])
-        #expect(fixture.acknowledged == ["dm-1"])
+        #expect(fixture.acknowledged(by: android) == ["dm-1"])
         #expect(fixture.ratchetRecords(of: alice).session?.confirmed == true)
 
         fixture.advance(MeshConfiguration().sweepMilliseconds)
         #expect(receivedRecords(in: fixture.engine.drainEvents()).isEmpty, "delivered exactly once")
-        #expect(fixture.acknowledged == ["dm-1"])
+        #expect(fixture.acknowledged(by: android) == ["dm-1"])
     }
 
     /// A photo whose bytes this phone holds but cannot read: the DM's unit commits and the DM is delivered once, and the
@@ -85,7 +85,7 @@ import Testing
         #expect(fixture.engine.dropped[.storeRefused] == nil, "a blob's file error fails no unit")
         #expect(fixture.stores.messages.message("photo-1")?.attachment?.hash == hash)
         #expect(receivedRecords(in: fixture.engine.drainEvents()).map(\.id) == ["photo-1"])
-        #expect(fixture.acknowledged == ["photo-1"])
+        #expect(fixture.acknowledged(by: android) == ["photo-1"])
         #expect(failures.count == before + 1, "the file's error is reported")
 
         fixture.deliverPastRouter(frame, from: alice)
@@ -94,7 +94,8 @@ import Testing
 
     /// Crypto reviewer's shape 11 and blobs reviewer's: a copy handed to us point to point never reaches our custody, so
     /// when its unit fails our digest lacks it and a carrier's back-fill brings it again, under the id our router saw. Let
-    /// past the router once, it is delivered, carried, and acknowledged, and both custodies hold the same live ids.
+    /// past the router once, it is delivered, carried, and acknowledged, and both custodies hold the same live ids: the DM
+    /// and our receipt, which is sealed (phase P5d) and purges nothing.
     @Test(arguments: StoreKind.allCases)
     func aFailedUnitsFrameComesBackInTheNextBackFillAndCustodyConverges(kind: StoreKind) throws {
         let directory = scratchDirectory("back-fill")
@@ -127,7 +128,7 @@ import Testing
         let ours = Set(iphone.stores.custody.liveIds(now: now))
         let theirs = Set(carrier.stores.custody.liveIds(now: now))
         #expect(ours == theirs, "the custodies differ by \(ours.symmetricDifference(theirs).sorted())")
-        #expect(!theirs.contains("dm-1"), "our cleartext receipt purged it everywhere")
+        #expect(ours.contains("dm-1") && theirs.contains("dm-1"), "our sealed receipt purged it nowhere, ours included")
     }
 
     /// Carries what each engine writes to the other until both fall quiet, as a live link between them would

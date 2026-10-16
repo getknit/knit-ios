@@ -711,3 +711,176 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     - with the shipped seams, every tick waiting for the link.
   - A group open keeps `acknowledge` in its post-commit half, as `announce` does: a standing rule for P6, which opens
     group messages inside a unit.
+
+**Amended 2026-10-16, phase P5d (receipts and ticks sealed):**
+
+- **With the switch on, our acknowledgements take Android's sealed form toward an author who can read one**
+  (`MeshEngine+RatchetReceipts.swift`; `sealDmReceipt`, `InboundPipeline.kt:2895-2958`; `sealDeliveryTickEnvelope`,
+  `sealDeliveryTick`, `originateDeliveryTick` and `canSealTickTo`, `MeshManager.kt:1859-1966` and `:2066-2069`, at
+  knit-next `cbf2a487`).
+  - One read of the pinned row decides who can read one: `CAP_RATCHET` and a bundle that decodes, and no prekey, as
+    `canSealTickTo` reads it (`RatchetOutbound.receiptPlan`). The switch comes first. A DM's receipt reads the row
+    inside its seal's unit, so a read that fails fails the unit; a tick's seam reads it just before.
+  - Each is a `CTL_RECEIPT` DM to the author under a fresh id and `sentAt` now, both drawn inside the unit once the row
+    is read, as Kotlin draws them after its read. It is compact when the profile reads v3 and every id it names is
+    canonical, else v2. A tick names one id in `ack` and a batch in `acks`. A DM's receipt names the DM in `ack` and
+    the room ticks riding it in `acks`.
+  - The live-link tick is signed `relay = false` and never carried. Kotlin sends a v3 one unsigned (ADR 059), and this
+    port sends nothing unsigned, as the decision above has it. The group's escalated batch and the DM's receipt are
+    originated: signed `relay = true`, taken into our custody inside the seal's unit, and flooded after it.
+  - Each seal stands in a store unit of its own, the outermost, with `sealDm` joined to it. It answers the wire or
+    `true` only once that unit commits, and settles after. A unit that fails or is abandoned, and a facade that cannot
+    seal, write nothing and put nothing sealed on the air. The fallback is the cleartext receipt or tick, never v1,
+    which a build without the ratchet would store as an empty bubble (`InboundPipeline.kt:2898-2900`).
+  - A seal asked for inside a unit its caller opened joins that unit. It puts nothing on the air then, but its chain
+    advance, and for an originated form its custody row, stand or fall with that unit. If the outer unit commits, the
+    frame stands in our custody unflooded and unmarked, and the next custody exchange serves it. A joined
+    `originateTick` answers `false` all the same, so the ledger also keeps the ids as cleartext entries, and that tick
+    goes in both forms. No key is used twice, since the advance commits with the frame. Nothing opens a unit around
+    these calls today, and the standing rule for P6 keeps `acknowledge` out of one.
+  - No blocked gate on a tick (`MeshManager.kt:1863-1865`). A blocked sender's DM is never delivered, so it earns no
+    receipt of either form.
+- **The sealed DM receipt drops our self-purge** (ADR 2026-09.p6nb, amended). Carriers cannot read it, so the DM stays
+  in every custody, ours included, to its TTL. While our custody holds it, our digest lists it, so no neighbour's
+  back-fill serves it to us. A copy still reaches us two ways, and each past the router's window is answered with one
+  more sealed receipt, as Kotlin does (`InboundPipeline.kt:946-955`). Our quotas may evict it first, and then every
+  holder next to us serves it. Or a node that lacks it and links to two holders (a returning phone's or a newcomer's
+  back-fill, or a carrier whose quota evicted it) relays the first copy it gets to the other holder before that holder's
+  own copy crosses: a served frame floods on (`ForwardSync.kt:14-15`), a serve stamps nothing in the server's seen set,
+  and every node it reaches past its router window relays it on, holders included (`MeshEngine.swift:221-233`,
+  `MeshRouter.kt:113-114`). So the recipient answers that copy wherever the re-flood finds it, though it still holds the
+  DM. The P5c crypto review traced the alternative: our custody purging a DM every carrier keeps would have our digest
+  omit it for its whole day, a carrier re-serve it every ten minutes past the router, and the exists-gate answer each
+  copy with a new sealed receipt, about 144 a day for every delivered DM. An author who cannot read one and a facade
+  that cannot seal get the cleartext receipt, which still purges and self-vaccinates. Every receipt goes at once:
+  Kotlin's LoRa hold of a DM's receipt (`DmAckCoalescer`) has no plane here.
+- **A store that fails sends no receipt,** sealed or cleartext, as Kotlin's throw out of `sealDmReceipt` sends none
+  (`PeerRepository.kt:138`, `RatchetSessions.kt:50`, `:247`, `:259`, swallowed at `InboundPipeline.kt:304`). That holds
+  for a failed read of the author's row and for a seal's unit that answers `.failed` (`SealedReceiptAttempt.failed`):
+  nothing is purged, and the riders go back. That DM's ✓✓ waits until a copy reaches us again, as after Kotlin's throw:
+  our digest lists the DM, so only the two paths above bring one. A tick whose seal fails on a store keeps its cleartext
+  entry, as P5c has it, since a cleartext tick purges nothing; Kotlin's throw sends none there either.
+- **The engine holds `RatchetTickSeals`, the seams `AckSync` asks, whatever the switch says.** Each answers "cannot
+  seal" by itself with the switch off, since the ledger asks `sealTick` without `canSeal`. `NoTickSealing` is gone. The
+  alternative, `NoTickSealing` held with the switch off, would leave the seams' own gate untested by any engine.
+- **Riders.** Room ticks waiting for a ride toward an author cross on two more frames sealed to it anyway: up to eleven
+  on its DM's receipt (`DmAckCoalescer.MAX_LORA_TICK_ACKS - 1`, `InboundPipeline.kt:2924`), and up to four inline on our
+  DM's first seal toward a profile carrying `CAP_INLINE_ACK`, within Kotlin's LoRa body budget for that DM
+  (`inlineAcksFor` and `LoraSizeHint`, `MeshManager.kt:2004-2026`). Inline acks ride the ratchet's plaintext only, never
+  the v1 fallback, and never a flush or a re-seal, as in Kotlin. Each carrier takes them before its unit, and within the
+  same call says they rode only once its unit commits with a ratchet seal, or gives them back with their stamps. The
+  seams take none: the ledger takes a batch's. This port has no DM coalescer, so only room ticks ride.
+- **A receipt asked for inside a caller's unit sends nothing then,** sealed or cleartext
+  (`SealedReceiptAttempt.heldBack`), and gives its riders back. If that unit commits, the joined seal's receipt still
+  goes at the next exchange, as above, carrying the riders it gave back, which the author then applies twice,
+  idempotently. Nothing asks for one there; a group open in a unit must keep `acknowledge` in its post-commit half (P6).
+- **The replay's keep-and-drop rule needs no change.** A kept copy's DM delivered another way stays in our custody now,
+  and neither the sweep, which lets the copy go by its row or by `forget`, nor the start's replay, which skips a DM with
+  a row, acknowledges it again.
+- **The counts.** `RatchetSealCounts` stays the DMs': Kotlin also counts a v3 receipt or tick in `dmSealedV3`, and this
+  port does not, so a trial's `dmSealedV3 >= 1` still means a v3 DM. The receipts get Android's own counters
+  (`MeshMetrics.Receipts`, as `RatchetReceiptCounts`), counted where Kotlin counts them and reported in the control
+  surface's `ratchet` reply beside `seals`, not in the footprint, whose keys `PeerNodeTests` pins:
+  - `receiptsSealed`, each committed seal of a receipt or tick;
+  - `receiptsSealedFallback`, each seal the facade could not make toward an author who could read one, a store's
+    failure not counted, as Kotlin's throw counts nothing;
+  - `receiptsCustodied`, each escalated batch;
+  - `receiptsRidden`, each room tick that rode, which the ledger counts in `rode`, the one call every carrier makes, as
+    Kotlin calls `onReceiptRidden` beside each `rode`.
+
+  The other four are left out: `receiptsCoalesced`, `receiptsSpooled` and `ticksUnsigned` have no plane or form here,
+  and `receiptsResent` counts the ledger's re-sends, which this port leaves uncounted.
+- **A9.** Carol's ticks are the sealed receipts her engine makes as it opens, checked byte for byte under the frame ids
+  Kotlin's pipeline minted, which the replay hands her engine. `ctlPlane`'s Bob acknowledges sealed, and the state is
+  compared on what his opens leave, since the file lists none of his seals. The `dm` send replay lists no receiver's
+  ack-back, so while an engine opens a plain DM there the peer's row reads as a build without the ratchet.
+- **Decided at review (2026-10-16):**
+  - The crypto and blobs reviews split on a store that fails. The crypto review preferred the cleartext receipt, which
+    shows carriers one delivery during a store failure, as every author without the bit already gets, and purges
+    uniformly. The blobs review preferred Kotlin's posture, since the cleartext receipt's own purge reads the store that
+    just failed, and a purge that misses leaves our custody serving a DM every carrier purged. The caller chose parity
+    with Kotlin, above.
+  - Both reviews accepted merging P5d dark with the reinstall race pinned, on condition that the roadmap names both of
+    its orderings and blocks the flip on them. The switch is off by default, and Release builds cannot turn it on (ADR
+    2026-10.8cy5). The fix waits for the maintainer.
+  - Accepted as written: `dmSealedV3` left to the DMs; the receipt asked for inside a unit, with the correction above;
+    the `dm` replay's peer row read without `CAP_RATCHET`; and a reinstalled node's heuristic firing sooner, since the
+    peer's carried ctl frames count toward its three failures, which makes the race the likelier ordering.
+  - The receipt counters went in because a trial needs them: the soak's oracle reads our sealed receipts against the DMs
+    delivered.
+  - The re-reviews found more, stated here and on the roadmap. A back-fill fed by two holders reaches a recipient that
+    still holds the DM, so the re-ack has a second path, and its re-flood reaches the recipient anywhere the flood
+    goes; both are pinned at Kotlin's level. The candidate fix for the reinstall's opener closes the lost DMs but, when
+    the node's id is the larger, not the split, unless it also sends a flagged reset at once. A room tick the node seals
+    before the opener lands can hold that reset back, and the roadmap names the guard's two options for the
+    maintainer.
+- **The alternatives, and why not:**
+  - **The receipt's row read before its unit:** a read that fails there answers as if no row were pinned, so the
+    cleartext receipt and its purge would go during a store failure.
+  - **A seal refused when a unit is open:** it needs a query on `StoreTransactor`, for calls nothing makes inside a
+    unit.
+- **Limits:**
+  - **A reinstall gets the last day's DMs back from custody,** since nothing purges them, and a responder also gets its
+    peer's opener, the DM its init rode. That opener breaks the pair in either order it can come in. Both orderings
+    are pinned as known issues in `RatchetRestoreLabTests`, and both block the flip. The roadmap holds the candidate
+    fix and the second half it needs, for the maintainer (`.agents/memory/roadmap.md`).
+    - **The opener before the reset.** After a short history, fewer than three failing frames come ahead of it in the
+      back-fill, so the opener lands before any reset. `establish` answers it with the prekey the Keychain kept and
+      rebuilds the old root as a fresh responder with `sendEpoch` 0 (`RatchetEngine.kt:56`, `:519-533`), and the node's
+      next seal mints its epoch 1 again under a new key (`:837`). The peer's `climb` finds its row for that epoch on
+      that root, so no fresh derivation runs: what falls below its cursor drops as `DUPLICATE`, never counted, and the
+      rest fails on the old chain. The pair heals only through a reset at either side's third failure, after silent
+      drops: the peer's frames fail at the node too. Only the reset's receiver re-seals. If the peer resets, a DM it
+      dropped as a duplicate is lost when the re-seal comes within the router's ten minutes of it, since a `DUPLICATE`
+      reopens nothing and the peer's custody holds the copy it cannot open. If the node resets first, nothing re-seals
+      its own DMs, and every one the peer dropped is lost for its day. The node's receipt for the opener is lost either
+      way, since a ctl frame is never re-sealed, which costs the opener's ✓✓ nothing when the first install's receipt
+      reached the peer, as in the lab. In the lab, the node's receipt for the opener and its first DM drop as
+      duplicates, and its second DM fails; the peer's two DMs then give the node its third failure, so the node resets
+      first and its own DMs never read.
+    - **A room post between.** A peer that posted in the room after its opener has the node tick that post before the
+      opener lands, since the back-fill serves newest first, and the sealed live tick starts a session with a plain init
+      (`sealLiveTick`, then `sealDm`). When the node's id is the smaller, its init wins the race at the node and the
+      peer takes it as a replacement, so the pair heals with no reset. When it is the larger, the peer's remnant guard
+      refuses the init and reads its frames read-only, the opener wins the race at the node, and the pair breaks as
+      above. The lab pins both orders, the larger as the known issue.
+    - **The opener after the reset.** Custody serves newest first, so with a longer history the opener comes after the
+      third failure has reset the pair. It then meets the node's unanswered reset in the race, which goes by node id
+      alone (`RatchetEngine.kt:547`, `:653-705`) before the stale-init check (`:549`). When the peer's id is the
+      smaller, the reinstalled node takes the old root back while the peer adopts the reset, which is exempt from the
+      remnant guard (`:560-570`, knit-next ADR 024). Each then reads the other under the root it keeps draining, era
+      effects stop, and the split lasts until those roots expire after two days.
+    - Kotlin has the same rules and never meets either, because its restore keeps the message rows and its exists-gate
+      stops the opener; its clear-data mints a new identity. Only an iOS reinstall keeps the identity and prekeys and
+      loses the rows. The rules are shared, so knit-next should check its restore.
+  - A delivered DM earns one more sealed receipt in each router window in which a copy reaches its recipient: from our
+    own eviction, or from a re-flood. Any node that takes a served copy from one holder while linked to another sends it
+    on, and every holder past its window relays it, so a phone returning next to two holders can buy one more receipt
+    for each delivered DM it takes, from that DM's recipient anywhere the flood reaches. That is up to about 144 in a
+    DM's day, more if 4,096 ids churn through a seen set first, each flooded and carried for a day and taking a row in
+    the acker's 200, as in Kotlin. Bounding the re-ack is knit-next #176's, for both platforms to take (the roadmap).
+  - A re-sealed DM's receiver keeps whichever seal reached its custody first, and its sender the original: one id, two
+    sets of bytes on two nodes, which the digests, comparing ids, do not see. Kotlin does the same.
+  - A receipt or tick for an id the compact codec cannot carry goes v2
+    (`aTickAckingANonCanonicalIdToAV3AuthorFallsBackToV2`).
+  - A ride hold or a batch flushed over a link is one tick however many ids it holds (the P5c limit), and a live-link
+    tick carries no riders, as Kotlin's `sealDeliveryTick` takes none.
+- **Guards:**
+  - `MeshEngineSealedReceiptTests`: `InboundPipelineTest`'s receipt cases by name, the prekey path, a facade that cannot
+    seal, a store failure over both store kinds in the seal's unit and in the row's read, a receipt asked for inside a
+    unit that is abandoned and one that commits, and a blocked sender.
+  - `MeshEngineSealedTickTests`: `MeshManagerTest`'s tick cases by name, a seal the facade cannot make, and a store
+    failure over both store kinds. `MeshEngineSealedTickUnitTests`: each seam inside a unit that is abandoned and one
+    that commits, and a batch due inside a committed unit going in both forms.
+  - `MeshEngineInlineAckTests`: `MeshManagerTest`'s inline cases, a failed unit over both store kinds, the heal's flush
+    and the re-seal carrying none, and the budget. `RatchetOutboundTests`' P5d cases.
+  - `MeshEngineTickTests.withTheSwitchOffEveryTickTowardARatchetAndroidIsTodaysCleartext` and
+    `MeshEngineRatchetSwitchTests.withTheSwitchOffReceiptsAndTicksTowardARatchetAndroidAreTodays`: the switch off, the
+    real seams, an Android peer with `0x15F` and a signed prekey, frame for frame against today's from the same draws.
+  - Engines on both ends: `TickLabTests.aSealedGroupTickReachesAnAbsentAuthorFromACarriersCustodyAndFlipsEachTick`, with
+    Carol's one point-to-point serve and all three custodies compared; `SealedReceiptLabTests`, with no second receipt
+    past the router's window, the quota eviction's one receipt per window, and one more receipt from a two-holder
+    back-fill, next to the recipient or two hops from it; `RatchetRestoreLabTests`' pinned orderings, the opener-first
+    one in both node-id orders, with and without a room post the node ticks before the opener lands.
+  - `RatchetCarolVectorTests`: A9's Carol ticks byte for byte.
+  - `MeshControlRatchetTests.theDumpCountsOurReceiptsUnderAndroidsNames`: the reply's keys.

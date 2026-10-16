@@ -13,7 +13,10 @@ import Testing
 /// prekeys, loses the database, and sends no resets of its own (ADR 2026-09.tkww; ADR 2026-10.5sk9). The peer's frames
 /// then fail as `NO_SESSION`, the heuristic resets at the third, and the peer seals its unacked DMs again under the new
 /// session. So the first case sends three DMs while the node is away where Kotlin's sends two, and the reinstalled thread
-/// holds only what came after. The group case, `aRestoredNodeReMintsItsGroupChainAndTheMembersFollow`, is P6's. The P5b
+/// holds what came after, and, since our receipts are sealed (phase P5d) and purge nothing, the DMs the peer's custody
+/// still holds from before that opened: the peer's opener, for a node that answered it. That opener breaks the pair
+/// whether it comes before the reset or after it, and both orderings are pinned as known issues that block the flip
+/// (`.agents/memory/roadmap.md`). The group case, `aRestoredNodeReMintsItsGroupChainAndTheMembersFollow`, is P6's. The P5b
 /// blobs review adds a custody check after the re-seal and a crash stand-in over the database.
 @Suite struct RatchetRestoreLabTests {
     private let alice = TestPeer(seed: 1)
@@ -55,16 +58,161 @@ import Testing
         #expect(Set(lab[index].resetsSent(to: peers[other]).map(\.envelope.id)).count == 1, "the third NO_SESSION reset the pair")
         let read = lab.thread(index, with: other)
         #expect(away.allSatisfy { id in read.contains { $0.hasPrefix(id) } }, "the peer sealed them again, and they open: \(read)")
-        #expect(lab[index].ratchetRecords(of: peers[other]).session?.root != root, "a new session, not the old one")
+        // Since P5d our receipt is sealed and purges nothing, so the peer's custody keeps its opener, the DM its init rode,
+        // for the day, and serves it back to the node that answered it and then lost its database: Bob, here. Served newest
+        // first, it comes after the third failure has reset the pair, and the race takes it by node id, so a peer whose
+        // id is the smaller drags the reinstalled node back onto the root the pair left while the peer adopts the reset
+        // (the P5d crypto owner's finding; ADR 2026-10.5sk9's P5a limits name the same hole for a reset). Each still reads
+        // the other under the root it keeps draining, for two days.
+        let racedTheOpener = index == 1 && peers[0].nodeId < peers[1].nodeId
+        withKnownIssue("a stale opener served after a reinstall's reset wins the init race (P5d finding)") {
+            #expect(lab[index].ratchetRecords(of: peers[other]).session?.root != root, "a new session, not the old one")
+        } when: {
+            racedTheOpener
+        }
 
         try send(lab, index, other, "after")
         try send(lab, other, index, "after too")
-        #expect(lab.thread(index, with: other).count == 5, "the three, and what came after")
+        // A responder also gets its peer's opener back, the DM custody now keeps for its day (above).
+        #expect(lab.thread(index, with: other).count == (index == 1 ? 6 : 5), "the three, what came after, and the opener")
         #expect(Set(lab.thread(index, with: other)).isSubset(of: Set(lab.thread(other, with: index))))
-        #expect(lab.sessionsAgree(0, 1), "\(lab.describe(0, 1))")
+        withKnownIssue("a stale opener served after a reinstall's reset wins the init race (P5d finding)") {
+            #expect(lab.sessionsAgree(0, 1), "\(lab.describe(0, 1))")
+        } when: {
+            racedTheOpener
+        }
         #expect(lab[other].ratchetRecords(of: peers[index]).session?.lastResetSentAt == 0, "the peer never reset back")
         lab.advance(Self.minute)
         lab.expectCustodyAgrees(0, 1, resealed: away, from: other, to: index)
+    }
+
+    /// The reinstall's other ordering (the P5d crypto review's first finding), pinned as a known issue as the race above is,
+    /// in both node-id orders: node `index` answered the peer's opener and then reinstalled, after a short history and with
+    /// nothing sent while it was away, so the back-fill brings the opener before any failure could reset the pair. Only
+    /// that ordering is asserted outside the pin. What the node makes of the opener is today's mechanism, which any fix
+    /// changes: it takes the old root back with the prekey its Keychain kept, a fresh responder with no epoch of its own,
+    /// and its next seal mints its first epoch again under a new key. The peer still holds that epoch on that root, so it
+    /// reads the node on the old chain, below the cursor as duplicates, never counted, and at or past it as failures, and
+    /// its own frames fail at the node too. The oracle still sees one root and one era. The pair heals only through a
+    /// reset at either side's third failure, after silent drops, and only the reset's receiver re-seals. In the lab's case
+    /// the node's receipt for the opener and its first DM drop as duplicates, and its second fails; the peer's two DMs then
+    /// give the node its third failure first, so the node resets and reads them re-sealed, while nothing re-seals the
+    /// node's own two, which the peer never reads. The pin is the fix's oracle (``expectHealed(_:_:sent:answered:)``).
+    @Test(arguments: [0, 1])
+    func aReinstalledResponderGetsItsOpenerBackFirstAndItsPeerReadsWhatItSendsNext(reinstalled index: Int) throws {
+        let history = try reinstalledAfterAShortHistory(index)
+        let lab = history.lab
+        let ahead = try framesToTheNode(ahead: history.opener, in: history.backFill, of: index)
+        #expect(ahead < 3, "so it reached the node before any reset could")
+
+        let sent = try (1...2).map { try send(lab, index, 1 - index, "after \($0)") }
+        let answered = try (1...2).map { try send(lab, 1 - index, index, "and back \($0)") }
+        lab.advance(Self.minute)
+        withKnownIssue("a reinstalled responder's opener served first re-mints its first epoch on the old root (P5d finding)") {
+            expectHealed(lab, index, sent: sent, answered: answered)
+        }
+    }
+
+    /// The same ordering with a room post between (the P5d crypto re-review's first finding), in both node-id orders: the
+    /// peer posted in the room after its opener, so the back-fill, profiles first and then newest first, brings the post
+    /// ahead of the opener. The node delivers it and owes the peer a tick, which it seals at once over the link
+    /// (`sealLiveTick`), and with no session held that seal starts one with a plain init, so when the opener lands the
+    /// node holds its own unanswered init and meets the opener in the race. Only that ordering is asserted outside the
+    /// pin. Today, when the node's id is the smaller, its init wins the race at the node, the peer takes it as a
+    /// replacement, and the pair heals with no reset, which the oracle pins plainly. When the node's id is the larger,
+    /// the peer's remnant guard refuses the init and reads its frames read-only, the opener's old root wins the race at
+    /// the node, and the pair breaks as in the case above: that order is the known issue. A fix's second half guarded by
+    /// "while no session is held" never fires here, since the tick's init is held (`.agents/memory/roadmap.md`). The pin
+    /// is the same oracle as the case above.
+    @Test(arguments: [0, 1])
+    func aReinstalledResponderTicksItsPeersRoomPostBeforeTheOpenerLands(reinstalled index: Int) throws {
+        let history = try reinstalledAfterAShortHistory(index) { lab in
+            _ = try #require(lab[1 - index].engine.postToRoom("after the opener"))
+            lab.carry()
+        }
+        let lab = history.lab
+        let backFill = history.backFill
+        let post = try #require(backFill.firstIndex { $0.envelope.isRoomPost }, "the back-fill brought the peer's room post")
+        let opened = try #require(backFill.firstIndex { ExactKey($0.envelope.id) == ExactKey(history.opener) })
+        #expect(post < opened, "ahead of the opener")
+        let ahead = try framesToTheNode(ahead: history.opener, in: backFill, of: index)
+        #expect(ahead < 3, "which still reached the node before any reset could")
+
+        let sent = try (1...2).map { try send(lab, index, 1 - index, "after \($0)") }
+        let answered = try (1...2).map { try send(lab, 1 - index, index, "and back \($0)") }
+        lab.advance(Self.minute)
+        let nodeIsTheLarger = lab[index].me.nodeId > lab[1 - index].me.nodeId
+        withKnownIssue("a reinstalled responder's tick init meets the peer's opener in the race and loses (P5d finding)") {
+            expectHealed(lab, index, sent: sent, answered: answered)
+        } when: {
+            nodeIsTheLarger
+        }
+    }
+
+    /// A pair after a short history, its node reinstalled and linked again.
+    private struct ShortHistory {
+        /// The two engines.
+        let lab: EngineLab
+        /// The peer's opener, the DM its init rode.
+        let opener: String
+        /// What the peer wrote to the node at the link-up: its back-fill.
+        let backFill: [Written]
+    }
+
+    /// Node `1 - index`'s opener to node `index` and node `index`'s answer, then `prelude`, then node `index` reinstalled, a
+    /// fresh database with the Keychain's identity and prekeys kept, and linked again.
+    private func reinstalledAfterAShortHistory(_ index: Int, prelude: ((EngineLab) throws -> Void)? = nil) throws -> ShortHistory {
+        let peers = [alice, bob]
+        let other = 1 - index
+        let keychains = peers.map { KeptSecretStore($0.keys.storedForm) }
+        let lab = EngineLab([
+            try EngineFixture.ratcheting(alice, keychain: keychains[0], seed: 11),
+            try EngineFixture.ratcheting(bob, keychain: keychains[1], seed: 12),
+        ])
+        lab.link(0, 1)
+        let opener = try send(lab, other, index, "the opener")
+        try send(lab, index, other, "the answer")
+        try prelude?(lab)
+        lab.expectConverged(0, 1, atLeast: 2, "before")
+
+        lab.advance(Self.minute)
+        lab.unlink(0, 1)
+        let wall = lab[index].clock.wallMilliseconds()
+        lab.replace(index, with: try EngineFixture.ratcheting(peers[index], keychain: keychains[index], wall: wall, seed: 21))
+        let written = lab[other].transport.written.count
+        lab.link(0, 1)
+        let backFill = lab[other].transport.written.dropFirst(written).filter { $0.to == peers[index].nodeId }
+        return ShortHistory(lab: lab, opener: opener, backFill: Array(backFill))
+    }
+
+    /// How many of the peer's frames to node `index` the back-fill carried ahead of the opener. Fewer than three, and the
+    /// opener reached the node before any third failure could reset the pair, whatever the node makes of either.
+    private func framesToTheNode(ahead opener: String, in backFill: [Written], of index: Int) throws -> Int {
+        let node = ExactKey([alice, bob][index].nodeId.string)
+        let peer = ExactKey([alice, bob][1 - index].nodeId.string)
+        let toTheNode = backFill.filter { frame in
+            ExactKey(frame.envelope.recipientId ?? "") == node && ExactKey(frame.envelope.senderId) == peer
+        }
+        return try #require(toTheNode.firstIndex { ExactKey($0.envelope.id) == ExactKey(opener) }, "the back-fill brought the opener")
+    }
+
+    /// The fix's oracle for a reinstalled responder's opener (`.agents/memory/roadmap.md`): node `index`'s DMs `sent` read at
+    /// the peer and the peer's `answered` at the node, the sessions agree, the node sends at most the one flagged reset a fix
+    /// may send, counted by id, as the race above counts, and the peer sends none.
+    private func expectHealed(_ lab: EngineLab, _ index: Int, sent: [String], answered: [String]) {
+        let other = 1 - index
+        let theirs = lab.thread(other, with: index)
+        let mine = lab.thread(index, with: other)
+        #expect(sent.allSatisfy { id in theirs.contains { $0.hasPrefix(id) } }, "the peer reads the node's DMs: \(theirs)")
+        #expect(answered.allSatisfy { id in mine.contains { $0.hasPrefix(id) } }, "and the node the peer's: \(mine)")
+        #expect(lab.sessionsAgree(0, 1), "\(lab.describe(0, 1))")
+        let resets = lab[index].resetsSent(to: lab[other].me)
+        let flagged = resets.allSatisfy { frame in
+            let flags = (try? ChatContent(decoding: frame.envelope.payload))?.enc?.ratchet?.flags ?? 0
+            return flags & RatchetHeader.resetFlag != 0
+        }
+        #expect(Set(resets.map(\.envelope.id)).count <= 1 && flagged, "at most the one flagged reset a fix may send")
+        #expect(Set(lab[other].resetsSent(to: lab[index].me).map(\.envelope.id)).isEmpty, "and none from the peer")
     }
 
     /// The blobs review's crash stand-in, over the database: Alice's DM to Bob commits in its send unit while they are

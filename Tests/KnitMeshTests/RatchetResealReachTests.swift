@@ -17,11 +17,17 @@ import Testing
     private let peer = TestPeer(seed: 2)
     private let carrier = TestPeer(seed: 3)
     private static let minute: Int64 = 60_000
+    /// Custody's day, past which nothing of the greeting is carried.
+    private static let day: Int64 = 24 * 60 * minute
     /// Longer than any relay's jitter, so a flood crosses a hop in one step.
     private static let hop: Int64 = 200
 
-    /// The line, greeted end to end through the carrier, with the peer then reinstalled while it is linked to the carrier
-    /// alone: a fresh database, the Keychain's identity and prekeys kept.
+    /// The line, greeted end to end through the carrier, with the peer then reinstalled a day later while it is linked to
+    /// the carrier alone: a fresh database, the Keychain's identity and prekeys kept. The day empties every custody of the
+    /// greeting. Since P5d our receipts are sealed and purge nothing, so within the day the carrier would serve the
+    /// reinstalled peer the iPhone's opener, from which it takes the old root back: an ordering that heals only through a
+    /// reset, after frames dropped silently, which `RatchetRestoreLabTests` pins as a known issue. The reset is what this
+    /// suite measures.
     private func reinstalledLine() throws -> EngineLab {
         let keychain = KeptSecretStore(peer.keys.storedForm)
         let lab = EngineLab([
@@ -37,7 +43,8 @@ import Testing
         try send(lab, 0, 2, "and back")
         lab.expectConverged(0, 2, atLeast: 3, "greeted through the carrier")
 
-        lab.advance(Self.minute)
+        lab.advance(Self.day + Self.minute)
+        #expect((0...2).allSatisfy { lab.liveIds($0).allSatisfy { $0.hasPrefix("profile-") } }, "nothing of the greeting is carried")
         let wall = lab[2].clock.wallMilliseconds()
         lab.replace(2, with: try EngineFixture.ratcheting(peer, keychain: keychain, wall: wall, seed: 22))
         lab.link(1, 2)

@@ -210,6 +210,7 @@ Swift must count `utf16`, not `Character`s.
 | `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `sealResetDm`, `sweep`, `forget`, `settle`; the reset's pure rules in `RatchetResetPolicy` |
 | `InboundPipeline`'s ratchet arm, `sendSessionReset` | `MeshEngine.handleRatchetDirect` and `sendSessionReset`, over `RatchetInbound`'s pure rules; the replay of a failed open in `RatchetReplay` |
 | `MeshManager.sealEnvelopeFor`'s DM arm, `flushPendingFor`, `resealRecentDmsTo` | `MeshEngine.sendRatchet`, `flushPendingDirect` and `resealRecentDirectMessages`, over `RatchetOutbound`'s pure rules; Android's seal counts in `RatchetSealCounts` |
+| `InboundPipeline.sealDmReceipt`, `MeshManager.sealDeliveryTick`, `originateDeliveryTick`, `canSealTickTo`, `inlineAcksFor` | `MeshEngine.sendSealedReceipt`, `sealLiveTick`, `originateTick` and `canSealTick` behind `RatchetTickSeals`, and `sendRatchet`'s riders, over `RatchetOutbound.receiptPlan` and `inlineAckRoom` |
 | `RatchetStore`, `RatchetRepository` | KnitStore's `RatchetStore`, `MemoryRatchetStore` and `RatchetRetention`; KnitStoreSQL's `SQLRatchetStore` (schema v17); `RatchetRecords` maps the rows to the engine's types |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
@@ -511,7 +512,8 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 - **A sealed receipt purges nothing,** anywhere, and a sealed tick is sealed once and re-sent verbatim, only over a
   live link, with a group's batch carried by custody (ADR 2026-09.p6nb, amended twice).
 - **Inline acks** (`CAP_INLINE_ACK`): up to four `acks` ride a plain sealed DM to an author whose profile has
-  `0x40`, and are applied in the same commit as the message (`InboundPipeline.kt:1088-1116`).
+  `0x40`, and are applied in the same commit as the message (`InboundPipeline.kt:1088-1116`). This port sends room
+  ticks alone this way, on a DM's first seal, since it has no DM coalescer (phase P5d).
 
 ### Which scheme a send takes
 
@@ -604,8 +606,8 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     presentation. A plaintext that will not decode, or an unsigned frame that is not a receipt, answers `nil` and
     abandons the open, so the chain index stays unspent, as Kotlin's peek leaves it.
   - Everything that is not a store write waits for the unit's commit (`RatchetArrival`): the events, a refused
-    reaction's count, a photo's fetch or local copy, and the acknowledgement, which stays this build's cleartext receipt
-    until P5d seals it.
+    reaction's count, a photo's fetch or local copy, and the acknowledgement, sealed since phase P5d toward an author
+    who can read it (below).
   - A typed failure from a signed frame that counts gets one copy past the router (`Router.reopen`) and goes to
     `noteUndecryptable` outside any unit; when the heuristic fires, the reset goes out as Kotlin's `originate` sends a
     frame, signed once, carried in our own custody and flooded, with no row (`sendSessionReset`).
@@ -666,6 +668,37 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     peer's included, keeps only the original, as in Kotlin. So a peer two hops away does not read DMs that crossed a
     relay within ten minutes before its reset (`RatchetResealReachTests`).
   - The v1 path is as it was, from the same draws, with the switch off and toward a peer without the bit.
+- **Our receipts and ticks, sealed** (`MeshEngine+RatchetReceipts.swift`, phase P5d), with the switch on, toward an
+  author whose pinned row carries `CAP_RATCHET` and a bundle that decodes, read once (`canSealTickTo`,
+  `MeshManager.kt:2066-2069`):
+  - Each is a `CTL_RECEIPT` DM to the author under a fresh id and `sentAt` now, compact when its profile reads v3 and
+    every id it names is canonical, else v2. A tick names one id in `ack` and a batch in `acks`; a DM's receipt names
+    the DM in `ack` and up to eleven room ticks riding it in `acks` (`InboundPipeline.kt:2924-2925`).
+  - The live-link tick is signed `relay = false` and never carried; Kotlin sends a v3 one unsigned (ADR 059), and this
+    port sends nothing unsigned. The group's escalated batch and the DM's receipt are originated: signed
+    `relay = true`, carried in our custody inside the seal's unit, flooded after it.
+  - Each seal stands in a store unit of its own, the outermost, `sealDm` joined, answered only after `.committed` and
+    settled after. The frame id and the clock are drawn inside it, once the author's row is read; the DM receipt's
+    row is read inside it too, so a read that fails fails the unit.
+  - A unit that fails or is abandoned, and a facade that cannot seal, write nothing and put nothing sealed on the air:
+    the seams answer `nil` or `false`. A DM's receipt then goes cleartext when the store works (an author who cannot
+    read one, a facade that cannot seal), and goes not at all when a store failed, as Kotlin's throw sends nothing.
+  - A seal asked for inside a caller's unit joins it and puts nothing on the air then, but leaves its chain advance
+    in that unit, and for an originated form its custody row. If the outer unit commits, the frame stands in our
+    custody unflooded and unmarked and the next exchange serves it; a joined `originateTick` answers `false`, so the
+    ledger also keeps its ids as cleartext entries and that tick goes in both forms. No key is used twice. Nothing
+    opens a unit around these calls today, and P6's standing rule keeps `acknowledge` out of one.
+  - The fallback is the cleartext receipt or tick, never v1. The cleartext receipt purges the DM from our custody;
+    the sealed one purges nothing, ours included (ADR 2026-09.p6nb, amended).
+  - The counts are Android's `MeshMetrics.Receipts` names, in the control surface's `ratchet` reply beside `seals`:
+    `receiptsSealed`, `receiptsSealedFallback`, `receiptsCustodied` and `receiptsRidden` (`RatchetReceiptCounts`).
+  - No blocked gate on a tick (`MeshManager.kt:1863-1865`); a blocked sender's DM is never delivered, so it earns no
+    receipt at all.
+  - Room ticks waiting for a ride also ride a DM's first seal toward a peer whose profile carries `CAP_INLINE_ACK`,
+    inside the ratchet's plaintext only, at most four within Kotlin's LoRa body budget (`inlineAcksFor`,
+    `MeshManager.kt:2004-2026`). A carrier takes them before its unit and, within the same call, says they rode once
+    its unit commits with a ratchet seal, or gives them back with their stamps.
+  - With the switch off, the seams answer "cannot seal" by themselves, so every receipt and tick is today's.
 
 ### The promise behind the bits
 
@@ -737,7 +770,9 @@ knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` from a branc
 - `carol`, Carol, the iPhone, in races and first contacts with Alice and with Bob. Every opener is v3, and
   `RatchetTranscriptTests` replays them at the engine, Carol's seals byte for byte. `RatchetCarolVectorTests` delivers
   every frame Carol opens through her engine's inbound path, against the state and floors Android's own pipeline left.
-  Her DMs go through her engine's send path, and her ticks through its facade, from her draws, until P5d seals them.
+  Her DMs go through her engine's send path, and her ticks are the sealed receipts her engine makes as it opens,
+  byte for byte, under the frame ids Kotlin's pipeline minted (phase P5d). The `dm` replays list no receiver's
+  ack-back, so while an engine opens a plain DM there, the peer's row reads as a build without the ratchet.
 
 A10 then adds this port's own ratchet frames to `ios-emitted-v1.json`, for knit-next's `IosEmittedVectorTest` to
 open (`.agents/memory/roadmap.md`).

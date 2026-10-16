@@ -32,6 +32,14 @@ import KnitWire
 /// id and `sentAt`, and signs the id again: one more signature for each committed first verdict of a reset from that
 /// peer within the day, with no per-id guard, as in Kotlin (ADR 2026-09.2ved, amended). It flies live, and custody keeps
 /// the first bytes it stored under the id (``CustodySync/carryOwn(_:in:now:)``, `ForwardSync.kt:75`).
+///
+/// **Inline acks** (phase P5d; `inlineAcksFor` and `sendChat`, `MeshManager.kt:2004-2026` and `:1185-1202`, knit-next ADRs
+/// 054 and 2026-09.aa27). A DM's first seal toward a peer whose pinned profile carries `CAP_INLINE_ACK` carries the room
+/// ticks waiting for a ride toward it, inside the ratchet's plaintext only, as many as Kotlin's LoRa budget for that DM
+/// leaves room for (``RatchetOutbound/inlineAckRoom(for:)``). They are taken before the unit and, within the same call,
+/// said to have ridden once the unit commits with the ratchet's seal, or given back with their stamps: on a v1 fallback,
+/// which carries none, and on a unit that fails, joins or is abandoned. A flush and a re-seal carry none, as Kotlin's
+/// `flushPendingFor` and `resealAndFlood` carry none. This port has no DM coalescer, so only room ticks ride.
 extension MeshEngine {
     /// What one send unit is for.
     enum RatchetSendPurpose {
@@ -50,16 +58,21 @@ extension MeshEngine {
 
     /// Our new DM `record` to `recipient`, with the switch on, sent as `scheme`, which one read of the peer's row decided,
     /// and answered as stored:
-    /// - the ratchet: saved waiting first, so a unit that fails leaves the row for the heal and nothing on the air;
+    /// - the ratchet: saved waiting first, so a unit that fails leaves the row for the heal and nothing on the air, and
+    ///   carrying the room ticks waiting for a ride toward the peer when its profile reads inline acks;
     /// - v1, to the bundle that read gave, as today's send seals it: sent at once, or waiting when v1 refuses the key;
     /// - waiting: no bundle pinned, or a read that failed, for the key's arrival or the heal, with no second read.
+    ///
+    /// Only this first seal carries inline acks, and only the ratchet's arm: Kotlin takes them for every send and gives
+    /// them back unless the seal came out v2 or v3 (`MeshManager.kt:1187-1202`), so a v1 or a waiting DM is sent none here.
     func sendDirect(_ record: MessageRecord, to recipient: NodeId, as scheme: RatchetOutbound.Scheme) -> MessageRecord {
         var record = record
         switch scheme {
         case .ratchet(let plan):
             record.pendingKey = true
             stores.messages.save(record)
-            record.pendingKey = !sendRatchet(record, to: recipient, plan, purpose: .first)
+            let riders = plan.readsInlineAcks ? ackSync.takeRiding(recipient, limit: RatchetOutbound.inlineAckRoom(for: record)) : []
+            record.pendingKey = !sendRatchet(record, to: recipient, plan, purpose: .first, riders: riders)
         case .staticKeys(let bundle):
             let sealed = sealStatic(record, to: recipient, bundle)
             record.pendingKey = sealed == nil
@@ -84,7 +97,7 @@ extension MeshEngine {
         for message in waiting {
             let scheme = directScheme(for: message, to: peer)
             if case .ratchet(let plan) = scheme {
-                sendRatchet(message, to: recipient, plan, purpose: .first)
+                sendRatchet(message, to: recipient, plan, purpose: .first, riders: [])
             } else if case .staticKeys(let bundle) = scheme, let sealed = sealStatic(message, to: recipient, bundle) {
                 originate(staticEnvelope(sealed, of: message, to: recipient))
                 stores.messages.clearPendingKey(message.id)
@@ -109,15 +122,21 @@ extension MeshEngine {
     // MARK: The send unit
 
     /// Seals our DM `message` to `recipient` with `plan` in one store unit and sends it once the unit commits, as the type's
-    /// doc says. Answers whether it went: `false` leaves it as it was, waiting on a first seal.
+    /// doc says, with `riders`, room ticks taken out of their ride hold, inside the ratchet's plaintext. Answers whether it
+    /// went: `false` leaves it as it was, waiting on a first seal. Either way the riders are settled before it answers.
     @discardableResult
     func sendRatchet(
-        _ message: MessageRecord, to recipient: NodeId, _ plan: RatchetOutbound.Ratcheted, purpose: RatchetSendPurpose
+        _ message: MessageRecord,
+        to recipient: NodeId,
+        _ plan: RatchetOutbound.Ratcheted,
+        purpose: RatchetSendPurpose,
+        riders: [String]
     ) -> Bool {
         let now = clock.wallMilliseconds()
         let aad = MessageCrypto.header(id: message.id, senderId: nodeId.string, sentAt: message.sentAt, thread: recipient.string)
+        let sealing = riders.isEmpty ? plan : plan.carrying(riders, in: Self.content(of: message))
         let unit = stores.transactor.atomically { () -> RatchetSend? in
-            guard let sealed = ratchetSeal(message, to: recipient, plan, aad: aad, now: now) else {
+            guard let sealed = ratchetSeal(message, to: recipient, sealing, aad: aad, now: now) else {
                 return nil
             }
             let content = Self.chat(sealed.envelope, carrying: message)
@@ -137,21 +156,41 @@ extension MeshEngine {
         switch unit {
         case .committed(let send):
             fly(send, to: recipient, purpose: purpose)
+            // A v1 fallback carried none of them: a v1 reader never looks (`MeshManager.kt:1190-1202`).
+            settleRiders(riders, toward: recipient, rode: send.sealed.form != .fallback)
             return true
         case .failed:
             log.log(.warning, "mesh DM \(message.id) to \(recipient) not sealed: a store failed, and nothing was sent")
+            settleRiders(riders, toward: recipient, rode: false)
             return false
         case .abandoned, .joined:
             // Abandoned: neither the ratchet nor v1 would seal to this peer, or the signature failed. Joined cannot
             // happen, since nothing opens a unit around a send; were it to, its frame could not go before an outer commit
             // this never sees.
+            settleRiders(riders, toward: recipient, rode: false)
             return false
         }
     }
 
-    /// `message` sealed toward `plan`'s peer inside the caller's unit: with the ratchet, joined to that unit, or v1 when the
-    /// facade cannot seal or X25519 refuses the peer's key (`MeshManager.kt:1293-1307`). `nil` when neither seals, or when a
-    /// store failed, which fails the caller's unit with it.
+    /// The room ticks a send carried inline, told to the ledger once its unit has answered: they rode, now that a ratchet
+    /// seal of them committed, or go back to their ride hold with the stamps they had (`ackSync.rode` and
+    /// `giveBackRiding`, `MeshManager.kt:1190-1202`).
+    private func settleRiders(_ riders: [String], toward recipient: NodeId, rode: Bool) {
+        guard !riders.isEmpty else {
+            return
+        }
+        let now = clock.monotonicMilliseconds()
+        if rode {
+            ackSync.rode(riders, now: now)
+        } else {
+            ackSync.giveBackRiding(recipient, riders, now: now)
+        }
+    }
+
+    /// `message` sealed toward `plan`'s peer inside the caller's unit: `plan`'s plaintext with the ratchet, joined to that
+    /// unit, or the message's own content v1 when the facade cannot seal or X25519 refuses the peer's key
+    /// (`MeshManager.kt:1293-1307`), so inline acks never ride the v1 wrap. `nil` when neither seals, or when a store failed,
+    /// which fails the caller's unit with it.
     private func ratchetSeal(
         _ message: MessageRecord, to recipient: NodeId, _ plan: RatchetOutbound.Ratcheted, aad: [UInt8], now: Int64
     ) -> RatchetSealed? {
@@ -226,7 +265,7 @@ extension MeshEngine {
         for message in unacked {
             switch directScheme(for: message, to: record) {
             case .ratchet(let plan):
-                resealed += sendRatchet(message, to: peer, plan, purpose: .reseal) ? 1 : 0
+                resealed += sendRatchet(message, to: peer, plan, purpose: .reseal, riders: []) ? 1 : 0
             case .staticKeys(let bundle):
                 // A peer whose pinned profile lacks the bit sent the reset anyway: v1, as `sealEnvelopeFor` falls back.
                 resealed += resealStatic(message, to: peer, bundle) ? 1 : 0

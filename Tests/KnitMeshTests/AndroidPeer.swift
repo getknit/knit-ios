@@ -130,6 +130,42 @@ final class AndroidPeer {
             opening, from: sender.keys.bundle, now: now, prekeys: { $0 == held.id ? held : nil }, alongside: { _ in () })
     }
 
+    /// What `frame`, a DM-form frame from `sender` addressed to this phone, says, opened as this phone would open it with
+    /// nothing committed: the open's unit is abandoned, so the session it holds does not move. How a test reads a sealed
+    /// receipt of ours without changing what the phone holds. `nil` for a frame it cannot open.
+    func peek(_ frame: Written, from sender: TestPeer) -> MessageContent? {
+        let envelope = frame.envelope
+        guard ExactKey(envelope.recipientId ?? "") == ExactKey(nodeId.string),
+            let enc = (try? ChatContent(decoding: envelope.payload))?.enc
+        else {
+            return nil
+        }
+        let aad = MessageCrypto.header(id: envelope.id, senderId: envelope.senderId, sentAt: envelope.sentAt, thread: nodeId.string)
+        guard let opening = RatchetSessions.Frame(envelope: enc, aad: aad) else {
+            return nil
+        }
+        let held = prekey
+        var bytes: [UInt8]?
+        let read: (RatchetEngine.OpenOutcome.Opened) -> Void? = { opened in
+            bytes = opened.plaintext
+            return nil
+        }
+        _ = sessions.open(opening, from: sender.keys.bundle, now: envelope.sentAt, prekeys: { $0 == held.id ? held : nil }, alongside: read)
+        guard let bytes else {
+            return nil
+        }
+        return enc.version == EncEnvelope.Version.compactRatchet ? MessageContentV2.decode(bytes) : try? MessageContent(decoding: bytes)
+    }
+
+    /// The ids `frame` acknowledges, as this phone reads it: a sealed receipt's `ack` first, then its `acks`; `nil` for a
+    /// frame that is no sealed receipt to this phone.
+    func receiptAcks(_ frame: Written, from sender: TestPeer) -> [String]? {
+        guard let content = peek(frame, from: sender), content.ctl == MessageContent.Control.receipt else {
+            return nil
+        }
+        return [content.ack].compactMap(\.self) + (content.acks ?? [])
+    }
+
     /// The session this phone holds with `peer`, or `nil`.
     func session(with peer: TestPeer) -> RatchetEngine.SessionState? {
         sessions.session(of: peer.nodeId)
@@ -194,11 +230,16 @@ extension EngineFixture {
     }
 
     /// The resets the engine sent: DM-form chats to `peer` whose plaintext is the reset marker, which only `peer` could
-    /// open, so they are told apart by their flag or their init.
+    /// open, so they are told apart by their flag or their init, and by their form. Every reset seals v2, the marker
+    /// ``RatchetSessions/resetPlaintext`` and its 16-byte tag (`RatchetSessions.kt:471-492`), and no message of ours names
+    /// it. Since P5d our sealed receipts are ctl frames with an init riding too while our session is unconfirmed, v2 for an
+    /// id the compact codec cannot carry, and longer, since a receipt names what it acknowledges.
     func resetsSent(to peer: TestPeer) -> [Written] {
         transport.written(.chat).filter { written in
             guard ExactKey(written.envelope.recipientId ?? "") == ExactKey(peer.nodeId.string),
-                let header = (try? ChatContent(decoding: written.envelope.payload))?.enc?.ratchet
+                stores.messages.message(written.envelope.id) == nil,
+                let enc = (try? ChatContent(decoding: written.envelope.payload))?.enc, enc.version == EncEnvelope.Version.ratchet,
+                enc.ct.count == RatchetSessions.resetPlaintext.count + 16, let header = enc.ratchet
             else {
                 return false
             }
@@ -206,9 +247,42 @@ extension EngineFixture {
         }
     }
 
-    /// The ids our cleartext receipts acknowledged.
+    /// The ids our cleartext receipts acknowledged, each receipt once: what an author without the ratchet hears, and every
+    /// author with the switch off.
     var acknowledged: [String] {
-        transport.written(.receipt).compactMap { (try? ReceiptContent(decoding: $0.envelope.payload))?.ackId }
+        Self.once(transport.written(.receipt)).compactMap { (try? ReceiptContent(decoding: $0.envelope.payload))?.ackId }
+    }
+
+    /// The ids our receipts to `android` acknowledged, each receipt once, in the order they were written: a cleartext
+    /// receipt's, and a sealed one's as the phone reads it, its `ack` first (phase P5d), so a test of what we acknowledge
+    /// reads the same whichever form went. Reading a sealed one moves nothing the phone holds (``AndroidPeer/peek(_:from:)``).
+    func acknowledged(by android: AndroidPeer) -> [String] {
+        let me = ExactKey(self.me.nodeId.string)
+        return Self.once(transport.written).flatMap { written -> [String] in
+            switch written.envelope.type {
+            case .receipt:
+                return [(try? ReceiptContent(decoding: written.envelope.payload))?.ackId].compactMap(\.self)
+            case .chat where ExactKey(written.envelope.senderId) == me:
+                return android.receiptAcks(written, from: self.me) ?? []
+            default:
+                return []
+            }
+        }
+    }
+
+    /// Our sealed receipts and ticks to `android`, each once: DM-form chats of ours that the phone reads as a `CTL_RECEIPT`.
+    func sealedReceipts(to android: AndroidPeer) -> [Written] {
+        let me = ExactKey(self.me.nodeId.string)
+        return Self.once(transport.written(.chat)).filter { written in
+            ExactKey(written.envelope.senderId) == me && android.receiptAcks(written, from: self.me) != nil
+        }
+    }
+
+    /// `written` with each frame id once, the first copy kept: custody's back-fill writes a frame we sent again, which is the
+    /// same receipt, not another one.
+    static func once(_ written: [Written]) -> [Written] {
+        var seen: Set<ExactKey> = []
+        return written.filter { seen.insert(ExactKey($0.envelope.id)).inserted }
     }
 }
 
