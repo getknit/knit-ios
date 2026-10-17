@@ -195,6 +195,14 @@ publish it honestly.
     the router; a ctl frame from the era the pair holds drops as `DUPLICATE`, and one from an era it has since left can
     open again under that era's draining root for as long as custody keeps it, where a reaction or a profile applies
     nothing.
+- **A blob stays while a live frame our custody carries names it,** whoever sent the frame: the hash a `chat` frame
+  carries in the clear, a room post's photo, a sealed message's beside its seal, or a sealed profile's photo
+  (`MeshEngine.carriedBlobs`, ADR 2026-10.5sk9's P7c amendment). It is Kotlin's `forward.countByAttachmentHash`
+  (`BlobRepository.kt:100-112`), decoded on demand where Kotlin keeps a column. So a photo of ours that our sealed profiles
+  still name is held and served for their day after it changes, and so, whatever our switch, is a peer's replaced photo that
+  its sealed profiles we carry still name. The first start after the last such frame removes it.
+  This port pulls no carried frame's photo (ADR 2026-10.ym9y), so it only keeps bytes it already holds. Delivery-side:
+  custody's carry, quotas and digest read nothing of it.
 - **Our own ratchet DM is custodied inside its send unit,** with the switch on (ADR 2026-10.5sk9, phase P5b): the seal,
   the cleared wait and our custody's copy commit together, before the frame goes on the air, which is Android's order
   too (`originateWire`, custody first). A re-seal after a peer's reset flies live and is carried only where custody holds

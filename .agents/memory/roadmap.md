@@ -487,7 +487,10 @@ explicit direction.** Update this file in the change that ships an item.
     flip to `0x15F`, and the security claims. P7a, done on 2026-10-16, replays a lost departure: the start's replay,
     and with the switch on the hourly one, take our custodied `groupleave` and `groupupdate` frames from others, so a
     roster unit that fails no longer loses the frame for good (ADR 2026-10.5sk9's P7a amendment). Kotlin still has the
-    hole; worth a knit-next issue. P7b, done on 2026-10-16, is A10's iOS half (below).
+    hole; worth a knit-next issue. P7b, done on 2026-10-16, is A10's iOS half (below). P7c, done on 2026-10-16, serves the
+    photo our sealed profiles still name: a blob stays while any live frame our custody carries names it, as Kotlin's
+    `forward.countByAttachmentHash` keeps it (ADR 2026-10.5sk9's P7c amendment). Group photos join that count when the
+    blob phase that fetches them lands.
 
   Before the flip, besides the phases:
   - **Read `PRAGMA secure_delete` once on the lab iPhone's Debug build.** Pass is 1. Only the Mac's run reads Apple's
@@ -495,17 +498,13 @@ explicit direction.** Update this file in the change that ships an item.
   - **Restoring the same phone from its own backup** (ADR 2026-10.5sk9's P3 amendment). It brings back the identity
     and the onboarded flag without the database, so our fresh prekey goes out only at version 0, which peers ignore.
     Onboarding must follow every database that has never published. That is a product change, the maintainer's call.
-  - **Serve the photo our sealed profiles still name** (ADR 2026-10.5sk9's P5e limits). An Android carrier pulls and
-    keeps the photo a carried CHAT frame's cleartext hash names, for the frame's day, so after our photo changes an
-    Android newcomer back-filled with our old sealed profiles asks for the superseded one. This port drops a replaced
-    photo at once and answers NONE, where an Android author would serve it. Keep our replaced photo while our custody
-    carries a live frame of ours naming it, as Kotlin's `forward.countByAttachmentHash` does (`BlobRepository.kt:100-112`).
-    It is the blobs plane's change, not P5e's.
   - **Found on the way, not the ratchet's (already on `main`):** a failed read of our own profile is taken for a fresh
     one. `updateProfile` and the photo edit then publish a blank name at a version every peer takes, and the next
     start's sweep can delete our own photo (P3's blobs review). The fix reads with `loadIfReadable()` and does
     nothing on a failure, in `publishEdit`, `setAvatar` and `referencedBlobs`. P3 already applied it to
-    `republishIfStale` and the prekey's sync.
+    `republishIfStale` and the prekey's sync. The same kind of failure reaches the blob sweep too (P7c's blobs review):
+    if the message read in `blobsTheRowsName()` fails, `attachmentHashes()` answers no hashes and the start's sweep
+    removes every message photo. The sweep should skip a pass whose reads failed.
 
   Two companion changes go with it:
   - **A9 (ratchet vectors):** a paired change that iOS leads. knit-next gains `vectors/ratchet-v1.json`, written by a

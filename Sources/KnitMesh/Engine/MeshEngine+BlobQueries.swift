@@ -11,6 +11,13 @@ extension MeshEngine {
         !frame.wire.relay && NodeId(frame.envelope.senderId) == frame.from
     }
 
+    /// An unsigned, point-to-point frame (`unsignedPointToPoint`): our id as its sender, `relay = false` so no router
+    /// floods it, and `sentAt` left at 0, as Android leaves it.
+    func unsignedPointToPoint(_ type: FrameType, id: String, payload: [UInt8]) -> WireEnvelope {
+        let envelope = RelayEnvelope(type: type, id: id, senderId: nodeId.string, payload: payload)
+        return WireEnvelope(relay: false, sig: [], signed: envelope.encoded)
+    }
+
     /// A neighbour asked which of some blobs we hold (`onHaveQuery`, `BlobExchange.kt:744-784`). Each is answered from
     /// reads alone, in the order the bytes move, backwards:
     ///
@@ -97,6 +104,22 @@ extension MeshEngine {
             stepBlob(hash, among: candidates, now: now)
         }
         flushBlobQueries()
+    }
+
+    // MARK: Asking
+
+    /// Point-to-point holder queries for what the steps since the last flush owe, one frame per neighbour.
+    func flushBlobQueries() {
+        let now = clock.monotonicMilliseconds()
+        for query in blobExchange.takeQueries() {
+            let id = newFrameId()
+            blobExchange.noteQuerySent(id, to: query.peer, hashes: query.hashes, now: now)
+            let content = BlobHaveContent(hashes: query.hashes.map(\.string))
+            transport.send(unsignedPointToPoint(.blobHave, id: id, payload: content.encoded), to: query.peer)
+            let shown = query.hashes.map { String($0.string.prefix(BlobExchange.shownHashCharacters)) }.joined(separator: ", ")
+            let queryId = id.prefix(BlobExchange.shownIdCharacters)
+            log.log(.debug, "mesh blob query → \(query.peer) \(query.hashes.count) hashes #\(queryId) [\(shown)]")
+        }
     }
 
     // MARK: Progress reports

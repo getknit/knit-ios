@@ -1037,8 +1037,8 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     named for their day: every Android node keeps that photo, and an Android newcomer back-filled with them pulls it.
     This port drops a replaced photo at once (`releaseBlob(replaced)`; `referencedBlobs()` counts no carried frame), so
     we answer NONE where an Android author would serve, and an Android asker with no Android holder in reach re-asks
-    for the day (ADR 2026-10.m9uq). With the switch off nothing names it. Keeping the photo while our custody carries a
-    live frame of ours naming it is the blobs plane's change, before the flip (`.agents/memory/roadmap.md`).
+    for the day (ADR 2026-10.m9uq). With the switch off nothing names it. Closed by phase P7c (below): a blob now stays
+    while any live frame our custody carries names it, as in Kotlin.
   - **What each event adds to every custody in reach.** Every sealed profile and answer is originated, so each is a row
     of ours for its day, counted in our 200 and in each node's 1,000, and purged by nothing: a ctl earns no receipt on
     either platform, and a sealed receipt purges nothing (ADR 2026-09.p6nb, amended). N is our confirmed sessions:
@@ -1641,3 +1641,70 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     and fields, and the draw order;
   - `theRatchetChecksTellACurrentFrameFromAStaleOne`: a run at another clock, a profile with other bits or another
     prekey, and a frame for Bob read as Alice all fail.
+
+**Amended 2026-10-16, phase P7c (the photo our sealed frames still name):**
+
+- **A blob stays while a live frame our custody carries names it,** whoever sent the frame: the hash a `chat` frame's
+  payload carries in the clear (`ChatContent.attachmentHash`), which is a room post's photo, a sealed message's beside its
+  seal, and our sealed profile's photo. `referencedBlobs()` is now what the rows name (`blobsTheRowsName()`, unchanged)
+  and `carriedBlobs()`, so every release (`releaseBlob`, a delete's), the sweep's `releaseDeletedPhotos` and the start's
+  `sweepUnreferencedBlobs` keep such a blob. This is Kotlin's rule whole: `forward.countByAttachmentHash` in
+  `BlobRepository.deleteIfUnreferenced` (`BlobRepository.kt:100-112`) and the `forward_store` clause of
+  `BlobDao.orphanHashes` (`BlobDao.kt:59-67`), over the column `ForwardRepository.kt:95-99` fills at the custody write, at
+  knit-next `cbf2a487`. So after our photo changes, a sealed profile of ours that named the old one keeps it held, and a
+  query is answered HAVE and a `blobreq` served, as an Android author answers. The first start after the last such frame
+  leaves custody removes it.
+- **Decided:**
+  1. **Any sender's frame, not only ours.** It is Kotlin's rule, and it costs the same single scan. This port pulls no
+     carried frame's photo (ADR 2026-10.ym9y), so the rule keeps only bytes already held: our own, one shown, or one
+     fetched on an asker's behalf, which would otherwise go at the next start. An Android peer's old photo that its
+     sealed profiles still name now stays while we carry them too, as on every Android carrier.
+  2. **Decoded on demand, no column.** Custody holds at most 1,000 live frames, and the scan runs at the start's sweep,
+     at the release of a blob still held (a photo replaced, ours or a shown peer's), at a delete, and at a sweep that finds
+     a deleted message's photo held after its frame. `releaseBlob` now reads nothing for a blob not held. No schema change.
+  3. **Live frames only.** Kotlin counts rows its sweep has not yet removed, and its start removes orphans before it sweeps
+     custody (`MeshManager.kt:2316-2319`); ours sweeps custody first (`MeshEngine.start`). A photo here goes up to one start
+     sooner after its last frame expires than on Android.
+  4. **Removed at a start, as Kotlin's `deleteOrphans`.** A replaced photo whose last frame expires mid-run stays until the
+     next start, as on Android. A deleted message's photo is still checked at every sweep (ADR 2026-10.u7cq), and the
+     carried frames now count there too.
+  5. **A pulled file is admitted as before.** `receiveFile` keeps an ATTACHMENT only if it is wanted or the rows name it
+     (`blobsTheRowsName()`), never because a carried frame names it, so custody keeps bytes and admits none.
+  6. **Custody itself is untouched.** `isCarriable`, the carry, the quotas, the eviction order and the digest read nothing
+     new; reading custody to decide which blobs to keep is delivery-side, as ADR 2026-10.u7cq's deleted photo already was.
+  7. **A custody read that fails reads as no frame** (the SQL store answers `[]`), so the blob goes as it went before this
+     rule and an asker is told NONE: the loss of a serve, never a wrong serve.
+- **With the switch off** nothing new goes on the air. No frame of ours names our photo then (the cleartext profile is a
+  `profile`, not a `chat`), so a replaced photo of ours still goes at once. Custody's gate reads no switch, though, so an
+  asker sees HAVE and is served where it saw NONE (and we fetched on its behalf) in three cases:
+  - a shown peer's replaced photo that its sealed profiles, which we carry for its own sessions, still name. Every Android
+    build with the ratchet sends those, so this is the common case today, and it is how an Android carrier behaves;
+  - a deleted message's photo that some other live carried frame names;
+  - a blob we fetched on an asker's behalf that a live carried frame names, now kept past the next start until that
+    frame's day ends.
+
+  None of it is a change a user sees, so it earns no changelog line before the flip.
+- **Limits:**
+  - **A stranger can keep bytes it chose here across starts.** `serveOrWant` already fetches any hash on any asker's
+    behalf (ADR 2026-10.ym9y), and before P7c such a blob lived until the next start. Now a signed `chat` frame naming it
+    keeps it, and a key is free to pin, since a profile carries its key in-band. So two stranger identities, one asking and
+    one posting, can make us store bytes they choose and keep them past restarts, re-posting to refresh the hold: 6 h a
+    room post, 24 h a DM-form frame. It is bounded by custody's quotas (200 per sender, 1,000 live frames, so at most that
+    many distinct blobs) and by the blob sizes the link accepts. Kotlin is worse here, since its carrier pulls a carried
+    frame's photo itself, so this is parity, not a gap against Android.
+- **What closes:** the P5e limit "The photo's hash beside the seal acts on Android alone". Group photos stay as they were:
+  this port records a group's `photoHash` but fetches and stores no group photo's bytes yet (the roadmap's phase 4), so
+  Kotlin's `groups.countByPhotoHash` has nothing to keep here. It goes in with that phase.
+- **Guards:** `MeshEngineCarriedPhotoTests`, over both store kinds where custody is read:
+  - `ourReplacedPhotoIsServedWhileOurSealedProfileStillNamesIt`: the switch on, an Android session confirmed, our photo
+    changed while our sealed profile naming the old one is in custody; a newcomer's query is answered HAVE and its
+    `blobreq` served the old bytes; a start a day on removes them, and the next ask is answered NONE and streams nothing.
+    Without the custody count it fails (checked by mutation).
+  - `aFrameWeCarryForOthersKeepsABlobWeHold`: Carol's DM to Bob, carried, naming a blob we hold keeps it through a
+    release and a start, and the first start after its day removes it.
+  - `withTheSwitchOffAReplacedPhotoGoesAtOnceAsBefore`: one cleartext profile and no `chat` on the edit, the old photo gone
+    at once, and an ask answered NONE and wanted on the asker's behalf, as before.
+  - `withTheSwitchOffAPeersReplacedPhotoStaysWhileItsSealedProfilesWeCarryNameIt`: the switch off, over both store kinds.
+    An Android peer's sealed profile to another Android phone, which we carry, names her photo A; she moves to B, A stays,
+    a query is answered HAVE and one ATTACHMENT copy is served; a start a day on removes A, and the next ask is NONE.
+    Without the custody count it fails (checked by mutation).

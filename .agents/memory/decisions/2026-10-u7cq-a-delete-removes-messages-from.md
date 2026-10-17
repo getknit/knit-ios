@@ -101,3 +101,9 @@ for a day, so it was ruled out.
 reactions, in the same transaction, as Android's `deleteForMessage` does. A reaction that arrives later for a deleted id
 still remembered is refused, so it cannot leave a row behind. Custody still never reads a delete. `ReactionStoreTests`
 and `MeshEngineReactionTests.aReactionToADeletedMessageIsRefusedSilently` guard it.
+
+**Amended 2026-10-16, by ADR 2026-10.5sk9's phase P7c:** a deleted message's photo now also stays while any other live
+frame our custody carries names it in the clear, whoever sent that frame, as Kotlin's `forward.countByAttachmentHash`
+keeps it (`BlobRepository.kt:100-112`). `referencedBlobs()` counts those frames, so the delete's release, every sweep's
+`releaseDeletedPhotos` and the start's sweep all keep it until the last such frame's day ends. Custody still never reads a
+delete, and the frame alone decides what is kept.

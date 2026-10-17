@@ -194,31 +194,10 @@ extension MeshEngine {
         wantBlobs(wanted)
     }
 
-    /// Point-to-point holder queries for what the steps since the last flush owe, one frame per neighbour.
-    func flushBlobQueries() {
-        let now = clock.monotonicMilliseconds()
-        for query in blobExchange.takeQueries() {
-            let id = newFrameId()
-            blobExchange.noteQuerySent(id, to: query.peer, hashes: query.hashes, now: now)
-            let content = BlobHaveContent(hashes: query.hashes.map(\.string))
-            transport.send(unsignedPointToPoint(.blobHave, id: id, payload: content.encoded), to: query.peer)
-            let shown = query.hashes.map { String($0.string.prefix(BlobExchange.shownHashCharacters)) }.joined(separator: ", ")
-            let queryId = id.prefix(BlobExchange.shownIdCharacters)
-            log.log(.debug, "mesh blob query → \(query.peer) \(query.hashes.count) hashes #\(queryId) [\(shown)]")
-        }
-    }
-
     /// One blob request (`BlobExchange.blobRequest`). This port keeps no prefix of a cut transfer, so it never names an
     /// offset (knit-ios #2).
     func blobRequest(_ hash: BlobHash) -> WireEnvelope {
         unsignedPointToPoint(.blobRequest, id: newFrameId(), payload: BlobRequestContent(hash: hash.string).encoded)
-    }
-
-    /// An unsigned, point-to-point frame (`unsignedPointToPoint`): our id as its sender, `relay = false` so no router
-    /// floods it, and `sentAt` left at 0, as Android leaves it.
-    func unsignedPointToPoint(_ type: FrameType, id: String, payload: [UInt8]) -> WireEnvelope {
-        let envelope = RelayEnvelope(type: type, id: id, senderId: nodeId.string, payload: payload)
-        return WireEnvelope(relay: false, sig: [], signed: envelope.encoded)
     }
 
     /// Logs the blob exchange's own lines, as the mesh logs its others.
@@ -323,7 +302,8 @@ extension MeshEngine {
                 return
             }
         case .attachment:
-            guard blobExchange.isWanted(file.hash) || referencedBlobs().contains(file.hash) else {
+            // Never what a carried frame names: this port pulls no carried frame's photo (ADR 2026-10.ym9y).
+            guard blobExchange.isWanted(file.hash) || blobsTheRowsName().contains(file.hash) else {
                 reject(file, "was not asked for")
                 return
             }
@@ -359,9 +339,15 @@ extension MeshEngine {
 
     // MARK: Collecting
 
-    /// Every blob something here still names: our photo, each peer's photo, shown or advertised, every photo a
-    /// message carries, and a deleted message's photo while our custody carries its frame (ADR 2026-10.u7cq).
+    /// Every blob something here still names: what the rows name (``blobsTheRowsName()``), and the photo every live frame
+    /// our custody carries names in the clear (``carriedBlobs()``).
     func referencedBlobs() -> Set<BlobHash> {
+        blobsTheRowsName().union(carriedBlobs())
+    }
+
+    /// Every blob the rows name: our photo, each peer's photo, shown or advertised, every photo a message carries, and a
+    /// deleted message's photo while our custody carries its frame (ADR 2026-10.u7cq).
+    func blobsTheRowsName() -> Set<BlobHash> {
         var named = stores.messages.attachmentHashes()
         for deleted in stores.messages.deletedAttachments() where stores.custody.contains(deleted.id) {
             named.insert(deleted.hash)
@@ -380,15 +366,31 @@ extension MeshEngine {
         return named
     }
 
-    /// Removes `hash` once nothing names it (`BlobRepository.deleteIfUnreferenced`).
+    /// The hash each live `chat` frame in our custody names in the clear, whoever sent it: a room post's photo, or a sealed
+    /// message's or profile's beside the seal. Kotlin keeps a blob while any carried frame names it (`BlobRepository.kt:100-112`,
+    /// `BlobDao.kt:59-67`, at knit-next `cbf2a487`), so after our photo changes we still serve the one our sealed profiles
+    /// name for their day. Decoded on demand from at most 1,000 live frames, where Kotlin keeps a column; a failed read reads
+    /// as no frame, so the blob goes as before (ADR 2026-10.5sk9's P7c amendment).
+    func carriedBlobs() -> Set<BlobHash> {
+        var named: Set<BlobHash> = []
+        for carried in stores.custody.liveFrames(now: clock.wallMilliseconds()) where carried.envelope.type == .chat {
+            if let text = (try? ChatContent(decoding: carried.envelope.payload))?.attachmentHash, let hash = BlobHash(text) {
+                named.insert(hash)
+            }
+        }
+        return named
+    }
+
+    /// Removes `hash` once nothing names it (`BlobRepository.deleteIfUnreferenced`). A blob not held reads nothing more.
     func releaseBlob(_ hash: BlobHash) {
-        if !referencedBlobs().contains(hash) {
+        if stores.blobs.contains(hash), !referencedBlobs().contains(hash) {
             stores.blobs.remove(hash)
         }
     }
 
     /// Removes every blob nothing names (`BlobRepository.deleteOrphans`, at each mesh start). A blob fetched on an
-    /// asker's behalf lives until then, so the asker's next ask still finds it here.
+    /// asker's behalf lives until then, so the asker's next ask still finds it here, and one a live carried frame names
+    /// lives until the first start after that frame leaves custody: the start sweeps custody first.
     func sweepUnreferencedBlobs() {
         let named = referencedBlobs()
         for hash in stores.blobs.allHashes() where !named.contains(hash) {
