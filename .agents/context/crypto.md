@@ -215,8 +215,9 @@ Swift must count `utf16`, not `Character`s.
 | `IntroSync`'s answer half (`lastAnswered`, `owed`, `onPeerFrameOpened`, `onProfilePinned`) | `RatchetAnswers`, which `MeshEngine.answerInit` and `answerOwedInit` ask; the intro send half is not ported |
 | `RatchetStore`, `RatchetRepository` | KnitStore's `RatchetStore`, `MemoryRatchetStore` and `RatchetRetention`; KnitStoreSQL's `SQLRatchetStore` (schema v17); `RatchetRecords` maps the rows to the engine's types |
 | `GroupRatchetEngine` | `GroupRatchetEngine`: `mint`, `needsNewEpoch`, `seal`, `adoptSeed`, `open`, over `SendChain` (and its `retired()`), `RecvChain`, `SkippedKey`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
-| `GroupRatchetSessions` | KnitMesh's `GroupRatchetSessions`: `open`, `adoptSeeds`, `sealGroup`, `currentSeeds`, `markKeySent`, `keySend`, `onKeyAck`, `noteUndecryptable`, `markKeyRequested`, `floors`, `settle` and `sweep` (phase P6a2: the receive side calls it; `sealGroup` and the outbox wait for P6b) |
+| `GroupRatchetSessions` | KnitMesh's `GroupRatchetSessions`: `open`, `adoptSeeds`, `sealGroup`, `currentSeeds`, `markKeySent`, `keySend`, `onKeyAck`, `noteUndecryptable`, `markKeyRequested`, `floors`, `settle` and `sweep` (the receive side calls it since phase P6a2, the send side since P6b) |
 | `InboundPipeline`'s group arm, `holdGroupKeyForUnknownGroup`, `pinRosterFromSeed`, `replayHeldGroupKeys`, `adoptGroupSeeds`, `ackGroupSeed`, `maybeRequestGroupKey`; `MeshManager.replayCustodiedGroupFrames`, `replayCustodiedSeedDms` | `MeshEngine.handleGroupRatchet`, `seedAwaitsRoster`, `releaseHeldSeeds`, `adoptGroupSeeds`, `acknowledgeSeeds`, `replayCustodiedGroupFrames` and `replayCustodiedSeedDirectMessages`, over `GroupRatchetInbound`'s pure rules; the park in `PendingGroupKeys`; Android's group counts in `RatchetGroupCounts` |
+| `MeshManager.sealEnvelopeFor`'s group arm, `sealGroupRatchet`, `groupRatchetEligible`, `distributeGroupSeed`, `sendSeedDm`, `flushPendingGroupKeysFor`, `redistributeGroupKey`, `seedSendFloorOpen`, `sealGroupReaction`; `InboundPipeline.rejoinRekeyDue`; `GroupRepository`'s ratchet hooks | `MeshEngine.sendGroupRatchet`, `groupSend`, `sealSeed`, `flushPendingGroupKeys`, `redistributeGroupKey`, `sendGroupReaction` and `retryWaitingGroupMessages`, over `GroupRatchetOutbound`'s pure rules and `GroupSendFloors`; the roster's units in `MeshEngine+Groups` |
 | `GroupRatchetStore`, `GroupRatchetRepository` | KnitStore's `GroupRatchetStore`, `MemoryGroupRatchetStore` and `GroupRatchetRetention`; KnitStoreSQL's `SQLGroupRatchetStore` (schema v18); `GroupRatchetRecords` maps the rows to the engine's types |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
@@ -504,8 +505,8 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   keeping an attachment's name and size, and force a group seed flush (`MeshManager.kt:3361-3407`). That re-seal is
   the one exception to "signed once" (ADR 2026-09.2ved, amended): each committed first verdict of a reset from that
   peer within the day signs each DM still unacked once more, with no per-id guard, in Kotlin as here. This port
-  re-seals from phase P5b, once the reset's first verdict commits and never from the start's replay; the seed flush is
-  P6's.
+  re-seals from phase P5b, once the reset's first verdict commits and never from the start's replay, and flushes its group
+  seeds from phase P6b, right after the re-seal, forced past the outbox's ack but floored.
 - **Init answers** (IntroSync's answer half, `IntroSync.kt:185-240`; phase P5e, `MeshEngine+RatchetPresentation.swift`):
   - a frame whose header still carries its sender's init, opened and committed as its first verdict, gets one sealed
     `CTL_PROFILE` at our current version, version 0 included, then none again for that init for 60 min, and a
@@ -530,7 +531,7 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 | 3 | group key request | `gk{groupId}` | send when a group frame will not open (P6a2); answer (P6b) |
 | 4 | group key ack | `gk{groupId, ackEpoch}` | send and handle (P6a2) |
 | 5 | receipt | `ack` and/or `acks`, at most 128 ids, the forged-ack guard | handle and send |
-| 6 | reaction | `rp{messageId, emoji?}`; no emoji retracts; last writer wins on `sentAt` | handle in DM and group form; send in DM form (P5e), the group form P6b's |
+| 6 | reaction | `rp{messageId, emoji?}`; no emoji retracts; last writer wins on `sentAt` | handle in DM and group form; send in DM form (P5e) and group form (P6b) |
 | 7 | reserved | never reused | — |
 | 8 | profile | `pr{name, status, avatarHash?, version, openToChat, loraNode?, loraKey?}`, no prekey | handle and send, presentation only |
 | 9 | transfer | `xf`, only toward `CAP_DIRECT_TRANSFER` | unknown here |
@@ -586,18 +587,17 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     `MeshManager.kt:1739-1800`).
 - **A send epoch advances** at 200 messages, at 24 h, and on a leave or a rejoin.
 - **A retired chain never reuses its epoch number** (knit-next `0f519d71`, knit-next ADR 2026-10.xgwj).
-- **This port, as of phase P6a2,** has the engine, the store and the facade, and receives the group form with the switch
-  on (below, "The engine's group arm"). It seals none: every group message of ours is v1 until P6b, which adds the send
-  path, the seed outbox and its flush, and answers a key request. With the switch off nothing changes, on the air or in
-  the stores.
+- **This port, as of phase P6b,** has the engine, the store and the facade, receives the group form with the switch on
+  (below, "The engine's group arm"), and sends it ("The engine's group send arm"). With the switch off nothing changes,
+  on the air or in the stores.
   - The store is `GroupRatchetStore`, schema v18: Android's four `group_*` tables as its database v23 has them,
     `STRICT`, every id a UTF-8 `BLOB`, without `export` and `updatedAt`. Our send chains are keyed by group and epoch,
     a sender's receive chains and skipped keys by group, sender, epoch and mint, and the seed outbox by group and
     member.
   - A retired chain is a row whose seed and chain key are empty and whose count is at the cap, so the next mint numbers
     past it and no re-distribution serves it (`GroupRatchetRetention.retired`). The store's `retireSendChains`,
-    `deleteKeySend` and `purgeGroup` are for the roster's units in P6a2 and P6b, as Kotlin's `GroupRepository` calls the
-    store directly (`GroupRepository.kt:133-134`, `:163`, `:191`, `:211`).
+    `deleteKeySend` and `purgeGroup` run in the roster's units (phase P6b), as Kotlin's `GroupRepository` calls the store
+    directly (`GroupRepository.kt:133-134`, `:163`, `:191`, `:211`).
   - Retention is `GroupRatchetRetention`'s, which both stores apply. A skipped key lives 48 h from its creation and a
     receive chain 48 h unused. The group's skipped keys are capped at 2,000 apart from the DM's, oldest first, a tie
     going by group bytes, sender, epoch, mint and index where Android leaves it to SQLite, and the SQL store deletes
@@ -721,9 +721,9 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     effective roster has the sender, and only when it carries keys; a root-only one commits the advance alone, its `gr`
     kept raw. Once the unit commits, the facade settles, each DM's open before the next opens, then a
     `CTL_GROUP_KEY_ACK`, always v2, goes in a seal of its own, then the sender's group frames our custody holds open
-    again. A `CTL_GROUP_KEY_ACK` moves the outbox's row in its own DM's unit. A key request commits the advance alone
-    until P6b answers it. Seeds and acks apply at every origin, the start's replay included: an adoption goes by the
-    sender's own `(epoch, mintedAt)`, never a stamp of ours.
+    again. A `CTL_GROUP_KEY_ACK` moves the outbox's row in its own DM's unit. A key request commits the advance, and its
+    first verdict is answered after the commit (phase P6b, below). Seeds and acks apply at every origin, the start's
+    replay included: an adoption goes by the sender's own `(epoch, mintedAt)`, never a stamp of ours.
   - The roster gate comes first, inside the open's unit: a seed for a group we hold no row for, or from a sender we hold
     as departed, abandons the open with its chain where it was. At its first verdict it then pins the roster it carries
     through `reconcile`, Kotlin's door with its checks, and opens again on the ordinary path once that row admits the
@@ -748,7 +748,49 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     its own first, and reads custody without writing it. At start the DM replay runs before the group replay, so a seed
     whose unit failed before a stop adopts, and opens the frames it keys, before they can count as keyless again.
   - The control surface's `ratchet` reply carries no group state yet; `MeshEngine.groupCounts` holds Android's
-    `groupSeedsHeld`, `groupSeedsReplayed`, `groupSeedsAdopted` and `groupKeyRequestsSent`.
+    `groupSeedsHeld`, `groupSeedsReplayed`, `groupSeedsAdopted` and `groupKeyRequestsSent`, and since P6b
+    `groupSealedRatchet`, `groupSealedV1Fallback` and `groupSeedsSent`.
+- **The engine's group send arm** (`MeshEngine+GroupRatchetOutbound.swift` and `+GroupRatchetSeedSends.swift`, phase P6b),
+  with the switch on (`sealEnvelopeFor`'s group arm, `MeshManager.kt:1304-1515`, `:1838-1849`, `:2227-2247`):
+  - The form is all or nothing per frame. The send's unit reads every other member's pinned row once
+    (`GroupRatchetOutbound.form`). Only if each has a bundle, `CAP_RATCHET` and a valid prekey does the frame go in the
+    group form; otherwise it goes v1 to the bundles that read returned. Every send decides again. A blocked member counts
+    like any other.
+  - The message's row is saved waiting first. One store unit, the outermost, then holds the group seal and any mint, each
+    new seed's DM-ratchet seal to every member with its outbox row (`markKeySent`), every signature, our custody's copy of
+    each frame, and the cleared `pendingKey`.
+  - The group-form attempt is a unit nested inside it. A seed that will not seal to one member undoes the mint, the
+    chain's advance and the seeds already sealed, and the frame goes v1 in the outer unit, counted as
+    `groupSealedV1Fallback`. Kotlin keeps the mint and the seeds it already sent.
+  - Once the unit commits, the seeds settle and flood, then the frame, then the counts and `.sent`. If the unit fails, the
+    row stays waiting, nothing goes on the air, and the heal seals it again (`retryWaitingGroupMessages`).
+  - A seed DM is a `CTL_GROUP_KEY`, always in v2's named form. It carries the group's founding roster (`toFoundingInfo`:
+    the founding set, the creator and the name, never the photo) and never a root (`gr`). It floods and sits in custody
+    like any chat and never makes a row. A first distribution has no floor.
+  - Our unacknowledged seed goes again, floored, when the member's profile arrives, at each link-up and at each 60-second
+    re-offer (`MeshManager.kt:2467`, `:2521`). After the member's reset's first verdict it goes forced past the outbox's
+    ack. A key request's first verdict is answered after its commit with every seed we retain, current and draining, when
+    we hold the group, have not left it, and the requester is on its effective roster. The answer never advances the
+    epoch. Each re-send is its own unit.
+  - The seed floor (`GroupSendFloors`, in memory, on our monotonic clock) is 15 minutes per group and member under one
+    pairwise root, fingerprinted by the root's tag, so a seed sent under a root the member has since left holds nothing
+    back. The floor is stamped once the unit commits, with the root the seed went under; Kotlin stamps the root it read
+    before the seal. A seal that cannot be made once the floor is open stamps it too, and a unit that fails stamps
+    nothing.
+  - A group reaction goes in the group form as `CTL_REACTION` when every other member can read it, with its seed sent as
+    for a message. Otherwise it goes as the cleartext frame, counted.
+  - The roster's units carry the group form's state (`GroupRepository.kt:108-194`):
+    - A departure retires our send chains and drops the leaver's outbox row together with the roster's shrink, so the
+      next send mints past the retired epoch for the members who remain.
+    - A member's own rejoin retires them too: with the switch on at most once an hour per group and member
+      (`rejoinRekeyDue`, held in memory, stamped after the commit), and with it off at every rejoin.
+    - Our leave purges the group's state and keeps the retired number (knit-next ADR 2026-10.xgwj).
+
+    The departure's, the rejoin's and the leave's ratchet writes run whatever the switch says: they only ever take key
+    material away, and write nothing on a store the switch never wrote to. A unit that fails writes nothing and counts
+    `storeRefused` for a frame. A chat frame whose roster write failed waits in custody for a replay; a `groupleave` or
+    `groupupdate` whose unit failed is lost, as on Android, until the start's replay takes them (before the flip). The port has no local group delete and never holds an
+    outbox row for itself, so Kotlin's `forgetSelf` has nothing to forget here.
 - **The engine's send arm** (`MeshEngine+RatchetOutbound.swift`, phase P5b), with the switch on, takes a DM to a peer whose
   pinned profile carries `CAP_RATCHET` and a bundle (`sealEnvelopeFor`, `MeshManager.kt:1267-1308`):
   - One read of the peer's pinned row decides the scheme, and the v1 arm seals to the bundle that read gave. A read
@@ -808,9 +850,9 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   peer's row read inside it, signed once and carried in our custody inside it, marked and flooded after it commits.
   - A reaction to a message in a DM with a peer whose pinned row carries `CAP_RATCHET` and a bundle goes as a
     `CTL_REACTION` dated by its row's stamp (`sealDmReaction`, `MeshManager.kt:2249-2276`). The room's goes in the clear
-    always, and a group's until P6b, uncounted, a drift from Kotlin, which counts a group that cannot seal as a fallback.
-    A peer who cannot read one, and a facade that cannot seal, get the cleartext frame, counted as
-    `reactionsSealedFallback`; a store that fails sends neither, and the row stays applied.
+    always. A group's goes in the group form when every other member can read it (phase P6b, above). A peer or a group
+    that cannot read one, and a seal that cannot be made, get the cleartext frame, counted as `reactionsSealedFallback`; a
+    store that fails sends neither, and the row stays applied.
   - Our sealed profile goes beside the cleartext profile to every confirmed session (`RatchetSessions.confirmedPeers`,
     over `RatchetStore.sessionPeerIds`): after each edit of what we present, and at each heal (`broadcastSealedProfile`,
     `:2812-2853`). It is deduped per peer and version in memory, sent to nobody at version 0, and carries our photo's
@@ -830,10 +872,10 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 
 - **`CAP_RATCHET` (0x10):**
   - the open path above, races and replacement included;
-  - ctl 1, 2, 5, 6 and 8 handled, and 4 sent;
+  - ctl 1 to 6 and 8 handled, a key request (3) answered;
   - the reset heuristic and plans;
   - init answers;
-  - the group form received in full;
+  - the group form received and sent in full, its seeds distributed, re-sent and answered for;
   - our prekey published, signed, rotated and kept.
 - **`CAP_INLINE_ACK` (0x40):** inline `acks` applied in the message's commit.
 - **`CAP_CRYPTO_V3` (0x100):**

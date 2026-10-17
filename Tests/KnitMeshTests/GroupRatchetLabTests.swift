@@ -8,8 +8,8 @@ import Testing
 
 /// The receive side of knit-next's group labs, as engines on links (ADR 2026-10.5sk9, phase P6a2): `GroupFirstMessageLabTest`,
 /// `SessionLabTest.aMemberWhoMissedTheSeedAsksAfterThreeUnreadableFrames` and `GroupMembershipLabTest`'s overtaking seeds (at
-/// knit-next `cbf2a487`). Nothing here seals the group form before P6b, so an Android phone authors it (``GroupFormAuthor``)
-/// and hands its frames to the node it is linked to; the iPhones receive, relay and carry them.
+/// knit-next `cbf2a487`). An Android phone authors the group form here (``GroupFormAuthor``) and hands its frames to the node
+/// it is linked to; the iPhones receive, relay and carry them. The iPhone's own sends are `GroupSendLabTests`' (phase P6b).
 @Suite struct GroupRatchetLabTests {
     private let me = TestPeer(seed: 1)
     private let alice = TestPeer(seed: 2)
@@ -112,7 +112,8 @@ import Testing
         }
         let requests = fixture.controls(to: android).filter { $0.ctl == MessageContent.Control.groupKeyRequest }
         #expect(requests.count == 1 && fixture.engine.groupCounts.groupKeyRequestsSent == 1, "the three ask once")
-        // Android's answer re-seals its current seed (`redistributeGroupKey`); the iPhone's own answer is P6b's.
+        // Android's answer re-seals its current seed (`redistributeGroupKey`); the iPhone's own answer is phase P6b's
+        // (`GroupSendPairTests.aMemberThatMissedTheSeedAsksAndOurAnswerOpensEverything()`).
         fixture.deliver(try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: "seed-answer", sentAt: now + 10), from: android)
         #expect((1...3).map { fixture.stores.messages.message("sealed-\($0)")?.body } == ["sealed 1", "sealed 2", "sealed 3"])
         #expect(fixture.engine.groupCounts.groupKeyRequestsSent == 1)

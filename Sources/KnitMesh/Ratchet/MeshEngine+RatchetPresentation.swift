@@ -25,12 +25,18 @@ extension MeshEngine {
     /// (`sendReaction`, `MeshManager.kt:2174-2199`). A reaction to a message in a DM with a peer who can read one goes as a
     /// sealed `CTL_REACTION` under a fresh id, dated by the row's own clock, so last writer wins compares the same stamp on
     /// both phones (`sealDmReaction`, `:2249-2276`). The room's goes as the cleartext `reaction` frame always, the room
-    /// being plaintext by design, and a group's does until phase P6b ports its sealed form (`sealGroupReaction`). Toward a
-    /// DM peer who cannot read one, and when the facade cannot seal, the cleartext frame goes, counted
-    /// (`onReactionSealedFallback`, `:2189`). A store that fails sends neither, as Kotlin's throw out of `sendReaction`
-    /// sends nothing; the row stays applied, as Kotlin's optimistic row does (`:2187`).
+    /// being plaintext by design, and a group's in the group form when every other member can read it
+    /// (``sendGroupReaction(_:in:)``, phase P6b). Toward a DM peer or a group that cannot read one, and when the facade
+    /// cannot seal, the cleartext frame goes, counted (`onReactionSealedFallback`, `:2189`). A store that fails sends
+    /// neither, as Kotlin's throw out of `sendReaction` sends nothing; the row stays applied, as Kotlin's optimistic row does
+    /// (`:2187`).
     func sendReaction(_ reaction: ReactionRecord, in conversationId: String) {
-        guard configuration.ratchet, case .direct(let peer) = RatchetOutbound.reactionTarget(in: conversationId, me: nodeId) else {
+        let target = configuration.ratchet ? RatchetOutbound.reactionTarget(in: conversationId, me: nodeId) : .room
+        if target == .group {
+            sendGroupReaction(reaction, in: stores.groups.group(conversationId))
+            return
+        }
+        guard case .direct(let peer) = target else {
             originateCleartext(reaction)
             return
         }
@@ -54,7 +60,7 @@ extension MeshEngine {
 
     /// Our reaction as the cleartext `reaction` frame, naming no recipient and no group, signed, flooded and carried
     /// (`MeshManager.kt:2190-2198`): the one form with the switch off, and the fallback with it on.
-    private func originateCleartext(_ reaction: ReactionRecord) {
+    func originateCleartext(_ reaction: ReactionRecord) {
         originate(
             RelayEnvelope(
                 type: .reaction,

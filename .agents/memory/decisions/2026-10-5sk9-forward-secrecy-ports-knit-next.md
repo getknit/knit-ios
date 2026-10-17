@@ -1355,3 +1355,133 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   `healRunsTheRetentionSweepsAndTheCustodyReplayOncePastTheirHourNotOnEveryCall`); `GroupRatchetLabTests` (the receive
   half of `GroupFirstMessageLabTest`, `SessionLabTest.aMemberWhoMissedTheSeedAsksAfterThreeUnreadableFrames` and
   `GroupMembershipLabTest`'s overtaking seeds); `StoreTransactorTests`, whose contents now read both ratchet stores.
+
+**Amended 2026-10-16, phase P6b (the group form sent in the mesh):**
+
+- **With the switch on, the iPhone seals the group form when every other member advertises `CAP_RATCHET` with a valid
+  prekey, and sends each epoch's seed to each member, pairwise, before the frame** (`sealEnvelopeFor`'s group arm,
+  `sealGroupRatchet`, `groupRatchetEligible`, `distributeGroupSeed` and `sendSeedDm`, `MeshManager.kt:1304-1409` at
+  knit-next `cbf2a487`). Every other frame stays v1, decided frame by frame. With the switch off nothing changes on the
+  air or in the stores.
+- **One read decides, all or nothing per frame.** The send's unit reads every other member's pinned row once
+  (`GroupRatchetOutbound.form`). The group form needs each of them to have a bundle, the bit and a prekey that verifies;
+  otherwise the frame goes v1 to the bundles that read returned. A member whose id does not parse keeps the group on v1
+  and gets no wrap, as the v1 seal always skipped it. A blocked member is still a member: withholding their seed would
+  reveal the block (ADR 2026-10.5wgg).
+- **The send unit follows P5b's.** The message's row is saved waiting first. One store unit, the outermost, then holds
+  the group seal and any mint, each new seed's DM-ratchet seal to every member with its outbox row (`markKeySent`), every
+  signature, our custody's copy of each frame, and the cleared `pendingKey`. Only after it commits do the seeds settle
+  and go on the air, then the frame, then the counts (`groupSealedRatchet`, `groupSealedV1Fallback`, `groupSeedsSent`)
+  and `.sent`. If the unit fails, the row stays waiting, nothing goes on the air, and the heal seals it again
+  (`retryWaitingGroupMessages`), as P5b's heal retries a DM. Each frame is signed once, inside the unit.
+- **A seed that will not seal undoes the mint.** The group-form attempt is a unit nested inside the send's. If the DM
+  ratchet will not seal a seed to one member (no session and no usable prekey, a new epoch due with no base, a prekey
+  X25519 refuses), the nested unit is abandoned. That undoes the mint, the group chain's advance and the seeds already
+  sealed, and the frame goes v1 in the outer unit, counted as `groupSealedV1Fallback`. Kotlin keeps the mint and floods
+  the seeds it already sealed (`MeshManager.kt:1333-1339`). Its next send then reuses that chain toward the member who
+  never got the seed, and that member reads nothing until a re-send or a key request. Here no group frame is ever sealed
+  under a seed that some current member was never sent.
+- **Seed DMs** are `CTL_GROUP_KEY` ctl DMs, always in v2's named form. They carry `keys` and the group's founding roster
+  (`toFoundingInfo`: the founding set, the creator and the name, never the photo, spec C-3.2-16), and never a root (`gr`,
+  which this ADR leaves out). They flood and sit in custody like any chat, but never make a row, are never acknowledged
+  as a message, and purge nothing (ADR 2026-09.p6nb). A first distribution has no floor, as in Kotlin.
+- **The re-sends** (`flushPendingGroupKeysFor` and `redistributeGroupKey`, `MeshManager.kt:1444-1484`). Our newest seed
+  goes again to a member whose outbox row shows it unacknowledged, in every group we share with them and have not left.
+  That happens when their profile arrives, at each link-up and at each 60-second re-offer (`:2467`, `:2521`). It also
+  happens after their reset's first verdict, right after the P5b re-seal, forced past the outbox's ack
+  (`InboundPipeline.kt:1144-1148`). A key request's first verdict is answered after its DM commits, with every seed we
+  retain, when we hold the group, have not left it, and the requester is on its effective roster. The answer never
+  advances the epoch. The start's replay answers no request and forces no flush, just as it re-seals nothing. Each
+  re-send is its own unit: it reads the seeds and the member's row, checks the floor, seals, and writes the outbox row
+  and our custody's copy. The flood, the floor's stamp and the count wait for the commit.
+- **The seed floor** (`GroupSendFloors`, `seedSendFloorOpen`, `:1838-1849`) is 15 minutes per group and member under one
+  pairwise root. It lives in memory on our monotonic clock and dies with the process. The root is fingerprinted by its
+  tag (`RatchetCrypto.rootTag`), never kept. Kotlin stamps the floor as it checks it, and this port differs in two ways.
+  The stamp waits for the unit's commit, so a failed unit stamps nothing and the next trigger tries again. And the stamp
+  names the root the seed went under, read after the seal, where Kotlin names the root it read before, so a seed that
+  starts a session is not sent again at once under that session's new root. A seal that cannot be made once the floor is
+  open still stamps it, as Kotlin's does.
+- **The profile's flush runs before the waiting messages' flush.** Kotlin runs it after `flushPending`
+  (`InboundPipeline.kt:3220-3221`), but Kotlin never holds a group message waiting. Here a waiting message that mints at
+  that moment sends its own seed, and the profile's flush would otherwise send the same seed again straight away.
+- **Sealed group reactions** (`sealGroupReaction`, `MeshManager.kt:2227-2247`) go in the group form as `CTL_REACTION`,
+  dated by the row's clock, when every other member can read it, with the seed sent as for a message. Otherwise they go
+  as the cleartext frame, now counted as `reactionsSealedFallback` as Kotlin counts it, which ends P5e's drift.
+- **The roster's units carry the group form's state** (`GroupRepository.kt:108-194`):
+  - A departure's roster shrink, its notice, `retireSendChains` and `deleteKeySend(leaver)` commit in one unit.
+  - A member's own rejoin retires our send chains in the reconcile's unit when its rekey is due: with the switch on, at
+    most once an hour per group and member (`rejoinRekeyDue`, `InboundPipeline.kt:2308-2321`), held in memory on our
+    monotonic clock and stamped after the commit.
+  - Our leave's deletes, tombstone and `purgeGroup` commit in one unit.
+
+  A retired chain keeps its number (knit-next ADR 2026-10.xgwj). The roster's writes were not in units before, and now a
+  unit that fails writes nothing and counts `storeRefused`. A rejoin carried by a chat frame is not delivered, and the
+  frame waits in our custody for the start's replay, and with the switch on for the hourly one. A `groupleave` or a
+  `groupupdate` whose unit fails is lost, as on Android, since neither replay takes them (below, Limits). Our own leave
+  answers `false` with the `groupleave` already on the air, since today's order sends that first.
+- **Which writes wait for the switch.** The departure's retire, the rejoin's retire and our leave's purge run whatever
+  the switch says. They only ever take key material away, they write nothing on a store the switch never wrote to, and
+  they stop a Debug toggle from leaving behind a chain whose seed the leaver holds, or one the rejoiner would get with
+  every frame it missed. Only the rejoin floor waits for the switch: with it off every rejoin retires, and no floor is
+  stamped.
+- **Kotlin's `forgetSelf`** drops outbox rows that older builds wrote for their own node. No build of this port writes
+  one, since every seed target and re-send skips our own id, so it is not ported. The port has no local group delete, so
+  `delete`'s purge has no caller here.
+- **The control surface** still carries no group state. `MeshEngine.groupCounts` holds all seven of Android's counts for
+  P7's oracle.
+- **Alternatives, and why not:**
+  - **Kotlin's order, keeping the mint when a seed will not seal:** the next send would seal under a seed a current
+    member was never sent, the one case the all-or-nothing rule exists to prevent.
+  - **The v1 fallback in a second unit after abandoning the first:** two reads of the members' rows, and a second path to
+    the same frame. The nested unit keeps one read and one unit.
+  - **Gating the departure's or the rejoin's retire on the switch:** a chain minted while the switch was on would outlive
+    a departure seen while it was off, and once the switch is back on it would seal again under a seed the leaver holds.
+    Across a rejoin seen while it was off, the next flush would send the rejoiner the seed of every frame it missed.
+  - **Floors on the wall clock, as in Kotlin:** this port's floors live in memory on the monotonic clock, which a clock
+    change can neither reopen nor shut.
+- **Limits:**
+  - A first distribution stamps no floor, as in Kotlin, so a linked member that has not acknowledged by the next
+    60-second re-offer gets the seed once more.
+  - A group message waiting for a key, or one whose unit failed, is retried at every heal. While no key is pinned, that
+    retry is a unit that reads the members' rows and writes nothing.
+  - With the switch on, the re-offer's flush opens one read-only unit per neighbour and group.
+  - The floors die with the process. After a relaunch each unacknowledged seed may go once more, and a rejoin soon after
+    rekeys again.
+  - While the switch is off, which is every build until the flip, Android's group info reads "Legacy encryption" for any
+    group with an iPhone in it. ADR 2026-09.n393's consequence holds until then.
+  - **A departure lost to a failed unit stays lost** (both reviews of P6b). The replays take only group chat frames, as
+    Kotlin's do (`MeshManager.kt:1739-1764`), and our digest lists the `groupleave`, so no neighbour serves it again.
+    The leaver stays on our roster, no retire runs, and our next mint sends them a seed. Kotlin has the same hole, and
+    it was here before P6b, when the writes failed one by one. Before the flip, the start's replay takes our custodied
+    `groupleave` and `groupupdate` frames from others too (the roadmap's "Before the flip").
+  - **A member who never acknowledges costs a seed every 15 minutes while linked,** as in Kotlin. A leaver whose leave
+    we never saw refuses our seeds unanswered (`adoptGroupSeeds`, `InboundPipeline.kt:1543`), so the re-offer sends
+    them a new seed DM under a fresh id each time the floor opens: up to 96 a day per group and member. Each one floods,
+    sits in every carrier's custody for a day and counts against our quota of 200 there, which then evicts our oldest
+    frames. Reported as knit-next #183; the port keeps Kotlin's rule until a fix lands on both.
+  - **A member who flaps leave and rejoin** makes us mint at each departure (no floor) and at each due rejoin (hourly).
+    Past `maxAdoptionsPerDay` (4), receivers refuse our new seeds for the rest of the day, and the group form goes dark
+    for them. That is Kotlin's level, and the port matches it.
+- **Guards:**
+  - `GroupRatchetOutboundTests`: the pure rules (the form, the owed seed, the founding roster, both floors, a rejoin).
+  - `MeshEngineGroupSendTests`: `MeshManagerTest`'s group-send cases by name (`:2128-2485`: all capable, the founding
+    roster, the chain reused, an incapable member, an unpinned member, blocked members, the eligible group reaction), and
+    a seed that will not seal.
+  - `MeshEngineGroupSeedSendTests`: `aKeyRequestReSendsCurrentSeedsOncePerFloor`,
+    `aForcedFlushBypassesTheStaleAckGuardAfterAPeerWipe`, `aSeedSentUnderARootTheMemberHasLeftDoesNotHoldBackTheNextOne`,
+    `InboundPipelineTest.aSessionResetAlsoReSendsGroupSeeds`, the request's P6b half, each trigger, what is never re-sent,
+    and a re-send whose unit fails.
+  - `MeshEngineSealedReactionTests.aGroupReactionWithAnIneligibleMemberFallsBackToTheCleartextFrame`.
+  - `MeshEngineGroupRosterUnitTests`: the departure's, the leave's and the rejoin's units over both store kinds, each
+    failing whole; a rejoin seen with the switch off retires a chain the switch minted; and a departure lost to a failed
+    unit, pinned as a known issue until the replay takes it.
+  - `MeshEngineGroupSwitchTests`: with the switch off, the same frames from the same draws, nothing in the group store,
+    and no floor.
+  - `GroupSendPairTests`: an iPhone author and an iPhone receiver over SQL, with an Android reader. The first send, a
+    frame that outruns its seed, a member that missed its seed and asks, a send unit that fails and the heal, and the
+    rejoin rekey's floor.
+  - `GroupSendLabTests`: `GroupMembershipLabTest`'s leave rekey, rejoiner's seed and both #167 cases, and
+    `GroupFirstMessageLabTest`'s three first messages, with iPhone authors.
+  - `GroupSendSoakTests`: three iPhones on Kotlin's six seeds, under a courier that drops, reorders, duplicates and
+    holds, with a departure mid-run.
+  - `TickLabTests`' sealed group tick, now under the session the seed began.

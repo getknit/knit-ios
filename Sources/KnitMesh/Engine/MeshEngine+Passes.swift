@@ -5,8 +5,9 @@ import KnitStore
 /// `sweepExpired` and `heal` in knit-next).
 extension MeshEngine {
     /// The 60-second re-offer to every linked neighbour (`MeshManager.reofferToNeighborsPeriodically`): the blobs and
-    /// keys we still lack, our digest, and any ticks owed. A Bluetooth link stays up, so this is what reconciles
-    /// custody that drifts after link-up, and what opens a blob's next cycle, which moves it one hop nearer.
+    /// keys we still lack, our digest, any ticks owed, and with the ratchet's switch on the group seeds it never acknowledged.
+    /// A Bluetooth link stays up, so this is what reconciles custody that drifts after link-up, and what opens a blob's next
+    /// cycle, which moves it one hop nearer.
     func reoffer() {
         let neighbors = neighborIds
         rewantMissingBlobs(sparing: [])
@@ -16,6 +17,8 @@ extension MeshEngine {
         for peer in neighbors {
             transport.sendDigest(ids, to: peer)
             sendOwedTicks(to: peer)
+            // The group seeds it never acknowledged, floored, with the switch on (`MeshManager.kt:2467`, phase P6b).
+            flushPendingGroupKeys(for: peer, force: false)
         }
     }
 
@@ -42,7 +45,7 @@ extension MeshEngine {
     /// The 15-minute heal pass (`MeshManager.heal`): re-ask for missing keys, go over the ticks we owe, rotate our prekey
     /// when due, republish a stale profile, and, with the ratchet's switch on, fan our sealed profile to the sessions that
     /// confirmed since it last went (`broadcastSealedProfile`, `MeshManager.kt:974`, in Kotlin's order after the
-    /// republish) and seal again the DMs a store failure left waiting.
+    /// republish) and seal again the DMs and group messages a store failure left waiting (phases P5b and P6b).
     func heal() {
         askForMissingKeys(to: neighborIds)
         retryOwedTicks()
@@ -50,5 +53,6 @@ extension MeshEngine {
         republishIfStale()
         broadcastSealedProfile()
         retryWaitingDirectMessages()
+        retryWaitingGroupMessages()
     }
 }

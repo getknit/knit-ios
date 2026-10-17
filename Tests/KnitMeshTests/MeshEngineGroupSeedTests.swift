@@ -107,7 +107,8 @@ import Testing
         #expect(fixture.engine.groupCounts.groupSeedsReplayed == 1 && fixture.recvChains(group.id, from: alice).count == 1)
         #expect(fixture.stores.messages.message("g-back")?.body == "back again")
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == nil)
-        // Kotlin's rejoin rekey and its hourly floor (`recordRejoin(rekey:)`) retire our send chain, which is P6b's.
+        // Kotlin's rejoin rekey and its hourly floor (`recordRejoin(rekey:)`) retire our send chain: phase P6b's
+        // `GroupSendPairTests.aRejoinRekeysOncePerHourAndADepartureAlways()`.
     }
 
     @Test func anotherMembersFrameLeavesADepartedSendersSeedParkedUntilTheyRejoin() throws {

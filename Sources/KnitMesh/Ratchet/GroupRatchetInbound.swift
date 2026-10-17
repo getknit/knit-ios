@@ -90,9 +90,10 @@ internal enum GroupRatchetInbound {
     }
 }
 
-/// How the group form's receive side went so far, under the names of Android's metrics (`MeshMetrics.Groups`, at knit-next
-/// `cbf2a487`), counted where Kotlin counts them (`onGroupSeedHeld`, `onGroupSeedReplayed`, `onGroupSeedAdopted` and
-/// `onGroupKeyRequested`; ADR 2026-10.5sk9, phase P6a2).
+/// How the group form went so far, under the names of Android's metrics (`MeshMetrics.Groups`, at knit-next `cbf2a487`),
+/// counted where Kotlin counts them: the receive side's `onGroupSeedHeld`, `onGroupSeedReplayed`, `onGroupSeedAdopted` and
+/// `onGroupKeyRequested` (phase P6a2), and the send side's `onGroupSealedRatchet`, `onGroupSealedV1Fallback` and
+/// `onGroupSeedSent` (phase P6b; ADR 2026-10.5sk9).
 public struct RatchetGroupCounts: Sendable, Equatable {
     /// Seeds parked for a roster we did not hold yet, or a sender we held as departed, each once (`groupSeedsHeld`).
     public internal(set) var groupSeedsHeld = 0
@@ -102,12 +103,26 @@ public struct RatchetGroupCounts: Sendable, Equatable {
     public internal(set) var groupSeedsAdopted = 0
     /// Key requests sealed and sent (`groupKeyRequestsSent`).
     public internal(set) var groupKeyRequestsSent = 0
+    /// Our group frames sealed in the group form, messages and reactions alike (`groupSealedRatchet`).
+    public internal(set) var groupSealedRatchet = 0
+    /// Our group frames every other member could read in the group form that went v1 instead, a seed that would not seal
+    /// to one of them or a group seal that would not go (`groupSealedV1Fallback`). A group with a member who cannot read the
+    /// group form is not counted: it was never eligible.
+    public internal(set) var groupSealedV1Fallback = 0
+    /// Seed DMs sent, a first distribution's, a re-send's and a key request's answer alike (`groupSeedsSent`).
+    public internal(set) var groupSeedsSent = 0
 
-    /// Counts as stated, each zero unless given: nothing received yet.
-    public init(groupSeedsHeld: Int = 0, groupSeedsReplayed: Int = 0, groupSeedsAdopted: Int = 0, groupKeyRequestsSent: Int = 0) {
+    /// Counts as stated, each zero unless given: nothing received or sent yet.
+    public init(
+        groupSeedsHeld: Int = 0, groupSeedsReplayed: Int = 0, groupSeedsAdopted: Int = 0, groupKeyRequestsSent: Int = 0,
+        groupSealedRatchet: Int = 0, groupSealedV1Fallback: Int = 0, groupSeedsSent: Int = 0
+    ) {
         self.groupSeedsHeld = groupSeedsHeld
         self.groupSeedsReplayed = groupSeedsReplayed
         self.groupSeedsAdopted = groupSeedsAdopted
         self.groupKeyRequestsSent = groupKeyRequestsSent
+        self.groupSealedRatchet = groupSealedRatchet
+        self.groupSealedV1Fallback = groupSealedV1Fallback
+        self.groupSeedsSent = groupSeedsSent
     }
 }

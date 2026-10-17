@@ -116,7 +116,7 @@ internal enum RatchetOutbound {
 
     /// The prekey pinned for `peer`, verified against `bundle`: the pin was verified as it was taken, and one that would
     /// not verify now counts as none (`ratchetPrekeyOf`, `MeshManager.kt:1851-1856`).
-    private static func pinnedPrekey(of peer: PeerRecord, signedBy bundle: PublicKeyBundle) -> PeerPrekey? {
+    static func pinnedPrekey(of peer: PeerRecord, signedBy bundle: PublicKeyBundle) -> PeerPrekey? {
         peer.prekey.flatMap { PeerPrekey(verifying: $0, signedBy: bundle) }
     }
 
@@ -193,8 +193,8 @@ internal enum RatchetOutbound {
     enum ReactionTarget: Equatable {
         /// The Nearby room, plaintext by design: the cleartext `reaction` frame, always, counted as nothing.
         case room
-        /// A group: its sealed form is the group ratchet's (`sealGroupReaction`, `:2227-2247`), which phase P6b ports, so
-        /// until then the cleartext frame, counted as nothing, since nothing tried to seal it.
+        /// A group: a `CTL_REACTION` in the group form when every other member can read it (`sealGroupReaction`,
+        /// `:2227-2247`, phase P6b), else the cleartext frame, counted.
         case group
         /// A DM with this peer: sealed as a `CTL_REACTION` when it can read one, else the cleartext frame, counted.
         case direct(NodeId)
@@ -255,12 +255,11 @@ public struct RatchetSealCounts: Sendable, Equatable {
     /// and no usable prekey, a new epoch due with no base, or a key X25519 refuses. A persistent count is worth a look.
     public internal(set) var dmSealedV1Fallback = 0
     /// Our reactions sealed as a `CTL_REACTION` (`reactionsSealed`, `onReactionSealed`, `MeshManager.kt:2274`): a DM's, since
-    /// phase P5e. A group's waits for P6b.
+    /// phase P5e, and a group's in the group form, since phase P6b.
     public internal(set) var reactionsSealed = 0
-    /// Our DM reactions that went as the cleartext `reaction` frame instead (`reactionsSealedFallback`,
-    /// `onReactionSealedFallback`, `MeshManager.kt:2189`): a peer who cannot read one, or a seal the facade could not make. A
-    /// store that failed counts nothing and sends nothing, as Kotlin's throw does; a room's reaction is never counted, and a
-    /// group's not until P6b seals one.
+    /// Our DM and group reactions that went as the cleartext `reaction` frame instead (`reactionsSealedFallback`,
+    /// `onReactionSealedFallback`, `MeshManager.kt:2189`): a peer or a group that cannot read one, or a seal that could not be
+    /// made. A store that failed counts nothing and sends nothing, as Kotlin's throw does; a room's reaction is never counted.
     public internal(set) var reactionsSealedFallback = 0
 
     /// Counts as stated, each zero unless given: nothing sealed yet.

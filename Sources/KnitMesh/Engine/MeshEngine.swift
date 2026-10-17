@@ -30,6 +30,8 @@ public final class MeshEngine {
     var ratchetReplay = RatchetReplay()
     /// The seeds held back for a roster we do not hold yet, or a sender we hold as departed (phase P6a2).
     var pendingGroupKeys = PendingGroupKeys()
+    /// The seed re-send and rejoin rekey floors our group sends hold in memory (phase P6b, ``GroupSendFloors``).
+    var groupFloors = GroupSendFloors()
     /// What our reactions, sealed profile and init answers keep in memory (phase P5e, ``RatchetPresentationState``).
     var presentation = RatchetPresentationState()
     let transport: any MeshTransport
@@ -219,6 +221,8 @@ public final class MeshEngine {
         transport.sendDigest(stores.custody.liveIds(now: clock.wallMilliseconds()), to: peer)
         askForMissingKeys(to: [peer])
         sendOwedTicks(to: peer)
+        // A partition's merge: the seeds it never acknowledged, with the switch on (`MeshManager.kt:2521`, phase P6b).
+        flushPendingGroupKeys(for: peer, force: false)
         events.append(.neighborsChanged(transport.neighbors))
         log.log(.info, "mesh link up \(peer)")
     }

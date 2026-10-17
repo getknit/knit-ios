@@ -245,9 +245,10 @@ import Testing
         #expect((fixture.engine.dropped[.groupRatchetNoKey] ?? 0) >= 4)
     }
 
-    /// Kotlin's `aKeyRequestCtlInvokesTheRedistributionLambda` (`:6926`): the answer re-seals our current seeds, which needs a
-    /// send chain, P6b's. Here a request commits the chain's advance and nothing else, and is never a row.
-    @Test func aKeyRequestCtlCommitsTheChainsAdvanceAndNothingElseUntilP6b() throws {
+    /// Kotlin's `aKeyRequestCtlInvokesTheRedistributionLambda` (`:6926`), with no send chain of ours: the request commits the
+    /// chain's advance, is never a row, and our answer has no seed to re-seal (phase P6b). The answer with a chain held is
+    /// `MeshEngineGroupSeedSendTests.aKeyRequestReSendsCurrentSeedsOncePerFloor()`.
+    @Test func aKeyRequestCtlWithNoSendChainOfOursCommitsTheAdvanceAndAnswersNothing() throws {
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let request = MessageContent(body: "", ctl: MessageContent.Control.groupKeyRequest, gk: GroupKeyPayload(groupId: group.id))

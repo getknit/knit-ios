@@ -17,12 +17,14 @@ spawns them by name.
 | Crypto | `crypto-owner`, `crypto-reviewer` | `KnitCrypto`, the envelopes, the sealed plaintexts and the capability bits, groups and their roster, pinned keys, the Keychain store, the store unit, and the ratchet's own files as each phase adds them (ADR 2026-10.5sk9) | the verify and open paths of `MeshEngine+Inbound`, the seal paths of `MeshEngine+Outbound`, and, once the ratchet seals them, the receipt, reaction and profile paths of `MeshEngine+Outbound`, `MeshEngine+Reactions` and `MeshEngine+Profiles` | `.agents/context/crypto.md` |
 
 The exact paths are each reviewer's line in `.claude/hooks/review-gate.conf`. `FeedMeter`, `LinkManager+Files`,
-`MeshEngine+Delivery`, `TickSealing`, `StoredText`, `MeshStores` and `MeshEngine+GroupRatchetInbound` sit in two planes
-on purpose: a change there owes both reviewers. `MeshEngine+Delivery` writes a delivered message's row inside a ratchet
-open's store unit, and fetches its photo and sends its receipt after it. `TickSealing` is the delivery-tick ledger's
-protocol, whose seams seal. `StoredText` is the SQL stores' reader of every stored string, ids included. `MeshStores`
-names every store the memory unit puts back when it fails. `MeshEngine+GroupRatchetInbound` opens group frames and
-replays them from custody past the router.
+`MeshEngine+Delivery`, `TickSealing`, `StoredText`, `MeshStores` and the group form's three engine files sit in two
+planes on purpose: a change there owes both reviewers. `MeshEngine+Delivery` writes a delivered message's row inside a
+ratchet open's store unit, and fetches its photo and sends its receipt after it. `TickSealing` is the delivery-tick
+ledger's protocol, whose seams seal. `StoredText` is the SQL stores' reader of every stored string, ids included.
+`MeshStores` names every store the memory unit puts back when it fails. `MeshEngine+GroupRatchetInbound` opens group
+frames and replays them from custody past the router. `MeshEngine+GroupRatchetOutbound` carries each seed DM and group
+frame in the send unit and floods them after it commits, and `MeshEngine+GroupRatchetSeedSends` re-sends seeds from the
+flushes.
 
 A change in a hub file that the hook gates for no one (`Mesh.swift`, `MeshEngine.swift`, the `MeshEngine+Inbound`
 family) still owes the reviewer whose plane the changed lines belong to. The "Adopt" column names those paths,

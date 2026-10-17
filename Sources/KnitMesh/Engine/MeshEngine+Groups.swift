@@ -41,6 +41,10 @@ extension MeshEngine {
     /// is pinned the message waits as `pendingKey`, mentions and all, and goes out once one pins, which Android never
     /// does. Answers the stored message, or `nil` for a blank message with no photo, a photo too heavy to send, a group
     /// we are not in, or one nobody else is left in.
+    ///
+    /// With the ratchet's switch on, it is stored waiting first and sealed in a send unit of its own, which clears the wait
+    /// as it commits: in the group form when every other member can read it, else v1 as above (``sendGroupRatchet(_:in:)``,
+    /// ADR 2026-10.5sk9, phase P6b).
     @discardableResult
     public func sendGroupMessage(
         _ text: String, to groupId: String, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil,
@@ -64,6 +68,16 @@ extension MeshEngine {
             replyTo: replyTo,
             mentions: MessageMention.carried(mentions, in: body)
         )
+        if configuration.ratchet {
+            record.pendingKey = true
+            stores.messages.save(record)
+            let outcome = sendGroupRatchet(record, in: group)
+            record.pendingKey = !outcome.sent
+            for member in outcome.unkeyed {
+                requestKey(member)
+            }
+            return record
+        }
         let sealed = sealGroup(Self.content(of: record), id: id, sentAt: sentAt, in: group)
         record.pendingKey = sealed.envelope == nil
         stores.messages.save(record)
@@ -113,11 +127,23 @@ extension MeshEngine {
             payload: GroupLeaveContent(groupId: groupId).encoded
         )
         originate(leave)
-        // The thread goes first: a crash between the two leaves an empty group still open, not old messages that a
-        // later re-create would bring back.
-        stores.messages.deleteMessages(in: groupId, at: now)
         group.hasLeft = true
-        stores.groups.save(group)
+        // One unit, so the thread, the tombstone and the group form's state go together (`GroupRepository.leave`,
+        // `GroupRepository.kt:180-194`): every receive chain, stored key and outbox row of the group, and our send chains
+        // retired rather than deleted, since the same people put together again are the same group and its next mint must
+        // number past what the others hold (knit-next ADR 2026-10.xgwj). On a store the switch never wrote to, the purge
+        // writes nothing. A unit that fails leaves us in the group, with the leave already on the air.
+        let left = group
+        let unit = stores.transactor.atomically { () -> Void? in
+            stores.messages.deleteMessages(in: groupId, at: now)
+            stores.groups.save(left)
+            stores.groupRatchet.purgeGroup(groupId)
+            return ()
+        }
+        guard case .committed = unit else {
+            log.log(.warning, "mesh left group \(groupId) on the air but not here: a store failed")
+            return false
+        }
         events.append(.groupChanged(groupId))
         return true
     }
@@ -157,6 +183,13 @@ extension MeshEngine {
     func flushPendingGroups(for member: NodeId) {
         let key = ExactKey(member.string)
         for group in stores.groups.groups() where !group.hasLeft && group.members.contains(where: { ExactKey($0) == key }) {
+            if configuration.ratchet {
+                // Each in a send unit of its own, in the form one read of the members' rows decides now (phase P6b).
+                for message in stores.messages.pendingKey(in: group.id) {
+                    sendGroupRatchet(message, in: group)
+                }
+                continue
+            }
             for message in stores.messages.pendingKey(in: group.id) {
                 // A key that pins is one we can seal to; only a key no exchange can use would leave it waiting.
                 if let envelope = sealGroup(Self.content(of: message), id: message.id, sentAt: message.sentAt, in: group).envelope {
@@ -238,13 +271,32 @@ extension MeshEngine {
         else {
             return
         }
-        stores.groups.save(departure.group)
-        stores.messages.save(departure.notice)
+        // The leave rekey, in one unit with the roster's shrink (`recordDeparture`, `GroupRepository.kt:127-134`): our send
+        // chains retired, every key gone and the newest number kept, so the next send mints an epoch numbered past it for
+        // the members who remain (knit-next ADR 2026-10.xgwj), and the leaver's outbox row dropped. Its receive chains
+        // drain through the sweep, since its frames from before the leave may still be served. On a store the switch never
+        // wrote to, both write nothing.
+        let unit = stores.transactor.atomically { () -> Void? in
+            stores.groups.save(departure.group)
+            stores.messages.save(departure.notice)
+            stores.groupRatchet.retireSendChains(group.id)
+            stores.groupRatchet.deleteKeySend(group.id, member: sender)
+            return ()
+        }
+        guard case .committed = unit else {
+            drop(.storeRefused, envelope)
+            log.log(.warning, "mesh leave \(envelope.id) from \(sender) not recorded: a store failed")
+            return
+        }
         events.append(.groupChanged(group.id))
     }
 
-    /// Brings our row in line with a roster from `sender`'s frame, and writes the status lines it earns. Answers
-    /// whether the group is ours and active, so a chat frame should be delivered.
+    /// Brings our row in line with a roster from `sender`'s frame, and writes the status lines it earns, in one unit.
+    /// Answers whether the group is ours and active, so a chat frame should be delivered: not when the unit failed. A chat
+    /// frame then waits in custody for the start's replay, and a rename is lost, as on Android. A sender's own frame that
+    /// brings it back retires our send chains in that unit (`rejoinRekeyDue`, `InboundPipeline.kt:2308-2321`; phase P6b):
+    /// with the ratchet's switch on at most once an hour per group and member, a floor held in memory and stamped once the
+    /// unit commits, and with it off at every rejoin, which writes nothing on a store the switch never wrote to.
     ///
     /// With the ratchet's switch on, a roster that lands then lets in the seeds that waited for it
     /// (`reconcileGroup`'s second half, `InboundPipeline.kt:2167-2178`, phase P6a2): the parked seeds whose sender the row
@@ -266,17 +318,53 @@ extension MeshEngine {
             drop(.rosterRefused, envelope)
             return false
         case .accepted(let group, let notices):
-            if group != existing {
-                stores.groups.save(group)
-                events.append(.groupChanged(group.id))
+            // Whatever the switch says, as a departure's retire: a chain minted while it was on and reused across a rejoin
+            // seen while it was off would reach the rejoiner with every frame it missed. The floor is the switch's alone.
+            let monotonic = clock.monotonicMilliseconds()
+            let rekey =
+                GroupRoster.rejoined(sender, from: existing, to: group)
+                && (!configuration.ratchet || groupFloors.rekeyDue(in: group.id, for: sender, now: monotonic))
+            guard store(group, over: existing, notices: notices, retiring: rekey) else {
+                drop(.storeRefused, envelope)
+                log.log(.warning, "mesh roster of \(group.id) from \(envelope.id) not stored: a store failed")
+                return false
             }
-            for notice in notices {
-                stores.messages.save(notice)
+            if rekey, configuration.ratchet {
+                groupFloors.rekeyed(in: group.id, for: sender, now: monotonic)
+            }
+            if group != existing {
+                events.append(.groupChanged(group.id))
             }
             if configuration.ratchet {
                 seedsMayLand(in: group, firstSight: existing == nil, except: seedPinning)
             }
             return true
         }
+    }
+
+    /// Writes what a reconciled roster changed in one unit, and answers whether it stood: the row when it moved, the status
+    /// lines it earned, and with `retiring` our send chains retired, the rejoin rekey (`recordRejoin`, `GroupRepository.kt:156-168`),
+    /// so the next send mints an epoch for the roster as it now stands and the rejoiner reads nothing sealed while it was
+    /// out. A frame that changes nothing opens no unit.
+    private func store(_ group: GroupRecord, over existing: GroupRecord?, notices: [MessageRecord], retiring: Bool) -> Bool {
+        guard group != existing || !notices.isEmpty || retiring else {
+            return true
+        }
+        let unit = stores.transactor.atomically { () -> Void? in
+            if group != existing {
+                stores.groups.save(group)
+            }
+            for notice in notices {
+                stores.messages.save(notice)
+            }
+            if retiring {
+                stores.groupRatchet.retireSendChains(group.id)
+            }
+            return ()
+        }
+        guard case .committed = unit else {
+            return false
+        }
+        return true
     }
 }

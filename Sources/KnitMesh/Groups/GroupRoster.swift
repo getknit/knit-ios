@@ -172,6 +172,13 @@ internal struct GroupRoster {
         return sentAt > member.leftAt ?? 0
     }
 
+    /// Whether `group`, the row a reconciled frame from `sender` leaves, brought the sender back from `existing`: held as
+    /// departed before, and present now. Only the sender's own frame does that (``rejoins(_:in:at:existing:)``), and the
+    /// caller then rekeys, floored (`recordRejoin`'s `rekey`, `InboundPipeline.kt:2166`).
+    static func rejoined(_ sender: NodeId, from existing: GroupRecord?, to group: GroupRecord) -> Bool {
+        existing?.member(sender.string)?.departed == true && group.member(sender.string)?.departed == false
+    }
+
     /// The roster to store: the effective `members` in order, then our tombstones, each keeping its clocks.
     private static func roster(members: [String], departed: [String], existing: GroupRecord?) -> [GroupMember] {
         let present = members.map { id in

@@ -498,6 +498,11 @@ explicit direction.** Update this file in the change that ships an item.
     photo at once and answers NONE, where an Android author would serve it. Keep our replaced photo while our custody
     carries a live frame of ours naming it, as Kotlin's `forward.countByAttachmentHash` does (`BlobRepository.kt:100-112`).
     It is the blobs plane's change, not P5e's.
+  - **Replay a lost departure** (ADR 2026-10.5sk9's P6b limits). A `groupleave` or `groupupdate` whose store unit
+    fails stays in our custody and digest, and nothing replays it, so the leaver keeps getting our seeds. The start's
+    replay should take our custodied leave and update frames from others too. A replayed departure that is already
+    recorded changes nothing, but an old leave replayed after its sender's rejoin must not depart them again, so it
+    wants an owner's design and a two-engine test. Kotlin has the same hole.
   - **Found on the way, not the ratchet's (already on `main`):** a failed read of our own profile is taken for a fresh
     one. `updateProfile` and the photo edit then publish a blank name at a version every peer takes, and the next
     start's sweep can delete our own photo (P3's blobs review). The fix reads with `loadIfReadable()` and does

@@ -66,11 +66,12 @@ import Testing
     }
 
     /// The real seal's lab, the P5c reviews' owed test, in the shape of the stand-in's above: Bob and Alice with the
-    /// ratchet's switch on, Carol without it, carrying, and outside the group, so no tick of hers flips Bob's. Alice's batch
-    /// for Bob's two group messages goes as one sealed `CTL_RECEIPT`, her first seal to Bob, so it starts a session. Carol's
-    /// custody serves it to Bob at the link-up, Bob's own open of it flips each tick, and Bob answers nothing, since a ctl
-    /// frame is never acknowledged. A re-serve of his message past the router's ten minutes owes nothing more, so Alice's
-    /// send index does not move.
+    /// ratchet's switch on, Carol without it, carrying, and outside the group, so no tick of hers flips Bob's. Since phase
+    /// P6b Bob's two group messages go in the group form, and the seed of his epoch, sealed ahead of the first, starts the
+    /// DM session; Alice acknowledges the seed. Her batch for the two messages goes as one sealed `CTL_RECEIPT` under that
+    /// session, one chain key. Carol's custody serves it to Bob at the link-up, Bob's own open of it flips each tick, and Bob
+    /// answers nothing, since a ctl frame is never acknowledged and Alice's frames carry no init to answer. A re-serve of his
+    /// message past the router's ten minutes owes nothing more, so Alice's send index does not move.
     @Test func aSealedGroupTickReachesAnAbsentAuthorFromACarriersCustodyAndFlipsEachTick() throws {
         let lab = EngineLab([
             try EngineFixture.ratcheting(bob, seed: 21), EngineFixture(carol, seed: 22), try EngineFixture.ratcheting(alice, seed: 23),
@@ -86,18 +87,22 @@ import Testing
         relay(lab)
         #expect(lab[2].stores.messages.message(first.id) != nil && lab[2].stores.messages.message(second.id) != nil)
         #expect(lab[0].stores.messages.message(first.id)?.delivered == false, "nobody has ticked them yet")
+        #expect(lab[0].engine.groupCounts.groupSealedRatchet == 2 && lab[0].engine.groupCounts.groupSeedsSent == 1)
         lab.unlink(0, 1)
         _ = lab[0].engine.drainEvents()
+        // Alice's DM-form chats to Bob so far: her ack of his seed.
+        let acked = alicesTicks(lab).count
+        let keys = try #require(lab[2].ratchetRecords(of: bob).session?.sendCount)
 
         lab.advance(AckSync.batchDebounceMilliseconds)
         relay(lab)
-        let ticks = alicesTicks(lab)
+        let ticks = Array(alicesTicks(lab).dropFirst(acked))
         let tick = try #require(ticks.first)
         #expect(ticks.count == 1 && tick.to == nil && tick.wire.relay, "one originated, sealed frame")
-        #expect(try ChatContent(decoding: tick.envelope.payload).enc?.ratchet?.initial != nil, "her first seal to Bob, an init")
+        #expect(try ChatContent(decoding: tick.envelope.payload).enc?.ratchet?.initial == nil, "under the session Bob's seed began")
         #expect(lab[1].stores.custody.contains(tick.envelope.id) && lab[2].stores.custody.contains(tick.envelope.id))
         let sent = try #require(lab[2].ratchetRecords(of: bob).session?.sendCount)
-        #expect(sent == 1, "one chain key for the batch")
+        #expect(sent == keys + 1, "one chain key for the batch")
 
         lab.link(0, 1)
         let served = lab[1].transport.written.filter { ExactKey($0.envelope.id) == ExactKey(tick.envelope.id) && $0.to == bob.nodeId }
@@ -106,11 +111,12 @@ import Testing
         #expect(lab[0].stores.messages.message(second.id)?.delivered == true, "and the second")
         #expect(Set(deliveredIds(in: lab[0].engine.drainEvents())) == [first.id, second.id])
         #expect(lab[0].ratchetRecords(of: alice).session?.confirmed == true, "Bob holds the session Alice's tick began")
-        // Bob's one DM-form frame is his answer to the init Alice's batch carried (phase P5e): never an acknowledgement.
+        // Bob's one DM-form frame is the seed of his group epoch (phase P6b): never an acknowledgement, and no answer, since
+        // the session is his and Alice's frames carry no init.
         let fromBob = EngineFixture.once(lab[0].transport.written(.chat)).filter { written in
             written.envelope.senderId == bob.nodeId.string && written.envelope.isDirect
         }
-        #expect(fromBob.count == 1 && Set(fromBob.map { ExactKey($0.envelope.id) }) == lab[0].answerIds, "his answer to her init")
+        #expect(fromBob.count == 1 && lab[0].answerIds.isEmpty, "his seed, and no answer")
         #expect(lab[0].transport.written(.receipt).isEmpty, "a ctl frame is never acknowledged")
 
         let original = try #require(lab[0].transport.written(.chat).first { $0.envelope.id == first.id })
@@ -118,7 +124,7 @@ import Testing
         lab[2].engine.receive(InboundFrame(wire: original.wire, envelope: original.envelope, from: carol.nodeId))
         lab.advance(AckSync.batchDebounceMilliseconds)
         relay(lab)
-        #expect(alicesTicks(lab).count == 1, "no second seal")
+        #expect(alicesTicks(lab).count == acked + 1, "no second seal")
         #expect(lab[2].ratchetRecords(of: bob).session?.sendCount == sent, "Alice's send index unchanged")
         #expect(Set(lab.liveIds(0)) == Set(lab.liveIds(1)) && Set(lab.liveIds(1)) == Set(lab.liveIds(2)), "the custodies agree")
     }

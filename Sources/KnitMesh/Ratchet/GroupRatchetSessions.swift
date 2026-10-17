@@ -4,8 +4,8 @@ public import KnitWire
 
 /// The group form's session service (`GroupRatchetSessions` in knit-next's `mesh/crypto/ratchet/GroupRatchetSessions.kt`,
 /// at `cbf2a487`): the pure ``GroupRatchetEngine`` over a ``GroupRatchetStore``, our node id, and the floors held in
-/// memory per group and sender (ADR 2026-10.5sk9). Nothing in the mesh calls it before phase P6a2 (the receive path) and
-/// P6b (the send path); A9's group transcripts and the tests drive it directly.
+/// memory per group and sender (ADR 2026-10.5sk9). The mesh's receive path calls it since phase P6a2 and its send path since
+/// P6b, with the switch on; A9's group transcripts drive it directly too.
 ///
 /// **One phase, in a store unit,** as ``RatchetSessions`` runs. Android peeks with no lock, then commits under the one
 /// ratchet mutex both facades share, inside a Room transaction (`:9-34`). This port's engine runs on one actor, so each
@@ -152,7 +152,7 @@ public final class GroupRatchetSessions {
     /// yet, the count, the age, and a forced rekey's retired chain, which the mint numbers past; a wipe's empty store
     /// restarts at epoch 1 (`sealGroup`, `:174-198`). Read, mint, seal and persist in one unit, so the chain is stored
     /// before the envelope is answered. A minted seed is the caller's to distribute to the roster, and the outbox rows to
-    /// record, strictly after, before the frame floods (P6b's).
+    /// record, strictly after, before the frame floods (``MeshEngine/sendGroupRatchet(_:in:)``, phase P6b).
     public func sealGroup(plaintext: [UInt8], aad: [UInt8], in group: String, now: Int64) -> Answer<Sealing> {
         let unit = transactor.atomically { () -> Sealing? in
             let held = store.sendChain(group).map(GroupRatchetRecords.sendChain)

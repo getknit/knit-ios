@@ -223,7 +223,8 @@ Launch arguments, set in the scheme on the Mac (P7):
     and, once a DM went, `seals.dmSealedV2 > 0`. A switch that is off passes "no fallback" and "no reset" without
     testing anything.
   - While it is on, the phone receives the group form Android seals to a group whose other members all run the ratchet,
-    and adopts the seeds (phase P6a2), but sends v1 to every group until P6b.
+    and adopts the seeds (phase P6a2). It also seals the group form itself to a group whose other members all advertise
+    the ratchet with a prekey, sending each member the seed first (phase P6b).
   - End every trial with the same launch and `-ratchet off`, then check that the reply shows `prekeyId: null` once the
     mesh has started. A kept "on" otherwise runs every later run with the ratchet: `check.sh devicetest` and each
     `interop.py` leg run whatever is kept, and `iphone-react`'s DM leg would take the sealed reaction for the cleartext

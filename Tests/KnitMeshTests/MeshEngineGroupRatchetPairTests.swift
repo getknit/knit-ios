@@ -9,8 +9,8 @@ import Testing
 
 /// The group form received in the mesh against custody and the store unit (ADR 2026-10.5sk9, phase P6a2): the trials the
 /// P6a1 reviews owe, as two engines over the database with the switch on, an iPhone and a carrier exchanging digests in an
-/// ``EngineLab``, with an Android phone authoring the group form (``GroupFormAuthor``), since nothing here seals it before
-/// P6b. The restarts are ``MeshEngineGroupRatchetRestartTests``.
+/// ``EngineLab``, with an Android phone authoring the group form (``GroupFormAuthor``). The restarts are
+/// ``MeshEngineGroupRatchetRestartTests``, and the iPhone's own sends `GroupSendPairTests` (phase P6b).
 @Suite struct MeshEngineGroupRatchetPairTests {
     private let me = TestPeer(seed: 1)
     private let alice = TestPeer(seed: 2)

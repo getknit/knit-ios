@@ -252,6 +252,10 @@ extension MeshEngine {
                 releaseBlob(replaced)
             }
         }
+        // With the switch on, the group seeds its outbox row shows unacknowledged go again, its prekey perhaps new
+        // (`InboundPipeline.kt:3218-3221`, phase P6b). Before the waiting messages: a group message among them that mints
+        // distributes its own seed, which this flush would otherwise send the sender a second time at once.
+        flushPendingGroupKeys(for: sender, force: false)
         flushPending(to: sender)
         // Keep the frame the key pinned from beside the pin, so this node can prove the key to a newcomer after a
         // restart and after custody has lost it to the quota or the TTL (knit-next ADR 2026-09.g64k). The newest

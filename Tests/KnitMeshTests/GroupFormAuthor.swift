@@ -8,8 +8,8 @@ import Testing
 
 /// One member of a group authoring group-form frames toward the engine under test, as Android's `GroupRatchetEngine` seals
 /// them (`GroupRatchetAuthor`, `InboundPipelineTest.kt:5675-5723`, at knit-next `cbf2a487`), with its seeds sent as
-/// `CTL_GROUP_KEY` DMs through ``AndroidPeer``'s DM ratchet. Phase P6a2 receives what it sends; nothing in the engine seals
-/// the group form before P6b.
+/// `CTL_GROUP_KEY` DMs through ``AndroidPeer``'s DM ratchet. Phase P6a2 receives what it sends; what the engine seals in the
+/// group form since phase P6b, ``GroupFormReader`` reads.
 final class GroupFormAuthor {
     let android: AndroidPeer
     let groupId: String

@@ -10,10 +10,9 @@ import Testing
 /// Our reactions with the ratchet's switch on (ADR 2026-10.5sk9, phase P5e): knit-next's `MeshManagerTest` reaction cases by
 /// name (`MeshManagerTest.kt:2419-2588`, at `cbf2a487`), each read by Android's own session layer (``AndroidPeer``). A
 /// reaction to a message in a DM with a peer who can read one goes as a sealed `CTL_REACTION`, never the cleartext frame and
-/// never the v1 wrap; the room's goes in the clear always, and a group's does until phase P6b. Not ported, as P6b's:
-/// `aGroupReactionWithEveryMemberEligibleRidesTheGroupFormAndDistributesItsSeed` and
-/// `aGroupReactionWithAnIneligibleMemberFallsBackToTheCleartextFrame`, whose group form this port does not seal yet
-/// (``aGroupReactionStaysCleartextAndUncountedUntilP6bSealsTheGroupForm()``).
+/// never the v1 wrap; the room's goes in the clear always. A group's goes in the group form when every member can read it
+/// (phase P6b): `aGroupReactionWithEveryMemberEligibleRidesTheGroupFormAndDistributesItsSeed` is
+/// `MeshEngineGroupSendTests`', and the ineligible group's fallback is here.
 @Suite struct MeshEngineSealedReactionTests {
     private let me = TestPeer(seed: 1)
     private let alice = TestPeer(seed: 2)
@@ -155,10 +154,10 @@ import Testing
         #expect(fixture.engine.seals == RatchetSealCounts(reactionsSealed: 1))
     }
 
-    /// A drift from Kotlin until P6b: a group's reaction goes as the cleartext frame and counts nothing, where Kotlin seals
-    /// it in the group form when every member can read one and counts a fallback when not (`sealGroupReaction`,
-    /// `MeshManager.kt:2189`, `:2227-2247`). This port does not seal the group form yet, so nothing tried.
-    @Test func aGroupReactionStaysCleartextAndUncountedUntilP6bSealsTheGroupForm() throws {
+    /// Kotlin's `aGroupReactionWithAnIneligibleMemberFallsBackToTheCleartextFrame` (`MeshManagerTest.kt:2485`): Bob has no
+    /// pinned profile, so the group cannot take the group form, and the reaction goes as the cleartext frame, counted as a
+    /// fallback, as Kotlin counts a group that cannot seal (`MeshManager.kt:2189`), and nothing reaches the group store.
+    @Test func aGroupReactionWithAnIneligibleMemberFallsBackToTheCleartextFrame() throws {
         let (fixture, _) = try rig()
         let group = roster([alice, bob, me], createdBy: alice)
         fixture.deliver(try alice.groupMessage("group", in: group, to: [bob, me], id: "gm-1", sentAt: now), from: alice)
@@ -166,7 +165,9 @@ import Testing
         fixture.transport.clear()
         _ = try #require(fixture.engine.react(to: "gm-1", with: "👍"))
         #expect(fixture.transport.written(.reaction).count == 1 && fixture.transport.written(.chat).isEmpty)
-        #expect(fixture.engine.seals == RatchetSealCounts())
+        #expect(fixture.engine.seals == RatchetSealCounts(reactionsSealedFallback: 1))
+        #expect(fixture.engine.groupCounts.groupSealedV1Fallback == 0, "never eligible, so no group fallback")
+        #expect(fixture.stores.groupRatchet.holdings(of: group.id) == .empty)
     }
 
     /// A message whose id the compact codec cannot carry: the reaction seals named under v2, still never in the clear.

@@ -217,3 +217,10 @@ publish it honestly.
   `MeshManager.kt:1772-1830`). Each replay goes past the router, reads custody and writes nothing to it. Custody never
   reads group-ratchet state: a group frame's `NO_KEY`, `AEAD_FAIL`, `BAD_HEADER` or failed unit changes what we deliver,
   never what we carry, and a seed's ack and a key request are ordinary sealed DMs that purge nothing.
+- **Our own group form** (ADR 2026-10.5sk9, phase P6b): each seed DM, and the group frame it goes ahead of, is signed
+  once and taken into our own custody inside the send's store unit, then flooded once the unit commits, seeds first. A
+  seed DM is an ordinary sealed DM, custodied and carried like any other. It never makes a row and is never
+  acknowledged, so it purges nothing and every custody keeps it to its TTL. The seed outbox, not custody, records what a
+  member holds. A seed the member never acknowledged is sealed again under a fresh id at a link-up, a re-offer, their
+  profile, their reset or their key request, floored at 15 minutes per group, member and pairwise root. A send unit that
+  fails writes no custody row and sends nothing.
