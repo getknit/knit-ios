@@ -1579,3 +1579,65 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     first-verdict gate the refusal and block tests fail. Without `actedAfter` the eviction test fails, without the
     no-photo clause the photo case fails, without the new frame types the pair test fails, and with the thread read
     outside its own unit the failed-read case fails.
+
+**Amended 2026-10-16, phase P7b (A10's iOS half):**
+
+- **`ios-emitted-v1.json` now carries the iPhone's ratchet frames,** additively. Its six frames, Carol's identity and
+  the safety number are byte-identical, and only `about` grew. Carol's v1 profile takes a literal `0xF` in place of
+  `Capabilities.local`, so the flip cannot move a frame Android pins as "no ratchet". Its committed bytes were already
+  `0xF` and did not change.
+- **What it adds.** Eleven entries: ten frames Carol's engine makes, each with a `sealed` block giving its `v`, its form,
+  `se`, `n`, `pe`, the prekey its init names, its exact plaintext and that plaintext's fields, and her hand-built ratchet
+  profile, which carries `prekey`, `capabilities` and `version` instead:
+  - `carolRatchetProfile`, the only hand-built one: her signed profile with the flip's bits (`0x15F`, a literal) and
+    carolSpk1, at version 2;
+  - Carol's DMs to Bob in one session, which her engine starts: the v3 opener with its init (`carolRatchetDmToBob`), a v3 DM
+    carrying a room post's tick inline (`carolInlineAcksToBob`), then, once Bob's reply confirms the session, a sealed
+    receipt with a second tick riding in `acks`, a sealed profile (ctl 8), and a reaction and its retraction (ctl 6), all
+    v3;
+  - for a group of Alice, Bob and Carol: a v2 `CTL_GROUP_KEY` seed DM to each member (an init to Alice, the session to Bob),
+    carrying `keys` and the founding roster and never `gr`, then a group-form message and a group-form reaction (ctl 6).
+
+  A new `ratchet` section says how to open them. It lists A9's three prekeys with their private halves (test keys), the
+  draws Carol's engines took in order, and Bob's one seal, his v3 reply on one fixed key. It also gives each reader's steps
+  in order (`replay`): a fresh `RatchetSessions` beside a fresh `GroupRatchetSessions`, opening and committing at each
+  frame's `sentAt`, adopting a seed DM's seeds, and sending nothing back.
+- **Made by the engine, from fixed draws.** Carol's `MeshEngine` makes every frame but the profile, with the switch on. Its
+  ratchet takes keys and IVs, and its group form seeds and IVs, from `fixtureBytes` seeds 184–193. Bob's reply takes seed
+  194, Bob's frame ids take seeds 36–38, and the engine's generator (seed `0xA10`) draws only frame ids. So every frame,
+  v2 and the group form included, comes out the same on every run apart from its signature: each is rebuilt and
+  compared, then its signature verified. The profile's prekey signature is the one exception: it is taken from the committed copy
+  once it verifies, because CryptoKit randomizes it.
+- **One test seam in product code.** `MeshEngine`'s internal initializer takes the group engine
+  (`groupRatchetEngine`) beside the DM engine, as P5b's seam does. The public initializer passes `GroupRatchetEngine()`,
+  the system's generator, and nothing else changed.
+- **Left out, and why:**
+  - an init's answer and anything sealed while Carol is the responder: Kotlin's half would have to replay Bob's opener on
+    his draws. The answer is the sealed profile above, and `RatchetCarolVectorTests` already checks Carol's responder
+    seals against A9's `aliceInitiatesToCarol`;
+  - a reset and the re-seal: `RatchetSendVectorTests` already sends A9's through this port's engine, byte for byte;
+  - the live-link tick: the receipt's seal and plaintext, signed with `relay = false`;
+  - ctl 3 and 4: the same `sealControl` path, with a `gk` that `wire-v1.json` pins. A group key ack needs a seed sent to
+    Carol, which brings in Bob's group draws. It can be added on the same file later.
+- **What Android's half must check** (`IosEmittedVectorTest`, under knit-next's rules). Each frame verifies under Carol's
+  bundle and re-encodes at both layers. The ratchet profile pins carolSpk1 and `0x15F` through the ordinary door. Each
+  reader takes its `replay` steps with A9's prekey, with Bob's seal on his listed draw coming out as the listed signed
+  bytes. Each open gives the entry's `plaintext` exactly, and the seeds adopted open the group form for both readers.
+  Three details from the crypto review, for whoever writes those cases:
+  - `adoptSeeds` answers `AdoptResult(ackEpoch, freshChains)`: check `ackEpoch == 1` and `freshChains == 1`, called
+    inside `commitOpen`'s `onOpened`, as the pipeline calls it.
+  - For Bob's seal, decode the listed wire and compare the resealed `EncEnvelope`; the entry does not spell out the
+    `ChatContent` around it.
+  - Deliver `carolRatchetProfile` straight after `carolProfile`. If the sealed profile (version 1756200016000) comes
+    first, the name and status read as stale, though the prekey still pins.
+- **Still owed:** `scripts/sync-vectors.py --export` and the knit-next session that adds those cases and a README row.
+  The iOS checks already pass under CryptoKit (`test:macos`, 2026-10-16).
+- **Guards:** `EmittedVectorTests`, which now lives in `KnitMeshTests` beside the engine's fixtures:
+  - `theCommittedRatchetFramesAreCurrent`: every entry and the section, against a fresh run;
+  - `bobAndAliceOpenTheCommittedRatchetFrames`: the committed frames through `AndroidPeer` and `GroupFormReader`, by the
+    committed steps;
+  - `bobsEnginePinsCarolsCommittedRatchetProfile`, with Bob's switch on and off;
+  - `carolsRatchetDMsSayWhatTheScenarioDid` and `carolsGroupFormFramesSayWhatTheScenarioDid`: each frame's form, header
+    and fields, and the draw order;
+  - `theRatchetChecksTellACurrentFrameFromAStaleOne`: a run at another clock, a profile with other bits or another
+    prekey, and a frame for Bob read as Alice all fail.

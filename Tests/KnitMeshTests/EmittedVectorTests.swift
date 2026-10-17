@@ -4,9 +4,11 @@ import KnitWire
 import Testing
 
 /// What this port emits for knit-next to check (`ios-emitted-v1.json`): Carol's identity from fixed keys, her
-/// signed profile and room post, a v1 DM she seals to knit-next's Bob, their safety number, and her group frames
-/// (``EmittedGroupFrames``). knit-next's `IosEmittedVectorTest` verifies each signature with Tink, re-encodes each
-/// frame with kotlinx, and opens the DM as Bob.
+/// signed profile and room post, a v1 DM she seals to knit-next's Bob, their safety number, her group frames
+/// (``EmittedGroupFrames``), and her ratchet profile and the ratchet frames her mesh engine sends Bob and Alice
+/// (``EmittedRatchetFrames``, phase P7b). knit-next's `IosEmittedVectorTest` verifies each signature with Tink, re-encodes
+/// each frame with kotlinx, and opens the DMs as Bob. The suite lives beside the engine's fixtures, since Carol's engine
+/// makes her ratchet frames.
 ///
 /// `KNIT_WRITE_VECTORS=1` rewrites the file, keeping every committed frame that is still current, so a rewrite
 /// moves only what changed; `scripts/sync-vectors.py --export` copies it into knit-next. A normal run checks
@@ -18,28 +20,38 @@ import Testing
     private static let roomPostId = FrameId.text(for: fixtureBytes(16, seed: 31))
     private static let dmId = FrameId.text(for: fixtureBytes(16, seed: 32))
     private static let dmSentAt = publishedAt + 2000
+    /// E2E, GROUPS, REACTIONS and STORE_FORWARD: what this build advertises with the ratchet's switch off.
+    static let v1Capabilities: Int64 = 0xF
     private static let about =
         "Frames the iOS port emits: Carol's identity from fixed keys, her signed profile and room post, a v1 DM she "
         + "seals to Bob from keyed-v1.json, their safety number, and a group she makes with Alice and Bob: a v1 group "
-        + "message, her rename and her leave. Written by knit-ios with KNIT_WRITE_VECTORS=1; IosEmittedVectorTest "
-        + "checks it. See vectors/README.md."
+        + "message, her rename and her leave. With the ratchet (A10): her ratchet profile, and what her mesh engine "
+        + "sends Bob and Alice with the ratchet on: a v3 DM that opens a session, inline acks, a sealed receipt, profile, "
+        + "reaction and retraction, seeds for a group of the three, a group-form message and a group-form reaction; "
+        + "ratchet says how to open them. Written by knit-ios with KNIT_WRITE_VECTORS=1; IosEmittedVectorTest checks "
+        + "it. See vectors/README.md."
+    /// What a check says of a committed frame this build no longer sends.
+    static let stale = "is not what this build sends; regenerate with KNIT_WRITE_VECTORS=1, then sync-vectors.py --export"
 
     private let roomBody = "Hello from Swift"
     private let dmBody = "Hi Bob, from Swift"
 
-    private func carol() throws -> IdentityKeys {
+    func carol() throws -> IdentityKeys {
         try #require(IdentityKeys(signingSeed: fixtureBytes(32, seed: 5), agreementScalar: fixtureBytes(32, seed: 6)))
     }
 
     /// Bob from knit-next's keyed vectors, private keys included, so this port can open what Carol seals to him.
-    private func bob() throws -> IdentityKeys {
+    func bob() throws -> IdentityKeys {
         try keyed("bob")
     }
 
     /// One of knit-next's keyed identities, private keys included.
-    private func keyed(_ name: String) throws -> IdentityKeys {
+    func keyed(_ name: String) throws -> IdentityKeys {
         let entry = try #require(KeyedVectors.file.identities[name])
-        return try #require(IdentityKeys(signingSeed: hexBytes(entry.signingSeed), agreementScalar: hexBytes(entry.agreementScalar)))
+        return try #require(
+            IdentityKeys(
+                signingSeed: try RatchetVectorReplay.bytes(entry.signingSeed),
+                agreementScalar: try RatchetVectorReplay.bytes(entry.agreementScalar)))
     }
 
     private func profileFrame(of carol: IdentityKeys) -> RelayEnvelope {
@@ -49,7 +61,9 @@ import Testing
             pubKey: carol.bundle.encoded,
             deviceTag: DeviceTag.derive("vector-device-carol"),
             protoVersion: WireProtocol.version,
-            capabilities: Capabilities.local.rawValue,
+            // A literal, never `Capabilities.local`: knit-next pins this frame as "no ratchet", so the flip to `0x15F`
+            // must not move it (ADR 2026-10.5sk9's P7b amendment). The ratchet's profile is `carolRatchetProfile`.
+            capabilities: Self.v1Capabilities,
             version: 1
         )
         return RelayEnvelope(
@@ -156,6 +170,8 @@ import Testing
             try currentWire(committed["carolDmToBob"]) { isCurrentDm($0, from: carol, to: bob) }
             ?? wire(dmFrame(of: carol, to: bob), signedBy: carol)
         #expect(isCurrentDm(dmWire, from: carol, to: bob))
+        let ratchet = try EmittedRatchetFrames.vectors(
+            carol: carol, alice: try keyed("alice"), bob: bob, committed: EmittedVectors.committed)
         let vectors = EmittedVectors(
             about: Self.about,
             identities: ["carol": identityEntry(carol)],
@@ -164,7 +180,10 @@ import Testing
                 "carolProfile": VectorFrame(sender: "carol", wire: profileWire),
                 "carolRoomPost": VectorFrame(sender: "carol", body: roomBody, wire: roomPostWire),
                 "carolDmToBob": VectorFrame(sender: "carol", recipient: "bob", body: dmBody, wire: dmWire),
-            ].merging(try groupFrames(committed, carol: carol, bob: bob)) { first, _ in first }
+            ]
+            .merging(try groupFrames(committed, carol: carol, bob: bob)) { first, _ in first }
+            .merging(ratchet.frames) { first, _ in first },
+            ratchet: ratchet.section
         )
         try VectorFile.write(vectors, to: EmittedVectors.fileName)
     }
@@ -200,17 +219,18 @@ import Testing
         let alice = try keyed("alice")
         let bob = try bob()
         let groups = EmittedGroupFrames.self
-        let stale = "is not what this build sends; regenerate with KNIT_WRITE_VECTORS=1, then sync-vectors.py --export"
         let chat = try #require(committed.frames["carolGroupChat"])
-        #expect(groups.isCurrentChat(chat.wire, carol: carol, alice: alice, bob: bob), "carolGroupChat \(stale)")
+        #expect(groups.isCurrentChat(chat.wire, carol: carol, alice: alice, bob: bob), "carolGroupChat \(Self.stale)")
         #expect(chat.groupId == GroupId.derive([alice, bob, carol].map(\.nodeId.string)) && chat.members == groups.memberNames)
         let rename = try #require(committed.frames["carolGroupRename"])
         #expect(
-            isCurrent(rename.wire, expected: groups.rename(carol: carol, alice: alice, bob: bob), from: carol), "carolGroupRename \(stale)")
+            isCurrent(rename.wire, expected: groups.rename(carol: carol, alice: alice, bob: bob), from: carol),
+            "carolGroupRename \(Self.stale)")
         #expect(rename.name == groups.name)
         let leave = try #require(committed.frames["carolGroupLeave"])
         #expect(
-            isCurrent(leave.wire, expected: groups.leave(carol: carol, alice: alice, bob: bob), from: carol), "carolGroupLeave \(stale)")
+            isCurrent(leave.wire, expected: groups.leave(carol: carol, alice: alice, bob: bob), from: carol),
+            "carolGroupLeave \(Self.stale)")
     }
 
     /// The group message's currency check must be able to fail, as the DM's must.
@@ -238,10 +258,9 @@ import Testing
         let profile = try #require(committed.frames["carolProfile"])
         let roomPost = try #require(committed.frames["carolRoomPost"])
         let dm = try #require(committed.frames["carolDmToBob"])
-        let stale = "is not what this build sends; regenerate with KNIT_WRITE_VECTORS=1, then sync-vectors.py --export"
-        #expect(isCurrent(profile.wire, expected: profileFrame(of: carol), from: carol), "carolProfile \(stale)")
-        #expect(isCurrent(roomPost.wire, expected: roomPostFrame(of: carol), from: carol), "carolRoomPost \(stale)")
-        #expect(isCurrentDm(dm.wire, from: carol, to: bob), "carolDmToBob \(stale)")
+        #expect(isCurrent(profile.wire, expected: profileFrame(of: carol), from: carol), "carolProfile \(Self.stale)")
+        #expect(isCurrent(roomPost.wire, expected: roomPostFrame(of: carol), from: carol), "carolRoomPost \(Self.stale)")
+        #expect(isCurrentDm(dm.wire, from: carol, to: bob), "carolDmToBob \(Self.stale)")
         #expect(roomPost.body == roomBody)
         #expect(dm.body == dmBody)
     }
@@ -251,9 +270,9 @@ import Testing
         let carol = try carol()
         let bob = try bob()
         let current = try wire(dmFrame(of: carol, to: bob), signedBy: carol)
-        let stale = try wire(dmFrame(of: carol, to: bob, sentAt: Self.dmSentAt + 1), signedBy: carol)
+        let later = try wire(dmFrame(of: carol, to: bob, sentAt: Self.dmSentAt + 1), signedBy: carol)
         #expect(isCurrentDm(current, from: carol, to: bob))
-        #expect(!isCurrentDm(stale, from: carol, to: bob))
+        #expect(!isCurrentDm(later, from: carol, to: bob))
         #expect(!isCurrentDm(current, from: carol, to: carol), "Carol cannot open what she sealed to Bob")
         #expect(!isCurrent(current, expected: profileFrame(of: carol), from: carol))
     }

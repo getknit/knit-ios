@@ -20,7 +20,8 @@ struct EngineFixture {
 
     /// An engine for `me`, keeping `prekeys` when given, its wall clock at `wall`, started unless told otherwise. It draws
     /// frame ids and jitter from `seed`, which two engines that talk to each other must not share, or their ids collide.
-    /// Its ratchet draws from `ratchetEngine` when a vector replay passes one, and from the system's generator otherwise.
+    /// Its ratchet draws from `ratchetEngine`, and its group form from `groupRatchetEngine`, when a vector passes them, and
+    /// from the system's generator otherwise.
     init(
         _ me: TestPeer,
         stores: MeshStores = .inMemory(),
@@ -29,7 +30,8 @@ struct EngineFixture {
         wall: Int64 = Self.start,
         started: Bool = true,
         seed: UInt64 = 7,
-        ratchetEngine: RatchetEngine = RatchetEngine()
+        ratchetEngine: RatchetEngine = RatchetEngine(),
+        groupRatchetEngine: GroupRatchetEngine = GroupRatchetEngine()
     ) {
         self.me = me
         clock = ManualClock(wall: wall, monotonic: 1000)
@@ -45,7 +47,8 @@ struct EngineFixture {
             random: SeededGenerator(seed: seed),
             configuration: configuration,
             log: log,
-            ratchetEngine: ratchetEngine
+            ratchetEngine: ratchetEngine,
+            groupRatchetEngine: groupRatchetEngine
         )
         if started {
             engine.start()

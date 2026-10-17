@@ -65,6 +65,14 @@ public struct VectorFrame: Codable, Sendable, Equatable {
     public let name: String?
     /// The text a reader should see.
     public let body: String?
+    /// A ratchet profile's prekey, by its name in ``EmittedRatchet/prekeys`` (phase P7b).
+    public let prekey: String?
+    /// A profile's capability bits, where the entry pins them (phase P7b).
+    public let capabilities: Int64?
+    /// A profile's version, where the entry pins it (phase P7b).
+    public let version: Int64?
+    /// What a ratchet seal carries and opens to (phase P7b).
+    public let sealed: VectorSealed?
     /// The encoded `WireEnvelope`, as hex.
     public let wire: String
 
@@ -76,6 +84,10 @@ public struct VectorFrame: Codable, Sendable, Equatable {
         members: [String]? = nil,
         name: String? = nil,
         body: String? = nil,
+        prekey: String? = nil,
+        capabilities: Int64? = nil,
+        version: Int64? = nil,
+        sealed: VectorSealed? = nil,
         wire: String
     ) {
         self.sender = sender
@@ -84,7 +96,28 @@ public struct VectorFrame: Codable, Sendable, Equatable {
         self.members = members
         self.name = name
         self.body = body
+        self.prekey = prekey
+        self.capabilities = capabilities
+        self.version = version
+        self.sealed = sealed
         self.wire = wire
+    }
+
+    /// The same entry carrying `wire` instead.
+    public func carrying(_ wire: String) -> Self {
+        Self(
+            sender: sender,
+            recipient: recipient,
+            groupId: groupId,
+            members: members,
+            name: name,
+            body: body,
+            prekey: prekey,
+            capabilities: capabilities,
+            version: version,
+            sealed: sealed,
+            wire: wire
+        )
     }
 }
 
@@ -205,15 +238,21 @@ public struct EmittedVectors: Codable, Sendable, Equatable {
     public let identities: [String: VectorIdentity]
     /// Carol and Bob's safety number.
     public let safetyNumber: VectorSafetyNumber
-    /// `carolProfile`, `carolRoomPost` and `carolDmToBob`.
+    /// Carol's frames by name: her v1 frames, and her ratchet frames, which ``ratchet`` says how to open.
     public let frames: [String: VectorFrame]
+    /// What a reader needs to open Carol's ratchet frames (phase P7b); absent before it.
+    public let ratchet: EmittedRatchet?
 
     /// Makes the file's content.
-    public init(about: String, identities: [String: VectorIdentity], safetyNumber: VectorSafetyNumber, frames: [String: VectorFrame]) {
+    public init(
+        about: String, identities: [String: VectorIdentity], safetyNumber: VectorSafetyNumber, frames: [String: VectorFrame],
+        ratchet: EmittedRatchet? = nil
+    ) {
         self.about = about
         self.identities = identities
         self.safetyNumber = safetyNumber
         self.frames = frames
+        self.ratchet = ratchet
     }
 
     /// The committed file, or `nil` before it has been written.

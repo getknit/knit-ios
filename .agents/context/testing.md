@@ -12,8 +12,8 @@ ladder, not the first.
 2. **Golden and known-answer vectors.** knit-next's `vectors/` (the 61 codec fixtures, and keyed vectors:
    identities, signed frames, a sealed DM, the safety number, the link records and an advert), its node id,
    alias and card goldens, and the RFC 7748, 8032, 5869 and 9180 vectors. The other direction runs too:
-   `EmittedVectorTests` writes frames this port signs, and knit-next's `IosEmittedVectorTest` verifies them
-   with Tink and re-encodes them with kotlinx. Signatures are verified, never compared: CryptoKit
+   `EmittedVectorTests` writes frames this port signs, its ratchet frames made by Carol's engine from fixed draws, and
+   knit-next's `IosEmittedVectorTest` verifies them with Tink and re-encodes them with kotlinx. Signatures are verified, never compared: CryptoKit
    randomizes Ed25519 signatures and swift-crypto on Linux does not.
 3. **The engine and the link layer, one node at a time.** `MeshEngine` and `LinkManager` are synchronous
    (ADR 2026-09.gq84), so a test hands one a `ManualClock`, a `RecordingTransport` or a `FakeRadio`, feeds it

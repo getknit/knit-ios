@@ -87,9 +87,10 @@ public final class MeshEngine {
     }
 
     /// A node with `identity` and the prekeys it keeps, its repositories, and the transport, clock and randomness it runs
-    /// on, whose ratchet draws its ephemerals, epoch keys and v2 IVs from `ratchetEngine`: the system's generator but for a
-    /// vector replay, which passes A9's draws. Never the injected `random`, which a seed fixes (`crypto.md`, ADR
-    /// 2026-10.5sk9's P4b amendment). A ring another identity signs is not this node's, and is left out.
+    /// on, whose ratchet draws its ephemerals, epoch keys and v2 IVs from `ratchetEngine`, and its group seeds and group-form
+    /// IVs from `groupRatchetEngine`: the system's generator but for a vector, which passes fixed draws (A9's replays, and
+    /// A10's emitted frames, phase P7b). Never the injected `random`, which a seed fixes (`crypto.md`, ADR 2026-10.5sk9's P4b
+    /// amendment). A ring another identity signs is not this node's, and is left out.
     init(
         identity: IdentityKeys,
         prekeys: PrekeyRing?,
@@ -100,15 +101,17 @@ public final class MeshEngine {
         random: some RandomNumberGenerator,
         configuration: MeshConfiguration,
         log: any KnitLog,
-        ratchetEngine: RatchetEngine
+        ratchetEngine: RatchetEngine,
+        groupRatchetEngine: GroupRatchetEngine
     ) {
         self.identity = identity
         prekeyRing = prekeys.flatMap { $0.identity.bundle == identity.bundle ? $0 : nil }
         self.deviceTag = deviceTag
         self.stores = stores
         ratchet = RatchetSessions(identity: identity, store: stores.ratchet, transactor: stores.transactor, engine: ratchetEngine)
-        // Its seeds and IVs come from the system's generator, as the DM engine's keys do, never the injected `random`.
-        groupRatchet = GroupRatchetSessions(nodeId: identity.nodeId, store: stores.groupRatchet, transactor: stores.transactor)
+        // Its seeds and IVs come from `groupRatchetEngine`, as the DM engine's keys do, never the injected `random`.
+        groupRatchet = GroupRatchetSessions(
+            nodeId: identity.nodeId, store: stores.groupRatchet, transactor: stores.transactor, engine: groupRatchetEngine)
         self.transport = transport
         self.clock = clock
         self.random = random
@@ -372,7 +375,8 @@ extension MeshEngine {
             random: random,
             configuration: configuration,
             log: log,
-            ratchetEngine: RatchetEngine()
+            ratchetEngine: RatchetEngine(),
+            groupRatchetEngine: GroupRatchetEngine()
         )
     }
 }

@@ -20,11 +20,17 @@ final class AndroidPeer {
     let sessions: RatchetSessions
 
     /// Android on `peer`'s keys, with prekey `prekeyId`, whose pair is fixed by its id as ``TestPeer/prekey(id:)``'s is.
-    init(_ peer: TestPeer, prekeyId: Int = 1) throws {
-        self.peer = peer
+    convenience init(_ peer: TestPeer, prekeyId: Int = 1) throws {
         let pair = try RatchetCrypto.KeyPair(privateKey: fixtureBytes(32, seed: 200 + prekeyId))
-        prekey = try SignedPrekey.mint(id: prekeyId, signedBy: peer.keys, createdAt: 0) { pair }
-        sessions = RatchetSessions(identity: peer.keys, store: store, transactor: MemoryTransactor(stores: [store]))
+        self.init(peer, prekey: try SignedPrekey.mint(id: prekeyId, signedBy: peer.keys, createdAt: 0) { pair })
+    }
+
+    /// Android on `peer`'s keys holding `prekey`, such as a vector's, whose seals draw from `engine`: the system's generator
+    /// unless a vector fixes the draws.
+    init(_ peer: TestPeer, prekey: SignedPrekey, engine: RatchetEngine = RatchetEngine()) {
+        self.peer = peer
+        self.prekey = prekey
+        sessions = RatchetSessions(identity: peer.keys, store: store, transactor: MemoryTransactor(stores: [store]), engine: engine)
     }
 
     var nodeId: NodeId { peer.nodeId }

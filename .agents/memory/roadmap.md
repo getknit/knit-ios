@@ -487,7 +487,7 @@ explicit direction.** Update this file in the change that ships an item.
     flip to `0x15F`, and the security claims. P7a, done on 2026-10-16, replays a lost departure: the start's replay,
     and with the switch on the hourly one, take our custodied `groupleave` and `groupupdate` frames from others, so a
     roster unit that fails no longer loses the frame for good (ADR 2026-10.5sk9's P7a amendment). Kotlin still has the
-    hole; worth a knit-next issue.
+    hole; worth a knit-next issue. P7b, done on 2026-10-16, is A10's iOS half (below).
 
   Before the flip, besides the phases:
   - **Read `PRAGMA secure_delete` once on the lab iPhone's Debug build.** Pass is 1. Only the Mac's run reads Apple's
@@ -520,7 +520,12 @@ explicit direction.** Update this file in the change that ships an item.
     `GroupRatchetEngine(newSeed)`). It is additive: `keyed-v1.json` and every vector in it stay as they are.
   - **A10 (the iPhone's ratchet frames):** `ios-emitted-v1.json` gains Carol's ratchet profile and frames, which
     knit-next's `IosEmittedVectorTest` opens as Bob. First, Carol's existing profile takes a literal `0xF` in place of
-    `Capabilities.local`, so the flip needs no Android change.
+    `Capabilities.local`, so the flip needs no Android change. The iOS half is done (phase P7b, 2026-10-16). The file holds
+    eleven new entries: her hand-built ratchet profile, and ten frames her engine makes from fixed draws, which are her
+    v3 DMs to Bob (the opener, inline acks, a sealed receipt, profile, reaction and retraction), seed DMs to Alice and
+    Bob, and a group-form message and reaction. A `ratchet` section says how Bob and Alice open them (ADR 2026-10.5sk9's
+    P7b amendment). Still owed: the export, and
+    knit-next's cases for them in `IosEmittedVectorTest`.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).

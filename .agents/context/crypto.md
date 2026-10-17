@@ -963,5 +963,9 @@ knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` from a branc
   byte for byte, under the frame ids Kotlin's pipeline minted (phase P5d). The `dm` replays list no receiver's
   ack-back, so while an engine opens a plain DM there, the peer's row reads as a build without the ratchet.
 
-A10 then adds this port's own ratchet frames to `ios-emitted-v1.json`, for knit-next's `IosEmittedVectorTest` to
-open (`.agents/memory/roadmap.md`).
+A10 adds this port's own ratchet frames to `ios-emitted-v1.json`, for knit-next's `IosEmittedVectorTest` to open
+(phase P7b, ADR 2026-10.5sk9's amendment). Carol's engine makes them with the switch on, from fixed draws through the
+injected sources (`MeshEngine`'s internal initializer takes both engines), so each one is rebuilt and compared below
+its signature. The file's `ratchet` section lists the prekeys, Carol's draws, Bob's one seal and each reader's steps.
+`EmittedVectorTests`, in `KnitMeshTests`, checks that the frames are current, and opens them through `AndroidPeer` and
+`GroupFormReader`. Carol's v1 profile keeps a literal `0xF`, so the flip moves no committed frame.

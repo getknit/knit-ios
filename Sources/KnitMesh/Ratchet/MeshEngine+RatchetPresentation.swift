@@ -253,8 +253,8 @@ internal struct RatchetPresentationState {
     /// The answers we owe the inits peers' frames still carry, and when each was last given.
     var answers = RatchetAnswers()
     /// Whether an init a peer's frame still carries is answered: always, but in A9's replays. It is their seam, internal as
-    /// the engine's initializer that takes A9's draws is (`ratchetEngine:`), so nothing outside KnitMesh, the app and
-    /// knit-peer included, can turn answers off. The file comes from Kotlin's pipeline alone, which wires no answer
+    /// the engine's initializer that takes fixed draws is (`ratchetEngine:` and `groupRatchetEngine:`), so nothing outside
+    /// KnitMesh, the app and knit-peer included, can turn answers off. The file comes from Kotlin's pipeline alone, which wires no answer
     /// (`onPeerFrameOpened`'s default, `InboundPipeline.kt:206`, at knit-next `cbf2a487`), so a replay turns it off to seal the
     /// file's frames byte for byte.
     var answersInits = true
