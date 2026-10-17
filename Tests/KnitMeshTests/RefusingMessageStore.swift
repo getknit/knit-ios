@@ -6,7 +6,7 @@ import KnitSync
 import KnitWire
 
 /// A message store whose row write can be refused, as a full disk refuses it, and whose row read can fail, as a database
-/// that cannot read its file fails it: told to, ``insertIfAbsent(_:)`` or ``contains(_:)`` fails the store unit it runs in
+/// that cannot read its file fails it: told to, ``insertIfAbsent(_:)``, ``save(_:)`` or ``contains(_:)`` fails the store unit it runs in
 /// and answers the store's fallback, and everything else goes to the store it wraps. `refuse` is how the unit fails: a
 /// memory unit is told so (``MemoryTransactor/failCurrentUnit()``), and the database is handed a write SQLite refuses
 /// (``StoreKind``), since a trigger needs GRDB, which stays in KnitStoreSQL. Outside a unit only the fallback is left, as
@@ -16,6 +16,8 @@ final class RefusingMessageStore: MessageStore {
     private let refuse: @Sendable () -> Void
     private let refusing = Lock(false)
     private let failingReads = Lock(false)
+    private let refusingSaves = Lock(false)
+    private let failingThreads = Lock(false)
 
     init(_ held: any MessageStore, refuse: @escaping @Sendable () -> Void) {
         self.held = held
@@ -32,6 +34,18 @@ final class RefusingMessageStore: MessageStore {
     var failsReads: Bool {
         get { failingReads.withLock { $0 } }
         set { failingReads.withLock { $0 = newValue } }
+    }
+
+    /// Whether a saved row is refused now: a status line's, such as a rename's in the roster's unit.
+    var refusesSaves: Bool {
+        get { refusingSaves.withLock { $0 } }
+        set { refusingSaves.withLock { $0 = newValue } }
+    }
+
+    /// Whether a thread's read fails now, answering no rows, as `SQLMessageStore.messages(in:)` falls back.
+    var failsThreadReads: Bool {
+        get { failingThreads.withLock { $0 } }
+        set { failingThreads.withLock { $0 = newValue } }
     }
 
     func insertIfAbsent(_ message: MessageRecord) -> Bool {
@@ -51,14 +65,27 @@ final class RefusingMessageStore: MessageStore {
         return false
     }
 
-    func save(_ message: MessageRecord) { held.save(message) }
+    func save(_ message: MessageRecord) {
+        guard refusesSaves else {
+            held.save(message)
+            return
+        }
+        refuse()
+    }
+
     func markDelivered(_ id: String) -> Bool { held.markDelivered(id) }
     func pendingKey(to recipient: NodeId) -> [MessageRecord] { held.pendingKey(to: recipient) }
     func pendingKey(in conversationId: String) -> [MessageRecord] { held.pendingKey(in: conversationId) }
     func clearPendingKey(_ id: String) { held.clearPendingKey(id) }
     func conversations(authoredBy author: NodeId) -> Set<String> { held.conversations(authoredBy: author) }
     func senders(in conversationId: String) -> Set<NodeId> { held.senders(in: conversationId) }
-    func messages(in conversationId: String) -> [MessageRecord] { held.messages(in: conversationId) }
+    func messages(in conversationId: String) -> [MessageRecord] {
+        guard failsThreadReads else {
+            return held.messages(in: conversationId)
+        }
+        refuse()
+        return []
+    }
     func threadHeads(excludingSenders blocked: Set<NodeId>) -> [MessageRecord] { held.threadHeads(excludingSenders: blocked) }
     func markRead(in conversationId: String) -> Bool { held.markRead(in: conversationId) }
     func unreadCounts(excludingSenders blocked: Set<NodeId>) -> [ExactKey: Int] { held.unreadCounts(excludingSenders: blocked) }
@@ -96,28 +123,37 @@ enum StoreKind: CaseIterable, Sendable {
     /// store. `blobs` is the directory the SQL blob store keeps its files in; `failures` hears every error the database
     /// reports.
     func storesRefusingRows(blobs: URL, failures: @escaping @Sendable (any Error) -> Void) throws -> (MeshStores, RefusingMessageStore) {
-        let refusing = try refusingStores(blobs: blobs, failures: failures)
+        try storesRefusingRows(blobs: blobs, failures: failures, custodyLimits: CustodyLimits())
+    }
+
+    /// The same, with custody kept under `custodyLimits`, so a test can make its quotas bite.
+    func storesRefusingRows(
+        blobs: URL, failures: @escaping @Sendable (any Error) -> Void, custodyLimits: CustodyLimits
+    ) throws -> (MeshStores, RefusingMessageStore) {
+        let refusing = try refusingStores(blobs: blobs, failures: failures, custodyLimits: custodyLimits)
         return (refusing.stores, refusing.messages)
     }
 
     /// Stores of this kind whose ratchet store refuses its writes when told to, as a full disk does, and the refusing
     /// store: every ratchet open's unit fails then, a ctl frame's included.
     func storesRefusingOpens(blobs: URL, failures: @escaping @Sendable (any Error) -> Void) throws -> (MeshStores, RefusingRatchetWrites) {
-        let refusing = try refusingStores(blobs: blobs, failures: failures)
+        let refusing = try refusingStores(blobs: blobs, failures: failures, custodyLimits: CustodyLimits())
         return (refusing.stores, refusing.ratchet)
     }
 
     /// Stores of this kind whose peer store fails its row read when told to, and the refusing store: a unit that reads a
     /// pinned row then fails.
     func storesRefusingPeerReads(blobs: URL, failures: @escaping @Sendable (any Error) -> Void) throws -> (MeshStores, RefusingPeerReads) {
-        let refusing = try refusingStores(blobs: blobs, failures: failures)
+        let refusing = try refusingStores(blobs: blobs, failures: failures, custodyLimits: CustodyLimits())
         return (refusing.stores, refusing.peers)
     }
 
-    private func refusingStores(blobs: URL, failures: @escaping @Sendable (any Error) -> Void) throws -> RefusingStores {
+    private func refusingStores(
+        blobs: URL, failures: @escaping @Sendable (any Error) -> Void, custodyLimits: CustodyLimits
+    ) throws -> RefusingStores {
         switch self {
         case .memory:
-            let memory = MeshStores.inMemory()
+            let memory = MeshStores.inMemory(custodyLimits: custodyLimits)
             let transactor = memory.transactor as? MemoryTransactor
             let refuse: @Sendable () -> Void = { transactor?.failCurrentUnit() }
             let messages = RefusingMessageStore(memory.messages, refuse: refuse)
@@ -149,7 +185,7 @@ enum StoreKind: CaseIterable, Sendable {
             let ratchet = RefusingRatchetWrites(SQLRatchetStore(database), refuse: refuse)
             let peers = RefusingPeerReads(SQLPeerStore(database), refuse: refuse)
             let stores = MeshStores(
-                custody: SQLCustodyStore(database),
+                custody: SQLCustodyStore(database, limits: custodyLimits),
                 peers: peers,
                 messages: messages,
                 conversations: SQLConversationStore(database),

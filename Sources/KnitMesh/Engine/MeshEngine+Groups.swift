@@ -216,12 +216,17 @@ extension MeshEngine {
     /// first, so a member's verified frame makes the group even when we cannot open it, then the message is opened
     /// and delivered into the group's thread: v1 here, and with the ratchet's switch on, the group form through its own
     /// arm (``handleGroupRatchet(_:_:group:sender:via:)``, `InboundPipeline.kt:961-966`, phase P6a2).
-    func handleGroupChat(_ envelope: RelayEnvelope, group info: GroupInfo, sender: NodeId, via hop: NodeId?) {
+    ///
+    /// Out of our own custody (`origin` ``RatchetInbound/Origin/startReplay``) its roster keeps the row on a tie, and a
+    /// refusal or a blocked creator counts no drop again (phase P7a).
+    func handleGroupChat(
+        _ envelope: RelayEnvelope, group info: GroupInfo, sender: NodeId, via hop: NodeId?, origin: RatchetInbound.Origin
+    ) {
         guard let chat = try? ChatContent(decoding: envelope.payload) else {
             drop(.undecodable, envelope)
             return
         }
-        guard reconcile(info, from: sender, envelope, seedPinning: nil) else {
+        guard reconcile(info, from: sender, envelope, seedPinning: nil, origin: origin) else {
             return
         }
         guard let enc = chat.enc else {
@@ -246,24 +251,33 @@ extension MeshEngine {
     }
 
     /// A standalone roster frame, such as a rename (`handleGroupUpdate`, `:1976-1979`): reconciled, with no message to
-    /// store or tick.
-    func handleGroupUpdate(_ envelope: RelayEnvelope) {
+    /// store or tick. Out of our own custody at start, and with the switch on every hour, it comes again with `origin`
+    /// ``RatchetInbound/Origin/startReplay`` (phase P7a), where a frame that changes nothing opens no unit and counts no
+    /// drop.
+    func handleGroupUpdate(_ envelope: RelayEnvelope, origin: RatchetInbound.Origin) {
         guard let info = envelope.group, let sender = NodeId(envelope.senderId) else {
             return
         }
-        reconcile(info, from: sender, envelope, seedPinning: nil)
+        reconcile(info, from: sender, envelope, seedPinning: nil, origin: origin)
     }
 
-    /// A member's departure (`handleGroupLeave`, `:1989-1995`). The frame is signed by the key its sender derives
-    /// from, so a member can only take themselves off the roster. A leave for a group we do not hold yet is lost, as on
-    /// Android, and so is a blocked member's, whose place on the roster stays as it was.
-    func handleGroupLeave(_ envelope: RelayEnvelope) {
+    /// A member's departure (`handleGroupLeave`, `InboundPipeline.kt:2087-2093` at knit-next `cbf2a487`). The frame is
+    /// signed by the key its sender derives from, so a member can only take themselves off the roster. A blocked member's
+    /// leave changes nothing while the block stands, and their place on the roster stays as it was.
+    ///
+    /// Out of our own custody at start, and with the switch on every hour, a leave comes again with `origin`
+    /// ``RatchetInbound/Origin/startReplay`` (``replayCustodiedGroupFrames(in:from:)``, phase P7a): one whose unit failed,
+    /// or that came before its group, departs its sender then, and one already recorded, or no newer than its sender's
+    /// rejoin, finds nothing to change (``GroupRoster/depart(_:at:from:)``). A replay counts no drop for a frame whose
+    /// verdict cannot have changed since its first, so `status.dropped` does not climb at every start. Kotlin replays no
+    /// leave and loses these for good.
+    func handleGroupLeave(_ envelope: RelayEnvelope, origin: RatchetInbound.Origin) {
         guard let leave = try? GroupLeaveContent(decoding: envelope.payload) else {
-            drop(.undecodable, envelope)
+            dropAtFirstVerdict(.undecodable, envelope, origin)
             return
         }
         if let sender = NodeId(envelope.senderId), isBlocked(sender) {
-            drop(.blocked, envelope)
+            dropAtFirstVerdict(.blocked, envelope, origin)
             return
         }
         guard let sender = NodeId(envelope.senderId), let group = stores.groups.group(leave.groupId),
@@ -292,8 +306,10 @@ extension MeshEngine {
     }
 
     /// Brings our row in line with a roster from `sender`'s frame, and writes the status lines it earns, in one unit.
-    /// Answers whether the group is ours and active, so a chat frame should be delivered: not when the unit failed. A chat
-    /// frame then waits in custody for the start's replay, and a rename is lost, as on Android. A sender's own frame that
+    /// Answers whether the group is ours and active, so a chat frame should be delivered: not when the unit failed. The
+    /// frame then waits in our custody for the start's replay, and with the switch on the hourly one, a `groupupdate` among
+    /// them since phase P7a, where Android loses a rename. `origin` says whether this is that replay, which counts no
+    /// block and no refusal again: a verdict that cannot have changed since the frame's first. A sender's own frame that
     /// brings it back retires our send chains in that unit (`rejoinRekeyDue`, `InboundPipeline.kt:2308-2321`; phase P6b):
     /// with the ratchet's switch on at most once an hour per group and member, a floor held in memory and stamped once the
     /// unit commits, and with it off at every rejoin, which writes nothing on a store the switch never wrote to.
@@ -303,19 +319,22 @@ extension MeshEngine {
     /// now admits open again, and at a group's first sight the ratchet DMs our custody holds from its roster open again
     /// too, all but `seedPinning`, the seed whose own roster is making the row and is still being handled.
     @discardableResult
-    func reconcile(_ info: GroupInfo, from sender: NodeId, _ envelope: RelayEnvelope, seedPinning: String?) -> Bool {
+    func reconcile(
+        _ info: GroupInfo, from sender: NodeId, _ envelope: RelayEnvelope, seedPinning: String?,
+        origin: RatchetInbound.Origin
+    ) -> Bool {
         let existing = stores.groups.group(info.id)
         if isBlockedGroupFrame(info, from: sender, existing: existing) {
-            drop(.blocked, envelope)
+            dropAtFirstVerdict(.blocked, envelope, origin)
             return false
         }
-        let roster = GroupRoster(me: nodeId, maxClock: clampFuture(.max))
+        let roster = GroupRoster(me: nodeId, maxClock: clampFuture(.max), keepsTies: origin == .startReplay)
         let verdict = roster.reconcile(info, from: sender, at: clampFuture(envelope.sentAt), existing: existing)
         switch verdict {
         case .ignored:
             return false
         case .refused:
-            drop(.rosterRefused, envelope)
+            dropAtFirstVerdict(.rosterRefused, envelope, origin)
             return false
         case .accepted(let group, let notices):
             // Whatever the switch says, as a departure's retire: a chain minted while it was on and reused across a rejoin
@@ -366,5 +385,15 @@ extension MeshEngine {
             return false
         }
         return true
+    }
+
+    /// Counts `reason` for a roster frame at its first verdict only. Replayed from our custody, the same frame meets the
+    /// same verdict at every start, so it is logged at debug and counted nothing (phase P7a).
+    private func dropAtFirstVerdict(_ reason: DropReason, _ envelope: RelayEnvelope, _ origin: RatchetInbound.Origin) {
+        guard origin == .firstVerdict else {
+            log.log(.debug, "mesh replayed \(envelope.type.rawValue) \(envelope.id) from \(envelope.senderId) changes nothing: \(reason)")
+            return
+        }
+        drop(reason, envelope)
     }
 }

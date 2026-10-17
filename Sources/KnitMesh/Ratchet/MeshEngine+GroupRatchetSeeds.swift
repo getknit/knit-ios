@@ -9,7 +9,7 @@ import KnitWire
 ///
 /// A seed rides a `CTL_GROUP_KEY` DM, and its adoption commits in that DM's open unit, or nothing does. A seed for a group
 /// we do not hold yet, or from a sender we hold as departed, waits for its roster before anything commits: it pins the
-/// roster it carries through the one door every roster takes (``reconcile(_:from:_:seedPinning:)``), or parks in memory
+/// roster it carries through the one door every roster takes (``reconcile(_:from:_:seedPinning:origin:)``), or parks in memory
 /// (``PendingGroupKeys``) until a roster lets its sender in. Everything that is not a store write, the floor's move, the
 /// ack and the custody replay, waits for the outermost commit.
 extension MeshEngine {
@@ -96,7 +96,8 @@ extension MeshEngine {
             log.log(.info, "mesh group seed \(envelope.id) from \(sender) left in custody: no roster for group \(seeds.groupId)")
             return
         }
-        if let roster = GroupRatchetInbound.roster(pinnedBy: seeds), reconcile(roster, from: sender, envelope, seedPinning: envelope.id) {
+        let roster = GroupRatchetInbound.roster(pinnedBy: seeds)
+        if let roster, reconcile(roster, from: sender, envelope, seedPinning: envelope.id, origin: route.origin) {
             log.log(.info, "mesh pinned group \(seeds.groupId) from the seed \(envelope.id) of \(sender)")
         }
         let group = stores.groups.group(seeds.groupId)

@@ -34,9 +34,9 @@ extension MeshEngine {
         case .keyRequest:
             handleKeyRequest(envelope, from: frame.from)
         case .groupUpdate:
-            handleGroupUpdate(envelope)
+            handleGroupUpdate(envelope, origin: .firstVerdict)
         case .groupLeave:
-            handleGroupLeave(envelope)
+            handleGroupLeave(envelope, origin: .firstVerdict)
         case .blobRequest:
             handleBlobRequest(frame)
         case .blobHave:
@@ -139,7 +139,7 @@ extension MeshEngine {
     }
 
     /// A chat frame (`InboundPipeline.handleChat` and `decryptAndDeliver`): a room post, a DM addressed to us, or a
-    /// group message (``handleGroupChat(_:group:sender:)``). Someone else's DM is only relayed. `signed` is false only for
+    /// group message (``handleGroupChat(_:group:sender:via:origin:)``). Someone else's DM is only relayed. `signed` is false only for
     /// the v3 live-link tick ``verify(_:)`` admitted unsigned: its AEAD is what authenticates it, so it takes no branch
     /// before its open. `origin` is the ratchet's alone: whether a DM-form frame's open is its first verdict, or the
     /// start's replay out of our own custody (``RatchetInbound/Origin``).
@@ -155,7 +155,7 @@ extension MeshEngine {
         }
         // A group message names no recipient, so it is told apart before the DM check would take it for the room.
         if let group = envelope.group {
-            handleGroupChat(envelope, group: group, sender: sender, via: hop)
+            handleGroupChat(envelope, group: group, sender: sender, via: hop, origin: origin)
             return
         }
         let recipient = envelope.recipientId.flatMap(NodeId.init)

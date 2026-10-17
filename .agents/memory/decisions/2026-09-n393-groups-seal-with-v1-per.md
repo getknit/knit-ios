@@ -118,3 +118,12 @@ its roster, and the engine refuses one from off it. Mentions stay out.
 **Amended 2026-10-14, when mentions came into scope (ADR 2026-10.nbhj):** mentions are no longer out. A group's mentions
 travel sealed inside `MessageContent`, as a DM's do, and never in the shell. The composer offers the group's members
 before they say anything, as Android's does.
+
+**Amended 2026-10-16, with phase P7a of ADR 2026-10.5sk9:** a leave that arrives before its group is no longer mirrored
+as lost for good. The start's replay, and with the ratchet's switch on the hourly one, take our custodied `groupleave` and
+`groupupdate` frames from others, so such a leave departs its sender at the first replay after the group lands, while our
+custody still holds it (`sentAt + 24 h`). A leave is skipped when its sender acted after it: their own newer frame in our
+custody lists them as a member (`GroupRoster.outlives`), or the group's thread holds a newer message, rename or rejoin row
+of theirs (`GroupRoster.actedAfter`). A rejoin carried only by a `groupupdate` that renamed nothing leaves no row, so
+once that frame has left our custody, a replay can still depart the member until their next frame. Android still loses it, so the two can disagree on that member until their next frame.
+Android peers already disagree with each other on this case, depending on the order the frames reached each one.

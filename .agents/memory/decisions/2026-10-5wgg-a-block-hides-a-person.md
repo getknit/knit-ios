@@ -59,14 +59,17 @@ block list out of everything but delivery:
 
 **Consequences / limits:**
 
-- **A group message can surface after an unblock.** Our own custody holds a group message sent during the block for
-  up to 24 hours, and the custody replay (`replayCustodiedGroupFrames`, before 2026-10-16 `replayCustodiedGroupChats`)
+- **A group message can surface after an unblock.** Our own custody holds a group message sent during the block for up
+  to 24 hours, and the custody replay (`replayCustodiedGroupFrames`, before 2026-10-16 `replayCustodiedGroupChats`)
   delivers it at the next start after the unblock, and with the ratchet's switch on within the hour (ADR 2026-10.5sk9,
   phase P6a2). Android replays at start-up and at heal (`MeshManager.kt:1622-1654`; the heal's hourly floor is
   `MeshManager.kt:970-971` at `cbf2a487`), so the two agree once the switch is on, though bts9's corollary speaks only
-  of DMs. A DM or a room post never comes back. The copy therefore promises nothing about what was sent during a
-  block: the confirmation says what stops while it stands, and the list says an unblock brings back what came before
-  it.
+  of DMs. Since ADR 2026-10.5sk9's phase P7a, the same replay also applies a member's `groupleave` or roster frame sent
+  during the block, so after the unblock a member who left while blocked is departed at the next start. Android keeps
+  them on its roster for good, since its replay reads group chat alone. The leave is the member's own signed act, and a
+  replay while the block stands meets the gate and counts nothing. A DM or a room post never comes back. The copy
+  therefore promises nothing about what was sent during a block: the confirmation says what stops while it stands, and
+  the list says an unblock brings back what came before it.
 - **A DM to a blocker never ticks.** Its sender's copy waits in every carrier's custody until its TTL, as on Android.
 - **No report.** Android has none either, despite `docs/IOS_PORT_REVIEW.md` there. Rule 1.2 still wants one.
 - **Blocked people stay in groups:** on the roster and in the faces, sealed to like everyone else.

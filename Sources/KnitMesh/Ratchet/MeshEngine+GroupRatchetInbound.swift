@@ -113,24 +113,90 @@ extension MeshEngine {
     /// came but with no hop, since custody kept none, with its row read first in a unit of its own: one that exists is
     /// skipped, so it is not acknowledged again, and a read the store fails skips it until the next replay. It reads custody
     /// and writes nothing to it. A frame still keyless counts its refusal again, which is what feeds the key request.
+    ///
+    /// The start's and the hourly pass take our custodied `groupleave` and `groupupdate` frames from others too, in the same
+    /// order as the chats (phase P7a), a deliberate difference from Kotlin, whose replay reads group chat alone: one whose
+    /// unit failed stays in our custody and our digest, so nobody serves it to us again, and a departure lost that way would
+    /// leave the leaver on our roster, seeded at our next mint. Neither has a row; each goes through its own handler as the
+    /// start's replay (``handleGroupLeave(_:origin:)``, ``handleGroupUpdate(_:origin:)``), where one already applied
+    /// changes nothing and opens no unit. A leave its sender's own newer frame in our custody, or newer row in the group's
+    /// thread, outlives is not replayed (``isOutlived(_:by:under:)``). The instant replay stays chats only.
     func replayCustodiedGroupFrames(in group: String?, from sender: NodeId?) {
         let me = ExactKey(nodeId.string)
         let groupKey = group.map(ExactKey.init)
         let senderKey = sender.map { ExactKey($0.string) }
-        let frames = stores.custody.liveFrames(now: clock.wallMilliseconds()).reversed().filter { carried in
+        let takesRosterFrames = group == nil && sender == nil
+        let live = stores.custody.liveFrames(now: clock.wallMilliseconds()).reversed().filter { ExactKey($0.envelope.senderId) != me }
+        let frames = live.filter { carried in
             let envelope = carried.envelope
-            guard envelope.type == .chat, let frameGroup = envelope.group else {
+            switch envelope.type {
+            case .chat:
+                guard let frameGroup = envelope.group else {
+                    return false
+                }
+                let author = ExactKey(envelope.senderId)
+                return (groupKey.map { $0 == ExactKey(frameGroup.id) } ?? true) && (senderKey.map { $0 == author } ?? true)
+            case .groupLeave, .groupUpdate:
+                return takesRosterFrames
+            default:
                 return false
             }
-            let author = ExactKey(envelope.senderId)
-            return author != me && (groupKey.map { $0 == ExactKey(frameGroup.id) } ?? true) && (senderKey.map { $0 == author } ?? true)
         }
         if group == nil {
             log.log(.debug, "mesh group custody replay: \(frames.count) frames")
         }
+        let roster = GroupRoster(me: nodeId, maxClock: clampFuture(.max))
         for carried in frames {
-            replayUnread(carried)
+            let envelope = carried.envelope
+            switch envelope.type {
+            case .groupLeave:
+                if isOutlived(envelope, by: live.lazy.map(\.envelope), under: roster) {
+                    log.log(.debug, "mesh replayed leave \(envelope.id) from \(envelope.senderId) is outlived by a newer act of theirs")
+                    continue
+                }
+                handleGroupLeave(envelope, origin: .startReplay)
+            case .groupUpdate:
+                handleGroupUpdate(envelope, origin: .startReplay)
+            default:
+                replayUnread(carried)
+            }
         }
+    }
+
+    /// Whether the replayed leave `envelope` is outlived by its sender's own later act, its stamp bounded as
+    /// ``handleGroupLeave(_:origin:)`` bounds it: a newer roster-carrying frame of theirs among `frames`, our custody
+    /// (``GroupRoster/outlives(_:leftAt:in:by:)``), or a row of theirs in the group's thread newer than the leave
+    /// (``GroupRoster/actedAfter(_:leftAt:among:)``). The row is the durable half: custody trims a busy group's bucket
+    /// oldest first, and a leave, whose envelope names no group, sits in no group bucket, so the frame that outlives it
+    /// can leave our custody before it does (the crypto review of P7a).
+    ///
+    /// Asked only of a leave that would depart someone (``GroupRoster/depart(_:at:from:)`` answers a departure): a group
+    /// we hold and have not left, its sender not blocked and an active member, and the leave newer than their rejoin.
+    /// Anything else changes nothing in ``handleGroupLeave(_:origin:)``, so no scan runs for it, and a self-signed leave
+    /// for a group that does not exist costs one row read (the blobs review of P7a). A thread the store cannot read holds the
+    /// leave back, as if outlived, until the next replay.
+    private func isOutlived(_ envelope: RelayEnvelope, by frames: some Sequence<RelayEnvelope>, under roster: GroupRoster) -> Bool {
+        guard let leave = try? GroupLeaveContent(decoding: envelope.payload), let leaver = NodeId(envelope.senderId),
+            !isBlocked(leaver), let group = stores.groups.group(leave.groupId)
+        else {
+            return false
+        }
+        let leftAt = clampFuture(envelope.sentAt)
+        guard GroupRoster.depart(leaver, at: leftAt, from: group) != nil else {
+            return false
+        }
+        if roster.outlives(leaver, leftAt: leftAt, in: group.id, by: frames) {
+            return true
+        }
+        // The thread in a unit of its own, as ``replayUnread(_:)`` reads a row: a read the store fails answers no rows, which
+        // would depart a member who acted after the leave, so it holds the leave back until a replay that can read (both
+        // reviews of P7a's fixes).
+        let thread = stores.transactor.atomically { () -> [MessageRecord]? in stores.messages.messages(in: group.id) }
+        guard case .committed(let rows) = thread else {
+            log.log(.warning, "mesh replayed leave \(envelope.id) from \(envelope.senderId) held back: a store failed")
+            return true
+        }
+        return roster.actedAfter(leaver, leftAt: leftAt, among: rows)
     }
 
     /// Opens `carried`, a frame from our own custody, again unless its row exists, read in a store unit of its own first: a

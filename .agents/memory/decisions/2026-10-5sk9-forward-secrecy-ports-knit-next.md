@@ -1417,7 +1417,7 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   A retired chain keeps its number (knit-next ADR 2026-10.xgwj). The roster's writes were not in units before, and now a
   unit that fails writes nothing and counts `storeRefused`. A rejoin carried by a chat frame is not delivered, and the
   frame waits in our custody for the start's replay, and with the switch on for the hourly one. A `groupleave` or a
-  `groupupdate` whose unit fails is lost, as on Android, since neither replay takes them (below, Limits). Our own leave
+  `groupupdate` whose unit fails waits the same way since phase P7a, where Android loses it (below, Limits). Our own leave
   answers `false` with the `groupleave` already on the air, since today's order sends that first.
 - **Which writes wait for the switch.** The departure's retire, the rejoin's retire and our leave's purge run whatever
   the switch says. They only ever take key material away, they write nothing on a store the switch never wrote to, and
@@ -1449,11 +1449,12 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     rekeys again.
   - While the switch is off, which is every build until the flip, Android's group info reads "Legacy encryption" for any
     group with an iPhone in it. ADR 2026-09.n393's consequence holds until then.
-  - **A departure lost to a failed unit stays lost** (both reviews of P6b). The replays take only group chat frames, as
-    Kotlin's do (`MeshManager.kt:1739-1764`), and our digest lists the `groupleave`, so no neighbour serves it again.
-    The leaver stays on our roster, no retire runs, and our next mint sends them a seed. Kotlin has the same hole, and
-    it was here before P6b, when the writes failed one by one. Before the flip, the start's replay takes our custodied
-    `groupleave` and `groupupdate` frames from others too (the roadmap's "Before the flip").
+  - **A departure lost to a failed unit stays lost until the next start** (both reviews of P6b), and with the switch on
+    until the next hourly replay. Our digest lists the `groupleave`, so no neighbour serves it again, and until the
+    replay takes it the leaver stays on our roster, no retire runs, and a mint in between sends them a seed. Since
+    phase P7a the replays take our custodied `groupleave` and `groupupdate` frames (below); one that leaves our custody
+    first, past its day or evicted, is lost for good. Kotlin's replay takes group chat alone (`MeshManager.kt:1739-1764`),
+    so Android loses it for good.
   - **A member who never acknowledges costs a seed every 15 minutes while linked,** as in Kotlin. A leaver whose leave
     we never saw refuses our seeds unanswered (`adoptGroupSeeds`, `InboundPipeline.kt:1543`), so the re-offer sends
     them a new seed DM under a fresh id each time the floor opens: up to 96 a day per group and member. Each one floods,
@@ -1474,7 +1475,7 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   - `MeshEngineSealedReactionTests.aGroupReactionWithAnIneligibleMemberFallsBackToTheCleartextFrame`.
   - `MeshEngineGroupRosterUnitTests`: the departure's, the leave's and the rejoin's units over both store kinds, each
     failing whole; a rejoin seen with the switch off retires a chain the switch minted; and a departure lost to a failed
-    unit, pinned as a known issue until the replay takes it.
+    unit, which the next start's replay recovers since P7a.
   - `MeshEngineGroupSwitchTests`: with the switch off, the same frames from the same draws, nothing in the group store,
     and no floor.
   - `GroupSendPairTests`: an iPhone author and an iPhone receiver over SQL, with an Android reader. The first send, a
@@ -1485,3 +1486,96 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   - `GroupSendSoakTests`: three iPhones on Kotlin's six seeds, under a courier that drops, reorders, duplicates and
     holds, with a departure mid-run.
   - `TickLabTests`' sealed group tick, now under the session the seed began.
+
+**Amended 2026-10-16, phase P7a (a lost departure replayed):**
+
+- **The start's replay, and with the switch on the hourly one, take our custodied `groupleave` and `groupupdate`
+  frames from others,** in the same pass and order as the group chats (oldest received first), past the router and with
+  no hop, through `handleGroupLeave` and `handleGroupUpdate`. The instant replay after a seed lands stays chats only.
+  It runs whatever the switch says at start, as the chat replay does. This is a deliberate difference from Kotlin,
+  whose `replayCustodiedGroupFrames` reads group chat alone (`MeshManager.kt:1739-1764` at knit-next `cbf2a487`), so a
+  roster frame whose store unit fails is lost there for good: it stays in custody and the digest, and nobody serves it
+  again. No wire, vector, schema, label, floor or capability moved, and Android needs nothing.
+- **A replay never undoes a later state.**
+  - A departure already recorded changes nothing, since `GroupRoster.depart` answers nil for someone already departed.
+  - A leave no newer than its sender's rejoin changes nothing either, by `depart`'s `leftAt > rejoinedAt` rule.
+  - A `groupupdate` that changes nothing opens no unit and announces nothing.
+  - One new rule covers the case those miss. When a leave was lost, its sender was never departed here, so their newer
+    frame arrived as an ordinary one and left no rejoin stamp. Replaying the leave would then take them off, though their
+    own later frame brings them back in either order. So a leave is skipped when the leaver acted after it, by either
+    of two records, each compared on the leaver's clock and bounded as `clampFuture` bounds it:
+    - our custody holds a newer chat or `groupupdate` of theirs in that group that lists them as a member
+      (`GroupRoster.outlives`);
+    - the group's thread holds a newer row of theirs: a message, or the rename or rejoin line only their own frame
+      writes (`GroupRoster.actedAfter`, over `messages(in:)`). This is the durable half (the crypto review of P7a).
+      Custody trims a busy group's bucket (200) oldest first, and a leave's envelope names no group, so the leave sits
+      in no group bucket and can outlast the frame that outlives it. The thread is read in a store unit of its own, and
+      a read the store fails holds the leave back until the next replay, since its fallback of no rows would depart a
+      member who stayed (both reviews of P7a's fixes).
+
+    Only the leaver's own frames and rows count, so a member still removes only themselves and nobody keeps anyone else
+    on the roster. A rejoin carried only by a seed DM is sealed, so neither record sees it. A seed comes only with a
+    group frame of that epoch, and that frame counts.
+- **A replay counts nothing its first verdict already counted.** A blocked sender, a refused roster and an
+  undecodable leave are counted only at the first verdict (`.firstVerdict`). Replayed, they log at debug and count
+  nothing, so `status.dropped` does not climb at every start. A store that still fails counts `storeRefused` again,
+  because that is a new failure. A group chat replayed from a blocked sender still counts `.blocked` at every start, as
+  it did before.
+- **After an unblock,** a leave or roster frame the member sent during the block applies at the next start, as a
+  group message from that time already surfaces (ADR 2026-10.5wgg, amended). Android never applies a blocked member's
+  leave. The leave is the member's own signed act, so this port departs them.
+- **A leave that came before its group** now applies at the next start if the group has landed by then and our custody
+  still holds the leave. ADR 2026-09.n393 mirrored Android's loss on purpose, and that mirror ends here (n393, amended).
+  Android peers already disagree on this case, depending on the order the frames reached each one.
+- **Custody is unchanged.** `isCarriable`, the carry, the digest and the quotas read no roster and no group-ratchet
+  state. The replay reads custody and writes nothing to it, and with the switch off it puts nothing on the air. Where
+  the switch was never on, it writes nothing to the group-ratchet store: the departure's retire and the rejoin's run
+  whatever the switch says, as in P6b, and find no rows to retire.
+- **The cost.** Every start, and with the switch on every hour, runs `depart` or `reconcile` once more for each live
+  roster frame from others in our custody. That is a read, plus `seedsMayLand` for an accepted `groupupdate` with the
+  switch on. Nothing is written for a frame already applied. The outlived check scans custody and reads the group's
+  thread only for a leave that would depart someone (the group held and not left, the sender not blocked, an active
+  member, the leave newer than their rejoin), so a leave already applied, or a self-signed leave for a group that does
+  not exist, costs a row read and no scan (the blobs review of P7a).
+- **Limits:**
+  - A roster frame that leaves our custody before the next start, past its day (`sentAt + 24 h`) or evicted by a quota,
+    is lost for good, as before.
+  - A rejoin carried only by a `groupupdate` leaves no row unless it renamed the group. If that frame has left our
+    custody while the lost leave has not, the replay still departs the member until their next frame brings them back.
+    So does a rejoin whose only row the user deleted: a deleted message's row is gone, and only custody's copy then
+    speaks for it.
+  - A photo with no clock (`photoUpdatedAt` absent, as builds before the field send it) is taken by a replay while no
+    photo is held, as a first verdict takes it. A tie against a held photo never moves it in either case.
+  - A tie on a name's or a photo's clock goes to the incoming frame at a first verdict, as Kotlin's does
+    (`InboundPipeline.kt:2042-2045`), so the pair converges as Android does. A replay keeps the row on a tie
+    (`GroupRoster.keepsTies`), and changes the name or the photo only for a strictly newer clock. Two renames on one
+    millisecond therefore stay as their first verdicts left them, and no start writes a notice for them. A group chat
+    replayed from our custody carries a roster too, so it follows the same rule, and its roster's refusal or blocked
+    creator is no longer counted again at each start. The blocked-sender gate on chats, in `handleChat`, still counts
+    and ticks at every start, as it did before P7a.
+  - Kotlin keeps the hole. It is worth a knit-next issue, and P7's note for knit-next names it.
+- **Guards:**
+  - `MeshEngineGroupRosterUnitTests.aDepartureLostToAFailedUnitIsRecoveredByTheNextStartsReplay`, over both store kinds:
+    Carol is departed after the restart, the next mint seeds Alice alone, and Carol gets no seed.
+  - `MeshEngineGroupRosterReplayTests`: an old leave after its sender's rejoin; a lost leave outlived by its sender's
+    newer chat (both kinds); a departure already recorded (no write, no notice, no drop, nothing above debug); a refusal
+    and an undecodable leave counted once; a blocked sender's leave counted once and applied after the unblock; a lost
+    rename applied at the next start and only once (both kinds); the switch off recovering at start with nothing more
+    on the air (both kinds); the hourly replay recovering with the switch on, and not with it off.
+  - `MeshEngineGroupRosterReplayEdgeTests`: a lost leave whose outliving chat the group's custody bucket evicted
+    (`maxPerGroup` 3) keeps Carol, her outbox row and our chain (both kinds), and so does a start whose read of the
+    thread fails, and the start after it (both kinds); a lost departure recovered at start against
+    a control whose departure committed, with a peer linked: the same frames on the air, no custody row written, and
+    with the switch on the same hourly frames and no drop (both kinds, both switch states).
+  - `GroupLeavePairTests.aLeaverWhoseDepartureWasLostReadsNothingSentAfterTheRestart`: over SQL, Carol (an Android
+    reader) read the group before her leave; after the lost departure and a restart, the group-form frame carries no
+    wrap, Carol gets no seed and opens nothing, the outbox has no row for her, and Alice opens it.
+  - `GroupRosterReplayRulesTests`: `outlives`, `actedAfter`, a replay keeping the row on a tie where a first verdict
+    takes the incoming frame, and a replay taking a photo with no clock while none is held.
+  - `MeshEngineGroupRosterReplayTests.twoRenamesOnOneClockChangeNothingAtLaterStarts` (two first verdicts, two
+    restarts) and `aTiedRenameReplayedAloneDoesNotTakeTheRowBack`; without the replay's tie rule both fail.
+  - Mutation-checked: without the new frame types in the filter, the restart, rename, unblock and hourly tests fail.
+    Without `depart`'s rejoin guard the rejoin test fails, without `outlives` the outlived test fails, and without the
+    first-verdict gate the refusal and block tests fail. Without `actedAfter` the eviction test fails, without the
+    no-photo clause the photo case fails, without the new frame types the pair test fails, and with the thread read
+    outside its own unit the failed-read case fails.

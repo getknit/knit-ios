@@ -208,7 +208,11 @@ publish it honestly.
   group `chat` in custody from someone else that has no message row, oldest first, as Android's
   `replayCustodiedGroupFrames` does (`MeshEngine+GroupRatchetInbound.swift`, ADR 2026-09.n393). One already delivered
   is skipped, so it is not ticked again; its row is read in a store unit of its own, and a read that fails skips the
-  frame until the next replay.
+  frame until the next replay. Since ADR 2026-10.5sk9's phase P7a the same pass takes our custodied `groupleave` and
+  `groupupdate` frames from others too, where Android's reads group chat alone: one whose roster unit failed is in our
+  custody and our digest, so nobody serves it to us again, and only this replay applies it. Applied already, it changes
+  nothing and counts nothing. The replay still reads custody and writes nothing to it, and custody, the digest and
+  `isCarriable` read no roster.
 - **With the ratchet's switch on, the same replay runs twice more** (ADR 2026-10.5sk9, phase P6a2): every hour, as the
   net under the rest (`replayUndeliveredGroupCustody`, `MeshManager.kt:971`), and at once for one sender's frames in one
   group once that sender's seed is adopted. A group frame that came before its seed is in our custody and our digest, so

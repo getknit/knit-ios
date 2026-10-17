@@ -25,6 +25,12 @@ internal struct GroupRoster {
     let me: NodeId
     /// Five minutes past our clock: no sender's clock counts for later (`clampFuture`).
     let maxClock: Int64
+    /// Whether a tie keeps the row: set for a frame replayed from our own custody (ADR 2026-10.5sk9, phase P7a), whose
+    /// verdict at its first arrival already applied the incoming frame's name or photo on a tie. Replayed again at every
+    /// start, two frames on one clock would otherwise trade places, each writing its notice. A first verdict keeps
+    /// Kotlin's rule, the tie going to the incoming frame (`InboundPipeline.kt:2042-2045`), so the pair converges as
+    /// Android does.
+    var keepsTies = false
 
     /// Brings `existing` in line with `info`, carried by a frame from `sender` stamped `sentAt`
     /// (`InboundPipeline.kt:2015-2084`). `sentAt` is already bounded by ``maxClock``, and the photo's clock is bounded
@@ -40,10 +46,11 @@ internal struct GroupRoster {
             return vetted == .notOurs ? .ignored : .refused
         }
         // The name is shared only when one is set, so an unnamed frame never clears it, and the newer frame wins, a
-        // tie going to the incoming one (:2042-2045).
+        // tie going to the incoming one (:2042-2045) at a first verdict and keeping the row at a replay.
         let keepName = existing?.name ?? ""
         let keepClock = existing?.nameUpdatedAt ?? 0
-        let takenName = sentAt >= keepClock ? TextLimits.incomingGroupName(info.name) : nil
+        let newer = keepsTies ? sentAt > keepClock : sentAt >= keepClock
+        let takenName = newer ? TextLimits.incomingGroupName(info.name) : nil
         let createdAt = existing?.createdAt ?? sentAt
         var record = GroupRecord(
             id: info.id,
@@ -59,7 +66,10 @@ internal struct GroupRoster {
         // once and goes out on every frame we send, as on Android since knit-next ADR 2026-09.nxcq, where the photo
         // shown waits for its bytes.
         let photoClock = min(info.photoUpdatedAt ?? 0, maxClock)
-        if Self.photoWins(info.photoHash, at: photoClock, over: existing?.photoHash, at: existing?.photoUpdatedAt ?? 0) {
+        let heldPhotoClock = existing?.photoUpdatedAt ?? 0
+        // Holding no photo, a tie swaps nothing back, so a replay takes one with no clock as a first verdict does.
+        let photoNewer = !keepsTies || existing?.photoHash == nil || photoClock > heldPhotoClock
+        if photoNewer, Self.photoWins(info.photoHash, at: photoClock, over: existing?.photoHash, at: heldPhotoClock) {
             record.photoHash = info.photoHash
             record.photoUpdatedAt = photoClock
         }
@@ -103,6 +113,38 @@ internal struct GroupRoster {
         member.leftAt = leftAt
         updated.roster.append(member)
         return (updated, StatusNotices.memberLeft(group.id, member: leaver, at: leftAt))
+    }
+
+    /// Whether `leaver`'s own frames outlive their leave from `groupId`, stamped `leftAt` and already bounded by
+    /// ``maxClock``: one of `frames` is a roster-carrying frame of theirs (a chat or a `groupupdate`) in that group that
+    /// lists them as a member and is newer than the leave, both on `leaver`'s own clock. Such a frame brings them back
+    /// whichever order the two meet in (``rejoins(_:in:at:existing:)``), so a leave replayed from our custody after it,
+    /// whose first verdict was lost to a failed unit, must not take them off again (ADR 2026-10.5sk9, phase P7a). Only the
+    /// leaver's own frames count, so nobody can keep anyone else on the roster. Kotlin replays no leave, so it has no rule.
+    func outlives(_ leaver: NodeId, leftAt: Int64, in groupId: String, by frames: some Sequence<RelayEnvelope>) -> Bool {
+        let author = ExactKey(leaver.string)
+        let group = ExactKey(groupId)
+        return frames.contains { envelope in
+            guard envelope.type == .chat || envelope.type == .groupUpdate, ExactKey(envelope.senderId) == author,
+                let info = envelope.group, ExactKey(info.id) == group
+            else {
+                return false
+            }
+            return info.members.contains { ExactKey($0) == author } && min(envelope.sentAt, maxClock) > leftAt
+        }
+    }
+
+    /// Whether a row in the group's thread shows `leaver` acting after their leave stamped `leftAt`: a message of theirs,
+    /// or a status line only their own frame writes (a rename, a rejoin), newer than the leave on their own clock, bounded
+    /// by ``maxClock`` as the leave is. The durable half of ``outlives(_:leftAt:in:by:)``, which custody's quotas can empty
+    /// first (ADR 2026-10.5sk9, phase P7a). A row the user deleted is gone, and only custody's copy then speaks for it; a
+    /// rejoin carried by a `groupupdate` that changed nothing leaves no row at all.
+    func actedAfter(_ leaver: NodeId, leftAt: Int64, among rows: [MessageRecord]) -> Bool {
+        let author = ExactKey(leaver.string)
+        return rows.contains { row in
+            (row.kind == .message || row.kind == .groupRenamed || row.kind == .memberRejoined)
+                && ExactKey(row.senderId.string) == author && min(row.sentAt, maxClock) > leftAt
+        }
     }
 
     // MARK: The roster

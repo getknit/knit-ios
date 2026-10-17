@@ -788,9 +788,25 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 
     The departure's, the rejoin's and the leave's ratchet writes run whatever the switch says: they only ever take key
     material away, and write nothing on a store the switch never wrote to. A unit that fails writes nothing and counts
-    `storeRefused` for a frame. A chat frame whose roster write failed waits in custody for a replay; a `groupleave` or
-    `groupupdate` whose unit failed is lost, as on Android, until the start's replay takes them (before the flip). The port has no local group delete and never holds an
-    outbox row for itself, so Kotlin's `forgetSelf` has nothing to forget here.
+    `storeRefused` for a frame. A frame whose roster write failed waits in our custody for the start's replay, and with
+    the switch on the hourly one: a chat, and since phase P7a a `groupleave` or `groupupdate` too, which Android loses
+    (below). The port has no local group delete and never holds an outbox row for itself, so Kotlin's `forgetSelf` has
+    nothing to forget here.
+  - **Lost roster frames replayed** (phase P7a, a deliberate difference from Kotlin, whose `replayCustodiedGroupFrames`
+    reads group chat alone, `MeshManager.kt:1739-1764`). The start's and the hourly replay take our custodied
+    `groupleave` and `groupupdate` frames from others in the same pass and order as the chats, past the router, through
+    `handleGroupLeave` and `handleGroupUpdate` as `.startReplay`; the instant replay stays chats only. A replay never
+    undoes a later state: `GroupRoster.depart` answers nil for a departure already recorded and for a leave no newer
+    than its sender's rejoin, a `reconcile` that changes nothing opens no unit, and a leave its sender acted after is
+    skipped, the case where the leave was lost and the rejoin left no stamp: their own newer roster-carrying frame in
+    our custody (`GroupRoster.outlives`), or their newer message, rename or rejoin row in the thread
+    (`GroupRoster.actedAfter`), which outlasts custody's group bucket. Both are checked only for a leave that would
+    depart someone, so the pass stays linear for leaves already applied. A replay takes a photo with no clock while
+    none is held. A replay counts no block, refusal or undecodable payload again, so
+    `status.dropped` does not climb at every start; a blocked sender's leave applies at the first start after the
+    unblock, where Android keeps them on the roster. A replayed roster, a group chat's included, keeps the row on a
+    tie (`GroupRoster.keepsTies`): a first verdict gives a tied name or photo to the incoming frame as Kotlin does, and a
+    replay changes them only for a strictly newer clock, so no start writes a notice for a tie.
 - **The engine's send arm** (`MeshEngine+RatchetOutbound.swift`, phase P5b), with the switch on, takes a DM to a peer whose
   pinned profile carries `CAP_RATCHET` and a bundle (`sealEnvelopeFor`, `MeshManager.kt:1267-1308`):
   - One read of the peer's pinned row decides the scheme, and the v1 arm seals to the bundle that read gave. A read

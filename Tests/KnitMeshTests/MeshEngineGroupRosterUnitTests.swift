@@ -11,7 +11,7 @@ import Testing
 /// `recordRejoin` and `leave`, `GroupRepository.kt:108-194`, at knit-next `cbf2a487`): a departure retires our send chains
 /// and drops the leaver's outbox row with the roster's shrink, our leave purges the group's state and keeps its epoch number,
 /// and each of them stands whole or not at all, over both store kinds. A rejoin retires whatever the switch says, and a
-/// departure lost to a failed unit stays lost, as on Android, until the start's replay takes it.
+/// departure lost to a failed unit is recovered by the next start's replay (phase P7a), where Android loses it.
 @Suite struct MeshEngineGroupRosterUnitTests {
     private let me = TestPeer(seed: 1)
     private let alice = TestPeer(seed: 2)
@@ -164,12 +164,12 @@ import Testing
         #expect(held.keySend(group.id, member: alice.nodeId)?.sentEpoch == 3)
     }
 
-    /// Both reviews of P6b: a `groupleave` whose departure unit fails stays in our custody and digest, and the start's
-    /// replay takes only group chat frames, as Kotlin's does (`MeshManager.kt:1739-1764`), so the departure is lost and the
-    /// next mint still seeds the leaver. Pinned until the replay takes our custodied leave frames (the roadmap's "Before the
-    /// flip").
+    /// Both reviews of P6b: a `groupleave` whose departure unit fails stays in our custody and digest, so nobody serves it
+    /// to us again. Kotlin's replay takes only group chat frames (`MeshManager.kt:1739-1764`) and the departure is lost; the
+    /// start's replay here takes our custodied leave too (phase P7a), so after the restart Carol is departed and the next
+    /// mint seeds Alice alone.
     @Test(arguments: StoreKind.allCases)
-    func aDepartureLostToAFailedUnitIsNotReplayedAtTheNextStart(kind: StoreKind) throws {
+    func aDepartureLostToAFailedUnitIsRecoveredByTheNextStartsReplay(kind: StoreKind) throws {
         let directory = scratchDirectory("departure-lost")
         defer { try? FileManager.default.removeItem(at: directory) }
         let rig = try minted(kind, directory)
@@ -178,9 +178,17 @@ import Testing
         rig.fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
         rig.refusing.refusesWrites = false
         #expect(rig.fixture.stores.custody.liveIds(now: now + 1).contains("carol-leaves"), "custodied before the unit failed")
+        #expect(rig.fixture.roster(of: group).departed.isEmpty, "lost for now")
         let restarted = try relaunched(rig, ratchet: true, wall: now + 60_000)
-        withKnownIssue("the start's replay takes only group chat frames (ADR 2026-10.5sk9's P6b limits)") {
-            #expect(restarted.roster(of: group).departed == [carol.nodeId.string])
-        }
+        #expect(restarted.roster(of: group).departed == [carol.nodeId.string])
+        #expect(restarted.stores.messages.messages(in: group.id).count { $0.kind == .memberLeft } == 1)
+        #expect(restarted.engine.dropped.isEmpty, "the replay's departure counts nothing")
+        let held = restarted.stores.groupRatchet
+        #expect(held.sendChains(group.id).isEmpty && held.keySend(group.id, member: carol.nodeId) == nil, "retired with the shrink")
+        restarted.transport.clear()
+        _ = try #require(restarted.engine.sendGroupMessage("without carol", to: group.id))
+        #expect(held.sendChains(group.id).map(\.epoch) == [2] && held.keySends(group.id).map(\.member) == [alice.nodeId])
+        #expect(restarted.chats(to: carol).isEmpty, "no seed to Carol")
+        #expect(restarted.chats(to: alice).count == 1, "Alice's seed")
     }
 }
