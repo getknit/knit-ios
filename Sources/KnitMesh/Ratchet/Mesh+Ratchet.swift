@@ -17,6 +17,11 @@ extension Mesh {
     /// How many inits our sealed profile answered so far, under Android's metric name (phase P5e).
     public var answers: RatchetAnswerCounts { engine.answers }
 
+    /// How the group form went so far, seeds held, replayed and adopted, key requests sent, and our group frames sealed with
+    /// it or v1 in its stead and the seeds they sent, under Android's metric names (phases P6a2 and P6b; read by the control
+    /// surface since P7d).
+    public var groupCounts: RatchetGroupCounts { engine.groupCounts }
+
     /// Seals a DM ratchet reset toward `peer` past the heuristic and floods it, for the control surface's `ratchet` with
     /// `reset`, as Android's debug bridge does (``MeshEngine/sendSessionReset(to:now:cause:)``). The reset is carried as
     /// our own, so it settles the mesh as every other send does, and the advert's digest cue moves with it.

@@ -198,7 +198,11 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   switch off it is declined. `seals` counts how our DMs were sealed, under Android's metric names: `dmSealedV2` for
   every ratchet seal, `dmSealedV3` for the compact ones, and `dmSealedV1Fallback`. `receipts` counts our receipts and
   ticks, under `MeshMetrics.Receipts`' names, since P5d: `receiptsSealed`, `receiptsSealedFallback`,
-  `receiptsCustodied` for escalated batches, and `receiptsRidden` for the room ticks that rode; ADR 2026-10.5sk9),
+  `receiptsCustodied` for escalated batches, and `receiptsRidden` for the room ticks that rode. `answers` counts the
+  inits our sealed profile answered (`introsAnswered`, since P5e), and `groups` the group form's seven counts under
+  `MeshMetrics.Groups`' names, since P7d: `groupSealedRatchet`, `groupSealedV1Fallback`, `groupSeedsSent`,
+  `groupSeedsAdopted`, `groupSeedsHeld`, `groupSeedsReplayed` and `groupKeyRequestsSent`, without the two root counts,
+  which belong to `gr`; ADR 2026-10.5sk9),
   `stop` and `start` (the mesh, as Settings' Stop and Start do), and
   `quit` (the peer exits; the app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):

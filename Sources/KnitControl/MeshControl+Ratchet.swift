@@ -9,7 +9,8 @@ extension MeshControl {
     /// the peer's dump shows as its `peerPrekeyId`. `seals` adds how our DMs and reactions were sealed, `receipts` how our
     /// receipts and ticks were and how many room ticks rode, and `answers` how many inits our sealed profile answered,
     /// under the names of Android's metrics (`MeshMetrics.Seals`, `MeshMetrics.Receipts` and `introsAnswered` in
-    /// `MeshMetrics.Keys`), which its bridge reports apart.
+    /// `MeshMetrics.Keys`), which its bridge reports apart. `groups` adds how the group form went (phase P7d), under the names
+    /// of `MeshMetrics.Groups` as the bridge's metrics report them (`DebugBridgeReceiver.kt:1321-1329`).
     func ratchet(resetting peer: NodeId?) async -> [String: JSONValue] {
         var reply: [String: JSONValue] = [:]
         if let peer {
@@ -27,6 +28,7 @@ extension MeshControl {
         reply["seals"] = ControlLines.describe(await mesh.seals)
         reply["receipts"] = ControlLines.describe(await mesh.receipts)
         reply["answers"] = ControlLines.describe(await mesh.answers)
+        reply["groups"] = ControlLines.describe(await mesh.groupCounts)
         return reply
     }
 }

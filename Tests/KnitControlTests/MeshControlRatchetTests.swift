@@ -133,6 +133,45 @@ import Testing
         }
     }
 
+    /// The reply's `groups`, beside `seals`, under the names of Android's `MeshMetrics.Groups` as its bridge reports them
+    /// (`DebugBridgeReceiver.kt:1321-1329`; phase P7d): exactly those seven, all zero before anything was sent, with the switch
+    /// on or off. The engine's tests count them (`MeshEngineGroupSendTests`, `MeshEngineGroupSeedTests`).
+    @Test func theDumpCountsTheGroupFormUnderAndroidsNames() async throws {
+        for on in [true, false] {
+            let rig = ControlRig(configuration: MeshConfiguration(ratchet: on))
+            let groups = try #require(try await rig.send(#"{"cmd":"ratchet"}"#)["groups"] as? [String: Int])
+            #expect(
+                groups == [
+                    "groupSealedRatchet": 0, "groupSealedV1Fallback": 0, "groupSeedsSent": 0, "groupSeedsAdopted": 0,
+                    "groupSeedsHeld": 0, "groupSeedsReplayed": 0, "groupKeyRequestsSent": 0,
+                ],
+                "switch \(on)")
+        }
+    }
+
+    /// With the switch on, a send to a group whose other members both advertise the ratchet with a prekey mints a chain,
+    /// seeds each of them and seals the group form, which `groups` shows as one ratchet seal and two seeds; with it off, the
+    /// same send goes v1 and counts nothing.
+    @Test func theDumpCountsAGroupSendThatMintsAndSeeds() async throws {
+        let other = TestKeys(seed: 5)
+        for on in [true, false] {
+            let rig = ControlRig(configuration: MeshConfiguration(ratchet: on))
+            pin(peer, in: rig.stores)
+            pin(other, in: rig.stores)
+            let made = try await rig.send(#"{"cmd":"group-create","members":["\#(peer.keys.nodeId)","\#(other.keys.nodeId)"]}"#)
+            let groupId = try #require(made["id"] as? String)
+            let sent = try await rig.send(#"{"cmd":"group-send","conv":"\#(groupId)","text":"hi all"}"#)
+            #expect(sent["ok"] as? Bool == true && sent["pendingKey"] as? Bool == false)
+            let groups = try #require(try await rig.send(#"{"cmd":"ratchet"}"#)["groups"] as? [String: Int])
+            #expect(
+                groups == [
+                    "groupSealedRatchet": on ? 1 : 0, "groupSealedV1Fallback": 0, "groupSeedsSent": on ? 2 : 0,
+                    "groupSeedsAdopted": 0, "groupSeedsHeld": 0, "groupSeedsReplayed": 0, "groupKeyRequestsSent": 0,
+                ],
+                "switch \(on)")
+        }
+    }
+
     private func pin(_ peer: TestKeys, in stores: MeshStores) {
         stores.peers.upsert(
             PeerRecord(

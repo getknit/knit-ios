@@ -747,9 +747,9 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     every undelivered group frame opens it again. Each replay goes past the router with the frame's row read in a unit of
     its own first, and reads custody without writing it. At start the DM replay runs before the group replay, so a seed
     whose unit failed before a stop adopts, and opens the frames it keys, before they can count as keyless again.
-  - The control surface's `ratchet` reply carries no group state yet; `MeshEngine.groupCounts` holds Android's
-    `groupSeedsHeld`, `groupSeedsReplayed`, `groupSeedsAdopted` and `groupKeyRequestsSent`, and since P6b
-    `groupSealedRatchet`, `groupSealedV1Fallback` and `groupSeedsSent`.
+  - `MeshEngine.groupCounts` holds Android's `groupSeedsHeld`, `groupSeedsReplayed`, `groupSeedsAdopted` and
+    `groupKeyRequestsSent`, and since P6b `groupSealedRatchet`, `groupSealedV1Fallback` and `groupSeedsSent`. Since P7d the
+    control surface's `ratchet` reply carries all seven as `groups` (`Mesh.groupCounts`); per-group state it still does not.
 - **The engine's group send arm** (`MeshEngine+GroupRatchetOutbound.swift` and `+GroupRatchetSeedSends.swift`, phase P6b),
   with the switch on (`sealEnvelopeFor`'s group arm, `MeshManager.kt:1304-1515`, `:1838-1849`, `:2227-2247`):
   - The form is all or nothing per frame. The send's unit reads every other member's pinned row once

@@ -1311,7 +1311,8 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   state: a refusal and a failed unit change what we deliver, never what we carry, and ctl 3 and 4 are ordinary sealed
   DMs that purge nothing.
 - **Android's counts** (`groupSeedsHeld`, `groupSeedsReplayed`, `groupSeedsAdopted`, `groupKeyRequestsSent`) are
-  `MeshEngine.groupCounts`. The control surface's `ratchet` reply carries no group state yet.
+  `MeshEngine.groupCounts`. The control surface's `ratchet` reply carries no group state yet (since P7d it carries the
+  counts as `groups`).
 - **With the switch off nothing changes:** a seed DM and a group-form frame drop as `.cannotOpen`, nothing reaches the
   group store, the park stays empty, and nothing goes on the air. The hourly replay and the group sweep do not run.
 - **The alternatives, and why not:**
@@ -1428,7 +1429,7 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   one, since every seed target and re-send skips our own id, so it is not ported. The port has no local group delete, so
   `delete`'s purge has no caller here.
 - **The control surface** still carries no group state. `MeshEngine.groupCounts` holds all seven of Android's counts for
-  P7's oracle.
+  P7's oracle (since P7d the `ratchet` reply carries them as `groups`).
 - **Alternatives, and why not:**
   - **Kotlin's order, keeping the mint when a seed will not seal:** the next send would seal under a seed a current
     member was never sent, the one case the all-or-nothing rule exists to prevent.
@@ -1708,3 +1709,6 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     An Android peer's sealed profile to another Android phone, which we carry, names her photo A; she moves to B, A stays,
     a query is answered HAVE and one ATTACHMENT copy is served; a start a day on removes A, and the next ask is NONE.
     Without the custody count it fails (checked by mutation).
+
+**Amended 2026-10-16, phase P7d:** the `ratchet` reply carries `MeshEngine.groupCounts` as `groups`, under Android's
+bridge names (`DebugBridgeReceiver.kt:1321-1329`), without `gr`'s two root counts. Guard: `MeshControlRatchetTests`.

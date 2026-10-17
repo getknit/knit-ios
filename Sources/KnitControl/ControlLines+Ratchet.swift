@@ -54,4 +54,19 @@ extension ControlLines {
             "receiptsRidden": .int(Int64(receipts.receiptsRidden)),
         ]
     }
+
+    /// How the group form went, under the names of Android's metrics (`MeshMetrics.Groups`, as the debug bridge reports them
+    /// at `DebugBridgeReceiver.kt:1321-1329`): the seven this port counts (phase P7d). Android's `groupRootsMinted` and
+    /// `groupRootsAdopted` count the `gr` root, which this port leaves out, so they are not here.
+    static func describe(_ groups: RatchetGroupCounts) -> JSONValue {
+        [
+            "groupSealedRatchet": .int(Int64(groups.groupSealedRatchet)),
+            "groupSealedV1Fallback": .int(Int64(groups.groupSealedV1Fallback)),
+            "groupSeedsSent": .int(Int64(groups.groupSeedsSent)),
+            "groupSeedsAdopted": .int(Int64(groups.groupSeedsAdopted)),
+            "groupSeedsHeld": .int(Int64(groups.groupSeedsHeld)),
+            "groupSeedsReplayed": .int(Int64(groups.groupSeedsReplayed)),
+            "groupKeyRequestsSent": .int(Int64(groups.groupKeyRequestsSent)),
+        ]
+    }
 }
