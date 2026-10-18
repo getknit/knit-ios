@@ -5,7 +5,8 @@ import Testing
 
 /// What bounds ``AckSync`` and what a sealed batch carries: the riders it takes from the room's hold, the caps
 /// (`PENDING_CAP`, `ESCALATED_CAP`, `OWED_CAP`, `AckSync.kt:762-796` at knit-next `cbf2a487`) and the order they evict in,
-/// which Kotlin's hash maps leave to chance and this port fixes so every run repeats.
+/// which Kotlin's hash maps leave to chance and this port fixes so every run repeats, and how a hold wider than one batch
+/// goes over a link (knit-next #173).
 @Suite struct AckSyncBoundsTests {
     private let me = fixtureNodeId(1)
     private let author = fixtureNodeId(2)
@@ -151,6 +152,42 @@ import Testing
         _ = ledger.owe("o3", author: other, escalatable: false, me: me, linked: [], now: debounce + 1, seals: seals)
         #expect(ledger.linked(to: author, now: debounce + 2, seals: seals).isEmpty, "g1 was evicted")
         #expect(ledger.linked(to: other, now: debounce + 3, seals: seals).cleartextIds == ["o1", "o2", "o3"])
+    }
+
+    // MARK: A hold over a link
+
+    @Test func aChunkThatCannotSealGoesAsCleartextAndTheOthersStaySealed() {
+        // `flushBatchOverLink` restores a chunk whose seal fails as cleartext, chunk by chunk (`AckSync.kt:588-598` at
+        // knit-next `3e3e044c`), so one stale "can seal" costs that chunk's ids a cleartext tick each and nothing more.
+        var ledger = AckSync()
+        let seals = LedgerSeals(capable: [author], seals: true)
+        let width = AckSync.maxBatchAcks
+        let ids = (0..<(2 * width + 22)).map { "r\($0)" }
+        let middle = Array(ids[width..<(2 * width)])
+        seals.refuses = { $0 == middle }
+        for (index, id) in ids.enumerated() {
+            _ = ledger.owe(id, author: author, escalatable: false, me: me, linked: [], now: Int64(index), seals: seals)
+        }
+        let ticks = ledger.linked(to: author, now: 1000, seals: seals)
+
+        #expect(seals.sealed == [Array(ids[..<width]), Array(ids[(2 * width)...])], "the first and last chunks sealed")
+        let expected =
+            [AckSync.Tick(author: author, form: .sealed(LedgerSeals.wire(to: author, acks: Array(ids[..<width]))))]
+            + middle.map { AckSync.Tick(author: author, form: .cleartext(ackId: $0)) }
+            + [AckSync.Tick(author: author, form: .sealed(LedgerSeals.wire(to: author, acks: Array(ids[(2 * width)...]))))]
+        #expect(ticks == expected, "in the order the ids came, the middle chunk one cleartext tick per id")
+        #expect(ledger.isEmpty, "the link ends every one of them")
+    }
+
+    @Test func aHoldOfOneBatchStillGoesAsOneTick() {
+        var ledger = AckSync()
+        let seals = LedgerSeals(capable: [author], seals: true)
+        let ids = (0..<AckSync.maxBatchAcks).map { "r\($0)" }
+        for id in ids {
+            _ = ledger.owe(id, author: author, escalatable: false, me: me, linked: [], now: 0, seals: seals)
+        }
+        #expect(ledger.linked(to: author, now: 10, seals: seals).count == 1)
+        #expect(seals.sealed == [ids], "a hold that fits one tick is not cut")
     }
 
     @Test func theNextBatchDueIsTheOldestBatchsDebounce() {

@@ -13,7 +13,7 @@ extension MeshEngine {
     }
 
     /// Sends every tick owed to `peer`, now that it is linked or at the 60 s re-offer (`AckSync.onNeighborAdded`): its
-    /// batch and its ride hold as one tick each, then each entry.
+    /// batch and its ride hold in ticks of at most ``AckSync/maxBatchAcks`` ids, then each entry.
     func sendOwedTicks(to peer: NodeId) {
         sendTicks(ackSync.linked(to: peer, now: clock.monotonicMilliseconds(), seals: tickSeals))
     }

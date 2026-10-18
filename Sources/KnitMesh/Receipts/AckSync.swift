@@ -20,8 +20,8 @@ public import KnitWire
 /// - **An author who could not read one** keeps the cleartext entry it always had: signed, point to point, no `sentAt`,
 ///   under a fresh id each attempt so its seen set never swallows a retry, sent only over a live link, never carried.
 ///
-/// A live link is the reliable path home, and ends an owed entry, a batch or a ride hold as one tick
-/// (``linked(to:now:seals:)``). An owed entry keeps the sealed tick it was given (`Owed.sealed`) and re-sends those bytes
+/// A live link is the reliable path home, and ends an owed entry as one tick, and a batch or a ride hold in ticks of at
+/// most ``maxBatchAcks`` ids (``linked(to:now:seals:)``). An owed entry keeps the sealed tick it was given (`Owed.sealed`) and re-sends those bytes
 /// verbatim, since a seal spends a chain key.
 ///
 /// **What the missing planes leave out.** Kotlin's send toward an author with no link (`fastSend`) rides the fast plane:
@@ -47,7 +47,8 @@ public struct AckSync: Sendable {
     /// a live link.
     public static let rideHoldMilliseconds: Int64 = 60_000
     /// The most ids one batch's tick carries, riders included, and the size at which a batch goes at once
-    /// (`MAX_BATCH_ACKS`). A receiver applies at most twice this from one tick.
+    /// (`MAX_BATCH_ACKS`), and the most a hold sends over a link in one tick. A receiver applies at most twice this from one
+    /// tick.
     public static let maxBatchAcks = 64
     /// The most ids waiting in every author's batch together, and in every ride hold together (`PENDING_CAP`).
     public static let pendingCapacity = 500
@@ -177,9 +178,9 @@ public struct AckSync: Sendable {
     }
 
     /// A link to `peer` is up, fresh or at the 60 s re-offer (`onNeighborAdded`, `AckSync.kt:201-214`): its batch and its
-    /// ride hold go over the link as one tick each, ahead of custody, then every entry owed to it, oldest first. A live
-    /// link is the reliable path home, so each is done once sent. Past a sweep first, as at every entry point that sends
-    /// (`owe`, `linked`, `retryPending`, `flushDueBatches`) and as the old ledger's two did, where Kotlin's
+    /// ride hold go over the link in ticks of at most ``maxBatchAcks`` ids, ahead of custody, then every entry owed to it,
+    /// oldest first. A live link is the reliable path home, so each is done once sent. Past a sweep first, as at every entry
+    /// point that sends (`owe`, `linked`, `retryPending`, `flushDueBatches`) and as the old ledger's two did, where Kotlin's
     /// `onNeighborAdded` and its debounce wake do not: so a tick past its day never goes.
     public mutating func linked(to peer: NodeId, now: Int64, seals: some TickSealing) -> [Tick] {
         sweep(now: now)

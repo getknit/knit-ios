@@ -1809,3 +1809,32 @@ port found and reported while it kept Kotlin's old behaviour. This port follows 
   - `RatchetPrekeyRotationLabTests`, `SessionLabTest`'s two #174 cases on two engines.
   - The A9 replays pass on the re-synced file and fail without #174's `initiate` change, as the lab and session tests do
     (checked by reverting it); the 9wvr and second-pass tests fail with their rule taken out (checked the same way).
+
+**Amended 2026-10-18, phase P7g (a ride hold over a link, in ticks of one batch):** this follows `458c2eee`'s #173,
+which P7f left to the blobs plane. Kotlin lines below are at `3e3e044c`.
+
+- **The defect, on both platforms:** a linked author's hold went over the link as one sealed tick, however many ids it
+  held (`flushBatchOverLink`). A ride hold is bounded only by `PENDING_CAP` (500), and the author applies at most
+  `MAX_RECEIPT_ACKS` (128) ids from one tick (`RatchetInbound.acknowledged`; `InboundPipeline.kt:1329-1337`,
+  `:4012`). Nothing re-owes the rest once the hold is gone, so the author's ticks stopped at 128 Nearby posts. This
+  retires the first of P5c's limits, and the review's ruling that cutting a hold was knit-next's to make: knit-next
+  made it.
+- **The rule:** `AckSync.flushOverLink` cuts the hold into chunks of at most `maxBatchAcks` (64, Kotlin's
+  `MAX_BATCH_ACKS`) ids, in the order the ids came, and seals each `relay = false` with no custody row. A chunk whose
+  seal fails goes back as one cleartext entry per id and is sent at once over the link, chunk by chunk, while the chunks
+  around it keep their seals (`AckSync.kt:581-599`). It covers both holds and every caller: the link-up, the 60 s
+  re-offer, and the heal's flush of a due ride. A batch never reaches 64 (it escalates there), so in practice only a
+  ride hold is cut. Kotlin's deadline routes, the spool and the air (`escalateRide`, `:501-515`), already cut at 64 and
+  are not this port's.
+- **The cost:** one chain key per chunk, where one covered the hold: at most eight for a full 500-id hold.
+- **The switch and the wire:** with the switch off, `canSeal` is `false`, so nothing enters a hold and every tick stays
+  the cleartext one it was, byte for byte. No frame type, field, capability bit, schema or custody rule moves.
+- **Guards:**
+  - `AckSyncTests.aRideWiderThanTheReceiversCapGoesOverTheLinkInChunks`, Kotlin's case by name. `AckSyncTests` now
+    accounts for `AckSyncTest`'s 27 cases and ports 25.
+  - `AckSyncBoundsTests.aChunkThatCannotSealGoesAsCleartextAndTheOthersStaySealed` and
+    `aHoldOfOneBatchStillGoesAsOneTick` are this port's.
+  - `TickLabTests.aRideWiderThanTheReceiversCapComesHomeTickedOverTheLink` uses two engines with the real seals. Bob
+    posts 129 room posts while Alice is apart, and a carrier outside the lab hands them to her. At the link-up she sends
+    three ticks over the link, and Bob's own opens flip all 129. The case and the lab fail with the chunking taken out
+    (checked by reverting it).

@@ -10,7 +10,8 @@ import Testing
 /// (knit-next ADR 033's case), or relayed by Carol while he is linked to her. Her room tick is never carried and goes home
 /// over the link. With the switch off, the seams as shipped seal nothing, so her ticks wait for the link, cleartext, as they
 /// always have. Bob's engine cannot read the stand-in seal, a v1 ctl frame it ignores; with the real seals and the switch on
-/// at both ends (phase P5d), his own open of Alice's tick flips each of his ✓✓.
+/// at both ends (phase P5d), his own open of Alice's tick flips each of his ✓✓, a ride hold wider than his intake's cap
+/// included, which goes home in ticks of one batch each (phase P7g, knit-next #173).
 @Suite struct TickLabTests {
     private let alice = TestPeer(seed: 1)
     private let bob = TestPeer(seed: 2)
@@ -171,6 +172,41 @@ import Testing
         #expect(EngineSeals.acks(of: tick, as: bob) == [post.id])
         #expect((0..<3).allSatisfy { !lab[$0].stores.custody.contains(tick.envelope.id) }, "and no custody holds it")
         #expect(lab[2].engine.footprint.owedTicks == 0)
+    }
+
+    /// knit-next #173 on two engines of this port with the real seals (phase P7g): Bob (0) and Alice (1) with the ratchet's
+    /// switch on, acquainted and then apart. Bob posts one more room post than Alice's intake applies from one tick, and a
+    /// carrier outside the lab hands each to Alice, so every one of her ticks waits in her ride hold. A carrier in the lab
+    /// would tick each post itself over its link to Bob, and flip it. At the link-up the hold goes as sealed `relay = false`
+    /// ticks of at most ``AckSync/maxBatchAcks`` ids, and Bob's own open of each flips every post, where one tick for the
+    /// whole hold flipped only the first 128.
+    @Test func aRideWiderThanTheReceiversCapComesHomeTickedOverTheLink() throws {
+        let lab = EngineLab([try EngineFixture.ratcheting(bob, seed: 21), try EngineFixture.ratcheting(alice, seed: 23)])
+        lab.link(0, 1)
+        lab.unlink(0, 1)
+        let count = RatchetInbound.maxReceiptAcks + 1
+        var posts: [MessageRecord] = []
+        for index in 0..<count {
+            posts.append(try #require(lab[0].engine.postToRoom("post \(index)")))
+        }
+        let ids = Set(posts.map { ExactKey($0.id) })
+        for written in lab[0].transport.written(.chat) where ids.contains(ExactKey(written.envelope.id)) {
+            lab[1].engine.receive(InboundFrame(wire: written.wire, envelope: written.envelope, from: carol.nodeId))
+        }
+        #expect(posts.allSatisfy { lab[1].stores.messages.message($0.id) != nil }, "Alice has every post from the carrier")
+        #expect(lab[1].engine.ackSync.ridingFor(bob.nodeId) == count, "every tick waits in her ride hold")
+        #expect(posts.allSatisfy { lab[0].stores.messages.message($0.id)?.delivered == false }, "nothing has ticked them yet")
+        let mark = lab[1].transport.written.count
+
+        lab.link(0, 1)
+        let ticks = lab[1].transport.written.dropFirst(mark).filter { written in
+            written.envelope.type == .chat && written.envelope.recipientId == bob.nodeId.string
+        }
+        #expect(ticks.count == 3 && ticks.allSatisfy { $0.to == bob.nodeId && !$0.wire.relay }, "three ticks, over the link")
+        #expect((0..<2).allSatisfy { node in ticks.allSatisfy { !lab[node].stores.custody.contains($0.envelope.id) } })
+        let flipped = posts.filter { lab[0].stores.messages.message($0.id)?.delivered == true }
+        #expect(flipped.count == count, "Bob's open of the three flips every post")
+        #expect(lab[1].engine.ackSync.ridingFor(bob.nodeId) == 0 && lab[1].engine.footprint.owedTicks == 0)
     }
 
     @Test func withTheSeamsAsShippedAnAbsentAuthorsTicksWaitForItsLink() throws {

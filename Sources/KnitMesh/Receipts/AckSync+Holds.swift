@@ -3,7 +3,7 @@ public import KnitWire
 /// ``AckSync``'s two holds toward an absent author who could read a sealed tick (`AckSync.kt` at knit-next `cbf2a487`): the
 /// batch, a group's ticks escalating into custody as one sealed tick (knit-next ADR 033), and the ride hold, a room's
 /// ticks waiting for a frame sealed toward that author anyway (knit-next ADR 2026-09.aa27). Both live inside a sealed
-/// frame, so only ``TickSealing`` puts an id in one, and a live link ends either as one tick.
+/// frame, so only ``TickSealing`` puts an id in one, and a live link ends either in ticks of at most ``maxBatchAcks`` ids.
 extension AckSync {
     /// Which of the two holds.
     enum Hold {
@@ -136,8 +136,9 @@ extension AckSync {
     }
 
     /// The ride hold's deadline (`flushDueRides` and `escalateRide`, `AckSync.kt:479-516`): a hold whose oldest id has
-    /// waited out ``rideHoldMilliseconds`` goes over its author's live link as one tick. With no link it keeps waiting: the
-    /// deadline's other routes, the spool and the fast plane, are not this port's, and no chain key is spent on nobody.
+    /// waited out ``rideHoldMilliseconds`` goes over its author's live link, in ticks of at most ``maxBatchAcks`` ids. With no
+    /// link it keeps waiting: the deadline's other routes, the spool and the fast plane, are not this port's, and no chain
+    /// key is spent on nobody.
     mutating func flushRidesDue(linked: Set<NodeId>, now: Int64, seals: some TickSealing) -> [Tick] {
         let cutoff = now - Self.rideHoldMilliseconds
         var ticks: [Tick] = []
@@ -149,9 +150,13 @@ extension AckSync {
 
     // MARK: Both holds
 
-    /// `author` is linked while a hold waits (`flushBatchOverLink`, `AckSync.kt:579-593`): the whole hold goes over the link
-    /// as one sealed tick, `relay = false`, with no custody row. It is not remembered as escalated: a live-link send ends
-    /// the hold, as it ends an owed entry, and a re-serve owes again. With no seal, each id goes as a cleartext tick.
+    /// `author` is linked while a hold waits (`flushBatchOverLink`, `AckSync.kt:581-599` at knit-next `3e3e044c`): the whole
+    /// hold goes over the link as sealed ticks of at most ``maxBatchAcks`` ids each, in the order the ids came, `relay =
+    /// false`, with no custody row. A ride hold is bounded only by ``pendingCapacity``, and a receiver applies at most 128
+    /// ids from one tick (`MAX_RECEIPT_ACKS`, ``RatchetInbound/maxReceiptAcks``), so one tick for the whole hold lost every
+    /// id past that at the author (knit-next #173, phase P7g of ADR 2026-10.5sk9). It is not remembered as escalated: a
+    /// live-link send ends the hold, as it ends an owed entry, and a re-serve owes again. A chunk with no seal goes as one
+    /// cleartext tick per id, and the chunks around it keep theirs.
     mutating func flushOverLink(_ hold: Hold, of author: NodeId, seals: some TickSealing) -> [Tick] {
         let held: [Waiting]?
         switch hold {
@@ -163,10 +168,16 @@ extension AckSync {
         guard let held, !held.isEmpty else {
             return []
         }
-        if let wire = seals.sealTick(to: author, acks: held.map(\.messageId)) {
-            return [Tick(author: author, form: .sealed(wire))]
+        var ticks: [Tick] = []
+        for start in stride(from: held.startIndex, to: held.endIndex, by: Self.maxBatchAcks) {
+            let chunk = Array(held[start..<min(start + Self.maxBatchAcks, held.endIndex)])
+            if let wire = seals.sealTick(to: author, acks: chunk.map(\.messageId)) {
+                ticks.append(Tick(author: author, form: .sealed(wire)))
+            } else {
+                ticks += restoreAsCleartext(chunk, author: author, linked: [author])
+            }
         }
-        return restoreAsCleartext(held, author: author, linked: [author])
+        return ticks
     }
 
     /// Whether `author`'s batch or ride hold holds `key`: the re-owe that does nothing (`holds`, `AckSync.kt:284-288`).

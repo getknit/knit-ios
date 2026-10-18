@@ -158,6 +158,25 @@ import Testing
         #expect(ledger.ridingFor(author) == 0, "and nothing left waiting")
     }
 
+    @Test func aRideWiderThanTheReceiversCapGoesOverTheLinkInChunks() {
+        // The author applies at most MAX_RECEIPT_ACKS ids from one tick, and nothing re-owes the rest once the hold is gone
+        // (knit-next #173, `AckSyncTest.kt:341-370` at `3e3e044c`): the link route cuts the hold as the spool and air
+        // routes do.
+        var ledger = AckSync()
+        let seals = LedgerSeals(capable: [author], seals: true)
+        // One past the receiver's MAX_RECEIPT_ACKS, the most ids it applies from one tick.
+        let owedIds = (0...(2 * AckSync.maxBatchAcks)).map { "m\($0)" }
+        for id in owedIds {
+            _ = ledger.owe(id, author: author, escalatable: false, me: me, linked: [], now: 0, seals: seals)
+        }
+        let ticks = ledger.linked(to: author, now: 10, seals: seals)
+
+        #expect(seals.sealed.allSatisfy { $0.count <= AckSync.maxBatchAcks }, "no tick wider than one batch")
+        #expect(seals.sealed.flatMap(\.self) == owedIds, "together they carry every id")
+        #expect(ticks.sealedWires.count == seals.sealed.count && ticks.count == ticks.sealedWires.count, "each seal goes")
+        #expect(ledger.ridingFor(author) == 0, "and nothing left waiting")
+    }
+
     @Test func aLegacyAuthorsRoomTickKeepsTheCleartextBestEffortForm() {
         // A ride exists only inside a frame sealed to its author, so an author who cannot read one keeps today's path.
         var ledger = AckSync()

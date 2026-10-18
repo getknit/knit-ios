@@ -104,7 +104,9 @@ publish it honestly.
 - **Room and group ticks:** the cleartext tick is `relay = false`, with no `sentAt` and a fresh id each attempt,
   never custodied, and sent only over a live link. A sealed one is sealed once, with `sentAt` set to now, and every
   send repeats those bytes: over a live link it is `relay = false` and never custodied; escalated, it is originated
-  and custodied, as below. Android sends the cleartext tick to a non-ratchet author for up to 24 h, one per link-up.
+  and custodied, as below. A batch or a ride hold that goes over its author's link goes in sealed ticks of at most 64
+  ids, since the author applies at most 128 from one tick (knit-next #173, phase P7g). Android sends the cleartext
+  tick to a non-ratchet author for up to 24 h, one per link-up.
   It moves a group tick into custody, as one sealed batch, only for an author who can open a sealed one
   (`canSealTickTo`, `MeshManager.kt:2066-2068`; `AckSync.kt`): an iPhone with the ratchet's switch on has opened it
   since P5a. The batch is a DM-form ctl 5 frame that every node carries for 24 h and nothing purges. Ours take the

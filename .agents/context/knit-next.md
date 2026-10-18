@@ -203,8 +203,9 @@ Kotlin wins.
       (`4f3cd995`, not pushed), past the pin:
       - **What comes in:** `vectors/ratchet-v1.json`, synced alone with `scripts/sync-vectors.py --only
         ratchet-v1.json`, now from `main` at `3e3e044c`, which adds `groupSkippedPerMint` for #177.
-        `Tests/Vectors/ratchet-v1.json` records the commit it came from. `1b5e72fa` regenerated it for #174: 139 `state.session.peerBasePub` leaves carry the init's prekey where
-        they had null, and no frame, header, plaintext or ciphertext byte moved (phase P7f).
+        `Tests/Vectors/ratchet-v1.json` records the commit it came from. `1b5e72fa` regenerated it for #174: 139
+        `state.session.peerBasePub` leaves carry the init's prekey where they had null, and no frame, header, plaintext
+        or ciphertext byte moved (phase P7f).
       - **Stages in:** all six. Stage 1, the known answers (`95d26b8f`); stage 2, the profiles (`bc47c7d1`); stage
         3a, the DM transcripts and refusals (`4bb2e816`); stage 3b, the control plane, races, resets and re-seals
         (`919f8a53`); stage 4, the group form (`a20fba4d`); stage 5, Carol's races and first contacts (`c6edf7df`).
@@ -220,8 +221,9 @@ Kotlin wins.
         pinned (`RatchetCrypto.acceptsPublicKey`, `verifiedPrekey`, `MessageCrypto.seal`, `recipientBundles`,
         `groupRatchetEligible`); #171, a reset's re-seal goes out once more past the dedup window (`ResetReseal`);
         #177, a group skipped key spent by its full key, which this port already did. Its #173, `AckSync`'s live-link
-        tick chunked at `MAX_BATCH_ACKS`, is the blobs plane's and not followed here. This port already makes its
-        `MessageContentV2` change, a canonical check on a profile's `loraKey` when encoding (`CanonicalText.keyBytes`).
+        tick chunked at `MAX_BATCH_ACKS`, is the blobs plane's, followed in phase P7g (`AckSync.flushOverLink`). This
+        port already makes its `MessageContentV2` change, a canonical check on a profile's `loraKey` when encoding
+        (`CanonicalText.keyBytes`).
       - `09cacf5b` (knit-next ADR 2026-10.9wvr): an `EPOCH_GONE` on a retired local epoch behind the peer's own ack is
         never reset evidence (`RatchetResetPolicy.isRetiredBase`, `RatchetStore.lowestLocalEpoch`). Its follow-ups #179,
         #180 and #181 had not landed at `4f3cd995`.

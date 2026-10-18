@@ -10,6 +10,8 @@ final class LedgerSeals: TickSealing {
     var capable: Set<NodeId>
     var seals: Bool
     var originates: Bool
+    /// Refuses the seal of the ids it names though ``seals`` would make one: a stale "can seal" for one chunk of a hold.
+    var refuses: ([String]) -> Bool = { _ in false }
     /// The ids of each seal made, in order.
     private(set) var sealed: [[String]] = []
     /// The ids of each origination that went, in order.
@@ -26,7 +28,7 @@ final class LedgerSeals: TickSealing {
     }
 
     func sealTick(to author: NodeId, acks ids: [String]) -> WireEnvelope? {
-        guard seals else {
+        guard seals, !refuses(ids) else {
             return nil
         }
         sealed.append(ids)
