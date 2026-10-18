@@ -79,7 +79,9 @@ internal enum ControlLines {
     }
 
     /// A carried frame's addressing, for the `custody` reply. A sealed chat also names who its keys are wrapped to,
-    /// which is who can open it: for a group message, the members its sender held keys for.
+    /// which is who can open it: for a group message, the members its sender held keys for. It also gives its seal's `v`,
+    /// 1 or the ratchet's 2 and 3, and `groupForm` when it carries the group form's header, so an interop run reads the
+    /// form each frame went in (ADR 2026-10.5sk9). A ratchet frame wraps no keys.
     static func describe(_ envelope: RelayEnvelope) -> JSONValue {
         var fields: [String: JSONValue] = [
             "id": .string(envelope.id),
@@ -91,6 +93,8 @@ internal enum ControlLines {
         ]
         if envelope.type == .chat, let enc = (try? ChatContent(decoding: envelope.payload))?.enc {
             fields["wrappedTo"] = .array(enc.keys.map { .string($0.to) })
+            fields["v"] = .int(Int64(enc.version))
+            fields["groupForm"] = .bool(enc.groupRatchet != nil)
         }
         return .object(fields)
     }

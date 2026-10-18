@@ -1631,8 +1631,14 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     `ChatContent` around it.
   - Deliver `carolRatchetProfile` straight after `carolProfile`. If the sealed profile (version 1756200016000) comes
     first, the name and status read as stale, though the prekey still pins.
-- **Still owed:** `scripts/sync-vectors.py --export` and the knit-next session that adds those cases and a README row.
-  The iOS checks already pass under CryptoKit (`test:macos`, 2026-10-16).
+- **Android's half is written (2026-10-18):** knit-next `10c12b8b` on `feat/ratchet-vectors-a10`, on A9's `c6edf7df`, and
+  not yet merged. It holds the export unedited (sha256 `7dcc87df…`), five new `IosEmittedVectorTest` cases (the ratchet
+  profile, the prekeys equal to A9's, the ten frames' headers and re-encoding, and Bob's and Alice's replays),
+  `InboundPipelineTest.theIphoneRatchetProfilePinsItsPrekeyAfterItsPlainProfile` and a README row. All 15 targeted tests
+  pass, so every check above holds on Tink. Bob's whole signed reply matches as well, as `ChatContent(enc = …)` around
+  the `EncEnvelope`. The pin records the profile's version, 2, as `prekeyProfileAt`, as `handleProfile` stamps it.
+  Android's content check refuses any decoded field an entry's `sealed.content` leaves out, so a later entry lists every
+  field. The iOS checks already pass under CryptoKit (`test:macos`, 2026-10-16). A9 merges first, then A10.
 - **Guards:** `EmittedVectorTests`, which now lives in `KnitMeshTests` beside the engine's fixtures:
   - `theCommittedRatchetFramesAreCurrent`: every entry and the section, against a fresh run;
   - `bobAndAliceOpenTheCommittedRatchetFrames`: the committed frames through `AndroidPeer` and `GroupFormReader`, by the

@@ -92,6 +92,8 @@ python3 scripts/interop.py iphone-relay --device <serial>         # MVP item 7: 
 python3 scripts/interop.py iphone-relay … --expect-avatar --peer-avatar <jpeg>   # each end's photo, served by the iPhone between them
 python3 scripts/interop.py iphone-group --device <serial>         # v1 groups along that line, the peer as the third member (ADR 2026-09.n393)
 python3 scripts/interop.py group --device <serial>                # v1 groups between two peers and the phone, which needs two links free
+python3 scripts/interop.py ratchet --device <serial>              # the ratchet against the phone (or an emulator): knit-peer --ratchet on hci1, a reinstall, resets both ways
+python3 scripts/interop.py iphone-ratchet --device <serial>       # the same with the iPhone, a Debug build launched with -ratchet on; Knit open on both
 python3 scripts/interop.py iphone-soak --device <serial> --peer --extras   # MVP item 11 on the iPhone: an hour, the peer on hci0; Auto-Lock off
 python3 scripts/interop.py iphone-wake --device <serial>          # MVP item 9 from the phone: someone locks the iPhone, a DM a minute
 python3 scripts/interop.py iphone-wake --device <serial> --expect-wakes   # the same from an A4 build, which must ring and wake Knit for every DM

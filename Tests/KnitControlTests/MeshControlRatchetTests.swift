@@ -98,6 +98,10 @@ import Testing
             pin(peer, in: rig.stores)
             let sent = try await rig.send(#"{"cmd":"dm","to":"\#(peer.keys.nodeId)","text":"hi"}"#)
             #expect(sent["pendingKey"] as? Bool == false)
+            let frames = try #require(try await rig.send(#"{"cmd":"custody"}"#)["frames"] as? [[String: Any]])
+            let carried = try #require(frames.first { $0["id"] as? String == sent["id"] as? String })
+            #expect(carried["v"] as? Int == (on ? 3 : 1) && carried["groupForm"] as? Bool == false, "custody names the seal")
+            #expect((carried["wrappedTo"] as? [String])?.isEmpty == on, "a ratchet frame wraps no keys")
             let seals = try #require(try await rig.send(#"{"cmd":"ratchet"}"#)["seals"] as? [String: Int])
             let counted = on ? 1 : 0
             #expect(

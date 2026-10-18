@@ -523,8 +523,8 @@ explicit direction.** Update this file in the change that ships an item.
     eleven new entries: her hand-built ratchet profile, and ten frames her engine makes from fixed draws, which are her
     v3 DMs to Bob (the opener, inline acks, a sealed receipt, profile, reaction and retraction), seed DMs to Alice and
     Bob, and a group-form message and reaction. A `ratchet` section says how Bob and Alice open them (ADR 2026-10.5sk9's
-    P7b amendment). Still owed: the export, and
-    knit-next's cases for them in `IosEmittedVectorTest`.
+    P7b amendment). Android's half is written too: knit-next `10c12b8b` on `feat/ratchet-vectors-a10`, which opens all
+    ten frames and pins the profile (2026-10-18). It merges after A9.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
