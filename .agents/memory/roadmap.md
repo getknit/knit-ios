@@ -397,7 +397,11 @@ explicit direction.** Update this file in the change that ships an item.
       nothing and the peer's custody holds the copy it cannot open. If the node resets first, nothing re-seals its own
       DMs, and every one the peer dropped is lost for its day;
     - **after the reset**, after a longer history: the opener wins the init race when the peer's node id is the
-      smaller, and the pair splits onto two roots until they expire after two days;
+      smaller, and the pair splits onto two roots until they expire after two days. Seen live on 2026-10-18, two
+      knit-peers at P7f linked only through the Pixel 8. The reinstalled node reset the pair 32 s after the peer's last
+      DMs crossed the Pixel. Two seconds later the Pixel's back-fill brought the peer's opener, which the node answered.
+      The peer had already answered the reset, so the two sat on different roots, and they still disagreed 5 minutes
+      after the peer's second re-seal pass had reached the node;
     - **since P5e's init answers**, with a room post between and the node's id the larger, the pair fails another way,
       and the pin, the fix's oracle, still records the known issue (ADR 2026-10.5sk9's P5e limits). The node answers the
       stale opener's init, which drops at the peer as a duplicate and shifts the node's next frames one index, so its

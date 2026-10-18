@@ -1838,3 +1838,41 @@ which P7f left to the blobs plane. Kotlin lines below are at `3e3e044c`.
     posts 129 room posts while Alice is apart, and a carrier outside the lab hands them to her. At the link-up she sends
     three ticks over the link, and Bob's own opens flip all 129. The case and the lab fail with the chunking taken out
     (checked by reverting it).
+
+**Amended 2026-10-18, the first live runs (phase P7e's tooling):** knit-peer with `--ratchet` on the lab's nRF52840
+dongles, against the Pixel 8 and Pixel 9 on a debug build of knit-next 2.9.0. The maintainer allowed the Pixels for
+the day; no app data was wiped. `scripts/interop.py ratchet` and `ratchet-group` and two scratch scripts drove them.
+
+- **Two knit-peers, dongle to dongle, at P7e:** 31 of 31 steps passed. That covered DMs both ways in v3, the session
+  oracle, the group form both ways, a reinstall recovered by the reinstalled side's own reset with all three stranded
+  DMs read, and a forced reset.
+- **`ratchet` against the Pixel 8, at P7e:** 41 steps, and every ratchet check passed:
+  - each side pinned the other's prekey;
+  - DMs both ways, sealed v3 with no v1 fallback;
+  - the oracle held after the first contact, after the reinstall and after a forced reset from each side;
+  - receipts and reactions sealed both ways;
+  - the name change, and the group form both ways with reactions;
+  - after the reinstall the peer's own reset brought back all three stranded DMs, in 111 s;
+  - at the end, one duplicate was the only drop.
+
+  The one failure was the wait for the peer's photo pulls, now reported rather than failed. On the first run, before
+  that wait, the Pixel's DM, receipt, reaction and group message each sat behind about 600 KB of Nearby photos the
+  fresh peer pulled at 4 KiB/s, since Android's link sends a frame only between files (knit-ios #5).
+- **`ratchet-group` with the Pixel 8 and Pixel 9, at P7e:** 21 of 21 steps passed. The peer seeded both phones, each
+  phone adopted two seeds, and every member's message reached the other two in the group form. After the Pixel 9 left,
+  the peer's next message was one fresh mint, seeded to the Pixel 8 alone, which read it. Only duplicates dropped (55,
+  from copies arriving by two paths).
+- **The Pixel 3** linked to nothing: it held four links, and its dial to the peer failed. Its link budget, not the
+  ratchet.
+- **#171's second pass, two knit-peers at P7f linked only through the Pixel 8:**
+  - The reinstalled node reset the pair 32 s after the peer's three DMs crossed the Pixel. The peer re-sealed all three
+    at once, and none reached the node for the next 90 s: the Pixel's dedup window still held their ids.
+  - About 11 minutes after the reset, the peer logged `mesh reset re-seal second pass to …: 3 of 3 still unacked`, and
+    all three reached the node.
+  - The same run met the flip-blocking reinstall race in its "after the reset" ordering (the roadmap's entry). Two
+    seconds after the node's reset, the Pixel's back-fill brought the peer's opener. The node answered it, and the
+    peer, whose id is the smaller, had already answered the reset, so the pair split onto two roots.
+- **The Mac:** `scripts/check.sh test` on the tree at P7g passes under CryptoKit, every suite green, the 13 known issues
+  as before.
+- **Not yet run:** `iphone-ratchet` (the iPhone had no go-ahead), knit-next `main` past 2.9.0 on a phone, and the
+  v2.8.0 build, which would mean a downgrade of a lab phone's data.
