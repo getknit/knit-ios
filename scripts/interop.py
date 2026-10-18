@@ -10,6 +10,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py relay   --device SERIAL [--radio-profile ios|android] [--expect-avatar] [--peer-avatar JPEG]
     scripts/interop.py group   --device SERIAL [--radio-profile android|ios]
     scripts/interop.py ratchet --device SERIAL [--radio-profile android|ios]
+    scripts/interop.py ratchet-group --device SERIAL --second-device SERIAL
     scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline] [--links N] [--hold 60]
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID] [--expect-avatar] [--peer-avatar JPEG]
     scripts/interop.py iphone-group --device SERIAL [--udid UDID]
@@ -56,6 +57,7 @@ every thread, and checks a replacement, a retraction, an emoji outside the iPhon
 `ratchet` runs the forward-secrecy ratchet against the phone, knit-peer with `--ratchet` (ADR 2026-10.5sk9): DMs, ticks,
 reactions, a profile and a group in the group form, the pair's agreement on one session, a reinstall's recovery and a
 forced reset from each side, and `iphone-ratchet` runs it with the iPhone, a Debug build launched with `-ratchet on`;
+`ratchet-group` runs the group form among the peer and two phones, a departure's fresh mint included;
 `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
 `iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `android-keeps-iphone` checks that
 an Android phone keeps a backgrounded iPhone's link and admits its re-dial (knit-next AND-3), moving Knit away from the
@@ -6244,6 +6246,122 @@ def ratchet(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def ratchet_group(arguments: argparse.Namespace) -> int:
+    """The group form among three (ADR 2026-10.5sk9, phase P6a's gate): knit-peer on hci1 with `--ratchet`, and two phones
+    running debug builds of knit-next, every other node refused. The peer is a fresh identity both phones dial.
+
+    1. The links settle, and each of the three holds the other two's ratchet profiles.
+    2. In a group of the three, each member writes once. Each message reaches the other two, the peer's goes in the
+        group form, and its seeds go to both phones.
+    3. The second phone leaves. The peer shows the leave and holds it departed, and its next message is a fresh mint
+        seeded to the first phone alone, which reads it.
+    4. Nobody dropped a ratchet frame, bar a duplicate."""
+    first, second = Phone(arguments.device), Phone(arguments.second_device)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    first_id, second_id = first.state()["self"]["nodeId"], second.state()["self"]["nodeId"]
+    others = set(in_range()) - {first_id, second_id}
+    # Both phones dial the peer: its id sorts below both, and above every other phone below them.
+    below = min(first_id, second_id)
+    above = max((node for node in others if node < below), default=None)
+    peer_id = _keygen(INSTANCE, "--below", below, *(["--above", above] if above else []))
+    print(json.dumps({"run": "ratchet-group", "phones": [first_id, second_id], "peer": peer_id, "refused": sorted(others), "nonce": nonce}))
+    peer = Peer(arguments.radio_profile, f"knit-peer {nonce}", others, arguments.peer_log, arguments.rssi_floor, ratchet=True)
+    peer.start()
+    try:
+        phones = ((first, first_id), (second, second_id))
+        run.step("links", lambda: {phone_id[:6]: link_up(peer, phone, phone_id) and "up" for phone, phone_id in phones})
+        node_drops = _ratchet_drops(peer)
+        phone_drops = {phone_id: _phone_ratchet_drops(phone) for phone, phone_id in phones}
+        before = {phone_id: _phone_metrics(phone) for phone, phone_id in phones}
+        for phone, phone_id in phones:
+            run.step(f"custody-converges-{phone_id[:6]}", lambda phone=phone: _converges(peer, phone, 600))
+        run.step("photo-pulls-settle", lambda: _pulls_settle(peer, 600))
+        # 1
+        for phone, phone_id in phones:
+            run.step(f"prekeys-pinned-{phone_id[:6]}", lambda phone=phone, phone_id=phone_id: _timed(
+                lambda: _ratchet_pinned(peer, phone, phone_id), 180))
+        run.step("phones-pin-each-other", lambda: _timed(lambda: _phones_pinned(first, first_id, second, second_id), 180))
+        node_before = _node_ratchet_counts(peer)
+        # 2
+        group = first.make_group([peer_id, second_id])
+        run.step("group-ids-agree", lambda: {
+            "peer": _agrees(_ios_ok(peer.command(cmd="group-create", members=[first_id, second_id]))["id"], group),
+            "second": _agrees(second.make_group([peer_id, first_id]), group),
+        })
+        from_first = f"interop ratchet trio from the first phone {nonce}"
+        _phone_sends(first, from_first, group)
+        run.step("first-phone-on-node", lambda: _arrival(peer, from_first, 180))
+        run.step("first-phone-on-second-phone", lambda: _timed(lambda: _has(second.state(group), from_first), 180))
+        peer.command(cmd="accept", conv=group)
+        from_node = f"interop ratchet trio from node {nonce}"
+        sent = peer.command(cmd="group-send", conv=group, text=from_node)
+        run.step("node-on-both-phones", lambda: _timed(lambda: all(_has(phone.state(group), from_node) for phone, _ in phones), 180))
+        run.step("node-sealed-in-the-group-form", lambda: _ratchet_form(peer, sent.get("id"), group=True))
+        run.step("node-seeded-both-phones", lambda: _seeded(_node_ratchet_counts(peer), node_before, members=2))
+        from_second = f"interop ratchet trio from the second phone {nonce}"
+        _phone_sends(second, from_second, group)
+        run.step("second-phone-on-node", lambda: _arrival(peer, from_second, 180))
+        run.step("second-phone-on-first-phone", lambda: _timed(lambda: _has(first.state(group), from_second), 180))
+        for phone, phone_id in phones:
+            run.step(f"group-form-on-{phone_id[:6]}", lambda phone=phone, phone_id=phone_id: _counted(
+                _phone_metrics(phone), before[phone_id], grew=("groupSealedRatchet", "groupSeedsAdopted"), held=("groupSealedV1Fallback",)))
+        # 3
+        second.leave_group(group)
+        run.step("leave-on-node", lambda: _timed(lambda: second_id in _group_of(peer, group)["departed"], 120))
+        minted = _node_ratchet_counts(peer)
+        after_leave = f"interop ratchet trio after the leave {nonce}"
+        peer.command(cmd="group-send", conv=group, text=after_leave)
+        run.step("after-leave-on-first-phone", lambda: _timed(lambda: _has(first.state(group), after_leave), 180))
+        run.step("after-leave-seeded-the-first-phone-alone", lambda: _seeded_once(_node_ratchet_counts(peer), minted))
+        # 4
+        run.step("no-ratchet-drops-but-duplicates", lambda: _no_trio_drops(peer, phones, node_drops, phone_drops))
+    finally:
+        peer.stop()
+    print(json.dumps({"summary": "ratchet-group", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _phones_pinned(first: Phone, first_id: str, second: Phone, second_id: str) -> dict | None:
+    """Each phone holds the other's ratchet bits and a signed prekey, which Android's group form asks of every member."""
+    one = _ratchet_peer_entry(first.bridge("RATCHET"), second_id)
+    two = _ratchet_peer_entry(second.bridge("RATCHET"), first_id)
+    if one and two and one["capRatchet"] and one["peerPrekeyPinned"] and two["capRatchet"] and two["peerPrekeyPinned"]:
+        return {"first": one["peerPrekeyId"], "second": two["peerPrekeyId"]}
+    return None
+
+
+def _seeded(now: dict, before: dict, members: int) -> dict:
+    """At least one message in the group form, a seed to each of `members`, and no v1 fallback."""
+    deltas = {key: now.get(key, 0) - before.get(key, 0) for key in ("groupSealedRatchet", "groupSeedsSent", "groupSealedV1Fallback")}
+    if deltas["groupSealedRatchet"] < 1 or deltas["groupSeedsSent"] < members or deltas["groupSealedV1Fallback"]:
+        raise RuntimeError(f"{deltas}")
+    return deltas
+
+
+def _seeded_once(now: dict, before: dict) -> dict:
+    """One fresh mint, seeded to one member: the departure retired the chain, and only the first phone is left."""
+    deltas = {key: now.get(key, 0) - before.get(key, 0) for key in ("groupSealedRatchet", "groupSeedsSent", "groupSealedV1Fallback")}
+    if deltas != {"groupSealedRatchet": 1, "groupSeedsSent": 1, "groupSealedV1Fallback": 0}:
+        raise RuntimeError(f"{deltas}")
+    return deltas
+
+
+def _no_trio_drops(peer: Peer, phones: tuple, node_before: dict, phone_before: dict) -> dict:
+    """Neither the peer nor either phone dropped a ratchet frame since the counts given, bar a duplicate."""
+    grown = {}
+    sides = [("node", _ratchet_drops(peer), node_before)]
+    sides += [(phone_id[:6], _phone_ratchet_drops(phone), phone_before[phone_id]) for phone, phone_id in phones]
+    for side, now, before in sides:
+        for key, count in now.items():
+            if count > before.get(key, 0):
+                grown[f"{side}.{key}"] = count - before.get(key, 0)
+    refused = {key: count for key, count in grown.items() if key.split(".", 1)[1] not in RATCHET_DUPLICATES}
+    if refused:
+        raise RuntimeError(f"ratchet drops: {refused}")
+    return {"duplicates": sum(grown.values())}
+
+
 def iphone_ratchet(arguments: argparse.Namespace) -> int:
     """`ratchet` with the iPhone in the peer's place: a Debug build launched with `-ratchet on` (ADR 2026-10.8cy5), so
     CryptoKit seals and opens live. A stop and start of its mesh keeps its database, so the pair's session must hold
@@ -6309,7 +6427,7 @@ def _ratchet_walk(run: Run, node: Node, phone: Phone, phone_id: str, nonce: str,
     node_drops, phone_drops = _ratchet_drops(node), _phone_ratchet_drops(phone)
     # 0
     run.step("custody-converges", lambda: _converges(node, phone, 600))
-    run.step("photo-pulls-drained", lambda: _timed(lambda: _pulls_drained(node), 600))
+    run.step("photo-pulls-settle", lambda: _pulls_settle(node, 600))
     # 1
     run.step("prekeys-pinned", lambda: _timed(lambda: _ratchet_pinned(node, phone, phone_id), 180))
     # 2
@@ -6414,10 +6532,17 @@ def _ratchet_walk(run: Run, node: Node, phone: Phone, phone_id: str, nonce: str,
     run.step("no-ratchet-drops-but-duplicates-at-the-end", lambda: _no_new_ratchet_drops(node, phone, node_drops, phone_drops))
 
 
-def _pulls_drained(node: Node) -> bool:
-    """`node` wants no blob and has no file queued: nothing it pulled is still ahead of the frames on its links."""
-    footprint = node.command(cmd="status").get("footprint", {})
-    return footprint.get("wantedBlobs") == 0 and footprint.get("queuedFiles") == 0
+def _pulls_settle(node: Node, timeout: float) -> dict:
+    """Waits until `node` wants no blob and has no file queued, so nothing it pulled is still ahead of the frames on its
+    links, or for `timeout`, and says which. A photo no neighbour holds stays wanted, so running out of time is reported,
+    not failed: by then the pulls that could land have."""
+    started = time.monotonic()
+    while True:
+        footprint = node.command(cmd="status").get("footprint", {})
+        wanted, queued = footprint.get("wantedBlobs"), footprint.get("queuedFiles")
+        if (wanted == 0 and queued == 0) or time.monotonic() - started > timeout:
+            return {"seconds": round(time.monotonic() - started, 1), "wantedBlobs": wanted, "queuedFiles": queued}
+        time.sleep(5)
 
 
 def _ratchet_round_trip(run: Run, node: Node, phone: Phone, phone_id: str, nonce: str, label: str) -> None:
@@ -6574,7 +6699,7 @@ def _not_declined(reply: dict) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("check", "refusal", "replace", "soak", "relay", "iphone-relay", "group", "iphone-group", "ratchet"):
+    for name in ("check", "refusal", "replace", "soak", "relay", "iphone-relay", "group", "iphone-group", "ratchet", "ratchet-group"):
         sub = commands.add_parser(name)
         sub.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
         sub.add_argument("--radio-profile", default="android", choices=["android", "ios"])
@@ -6584,6 +6709,7 @@ def main() -> int:
         # checklist L may pass only because of it.
         sub.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     commands.choices["check"].add_argument("--order", default="phone-dials", choices=["phone-dials", "peer-dials"])
+    commands.choices["ratchet-group"].add_argument("--second-device", required=True, help="a second approved phone's adb serial, the group's third member")
     commands.choices["check"].add_argument("--blank-name", action="store_true", help="run the peer with no name, so each side shows the alias")
     commands.choices["check"].add_argument("--expect-avatar", action="store_true", help="the phone has a photo: check the peer shows it")
     commands.choices["check"].add_argument("--peer-avatar", default="", help="a JPEG the peer takes as its photo and pushes to the phone")
@@ -6869,6 +6995,7 @@ def main() -> int:
         "group": group,
         "iphone-group": iphone_group,
         "ratchet": ratchet,
+        "ratchet-group": ratchet_group,
     }
     return scenarios[arguments.command](arguments)
 
