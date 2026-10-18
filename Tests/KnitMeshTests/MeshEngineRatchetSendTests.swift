@@ -111,16 +111,21 @@ import Testing
         #expect(try sent(fixture).last?.enc.version == EncEnvelope.Version.compactRatchet)
     }
 
-    /// The chat's half of `aCtlReactionNeverFallsBackToTheV1Wrap` (`MeshManagerTest.kt:2528-2552`): a peer's prekey X25519
-    /// refuses, signed by its own key, which Kotlin throws out of `sendChat` (`MeshManager.kt:1189`, `:1295`). A chat goes
-    /// v1, counted, and nothing is persisted or counted toward a reset.
-    @Test func aPeersPrekeyThatX25519RefusesSendsTheChatV1() throws {
+    /// `aDmToALowOrderPrekeyFallsBackToV1AndCounts` (#172, `MeshManagerTest.kt` at `4f3cd995`): a peer's prekey X25519
+    /// refuses, signed by its own key. Since #172 the profile's intake never pins it (`aSignedLowOrderPrekeyIsNotPinned`,
+    /// in `MeshEnginePrekeyIntakeTests`), so the row here is one pinned before that rule, which the facade refuses as
+    /// Kotlin's maps Tink's throw to "cannot seal". A chat goes v1, counted, and nothing is persisted or counted toward a
+    /// reset.
+    @Test func aDmToALowOrderPrekeyFallsBackToV1AndCounts() throws {
         let fixture = try EngineFixture.ratcheting(me)
         let zero = [UInt8](repeating: 0, count: 32)
         let signature = try alice.keys.signature(for: RatchetCrypto.spkSigningBytes(id: 4, pub: zero))
         let lowOrder = PrekeyInfo(id: 4, pub: zero, sig: signature)
         fixture.deliver(try alice.profile(publishedAt: now, capabilities: AndroidPeer.capabilities, prekey: lowOrder), from: alice)
-        #expect(fixture.stores.peers.peer(alice.nodeId)?.prekey == lowOrder, "pinned: a signature does not rule one out")
+        var row = try #require(fixture.stores.peers.peer(alice.nodeId))
+        #expect(row.prekey == nil, "never pinned since #172")
+        row.prekey = lowOrder
+        fixture.stores.peers.upsert(row)
         fixture.transport.clear()
 
         _ = try #require(fixture.engine.sendDirectMessage("still reaches you", to: alice.nodeId))

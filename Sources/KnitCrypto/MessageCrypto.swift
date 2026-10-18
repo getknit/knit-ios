@@ -28,8 +28,13 @@ public enum MessageCrypto {
         Array("\(id)|\(senderId)|\(sentAt)|\(thread)".utf8)
     }
 
-    /// Seals `content`, an encoded ``MessageContent``, to each recipient. Returns `nil` when there are no
-    /// recipients, because nobody could read the frame.
+    /// Seals `content`, an encoded ``MessageContent``, to each recipient. Returns `nil` when no wrap remains, because
+    /// nobody could read the frame.
+    ///
+    /// A recipient whose key HPKE refuses, a low-order X25519 point a forged profile published as its identity key, is
+    /// skipped like an unknown key (knit-next `MessageCrypto.kt:49-72` at `4f3cd995`, #172): one such member never strands
+    /// a group's post for everyone else, and a DM to it waits as `pendingKey`, as for a peer whose key is unknown. The
+    /// group seals leave such a member out before they get here; this is the backstop.
     ///
     /// Wrapped keys are sorted by node id, as knit-next sorts them, so the same message to the same people
     /// always lists its keys in the same order.
@@ -50,9 +55,11 @@ public enum MessageCrypto {
                 nonce: AES.GCM.Nonce(data: nonce),
                 authenticating: header
             )
-            var keys: [WrappedKey] = []
-            for (recipient, bundle) in recipients.sorted(by: { $0.key < $1.key }) {
-                keys.append(WrappedKey(to: recipient.string, wk: try wrap(key, to: bundle, header: header)))
+            let keys = recipients.sorted { $0.key < $1.key }.compactMap { recipient, bundle in
+                (try? wrap(key, to: bundle, header: header)).map { WrappedKey(to: recipient.string, wk: $0) }
+            }
+            guard !keys.isEmpty else {
+                return nil
             }
             return EncEnvelope(nonce: nonce, ct: Array(box.ciphertext) + Array(box.tag), keys: keys)
         } catch {

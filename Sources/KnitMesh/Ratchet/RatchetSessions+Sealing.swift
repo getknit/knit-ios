@@ -54,6 +54,7 @@ extension RatchetSessions {
                 return .sealed(Self.envelope(sealed, version: version, flags: sealed.header.flags))
             } catch {
                 unsealed = .refusedKey
+                refused(peer.nodeId, error)
                 return nil
             }
         }
@@ -103,6 +104,7 @@ extension RatchetSessions {
                 return .sealed(Self.envelope(reset.sealed, version: EncEnvelope.Version.ratchet, flags: flags), plan: plan)
             } catch {
                 unsealed = .refusedKey
+                refused(peer.nodeId, error)
                 return nil
             }
         }
@@ -138,6 +140,12 @@ extension RatchetSessions {
     /// Seals `request` under `session` and stores the advanced session, stamped with `resetAt` for a reset, with the epoch
     /// the seal or an initiation minted, inside the caller's unit (`store.commitSend`, `RatchetSessions.kt:259`, `:433`,
     /// `:464`). `nil` when the engine will not seal: a new epoch due with no base, or a session missing its chain or init.
+    ///
+    /// The request's prekey reaches the engine through ``RatchetEngine/prekeyBase(_:peerPrekey:)``, as every Kotlin seal
+    /// site passes it (`sealDm`, `sealResetDm`'s mark, knit-next `RatchetSessions.kt:281`, `:461` at `4f3cd995`,
+    /// #174; its re-root passes the fresh session's own prekey, which the rule hands through unchanged): a row an older
+    /// build initiated, holding no base, seals a new epoch only while the pinned prekey is still the one its init names,
+    /// and otherwise answers `nil`, the caller's fallback.
     func commitSeal(
         _ session: RatchetEngine.SessionState,
         minted: RatchetEngine.LocalEpoch?,
@@ -148,7 +156,7 @@ extension RatchetSessions {
             session,
             plaintext: request.plaintext,
             aad: request.aad,
-            peerPrekey: request.prekey,
+            peerPrekey: RatchetEngine.prekeyBase(session, peerPrekey: request.prekey),
             now: request.now,
             v3: request.v3
         )
@@ -159,6 +167,13 @@ extension RatchetSessions {
         advanced.lastResetSentAt = resetAt ?? advanced.lastResetSentAt
         store.commitSend(RatchetRecords.record(advanced), newLocalEpoch: (minted ?? sealed.newLocalEpoch).map { RatchetRecords.record($0) })
         return sealed
+    }
+
+    /// Logs a seal toward `peer` that X25519 refused a key for (`refusedAsNull`, knit-next `RatchetSessions.kt:508-526` at
+    /// `4f3cd995`, #172): a peer can sign a low-order point as its prekey, or publish one as its identity key. The seal
+    /// answers ``Sealing/refusedKey`` with nothing persisted, so its caller takes the fallback it takes without a prekey.
+    private func refused(_ peer: NodeId, _ error: any Error) {
+        log.log(.warning, "mesh cannot seal to \(peer): X25519 refused a key (\(error))")
     }
 
     /// The envelope a seal goes out in, its header flagged as asked: the engine writes `flags` 0, and a reset's flag is

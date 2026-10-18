@@ -64,6 +64,13 @@ public final class SQLRatchetStore: RatchetStore {
         }
     }
 
+    public func lowestLocalEpoch(_ peer: NodeId) -> Int? {
+        database.read(or: nil) { db in
+            try Int.fetchOne(
+                db, sql: "SELECT MIN(epoch) FROM ratchet_local_epochs WHERE peerId = ?", arguments: [StoredText.bytes(peer.string)])
+        }
+    }
+
     public func recvEpochs(_ peer: NodeId, epoch: Int) -> [RatchetRecvEpochRecord] {
         database.read(or: []) { db in
             try Row.fetchAll(

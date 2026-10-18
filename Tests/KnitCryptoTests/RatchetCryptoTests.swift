@@ -11,6 +11,20 @@ import Testing
 @Suite struct RatchetCryptoTests {
     // MARK: RFC 7748
 
+    /// #172 (`RatchetCryptoTest.kt` at `4f3cd995`): the probe answers what every DH against the key would, so a prekey it
+    /// refuses is never pinned. The order-8 point and a non-canonical encoding of zero are this port's: swift-crypto reaches
+    /// them as zeros, where Tink refuses them by list.
+    @Test func acceptsPublicKeyRefusesWhatX25519Refuses() {
+        #expect(RatchetCrypto.acceptsPublicKey(RatchetCrypto.generateKeyPair().publicKey))
+        #expect(!RatchetCrypto.acceptsPublicKey([UInt8](repeating: 0, count: RatchetCrypto.keyByteCount)), "the zero point")
+        #expect(!RatchetCrypto.acceptsPublicKey([1] + [UInt8](repeating: 0, count: RatchetCrypto.keyByteCount - 1)), "u = 1, order 1")
+        #expect(!RatchetCrypto.acceptsPublicKey([UInt8](repeating: 9, count: 31)), "a short key")
+        #expect(!RatchetCrypto.acceptsPublicKey(hexBytes("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800")), "order 8")
+        #expect(
+            !RatchetCrypto.acceptsPublicKey(hexBytes("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f")),
+            "p, which is zero")
+    }
+
     @Test func x25519MatchesRfc7748Vector1() throws {
         let scalar = hexBytes("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4")
         let uCoordinate = hexBytes("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c")

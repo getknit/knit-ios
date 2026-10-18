@@ -296,11 +296,12 @@ extension GroupRatchetEngineTests {
         #expect(elsewhere != adopted, "the seed binds its sender")
     }
 
-    /// A wiped sender's two eras of one epoch, both held because Bob adopted the old seed first, bank keys at the indices
-    /// they share. A spend names the mint of the key it spent, so the other era's key at that index stays and its frame
-    /// opens (knit-next #177: Kotlin's delta names the index alone, its store spends both keys, and the old era's frame
-    /// then drops as `DUPLICATE` at every re-serve).
-    @Test func bothErasOfAWipedSenderKeepTheirOwnKeysAtAnIndexTheyShare() throws {
+    /// `spendingOneMintsSkippedKeyLeavesTheOtherMintsKeyAtTheSameIndex` (knit-next #177, `GroupRatchetEngineTest.kt` at
+    /// `4f3cd995`): a wiped sender's two eras of one epoch, both held because Bob adopted the old seed first, bank keys at
+    /// the indices they share. A spend names the mint of the key it spent, so the other era's key at that index stays and
+    /// its frame opens. Before the fix Kotlin's delta named the index alone, its store spent both keys, and the old era's
+    /// frame then dropped as `DUPLICATE` at every re-serve; this port spent by the full key from P6a1.
+    @Test func spendingOneMintsSkippedKeyLeavesTheOtherMintsKeyAtTheSameIndex() throws {
         let (alice, bob) = (GroupRatchetMember(1), GroupRatchetMember(2))
         bob.adopt(from: alice, alice.mint(now: 1), now: 1)
         let old = try (0...5).map { try alice.seal("old\($0)", "old \($0)", now: 2) }
@@ -316,7 +317,9 @@ extension GroupRatchetEngineTests {
         }
         #expect(spent.delta.consumedSkippedMintedAt == 10, "the spend names the new era's key")
         #expect(try bob.openedText(old[3], now: 16) == "old 3", "the old era's key at 3 outlived the new era's spend")
+        // Each spent key went with its own frame: a re-serve of either is a duplicate.
         #expect(bob.open(old[3], now: 17).failure == .duplicate)
+        #expect(bob.open(new[3], now: 17).failure == .duplicate)
     }
 }
 

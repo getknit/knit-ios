@@ -37,7 +37,7 @@ extension RatchetSessions {
         case opened(plaintext: [UInt8], work: Work)
         /// The engine refused the frame with a typed failure: nothing changed. Only an authenticated frame's failure in
         /// ``RatchetResetPolicy/triggeringFailures`` may go on to
-        /// ``RatchetSessions/noteUndecryptable(from:frameId:sentAt:now:)``.
+        /// ``RatchetSessions/noteUndecryptable(from:frameId:sentAt:now:epochGoneBase:)``.
         case refused(RatchetEngine.OpenOutcome.Failed)
         /// X25519 refused the init's ephemeral or the peer's identity key in the X3DH respond, where Tink throws out of
         /// Kotlin's engine (`InboundPipeline`'s `runCatching`, `DECRYPT_FAILED`): nothing committed, and nothing counts
@@ -45,6 +45,17 @@ extension RatchetSessions {
         case rejected
         /// It opened, and the caller's body answered `nil`: every write of the unit, the open's included, is undone.
         case abandoned
+    }
+
+    /// What the retired-base gate judged an `EPOCH_GONE` on (`RetiredBase`, knit-next `RatchetSessions.kt:612-617` at
+    /// `4f3cd995`): the frame's base, our lowest epoch still held, and the newest of ours the peer has sealed against.
+    public struct RetiredBase: Sendable, Equatable {
+        /// The local epoch the frame's header named, `pe`.
+        public let pe: Int
+        /// The lowest epoch number we still hold for the peer.
+        public let lowestRetained: Int
+        /// The session's `highestPeAcked`.
+        public let highestPeAcked: Int
     }
 
     /// A reset's result (`ResetSeal`, `RatchetSessions.kt:516-531`), with the plan that decided it.

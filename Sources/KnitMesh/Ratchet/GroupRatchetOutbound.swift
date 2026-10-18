@@ -53,8 +53,12 @@ internal enum GroupRatchetOutbound {
     /// one of them has a pinned bundle, a profile carrying `CAP_RATCHET` and a valid prekey, since the seed rides the DM
     /// ratchet; otherwise v1 to the bundles pinned, which every build reads, re-evaluated at every send. A member whose id
     /// does not parse keeps the group v1 and is skipped from the wraps, as the v1 seal has always skipped it, and a
-    /// member with no bundle is unkeyed, for a key request. A blocked member is a member like any other: blocking is
-    /// presentation (ADR 2026-10.5wgg), and withholding a seed would show the block.
+    /// member with no bundle is unkeyed, for a key request. A member whose identity key X25519 refuses, a low-order point
+    /// a forged profile published, keeps the group v1 too and is skipped from the wraps, since no seed and no wrap could
+    /// ever reach it, while the rest still get the post (`groupRatchetEligible` and `recipientBundles`, knit-next
+    /// `MeshManager.kt:1552-1562`, `:2284-2306` at `4f3cd995`, #172); its key is pinned, so it is no key request's. A
+    /// blocked member is a member like any other: blocking is presentation (ADR 2026-10.5wgg), and withholding a seed
+    /// would show the block.
     static func form(of members: [Member], ratchet: Bool) -> Form {
         var bundles: [NodeId: PublicKeyBundle] = [:]
         var unkeyed: [NodeId] = []
@@ -67,6 +71,10 @@ internal enum GroupRatchetOutbound {
             }
             guard let row = member.row, let bundle = PublicKeyBundle(encoded: row.publicKey) else {
                 unkeyed.append(nodeId)
+                eligible = false
+                continue
+            }
+            guard bundle.hasUsableAgreementKey else {
                 eligible = false
                 continue
             }

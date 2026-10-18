@@ -38,5 +38,9 @@ honest.
 - **Why custody still holds one set of bytes per id:** the re-seal flies live and never replaces the bytes custody
   holds. Custody keeps the first bytes it stored for an id, here (`CustodySync`) as on Android (`ForwardSync.kt:75`).
   The receiver lets one copy of the re-sealed id past its dedup (`Router.reopen`).
+- **Since 2026-10-18 (ADR 2026-10.5sk9's P7f amendment):** a reset gives each id up to two more sets of signed bytes.
+  The second pass re-seals only the ids still unacked at `SeenSet.defaultWindowMilliseconds` + 60 s, so a relay whose
+  dedup window held the id at the first pass lets it through. It records nothing, so it never comes round again
+  (knit-next ADR 2026-10.dmgw, `MeshManager.kt` at `4f3cd995`).
 
 Every other frame id is still signed once.

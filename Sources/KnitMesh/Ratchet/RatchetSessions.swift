@@ -27,7 +27,7 @@ public import KnitWire
 /// They die with the process, as Android's do, and each moves only once its unit commits, but for one: a frame the
 /// heuristic counts joins its ids at once, as on Android, after the era gate read the session, and only their clearing
 /// waits for a commit. `sealResetDm`'s decline reads the persisted `lastResetSentAt`, which survives a restart; the stamp
-/// held here is only ``noteUndecryptable(from:frameId:sentAt:now:)``'s fallback for a peer with no session.
+/// held here is only ``noteUndecryptable(from:frameId:sentAt:now:epochGoneBase:)``'s fallback for a peer with no session.
 ///
 /// Left out: the spool's `exportedRoots` and `rootChanges`, since there is no spool here (ADR 2026-10.5sk9), but for the
 /// filter `exportedRoots` applies, which ``confirmedPeers()`` keeps for the sealed profile's fan-out.
@@ -36,6 +36,9 @@ public final class RatchetSessions {
     let store: any RatchetStore
     let transactor: any StoreTransactor
     let engine: RatchetEngine
+    /// Where the facade's diagnostics go: a seal X25519 refused, and a reset gate's verdict (`log`, knit-next
+    /// `RatchetSessions.kt:45-46` at `4f3cd995`).
+    let log: any KnitLog
 
     /// Per peer, the distinct undecryptable frame ids, oldest first, at most ``RatchetResetPolicy/trackedFrames``
     /// (`undecryptable`, `RatchetSessions.kt:98`). Ids compare by their bytes (ADR 2026-09.jc2x).
@@ -48,18 +51,25 @@ public final class RatchetSessions {
     /// so its replacement floor runs until at least a minute past this (`confirmedAt`, `:106-111`).
     var confirmedAt: [NodeId: Int64] = [:]
 
-    /// A session service for `identity` over `store`, whose units `transactor` runs. `engine` draws from the system's
-    /// generator unless a test or a vector replay passes another.
-    public init(identity: IdentityKeys, store: any RatchetStore, transactor: any StoreTransactor, engine: RatchetEngine = RatchetEngine()) {
+    /// A session service for `identity` over `store`, whose units `transactor` runs, logging to `log`. `engine` draws from
+    /// the system's generator unless a test or a vector replay passes another.
+    public init(
+        identity: IdentityKeys,
+        store: any RatchetStore,
+        transactor: any StoreTransactor,
+        engine: RatchetEngine = RatchetEngine(),
+        log: any KnitLog = SilentLog()
+    ) {
         self.identity = identity
         self.store = store
         self.transactor = transactor
         self.engine = engine
+        self.log = log
     }
 
     /// The session held with `peer`, read outside any unit (`sessionFor`, `RatchetSessions.kt:533-538`), for diagnostics
     /// only and never a decision: a store that cannot answer reads as none. Kotlin's era gate decides on `sessionFor`,
-    /// which throws there; here the gate is inside ``noteUndecryptable(from:frameId:sentAt:now:)``, which reads the
+    /// which throws there; here the gate is inside ``noteUndecryptable(from:frameId:sentAt:now:epochGoneBase:)``, which reads the
     /// session in a unit, so a store that cannot answer counts nothing.
     public func session(of peer: NodeId) -> RatchetEngine.SessionState? {
         store.session(peer).map(RatchetRecords.session)
@@ -123,6 +133,11 @@ public final class RatchetSessions {
     ///   eight slots a re-served tail would otherwise fill (knit-next ADR 024, `d7487392`). A unit that fails counts
     ///   nothing either: a pre-era frame let in on a store's fallback would re-root on evidence from the era the reset
     ///   abandons. A peer with no session passes, since there is no era to compare with.
+    /// - **Then, for an `EPOCH_GONE`, the retired base.** `epochGoneBase` is its header's `pe`. A frame sealed against one
+    ///   of our epochs that retention already retired, behind an epoch the peer has sealed against since, is doomed as a
+    ///   pre-era frame is, and never enters the ids (``RatchetResetPolicy/isRetiredBase(pe:highestPeAcked:lowestRetained:)``,
+    ///   `maybeRequestReset`, knit-next `InboundPipeline.kt:1967-1999` at `4f3cd995`, knit-next ADR 2026-10.9wvr). The
+    ///   unit that read the session reads our lowest epoch with it.
     /// - **Then the count.** The id joins the last ``RatchetResetPolicy/trackedFrames`` at once, as on Android, and a
     ///   reset is due at ``RatchetResetPolicy/distinctFrames`` distinct ids, ``RatchetResetPolicy/resetMilliseconds``
     ///   past our last reset: the stamp the unit read from the session row, which survives a restart, or the one held in
@@ -139,17 +154,29 @@ public final class RatchetSessions {
     /// unit, as Kotlin does (`InboundPipeline.kt:1819-1826`). Inside a caller's unit it counts nothing: a joined open or reset
     /// clears the ids only once that unit commits, where Kotlin clears them as an open commits and as a reset is sealed
     /// (`RatchetSessions.kt:207-211`, `:435`, `:466`), so a frame counted before then would join the abandoned era's ids.
-    public func noteUndecryptable(from peer: NodeId, frameId: String, sentAt: Int64, now: Int64) -> Bool {
-        // The body answers the row or its absence, never `nil`, which would abandon the unit.
-        let read = transactor.atomically { () -> RatchetSessionRecord?? in .some(store.session(peer)) }
+    public func noteUndecryptable(from peer: NodeId, frameId: String, sentAt: Int64, now: Int64, epochGoneBase: Int? = nil) -> Bool {
+        // The body answers the row or its absence, never `nil`, which would abandon the unit. The lowest epoch held is
+        // read in the same unit, and only for an `EPOCH_GONE`, so the retired-base gate decides on what the store holds.
+        let read = transactor.atomically { () -> (RatchetSessionRecord?, Int?)? in
+            (store.session(peer), epochGoneBase == nil ? nil : store.lowestLocalEpoch(peer))
+        }
         let held: RatchetSessionRecord?
+        let lowest: Int?
         switch read {
-        case .committed(let row):
-            held = row
+        case .committed(let rows):
+            (held, lowest) = rows
         case .joined, .abandoned, .failed:
             return false
         }
         if let held, !RatchetResetPolicy.isLiveEvidence(sentAt: sentAt, session: RatchetRecords.session(held), now: now) {
+            return false
+        }
+        if let pe = epochGoneBase, let retired = Self.retired(pe, held: held, lowest: lowest) {
+            // Kotlin's own line, `InboundPipeline.kt:1986-1993` at `4f3cd995`.
+            log.log(
+                .info,
+                "mesh reset gate: \(frameId) from \(peer) retired epoch pe=\(retired.pe) "
+                    + "lowestRetained=\(retired.lowestRetained) highestPeAcked=\(retired.highestPeAcked)")
             return false
         }
         var ids = undecryptable[peer] ?? []
@@ -163,6 +190,31 @@ public final class RatchetSessions {
             return false
         }
         return now &- max(held?.lastResetSentAt ?? 0, lastResetSentAt[peer] ?? 0) >= RatchetResetPolicy.resetMilliseconds
+    }
+
+    /// Whether a frame from `peer` that failed as `EPOCH_GONE` was sealed against our local epoch `pe` that this phone
+    /// retired behind the peer's own progress, read in a unit of its own (`retiredBase`, knit-next `RatchetSessions.kt:594-611`
+    /// at `4f3cd995`, knit-next ADR 2026-10.9wvr): the verdict, or `nil` when the frame may still be evidence, or when a
+    /// store failed. No session is never retired: there is nothing to protect, and a reset is the only answer to a peer we
+    /// cannot read. ``noteUndecryptable(from:frameId:sentAt:now:epochGoneBase:)`` applies the same rule inside its own
+    /// read; this answers it for diagnostics and the tests.
+    public func retiredBase(from peer: NodeId, pe: Int) -> RetiredBase? {
+        let read = transactor.atomically { () -> (RatchetSessionRecord?, Int?)? in
+            (store.session(peer), store.lowestLocalEpoch(peer))
+        }
+        guard case .committed(let (held, lowest)) = read else {
+            return nil
+        }
+        return Self.retired(pe, held: held, lowest: lowest)
+    }
+
+    /// The retired-base verdict on `pe` for the session `held` and our lowest epoch `lowest` (``RatchetResetPolicy/isRetiredBase(pe:highestPeAcked:lowestRetained:)``).
+    private static func retired(_ pe: Int, held: RatchetSessionRecord?, lowest: Int?) -> RetiredBase? {
+        guard let held, let lowest, RatchetResetPolicy.isRetiredBase(pe: pe, highestPeAcked: held.highestPeAcked, lowestRetained: lowest)
+        else {
+            return nil
+        }
+        return RetiredBase(pe: pe, lowestRetained: lowest, highestPeAcked: held.highestPeAcked)
     }
 
     /// How often the engine runs ``sweep(now:)`` after the one at start: hourly, since every retention window is 48 h or

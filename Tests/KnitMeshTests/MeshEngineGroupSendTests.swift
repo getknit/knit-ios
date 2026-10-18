@@ -136,7 +136,10 @@ import Testing
 
     /// The fallback Kotlin counts (`onGroupSealedV1Fallback`, `MeshManager.kt:1330-1340`): every member eligible, but a
     /// seed that will not seal to one of them. Here the mint, the group chain's advance and the seeds already sealed are all
-    /// undone with the attempt, and the message goes v1 to the bundles the same read gave, where Kotlin keeps the mint.
+    /// undone with the attempt, and the message goes v1 to the bundles the same read gave, where Kotlin keeps the mint
+    /// (`aGroupPostWhoseSeedCannotSealToALowOrderPrekeyFallsBackToV1`, `MeshManagerTest.kt` at `4f3cd995`). Since #172 the
+    /// intake never pins such a prekey, which then reads as none and keeps the group v1 uncounted; the row here is one
+    /// pinned before that rule.
     @Test func aSeedThatWillNotSealSendsTheWholeMessageV1AndKeepsNoMint() throws {
         let (fixture, _) = try rig()
         // Carol claims the bit with a prekey X25519 refuses, the all-zero point her own key signed.
@@ -144,7 +147,10 @@ import Testing
         let refused = PrekeyInfo(
             id: 1, pub: lowOrder, sig: try carol.keys.signature(for: RatchetCrypto.spkSigningBytes(id: 1, pub: lowOrder)))
         fixture.deliver(try carol.profile(publishedAt: now, capabilities: 0x15F, prekey: refused), from: carol)
-        #expect(fixture.stores.peers.peer(carol.nodeId)?.prekey != nil, "pinned, since its signature verifies")
+        var row = try #require(fixture.stores.peers.peer(carol.nodeId))
+        #expect(row.prekey == nil, "never pinned since #172, though its signature verifies")
+        row.prekey = refused
+        fixture.stores.peers.upsert(row)
         let group = fixture.holdGroup(with: [alice, carol])
         fixture.transport.clear()
         _ = try #require(fixture.engine.sendGroupMessage("not for everyone yet", to: group.id))

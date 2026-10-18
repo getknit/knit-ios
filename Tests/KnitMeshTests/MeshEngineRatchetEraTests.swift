@@ -125,4 +125,63 @@ import Testing
         #expect(fixture.engine.dropped[.ratchetAeadFail] == 3)
         #expect(fixture.resetsSent(to: alice).count == 1)
     }
+
+    /// `anEpochGoneOnAnEpochWeRetiredBehindThePeersAckIsNeverEvidence` (knit-next ADR 2026-10.9wvr, `InboundPipelineTest.kt`
+    /// at `4f3cd995`), the field's shape: a session we initiated more than 48 h ago, so the era gate's escape is open, whose
+    /// epochs have churned past the 16-row cap. A restart's custody re-serve brings frames the peer sealed against epochs
+    /// we retired long since, behind one it has sealed against after. They are doomed as a pre-era tail is, and neither buy
+    /// a reset nor take a slot among the heuristic's ids; an `EPOCH_GONE` on an epoch at or above the lowest we hold, a
+    /// hole, is the split-era case and still counts.
+    @Test func anEpochGoneOnAnEpochWeRetiredBehindThePeersAckIsNeverEvidence() throws {
+        let (fixture, android) = try rig()
+        try initiateEra(fixture, toward: android, at: now - 49 * Self.hour)
+        // A long-lived session: confirmed, Alice's newest seal against us on our epoch 20, epochs 12...20 kept but 15.
+        var session = try #require(fixture.stores.ratchet.session(alice.nodeId))
+        session.confirmed = true
+        session.initEphPub = nil
+        session.highestPeAcked = 20
+        fixture.stores.ratchet.deletePeer(alice.nodeId)
+        fixture.stores.ratchet.upsertSession(session)
+        for epoch in Array(12...20) where epoch != 15 {
+            let pair = RatchetCrypto.generateKeyPair()
+            let kept = RatchetLocalEpochRecord(
+                epoch: epoch, privateKey: pair.privateKey, publicKey: pair.publicKey, createdAt: Int64(epoch))
+            fixture.stores.ratchet.commitSend(session, newLocalEpoch: kept)
+        }
+        #expect(fixture.stores.ratchet.lowestLocalEpoch(alice.nodeId) == 12)
+        let before = fixture.resetsSent(to: alice).count
+        let prekey = try fixture.ourPrekey()
+
+        // An epoch of Alice's we hold no chain for, based on the epoch named: the open reaches the fresh derivation and finds
+        // no base key.
+        func basedOn(_ id: String, pe: Int) throws -> TestFrame {
+            try android.dm(MessageContent(body: "x"), to: me, prekey: prekey, id: id, sentAt: now - 51 * Self.hour, now: now) { envelope in
+                guard var header = envelope.ratchet else {
+                    return
+                }
+                header.se += 1
+                header.pe = pe
+                header.initial = nil
+                envelope.ratchet = header
+            }
+        }
+
+        for index in 1...3 {
+            fixture.deliver(try basedOn("retired-\(index)", pe: 5), from: android)
+        }
+        #expect(fixture.engine.dropped[.ratchetEpochGone] == 3)
+        #expect(fixture.resetsSent(to: alice).count == before, "ciphertext on a key retention already took is doomed, not divergence")
+        #expect(fixture.engine.ratchet.floors(for: alice.nodeId).undecryptableIds == 0, "and never took a slot")
+        #expect(
+            fixture.log.all.contains { $0.contains("mesh reset gate: retired-1 from \(alice.nodeId) retired epoch pe=5 lowestRetained=12") }
+        )
+
+        // Two holes: had the doomed three entered the ids, these would make five distinct and fire.
+        for index in 1...2 {
+            fixture.deliver(try basedOn("hole-\(index)", pe: 15), from: android)
+        }
+        #expect(fixture.resetsSent(to: alice).count == before, "the doomed frames never took a slot among the distinct ids")
+        fixture.deliver(try basedOn("hole-3", pe: 15), from: android)
+        #expect(fixture.resetsSent(to: alice).count == before + 1, "a missing epoch we should still hold is the split-era case")
+    }
 }

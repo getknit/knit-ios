@@ -20,7 +20,10 @@ final class RatchetSide {
 
     let nodeId: NodeId
     let identity: IdentityKeys
-    let prekey: SignedPrekey
+    private(set) var prekey: SignedPrekey
+    /// Prekeys this side rotated away from, by id: kept, as the ring keeps the last four (`retiredSpks`,
+    /// `RatchetEngineTest.kt:38-47` at `4f3cd995`).
+    private(set) var retiredPrekeys: [Int: SignedPrekey] = [:]
     let engine: RatchetEngine
     /// Whether an init naming our prekey finds its private half; `false` plays a prekey pruned since.
     var prekeyResolvable = true
@@ -34,6 +37,17 @@ final class RatchetSide {
         identity = IdentityKeys.generate()
         prekey = try SignedPrekey.mint(id: 1, signedBy: identity, createdAt: RatchetEngineTests.now)
         self.engine = engine
+    }
+
+    /// The weekly rotation: a new current prekey under the next id, the old one still resolvable (`rotatePrekey`).
+    func rotatePrekey() throws {
+        retiredPrekeys[prekey.id] = prekey
+        prekey = try SignedPrekey.mint(id: prekey.id + 1, signedBy: identity, createdAt: RatchetEngineTests.now)
+    }
+
+    /// Our prekey `pkid` names, the current one or one rotated away from, as the ring resolves an init's.
+    func prekey(named pkid: Int) -> SignedPrekey? {
+        pkid == prekey.id ? prekey : retiredPrekeys[pkid]
     }
 
     var session: RatchetEngine.SessionState? {
@@ -108,7 +122,7 @@ final class RatchetSide {
             ownBasePrivateKey: rows.ownBasePrivateKey(for: header),
             identity: identity,
             peerIdentity: other.identity.bundle,
-            prekeyForInit: header.initial.flatMap { initial in prekeyResolvable && initial.pkid == prekey.id ? prekey : nil },
+            prekeyForInit: header.initial.flatMap { initial in prekeyResolvable ? prekey(named: initial.pkid) : nil },
             allowReplacement: allowReplacement,
             resetRequested: resetRequested,
             allowEraChange: allowEraChange

@@ -77,7 +77,7 @@ extension MeshEngine {
         case .settled(.refused(let failure)):
             refused(envelope, failure, header: frame.header)
             if RatchetInbound.countsTowardReset(failure, route: route) {
-                unreadable(envelope, from: sender, now: now)
+                unreadable(envelope, from: sender, now: now, epochGoneBase: failure == .epochGone ? frame.header.pe : nil)
             }
         case .settled(.rejected):
             // X25519 refused the init's ephemeral or the peer's identity key: Kotlin's catch records `DECRYPT_FAILED`, and
@@ -151,16 +151,22 @@ extension MeshEngine {
     }
 
     /// A signed frame whose failure is evidence that the session we hold is broken (`InboundPipeline.kt:1798-1828`): let
-    /// past the router's dedup once, and fed to the reset heuristic, which sends a reset when it fires.
-    private func unreadable(_ envelope: RelayEnvelope, from sender: NodeId, now: Int64) {
+    /// past the router's dedup once, and fed to the reset heuristic, which sends a reset when it fires. `epochGoneBase` is
+    /// the header's `pe` for an `EPOCH_GONE`, which the heuristic's retired-base gate reads (knit-next ADR 2026-10.9wvr).
+    private func unreadable(_ envelope: RelayEnvelope, from sender: NodeId, now: Int64, epochGoneBase: Int?) {
         // A reset of ours makes the sender seal this very frame again under the same id, which the router would take for
-        // the copy custody just served us, for ten minutes: one copy is let through (`:1819-1824`).
+        // the copy custody just served us, for ten minutes: one copy is let through (`:1819-1824`). This opens our gate
+        // only: a relay between us that saw the id in its window drops that seal, which is why the sender seals it once
+        // more after the window (`resealRecentDirectMessages`, knit-next `InboundPipeline.kt:1943-1948` at `4f3cd995`, knit-next
+        // ADR 2026-10.dmgw).
         _ = router.reopen(envelope.id, now: clock.monotonicMilliseconds())
         // Outside any unit, as Kotlin runs it before any transaction (`:1041`, `:1835-1856`): inside one it counts nothing.
         // The stamp is the envelope's signed `sentAt` as it arrived, never `clampFuture`'s: a responder's era starts at the
         // peer's own `init.at`, so a clamped stamp would class every live failure from a fast clock as pre-era
         // (`:1897-1899`, knit-next `cf447a9b`).
-        guard ratchet.noteUndecryptable(from: sender, frameId: envelope.id, sentAt: envelope.sentAt, now: now) else {
+        let noted = ratchet.noteUndecryptable(
+            from: sender, frameId: envelope.id, sentAt: envelope.sentAt, now: now, epochGoneBase: epochGoneBase)
+        guard noted else {
             return
         }
         if case .declined(let reason) = sendSessionReset(to: sender, now: now, cause: .unreadable) {

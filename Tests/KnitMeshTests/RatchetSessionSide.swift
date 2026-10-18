@@ -45,10 +45,10 @@ final class RatchetSessionSide {
         return try #require(PeerPrekey(verifying: held.info, signedBy: peer.identity.bundle))
     }
 
-    /// A DM to the peer, which must seal.
-    func seal(_ text: String, now: Int64, v3: Bool = false) throws -> EncEnvelope {
+    /// A DM to the peer, against its prekey `pkid`, which must seal.
+    func seal(_ text: String, now: Int64, v3: Bool = false, pkid: Int = 1) throws -> EncEnvelope {
         let answer = sessions.sealDm(
-            to: peer.identity.bundle, prekey: try prekey(), plaintext: Array(text.utf8), aad: Self.aad, now: now, v3: v3)
+            to: peer.identity.bundle, prekey: try prekey(pkid), plaintext: Array(text.utf8), aad: Self.aad, now: now, v3: v3)
         guard case .settled(.sealed(let envelope)) = answer else {
             Issue.record("expected a sealed DM, got \(answer)")
             throw Unexpected()

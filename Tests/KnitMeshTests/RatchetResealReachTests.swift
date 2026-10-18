@@ -6,12 +6,13 @@ import Testing
 
 @testable import KnitMesh
 
-/// How far a re-seal after a reset reaches (ADR 2026-10.5sk9, phase P5b; the P5b blobs review's first finding), on three
-/// engines in a line: the iPhone (0), a carrier (1) and a peer (2), each linked only to its neighbours. The re-seal keeps
-/// its DM's id, and a router drops a frame by its id alone for ten minutes (`Router.swift:120`, `MeshRouter.kt:100`): the
-/// peer whose open failed lets one copy back past its own router, but a carrier never does, and every custody keeps the
-/// original's bytes. So a re-seal reaches only the nodes it meets live whose router has not seen its id within ten
-/// minutes, in this port as in Kotlin.
+/// How far a re-seal after a reset reaches (ADR 2026-10.5sk9, phase P5b; the P5b blobs review's first finding; knit-next ADR
+/// 2026-10.dmgw), on three engines in a line: the iPhone (0), a carrier (1) and a peer (2), each linked only to its
+/// neighbours. The re-seal keeps its DM's id, and a router drops a frame by its id alone for ten minutes
+/// (`Router.swift:120`, `MeshRouter.kt:100`): the peer whose open failed lets one copy back past its own router, but a
+/// carrier never does, and every custody keeps the original's bytes. So the first re-seal reaches only the nodes it meets
+/// live whose router has not seen its id within ten minutes, and since P7f the same ids still unacked go once more eleven
+/// minutes later, past every such window (`RestoreLabTest`'s relayed-restore scenarios, knit-next #171).
 @Suite struct RatchetResealReachTests {
     private let iphone = TestPeer(seed: 1)
     private let peer = TestPeer(seed: 2)
@@ -62,13 +63,12 @@ import Testing
         return record.id
     }
 
-    /// Kotlin's level, pinned (the blobs review): three DMs cross the carrier live, and the reinstalled peer resets at the
-    /// third. The iPhone seals all three again, but the carrier relayed their originals inside its ten-minute window and
-    /// drops the copies as duplicates, every custody holds only the originals, and the peer never reads the three. Kotlin's
-    /// `resealRecentDmsTo` promises "recoverable copies back on the mesh" (`MeshManager.kt:3354-3360`), and its copies die
-    /// at such a carrier too. A fix in knit-next, a re-seal that carriers let past their window say, would flip this test,
-    /// and the port would follow it.
-    @Test func atKotlinsLevelAReSealDiesAtACarrierThatRelayedItsOriginalWithinTenMinutes() throws {
+    /// `aRestoredNodeBehindARelayGetsWhatCrossedItInsideTheDedupWindow` (`RestoreLabTest.kt` at `4f3cd995`): three DMs
+    /// cross the carrier live, and the reinstalled peer resets at the third. The iPhone seals all three again at once, but
+    /// the carrier relayed their originals inside its ten-minute window and drops the copies as duplicates, and every
+    /// custody holds only the originals. Before knit-next #171 the peer never read them (the blobs review pinned that here
+    /// at Kotlin's level); now the second pass, past the carrier's window, carries all three.
+    @Test func aRestoredNodeBehindARelayGetsWhatCrossedItInsideTheDedupWindow() throws {
         let lab = try reinstalledLine()
         let ids = try (1...3).map { try send(lab, 0, 2, "while you were gone \($0)") }
         let originals = Dictionary(uniqueKeysWithValues: ids.map { id in (id, lab.chats(from: 0, to: 2, id: id).first?.wire.signed) })
@@ -87,12 +87,23 @@ import Testing
             #expect(ids.allSatisfy { lab[node].stores.custody.frame($0, now: now)?.signed == originals[$0] }, "\(node) holds the originals")
         }
         lab.advance(Self.minute)
-        #expect(ids.allSatisfy { id in !lab.thread(2, with: 0).contains { $0.hasPrefix(id) } }, "the peer never reads them")
+        #expect(ids.allSatisfy { id in !lab.thread(2, with: 0).contains { $0.hasPrefix(id) } }, "the first pass reached nobody")
+
+        // The routers' window runs out, and the 60-second tick seals the three once more, which the carrier now relays.
+        lab.advance(ResetReseal.secondPassMilliseconds)
+        lab.advance(Self.hop)
+        lab.advance(Self.hop)
+        #expect(ids.allSatisfy { lab.seals(from: 0, to: 2, id: $0) == 3 }, "the second pass sealed each once more")
+        let read = lab.thread(2, with: 0)
+        #expect(ids.allSatisfy { id in read.contains { $0.hasPrefix(id) } }, "the peer reads all three: \(read)")
+        lab.advance(ResetReseal.secondPassMilliseconds + Self.minute)
+        #expect(ids.allSatisfy { lab.seals(from: 0, to: 2, id: $0) == 3 }, "once per reset")
     }
 
-    /// The same three DMs crossing the carrier more than ten minutes before the peer's reset gets out: by then the carrier's
-    /// window for their ids has passed, so it relays the copies and the peer reads all three.
-    @Test func aReSealCrossesACarrierWhoseWindowForItsOriginalHasPassed() throws {
+    /// `aRestoredNodeBehindARelayGetsWhatCrossedItBeforeTheDedupWindow`: the same three DMs crossing the carrier more than
+    /// ten minutes before the peer's reset gets out. By then the carrier's window for their ids has passed, so it relays the
+    /// first re-seal and the peer reads all three, which worked before knit-next #171 too.
+    @Test func aRestoredNodeBehindARelayGetsWhatCrossedItBeforeTheDedupWindow() throws {
         let lab = try reinstalledLine()
         lab.hold(from: 2, to: 1)
         let ids = try (1...3).map { try send(lab, 0, 2, "while you were gone \($0)") }
@@ -107,5 +118,11 @@ import Testing
         #expect(ids.allSatisfy { lab.seals(from: 0, to: 2, id: $0) == 2 }, "the iPhone sealed each again once")
         let read = lab.thread(2, with: 0)
         #expect(ids.allSatisfy { id in read.contains { $0.hasPrefix(id) } }, "the peer reads all three: \(read)")
+
+        // The peer's receipts came home before the second pass came due, so it seals none of them again.
+        lab.advance(ResetReseal.secondPassMilliseconds + Self.minute)
+        lab.advance(Self.hop)
+        lab.advance(Self.hop)
+        #expect(ids.allSatisfy { lab.seals(from: 0, to: 2, id: $0) == 2 }, "acked before the second pass: no third seal")
     }
 }

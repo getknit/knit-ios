@@ -199,9 +199,12 @@ Kotlin wins.
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Mirrored ahead of the pin:**
-    - knit-next `feat/ratchet-vectors-a9`, companion change A9 (ADR 2026-10.5sk9), not yet on `main`:
+    - knit-next companion change A9 (ADR 2026-10.5sk9), merged into knit-next's local `main` with A10 by 2026-10-18
+      (`4f3cd995`, not pushed), past the pin:
       - **What comes in:** `vectors/ratchet-v1.json`, synced alone with `scripts/sync-vectors.py --only
-        ratchet-v1.json`. `Tests/Vectors/ratchet-v1.json` records the commit it came from.
+        ratchet-v1.json`, now from `main` at `3e3e044c`, which adds `groupSkippedPerMint` for #177.
+        `Tests/Vectors/ratchet-v1.json` records the commit it came from. `1b5e72fa` regenerated it for #174: 139 `state.session.peerBasePub` leaves carry the init's prekey where
+        they had null, and no frame, header, plaintext or ciphertext byte moved (phase P7f).
       - **Stages in:** all six. Stage 1, the known answers (`95d26b8f`); stage 2, the profiles (`bc47c7d1`); stage
         3a, the DM transcripts and refusals (`4bb2e816`); stage 3b, the control plane, races, resets and re-seals
         (`919f8a53`); stage 4, the group form (`a20fba4d`); stage 5, Carol's races and first contacts (`c6edf7df`).
@@ -210,6 +213,23 @@ Kotlin wins.
       - **The IV seam:** the branch gives `RatchetEngine` and `GroupRatchetEngine` a constructor IV source
         (`newIv`, default `AesGcm.randomIv`). It changes nothing in production, and the port's engines mirror it.
       - **When the pin passes A9's merge:** sync every file the normal way.
+    - knit-next's ratchet fixes past `72684a86`, followed in phase P7f (ADR 2026-10.5sk9's P7f amendment), read at
+      `4f3cd995`:
+      - `458c2eee` (knit-next ADR 2026-10.dmgw): #174, an initiator records the prekey its init names as its base
+        (`RatchetEngine.initiate`, `prekeyBase`); #172, a low-order key is "cannot seal" and a low-order prekey is never
+        pinned (`RatchetCrypto.acceptsPublicKey`, `verifiedPrekey`, `MessageCrypto.seal`, `recipientBundles`,
+        `groupRatchetEligible`); #171, a reset's re-seal goes out once more past the dedup window (`ResetReseal`);
+        #177, a group skipped key spent by its full key, which this port already did. Its #173, `AckSync`'s live-link
+        tick chunked at `MAX_BATCH_ACKS`, is the blobs plane's and not followed here. This port already makes its
+        `MessageContentV2` change, a canonical check on a profile's `loraKey` when encoding (`CanonicalText.keyBytes`).
+      - `09cacf5b` (knit-next ADR 2026-10.9wvr): an `EPOCH_GONE` on a retired local epoch behind the peer's own ack is
+        never reset evidence (`RatchetResetPolicy.isRetiredBase`, `RatchetStore.lowestLocalEpoch`). Its follow-ups #179,
+        #180 and #181 had not landed at `4f3cd995`.
+      - Not followed: `6d9627b7` (knit-next ADR 2026-10.j67x), the spool's scopes for our unanswered reset. The same
+        commit reads a frame that predates our session, carrying the init of the root we replaced, under the drained
+        root rather than racing it (`RatchetEngine.resolveSession`'s `predatesSession`, `derivesPrevRoot`). The scopes
+        are the spool's, which this port leaves out; the race rule changes what a peer accepts and is owed a phase of
+        its own. `a81f2050`, which refuses non-canonical frame ids at the router, belongs to the router's plane.
     - knit-next `d47ad76c` (2026-10-07, on its `main`), a picked mention as a chip that backspace deletes whole, and
       `eafb0721` (2026-10-13), a mention's color moved until it reads 4.5:1 on its bubble. Both are UI only, and nothing
       on the wire moves. They are mirrored by ADR 2026-10.nbhj as `MentionText.keepChipsWhole`, `snapOutOfChips` and

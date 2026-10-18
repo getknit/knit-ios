@@ -60,6 +60,10 @@ final class RefusingRatchetStore: RatchetStore {
         read(nil) { held.localEpochPrivateKey(peer, epoch: epoch) }
     }
 
+    func lowestLocalEpoch(_ peer: NodeId) -> Int? {
+        read(nil) { held.lowestLocalEpoch(peer) }
+    }
+
     func recvEpochs(_ peer: NodeId, epoch: Int) -> [RatchetRecvEpochRecord] {
         read([]) { held.recvEpochs(peer, epoch: epoch) }
     }

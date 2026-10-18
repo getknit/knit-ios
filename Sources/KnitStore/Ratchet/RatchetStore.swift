@@ -30,6 +30,12 @@ public protocol RatchetStore: AnyObject, Sendable {
     /// once retired.
     func localEpochPrivateKey(_ peer: NodeId, epoch: Int) -> [UInt8]?
 
+    /// The lowest number among our epochs held for `peer`, or `nil` when none is held (`lowestLocalEpoch`, knit-next
+    /// `RatchetStore.kt:29-34`, `RatchetDao.kt:54-57` at `4f3cd995`). The lowest number, not the oldest mint: a dead era's
+    /// rows left beside the live era's after our own reset can only lower it, which is the safe side for its one reader,
+    /// the retired-base gate (knit-next ADR 2026-10.9wvr).
+    func lowestLocalEpoch(_ peer: NodeId) -> Int?
+
     /// Every receive chain held for `peer`'s `epoch`, whatever root derived it, by root tag: each root candidate reads
     /// only its own (knit-next ADR 2026-10.gcrd).
     func recvEpochs(_ peer: NodeId, epoch: Int) -> [RatchetRecvEpochRecord]

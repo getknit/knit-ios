@@ -57,6 +57,21 @@ import Testing
         )
     }
 
+    /// #172 (`groupRatchetEligible` and `recipientBundles`, `MeshManager.kt:1552-1562`, `:2284-2306` at `4f3cd995`): a member
+    /// whose pinned identity key X25519 refuses, a low-order point beside a real signing key, keeps the frame v1 and is left
+    /// out of its wraps, never asked for, so the rest still get the post; with the switch off as on.
+    @Test func aMemberWhoseIdentityKeyX25519RefusesKeepsTheFrameV1AndIsLeftOutOfItsWraps() throws {
+        let zero = [UInt8](repeating: 0, count: 32)
+        let forged = try #require(PublicKeyBundle(signingKey: bob.keys.bundle.signingKey, agreementKey: zero))
+        var phantom = PeerRecord(nodeId: forged.nodeId, name: "", status: "", publicKey: forged.encoded, updatedAt: 1)
+        phantom.capabilities = 0x15F
+        phantom.prekey = try bob.prekey(id: 1)
+        let members = [member(alice, try row(alice)), GroupRatchetOutbound.Member(nodeId: forged.nodeId, row: phantom)]
+        for ratchet in [true, false] {
+            #expect(GroupRatchetOutbound.form(of: members, ratchet: ratchet) == .staticKeys([alice.nodeId: alice.keys.bundle], unkeyed: []))
+        }
+    }
+
     @Test func theSwitchOffAndAnEmptyRosterAreV1() throws {
         #expect(
             GroupRatchetOutbound.form(of: [member(alice, try row(alice))], ratchet: false)

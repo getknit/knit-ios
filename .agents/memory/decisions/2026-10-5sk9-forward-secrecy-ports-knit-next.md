@@ -534,6 +534,7 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
   - Each goes in a send unit of its own, under its own id and `sentAt`, sealed from its row, so an attachment keeps its
     name and size (knit-next `0fa6c548`). It signs the id again: one more signature for each committed first verdict
     of a reset from that peer within the day, with no per-id guard, in Kotlin as here (ADR 2026-09.2ved, amended).
+    Since P7f a second pass about 11 minutes later signs the ids still unacked once more (the P7f amendment below).
   - It flies live. Custody keeps the first bytes stored under an id (`CustodySync.carryOwn`, `ForwardSync.kt:75`), so a
     re-seal is carried only where custody lost the original. A peer whose open of the original failed reopened the id
     at its router, so a re-seal that reaches it gets past it; a peer that holds the message's row meets the re-seal at
@@ -1214,7 +1215,7 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
 - **Guards:**
   - `GroupRatchetEngineTests`: knit-next's fifteen `GroupRatchetEngineTest` cases by name, and this port's: the header's
     own chains and keys, the nonce, the IV source, the mint, and a wiped sender's two eras keeping their own keys at an
-    index they share (`bothErasOfAWipedSenderKeepTheirOwnKeysAtAnIndexTheyShare`).
+    index they share (`spendingOneMintsSkippedKeyLeavesTheOtherMintsKeyAtTheSameIndex`).
   - `GroupRatchetSoakTests`: the soak's property on Kotlin's six seeds, drawn through this port's generator, one run at
     the roster cap of eight.
   - `GroupRatchetStoreTests`: twelve of knit-next's fifteen `GroupRatchetRepositoryTest` cases by name, over both store
@@ -1718,3 +1719,93 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
 
 **Amended 2026-10-16, phase P7d:** the `ratchet` reply carries `MeshEngine.groupCounts` as `groups`, under Android's
 bridge names (`DebugBridgeReceiver.kt:1321-1329`), without `gr`'s two root counts. Guard: `MeshControlRatchetTests`.
+
+**Amended 2026-10-18, phase P7f (knit-next's fixes to what this port reported):** knit-next `main` moved from `72684a86`
+to `4f3cd995` (local, not pushed), merging A9, A10 and two ratchet fixes. Several of the defects they fix are ones this
+port found and reported while it kept Kotlin's old behaviour. This port follows the fixes. Kotlin lines below are at
+`4f3cd995`.
+
+- **#174, an initiator's base is the prekey its init names** (knit-next ADR 2026-10.dmgw's commit `458c2eee`):
+  - `RatchetEngine.initiate` records the prekey as `peerBasePub` at `peerBaseEpoch` 0 until the peer contributes an
+    epoch; an open under the active root then adopts that epoch over it (`RatchetEngine.kt:226-250`).
+  - For a row an older build initiated with no base, `RatchetEngine.prekeyBase` hands a seal the pinned prekey only
+    where the init names it (`:320-333`). Every seal of the session layer passes through it (`commitSeal`; `sealDm` and
+    `sealResetDm`, `RatchetSessions.kt:281`, `:461`), so such a row seals a new epoch only while the pinned prekey is
+    still the init's, and otherwise the boundary answers `nil`: a chat goes v1, a ctl as its cleartext frame.
+  - This retires the rule `crypto.md` said to port as it is and report rather than fix (`RatchetEngine.kt:260`, `:277`
+    at `ac491f4c`): a session unconfirmed past 24 h or 200 frames based its next epoch on a rotated prekey, and its
+    frames failed as `AEAD_FAIL` until a reset.
+  - A9's `1b5e72fa` regenerated `ratchet-v1.json` for it: 139 `peerBasePub` leaves in `dm`, `negative`, `group` and
+    `carol` carry the init's prekey where they had null, and no frame byte moved. The file is synced from `3e3e044c`,
+    which adds a seventh group transcript, `groupSkippedPerMint`, pinning #177 on both platforms (28 steps; this port
+    replays it at the group engine and through both session layers on both store kinds). `wire-v1.json`,
+    `keyed-v1.json` and the alias words stay at the pin.
+- **#172, a key X25519 refuses is "cannot seal", never an error:**
+  - `RatchetCrypto.acceptsPublicKey` runs one `dh` with a fixed scalar (`RatchetCrypto.kt:78-84`), and
+    `PublicKeyBundle.hasUsableAgreementKey` is built on it.
+  - The profile's intake never pins a prekey it refuses: the peer reads as having none and gets v1, and a newer profile
+    carrying one clears the pin (`InboundPipeline.kt:3670-3674`). `PeerPrekey(verifying:)` is unchanged, so a prekey
+    pinned before this rule still reaches the facade, whose `refusedKey` already mapped Kotlin's new "cannot seal"
+    (P4c), with nothing persisted.
+  - `MessageCrypto.seal` drops a wrap that throws and answers `nil` when none remains, where it used to throw for the
+    whole message (`MessageCrypto.kt:55-72`). The group seals leave a member whose identity key X25519 refuses out of
+    the v1 wraps and never ask it for its key, and such a member keeps the group off the group form (`recipientBundles`,
+    `groupRatchetEligible`, `MeshManager.kt:1552-1562`, `:2284-2306`), so the rest of the group gets the post, with the
+    switch on or off. A DM to such a member waits as `pendingKey`, as it already did here.
+  - The facade logs a refused seal, as Kotlin's `refusedAsNull` does (`RatchetSessions.kt:508-526`); `RatchetSessions`
+    takes the engine's log for it.
+  - This port's rule that a low-order input never reads as `AEAD_FAIL` stands: `RatchetCrypto.dh` refuses the all-zero
+    result, and `acceptsPublicKey` asks `dh`.
+- **#171, a reset's re-seal goes out twice** (knit-next ADR 2026-10.dmgw): `ResetReseal` records the ids
+  `resealRecentDirectMessages` takes, per peer and in memory, before the first copy leaves, and marks them due
+  `SeenSet.defaultWindowMilliseconds` + 60 s later. The 60-second re-offer drains each due entry as its first step,
+  whoever is linked (`resealSecondPass`, `MeshManager.kt:2815-2818`, `:3945-3973`), and re-seals only the recorded ids
+  still unacked. A later reset of the peer replaces the entry; the second pass records nothing, so it never re-arms. It
+  runs on the monotonic clock that the router's `SeenSet` reads here, as Kotlin ties it to the clock its router reads.
+  An engine deadline already fires the re-offer (ADR 2026-09.gq84), so nothing waits on a delay. `SeenSet.reopen`'s doc
+  and the inbound path's reopen comment say what the re-seal reaches. This flips `RatchetResealReachTests`, which had
+  pinned the limit at Kotlin's level since P5b, as that suite said a knit-next fix would.
+- **#177, a group skipped key spent by one mint only:** this port has spent it by the full key since P6a1, and knit-next
+  now does too (`GroupRatchetDao.deleteSkippedKey`). Nothing moves here; a sessions test over both store kinds pins it,
+  since no A9 transcript holds two mints' keys at one index.
+- **An `EPOCH_GONE` on a retired epoch is never reset evidence** (knit-next ADR 2026-10.9wvr, `09cacf5b`):
+  `RatchetResetPolicy.isRetiredBase` (`RatchetSessions.kt:714-740`) refuses a frame whose `pe ≥ 1` is below both the
+  lowest local epoch number held (`RatchetStore.lowestLocalEpoch`, both stores, no schema change) and the session's
+  `highestPeAcked`. Kotlin's pipeline reads `retiredBase` in a locked read of its own after the era gate
+  (`InboundPipeline.kt:1967-1999`). Here `noteUndecryptable` reads the lowest epoch in the same unit as the session,
+  after the era gate and before the ids, so a store that cannot answer counts nothing, and it logs Kotlin's
+  `reset gate: … retired epoch` line. `retiredBase(from:pe:)` answers the same rule in a unit of its own, for
+  diagnostics and the tests. Kotlin's `SessionTransactorOrderTest` case has no counterpart, since there is no lock here.
+  The follow-ups that ADR names (#179, #180, #181) had not landed at `4f3cd995`.
+- **Not followed:** `458c2eee`'s #173, `AckSync`'s live-link tick chunked at `MAX_BATCH_ACKS`, belongs to the blobs
+  plane and is handed to its owner. `6d9627b7` (knit-next ADR 2026-10.j67x) adds the spool's scopes for our unanswered
+  reset, and with them a race rule: a frame that predates our session and carries the init of the root we replaced is
+  read under the drained root rather than raced (`predatesSession`, `derivesPrevRoot`). The scopes are the spool's,
+  which this port leaves out; the race rule changes what a peer accepts and needs a phase of its own. `e3e41a2e` and
+  `2cce03eb` add supporter badges at label 8 of the sealed profile, which this port's compact codec skips as an
+  unknown label.
+- **The switch, the bits and the wire:** nothing moves with the switch off but two v1 refusals, each only toward a key no
+  honest peer publishes: a group post no longer waits for a member whose identity key X25519 refuses, and such a member
+  is no longer asked for its key. No capability bit, schema, label or emitted vector moves.
+- **Guards:**
+  - `RatchetEngineTests`: Kotlin's six `458c2eee` cases by name (`RatchetEngineTests+Prekeys.swift`); `RatchetSide` now
+    rotates its prekey and resolves an init's by id.
+  - `RatchetSessionsSealTests`: `RatchetSessionsSealTest`'s six cases, over memory stores.
+  - `RatchetCryptoTests.acceptsPublicKeyRefusesWhatX25519Refuses`, with the order-8 point and `p` as this port's;
+    `MessageCryptoTests.noWrapLeftIsNullNotAThrow` and `aRecipientWhoseKeyHpkeRefusesIsSkippedAndTheRestStillRead`.
+  - `MeshEnginePrekeyIntakeTests.aSignedLowOrderPrekeyIsNotPinned`; `GroupRatchetOutboundTests` and
+    `MeshEngineLowOrderMemberTests` for the member no one can wrap to (`MeshManagerTest`'s and `GroupMembershipLabTest`'s
+    #172 cases). `MeshEngineRatchetSendTests.aDmToALowOrderPrekeyFallsBackToV1AndCounts`,
+    `MeshEngineGroupSendTests.aSeedThatWillNotSealSendsTheWholeMessageV1AndKeepsNoMint` and the init answer's case now pin
+    a prekey from before the rule, which only the facade refuses.
+  - `MeshEngineResetResealSecondPassTests` (`aResetsResealGoesOutOnceMoreAfterTheDedupWindow`,
+    `aResetsSecondResealSkipsAPeerBlockedSince`, and this port's replacement and nobody-linked case);
+    `RatchetResealReachTests`' two cases are `RestoreLabTest`'s relayed-restore scenarios on three engines.
+  - `GroupRatchetSessionsTests.aSkippedKeyIsSpentByItsMintAndTheSiblingEraStillOpens` on both store kinds, and
+    `GroupRatchetEngineTests.spendingOneMintsSkippedKeyLeavesTheOtherMintsKeyAtTheSameIndex`.
+  - `RatchetSessionsRetiredBaseTests` (`RatchetSessionsRetiredBaseTest`'s cases), `RatchetStoreLowestEpochTests` on both
+    store kinds, `MeshEngineRatchetEraTests.anEpochGoneOnAnEpochWeRetiredBehindThePeersAckIsNeverEvidence`, and
+    `RatchetRetiredEpochLabTests`, `SessionLabTest`'s two 9wvr cases on two engines.
+  - `RatchetPrekeyRotationLabTests`, `SessionLabTest`'s two #174 cases on two engines.
+  - The A9 replays pass on the re-synced file and fail without #174's `initiate` change, as the lab and session tests do
+    (checked by reverting it); the 9wvr and second-pass tests fail with their rule taken out (checked the same way).

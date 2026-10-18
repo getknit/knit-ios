@@ -111,6 +111,20 @@ public enum RatchetCrypto {
         return copiedBytes(secret)
     }
 
+    /// Whether X25519 takes `publicKey` as a peer's public key at all (`acceptsPublicKey`, knit-next `RatchetCrypto.kt:78-84`
+    /// at `4f3cd995`, #172): the check every ``dh(_:_:)`` against it makes, run once with a fixed scalar whose output
+    /// nothing uses. A low-order point sends every clamped scalar to zero, so the scalar is irrelevant, and asking
+    /// ``dh(_:_:)`` rather than listing the points keeps the two from drifting, as Kotlin asks Tink. A signature proves only
+    /// that a peer chose a key: a prekey this refuses is never pinned, and a member whose identity key it refuses is left
+    /// out of a group's wraps and keeps the group off the group form.
+    public static func acceptsPublicKey(_ publicKey: [UInt8]) -> Bool {
+        (try? dh(probeScalar, publicKey)) != nil
+    }
+
+    /// ``acceptsPublicKey(_:)``'s fixed, public scalar (`PROBE_PRIV`, `:33`).
+    private static let probeScalar = [UInt8](repeating: probeByte, count: keyByteCount)
+    private static let probeByte: UInt8 = 0x5A
+
     /// The initiator's session root (`x3dhInitiate`, `:67-77`): DH1 binds our identity, DH2 the peer's, and DH3,
     /// ephemeral to prekey, is the forward secrecy no long-term key can rebuild once `ekPriv` and the prekey retire.
     /// The identity keys are the X25519 halves, `hpkePub` and its scalar.

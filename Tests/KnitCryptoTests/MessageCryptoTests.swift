@@ -147,14 +147,27 @@ import Testing
         hexBytes("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800"),
     ]
 
-    /// Tink refuses to seal to a low-order key, and so does this port, although swift-crypto would not.
+    /// `noWrapLeftIsNullNotAThrow` (#172, `MessageCryptoTest.kt` at `4f3cd995`): Tink refuses to wrap to a low-order key,
+    /// and so does this port, although swift-crypto would not. With no wrap left nobody could read the frame, so the seal
+    /// answers `nil`, as for no recipients, never a throw.
     @Test(arguments: lowOrderPoints)
-    func aLowOrderRecipientKeyFailsToSeal(point: [UInt8]) throws {
+    func noWrapLeftIsNullNotAThrow(point: [UInt8]) throws {
         let hostile = try #require(PublicKeyBundle(signingKey: bob.bundle.signingKey, agreementKey: point))
         #expect(PublicKeyBundle(encoded: hostile.encoded) == hostile, "the bundle still parses, as on Android")
-        #expect(throws: CryptoFailure.sealing) {
-            try MessageCrypto.seal(content("hi"), header: [1], to: [hostile.nodeId: hostile])
-        }
+        #expect(!hostile.hasUsableAgreementKey)
+        #expect(try MessageCrypto.seal(content("hi"), header: [1], to: [hostile.nodeId: hostile]) == nil)
+    }
+
+    /// `aRecipientWhoseKeyHpkeRefusesIsSkippedAndTheRestStillRead` (#172): a forged bundle, a real signing key beside a
+    /// low-order X25519 key, is skipped like an unknown key, so one such group member never strands the post for the rest.
+    @Test(arguments: lowOrderPoints)
+    func aRecipientWhoseKeyHpkeRefusesIsSkippedAndTheRestStillRead(point: [UInt8]) throws {
+        let mallory = try #require(PublicKeyBundle(signingKey: carol.bundle.signingKey, agreementKey: point))
+        let header = MessageCrypto.header(id: "m9", senderId: alice.nodeId.string, sentAt: 1, thread: "g-1")
+        let sealed = try MessageCrypto.seal(content("hello group"), header: header, to: [bob.nodeId: bob.bundle, mallory.nodeId: mallory])
+        let envelope = try #require(sealed)
+        #expect(envelope.keys.map(\.to) == [bob.nodeId.string])
+        #expect(MessageCrypto.open(envelope, header: header, as: bob)?.body == "hello group")
     }
 
     /// A sender who puts a low-order point in `enc` is refused on open too, as Tink refuses it.

@@ -308,14 +308,20 @@ extension MeshEngine {
     }
 
     /// The profile's prekey, or `nil` for none: its signature must verify against `peer`'s key, the one in the same
-    /// profile, and its public value must be 32 bytes (`verifiedPrekey`, `:3353-3368`). A bad one counts as none, so it
-    /// never blocks the rest of the profile.
+    /// profile, its public value must be 32 bytes (`verifiedPrekey`, `:3353-3368`), and X25519 must take it (knit-next
+    /// `InboundPipeline.kt:3670-3674` at `4f3cd995`, #172). A signature proves the peer chose the key, not that it is one:
+    /// a low-order point verifies, and every seal against it would be refused. A bad one counts as none, so it never
+    /// blocks the rest of the profile, a newer profile carrying one clears the pin, and the peer gets v1.
     private func verifiedPrekey(_ content: ProfileContent, of peer: PeerRecord) -> PrekeyInfo? {
         guard let info = content.prekey else {
             return nil
         }
         guard let bundle = PublicKeyBundle(encoded: peer.publicKey), PeerPrekey(verifying: info, signedBy: bundle) != nil else {
             log.log(.warning, "mesh ignored a bad prekey from \(peer.nodeId)")
+            return nil
+        }
+        guard RatchetCrypto.acceptsPublicKey(info.pub) else {
+            log.log(.warning, "mesh ignored a prekey from \(peer.nodeId): X25519 refuses it")
             return nil
         }
         return info

@@ -65,4 +65,11 @@ public struct PublicKeyBundle: Hashable, Sendable {
         }
         return key.isValidSignature(signature, for: message)
     }
+
+    /// Whether X25519 takes ``agreementKey`` at all (``RatchetCrypto/acceptsPublicKey(_:)``, #172). The bundle still
+    /// parses and pins with a low-order key, as on Android, since its signing half is valid; but no v1 wrap and no ratchet
+    /// session can reach it, so a group seal leaves such a member out (`recipientBundles`, `groupRatchetEligible`).
+    public var hasUsableAgreementKey: Bool {
+        RatchetCrypto.acceptsPublicKey(agreementKey)
+    }
 }

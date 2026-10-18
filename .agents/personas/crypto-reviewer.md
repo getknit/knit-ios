@@ -129,8 +129,9 @@ people, or leaks what the seal hides. Check each shape explicitly.
    and sent again under the hash and key it already has (ADR 2026-10.f3mv). A `pendingKey` message is signed only
    when it is finally sealed. A verbatim re-send inside the `SeenSet`'s ten minutes is absorbed; outside them it
    lands as a duplicate. A ratchet seal consumes a chain key; a sealed tick is sealed once and re-sent verbatim, only
-   over a live link; the one exception to signing once is the re-seal after a peer's reset, one more signature per
-   committed first verdict of a reset, unguarded per id as in Kotlin (ADR 2026-09.2ved, amended); a v3 nonce
+   over a live link; the one exception to signing once is the re-seal after a peer's reset: one more signature per
+   committed first verdict of a reset, unguarded per id as in Kotlin, and since P7f a second one about 11 minutes later
+   for the ids still unacked, which never comes round again (ADR 2026-09.2ved, amended); a v3 nonce
    derives from the message key and the AAD, never from a counter (knit-next dd68d9fd).
    Evidence: c7efff6 (every send sealed a picture under a fresh key, so one picture became N
    blobs and every recipient pulled each), knit-next bfa03264 (a retry past the dedup window, about 96 duplicates

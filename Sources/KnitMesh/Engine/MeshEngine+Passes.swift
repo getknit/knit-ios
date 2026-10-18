@@ -9,6 +9,9 @@ extension MeshEngine {
     /// A Bluetooth link stays up, so this is what reconciles custody that drifts after link-up, and what opens a blob's next
     /// cycle, which moves it one hop nearer.
     func reoffer() {
+        // First, and whoever is linked: a reset's second re-seal is due by the clock, not by a link (knit-next
+        // `MeshManager.kt:2815-2818` at `4f3cd995`, ADR 2026-10.dmgw).
+        resealSecondPass()
         let neighbors = neighborIds
         rewantMissingBlobs(sparing: [])
         stepBlobs()

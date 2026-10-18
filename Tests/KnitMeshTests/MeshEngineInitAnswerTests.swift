@@ -275,7 +275,10 @@ import Testing
         let signature = try alice.keys.signature(for: RatchetCrypto.spkSigningBytes(id: 1, pub: lowOrder))
         let refused = PrekeyInfo(id: 1, pub: lowOrder, sig: signature)
         fixture.deliver(try alice.profile(publishedAt: now, capabilities: AndroidPeer.capabilities, prekey: refused), from: alice)
-        #expect(fixture.stores.peers.peer(alice.nodeId)?.prekey != nil, "a prekey the peer signed, pinned")
+        // Since #172 the intake never pins it: the row is one pinned before that rule, which only the facade refuses.
+        var row = try #require(fixture.stores.peers.peer(alice.nodeId))
+        row.prekey = refused
+        fixture.stores.peers.upsert(row)
         fixture.transport.clear()
         let initial = RatchetInit(eph: [UInt8](repeating: 7, count: 32), pkid: 1, at: now)
         let header = RatchetHeader(se: 1, ek: [UInt8](repeating: 9, count: 32), pe: 0, n: 0, initial: initial)

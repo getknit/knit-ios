@@ -490,7 +490,11 @@ explicit direction.** Update this file in the change that ships an item.
     hole; worth a knit-next issue. P7b, done on 2026-10-16, is A10's iOS half (below). P7c, done on 2026-10-16, serves the
     photo our sealed profiles still name: a blob stays while any live frame our custody carries names it, as Kotlin's
     `forward.countByAttachmentHash` keeps it (ADR 2026-10.5sk9's P7c amendment). Group photos join that count when the
-    blob phase that fetches them lands.
+    blob phase that fetches them lands. P7f, done on 2026-10-18, follows knit-next `main` at `4f3cd995`: #174 (an
+    initiator's base is the prekey its init names), #172 (a key X25519 refuses is "cannot seal", and such a prekey is
+    never pinned), #171 (a reset's re-seal goes out once more past the dedup window), 9wvr (an `EPOCH_GONE` on a retired
+    epoch is no reset evidence) and A9's re-synced file (ADR 2026-10.5sk9's P7f amendment). Owed: #173, `AckSync`'s
+    chunked live-link tick, the blobs plane's; and `6d9627b7`'s race rule for a frame that predates our session.
 
   Before the flip, besides the phases:
   - **Read `PRAGMA secure_delete` once on the lab iPhone's Debug build.** Pass is 1. Only the Mac's run reads Apple's

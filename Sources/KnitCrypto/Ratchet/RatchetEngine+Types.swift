@@ -33,7 +33,9 @@ extension RatchetEngine {
         /// The peer init we last resolved (answered, adopted or drained): known by its ephemeral, never its stamp, so a
         /// re-served init is inert.
         public var peerInitEphPub: [UInt8]?
-        /// The peer's newest epoch we DH our next epoch against; `nil` while the peer has contributed none.
+        /// The base we DH our next epoch against: the peer's newest epoch once it has contributed one, else, for a session
+        /// we initiated, the prekey our init names, at ``peerBaseEpoch`` 0 (#174). `nil` for a session that holds neither:
+        /// a replacement we adopted before the peer's first epoch, or a row an older build initiated.
         public var peerBasePub: [UInt8]?
         /// That epoch's number, 0 for none.
         public var peerBaseEpoch: Int

@@ -4,7 +4,7 @@ import KnitWire
 /// The session reset's pure rules, apart from the state that drives them (knit-next ADR 023, ADR 024, ADR 026 and ADR
 /// 2026-09.qerd, at `ac491f4c`): which failures count as evidence, the era gate that keeps a stranded tail from counting,
 /// the floors either side holds, and the plan a reset takes. ``RatchetSessions`` keeps the per-peer memory and applies
-/// them: ``RatchetSessions/noteUndecryptable(from:frameId:sentAt:now:)`` runs ``isLiveEvidence(sentAt:session:now:)``
+/// them: ``RatchetSessions/noteUndecryptable(from:frameId:sentAt:now:epochGoneBase:)`` runs ``isLiveEvidence(sentAt:session:now:)``
 /// itself, on the session it reads in a unit, before a frame touches the heuristic's ids, and P5's inbound path checks
 /// ``triggeringFailures`` before calling it.
 public enum RatchetResetPolicy {
@@ -39,7 +39,7 @@ public enum RatchetResetPolicy {
     /// `:1897-1899`). For a responder `establishedAt` is that peer's `init.at`, so the comparison is exact. For an
     /// initiator it is our clock: the skew bound absorbs ordinary disagreement, and once the era has outlived every
     /// retention window there is no stranded tail left anywhere, whatever the peer's clock says (knit-next ADR 026). A
-    /// peer with no session passes, which ``RatchetSessions/noteUndecryptable(from:frameId:sentAt:now:)`` decides before
+    /// peer with no session passes, which ``RatchetSessions/noteUndecryptable(from:frameId:sentAt:now:epochGoneBase:)`` decides before
     /// calling.
     public static func isLiveEvidence(sentAt: Int64, session: RatchetEngine.SessionState, now: Int64) -> Bool {
         guard session.weAreInitiator else {
@@ -49,6 +49,30 @@ public enum RatchetResetPolicy {
             return true
         }
         return sentAt >= session.establishedAt &- WireProtocol.maxFutureSkewMilliseconds
+    }
+
+    /// Whether an `EPOCH_GONE` whose header names our local epoch `pe` is doomed ciphertext rather than evidence that the
+    /// session is broken (`isRetiredBase`, knit-next `RatchetSessions.kt:714-740` at `4f3cd995`, knit-next ADR 2026-10.9wvr):
+    /// both must hold.
+    ///
+    /// - **`pe` is below `lowestRetained`**, the lowest epoch number we still hold for the peer. The key went to retention
+    ///   and nothing brings it back; a reset strands the frame just the same. A `pe` at or above it that is missing (a
+    ///   hole), or past our newest, is the split-era case the heuristic exists for, and still counts. The lowest number,
+    ///   not the oldest mint: after our own reset restarts the numbering a dead era's high rows sit beside the live era's
+    ///   low ones, and the minimum only drops, which narrows this rule.
+    /// - **`pe` is below `highestPeAcked`**, the newest of our epochs the peer has sealed against that we opened under the
+    ///   active root, recorded only on a fresh derivation (knit-next ADR 2026-09.pz9g). The peer's base for us only moves
+    ///   forward within our numbering, so a frame on an older one is from its past, and the channel has worked since. A
+    ///   peer still based on an epoch the 16-row cap evicted, one that never heard our newer ones, stays counted: there
+    ///   `pe` equals its newest seal against us. Our own reset zeroes the ack with its fresh initiation, so the rule stays
+    ///   shut until the peer seals under the new root.
+    ///
+    /// `pe = 0` is never retired: it names our signed prekey, whose retention is time-based, five kept a week apart, and a
+    /// missing one may be a peer still pinned to a rotated prekey that will keep sealing inits we cannot open, which only a
+    /// reset or our profile cures. Both numbers are this phone's own, our epoch counter echoed back, so no clock and no
+    /// other device's counter enters.
+    public static func isRetiredBase(pe: Int, highestPeAcked: Int, lowestRetained: Int) -> Bool {
+        pe >= 1 && pe < lowestRetained && pe < highestPeAcked
     }
 
     /// The floor an init with `flags` meets before it may replace a session we hold: a minute for `FLAG_RESET`, an hour

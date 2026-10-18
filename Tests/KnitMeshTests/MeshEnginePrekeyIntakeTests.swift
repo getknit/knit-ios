@@ -61,6 +61,24 @@ import Testing
         #expect(fixture.log.all.filter { $0 == "warning mesh ignored a bad prekey from \(bob.nodeId)" }.count == 3)
     }
 
+    /// `aSignedLowOrderPrekeyIsNotPinned` (#172, `InboundPipelineTest.kt` at `4f3cd995`): a signature over a low-order
+    /// point verifies, and every seal against it would be refused, so it is read as no prekey: the earlier pin is cleared,
+    /// not replaced, and the rest of the profile still applies.
+    @Test func aSignedLowOrderPrekeyIsNotPinned() throws {
+        let fixture = EngineFixture(alice)
+        fixture.deliver(try bob.profile(name: "Ann", version: 10, publishedAt: start, prekey: try bob.prekey(id: 7)), from: bob)
+        #expect(try bobsRecord(fixture).prekey?.id == 7)
+
+        let lowOrder = [UInt8](repeating: 0, count: RatchetCrypto.keyByteCount)
+        let signed = PrekeyInfo(id: 8, pub: lowOrder, sig: try bob.keys.signature(for: RatchetCrypto.spkSigningBytes(id: 8, pub: lowOrder)))
+        fixture.deliver(try bob.profile(name: "Ann", version: 11, publishedAt: start + 1, prekey: signed), from: bob)
+        let peer = try bobsRecord(fixture)
+        #expect(peer.prekey == nil, "read as no prekey: the earlier pin is cleared, not replaced")
+        #expect(peer.prekeyProfileAt == 11)
+        #expect(peer.name == "Ann", "the rest of the profile still applies")
+        #expect(fixture.log.all.contains("warning mesh ignored a prekey from \(bob.nodeId): X25519 refuses it"))
+    }
+
     @Test func aProfileOlderOnBothWatermarksChangesNothing() throws {
         let fixture = EngineFixture(alice)
         let newer = try bob.prekey(id: 2)

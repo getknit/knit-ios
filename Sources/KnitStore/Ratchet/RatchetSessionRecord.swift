@@ -32,7 +32,7 @@ public struct RatchetSessionRecord: Sendable, Equatable {
     public var initPkid: Int
     /// The peer init we last resolved, known by its ephemeral.
     public var peerInitEphPub: [UInt8]?
-    /// The peer's newest epoch we DH our next epoch against.
+    /// The base we DH our next epoch against: the peer's newest epoch, or the prekey our init names at epoch 0 (#174).
     public var peerBasePub: [UInt8]?
     /// That epoch's number, 0 for none.
     public var peerBaseEpoch: Int

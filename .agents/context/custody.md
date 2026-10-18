@@ -209,8 +209,9 @@ publish it honestly.
   no bytes under its id, so custody keeps the first bytes stored under an id here as on Android (`ForwardSync.kt:75`).
   A re-seal reaches only the nodes it meets live whose router has not seen its id within ten minutes. The reopen is
   the failing peer's alone, a relay that carried the original inside that window drops it, and every custody, the
-  peer's included, keeps only the original, as in Kotlin. So a peer two hops away does not read DMs that crossed a
-  relay within ten minutes before its reset (`RatchetResealReachTests`). The unit's one write in memory, a tombstone
+  peer's included, keeps only the original, as in Kotlin. So the ids still unacked are sealed once more about 11 minutes
+  later (phase P7f, knit-next ADR 2026-10.dmgw), which reaches a peer two hops away that the first pass missed
+  (`RatchetResealReachTests`); custody still carries only the originals. The unit's one write in memory, a tombstone
   `CustodySync.admits` may set, is idempotent (`StoreTransactor`'s contract), so custody's copy stays in the unit.
 - **Group messages carried before groups showed** are delivered at start-up: the engine replays each live
   group `chat` in custody from someone else that has no message row, oldest first, as Android's

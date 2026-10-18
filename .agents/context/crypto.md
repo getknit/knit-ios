@@ -207,9 +207,9 @@ Swift must count `utf16`, not `Character`s.
 | `SafetyNumber`, `Alias`, `DeviceTag` | the same names |
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
 | `RatchetEngine` | `RatchetEngine`: `initiate`, `seal`, `open`, over `SessionState`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
-| `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `sealResetDm`, `sweep`, `forget`, `settle`, and `confirmedPeers`, `exportedRoots`' filter; the reset's pure rules in `RatchetResetPolicy` |
+| `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `retiredBase`, `sealResetDm`, `sweep`, `forget`, `settle`, and `confirmedPeers`, `exportedRoots`' filter; the reset's pure rules in `RatchetResetPolicy` (`isRetiredBase` among them) |
 | `InboundPipeline`'s ratchet arm, `sendSessionReset` | `MeshEngine.handleRatchetDirect` and `sendSessionReset`, over `RatchetInbound`'s pure rules; the replay of a failed open in `RatchetReplay` |
-| `MeshManager.sealEnvelopeFor`'s DM arm, `flushPendingFor`, `resealRecentDmsTo` | `MeshEngine.sendRatchet`, `flushPendingDirect` and `resealRecentDirectMessages`, over `RatchetOutbound`'s pure rules; Android's seal counts in `RatchetSealCounts` |
+| `MeshManager.sealEnvelopeFor`'s DM arm, `flushPendingFor`, `resealRecentDmsTo`, `resealSecondPass` | `MeshEngine.sendRatchet`, `flushPendingDirect`, `resealRecentDirectMessages` and `resealSecondPass` (`ResetReseal` records the pass owed), over `RatchetOutbound`'s pure rules; Android's seal counts in `RatchetSealCounts` |
 | `InboundPipeline.sealDmReceipt`, `MeshManager.sealDeliveryTick`, `originateDeliveryTick`, `canSealTickTo`, `inlineAcksFor` | `MeshEngine.sendSealedReceipt`, `sealLiveTick`, `originateTick` and `canSealTick` behind `RatchetTickSeals`, and `sendRatchet`'s riders, over `RatchetOutbound.receiptPlan` and `inlineAckRoom` |
 | `MeshManager.sendReaction`, `sealDmReaction`, `broadcastSealedProfile`, `currentProfilePayload`, `sendCtlDm`, `sendIntroTo` | `MeshEngine.sendReaction`, `broadcastSealedProfile` and `answerInit` over `sealControl`, every ctl's one seal, with `RatchetOutbound`'s `reactionTarget`, `profile(of:)` and `answerPlan` |
 | `IntroSync`'s answer half (`lastAnswered`, `owed`, `onPeerFrameOpened`, `onProfilePinned`) | `RatchetAnswers`, which `MeshEngine.answerInit` and `answerOwedInit` ask; the intro send half is not ported |
@@ -257,9 +257,10 @@ Swift must count `utf16`, not `Character`s.
   - `open` reads a chain or a stored key only for the header's own `se` and `n`, and tries the chains newest mint
     first, where Kotlin trusts its caller to pass no others. The outcome is the same.
   - A stored key is spent by its full key, `(group, sender, epoch, mintedAt, index)`: the delta names the mint of the
-    key that opened the frame, as the DM delta names its root tag. Kotlin's names the index, and its store deletes every
-    mint's key there, so a receiver holding both eras of a wiped sender's epoch loses one frame per index they share,
-    as `DUPLICATE` at every re-serve (knit-next #177).
+    key that opened the frame, as the DM delta names its root tag. Kotlin's named the index, and its store deleted every
+    mint's key there, so a receiver holding both eras of a wiped sender's epoch lost one frame per index they share,
+    as `DUPLICATE` at every re-serve (knit-next #177). knit-next `458c2eee` spends by the full key too
+    (`consumedSkippedMintedAt`, `GroupRatchetDao.deleteSkippedKey`), so the two now agree.
 
   The group form has no shape rule for a carried nonce, as Kotlin's group arm has none: one that is not 12 bytes fails
   as any AEAD refusal does, `AEAD_FAIL` where a chain is held, never `BAD_HEADER`. The JVM's GCM would open a frame
@@ -295,8 +296,10 @@ that an in-order chain would not survive. The session root never changes, and ea
   the eighth field, after `capabilities`. It rides the cleartext profile only, never the sealed `CTL_PROFILE`
   (`Wire.kt:576-581`, `:682-686`).
 - **Taking a peer's prekey in** (`InboundPipeline.kt:3281-3368`):
-  - verify `sig` against the bundle in the same profile, and require a 32-byte `pub`; anything else counts as no
-    prekey;
+  - verify `sig` against the bundle in the same profile, require a 32-byte `pub`, and require that X25519 takes it
+    (`RatchetCrypto.acceptsPublicKey`, knit-next #172, `InboundPipeline.kt:3670-3674` at `4f3cd995`): a low-order
+    point's signature verifies, yet every seal against it would be refused. Anything else counts as no prekey, so the
+    peer gets v1;
   - the prekey has its own watermark, the profile's `version`;
   - a profile newer on that watermark with no prekey, or a bad one, clears the pin;
   - a profile older on the presentation's watermark and not on the prekey's still moves the prekey, and with it the
@@ -354,8 +357,11 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 
 - **`dir`** is `'i'` (0x69) when the epoch's sender initiated the session, else `'r'` (0x72)
   (`RatchetCrypto.kt:116-129`).
-- **The sender's DH base** is the peer's newest epoch it has seen (`peerBasePub`), or the peer's pinned SPK when
-  `pe = 0`.
+- **The sender's DH base** is the peer's newest epoch it has seen (`peerBasePub`), or, when `pe = 0`, the SPK its init
+  names, which `initiate` records as `peerBasePub` at `peerBaseEpoch` 0 until the peer contributes an epoch (knit-next
+  #174, `RatchetEngine.kt:226-250` at `4f3cd995`). A session an older build initiated holds no base: it seals a new
+  epoch only while the pinned SPK is still the init's (`RatchetEngine.prekeyBase`), and otherwise the boundary answers
+  `nil` and the caller takes its fallback.
 - **The receiver's DH base** is our SPK for `init.pkid` when `pe = 0`, and otherwise our own local epoch numbered
   `pe`. The lookup is by number alone (`RatchetEngine.kt:451`, `RatchetSessions.kt:134-140`).
 - **No one-time prekeys.** The EK private key is used once for the root and never stored.
@@ -494,6 +500,12 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 - **The reset heuristic** (`InboundPipeline.kt:1816-1900`, `RatchetSessions.kt:295-311`):
   - It counts authenticated `NO_SESSION`, `EPOCH_GONE` and `AEAD_FAIL` only, never `DUPLICATE` or `BAD_HEADER`.
   - It needs three distinct ids from the era it would abandon, and 6 h since our last reset.
+  - An `EPOCH_GONE` sealed against one of our epochs that retention retired, `pe ≥ 1` below both the lowest local epoch
+    number we hold and `highestPeAcked`, is doomed and never counts (knit-next ADR 2026-10.9wvr,
+    `RatchetResetPolicy.isRetiredBase`, read in `noteUndecryptable`'s own unit, which logs `mesh reset gate: … retired
+    epoch`). A hole, a `pe` past our newest and `pe = 0` still count, and our own reset zeroes the ack, which turns the
+    rule off until the peer seals under the new root. So a reset's re-seal no longer recovers a DM late behind live
+    traffic on a cap-retired base, a cost knit-next accepts (its #180).
   - Each counted frame gets one copy past the router's dedup (`reopen`).
 - **Reset plans** (knit-next ADR 2026-09.qerd; `RatchetSessions.kt:393-469`):
   - **Re-root:** a fresh init flagged `FLAG_RESET`, numbering again from 1.
@@ -507,6 +519,12 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   peer within the day signs each DM still unacked once more, with no per-id guard, in Kotlin as here. This port
   re-seals from phase P5b, once the reset's first verdict commits and never from the start's replay, and flushes its group
   seeds from phase P6b, right after the re-seal, forced past the outbox's ack but floored.
+- **The re-seal goes out twice** (knit-next ADR 2026-10.dmgw, #171; phase P7f, `ResetReseal`): `ResetReseal` records
+  the ids the first pass takes, per peer and in memory, before the first copy leaves. The 60-second re-offer, as its
+  first step and whoever is linked, seals once more those still unacked `SeenSet.defaultWindowMilliseconds` + 60 s
+  later, on the monotonic clock the router's dedup reads. A later reset of the peer replaces the pass owed. The second
+  pass records nothing, so it never re-arms, and a restart inside the window loses it. Each pass costs one chain key per
+  DM still unacked.
 - **Init answers** (IntroSync's answer half, `IntroSync.kt:185-240`; phase P5e, `MeshEngine+RatchetPresentation.swift`):
   - a frame whose header still carries its sender's init, opened and committed as its first verdict, gets one sealed
     `CTL_PROFILE` at our current version, version 0 included, then none again for that init for 60 min, and a
@@ -557,10 +575,15 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   - A DM waits only for a bundle (`pendingKey`), so a peer pinned without a prekey gets v1 at once, and that DM is
     never upgraded.
   - In this port the switch comes first: off, nothing takes the ratchet. On, `RatchetOutbound.scheme` makes the choice
-    above (phase P5b). A prekey X25519 refuses, which Kotlin throws on out of `sendChat` (`:1189`, `:1295`), sends the DM
-    v1 as `sealDm`'s `nil` does, counted with it as `dmSealedV1Fallback`.
-- **A group message** takes the group form only when every other member has a bundle, `CAP_RATCHET` and a prekey,
-  and the epoch's seed seals to all of them (`MeshManager.kt:1319-1353`). Any shortfall sends that message as v1.
+    above (phase P5b). Since phase P7f a prekey X25519 refuses is never pinned (above). One pinned before sends the DM
+    v1 as `sealDm`'s `nil` does, counted with it as `dmSealedV1Fallback`; Kotlin's facade now maps Tink's throw on it to
+    "cannot seal" (#172). A peer whose identity key X25519 refuses gets no v1 wrap either (`MessageCrypto.seal` answers
+    `nil` with no wrap left), so its DM waits as `pendingKey`, as in Kotlin.
+- **A group message** takes the group form only when every other member has a bundle whose identity key X25519 takes,
+  `CAP_RATCHET` and a prekey, and the epoch's seed seals to all of them (`MeshManager.kt:1319-1353`). Any shortfall sends
+  that message as v1. A member whose identity key X25519 refuses is left out of the v1 wraps and never asked for its
+  key, so the rest still get the post (`recipientBundles`, `groupRatchetEligible`, #172;
+  `PublicKeyBundle.hasUsableAgreementKey`).
 - **Resets, seeds and the group form** are always v2.
 
 ### The group form
@@ -827,8 +850,9 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     Custody keeps the first bytes stored under an id, so it is carried only where custody lost the original.
   - A re-seal reaches only the nodes it meets live whose router has not seen its id within ten minutes. The reopen is
     the failing peer's alone, a relay that carried the original inside that window drops it, and every custody, the
-    peer's included, keeps only the original, as in Kotlin. So a peer two hops away does not read DMs that crossed a
-    relay within ten minutes before its reset (`RatchetResealReachTests`).
+    peer's included, keeps only the original, as in Kotlin. So the same ids still unacked are sealed once more about
+    11 minutes later (phase P7f, knit-next ADR 2026-10.dmgw), which reaches a peer two hops away that the first pass missed
+    (`RatchetResealReachTests`). A peer reachable live at neither pass still misses them.
   - The v1 path is as it was, from the same draws, with the switch off and toward a peer without the bit.
 - **Our receipts and ticks, sealed** (`MeshEngine+RatchetReceipts.swift`, phase P5d), with the switch on, toward an
   author whose pinned row carries `CAP_RATCHET` and a bundle that decodes, read once (`canSealTickTo`,
@@ -926,15 +950,16 @@ This port follows the Kotlin in each case, and each one is a doc fix owed to kni
 - **Race candidates:** a race rebuilds the candidate list rather than adding to it.
 - **The 6 h reset floor** applies to the heuristic alone.
 
-One rule to port as it is and report rather than fix: a session left unconfirmed past 24 h or 200 frames bases its
-next epoch on a rotated prekey while its init still names the old `pkid`. Its frames then fail until a reset
-(`RatchetEngine.kt:260`, `:277`).
+This section once said to port one rule as it is and report rather than fix it: a session left unconfirmed past 24 h
+or 200 frames based its next epoch on a rotated prekey while its init still named the old `pkid`. That was
+knit-next #174, fixed in `458c2eee`, and this port follows the fix from phase P7f (above, "Derivations").
 
 ### Vectors
 
 `wire-v1.json` pins only the ratchet's shapes. The keyed answers come from companion change A9:
-knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` from a branch ahead of the pin
-(`.agents/context/knit-next.md`, "Mirrored ahead of the pin"). Each section serves one phase:
+knit-next's `vectors/ratchet-v1.json`, synced alone into `Tests/Vectors/` from knit-next `main` at `4f3cd995`, ahead
+of the pin (`.agents/context/knit-next.md`, "Mirrored ahead of the pin"). Since `1b5e72fa` an initiator's state holds the
+prekey its init names as `peerBasePub` at `peerBaseEpoch` 0 (#174); no frame byte moved. Each section serves one phase:
 
 - `kats`, the known answers for each derivation above, which `RatchetVectorTests` checks. Its `export` entry is marked
   non-normative and skipped, since the exports are left out;

@@ -213,6 +213,46 @@ import Testing
         #expect(GroupRatchetRecords.record(minted.retired()) == GroupRatchetRetention.retired(GroupRatchetRecords.record(minted)))
     }
 
+    /// `aSkippedKeyIsSpentByItsMintAndTheSiblingEraStillOpens` (knit-next #177, `GroupRatchetRepositoryTest.kt` at
+    /// `4f3cd995`), over both store kinds: a receiver holding two mints of epoch 1 banks a key per mint at index 3, and
+    /// spending the new mint's leaves the old mint's. Kotlin's delete ignored `mintedAt`, so the old era's n = 3 found no
+    /// key, both chains were past it, and it dropped as `DUPLICATE` on every re-serve. No A9 transcript holds two mints'
+    /// keys at one index, so this pins it.
+    @Test(arguments: kinds)
+    func aSkippedKeyIsSpentByItsMintAndTheSiblingEraStillOpens(kind: GroupSessionKind) throws {
+        let made = try kind.make()
+        let receiver = made.sessions(bob)
+        let engine = GroupRatchetEngine()
+        let oldMint = engine.mint(groupId: Self.group, selfId: alice, previousEpoch: 0, now: Self.now - 10)
+        let newMint = engine.mint(groupId: Self.group, selfId: alice, previousEpoch: 0, now: Self.now)
+        func frames(_ mint: GroupRatchetEngine.SendChain) throws -> [GroupRatchetSessions.Frame] {
+            var chain = mint
+            return try (0...5).map { index in
+                let sealing = try engine.seal(chain, plaintext: Array("\(mint.mintedAt):\(index)".utf8), aad: aad("frame"))
+                let sealed = try #require(sealing)
+                chain = sealed.chain
+                return GroupRatchetSessions.Frame(header: sealed.header, nonce: sealed.nonce, ct: sealed.ct, aad: aad("frame"))
+            }
+        }
+        let old = try frames(oldMint)
+        let new = try frames(newMint)
+        for mint in [oldMint, newMint] {
+            let seed = GroupSeed(epoch: 1, seed: mint.seed, mintedAt: mint.mintedAt)
+            #expect(receiver.adoptSeeds([seed], in: Self.group, from: alice, now: Self.now).freshChains == 1)
+        }
+        func opens(_ frame: GroupRatchetSessions.Frame) -> Bool {
+            guard case .settled(.opened) = receiver.open(frame, in: Self.group, from: alice, now: Self.now, alongside: { _ in 7 }) else {
+                return false
+            }
+            return true
+        }
+
+        #expect(opens(old[5]) && opens(new[5]) && opens(new[3]))
+        #expect(made.store.skippedKeys(Self.group, from: alice, epoch: 1, index: 3).map(\.mintedAt) == [Self.now - 10])
+        #expect(opens(old[3]), "the old era's n = 3 opens on its own key")
+        #expect(made.store.skippedKeys(Self.group, from: alice, epoch: 1, index: 3).isEmpty)
+    }
+
     /// The frame a group envelope carries: a v2 envelope with a group header, and nothing else.
     @Test func aGroupEnvelopeIsAFrameAndNoOtherIs() {
         let header = GroupRatchetHeader(se: 1, n: 2)

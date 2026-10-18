@@ -56,6 +56,12 @@ public struct RatchetEngine: Sendable {
     /// never kept; its public half rides every frame as the init until the session confirms. `establishedAt` is our
     /// clock, `now`, which is what lets the session layer compare it with our own stamps alone.
     ///
+    /// `peerPrekey` is also the session's DH base (``SessionState/peerBasePub``, at `peerBaseEpoch` 0) until the peer
+    /// contributes an epoch of its own, which an open under the active root adopts over it (knit-next
+    /// `RatchetEngine.kt:226-231`, `:250` at `4f3cd995`, #174). So every `pe = 0` epoch of the session is based on the
+    /// prekey its init names, the one the receiver resolves by `init.pkid`: one based on a prekey the peer had rotated to
+    /// since was unreadable there until a reset.
+    ///
     /// Throws where Tink throws: a peer key X25519 refuses (a low-order or malformed identity key or prekey).
     public func initiate(
         peerId: NodeId,
@@ -78,16 +84,21 @@ public struct RatchetEngine: Sendable {
             root: root,
             establishedAt: now,
             initEphPub: ephemeral.publicKey,
-            initPkid: peerPrekey.id
+            initPkid: peerPrekey.id,
+            peerBasePub: peerPrekey.publicKey
         )
         let started = try startSendEpoch(session, basePub: peerPrekey.publicKey, baseEpoch: 0, now: now)
         return Initiation(session: started.session, epoch: started.epoch)
     }
 
     /// Seals `plaintext` in the session's send epoch, moving first to a fresh epoch when one is due (`seal`,
-    /// `:248-298`). The DH base is the peer's newest epoch we hold, or `peerPrekey` while the peer has contributed none
-    /// (`pe = 0`). `v3` seals the compact form (knit-next ADR 059): the header is bound into the AAD and the nonce
-    /// derives from the message key and that AAD, so nothing random rides the wire; the chain and the header are v2's.
+    /// `:248-298`; knit-next `:258-319` at `4f3cd995`). The fresh epoch's DH base is ``SessionState/peerBasePub``: the
+    /// peer's newest epoch once it has contributed one, else the prekey our init named, which `initiate` records.
+    /// `peerPrekey` is only the fallback for a session that holds neither, one an older build initiated before the init's
+    /// prekey was recorded (#174), and the session layer passes it through ``prekeyBase(_:peerPrekey:)``, which refuses a
+    /// prekey the init does not name. `v3` seals the compact form (knit-next ADR 059): the header is bound into the AAD
+    /// and the nonce derives from the message key and that AAD, so nothing random rides the wire; the chain and the header
+    /// are v2's.
     /// The plaintext must already be laid out for the form, `MessageContentV2` for v3.
     ///
     /// Answers `nil` when a new epoch is due and there is no base: a chat then goes as v1, a ctl as its cleartext frame,
@@ -185,6 +196,21 @@ public struct RatchetEngine: Sendable {
     }
 
     // MARK: Sending
+
+    /// The prekey to hand ``seal(_:plaintext:aad:peerPrekey:now:forceNewEpoch:v3:)`` as its fallback base for `session`,
+    /// from the peer's pinned `peerPrekey` (`prekeyBase`, knit-next `RatchetEngine.kt:320-333` at `4f3cd995`, #174): the
+    /// one place the rule lives. A session we initiated that the peer has not answered bases every `pe = 0` epoch on the
+    /// prekey its init names, the key the receiver resolves by `init.pkid`. ``initiate(peerId:identity:peerIdentity:peerPrekey:now:)``
+    /// records it, so this matters only for a row an older build initiated with no base recorded: the peer's current
+    /// prekey serves it only while it is still that one, and `nil` otherwise makes the next epoch boundary answer `nil`
+    /// (a chat then goes v1, which the peer reads) rather than seal a frame the peer cannot open. Any other session is
+    /// based on the peer's own epoch and never reads the prekey.
+    public static func prekeyBase(_ session: SessionState, peerPrekey: PeerPrekey?) -> PeerPrekey? {
+        guard let peerPrekey, !(session.weAreInitiator && !session.confirmed && peerPrekey.id != session.initPkid) else {
+            return nil
+        }
+        return peerPrekey
+    }
 
     /// Whether the next seal needs a fresh epoch (`needsNewEpoch`, `:300-311`): none yet, or a resolution that took the
     /// root away nulled the chain; the peer has contributed an epoch newer than our base (every turnaround is a fresh

@@ -150,7 +150,8 @@ extension MeshEngine {
 
     /// Seals `content` to each current member of `group` but us whose key is pinned (`recipientBundles`,
     /// `MeshManager.kt:1933-1952`), under the header whose thread is the group's id. Answers `nil` in place of the
-    /// envelope when no member is keyed, and the members skipped for want of a key either way.
+    /// envelope when no member is keyed, and the members skipped for want of a key either way. One whose key X25519
+    /// refuses is skipped unasked, so it never strands the post (#172, knit-next `MeshManager.kt:2284-2306` at `4f3cd995`).
     func sealGroup(_ content: MessageContent, id: String, sentAt: Int64, in group: GroupRecord) -> (
         envelope: EncEnvelope?, unkeyed: [NodeId]
     ) {
@@ -163,7 +164,7 @@ extension MeshEngine {
                 continue
             }
             if let record = stores.peers.peer(peer), let bundle = PublicKeyBundle(encoded: record.publicKey) {
-                bundles[peer] = bundle
+                bundles[peer] = bundle.hasUsableAgreementKey ? bundle : nil
             } else {
                 unkeyed.append(peer)
             }

@@ -56,6 +56,10 @@ public final class MemoryRatchetStore: RatchetStore {
         peers.withLock { $0[peer]?.localEpochs[epoch]?.privateKey }
     }
 
+    public func lowestLocalEpoch(_ peer: NodeId) -> Int? {
+        peers.withLock { $0[peer]?.localEpochs.keys.min() }
+    }
+
     public func recvEpochs(_ peer: NodeId, epoch: Int) -> [RatchetRecvEpochRecord] {
         peers.withLock { peers in
             (peers[peer]?.recvEpochs.values.filter { $0.epoch == epoch } ?? []).sorted { $0.rootTag < $1.rootTag }

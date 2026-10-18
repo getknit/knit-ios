@@ -254,15 +254,47 @@ extension MeshEngine {
     /// (``RatchetInbound/Origin/startReplay``), which re-opens resets whose first verdict came before the restart and
     /// re-sealed then: signing the ids again would answer nothing that re-seal did not.
     func resealRecentDirectMessages(to peer: NodeId) {
-        guard !isBlocked(peer), let record = stores.peers.peer(peer) else {
-            return
+        let unacked = unackedToReseal(peer)
+        // Recorded before the first copy leaves, so whoever sees one sees the pass owed too. A DM that cannot seal now is
+        // owed the second try with the rest: it is still unacked (`MeshManager.kt:3936-3943` at `4f3cd995`).
+        resetReseal.record(unacked.map(\.id), for: peer, now: clock.monotonicMilliseconds())
+        reseal(unacked, to: peer, pass: "after its reset")
+    }
+
+    /// The second pass of every reset re-seal now due (``ResetReseal``, `resealSecondPass`, knit-next `MeshManager.kt:3945-3973`
+    /// at `4f3cd995`, ADR 2026-10.dmgw): the ids that pass recorded that are still unacked, so neither one acknowledged since
+    /// nor a DM sent after the reset, which went under the new session. Once per reset: it records nothing, so it never
+    /// re-arms. The 60-second re-offer runs it first, whoever is linked, so a pass due with nobody linked still goes, as
+    /// Kotlin's tick runs it outside its link-set guards. Each costs one chain key per DM still unacked about eleven
+    /// minutes after the reset.
+    func resealSecondPass() {
+        for (peer, ids) in resetReseal.takeDue(now: clock.monotonicMilliseconds()) {
+            let owed = unackedToReseal(peer).filter { ids.contains(ExactKey($0.id)) }
+            log.log(.info, "mesh reset re-seal second pass to \(peer): \(owed.count) of \(ids.count) still unacked")
+            reseal(owed, to: peer, pass: "in the second pass after its reset")
+        }
+    }
+
+    /// Our DMs to `peer` from the last day that no receipt acknowledged, none for a blocked peer (`unackedToReseal`,
+    /// knit-next `MeshManager.kt:3974-3978` at `4f3cd995`).
+    private func unackedToReseal(_ peer: NodeId) -> [MessageRecord] {
+        guard !isBlocked(peer) else {
+            return []
         }
         let since = clock.wallMilliseconds() &- RatchetOutbound.resealMilliseconds
-        let unacked = stores.messages.messages(in: peer.string).filter { message in
+        return stores.messages.messages(in: peer.string).filter { message in
             RatchetOutbound.isUnacknowledged(message, to: peer, from: nodeId, since: since)
         }
+    }
+
+    /// `messages` sealed again to `peer` under the session now held, each under its own id and `sentAt`, as one read of the
+    /// peer's row decides (`reseal`, `MeshManager.kt:3980-3991`).
+    private func reseal(_ messages: [MessageRecord], to peer: NodeId, pass: String) {
+        guard !messages.isEmpty, let record = stores.peers.peer(peer) else {
+            return
+        }
         var resealed = 0
-        for message in unacked {
+        for message in messages {
             switch directScheme(for: message, to: record) {
             case .ratchet(let plan):
                 resealed += sendRatchet(message, to: peer, plan, purpose: .reseal, riders: []) ? 1 : 0
@@ -273,9 +305,7 @@ extension MeshEngine {
                 continue
             }
         }
-        if !unacked.isEmpty {
-            log.log(.info, "mesh re-sealed \(resealed) of \(unacked.count) unacked DMs to \(peer) after its reset")
-        }
+        log.log(.info, "mesh re-sealed \(resealed) of \(messages.count) unacked DMs to \(peer) \(pass)")
     }
 
     /// `message` sealed again v1 to `bundle` and flooded under its own id (`resealAndFlood` through `originateSigned`): signed

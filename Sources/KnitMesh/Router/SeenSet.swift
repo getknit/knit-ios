@@ -43,8 +43,11 @@ public struct SeenSet: Sendable {
     }
 
     /// Lets one more copy of `id` through inside its window, for a sealed DM this node took but could not open
-    /// because it no longer holds the session. The sender's answer reuses the frame id, so without this it
-    /// would be dropped as a repeat. Once per id per window, so a peer re-serving an unopenable frame buys at
+    /// because it no longer holds the session. The sender's answer to our reset is a fresh seal under the same id
+    /// (no wire change, and the exists-gate dedups it), which can land seconds after the copy custody just served
+    /// us, so without this it would be dropped as a repeat. Only we reopen: a relay that saw the id in its window
+    /// drops that seal too, so the sender seals it once more after the window (knit-next `SeenSet.kt:38-47` at
+    /// `4f3cd995`, ADR 2026-10.dmgw). Once per id per window, so a peer re-serving an unopenable frame buys at
     /// most one extra relay. Answers whether the id was reopened.
     public mutating func reopen(_ id: String, now: Int64) -> Bool {
         guard let last = seen[id], now - last < window else {

@@ -34,6 +34,8 @@ public final class MeshEngine {
     var groupFloors = GroupSendFloors()
     /// What our reactions, sealed profile and init answers keep in memory (phase P5e, ``RatchetPresentationState``).
     var presentation = RatchetPresentationState()
+    /// The second pass each peer's reset owes its re-seal, in memory (knit-next ADR 2026-10.dmgw).
+    var resetReseal = ResetReseal()
     let transport: any MeshTransport
     let clock: any MeshClock
     let configuration: MeshConfiguration
@@ -108,7 +110,7 @@ public final class MeshEngine {
         prekeyRing = prekeys.flatMap { $0.identity.bundle == identity.bundle ? $0 : nil }
         self.deviceTag = deviceTag
         self.stores = stores
-        ratchet = RatchetSessions(identity: identity, store: stores.ratchet, transactor: stores.transactor, engine: ratchetEngine)
+        ratchet = RatchetSessions(identity: identity, store: stores.ratchet, transactor: stores.transactor, engine: ratchetEngine, log: log)
         // Its seeds and IVs come from `groupRatchetEngine`, as the DM engine's keys do, never the injected `random`.
         groupRatchet = GroupRatchetSessions(
             nodeId: identity.nodeId, store: stores.groupRatchet, transactor: stores.transactor, engine: groupRatchetEngine)
