@@ -92,3 +92,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.nbhj](decisions/2026-10-nbhj-mentions-highlight-the-sender-s.md) | Mentions highlight the sender's words and alert apart | messages, wire, interop, ui, notifications |
 | [2026-10.5sk9](decisions/2026-10-5sk9-forward-secrecy-ports-knit-next.md) | Forward secrecy ports knit-next's ratchet whole, dark behind one switch | crypto, dm, groups, interop |
 | [2026-10.wcex](decisions/2026-10-wcex-a-reinstalled-iphone-recognises-the.md) | A reinstalled iPhone recognises the inits it answered and resets at once | crypto, custody |
+| [2026-10.b4yk](decisions/2026-10-b4yk-dms-and-groups-seal-with.md) | DMs and groups seal with the ratchet, and the iPhone advertises 0x15F | crypto, dm, groups, interop |

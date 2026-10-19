@@ -123,21 +123,23 @@ public struct MeshConfiguration: Sendable {
     /// How long after one of our typing cues the next may go to the same thread (`TYPING_SEND_INTERVAL_MS`,
     /// `ChatViewModel.kt:2542`): the first keystroke after a quiet spell sends one at once, and the rest wait it out.
     public var typingIntervalMilliseconds: Int64
-    /// The forward-secrecy ratchet's switch (ADR 2026-10.5sk9), off everywhere until the flip. On, our signed profile
-    /// carries our prekey and ``capabilities``' three ratchet bits, kept and rotated in the identity's store; the HELLO and
-    /// the advert stay ``Capabilities/local``, since Android reads these bits from the pinned profile alone
-    /// (`CryptoScheme.kt:11-13`). Off, the profile is what it was before the ratchet. Each phase adds what the switch
-    /// turns on. Taking peers' prekeys in runs either way, since it sends nothing.
+    /// The forward-secrecy ratchet's switch (ADR 2026-10.5sk9): on in the app, in every build, and in the Linux peer; off,
+    /// the default tests start from, and through a debug build's `-ratchet off` or the peer's `--no-ratchet`. On, our signed
+    /// profile carries our prekey and ``capabilities``' three ratchet bits, kept and rotated in the identity's store, and
+    /// DMs and groups seal and open with the ratchet toward peers whose profiles claim it. Off, the profile is what it was
+    /// before the ratchet, and nothing seals with it. The HELLO and the advert carry ``Capabilities/local`` either way,
+    /// since Android reads these bits from the pinned profile alone (`CryptoScheme.kt:11-13`). Taking peers' prekeys runs
+    /// either way, since it sends nothing.
     public var ratchet: Bool
 
-    /// What our signed profile advertises while it carries our prekey: ``Capabilities/local``, plus
-    /// ``Capabilities/ratchet``, ``Capabilities/inlineAck`` and ``Capabilities/cryptoV3`` when the switch is on (`0x15F`).
+    /// What our signed profile advertises while it carries our prekey: ``Capabilities/local`` (`0x15F`) with the switch
+    /// on, and without ``Capabilities/ratchetSuite`` (`0xF`) with it off.
     public var capabilities: Capabilities {
-        ratchet ? Capabilities.local.union([.ratchet, .inlineAck, .cryptoV3]) : .local
+        ratchet ? .local : Capabilities.local.subtracting(.ratchetSuite)
     }
 
     /// knit-next's cadences unless told otherwise: 60 s, 10 min, 15 min and 12 h, and typing's 12 s and 8 s. The ratchet
-    /// is off.
+    /// is off unless asked for, as the blob query is: the app and the peer ask, and a test starts from the build before it.
     public init(
         router: Router.Configuration = Router.Configuration(),
         reofferMilliseconds: Int64 = 60_000,

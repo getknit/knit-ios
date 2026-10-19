@@ -113,17 +113,21 @@ import Testing
     }
 
     @Test func helloCarriesOurCapabilitiesAsLowercaseHex() {
-        #expect(Hello(nodeId: nodeA).payload == Array("\(nodeA)|1|f".utf8))
-        #expect(Capabilities.local.hex == "f", "end-to-end, groups, reactions and store-and-forward (ADR 2026-10.ehe6)")
+        #expect(Hello(nodeId: nodeA).payload == Array("\(nodeA)|1|15f".utf8))
+        #expect(
+            Capabilities.local.hex == "15f",
+            "end-to-end, groups, reactions and store-and-forward (ADR 2026-10.ehe6), and the ratchet's three (ADR 2026-10.5sk9)")
+        #expect(Capabilities.local.subtracting(.ratchetSuite).hex == "f", "what a profile signs with the switch off")
+        #expect(Capabilities.ratchetSuite.rawValue == 0x150)
         #expect(Capabilities(rawValue: 0xFFF).hex == "fff")
     }
 
     @Test func theBlobHaveBitIsPinnedAndKeptOutOfWhatWeSign() {
         // `Protocol.CAP_BLOB_HAVE` (knit-next ADR 2026-10.6e5t): the link manager adds it to every HELLO, and nothing
-        // signed carries it, so the profile and the emitted vectors keep `0xF`.
+        // signed carries it, so the profile keeps `0x15F` or `0xF`, and the emitted vectors their literals.
         #expect(Capabilities.blobHave.rawValue == 0x2000)
         #expect(!Capabilities.local.contains(.blobHave))
-        #expect(Capabilities.local.union(.blobHave).hex == "200f")
+        #expect(Capabilities.local.union(.blobHave).hex == "215f")
         #expect(Hello(payload: Array("\(nodeA)|1|2fff".utf8)).capabilities.contains(.blobHave), "Android since 403cd861")
         #expect(!Hello(payload: Array("\(nodeA)|1|fff".utf8)).capabilities.contains(.blobHave), "Android before it")
     }
@@ -132,7 +136,7 @@ import Testing
         // `Protocol.CAP_DOORBELL`: the radio adds it to the HELLO, and this build never advertises it anywhere else.
         #expect(Capabilities.doorbell.rawValue == 0x1000)
         #expect(!Capabilities.local.contains(.doorbell))
-        #expect(Capabilities.local.union(.doorbell).hex == "100f")
+        #expect(Capabilities.local.union(.doorbell).hex == "115f")
         #expect(
             Hello(payload: Array("\(nodeA)|1|100f".utf8)).capabilities == [.endToEnd, .groups, .reactions, .storeForward, .doorbell])
         #expect(

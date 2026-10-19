@@ -34,8 +34,9 @@ public struct LaunchOptions: Sendable, Equatable {
     /// abusive to test with.
     public var demoSensitive = false
     /// Whether a live launch turns the forward-secrecy ratchet's switch on (`MeshConfiguration.ratchet`, ADR 2026-10.5sk9):
-    /// `-ratchet on|off`, or the choice an earlier launch kept, else off (``Choice``). A release build never turns it on.
-    public var ratchet = false
+    /// `-ratchet on|off`, or the choice an earlier launch kept, else on (``Choice``). A release build reads no choice, so
+    /// it is always on.
+    public var ratchet = true
     /// What this launch's `-ratchet` chose, for the app to keep, or `nil` when it chose nothing.
     public var ratchetChoice: Choice?
 
@@ -60,7 +61,7 @@ public struct LaunchOptions: Sendable, Equatable {
         demoNotification = arguments.contains("-demoNotification")
         demoSensitive = arguments.contains("-demoSensitive")
         ratchetChoice = Choice(after: "-ratchet", in: arguments)
-        ratchet = (ratchetChoice ?? storedRatchet) == .on
+        ratchet = (ratchetChoice ?? storedRatchet) != .off
     }
 
     private static let radioStates: [String: RadioState] = [
@@ -341,7 +342,7 @@ public enum DemoSeed {
                     name: person.name,
                     status: person.status,
                     publicKey: keys.bundle.encoded,
-                    capabilities: Capabilities.local.rawValue,
+                    capabilities: Capabilities.local.subtracting(.ratchetSuite).rawValue,
                     updatedAt: now - profileAge,
                     verified: person.verified,
                     openToChat: person.openToChat,

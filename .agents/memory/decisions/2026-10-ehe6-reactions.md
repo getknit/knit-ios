@@ -93,3 +93,8 @@ with the copy saying plainly that reactions travel unencrypted.
   - `ReactionTests` in KnitAppCore (the six's bytes, chips, whose reactions each thread shows, the toggle, where none
     is offered), `DemoTests`' seeded chips through a real `Mesh`, and `KnitUITests`' reaction walk, whose menu and
     chips the audit reads in every mode.
+
+**Amended 2026-10-19, with the flip (ADR 2026-10.b4yk):** a reaction to a DM goes as a sealed ctl 6 toward a peer
+whose profile carries the ratchet, and a reaction in a group that takes the group form is sealed in it (ADR
+2026-10.5sk9, phases P5e and P6b). Toward an older phone, and in a group with one, it floods in the clear as this ADR
+describes, and the copy says so. `CAP_REACTIONS` stays inside the advertised `0x15F`.

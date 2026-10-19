@@ -94,7 +94,7 @@ import Foundation
         }
 
         /// The node, on the identity and profile kept in the state directory, with everything else in memory. With
-        /// `--ratchet`, the prekeys kept beside the identity too (ADR 2026-10.5sk9).
+        /// the ratchet on, as it is unless `--no-ratchet`, the prekeys kept beside the identity too (ADR 2026-10.5sk9).
         private static func makeNode(
             _ options: RunOptions,
             host: any PeerRadioHost,

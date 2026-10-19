@@ -185,7 +185,7 @@
                 parts.demoPhoto = options.demoPhoto ? DemoPictures.picked(moving: options.demoPhotoMoves) : nil
                 return compose(parts, ratchet: options.ratchet) { keys in try keyStore.write(keys.storedForm) }
             #else
-                return compose(parts, replace: nil)
+                return compose(parts, ratchet: options.ratchet, replace: nil)
             #endif
         }
 
@@ -232,7 +232,7 @@
             )
         }
 
-        private static func compose(_ parts: Parts, ratchet: Bool = false, replace: IdentityReplacer?) -> AppEnvironment {
+        private static func compose(_ parts: Parts, ratchet: Bool, replace: IdentityReplacer?) -> AppEnvironment {
             let clock = SystemClock()
             let node = Mesh(
                 identity: parts.identity,
@@ -243,7 +243,7 @@
                 clock: clock,
                 random: SystemRandomNumberGenerator(),
                 // Every build queries a blob's holders before it asks, as Android's does since its `BLOB_QUERY` shipped
-                // on in release (knit-next `713b29d6`, ADR 2026-10.m9uq's amendment); the ratchet only on a debug `-ratchet on`.
+                // on in release (knit-next `713b29d6`, ADR 2026-10.m9uq's amendment); the ratchet too, unless a debug `-ratchet off`.
                 configuration: MeshConfiguration(queriesBlobHolders: true, ratchet: ratchet),
                 log: parts.log
             )
@@ -340,7 +340,7 @@
                     demoPhoto: options.demoPhoto ? DemoPictures.picked(moving: options.demoPhotoMoves) : nil,
                     notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
                 )
-                return compose(parts, replace: nil)
+                return compose(parts, ratchet: false, replace: nil) // A demo keeps no prekeys and reaches no one.
             }
         #endif
 

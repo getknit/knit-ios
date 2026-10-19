@@ -37,7 +37,9 @@ Version 1.0.0 is headed for the App Store and has not been released yet. Everyth
 - **The Nearby room** is an open chat for everyone in range. Posts are signed, so nobody can post as you,
   but they are not encrypted, and neither are the photos posted there.
 - **Direct messages** are end-to-end encrypted, and so are their photos. The phones that carry them cannot
-  read them. Messages from people you haven't chatted with wait in Requests until you accept them.
+  read them, and between up-to-date phones Knit keeps replacing the keys, so keys stolen later don't open
+  what was sealed under the ones it replaced.
+  Messages from people you haven't chatted with wait in Requests until you accept them.
 - **Groups** of up to eight people are end-to-end encrypted too. Start one with anyone you've chatted with or
   verified, then rename it or leave it. Groups started on Android phones work as well.
 - **Send photos in any chat** and save the ones you receive. GIFs and animated stickers play, and you can
@@ -73,10 +75,13 @@ backgrounded app, though, and suspends it until something wakes it, so Knit find
 ## Security
 
 - Direct messages and group messages are end-to-end encrypted, and so are their photos.
-- A group's name and member list travel unencrypted, and so do reactions, so the phones that pass them on can
-  see who reacted to a message, though never what it says.
-- Version 1 direct and group messages use Knit's static-key scheme, which has no forward secrecy yet. The
-  epoch ratchet that Knit for Android already runs comes next.
+- Between phones running Knit for iPhone or Knit for Android 2.3 and later, they also have forward secrecy.
+  Knit keeps replacing the keys and deletes the old ones, so someone who later takes a phone's keys can't open
+  messages they recorded before those keys were replaced. Reactions and delivery ticks are sealed the same way.
+  [`SECURITY.md`](SECURITY.md) lists the exceptions.
+- With a phone on an older version, and in a group that includes one, messages use Knit's earlier
+  static-key scheme, which has no forward secrecy, and reactions travel unencrypted.
+- A group's name and member list travel unencrypted, and so do typing indicators.
 - The Nearby room is public: everyone in range can read it.
 
 Report vulnerabilities privately, as [`SECURITY.md`](SECURITY.md) describes. It also lists the limits that

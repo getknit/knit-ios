@@ -153,7 +153,7 @@ extension MeshEngine {
             pubKey: identity.bundle.encoded,
             deviceTag: deviceTag,
             protoVersion: WireProtocol.version,
-            capabilities: (prekey == nil ? Capabilities.local : configuration.capabilities).rawValue,
+            capabilities: (prekey == nil ? Capabilities.local.subtracting(.ratchetSuite) : configuration.capabilities).rawValue,
             prekey: prekey?.info,
             version: own.version,
             openToChat: own.openToChat

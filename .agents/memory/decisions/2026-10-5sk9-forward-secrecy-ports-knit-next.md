@@ -1914,3 +1914,23 @@ on`, against the Pixel 8 on knit-next 2.9.0, with the maintainer's go-ahead. Cry
   iPhone and none from the Pixel (ADR 2026-10.wcex, seen on the iPhone).
 - **Afterwards** the iPhone was launched with `-ratchet off`, and its reply showed `prekeyId: null`.
 - **Not yet run:** knit-next `main` past 2.9.0 on a phone, and the v2.8.0 build.
+
+**Amended 2026-10-19, phase P8 (the flip):** the ratchet is on, as ADR 2026-10.b4yk records.
+
+- **The bits:** `Capabilities.local` is `0x15F`, and the three ratchet bits are `Capabilities.ratchetSuite`. The HELLO
+  reads `215f` or `315f`, and the advert's low byte `5f`, whatever the switch says. The signed profile carries the
+  suite only beside our prekey, so with the switch off, or no prekey kept, it is `0xF` with no prekey. That closes
+  risk 1 at the one place Android reads the bits.
+- **The switch:** on by default in the app, Debug and Release, and in knit-peer (`--no-ratchet` turns it off).
+  `MeshConfiguration.init` keeps `false`, so tests ask for the ratchet by name.
+- **A fix the flip needed:** a profile with no prekey signed `Capabilities.local`. Once `local` gained the suite, that
+  would have claimed `CAP_RATCHET` with no prekey. It now signs `local` without the suite.
+- **The claims:** `SECURITY.md`, the README, both encryption sheets and the CHANGELOG now claim forward secrecy, sealed
+  reactions and sealed ticks between phones that run the ratchet, and v1 without them toward older phones and in
+  groups that include one. `.agents/rules/copy.md` says the same.
+- **`interop.py`:** knit-peer runs with the ratchet on unless a scenario passes `ratchet=False`, and the iPhone's
+  advert is told from Android's `ff` by `5f`, or by `f`, `b` and `9` for older builds.
+
+Still owed: the P3 amendment's restore from the phone's own backup (open, the maintainer's call), `6d9627b7`'s race
+rule, a run against knit-next `main` past 2.9.0 and against 2.8.0, a device trial of a build that names no `-ratchet`,
+and reading `PRAGMA secure_delete` on the iPhone. The maintainer flipped before the runs and the trial.

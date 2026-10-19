@@ -7,9 +7,9 @@ import KnitTestSupport
 import KnitWire
 import Testing
 
-/// `knit-peer --ratchet` (ADR 2026-10.5sk9, phase P5b): the switch is parsed, `main` loads the prekey ring kept beside the
-/// identity, and the profile the peer publishes carries the prekey and the ratchet's bits, `0x15F`. Without it, the
-/// profile is today's `0xF`, with no prekey.
+/// `knit-peer`'s ratchet (ADR 2026-10.5sk9, phases P5b and P8): the switch is parsed, on unless `--no-ratchet`, `main`
+/// loads the prekey ring kept beside the identity, and the profile the peer publishes carries the prekey and the ratchet's
+/// bits, `0x15F`. Off, the profile is the pre-ratchet `0xF`, with no prekey.
 @Suite struct PeerRatchetTests {
     private let home = ["HOME": "/home/tester"]
 
@@ -20,14 +20,21 @@ import Testing
         return options
     }
 
-    @Test func theRatchetIsASwitchOffUnlessAsked() throws {
-        #expect(try !run([]).ratchet)
-        #expect(try run(["--ratchet"]).ratchet)
+    @Test func theRatchetIsOnUnlessTurnedOff() throws {
+        #expect(try run([]).ratchet)
+        #expect(try run(["--ratchet"]).ratchet, "what an interop run still passes")
         #expect(try run(["run", "--name", "Peer", "--ratchet", "--feed", "pace"]).ratchet)
-        #expect(throws: UsageError.unknownFlag("--ratchet")) {
-            try PeerCommand.parse(["keygen", "--above", "cswad43wmlont27jr4tyvu63i4", "--ratchet"], environment: home)
+        #expect(try !run(["--no-ratchet"]).ratchet)
+        #expect(try !run(["run", "--name", "Peer", "--no-ratchet", "--feed", "pace"]).ratchet)
+        #expect(throws: UsageError.invalid(flag: "--ratchet", value: "--no-ratchet")) {
+            try PeerCommand.parse(["--ratchet", "--no-ratchet"], environment: home)
         }
-        #expect(PeerCommand.usage.contains("[--ratchet]"))
+        for flag in ["--ratchet", "--no-ratchet"] {
+            #expect(throws: UsageError.unknownFlag(flag)) {
+                try PeerCommand.parse(["keygen", "--above", "cswad43wmlont27jr4tyvu63i4", flag], environment: home)
+            }
+        }
+        #expect(PeerCommand.usage.contains("[--ratchet | --no-ratchet]"))
     }
 
     /// What one run of the peer left: the profile a far engine pinned from it, and its state directory.

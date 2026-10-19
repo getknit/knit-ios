@@ -1,8 +1,8 @@
 ---
 name: crypto-reviewer
 description: >-
-  Pair-convergence reviewer for Knit for iOS's end-to-end crypto: v1, and knit-next's ratchet as it is ported dark
-  behind its switch (ADR 2026-10.5sk9). MUST be used whenever a file under Sources/KnitCrypto/,
+  Pair-convergence reviewer for Knit for iOS's end-to-end crypto: knit-next's ratchet, on since its flip, and v1
+  toward older phones (ADR 2026-10.5sk9, ADR 2026-10.b4yk). MUST be used whenever a file under Sources/KnitCrypto/,
   Sources/KnitWire/Envelope/, Sources/KnitMesh/Groups/, Sources/KnitStore/Groups/ or Sources/KnitStore/Peers/ is
   created or modified, or any of Sources/KnitWire/Payload/EncEnvelope.swift, RatchetHeader.swift,
   MessageContent.swift, ProfileContent.swift, Sources/KnitWire/Registry/Capabilities.swift,
@@ -29,10 +29,11 @@ effort: medium
 You review changes to Knit for iOS's end-to-end crypto for **one class of defect**: code that is right for one
 engine and strands the pair, or leaks what the seal was meant to hide. Two phones hold each other's keys, pinned
 once, while custody re-serves frames out of order for hours, a frame can outrun the profile that pins its sender,
-and the two phones' clocks disagree. This port seals v1 on air: a fresh AES-256-GCM key per message, wrapped with
-HPKE to each recipient's static X25519 key, and an Ed25519 signature over every frame. knit-next's ratchet is being
-ported dark behind `MeshConfiguration.ratchet` (ADR 2026-10.5sk9), and with it the pair also changes the session it
-shares (a race, a reset, a reinstall) while custody re-serves frames from every era it holds. A single engine's tests
+and the two phones' clocks disagree. This port seals with knit-next's ratchet toward every peer whose profile carries
+it, and v1 toward the rest: a fresh AES-256-GCM key per message, wrapped with HPKE to each recipient's static X25519
+key. Every frame carries an Ed25519 signature. The ratchet was ported dark behind `MeshConfiguration.ratchet` and
+flipped on in P8 (ADR 2026-10.5sk9, ADR 2026-10.b4yk); with it the pair also changes the session it shares (a race, a
+reset, a reinstall) while custody re-serves frames from every era it holds. A single engine's tests
 pass every defect of this class. Android's ratchet bugs are the evidence for most of the shapes below, because this
 repository has shipped no crypto fix of its own yet; the iOS shapes come from Swift and Apple, and this port's
 ADRs record them.
@@ -271,8 +272,9 @@ each one guards (`.agents/context/crypto.md`, "The ratchet").
 19. **A switch that gates what we advertise but not what we seal.** Every Android build since 2.3.0 advertises
     `CAP_RATCHET` with a prekey, and Android starts a session just to seal a receipt (`InboundPipeline.kt:2904-2948`).
     A dark iPhone that read only the peer's bits would start one-sided sessions with every Android peer, which would
-    still exist at the flip. With `MeshConfiguration.ratchet` off, nothing the iPhone puts on air changes; with it on,
-    the bits and the prekey join the signed profile only; every toggle republishes under a new stamp, with a version
+    still exist at the flip. Since the flip (ADR 2026-10.b4yk) the HELLO and the advert carry `0x15F` whatever the
+    switch says, and the switch gates the signed profile alone: off, or with no prekey kept, it is `0xF` with no
+    prekey; on, the bits and the prekey ride together. Every toggle republishes under a new stamp, with a version
     bump once the profile has been edited (a never-edited profile stays at version 0, so no peer takes its blank
     name; ADR 2026-10.5sk9, amended).
 
@@ -296,10 +298,10 @@ The vectors in `Tests/Vectors/` move only through `scripts/sync-vectors.py` (fro
 migration and its schema pins (ADR 2026-09.nyya).
 
 **Security claims.** A change to what is sealed and what travels in the clear keeps `SECURITY.md` and
-`.agents/rules/copy.md` true: v1 DMs and groups have no forward secrecy yet, and a group's name, its member list and
-its delivery ticks are not end-to-end encrypted. A change that makes one of those claims false is a finding until
-the claim is fixed in the same change. With the switch off the ratchet changes no claim; the claims move at the
-flip, in the same change.
+`.agents/rules/copy.md` true: forward secrecy, sealed reactions and sealed ticks between phones that run the
+ratchet; v1, with none of them, toward older phones and in groups that include one; a group's name and member list
+never encrypted. A change that makes one of those claims false is a finding until the claim is fixed in the same
+change.
 
 ## Step 3: run the checks
 
@@ -373,10 +375,10 @@ the one write you make.
 These are sourced. Cite them by their ADR or section, and treat anything not here or in an ADR as a claim to
 verify.
 
-- **v1 on air.** This port seals and opens v1 DMs and groups, and advertises `0xF` without `CAP_RATCHET`, so every
-  Android build seals v1 toward it and to any group with an iPhone in it (ADR 2026-09.qsd9, ADR 2026-09.n393). The
-  ratchet is being ported dark behind `MeshConfiguration.ratchet`, and the bits go on once, at the flip (ADR
-  2026-10.5sk9).
+- **What goes on air.** This port advertises `0x15F` in the HELLO and the advert, and in the signed profile beside
+  our prekey, so Android 2.3 and later seals the ratchet toward it. With the switch off, or no prekey kept, the
+  profile says `0xF` and Android seals v1 (ADR 2026-10.b4yk). v1 still goes toward a peer without the ratchet and to
+  any group with one in it (ADR 2026-09.n393).
 - **The ratchet's floors and bounds** are the receiver's, the same in every build in the field (`crypto.md`,
   "Sessions"). `establishedAt` is our clock exactly when we initiated; the skew tolerance is five minutes, and past
   48 h no tail survives anywhere (knit-next ADR 026).
@@ -387,7 +389,7 @@ verify.
 - **A ctl frame** never stores a message row and is never acknowledged as a message, so the exists-gate never stops
   its re-serves (`crypto.md`, "Lifecycle").
 - **v1 has no forward secrecy.** Whoever takes a device's X25519 key can open every v1 message sent to it (ADR
-  2026-09.qsd9, `SECURITY.md`).
+  2026-09.qsd9, ADR 2026-10.b4yk, `SECURITY.md`).
 - **A group message is sealed to the effective roster** members whose bundles are pinned, the sender excepted. A
   member whose key the sender lacks is skipped and asked for with a `keyreq`; with no key at all the message waits
   as `pendingKey` (`crypto.md`, "v1 group sealing").
@@ -417,9 +419,10 @@ One line per invariant, with the ADR to read. Not exhaustive and not authoritati
   pins its own, and never holds a session or a seed row with itself (knit-next 45763fb6, 8333c858).
 - **Store unit** (ADR 2026-10.5sk9, P4a). The ratchet's state commits with what it carries or nothing does; any
   store error fails the unit except a blob's file error; only the outermost `.committed` releases post-commit work.
-- **The switch** (ADR 2026-10.5sk9). Off puts the same bytes on air as before; on adds the bits and the prekey to
-  the profile only; every toggle republishes under a new stamp, with a version bump once the profile has been
-  edited.
+- **The switch** (ADR 2026-10.5sk9, ADR 2026-10.b4yk). On by default in the app and knit-peer. Off, the signed
+  profile is the pre-ratchet bytes (`0xF`, no prekey) while the HELLO and the advert keep `0x15F`; on, the bits and the
+  prekey ride the profile together; every toggle republishes under a new stamp, with a version bump once the profile
+  has been edited.
 - **DM sessions** (`crypto.md`, "Lifecycle"; knit-next ADRs 016, 023 and 027). The smaller node id wins a race; a
   resolved init is anchored by its ephemeral; era effects only on a fresh derivation under the active root
   (knit-next ADR 2026-09.pz9g); receive state keyed by root tag, and `DUPLICATE` outranks but never stops the ladder

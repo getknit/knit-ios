@@ -37,11 +37,18 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     /// only there: every build answers, so every HELLO claims it, and it is above the advert's 8 bits.
     public static let blobHave: Self = 0x2000
 
-    /// What this build advertises: end-to-end DMs, groups (both v1), reactions and store-and-forward, `0xF` (ADR
-    /// 2026-09.n393, ADR 2026-10.ehe6). Android reads the reactions bit for diagnostics only. Never the ratchet until it
-    /// ships, or Android would seal DMs and groups we cannot open. Never ``doorbell`` or ``blobHave`` either: those are the
-    /// link's to claim, in the HELLO alone.
-    public static let local: Self = [.endToEnd, .groups, .reactions, .storeForward]
+    /// What this build advertises: end-to-end DMs, groups, reactions and store-and-forward, with the ratchet's three bits,
+    /// ``ratchet``, ``inlineAck`` and ``cryptoV3`` (`0x15F`, ADR 2026-09.n393, ADR 2026-10.ehe6, ADR 2026-10.5sk9). Android
+    /// reads the reactions bit for diagnostics only, and the ratchet's from our signed profile alone
+    /// (`CryptoScheme.kt:11-13`), which carries them only beside our prekey with the ratchet's switch on
+    /// (`MeshConfiguration.capabilities`); the HELLO and the advert carry this set whatever the switch says, as hints
+    /// nothing seals by. Never ``fastCompact`` or ``frameTranscode``, which are fast-plane encodings this port has no
+    /// plane for, and never ``doorbell`` or ``blobHave``: those are the link's to claim, in the HELLO alone.
+    public static let local: Self = [.endToEnd, .groups, .reactions, .storeForward, .ratchet, .inlineAck, .cryptoV3]
+
+    /// The ratchet's bits: what our signed profile drops with the switch off or no prekey kept, so it reads as it did
+    /// before the ratchet (`0xF`), since `CAP_RATCHET` promises a published prekey (`MeshManager.kt:2963-2979`).
+    public static let ratchetSuite: Self = [.ratchet, .inlineAck, .cryptoV3]
 
     /// The bit field, a Kotlin `Long`.
     public let rawValue: Int64
@@ -57,7 +64,7 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     }
 
     /// The bits in lowercase hexadecimal with no leading zeros, as the HELLO carries them
-    /// (Kotlin's `Long.toString(16)`): `fff` for Android, `b` for us.
+    /// (Kotlin's `Long.toString(16)`): `fff` for Android, `15f` for us.
     public var hex: String { String(rawValue, radix: Self.hexRadix) }
 
     private static let hexRadix = 16

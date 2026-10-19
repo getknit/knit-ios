@@ -92,8 +92,8 @@ python3 scripts/interop.py iphone-relay --device <serial>         # MVP item 7: 
 python3 scripts/interop.py iphone-relay … --expect-avatar --peer-avatar <jpeg>   # each end's photo, served by the iPhone between them
 python3 scripts/interop.py iphone-group --device <serial>         # v1 groups along that line, the peer as the third member (ADR 2026-09.n393)
 python3 scripts/interop.py group --device <serial>                # v1 groups between two peers and the phone, which needs two links free
-python3 scripts/interop.py ratchet --device <serial>              # the ratchet against the phone (or an emulator): knit-peer --ratchet on hci1, a reinstall, resets both ways
-python3 scripts/interop.py iphone-ratchet --device <serial>       # the same with the iPhone, a Debug build launched with -ratchet on; Knit open on both
+python3 scripts/interop.py ratchet --device <serial>              # the ratchet against the phone (or an emulator): knit-peer on hci1, a reinstall, resets both ways
+python3 scripts/interop.py iphone-ratchet --device <serial>       # the same with the iPhone, whose ratchet is on unless a Debug launch said -ratchet off; Knit open on both
 python3 scripts/interop.py iphone-soak --device <serial> --peer --extras   # MVP item 11 on the iPhone: an hour, the peer on hci0; Auto-Lock off
 python3 scripts/interop.py iphone-wake --device <serial>          # MVP item 9 from the phone: someone locks the iPhone, a DM a minute
 python3 scripts/interop.py iphone-wake --device <serial> --expect-wakes   # the same from an A4 build, which must ring and wake Knit for every DM
@@ -212,15 +212,17 @@ is the tick.
 
 Launch arguments, set in the scheme on the Mac (P7):
 
-- `-ratchet on` or `-ratchet off` sets the forward-secrecy ratchet's switch for a live launch (ADR 2026-10.5sk9). With
-  it on, the profile carries our prekey and the ratchet's bits, and DMs to a peer that advertises them seal and open
-  with the ratchet. A debug build keeps the choice for every launch after it that names none, iOS's own and the device
-  tests' included, until `-ratchet off`; with no choice kept it is off, and `-ratchet` with no value or another value
-  changes nothing. It is for a device trial, with the go-ahead. Turning it off republishes the profile without them.
+- `-ratchet on` or `-ratchet off` sets the forward-secrecy ratchet's switch for a live launch (ADR 2026-10.5sk9, ADR
+  2026-10.b4yk). With it on, the profile carries our prekey and the ratchet's bits, and DMs to a peer that advertises
+  them seal and open with the ratchet. Since the flip it is on with no choice given, and a release build, which reads
+  no argument, always runs with it on. A debug build keeps a choice for every launch after it that names none, iOS's
+  own and the device tests' included; `-ratchet` with no value or another value changes nothing. `-ratchet off` is for
+  a v1 trial, with the go-ahead. Turning it off republishes the profile without the bits and the prekey, and the HELLO
+  and the advert keep `0x15F`.
   - Knit is nearly always running already: iOS starts it by itself after every install, and `check.sh devicetest`
     reopens it. A running Knit reads no argument, since `devicectl` only brings it forward, so give every
-    `-ratchet on` and every `-ratchet off` `--terminate-existing`:
-    `xcrun devicectl device process launch --terminate-existing --device <id> app.getknit.knit.dev -ratchet on`.
+    `-ratchet on` and every `-ratchet off` `--terminate-existing`, with the arguments after `--`:
+    `xcrun devicectl device process launch --terminate-existing --device <id> app.getknit.knit.dev -- -ratchet on`.
   - Before judging anything in a trial, check that the bridge's `{"cmd":"ratchet"}` reply shows a non-null `prekeyId`
     and, once a DM went, `seals.dmSealedV2 > 0`. A switch that is off passes "no fallback" and "no reset" without
     testing anything.
@@ -228,10 +230,11 @@ Launch arguments, set in the scheme on the Mac (P7):
     and adopts the seeds (phase P6a2). It also seals the group form itself to a group whose other members all advertise
     the ratchet with a prekey, sending each member the seed first (phase P6b). The reply's `groups` counts both sides
     under Android's metric names: once a group message went, `groups.groupSealedRatchet > 0` (phase P7d).
-  - End every trial with the same launch and `-ratchet off`, then check that the reply shows `prekeyId: null` once the
-    mesh has started. A kept "on" otherwise runs every later run with the ratchet: `check.sh devicetest` and each
-    `interop.py` leg run whatever is kept, and `iphone-react`'s DM leg would take the sealed reaction for the cleartext
-    one it means to test.
+  - End a v1 trial with the same launch and `-ratchet on`, then check that the reply shows a non-null `prekeyId` once
+    the mesh has started. A kept "off" otherwise runs every later run as v1: `check.sh devicetest` and each
+    `interop.py` leg run whatever is kept. Legs written before the flip that expect cleartext reactions or ticks
+    toward the iPhone (`iphone-react`'s DM leg among them) now meet the sealed form against any phone on Knit for
+    Android 2.3 or later.
 
 - `-seedDemo` runs the app on seeded stores in memory, a fixed identity and a radio that goes nowhere: four
   people, a room conversation, an accepted DM and a message request.

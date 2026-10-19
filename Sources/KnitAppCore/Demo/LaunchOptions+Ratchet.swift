@@ -1,10 +1,10 @@
 extension LaunchOptions {
-    /// What `-ratchet` chooses for the ratchet's switch, a debug build's way onto the dark ratchet for a device trial (ADR
-    /// 2026-10.5sk9): `-ratchet on` or `-ratchet off`. The app keeps the choice and hands it back to every launch after it
-    /// that names none, so a launch iOS makes by itself (after an install, at the first unlock after a reboot) keeps the
-    /// switch where the trial put it; its start would otherwise republish the profile without the prekey. With no choice
-    /// made or kept, the switch is off. A release build reads no argument and keeps nothing (ADR 2026-10.8cy5), so it
-    /// never turns the switch on before the flip.
+    /// What `-ratchet` chooses for the ratchet's switch, a debug build's way off the ratchet and back for a device trial
+    /// (ADR 2026-10.5sk9): `-ratchet off` or `-ratchet on`. The app keeps the choice and hands it back to every launch
+    /// after it that names none, so a launch iOS makes by itself (after an install, at the first unlock after a reboot)
+    /// keeps the switch where the trial put it; its start would otherwise republish the profile with the prekey the trial
+    /// took away. With no choice made or kept, the switch is on. A release build reads no argument and keeps nothing (ADR
+    /// 2026-10.8cy5), so its switch is always on.
     public enum Choice: Sendable, Equatable {
         /// The switch on.
         case on

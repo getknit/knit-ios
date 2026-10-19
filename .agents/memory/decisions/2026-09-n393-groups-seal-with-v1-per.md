@@ -127,3 +127,8 @@ custody lists them as a member (`GroupRoster.outlives`), or the group's thread h
 of theirs (`GroupRoster.actedAfter`). A rejoin carried only by a `groupupdate` that renamed nothing leaves no row, so
 once that frame has left our custody, a replay can still depart the member until their next frame. Android still loses it, so the two can disagree on that member until their next frame.
 Android peers already disagree with each other on this case, depending on the order the frames reached each one.
+
+**Amended 2026-10-19, with the flip (ADR 2026-10.b4yk):** a group message takes the group form when every other
+member's profile carries `CAP_RATCHET` and a prekey and the epoch's seed seals to all of them (ADR 2026-10.5sk9,
+phases P6a and P6b). Otherwise that message is v1 per recipient, as this ADR describes. The name and the roster
+stay unsealed either way. `CAP_GROUPS` is unchanged, inside the advertised `0x15F`.

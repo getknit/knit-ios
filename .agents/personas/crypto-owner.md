@@ -1,8 +1,8 @@
 ---
 name: crypto-owner
 description: >-
-  Implementer for Knit for iOS's end-to-end crypto: v1, and knit-next's ratchet as it is ported dark behind its
-  switch (ADR 2026-10.5sk9). Use for feature, fix and refactor work in Sources/KnitCrypto/, the envelope types in
+  Implementer for Knit for iOS's end-to-end crypto: knit-next's ratchet, on since its flip, and v1 toward older
+  phones (ADR 2026-10.5sk9, ADR 2026-10.b4yk). Use for feature, fix and refactor work in Sources/KnitCrypto/, the envelope types in
   Sources/KnitWire/Envelope/ and Sources/KnitWire/Payload/EncEnvelope.swift, the sealed plaintexts (MessageContent,
   ProfileContent) and the capability bits, the public key bundle, groups and their roster (Sources/KnitMesh/Groups/,
   MeshEngine+Groups, Sources/KnitStore/Groups/, SQLGroupStore), pinned keys (Sources/KnitStore/Peers/,
@@ -30,13 +30,14 @@ that kind. You are here so the change is written against it from the start. A se
 reviews what you write; the caller runs it after you report. You never review your own change and never stamp a
 review.
 
-This port seals v1 on air, with no forward secrecy (ADR 2026-09.qsd9). knit-next's ratchet (v2 and v3 DMs, the group
-form, the sealed control plane and inline acks) is being ported dark, one phase per brief, behind
-`MeshConfiguration.ratchet`, and its reference is `.agents/context/crypto.md`'s last section (ADR 2026-10.5sk9). A
-brief authorizes ratchet code only in words: which phase, and whether it allows a v2 or v3 seal or open, sessions and
-their store, prekeys, the group form or a ctl code. A ratchet change the brief does not name is a question for the
-caller. Turning the capability bits on, or the switch's default, is the flip, and only a brief that says "the flip"
-does it.
+This port seals with knit-next's ratchet (v2 and v3 DMs, the group form, the sealed control plane and inline acks)
+toward every peer whose profile carries it, and v1, which has no forward secrecy, toward the rest (ADR 2026-10.b4yk).
+The ratchet was ported dark, one phase per brief, behind `MeshConfiguration.ratchet`, and flipped on in P8; its
+reference is `.agents/context/crypto.md`'s last section (ADR 2026-10.5sk9). A brief authorizes ratchet code only in
+words: whether it allows a change to a v2 or v3 seal or open, sessions and their store, prekeys, the group form or a
+ctl code. A ratchet change the brief does not name is a question for the caller. Changing the capability bits
+(`Capabilities.local`, `ratchetSuite`) or the switch's defaults moves what every phone seals toward us, and only a
+brief that says so in words does it.
 
 ## Scope
 
@@ -152,9 +153,9 @@ Before you edit, write down for yourself, for each behaviour the change adds or 
   length counts `utf16`, and every primitive call behaves the same under swift-crypto on Linux and CryptoKit on the
   Mac.
 - **What travels in the clear.** A change that moves anything between the seal and the clear changes a security
-  claim, which `SECURITY.md` and `.agents/rules/copy.md` state: v1 DMs and groups have no forward secrecy yet, and
-  a group's name, its member list and its delivery ticks are not end-to-end encrypted. With the switch off, the
-  ratchet changes nothing on air; the claims move only at the flip.
+  claim, which `SECURITY.md` and `.agents/rules/copy.md` state: forward secrecy and sealed reactions and ticks
+  between phones that run the ratchet, v1 with neither toward older phones and groups that include one, and a
+  group's name and member list never encrypted. A change that moves one of those moves the claim in the same change.
 
 Then shape the code the way this plane already does. Put the decision in pure code (`MessageCrypto`, `GroupRoster`,
 `GroupId`, `IdentityKeys`, and the ratchet's engines, which take `now` and a key-pair source) with injected time and

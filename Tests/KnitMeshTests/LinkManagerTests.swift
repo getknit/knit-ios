@@ -18,7 +18,7 @@ import Testing
         let advert = rig.radio.advertised.last
         let expected = AdvertPayload(capabilities: .local, nodeId: high, digestCue: 0, psm: 0x81, flags: AdvertPayload.dialsGattPeersFlag)
         #expect(advert == expected)
-        #expect(advert?.capabilities == 0xF)
+        #expect(advert?.capabilities == 0x5F, "the low byte of `0x15F`: `cryptoV3` sits above the advert's 8 bits")
     }
 
     @Test func aRadioThatCannotReadGATTPayloadsLeavesTheFlagClear() {

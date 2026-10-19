@@ -354,10 +354,11 @@ class Peer(Node):
         never_sight: set[str] | None = None,
         gatt_payload: bool = True,
         gatt_reads: bool | None = None,
-        ratchet: bool = False,
+        ratchet: bool = True,
     ) -> None:
         super().__init__()
-        # knit-peer's `--ratchet`, the forward-secrecy ratchet's switch (ADR 2026-10.5sk9).
+        # knit-peer's forward-secrecy ratchet (ADR 2026-10.5sk9): on by default, as in the app, and passed as `--ratchet`;
+        # False passes `--no-ratchet`, a peer from before the ratchet.
         self.ratchet = ratchet
         # knit-peer's test switches: nodes it never takes as sighted, so it never dials them and admits their dials
         # unsighted; in the `ios` profile, a doorbell served without the payload, so an A3 phone never sights it; and
@@ -386,8 +387,7 @@ class Peer(Node):
             arguments.append("--no-gatt-payload")
         if self.gatt_reads is not None:
             arguments.append("--gatt-reads" if self.gatt_reads else "--no-gatt-reads")
-        if self.ratchet:
-            arguments.append("--ratchet")
+        arguments.append("--ratchet" if self.ratchet else "--no-ratchet")
         if ON_MAC:
             # The adapter and the MTU knobs are BlueZ's; CoreBluetooth has one radio and picks its own MTU.
             command = on_mac("run", arguments)
@@ -599,7 +599,8 @@ def poll(check, timeout: float, every: float = 2):
 
 def in_range(seconds: int = 20, adapter: list[str] | None = None) -> dict[str, dict]:
     """Every Knit node a quiet scan hears, by node id, with what it advertised: its flags, and the low byte of its
-    capabilities, `ff` from Android and `f` from an iPhone or an `ios` peer (`b` before reactions, `9` before groups).
+    capabilities, `ff` from Android and `5f` from an iPhone or an `ios` peer (`f` before the ratchet, `b` before
+    reactions, `9` before groups).
     `adapter` scans elsewhere than hci1."""
     command = [str(PEER), "scan", "--seconds", str(seconds), "--log", "debug", *(adapter or [])]
     result = subprocess.run(command, capture_output=True, text=True, check=True)
@@ -619,11 +620,12 @@ def others_in_range(phone_id: str, seconds: int = 20) -> set[str]:
 # FLAG_DIALS_GATT_PEERS, bit 1 of the advert's flags byte: the node reads GATT payloads, so it can find a node that
 # advertises only the 0xFE30 UUID, and such a node waits for it to dial (ADR 2026-09.xzpt).
 DIALS_GATT_PEERS = 0x02
-# The low byte of the capabilities this port advertises, as the scan spells it: 0xF since reactions (ADR 2026-10.ehe6),
-# 0xB from a build before them (ADR 2026-09.n393), and 0x9 from one before groups, which phones and peers may still run.
-# Android's builds send 0xFF.
-IOS_ADVERT_CAPABILITIES = "f"
-IOS_ADVERT_CAPABILITIES_ALL = frozenset({IOS_ADVERT_CAPABILITIES, "b", "9"})
+# The low byte of the capabilities this port advertises, as the scan spells it: 0x5F since the ratchet (`0x15F`, whose
+# `cryptoV3` sits above the byte, ADR 2026-10.5sk9), 0xF from a build before it (ADR 2026-10.ehe6), 0xB from one before
+# reactions (ADR 2026-09.n393), and 0x9 from one before groups, which phones and peers may still run. The advert keeps
+# 0x5F whatever the ratchet's switch says. Android's builds send 0xFF.
+IOS_ADVERT_CAPABILITIES = "5f"
+IOS_ADVERT_CAPABILITIES_ALL = frozenset({IOS_ADVERT_CAPABILITIES, "f", "b", "9"})
 # knit-next #103 (its ADR 2026-09.hj4a): a phone that has held no BLE link for three minutes may dial a peer it sights
 # above it, and logs `bt lonely dial <id> (alone=<ms>ms rssi=<dBm> dwell=<ms>ms)` just before that dial's `bt initiating
 # to`. The peer admits it only if it never sighted the phone.
@@ -632,8 +634,8 @@ LONELY_DIAL = "bt lonely dial "
 
 def androids(heard: dict[str, dict]) -> set[str]:
     """The nodes a scan heard that advertise as Android does. The scan does not say where a payload came from, so
-    this goes by the capabilities' low byte, which only this port's nodes send as 0xF, 0xB before reactions, or 0x9
-    before groups."""
+    this goes by the capabilities' low byte, which only this port's nodes send as 0x5F, 0xF before the ratchet, 0xB
+    before reactions, or 0x9 before groups."""
     return {node for node, entry in heard.items() if entry.get("capabilities") not in IOS_ADVERT_CAPABILITIES_ALL}
 
 
@@ -5056,7 +5058,8 @@ def iphone_delete(arguments: argparse.Namespace) -> int:
 
 
 def iphone_react(arguments: argparse.Namespace) -> int:
-    """Reactions both ways, in the clear as Android floods them toward a peer without the ratchet (ADR 2026-10.ehe6).
+    """Reactions both ways (ADR 2026-10.ehe6): sealed in the DM since the flip (ADR 2026-10.b4yk), unless the iPhone
+    was launched with `-ratchet off`, and in the clear in Nearby and in the group, whose ghost has no prekey.
     The phone posts in Nearby, sends a DM and writes in a group, and reacts 👍 to each through its bridge; the iPhone
     must show each. The group adds a fresh ghost nobody runs, since a group's id comes from its members alone, and the
     two phones' own group may be one either has left. The iPhone reacts ❤️ to each, and the phone must show each; it

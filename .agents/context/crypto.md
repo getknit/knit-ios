@@ -1,8 +1,9 @@
 # Identity and end-to-end crypto
 
-How knit-next derives identities and seals DMs at the pinned commit. This port seals the v1 scheme on air (ADR
-router: `.agents/memory/decisions.md`). The ratchet (v2, v3 and the group form) is being ported dark behind a switch,
-which a Debug build's `-ratchet on` and knit-peer's `--ratchet` turn on; the last section is its reference (ADR
+How knit-next derives identities and seals DMs at the pinned commit, and how this port follows it (ADR router:
+`.agents/memory/decisions.md`). Since the flip it seals with the ratchet (v2, v3 and the group form) toward
+every peer whose profile carries it, and v1 toward the rest (ADR 2026-10.b4yk). The ratchet's switch is on by default;
+a Debug build's `-ratchet off` and knit-peer's `--no-ratchet` turn it off. The last section is its reference (ADR
 2026-10.5sk9). The `crypto-owner` reads it before it writes and the `crypto-reviewer` before it judges
 (`.agents/rules/owners.md`).
 
@@ -80,7 +81,9 @@ EncEnvelope { nonce: iv, ct, keys: [{ to: recipientId, wk }] }   (v omitted; key
 - **Android never wraps ctl payloads in v1.** Toward a v1 peer it sends cleartext `receipt` and `reaction`
   frames instead, so the MVP must accept those.
 
-v1 has no forward secrecy: the same static keys open every message a peer ever sent us.
+v1 has no forward secrecy: the same static keys open every message a peer ever sent us. Since the flip (ADR
+2026-10.5sk9's P8 amendment) this port takes v1 only toward a peer whose profile carries no ratchet, and in a group
+with such a member.
 
 ## v1 group sealing and the group id
 
@@ -113,8 +116,9 @@ keys   = one wk per member of the effective roster with a pinned bundle, the sen
   carol]` gives `g-0fcb434512afea55af84f0a5`, and `[a, b]` gives `g-0aaf7d9b49f9210774ddcf1d`.
   `[U+FF61, U+1F600]` gives `g-54465e508ab811be30a4eb91`, where scalar order would give
   `g-786c8e7cddfe4cc9ea05e679`.
-- **The name and the roster are not sealed.** Relays read both, and a group message's ticks travel in the
-  clear, as a room post's do.
+- **The name and the roster are not sealed.** Relays read both. A group message's ticks travel in the clear, as a
+  room post's do, toward an author without the ratchet; toward one with it they go as a sealed `CTL_RECEIPT`, even in
+  a v1 group (phase P5d, below).
 
 ## A photo in a DM or a group
 
@@ -269,8 +273,9 @@ Swift must count `utf16`, not `Character`s.
 
 ## The ratchet: v2, v3 and the group form
 
-knit-next's forward secrecy, which this port carries but does not yet open. ADR 2026-10.5sk9 ports all of it dark,
-behind `MeshConfiguration.ratchet`, phase by phase, and turns the capability bits on once, at the end. Kotlin lines
+knit-next's forward secrecy, which this port seals and opens. ADR 2026-10.5sk9 ported all of it dark, behind
+`MeshConfiguration.ratchet`, phase by phase, and P8 turned the capability bits on once, at the end, with the switch on
+by default. Kotlin lines
 in this section are at knit-next `ac491f4c`, past the pin. The DM side is under `mesh/crypto/ratchet/`
 (`RatchetCrypto.kt`, `RatchetEngine.kt`, `RatchetSessions.kt`), `data/ratchet/` and
 `data/crypto/IdentityKeyStore.kt`. The rest is in `InboundPipeline.kt`, `MeshManager.kt`, `IntroSync.kt`,
@@ -955,7 +960,8 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     checked ahead of the exists-gate, must open as a v3 `CTL_RECEIPT` before anything commits, and is never
     custodied and never counted toward a reset (`InboundPipeline.kt:592-598`, `:1739-1768`).
 - **Android reads these bits from the pinned profile alone** (`CryptoScheme.kt:11-13`). That is why the dark phases
-  can carry them on a Debug build's profile while the HELLO and the advert stay `0xF`.
+  could carry them on a Debug build's profile while the HELLO and the advert stayed `0xF`, and why the profile is what
+  the switch gates: off, it carries neither the bits nor a prekey (P8).
 
 ### What this port leaves out
 

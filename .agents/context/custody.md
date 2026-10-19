@@ -182,8 +182,9 @@ publish it honestly.
   - a cleartext DM or group message is dropped, not shown;
   - a `blobreq` is never flooded, even one marked `relay = true`, where Android would flood it; it is answered or
     asked onward as Android's `BlobExchange` does (ADR 2026-10.ym9y);
-  - with the ratchet's switch off, every receipt and tick, room or group, is cleartext, a ratchet DM's receipt
-    included; with it on, they take the sealed form toward an author who can read one (phase P5d);
+  - receipts and ticks take the sealed form toward an author who can read one, as Android's do (phase P5d; on by
+    default since the flip, ADR 2026-10.b4yk); with the switch off (a Debug build's `-ratchet off`, knit-peer's
+    `--no-ratchet`) every receipt and tick, room or group, is cleartext, a ratchet DM's receipt included;
   - an owed tick, sealed or cleartext, goes only over a live link, at link-up, the 60 s re-offer or the heal. Kotlin's
     best-effort re-sends between, on a doubling back-off, ride the fast plane, and a room tick's ride deadline routes
     only to the spool or the fast plane, so a due ride waits for a link or a carrier (ADR 2026-10.5sk9's P5c amendment);

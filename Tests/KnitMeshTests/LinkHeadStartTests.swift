@@ -93,7 +93,7 @@ import Testing
         rig.advance(12_000, hearing: high)
         let id = try #require(rig.radio.dials.first?.channel)
         _ = rig.handle(.connected(id))
-        #expect(rig.radio.records(on: id) == [LinkRig.ourHello(low, servesDoorbell: true)], "caps 300f")
+        #expect(rig.radio.records(on: id) == [LinkRig.ourHello(low, servesDoorbell: true)], "caps 315f")
         let events = rig.handle(.received(id, LinkRig.helloRecord(high)))
         #expect(events == [.up(Neighbor(nodeId: high, protocolVersion: 1, capabilities: 0xFFF))])
     }

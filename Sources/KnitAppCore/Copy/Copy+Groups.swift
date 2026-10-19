@@ -114,8 +114,9 @@ extension Copy {
             NSLocalizedString("groups.leave.action", bundle: .main, value: "Leave", comment: "Group info: the button that confirms leaving")
         }
 
-        // A group's encryption sheet: whom it covers, what travels unencrypted (the name, the members, and reactions, ADR
-        // 2026-10.ehe6), and the one limit v1 has. ``Chat/encryptionSealed`` and ``Chat/encryptionReactions`` sit between.
+        // A group's encryption sheet: whom it covers, what travels unencrypted (the name and the members, ADR 2026-10.ehe6),
+        // and forward secrecy, which a group with an older phone in it lacks (ADR 2026-10.5sk9). ``Chat/encryptionSealed``
+        // and ``Chat/encryptionReactions`` sit between.
 
         /// Whom a group's encryption covers.
         public static var encryptionWho: String {
@@ -137,16 +138,17 @@ extension Copy {
             )
         }
 
-        /// A group's one limit: no forward secrecy yet.
+        /// A group's forward secrecy, and the older phones that keep a group from it.
         public static var encryptionSecrecy: String {
             NSLocalizedString(
                 "groups.encryption.secrecy",
                 bundle: .main,
                 value: """
-                    This version doesn't have forward secrecy yet. Anyone who later gets a member's keys could open what \
-                    they recorded earlier.
+                    Knit keeps replacing the group's keys and deletes the old ones. That's forward secrecy: anyone who later \
+                    gets a member's keys can't open what they recorded before those keys were replaced. The group goes \
+                    without it while any member's phone runs an older version of Knit.
                     """,
-                comment: "Encryption sheet: groups have no forward secrecy in this version"
+                comment: "Encryption sheet: groups have forward secrecy, except while a member's phone runs an older version"
             )
         }
 

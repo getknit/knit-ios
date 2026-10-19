@@ -49,11 +49,11 @@ import Testing
     }
 
     @Test func theSwitchAddsTheRatchetsThreeBitsToTheProfileAlone() {
-        #expect(MeshConfiguration().ratchet == false)
-        #expect(MeshConfiguration().capabilities == .local)
+        #expect(MeshConfiguration().ratchet == false, "a test starts from the build before the ratchet")
+        #expect(MeshConfiguration().capabilities.rawValue == 0xF)
+        #expect(MeshConfiguration().capabilities == Capabilities.local.subtracting([.ratchet, .inlineAck, .cryptoV3]))
         #expect(ratchetOn.capabilities.rawValue == 0x15F)
-        #expect(ratchetOn.capabilities == Capabilities.local.union([.ratchet, .inlineAck, .cryptoV3]))
-        #expect(Capabilities.local.rawValue == 0xF, "the HELLO and the advert keep what they had")
+        #expect(ratchetOn.capabilities == .local, "the HELLO and the advert carry the build's set either way")
     }
 
     @Test func withTheSwitchOffOurProfileIsTheBytesItWasAndNothingIsMinted() throws {

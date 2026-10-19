@@ -27,10 +27,19 @@ reports:
 - **The Nearby room is not encrypted.** It has no fixed set of recipients, so posts, and the delivery ticks
   and reactions that go with them, travel in the clear. A mention there carries the mentioned person's Knit
   identity, which anyone in range can read. Posts are signed, so they can't be forged.
-- **Direct messages have no forward secrecy yet.** The first release seals them with Knit's static-key
-  scheme (v1): whoever later obtains your identity key can read every direct message sent to it. The epoch
-  ratchet that Knit for Android already runs is the next milestone. Until then, delivery ticks and
-  reactions on direct messages also travel in the clear.
+- **Forward secrecy needs both phones up to date.** Direct and group messages between phones running Knit for
+  iPhone or Knit for Android 2.3 and later use Knit's epoch ratchet: each conversation moves to fresh keys
+  after a day of use or 200 messages, and deletes the old ones once nothing needs them. The delivery ticks and
+  reactions that go with those messages are sealed too, except a reaction Knit can't seal yet, such as one
+  sent before it holds the other phone's key, which goes in the clear. With a phone on an older version, and
+  in a group that includes one, messages fall back to Knit's static-key scheme (v1): whoever later obtains
+  your identity key can read every v1 message sent to it, and those messages' ticks and reactions travel in
+  the clear.
+- **Forward secrecy covers what was recorded off the air, not the phone itself.** Someone holding your
+  unlocked phone can read the messages stored on it, and each conversation keeps its newest few keys there,
+  which open the messages sealed under them. A conversation's first messages, and those after a reset, are
+  sealed to a signed prekey before your phone answers. Knit rotates that prekey weekly and keeps the last five,
+  so for about five weeks whoever takes your phone's keys can open those messages too.
 - **Typing indicators are not encrypted.** They go only to phones linked directly to yours, and no phone passes them
   on. In a direct message that means the other person's phone alone; in Nearby or a group, every phone linked to yours,
   and a group's indicator says which group it's for.
@@ -38,9 +47,8 @@ reports:
   acts on, and from end-to-end encryption on direct and group messages, not from the radio.
 - **Direct messages flood the mesh.** Only the recipient can open one, but relaying phones can see who is
   writing to whom, and how often.
-- **Group messages have no forward secrecy either,** and travel with their group's name and member list in the
-  clear, so relaying phones can see who is in a group, what it is called and how often each member writes.
-  Group delivery ticks and reactions travel in the clear too.
+- **Group messages travel with their group's name and member list in the clear,** so relaying phones can see
+  who is in a group, what it is called and how often each member writes.
 - **Leaving a group takes effect as word of it spreads.** Each member's phone stops sealing messages to you
   once your signed leave reaches it. Phones carry the leave for up to a day, so a member who stays out of
   reach for longer keeps sealing their messages to you.

@@ -54,11 +54,12 @@
         @ObservationIgnored private var history = History(startedAt: SystemClock().wallMilliseconds())
 
         /// The launch's options, read as each try builds the environment, once protected data can be read: from the
-        /// process's own arguments in a debug build (`-seedDemo`, the `-demo…` flags and `-ratchet on|off`), and from none
-        /// in a release one, which always runs live (ADR 2026-10.8cy5). A debug build also keeps `-ratchet`'s choice in its
-        /// defaults for every launch after it that names none (ADR 2026-10.5sk9), the ones iOS makes by itself after an
-        /// install or a reboot among them. A running process keeps what its own start read, so a `devicectl` launch that
-        /// brings it forward without `--terminate-existing` changes nothing. A release build reads and keeps nothing.
+        /// process's own arguments in a debug build (`-seedDemo`, the `-demo…` flags and `-ratchet on|off`), and from
+        /// none in a release one, which always runs live with the ratchet on (ADR 2026-10.8cy5). A debug build also keeps
+        /// `-ratchet`'s choice in its defaults for every launch after it that names none (ADR 2026-10.5sk9), the ones iOS
+        /// makes by itself after an install or a reboot among them. A running process keeps what its own start read, so a
+        /// `devicectl` launch that brings it forward without `--terminate-existing` changes nothing. A release build reads
+        /// and keeps nothing.
         nonisolated private static func options() -> LaunchOptions {
             #if DEBUG
                 let defaults = UserDefaults.standard

@@ -8,7 +8,7 @@ topics: [crypto, dm, interop]
 
 # ADR 2026-09.qsd9 — DMs seal with v1 static keys until the ratchet lands
 
-Status: Accepted (2026-09-25)
+Status: Accepted (2026-09-25); its "v1 only, no `CAP_RATCHET`" superseded by ADR 2026-10.b4yk (2026-10-19), and its v1 rules still the scheme toward older phones
 
 **Context:** knit-next seals a DM with one of three schemes. v1 wraps a fresh AES-256-GCM key to the
 recipient's static X25519 key with HPKE. v2 and v3 are an epoch-rekey ratchet with an X3DH bootstrap, which
@@ -39,3 +39,6 @@ it. `LinkTests` pins `0xB`. The keyed vectors keep the `0x9` they were made with
 without `CAP_RATCHET`. Android reads the reactions bit for diagnostics only, and keeps flooding reactions to the iPhone in
 the clear, as it does to any peer without the ratchet. `LinkTests` pins `0xF`. `ios-emitted-v1.json` now carries `0xF`
 in Carol's profile; knit-next's copy keeps the `0x9` it was exported with until the next export, which A5 makes.
+
+**Superseded 2026-10-19 by ADR 2026-10.b4yk:** the ratchet landed (ADR 2026-10.5sk9), and the iPhone advertises
+`0x15F`. v1 is now what it seals toward a peer without the ratchet, and in a group with one.

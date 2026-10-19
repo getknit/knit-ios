@@ -18,8 +18,8 @@ public actor PeerNode {
     private var forwarding: Task<Void, Never>?
 
     /// A node for `identity` on `radio`, with the ratchet prekeys `prekeys` (``PeerState/loadPrekeys(for:)``), or none,
-    /// and the ratchet's switch at `ratchet` (`--ratchet`), which publishes the newest prekey only when `prekeys` keeps one.
-    /// Nothing runs until ``start(name:)``.
+    /// and the ratchet's switch at `ratchet` (on unless `--no-ratchet`), which publishes the newest prekey only when
+    /// `prekeys` keeps one. Nothing runs until ``start(name:)``.
     @preconcurrency
     public init(
         identity: IdentityKeys,

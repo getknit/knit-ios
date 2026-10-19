@@ -7,7 +7,7 @@ public import KnitWire
 /// knit-peer [run] [--adapter-address AA:BB:CC:DD:EE:FF] [--shared-adapter]
 ///           [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
 ///           [--log debug|info|warning|off] [--rssi-floor DBM] [--never-sight NODE_ID[,NODE_ID…]]
-///           [--no-gatt-payload] [--gatt-reads | --no-gatt-reads] [--feed window|pace] [--ratchet]
+///           [--no-gatt-payload] [--gatt-reads | --no-gatt-reads] [--feed window|pace] [--ratchet | --no-ratchet]
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
 /// knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
 ///                [--advertise android|ios] [--instance NAME | --state DIR]
@@ -41,7 +41,7 @@ public enum PeerCommand: Equatable, Sendable {
                 [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
                 [--log debug|info|warning|off] [--rssi-floor DBM] [--receive-mtu BYTES] [--send-mtu BYTES]
                 [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload] [--gatt-reads | --no-gatt-reads]
-                [--feed window|pace] [--ratchet]
+                [--feed window|pace] [--ratchet | --no-ratchet]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
             knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
@@ -52,8 +52,9 @@ public enum PeerCommand: Equatable, Sendable {
         $KNIT_ADAPTER_A), whatever hciN the kernel made it. Commands arrive as JSON lines on standard input, and
         replies and events leave as JSON lines on standard output. The adapters in $KNIT_ADAPTER_RESERVED are
         refused unless --shared-adapter says other devices use them too; the peer then leaves every link it did not
-        make alone. --ratchet turns on the forward-secrecy ratchet, still dark in the app, and keeps the peer's
-        prekeys beside its identity. `stranger` is a test stimulus that never links: it advertises the 0xFE30
+        make alone. The forward-secrecy ratchet is on, as in the app, and keeps the peer's prekeys beside its
+        identity; --no-ratchet runs the peer as a build from before it, and --ratchet, the default, is still taken.
+        `stranger` is a test stimulus that never links: it advertises the 0xFE30
         UUID as a device that is not Knit's, registering its advert afresh every --rotate seconds.
         """
 
@@ -66,7 +67,8 @@ public enum PeerCommand: Equatable, Sendable {
             rest.removeFirst()
         }
         var flags = try Flags(
-            parsing: rest, switches: ["--shared-adapter", "--no-gatt-payload", "--gatt-reads", "--no-gatt-reads", "--ratchet"])
+            parsing: rest,
+            switches: ["--shared-adapter", "--no-gatt-payload", "--gatt-reads", "--no-gatt-reads", "--ratchet", "--no-ratchet"])
         switch verb {
         case nil, "run":
             let options = try RunOptions(flags: &flags, environment: environment)
@@ -145,10 +147,11 @@ public struct RunOptions: Equatable, Sendable {
     /// window's cadence (``LinkManager/Configuration/feedWindow``, ADR 2026-10.xwjc). `--feed pace` turns both off, the
     /// A/B switch Android's `…debug.LINKTUNE --es feed` is.
     public var feedWindow = true
-    /// Whether the forward-secrecy ratchet's switch is on (`MeshConfiguration.ratchet`, ADR 2026-10.5sk9): `--ratchet`,
-    /// with which the peer keeps its prekeys beside its identity, publishes one with the ratchet's bits in its profile,
-    /// and seals and opens DMs with the ratchet. Off, the peer is what it was before the ratchet.
-    public var ratchet = false
+    /// Whether the forward-secrecy ratchet's switch is on (`MeshConfiguration.ratchet`, ADR 2026-10.5sk9): by default, as
+    /// in the app, and with `--ratchet`, which an interop run still passes. On, the peer keeps its prekeys beside its
+    /// identity, publishes one with the ratchet's bits in its profile, and seals and opens DMs with the ratchet.
+    /// `--no-ratchet` turns it off, and the peer is what it was before the ratchet.
+    public var ratchet = true
 
     static let profiles = ["android", "ios"]
     static let feeds = ["window", "pace"]
@@ -186,7 +189,12 @@ public struct RunOptions: Equatable, Sendable {
         }
         gattReads = reads ? .on : readsNone ? .off : .asProfile
         feedWindow = try flags.take("--feed", oneOf: Self.feeds).map { $0 == "window" } ?? feedWindow
-        ratchet = flags.take(switch: "--ratchet")
+        let ratchetOn = flags.take(switch: "--ratchet")
+        let ratchetOff = flags.take(switch: "--no-ratchet")
+        guard !(ratchetOn && ratchetOff) else {
+            throw .invalid(flag: "--ratchet", value: "--no-ratchet")
+        }
+        ratchet = !ratchetOff
     }
 
     private static func mtu(_ text: String?, flag: String) throws(UsageError) -> Int? {

@@ -366,9 +366,10 @@ explicit direction.** Update this file in the change that ships an item.
     the composer names it, and `STATE` reports each message's stored `mentions`. No vector moves, and the pin stays.
     `interop.py iphone-mention` waits on it.
 - **Forward secrecy, begun 2026-10-15** at the maintainer's direction (ADR 2026-10.5sk9). This ports knit-next's whole
-  ratchet: v2 and v3 DMs, the group form both ways, the sealed control plane and inline acks. It ports dark, behind
-  `MeshConfiguration.ratchet`, one phase per change, and turns `CAP_RATCHET`, `CAP_INLINE_ACK` and `CAP_CRYPTO_V3` on
-  once, at the end. It comes before any public build.
+  ratchet: v2 and v3 DMs, the group form both ways, the sealed control plane and inline acks. It ported dark, behind
+  `MeshConfiguration.ratchet`, one phase per change, and P8 turned `CAP_RATCHET`, `CAP_INLINE_ACK` and `CAP_CRYPTO_V3`
+  on together on 2026-10-19, with the switch on by default in every build and the claims rewritten. It comes before any
+  public build.
   - **P0, decisions and tooling:** written on 2026-10-15 on `feat/ratchet-p0`. That covers the scope ADR, amendments to
     ADR 2026-09.2ved and ADR 2026-09.p6nb, the ratchet's shapes in the crypto reviewer, and the ratchet reference in
     `.agents/context/crypto.md`. The held `ios-pin-move` order runs from knit-pair before A9.
@@ -439,6 +440,13 @@ explicit direction.** Update this file in the change that ships an item.
     epoch is no reset evidence) and A9's re-synced file (ADR 2026-10.5sk9's P7f amendment). P7g, done on 2026-10-18,
     follows #173: a hold that goes over a link is cut into ticks of at most 64 ids (ADR 2026-10.5sk9's P7g amendment).
     Owed: `6d9627b7`'s race rule for a frame that predates our session.
+  - **P8, the flip:** written on 2026-10-19 on `feat/ratchet-p8`. `Capabilities.local` is `0x15F`, the switch is on by
+    default in the app (Debug and Release) and in knit-peer, and `SECURITY.md`, the README, the encryption sheets and
+    the CHANGELOG claim forward secrecy between phones that run the ratchet (ADR 2026-10.b4yk; ADR 2026-10.5sk9's P8
+    amendment). Still owed after it: the restore from the phone's own backup (below, open and the maintainer's call),
+    `6d9627b7` (above), an interop run against knit-next `main` past 2.9.0 and against
+    2.8.0, a device trial of an iPhone build that names no `-ratchet`, and the reading of `PRAGMA secure_delete` on the
+    iPhone (below).
 
   Before the flip, besides the phases:
   - **Read `PRAGMA secure_delete` once on the lab iPhone's Debug build.** Pass is 1. Only the Mac's run reads Apple's
@@ -493,7 +501,7 @@ explicit direction.** Update this file in the change that ships an item.
 
 ## Next, after the MVP
 
-- **DM forward secrecy:** in flight since 2026-10-15, with the group ratchet ("Forward secrecy", above).
+- **DM and group forward secrecy:** on since P8, 2026-10-19 ("Forward secrecy", above).
 - **Contacts:** contact links at a distance (`docs/CONTACT_CARD.md` in knit-next), and Android's Add contact,
   which pins a key from a scanned code. QR verification in person is in on a peer's profile (ADR 2026-10.65xx):
   the profile shows our code and scans theirs, and compares only, as Android's profile does. It passes in the

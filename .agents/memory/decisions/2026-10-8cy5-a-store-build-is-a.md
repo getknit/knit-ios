@@ -83,3 +83,8 @@ reads and keeps no defaults either: outside `DEBUG`, `options()` answers `Launch
 keeps `-ratchet on|off`'s choice under the defaults key `debug.launch.ratchet` (ADR 2026-10.5sk9, phase P5b), and
 `check_release_app` checks that key as a third marker string, with the same comment at its place. On 2026-10-15 all
 three markers were in the Debug build's `Knit.debug.dylib` and none was in the Release `Knit`.
+
+**Amended 2026-10-19 (ADR 2026-10.b4yk):** a release build still reads no argument, and the forward-secrecy ratchet's
+switch is now on when no choice is given, so a release build runs with it on. `compose` takes the switch with no
+default, so no build path can fall back to off by omission. The kept `debug.launch.ratchet` key stays debug-only, and
+`scripts/check.sh release` still fails a release build that holds it.

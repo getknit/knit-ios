@@ -32,7 +32,8 @@ import Testing
         #expect(CryptoScheme.readsCryptoV3(Self.androidLocal.rawValue))
         #expect(!CryptoScheme.readsCryptoV3(Capabilities.ratchet.rawValue))
         #expect(!CryptoScheme.readsCryptoV3(nil), "an unpinned peer")
-        // This build's own bits, `0xF`, carry neither ratchet bit until the flip.
-        #expect(!CryptoScheme.readsCryptoV3(Capabilities.local.rawValue))
+        // This build's own bits, `0x15F` since the flip, read v3; without the ratchet's, `0xF`, they read neither.
+        #expect(CryptoScheme.readsCryptoV3(Capabilities.local.rawValue))
+        #expect(!CryptoScheme.readsCryptoV3(Capabilities.local.subtracting(.ratchetSuite).rawValue))
     }
 }

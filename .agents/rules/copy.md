@@ -9,9 +9,12 @@ Rules for any text a person reads.
   descriptions.
 - **Legal text goes through neither:** `COPYING`, `DCO`, `APP-STORE-EXCEPTION.md`. It changes only on
   purpose, with a lawyer's read for the exception.
-- **Scope every security claim to what it covers.** Direct and group messages are end-to-end encrypted. A
-  group's name and member list are not, and neither are its delivery ticks. The Nearby room is open to
-  everyone in range. v1 DMs and groups have no forward secrecy yet.
+- **Scope every security claim to what it covers.** Direct and group messages are end-to-end encrypted. Between
+  phones running the ratchet (this build, and Knit for Android 2.3 and later) they also have forward secrecy, and
+  their reactions and delivery ticks are sealed. Toward an older phone, and in a group that includes one, they take
+  v1, which has none, and the reactions and ticks go in the clear. A group's name and member list are never
+  encrypted, and neither are typing indicators. The Nearby room is open to everyone in range. Forward secrecy
+  covers what was recorded off the air, not a phone in someone's hands (ADR 2026-10.5sk9).
 - **Name the boundary once, and plainly.** The iPhone finds new people while Knit is open. In the background
   it looks for people only once it has lost its last link, and stops after a few tries that lead nowhere (ADR
   2026-10.mueg). Its links stay up there, but a suspended Knit reads them only when a phone wakes it (ADR

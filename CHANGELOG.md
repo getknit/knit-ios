@@ -69,8 +69,8 @@ document:
   Only your iPhone forgets them: other phones keep their copies, and you stay in any group whose chat you
   delete.
 - Long-press a message to react with one of six emoji, and see the reactions Android phones send, whichever
-  emoji they pick. Reactions travel unencrypted, so phones that pass them on can see who reacted to a message,
-  though never what it says.
+  emoji they pick. Reactions to and from older phones travel unencrypted, so phones that pass them on can see
+  who reacted, though never what the message says.
 - Scroll up into a chat's older messages and Knit keeps your place as new ones arrive, with a button in the
   corner that jumps back to the newest. Sending a message still takes you straight down to it.
 - GIFs and animated stickers now play in chats and full screen, including ones sent from Android phones, and
@@ -88,6 +88,9 @@ document:
   stand out and gets a mention notification, on Android phones too.
 - Each chat in your list now shows how many messages you haven't read, and opening the chat clears the count.
   Knit's icon adds up your direct messages and groups, while Nearby keeps its count on its own row.
+- Direct and group messages now have forward secrecy between phones running Knit for iPhone or Knit for
+  Android 2.3 and later, so keys stolen later can't open messages sealed under keys Knit already replaced.
+  Reactions and delivery ticks are sealed too, while older phones keep the earlier encryption.
 
 ### Changed
 

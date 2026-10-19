@@ -135,8 +135,8 @@ extension Copy {
         }
 
         // The encryption sheet, a point at a time: whom encryption covers, what the carrying phones can't open, what
-        // travels unencrypted (ADR 2026-10.ehe6), and the one limit v1 has (ADR 2026-09.qsd9). A group's sheet shares the
-        // second and third.
+        // travels unencrypted (ADR 2026-10.ehe6), and forward secrecy, which older phones' v1 lacks (ADR 2026-10.5sk9). A
+        // group's sheet shares the second and third.
 
         /// Whom a DM's encryption covers.
         public static func encryptionWho(_ name: String) -> String {
@@ -166,30 +166,31 @@ extension Copy {
             )
         }
 
-        /// What travels unencrypted: reactions, and typing indicators (ADR 2026-10.29z9), which share a point so a group's
-        /// sheet still fits under the screen's top.
+        /// Reactions, sealed except toward older phones, and typing indicators, which travel unencrypted (ADR 2026-10.29z9):
+        /// one point, so a group's sheet still fits under the screen's top.
         public static var encryptionReactions: String {
             NSLocalizedString(
                 "chat.encryption.reactions",
                 bundle: .main,
                 value: """
-                    Reactions and typing indicators travel unencrypted. Phones that carry a reaction can see who reacted and \
-                    with which emoji, but not what the message says.
+                    Reactions are usually sealed too, but not with phones running an older version of Knit. Typing \
+                    indicators travel unencrypted.
                     """,
-                comment: "Encryption sheet: reactions and typing indicators are not encrypted"
+                comment: "Encryption sheet: reactions are sealed except toward older phones; typing indicators are not encrypted"
             )
         }
 
-        /// A DM's one limit: no forward secrecy yet.
+        /// A DM's forward secrecy, and the older phones that don't have it.
         public static var encryptionSecrecy: String {
             NSLocalizedString(
                 "chat.encryption.secrecy",
                 bundle: .main,
                 value: """
-                    This version doesn't have forward secrecy yet. Anyone who later gets the keys from either phone could \
-                    open what they recorded earlier.
+                    Knit keeps replacing the keys that open this chat and deletes the old ones. That's forward secrecy: \
+                    anyone who later gets either phone's keys can't open what they recorded before those keys were \
+                    replaced. A phone running an older version of Knit doesn't have it.
                     """,
-                comment: "Encryption sheet: DMs have no forward secrecy in this version"
+                comment: "Encryption sheet: DMs have forward secrecy, except with phones running an older version"
             )
         }
 
