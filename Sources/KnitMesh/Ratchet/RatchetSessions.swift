@@ -95,6 +95,19 @@ public final class RatchetSessions {
         return peers
     }
 
+    /// The init each held session is anchored on, by peer, read in a unit of its own (ADR 2026-10.wcex): what the start
+    /// keeps in the identity's item where a write that failed, or a process ended between an open's commit and its keep,
+    /// left one unkept. `nil` when a store failed, and when asked inside a caller's unit.
+    public func anchoredInits() -> [(peer: NodeId, eph: [UInt8])]? {
+        let unit = transactor.atomically { () -> [(peer: NodeId, eph: [UInt8])]? in
+            store.sessionPeerIds().compactMap { peer in store.session(peer)?.peerInitEphPub.map { (peer, $0) } }
+        }
+        guard case .committed(let anchors) = unit else {
+            return nil
+        }
+        return anchors
+    }
+
     /// The floors held in memory for `peer`, `nil` where none is held.
     public func floors(for peer: NodeId) -> Floors {
         Floors(

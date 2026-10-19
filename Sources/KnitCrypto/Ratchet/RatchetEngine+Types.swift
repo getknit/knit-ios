@@ -233,8 +233,15 @@ extension RatchetEngine {
         /// one the pair has since left. Kotlin replays nothing from its own custody, so it has no such open. With no
         /// session held, an init still establishes one.
         public var allowEraChange: Bool
+        /// Whether the frame's init is one a session of ours anchored before and no longer holds: its ephemeral is among
+        /// those the identity's item keeps (``PrekeyRing/answered(_:by:now:)``, ADR 2026-10.wcex), and the session held, if
+        /// any, is anchored on another. Such an init is resolved: it neither establishes, races nor replaces, and with no
+        /// session held the frame is `NO_SESSION`, whatever prekey it names; with one, it is read under the roots held, as
+        /// ``allowEraChange`` `false` reads it. Kotlin's anchor rule (`RatchetEngine.kt:575-578` at `4f3cd995`) carried
+        /// across an iPhone reinstall, which keeps the Keychain and loses the session rows.
+        public var initAnsweredBefore: Bool
 
-        /// A context; replacement and era changes allowed and no reset requested unless said.
+        /// A context; replacement and era changes allowed, no reset requested and no init answered before unless said.
         public init(
             selfNodeId: NodeId,
             peerId: NodeId,
@@ -247,7 +254,8 @@ extension RatchetEngine {
             prekeyForInit: SignedPrekey?,
             allowReplacement: Bool = true,
             resetRequested: Bool = false,
-            allowEraChange: Bool = true
+            allowEraChange: Bool = true,
+            initAnsweredBefore: Bool = false
         ) {
             self.selfNodeId = selfNodeId
             self.peerId = peerId
@@ -261,6 +269,7 @@ extension RatchetEngine {
             self.allowReplacement = allowReplacement
             self.resetRequested = resetRequested
             self.allowEraChange = allowEraChange
+            self.initAnsweredBefore = initAnsweredBefore
         }
     }
 

@@ -1876,3 +1876,22 @@ the day; no app data was wiped. `scripts/interop.py ratchet` and `ratchet-group`
   as before.
 - **Not yet run:** `iphone-ratchet` (the iPhone had no go-ahead), knit-next `main` past 2.9.0 on a phone, and the
   v2.8.0 build, which would mean a downgrade of a lab phone's data.
+
+**Amended 2026-10-18, phase P7h (a reinstalled responder's opener):** ADR 2026-10.wcex closes the reinstall race from
+the P5d and P5e limits, which blocked the flip. It takes both halves of the fix the P5d crypto reviews proposed, with
+option (i) for the guard.
+
+- **Kept ephemerals.** The identity's Keychain item keeps the ephemeral of every init a session of ours anchored, for
+  48 h, as a fourth key (`answered`, beside `prekeys`). After a reinstall a frame whose init is one of them establishes,
+  races and replaces nothing. It counts toward the heuristic only as `NO_SESSION`, so only while no session is held,
+  and is never answered.
+- **A flagged reset at once.** Such a frame calls for a flagged reset while no session is held, or while the one held is
+  our own unanswered init with no reset since it. The peer adopts that reset in either node-id order.
+- **What this changes here:**
+  - the reinstall rule above no longer leaves every pair to the heuristic: a reinstalled responder resets on its opener;
+  - the P3 amendment's stored form grows by the fourth key;
+  - the P5d and P5e limits' orderings are now plain expectations in `RatchetRestoreLabTests`.
+- **The switch off** opens no ratchet frame, so it keeps and writes nothing. No wire byte, vector, schema or capability
+  bit moves.
+- **One ordering stays open,** listed in ADR 2026-10.wcex's limits: an answer that never left before the reinstall,
+  toward a peer whose id is the smaller.

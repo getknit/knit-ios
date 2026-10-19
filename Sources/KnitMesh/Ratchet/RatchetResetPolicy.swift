@@ -75,6 +75,21 @@ public enum RatchetResetPolicy {
         pe >= 1 && pe < lowestRetained && pe < highestPeAcked
     }
 
+    /// Whether a frame from a peer whose init a session of ours anchored before a reinstall calls for our flagged reset now,
+    /// given the session `held` (ADR 2026-10.wcex): while no session is held, or the one held is our own init the peer has
+    /// not answered and no reset has gone since it. The frame proves the peer holds a session we lost, which three
+    /// `NO_SESSION`s only suggest. In the first state ``plan(for:prekeyId:now:cause:)`` re-roots, and in the second it marks
+    /// the init our frames ride (``Plan/Rule/plainInit``), whose flag exempts it from the peer's remnant guard
+    /// (`RatchetEngine.kt:605-615` at `4f3cd995`), so the peer adopts it in either node-id order at its one-minute floor and re-seals its
+    /// unacked DMs. A room tick sealed before the opener lands starts that plain init (`sealLiveTick`). The persisted
+    /// `lastResetSentAt` is the loop guard: once our reset has gone, the next such frame sends nothing.
+    public static func resetsOnAnsweredInit(_ held: RatchetEngine.SessionState?) -> Bool {
+        guard let held else {
+            return true
+        }
+        return held.weAreInitiator && !held.confirmed && held.lastResetSentAt < held.establishedAt
+    }
+
     /// The floor an init with `flags` meets before it may replace a session we hold: a minute for `FLAG_RESET`, an hour
     /// otherwise (`RatchetSessions.kt:149-158`). The sender's six-hour floor is the real rate limit; the short one bounds
     /// what a peer that ignores it can cost us (knit-next ADR 023).

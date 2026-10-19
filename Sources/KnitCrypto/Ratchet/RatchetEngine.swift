@@ -273,8 +273,9 @@ public struct RatchetEngine: Sendable {
     }
 
     /// Why a frame with no session to read it under fails (`sessionFailure`, `:494-502`): an init naming a prekey we no
-    /// longer hold is `EPOCH_GONE`, anything else `NO_SESSION`.
+    /// longer hold is `EPOCH_GONE`, anything else `NO_SESSION`, an init a session of ours anchored before included, which
+    /// says only that the peer holds a session we lost, whichever prekey it names (ADR 2026-10.wcex).
     static func sessionFailure(_ context: OpenContext, header: RatchetHeader) -> OpenOutcome.Failed {
-        header.initial != nil && context.prekeyForInit == nil ? .epochGone : .noSession
+        header.initial != nil && context.prekeyForInit == nil && !context.initAnsweredBefore ? .epochGone : .noSession
     }
 }

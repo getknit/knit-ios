@@ -1,4 +1,4 @@
-import KnitWire
+public import KnitWire
 
 extension RatchetEngine {
     /// The session a frame is read under and the roots it may open under, in order (`ResolvedSession`, `:351-356`).
@@ -34,6 +34,11 @@ extension RatchetEngine {
     /// when nothing can read it (no session and no usable init). Throws where Kotlin's `respond` does.
     func resolveSession(_ context: OpenContext, header: RatchetHeader, now: Int64) throws(RatchetCryptoError) -> ResolvedSession? {
         guard let session = context.session else {
+            // An init a session of ours anchored before a reinstall establishes nothing: the root it derives is one the
+            // peer may have left, or is still answering under a session we lost (ADR 2026-10.wcex).
+            guard !context.initAnsweredBefore else {
+                return nil
+            }
             return try establish(context, initial: header.initial)
         }
         var candidates = [RootCandidate(root: session.root, senderIsInitiator: !session.weAreInitiator, active: true)]
@@ -51,8 +56,9 @@ extension RatchetEngine {
         }
         // A frame that may not move the era, this port's start replay out of its own custody: an init the session has not
         // resolved neither races nor replaces it, and the frame is read under the roots held, the read-only remnant
-        // included (``OpenContext/allowEraChange``).
-        guard context.allowEraChange else {
+        // included (``OpenContext/allowEraChange``). So too an init a session of ours anchored before a reinstall, which
+        // the lost row can no longer tell apart from a new one (``OpenContext/initAnsweredBefore``, ADR 2026-10.wcex).
+        guard context.allowEraChange, !context.initAnsweredBefore else {
             let remnants = try remnantCandidates(session, header: header, initial: initial, context: context)
             return ResolvedSession(session: session, candidates: candidates + remnants, purge: false)
         }
@@ -129,6 +135,22 @@ extension RatchetEngine {
             candidates: [RootCandidate(root: root, senderIsInitiator: true, active: true)],
             purge: true
         )
+    }
+
+    /// Whether `initial` derives the previous root `session` still drains at `now`, with the prekey `context` holds for it
+    /// (`derivesPrevRoot`, knit-next `RatchetEngine.kt:642-656` at `4f3cd995`): the era that init founded is one this
+    /// session left by a reset or a replacement of its own, not one a reinstall lost. The caller asks it before it reads
+    /// an init as one a session of ours anchored before (``OpenContext/initAnsweredBefore``, ADR 2026-10.wcex), so such an
+    /// init keeps this port's rules for a held era. Kotlin pairs it with `predatesSession` to stop the race for a frame
+    /// sealed before our session (`:590`, knit-next ADR 2026-10.j67x, `6d9627b7`); this port has not followed that yet, so
+    /// it races every such frame, as Kotlin did before (`.agents/memory/roadmap.md`). Throws where `respond` does.
+    public func derivesPreviousRoot(
+        _ context: OpenContext, session: SessionState, initial: RatchetInit, now: Int64
+    ) throws(RatchetCryptoError) -> Bool {
+        guard let previous = session.prevRoot, session.prevRootExpiresAt > now, let prekey = context.prekeyForInit else {
+            return false
+        }
+        return try respond(context, prekey: prekey, initial: initial) == previous
     }
 
     /// The state the race-remnant guard reads (`isRemnantOf`, `:602-607`): a confirmed session we initiated with no

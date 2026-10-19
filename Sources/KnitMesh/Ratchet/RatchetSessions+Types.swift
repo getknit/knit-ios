@@ -35,10 +35,20 @@ extension RatchetSessions {
         /// The frame opened, and its changes stand with the caller's: the plaintext, `MessageContent` for v2 and
         /// `MessageContentV2` for v3, and the work the caller's body answered for after the commit.
         case opened(plaintext: [UInt8], work: Work)
+        /// The frame opened as ``opened(plaintext:work:)`` did, read under the roots held, though its init is one a session
+        /// of ours anchored before a reinstall (ADR 2026-10.wcex): the late race loser's read-only remnant. Its init is never
+        /// answered.
+        case openedStale(plaintext: [UInt8], work: Work)
         /// The engine refused the frame with a typed failure: nothing changed. Only an authenticated frame's failure in
         /// ``RatchetResetPolicy/triggeringFailures`` may go on to
         /// ``RatchetSessions/noteUndecryptable(from:frameId:sentAt:now:epochGoneBase:)``.
         case refused(RatchetEngine.OpenOutcome.Failed)
+        /// The frame's init is one a session of ours anchored before a reinstall, and the engine refused it with this
+        /// failure, under the session held or with none: nothing changed, and it is evidence about no era we hold, so it
+        /// counts toward a reset only as `NO_SESSION`, while no session is held (ADR 2026-10.wcex). It proves the peer holds a
+        /// session we lost, and `resetsAtOnce` says whether that calls for our flagged reset now, by
+        /// ``RatchetResetPolicy/resetsOnAnsweredInit(_:)`` on the session the open's unit read.
+        case stale(RatchetEngine.OpenOutcome.Failed, resetsAtOnce: Bool)
         /// X25519 refused the init's ephemeral or the peer's identity key in the X3DH respond, where Tink throws out of
         /// Kotlin's engine (`InboundPipeline`'s `runCatching`, `DECRYPT_FAILED`): nothing committed, and nothing counts
         /// toward a reset.

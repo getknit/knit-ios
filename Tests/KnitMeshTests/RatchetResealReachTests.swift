@@ -26,9 +26,8 @@ import Testing
     /// The line, greeted end to end through the carrier, with the peer then reinstalled a day later while it is linked to
     /// the carrier alone: a fresh database, the Keychain's identity and prekeys kept. The day empties every custody of the
     /// greeting. Since P5d our receipts are sealed and purge nothing, so within the day the carrier would serve the
-    /// reinstalled peer the iPhone's opener, from which it takes the old root back: an ordering that heals only through a
-    /// reset, after frames dropped silently, which `RatchetRestoreLabTests` pins as a known issue. The reset is what this
-    /// suite measures.
+    /// reinstalled peer the iPhone's opener, which since P7h resets the pair at once (`RatchetAnsweredInitLabTests`, ADR
+    /// 2026-10.wcex). The heuristic's reset at the third failure is what this suite measures, so it waits the day out.
     private func reinstalledLine() throws -> EngineLab {
         let keychain = KeptSecretStore(peer.keys.storedForm)
         let lab = EngineLab([

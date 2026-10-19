@@ -56,13 +56,21 @@ extension MeshEngine {
         let v3 = enc.version == EncEnvelope.Version.compactRatchet
         let now = clock.wallMilliseconds()
         var decided = DirectArrival.refused(.cannotOpen)
+        // The inits of the peer's that a session of ours anchored, kept in the identity's item across a reinstall (ADR
+        // 2026-10.wcex), and the one this open anchors, if it does.
+        let answeredBefore = { [ring = prekeyRing] (eph: [UInt8]) in ring?.answered(eph, by: sender, now: now) ?? false }
+        var anchored: [UInt8]?
         let answer = ratchet.open(
             frame,
             from: bundle,
             now: now,
             allowEraChange: route.origin == .firstVerdict,
+            answeredBefore: answeredBefore,
             prekeys: { [ring = prekeyRing] in ring?.prekey(id: $0) },
             alongside: { opened -> RatchetArrival? in
+                if let initial = frame.header.initial, opened.delta.session.peerInitEphPub == initial.eph {
+                    anchored = initial.eph
+                }
                 let content = RatchetInbound.content(of: opened.plaintext, v3: v3)
                 decided = directArrival(content, envelope, from: sender, route: route, parksSeeds: parksSeeds)
                 guard case .arrival(let arrival) = decided else {
@@ -71,24 +79,23 @@ extension MeshEngine {
                 return arrival
             }
         )
+        let open = DirectOpen(envelope: envelope, header: frame.header, sender: sender, route: route, now: now)
         switch answer {
         case .settled(.opened(_, let arrival)):
-            committed(arrival, envelope, header: frame.header, from: sender, route: route)
+            committed(arrival, open, answering: true, anchored: anchored)
+        case .settled(.openedStale(_, let arrival)):
+            // An init kept from a session we lost, read under the roots held: never answered.
+            committed(arrival, open, answering: false, anchored: anchored)
+        case .settled(.stale(let failure, let resetsAtOnce)):
+            resolvedStale(open, failure: failure, resetsAtOnce: resetsAtOnce)
         case .settled(.refused(let failure)):
-            refused(envelope, failure, header: frame.header)
-            if RatchetInbound.countsTowardReset(failure, route: route) {
-                unreadable(envelope, from: sender, now: now, epochGoneBase: failure == .epochGone ? frame.header.pe : nil)
-            }
+            refusedOpen(open, failure: failure)
         case .settled(.rejected):
             // X25519 refused the init's ephemeral or the peer's identity key: Kotlin's catch records `DECRYPT_FAILED`, and
             // nothing counts toward a reset (`:976-980`).
             drop(.cannotOpen, envelope)
         case .settled(.abandoned):
-            if case .awaitsRoster(let seeds) = decided {
-                seedAwaitsRoster(envelope, enc, seeds, sender: sender, route: route)
-            } else if case .refused(let reason) = decided {
-                drop(reason, envelope)
-            }
+            abandoned(open, enc, decided: decided)
         case .joined, .failed:
             // Nothing opens a unit around the inbound path, so a joined answer cannot happen here; were it to, its work
             // could not run before an outer commit this path never sees, so it waits for the replay like a failure.
@@ -97,10 +104,12 @@ extension MeshEngine {
     }
 
     /// The work after a DM ratchet frame's unit committed: the copy a failed unit kept goes, the group facade settles, an
-    /// init the header still carries is answered, and what the frame carried follows.
-    private func committed(
-        _ arrival: RatchetArrival, _ envelope: RelayEnvelope, header: RatchetHeader, from sender: NodeId, route: RatchetInbound.Route
-    ) {
+    /// init the header still carries is answered unless `answering` is false, what the frame carried follows, and an init
+    /// the open `anchored` is kept in the identity's item. `answering` is false for a frame whose init a session of ours
+    /// anchored before a reinstall, which is never answered: the answer is what moves our indexes at the peer (ADR
+    /// 2026-10.5sk9's P5e limits, ADR 2026-10.wcex).
+    private func committed(_ arrival: RatchetArrival, _ open: DirectOpen, answering: Bool, anchored: [UInt8]?) {
+        let (envelope, sender, route) = (open.envelope, open.sender, open.route)
         // Any copy of this id that commits ends the copy a failed unit kept, whatever its origin: a ctl frame has no row for
         // the sweep to find, and opened again past an era change it would apply a second time.
         ratchetReplay.forget(envelope.id)
@@ -108,10 +117,94 @@ extension MeshEngine {
         settleSeeds(arrival.seeds)
         // An init the header still carries is answered first, once the open has committed, as Kotlin's commit calls
         // `onPeerFrameOpened` before the work after it (`:1059-1067`); never from the start's replay (phase P5e).
-        if route.origin == .firstVerdict {
-            answerInit(in: header, from: sender)
+        if route.origin == .firstVerdict, answering {
+            answerInit(in: open.header, from: sender)
         }
         finish(arrival, envelope, from: sender, via: route.hop)
+        if let anchored {
+            keepAnsweredInit(anchored, from: sender, now: open.now)
+        }
+    }
+
+    /// An open its body abandoned: a seed waits for its roster, or the frame drops for the reason decided.
+    private func abandoned(_ open: DirectOpen, _ enc: EncEnvelope, decided: DirectArrival) {
+        if case .awaitsRoster(let seeds) = decided {
+            seedAwaitsRoster(open.envelope, enc, seeds, sender: open.sender, route: open.route)
+        } else if case .refused(let reason) = decided {
+            drop(reason, open.envelope)
+        }
+    }
+
+    /// Keeps `eph`, the init from `peer` that an open at `now` anchored, in the identity's item, once that open's unit has
+    /// committed and never inside one (ADR 2026-10.wcex): a reinstall, which keeps the item and loses the session, then
+    /// knows the frames that init rode for what they are. A write that fails changes nothing, and a reinstall before the
+    /// next answered open meets them as every earlier build did.
+    private func keepAnsweredInit(_ eph: [UInt8], from peer: NodeId, now: Int64) {
+        guard var ring = prekeyRing, !ring.answered(eph, by: peer, now: now) else {
+            return
+        }
+        do {
+            if try ring.keepAnswered(eph, from: peer, now: now) {
+                prekeyRing = ring
+            }
+        } catch {
+            log.log(.warning, "mesh kept no answered init from \(peer): \(error)")
+        }
+    }
+
+    /// The start's pass, with the switch on (ADR 2026-10.wcex): every init a held session is anchored on and the identity's
+    /// item lacks is kept there, in one write, after the store's own unit and outside any other. It covers a keep that
+    /// failed, and a process ended between an open's commit and its keep.
+    func keepAnchoredInits() {
+        guard configuration.ratchet, var ring = prekeyRing, let anchors = ratchet.anchoredInits() else {
+            return
+        }
+        let now = clock.wallMilliseconds()
+        do {
+            if try ring.keepAnswered(anchors.map { PrekeyRing.AnsweredInit(peer: $0.peer, eph: $0.eph, at: now) }, now: now) {
+                prekeyRing = ring
+            }
+        } catch {
+            log.log(.warning, "mesh kept no anchored inits at start: \(error)")
+        }
+    }
+
+    /// A typed failure of `open`'s frame, counted, and fed to the reset heuristic when it is evidence.
+    private func refusedOpen(_ open: DirectOpen, failure: RatchetEngine.OpenOutcome.Failed) {
+        refused(open.envelope, failure, header: open.header)
+        if RatchetInbound.countsTowardReset(failure, route: open.route) {
+            let base = failure == .epochGone ? open.header.pe : nil
+            unreadable(open.envelope, from: open.sender, now: open.now, epochGoneBase: base)
+        }
+    }
+
+    /// `open`'s signed frame, whose init a session of ours anchored before a reinstall, refused with `failure`
+    /// (ADR 2026-10.wcex). It proves the peer holds a session we lost, so when `resetsAtOnce` says the session held calls
+    /// for it (``RatchetResetPolicy/resetsOnAnsweredInit(_:)``) our flagged reset goes now, through the reset's ordinary
+    /// path, its plan and its floors (``sendSessionReset(to:now:cause:)``), and the frame is let past the router once for
+    /// the peer's re-seal of it, as a counted failure is. Otherwise, or if that reset declines, it counts toward the
+    /// heuristic only as `NO_SESSION`, which the engine answers only while no session is held: with one, it is evidence
+    /// about an era we no longer hold. Never at a start's replay or for an unsigned frame, as no failure counts there.
+    private func resolvedStale(_ open: DirectOpen, failure: RatchetEngine.OpenOutcome.Failed, resetsAtOnce: Bool) {
+        refused(open.envelope, failure, header: open.header, stale: true)
+        guard open.route.signed, open.route.origin == .firstVerdict else {
+            return
+        }
+        // Whatever follows, the peer may re-seal this id after a reset of either side's: one copy is let past the router,
+        // as a counted failure's is (``unreadable(_:from:now:epochGoneBase:)``).
+        _ = router.reopen(open.envelope.id, now: clock.monotonicMilliseconds())
+        if resetsAtOnce {
+            switch sendSessionReset(to: open.sender, now: open.now, cause: .unreadable) {
+            case .sent:
+                log.log(.info, "mesh reset to \(open.sender) at once: \(open.envelope.id) rode an init a lost session of ours answered")
+                return
+            case .declined(let reason):
+                log.log(.info, "mesh no session reset to \(open.sender) at once: \(reason)")
+            }
+        }
+        if failure == .noSession {
+            unreadable(open.envelope, from: open.sender, now: open.now, epochGoneBase: nil)
+        }
     }
 
     /// What a DM ratchet frame that opened as `content` comes to inside its open's unit (`decryptAndDeliverV2`'s peek,
@@ -144,9 +237,12 @@ extension MeshEngine {
 
     /// A typed failure (`onRatchetFailure`, `InboundPipeline.kt:1775-1797`), counted under its reason. The header's
     /// fields are the whole diagnosis: which base key could not be found separates two eras from a swept retention window.
-    private func refused(_ envelope: RelayEnvelope, _ failure: RatchetEngine.OpenOutcome.Failed, header: RatchetHeader) {
+    /// `stale` marks a frame whose init a session of ours anchored before a reinstall (ADR 2026-10.wcex).
+    private func refused(
+        _ envelope: RelayEnvelope, _ failure: RatchetEngine.OpenOutcome.Failed, header: RatchetHeader, stale: Bool = false
+    ) {
         drop(RatchetInbound.dropReason(for: failure), envelope)
-        let fields = "se=\(header.se) pe=\(header.pe) n=\(header.n) init=\(header.initial != nil)"
+        let fields = "se=\(header.se) pe=\(header.pe) n=\(header.n) init=\(header.initial != nil)\(stale ? " answered-before" : "")"
         log.log(.info, "mesh ratchet drop \(envelope.id) from \(envelope.senderId): \(failure) \(fields)")
     }
 
@@ -258,6 +354,16 @@ extension MeshEngine {
             log.log(.warning, "mesh group ratchet sweep failed: a store failed")
         }
     }
+}
+
+/// One DM ratchet frame's open, as the work after it reads it: the frame, its header, its verified sender, the route it
+/// came by, and the wall clock the open ran at.
+private struct DirectOpen {
+    let envelope: RelayEnvelope
+    let header: RatchetHeader
+    let sender: NodeId
+    let route: RatchetInbound.Route
+    let now: Int64
 }
 
 /// What a DM ratchet frame that opened comes to inside its open's unit.

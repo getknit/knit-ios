@@ -200,7 +200,7 @@ Swift must count `utf16`, not `Character`s.
 | `PublicKeyBundle` | `PublicKeyBundle`: `init?(encoded:)`, `init?(signingKey:agreementKey:)`, `nodeId`, `isValidSignature(_:for:)` |
 | `NodeId.derive` | `NodeId(deriving:)`, an extension on the `KnitWire` type |
 | `IdentityKeyStore` | `IdentityKeys` plus a `SecretStore` (a file for the peer; the Keychain in P6) |
-| `IdentityKeyStore`'s prekeys | `PrekeyRing`: `load(for:from:)`, `newest`, `prekey(id:)`, `rotateIfDue(now:)`, `rotate(now:)` |
+| `IdentityKeyStore`'s prekeys | `PrekeyRing`: `load(for:from:)`, `newest`, `prekey(id:)`, `rotateIfDue(now:)`, `rotate(now:)`; and this port's own `answeredInits`, `answered(_:by:now:)` and `keepAnswered(_:from:now:)` (ADR 2026-10.wcex) |
 | `MessageCrypto` | `MessageCrypto.header`, `.seal`, `.open`; `IdentityKeys.signature(for:)` |
 | `AttachmentCrypto` | `AttachmentCrypto.seal(_:)`, `.open(_:key:)`, and `BlobHash(of:)` for the blob's name |
 | `Conversations.groupIdFor` | `GroupId.derive(_:)` |
@@ -221,8 +221,9 @@ Swift must count `utf16`, not `Character`s.
 | `GroupRatchetStore`, `GroupRatchetRepository` | KnitStore's `GroupRatchetStore`, `MemoryGroupRatchetStore` and `GroupRatchetRetention`; KnitStoreSQL's `SQLGroupRatchetStore` (schema v18); `GroupRatchetRecords` maps the rows to the engine's types |
 
 - **Stored keys** are the CBOR map `{signingSeed, agreementScalar}`, two raw 32-byte private keys. The
-  ratchet's prekeys join it as a third key, `prekeys`, which `PrekeyRing` writes and an older build ignores ("Keys
-  and the signed prekey", below). `IdentityKeys.load(from:)` makes a new identity only when the store is empty or holds
+  ratchet's prekeys join it as a third key, `prekeys`, and the inits our sessions anchored as a fourth, `answered`.
+  `PrekeyRing` writes both, and an older build ignores them ("Keys and the signed prekey", below).
+  `IdentityKeys.load(from:)` makes a new identity only when the store is empty or holds
   something unreadable. A store that cannot answer throws instead, so a Keychain read before the first unlock
   after a reboot never mints a new node id.
 - **Low-order X25519 keys are refused on both seal and open.** RFC 9180 §7.1.4 requires it and Tink does
@@ -327,8 +328,18 @@ that an in-order chain would not survive. The session root never changes, and ea
     cannot read (`OwnProfileStore.loadIfReadable`) changes nothing.
   - The three bits and the prekey ride the profile together, or neither does: `CAP_RATCHET` promises a published
     prekey. A node with no ring, or whose store refused the first mint, publishes what it would with the switch off.
+  - **The inits it answered** ride the same item as a fourth key, `answered: [{peer, eph, at}]` (ADR 2026-10.wcex):
+    - `peer` is the node id's 16 bytes, `eph` the init's ephemeral, and `at` our clock when the open that anchored it
+      committed;
+    - a write reads, checks the identity, replaces `answered` alone, writes and reads back, as a rotation does, and runs
+      only after that open's unit commits;
+    - each entry is pruned 48 h after its answer, and at most 8 per peer and 256 in all are kept;
+    - loading reads them in the prekeys' read, so before the first unlock it throws.
+
+    A reinstall keeps them with the prekeys ("Lifecycle", below).
   - A start that finds prekeys over a profile never published is a reinstall, and mints a fresh one whatever the
-    newest one's age, as Android's restore does (`MeshManager.kt:1036-1047`), with no resets. Android's restore brings
+    newest one's age, as Android's restore does (`MeshManager.kt:1036-1047`), with no resets at start: the node
+    resets a pair when that peer's opener comes back (ADR 2026-10.wcex). Android's restore brings
     the name back and bumps the version. A reinstall here has no name until onboarding publishes one, so its prekey
     rides the republish at version 0: an edit would flood an empty name that every peer takes, and Android would
     write a rename line into every thread with us (`InboundPipeline.kt:1299-1301`).
@@ -481,6 +492,13 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   out of our own custody: an init the session has not resolved neither races nor replaces it, flagged or not, and the
   frame reads under the roots held, the read-only remnant included. With no session, an init still establishes one.
   Kotlin replays nothing from its own custody, so it has no such open.
+- **An init answered before a reinstall** is this port's own too (`OpenContext.initAnsweredBefore`, phase P7h, ADR
+  2026-10.wcex). It covers a frame whose init the identity's item keeps but the session held is not anchored on, and
+  whose root the session does not drain as `prevRoot`. Such a frame establishes, races and replaces nothing, is read
+  under the roots held, and with no session is `NO_SESSION`. This is Kotlin's anchor rule (`RatchetEngine.kt:575-578`
+  at `4f3cd995`), carried past the lost session row and keyed by the ephemeral. An init of our draining `prevRoot`
+  keeps this port's rules, the race included. Kotlin's j67x (`6d9627b7`) stops that race for a frame that predates our
+  session; this port has not followed it yet.
 - **Opening, in three passes, per candidate root:**
   1. the skipped key;
   2. the live chain;
@@ -734,6 +752,19 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   - A failed unit's frame whose process dies before the sweep loses its first verdict, Kotlin's level. Where custody
     holds it as it came, the start opens it with the era held, so one that would have moved the era waits for a start
     after the peer's next live frame has; a re-seal is lost outright.
+  - **A frame whose init a session of ours anchored before a reinstall** fails as `Opening.stale` (phase P7h, ADR
+    2026-10.wcex):
+    - it counts toward the heuristic only as `NO_SESSION`, so only while no session is held, and lets one copy of its
+      id past the router;
+    - it is never answered, and neither is a copy that opens read-only (`Opening.openedStale`);
+    - at a signed frame's first verdict it calls for our flagged reset at once
+      (`RatchetResetPolicy.resetsOnAnsweredInit`) while no session is held, or while the one held is our own unanswered
+      init with no reset since it;
+    - the reset goes through `sendSessionReset`, which re-roots in the first state and marks the init in the second. The
+      peer adopts it in either node-id order, and `lastResetSentAt` is the loop guard.
+
+    Every open that anchors an init keeps its ephemeral in the identity's item once the unit commits, and each start
+    keeps, in one write, any anchor a held session has that the item lacks (`keepAnchoredInits`).
   - Once a reset's first verdict commits, however it opened (a root adopted, a race won or lost, a marker under the
     session held), our unacked DMs to its sender are re-sealed, as Kotlin does (`InboundPipeline.kt:1137-1148`), through
     the send arm below. A kept copy whose unit failed re-seals when the sweep's open of it commits, which is that

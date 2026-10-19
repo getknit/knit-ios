@@ -34,6 +34,11 @@ import KnitWire
 /// refused write leaves it as it was, and no profile names a prekey whose private half the store does not hold. Key
 /// material comes from `keyPair`, the system's generator unless a test fixes it, never the mesh's injected generator
 /// (`crypto.md`).
+///
+/// **The inits this identity answered** ride the same item as a fourth key, `answered`, which loading reads with the
+/// prekeys and an older build ignores and writes back as it was stored (``answeredInits``,
+/// ``keepAnswered(_:from:now:)``, ADR 2026-10.wcex): a reinstall keeps them with the prekeys, and so knows the peer's
+/// opener custody serves back to it for a day as an init it answered in a life whose sessions it has lost.
 public struct PrekeyRing: Sendable {
     /// How old the newest prekey grows before a new one is minted: a week (`SPK_ROTATE_MS`).
     public static let rotationMilliseconds: Int64 = 604_800_000
@@ -59,6 +64,9 @@ public struct PrekeyRing: Sendable {
         /// The store keeps its prekeys in a form this build cannot read as a list, a newer build's: minting over them
         /// would lose keys a peer's init may name, which Android refuses too (`IdentityKeyStore.kt:136-137`).
         case unreadablePrekeys
+        /// The store keeps the inits it answered in a form this build cannot read as a list, a newer build's, which a
+        /// write would lose.
+        case unreadableAnswers
         /// The store answered the write, and then held something else.
         case readBack
         /// The identity's key would not sign.
@@ -88,22 +96,28 @@ public struct PrekeyRing: Sendable {
     public let identity: IdentityKeys
     /// The prekeys kept, newest first.
     public private(set) var prekeys: [SignedPrekey]
-    private let store: any SecretStore
+    /// The inits this identity answered within ``answeredMilliseconds``, as the store held them when the ring loaded or
+    /// last wrote them, oldest first (``keepAnswered(_:from:now:)``).
+    public internal(set) var answeredInits: [AnsweredInit]
+    let store: any SecretStore
     private let keyPair: @Sendable () -> RatchetCrypto.KeyPair
 
     private init(
         identity: IdentityKeys,
         prekeys: [SignedPrekey],
+        answeredInits: [AnsweredInit],
         store: any SecretStore,
         keyPair: @escaping @Sendable () -> RatchetCrypto.KeyPair
     ) {
         self.identity = identity
         self.prekeys = prekeys
+        self.answeredInits = answeredInits
         self.store = store
         self.keyPair = keyPair
     }
 
-    /// The prekeys `identity` keeps in `store`, without writing anything. Load the identity first, from the same store.
+    /// The prekeys `identity` keeps in `store`, and the inits it answered, without writing anything. Load the identity
+    /// first, from the same store. A store that cannot answer throws, so neither is ever taken for empty then.
     @preconcurrency
     public static func load(
         for identity: IdentityKeys,
@@ -112,7 +126,8 @@ public struct PrekeyRing: Sendable {
     ) throws(SecretStoreError) -> Self {
         let stored = try store.read()
         let held = (try? item(stored, of: identity))?.prekeys ?? []
-        return Self(identity: identity, prekeys: ring(of: held), store: store, keyPair: keyPair)
+        let answered = (try? storedAnswers(stored, of: identity)) ?? []
+        return Self(identity: identity, prekeys: ring(of: held), answeredInits: answered, store: store, keyPair: keyPair)
     }
 
     /// The prekey a profile publishes, or `nil` before the first is minted (`currentPrekey`, `:84-94`).
@@ -157,16 +172,16 @@ public struct PrekeyRing: Sendable {
         let keptIds = Set(kept.map(\.id))
         // Only an entry this build reads is ever pruned; every other one is written back as it was, in the order stored.
         let list = [Self.cbor(fresh)] + held.prekeys.filter { entry in entry.prekey.map { keptIds.contains($0.id) } ?? true }.map(\.item)
-        try persist(.array(list), beside: held.entries)
+        try persist(.array(list), as: Self.prekeysKey, beside: held.entries)
         prekeys = kept
         return fresh
     }
 
     // MARK: The store
 
-    /// Writes `list` as the item's `prekeys`, beside every other entry of `entries`, and proves it reads back.
-    private func persist(_ list: CBOR, beside entries: [CBOR.Entry]) throws(Failure) {
-        let replaced = CBOR.Entry(key: .text(Self.prekeysKey), value: list)
+    /// Writes `value` as the item's `key`, beside every other entry of `entries`, and proves it reads back.
+    func persist(_ value: CBOR, as key: String, beside entries: [CBOR.Entry]) throws(Failure) {
+        let replaced = CBOR.Entry(key: .text(key), value: value)
         let grown = CBOR.map(
             entries.contains { $0.key == replaced.key } ? entries.map { $0.key == replaced.key ? replaced : $0 } : entries + [replaced]
         )
@@ -181,7 +196,7 @@ public struct PrekeyRing: Sendable {
         }
     }
 
-    private func read() throws(Failure) -> [UInt8]? {
+    func read() throws(Failure) -> [UInt8]? {
         do {
             return try store.read()
         } catch {
@@ -192,9 +207,7 @@ public struct PrekeyRing: Sendable {
     /// The item `stored` holds for `identity`. It throws when `stored` holds no identity or another one, and when its
     /// `prekeys` is not one list.
     private static func item(_ stored: [UInt8]?, of identity: IdentityKeys) throws(Failure) -> Item {
-        guard let stored, holds(identity, in: stored), case .map(let entries) = try? CBOR.decode(stored) else {
-            throw .identityReplaced
-        }
+        let entries = try entries(stored, of: identity)
         let lists = entries.filter { $0.key == .text(prekeysKey) }
         guard let list = lists.first else {
             return Item(entries: entries, prekeys: [])
@@ -204,6 +217,14 @@ public struct PrekeyRing: Sendable {
         }
         let parsed = items.map { item in StoredEntry(item: item, id: storedId(of: item), prekey: prekey(from: item, of: identity)) }
         return Item(entries: entries, prekeys: parsed)
+    }
+
+    /// The entries of the item `stored` holds for `identity`. It throws when `stored` holds no identity or another one.
+    static func entries(_ stored: [UInt8]?, of identity: IdentityKeys) throws(Failure) -> [CBOR.Entry] {
+        guard let stored, holds(identity, in: stored), case .map(let entries) = try? CBOR.decode(stored) else {
+            throw .identityReplaced
+        }
+        return entries
     }
 
     /// Whether `stored` holds `identity`, read the way ``IdentityKeys/init(storedForm:)`` reads it.
@@ -222,7 +243,7 @@ public struct PrekeyRing: Sendable {
     }
 
     /// The value of `key` in `item`, when `item` is a map.
-    private static func field(_ key: String, of item: CBOR) -> CBOR? {
+    static func field(_ key: String, of item: CBOR) -> CBOR? {
         guard case .map(let fields) = item else {
             return nil
         }

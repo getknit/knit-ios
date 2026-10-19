@@ -188,6 +188,7 @@ public final class MeshEngine {
         sweep()
         // Before anything opens a frame, as Android's start sweeps the ratchet before its replay (`MeshManager.kt:2552`).
         sweepRatchet()
+        keepAnchoredInits()
         stores.messages.pruneDeleted(before: clock.wallMilliseconds())
         // The DMs first: a seed whose unit failed before we stopped adopts here, and its instant replay opens that sender's
         // group frames, which the group replay would otherwise count as keyless and ask for again.
