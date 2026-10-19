@@ -119,6 +119,22 @@ import Testing
         #expect(alice.sessions.retiredBase(from: bob.nodeId, pe: held.base) == nil)
     }
 
+    /// A read the store fails answers no verdict, and changes nothing: the next read that succeeds gives the verdict the
+    /// rows held all along. This is the diagnostic read; the engine's own gate, `noteUndecryptable`, counts nothing when
+    /// its read fails.
+    @Test func aReadTheStoreFailsAnswersNoVerdict() throws {
+        let refusing = RefusingRatchetStore()
+        let (alice, bob) = try RatchetSessionSide.pair(refusing: refusing)
+        let held = try heldPastTheCap(alice, bob)
+        let records = refusing.held.records(of: bob.nodeId)
+
+        refusing.refuse(.reads)
+        #expect(alice.sessions.retiredBase(from: bob.nodeId, pe: held.base) == nil, "a failed read is no verdict")
+        refusing.refuse([])
+        #expect(refusing.held.records(of: bob.nodeId) == records, "and moved nothing")
+        #expect(alice.sessions.retiredBase(from: bob.nodeId, pe: held.base) != nil, "the next read gives the verdict")
+    }
+
     @Test func noSessionIsNeverRetired() throws {
         let (alice, bob) = try RatchetSessionSide.pair()
         #expect(alice.sessions.retiredBase(from: bob.nodeId, pe: 3) == nil, "no session, nothing to protect: a reset is the only answer")

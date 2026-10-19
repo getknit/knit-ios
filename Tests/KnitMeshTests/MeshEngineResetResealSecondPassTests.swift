@@ -109,4 +109,29 @@ import Testing
         #expect(iphone.engine.resetReseal.owed(to: alice.nodeId) == nil, "drained with nobody linked")
         #expect([seals(iphone, first), seals(iphone, second)] == [3, 2], "both were acked since")
     }
+
+    /// This port's: resets whose passes fall due on one tick go in node-id order, whatever order the resets came in, so the
+    /// second pass is the same sequence of seals on every run; each peer's pass goes once, with its own ids. Six peers,
+    /// since the passes wait in a dictionary, whose own order matches node-id order by chance once in 720 runs.
+    @Test func passesDueOnOneTickGoInNodeIdOrder() throws {
+        let iphone = try EngineFixture.ratcheting(me)
+        let peers = ([alice] + (3...7).map { TestPeer(seed: $0) }).sorted { $0.nodeId < $1.nodeId }
+        let androids = try peers.map { try AndroidPeer($0) }
+        for android in androids {
+            try iphone.pin(android)
+        }
+        let ids = try peers.map { try #require(iphone.engine.sendDirectMessage("to \($0.nodeId)", to: $0.nodeId)).id }
+        // The largest id's reset first.
+        for peer in peers.reversed() {
+            iphone.engine.resealRecentDirectMessages(to: peer.nodeId)
+        }
+        let before = iphone.transport.written(.chat).count
+
+        tick(iphone, after: ResetReseal.secondPassMilliseconds)
+        let passes = iphone.log.all.filter { $0.hasPrefix("info mesh reset re-seal second pass to ") }
+        #expect(passes == peers.map { "info mesh reset re-seal second pass to \($0.nodeId): 1 of 1 still unacked" })
+        let resealed = iphone.transport.written(.chat).dropFirst(before).map(\.envelope.id)
+        #expect(resealed == ids, "the smaller id's DM first: \(resealed)")
+        #expect(peers.allSatisfy { iphone.engine.resetReseal.owed(to: $0.nodeId) == nil })
+    }
 }

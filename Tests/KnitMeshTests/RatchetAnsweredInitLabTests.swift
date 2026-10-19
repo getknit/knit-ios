@@ -115,7 +115,8 @@ import Testing
     }
 
     /// The crypto review's C4: a keep the Keychain refused, after the open's unit committed, is made good at the next
-    /// start, in one write, from the anchor the session row holds; a start with nothing missing writes nothing.
+    /// start, in one write, from the anchor the session row holds; a start the Keychain still refuses logs, keeps nothing
+    /// and leaves the item and the session as they were, for the start after it; a start with nothing missing writes nothing.
     @Test func aStartKeepsTheAnchorAKeychainRefusalLeftUnkept() throws {
         let keychain = KeptSecretStore(two.keys.storedForm)
         let lab = EngineLab([try EngineFixture.ratcheting(one, seed: 11), try EngineFixture.ratcheting(two, keychain: keychain, seed: 12)])
@@ -123,12 +124,20 @@ import Testing
         keychain.refusesWrites = true
         try send(lab, 0, 1, "the opener")
         try send(lab, 1, 0, "the answer")
-        keychain.refusesWrites = false
         #expect(lab[1].engine.prekeyRing?.answeredInits.isEmpty == true, "the keep was refused")
         let anchor = try #require(lab[1].ratchetRecords(of: one).session?.peerInitEphPub)
 
         let stores = lab[1].stores
         let wall = lab[1].clock.wallMilliseconds()
+        let refused = keychain.contents
+        let records = lab[1].ratchetRecords(of: one)
+        lab.replace(1, with: try EngineFixture.ratcheting(two, stores: stores, keychain: keychain, wall: wall, seed: 20))
+        #expect(lab[1].log.all.contains { $0.hasPrefix("warning mesh kept no anchored inits at start: ") })
+        #expect(lab[1].engine.prekeyRing?.answeredInits.isEmpty == true, "a start the Keychain refuses keeps nothing")
+        #expect(keychain.contents == refused, "and leaves the item as it was")
+        #expect(lab[1].ratchetRecords(of: one) == records, "and the session too, its anchor the next start's to keep")
+
+        keychain.refusesWrites = false
         lab.replace(1, with: try EngineFixture.ratcheting(two, stores: stores, keychain: keychain, wall: wall, seed: 21))
         #expect(lab[1].engine.prekeyRing?.answeredInits.map(\.eph) == [anchor], "the restart kept the session's anchor")
         #expect(try PrekeyRing.load(for: two.keys, from: keychain).answeredInits.map(\.eph) == [anchor])
