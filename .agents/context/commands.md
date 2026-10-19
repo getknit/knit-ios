@@ -11,7 +11,7 @@ tree, so switching between them never rebuilds the plain debug tree.
 | `scripts/check.sh all` | fast, plus the ADR router check, coverage floors, TSan, ASan, analyze and lintorama | before a merge request, and after touching `KnitWire`, `KnitCrypto` or `KnitMesh` |
 | `scripts/check.sh format` / `lint` | `swift format lint --strict`, `swiftlint lint --strict` | while editing |
 | `scripts/check.sh build` / `test` | the strict build; Swift Testing with xUnit output | while editing |
-| `scripts/check.sh coverage` | tests in `.build-cov`, then `scripts/coverage-gate.py` | before a phase closes |
+| `scripts/check.sh coverage` | tests in `.build-cov`, then `scripts/coverage-gate.py`, on half the cores the run may use, a container's CPU quota included; `KNIT_COVERAGE_CORES` sets another number | before a phase closes |
 | `scripts/check.sh tsan` / `asan` | tests under a sanitizer, in `.build-tsan` / `.build-asan` | after touching actors, locks or unsafe code |
 | `scripts/check.sh analyze` | `swiftlint analyze` over the platform-free targets | before a merge request |
 | `scripts/check.sh periphery` | Periphery over the Swift Build index store; on the Mac, run `xcode periphery` for the app's index too | after deleting or renaming API; on Linux the Stop hook runs it when Swift changed |

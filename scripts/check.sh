@@ -28,6 +28,19 @@ if [ "${KNIT_NICE:-10}" != 0 ]; then
 	renice -n "${KNIT_NICE:-10}" -p $$ >/dev/null 2>&1 || true
 fi
 
+# The cores this run may use: its CPU affinity, or fewer when its cgroup has a CPU quota, as the CI runners' containers
+# do (`cpus = "8"`), which `nproc` cannot see.
+available_cores() {
+	local cores quota period
+	cores=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN)
+	if read -r quota period 2>/dev/null <"/sys/fs/cgroup$(sed -n 's/^0:://p' /proc/self/cgroup 2>/dev/null)/cpu.max" &&
+		[ "$quota" != max ]; then
+		quota=$(((quota + period - 1) / period))
+		((quota < cores)) && cores=$quota
+	fi
+	echo "$cores"
+}
+
 swift_sources=(Package.swift Sources Tests Fuzz/Package.swift Fuzz/Sources)
 pure_targets=(Sources/KnitSync Sources/KnitWire Sources/KnitCrypto Sources/KnitStore Sources/KnitMesh Sources/KnitAppCore Sources/KnitPeer Sources/KnitBlueZ)
 
@@ -79,9 +92,16 @@ gate_test() {
 }
 
 gate_coverage() {
-	step "coverage floors"
-	swift test "${jobs[@]}" --disable-xctest --only-use-versions-from-resolved-file --enable-code-coverage --scratch-path .build-cov
-	python3 scripts/coverage-gate.py --scratch-path .build-cov
+	# The longest Linux gate, and often run while the machine has other work: it takes half the cores it may use, or
+	# $KNIT_COVERAGE_CORES, for its compilers (never more than $SWIFT_JOBS), its tests and llvm-cov. `swift test` runs
+	# one test binary at a time, and Swift Testing's width caps how many tests each runs at once.
+	local cores=${KNIT_COVERAGE_CORES:-$(($(available_cores) / 2))}
+	((cores < 1)) && cores=1
+	local compilers=$((cores < swift_jobs ? cores : swift_jobs))
+	step "coverage floors ($cores cores)"
+	SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH=$cores swift test -j "$compilers" "${jobs[@]:2}" --disable-xctest \
+		--only-use-versions-from-resolved-file --enable-code-coverage --scratch-path .build-cov
+	python3 scripts/coverage-gate.py --scratch-path .build-cov --threads "$cores"
 }
 
 gate_tsan() {

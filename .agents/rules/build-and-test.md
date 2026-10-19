@@ -1,7 +1,8 @@
 # Building and testing
 
 - **Be a considerate neighbour.** This machine runs a lot besides Knit. `check.sh` and `fuzz.sh` cap the
-  compilers at `SWIFT_JOBS` (8) and run at nice 10, and the CI runners are capped too (the shared Linux
+  compilers at `SWIFT_JOBS` (8) and run at nice 10, `check.sh coverage` takes half the cores it may use
+  (`KNIT_COVERAGE_CORES` sets another number), and the CI runners are capped too (the shared Linux
   runner: two jobs of 8 GB and 8 cores; `knit-local`: one job). Give new scripts and CI jobs the same caps,
   never raise a runner's `concurrent`, run the one gate you need while iterating, and save `check.sh all` and
   long runs (ten minutes of fuzzing, knit-next's whole Gradle suite) for the end of a change.

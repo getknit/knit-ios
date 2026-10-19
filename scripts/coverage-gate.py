@@ -49,9 +49,11 @@ def find_inputs(scratch: Path) -> tuple[Path, list[Path]]:
     return Path(profiles[0]), binaries
 
 
-def measure(scratch: Path) -> dict[str, tuple[int, int]]:
+def measure(scratch: Path, threads: int) -> dict[str, tuple[int, int]]:
     profile, binaries = find_inputs(scratch)
     command = [*llvm_cov(), "export", "-summary-only", "-instr-profile", str(profile), str(binaries[0])]
+    if threads:
+        command.append(f"--num-threads={threads}")
     for binary in binaries[1:]:
         command += ["-object", str(binary)]
     report = json.loads(subprocess.check_output(command))
@@ -73,10 +75,11 @@ def main() -> int:
     parser.add_argument("--scratch-path", default=".build-cov", type=Path)
     parser.add_argument("--floors", default=DEFAULT_FLOORS, type=Path)
     parser.add_argument("--ratchet", action="store_true", help="raise floors to the measured figures")
+    parser.add_argument("--threads", default=0, type=int, help="llvm-cov's threads (default: one per core)")
     args = parser.parse_args()
 
     floors: dict[str, int] = json.loads(args.floors.read_text()) if args.floors.exists() else {}
-    totals = measure(args.scratch_path)
+    totals = measure(args.scratch_path, args.threads)
     failures = []
     for target in sorted(set(floors) | set(totals)):
         covered, count = totals.get(target, (0, 0))
