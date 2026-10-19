@@ -40,7 +40,10 @@ import Testing
         #expect(mode == 0o600)
     }
 
-    @Test func aRefusedWriteOrAnotherIdentityLeavesTheFileAndTheRingAsTheyWere() throws {
+    // Root writes through a directory's mode, and CI's Docker jobs run as root: there the refusal is the sanitizer jobs'
+    // and the Mac's to check.
+    @Test(.disabled(if: geteuid() == 0, "root writes through a directory's mode"))
+    func aRefusedWriteLeavesTheFileAndTheRingAsTheyWere() throws {
         let directory = temporaryDirectory()
         defer {
             try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory)
@@ -60,7 +63,16 @@ import Testing
         }
         #expect(ring.answeredInits == kept)
         #expect(FileManager.default.contents(atPath: directory + "/identity") == file)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory)
+    }
+
+    @Test func anotherIdentityInTheFileLeavesTheRingAsItWas() throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let state = PeerState(directory: directory)
+        let keys = try state.loadIdentity().keys
+        var ring = try state.loadPrekeys(for: keys)
+        try ring.keepAnswered(eph(1), from: identity(7).nodeId, now: start)
+        let kept = ring.answeredInits
 
         try state.replaceIdentity(with: identity(5))
         #expect(throws: PrekeyRing.Failure.identityReplaced) {

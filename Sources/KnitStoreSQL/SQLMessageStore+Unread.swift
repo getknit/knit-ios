@@ -1,5 +1,4 @@
 import GRDB
-import KnitStore
 public import KnitWire
 
 // Unread, apart from the class only to keep its body inside the lint's length: the `unread` column (schema v15, ADR

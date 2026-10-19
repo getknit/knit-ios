@@ -15,13 +15,19 @@ extension KnitUITests {
         try walkReplies()
     }
 
-    /// The room's walk: the menu's Reply, the bar audited and cancelled, a swipe's reply sent. Then the group's: a tap on
-    /// our quote of Priya. `arguments` go to the launch.
+    /// The room's walks: the menu's Reply, the bar audited and cancelled, then a swipe's reply sent. Then the group's: a
+    /// tap on our quote of Priya. `arguments` go to the launches.
     func walkReplies(_ arguments: String...) throws {
+        try walkMenuReply(arguments)
+        try walkSwipeReply(arguments)
+    }
+
+    /// The room's first post's menu: Reply, the bar audited, and Cancel reply.
+    private func walkMenuReply(_ arguments: [String]) throws {
         let app = launch(arguments)
         try app.reveal(AccessibilityID.chatRow("nearby")).tap()
         try app.appear(AccessibilityID.chatThread)
-        // A long post, so the press and the swipe land on its bubble rather than the space beside it.
+        // A long post, so the press lands on its bubble rather than the space beside it.
         let post = try app.reveal(AccessibilityID.chatMessage("room-1"))
         post.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.6)).press(forDuration: 1)
         settle(try app.element(AccessibilityID.chatMessageReply).appear("Reply in the menu"))
@@ -31,14 +37,22 @@ extension KnitUITests {
         audit(app, screen: "the composer holding a quote")
         try app.appear(AccessibilityID.chatReplyCancel).tap()
         XCTAssert(bar.waitForNonExistence(timeout: Walking.appears), "Cancel reply left the bar")
-        // Reply gave the field the keyboard, which took the room's first post up under the navigation bar: a tap on the
-        // thread puts it away, and the post comes back into view.
-        try app.appear(AccessibilityID.chatThread).tap()
+        app.terminate()
+    }
+
+    /// A swipe on the room's first post, its reply sent, then a tap on our quote of Priya in the group. A launch of its
+    /// own, so the keyboard the menu's Reply raised is gone: a tap on the thread puts it away, but at the largest sizes
+    /// the thread's middle can hold an author's name, which opens their profile.
+    private func walkSwipeReply(_ arguments: [String]) throws {
+        let app = launch(arguments)
+        try app.reveal(AccessibilityID.chatRow("nearby")).tap()
+        try app.appear(AccessibilityID.chatThread)
+        // A long post, so the swipe lands on its bubble rather than the space beside it.
         let shown = try app.reveal(AccessibilityID.chatMessage("room-1"))
         // A drag of a set length, where `swipeRight` goes as far as XCUITest likes.
         let start = shown.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
         start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: Self.swipe, dy: 0)))
-        try bar.appear("the reply bar, after a swipe")
+        let bar = try app.element(AccessibilityID.chatReplyBar).appear("the reply bar, after a swipe")
         let input = try app.appear(AccessibilityID.chatInput)
         input.tap()
         input.typeText("Same here")

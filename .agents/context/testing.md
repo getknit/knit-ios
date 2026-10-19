@@ -120,3 +120,8 @@ ladder, not the first.
 - **Bind a closure's outcome before `#expect` reads it.** Swift 6.4 fails to compile a test function that has a
   closure inside `#expect` and another closure beside it, with a SIL function-type mismatch. Assign the outcome to a
   constant first (`let outer = database.atomically { … }`, then `#expect(outer == .failed)`).
+- **A file's mode doesn't stop root, and CI's Docker jobs run as root.** A test that needs a read-only directory to
+  refuse a write skips itself there with `.disabled(if: geteuid() == 0, …)`, and the sanitizer jobs and `test:macos`,
+  which run as an ordinary user, check the refusal (`PeerAnsweredInitsTests`). To see the root case on Linux, run the
+  test binary under `unshare -r`. A path beneath a regular file fails for root too, where that is the refusal a test
+  means (`IdentityTests`).
