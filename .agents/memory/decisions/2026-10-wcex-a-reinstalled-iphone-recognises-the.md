@@ -170,3 +170,22 @@ before the review fixes, the second ran `d9425a6`.
 The morning's run, before this change and with the peer's id the smaller, ended on two roots (ADR 2026-10.5sk9's
 live-runs amendment). The second run in this order needed the Pixel 9 and Pixel 3 paused for its length (the bridge's
 `PAUSE`, resumed after), because the Pixel 8's links to them left the two peers flapping.
+
+**Amended 2026-10-19, seen on the iPhone:** the lab iPhone 12 on a Debug build of `8524aa4` with `-ratchet on`, against
+the Pixel 8 on knit-next 2.9.0, with the maintainer's go-ahead. The Pixel forced a reset, so the session stood on its
+init and the iPhone kept that init's ephemeral in the identity's Keychain item. Knit was then terminated and its
+`Database/` directory removed, with the Keychain kept: a reinstall as far as the ratchet can tell. A real delete would
+also drop the Bluetooth permission and onboarding, which need someone at the phone. The Pixel sent three DMs while the
+iPhone was away.
+
+- On relaunch, custody back-filled newest first, so the three DMs came before the opener. The iPhone's heuristic reset
+  the pair at the third `NO_SESSION`, which was its only reset.
+- The opener came after it and was dropped as `aeadFail … init=true answered-before`. The openers of the day's three
+  earlier sessions with the Pixel were dropped the same way. None of them was answered, and none sent a second reset.
+- The Pixel's second re-seal pass brought all three DMs, 616 s after the reset.
+- Both sides ended confirmed on one root and `establishedAt`, the iPhone as the reset's initiator. The Pixel sent no
+  reset after its forced one.
+
+The kept ephemerals worked through the real Keychain, which the tests reach only through a double. The reset at once
+did not fire here, because three newer frames reached the heuristic first. It covers a reinstall that finds fewer
+than three frames newer than the opener.

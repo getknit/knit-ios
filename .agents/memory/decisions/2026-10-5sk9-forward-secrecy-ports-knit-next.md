@@ -1895,3 +1895,22 @@ option (i) for the guard.
   bit moves.
 - **One ordering stays open,** listed in ADR 2026-10.wcex's limits: an answer that never left before the reinstall,
   toward a peer whose id is the smaller.
+
+**Amended 2026-10-19, the Debug iPhone trial:** the lab iPhone 12 on a Debug build of `8524aa4`, launched with `-ratchet
+on`, against the Pixel 8 on knit-next 2.9.0, with the maintainer's go-ahead. CryptoKit sealed and opened live.
+
+- **`interop.py iphone-ratchet`:** 38 of 38 steps passed. That covered:
+  - each side pinning the other's prekey;
+  - DMs both ways, the iPhone's sealed v3, with no v1 fallback on either side;
+  - the oracle after the first contact;
+  - receipts and reactions sealed both ways, and the name change;
+  - the group form both ways, with seeds sent and adopted on each side and reactions both ways;
+  - the session holding across a stop and start of the iPhone's mesh, with no reset;
+  - a forced reset from each side, each followed by DMs both ways and the oracle on a new root.
+
+  The only drops were three duplicates after the resets. The photo settle ran out its 10 minutes with one photo still
+  wanted (knit-ios #5); that step reports and does not fail.
+- **A reinstall on the iPhone:** its database removed with the Keychain kept. It recovered with one reset from the
+  iPhone and none from the Pixel (ADR 2026-10.wcex, seen on the iPhone).
+- **Afterwards** the iPhone was launched with `-ratchet off`, and its reply showed `prekeyId: null`.
+- **Not yet run:** knit-next `main` past 2.9.0 on a phone, and the v2.8.0 build.

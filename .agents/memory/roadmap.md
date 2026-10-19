@@ -399,8 +399,9 @@ explicit direction.** Update this file in the change that ships an item.
       node's reset and keeps the old root, which the node no longer races into. Its frames fail uncounted at the node
       until its read-only candidate drains after 48 h and its heuristic resets. Telling that peer state apart needs a
       stamp or a paired change (ADR 2026-10.wcex's limits).
-    - **A live run** of the fix: two knit-peers linked only through a Pixel, one restarted with empty stores, as on
-      2026-10-18. After that, `iphone-ratchet` on the iPhone, once it has a go-ahead.
+    - **Live runs: done.** Two knit-peers through the Pixel 8 on 2026-10-18, in both id orders. Then on 2026-10-19 the
+      iPhone itself: `iphone-ratchet` passed, and so did a reinstall with its database removed and the Keychain kept
+      (ADR 2026-10.wcex, seen on the iPhone).
     - **Knit-next.** The rules are shared, and its restore should be checked against the same ordering.
   - **Open before the flip, from P5e, and not blocking it on its own: two resets apart, in knit-next #89's two orders**
     (ADR 2026-10.5sk9's P5e limits). Both sides reset while apart:
