@@ -96,7 +96,7 @@ import Testing
         replay.keep(relay("b", payload: [2]), route: live)
         replay.keep(relay("\u{212A}"), route: live)
         replay.keep(relay("K"), route: live)
-        #expect(replay.count == 4)
+        #expect(replay.kept.count == 4)
         let taken = replay.take()
         #expect(taken.map(\.envelope.id) == ["a", "b", "\u{212A}", "K"], "the later copy goes to the back of the line")
         #expect(taken[1] == RatchetReplay.Kept(envelope: relay("b", payload: [2]), route: live), "an id kept twice keeps the later copy")

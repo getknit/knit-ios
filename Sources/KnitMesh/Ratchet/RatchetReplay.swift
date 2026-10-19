@@ -35,13 +35,10 @@ internal struct RatchetReplay {
     /// The most bytes kept, the parking lot's memory bound (4 MiB, ``PendingInbound/defaultMaxBytes``).
     static let maxBytes = PendingInbound.defaultMaxBytes
 
-    /// Oldest first.
-    private var kept: [Kept] = []
+    /// Oldest first; read by the tests, which count it.
+    private(set) var kept: [Kept] = []
     private var keys: Set<ExactKey> = []
     private var keptBytes = 0
-
-    /// How many copies are kept.
-    var count: Int { kept.count }
 
     /// Keeps `envelope`, as it came by `route`, for the next sweep. An id kept already gives up its copy for this one,
     /// unless this one is unsigned and that one signed. Past either bound the oldest copies go first.

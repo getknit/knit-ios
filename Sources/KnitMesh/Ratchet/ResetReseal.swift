@@ -28,7 +28,8 @@ internal struct ResetReseal {
         let ids: Set<ExactKey>
     }
 
-    private var pending: [NodeId: Pass] = [:]
+    /// The pass owed each peer; read by the tests, which pin what a reset recorded.
+    private(set) var pending: [NodeId: Pass] = [:]
 
     /// Records the ids a reset of `peer` re-seals now, at `now` on the monotonic clock, replacing any pass still owed for
     /// that peer. None recorded leaves a pending pass as it was (`if (rows.isNotEmpty())`, `:3939-3941`).
@@ -47,10 +48,5 @@ internal struct ResetReseal {
             pending[peer] = nil
         }
         return due.map { (peer: $0.key, ids: $0.value.ids) }
-    }
-
-    /// The pass owed for `peer`, if any, for the tests.
-    func owed(to peer: NodeId) -> Pass? {
-        pending[peer]
     }
 }

@@ -37,7 +37,7 @@ import Testing
         #expect(fixture.engine.dropped[.cannotOpen] == 4)
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == nil)
         #expect(fixture.stores.groupRatchet.holdings(of: group.id) == .empty)
-        #expect(fixture.engine.pendingGroupKeys.isEmpty && fixture.engine.groupCounts == RatchetGroupCounts())
+        #expect(fixture.engine.pendingGroupKeys.parked.isEmpty && fixture.engine.groupCounts == RatchetGroupCounts())
         #expect(
             fixture.transport.written(.chat).allSatisfy { ExactKey($0.envelope.senderId) != ExactKey(me.nodeId.string) }, "nothing of ours")
         #expect(fixture.stores.custody.contains("off-seed") && fixture.stores.custody.contains("off-g0"), "still carried")

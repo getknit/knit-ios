@@ -64,7 +64,7 @@ import Testing
         #expect(fixture.recvChains(group.id, from: alice).isEmpty, "parked, not consumed")
         #expect(!acked(fixture, by: first) && fixture.stores.groups.group(group.id) == nil)
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: 1))
-        #expect(fixture.engine.pendingGroupKeys.count == 1)
+        #expect(fixture.engine.pendingGroupKeys.parked.count == 1)
         fixture.deliver(try author.frame(group, id: "g-first", body: "stock group", sentAt: now + 1), from: alice)
         #expect(fixture.stores.groups.group(group.id) != nil)
         #expect(fixture.engine.groupCounts.groupSeedsReplayed == 1 && fixture.engine.groupCounts.groupSeedsAdopted == 1)
@@ -84,7 +84,7 @@ import Testing
         let seedFrame = try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: "seed-aged", sentAt: now, relay: false)
         fixture.deliver(seedFrame, from: alice)
         fixture.advance(2 * Self.hour)
-        #expect(fixture.engine.pendingGroupKeys.isEmpty, "the hold aged out")
+        #expect(fixture.engine.pendingGroupKeys.parked.isEmpty, "the hold aged out")
         fixture.deliver(try author.frame(group, id: "g-first", body: "stock group", sentAt: now + 2 * Self.hour), from: alice)
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == 1)
         #expect(fixture.stores.messages.message("g-first") == nil)
@@ -166,7 +166,7 @@ import Testing
         let group = fixture.holdGroup(with: [alice])
         try seed(fixture, GroupFormAuthor(first, in: group.id), id: "seed-known")
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsAdopted: 1))
-        #expect(fixture.engine.pendingGroupKeys.isEmpty)
+        #expect(fixture.engine.pendingGroupKeys.parked.isEmpty)
     }
 
     @Test func aSeedCarryingItsRosterPinsTheGroupAndAdoptsOnItsFirstPass() throws {
@@ -299,9 +299,9 @@ import Testing
         let group = roster([me, alice], createdBy: alice)
         let author = GroupFormAuthor(first, in: group.id)
         try seed(fixture, author, id: "seed-parked")
-        #expect(fixture.engine.pendingGroupKeys.count == 1)
+        #expect(fixture.engine.pendingGroupKeys.parked.count == 1)
         let restarted = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + 60_000, seed: 8)
-        #expect(restarted.engine.pendingGroupKeys.isEmpty, "the park died with the process")
+        #expect(restarted.engine.pendingGroupKeys.parked.isEmpty, "the park died with the process")
         #expect(restarted.log.all.contains { $0.contains("mesh group seed seed-parked from \(alice.nodeId) left in custody") })
         #expect(restarted.ratchetRecords(of: alice).session == nil, "nothing committed: the init it carries waits too")
         #expect(stores.custody.contains("seed-parked"))
@@ -315,7 +315,7 @@ import Testing
         fixture.deliver(frame, from: alice)
         fixture.advance(SeenSet.defaultWindowMilliseconds + 1)
         fixture.deliver(frame, from: alice)
-        #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: 1) && fixture.engine.pendingGroupKeys.count == 1)
+        #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: 1) && fixture.engine.pendingGroupKeys.parked.count == 1)
     }
 
     /// A group whose park is full lets the next seed take the ordinary path (`holdGroupKeyForUnknownGroup`, `:1473`): it
@@ -328,7 +328,7 @@ import Testing
         for index in 0...PendingGroupKeys.defaultPerGroup {
             fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: "seed-\(index)", sentAt: now + Int64(index)), from: alice)
         }
-        #expect(fixture.engine.pendingGroupKeys.count == PendingGroupKeys.defaultPerGroup)
+        #expect(fixture.engine.pendingGroupKeys.parked.count == PendingGroupKeys.defaultPerGroup)
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: PendingGroupKeys.defaultPerGroup))
         #expect(fixture.ratchetRecords(of: alice).session != nil, "the last one committed")
         #expect(fixture.recvChains(group.id, from: alice).isEmpty, "with nothing adopted")

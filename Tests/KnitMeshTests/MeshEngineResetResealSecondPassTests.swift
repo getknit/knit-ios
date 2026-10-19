@@ -43,7 +43,7 @@ import Testing
 
         iphone.engine.resealRecentDirectMessages(to: alice.nodeId)
         #expect(ids.map { seals(iphone, $0) } == [2, 2, 2], "the reset re-seals each at once")
-        #expect(iphone.engine.resetReseal.owed(to: alice.nodeId)?.ids.count == 3, "recorded with the first pass")
+        #expect(iphone.engine.resetReseal.pending[alice.nodeId]?.ids.count == 3, "recorded with the first pass")
 
         tick(iphone, after: ResetReseal.secondPassMilliseconds - 1)
         #expect(ids.map { seals(iphone, $0) } == [2, 2, 2], "nothing before the window has passed")
@@ -55,7 +55,7 @@ import Testing
         #expect(seals(iphone, acked) == 2, "the acked one is left alone")
         #expect([seals(iphone, stillOwed), seals(iphone, alsoOwed)] == [3, 3], "the still-unacked ones go once more")
         #expect(seals(iphone, afterReset) == 1, "a DM sent after the reset is not the reset's to re-seal")
-        #expect(iphone.engine.resetReseal.owed(to: alice.nodeId) == nil)
+        #expect(iphone.engine.resetReseal.pending[alice.nodeId] == nil)
 
         tick(iphone, after: ResetReseal.secondPassMilliseconds)
         #expect([acked, stillOwed, alsoOwed, afterReset].map { seals(iphone, $0) } == [2, 3, 3, 1], "once per reset: it never re-arms")
@@ -89,24 +89,24 @@ import Testing
         iphone.unlink(alice)
         let first = try #require(iphone.engine.sendDirectMessage("one", to: alice.nodeId)).id
         iphone.engine.resealRecentDirectMessages(to: alice.nodeId)
-        let firstDue = try #require(iphone.engine.resetReseal.owed(to: alice.nodeId)).dueAt
+        let firstDue = try #require(iphone.engine.resetReseal.pending[alice.nodeId]).dueAt
 
         iphone.clock.advance(60_000)
         let second = try #require(iphone.engine.sendDirectMessage("two", to: alice.nodeId)).id
         iphone.engine.resealRecentDirectMessages(to: alice.nodeId)
-        let replaced = try #require(iphone.engine.resetReseal.owed(to: alice.nodeId))
+        let replaced = try #require(iphone.engine.resetReseal.pending[alice.nodeId])
         #expect(replaced.dueAt == firstDue + 60_000 && replaced.ids == [ExactKey(first), ExactKey(second)])
         #expect([seals(iphone, first), seals(iphone, second)] == [3, 2])
 
         _ = iphone.stores.messages.markDelivered(first)
         _ = iphone.stores.messages.markDelivered(second)
         iphone.engine.resealRecentDirectMessages(to: alice.nodeId)
-        #expect(iphone.engine.resetReseal.owed(to: alice.nodeId) == replaced, "nothing unacked records nothing")
+        #expect(iphone.engine.resetReseal.pending[alice.nodeId] == replaced, "nothing unacked records nothing")
 
         tick(iphone, after: ResetReseal.secondPassMilliseconds - 60_000)
-        #expect(iphone.engine.resetReseal.owed(to: alice.nodeId) == replaced, "the first reset's due time no longer counts")
+        #expect(iphone.engine.resetReseal.pending[alice.nodeId] == replaced, "the first reset's due time no longer counts")
         tick(iphone, after: 60_000)
-        #expect(iphone.engine.resetReseal.owed(to: alice.nodeId) == nil, "drained with nobody linked")
+        #expect(iphone.engine.resetReseal.pending[alice.nodeId] == nil, "drained with nobody linked")
         #expect([seals(iphone, first), seals(iphone, second)] == [3, 2], "both were acked since")
     }
 
@@ -132,6 +132,6 @@ import Testing
         #expect(passes == peers.map { "info mesh reset re-seal second pass to \($0.nodeId): 1 of 1 still unacked" })
         let resealed = iphone.transport.written(.chat).dropFirst(before).map(\.envelope.id)
         #expect(resealed == ids, "the smaller id's DM first: \(resealed)")
-        #expect(peers.allSatisfy { iphone.engine.resetReseal.owed(to: $0.nodeId) == nil })
+        #expect(peers.allSatisfy { iphone.engine.resetReseal.pending[$0.nodeId] == nil })
     }
 }

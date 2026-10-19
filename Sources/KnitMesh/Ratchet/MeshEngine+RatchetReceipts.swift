@@ -1,4 +1,3 @@
-import KnitCrypto
 import KnitStore
 import KnitWire
 

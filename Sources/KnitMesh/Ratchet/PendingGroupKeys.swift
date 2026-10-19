@@ -40,8 +40,8 @@ internal struct PendingGroupKeys {
     private let holdMilliseconds: Int64
     private let capacity: Int
     private let perGroup: Int
-    /// Oldest first.
-    private var parked: [Parked] = []
+    /// Oldest first; read by the tests, which count it.
+    private(set) var parked: [Parked] = []
 
     /// A park with knit-next's bounds.
     init() {
@@ -54,12 +54,6 @@ internal struct PendingGroupKeys {
         self.capacity = capacity
         self.perGroup = perGroup
     }
-
-    /// How many seeds are parked.
-    var count: Int { parked.count }
-
-    /// Whether nothing is parked.
-    var isEmpty: Bool { parked.isEmpty }
 
     /// What ``hold(_:for:route:now:)`` did with a seed.
     enum Hold: Equatable {

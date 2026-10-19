@@ -34,7 +34,7 @@ import Testing
         fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: "seed-1", sentAt: now), from: android)
         #expect(fixture.engine.groupCounts.groupSeedsHeld == 1)
         let restarted = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + 60_000, seed: 8)
-        #expect(restarted.engine.pendingGroupKeys.isEmpty && restarted.recvChains(group.id, from: alice).isEmpty)
+        #expect(restarted.engine.pendingGroupKeys.parked.isEmpty && restarted.recvChains(group.id, from: alice).isEmpty)
         restarted.deliver(try author.frame(group, id: "g-first", body: "after the restart", sentAt: now + 60_000), from: alice)
         #expect(restarted.recvChains(group.id, from: alice).count == 1, "the first sight's replay opened the seed")
         #expect(restarted.stores.messages.message("g-first")?.body == "after the restart")
