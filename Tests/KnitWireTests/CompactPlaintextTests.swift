@@ -2,7 +2,7 @@ import KnitTestSupport
 import KnitWire
 import Testing
 
-/// The v3 compact plaintext against knit-next's nine `messageContentV2*` fixtures, and what its decoder does with keys,
+/// The v3 compact plaintext against the nine `messageContentV2*` fixtures this build models, and what its decoder does with keys,
 /// labels, widths and kinds no encoder writes, as kotlinx's `compactCbor` reads them (`Crypto.kt:111-119`;
 /// kotlinx-serialization-cbor 1.11.0's `CborReader`). Kotlin's own cases are ``MessageContentV2Tests``'.
 @Suite struct CompactPlaintextTests {
@@ -20,8 +20,12 @@ import Testing
 
     // MARK: The nine fixtures
 
+    /// Every compact fixture but the two for fields this build does not model, a profile's supporter badges and a short
+    /// video, which ``GoldenVectorTests`` decodes.
     @Test func everyCompactFixtureIsHere() {
-        #expect(Set(compactFixtures.keys) == Set(GoldenVectors.names.filter { $0.hasPrefix("messageContentV2") }))
+        let unmodeled: Set = ["messageContentV2ProfileBadges", "messageContentV2Video"]
+        let compact = Set(GoldenVectors.names.filter { $0.hasPrefix("messageContentV2") })
+        #expect(Set(compactFixtures.keys) == compact.subtracting(unmodeled))
         #expect(compactFixtures.count == 9)
     }
 

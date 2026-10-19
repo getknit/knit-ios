@@ -199,6 +199,17 @@ Kotlin wins.
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Mirrored ahead of the pin:**
+    - `vectors/wire-v1.json`, synced alone with `scripts/sync-vectors.py --only wire-v1.json` from knit-next's `main` at
+      `9c3d487b` (2026-10-19):
+      - **What comes in:** 14 fixtures for features this port has not taken. Calls (`messageContentCall*`, `bd7c905b`,
+        knit-next ADR 2026-10.3tee), supporter badges on the profile (`profilePayloadBadges`,
+        `messageContentV2ProfileBadges`, `e3e41a2e`, knit-next ADR 2026-10.r99s), short videos (`messageContentVideo`,
+        `messageContentV2Video`, `chatContentVideo`, `13387e0a`), and two blob request fields: `fastOnly`, which asks
+        before a large Bluetooth-only download (`3b03c5f9`), and `pull` with its `until` (`385bfba0`).
+      - **What this port does with them:** decodes each to the type it already has and drops the new fields, which
+        `GoldenVectorTests.whatThisBuildDoesNotModelStillDecodes` pins. It models none of them, so none has a typed
+        test. `fastOnly` marks an asker that takes the bytes over Wi-Fi Aware alone (knit-next ADR 2026-10.js2p), which
+        this port cannot honour. Whether Android sends one to an iPhone is not yet checked.
     - knit-next companion change A9 (ADR 2026-10.5sk9), merged into knit-next's local `main` with A10 by 2026-10-18
       (`4f3cd995`, not pushed), past the pin:
       - **What comes in:** `vectors/ratchet-v1.json`, synced alone with `scripts/sync-vectors.py --only

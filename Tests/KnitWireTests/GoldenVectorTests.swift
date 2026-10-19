@@ -15,9 +15,28 @@ import Testing
         #expect(item.encoded == bytes, "\(name) did not re-encode to its pinned bytes")
     }
 
-    @Test func thereAreSixtyFourVectors() {
+    @Test func thereAreSeventyEightVectors() {
         // A new fixture in knit-next needs a typed test here when this build models its type.
-        #expect(GoldenVectors.names.count == 64)
+        #expect(GoldenVectors.names.count == 78)
+    }
+
+    /// knit-next's fixtures for what this build does not model yet, taken at `9c3d487b`: calls (knit-next ADR
+    /// 2026-10.3tee), supporter badges (knit-next ADR 2026-10.r99s), short videos, and a blob request's `fastOnly` and
+    /// `pull`. Each decodes to the type this build has, the new fields dropped, so a newer Android's frame is read, never
+    /// refused.
+    @Test func whatThisBuildDoesNotModelStillDecodes() throws {
+        for name in ["blobReqContentFastOnly", "blobReqContentPull", "blobReqContentPullSpent"] {
+            #expect(try BlobRequestContent(decoding: GoldenVectors.bytes(name)).hash == "h1", "\(name)")
+        }
+        #expect(try ProfilePayload(decoding: GoldenVectors.bytes("profilePayloadBadges")).name == "Ann")
+        for name in GoldenVectors.names where name.hasPrefix("messageContentCall") {
+            #expect(try MessageContent(decoding: GoldenVectors.bytes(name)).ctl == 10, "\(name)")
+        }
+        _ = try MessageContent(decoding: GoldenVectors.bytes("messageContentVideo"))
+        _ = try ChatContent(decoding: GoldenVectors.bytes("chatContentVideo"))
+        for name in ["messageContentV2ProfileBadges", "messageContentV2Video"] {
+            #expect(MessageContentV2.decode(GoldenVectors.bytes(name)) != nil, "\(name)")
+        }
     }
 
     @Test(arguments: typedFixtures)
