@@ -151,3 +151,22 @@ maintainer chose this on 2026-10-18 (`.agents/memory/roadmap.md`).
   - `PrekeyRingAnsweredTests` and `PeerAnsweredInitsTests`: the stored form on the Keychain double and on knit-peer's
     file.
   - Checked by reverting: with either half taken out, the lab's pins fail as the roadmap predicted.
+
+**Amended 2026-10-18, seen live:** two knit-peers with `--ratchet` on the lab's dongles, linked only through the Pixel 8
+on knit-next 2.9.0, ran the ordering that split the pair that morning. The peer opened a session and the node answered
+it. The node then stopped, the peer sent it three DMs that crossed the Pixel, and the node restarted with empty stores
+and its state directory kept: the reinstall case. The run was made once in each node-id order. The first ran the build
+before the review fixes, the second ran `d9425a6`.
+
+- In both, the node's heuristic reset the pair at the third `NO_SESSION`, within 60 s of the DMs crossing the Pixel.
+- About a second later the Pixel's back-fill brought the peer's opener. The node dropped it as `answered-before`,
+  answered nothing and sent no second reset.
+- The peer re-sealed the three at once. The Pixel's dedup stopped those copies, and the second pass, about 11 minutes
+  later, brought all three to the node.
+- Both sides ended confirmed on one root and `establishedAt`, the node as the reset's initiator, with exactly one reset
+  from the node and none from the peer. The node's drops were the reinstall's leftovers: five `ratchetNoSession` and two
+  `ratchetAeadFail`, one of them the opener. The peer dropped nothing.
+
+The morning's run, before this change and with the peer's id the smaller, ended on two roots (ADR 2026-10.5sk9's
+live-runs amendment). The second run in this order needed the Pixel 9 and Pixel 3 paused for its length (the bridge's
+`PAUSE`, resumed after), because the Pixel 8's links to them left the two peers flapping.

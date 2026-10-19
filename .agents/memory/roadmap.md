@@ -392,7 +392,8 @@ explicit direction.** Update this file in the change that ships an item.
       with no reset since it.
 
     `RatchetRestoreLabTests` now asserts every ordering plainly, in both node-id orders: exactly one flagged reset, and
-    every receipt for the node's DMs read at the node. What remains:
+    every receipt for the node's DMs read at the node. The "after the reset" ordering passed live in both node-id
+    orders on 2026-10-18, two knit-peers through the Pixel 8 (ADR 2026-10.wcex, seen live). What remains:
     - **An answer that never left.** The node answered the opener and reinstalled before its answer reached the peer,
       and the peer's id is the smaller. The peer, still that root's unconfirmed initiator, wins the race against the
       node's reset and keeps the old root, which the node no longer races into. Its frames fail uncounted at the node
