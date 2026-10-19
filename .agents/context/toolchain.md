@@ -107,7 +107,9 @@ exact interval, then update this file in the same change.
   fastest (2026-09-28). A test that waits on a thread needs a deadline with room for that, as
   `LoopRig.settleMilliseconds` has.
 - **`verify:analyze` needs more than 8 GB on Linux.** SourceKit keeps every file's compiler instance until the
-  run ends, and an 8 GB cap killed it at 8.35 GB.
+  run ends, and an 8 GB cap killed it at 8.35 GB. One run over every module later passed 28 GB and was killed on
+  `knit-local` (2026-10-19), so `check.sh analyze` now runs SwiftLint once per module. KnitMesh's run is the largest,
+  at 7.7 GB, and the whole gate took 2 min 39 s with the build.
 - **Architectures:** `swift:6.4-noble`, `python:3.13-alpine`, `alpine/git` and `zaventh/lintorama:7` all
   publish arm64 images. The line total can differ from amd64 by a line or so (10827 against 10826 of 11114),
   which the whole-percent floors absorb.

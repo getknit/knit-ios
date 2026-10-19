@@ -11,9 +11,9 @@ unused_import:
 # Three targets are analyzed on the Mac only. Knit and KnitBLE compile to empty modules here, and SourceKit reports
 # their Apple-only code as errors. SourceKit crashes (SIGSEGV) expanding `@Observable` under `swiftlint analyze` on
 # Linux with Swift 6.4 and SwiftLint 0.65.1, in-process plugin or not, so KnitAppCore, whose view models use it,
-# goes too; drop it once a toolchain passes. SwiftLint analyzes every file the configuration includes whatever
-# paths it is given, so the exclusions live here. The parent's are repeated because a child's list replaces them,
-# and every path is relative to this file.
+# goes too; drop it once a toolchain passes. `check.sh analyze` hands SwiftLint each module's files, which it takes
+# as given, and gives no run to a module whose `../Sources/` line is below. The parent's exclusions are repeated
+# because a child's list replaces them, and every path is relative to this file.
 excluded:
   - ../.build
   - ../Fuzz/.build

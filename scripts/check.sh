@@ -42,7 +42,6 @@ available_cores() {
 }
 
 swift_sources=(Package.swift Sources Tests Fuzz/Package.swift Fuzz/Sources)
-pure_targets=(Sources/KnitSync Sources/KnitWire Sources/KnitCrypto Sources/KnitStore Sources/KnitMesh Sources/KnitAppCore Sources/KnitPeer Sources/KnitBlueZ)
 
 # SwiftLint looks for SourceKit beside the `swift` binary, which under swiftly is a proxy rather than the
 # toolchain. Ask the compiler where its resources live instead.
@@ -117,23 +116,47 @@ gate_asan() {
 }
 
 gate_analyze() {
-	step "swiftlint analyze (platform-free targets)"
+	step "swiftlint analyze (one run per module)"
 	# The compiler log must come from a fresh build, or SwiftLint sees no invocations to analyze.
 	rm -rf .build-analyze
 	local log=.build-analyze.log
 	swift build "${jobs[@]}" -v --only-use-versions-from-resolved-file --scratch-path .build-analyze >"$log" 2>&1
-	# Apple-only targets compile to empty modules here, and SourceKit reports their SwiftUI and CoreBluetooth
-	# imports as noise; the Mac runner analyzes the whole tree.
-	local output status=0
-	# The Linux override keeps `import Foundation`, which SourceKit misattributes here; the file says why.
-	local configs=(--config .swiftlint.yml)
-	[[ "$(uname -s)" == Linux ]] && configs+=(--config scripts/swiftlint-analyze-linux.yml)
+	# The Linux override keeps `import Foundation`, which SourceKit misattributes here, and leaves out the Apple-only
+	# modules and the one SourceKit crashes on; the file says why. The modules it leaves out get no run here.
+	local configs=(--config .swiftlint.yml) skipped=()
+	if [[ "$(uname -s)" == Linux ]]; then
+		configs+=(--config scripts/swiftlint-analyze-linux.yml)
+		mapfile -t skipped < <(sed -n 's|^  - \.\./Sources/||p' scripts/swiftlint-analyze-linux.yml)
+	fi
 	# SourceKit keeps every file's compiler instance, and the ten Clang modules it holds open, until the run ends.
 	# Docker's soft limit of 1024 descriptors runs out a hundred files in, so lift it to the hard limit.
 	ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
-	output=$(swiftlint analyze "${configs[@]}" --strict --quiet --compiler-log-path "$log" "${pure_targets[@]}" 2>&1) ||
-		status=$?
-	grep -v -E 'no such module|^[[:space:]]+(import|\^)' <<<"$output" || true
+	# One run over every module passed 28 GB and was killed (2026-10-19), so each module gets a run of its own, whose
+	# compiler instances go when it ends. SwiftLint analyzes all `included` names whatever directories it is given (and
+	# a child config's `included` adds to its parent's), but takes files as given, so each run names its module's files.
+	# `unused_declaration` weighs only internal and private declarations, which nothing outside their module can use, so
+	# a module's own run sees every use that counts.
+	local module name file files output result analyzed status=0
+	for module in "$root"/Sources/*/; do
+		name=$(basename "$module")
+		[[ " ${skipped[*]:-} " == *" $name "* ]] && continue
+		# Absolute paths, as the compiler log names them: SwiftLint finds no arguments for a relative path, skips the
+		# file and passes. So the run reports how many files it analyzed, and a count short of the module's fails.
+		files=()
+		while IFS= read -r file; do files+=("$file"); done < <(find "$module" -name '*.swift' | sort)
+		((${#files[@]})) || continue
+		echo "-- $name"
+		result=0
+		output=$(swiftlint analyze "${configs[@]}" --strict --compiler-log-path "$log" "${files[@]}" 2>&1) || result=$?
+		grep -v -E "no such module|^[[:space:]]+(import|\^)|^Analyzing Swift files|^(Collecting|Analyzing) '|^Done analyzing" \
+			<<<"$output" || true
+		analyzed=$(sed -n -E 's/^Done analyzing!.* in ([0-9]+) files?\.$/\1/p' <<<"$output")
+		if ((result == 0)) && [ "${analyzed:-0}" != "${#files[@]}" ]; then
+			echo "swiftlint analyzed ${analyzed:-0} of $name's ${#files[@]} files" >&2
+			result=1
+		fi
+		((result == 0)) || status=$result
+	done
 	return "$status"
 }
 
