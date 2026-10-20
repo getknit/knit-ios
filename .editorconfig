@@ -40,7 +40,7 @@ indent_style = tab
 [.githooks/*]
 indent_style = tab
 
-[*.{plist,xcprivacy}]
+[*.{plist,xcprivacy,entitlements}]
 indent_style = tab
 
 [{COPYING,DCO}]

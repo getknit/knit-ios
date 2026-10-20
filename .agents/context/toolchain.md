@@ -188,6 +188,10 @@ logs in to the desktop by itself, because the Simulator and signing need a deskt
     file and fails if the pins drift.
   - **The debug dylib:** a Debug build keeps the app's code in `Knit.debug.dylib`, where the gate looks for
     KnitBLE's delegate methods.
+  - **Entitlements:** `App/Knit.entitlements` names the associated domain `applinks:getknit.app`, so contact links open
+    Knit (ADR 2026-10.tpr5). An unsigned build drops it. A signed one needs a profile with Associated Domains, which
+    `-allowProvisioningUpdates` turns on for the App ID, and `check.sh device` and `archive` check the signature
+    carries it.
 - **Signing on the Mac:** Xcode is signed in to the maintainer's team, a free Personal Team until it joined the
   Apple Developer Program on 2026-10-03 under the same team id. Its first run on the iPhone (2026-09-27) made an
   Apple Development certificate and a profile for `app.getknit.knit.dev`. Set up once at

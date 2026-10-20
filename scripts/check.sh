@@ -337,6 +337,28 @@ print(f"{app.name}: no debug code; privacy manifests in the app and {len(list(ap
 PY
 }
 
+# The signed app $1 claims getknit.app's contact links (ADR 2026-10.tpr5): App/Knit.entitlements' associated domains
+# reached its signature. A profile without Associated Domains fails the signing before this, and an unsigned build
+# carries no entitlements at all.
+check_associated_domains() {
+	local signed status=0
+	signed=$(mktemp)
+	codesign -d --entitlements - --xml "$1" 2>/dev/null >"$signed"
+	python3 - "$1" "$signed" <<'PY' || status=$?
+import plistlib, sys
+app, path = sys.argv[1:]
+key = "com.apple.developer.associated-domains"
+wanted = plistlib.load(open("App/Knit.entitlements", "rb"))[key]
+data = open(path, "rb").read()
+signed = plistlib.loads(data).get(key) if data else None
+if signed != wanted:
+	sys.exit(f"{app} is signed with associated domains {signed}, while App/Knit.entitlements names {wanted}")
+print(f"{app}: associated domains {wanted}")
+PY
+	rm -f "$signed"
+	return "$status"
+}
+
 # The unsigned build any Mac can run: the iPhone and the Simulator, into .build-xcode.
 gate_xcode() {
 	step "xcodebuild App/Knit.xcodeproj (iOS and Simulator, unsigned)"
@@ -594,6 +616,7 @@ gate_device() {
 		-allowProvisioningUpdates "${team[@]}" "${key[@]}" build | "${xcode_pretty[@]}"
 	check_xcode_app
 	codesign --verify --strict --deep "$xcode_app"
+	check_associated_domains "$xcode_app"
 	# The profile's end date, so a renewal that stopped working shows here days before installs fail.
 	security cms -D -i "$xcode_app/embedded.mobileprovision" >"$xcode_app.profile.plist"
 	python3 - "$xcode_app.profile.plist" <<'PY'
@@ -817,6 +840,7 @@ check_store_ipa() {
 	ditto -x -k "$1" "$unpacked"
 	local app=$unpacked/Payload/Knit.app
 	codesign --verify --strict --deep "$app"
+	check_associated_domains "$app"
 	codesign -d --entitlements - --xml "$app" 2>/dev/null >"$unpacked/entitlements.plist"
 	security cms -D -i "$app/embedded.mobileprovision" >"$unpacked/profile.plist"
 	python3 - "$unpacked/entitlements.plist" "$unpacked/profile.plist" "$2" <<'PY' || status=$?

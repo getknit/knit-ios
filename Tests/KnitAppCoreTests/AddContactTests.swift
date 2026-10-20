@@ -1,3 +1,4 @@
+import Foundation
 import KnitCrypto
 import KnitMesh
 import KnitStore
@@ -193,5 +194,21 @@ import Testing
         #expect(Set(words).count == words.count)
         let problems: [AddContactProblem] = [.notALink, .ownLink, .mismatch(name: "Sam"), .failed]
         #expect(Set(problems.map(Copy.AddContact.problem)).count == problems.count)
+    }
+
+    // MARK: Links that open Knit
+
+    /// Both forms of a link open Knit: `App/Info.plist` registers the `knit` scheme, and `App/Knit.entitlements` names
+    /// the https link's host as an associated domain, whose apple-app-site-association file claims `/c` for Knit.
+    @Test func knitClaimsBothFormsOfALink() throws {
+        func plist(_ path: String) throws -> [String: Any] {
+            let data = try Data(contentsOf: CopyTests.root.appendingPathComponent(path))
+            return try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        }
+        let host = try #require(URL(string: ContactCard.urlPrefix)?.host)
+        #expect(try plist("App/Knit.entitlements")["com.apple.developer.associated-domains"] as? [String] == ["applinks:\(host)"])
+        let types = try #require(try plist("App/Info.plist")["CFBundleURLTypes"] as? [[String: Any]])
+        let schemes = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        #expect(schemes == [try #require(URL(string: ContactCard.schemePrefix)?.scheme)])
     }
 }

@@ -26,6 +26,8 @@ targets:
         buildPhase: resources
       - path: Info.plist
         buildPhase: none
+      - path: Knit.entitlements
+        buildPhase: none
       # The content filter's photo model (ADR 2026-10.rpmq): Xcode compiles it into Knit.app/NSFW.mlmodelc, which
       # DevicePhotoClassifier loads. One package, not the folder of files it is; `check.sh xcode` checks it lands.
       - path: Models/NSFW.mlpackage
@@ -58,6 +60,10 @@ targets:
         INFOPLIST_FILE: Info.plist
         # Adds the bundle id and executable keys to App/Info.plist's own.
         GENERATE_INFOPLIST_FILE: true
+        # applinks:getknit.app, so a tapped https://getknit.app/c#… contact link opens Knit (ADR 2026-10.tpr5). The
+        # site's apple-app-site-association file claims /c for both bundle ids, and each id's profile carries Associated
+        # Domains. An unsigned build drops it.
+        CODE_SIGN_ENTITLEMENTS: Knit.entitlements
         # The generated plist takes its version keys from these two, over App/Info.plist's. Keep them equal to
         # its CFBundleShortVersionString and CFBundleVersion; `check.sh xcode` fails when they differ.
         MARKETING_VERSION: 1.0.0

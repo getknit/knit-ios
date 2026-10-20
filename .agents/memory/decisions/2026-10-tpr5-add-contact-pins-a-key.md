@@ -91,3 +91,26 @@ only the legacy `knit-id:v1` code as a QR code, and both its scan paths read eit
   - `AddContactTests` and `ProfileTests` in KnitAppCore.
   - `KnitUITests`' Add contact walk.
   - `interop.py iphone-contact` against a Pixel.
+
+**Amended 2026-10-20:** a tapped `https://getknit.app/c#…` link now opens Knit too. getknit.app serves an
+apple-app-site-association file that claims `/c` for `6S3X4M797G.app.getknit.knit` and the `.dev` id (the site's
+`430cace`), and `App/Knit.entitlements` gives both builds `applinks:getknit.app`. SwiftUI hands a universal link to the
+same `onOpenURL` as a `knit://` link, so `Launch.open(url:)` needed no change: it stages either one for Add contact.
+
+- **Every profile that signs Knit carries Associated Domains.** On 2026-10-20, with the App Store Connect API key,
+  `-allowProvisioningUpdates` turned it on and made new profiles: the `.dev` id's in `check.sh device`, and the App
+  Store profile for `app.getknit.knit` in `check.sh archive`, whose exported `.ipa` carries the domain.
+- **No `?mode=developer`.** Apple's CDN already serves the file, and a phone skips a developer-mode entry unless
+  Associated Domains Development is on in its Developer settings.
+- **Some links still open Safari:**
+  - one tapped on a getknit.app page, since iOS keeps a link to the page's own site in Safari (the `/c` page's Open in
+    Knit goes through `knit://`);
+  - one typed or pasted into Safari;
+  - every link, after someone picks Open in Safari from a link's menu, until they pick Knit again.
+- **`/r` relay invites stay with the browser.** This port has no relays.
+- **`/c` without a card opens Knit as well.** Knit ignores it, as it ignores any URL that holds no contact link.
+- **A change to the file reaches phones late.** Apple's CDN caches it for hours, and a phone reads it when Knit is
+  installed or updated.
+- **The guards:** `AddContactTests`' `knitClaimsBothFormsOfALink` holds the entitlement's domain to
+  `ContactCard.urlPrefix`'s host and the registered scheme to `schemePrefix`'s. `check.sh device` and `check.sh archive`
+  check that the signed app carries the domain, and the site's `app/aasa.test.ts` pins the file.

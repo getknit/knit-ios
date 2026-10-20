@@ -513,17 +513,18 @@ explicit direction.** Update this file in the change that ships an item.
 - **Add contact and contact links** (ADR 2026-10.tpr5): New message opens Add contact, which shows our code, scans
   theirs and pins their key verified, and shares, copies and reads signed contact links (`docs/CONTACT_CARD.md` in
   knit-next). A link previews the person and their safety number, then pins, accepts and asks for their key. Links open
-  the app through `knit://`. Built and tested on Linux and in the Simulator. On 2026-10-20 `interop.py iphone-contact`
-  passed 7 of 7 against the Pixel 8 (2.10.0-alpha.1, debug), with the lab iPhone on `722dd4a`. Each phone took the
-  other's link, Android read the iPhone's CryptoKit-signed card as `Ready`, and both showed one safety number. A DM went
-  each way, and no intro was left pending. The pair already held each other's keys, and the re-import changed nothing:
-  both kept the confirmed session at root `054c9626`, and the iPhone dropped nothing as `pinChangeRefused` or
-  `keyMismatch`. The Pixel's `knit://c/…` link, opened on the iPhone through `devicectl --payload-url`, showed Add
-  contact's preview with the same safety number. What remains:
+  the app through `knit://`, and since 2026-10-20 as universal links: getknit.app's apple-app-site-association file
+  claims `/c` for both bundle ids, and `App/Knit.entitlements` carries `applinks:getknit.app`. That day the Simulator,
+  handed `https://getknit.app/c#<card>` by `simctl openurl`, opened Add contact's preview, its `swcd` having fetched the
+  file from Apple's CDN at the install. Built and tested on Linux and in the Simulator. On 2026-10-20
+  `interop.py iphone-contact` passed 7 of 7 against the Pixel 8 (2.10.0-alpha.1, debug), with the lab iPhone on
+  `722dd4a`. Each phone took the other's link, Android read the iPhone's CryptoKit-signed card as `Ready`, and both
+  showed one safety number. A DM went each way, and no intro was left pending. The pair already held each other's keys,
+  and the re-import changed nothing: both kept the confirmed session at root `054c9626`, and the iPhone dropped nothing
+  as `pinChangeRefused` or `keyMismatch`. The Pixel's `knit://c/…` link, opened on the iPhone through
+  `devicectl --payload-url`, showed Add contact's preview with the same safety number. What remains:
   - **The intro** (`IntroSync`'s send half), deferred by the maintainer on 2026-10-19. This port answers Android's.
-  - **Universal links:** `applinks:getknit.app` waits for the site to serve an apple-app-site-association file for
-    Knit's team and bundle id. Until then an `https://getknit.app/c#…` link opens Safari, and reaches Knit only if the
-    `/c` page hands off to `knit://`.
+  - **A universal link tapped on the iPhone,** in Messages or Notes, with a build that carries the entitlement.
   - **Remove contact** (knit-next ADR 2026-09.adgd), and a contacts list beyond New message.
   - **A share extension,** so a link shared to Knit from another app lands in Add contact.
   - **The device trial's other half:** a scan with the camera in Add contact, which needs someone at the phones, and a

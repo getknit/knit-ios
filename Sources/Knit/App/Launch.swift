@@ -103,7 +103,8 @@
             }
         }
 
-        /// A URL that opened Knit: Add contact takes a contact link, and anything else is ignored, as Android's inbox
+        /// A URL that opened Knit, a `knit://` link or a tapped `https://getknit.app/c#…` one, which SwiftUI hands over
+        /// as a universal link: Add contact takes a contact link, and anything else is ignored, as Android's inbox
         /// stages only what reads as a card (`ContactCardInbox.offer`).
         func open(url: URL) {
             let text = url.absoluteString
