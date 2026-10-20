@@ -104,6 +104,9 @@ Read these before writing anything, in this order:
 If the change needs context none of these point to, read what it needs, and say in the report which routing line
 was missing.
 
+If the brief carries a design pass's findings (`.agents/rules/review-rounds.md`, section 1), the blocking ones are
+requirements and the non-blocking ones are constraints to design against. Say in your report how each was met.
+
 ## Step 2: design against the mesh
 
 Before you edit, write down for yourself, for each behaviour the change adds or moves:
@@ -169,7 +172,8 @@ Find the suites with `grep -rlw '<TouchedType>' Tests --include='*.swift'`. The 
 `BlobStoreTests`, `SQLBlobStoreTests` and `FileIntakeTests`. A custody rule runs against both stores. Trust a pass
 only after the output shows "Build complete!". Add or extend a test for every decision you put in a pure type, and
 a two-sided test for every change to what two nodes exchange. Run `scripts/check.sh format lint` and fix what it
-reports.
+reports before your last test run, so that run covers the tree the reviewer reads (`.agents/rules/review-rounds.md`,
+section 6).
 
 Don't run `check.sh all`, `fuzz.sh`, the Mac's gates or a device test unless the brief asks: they are heavy, and this
 machine is shared (`.agents/rules/build-and-test.md`). A green run proves the logic on one machine; the trial with

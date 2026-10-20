@@ -119,6 +119,9 @@ Read these before writing anything, in this order:
 If the change needs context none of these point to, read what it needs, and say in the report which routing line
 was missing.
 
+If the brief carries a design pass's findings (`.agents/rules/review-rounds.md`, section 1), the blocking ones are
+requirements and the non-blocking ones are constraints to design against. Say in your report how each was met.
+
 ## Step 2: design against the pair
 
 Before you edit, write down for yourself, for each behaviour the change adds or moves:
@@ -203,7 +206,8 @@ ported from the Kotlin tests `crypto.md`'s ratchet section names, and the ratche
 ratchet change also runs in `test:macos` through the caller, since CryptoKit is not Linux's swift-crypto. Trust a
 pass only after the output shows "Build complete!". Add or extend a test for every decision you make, and a
 two-engine test for every change to what two nodes exchange. Run `scripts/check.sh format lint` and fix what it
-reports.
+reports before your last test run, so that run covers the tree the reviewer reads (`.agents/rules/review-rounds.md`,
+section 6).
 
 `KeychainSecretStore` is in the `Knit` target, which compiles to an empty module on Linux. When you touched it, also
 run `scripts/mac.sh run scripts/check.sh xcode`, one Mac command at a time, and never from a worktree that shares

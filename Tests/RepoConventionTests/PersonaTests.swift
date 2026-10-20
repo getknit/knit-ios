@@ -3,13 +3,15 @@ import Testing
 
 /// The owner and reviewer personas (ADR 2026-10.zjmx, `.agents/rules/owners.md`) work only while their pieces agree:
 /// each persona is linked from `.claude/agents/` under its own name, each owner has a reviewer, each reviewer has one
-/// line in the Stop hook's conf and cannot edit, and every path and ADR id a persona cites still exists. A catalogue
-/// that names a file the code no longer has sends its next reader nowhere.
+/// line in the Stop hook's conf and cannot edit, each reviewer reads the review rounds and names its own delta file,
+/// and every path and ADR id a persona cites still exists. A catalogue that names a file the code no longer has sends
+/// its next reader nowhere.
 @Suite struct PersonaTests {
     private static let personas = ".agents/personas"
     private static let agents = ".claude/agents"
     private static let conf = ".claude/hooks/review-gate.conf"
     private static let owners = ".agents/rules/owners.md"
+    private static let rounds = ".agents/rules/review-rounds.md"
 
     @Test func everyPersonaIsNamedForItsFileAndLinkedForClaudeCode() throws {
         let names = try personaNames()
@@ -34,13 +36,18 @@ import Testing
             let reviewer = owner.replacingOccurrences(of: "-owner", with: "-reviewer")
             #expect(names.contains(reviewer), "\(owner) has no \(reviewer)")
         }
-        let gated = try gateLines().map(\.name)
+        let lines = try gateLines()
+        let gated = lines.map(\.name)
         #expect(Set(gated).count == gated.count, "a reviewer has two lines in \(Self.conf)")
         #expect(Set(gated) == names.filter { $0.hasSuffix("-reviewer") }, "\(Self.conf) and the reviewers disagree")
+        for line in lines where names.contains(line.name.replacingOccurrences(of: "-reviewer", with: "-owner")) {
+            #expect(line.stage == 1, "\(line.name) reviews a plane, so its stage is 1, not \(line.stage)")
+        }
     }
 
     @Test func theGateWatchesOnlyPathsThatExist() throws {
         for line in try gateLines() {
+            #expect(line.stage == 1 || line.stage == 2, "\(line.name)'s stage is not 1 or 2")
             #expect(line.followUp > 0, "\(line.name)'s follow-up is not a count of lines")
             for path in line.paths where !path.hasPrefix(":(") {
                 #expect(exists(path), "\(line.name) gates \(path), which does not exist")
@@ -53,6 +60,14 @@ import Testing
             let tools = try frontmatter(of: name)["tools"] ?? ""
             let granted = Set(tools.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
             #expect(granted.isDisjoint(with: ["Edit", "Write", "MultiEdit", "NotebookEdit"]), "\(name) can edit")
+        }
+    }
+
+    @Test func everyReviewerReadsTheRoundsAndItsOwnDelta() throws {
+        for name in try personaNames() where name.hasSuffix("-reviewer") {
+            let text = try RepoFiles.text("\(Self.personas)/\(name).md")
+            #expect(text.contains("`\(Self.rounds)`"), "\(name).md never sends its reader to \(Self.rounds)")
+            #expect(text.contains("`claude-review/\(name).delta`"), "\(name).md never names its own delta file")
         }
     }
 
@@ -87,6 +102,7 @@ import Testing
 
     private struct GateLine {
         let name: String
+        let stage: Int
         let followUp: Int
         let paths: [String]
     }
@@ -121,18 +137,19 @@ import Testing
             .filter { !$0.hasPrefix("#") && !$0.trimmingCharacters(in: .whitespaces).isEmpty }
             .map { line in
                 let fields = line.components(separatedBy: "\t")
-                #expect(fields.count == 4, "\(Self.conf) has a line without four tab-separated fields: \(line)")
-                let padded = fields + Array(repeating: "", count: max(0, 4 - fields.count))
+                #expect(fields.count == 5, "\(Self.conf) has a line without five tab-separated fields: \(line)")
+                let padded = fields + Array(repeating: "", count: max(0, 5 - fields.count))
                 return GateLine(
                     name: padded[0],
-                    followUp: Int(padded[1]) ?? 0,
-                    paths: padded[2].split(separator: " ").map(String.init)
+                    stage: Int(padded[1]) ?? 0,
+                    followUp: Int(padded[2]) ?? 0,
+                    paths: padded[3].split(separator: " ").map(String.init)
                 )
             }
     }
 
     private func citingFiles() throws -> [(String, String)] {
-        let files = try personaNames().map { "\(Self.personas)/\($0).md" } + [Self.owners]
+        let files = try personaNames().map { "\(Self.personas)/\($0).md" } + [Self.owners, Self.rounds]
         return try files.map { ($0, try RepoFiles.text($0)) }
     }
 

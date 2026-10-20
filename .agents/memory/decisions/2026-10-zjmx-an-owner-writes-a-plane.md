@@ -57,3 +57,24 @@ what found the defects the ADRs above cite.
 - A catalogue goes stale as code moves. `Tests/RepoConventionTests/PersonaTests.swift` keeps the wiring true: each
   persona has its link, a gate line and a row in `owners.md`; each owner has a reviewer; each reviewer lacks `Edit`
   and `Write`; and every path and ADR id the personas cite resolves. A symbol that is renamed waits for a doc-lint.
+
+**Amendment (2026-10-19): review rounds, ported from knit-next.** knit-next `14417f73` (2026-10-17) changed how its
+reviews run after its #195 took five full rounds of three reviewers each. Every pass re-read the whole diff, so
+findings unrelated to the last round kept arriving. This port takes the same rules, in
+`.agents/rules/review-rounds.md`:
+
+- **A design pass.** Before a brief goes to an owner, the plane's reviewer reads the plan. It runs nothing and stamps
+  nothing.
+- **Labels.** Every finding is Blocking or Non-blocking, and only a blocking one opens another round. When two rounds
+  in a row each bring a new blocking finding, the design goes back to the maintainer.
+- **Follow-up passes.** A stamp now also keeps its paths' working state as a git tree. When the change outgrows the
+  stamp's slack and no commit since has touched the reviewer's paths, the gate writes the diff since the stamp to
+  `claude-review/<name>.delta`. The reviewer reads that and closes its previous findings instead of reading the whole
+  change again. A commit that leaves those paths alone no longer voids the stamp.
+- **Stages.** `review-gate.conf` gains a stage column. The plane reviewers are stage 1, and a test reviewer (stage 2)
+  is asked for only once no stage-1 review is pending. All three reviewers here are stage 1, so the column waits for
+  the mesh-lab reviewer.
+
+Left out: knit-next's reuse of a chaos sweep across passes, which has nothing to reuse here until the lab lands, and
+its gate for contributors' pull requests (knit-next `4dea7521`), which needs a Claude workflow this repository does
+not run. `PersonaTests` checks the stage column, and that each reviewer reads the rounds and names its own delta file.

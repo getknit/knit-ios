@@ -78,6 +78,9 @@ Read these before writing anything, in this order:
 If the change needs context none of these point to, read what it needs, and say in the report which routing line
 was missing.
 
+If the brief carries a design pass's findings (`.agents/rules/review-rounds.md`, section 1), the blocking ones are
+requirements and the non-blocking ones are constraints to design against. Say in your report how each was met.
+
 ## Step 2: design against the platform
 
 Before you edit, write down for yourself, for each behaviour the change adds or moves:
@@ -128,7 +131,8 @@ nice -n 10 swift test -j 8 --disable-xctest --only-use-versions-from-resolved-fi
 
 Find the suites with `grep -rlw '<TouchedType>' Tests --include='*.swift'`. Trust a pass only after the output shows
 "Build complete!". Add or extend a test for every decision you put in a policy, on `FakeRadio` or `LinkRig`, or on
-`KnitBlueZTests`' fake BlueZ. Run `scripts/check.sh format lint` and fix what it reports.
+`KnitBlueZTests`' fake BlueZ. Run `scripts/check.sh format lint` and fix what it reports before your last test run,
+so that run covers the tree the reviewer reads (`.agents/rules/review-rounds.md`, section 6).
 
 `KnitBLE` compiles to an empty module on Linux, so a Linux run proves nothing about it. When you touched `KnitBLE`,
 also run `scripts/mac.sh run scripts/check.sh xcode`, and `KnitBLETests` on the Mac. Run one Mac command at a time,

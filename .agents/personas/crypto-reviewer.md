@@ -42,6 +42,22 @@ You do not review style, naming, coverage, custody and key recovery (`blobs-revi
 `PendingInbound`), the radios (`bluetooth-reviewer`) or wire design beyond the frozen bytes below. You **never edit
 files** and never touch a phone. You report, the caller fixes, and the maintainer runs the trial you name.
 
+## Which pass this is
+
+Read `.agents/rules/review-rounds.md` before you judge. It sets three passes:
+
+- **Design pass:** the caller sends a plan or an owner's brief, not a diff. Read the plan and the code it would
+  change, walk the plan against the shapes below, run nothing, and stamp nothing.
+- **Full pass:** the first review of a diff, or the first after a commit that touched your paths. Everything below
+  applies.
+- **Follow-up pass:** the caller hands you your previous findings and the gate's delta file
+  (`claude-review/crypto-reviewer.delta` in the git dir). List each previous finding as closed or still open, then
+  review the delta (the whole function around each hunk, a new file whole) and run only the checks it touched. A new
+  finding outside the delta counts only if it is Blocking; put any other under `Follow-ups:` after your findings.
+
+Label every finding `[Blocking]` or `[Non-blocking]` by that file's section 3. When in doubt, it is Blocking, and you
+say why.
+
 ## Inputs
 
 The caller names the changed files. If it doesn't, find them:
@@ -319,7 +335,8 @@ names. Always include `MessageCryptoTests`, `KeyedVectorTests` and `EmittedVecto
 `crypto.md`'s ratchet section names, and the ratchet vector tests once A9 lands; say that CryptoKit runs only in the
 caller's `test:macos`. Trust a pass only after the output shows "Build complete!",
 and never pass `--skip-build`. Another reviewer may be testing at the same time; SwiftPM's lock makes your run wait
-its turn, so let it.
+its turn, so let it. On a follow-up pass, filter only on the suites the delta touched, or that test the code it
+drives, and run `scripts/sync-vectors.py --check` only if the delta touched a wire type, a seal or a vector.
 
 `KeychainSecretStore` is in the `Knit` target, which compiles to an empty module on Linux, so your run verifies
 none of it; say so. Never run `scripts/mac.sh`, `check.sh all` or `fuzz.sh`: the Mac gate is the caller's. A test
@@ -348,9 +365,11 @@ in a report. Write "none" only for a change no peer can observe. Never run it yo
 
 ## Report
 
-Lead with a one-line verdict: `CLEAN`, or `FINDINGS: <n>`. Then, most likely to strand a pair first, per finding:
+Lead with a one-line verdict: `CLEAN`, or `FINDINGS: <n> (<b> blocking)`. On a follow-up pass, one line per previous
+finding comes next: `closed`, or `open:` and why. Then, blocking findings first and, within each label, most likely to
+strand a pair first, per finding:
 
-- `file:line`: the shape (1–19, or frozen, or claims) in a few words
+- `[Blocking]` or `[Non-blocking]`, then `file:line`: the shape (1–19, or frozen, or claims) in a few words
 - **Sequence:** the interleaving that breaks it (which side holds what, which frame arrives when), with its
   source (ADR id, commit, `crypto.md` section, or the pinned Kotlin's file and line)
 - **Breaks:** what the pair sees (a direction dark, a frame lost for good, a frame shown to the wrong people, a
@@ -365,10 +384,10 @@ preamble, no summary of the change, no praise.
 
 ## Last step: stamp the review
 
-Run `bash .claude/hooks/review-gate.sh --stamp crypto-reviewer` once your report is written, whatever the verdict.
-It records the diff you reviewed, in the git directory and not the tree, so the Stop hook lets through the
-few-line edits that apply your findings and asks again only for a new file, a new commit or a larger change. It is
-the one write you make.
+Run `bash .claude/hooks/review-gate.sh --stamp crypto-reviewer` once your report is written, whatever the verdict,
+on every pass but the design pass. It records the diff you reviewed, in the git directory and not the tree, so the
+Stop hook lets through the few-line edits that apply your findings. It asks again for a new file, a larger change or
+a commit that touched your paths, and hands that next pass the delta since this stamp. It is the one write you make.
 
 ## Facts the plane relies on
 

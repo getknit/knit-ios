@@ -20,7 +20,7 @@ growing an explanation, that explanation belongs in the ADR.
 | the device family, `TARGETED_DEVICE_FAMILY`, or anything for the iPad | [ADR 2026-10.kedu](../memory/decisions/2026-10-kedu-knit-ships-for-iphone-only.md) |
 | a release build, `#if DEBUG`, the demo's launch arguments, `App/PrivacyInfo.xcprivacy`, the export-compliance key, `check.sh release`, `archive` or `upload`, or `release:testflight` | [ADR 2026-10.8cy5](../memory/decisions/2026-10-8cy5-a-store-build-is-a.md) |
 | a CI job's `allow_failure`, a disabled lint rule, a compiler setting, or coverage floors | [ADR 2026-09.jgs6](../memory/decisions/2026-09-jgs6-each-quality-gate-blocks-from.md) |
-| a persona in `.agents/personas/` or `.claude/agents/`, `rules/owners.md`, `review-gate.sh` or `review-gate.conf` | [ADR 2026-10.zjmx](../memory/decisions/2026-10-zjmx-an-owner-writes-a-plane.md) |
+| a persona in `.agents/personas/` or `.claude/agents/`, `rules/owners.md`, `rules/review-rounds.md`, `review-gate.sh` or `review-gate.conf` | [ADR 2026-10.zjmx](../memory/decisions/2026-10-zjmx-an-owner-writes-a-plane.md) |
 | `COPYING`, `APP-STORE-EXCEPTION.md`, or how contributions are licensed | [ADR 2026-09.5phg](../memory/decisions/2026-09-5phg-knit-for-ios-is-gpl.md) |
 | where the iPhone app builds, the `knit-local` runner, CI caches or artifacts | [ADR 2026-09.fkqb](../memory/decisions/2026-09-fkqb-the-mac-builds-every-iphone.md) |
 | `App/project.yml`, `App/Knit.xcconfig`, `scripts/check.sh xcode`, or a job on the `macos` runner | [ADR 2026-09.de8f](../memory/decisions/2026-09-de8f-xcodegen-generates-the-app-project.md) |

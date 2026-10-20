@@ -22,9 +22,12 @@ for the target map and the seams.
   or `knit-peer`:** obey `.agents/rules/interop.md`, then READ the matching reference in `.agents/context/`:
   `wire-format.md`, `ble-transport.md`, `crypto.md`, `custody.md` or `linux-peer.md`. For the Kotlin behind
   them, READ `.agents/context/knit-next.md`.
-- **When changing code in the Bluetooth, blobs or crypto plane:** obey `.agents/rules/owners.md`. DELEGATE the
-  implementation to the plane's owner, then SPAWN its reviewer on the change, apply the findings and relay the trial
-  it names. A Stop hook enforces the review.
+- **When changing code in the Bluetooth, blobs or crypto plane:** obey `.agents/rules/owners.md`. SPAWN the
+  plane's reviewer on the plan, DELEGATE the implementation to its owner, then SPAWN the reviewer on the change, apply
+  the findings and relay the trial it names. A Stop hook enforces the review.
+- **When spawning a reviewer or relaying its findings:** obey `.agents/rules/review-rounds.md`. Findings are Blocking
+  or Non-blocking, only a blocking one opens another round, a re-review reads the delta the Stop hook writes, and two
+  rounds in a row with a new blocking finding send the design back to the maintainer.
 - **When your first prompt opens with "# Paired change", or a message arrives from the `knit-pair` supervisor
   or a `knit-android-*` worker:** obey `.agents/rules/paired-change.md`. The Android half runs in its own
   session under knit-next's rules; never edit that repo.

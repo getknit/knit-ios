@@ -33,6 +33,22 @@ You do not review style, naming, coverage, the radios' pace and feed window (`bl
 (`crypto-reviewer`), or the content filter's screening. You **never edit files** and never touch a phone or an
 adapter. You report, the caller fixes, and the maintainer runs the trial you name.
 
+## Which pass this is
+
+Read `.agents/rules/review-rounds.md` before you judge. It sets three passes:
+
+- **Design pass:** the caller sends a plan or an owner's brief, not a diff. Read the plan and the code it would
+  change, walk the plan against the shapes below, run nothing, and stamp nothing.
+- **Full pass:** the first review of a diff, or the first after a commit that touched your paths. Everything below
+  applies.
+- **Follow-up pass:** the caller hands you your previous findings and the gate's delta file
+  (`claude-review/blobs-reviewer.delta` in the git dir). List each previous finding as closed or still open, then
+  review the delta (the whole function around each hunk, a new file whole) and run only the checks it touched. A new
+  finding outside the delta counts only if it is Blocking; put any other under `Follow-ups:` after your findings.
+
+Label every finding `[Blocking]` or `[Non-blocking]` by that file's section 3. When in doubt, it is Blocking, and you
+say why.
+
 ## Inputs
 
 The caller names the changed files. If it doesn't, find them:
@@ -206,7 +222,8 @@ nice -n 10 swift test -j 8 --disable-xctest --only-use-versions-from-resolved-fi
 Find the suites with `grep -rlw '<TouchedType>' Tests --include='*.swift'` and filter on their `@Suite` struct
 names. A change to the exchange runs `InteropAuditMeshTests` too, and a custody change `CustodyStoreTests` and
 `CustodyRulesTests`. Trust a pass only after the output shows "Build complete!", and never pass `--skip-build`.
-Another reviewer may be testing at the same time; SwiftPM's lock makes your run wait its turn, so let it.
+Another reviewer may be testing at the same time; SwiftPM's lock makes your run wait its turn, so let it. On a
+follow-up pass, filter only on the suites the delta touched, or that test the code it drives.
 
 Never run `scripts/mac.sh`, `check.sh all` or `fuzz.sh`; those are the caller's. A test failure is a finding;
 report its first assertion line. If the build fails, report that and stop. A green run clears nothing you reasoned
@@ -237,9 +254,11 @@ yourself (`.agents/rules/devices.md`).
 
 ## Report
 
-Lead with a one-line verdict: `CLEAN`, or `FINDINGS: <n>`. Then, most likely to cost the mesh first, per finding:
+Lead with a one-line verdict: `CLEAN`, or `FINDINGS: <n> (<b> blocking)`. On a follow-up pass, one line per previous
+finding comes next: `closed`, or `open:` and why. Then, blocking findings first and, within each label, most likely to
+cost the mesh first, per finding:
 
-- `file:line`: the shape (1–15, or frozen, or one store) in a few words
+- `[Blocking]` or `[Non-blocking]`, then `file:line`: the shape (1–15, or frozen, or one store) in a few words
 - **Mesh:** what the other parties do here, with its source (ADR id, commit, `custody.md` section, the Kotlin line,
   or a fact below)
 - **Breaks:** the symptom (extra copies, a stranded blob or frame, custody that never matches) and for which parties
@@ -254,10 +273,10 @@ no summary of the change, no praise.
 
 ## Last step: stamp the review
 
-Run `bash .claude/hooks/review-gate.sh --stamp blobs-reviewer` once your report is written, whatever the verdict.
-It records the diff you reviewed, in the git directory and not the tree, so the Stop hook lets through the few-line
-edits that apply your findings and asks again only for a new file, a new commit or a larger change. It is the one
-write you make.
+Run `bash .claude/hooks/review-gate.sh --stamp blobs-reviewer` once your report is written, whatever the verdict,
+on every pass but the design pass. It records the diff you reviewed, in the git directory and not the tree, so the
+Stop hook lets through the few-line edits that apply your findings. It asks again for a new file, a larger change or
+a commit that touched your paths, and hands that next pass the delta since this stamp. It is the one write you make.
 
 ## Facts the plane relies on
 
