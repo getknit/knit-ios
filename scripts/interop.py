@@ -6976,6 +6976,7 @@ def main() -> int:
         ios_peer,
         ios_photos,
         ios_block,
+        ios_contact,
         ios_delete,
         ios_react,
         ios_reply,

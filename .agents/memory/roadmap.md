@@ -513,16 +513,22 @@ explicit direction.** Update this file in the change that ships an item.
 - **Add contact and contact links** (ADR 2026-10.tpr5): New message opens Add contact, which shows our code, scans
   theirs and pins their key verified, and shares, copies and reads signed contact links (`docs/CONTACT_CARD.md` in
   knit-next). A link previews the person and their safety number, then pins, accepts and asks for their key. Links open
-  the app through `knit://`. Built and tested on Linux and in the Simulator; `interop.py iphone-contact` and the device
-  trial below are owed. What remains:
+  the app through `knit://`. Built and tested on Linux and in the Simulator. On 2026-10-20 `interop.py iphone-contact`
+  passed 7 of 7 against the Pixel 8 (2.10.0-alpha.1, debug), with the lab iPhone on `722dd4a`. Each phone took the
+  other's link, Android read the iPhone's CryptoKit-signed card as `Ready`, and both showed one safety number. A DM went
+  each way, and no intro was left pending. The pair already held each other's keys, and the re-import changed nothing:
+  both kept the confirmed session at root `054c9626`, and the iPhone dropped nothing as `pinChangeRefused` or
+  `keyMismatch`. The Pixel's `knit://c/…` link, opened on the iPhone through `devicectl --payload-url`, showed Add
+  contact's preview with the same safety number. What remains:
   - **The intro** (`IntroSync`'s send half), deferred by the maintainer on 2026-10-19. This port answers Android's.
   - **Universal links:** `applinks:getknit.app` waits for the site to serve an apple-app-site-association file for
     Knit's team and bundle id. Until then an `https://getknit.app/c#…` link opens Safari, and reaches Knit only if the
     `/c` page hands off to `knit://`.
   - **Remove contact** (knit-next ADR 2026-09.adgd), and a contacts list beyond New message.
   - **A share extension,** so a link shared to Knit from another app lands in Add contact.
-  - **The device trial:** the iPhone and a Pixel that have never chatted scan each other's codes in Add contact, then
-    swap links through Messages, and a DM goes each way until the pair reaches the ratchet.
+  - **The device trial's other half:** a scan with the camera in Add contact, which needs someone at the phones, and a
+    first contact between two phones that have never met. Every lab phone already holds the others' keys, and no Pixel's
+    data may be wiped.
 - **Companion change A3** (knit-next #101): Android finds and dials iPhones. It is the paired change `gatt-peers`, on
   `feat/gatt-peers` in both repos (knit-next ADR 2026-09.kwq2). Android reads the GATT payload of a node that
   advertises only the `0xFE30` UUID, on `GattPayloads`' rules, dials it when its own id sorts higher, and takes a
