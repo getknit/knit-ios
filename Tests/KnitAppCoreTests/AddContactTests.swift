@@ -48,7 +48,7 @@ import Testing
         model.lookup(Self.link(of: AppRig.sam, name: "Sam"))
         let preview = try #require(model.preview)
         #expect(model.problem == nil)
-        #expect(preview.nodeId == AppRig.sam.nodeId)
+        #expect(preview.nodeId == AppRig.sam.nodeId && preview.id == preview.nodeId)
         #expect(preview.title == "Sam")
         #expect(preview.alias == Alias.alias(for: AppRig.sam.nodeId.string))
         #expect(preview.safetyNumber.joined(separator: " ") == SafetyNumber.compute(mine: AppRig.me.bundle, theirs: AppRig.sam.bundle))
@@ -139,7 +139,7 @@ import Testing
 
     @Test func aPinThatDidNotLandSaysSoOnceThePreviewHasGone() async {
         let rig = AppRig()
-        rig.mesh.refusesContacts()
+        rig.mesh.answersContacts(.failed)
         let model = AddContactModel(session: rig.session)
         model.lookup(Self.link(of: AppRig.sam))
         #expect(await model.confirm() == nil)
@@ -210,5 +210,50 @@ import Testing
         let types = try #require(try plist("App/Info.plist")["CFBundleURLTypes"] as? [[String: Any]])
         let schemes = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
         #expect(schemes == [try #require(URL(string: ContactCard.schemePrefix)?.scheme)])
+    }
+}
+
+// What the mesh answers, and the demo, apart from the suite's body to keep it inside the lint's length.
+extension AddContactTests {
+    @Test func confirmingWithNothingPreviewedAddsNobody() async {
+        let rig = AppRig()
+        #expect(await AddContactModel(session: rig.session).confirm() == nil)
+        #expect(rig.mesh.contactCalls.isEmpty)
+    }
+
+    /// The mesh checks the pin again inside the call, since a profile can pin another key between the preview and the tap,
+    /// and the store can refuse the pin: whatever it answers, a link's preview and a scan each say it.
+    @Test func eachAnswerFromTheMeshIsSaid() async {
+        struct Said {
+            let answer: ContactAdded
+            let problem: AddContactProblem
+            let outcome: AddContactScanOutcome
+        }
+        let answers = [
+            Said(answer: .ownCode, problem: .ownLink, outcome: .ownCode),
+            Said(answer: .mismatch(AppRig.sam.nodeId), problem: .mismatch(name: "Sam"), outcome: .mismatch),
+            Said(answer: .failed, problem: .failed, outcome: .failed),
+        ]
+        for said in answers {
+            let rig = AppRig()
+            rig.mesh.answersContacts(said.answer)
+            let model = AddContactModel(session: rig.session)
+            model.lookup(Self.link(of: AppRig.sam, name: "Sam"))
+            #expect(await model.confirm() == nil)
+            model.previewClosed()
+            #expect(model.problem == said.problem)
+            #expect(await model.scanned(VerifyPayload.encode(AppRig.sam.bundle)) == said.outcome)
+        }
+    }
+
+    /// The demo passes Add contact through to its mesh, as it passes everything but the links.
+    @Test func theDemoMeshPassesAddContactThrough() async throws {
+        let rig = AppRig()
+        let mesh = DemoMesh(rig.mesh, linked: [])
+        let card = try #require(ContactCard.parse(Self.link(of: AppRig.sam, name: "Sam")).card)
+        #expect(await mesh.addContact(card, from: .link, unblock: false) == .added(AppRig.sam.nodeId))
+        #expect(rig.mesh.contactCalls == ["link \(AppRig.sam.nodeId)"])
+        let link = try #require(await mesh.ownContactLink())
+        #expect(ContactCard.parse(link.url).card?.nodeId == AppRig.me.nodeId)
     }
 }

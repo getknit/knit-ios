@@ -6,10 +6,10 @@ import KnitWire
 
 @testable import KnitAppCore
 
-/// What Add contact asked of a ``FakeMesh``, in order, and whether its pins fail.
+/// What Add contact asked of a ``FakeMesh``, in order, and the answer it gives whatever the stores hold, if one is set.
 struct ContactLog {
     var calls: [String] = []
-    var refuses = false
+    var answer: ContactAdded?
 }
 
 // Add contact's half of the fake mesh (ADR 2026-10.tpr5), apart from the class to keep its file inside the lint's length.
@@ -17,17 +17,21 @@ extension FakeMesh {
     /// Each `addContact` asked, as `<source> <node id>`, with ` unblocking` when it unblocks.
     var contactCalls: [String] { contactLog.withLock { $0.calls } }
 
-    /// Makes every later ``addContact(_:from:unblock:)`` answer that the pin did not land.
-    func refusesContacts() {
-        contactLog.withLock { $0.refuses = true }
+    /// Makes every later ``addContact(_:from:unblock:)`` give `answer` and write nothing, as the engine does when the
+    /// store refuses the pin, or when its re-check finds a key that pinned between the preview and the tap.
+    func answersContacts(_ answer: ContactAdded) {
+        contactLog.withLock { $0.answer = answer }
     }
 
     /// What `MeshEngine.addContact` does to the stores: our own id and another key write nothing; a scan pins verified,
     /// and a link pins under the stored name, else the card's, and accepts the conversation.
     func addContact(_ card: ContactCard.Card, from source: ContactSource, unblock: Bool) -> ContactAdded {
-        let refuses = contactLog.withLock { log in
+        let answer = contactLog.withLock { log in
             log.calls.append("\(source) \(card.nodeId)\(unblock ? " unblocking" : "")")
-            return log.refuses
+            return log.answer
+        }
+        if let answer {
+            return answer
         }
         guard card.nodeId != nodeId else {
             return .ownCode
@@ -35,9 +39,6 @@ extension FakeMesh {
         let existing = stores.peers.peer(card.nodeId)
         if let existing, existing.publicKey != card.bundle {
             return .mismatch(card.nodeId)
-        }
-        guard !refuses else {
-            return .failed
         }
         if unblock {
             stores.blocks.unblock(card.nodeId, deviceTag: existing?.deviceTag)
