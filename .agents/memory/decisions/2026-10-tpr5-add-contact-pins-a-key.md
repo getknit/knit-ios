@@ -113,4 +113,5 @@ same `onOpenURL` as a `knit://` link, so `Launch.open(url:)` needed no change: i
   installed or updated.
 - **The guards:** `AddContactTests`' `knitClaimsBothFormsOfALink` holds the entitlement's domain to
   `ContactCard.urlPrefix`'s host and the registered scheme to `schemePrefix`'s. `check.sh device` and `check.sh archive`
-  check that the signed app carries the domain, and the site's `app/aasa.test.ts` pins the file.
+  check that the signed app carries the domain, and the site's `app/aasa.test.ts` pins the file. `KnitDeviceTests`'
+  `LinkTests` has iOS open a link on the iPhone and checks that Knit, not Safari, shows the preview.

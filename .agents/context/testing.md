@@ -75,7 +75,10 @@ ladder, not the first.
     off and on, the permission refused and allowed again, onboarding's prompt, a relaunch, and the camera prompt at a
     profile's Scan their code (`CameraTests`, which needs no radio and leaves Bluetooth as it found it). `PhotoTests`
     chooses, crops and saves our profile photo, a demo photo under `-demoPhoto`, which a debug build honours live too,
-    and leaves it set for a look at the lab's phones (ADR 2026-10.sepc). It reads the status
+    and leaves it set for a look at the lab's phones (ADR 2026-10.sepc). `LinkTests` has iOS open an
+    `https://getknit.app/c#…` link with Knit in the background, as a tap in Messages does, and checks that Knit, not
+    Safari, comes up on Add contact's preview (ADR 2026-10.tpr5). It needs the network after an install, when the
+    phone reads getknit.app's association file, and a relaunch closes the preview unconfirmed. It reads the status
     line's state from its identifier, never its words, and each test puts Bluetooth, the permission and the mesh
     back as it ends, `PhotoTests`' photo apart. `BackgroundTests` is the exception: two steps `interop.py` runs one at a
     time, which bring the Settings app or Knit to the front and never launch, end or restore Knit. They run from an
