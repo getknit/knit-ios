@@ -38,10 +38,10 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
             for await event in mesh.events {
                 switch event {
                 case .neighborsChanged:
-                    sink.yield(.neighborsChanged(await Self.shown(shown, by: mesh)))
+                    await Self.announce(shown, by: mesh, to: sink)
                 case .radioChanged:
                     sink.yield(event)
-                    sink.yield(.neighborsChanged(await Self.shown(shown, by: mesh)))
+                    await Self.announce(shown, by: mesh, to: sink)
                     if !typing.isEmpty {
                         sink.yield(.typing(await Self.typing(typing, over: [:], by: mesh)))
                     }
@@ -68,6 +68,19 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
         return running && radio == .on ? linked.withLock { $0 } : []
     }
 
+    /// Says on `sink` who is shown linked now. The links are read and said under their lock, so the pump and the
+    /// director's ``link(_:)`` say them in the order they read them: a pump that read them before the director added
+    /// someone can never land after the director's word and take that someone off the status line.
+    private static func announce(
+        _ linked: Lock<[Neighbor]>, by mesh: any MeshService, to sink: AsyncStream<MeshEvent>.Continuation
+    ) async {
+        let running = await mesh.isRunning
+        let radio = await mesh.radioState
+        linked.withLock { shown in
+            _ = sink.yield(.neighborsChanged(running && radio == .on ? shown : []))
+        }
+    }
+
     /// `picture` with `shown` laid over it while `mesh` runs with the radio on, as the links are.
     private static func typing(
         _ shown: [String: [NodeId]], over picture: [String: [NodeId]], by mesh: any MeshService
@@ -89,7 +102,7 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
                 shown.append(Neighbor(nodeId: peer))
             }
         }
-        continuation.yield(.neighborsChanged(await neighbors))
+        await Self.announce(linked, by: mesh, to: continuation)
     }
 
     /// Tells the session that `event` happened.
@@ -129,7 +142,7 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     /// Starts the mesh, and shows the links once the radio is on. The first start also starts the director.
     public func start() async {
         await mesh.start()
-        continuation.yield(.neighborsChanged(await neighbors))
+        await Self.announce(linked, by: mesh, to: continuation)
         if !typists.isEmpty {
             continuation.yield(.typing(await Self.typing(typists, over: [:], by: mesh)))
         }
