@@ -203,6 +203,11 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   `MeshMetrics.Groups`' names, since P7d: `groupSealedRatchet`, `groupSealedV1Fallback`, `groupSeedsSent`,
   `groupSeedsAdopted`, `groupSeedsHeld`, `groupSeedsReplayed` and `groupKeyRequestsSent`, without the two root counts,
   which belong to `gr`; ADR 2026-10.5sk9),
+  `contact-link` (our contact link, signed now, as `url`, `scheme` and `compact`, what Android's bridge prints for
+  `INTRO --ez card true`) and `add-contact` (`text`, a contact link or a scanned code: their key pins, their conversation
+  is accepted and their key asked for, as Add contact's preview does; `scan`, true, takes the scanner's path, which
+  verifies them and sends nothing; `unblock`, true, unblocks them first; the reply names the `peer`, and refuses our own
+  card, another key pinned for the id, and text that is no card, with Kotlin's reason; ADR 2026-10.tpr5),
   `stop` and `start` (the mesh, as Settings' Stop and Start do), and
   `quit` (the peer exits; the app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):

@@ -164,14 +164,36 @@ that catches a port that gets it wrong.
 code = "knit-id:v1:" + nodeId + ":" + bundle      // VerifyPayload.kt; always 150 ASCII bytes
 ```
 
-Each phone draws its own code as a QR code (zxing, error correction L) on a peer's profile, and the peer
-scans it there. The node id ends at the first `:` after the prefix, and the bundle is the rest, since
-standard base64 has no `:`. Android's profile compares a scanned code with the pinned bundle's text and
-writes nothing unless both match (`ProfileDetailsViewModel.kt:397-411`). Its Add contact path pins a key
-from a scan, and this port does not have it yet (ADR 2026-10.65xx). Android's scanner also reads a signed
-contact card (`docs/CONTACT_CARD.md`), which no phone draws as a QR code, and which this port reads as no
-code at all. knit-next pins no vector for the code: `VerifyPayloadTests` checks keyed-v1 Alice's, computed
-from the format.
+Each phone draws its own code as a QR code (zxing, error correction L) on a peer's profile and in Add
+contact, and the other phone scans it there. The node id ends at the first `:` after the prefix, and the
+bundle is the rest, since standard base64 has no `:`. A profile compares a scanned code with the pinned
+bundle's text and writes nothing unless both match (`ProfileDetailsViewModel.kt:439-453`, ADR 2026-10.65xx).
+Add contact pins the key from a scan when none has pinned, and marks the person verified (ADR 2026-10.tpr5).
+Both scanners also read a signed contact card, which no phone draws as a QR code. knit-next pins no vector
+for the code: `VerifyPayloadTests` checks keyed-v1 Alice's, computed from the format.
+
+## Contact card
+
+```text
+Signed = { body: bstr, sig: bstr }
+Body   = { v: 1, id: str, pk: bstr(64), name?: str, sp?: [str], iat: int }
+sig    = Ed25519(IK_sign, "knit/card/v1" ‖ body)
+```
+
+`docs/CONTACT_CARD.md` and `mesh/crypto/ContactCard.kt` in knit-next (its ADR 042), ported as `ContactCard`
+(ADR 2026-10.tpr5). `pk` is `sigPub ‖ hpkePub`, and the card certifies itself: the id must derive from the
+bundle rebuilt from `pk`, so that rebuild must be byte-identical to Android's. The signature covers the body
+bytes as received, never a re-encoding. The body leaves out nil, empty and default fields, `iat` 0 included,
+in declaration order. A card travels as `https://getknit.app/c#<base64url>`, `knit://c/<base64url>` or the
+bare base64url string, found anywhere in pasted text, and the legacy `knit-id` code parses as a card with no
+name. The name is clamped to 32 UTF-16 units without splitting a surrogate pair, as knit-next's `main` does
+past the pin. Nothing reads `iat`, so a card can be replayed and forwarded. The goldens are `ContactCardTest`'s
+`fullCard` and `minimalCard`, from the contact-card identity above.
+
+Add contact pins from a card without a profile frame (`MeshEngine.addContact`): from a link it pins, accepts
+and asks for the key; from a scan it pins verified and sends nothing. Either way it starts from the stored
+row, so a pinned peer's prekey and capabilities survive a re-import, and it releases the frames parked for
+that sender, which Kotlin leaves for the profile. A DM sent before the profile arrives goes v1.
 
 ## Alias
 
@@ -210,6 +232,7 @@ Swift must count `utf16`, not `Character`s.
 | `Conversations.groupIdFor` | `GroupId.derive(_:)` |
 | `SafetyNumber`, `Alias`, `DeviceTag` | the same names |
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
+| `ContactCard` (its `Body` and `Signed`), `ContactCards.mint`, `ContactImporter.import` and `AddContactViewModel.onScanned`'s pins, `MeshManager.importContact` less the intro | `ContactCard` (`parse`, `looksLikeCard`, `encode`), KnitWire's `ContactCardBody` and `ContactCardSigned`, `MeshEngine.addContact` and `ownContactLink` (ADR 2026-10.tpr5) |
 | `RatchetEngine` | `RatchetEngine`: `initiate`, `seal`, `open`, over `SessionState`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
 | `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `retiredBase`, `sealResetDm`, `sweep`, `forget`, `settle`, and `confirmedPeers`, `exportedRoots`' filter; the reset's pure rules in `RatchetResetPolicy` (`isRetiredBase` among them) |
 | `InboundPipeline`'s ratchet arm, `sendSessionReset` | `MeshEngine.handleRatchetDirect` and `sendSessionReset`, over `RatchetInbound`'s pure rules; the replay of a failed open in `RatchetReplay` |
@@ -967,7 +990,7 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 
 - **The spool's exports and its root gossip.** `gr` is decoded and kept raw, and never sent. Its cost is bounded
   (ADR 2026-10.5sk9).
-- **Sending contact-card intros.**
+- **Sending contact-card intros** (`IntroSync`'s send half), deferred by the maintainer (ADR 2026-10.tpr5).
 - **`CTL_TRANSFER`.**
 - **Unsigned tick sends:** a signed tick costs 64 bytes and verifies the normal way.
 - **The LoRa and spool tick paths.**

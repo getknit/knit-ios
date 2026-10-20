@@ -105,18 +105,19 @@ public final class PeerProfileModel {
         await session.report(report)
     }
 
-    /// Compares a scanned code with the key pinned for this person, and marks them verified on an exact match
-    /// (`ProfileDetailsViewModel.kt:397-411`). It never pins a key, and a mismatch never clears an earlier
-    /// verification.
+    /// Compares a scanned code, a `knit-id` code or a contact card, with the key pinned for this person, and marks them
+    /// verified on an exact match (`ProfileDetailsViewModel.kt:439-453`, ADR 2026-10.tpr5). It never pins a key, and a
+    /// mismatch never clears an earlier verification.
     public func scanned(_ text: String) async -> VerifyScanOutcome {
-        guard let code = VerifyPayload.parse(text), let scanned = code.certifiedNodeId else {
+        guard case .card(let code) = ContactCard.parse(text) else {
             return .notACode
         }
-        if scanned == session.identity.nodeId {
+        if code.nodeId == session.identity.nodeId {
             return .ownCode
         }
         // The pinned text, compared by its bytes, as Kotlin compares it (ADR 2026-09.jc2x).
-        guard scanned == nodeId, let pinned = session.directory.peers[nodeId]?.publicKey, code.bundle.utf8.elementsEqual(pinned.utf8)
+        guard code.nodeId == nodeId, let pinned = session.directory.peers[nodeId]?.publicKey,
+            code.bundle.utf8.elementsEqual(pinned.utf8)
         else {
             return .mismatch
         }

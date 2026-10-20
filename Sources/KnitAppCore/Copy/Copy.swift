@@ -82,8 +82,8 @@ extension Copy {
                 "system.camera-usage",
                 bundle: .main,
                 value: """
-                    Knit uses the camera to scan the code on someone's phone and check that no one is intercepting your direct \
-                    messages with them.
+                    Knit uses the camera to scan the code on someone's phone, so you can add them as a contact or check that no one \
+                    is intercepting your direct messages with them.
                     """,
                 comment: "The system's camera permission prompt"
             )

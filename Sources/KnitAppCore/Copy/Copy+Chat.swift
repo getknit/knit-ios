@@ -180,7 +180,8 @@ extension Copy {
             )
         }
 
-        /// A DM's forward secrecy, and the older phones that don't have it.
+        /// A DM's forward secrecy, and the messages that don't have it: to older phones, and to someone added by link or
+        /// code before their profile reaches this phone (ADR 2026-10.tpr5).
         public static var encryptionSecrecy: String {
             NSLocalizedString(
                 "chat.encryption.secrecy",
@@ -188,9 +189,13 @@ extension Copy {
                 value: """
                     Knit keeps replacing the keys that open this chat and deletes the old ones. That's forward secrecy: \
                     anyone who later gets either phone's keys can't open what they recorded before those keys were \
-                    replaced. A phone running an older version of Knit doesn't have it.
+                    replaced. A phone running an older version of Knit doesn't have it. Neither do messages you send \
+                    someone you added by link or code until their profile reaches your phone.
                     """,
-                comment: "Encryption sheet: DMs have forward secrecy, except with phones running an older version"
+                comment: """
+                    Encryption sheet: DMs have forward secrecy, except with phones running an older version, and messages \
+                    sent to someone added by link or code before their profile arrives
+                    """
             )
         }
 

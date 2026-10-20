@@ -15,6 +15,7 @@
             WindowGroup {
                 RootView(launch: delegate.launch)
                     .tint(Palette.accent)
+                    .onOpenURL { url in delegate.launch.open(url: url) }
             }
             .onChange(of: scenePhase) { _, phase in
                 delegate.launch.setActive(phase == .active)

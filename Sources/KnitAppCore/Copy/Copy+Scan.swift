@@ -8,7 +8,7 @@ extension Copy {
             NSLocalizedString(
                 "scan.hint",
                 bundle: .main,
-                value: "Point the camera at the code on their phone. They'll find it on your profile in Knit.",
+                value: "Point the camera at the code on their phone. They'll find it in Knit, under Add contact.",
                 comment: "Scanner: over the camera, what to scan"
             )
         }

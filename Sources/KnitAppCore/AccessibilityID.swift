@@ -159,6 +159,29 @@ public enum AccessibilityID {
 
     /// The picker's Start chat (Android's "Start chat" check).
     public static let newMessageStart = "contacts_start_chat"
+    /// The picker's Add contact, Android's PersonAdd. Android has no tag here.
+    public static let newMessageAddContact = "new_message_add_contact"
+
+    /// Add contact (ADR 2026-10.tpr5), as Android tags it.
+    public static let addContactScreen = "screen_add_contact"
+    /// Our own code, for them to scan. Android has no tag here.
+    public static let addContactCode = "add_contact_code"
+    /// The button that opens the scanner. Android has no tag here.
+    public static let addContactScan = "add_contact_scan"
+    /// Share link, as Android tags it.
+    public static let addContactShareLink = "verify_share_link"
+    /// Copy link, as Android tags it.
+    public static let addContactCopyLink = "verify_copy_link"
+    /// The link field, as Android tags it.
+    public static let addContactInput = "add_contact_input"
+    /// Paste, as Android tags it.
+    public static let addContactPaste = "add_contact_paste"
+    /// Continue, as Android tags it.
+    public static let addContactLookup = "add_contact_lookup"
+    /// The preview, as Android tags it.
+    public static let addContactPreview = "add_contact_preview"
+    /// The preview's Add contact or Unblock and add, as Android tags it.
+    public static let addContactConfirm = "add_contact_confirm"
 
     /// Group info.
     public static let groupInfoScreen = "screen_group_details"

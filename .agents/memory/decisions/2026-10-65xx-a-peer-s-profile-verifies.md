@@ -58,3 +58,7 @@ engine that refuses a different key for a pinned id.
   `infoPlistAsksForTheCameraInTheCatalogsWords`, `seam_codes`, `KnitUITests`' scan walk, and `KnitDeviceTests`'
   `CameraTests` on the iPhone, which keeps a picture of the code it drew. Both pictures decoded to the full code
   on 2026-10-02.
+
+**Amended 2026-10-19:** Add contact now pins from a scanned code or a signed contact link (ADR 2026-10.tpr5). The
+profile still only compares, and it now reads a card as well as a `knit-id` code, as Android's profile does. The first
+two limits above no longer hold.

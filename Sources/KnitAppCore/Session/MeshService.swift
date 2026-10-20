@@ -1,3 +1,4 @@
+public import KnitCrypto
 public import KnitMesh
 public import KnitStore
 public import KnitWire
@@ -62,6 +63,11 @@ public protocol MeshService: AnyObject, Sendable {
     func setAvatar(_ jpeg: [UInt8]?) async
     /// Marks a pinned peer verified, or not.
     func setVerified(_ peer: NodeId, _ verified: Bool) async
+    /// Adds the person a contact link or a scanned code names: their key pins, verified from a scan, and accepted with
+    /// their key asked for from a link (ADR 2026-10.tpr5).
+    func addContact(_ card: ContactCard.Card, from source: ContactSource, unblock: Bool) async -> ContactAdded
+    /// Our contact link, signed now, or `nil` when it could not be.
+    func ownContactLink() async -> ContactCard.Links?
     /// Blocks a person: nothing they send is shown, and the mesh carries and relays it as before (ADR 2026-10.5wgg).
     func block(_ peer: NodeId) async
     /// Unblocks a person.

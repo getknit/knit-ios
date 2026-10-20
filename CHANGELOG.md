@@ -33,6 +33,9 @@ document:
 - A person's profile now shows your code, and Scan their code reads theirs with the camera, so you can verify
   someone without reading forty digits aloud. It works with Android phones too, and Knit asks for the camera
   the first time you scan.
+- Add contact, under New message, adds someone you've never chatted with: scan their code to add them
+  verified, or swap contact links when you're apart. Both work with Android phones. If a link opens in
+  Safari, copy it and paste it into Add contact.
 - When your iPhone loses its last connection with Knit in the background, it now finds nearby phones and
   reconnects on its own instead of waiting for you to open the app. If the phones it finds won't connect, it
   stops after a few tries until Knit is next open.

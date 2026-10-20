@@ -44,6 +44,10 @@ extension ControlCommand {
             command.name
         case .ratchet:
             "ratchet"
+        case .contactLink:
+            "contact-link"
+        case .addContact:
+            "add-contact"
         case .stop:
             "stop"
         case .start:

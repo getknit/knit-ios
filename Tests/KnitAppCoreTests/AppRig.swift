@@ -59,7 +59,7 @@ final class FakeMesh: MeshService {
     let nodeId: NodeId
     let events: AsyncStream<MeshEvent>
     private let continuation: AsyncStream<MeshEvent>.Continuation
-    private let stores: MeshStores
+    let stores: MeshStores
     private struct State {
         var calls = Calls()
         var running = false
@@ -71,11 +71,16 @@ final class FakeMesh: MeshService {
     /// The pictures this mesh holds, by the hash of the bytes a pick hands over (`FakeMesh+Photos.swift`).
     let held = Lock<[BlobHash: OutgoingPhoto]>([:])
     let clock: Int64
+    /// The keys our contact link is signed with, or `nil` for a mesh that cannot sign one.
+    let keys: IdentityKeys?
+    /// What Add contact asked of the mesh, and whether it fails (`FakeMesh+Contacts.swift`).
+    let contactLog = Lock(ContactLog())
 
-    init(nodeId: NodeId, stores: MeshStores, radio: RadioState? = nil, clock: Int64 = 1_790_000_000_000) {
+    init(nodeId: NodeId, stores: MeshStores, radio: RadioState? = nil, clock: Int64 = 1_790_000_000_000, keys: IdentityKeys? = nil) {
         self.nodeId = nodeId
         self.stores = stores
         self.clock = clock
+        self.keys = keys
         state = Lock(State(radio: radio))
         (events, continuation) = AsyncStream<MeshEvent>.makeStream()
     }
@@ -374,7 +379,7 @@ struct AppRig {
 
     init(radio: RadioState? = nil, screening: TextScreening? = nil, preferences: MemoryPreferences = MemoryPreferences()) {
         stores = MeshStores.inMemory()
-        mesh = FakeMesh(nodeId: Self.me.nodeId, stores: stores, radio: radio)
+        mesh = FakeMesh(nodeId: Self.me.nodeId, stores: stores, radio: radio, keys: Self.me.keys)
         notifier = RecordingNotifier()
         session = AppSession(
             identity: OwnIdentity(bundle: Self.me.bundle),

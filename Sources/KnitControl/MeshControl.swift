@@ -53,6 +53,8 @@ public protocol ControlActions: Sendable {
     func block(_ peer: NodeId) async
     /// Unblocks a peer.
     func unblock(_ peer: NodeId) async
+    /// Adds the person a contact link or a scanned code names (ADR 2026-10.tpr5).
+    func addContact(_ card: ContactCard.Card, from source: ContactSource, unblock: Bool) async -> ContactAdded
 }
 
 extension Mesh: ControlActions {}
@@ -222,6 +224,10 @@ public actor MeshControl {
             return await answer(command)
         case .ratchet(let reset):
             return .success(await ratchet(resetting: reset))
+        case .contactLink:
+            return await contactLink()
+        case .addContact(let text, let scan, let unblock):
+            return await addContact(text, scan: scan, unblock: unblock)
         case .stop, .start:
             await (command == .stop ? actions.stop() : actions.start())
             return .success(["running": .bool(await mesh.isRunning)])

@@ -199,6 +199,11 @@ Kotlin wins.
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Mirrored ahead of the pin:**
+    - `ContactCard.clampName` from knit-next's `main` at `db18dbde` (2026-10-19), for Add contact (ADR 2026-10.tpr5):
+      `3d587088` cuts a card's name at 32 UTF-16 units on a code-point boundary, where the pin's `.take(32)` could split a
+      surrogate pair. Nothing else in `ContactCard.kt` or `docs/CONTACT_CARD.md` moved since the pin. `795b0883` (no intro
+      to a peer whose profile lacks `CAP_RATCHET`, an amendment to knit-next ADR 042) is Android's alone while this port
+      sends no intro.
     - `vectors/wire-v1.json`, synced alone with `scripts/sync-vectors.py --only wire-v1.json` from knit-next's `main` at
       `9c3d487b` (2026-10-19):
       - **What comes in:** 14 fixtures for features this port has not taken. Calls (`messageContentCall*`, `bd7c905b`,

@@ -204,5 +204,10 @@
         func unblock(_ peer: NodeId) async {
             await session.unblock(peer)
         }
+
+        /// Adds a contact as Add contact does, so the screens show them.
+        func addContact(_ card: ContactCard.Card, from source: ContactSource, unblock: Bool) async -> ContactAdded {
+            await session.addContact(card, from: source, unblock: unblock)
+        }
     }
 #endif

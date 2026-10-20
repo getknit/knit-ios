@@ -34,7 +34,8 @@ reports:
   sent before it holds the other phone's key, which goes in the clear. With a phone on an older version, and
   in a group that includes one, messages fall back to Knit's static-key scheme (v1): whoever later obtains
   your identity key can read every v1 message sent to it, and those messages' ticks and reactions travel in
-  the clear.
+  the clear. The same goes for direct messages you send someone you added by their link or code, until their
+  phone's profile reaches yours: those use v1, and stay v1.
 - **Forward secrecy covers what was recorded off the air, not the phone itself.** Someone holding your
   unlocked phone can read the messages stored on it, and each conversation keeps its newest few keys there,
   which open the messages sealed under them. A conversation's first messages, and those after a reset, are

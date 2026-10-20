@@ -12,7 +12,8 @@ Rules for any text a person reads.
 - **Scope every security claim to what it covers.** Direct and group messages are end-to-end encrypted. Between
   phones running the ratchet (this build, and Knit for Android 2.3 and later) they also have forward secrecy, and
   their reactions and delivery ticks are sealed. Toward an older phone, and in a group that includes one, they take
-  v1, which has none, and the reactions and ticks go in the clear. A group's name and member list are never
+  v1, which has none, and the reactions and ticks go in the clear. So does a DM sent to someone added by link or code
+  before their profile arrives (ADR 2026-10.tpr5). A group's name and member list are never
   encrypted, and neither are typing indicators. The Nearby room is open to everyone in range. Forward secrecy
   covers what was recorded off the air, not a phone in someone's hands (ADR 2026-10.5sk9).
 - **Name the boundary once, and plainly.** The iPhone finds new people while Knit is open. In the background

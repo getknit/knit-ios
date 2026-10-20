@@ -1,4 +1,5 @@
 import KnitControl
+import KnitCrypto
 import KnitMesh
 import KnitStore
 import KnitSync
@@ -89,6 +90,11 @@ final class RecordingActions: ControlActions {
 
     func unblock(_ peer: NodeId) {
         record("unblock \(peer)")
+    }
+
+    func addContact(_ card: ContactCard.Card, from source: ContactSource, unblock: Bool) -> ContactAdded {
+        record("add-contact \(card.nodeId) \(source)\(unblock ? " unblocking" : "")")
+        return refuses ? .failed : .added(card.nodeId)
     }
 
     private func group(named name: String) -> GroupRecord {

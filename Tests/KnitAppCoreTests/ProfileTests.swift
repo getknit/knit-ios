@@ -64,6 +64,16 @@ import Testing
         #expect(rig.mesh.calls.verified == ["\(AppRig.sam.nodeId): true"])
     }
 
+    /// A contact card compares as their code does (ADR 2026-10.tpr5), as Android's profile reads either form.
+    @Test func theirContactCardVerifiesThemToo() async throws {
+        let rig = AppRig()
+        await rig.pin(AppRig.sam, name: "Sam")
+        let model = PeerProfileModel(nodeId: AppRig.sam.nodeId, session: rig.session)
+        let card = try #require(ContactCard.encode(AppRig.sam.keys, name: "Sam", issuedAt: 1))
+        #expect(await model.scanned(card.url) == .match)
+        #expect(model.state.isVerified)
+    }
+
     @Test func someoneElsesCodeIsAMismatchAndVerifiesNoOne() async {
         let rig = AppRig()
         await rig.pin(AppRig.sam, name: "Sam")

@@ -9,21 +9,30 @@
         @State private var model: NewMessageModel
         @Environment(\.dismiss) private var dismiss
         private let started: (String) -> Void
+        private let addContact: () -> Void
 
-        /// The picker over `session`, which hands the thread to open to `started`: a DM's node id, or a group's id.
-        init(session: AppSession, started: @escaping (String) -> Void) {
+        /// The picker over `session`, which hands the thread to open to `started`: a DM's node id, or a group's id. Add
+        /// contact goes to `addContact`.
+        init(session: AppSession, started: @escaping (String) -> Void, addContact: @escaping () -> Void) {
             _model = State(initialValue: NewMessageModel(session: session))
             self.started = started
+            self.addContact = addContact
         }
 
         var body: some View {
             NavigationStack {
-                ContactList(model: model)
+                ContactList(model: model, addContact: addContact)
                     .navigationTitle(Copy.NewMessage.title)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button(Copy.Common.cancel) { dismiss() }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(action: addContact) {
+                                Label(Copy.AddContact.title, systemImage: "person.badge.plus")
+                            }
+                            .accessibilityIdentifier(AccessibilityID.newMessageAddContact)
                         }
                         ToolbarItem(placement: .confirmationAction) {
                             Button(Copy.NewMessage.start) {
@@ -47,6 +56,7 @@
     /// The people to pick, with what one and several picks do, or what to do while there is nobody.
     private struct ContactList: View {
         let model: NewMessageModel
+        let addContact: () -> Void
 
         var body: some View {
             List {
@@ -69,11 +79,14 @@
             }
             .overlay {
                 if model.candidates.isEmpty {
-                    ContentUnavailableView(
-                        Copy.NewMessage.emptyTitle,
-                        systemImage: "person.2",
-                        description: Text(Copy.NewMessage.emptyBody)
-                    )
+                    ContentUnavailableView {
+                        Label(Copy.NewMessage.emptyTitle, systemImage: "person.2")
+                    } description: {
+                        Text(Copy.NewMessage.emptyBody)
+                    } actions: {
+                        Button(Copy.AddContact.title, action: addContact)
+                            .prominentButton()
+                    }
                 }
             }
         }

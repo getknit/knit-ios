@@ -50,6 +50,8 @@
         var requestedConversation: String?
         /// Whether a tapped notification asked for the message requests.
         var requestedRequests = false
+        /// A contact link opened from outside Knit, until Add contact takes it (ADR 2026-10.tpr5).
+        var requestedContactLink: String?
 
         @ObservationIgnored private var history = History(startedAt: SystemClock().wallMilliseconds())
 
@@ -98,6 +100,15 @@
                 requestedConversation = conversation
             } else {
                 requestedRequests = true
+            }
+        }
+
+        /// A URL that opened Knit: Add contact takes a contact link, and anything else is ignored, as Android's inbox
+        /// stages only what reads as a card (`ContactCardInbox.offer`).
+        func open(url: URL) {
+            let text = url.absoluteString
+            if AddContactModel.isContactLink(text) {
+                requestedContactLink = text
             }
         }
 

@@ -9,6 +9,8 @@
         case requests
         case groupInfo(String)
         case peer(NodeId)
+        /// Add contact, previewing a link that was opened, if one was.
+        case addContact(String?)
         case profile
         case settings
         case blocked
@@ -132,6 +134,17 @@
                 NewMessageView(session: environment.session) { conversationId in
                     composing = false
                     path = [.chat(conversationId)]
+                } addContact: {
+                    composing = false
+                    path.append(.addContact(nil))
+                }
+            }
+            // A contact link opened from outside Knit, once onboarding is done, as Android's inbox waits for it.
+            .onChange(of: launch.requestedContactLink, initial: true) { _, link in
+                if let link {
+                    composing = false
+                    path = [.addContact(link)]
+                    launch.requestedContactLink = nil
                 }
             }
             // A notification's thread would open under the sheet, so the sheet goes first.
@@ -169,6 +182,12 @@
                 GroupInfoView(groupId: groupId, session: environment.session) { path = [] }
             case .peer(let nodeId):
                 PeerProfileView(nodeId: nodeId, session: environment.session, camera: environment.camera)
+            case .addContact(let link):
+                // The person added replaces Add contact, as Android pops it for their profile.
+                AddContactView(session: environment.session, camera: environment.camera, link: link) { nodeId in
+                    path.removeLast()
+                    path.append(.peer(nodeId))
+                }
             case .profile:
                 OwnProfileView(
                     session: environment.session,

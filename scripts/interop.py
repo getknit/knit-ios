@@ -17,6 +17,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-peer [--order iphone-below|iphone-above] [--skip-offline] [--udid UDID]
     scripts/interop.py iphone-photos --device SERIAL [--animated] [--udid UDID]
     scripts/interop.py iphone-block --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-contact --device SERIAL [--udid UDID]
     scripts/interop.py iphone-delete --device SERIAL [--udid UDID]
     scripts/interop.py iphone-react --device SERIAL [--udid UDID]
     scripts/interop.py iphone-reply --device SERIAL [--udid UDID]
@@ -46,7 +47,8 @@ runs the same items between the iPhone and the peer; `iphone-relay` runs MVP ite
 `iphone-group` v1 groups along that line, the peer as the third member (`group` runs them with two peers and no
 iPhone, ADR 2026-09.n393); `iphone-photos` sends photos both ways between the iPhone and the phone, in Nearby, a DM
 and a group (ADR 2026-10.6cas); `iphone-block` checks that a block on the iPhone leaves the phone's ✓✓ on its room post
-and its custody converging (ADR 2026-10.5wgg); `iphone-delete` checks that what the iPhone deletes stays deleted across
+and its custody converging (ADR 2026-10.5wgg); `iphone-contact` swaps contact links between the iPhone and the phone,
+each adding the other's, then sends a DM each way (ADR 2026-10.tpr5); `iphone-delete` checks that what the iPhone deletes stays deleted across
 a restart of its mesh, and that the delete sends nothing (ADR 2026-10.u7cq); `iphone-react` sends reactions both ways in
 every thread, and checks a replacement, a retraction, an emoji outside the iPhone's six and a block (ADR 2026-10.ehe6);
 `iphone-reply` sends quoted replies both ways in every thread, a photo's among them (ADR 2026-10.mn29);
@@ -5012,6 +5014,70 @@ def iphone_block(arguments: argparse.Namespace) -> int:
     return run.failed
 
 
+def iphone_contact(arguments: argparse.Namespace) -> int:
+    """Contact links both ways between the iPhone and an Android phone (ADR 2026-10.tpr5, knit-next ADR 042). The phone
+    signs its link through its debug bridge's `INTRO`, and the iPhone adds it through its own bridge, as Add contact's
+    preview does; then the iPhone signs its link, and the phone previews and imports it. Each side must take the other's
+    card, pin the key the card's id derives from and accept the other, never read it as a mismatch. A DM then goes each
+    way, and the phone's intro to the iPhone is answered, so the iPhone leaves the phone's pending intros. The two may
+    already hold each other's keys, as the lab's phones do: a re-import must then still be taken, and changes no key."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid, arguments.host)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    try:
+        phone_id = phone.state()["self"]["nodeId"]
+        print(json.dumps({"run": "iphone-contact", "phone": phone_id, "iphone": ios.node_id, "nonce": nonce}))
+        run.step("link", lambda: _ios_linked(ios, phone, phone_id))
+        phone_card = phone.bridge("INTRO", card=True)
+        added = ios.command(cmd="add-contact", text=phone_card["url"])
+        run.step("iphone-adds-phone", lambda: _contact_added(added, phone_id), url=phone_card.get("url"))
+        run.step("iphone-holds-phone", lambda: _ios_contact(ios, phone_id))
+        ios_card = ios.command(cmd="contact-link")
+        imported = phone.bridge("INTRO", **{"import": ios_card["url"]})
+        run.step("phone-adds-iphone", lambda: _phone_imported(imported, ios.node_id), url=ios_card.get("url"))
+        to_phone = f"interop dm to a contact {nonce}"
+        ios.command(cmd="dm", to=phone_id, text=to_phone)
+        run.step("dm-iphone-to-phone", lambda: _timed(lambda: _has(phone.state(ios.node_id), to_phone), 60))
+        to_ios = f"interop dm from a contact {nonce}"
+        phone.send(to_ios, conversation=ios.node_id)
+        run.step("dm-phone-to-iphone", lambda: _timed(lambda: _ios_has_body(ios, phone_id, to_ios), 60))
+        run.step("phone-intro-answered", lambda: _timed(lambda: ios.node_id not in _pending_intros(phone), 120))
+    finally:
+        ios.stop()
+    print(json.dumps({"summary": "iphone-contact", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _contact_added(reply: dict, peer: str) -> dict:
+    """The iPhone's `add-contact` reply names `peer`."""
+    if not reply.get("ok") or reply.get("peer") != peer:
+        raise RuntimeError(f"add-contact: {reply}")
+    return {}
+
+
+def _ios_contact(ios: IPhone, peer: str) -> dict:
+    """The iPhone pins `peer` and holds its conversation accepted, as a contact: it lists them, and a DM from them is no
+    request."""
+    found = [entry for entry in ios.command(cmd="peers")["peers"] if entry["peer"] == peer]
+    if not found:
+        raise RuntimeError(f"the iPhone pins no {peer}")
+    return {"verified": found[0].get("verified"), "safetyNumber": found[0].get("safetyNumber")}
+
+
+def _phone_imported(reply: dict, peer: str) -> dict:
+    """The phone's `INTRO --es import` previewed the card as Ready and imported `peer`."""
+    if reply.get("imported") != peer:
+        raise RuntimeError(f"the phone did not import {peer}: {reply.get('preview')}")
+    return {"preview": reply.get("preview")}
+
+
+def _pending_intros(phone: Phone) -> set[str]:
+    """The node ids of the phone's intros still waiting for an answer (`pending_intros`, `"<peer>|<millis>"`)."""
+    return {entry.split("|")[0] for entry in phone.bridge("INTRO").get("pending", [])}
+
+
 def iphone_delete(arguments: argparse.Namespace) -> int:
     """A delete on the iPhone sends nothing and stays deleted (ADR 2026-10.u7cq). The phone posts in Nearby, sends a DM
     and writes in a group the two share. Through its bridge the iPhone deletes the post and the group message one by one,
@@ -6791,6 +6857,8 @@ def main() -> int:
     ios_photos.add_argument("--animated", action="store_true", help="send GIFs both ways, and check that the iPhone plays both")
     ios_block = commands.add_parser("iphone-block")
     ios_block.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios_contact = commands.add_parser("iphone-contact")
+    ios_contact.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_delete = commands.add_parser("iphone-delete")
     ios_delete.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_react = commands.add_parser("iphone-react")
@@ -6933,7 +7001,8 @@ def main() -> int:
     if arguments.command == "android-reads" and arguments.links > 1 and arguments.order != "peer-above":
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
     if arguments.command in (
-        "iphone", "iphone-wake", "android-keeps-iphone", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-delete",
+        "iphone", "iphone-wake", "android-keeps-iphone", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-contact",
+        "iphone-delete",
         "iphone-react", "iphone-reply", "iphone-typing", "iphone-mention", "iphone-ratchet", "bridge", "record-pull",
     ):
         return {
@@ -6943,6 +7012,7 @@ def main() -> int:
             "iphone-reboot": iphone_reboot,
             "iphone-photos": iphone_photos,
             "iphone-block": iphone_block,
+            "iphone-contact": iphone_contact,
             "iphone-delete": iphone_delete,
             "iphone-react": iphone_react,
             "iphone-reply": iphone_reply,

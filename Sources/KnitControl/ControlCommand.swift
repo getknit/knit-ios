@@ -63,6 +63,12 @@ public enum ControlCommand: Equatable, Sendable {
     /// the heuristic and floods it, as the bridge's `--es reset <peer>` does, and says `forcedReset` and why it
     /// `declined`, or `null` (ADR 2026-10.5sk9). With the ratchet's switch off it is declined, and nothing is sealed.
     case ratchet(reset: NodeId?)
+    /// `{"cmd":"contact-link"}`: our contact link, signed now, as `url`, `scheme` and `compact` (ADR 2026-10.tpr5).
+    case contactLink
+    /// `{"cmd":"add-contact","text":"<link or code>"}`: add the person a contact link names, as Add contact's preview
+    /// does: their key pins, their conversation is accepted and their key asked for. `"scan":true` takes the scanner's
+    /// path instead, which verifies them and sends nothing; `"unblock":true` unblocks them first, as Unblock and add does.
+    case addContact(String, scan: Bool, unblock: Bool)
     /// `{"cmd":"stop"}`: stop the mesh, closing every link, as Settings' Stop does.
     case stop
     /// `{"cmd":"start"}`: start it again.
@@ -170,6 +176,8 @@ public struct ControlRequest: Equatable, Sendable {
         var replyTo: String?
         var mentions: [String]?
         var reset: String?
+        var scan: Bool? // swiftlint:disable:this discouraged_optional_boolean
+        var unblock: Bool? // swiftlint:disable:this discouraged_optional_boolean
         var tag: String?
     }
 
@@ -228,7 +236,19 @@ public struct ControlRequest: Equatable, Sendable {
         case "ratchet":
             ratchetCommand(from: raw)
         default:
-            groupCommand(from: raw).map(ControlCommand.group)
+            contactCommand(from: raw) ?? groupCommand(from: raw).map(ControlCommand.group)
+        }
+    }
+
+    /// `contact-link` and `add-contact`, or `nil` for any other command.
+    private static func contactCommand(from raw: Raw) -> Result<ControlCommand, ControlError>? {
+        switch raw.cmd {
+        case "contact-link":
+            .success(.contactLink)
+        case "add-contact":
+            required(raw.text, "text").map { .addContact($0, scan: raw.scan ?? false, unblock: raw.unblock ?? false) }
+        default:
+            nil
         }
     }
 

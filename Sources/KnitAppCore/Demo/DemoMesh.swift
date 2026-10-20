@@ -1,3 +1,4 @@
+public import KnitCrypto
 public import KnitMesh
 public import KnitStore
 import KnitSync
@@ -233,6 +234,16 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     /// Marks a pinned peer verified, or not.
     public func setVerified(_ peer: NodeId, _ verified: Bool) async {
         await mesh.setVerified(peer, verified)
+    }
+
+    /// Adds the person a link or a scanned code names.
+    public func addContact(_ card: ContactCard.Card, from source: ContactSource, unblock: Bool) async -> ContactAdded {
+        await mesh.addContact(card, from: source, unblock: unblock)
+    }
+
+    /// Our contact link, signed by the demo's identity.
+    public func ownContactLink() async -> ContactCard.Links? {
+        await mesh.ownContactLink()
     }
 
     /// Blocks a person, and tells the director, whose script may be waiting for it.

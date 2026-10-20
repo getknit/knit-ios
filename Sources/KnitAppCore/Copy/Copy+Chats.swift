@@ -294,7 +294,7 @@ extension Copy {
                 bundle: .main,
                 value: """
                     Pick one person for a direct message, or 2 to 7 people for a group. The list shows everyone you've chatted \
-                    with or verified.
+                    with, verified or added.
                     """,
                 comment: "New message: what one pick and several picks do, and who can be picked"
             )
@@ -315,7 +315,10 @@ extension Copy {
             NSLocalizedString(
                 "new-message.empty.body",
                 bundle: .main,
-                value: "People you've chatted with or verified show up here. To meet someone, say hello in Nearby.",
+                value: """
+                    People you've chatted with, verified or added show up here. To meet someone, say hello in Nearby, or add them \
+                    with their code or link.
+                    """,
                 comment: "New message: who appears in the list, and where to meet people"
             )
         }
