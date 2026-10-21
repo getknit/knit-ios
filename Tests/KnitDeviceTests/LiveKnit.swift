@@ -17,7 +17,7 @@ struct LiveKnit {
 
     /// The terms' version (`Terms.version`, ADR 2026-10.cgm3), which every launch says the user agreed to, so the lab
     /// iPhone opens on the app rather than the terms. `TermsTests` holds the two equal. Onboarding still shows the terms.
-    static let acceptedTerms = "1"
+    static let acceptedTerms = "2"
 
     /// Launches Knit afresh with `arguments`, and the terms agreed to, ending a process that was running. UserDefaults
     /// reads the argument domain first, so the agreement lasts this launch alone.

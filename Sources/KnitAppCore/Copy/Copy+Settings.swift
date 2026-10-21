@@ -91,6 +91,33 @@ extension Copy {
             )
         }
 
+        /// The row that emails Knit's report address, at the top level so App Review finds the contact guideline 1.2
+        /// asks for (ADR 2026-10.tydq).
+        public static var reportProblem: String {
+            NSLocalizedString(
+                "settings.report-problem",
+                bundle: .main,
+                value: "Report a problem",
+                comment: "Settings: the row that opens an email to Knit's report address"
+            )
+        }
+
+        /// Under Blocked people, Report a problem and the terms: where to report someone, and how to reach Knit.
+        public static func safetyFooter(_ address: String) -> String {
+            format(
+                NSLocalizedString(
+                    "settings.safety.footer",
+                    bundle: .main,
+                    value: """
+                        Report someone from their message's menu or their profile. To reach the Knit team, email %@. The team \
+                        reads every emailed report within 24 hours.
+                        """,
+                    comment: "Settings: under the safety rows; %@ is Knit's report address"
+                ),
+                address
+            )
+        }
+
         /// The row that opens About.
         public static var about: String {
             NSLocalizedString("settings.about", bundle: .main, value: "About", comment: "Settings: the row that opens About")

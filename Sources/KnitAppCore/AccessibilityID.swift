@@ -314,6 +314,10 @@ public enum AccessibilityID {
     public static let supportShare = "support_share"
     /// Settings' way to the people blocked. Android opens them from the chat list's menu, with no tag.
     public static let settingsBlocked = "settings_blocked"
+    /// Settings' Report a problem, which emails Knit (ADR 2026-10.tydq). Android has no tag here.
+    public static let settingsReport = "settings_report"
+    /// Settings' terms row (ADR 2026-10.tydq). Android has no terms.
+    public static let settingsTerms = "settings_terms"
     /// Settings' Content filtering toggle, Android's `settings_content_filtering`.
     public static let settingsContentFiltering = "settings_content_filtering"
     /// The people blocked.

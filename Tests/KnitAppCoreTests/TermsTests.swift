@@ -46,6 +46,18 @@ import Testing
         #expect(Set(Terms.rules).count == Terms.rules.count)
     }
 
+    @Test func theTermsAreForAdultsAndEveryEmailedReportIsReadWithinADay() {
+        // What the review notes promise App Review under guideline 1.2 (ADR 2026-10.tydq).
+        #expect(Copy.Terms.age.contains("18"))
+        for promise in [
+            Copy.Terms.enforcement, Copy.Report.confirmMessage("Sam"), Copy.Report.confirmPerson("Sam"),
+            Copy.Settings.safetyFooter(AbuseReport.address),
+        ] {
+            #expect(promise.contains("24 hours"), "\(promise)")
+        }
+        #expect(Copy.Settings.safetyFooter(AbuseReport.address).contains(AbuseReport.address))
+    }
+
     @Test func theLabIPhonesLaunchAgreesToTheseTerms() throws {
         // The device tests launch with `-acceptedTerms` so the iPhone opens on the app; a raised version needs it raised.
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -57,6 +69,6 @@ import Testing
 extension CopyCatalogTests {
     /// The terms' strings (ADR 2026-10.cgm3), apart so the suite stays under the lint's length.
     static var termsStrings: [String] {
-        [Copy.Terms.title, Copy.Terms.intro, Copy.Terms.enforcement, Copy.Terms.agree] + Terms.rules
+        [Copy.Terms.title, Copy.Terms.age, Copy.Terms.intro, Copy.Terms.enforcement, Copy.Terms.agree] + Terms.rules
     }
 }

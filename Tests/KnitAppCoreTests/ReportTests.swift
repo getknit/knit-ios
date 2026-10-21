@@ -146,6 +146,8 @@ extension CopyCatalogTests {
             Copy.Report.emailPhoto,
             Copy.Report.emailAddMore,
             Copy.About.contact,
+            Copy.Settings.reportProblem,
+            Copy.Settings.safetyFooter(AbuseReport.address),
         ] + places.map(Copy.Report.emailPlace)
     }
 }

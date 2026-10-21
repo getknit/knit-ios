@@ -94,4 +94,5 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.wcex](decisions/2026-10-wcex-a-reinstalled-iphone-recognises-the.md) | A reinstalled iPhone recognises the inits it answered and resets at once | crypto, custody |
 | [2026-10.b4yk](decisions/2026-10-b4yk-dms-and-groups-seal-with.md) | DMs and groups seal with the ratchet, and the iPhone advertises 0x15F | crypto, dm, groups, interop |
 | [2026-10.tpr5](decisions/2026-10-tpr5-add-contact-pins-a-key.md) | Add contact pins a key from a scanned code or a signed contact link | app, crypto, security |
+| [2026-10.tydq](decisions/2026-10-tydq-knit-is-for-adults.md) | Knit is for adults, and the Knit team reads emailed reports within 24 hours | moderation, store, ui |
 | [2026-10.z7a8](decisions/2026-10-z7a8-a-share-extension-hands-what.md) | A share extension hands what it takes to the app through an App Group | share, ui, signing |

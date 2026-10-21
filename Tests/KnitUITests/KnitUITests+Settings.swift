@@ -18,7 +18,8 @@ extension KnitUITests {
     /// What the walk tries to post, which the demo's classifier finds abusive like everything else.
     private static let refusedWords = "Heading up now"
 
-    /// Settings: the profile, About, Support Knit and Diagnostics, each audited, and Stop, which leaves the chat list saying so.
+    /// Settings: the profile, Report a problem and the terms, About, Support Knit and Diagnostics, each audited, and Stop,
+    /// which leaves the chat list saying so.
     func walkSettings() throws {
         let app = launch()
         try app.appear(AccessibilityID.chatListSettings).tap()
@@ -26,6 +27,11 @@ extension KnitUITests {
 
         try app.reveal(AccessibilityID.settingsProfileRow).tap()
         try audit(app, AccessibilityID.profileScreen)
+        app.back()
+        // Guideline 1.2's contact and terms, at Settings' top level (ADR 2026-10.tydq).
+        try app.reveal(AccessibilityID.settingsReport)
+        try app.reveal(AccessibilityID.settingsTerms).tap()
+        try app.appear(AccessibilityID.termsScreen)
         app.back()
         try app.reveal(AccessibilityID.settingsAbout).tap()
         try audit(app, AccessibilityID.aboutScreen)

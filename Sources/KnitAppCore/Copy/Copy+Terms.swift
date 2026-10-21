@@ -9,6 +9,16 @@ extension Copy {
             NSLocalizedString("terms.title", bundle: .main, value: "Terms of use", comment: "Terms: the page's heading and About's row")
         }
 
+        /// Who may use Knit, first on the page: App Review rates Knit 18+ (ADR 2026-10.tydq).
+        public static var age: String {
+            NSLocalizedString(
+                "terms.age",
+                bundle: .main,
+                value: "You must be 18 or older to use Knit.",
+                comment: "Terms: who may use Knit, over the rules"
+            )
+        }
+
         /// What the rules are for, over the list.
         public static var intro: String {
             NSLocalizedString(
@@ -65,8 +75,8 @@ extension Copy {
                 "terms.enforcement",
                 bundle: .main,
                 value: """
-                    If someone breaks these rules, report them. Knit deletes their message from your phone and blocks them, and \
-                    you can send the report to the Knit team.
+                    If someone breaks these rules, report them. Knit deletes their message from your phone and blocks them. \
+                    Email the report too, and the Knit team will read it within 24 hours.
                     """,
                 comment: "Terms: under the rules, what a report does"
             )

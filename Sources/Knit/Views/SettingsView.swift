@@ -2,7 +2,8 @@
     import KnitAppCore
     import SwiftUI
 
-    /// Settings: the profile row, Stop and Start, notifications, the people blocked, About, Support Knit and Diagnostics (MVP item 10),
+    /// Settings: the profile row, Stop and Start, notifications, the people blocked with Report a problem and the terms, About,
+    /// Support Knit and Diagnostics (MVP item 10),
     /// each row after a glyph, as Signal lists its settings (ADR 2026-10.5waw).
     internal struct SettingsView: View {
         @State private var model: SettingsModel
@@ -23,12 +24,7 @@
                 }
                 MeshSection(isRunning: model.isRunning) { Task { await model.toggleMesh() } }
                 NotificationSection(authorization: model.notifications) { Task { await model.requestNotifications() } }
-                Section {
-                    NavigationLink(value: Route.blocked) {
-                        RowLabel(Copy.Block.listTitle, symbol: "hand.raised")
-                    }
-                    .accessibilityIdentifier(AccessibilityID.settingsBlocked)
-                }
+                SafetySection()
                 if let screening {
                     ContentFilterSection(screening: screening)
                 }
@@ -42,6 +38,31 @@
                 }
             }
             .accessibilityIdentifier(AccessibilityID.settingsScreen)
+        }
+    }
+
+    /// The people blocked, a way to email Knit and the terms, at the top level, where App Review looks for guideline 1.2's
+    /// contact (ADR 2026-10.tydq). About keeps its own Email Knit and terms rows.
+    private struct SafetySection: View {
+        var body: some View {
+            Section {
+                NavigationLink(value: Route.blocked) {
+                    RowLabel(Copy.Block.listTitle, symbol: "hand.raised")
+                }
+                .accessibilityIdentifier(AccessibilityID.settingsBlocked)
+                if let url = URL(string: "mailto:\(AbuseReport.address)") {
+                    Link(destination: url) {
+                        RowLabel(Copy.Settings.reportProblem, symbol: "exclamationmark.bubble")
+                    }
+                    .accessibilityIdentifier(AccessibilityID.settingsReport)
+                }
+                NavigationLink(value: Route.terms) {
+                    RowLabel(Copy.Terms.title, symbol: "doc.text")
+                }
+                .accessibilityIdentifier(AccessibilityID.settingsTerms)
+            } footer: {
+                SectionNote(Copy.Settings.safetyFooter(AbuseReport.address))
+            }
         }
     }
 

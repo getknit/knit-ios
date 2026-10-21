@@ -43,7 +43,7 @@ extension Copy {
                     bundle: .main,
                     value: """
                         Knit deletes this message from your phone and blocks %@, and doesn't tell them. Email the report \
-                        too, and the Knit team will read it.
+                        too, and the Knit team will read it within 24 hours.
                         """,
                     comment: "Report: what reporting a message does, in the confirmation; %@ is the person's name"
                 ),
@@ -59,7 +59,7 @@ extension Copy {
                     bundle: .main,
                     value: """
                         Knit blocks %@ on your phone and doesn't tell them. Email the report too, and the Knit team will \
-                        read it.
+                        read it within 24 hours.
                         """,
                     comment: "Report: what reporting a person does, in the confirmation; %@ is the person's name"
                 ),
