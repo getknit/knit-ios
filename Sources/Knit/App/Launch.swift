@@ -142,6 +142,14 @@
             Task { await session.setActive(active) }
             if active {
                 environment.foregrounded()
+                // At the front a contact link the share sheet left can open Add contact (ADR 2026-10.z7a8).
+                if let shares = environment.shares {
+                    Task {
+                        if let link = await shares.drain(atFront: true) {
+                            requestedContactLink = link
+                        }
+                    }
+                }
             } else {
                 environment.backgrounded()
             }

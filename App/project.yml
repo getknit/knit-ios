@@ -64,6 +64,8 @@ targets:
         # site's apple-app-site-association file claims /c for both bundle ids, and each id's profile carries Associated
         # Domains. An unsigned build drops it.
         CODE_SIGN_ENTITLEMENTS: Knit.entitlements
+        # The App Group the share extension hands shares through (ADR 2026-10.z7a8), one per bundle id so the debug and
+        # store builds never drain each other's. The entitlements and App/Info.plist's KnitAppGroup both read it.
         # The generated plist takes its version keys from these two, over App/Info.plist's. Keep them equal to
         # its CFBundleShortVersionString and CFBundleVersion; `check.sh xcode` fails when they differ.
         MARKETING_VERSION: 1.0.0
@@ -81,6 +83,7 @@ targets:
         # ADR 2026-09.txqp: Xcode-signed development builds take the .dev id.
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.dev
+          KNIT_APP_GROUP: group.app.getknit.knit.dev
           # The bridge's screen recordings take the microphone (ADR 2026-10.x2cq), and iOS ends an app that asks for it
           # without this key. Debug only: a store build never records, and `check.sh release` checks the key is absent.
           INFOPLIST_KEY_NSMicrophoneUsageDescription: >-
@@ -88,6 +91,7 @@ targets:
             up its audio.
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit
+          KNIT_APP_GROUP: group.app.getknit.knit
           # The demo's pictures are licensed for the demo, and nothing in a store build reads them (ADR 2026-10.2acj).
           EXCLUDED_SOURCE_FILE_NAMES: DemoMedia
   # The Simulator's UI tests and accessibility audit (`scripts/check.sh uitest`). The sources live under Tests/ so
@@ -172,6 +176,7 @@ schemes:
         "-demoCamera denied": false
         "-demoCamera allowed": false
         "-demoSensitive": false
+        "-demoShare \"Shared from another app\"": false
     archive:
       config: Release
   KnitDevice:

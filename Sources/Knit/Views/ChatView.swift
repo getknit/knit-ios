@@ -20,12 +20,18 @@
         @Environment(\.dismiss) private var dismiss
         /// What Add photo picks under `-demoPhoto`, in place of the photo library.
         private let demoPhoto: Data?
+        /// Where a share held back for this thread waits for its composer (ADR 2026-10.z7a8).
+        private let shares: ShareHost?
 
         /// The thread `conversationId` over `session`, making picked photos ready to send through `codec` and checking them
-        /// with `screening`.
-        init(conversationId: String, session: AppSession, codec: any ImageCodec, screening: PhotoScreening, demoPhoto: Data?) {
+        /// with `screening`, and taking a share `shares` held for it into the composer.
+        init(
+            conversationId: String, session: AppSession, codec: any ImageCodec, screening: PhotoScreening, demoPhoto: Data?,
+            shares: ShareHost?
+        ) {
             _model = State(initialValue: ChatModel(conversationId: conversationId, session: session, codec: codec, screening: screening))
             self.demoPhoto = demoPhoto
+            self.shares = shares
         }
 
         var body: some View {
@@ -122,7 +128,12 @@
                 }
             }
             .releasesKeyboardWhenCovered()
-            .task { await model.appear() }
+            .task {
+                if let held = shares?.takeHeld(for: model.conversationId) {
+                    await model.adopt(held.manifest, picture: held.picture)
+                }
+                await model.appear()
+            }
             .onDisappear(perform: model.disappear)
         }
 

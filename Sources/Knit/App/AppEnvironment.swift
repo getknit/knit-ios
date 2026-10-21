@@ -37,6 +37,10 @@
         /// would: a UI test taps it to open its thread.
         private let demoNotification: LocalNotification?
         let about: AboutInfo
+        /// The share sheet's side of the App Group (ADR 2026-10.z7a8), or `nil` when Knit has no container to share.
+        let shares: ShareHost?
+        /// The share sheet's call that it left a share, heard while Knit runs.
+        private var shareWake: ShareWake?
         /// Stores a minted test identity for the next launch, in a debug build.
         let replaceIdentity: IdentityReplacer?
         /// The CoreBluetooth radio, which a demo has none of.
@@ -63,6 +67,7 @@
             textClassifier: any TextClassifier,
             demoPhoto: Data?,
             demoNotification: LocalNotification?,
+            shareInbox: ShareInbox?,
             replaceIdentity: IdentityReplacer?
         ) {
             self.session = session
@@ -75,8 +80,10 @@
             self.demoNotification = demoNotification
             self.replaceIdentity = replaceIdentity
             photos = BlobImageCache(session: session)
-            screening = PhotoScreening(classifier: classifier, session: session)
+            let screener = PhotoScreening(classifier: classifier, session: session)
+            screening = screener
             model = classifier as? DevicePhotoClassifier
+            shares = shareInbox.map { ShareContainer.host(inbox: $0, session: session, filter: screener, settings: preferences) }
             textModel = textClassifier as? DeviceTextClassifier
             let info = Bundle.main.infoDictionary ?? [:]
             about = AboutInfo(
@@ -109,6 +116,7 @@
             if preferences.hasOnboarded {
                 Task { await running.start() }
             }
+            shareWake = shares.flatMap(ShareContainer.start)
             if let demoNotification {
                 let alerts = notifier
                 Task {
@@ -178,6 +186,7 @@
                 classifier: DevicePhotoClassifier(log: log),
                 textClassifier: DeviceTextClassifier(log: log)
             )
+            parts.shareInbox = ShareContainer.inbox()
             #if DEBUG
                 parts.storage = StorageReport(
                     nodeId: identity.nodeId, keyStore: keyStore, directory: directory, preferences: defaults, launch: launch)
@@ -213,6 +222,8 @@
             var demoPhoto: Data?
             /// What the demo posts as Knit goes to the background, under `-demoNotification`.
             var notification: LocalNotification?
+            /// The share sheet's inbox: the App Group's in a live launch, or a folder of the demo's own under `-demoShare`.
+            var shareInbox: ShareInbox?
             #if DEBUG
                 /// What the debug bridge's `storage` reply reads, which only a live launch has.
                 var storage: StorageReport?
@@ -264,6 +275,7 @@
                 textClassifier: parts.textClassifier,
                 demoPhoto: parts.demoPhoto,
                 demoNotification: parts.notification,
+                shareInbox: parts.shareInbox,
                 replaceIdentity: replace
             )
             #if DEBUG
@@ -314,7 +326,7 @@
                     face: DemoPictures.profilePhoto,
                     snap: snap
                 )
-                let parts = Parts(
+                var parts = Parts(
                     identity: identity,
                     stores: stores,
                     radio: DemoRadio(state: options.demoRadio),
@@ -340,6 +352,7 @@
                     demoPhoto: options.demoPhoto ? DemoPictures.picked(moving: options.demoPhotoMoves) : nil,
                     notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
                 )
+                parts.shareInbox = options.demoShare.map(ShareContainer.demoInbox)
                 return compose(parts, ratchet: false, replace: nil) // A demo keeps no prekeys and reaches no one.
             }
         #endif
@@ -375,26 +388,6 @@
         private static func databaseDirectory() throws -> URL {
             try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
                 .appending(path: "Database", directoryHint: .isDirectory)
-        }
-    }
-
-    extension TextScreening {
-        /// The filter over `classifier` and the word lists bundled in the app, which reports a missing list to `log`.
-        static func bundled(classifier: (any TextClassifier)?, log: any KnitLog) -> TextScreening {
-            TextScreening(classifier: classifier, words: wordList("Profanity", log: log), slurs: wordList("Slurs", log: log))
-        }
-
-        /// A word list bundled as `<name>.txt`: `Profanity`, the Nearby room's (knit-next's `profanity_en.txt`), or
-        /// `Slurs`, every conversation's (its `slurs_en.txt`, knit-next ADR 2026-10.d62w). Without it the filter screens
-        /// without that list, and says so.
-        private static func wordList(_ name: String, log: any KnitLog) -> WordFilter {
-            guard let url = Bundle.main.url(forResource: name, withExtension: "txt"),
-                let text = try? String(contentsOf: url, encoding: .utf8)
-            else {
-                log.log(.warning, "text filter: \(name).txt is not in the app, so the filter screens without it")
-                return WordFilter(words: [])
-            }
-            return WordFilter(list: text)
         }
     }
 #endif

@@ -27,16 +27,18 @@ public final class ShareDrain {
     private let codec: (any ImageCodec)?
     private let screening: PhotoScreening?
     private let now: @Sendable () -> Int64
-    /// Called with a thread's id when a share for it is held, so a notification can say so.
-    private let held: @MainActor (String) -> Void
-    private var draining = false
+    /// Called with a thread's id and the refusal when a share for it is held, so a notification can say so.
+    private let held: @MainActor (String, ShareManifest.Refusal) -> Void
+    /// The pass under way, which a drain asked for meanwhile waits out before running its own.
+    private var running: Task<String?, Never>?
 
     /// Drains `inbox` into `session`'s threads, making pictures ready with `codec` and checking them with `screening`,
-    /// reading the wall clock in milliseconds from `now`, and calling `held` with the thread of each share held back.
+    /// reading the wall clock in milliseconds from `now`, and calling `held` with the thread and refusal of each share held
+    /// back.
     @preconcurrency
     public init(
         inbox: ShareInbox, session: AppSession, codec: (any ImageCodec)?, screening: PhotoScreening?,
-        now: @escaping @Sendable () -> Int64, held: @escaping @MainActor (String) -> Void
+        now: @escaping @Sendable () -> Int64, held: @escaping @MainActor (String, ShareManifest.Refusal) -> Void
     ) {
         self.inbox = inbox
         self.session = session
@@ -46,16 +48,33 @@ public final class ShareDrain {
         self.held = held
     }
 
+    /// The largest picture a drain in the background makes ready: past it a share waits for the front. A suspended Knit
+    /// wakes for seconds at a time for Bluetooth, and a picture of tens of megabytes decoded then could cost the wake, or
+    /// the process and every link with it.
+    public static let backgroundPictureBytes = 4_194_304
+
     /// Sends every waiting share, oldest first, and answers the first contact link waiting when Knit is `atFront`, for
-    /// Add contact. A contact link waits for the front, where Add contact can open. A drain under way makes a second
-    /// one return at once.
+    /// Add contact. A contact link waits for the front, where Add contact can open, and so does a picture past
+    /// ``backgroundPictureBytes``. A drain asked for while one is under way waits for it, then runs its own pass, so a
+    /// share left meanwhile, or a contact link the front asked for, is never left for a later pass.
     @discardableResult
     public func drain(atFront: Bool) async -> String? {
-        guard !draining else {
-            return nil
+        while let current = running {
+            _ = await current.value
         }
-        draining = true
-        defer { draining = false }
+        // The pass lets go of `running` itself, as it ends: a waiter awaiting a pass already done may not suspend, so had
+        // this caller cleared it after its own await, a waiter could spin on the main actor and never let it.
+        let pass = Task { () -> String? in
+            let link = await self.pass(atFront: atFront)
+            running = nil
+            return link
+        }
+        running = pass
+        return await pass.value
+    }
+
+    /// One pass over the inbox, as ``drain(atFront:)`` says.
+    private func pass(atFront: Bool) async -> String? {
         inbox.sweep(now: now())
         var link: String?
         for item in inbox.pending() {
@@ -69,7 +88,7 @@ public final class ShareDrain {
                     link = claimed.manifest.text
                 }
             case .message:
-                guard let claimed = inbox.claim(item) else {
+                guard atFront || !Self.waitsForTheFront(item), let claimed = inbox.claim(item) else {
                     continue
                 }
                 switch await send(claimed) {
@@ -77,20 +96,31 @@ public final class ShareDrain {
                     inbox.finish(claimed)
                 case .held(let refusal):
                     inbox.hold(claimed, because: refusal)
-                    held(claimed.manifest.conversationId)
+                    held(claimed.manifest.conversationId, refusal)
                 }
             }
         }
         return link
     }
 
-    /// The shares held for thread `conversationId`, taken out of the inbox for its composer, oldest first.
-    public func takeHeld(for conversationId: String) -> [(manifest: ShareManifest, picture: Data?)] {
-        inbox.held(in: conversationId).map { share in
-            let picture = inbox.picture(of: share)
-            inbox.release(share)
-            return (share.manifest, picture)
+    /// Whether `item`'s picture is past ``backgroundPictureBytes``, or cannot be measured.
+    private static func waitsForTheFront(_ item: ShareInbox.Item) -> Bool {
+        guard let picture = item.picture else {
+            return false
         }
+        let size = try? FileManager.default.attributesOfItem(atPath: picture.path)[.size] as? Int
+        return (size ?? .max) > backgroundPictureBytes
+    }
+
+    /// The oldest share held for thread `conversationId`, taken out of the inbox for its composer, or `nil` for none. One
+    /// at a time, since the composer holds one draft: the next opening of the thread takes the next.
+    public func takeHeld(for conversationId: String) -> (manifest: ShareManifest, picture: Data?)? {
+        guard let share = inbox.held(in: conversationId).first else {
+            return nil
+        }
+        let picture = inbox.picture(of: share)
+        inbox.release(share)
+        return (share.manifest, picture)
     }
 
     /// Sends one claimed share as the composer would.

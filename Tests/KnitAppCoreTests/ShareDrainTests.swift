@@ -28,6 +28,7 @@ import Testing
         @MainActor
         final class Log {
             var threads: [String] = []
+            var refusals: [ShareManifest.Refusal] = []
         }
 
         init(screening: TextScreening? = nil, codec: FakeCodec = FakeCodec(), photos: [[UInt8]: [Float]]? = nil) {
@@ -42,11 +43,15 @@ import Testing
                 codec: codec,
                 screening: screener,
                 now: { 1_790_000_000_000 },
-                held: { threads.threads.append($0) }
+                held: { thread, refusal in
+                    threads.threads.append(thread)
+                    threads.refusals.append(refusal)
+                }
             )
         }
 
         var heldFor: [String] { log.threads }
+        var heldBecause: [ShareManifest.Refusal] { log.refusals }
 
         /// Leaves `text` for `conversationId` in the inbox, with ``ShareDrainTests/picked`` beside it when `picture`.
         func share(_ text: String, to conversationId: String, picture: Bool = false) throws {
@@ -107,6 +112,37 @@ import Testing
         #expect(bench.inboxIsEmpty && bench.heldFor.isEmpty)
     }
 
+    /// In the background a picture past ``ShareDrain/backgroundPictureBytes`` waits for the front, where a wake's few
+    /// seconds and a background process's memory are not at stake.
+    @Test func aLargePictureWaitsForTheFront() async throws {
+        let bench = Bench()
+        let large = try bench.scratch.picture(Data(count: ShareDrain.backgroundPictureBytes + 1), named: "large.gif")
+        try bench.scratch.inbox.submit(
+            .message("Big one", to: AppRig.sam.nodeId.string, hasPicture: true, at: 1), picture: large, id: "BIG")
+        try bench.share("Small one", to: AppRig.sam.nodeId.string, picture: true)
+        await bench.drain.drain(atFront: false)
+        #expect(bench.rig.mesh.calls.direct == ["\(AppRig.sam.nodeId): Small one"], "the small picture went")
+        #expect(bench.scratch.inbox.pending().map(\.id) == ["BIG"], "the large one waits")
+        await bench.drain.drain(atFront: true)
+        #expect(bench.rig.mesh.calls.direct.last == "\(AppRig.sam.nodeId): Big one")
+        #expect(bench.inboxIsEmpty)
+    }
+
+    /// A drain asked for while one is under way waits for it and runs its own pass, so the front's contact link is never
+    /// left for a later pass.
+    @Test func aDrainAskedMeanwhileStillRunsItsOwnPass() async throws {
+        let bench = Bench()
+        try bench.share("A picture first", to: AppRig.sam.nodeId.string, picture: true)
+        let link = try #require(ContactCard.encode(AppRig.priya.keys, name: "Priya", issuedAt: 1_790_000_000_000)?.url)
+        try bench.scratch.inbox.submit(.contactLink(link, at: 99), picture: nil, id: "L")
+        async let background = bench.drain.drain(atFront: false)
+        async let front = bench.drain.drain(atFront: true)
+        let (fromBackground, fromFront) = await (background, front)
+        #expect(fromBackground == nil || fromFront == nil, "one link, handed out once")
+        #expect([fromBackground, fromFront].contains(link), "the link was not left behind")
+        #expect(bench.rig.mesh.calls.direct.count == 1 && bench.inboxIsEmpty)
+    }
+
     // MARK: Refusals
 
     /// Each refusal holds the share for its thread and says so, and nothing reaches the mesh.
@@ -123,7 +159,7 @@ import Testing
         await bench.drain.drain(atFront: false)
         #expect(bench.rig.mesh.calls.room == before.room && bench.rig.mesh.calls.direct == before.direct)
         #expect(bench.rig.mesh.calls.groups == before.groups)
-        #expect(bench.heldFor == [thread])
+        #expect(bench.heldFor == [thread] && bench.heldBecause == [refused.refusal])
         #expect(bench.inboxIsEmpty)
         let held = try #require(bench.scratch.inbox.held(in: thread).first)
         #expect(held.manifest.refusal == refused.refusal)
@@ -188,12 +224,11 @@ import Testing
         )
         try bench.share("oh shit, look", to: Conversations.nearby, picture: true)
         await bench.drain.drain(atFront: false)
-        let held = bench.drain.takeHeld(for: Conversations.nearby)
-        try #require(held.count == 1)
-        #expect(bench.drain.takeHeld(for: Conversations.nearby).isEmpty, "taken once")
+        let held = try #require(bench.drain.takeHeld(for: Conversations.nearby))
+        #expect(bench.drain.takeHeld(for: Conversations.nearby) == nil, "taken once")
 
         let model = ChatModel(conversationId: Conversations.nearby, session: bench.rig.session, codec: FakeCodec())
-        await model.adopt(held[0].manifest, picture: held[0].picture)
+        await model.adopt(held.manifest, picture: held.picture)
         #expect(model.draft == "oh shit, look" && model.wordsRefused)
         #expect(model.staged?.photo.bytes == Self.prepared)
         #expect(model.selection == 13..<13, "the caret at the end")

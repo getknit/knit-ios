@@ -247,6 +247,9 @@ Launch arguments, set in the scheme on the Mac (P7):
 - `-demoNotification` (with `-seedDemo`) asks to notify at launch, then posts the room's notification each time
   Knit goes to the background. Nothing reaches the demo's radio, so this is how the UI tests get a notification to
   tap.
+- `-demoShare "<words>"` (with `-seedDemo`) launches with `<words>` waiting for the room in a share inbox of the demo's
+  own, as if the share sheet had just left them, so the UI tests walk the drain (ADR 2026-10.z7a8). With
+  `-demoSensitive` the room refuses them, and the room's composer takes them back.
 - `-demoScene edge-cases|fresh|marketing` (with `-seedDemo`) picks what is seeded. `fresh` seeds nothing, so the chat
   list shows its first-run card. `edge-cases`, the default, is the
   cast above: two people with one name, one with none, and nobody linked. `marketing` is for store screenshots

@@ -173,7 +173,8 @@
                     session: environment.session,
                     codec: environment.codec,
                     screening: environment.screening,
-                    demoPhoto: environment.demoPhoto
+                    demoPhoto: environment.demoPhoto,
+                    shares: environment.shares
                 )
             case .requests:
                 RequestsView(session: environment.session)

@@ -62,6 +62,10 @@ nothing the inbox does not.
 - **The sheet never decodes a picture.** Its thumbnail comes from `CGImageSourceCreateThumbnailAtIndex`, and it refuses
   a picture over 50 MB or over `PhotoDecoder.pickedPixels` from the source's properties, because a share extension's
   memory limit is far below the app's. The app prepares the picture at the drain.
+- **A background wake drains lightly.** The session's revision moves on every frame a wake brings, so `ShareHost`
+  runs one pass for a burst, then waits a second before the next, and drains only when a share waits. A picture over
+  `ShareDrain.backgroundPictureBytes` (4 MiB) waits for the front: decoding tens of megabytes in a Bluetooth wake
+  could cost the wake, or the process and every link with it. The bluetooth-reviewer asked for both on 2026-10-21.
 - **Bounded.** The sheet refuses a ninth share while eight wait, and a held share older than 7 days goes.
 - **Two more App IDs and two App Groups** must exist before a signed build: `app.getknit.knit.share` and
   `app.getknit.knit.dev.share` (ADR 2026-09.txqp, ADR 2026-09.zawh). The extension carries the app's version keys, its
@@ -71,6 +75,8 @@ nothing the inbox does not.
   - Never call `AppSession.send` straight from the drain. It skips the room's photo screening, which runs in
     `choosePhoto`, and every check `ChatState` makes.
   - Never let the sheet open the database or the Keychain.
-- **The guards:** `ShareInboxTests` (the manifest, a half-written share ignored, the bounds, the order) and
+- **The guards:** `ShareInboxTests` (the manifest, a half-written share ignored, the bounds, the order),
   `ShareDrainTests` (each conversation kind, each refusal landing in `held/`, no typing cue, a contact link only at the
-  front).
+  front, a large picture left for the front, a drain asked for meanwhile still running its own pass), `ShareHostTests`
+  (the chats offered, the pause between passes, the held notification), and the Simulator walks in
+  `KnitUITests+Share.swift` under `-demoShare`.

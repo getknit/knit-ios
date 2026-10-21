@@ -68,6 +68,12 @@ public struct ShareInbox: Sendable {
         self.init(root: container.appendingPathComponent(Self.folderName, isDirectory: true))
     }
 
+    /// The Darwin notification the sheet posts once it leaves a share, and a running app listens for, for App Group
+    /// `group`.
+    public static func wakeName(group: String) -> String {
+        group + ".share-left"
+    }
+
     // MARK: The sheet's side
 
     /// How many shares wait for the app.

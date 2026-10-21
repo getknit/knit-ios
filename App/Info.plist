@@ -21,6 +21,8 @@
 	<string>3</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>KnitAppGroup</key>
+	<string>$(KNIT_APP_GROUP)</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Knit uses Bluetooth to find people nearby and pass messages from phone to phone, so you can chat without internet or cell service.</string>
 	<key>NSCameraUsageDescription</key>

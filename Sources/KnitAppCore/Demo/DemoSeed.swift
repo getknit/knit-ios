@@ -8,7 +8,8 @@ public import KnitWire
 /// seeds (`-demoScene marketing`), whether it starts at onboarding (`-demoOnboarding`), what the camera answers
 /// (`-demoCamera denied`), whether Choose photo picks a demo photo (`-demoPhoto`) or a GIF made of them
 /// (`-demoPhoto gif`), whether the demo posts a notification to tap (`-demoNotification`), and whether every photo and
-/// every message from someone else looks explicit or abusive to the content filter (`-demoSensitive`).
+/// every message from someone else looks explicit or abusive to the content filter (`-demoSensitive`), and words the
+/// share sheet left for the room (`-demoShare "words"`).
 public struct LaunchOptions: Sendable, Equatable {
     /// Whether to run the demo: seeded stores in memory, a radio that goes nowhere, and a fixed identity.
     public var seedDemo = false
@@ -33,6 +34,8 @@ public struct LaunchOptions: Sendable, Equatable {
     /// the content filter hides, asks and refuses; otherwise they find none so. Nothing in the repository is explicit or
     /// abusive to test with.
     public var demoSensitive = false
+    /// Words the share sheet left for the room as the demo launches, which the UI tests walk (ADR 2026-10.z7a8).
+    public var demoShare: String?
     /// Whether a live launch turns the forward-secrecy ratchet's switch on (`MeshConfiguration.ratchet`, ADR 2026-10.5sk9):
     /// `-ratchet on|off`, or the choice an earlier launch kept, else on (``Choice``). A release build reads no choice, so
     /// it is always on.
@@ -60,6 +63,7 @@ public struct LaunchOptions: Sendable, Equatable {
         }
         demoNotification = arguments.contains("-demoNotification")
         demoSensitive = arguments.contains("-demoSensitive")
+        demoShare = arguments.firstIndex(of: "-demoShare").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
         ratchetChoice = Choice(after: "-ratchet", in: arguments)
         ratchet = (ratchetChoice ?? storedRatchet) != .off
     }
