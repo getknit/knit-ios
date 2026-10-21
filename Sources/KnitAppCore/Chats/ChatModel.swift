@@ -119,7 +119,7 @@ public final class ChatModel {
     @ObservationIgnored let screening: PhotoScreening?
     /// The thread as last built, with whose reactions and typing it shows.
     @ObservationIgnored private var cache = Cached<Int, (state: ChatState, audience: ReactionAudience)>()
-    private var text = ""
+    var text = ""
     /// The photo the composer holds, which Send sends with the draft or alone.
     public internal(set) var staged: StagedPhoto?
     /// The quote the composer holds, which Send sends with the draft and the photo (ADR 2026-10.mn29).
@@ -150,13 +150,16 @@ public final class ChatModel {
     /// working. A tap meanwhile sends nothing more.
     public private(set) var isSending = false
 
-    /// The thread `conversationId` over `session`, making picked photos ready to send through `codec` and checking them
-    /// with `screening`.
-    public init(conversationId: String, session: AppSession, codec: (any ImageCodec)? = nil, screening: PhotoScreening? = nil) {
+    /// The thread `conversationId` over `session`, making picked photos ready with `codec` and checking them with `screening`,
+    /// with `draft` seeded in the composer, which cues no typing, as a share drained in the background must not (ADR 2026-10.z7a8).
+    public init(
+        conversationId: String, session: AppSession, codec: (any ImageCodec)? = nil, screening: PhotoScreening? = nil, draft: String = ""
+    ) {
         self.conversationId = conversationId
         self.session = session
         self.codec = codec
         self.screening = screening
+        text = Composer.clamp(draft)
     }
 
     /// What the composer holds, cut at the limit as it is typed. Each change that leaves words in it tells the thread we
@@ -210,10 +213,12 @@ public final class ChatModel {
     ///
     /// Words that look abusive are not posted in the room, whatever the content filter says, which governs only what we
     /// are shown (`MeshManager.sendChat`). A DM or a group sends them unread: the receiver's phone screens what arrives,
-    /// and its filter decides (ADR 2026-10.spcy). Words the model could not read go.
-    public func send() async {
+    /// and its filter decides (ADR 2026-10.spcy). Words the model could not read go. Answers whether the message was
+    /// stored.
+    @discardableResult
+    public func send() async -> Bool {
         guard !isSending else {
-            return
+            return false
         }
         isSending = true
         defer { isSending = false }
@@ -225,11 +230,11 @@ public final class ChatModel {
         let mentions = MessageMention.carried(pendingMentions, in: sending)
         if state.isRoom, await session.textScreening?.isAbusive(sending, inRoom: true) ?? false {
             wordsRefused = true
-            return
+            return false
         }
         guard await session.send(sending, photo: photo?.photo, replyTo: reply?.reply, mentions: mentions, in: conversationId) != nil
         else {
-            return
+            return false
         }
         if text == sending {
             text = ""
@@ -242,6 +247,7 @@ public final class ChatModel {
         if replying == reply {
             replying = nil
         }
+        return true
     }
 
     /// Accepts the request this thread is.

@@ -298,10 +298,10 @@ actor HeldTextClassifier: TextClassifier {
         let first = Task { await model.send() }
         await classifier.holding()
         #expect(model.isSending)
-        await model.send()
+        #expect(await !model.send(), "a tap while one is under way stores nothing")
         #expect(await classifier.asked == 1, "the second tap checks nothing")
         await classifier.release()
-        await first.value
+        #expect(await first.value, "the first tap stores the message")
         #expect(!model.isSending && model.draft.isEmpty)
         #expect(rig.mesh.calls.room == [Self.fine], "sent once")
     }

@@ -215,6 +215,15 @@ logs in to the desktop by itself, because the Simulator and signing need a deskt
     cached `.dev` profile moved aside, the key fetched a new one from Apple (2026-10-03). Without a key, a new App
     ID's profile, or one that expired, comes from Xcode's window: open the mirror's `App/Knit.xcodeproj`, pick the
     scheme and the iPhone, and build (Product → Build For → Testing for the device tests).
+  - **The share extension's ids and App Groups** (ADR 2026-10.z7a8). `app.getknit.knit.share` and
+    `app.getknit.knit.dev.share` were registered through the App Store Connect API on 2026-10-21 (`POST /v1/bundleIds`).
+    The API has no App Groups resource (`/v1/appGroups` is a 404), so the maintainer registered `group.app.getknit.knit`
+    and `group.app.getknit.knit.dev` in the developer portal the same day, and ticked each on its pair of ids: the store
+    group on `app.getknit.knit` and `.share`, the debug group on `.dev` and `.dev.share`. Before that, `xcodebuild
+    -allowProvisioningUpdates` with the key failed every target with "Authentication failed: Make sure a bearer token
+    was provided", over ssh and in the desktop session alike, while the same key answered the API. After it, a
+    throwaway app and extension carrying the groups built signed in Debug and Release, and every profile listed its
+    group.
   - **`app.getknit.knit` belongs to the App Store build.** It was registered to the team on 2026-10-03, through the
     App Store Connect API. Development builds still sign only the `.dev` id, so a development build and a
     TestFlight build are two apps, each with a Keychain identity of its own.
