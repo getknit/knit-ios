@@ -39,6 +39,7 @@
         let about: AboutInfo
         /// The share sheet's side of the App Group (ADR 2026-10.z7a8), or `nil` when Knit has no container to share.
         let shares: ShareHost?
+        // periphery:ignore - held, never read: the Darwin observer goes with its last reference
         /// The share sheet's call that it left a share, heard while Knit runs.
         private var shareWake: ShareWake?
         /// Stores a minted test identity for the next launch, in a debug build.
