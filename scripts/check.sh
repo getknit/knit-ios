@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # The gates, one subcommand each. CI calls the same subcommands, so a green local run means a green pipeline.
 #
-#     scripts/check.sh fast        # format, lint, build, unit tests (the pre-push hook)
+#     scripts/check.sh fast        # format, lint, build, unit tests, script tests (the pre-push hook)
 #     scripts/check.sh all         # every gate that runs on Linux
-#     scripts/check.sh <gate> ...  # format lint build test coverage tsan asan analyze periphery adr lintorama xcode uitest device devicetest
+#     scripts/check.sh <gate> ...  # format lint build test scripts coverage tsan asan analyze periphery adr lintorama xcode uitest device devicetest
 #                                  # release archive upload shots trailer clips
 #
 # Each build variant (coverage, TSan, ASan, analyze) gets its own --scratch-path, so switching between them never
@@ -189,6 +189,12 @@ gate_adr() {
 	python3 scripts/adr.py index --check
 }
 
+# The scripts' own tests: symbolicate.py's, with the Mac's tools stubbed, so they run here.
+gate_scripts() {
+	step "script tests"
+	python3 -m unittest discover -s scripts -p 'test_*.py'
+}
+
 gate_lintorama() {
 	step "lintorama (markdown, YAML, shell, editorconfig)"
 	# A worktree's .git is a file naming the main checkout's Git dir, so mount that at its host path too. Only when
@@ -238,6 +244,10 @@ xcode_release_app=.build-xcode/Build/Products/Release-iphoneos/Knit.app
 # The App Store build (ADR 2026-10.8cy5): the archive, and what exporting it leaves here.
 xcode_archive=.build-xcode/Knit.xcarchive
 xcode_export=.build-xcode/export
+# Each archive's dSYMs, zipped under its version and build, where the next archive leaves them: a saved crash or hang
+# report reads only against the dSYM of the build that failed (ADR 2026-10.qhsv). CI's release:testflight points this
+# at a folder of the job's own and keeps it as an artifact.
+xcode_dsyms=${KNIT_DSYM_DIR:-.build-xcode/dsyms}
 # Xcode indexes while it builds; Periphery reads this store for the app's own code.
 xcode_index=.build-xcode/Index.noindex/DataStore
 # Each gate names its scheme: Knit for the app and the Simulator's UI tests, KnitDevice for the iPhone's device tests,
@@ -809,6 +819,7 @@ archive_and_export() {
 	scripts/mac-desktop.sh xcodebuild "${xcode_release[@]}" -scheme Knit -destination 'generic/platform=iOS' \
 		-archivePath "$xcode_archive" -allowProvisioningUpdates "${team[@]}" "${key[@]}" archive | "${xcode_pretty[@]}"
 	check_release_app "$xcode_archive/Products/Applications/Knit.app"
+	keep_dsyms
 	# Xcode leaves the build number alone: the one in App/Info.plist is the one App Store Connect sees.
 	python3 - "$destination" "$team_id" >"$xcode_export/ExportOptions.plist" <<'PY'
 import plistlib, sys
@@ -830,6 +841,19 @@ PY
 	if [ "$destination" = export ]; then
 		check_store_ipa "$xcode_export/Knit.ipa" "$team_id"
 	fi
+}
+
+# Zips the archive's dSYMs into $xcode_dsyms as knit-ios-<version>-<build>-dSYMs.zip, which scripts/symbolicate.py
+# reads as it is. A second archive of one build replaces its zip; any other build's stays.
+keep_dsyms() {
+	local plist=$xcode_archive/Info.plist version build zip
+	version=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$plist")
+	build=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' "$plist")
+	zip=$xcode_dsyms/knit-ios-$version-$build-dSYMs.zip
+	mkdir -p "$xcode_dsyms"
+	rm -f "$zip"
+	ditto -c -k --norsrc --keepParent "$xcode_archive/dSYMs" "$zip"
+	echo "kept the dSYMs of $version ($build) in $zip"
 }
 
 # The exported .ipa is $1: its app must carry a sound seal and an App Store profile for team $2, which names no devices,
@@ -888,12 +912,12 @@ run() {
 }
 
 case "${1:-fast}" in
-fast) run format lint build test ;;
-all) run format lint adr build test coverage tsan asan analyze lintorama ;;
-format | lint | build | test | coverage | tsan | asan | analyze | periphery | adr | lintorama | xcode | uitest | device | devicetest | \
-	release | archive | upload | shots | trailer | clips) run "$@" ;;
+fast) run format lint build test scripts ;;
+all) run format lint adr build test scripts coverage tsan asan analyze lintorama ;;
+format | lint | build | test | scripts | coverage | tsan | asan | analyze | periphery | adr | lintorama | xcode | uitest | device | \
+	devicetest | release | archive | upload | shots | trailer | clips) run "$@" ;;
 *)
-	echo "usage: $0 [fast|all|format|lint|build|test|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest|release|archive|upload|shots|trailer|clips]" >&2
+	echo "usage: $0 [fast|all|format|lint|build|test|scripts|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest|release|archive|upload|shots|trailer|clips]" >&2
 	exit 2
 	;;
 esac

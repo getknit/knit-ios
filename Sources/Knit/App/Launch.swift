@@ -54,6 +54,12 @@
         var requestedContactLink: String?
 
         @ObservationIgnored private var history = History(startedAt: SystemClock().wallMilliseconds())
+        /// The saved crash and hang reports, which the app delegate's collector fills before any environment exists.
+        @ObservationIgnored private let crashes: CrashStore
+
+        init(crashes: CrashStore) {
+            self.crashes = crashes
+        }
 
         /// The launch's options, read as each try builds the environment, once protected data can be read: from the
         /// process's own arguments in a debug build (`-seedDemo`, the `-demo…` flags and `-ratchet on|off`), and from
@@ -85,7 +91,7 @@
                 return
             }
             do {
-                let environment = try AppEnvironment.make(Self.options(), launch: history.started(by: trigger))
+                let environment = try AppEnvironment.make(Self.options(), launch: history.started(by: trigger), crashes: crashes)
                 stage = .ready(environment)
                 environment.run()
             } catch {

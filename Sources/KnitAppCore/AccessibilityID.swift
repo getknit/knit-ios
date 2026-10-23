@@ -349,6 +349,20 @@ public enum AccessibilityID {
     public static let aboutVersion = "about_version"
     /// Diagnostics.
     public static let diagnosticsScreen = "screen_diagnostics"
+    /// Diagnostics' row for the newest saved crash (ADR 2026-10.qhsv). Android's crash row has no tag.
+    public static let diagnosticsLastCrash = "diagnostics_last_crash"
+    /// Diagnostics' row for the newest saved hang. Android keeps its ANRs among its crashes, with no row of their own.
+    public static let diagnosticsLastHang = "diagnostics_last_hang"
+    /// A saved report's screen, as Android tags its crash log.
+    public static let crashLogScreen = "screen_crash_log"
+    /// The report screen's Report on GitHub. Android has no tag on its buttons.
+    public static let crashLogReport = "crash_log_report"
+    /// The report screen's Copy.
+    public static let crashLogCopy = "crash_log_copy"
+    /// The report screen's Share.
+    public static let crashLogShare = "crash_log_share"
+    /// The report screen's Delete all.
+    public static let crashLogDelete = "crash_log_delete"
 
     /// What the chat list's status line says, as ``chatListStatus(_:)`` names it. Kept here rather than taken from
     /// `ConnectionStatus`, because the UI test bundles compile this file without the rest of KnitAppCore.

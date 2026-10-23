@@ -2,16 +2,16 @@
     import KnitAppCore
     import SwiftUI
 
-    /// Diagnostics: the mesh as it is now, read every two seconds while on screen, and the debug build's test
-    /// identities.
+    /// Diagnostics: the mesh as it is now, read every two seconds while on screen, the newest saved crash and hang, and
+    /// the debug build's test identities.
     internal struct DiagnosticsView: View {
         /// How often the screen reads the mesh again, in seconds.
         private static let refreshSeconds: Int64 = 2
 
         @State private var model: DiagnosticsModel
 
-        init(session: AppSession, replaceIdentity: IdentityReplacer?) {
-            _model = State(initialValue: DiagnosticsModel(session: session, replaceIdentity: replaceIdentity))
+        init(session: AppSession, replaceIdentity: IdentityReplacer?, crashes: CrashStore?) {
+            _model = State(initialValue: DiagnosticsModel(session: session, replaceIdentity: replaceIdentity, crashes: crashes))
         }
 
         var body: some View {
@@ -25,6 +25,9 @@
                     }
                 } header: {
                     SectionNote(Copy.Diagnostics.thisDevice)
+                }
+                if !model.reports.isEmpty {
+                    ReportSection(reports: model.reports)
                 }
                 if let state = model.state {
                     PeerSection(title: Copy.Diagnostics.linked(state.linked.count), peers: state.linked, none: Copy.Diagnostics.noneLinked)
@@ -52,6 +55,32 @@
                 }
             }
             .accessibilityIdentifier(AccessibilityID.diagnosticsScreen)
+        }
+    }
+
+    /// The newest saved report of each kind, each opening its screen (ADR 2026-10.qhsv): shown only when one is saved,
+    /// as Android's Problem reports section is.
+    private struct ReportSection: View {
+        let reports: [CrashReportRef]
+
+        var body: some View {
+            Section {
+                ForEach(reports) { report in
+                    NavigationLink(value: Route.crashLog(report.kind)) {
+                        VStack(alignment: .leading, spacing: Layout.hairline) {
+                            Text(Copy.CrashReports.title(report.kind))
+                            Text(Copy.CrashReports.saved(Date(milliseconds: report.at).formatted(.relative(presentation: .named))))
+                                .font(.caption)
+                                .foregroundStyle(Palette.secondaryText)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                    .accessibilityIdentifier(
+                        report.kind == .crash ? AccessibilityID.diagnosticsLastCrash : AccessibilityID.diagnosticsLastHang)
+                }
+            } header: {
+                SectionNote(Copy.CrashReports.section)
+            }
         }
     }
 

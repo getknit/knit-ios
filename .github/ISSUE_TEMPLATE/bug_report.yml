@@ -1,3 +1,7 @@
+# The field ids below are a contract with the app. Diagnostics' Report on GitHub fills this form in from a saved crash
+# or hang report (Sources/KnitAppCore/CrashReports/CrashIssueURL.swift, ADR 2026-10.qhsv); renaming or removing an id it
+# fills silently stops that field filling in. CrashIssueURLTests reads this file and fails when a key it sends is
+# missing here, or when its "state" is not one of the options.
 name: Bug report
 description: Report a defect in Knit for iOS.
 title: "[Bug]: "
@@ -75,7 +79,8 @@ body:
     attributes:
       label: Logs or screenshots
       description: >-
-        Screenshots, Settings → Diagnostics, or the phone's log from Console.app on a Mac. Remove anything you
+        Screenshots, Settings → Diagnostics, or the phone's log from Console.app on a Mac. If Knit closed or stopped
+        responding, Settings → Diagnostics → Last crash or Last hang fills this form in for you. Remove anything you
         don't want public, such as names and messages.
   - type: checkboxes
     id: confirmations

@@ -16,9 +16,11 @@
     /// bridge answers `wifi`, `wifi-pin` and `wifi-unpin` itself (``WiFiCommand``); `scan-filter`, since only the
     /// iPhone's radio has a scan probe (``ScanProbeCommand``); `storage`, since only the app keeps its identity in the
     /// Keychain and its database under Data Protection (``StorageCommand``); `photos`, since only the app decodes them
-    /// (``PhotosCommand``); `screen`, since only the app runs the content filter's model (``ScreenCommand``); and the
-    /// `record-` commands, since only the app has ReplayKit (``RecordCommand``, ADR 2026-10.x2cq). Each `status` carries
-    /// `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its memory grow.
+    /// (``PhotosCommand``); `screen`, since only the app runs the content filter's model (``ScreenCommand``); the
+    /// `record-` commands, since only the app has ReplayKit (``RecordCommand``, ADR 2026-10.x2cq); and `crash-now`,
+    /// `hang-now` and `crash-reports`, since only the app saves MetricKit's reports (``CrashCommand``, ADR 2026-10.qhsv).
+    /// Each `status` carries `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its
+    /// memory grow.
     @MainActor
     internal final class Bridge {
         nonisolated private static let bytesPerKilobyte = 1024
@@ -78,6 +80,9 @@
                 }
                 if let ask = RecordCommand.parse(line) {
                     return (await ask.answer(takes), false)
+                }
+                if let ask = CrashCommand.parse(line) {
+                    return (await ask.answer(.live), false)
                 }
                 let reply = await control.handle(line)
                 return (reply.line, reply.quits)

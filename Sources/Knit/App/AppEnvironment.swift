@@ -44,6 +44,8 @@
         private var shareWake: ShareWake?
         /// Stores a minted test identity for the next launch, in a debug build.
         let replaceIdentity: IdentityReplacer?
+        /// The saved crash and hang reports (ADR 2026-10.qhsv): none in a demo but `-demoCrash`'s.
+        private(set) var crashes: CrashStore?
         /// The CoreBluetooth radio, which a demo has none of.
         private let radio: BLERadio?
         /// The mesh, which hears whether Knit is in the background so its links seek peers there (ADR 2026-10.mueg).
@@ -143,16 +145,20 @@
             #endif
         }
 
-        /// The environment `options` ask for, on a launch that went as `launch` says. Throws when the Keychain or the
-        /// database cannot be read yet, before the first unlock since a reboot: the app then waits for protected data
-        /// rather than making a new identity. Only a debug build runs the demo.
-        static func make(_ options: LaunchOptions, launch: Launch.History) throws -> AppEnvironment {
+        /// The environment `options` ask for, on a launch that went as `launch` says, with `crashes` the saved reports.
+        /// Throws when the Keychain or the database cannot be read yet, before the first unlock since a reboot: the app
+        /// then waits for protected data rather than making a new identity. Only a debug build runs the demo.
+        static func make(_ options: LaunchOptions, launch: Launch.History, crashes: CrashStore) throws -> AppEnvironment {
             #if DEBUG
                 if options.seedDemo {
-                    return try demo(options)
+                    let environment = try demo(options)
+                    environment.crashes = options.demoCrash ? DemoCrash.store(now: SystemClock().wallMilliseconds()) : nil
+                    return environment
                 }
             #endif
-            return try live(launch, options: options)
+            let environment = try live(launch, options: options)
+            environment.crashes = crashes
+            return environment
         }
 
         private static func live(_ launch: Launch.History, options: LaunchOptions) throws -> AppEnvironment {

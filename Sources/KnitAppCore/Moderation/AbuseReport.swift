@@ -126,12 +126,7 @@ public struct ReportEmail: Sendable, Equatable, Identifiable {
     /// A `mailto:` link to ``AbuseReport/address`` carrying the subject and text, for a phone without Mail's account,
     /// or `nil` if it cannot be made.
     public var mailto: URL? {
-        // Only the unreserved characters go bare: `URLComponents` leaves `&` and `+` alone in a query item's value,
-        // and a mail app reads them as the next field and a space.
-        let unreserved = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
-        guard let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: unreserved),
-            let encodedBody = body.addingPercentEncoding(withAllowedCharacters: unreserved)
-        else {
+        guard let encodedSubject = QueryValue.encoded(subject), let encodedBody = QueryValue.encoded(body) else {
             return nil
         }
         return URL(string: "mailto:\(AbuseReport.address)?subject=\(encodedSubject)&body=\(encodedBody)")

@@ -94,6 +94,8 @@ document:
 - Direct and group messages now have forward secrecy between phones running Knit for iPhone or Knit for
   Android 2.3 and later, so keys stolen later can't open messages sealed under keys Knit already replaced.
   Reactions and delivery ticks are sealed too, while older phones keep the earlier encryption.
+- When Knit crashes or stops responding, Settings › Diagnostics saves a report on your iPhone. Copy it, share
+  it or open a GitHub bug form filled in from it, and nothing leaves the phone unless you send it.
 
 ### Changed
 

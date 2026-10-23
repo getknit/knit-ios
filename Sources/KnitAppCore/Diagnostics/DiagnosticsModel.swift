@@ -86,15 +86,19 @@ public final class DiagnosticsModel {
     public private(set) var state: DiagnosticsState?
     /// What the last mint said, success or not.
     public private(set) var mintOutcome: String?
+    /// The newest saved report of each kind, crash first (ADR 2026-10.qhsv).
+    public private(set) var reports: [CrashReportRef] = []
     @ObservationIgnored private let session: AppSession
     @ObservationIgnored private let replaceIdentity: IdentityReplacer?
+    @ObservationIgnored private let crashes: CrashStore?
 
     /// Diagnostics over `session`. `replaceIdentity` stores a minted identity where the next launch loads it; it is
-    /// `nil` in a release build, which then offers no test identities.
+    /// `nil` in a release build, which then offers no test identities. `crashes` holds the saved reports.
     @preconcurrency
-    public init(session: AppSession, replaceIdentity: IdentityReplacer? = nil) {
+    public init(session: AppSession, replaceIdentity: IdentityReplacer? = nil, crashes: CrashStore? = nil) {
         self.session = session
         self.replaceIdentity = replaceIdentity
+        self.crashes = crashes
     }
 
     /// Whether this build can mint test identities.
@@ -112,11 +116,14 @@ public final class DiagnosticsModel {
         session.identity.alias
     }
 
-    /// Reads the mesh again.
+    /// Reads the mesh again, and the saved reports, off the main actor.
     public func refresh() async {
         let mesh = await session.diagnostics()
         state = Self.state(
             mesh, directory: session.directory, stores: session.stores, radio: session.radioState, running: session.isRunning)
+        if let crashes {
+            reports = await Task.detached { CrashDiagnostic.Kind.allCases.compactMap(crashes.latest) }.value
+        }
     }
 
     /// Mints an identity whose node id sorts inside the bounds, either of which may be blank, and stores it for the

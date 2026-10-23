@@ -18,10 +18,10 @@ extension KnitUITests {
     /// What the walk tries to post, which the demo's classifier finds abusive like everything else.
     private static let refusedWords = "Heading up now"
 
-    /// Settings: the profile, Report a problem and the terms, About, Support Knit and Diagnostics, each audited, and Stop,
-    /// which leaves the chat list saying so.
+    /// Settings: the profile, Report a problem and the terms, About, Support Knit, Diagnostics and its saved crash, each
+    /// audited, and Stop, which leaves the chat list saying so.
     func walkSettings() throws {
-        let app = launch()
+        let app = launch("-demoCrash")
         try app.appear(AccessibilityID.chatListSettings).tap()
         try audit(app, AccessibilityID.settingsScreen)
 
@@ -45,6 +45,14 @@ extension KnitUITests {
         app.back()
         try app.reveal(AccessibilityID.settingsDiagnostics).tap()
         try audit(app, AccessibilityID.diagnosticsScreen)
+        // `-demoCrash`'s saved crash, and the question Report on GitHub asks before the form opens (ADR 2026-10.qhsv).
+        try app.reveal(AccessibilityID.diagnosticsLastCrash).tap()
+        try audit(app, AccessibilityID.crashLogScreen)
+        try app.reveal(AccessibilityID.crashLogReport).tap()
+        try app.alerts.firstMatch.appear("Report on GitHub's question")
+        audit(app, screen: "Report on GitHub's question")
+        app.alerts.buttons["Cancel"].tap()
+        app.back()
         app.back()
 
         let mesh = try app.reveal(AccessibilityID.settingsMesh)

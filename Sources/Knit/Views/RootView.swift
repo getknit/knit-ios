@@ -18,6 +18,8 @@
         case support
         case terms
         case diagnostics
+        /// The newest saved report of one kind (ADR 2026-10.qhsv).
+        case crashLog(CrashDiagnostic.Kind)
     }
 
     /// Opens a screen on the app's navigation stack. A thread's rows are drawn in a UIKit collection view, outside the
@@ -207,7 +209,12 @@
             case .terms:
                 TermsView()
             case .diagnostics:
-                DiagnosticsView(session: environment.session, replaceIdentity: environment.replaceIdentity)
+                DiagnosticsView(session: environment.session, replaceIdentity: environment.replaceIdentity, crashes: environment.crashes)
+            case .crashLog(let kind):
+                // Diagnostics lists a report only from a store, so a launch without one never comes here.
+                if let crashes = environment.crashes {
+                    CrashLogView(store: crashes, kind: kind)
+                }
             }
         }
     }

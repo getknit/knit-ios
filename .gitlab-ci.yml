@@ -100,6 +100,12 @@ lint:adr-index:
   script:
     - python3 scripts/adr.py index --check
 
+lint:scripts:
+  stage: lint
+  image: python:3.13-alpine
+  script:
+    - python3 -m unittest discover -s scripts -p 'test_*.py'
+
 lint:dco:
   stage: lint
   image: alpine/git:2.47.2
@@ -299,5 +305,15 @@ release:testflight:
   resource_group: app-store-connect
   variables:
     GIT_CLEAN_FLAGS: -ffdx -e /.build-xcode/
+    # check.sh zips the archive's dSYMs here, inside the checkout, which the clean empties before each run.
+    KNIT_DSYM_DIR: dsyms
   script:
     - scripts/check.sh upload
+  # The dSYMs of the build sent to App Store Connect, kept for good: a saved crash or hang report reads only against the
+  # dSYM of the build that failed, and the Mac's next archive replaces this one (scripts/symbolicate.py, ADR
+  # 2026-10.qhsv).
+  artifacts:
+    name: knit-ios-dsyms-$CI_COMMIT_SHORT_SHA
+    paths:
+      - dsyms/
+    expire_in: never

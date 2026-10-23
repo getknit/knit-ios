@@ -26,18 +26,31 @@
     }
 
     /// Builds the environment at launch, before any scene, so the Bluetooth managers exist when iOS relaunches
-    /// Knit in the background to restore them; and routes notification taps.
+    /// Knit in the background to restore them; subscribes to MetricKit's crash and hang reports; and routes
+    /// notification taps.
     @MainActor
     internal final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-        let launch = Launch()
+        let launch: Launch
+        /// Saves what MetricKit says of the last crash or hang (ADR 2026-10.qhsv), whether or not the phone has been
+        /// unlocked since it started. MetricKit is no in-process handler: it hands a failure to the launch after it,
+        /// whenever this subscribes, so the subscription waits until the Bluetooth managers exist.
+        private let collector: MetricKitCollector
+
+        override init() {
+            collector = MetricKitCollector(store: .live)
+            launch = Launch(crashes: .live)
+            super.init()
+        }
 
         func application(_: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
             UNUserNotificationCenter.current().delegate = self
             launch.begin(.launch)
+            collector.start()
             return true
         }
 
         func applicationProtectedDataDidBecomeAvailable(_: UIApplication) {
+            collector.importPast()
             launch.begin(.protectedData)
         }
 

@@ -7,8 +7,9 @@ tree, so switching between them never rebuilds the plain debug tree.
 
 | Command | Runs | When |
 | --- | --- | --- |
-| `scripts/check.sh fast` | format, lint, build, unit tests | before every push (the `pre-push` hook) |
+| `scripts/check.sh fast` | format, lint, build, unit tests, script tests | before every push (the `pre-push` hook) |
 | `scripts/check.sh all` | fast, plus the ADR router check, coverage floors, TSan, ASan, analyze and lintorama | before a merge request, and after touching `KnitWire`, `KnitCrypto` or `KnitMesh` |
+| `scripts/check.sh scripts` | the scripts' own Python tests (`scripts/test_*.py`), with the Mac's tools stubbed | after touching a script that has them |
 | `scripts/check.sh format` / `lint` | `swift format lint --strict`, `swiftlint lint --strict` | while editing |
 | `scripts/check.sh build` / `test` | the strict build; Swift Testing with xUnit output | while editing |
 | `scripts/check.sh coverage` | tests in `.build-cov`, then `scripts/coverage-gate.py`, on half the cores the run may use, a container's CPU quota included; `KNIT_COVERAGE_CORES` sets another number | before a phase closes |
@@ -35,6 +36,13 @@ tree, so switching between them never rebuilds the plain debug tree.
   <path> [dest]` and `shell` do one step each. Ignored files stay where they are, so each side keeps its own
   `.build/`, and `.env` and `.private/` never leave this machine. Anything changed in the mirror is lost at
   the next sync.
+- **Crash and hang reports:** `scripts/symbolicate.py <report>` names the frames of a report someone copied, shared or
+  filed from Knit's Diagnostics (ADR 2026-10.qhsv), against the dSYM of the build that failed: `--dsym` names a
+  bundle, an `.xcarchive` or a zip of dSYMs to read first, then Spotlight and Xcode's archives are searched. Every
+  `check.sh archive` and `upload` keeps its build's dSYMs as `.build-xcode/dsyms/knit-ios-<version>-<build>-dSYMs.zip`
+  on the Mac, and CI's `release:testflight` keeps the same zip as an artifact that never expires. It needs `atos`,
+  `dwarfdump` and `mdfind`, so it runs on the Mac: put the report in the tree and use `scripts/mac.sh run
+  scripts/symbolicate.py <path>`, or `pbpaste | scripts/symbolicate.py -` there.
 - **Coverage floors:** `python3 scripts/coverage-gate.py --scratch-path .build-cov --ratchet` raises the
   floors in `scripts/coverage-floors.json` to today's figures. It never lowers one.
 - **Fuzzing:** `scripts/fuzz.sh [seconds]` builds `Fuzz/` with `-sanitize=fuzzer,address` and runs every
@@ -203,6 +211,12 @@ iOS asks the person holding the phone at a start, and an Allow covers further st
 `record-stop` returns once Knit is back. A new start deletes the last file, and a relaunch forgets it. Pulling runs a
 megabyte per round trip; `record-pull` prints the rate it got.
 
+The bridge also crashes and hangs Knit for the saved reports' trial (ADR 2026-10.qhsv): `{"cmd":"crash-now"}` traps on
+the main thread and `{"cmd":"hang-now","seconds":3}` blocks it, each half a second after replying, and
+`{"cmd":"crash-reports"}` lists what Knit has saved, newest first. MetricKit hands a report to the launch after the one
+that failed, and never to a process under the debugger, so launch Knit with `devicectl`, send one, launch it again and
+ask for the list.
+
 The debug log carries link events, not messages; the bridge's `messages`, `peers` and `digest` answer what the
 store holds. When Knit is not running, copy
 `<dir>/Library/Application Support/Database/knit.sqlite` and its `-wal` out of the mount and open the copy with
@@ -250,6 +264,8 @@ Launch arguments, set in the scheme on the Mac (P7):
 - `-demoShare "<words>"` (with `-seedDemo`) launches with `<words>` waiting for the room in a share inbox of the demo's
   own, as if the share sheet had just left them, so the UI tests walk the drain (ADR 2026-10.z7a8). With
   `-demoSensitive` the room refuses them, and the room's composer takes them back.
+- `-demoCrash` (with `-seedDemo`) gives Diagnostics a saved crash and hang (`DemoCrash`) in a folder of the demo's own,
+  so the UI tests reach a report's screen without crashing Knit (ADR 2026-10.qhsv).
 - `-demoScene edge-cases|fresh|marketing` (with `-seedDemo`) picks what is seeded. `fresh` seeds nothing, so the chat
   list shows its first-run card. `edge-cases`, the default, is the
   cast above: two people with one name, one with none, and nobody linked. `marketing` is for store screenshots

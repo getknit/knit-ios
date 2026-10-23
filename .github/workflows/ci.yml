@@ -102,6 +102,16 @@ jobs:
       - name: Check .agents/memory/decisions.md
         run: python3 scripts/adr.py index --check
 
+  scripts:
+    name: Script tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: symbolicate.py, with the Mac's tools stubbed
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+
   lintorama:
     name: Markdown, YAML, shell and editorconfig
     runs-on: ubuntu-latest

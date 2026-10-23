@@ -96,3 +96,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.tpr5](decisions/2026-10-tpr5-add-contact-pins-a-key.md) | Add contact pins a key from a scanned code or a signed contact link | app, crypto, security |
 | [2026-10.tydq](decisions/2026-10-tydq-knit-is-for-adults.md) | Knit is for adults, and the Knit team reads emailed reports within 24 hours | moderation, store, ui |
 | [2026-10.z7a8](decisions/2026-10-z7a8-a-share-extension-hands-what.md) | A share extension hands what it takes to the app through an App Group | share, ui, signing |
+| [2026-10.qhsv](decisions/2026-10-qhsv-crashes-and-hangs-are-kept.md) | Crashes and hangs are kept on the iPhone and filed by the user | privacy, crash-reports, support |
