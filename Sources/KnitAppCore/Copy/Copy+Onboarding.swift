@@ -233,23 +233,25 @@ extension Copy {
             )
         }
 
-        /// A row's button that asks for a permission.
+        /// A row's button, which goes on to the system's own request for the permission. It says Continue, never Allow:
+        /// App Review rejected build 4 under guideline 5.1.1(iv) for an Allow button before the Bluetooth request, since
+        /// only the system's alert may ask the user to allow.
         public static var allow: String {
             NSLocalizedString(
                 "onboarding.allow",
                 bundle: .main,
-                value: "Allow",
-                comment: "Onboarding: a row's button that asks for a permission"
+                value: "Continue",
+                comment: "Onboarding: a row's button that goes on to the system's permission request; not Allow (guideline 5.1.1(iv))"
             )
         }
 
-        /// What a row's button says to a screen reader: "Allow, Bluetooth".
+        /// What a row's button says to a screen reader: "Continue, Bluetooth".
         public static func allowLabel(_ row: String) -> String {
             format(
                 NSLocalizedString(
                     "onboarding.allow.label",
                     bundle: .main,
-                    value: "Allow, %@",
+                    value: "Continue, %@",
                     comment: "Onboarding: spoken button label; %@ is the row's title"
                 ),
                 row

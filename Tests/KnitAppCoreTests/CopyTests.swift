@@ -135,7 +135,15 @@ import Testing
         #expect(Copy.Profile.scanOutcome(.match, name: "Sam") == "The keys match. Sam is now verified.")
         #expect(Copy.Profile.scanOutcome(.mismatch, name: "Sam").contains("Sam"))
         #expect(Copy.TestIdentity.minted("abc").contains("abc"))
-        #expect(Copy.Onboarding.allowLabel("Bluetooth") == "Allow, Bluetooth")
+        #expect(Copy.Onboarding.allowLabel("Bluetooth") == "Continue, Bluetooth")
+    }
+
+    @Test func noButtonBeforeAPermissionRequestSaysAllow() {
+        // Guideline 5.1.1(iv): only the system's alert asks the user to allow. App Review rejected build 4 for an Allow
+        // button on the onboarding row that leads to the Bluetooth request, and wants Continue or Next instead.
+        for button in [Copy.Onboarding.allow, Copy.Onboarding.allowLabel("Bluetooth"), Copy.Onboarding.start] {
+            #expect(!button.localizedCaseInsensitiveContains("allow"), "\(button)")
+        }
     }
 
     @Test func aWrappedStringReadsAsOneLine() {
