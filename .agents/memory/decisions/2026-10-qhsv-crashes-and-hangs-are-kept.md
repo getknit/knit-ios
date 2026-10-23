@@ -97,6 +97,10 @@ The alternatives:
   - **What it changed.** A debug build keeps the app's code in `Knit.debug.dylib`, which the summary now names, and
     MetricKit lists idle threads with no frames, which a report now says. A second crash on the fixed build showed
     both, and the first report stayed listed once.
-  - **Hang, not yet seen.** Ten seconds of a blocked main thread with Knit on screen and nobody touching the phone
-    left no hang in MetricKit or in the phone's own logs, which fits a hang being input that waits. It needs someone
-    tapping the screen during `hang-now`. Whether Share iPhone Analytics was on is not known either.
+  - **Hang, not delivered yet.** A main thread blocked for 3 and for 10 seconds with Knit on screen left no hang in
+    MetricKit at the next launch, nor among the phone's crash logs. The last run had the maintainer tapping the frozen
+    screen and Settings › Developer › Hang Detection on, whose timer counted the freeze on screen and whose log list then held a spindump
+    and a tailspin of it, so iOS recorded that hang. Those logs are Hang Detection's own, kept apart from what
+    MetricKit hands an app, and MetricKit had still handed nothing over at the next launch. Knit reads MetricKit's past payloads at every
+    launch, so a hang delivered late still lands in Diagnostics; until one does, the path from a hang to a report is
+    tested only with `DemoCrash`'s made-up payload. Whether Share iPhone Analytics was on is not known either.
