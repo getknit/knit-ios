@@ -142,27 +142,28 @@ Adding a custodial type is a flag day, not an additive change. Breaking changes 
 ## What this build sends and understands
 
 Groups joined the MVP's frames on 2026-09-30 (ADR 2026-09.n393), profile photos on 2026-10-03 (ADR 2026-10.nh55),
-photos in chats the same day (ADR 2026-10.6cas), and the blob holder query on 2026-10-05.
+photos in chats the same day (ADR 2026-10.6cas), the blob holder query on 2026-10-05, and the ratchet on 2026-10-19
+(ADR 2026-10.b4yk).
 
 | Frame | We send | We receive |
 | --- | --- | --- |
 | `profile` | on every new link, on edit, and at least every 12 h; `avatarHash` names our photo | pin, verify, carry; the photo shows once its bytes are held |
-| `chat` DM, `enc.v = 1` | yes | yes, always |
+| `chat` DM, `enc.v = 1` | toward a peer whose profile carries no `CAP_RATCHET`, and toward every peer with the ratchet's switch off | yes, always |
 | a photo in a DM or a group | sealed with `AttachmentCrypto`: the hash, type and key inside the sealed content, the hash alone beside `enc`; a picture held already goes as its blob and key, or a room picture under its own hash with no key (ADR 2026-10.f3mv) | kept with the message, its blob wanted, or held from our own sealed copy when a key-less one's author was in that chat; opened in memory with the key when shown |
 | a photo in a room post | `attachmentHash` and `attachmentMime` in the clear; the blob is the photo | kept with the post, its blob wanted |
-| `chat` DM, `enc.v = 2` or `3` | no (`CAP_RATCHET` stays off) | carry and relay; cannot open |
+| `chat` DM, `enc.v = 2` or `3` (the ratchet) | toward a peer whose profile carries `CAP_RATCHET`: v3 when it also carries `CAP_CRYPTO_V3` and the content has a compact form, v2 otherwise (ADR 2026-10.b4yk) | yes, with the switch on (`crypto.md`) |
 | `chat` room post (no recipient, no group) | yes, signed and cleartext | yes |
-| `chat` group message, `enc.v = 1`, roster in `group` | yes, wrapped to each keyed member | yes, after the roster rules (`GroupRoster`) |
-| `chat` group message, `enc.v = 2` (the group ratchet) | no (`CAP_RATCHET` stays off) | carry and relay; cannot open |
+| `chat` group message, `enc.v = 1`, roster in `group` | while any other member lacks `CAP_RATCHET` or a valid prekey, or with the switch off: wrapped to each keyed member | yes, after the roster rules (`GroupRoster`) |
+| `chat` group message, `enc.v = 2` (the group ratchet) | when every other member's profile carries `CAP_RATCHET` and a valid prekey, and the epoch's seed seals to each of them (ADR 2026-10.b4yk) | yes, with the switch on (`crypto.md`) |
 | `groupupdate`, empty payload, roster in `group` | on rename | yes: name and roster |
 | `groupleave`, `GroupLeaveContent`, no `group` | on leave | yes: the sender departs |
 | `receipt`, `relay = true`, `sentAt` set | our DM acks | yes: ✓✓ on our DMs |
 | `receipt`, `relay = false`, no `sentAt` | room and group ticks over the link | yes: Android's room and group ticks to us |
 | `keyreq` (`relay = false`, signed) | when a sender's key is missing | answer with cached signed profiles |
 | `blobreq` (unsigned, `relay = false`, `sentAt` 0, no `offset`) | to the best holder a query found, or blind: the author, then the hop the frame came from, then every other neighbour once a 5 s grace is up; a cycle at most every 45 s, on a link-up or the 60 s tick (knit-next ADRs 2026-10.f7gg and 2026-10.6e5t) | serve it if held, as FILE records of kind ATTACHMENT, the whole file whatever `offset` says; otherwise want it, never asking the asker back that cycle; never flood it (ADR 2026-10.ym9y) |
-| `blobhave` (unsigned, `relay = false`, `sentAt` 0, ≤ 32 hashes) | in a debug build, and from knit-peer: to each neighbour whose HELLO carries `CAP_BLOB_HAVE`, one frame per neighbour per step | answer every one, from the link that carried it and only when its sender is that link's peer, within 16 a burst and one a second; never flood it |
+| `blobhave` (unsigned, `relay = false`, `sentAt` 0, ≤ 32 hashes) | in every build, the app's and knit-peer's (`MeshConfiguration.queriesBlobHolders`, ADR 2026-10.m9uq's amendment of 2026-10-09): to each neighbour whose HELLO carries `CAP_BLOB_HAVE`, one frame per neighbour per step | answer every one, from the link that carried it and only when its sender is that link's peer, within 16 a burst and one a second; never flood it |
 | `blobhas` (unsigned, `relay = false`, `sentAt` 0) | the answer: NONE, HAVE with the size, SENDING, or FETCHING per hash, our `load` and the query's `re`; never an `eta` | taken only from a neighbour queried this cycle for a hash it names; a state this build does not know is never HAVE; a SENDING `eta` holds the ask on that holder until then plus 30 s, the `eta` taken as at most 15 min (ADR 2026-10.ds45) |
-| `blobprog` (unsigned, `relay = false`, `sentAt` 0, `BlobProgressContent`: hash, held, ms) | every 2 s of a kept file's chunks, to its sender when that link's HELLO carries `CAP_BLOB_HAVE` and not `CAP_DOORBELL` (knit-next ADR 2026-10.nsr7) | counted, from the link that carried it and only when its sender is that link's peer; nothing here measures a feed; never flood it (ADR 2026-10.ds45) |
+| `blobprog` (unsigned, `relay = false`, `sentAt` 0, `BlobProgressContent`: hash, held, ms) | while a file streams in, kept or skipped, to its sender: on every chunk that brings 2 KiB, at least every 500 ms, and once more 500 ms after chunks no report carried; every 2 s with the window off. Only when that link's HELLO carries `CAP_BLOB_HAVE`, an iPhone included (knit-next ADR 2026-10.nsr7, ADR 2026-10.xwjc) | counted, from the link that carried it and only when its sender is that link's peer; it clocks the window of the file we feed that peer (`FeedWindow`, ADR 2026-10.xwjc); never flood it (ADR 2026-10.ds45) |
 | `blobcancel` (unsigned, `relay = false`, `sentAt` 0, `BlobCancelContent`: hash) | to a neighbour our ask is on, when the fetch falls back from it while it is linked, and to every neighbour asked but the one the blob came from once it lands; never at a blind round's widening, nor to one that said at or after the ask that it lacks the blob; once per ask, and only where `blobprog` goes (knit-next ADR 2026-10.nsr7) | from the link that carried it and only when its sender is that link's peer: a copy of the blob still waiting on that link comes off it, and the serve memo forgets it; one already streaming goes on; never flood it (ADR 2026-10.ds45) |
 | `reaction`, `relay = true`, `sentAt` set, no recipient, no group | when the user reacts, in any thread, toggling as Android does (ADR 2026-10.ehe6) | yes: one emoji, last writer wins per message and reactor; never acked or notified |
 | a reply's quote, `ReplyRef` | in `ChatContent.replyTo` in the clear for a room post, in `MessageContent.replyTo` sealed for a DM or a group, never in a sealed frame's shell; the snippet cut at 120 UTF-16 units as Android's composer cuts it (ADR 2026-10.mn29) | kept with the message as it came, first copy wins, `author` and `snippet` clipped to 256; a cleartext quote beside `enc` ignored; nothing checked against the original |

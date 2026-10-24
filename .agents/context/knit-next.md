@@ -214,13 +214,21 @@ Kotlin wins.
       `9c3d487b` (2026-10-19):
       - **What comes in:** 14 fixtures for features this port has not taken. Calls (`messageContentCall*`, `bd7c905b`,
         knit-next ADR 2026-10.3tee), supporter badges on the profile (`profilePayloadBadges`,
-        `messageContentV2ProfileBadges`, `e3e41a2e`, knit-next ADR 2026-10.r99s), short videos (`messageContentVideo`,
-        `messageContentV2Video`, `chatContentVideo`, `13387e0a`), and two blob request fields: `fastOnly`, which asks
-        before a large Bluetooth-only download (`3b03c5f9`), and `pull` with its `until` (`385bfba0`).
+        `messageContentV2ProfileBadges`, `e3e41a2e`, knit-next ADR 2026-10.r99s, knit-ios #10), short videos
+        (`messageContentVideo`, `messageContentV2Video`, `chatContentVideo`, `13387e0a`, knit-ios #9), and two blob
+        request fields: `fastOnly`, which asks before a large Bluetooth-only download (`3b03c5f9`), and `pull` with its
+        `until` (`385bfba0`).
       - **What this port does with them:** decodes each to the type it already has and drops the new fields, which
         `GoldenVectorTests.whatThisBuildDoesNotModelStillDecodes` pins. It models none of them, so none has a typed
         test. `fastOnly` marks an asker that takes the bytes over Wi-Fi Aware alone (knit-next ADR 2026-10.js2p), which
-        this port cannot honour. Whether Android sends one to an iPhone is not yet checked.
+        this port cannot honour. Android sends one only to a neighbour with a Wi-Fi Aware route
+        (`BlobExchange.kt:493` at `eac3debc`), so an iPhone never gets one. `pull` and `until` carry knit-next ADR
+        2026-10.2drc's hop budget for a pull-through, whose iOS half is owed: until it lands, Android reads an
+        iPhone's ask as a fetch only, and an iPhone's echoes can keep a want alive with no phone behind it that needs
+        the blob.
+      - **Since then:** knit-next `main` at `eac3debc` adds four fixtures and moves none: two scope-config ctls
+        (`messageContentScopeConfigDm` and `Group`, `33d83aca`), which this port takes as the chain-advancing no-op
+        Android counts on, and two commons posts (`651cdc25`), which only a spool carries (knit-ios #11).
     - knit-next companion change A9 (ADR 2026-10.5sk9), merged into knit-next's local `main` with A10 by 2026-10-18
       (`4f3cd995`, not pushed), past the pin:
       - **What comes in:** `vectors/ratchet-v1.json`, synced alone with `scripts/sync-vectors.py --only
@@ -288,14 +296,16 @@ Kotlin wins.
       `BLE_FEED_WINDOW`, each ahead of its own trial. `6760b843` documents them in `docs/BLUETOOTH_PLANE.md`. Only
       `BLOB_QUERY` changes what this port does: the app now queries in every build (ADR 2026-10.m9uq's amendment of
       2026-10-09). With the others, a release Android phone now finds a foreground iPhone through its GATT payload and
-      dials it, hunts a Coded peer in windows deaf to an iPhone, and feeds an iPhone at the paced base, since it never
-      boosts or windows an iPhone link (`ble-transport.md`; knit-next ADR 2026-10.5buf, mirrored below).
+      dials it, hunts a Coded peer in windows deaf to an iPhone, and never boosts an iPhone link. It fed an iPhone at
+      the paced base until `e658eb6f` let the iPhone's reports window that feed (`ble-transport.md`; knit-next ADR
+      2026-10.5buf, mirrored below).
     - knit-next ADR 2026-10.5buf, a file clocked by its receiver's reports, with both amendments of 2026-10-08, and
       knit-next ADR 2026-10.8jwn's budget as its fallback (ADR 2026-10.xwjc, 2026-10-09). Read from the working tree
       at `713b29d6`: `FeedWindow.kt` (ported whole but for its Coded parts and resume), `RxReports.kt` (the cadence),
       `FramedLink.kt:367-430` and `:686-828`, `CodedPhyPolicy.kt:311-387` and `BluetoothMeshTransport.kt:1174-1227`.
-      This port also windows and reports to iPhones, where Android keeps two gates (`BleFeedPolicy.windowed`,
-      `BlobExchange.onFileProgress`) that the maintainer lifts in knit-next (roadmap). When the pin passes 5buf, check
+      This port also windows and reports to iPhones. Android left iPhones out behind two gates
+      (`BleFeedPolicy.windowed`, `BlobExchange.onFileProgress`) until `e658eb6f` (2026-10-09, on its `main`) lifted
+      both. The device run that checks it is owed (knit-ios #6). When the pin passes 5buf, check
       `FeedWindow.kt` against `FeedWindowTests` and `FeedWindowSimTests`, and `RxReports.kt` against
       `LinkFileProgressTests`.
     - knit-next AND-3, `a03fe167` (`fix/gatt-only-link-score`, built and trialled as `b7c13e57`), merged on knit-next's

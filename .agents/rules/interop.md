@@ -41,7 +41,8 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   out of `Capabilities.local`, the signed profile and the emitted vectors. Answering is never gated; only asking is
   (`MeshConfiguration.queriesBlobHolders`). A file's progress report, `blobprog`, and an asker's withdrawal,
   `blobcancel`, ride the same bit: each goes only to a neighbour whose HELLO carries it, an iPhone included (knit-next
-  ADR 2026-10.nsr7, ADR 2026-10.ds45, ADR 2026-10.xwjc). Android still sends an iPhone no `blobprog`.
+  ADR 2026-10.nsr7, ADR 2026-10.ds45, ADR 2026-10.xwjc). Android has sent an iPhone `blobcancel` since nsr7,
+  and `blobprog` since knit-next `e658eb6f`.
 - **Text limits count UTF-16 code units,** and whitespace is what ART says it is, not the desktop JDK: regex
   `\s` is Unicode White_Space, and `isWhitespace` is ART's own list, pinned from knit-next's `ArtTextSemanticsTest`
   (ADR 2026-10.7uyt). Node ids compare as ASCII strings, never as raw bytes.

@@ -95,10 +95,10 @@ bytes. The tags:
 - Android caps each socket write at `min(maxTransmitPacketSize, 8192)` bytes. Keep our writes at 8 KiB or less.
 - Android clocks a file to a peer that reports by the peer's `blobprog` reports (`FeedWindow`, knit-next ADR
   2026-10.5buf): a window of `rate × (round trip + 250 ms)`, 4 to 64 KiB, in chunks of about a quarter second of the
-  rate. A peer that reports is an Android build whose HELLO carries `CAP_BLOB_HAVE`. Android never windows an iPhone
-  (`BleFeedPolicy.windowed`) and sends one no report (`BlobExchange.onFileProgress`), two gates the maintainer lifts
-  in knit-next. Otherwise, and as the fallback for a silent or two-second receiver, it paces by the link's PHY, read
-  again before every chunk (`CodedPhyPolicy.pace`, #114):
+  rate. A peer that reports is any whose HELLO carries `CAP_BLOB_HAVE`, an iPhone included: knit-next `e658eb6f`
+  lifted the two gates that left iPhones out (`BleFeedPolicy.windowed`, `BlobExchange.onFileProgress`), and no
+  device run has checked either direction since (knit-ios #6). Otherwise, and as the fallback for a silent or
+  two-second receiver, it paces by the link's PHY, read again before every chunk (`CodedPhyPolicy.pace`, #114):
   - on 1M and 2M, one budget of 4 KiB/s split evenly across the links feeding at the pace, each chunk two seconds of
     a link's share, from 2 to 16 KiB (knit-next ADR 2026-10.8jwn; it was 28 KiB/s a link before);
   - 1 KiB/s in 2 KiB chunks on Coded, outside the split.

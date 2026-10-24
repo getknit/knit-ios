@@ -111,3 +111,9 @@ So this is a port, not a redesign.
 meter (`FeedMeter`, ported from `FeedMeter.kt`) beside its window, a second ask for a blob being fed live is parked
 behind it, and a SENDING answer carries `eta`. A file the iPhone skips is reported at this ADR's cadence too, so an
 Android sender's window no longer falls back to the pace for want of reports.
+
+**Amended 2026-10-24:** knit-next `e658eb6f` (2026-10-09, on its `main`, "Paired iOS change (5buf, nsr7)") lifted both
+gates this ADR waited on. `BleFeedPolicy.windowed` windows any peer whose HELLO carries `CAP_BLOB_HAVE`, and
+`BlobExchange.onFileProgress` reports to one, an iPhone included. The first two limits above no longer hold: an
+iPhone feeding Android hears its reports, and Android windows its feed to an iPhone. No code moved here. The device
+run that checks both directions is owed (knit-ios #6).

@@ -556,12 +556,11 @@ explicit direction.** Update this file in the change that ships an item.
   showed"). A bad record's warning now carries what the link read around it, so the next one can be read from the
   iPhone's log. Android rings only links the iPhone dialed until A3, which must then take a dialed iPhone's
   capabilities from its HELLO reply rather than its advert.
-- **Android windows its feed to an iPhone, and reports to one** (knit-next ADR 2026-10.5buf; ADR 2026-10.xwjc): two
-  gates in knit-next, which the maintainer lifts there. `BleFeedPolicy.windowed` leaves out a peer whose HELLO carries
-  `CAP_DOORBELL`, so Android feeds an iPhone at its paced base. `BlobExchange.onFileProgress` sends an iPhone no
-  `blobprog`, so an iPhone feeding Android hears nothing, waits out 3 s of silence, and goes on at the 4 KiB/s
-  fallback. This port reports at the window's cadence and windows any reporting peer already. Check both directions
-  with `interop.py iphone-photos` once both gates lift.
+- **Android windows its feed to an iPhone, and reports to one** (knit-next ADR 2026-10.5buf; ADR 2026-10.xwjc):
+  knit-next `e658eb6f` (2026-10-09) lifted both of Android's iPhone gates, `BleFeedPolicy.windowed` and
+  `BlobExchange.onFileProgress`, and this port windowed and reported already. Still owed: `interop.py iphone-photos`
+  both ways against a Pixel at or past `e658eb6f`, to show that each side windows its feed rather than falling back
+  to the pace (knit-ios #6).
 - **An iPhone's links run on a 720 ms supervision timeout** (knit-next #102): iOS sets it as the central, and Android's
   stack puts it back after the doorbell lookup briefly raises it to 5 s. One dropped at about 10 m in the walk test
   (`.agents/context/linux-peer.md`, "What the walk test showed"). The fix is on Android's side: knit-next `82898694`

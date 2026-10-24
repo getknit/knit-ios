@@ -89,7 +89,8 @@ with such a member.
 
 A v1 group message is sealed the way a DM is, to several people at once (`MeshManager.kt:1159-1179`).
 Android seals a group's message with v1 unless every other member's profile carries `CAP_RATCHET` and a
-prekey, so every group with an iPhone in it is v1 (ADR 2026-09.n393).
+prekey. Every group with an iPhone in it was v1 until the ratchet's flip (ADR 2026-09.n393, ADR 2026-10.b4yk), and one
+with an iPhone whose switch is off still is.
 
 ```text
 header = UTF-8("{id}|{senderId}|{sentAt}|{groupId}")
