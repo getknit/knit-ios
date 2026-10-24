@@ -55,15 +55,15 @@ import Testing
         let reader = rig.reader
         let group = rig.group
         let afterMint = seedsTo(alice, in: fixture)
-        try request(group.id, from: reader.android, id: "req-1", to: fixture)
+        try request(group.id, from: reader.android, id: frameIdOf("req-1"), to: fixture)
         #expect(seedsTo(alice, in: fixture) == afterMint + 1, "a member's request re-seals our current seeds")
         let resent = try #require(fixture.chats(to: alice).last)
         let answer = try #require(try reader.receive(resent, from: me))
         #expect(answer.gk?.keys.map(\.epoch) == [1] && answer.gk?.group?.id == group.id, "never advancing the epoch")
-        try request(group.id, from: reader.android, id: "req-2", to: fixture)
+        try request(group.id, from: reader.android, id: frameIdOf("req-2"), to: fixture)
         #expect(seedsTo(alice, in: fixture) == afterMint + 1, "once per floor")
         let outsider = try AndroidPeer(bob)
-        try request(group.id, from: outsider, id: "req-bob", to: fixture)
+        try request(group.id, from: outsider, id: frameIdOf("req-bob"), to: fixture)
         #expect(fixture.seeds(to: outsider).isEmpty, "a non-member's request re-seals nothing")
         #expect(fixture.engine.groupCounts.groupSeedsSent == 2 && fixture.stores.groupRatchet.sendChains(group.id).count == 1)
     }
@@ -77,10 +77,10 @@ import Testing
         let reader = rig.reader
         let group = rig.group
         try fixture.depart(alice, from: group, at: now + 1)
-        try request(group.id, from: reader.android, id: "req-gone", to: fixture)
-        #expect(seedsTo(alice, in: fixture) == 1 && fixture.stores.messages.message("req-gone") == nil, "departed: nothing")
+        try request(group.id, from: reader.android, id: frameIdOf("req-gone"), to: fixture)
+        #expect(seedsTo(alice, in: fixture) == 1 && fixture.stores.messages.message(frameIdOf("req-gone")) == nil, "departed: nothing")
         let other = roster([me, alice, bob], createdBy: me)
-        try request(other.id, from: reader.android, id: "req-unknown", to: fixture)
+        try request(other.id, from: reader.android, id: frameIdOf("req-unknown"), to: fixture)
         #expect(seedsTo(alice, in: fixture) == 1, "a group we do not hold: nothing")
     }
 
@@ -130,7 +130,8 @@ import Testing
         let before = seedsTo(alice, in: fixture)
         let wiped = try AndroidPeer(alice)
         fixture.deliver(
-            try wiped.resetDm(to: me, prekey: try fixture.ourPrekey(), id: "rst", at: fixture.clock.wallMilliseconds()), from: wiped)
+            try wiped.resetDm(to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("rst"), at: fixture.clock.wallMilliseconds()),
+            from: wiped)
         let sent = fixture.chats(to: alice).dropFirst(before).compactMap { wiped.peek($0, from: me) }
         let seeds = sent.filter { $0.ctl == MessageContent.Control.groupKey }
         #expect(seeds.count == 1, "forced past the ack the wipe made stale: \(sent.map(\.ctl))")
@@ -158,7 +159,8 @@ import Testing
         let group = rig.group
         let ack = MessageContent(body: "", ctl: MessageContent.Control.groupKeyAck, gk: GroupKeyPayload(groupId: group.id, ackEpoch: 1))
         fixture.deliver(
-            try reader.android.dm(ack, to: me, prekey: try fixture.ourPrekey(), id: "ack-1", sentAt: now + 1), from: reader.android)
+            try reader.android.dm(ack, to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("ack-1"), sentAt: now + 1),
+            from: reader.android)
         #expect(fixture.stores.groupRatchet.keySend(group.id, member: alice.nodeId)?.ackedEpoch == 1)
         fixture.engine.flushPendingGroupKeys(for: alice.nodeId, force: false)
         fixture.engine.flushPendingGroupKeys(for: me.nodeId, force: true)

@@ -181,7 +181,7 @@ import Testing
         #expect(fixture.engine.ackSync.ridingFor(alice.nodeId) == later.count)
 
         fixture.clock.advance(Self.minute)
-        let reset = try android.resetDm(to: me, prekey: try fixture.ourPrekey(), id: "android-reset", at: now + Self.minute)
+        let reset = try android.resetDm(to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("android-reset"), at: now + Self.minute)
         fixture.deliver(reset, from: android)
         let seals = fixture.transport.written(.chat).filter { $0.envelope.id == id }
         #expect(seals.count == 2, "sealed again once")

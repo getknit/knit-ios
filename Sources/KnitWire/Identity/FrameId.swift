@@ -1,12 +1,26 @@
 /// Frame ids: 16 random bytes as URL-safe base64 with no padding, 22 characters (`FrameId.kt` in knit-next).
 ///
-/// Profiles use `profile-<nodeId>-<publishedAt>` instead, so an id is opaque everywhere except where a
-/// canonical one is needed.
+/// Profiles use `profile-<nodeId>-<publishedAt>` instead (``profileId(sender:publishedAt:)``), and Android's walkie
+/// chunks, `talk`, the first ``talkLength`` characters of a fresh id.
+///
+/// **Not opaque on the way in** (knit-next ADR 2026-10.9qr4, knit-next #178, mirrored from knit-next `a81f2050`). The
+/// router refuses a frame whose id is not the shape its type is minted with (``admits(_:)``), so changing this format,
+/// or minting any other shape, is a wire break: every build of either platform that ships before the change drops the
+/// new ids unseen. Android needs the gate because its database binds every id as UTF-16 and SQLite drops one leading
+/// U+FEFF there, so `"\u{FEFF}" + X` took `X`'s rows. This port keeps every byte (ADR 2026-09.jc2x) and never had the
+/// collision, but a frame Android refuses and this port custodies is re-served to every Android neighbour at every
+/// exchange for its custody life, so both refuse the same ids at the same door. Past the door an id is opaque again:
+/// it is compared by its bytes (`ExactKey`) and never parsed.
 public enum FrameId {
     /// An id's length in bytes.
     public static let byteCount = 16
     /// A canonical id's length in characters.
     public static let length = 22
+    /// A walkie chunk's id length in characters, all base64url: the prefix of a fresh id Android's `talk` carries
+    /// (`TALK_LENGTH`, `FrameId.kt:33` at knit-next `a81f2050`). This port neither sends nor opens one.
+    public static let talkLength = 11
+
+    private static let urlAlphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".utf8)
 
     /// A fresh id, from the injected generator so a test or a chaos run can reproduce it.
     public static func generate(using generator: inout some RandomNumberGenerator) -> String {
@@ -30,11 +44,40 @@ public enum FrameId {
     /// The 16 bytes of a canonical id, or `nil` for any other string.
     public static func bytes(of id: String) -> [UInt8]? {
         guard id.utf8.count == length, let bytes = Base64.decode(id, variant: .urlSafeUnpadded), bytes.count == byteCount,
-            Base64.encode(bytes, variant: .urlSafeUnpadded) == id
+            Base64.encode(bytes, variant: .urlSafeUnpadded).utf8.elementsEqual(id.utf8)
         else {
             return nil
         }
         return bytes
+    }
+
+    /// The id of `sender`'s profile published at `publishedAt`, which is also the frame's `sentAt`
+    /// (`FrameId.profileId`, `FrameId.kt:80` at knit-next `a81f2050`). A negative stamp prints its sign, so
+    /// `profile-<node>--5` is a profile id.
+    public static func profileId(sender: String, publishedAt: Int64) -> String {
+        "profile-\(sender)-\(publishedAt)"
+    }
+
+    /// Whether an inbound frame's id is the shape its type is minted with: the gate the router asks before it meters,
+    /// dedups, delivers, custodies or relays anything (`FrameId.admits`, `FrameId.kt:72` at knit-next `a81f2050`).
+    ///
+    /// - a `profile`: exactly ``profileId(sender:publishedAt:)`` of its sender and `sentAt`, the sender a canonical
+    ///   node id, so nobody files a frame under another node's profile id;
+    /// - a `talk`: exactly ``talkLength`` base64url characters;
+    /// - anything else, an unknown type included: a canonical frame id (``bytes(of:)``).
+    ///
+    /// Every admitted shape is ASCII. The id is compared and measured by its UTF-8 bytes: Swift's `==` is canonical
+    /// equivalence, which calls a Kelvin sign a `K`, and `count` counts graphemes (ADR 2026-09.jc2x).
+    public static func admits(_ envelope: RelayEnvelope) -> Bool {
+        switch envelope.type {
+        case .profile:
+            NodeId(envelope.senderId) != nil
+                && envelope.id.utf8.elementsEqual(profileId(sender: envelope.senderId, publishedAt: envelope.sentAt).utf8)
+        case .talk:
+            envelope.id.utf8.count == talkLength && envelope.id.utf8.allSatisfy(urlAlphabet.contains)
+        default:
+            bytes(of: envelope.id) != nil
+        }
     }
 }
 

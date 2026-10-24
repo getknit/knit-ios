@@ -245,7 +245,15 @@ public final class MeshEngine {
     /// A frame arrived over a link (`MeshRouter.handleInbound`): deliver it if it is new, then relay it.
     public func receive(_ frame: InboundFrame) {
         let now = clock.monotonicMilliseconds()
-        guard router.admit(frame, now: now) == .new else {
+        switch router.admit(frame, now: now) {
+        case .new:
+            break
+        case .nonCanonical:
+            // Named so a trial can find the frame; counted in the router's counters, not `dropped`, which holds frames
+            // that were still relayed.
+            log.log(.debug, "mesh drop \(frame.envelope.type.rawValue) \(frame.envelope.id) from \(frame.envelope.senderId): nonCanonical")
+            return
+        case .duplicate, .refused:
             return
         }
         deliver(frame)

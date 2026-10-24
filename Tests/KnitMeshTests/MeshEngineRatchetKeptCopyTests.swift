@@ -1,6 +1,7 @@
 import Foundation
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -36,14 +37,15 @@ import Testing
         let prekey = try iphone.ourPrekey()
         let fast = 30 * Self.minute
 
-        let olderFrame = try android.dm(older, to: me, prekey: prekey, id: "older", sentAt: now + fast)
+        let olderFrame = try android.dm(older, to: me, prekey: prekey, id: frameIdOf("older"), sentAt: now + fast)
         refusing.refusesWrites = true
         iphone.deliver(olderFrame, from: android)
         refusing.refusesWrites = false
         #expect(iphone.engine.dropped[.storeRefused] == 1)
         iphone.deliver(olderFrame, from: carol)
         iphone.clock.advance(2 * Self.minute)
-        iphone.deliver(try android.dm(newer, to: me, prekey: prekey, id: "newer", sentAt: now + fast + 2 * Self.minute), from: android)
+        iphone.deliver(
+            try android.dm(newer, to: me, prekey: prekey, id: frameIdOf("newer"), sentAt: now + fast + 2 * Self.minute), from: android)
         let shown = held(stores)
 
         guard case .sent = iphone.engine.sendRatchetReset(to: alice.nodeId) else {
@@ -90,7 +92,7 @@ import Testing
         let iphone = try EngineFixture.ratcheting(me, stores: stores)
         let android = try AndroidPeer(alice)
         try iphone.pin(android)
-        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: "dm-1", sentAt: now, v3: true)
+        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now, v3: true)
         let stripped = TestFrame(wire: WireEnvelope(relay: false, sig: [], signed: frame.envelope.encoded), envelope: frame.envelope)
 
         refusing.refusesWrites = true
@@ -100,8 +102,8 @@ import Testing
         #expect(iphone.engine.dropped[.storeRefused] == 2, "both copies' units failed")
 
         iphone.advance(sweep)
-        #expect(stores.messages.message("dm-1")?.body == "hello")
-        #expect(iphone.acknowledged(by: android) == ["dm-1"])
+        #expect(stores.messages.message(frameIdOf("dm-1"))?.body == "hello")
+        #expect(iphone.acknowledged(by: android) == [frameIdOf("dm-1")])
         #expect(iphone.engine.dropped[.unsigned] == nil)
     }
 
@@ -123,7 +125,7 @@ import Testing
         let hash = BlobHash(of: sealed.blob)
         let content = MessageContent(
             body: "look", attachmentHash: hash.string, attachmentMime: "image/jpeg", attachmentKey: Base64.encode(sealed.key))
-        let frame = try android.dm(content, to: me, prekey: try iphone.ourPrekey(), id: "photo-1", sentAt: now)
+        let frame = try android.dm(content, to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("photo-1"), sentAt: now)
         iphone.transport.clear()
 
         refusing.refusesRows = true
@@ -153,9 +155,9 @@ import Testing
         let iphone = try EngineFixture.ratcheting(me, stores: stores)
         let android = try AndroidPeer(alice)
         try iphone.pin(android)
-        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: "dm-1", sentAt: now)
+        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now)
         iphone.deliver(frame, from: android)
-        #expect(iphone.acknowledged(by: android) == ["dm-1"])
+        #expect(iphone.acknowledged(by: android) == [frameIdOf("dm-1")])
         _ = iphone.engine.drainEvents()
         guard case .sent = iphone.engine.sendRatchetReset(to: alice.nodeId) else {
             Issue.record("our reset goes")
@@ -169,8 +171,8 @@ import Testing
 
         iphone.advance(sweep)
         #expect(receivedRecords(in: iphone.engine.drainEvents()).isEmpty)
-        #expect(iphone.acknowledged(by: android) == ["dm-1"], "its row let the copy go, unopened and unacknowledged")
-        #expect(iphone.stores.custody.contains("dm-1"), "our sealed receipt purged nothing of ours (phase P5d)")
+        #expect(iphone.acknowledged(by: android) == [frameIdOf("dm-1")], "its row let the copy go, unopened and unacknowledged")
+        #expect(iphone.stores.custody.contains(frameIdOf("dm-1")), "our sealed receipt purged nothing of ours (phase P5d)")
     }
 
     /// A sealed receipt, which has no row, whose unit fails: the sweep applies it once, and the next sweep opens nothing.
@@ -185,7 +187,7 @@ import Testing
         let ours = try #require(iphone.engine.sendDirectMessage("hi", to: alice.nodeId)).id
         _ = iphone.engine.drainEvents()
         let receipt = MessageContent(body: "", ctl: MessageContent.Control.receipt, ack: ours)
-        let frame = try android.dm(receipt, to: me, prekey: try iphone.ourPrekey(), id: "tick-1", sentAt: now)
+        let frame = try android.dm(receipt, to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("tick-1"), sentAt: now)
 
         refusing.refusesWrites = true
         iphone.deliver(frame, from: android)

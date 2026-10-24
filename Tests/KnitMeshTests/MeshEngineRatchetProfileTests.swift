@@ -40,14 +40,17 @@ import Testing
         let prekey = try fixture.ourPrekey()
         #expect(fixture.stores.peers.peer(alice.nodeId)?.openToChat == false)
         let fresh = ProfilePayload(name: "Ann", status: "", version: 20, openToChat: true)
-        fixture.deliver(try android.dm(profileUpdate(fresh), to: me, prekey: prekey, id: "ctl-otc-1", sentAt: now), from: android)
+        fixture.deliver(
+            try android.dm(profileUpdate(fresh), to: me, prekey: prekey, id: frameIdOf("ctl-otc-1"), sentAt: now), from: android)
         #expect(fixture.stores.peers.peer(alice.nodeId)?.openToChat == true)
         #expect(fixture.stores.peers.peer(alice.nodeId)?.updatedAt == 20)
         let stale = ProfilePayload(name: "Ann", status: "", version: 15)
-        fixture.deliver(try android.dm(profileUpdate(stale), to: me, prekey: prekey, id: "ctl-otc-2", sentAt: now), from: android)
+        fixture.deliver(
+            try android.dm(profileUpdate(stale), to: me, prekey: prekey, id: frameIdOf("ctl-otc-2"), sentAt: now), from: android)
         #expect(fixture.stores.peers.peer(alice.nodeId)?.openToChat == true, "an older sealed update is ignored whole")
         let newer = ProfilePayload(name: "Ann", status: "", version: 30)
-        fixture.deliver(try android.dm(profileUpdate(newer), to: me, prekey: prekey, id: "ctl-otc-3", sentAt: now), from: android)
+        fixture.deliver(
+            try android.dm(profileUpdate(newer), to: me, prekey: prekey, id: frameIdOf("ctl-otc-3"), sentAt: now), from: android)
         #expect(fixture.stores.peers.peer(alice.nodeId)?.openToChat == false, "the whole presentation moves together")
         #expect(fixture.transport.written(.receipt).isEmpty)
     }
@@ -56,7 +59,8 @@ import Testing
         let (fixture, android) = try rig(version: 10, prekey: false)
         let prekey = try fixture.ourPrekey()
         let fresh = ProfilePayload(name: "Ann", status: "", version: 100, openToChat: true)
-        fixture.deliver(try android.dm(profileUpdate(fresh), to: me, prekey: prekey, id: "ctl-otc-4", sentAt: now), from: android)
+        fixture.deliver(
+            try android.dm(profileUpdate(fresh), to: me, prekey: prekey, id: frameIdOf("ctl-otc-4"), sentAt: now), from: android)
         #expect(fixture.stores.peers.peer(alice.nodeId)?.openToChat == true)
         fixture.deliver(try android.profile(publishedAt: now + 1, version: 50), from: android)
         let held = try #require(fixture.stores.peers.peer(alice.nodeId))
@@ -69,7 +73,7 @@ import Testing
         let prekey = try fixture.ourPrekey()
         #expect(fixture.stores.peers.peer(alice.nodeId)?.prekey == nil)
         let newest = ProfilePayload(name: "Newest", status: "", version: 100)
-        fixture.deliver(try android.dm(profileUpdate(newest), to: me, prekey: prekey, id: "ctl-p1", sentAt: now), from: android)
+        fixture.deliver(try android.dm(profileUpdate(newest), to: me, prekey: prekey, id: frameIdOf("ctl-p1"), sentAt: now), from: android)
         #expect(fixture.stores.peers.peer(alice.nodeId)?.name == "Newest")
         #expect(fixture.stores.peers.peer(alice.nodeId)?.updatedAt == 100)
         fixture.deliver(try android.profile(publishedAt: now + 1, version: 50, name: "Older"), from: android)
@@ -83,7 +87,7 @@ import Testing
         let prekey = try fixture.ourPrekey()
         let before = try #require(fixture.stores.peers.peer(alice.nodeId))
         let update = ProfilePayload(name: "Annie", status: "Away", avatarHash: String(repeating: "a", count: 64), version: 20)
-        fixture.deliver(try android.dm(profileUpdate(update), to: me, prekey: prekey, id: "ctl-p2", sentAt: now), from: android)
+        fixture.deliver(try android.dm(profileUpdate(update), to: me, prekey: prekey, id: frameIdOf("ctl-p2"), sentAt: now), from: android)
         let after = try #require(fixture.stores.peers.peer(alice.nodeId))
         #expect(after.name == "Annie" && after.status == "Away" && after.updatedAt == 20)
         #expect(after.advertisedAvatarHash?.string == String(repeating: "a", count: 64) && after.avatarHash == nil, "named, not held")
@@ -97,9 +101,11 @@ import Testing
         let (fixture, android) = try rig(version: 10)
         let prekey = try fixture.ourPrekey()
         let update = ProfilePayload(name: "Ann", status: "", version: 20)
-        fixture.deliver(try android.dm(profileUpdate(update), to: me, prekey: prekey, id: "ctl-same-1", sentAt: now), from: android)
+        fixture.deliver(
+            try android.dm(profileUpdate(update), to: me, prekey: prekey, id: frameIdOf("ctl-same-1"), sentAt: now), from: android)
         #expect(fixture.engine.drainEvents().contains(.peerUpdated(alice.nodeId)))
-        fixture.deliver(try android.dm(profileUpdate(update), to: me, prekey: prekey, id: "ctl-same-2", sentAt: now + 1), from: android)
+        fixture.deliver(
+            try android.dm(profileUpdate(update), to: me, prekey: prekey, id: frameIdOf("ctl-same-2"), sentAt: now + 1), from: android)
         #expect(fixture.engine.drainEvents().isEmpty, "the same presentation again moves nothing")
     }
 
@@ -120,12 +126,14 @@ import Testing
         fixture.stores.peers.upsert(row)
 
         let garbled = ProfilePayload(name: "Ann", status: "", avatarHash: "not a hash", version: 20)
-        fixture.deliver(try android.dm(profileUpdate(garbled), to: me, prekey: prekey, id: "ctl-photo-1", sentAt: now), from: android)
+        fixture.deliver(
+            try android.dm(profileUpdate(garbled), to: me, prekey: prekey, id: frameIdOf("ctl-photo-1"), sentAt: now), from: android)
         #expect(fixture.stores.peers.peer(alice.nodeId)?.avatarHash == oldHash, "a hash that is no hash leaves the photo shown")
         #expect(fixture.stores.peers.peer(alice.nodeId)?.advertisedAvatarHash == nil)
 
         let held = ProfilePayload(name: "Ann", status: "", avatarHash: newHash.string, version: 30)
-        fixture.deliver(try android.dm(profileUpdate(held), to: me, prekey: prekey, id: "ctl-photo-2", sentAt: now + 1), from: android)
+        fixture.deliver(
+            try android.dm(profileUpdate(held), to: me, prekey: prekey, id: frameIdOf("ctl-photo-2"), sentAt: now + 1), from: android)
         #expect(fixture.stores.peers.peer(alice.nodeId)?.avatarHash == newHash)
         #expect(!fixture.stores.blobs.contains(oldHash), "the photo it replaced is let go after the commit")
         #expect(fixture.stores.blobs.contains(newHash))

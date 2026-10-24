@@ -50,7 +50,7 @@ import Testing
         #expect(ours.weAreInitiator && !ours.confirmed)
 
         iphone.clock.advance(Self.minute)
-        let reset = try android.resetDm(to: me, prekey: try iphone.ourPrekey(), id: "android-reset", at: now + Self.minute)
+        let reset = try android.resetDm(to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("android-reset"), at: now + Self.minute)
         iphone.deliver(reset, from: android)
         #expect(iphone.ratchetRecords(of: alice).session?.root == ours.root, "the race is ours: our root stays")
         #expect(chats(iphone, id: first).count == 2 && chats(iphone, id: second).count == 2, "each sealed again once")
@@ -71,12 +71,13 @@ import Testing
         let android = try AndroidPeer(alice)
         try iphone.pin(android)
         let prekey = try iphone.ourPrekey()
-        iphone.deliver(try android.dm("hello", to: me, prekey: prekey, id: "hello", sentAt: now, v3: true), from: android)
+        iphone.deliver(
+            try android.dm(frameIdOf("hello"), to: me, prekey: prekey, id: frameIdOf("hello"), sentAt: now, v3: true), from: android)
         let held = try #require(iphone.ratchetRecords(of: alice).session)
         #expect(held.confirmed && !held.weAreInitiator)
         let unacked = try #require(iphone.engine.sendDirectMessage("answer", to: alice.nodeId)).id
 
-        let mark = try android.resetDm(to: me, prekey: prekey, id: "mark", at: now + 1000)
+        let mark = try android.resetDm(to: me, prekey: prekey, id: frameIdOf("mark"), at: now + 1000)
         #expect(try ChatContent(decoding: mark.envelope.payload).enc?.ratchet?.initial != nil, "a marker under its pending init")
         iphone.deliver(mark, from: android)
         #expect(iphone.ratchetRecords(of: alice).session?.root == held.root, "no root moved")
@@ -98,7 +99,7 @@ import Testing
         #expect(ours.weAreInitiator && !ours.confirmed)
 
         iphone.clock.advance(Self.minute)
-        let reset = try android.resetDm(to: alice, prekey: try iphone.ourPrekey(), id: "android-reset", at: now + Self.minute)
+        let reset = try android.resetDm(to: alice, prekey: try iphone.ourPrekey(), id: frameIdOf("android-reset"), at: now + Self.minute)
         iphone.deliver(reset, from: android)
         let adopted = try #require(iphone.ratchetRecords(of: me).session)
         #expect(adopted.root != ours.root && !adopted.weAreInitiator, "the race is Android's: we took its root")
@@ -127,12 +128,13 @@ import Testing
         let android = try AndroidPeer(alice)
         try iphone.pin(android)
         let prekey = try iphone.ourPrekey()
-        iphone.deliver(try android.dm("hello", to: me, prekey: prekey, id: "hello", sentAt: now, v3: true), from: android)
+        iphone.deliver(
+            try android.dm(frameIdOf("hello"), to: me, prekey: prekey, id: frameIdOf("hello"), sentAt: now, v3: true), from: android)
         let unacked = try #require(iphone.engine.sendDirectMessage("held", to: alice.nodeId)).id
 
         iphone.clock.advance(2 * Self.minute)
         let reborn = try AndroidPeer(alice)
-        let reset = try reborn.resetDm(to: me, prekey: prekey, id: "reborn-reset", at: now + 2 * Self.minute)
+        let reset = try reborn.resetDm(to: me, prekey: prekey, id: frameIdOf("reborn-reset"), at: now + 2 * Self.minute)
         refusing.refusesWrites = true
         iphone.deliver(reset, from: reborn)
         refusing.refusesWrites = false
@@ -179,14 +181,15 @@ import Testing
         let android = try AndroidPeer(alice)
         try first.pin(android)
         let prekey = try first.ourPrekey()
-        first.deliver(try android.dm("hello", to: me, prekey: prekey, id: "hello", sentAt: now, v3: true), from: android)
+        first.deliver(
+            try android.dm(frameIdOf("hello"), to: me, prekey: prekey, id: frameIdOf("hello"), sentAt: now, v3: true), from: android)
         let unacked = try #require(first.engine.sendDirectMessage("still unacked", to: alice.nodeId)).id
 
         first.clock.advance(2 * Self.minute)
         let reborn = try AndroidPeer(alice)
-        first.deliver(try reborn.resetDm(to: me, prekey: prekey, id: "reborn-reset", at: now + 2 * Self.minute), from: reborn)
+        first.deliver(try reborn.resetDm(to: me, prekey: prekey, id: frameIdOf("reborn-reset"), at: now + 2 * Self.minute), from: reborn)
         #expect(chats(first, id: unacked).count == 2, "the first verdict re-sealed it once")
-        #expect(stores.custody.contains("reborn-reset"), "carried, so a restart finds it")
+        #expect(stores.custody.contains(frameIdOf("reborn-reset")), "carried, so a restart finds it")
 
         first.clock.advance(Self.minute)
         guard case .sent(_, reRooted: true) = first.engine.sendRatchetReset(to: alice.nodeId) else {
@@ -237,7 +240,7 @@ import Testing
         }
         iphone.transport.clear()
 
-        iphone.deliver(try android.resetDm(to: me, prekey: try iphone.ourPrekey(), id: "reset", at: now), from: android)
+        iphone.deliver(try android.resetDm(to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("reset"), at: now), from: android)
         // The reset carries Android's init, which our sealed profile answers first, as Kotlin's commit runs the answer before
         // the re-seal (`InboundPipeline.kt:1059-1067`, `:1140-1147`; phase P5e).
         let chats = iphone.transport.written(.chat)
@@ -263,7 +266,8 @@ import Testing
         let original = try #require(chats(iphone, id: unacked).first)
 
         iphone.clock.advance(Self.minute)
-        iphone.deliver(try android.resetDm(to: me, prekey: try iphone.ourPrekey(), id: "reset", at: now + Self.minute), from: android)
+        iphone.deliver(
+            try android.resetDm(to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("reset"), at: now + Self.minute), from: android)
         let copies = chats(iphone, id: unacked)
         #expect(copies.count == 2, "sealed again once")
         let reseal = try #require(copies.last)
@@ -288,7 +292,9 @@ import Testing
         for (peer, key) in [(alice.nodeId, "not a bundle"), (lowOrder.nodeId, lowOrder.encoded)] {
             iphone.stores.peers.upsert(PeerRecord(nodeId: peer, name: "", status: "", publicKey: key, capabilities: 0xF, updatedAt: 1))
             iphone.stores.messages.save(
-                MessageRecord(id: "to-\(peer)", senderId: me.nodeId, recipientId: peer, conversationId: peer.string, body: "x", sentAt: now)
+                MessageRecord(
+                    id: frameIdOf("to-\(peer)"), senderId: me.nodeId, recipientId: peer, conversationId: peer.string, body: "x", sentAt: now
+                )
             )
             iphone.engine.resealRecentDirectMessages(to: peer)
         }

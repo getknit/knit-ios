@@ -1,5 +1,6 @@
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -26,7 +27,7 @@ import Testing
         for peer in [bob] + peers {
             fixture.link(peer, capabilities: android)
         }
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-bob"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-bob")), from: bob)
         fixture.transport.feeds = [FedCopy(photoHash, bob.nodeId, FeedReading(etaMilliseconds: eta, live: true, recheckMilliseconds: 5000))]
         fixture.transport.feedingLoad = 1
         fixture.transport.clear()
@@ -59,7 +60,7 @@ import Testing
         fixture.stores.groups.save(group)
         fixture.stores.messages.save(
             MessageRecord(
-                id: "m-1",
+                id: frameIdOf("m-1"),
                 senderId: alice.nodeId,
                 recipientId: nil,
                 conversationId: group.id,
@@ -71,8 +72,8 @@ import Testing
 
     @Test func aSecondAskWhileACopyIsFedIsParkedAndServedWhenThatFeedEnds() {
         let fixture = feeding(carol)
-        ask(fixture, from: carol, "breq-1")
-        ask(fixture, from: carol, "breq-2")
+        ask(fixture, from: carol, frameIdOf("breq-1"))
+        ask(fixture, from: carol, frameIdOf("breq-2"))
         #expect(served(fixture).isEmpty, "no side-by-side copy on one budget")
         #expect(
             lines(fixture, "park") == ["debug mesh blob park \(shown)… for \(carol.nodeId) behind a feed"], "a re-ask only refreshes it")
@@ -91,7 +92,7 @@ import Testing
 
     @Test func thePollServesAParkedAskOnceItsFeedStallsAndThenLetsItselfGo() {
         let fixture = feeding(carol)
-        ask(fixture, from: carol, "breq-1")
+        ask(fixture, from: carol, frameIdOf("breq-1"))
         #expect(fixture.engine.blobExchange.parkPollAt == fixture.clock.monotonicMilliseconds() + BlobExchange.parkPollMilliseconds)
         fixture.advance(BlobExchange.parkPollMilliseconds)
         #expect(served(fixture).isEmpty)
@@ -106,12 +107,12 @@ import Testing
         let fixture = feeding(carol)
         fixture.transport.inFlight = [(photoHash, bob.nodeId)]
         fixture.transport.feeds.append(FedCopy(photoHash, bob.nodeId, FeedReading(etaMilliseconds: 12_000, live: true)))
-        fixture.deliver(bob.blobHave([photoHash.string], id: "q-bob"), from: bob)
+        fixture.deliver(bob.blobHave([photoHash.string], id: frameIdOf("q-bob")), from: bob)
         // Carol's copy of the 41 bytes would take 41 s at 1 B/s, so it waits behind bob's 20 s.
         fixture.transport.rates[carol.nodeId] = 1
         fixture.transport.feeds = [FedCopy(photoHash, bob.nodeId, FeedReading(etaMilliseconds: 20_000, live: true))]
-        ask(fixture, from: carol, "breq-1")
-        fixture.deliver(carol.blobHave([photoHash.string], id: "q-carol"), from: carol)
+        ask(fixture, from: carol, frameIdOf("breq-1"))
+        fixture.deliver(carol.blobHave([photoHash.string], id: frameIdOf("q-carol")), from: carol)
         let items = try fixture.transport.written(.blobHas).map { try BlobHasContent(decoding: $0.envelope.payload).items }
         let size = Int64(photo.count)
         #expect(
@@ -129,8 +130,8 @@ import Testing
         let fixture = feeding(carol, dave, erin, frank)
         inGroup(fixture, carol, dave)
         fixture.transport.feeds = [FedCopy(photoHash, carol.nodeId, FeedReading(etaMilliseconds: 20_000, live: true))]
-        ask(fixture, from: erin, "breq-1")
-        ask(fixture, from: dave, "breq-2")
+        ask(fixture, from: erin, frameIdOf("breq-1"))
+        ask(fixture, from: dave, frameIdOf("breq-2"))
         #expect(served(fixture).isEmpty)
         #expect(lines(fixture, "park").contains("debug mesh blob park \(shown)… for \(erin.nodeId) behind a feed (carrier)"))
         fixture.transport.feeds = []
@@ -141,7 +142,7 @@ import Testing
         #expect(served(fixture) == [dave.nodeId], "the carrier waits behind the member's copy")
         // A member goes beside a carrier's copy: that one is a spare.
         fixture.transport.feeds = [FedCopy(photoHash, frank.nodeId, FeedReading(etaMilliseconds: 20_000, live: true))]
-        ask(fixture, from: carol, "breq-3")
+        ask(fixture, from: carol, frameIdOf("breq-3"))
         #expect(served(fixture) == [dave.nodeId, carol.nodeId])
         fixture.transport.feeds = []
         fixture.engine.fileFeedsChanged()
@@ -153,7 +154,7 @@ import Testing
         // 41 bytes at 41 B/s: one second, beside a feed 60 s from its end. Saves 59.5 s for 0.5 s of the feed's.
         fixture.transport.rates[carol.nodeId] = Int64(photo.count)
         fixture.transport.feeds = [FedCopy(photoHash, bob.nodeId, FeedReading(etaMilliseconds: 60_000, live: true))]
-        ask(fixture, from: carol, "breq-1")
+        ask(fixture, from: carol, frameIdOf("breq-1"))
         #expect(served(fixture) == [carol.nodeId])
         #expect(
             lines(fixture, "beside") == [
@@ -163,7 +164,7 @@ import Testing
         // At 1 B/s its copy would take 41 s, behind a feed 30 s from its end: it waits.
         fixture.transport.rates[dave.nodeId] = 1
         fixture.transport.feeds = [FedCopy(photoHash, bob.nodeId, FeedReading(etaMilliseconds: 30_000, live: true))]
-        ask(fixture, from: dave, "breq-2")
+        ask(fixture, from: dave, frameIdOf("breq-2"))
         #expect(served(fixture) == [carol.nodeId])
         #expect(fixture.engine.blobExchange.isParked(photoHash, for: dave.nodeId))
     }
@@ -177,7 +178,7 @@ import Testing
             FedCopy(photoHash, bob.nodeId, FeedReading(etaMilliseconds: 1100, live: true)),
             FedCopy(photoHash, dave.nodeId, FeedReading(etaMilliseconds: 1200, live: true)),
         ]
-        ask(fixture, from: carol, "breq-1")
+        ask(fixture, from: carol, frameIdOf("breq-1"))
         #expect(served(fixture).isEmpty && lines(fixture, "beside").isEmpty)
     }
 
@@ -187,10 +188,10 @@ import Testing
         // Bob, whose copy is feeding, is a member too: a member goes beside a carrier's copy.
         inGroup(fixture, bob, carol, dave, erin)
         fixture.transport.feeds = [FedCopy(photoHash, bob.nodeId, FeedReading(etaMilliseconds: 20_000, live: true))]
-        ask(fixture, from: carol, "breq-1")
+        ask(fixture, from: carol, frameIdOf("breq-1"))
         fixture.clock.advance(10)
-        ask(fixture, from: dave, "breq-2")
-        ask(fixture, from: erin, "breq-3")
+        ask(fixture, from: dave, frameIdOf("breq-2"))
+        ask(fixture, from: erin, frameIdOf("breq-3"))
         fixture.transport.rates[erin.nodeId] = 1
         fixture.transport.feeds = []
         fixture.engine.fileFeedsChanged()
@@ -200,7 +201,7 @@ import Testing
         // A DM's addressees are its two ends.
         fixture.stores.messages.save(
             MessageRecord(
-                id: "dm-1",
+                id: frameIdOf("dm-1"),
                 senderId: carol.nodeId,
                 recipientId: alice.nodeId,
                 conversationId: carol.nodeId.string,
@@ -213,9 +214,10 @@ import Testing
 
     @Test func aWithdrawalOrAnUnlinkDropsAParkedAsk() {
         let fixture = feeding(carol, dave)
-        ask(fixture, from: carol, "breq-1")
-        ask(fixture, from: dave, "breq-2")
-        fixture.deliver(carol.unsigned(.blobCancel, payload: BlobCancelContent(hash: photoHash.string).encoded, id: "c-1"), from: carol)
+        ask(fixture, from: carol, frameIdOf("breq-1"))
+        ask(fixture, from: dave, frameIdOf("breq-2"))
+        fixture.deliver(
+            carol.unsigned(.blobCancel, payload: BlobCancelContent(hash: photoHash.string).encoded, id: frameIdOf("c-1")), from: carol)
         #expect(fixture.log.all.contains("debug mesh blob cancel ← \(carol.nodeId) \(shown)…: parked ask dropped"))
         #expect(fixture.engine.blobExchange.counts.cancelsTaken == 1)
         fixture.unlink(dave)
@@ -228,9 +230,9 @@ import Testing
     @Test func aCopyOnTheLinkOrInsideTheMemoIsNeitherParkedNorSentTwice() {
         let fixture = feeding(carol)
         fixture.transport.inFlight = [(photoHash, carol.nodeId)]
-        ask(fixture, from: carol, "breq-1")
+        ask(fixture, from: carol, frameIdOf("breq-1"))
         fixture.transport.inFlight = []
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-again"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-again")), from: bob)
         #expect(served(fixture).isEmpty)
         #expect(!fixture.engine.blobExchange.hasParked, "carol's copy was on its link; bob's own copy is the feed")
         #expect(

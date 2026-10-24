@@ -1,6 +1,7 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -71,7 +72,7 @@ import Testing
         try fixture.pin(bob)
         fixture.transport.clear()
         _ = fixture.engine.drainEvents()
-        let dm = try bob.directMessage("Hello Alice", to: alice, id: "dm-1", sentAt: EngineFixture.start)
+        let dm = try bob.directMessage("Hello Alice", to: alice, id: frameIdOf("dm-1"), sentAt: EngineFixture.start)
         fixture.deliver(dm, from: bob)
 
         let received = receivedRecords(fixture.engine.drainEvents())
@@ -83,9 +84,9 @@ import Testing
         #expect(receipt.to == nil && receipt.wire.relay, "a DM receipt floods")
         #expect(receipt.envelope.recipientId == nil)
         #expect(receipt.envelope.sentAt == EngineFixture.start, "sentAt set, or no carrier would hold it")
-        #expect(try ReceiptContent(decoding: receipt.envelope.payload).ackId == "dm-1")
+        #expect(try ReceiptContent(decoding: receipt.envelope.payload).ackId == frameIdOf("dm-1"))
         #expect(fixture.stores.custody.contains(receipt.envelope.id), "our receipt is carried as ours")
-        #expect(!fixture.stores.custody.contains("dm-1"), "and purges our own carried copy, as it purges every carrier's")
+        #expect(!fixture.stores.custody.contains(frameIdOf("dm-1")), "and purges our own carried copy, as it purges every carrier's")
     }
 
     @Test func anAcceptedConversationIsNoLongerARequest() throws {
@@ -93,7 +94,7 @@ import Testing
         try fixture.pin(bob)
         fixture.engine.accept(bob.nodeId.string)
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try bob.directMessage("Again", to: alice, id: "dm-2", sentAt: EngineFixture.start), from: bob)
+        fixture.deliver(try bob.directMessage("Again", to: alice, id: frameIdOf("dm-2"), sentAt: EngineFixture.start), from: bob)
         #expect(receivedRecords(fixture.engine.drainEvents()).map(\.1) == [false])
     }
 
@@ -102,14 +103,14 @@ import Testing
         try fixture.pin(bob)
         fixture.engine.sendDirectMessage("I wrote first", to: bob.nodeId)
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try bob.directMessage("Reply", to: alice, id: "dm-3", sentAt: EngineFixture.start), from: bob)
+        fixture.deliver(try bob.directMessage("Reply", to: alice, id: frameIdOf("dm-3"), sentAt: EngineFixture.start), from: bob)
         #expect(receivedRecords(fixture.engine.drainEvents()).map(\.1) == [false])
     }
 
     @Test func aReServedDMIsNotAnnouncedAgainButIsAcknowledgedAgain() throws {
         let fixture = EngineFixture(alice)
         try fixture.pin(bob)
-        let dm = try bob.directMessage("Once", to: alice, id: "dm-4", sentAt: EngineFixture.start)
+        let dm = try bob.directMessage("Once", to: alice, id: frameIdOf("dm-4"), sentAt: EngineFixture.start)
         fixture.deliver(dm, from: bob)
         _ = fixture.engine.drainEvents()
         fixture.transport.clear()
@@ -117,7 +118,7 @@ import Testing
         fixture.deliver(dm, from: bob)
         #expect(receivedRecords(fixture.engine.drainEvents()).isEmpty)
         #expect(fixture.transport.written(.receipt).count == 1)
-        #expect(!fixture.stores.custody.contains("dm-4"), "tombstoned, so it is not carried again")
+        #expect(!fixture.stores.custody.contains(frameIdOf("dm-4")), "tombstoned, so it is not carried again")
     }
 
     @Test func someoneElsesDMIsCarriedAndRelayedButNotRead() throws {
@@ -126,11 +127,11 @@ import Testing
         try fixture.pin(bob)
         fixture.transport.clear()
         _ = fixture.engine.drainEvents()
-        let dm = try bob.directMessage("For Carol", to: carol, id: "dm-5", sentAt: EngineFixture.start)
+        let dm = try bob.directMessage("For Carol", to: carol, id: frameIdOf("dm-5"), sentAt: EngineFixture.start)
         fixture.deliver(dm, from: bob)
         #expect(receivedRecords(fixture.engine.drainEvents()).isEmpty)
         #expect(fixture.transport.written(.receipt).isEmpty)
-        #expect(fixture.stores.custody.contains("dm-5"))
+        #expect(fixture.stores.custody.contains(frameIdOf("dm-5")))
         fixture.advance(150)
         #expect(fixture.transport.written(.chat).map(\.to) == [carol.nodeId])
     }
@@ -143,10 +144,10 @@ import Testing
         try fixture.pin(bob)
         try fixture.pin(carol)
         fixture.transport.clear()
-        fixture.deliver(try carol.receipt(for: "dm-9", id: "early", sentAt: EngineFixture.start), from: carol)
-        fixture.deliver(try bob.directMessage("For Carol", to: carol, id: "dm-9", sentAt: EngineFixture.start), from: bob)
-        #expect(!fixture.stores.custody.contains("dm-9"), "refused as the purge it missed would have left it")
-        #expect(fixture.stores.custody.contains("early"))
+        fixture.deliver(try carol.receipt(for: frameIdOf("dm-9"), id: frameIdOf("early"), sentAt: EngineFixture.start), from: carol)
+        fixture.deliver(try bob.directMessage("For Carol", to: carol, id: frameIdOf("dm-9"), sentAt: EngineFixture.start), from: bob)
+        #expect(!fixture.stores.custody.contains(frameIdOf("dm-9")), "refused as the purge it missed would have left it")
+        #expect(fixture.stores.custody.contains(frameIdOf("early")))
         #expect(fixture.engine.footprint.tombstones == 1)
         fixture.advance(150)
         #expect(fixture.transport.written(.chat).map(\.to) == [carol.nodeId], "and still relayed")
@@ -158,7 +159,7 @@ import Testing
         _ = fixture.engine.drainEvents()
         let envelope = RelayEnvelope(
             type: .chat,
-            id: "dm-6",
+            id: frameIdOf("dm-6"),
             senderId: bob.nodeId.string,
             sentAt: EngineFixture.start,
             recipientId: alice.nodeId.string,
@@ -167,7 +168,7 @@ import Testing
         fixture.deliver(try bob.signed(envelope), from: bob)
         #expect(receivedRecords(fixture.engine.drainEvents()).isEmpty)
         #expect(fixture.engine.dropped[.cleartextDirect] == 1)
-        #expect(!fixture.stores.custody.contains("dm-6"))
+        #expect(!fixture.stores.custody.contains(frameIdOf("dm-6")))
     }
 
     @Test func aRatchetDMIsCarriedAndRelayedButCannotBeOpened() throws {
@@ -178,7 +179,7 @@ import Testing
         let ratchet = EncEnvelope(version: EncEnvelope.Version.compactRatchet, nonce: [], ct: Array(repeating: 7, count: 40), keys: [])
         let envelope = RelayEnvelope(
             type: .chat,
-            id: "dm-7",
+            id: frameIdOf("dm-7"),
             senderId: bob.nodeId.string,
             sentAt: EngineFixture.start,
             recipientId: alice.nodeId.string,
@@ -186,7 +187,7 @@ import Testing
         )
         fixture.deliver(try bob.signed(envelope), from: bob)
         #expect(fixture.engine.dropped[.cannotOpen] == 1)
-        #expect(fixture.stores.custody.contains("dm-7"))
+        #expect(fixture.stores.custody.contains(frameIdOf("dm-7")))
         #expect(fixture.transport.written(.receipt).isEmpty)
     }
 
@@ -196,7 +197,8 @@ import Testing
         _ = fixture.engine.drainEvents()
         fixture.transport.clear()
         let control = MessageContent(body: "", ctl: MessageContent.Control.receipt, ack: "x")
-        fixture.deliver(try bob.directMessage("", to: alice, id: "dm-8", sentAt: EngineFixture.start, content: control), from: bob)
+        fixture.deliver(
+            try bob.directMessage("", to: alice, id: frameIdOf("dm-8"), sentAt: EngineFixture.start, content: control), from: bob)
         #expect(receivedRecords(fixture.engine.drainEvents()).isEmpty)
         #expect(fixture.transport.written(.receipt).isEmpty)
     }
@@ -209,7 +211,7 @@ import Testing
         try fixture.pin(bob)
         _ = fixture.engine.drainEvents()
         fixture.transport.clear()
-        let id = "dm-bad-\(field)"
+        let id = frameIdOf("dm-bad-\(field)")
         let header = MessageCrypto.header(id: id, senderId: bob.nodeId.string, sentAt: EngineFixture.start, thread: alice.nodeId.string)
         // {"body": "hi", "<field>": 7}: a number where the payload's map belongs.
         let plaintext: [UInt8] = [0xA2, 0x64] + Array("body".utf8) + [0x62] + Array("hi".utf8) + [0x62] + Array(field.utf8) + [0x07]
@@ -236,11 +238,11 @@ import Testing
         let record = try #require(fixture.engine.sendDirectMessage("Tick me", to: bob.nodeId))
         _ = fixture.engine.drainEvents()
 
-        fixture.deliver(try carol.receipt(for: record.id, id: "forged", sentAt: EngineFixture.start), from: carol)
+        fixture.deliver(try carol.receipt(for: record.id, id: frameIdOf("forged"), sentAt: EngineFixture.start), from: carol)
         #expect(fixture.engine.drainEvents().isEmpty, "only the recipient's receipt counts")
         #expect(fixture.stores.custody.contains(record.id))
 
-        fixture.deliver(try bob.receipt(for: record.id, id: "real", sentAt: EngineFixture.start), from: bob)
+        fixture.deliver(try bob.receipt(for: record.id, id: frameIdOf("real"), sentAt: EngineFixture.start), from: bob)
         #expect(fixture.engine.drainEvents() == [.delivered(messageId: record.id)])
         #expect(!fixture.stores.custody.contains(record.id), "the recipient's receipt is the vaccine")
     }
@@ -250,7 +252,7 @@ import Testing
         let fixture = EngineFixture(alice)
         try fixture.pin(bob)
         _ = fixture.engine.drainEvents()
-        let dm = try bob.directMessage("Nobody", to: alice, id: "dm-9", sentAt: EngineFixture.start)
+        let dm = try bob.directMessage("Nobody", to: alice, id: frameIdOf("dm-9"), sentAt: EngineFixture.start)
         var envelope = dm.envelope
         envelope.recipientId = "not-a-node-id"
         fixture.deliver(try bob.signed(envelope), from: bob)

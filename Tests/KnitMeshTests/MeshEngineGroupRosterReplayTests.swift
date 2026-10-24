@@ -42,12 +42,12 @@ import Testing
     @Test func anOldLeaveReplayedAfterItsSendersRejoinLeavesThemOnTheRoster() throws {
         let stores = MeshStores.inMemory()
         let (fixture, group) = try member(of: stores, ratchet: true)
-        fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         // Her rejoin reaches us point to point, so no custody holds it: only the rejoin's own clock stands against the leave.
         let back = RelayEnvelope(
-            type: .groupUpdate, id: "carol-back", senderId: carol.nodeId.string, sentAt: now + 2, group: group, payload: [])
+            type: .groupUpdate, id: frameIdOf("carol-back"), senderId: carol.nodeId.string, sentAt: now + 2, group: group, payload: [])
         fixture.deliver(try carol.signed(back, relay: false), from: carol)
-        #expect(fixture.roster(of: group).departed.isEmpty && !stores.custody.contains("carol-back"))
+        #expect(fixture.roster(of: group).departed.isEmpty && !stores.custody.contains(frameIdOf("carol-back")))
         let restarted = relaunched(stores, ratchet: true, wall: now + 60_000)
         #expect(restarted.roster(of: group).departed.isEmpty, "the leave is no newer than her rejoin")
         #expect(leftNotices(restarted, group) == 1 && restarted.engine.dropped.isEmpty)
@@ -63,10 +63,11 @@ import Testing
         let (stores, refusing) = try kind.storesRefusingGroupWrites(blobs: directory, failures: ReportedFailures().record)
         let (fixture, group) = try member(of: stores, ratchet: true)
         refusing.refusesWrites = true
-        fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         refusing.refusesWrites = false
-        fixture.deliver(try carol.groupMessage("still here", in: group, to: [me, alice], id: "carol-chat", sentAt: now + 2), from: carol)
-        #expect(stores.messages.message("carol-chat") != nil && stores.custody.contains("carol-chat"))
+        fixture.deliver(
+            try carol.groupMessage("still here", in: group, to: [me, alice], id: frameIdOf("carol-chat"), sentAt: now + 2), from: carol)
+        #expect(stores.messages.message(frameIdOf("carol-chat")) != nil && stores.custody.contains(frameIdOf("carol-chat")))
         let restarted = relaunched(stores, ratchet: true, wall: now + 60_000)
         #expect(restarted.roster(of: group).departed.isEmpty)
         #expect(leftNotices(restarted, group) == 0)
@@ -75,13 +76,13 @@ import Testing
     @Test func aReplayedDepartureAlreadyRecordedWritesNothingAddsNoNoticeAndCountsNoDrop() throws {
         let stores = MeshStores.inMemory()
         let (fixture, group) = try member(of: stores, ratchet: true)
-        fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         let recorded = try #require(stores.groups.group(group.id))
         let restarted = relaunched(stores, ratchet: true, wall: now + 60_000)
         #expect(stores.groups.group(group.id) == recorded)
         #expect(leftNotices(restarted, group) == 1 && restarted.engine.dropped.isEmpty)
         #expect(restarted.engine.drainEvents().allSatisfy { $0 != .groupChanged(group.id) })
-        #expect(!restarted.log.all.contains { $0.contains("carol-leaves") && !$0.hasPrefix("debug ") }, "nothing above debug")
+        #expect(!restarted.log.all.contains { $0.contains(frameIdOf("carol-leaves")) && !$0.hasPrefix("debug ") }, "nothing above debug")
     }
 
     /// A roster frame whose verdict was a refusal meets it again at every start, and counts it only at its first.
@@ -91,13 +92,12 @@ import Testing
         // A roster smuggling Dave in under the group's id: refused, since the id is not its hash.
         let smuggled = GroupInfo(
             id: group.id, members: group.members + [dave.nodeId.string], createdBy: group.createdBy, departed: nil)
-        fixture.deliver(try carol.groupUpdate(smuggled, id: "smuggled", sentAt: now + 1), from: carol)
-        fixture.deliver(
-            try carol.signed(
-                RelayEnvelope(type: .groupLeave, id: "garbled", senderId: carol.nodeId.string, sentAt: now + 2, payload: [0xFF])),
-            from: carol)
+        fixture.deliver(try carol.groupUpdate(smuggled, id: frameIdOf("smuggled"), sentAt: now + 1), from: carol)
+        let garbled = RelayEnvelope(
+            type: .groupLeave, id: frameIdOf("garbled"), senderId: carol.nodeId.string, sentAt: now + 2, payload: [0xFF])
+        fixture.deliver(try carol.signed(garbled), from: carol)
         #expect(fixture.engine.dropped[.rosterRefused] == 1 && fixture.engine.dropped[.undecodable] == 1)
-        #expect(stores.custody.contains("smuggled") && stores.custody.contains("garbled"))
+        #expect(stores.custody.contains(frameIdOf("smuggled")) && stores.custody.contains(frameIdOf("garbled")))
         let restarted = relaunched(stores, ratchet: true, wall: now + 60_000)
         #expect(restarted.engine.dropped.isEmpty)
         #expect(restarted.roster(of: group).members == Set(group.members))
@@ -109,7 +109,7 @@ import Testing
         let stores = MeshStores.inMemory()
         let (fixture, group) = try member(of: stores, ratchet: false)
         fixture.engine.block(carol.nodeId)
-        fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         #expect(fixture.engine.dropped[.blocked] == 1 && fixture.roster(of: group).departed.isEmpty)
         let blocked = relaunched(stores, ratchet: false, wall: now + 60_000)
         #expect(blocked.engine.dropped.isEmpty, "a start while blocked meets the gate and counts nothing")
@@ -127,7 +127,8 @@ import Testing
         let (fixture, group) = try member(of: stores, ratchet: false)
         refusing.refusesSaves = true
         fixture.deliver(
-            try carol.groupUpdate(roster([me, alice, carol], name: "Hike", createdBy: alice), id: "rename", sentAt: now + 1), from: carol)
+            try carol.groupUpdate(roster([me, alice, carol], name: "Hike", createdBy: alice), id: frameIdOf("rename"), sentAt: now + 1),
+            from: carol)
         refusing.refusesSaves = false
         #expect(stores.groups.group(group.id)?.name.isEmpty == true && fixture.engine.dropped[.storeRefused] == 1)
         let restarted = relaunched(stores, ratchet: false, wall: now + 60_000)
@@ -145,9 +146,11 @@ import Testing
         let stores = MeshStores.inMemory()
         let (fixture, group) = try member(of: stores, ratchet: true)
         fixture.deliver(
-            try alice.groupUpdate(roster([me, alice, carol], name: "Hike", createdBy: alice), id: "r-alice", sentAt: now + 1), from: alice)
+            try alice.groupUpdate(roster([me, alice, carol], name: "Hike", createdBy: alice), id: frameIdOf("r-alice"), sentAt: now + 1),
+            from: alice)
         fixture.deliver(
-            try carol.groupUpdate(roster([me, alice, carol], name: "Swim", createdBy: alice), id: "r-carol", sentAt: now + 1), from: carol)
+            try carol.groupUpdate(roster([me, alice, carol], name: "Swim", createdBy: alice), id: frameIdOf("r-carol"), sentAt: now + 1),
+            from: carol)
         let settled = try #require(stores.groups.group(group.id))
         #expect(settled.name == "Swim", "a first verdict's tie goes to the incoming frame")
         let notices = stores.messages.messages(in: group.id).count { $0.kind == .groupRenamed }
@@ -165,10 +168,11 @@ import Testing
         let stores = MeshStores.inMemory()
         let (fixture, group) = try member(of: stores, ratchet: true)
         fixture.deliver(
-            try carol.groupUpdate(roster([me, alice, carol], name: "Swim", createdBy: alice), id: "r-carol", sentAt: now + 1), from: carol)
+            try carol.groupUpdate(roster([me, alice, carol], name: "Swim", createdBy: alice), id: frameIdOf("r-carol"), sentAt: now + 1),
+            from: carol)
         let hike = RelayEnvelope(
             type: .groupUpdate,
-            id: "r-alice",
+            id: frameIdOf("r-alice"),
             senderId: alice.nodeId.string,
             sentAt: now + 1,
             group: roster([me, alice, carol], name: "Hike", createdBy: alice),
@@ -176,7 +180,7 @@ import Testing
         )
         fixture.deliver(try alice.signed(hike, relay: false), from: alice)
         let settled = try #require(stores.groups.group(group.id))
-        #expect(settled.name == "Hike" && !stores.custody.contains("r-alice"))
+        #expect(settled.name == "Hike" && !stores.custody.contains(frameIdOf("r-alice")))
         let notices = stores.messages.messages(in: group.id).filter { $0.kind == .groupRenamed }
         let restarted = relaunched(stores, ratchet: true, wall: now + 60_000)
         #expect(stores.groups.group(group.id) == settled)
@@ -192,7 +196,7 @@ import Testing
             let (stores, refusing) = try StoreKind.memory.storesRefusingGroupWrites(blobs: directory, failures: ReportedFailures().record)
             let (fixture, group) = try member(of: stores, ratchet: ratchet)
             refusing.refusesWrites = true
-            fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+            fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
             refusing.refusesWrites = false
             fixture.advance(Self.hour + 1)
             #expect(fixture.roster(of: group).departed == (ratchet ? [carol.nodeId.string] : []), "switch \(ratchet)")

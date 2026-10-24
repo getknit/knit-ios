@@ -29,44 +29,44 @@ import Testing
     @Test func aV2InitDmDecryptsPersistsAndEstablishesTheSession() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        fixture.deliver(try android.dm("ratchet hello", to: me, prekey: prekey, id: "v2-1", sentAt: now), from: android)
-        #expect(fixture.stores.messages.message("v2-1")?.body == "ratchet hello")
+        fixture.deliver(try android.dm("ratchet hello", to: me, prekey: prekey, id: frameIdOf("v2-1"), sentAt: now), from: android)
+        #expect(fixture.stores.messages.message(frameIdOf("v2-1"))?.body == "ratchet hello")
         let session = try #require(fixture.ratchetRecords(of: alice).session)
         #expect(session.confirmed && !session.weAreInitiator)
         #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [1])
-        #expect(receivedRecords(in: fixture.engine.drainEvents()).map(\.id) == ["v2-1"])
-        #expect(fixture.acknowledged(by: android) == ["v2-1"], "the DM's receipt goes out, sealed (phase P5d)")
+        #expect(receivedRecords(in: fixture.engine.drainEvents()).map(\.id) == [frameIdOf("v2-1")])
+        #expect(fixture.acknowledged(by: android) == [frameIdOf("v2-1")], "the DM's receipt goes out, sealed (phase P5d)")
         #expect(fixture.acknowledged.isEmpty, "and never in the clear toward an author who reads a sealed one")
 
-        fixture.deliver(try android.dm("still here", to: me, prekey: prekey, id: "v2-2", sentAt: now + 1), from: android)
-        #expect(fixture.stores.messages.message("v2-2")?.body == "still here")
+        fixture.deliver(try android.dm("still here", to: me, prekey: prekey, id: frameIdOf("v2-2"), sentAt: now + 1), from: android)
+        #expect(fixture.stores.messages.message(frameIdOf("v2-2"))?.body == "still here")
         #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [2])
     }
 
     @Test func v2OutOfOrderDeliveryDrainsThroughSkippedKeys() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        let first = try android.dm("first", to: me, prekey: prekey, id: "v2-m0", sentAt: now)
-        let second = try android.dm("second", to: me, prekey: prekey, id: "v2-m1", sentAt: now + 1)
+        let first = try android.dm("first", to: me, prekey: prekey, id: frameIdOf("v2-m0"), sentAt: now)
+        let second = try android.dm("second", to: me, prekey: prekey, id: frameIdOf("v2-m1"), sentAt: now + 1)
         fixture.deliver(second, from: android)
         #expect(fixture.ratchetRecords(of: alice).skippedKeys.map(\.index) == [0])
         fixture.deliver(first, from: android)
-        #expect(fixture.stores.messages.message("v2-m1")?.body == "second")
-        #expect(fixture.stores.messages.message("v2-m0")?.body == "first")
+        #expect(fixture.stores.messages.message(frameIdOf("v2-m1"))?.body == "second")
+        #expect(fixture.stores.messages.message(frameIdOf("v2-m0"))?.body == "first")
         #expect(fixture.ratchetRecords(of: alice).skippedKeys.isEmpty, "the key stored for the gap, spent and gone")
     }
 
     @Test func aReServedV2FrameShortCircuitsBeforeTheRatchetAndStillAcks() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        let frame = try android.dm("once", to: me, prekey: prekey, id: "v2-r", sentAt: now)
+        let frame = try android.dm("once", to: me, prekey: prekey, id: frameIdOf("v2-r"), sentAt: now)
         fixture.deliver(frame, from: android)
         // With the ratchet's rows gone, a copy that reached the engine would fail as NO_SESSION: the exists-gate answers
         // before any crypto runs.
         fixture.stores.ratchet.deletePeer(alice.nodeId)
         fixture.deliverPastRouter(frame, from: alice)
-        #expect(fixture.stores.messages.message("v2-r")?.body == "once")
-        #expect(fixture.acknowledged(by: android) == ["v2-r", "v2-r"], "each copy is acknowledged")
+        #expect(fixture.stores.messages.message(frameIdOf("v2-r"))?.body == "once")
+        #expect(fixture.acknowledged(by: android) == [frameIdOf("v2-r"), frameIdOf("v2-r")], "each copy is acknowledged")
         #expect(fixture.engine.dropped[.ratchetNoSession] == nil)
         #expect(fixture.engine.dropped[.cannotOpen] == nil)
     }
@@ -74,33 +74,36 @@ import Testing
     @Test func aV2EnvelopeWithoutItsHeaderIsBadHeaderNotACrash() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        let frame = try android.dm(MessageContent(body: "hi"), to: me, prekey: prekey, id: "v2-bad", sentAt: now) { $0.ratchet = nil }
+        let frame = try android.dm(MessageContent(body: "hi"), to: me, prekey: prekey, id: frameIdOf("v2-bad"), sentAt: now) { envelope in
+            envelope.ratchet = nil
+        }
         fixture.deliver(frame, from: android)
         #expect(fixture.engine.dropped[.ratchetBadHeader] == 1)
-        #expect(fixture.stores.messages.message("v2-bad") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("v2-bad")) == nil)
     }
 
     @Test func aDmAddressedEnvelopeWithOnlyAGroupHeaderIsMalformed() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        let frame = try android.dm(MessageContent(body: "hi"), to: me, prekey: prekey, id: "gdm", sentAt: now) { envelope in
+        let frame = try android.dm(MessageContent(body: "hi"), to: me, prekey: prekey, id: frameIdOf("gdm"), sentAt: now) { envelope in
             envelope.ratchet = nil
             envelope.groupRatchet = GroupRatchetHeader(se: 1, n: 0)
         }
         fixture.deliver(frame, from: android)
         #expect(fixture.engine.dropped[.ratchetBadHeader] == 1, "a stray `g` does not make a DM a group frame")
-        #expect(fixture.stores.messages.message("gdm") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("gdm")) == nil)
     }
 
     @Test func aV2FrameWithoutInitToAFreshDeviceIsNoSession() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        let orphan = try android.dm(MessageContent(body: "lost"), to: me, prekey: prekey, id: "v2-orphan", sentAt: now) { envelope in
+        let id = frameIdOf("v2-orphan")
+        let orphan = try android.dm(MessageContent(body: "lost"), to: me, prekey: prekey, id: id, sentAt: now) { envelope in
             envelope.ratchet = envelope.ratchet?.steady
         }
         fixture.deliver(orphan, from: android)
         #expect(fixture.engine.dropped[.ratchetNoSession] == 1)
-        #expect(fixture.stores.messages.message("v2-orphan") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("v2-orphan")) == nil)
         #expect(fixture.ratchetRecords(of: alice).session == nil)
     }
 
@@ -109,11 +112,11 @@ import Testing
         let prekey = try fixture.ourPrekey()
         let content = MessageContent(body: "x")
         let frames = [
-            try android.dm(content, to: me, prekey: prekey, id: "v3-with-nonce", sentAt: now, v3: true) { envelope in
+            try android.dm(content, to: me, prekey: prekey, id: frameIdOf("v3-with-nonce"), sentAt: now, v3: true) { envelope in
                 envelope.nonce = [UInt8](repeating: 0, count: 12)
             },
-            try android.dm(content, to: me, prekey: prekey, id: "v2-without-nonce", sentAt: now) { $0.nonce = [] },
-            try android.dm(content, to: me, prekey: prekey, id: "v2-short-nonce", sentAt: now) { $0.nonce = [1, 2, 3] },
+            try android.dm(content, to: me, prekey: prekey, id: frameIdOf("v2-without-nonce"), sentAt: now) { $0.nonce = [] },
+            try android.dm(content, to: me, prekey: prekey, id: frameIdOf("v2-short-nonce"), sentAt: now) { $0.nonce = [1, 2, 3] },
         ]
         for frame in frames {
             fixture.deliver(frame, from: android)
@@ -129,8 +132,8 @@ import Testing
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
         let reset = MessageContent(body: "", ctl: MessageContent.Control.sessionReset)
-        fixture.deliver(try android.dm(reset, to: me, prekey: prekey, id: "v2-ctl", sentAt: now), from: android)
-        #expect(fixture.stores.messages.message("v2-ctl") == nil)
+        fixture.deliver(try android.dm(reset, to: me, prekey: prekey, id: frameIdOf("v2-ctl"), sentAt: now), from: android)
+        #expect(fixture.stores.messages.message(frameIdOf("v2-ctl")) == nil)
         #expect(fixture.transport.written(.receipt).isEmpty)
         #expect(receivedRecords(in: fixture.engine.drainEvents()).isEmpty)
         #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [1], "the control frame's step is not a hole")
@@ -142,13 +145,14 @@ import Testing
         // The group form's codes, until P6, take the same path as a code nobody has minted.
         for (index, ctl) in [99, MessageContent.Control.groupKey, MessageContent.Control.groupKeyAck].enumerated() {
             let content = MessageContent(body: "", ctl: ctl)
-            fixture.deliver(try android.dm(content, to: me, prekey: prekey, id: "ctl-u\(index)", sentAt: now + Int64(index)), from: android)
+            fixture.deliver(
+                try android.dm(content, to: me, prekey: prekey, id: frameIdOf("ctl-u\(index)"), sentAt: now + Int64(index)), from: android)
         }
-        fixture.deliver(try android.dm("still alive", to: me, prekey: prekey, id: "dm-after", sentAt: now + 9), from: android)
-        #expect(fixture.stores.messages.message("dm-after")?.body == "still alive")
-        #expect(fixture.stores.messages.messages(in: alice.nodeId.string).map(\.id) == ["dm-after"])
+        fixture.deliver(try android.dm("still alive", to: me, prekey: prekey, id: frameIdOf("dm-after"), sentAt: now + 9), from: android)
+        #expect(fixture.stores.messages.message(frameIdOf("dm-after"))?.body == "still alive")
+        #expect(fixture.stores.messages.messages(in: alice.nodeId.string).map(\.id) == [frameIdOf("dm-after")])
         #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [4])
-        #expect(fixture.acknowledged(by: android) == ["dm-after"])
+        #expect(fixture.acknowledged(by: android) == [frameIdOf("dm-after")])
     }
 
     @Test func aBlockedPeersSealedCtlDiesAtTheBlockedGate() throws {
@@ -156,7 +160,7 @@ import Testing
         let prekey = try fixture.ourPrekey()
         fixture.engine.block(alice.nodeId)
         let reaction = MessageContent(body: "", ctl: MessageContent.Control.reaction, rp: ReactionContent(messageId: "m1", emoji: "👍"))
-        fixture.deliver(try android.dm(reaction, to: me, prekey: prekey, id: "ctl-b1", sentAt: now), from: android)
+        fixture.deliver(try android.dm(reaction, to: me, prekey: prekey, id: frameIdOf("ctl-b1"), sentAt: now), from: android)
         #expect(fixture.stores.messages.reaction(on: "m1", by: alice.nodeId) == nil)
         #expect(fixture.ratchetRecords(of: alice).session == nil, "never opened, so no chain moved")
         #expect(fixture.engine.dropped[.blocked] == 1)
@@ -165,19 +169,19 @@ import Testing
     @Test func aV3DmOpensWithItsCompactContent() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        let frame = try android.dm("compact hello", to: me, prekey: prekey, id: "v3-1", sentAt: now, v3: true)
+        let frame = try android.dm("compact hello", to: me, prekey: prekey, id: frameIdOf("v3-1"), sentAt: now, v3: true)
         let enc = try #require(try ChatContent(decoding: frame.envelope.payload).enc)
         #expect(enc.version == EncEnvelope.Version.compactRatchet && enc.nonce.isEmpty)
         fixture.deliver(frame, from: android)
-        #expect(fixture.stores.messages.message("v3-1")?.body == "compact hello")
-        #expect(fixture.acknowledged(by: android) == ["v3-1"])
+        #expect(fixture.stores.messages.message(frameIdOf("v3-1"))?.body == "compact hello")
+        #expect(fixture.acknowledged(by: android) == [frameIdOf("v3-1")])
     }
 
     @Test func aPlaintextThatOpensAndWillNotDecodeCommitsNothing() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
         // A v2 plaintext that is no `MessageContent`: Kotlin drops it as DECRYPT_FAILED before its commit (`:1043-1047`).
-        let aad = MessageCrypto.header(id: "junk", senderId: alice.nodeId.string, sentAt: now, thread: me.nodeId.string)
+        let aad = MessageCrypto.header(id: frameIdOf("junk"), senderId: alice.nodeId.string, sentAt: now, thread: me.nodeId.string)
         let answer = android.sessions.sealDm(to: me.keys.bundle, prekey: prekey, plaintext: [0xFF, 0x00], aad: aad, now: now)
         guard case .settled(.sealed(let envelope)) = answer else {
             Issue.record("the seal: \(answer)")
@@ -185,7 +189,7 @@ import Testing
         }
         let relay = RelayEnvelope(
             type: .chat,
-            id: "junk",
+            id: frameIdOf("junk"),
             senderId: alice.nodeId.string,
             sentAt: now,
             recipientId: me.nodeId.string,

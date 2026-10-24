@@ -118,16 +118,16 @@ import Testing
     @Test func anIncapableAuthorsDmGetsTheCleartextReceiptAndSelfVaccinates() throws {
         let (fixture, android) = try rig()
         fixture.deliver(try dave.profile(publishedAt: now, capabilities: 0xF), from: dave)
-        let frame = try dave.directMessage("old style", to: me, id: "v1-dm1", sentAt: now)
+        let frame = try dave.directMessage("old style", to: me, id: frameIdOf("v1-dm1"), sentAt: now)
         fixture.deliver(frame, from: dave)
-        #expect(fixture.stores.messages.message("v1-dm1")?.body == "old style")
-        #expect(fixture.acknowledged == ["v1-dm1"], "the cleartext receipt, the old author's build reads nothing else")
+        #expect(fixture.stores.messages.message(frameIdOf("v1-dm1"))?.body == "old style")
+        #expect(fixture.acknowledged == [frameIdOf("v1-dm1")], "the cleartext receipt, the old author's build reads nothing else")
         #expect(fixture.sealedReceipts(to: android).isEmpty && fixture.transport.written(.chat).isEmpty)
         #expect(fixture.engine.receipts == RatchetReceiptCounts(), "an author who cannot read one counts nothing")
-        #expect(!fixture.stores.custody.contains("v1-dm1"), "purged right out of our own custody")
+        #expect(!fixture.stores.custody.contains(frameIdOf("v1-dm1")), "purged right out of our own custody")
         fixture.clock.advance(SeenSetWindow.milliseconds)
         fixture.deliver(frame, from: carol)
-        #expect(!fixture.stores.custody.contains("v1-dm1"), "and a stale carrier's re-plant is refused")
+        #expect(!fixture.stores.custody.contains(frameIdOf("v1-dm1")), "and a stale carrier's re-plant is refused")
         #expect(fixture.ratchetRecords(of: dave) == RatchetPeerRecords(session: nil, localEpochs: [], recvEpochs: [], skippedKeys: []))
     }
 
@@ -175,9 +175,9 @@ import Testing
         let stamp = try #require(fixture.engine.ackSync.riding[dave.nodeId]?.first?.at)
         fixture.clock.advance(1000)
 
-        fixture.deliver(try dave.directMessage("no prekey", to: me, id: "v1-np", sentAt: now), from: dave)
-        #expect(fixture.acknowledged == ["v1-np"], "the cleartext receipt")
-        #expect(fixture.transport.written(.chat).isEmpty && !fixture.stores.custody.contains("v1-np"), "and its self-purge")
+        fixture.deliver(try dave.directMessage("no prekey", to: me, id: frameIdOf("v1-np"), sentAt: now), from: dave)
+        #expect(fixture.acknowledged == [frameIdOf("v1-np")], "the cleartext receipt")
+        #expect(fixture.transport.written(.chat).isEmpty && !fixture.stores.custody.contains(frameIdOf("v1-np")), "and its self-purge")
         #expect(fixture.engine.ackSync.riding[dave.nodeId]?.map(\.at) == [stamp], "the rider back, with its stamp")
         #expect(fixture.ratchetRecords(of: dave).session == nil, "no key moved")
         #expect(fixture.engine.receipts == RatchetReceiptCounts(receiptsSealedFallback: 1), "the seal that fell through, counted")
@@ -200,15 +200,15 @@ import Testing
         let stamp = try #require(fixture.engine.ackSync.riding[alice.nodeId]?.first?.at)
         fixture.clock.advance(1000)
         // A v1 DM from a capable author: its delivery writes nothing in the ratchet's tables, its receipt's seal does.
-        let frame = try alice.directMessage("while full", to: me, id: "v1-full", sentAt: now)
+        let frame = try alice.directMessage("while full", to: me, id: frameIdOf("v1-full"), sentAt: now)
 
         refusing.refusesWrites = true
         fixture.deliver(frame, from: alice)
         refusing.refusesWrites = false
-        #expect(fixture.stores.messages.message("v1-full")?.body == "while full")
+        #expect(fixture.stores.messages.message(frameIdOf("v1-full"))?.body == "while full")
         #expect(fixture.transport.written(.chat).isEmpty && fixture.acknowledged.isEmpty, "nothing on the air, sealed or cleartext")
-        #expect(stores.custody.contains("v1-full"), "nothing purged: the DM stays in our custody")
-        #expect(!fixture.engine.custody.isTombstoned("v1-full", now: fixture.clock.wallMilliseconds()))
+        #expect(stores.custody.contains(frameIdOf("v1-full")), "nothing purged: the DM stays in our custody")
+        #expect(!fixture.engine.custody.isTombstoned(frameIdOf("v1-full"), now: fixture.clock.wallMilliseconds()))
         #expect(stores.ratchet.records(of: alice.nodeId).session == nil, "no chain advanced")
         #expect(fixture.engine.ackSync.riding[alice.nodeId]?.map(\.at) == [stamp], "the rider back, with its stamp")
         #expect(fixture.engine.receipts == RatchetReceiptCounts(), "and a store that failed counts nothing")
@@ -216,7 +216,7 @@ import Testing
         fixture.clock.advance(SeenSetWindow.milliseconds)
         fixture.deliver(frame, from: carol)
         let content = try #require(fixture.sealedReceipts(to: android).first.flatMap { android.peek($0, from: me) })
-        #expect(content.ack == "v1-full" && content.acks == posts, "a later copy's receipt is sealed, and the tick rides it")
+        #expect(content.ack == frameIdOf("v1-full") && content.acks == posts, "a later copy's receipt is sealed, and the tick rides it")
         #expect(fixture.engine.ackSync.ridingFor(alice.nodeId) == 0)
         #expect(fixture.engine.receipts == RatchetReceiptCounts(receiptsSealed: 1, receiptsRidden: 1))
     }
@@ -231,21 +231,21 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let (stores, refusing) = try kind.storesRefusingPeerReads(blobs: directory, failures: ReportedFailures().record)
         let (fixture, android) = try rig(stores: stores)
-        let frame = try alice.directMessage("twice", to: me, id: "v1-twice", sentAt: now)
+        let frame = try alice.directMessage("twice", to: me, id: frameIdOf("v1-twice"), sentAt: now)
         fixture.deliver(frame, from: alice)
-        #expect(fixture.acknowledged(by: android) == ["v1-twice"], "the first copy's receipt, sealed")
+        #expect(fixture.acknowledged(by: android) == [frameIdOf("v1-twice")], "the first copy's receipt, sealed")
         _ = try roomTicksWaiting(1, in: fixture)
         let stamp = try #require(fixture.engine.ackSync.riding[alice.nodeId]?.first?.at)
         let advanced = stores.ratchet.records(of: alice.nodeId)
         fixture.transport.clear()
 
         refusing.failsReads = true
-        #expect(fixture.engine.sendSealedReceipt(for: "v1-twice", to: alice.nodeId) == .failed)
+        #expect(fixture.engine.sendSealedReceipt(for: frameIdOf("v1-twice"), to: alice.nodeId) == .failed)
         fixture.engine.acknowledge(frame.envelope, sender: alice.nodeId)
         refusing.failsReads = false
         #expect(fixture.transport.written.isEmpty, "nothing on the air, sealed or cleartext")
-        #expect(stores.custody.contains("v1-twice"), "nothing purged")
-        #expect(!fixture.engine.custody.isTombstoned("v1-twice", now: fixture.clock.wallMilliseconds()))
+        #expect(stores.custody.contains(frameIdOf("v1-twice")), "nothing purged")
+        #expect(!fixture.engine.custody.isTombstoned(frameIdOf("v1-twice"), now: fixture.clock.wallMilliseconds()))
         #expect(stores.ratchet.records(of: alice.nodeId) == advanced, "no chain advanced")
         #expect(fixture.engine.ackSync.riding[alice.nodeId]?.map(\.at) == [stamp], "the rider back, with its stamp")
         #expect(fixture.engine.receipts == RatchetReceiptCounts(receiptsSealed: 1))

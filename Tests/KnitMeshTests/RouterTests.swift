@@ -45,8 +45,8 @@ import Testing
 
     @Test func aNewFrameIsAdmittedOnceAndItsRepeatsAreDuplicates() {
         var router = Router()
-        let first = router.admit(inbound(frame("m1"), from: bob), now: 0)
-        let second = router.admit(inbound(frame("m1"), from: bob), now: 0)
+        let first = router.admit(inbound(frame(frameIdOf("m1")), from: bob), now: 0)
+        let second = router.admit(inbound(frame(frameIdOf("m1")), from: bob), now: 0)
         #expect(first == .new)
         #expect(second == .duplicate)
         #expect(router.counters.admitted == 1 && router.counters.deduplicated == 1)
@@ -54,7 +54,7 @@ import Testing
 
     @Test func aRelayGoesToEveryOtherNeighbourWithOneMoreHop() {
         var router = Router()
-        let (_, immediate) = handle(&router, frame("m1"), from: bob, neighbors: [bob, carol])
+        let (_, immediate) = handle(&router, frame(frameIdOf("m1")), from: bob, neighbors: [bob, carol])
         let fired = router.fireDue(now: 0, neighbors: [bob, carol])
         #expect(immediate.isEmpty)
         #expect(fired.map(\.to) == [carol])
@@ -65,20 +65,20 @@ import Testing
     @Test func addressedDMsFloodLikeRoomPosts() {
         // DMs have no routing table: a DM must flood, or it could never reach a recipient out of direct range.
         var router = Router()
-        _ = handle(&router, frame("dm1", recipient: zed), from: bob, neighbors: [bob, carol])
+        _ = handle(&router, frame(frameIdOf("dm1"), recipient: zed), from: bob, neighbors: [bob, carol])
         #expect(router.fireDue(now: 0, neighbors: [bob, carol]).map(\.to) == [carol])
     }
 
     @Test func aFrameIsNotRelayedOnceItsHopsReachItsTTL() {
         var router = Router()
-        _ = handle(&router, frame("m1", ttl: 3, hops: 3), from: bob, neighbors: [bob, carol])
+        _ = handle(&router, frame(frameIdOf("m1"), ttl: 3, hops: 3), from: bob, neighbors: [bob, carol])
         #expect(router.nextDeadline == nil)
         #expect(router.fireDue(now: 0, neighbors: [bob, carol]).isEmpty)
     }
 
     @Test func aForgedOversizedTTLIsCappedOnRelay() {
         var router = Router()
-        _ = handle(&router, frame("m1", ttl: .max), from: bob, neighbors: [bob, carol])
+        _ = handle(&router, frame(frameIdOf("m1"), ttl: .max), from: bob, neighbors: [bob, carol])
         let relayed = router.fireDue(now: 0, neighbors: [bob, carol]).map(\.wire)
         #expect(relayed.map(\.ttl) == [WireEnvelope.defaultTTL])
         #expect(relayed.map(\.hops) == [1])
@@ -86,13 +86,13 @@ import Testing
 
     @Test func aForgedTTLStopsAtTheLocalCap() {
         var router = Router()
-        _ = handle(&router, frame("m1", ttl: .max, hops: WireEnvelope.defaultTTL), from: bob, neighbors: [bob, carol])
+        _ = handle(&router, frame(frameIdOf("m1"), ttl: .max, hops: WireEnvelope.defaultTTL), from: bob, neighbors: [bob, carol])
         #expect(router.fireDue(now: 0, neighbors: [bob, carol]).isEmpty)
     }
 
     @Test func aPointToPointFrameIsDeliveredButNeverFlooded() {
         var router = Router()
-        let (admission, immediate) = handle(&router, frame("req1", relay: false), from: bob, neighbors: [bob, carol])
+        let (admission, immediate) = handle(&router, frame(frameIdOf("req1"), relay: false), from: bob, neighbors: [bob, carol])
         #expect(admission == .new)
         #expect(immediate.isEmpty)
         #expect(router.nextDeadline == nil)
@@ -100,7 +100,7 @@ import Testing
 
     @Test func aPointToPointDMFormFrameIsHandedToItsLinkedAddressee() {
         var router = Router()
-        let (_, immediate) = handle(&router, frame("tick1", recipient: zed, relay: false), from: bob, neighbors: [bob, zed])
+        let (_, immediate) = handle(&router, frame(frameIdOf("tick1"), recipient: zed, relay: false), from: bob, neighbors: [bob, zed])
         #expect(immediate.map(\.to) == [zed])
         #expect(immediate.map(\.wire.hops) == [1], "the hop is counted, as a relay counts one")
         #expect(immediate.map(\.wire.relay) == [false], "and it goes no further at the addressee")
@@ -109,13 +109,13 @@ import Testing
 
     @Test func aPointToPointFrameIsNeverHandedBackWhereItCameFrom() {
         var router = Router()
-        let (_, immediate) = handle(&router, frame("tick1", recipient: bob, relay: false), from: bob, neighbors: [bob])
+        let (_, immediate) = handle(&router, frame(frameIdOf("tick1"), recipient: bob, relay: false), from: bob, neighbors: [bob])
         #expect(immediate.isEmpty)
     }
 
     @Test func nothingIsHandedOnWithoutALiveLink() {
         var router = Router()
-        let (_, immediate) = handle(&router, frame("tick1", recipient: zed, relay: false), from: bob, neighbors: [bob, carol])
+        let (_, immediate) = handle(&router, frame(frameIdOf("tick1"), recipient: zed, relay: false), from: bob, neighbors: [bob, carol])
         #expect(immediate.isEmpty)
     }
 
@@ -123,9 +123,9 @@ import Testing
         var router = Router()
         let group = GroupInfo(id: "g", members: [zed.string], createdBy: "a")
         let frames = [
-            frame("t1", recipient: zed, relay: false, type: .typing),
-            frame("k1", relay: false, type: .keyRequest),
-            frame("g1", recipient: zed, relay: false, group: group),
+            frame(frameIdOf("t1"), recipient: zed, relay: false, type: .typing),
+            frame(frameIdOf("k1"), relay: false, type: .keyRequest),
+            frame(frameIdOf("g1"), recipient: zed, relay: false, group: group),
         ]
         let sends = frames.flatMap { handle(&router, $0, from: bob, neighbors: [bob, zed]).1 }
         #expect(sends.isEmpty)
@@ -133,14 +133,14 @@ import Testing
 
     @Test func aHandOnStopsAtTheLocalHopCap() {
         var router = Router()
-        let late = frame("tick1", ttl: .max, hops: WireEnvelope.defaultTTL, recipient: zed, relay: false)
+        let late = frame(frameIdOf("tick1"), ttl: .max, hops: WireEnvelope.defaultTTL, recipient: zed, relay: false)
         #expect(handle(&router, late, from: bob, neighbors: [bob, zed]).1.isEmpty)
     }
 
     @Test func aDuplicateFromASecondNeighbourCancelsThePendingRelay() {
         var router = Router()
-        _ = handle(&router, frame("m1"), from: bob, neighbors: [bob, carol, dave], jitter: 100, now: 0)
-        let overheard = router.admit(inbound(frame("m1"), from: carol), now: 40)
+        _ = handle(&router, frame(frameIdOf("m1")), from: bob, neighbors: [bob, carol, dave], jitter: 100, now: 0)
+        let overheard = router.admit(inbound(frame(frameIdOf("m1")), from: carol), now: 40)
         #expect(overheard == .duplicate)
         #expect(router.fireDue(now: 100, neighbors: [bob, carol, dave]).isEmpty)
         #expect(router.counters.suppressed == 1)
@@ -150,8 +150,8 @@ import Testing
     @Test func aDuplicateFromTheSameNeighbourIsNotAnOverhear() {
         // The link-up push, then the custody re-serve of the same frame from the same peer.
         var router = Router()
-        _ = handle(&router, frame("m1"), from: bob, neighbors: [bob, carol, dave], jitter: 100, now: 0)
-        _ = router.admit(inbound(frame("m1"), from: bob), now: 40)
+        _ = handle(&router, frame(frameIdOf("m1")), from: bob, neighbors: [bob, carol, dave], jitter: 100, now: 0)
+        _ = router.admit(inbound(frame(frameIdOf("m1")), from: bob), now: 40)
         let fired = router.fireDue(now: 100, neighbors: [bob, carol, dave])
         #expect(Set(fired.map(\.to)) == [carol, dave])
         #expect(router.counters.suppressed == 0)
@@ -159,7 +159,7 @@ import Testing
 
     @Test func aRelayWaitsOutItsJitterThenSkipsEverySource() {
         var router = Router()
-        _ = handle(&router, frame("m1"), from: bob, neighbors: [bob, carol, dave], jitter: 100, now: 0)
+        _ = handle(&router, frame(frameIdOf("m1")), from: bob, neighbors: [bob, carol, dave], jitter: 100, now: 0)
         #expect(router.nextDeadline == 100)
         #expect(router.fireDue(now: 99, neighbors: [bob, carol, dave]).isEmpty)
         let fired = router.fireDue(now: 100, neighbors: [bob, carol, dave])
@@ -170,37 +170,37 @@ import Testing
 
     @Test func aRelayGoesToTheNeighboursLinkedWhenItFires() {
         var router = Router()
-        _ = handle(&router, frame("m1"), from: bob, neighbors: [bob, carol], jitter: 50, now: 0)
+        _ = handle(&router, frame(frameIdOf("m1")), from: bob, neighbors: [bob, carol], jitter: 50, now: 0)
         #expect(router.fireDue(now: 50, neighbors: [bob, dave]).map(\.to) == [dave])
     }
 
     @Test func relaysFireOldestFirst() {
         var router = Router()
-        _ = handle(&router, frame("late"), from: bob, neighbors: [bob, carol], jitter: 90, now: 0)
-        _ = handle(&router, frame("early"), from: bob, neighbors: [bob, carol], jitter: 10, now: 0)
+        _ = handle(&router, frame(frameIdOf("late")), from: bob, neighbors: [bob, carol], jitter: 90, now: 0)
+        _ = handle(&router, frame(frameIdOf("early")), from: bob, neighbors: [bob, carol], jitter: 10, now: 0)
         let ids = router.fireDue(now: 100, neighbors: [bob, carol]).compactMap { try? RelayEnvelope(decoding: $0.wire.signed).id }
-        #expect(ids == ["early", "late"])
+        #expect(ids == [frameIdOf("early"), frameIdOf("late")])
     }
 
     @Test func aRoomPostOverTheBudgetIsRefusedUnmarked() {
         var router = Router(budget: IngressBudget(burst: 1, perMinute: 60))
-        let first = handle(&router, frame("m1"), from: bob, neighbors: [bob, carol])
-        let second = handle(&router, frame("m2"), from: bob, neighbors: [bob, carol])
+        let first = handle(&router, frame(frameIdOf("m1")), from: bob, neighbors: [bob, carol])
+        let second = handle(&router, frame(frameIdOf("m2")), from: bob, neighbors: [bob, carol])
         #expect(first.0 == .new)
         #expect(second.0 == .refused)
         #expect(router.counters.refused == 1)
         // Never marked seen, so the custody re-serve brings it in once the bucket refills: a delay, not a veto.
-        let later = handle(&router, frame("m2"), from: bob, neighbors: [bob, carol], now: 1000)
+        let later = handle(&router, frame(frameIdOf("m2")), from: bob, neighbors: [bob, carol], now: 1000)
         #expect(later.0 == .new)
     }
 
     @Test func duplicatesAndAddressedFramesAreNotMetered() {
         var router = Router(budget: IngressBudget(burst: 1, perMinute: 0))
         let admissions = [
-            handle(&router, frame("m1"), from: bob, neighbors: [bob, carol]).0,
-            handle(&router, frame("m1"), from: bob, neighbors: [bob, carol]).0,
-            handle(&router, frame("m1"), from: carol, neighbors: [bob, carol]).0,
-            handle(&router, frame("dm1", recipient: zed), from: bob, neighbors: [bob, carol]).0,
+            handle(&router, frame(frameIdOf("m1")), from: bob, neighbors: [bob, carol]).0,
+            handle(&router, frame(frameIdOf("m1")), from: bob, neighbors: [bob, carol]).0,
+            handle(&router, frame(frameIdOf("m1")), from: carol, neighbors: [bob, carol]).0,
+            handle(&router, frame(frameIdOf("dm1"), recipient: zed), from: bob, neighbors: [bob, carol]).0,
         ]
         #expect(admissions == [.new, .duplicate, .duplicate, .new])
         #expect(router.counters.refused == 0)
@@ -208,14 +208,14 @@ import Testing
 
     @Test func ourOwnFrameEchoesAsADuplicate() {
         var router = Router()
-        router.markOwn("mine", now: 0)
-        let echo = router.admit(inbound(frame("mine"), from: bob), now: 5)
+        router.markOwn(frameIdOf("mine"), now: 0)
+        let echo = router.admit(inbound(frame(frameIdOf("mine")), from: bob), now: 5)
         #expect(echo == .duplicate)
     }
 
     @Test func cancelAllDropsEveryPendingRelay() {
         var router = Router()
-        _ = handle(&router, frame("m1"), from: bob, neighbors: [bob, carol], jitter: 50)
+        _ = handle(&router, frame(frameIdOf("m1")), from: bob, neighbors: [bob, carol], jitter: 50)
         router.cancelAll()
         #expect(router.nextDeadline == nil)
         #expect(router.fireDue(now: 100, neighbors: [bob, carol]).isEmpty)
@@ -223,27 +223,51 @@ import Testing
 
     @Test func reopenLetsOneMoreCopyIn() {
         var router = Router()
-        _ = router.admit(inbound(frame("m1"), from: bob), now: 0)
-        let reopened = router.reopen("m1", now: 1)
-        let again = router.admit(inbound(frame("m1"), from: bob), now: 2)
+        _ = router.admit(inbound(frame(frameIdOf("m1")), from: bob), now: 0)
+        let reopened = router.reopen(frameIdOf("m1"), now: 1)
+        let again = router.admit(inbound(frame(frameIdOf("m1")), from: bob), now: 2)
         #expect(reopened)
         #expect(again == .new)
     }
 
-    @Test func aCraftedIdThatSwiftCallsEqualIsStillNew() {
-        // The Kelvin sign is "K" to Swift's String ==, and a different frame to Android.
+    @Test func aFrameWhoseIdIsNotCanonicalIsRefusedBeforeTheMeterAndTheSeenSet() {
+        // knit-next #178 (`MeshRouter.kt:96` at `a81f2050`): Android's database drops a leading U+FEFF, so the twin would
+        // take the real frame's rows there. A burst of one makes "not metered" a claim that can fail: had the twin cost the
+        // link its token, the real post after it would be refused.
+        var router = Router(budget: IngressBudget(burst: 1, perMinute: 0))
+        let real = frameIdOf("post-1")
+        let twin = handle(&router, frame("\u{FEFF}" + real), from: bob, neighbors: [bob, carol])
+        #expect(twin.0 == .nonCanonical)
+        #expect(router.counters.nonCanonical == 1 && router.counters.refused == 0 && router.counters.admitted == 0)
+        #expect(router.seenCount == 0, "never marked seen")
+        #expect(router.nextDeadline == nil, "never relayed")
+        let post = handle(&router, frame(real), from: bob, neighbors: [bob, carol])
+        #expect(post.0 == .new, "the real post is new, and its link still had its token")
+        #expect(router.fireDue(now: 0, neighbors: [bob, carol]).map(\.to) == [carol])
+        let again = handle(&router, frame("\u{FEFF}" + real), from: bob, neighbors: [bob, carol])
+        #expect(again.0 == .nonCanonical, "refused again, not deduplicated against anything")
+        #expect(router.counters.nonCanonical == 2 && router.counters.deduplicated == 0)
+    }
+
+    @Test func aCraftedIdThatSwiftCallsEqualIsRefused() {
+        // The Kelvin sign is "K" to Swift's String ==, and a different frame to Android; neither is a shape any build mints.
+        // That two such ids are distinct entries where one is kept is the seen set's guarantee (`SeenSetTests`).
         var router = Router()
-        _ = router.admit(inbound(frame("idK"), from: bob), now: 0)
-        let crafted = router.admit(inbound(frame("id\u{212A}"), from: bob), now: 0)
-        #expect(crafted == .new)
+        let canonical = String(repeating: "A", count: 20) + "KA"
+        let crafted = String(repeating: "A", count: 20) + "\u{212A}A"
+        #expect(crafted == canonical && crafted.count == FrameId.length, "Swift's == and count are both fooled")
+        #expect(router.admit(inbound(frame(crafted), from: bob), now: 0) == .nonCanonical)
+        #expect(router.admit(inbound(frame("id\u{212A}"), from: bob), now: 0) == .nonCanonical)
+        #expect(router.counters.nonCanonical == 2 && router.seenCount == 0)
+        #expect(router.admit(inbound(frame(canonical), from: bob), now: 0) == .new, "the id it imitates is still new")
     }
 
     @Test func aHigherThresholdNeedsMoreDistinctNeighbours() {
         var router = Router(configuration: Router.Configuration(suppressThreshold: 3))
-        _ = handle(&router, frame("m1"), from: bob, neighbors: [bob, carol, dave, zed], jitter: 100)
-        _ = router.admit(inbound(frame("m1"), from: carol), now: 10)
+        _ = handle(&router, frame(frameIdOf("m1")), from: bob, neighbors: [bob, carol, dave, zed], jitter: 100)
+        _ = router.admit(inbound(frame(frameIdOf("m1")), from: carol), now: 10)
         #expect(router.counters.suppressed == 0, "two of three")
-        _ = router.admit(inbound(frame("m1"), from: dave), now: 20)
+        _ = router.admit(inbound(frame(frameIdOf("m1")), from: dave), now: 20)
         #expect(router.counters.suppressed == 1)
         #expect(router.fireDue(now: 100, neighbors: [bob, carol, dave, zed]).isEmpty)
     }

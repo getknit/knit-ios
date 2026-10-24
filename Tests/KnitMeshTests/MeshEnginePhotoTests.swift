@@ -1,5 +1,6 @@
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -118,9 +119,10 @@ import Testing
         let hash = BlobHash(of: jpeg.bytes)
         let post = ChatContent(body: "Sunset", attachmentHash: hash.string, attachmentMime: "image/jpeg")
         let frame = try bob.signed(
-            RelayEnvelope(type: .chat, id: "post-1", senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: post.encoded))
+            RelayEnvelope(
+                type: .chat, id: frameIdOf("post-1"), senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: post.encoded))
         fixture.deliver(frame, from: bob)
-        #expect(fixture.stores.messages.message("post-1")?.attachment == MessageAttachment(hash: hash, mime: "image/jpeg"))
+        #expect(fixture.stores.messages.message(frameIdOf("post-1"))?.attachment == MessageAttachment(hash: hash, mime: "image/jpeg"))
         let asked = fixture.transport.written(.blobRequest)
         #expect(try asked.map { try BlobRequestContent(decoding: $0.envelope.payload).hash } == [hash.string])
         _ = fixture.engine.drainEvents()
@@ -138,8 +140,9 @@ import Testing
         let hash = BlobHash(of: sealed.blob)
         let content = MessageContent(
             body: "", attachmentHash: hash.string, attachmentMime: "image/png", attachmentKey: Base64.encode(sealed.key))
-        fixture.deliver(try bob.directMessage("", to: alice, id: "dm-1", sentAt: EngineFixture.start, content: content), from: bob)
-        let attachment = try #require(fixture.stores.messages.message("dm-1")?.attachment)
+        fixture.deliver(
+            try bob.directMessage("", to: alice, id: frameIdOf("dm-1"), sentAt: EngineFixture.start, content: content), from: bob)
+        let attachment = try #require(fixture.stores.messages.message(frameIdOf("dm-1"))?.attachment)
         #expect(attachment == MessageAttachment(hash: hash, mime: "image/png", key: Base64.encode(sealed.key)))
         #expect(fixture.engine.blobExchange.isWanted(hash))
     }
@@ -153,11 +156,13 @@ import Testing
         try fixture.pin(bob)
         let hash = BlobHash(of: jpeg.bytes)
         let content = MessageContent(body: "look", attachmentHash: hash.string, attachmentMime: "image/jpeg")
-        fixture.deliver(try bob.directMessage("look", to: alice, id: "dm-1", sentAt: EngineFixture.start, content: content), from: bob)
+        fixture.deliver(
+            try bob.directMessage("look", to: alice, id: frameIdOf("dm-1"), sentAt: EngineFixture.start, content: content), from: bob)
         let room = ChatContent(body: "", attachmentHash: hash.string, attachmentMime: "image/jpeg")
-        let post = RelayEnvelope(type: .chat, id: "post-1", senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: room.encoded)
+        let post = RelayEnvelope(
+            type: .chat, id: frameIdOf("post-1"), senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: room.encoded)
         fixture.deliver(try bob.signed(post), from: bob)
-        #expect(fixture.stores.messages.message("dm-1")?.attachment == MessageAttachment(hash: hash, mime: "image/jpeg"))
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1"))?.attachment == MessageAttachment(hash: hash, mime: "image/jpeg"))
         #expect(fixture.engine.blobExchange.isWanted(hash))
         fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: hash, mime: "image/jpeg", bytes: jpeg.bytes))
         #expect(fixture.stores.blobs.bytes(of: hash) == jpeg.bytes, "the plaintext itself, opened by nothing")
@@ -177,9 +182,10 @@ import Testing
             attachmentName: "map.pdf",
             attachmentSize: 2048
         )
-        fixture.deliver(try bob.directMessage("", to: alice, id: "dm-file", sentAt: EngineFixture.start, content: content), from: bob)
-        #expect(fixture.stores.messages.message("dm-file")?.attachment?.name == "map.pdf")
-        #expect(fixture.stores.messages.message("dm-file")?.attachment?.size == 2048)
+        fixture.deliver(
+            try bob.directMessage("", to: alice, id: frameIdOf("dm-file"), sentAt: EngineFixture.start, content: content), from: bob)
+        #expect(fixture.stores.messages.message(frameIdOf("dm-file"))?.attachment?.name == "map.pdf")
+        #expect(fixture.stores.messages.message(frameIdOf("dm-file"))?.attachment?.size == 2048)
     }
 
     /// A hash that is not 64 lowercase hex digits names no blob, so the message carries nothing, and a peer's long type
@@ -189,15 +195,17 @@ import Testing
         try fixture.pin(bob)
         let bad = ChatContent(body: "odd", attachmentHash: "NOT-A-HASH", attachmentMime: "image/jpeg")
         let frame = try bob.signed(
-            RelayEnvelope(type: .chat, id: "post-bad", senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: bad.encoded))
+            RelayEnvelope(
+                type: .chat, id: frameIdOf("post-bad"), senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: bad.encoded))
         fixture.deliver(frame, from: bob)
-        #expect(fixture.stores.messages.message("post-bad")?.attachment == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("post-bad"))?.attachment == nil)
         let long = ChatContent(
             body: "", attachmentHash: BlobHash(of: jpeg.bytes).string, attachmentMime: String(repeating: "x", count: 5000))
         let frame2 = try bob.signed(
-            RelayEnvelope(type: .chat, id: "post-long", senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: long.encoded))
+            RelayEnvelope(
+                type: .chat, id: frameIdOf("post-long"), senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: long.encoded))
         fixture.deliver(frame2, from: bob)
-        #expect(fixture.stores.messages.message("post-long")?.attachment?.mime?.utf16.count == MeshEngine.attachmentTextLimit)
+        #expect(fixture.stores.messages.message(frameIdOf("post-long"))?.attachment?.mime?.utf16.count == MeshEngine.attachmentTextLimit)
     }
 
     // MARK: Keeping and fetching
@@ -209,7 +217,7 @@ import Testing
         let missing = BlobHash(of: Array("not here yet".utf8))
         fixture.stores.messages.save(
             MessageRecord(
-                id: "m1",
+                id: frameIdOf("m1"),
                 senderId: bob.nodeId,
                 recipientId: nil,
                 conversationId: Conversations.nearby,

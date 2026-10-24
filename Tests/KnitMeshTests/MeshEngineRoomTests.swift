@@ -1,6 +1,7 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -34,7 +35,7 @@ import Testing
         let echo = try #require(fixture.transport.written(.chat).first)
         fixture.transport.clear()
         _ = fixture.engine.drainEvents()
-        fixture.engine.receive(InboundFrame(wire: echo.wire, envelope: echo.envelope, from: bob.nodeId))
+        fixture.engine.receiveAdmitted(InboundFrame(wire: echo.wire, envelope: echo.envelope, from: bob.nodeId))
         fixture.advance(1000)
         #expect(fixture.engine.drainEvents().isEmpty)
         #expect(fixture.transport.written(.chat).isEmpty, "a duplicate is never relayed")
@@ -60,7 +61,7 @@ import Testing
         try fixture.pin(bob)
         fixture.transport.clear()
         _ = fixture.engine.drainEvents()
-        let post = try bob.roomPost("Hi all", id: "post-1", sentAt: EngineFixture.start)
+        let post = try bob.roomPost("Hi all", id: frameIdOf("post-1"), sentAt: EngineFixture.start)
         fixture.deliver(post, from: bob)
 
         let events = fixture.engine.drainEvents()
@@ -70,13 +71,13 @@ import Testing
         }
         #expect(record.body == "Hi all" && record.senderId == bob.nodeId && !isRequest)
         #expect(record.arrivedAt == EngineFixture.start)
-        #expect(fixture.stores.custody.contains("post-1"))
+        #expect(fixture.stores.custody.contains(frameIdOf("post-1")))
 
         let tick = try #require(fixture.transport.written(.receipt).first)
         #expect(tick.to == bob.nodeId)
         #expect(!tick.wire.relay, "a room tick is point to point")
         #expect(tick.envelope.sentAt == 0, "and carries no sentAt, so nobody custodies it")
-        #expect(try ReceiptContent(decoding: tick.envelope.payload).ackId == "post-1")
+        #expect(try ReceiptContent(decoding: tick.envelope.payload).ackId == frameIdOf("post-1"))
 
         #expect(fixture.transport.written(.chat).isEmpty, "the relay waits out its jitter")
         fixture.advance(150)
@@ -90,19 +91,19 @@ import Testing
         let fixture = EngineFixture(alice)
         fixture.link(carol)
         try fixture.pin(bob)
-        fixture.deliver(try bob.roomPost("Via carol", id: "post-2", sentAt: EngineFixture.start), from: carol)
+        fixture.deliver(try bob.roomPost("Via carol", id: frameIdOf("post-2"), sentAt: EngineFixture.start), from: carol)
         #expect(fixture.transport.written(.receipt).isEmpty)
         fixture.link(bob)
         let ticks = fixture.transport.written(.receipt)
         #expect(ticks.map(\.to) == [bob.nodeId])
-        #expect(ticks.compactMap { try? ReceiptContent(decoding: $0.envelope.payload).ackId } == ["post-2"])
+        #expect(ticks.compactMap { try? ReceiptContent(decoding: $0.envelope.payload).ackId } == [frameIdOf("post-2")])
     }
 
     @Test func aTickIsOwedOnceAndSentOnce() throws {
         let fixture = EngineFixture(alice)
         fixture.link(carol)
         try fixture.pin(bob)
-        let post = try bob.roomPost("Twice", id: "post-3", sentAt: EngineFixture.start)
+        let post = try bob.roomPost("Twice", id: frameIdOf("post-3"), sentAt: EngineFixture.start)
         fixture.deliver(post, from: carol)
         fixture.clock.advance(SeenSetWindow.milliseconds)
         fixture.deliver(post, from: carol)
@@ -115,10 +116,10 @@ import Testing
         let fixture = EngineFixture(alice)
         fixture.link(carol)
         fixture.transport.clear()
-        let post = try bob.roomPost("Early", id: "post-4", sentAt: EngineFixture.start)
+        let post = try bob.roomPost("Early", id: frameIdOf("post-4"), sentAt: EngineFixture.start)
         fixture.deliver(post, from: carol)
         #expect(fixture.engine.dropped[.noSenderKey] == 1)
-        #expect(!fixture.stores.custody.contains("post-4"), "custody needs the sender's key")
+        #expect(!fixture.stores.custody.contains(frameIdOf("post-4")), "custody needs the sender's key")
         let request = try #require(fixture.transport.written(.keyRequest).first)
         #expect(request.to == carol.nodeId && !request.wire.relay)
         #expect(try KeyRequestContent(decoding: request.envelope.payload).nodeIds == [bob.nodeId.string])
@@ -131,8 +132,8 @@ import Testing
             }
             return record.id
         }
-        #expect(delivered == ["post-4"])
-        #expect(fixture.stores.custody.contains("post-4"), "the replay carries it too")
+        #expect(delivered == [frameIdOf("post-4")])
+        #expect(fixture.stores.custody.contains(frameIdOf("post-4")), "the replay carries it too")
     }
 
     @Test func aTickFromAnyoneMarksOurPostDelivered() throws {
@@ -141,10 +142,10 @@ import Testing
         try fixture.pin(carol)
         let post = try #require(fixture.engine.postToRoom("Anyone?"))
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try carol.receipt(for: post.id, id: "tick-1", relay: false), from: carol)
+        fixture.deliver(try carol.receipt(for: post.id, id: frameIdOf("tick-1"), relay: false), from: carol)
         #expect(fixture.engine.drainEvents() == [.delivered(messageId: post.id)])
         #expect(fixture.stores.messages.message(post.id)?.delivered == true)
-        fixture.deliver(try carol.receipt(for: post.id, id: "tick-2", relay: false), from: carol)
+        fixture.deliver(try carol.receipt(for: post.id, id: frameIdOf("tick-2"), relay: false), from: carol)
         #expect(fixture.engine.drainEvents().isEmpty, "✓✓ flips once")
     }
 
@@ -153,11 +154,11 @@ import Testing
         fixture.link(carol)
         try fixture.pin(bob)
         try fixture.pin(carol)
-        fixture.deliver(try bob.roomPost("Bob's", id: "post-5", sentAt: EngineFixture.start), from: carol)
+        fixture.deliver(try bob.roomPost("Bob's", id: frameIdOf("post-5"), sentAt: EngineFixture.start), from: carol)
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try carol.receipt(for: "post-5", id: "tick-3", sentAt: EngineFixture.start), from: carol)
+        fixture.deliver(try carol.receipt(for: frameIdOf("post-5"), id: frameIdOf("tick-3"), sentAt: EngineFixture.start), from: carol)
         #expect(fixture.engine.drainEvents().isEmpty)
-        #expect(fixture.stores.messages.message("post-5")?.delivered == false)
+        #expect(fixture.stores.messages.message(frameIdOf("post-5"))?.delivered == false)
     }
 }
 

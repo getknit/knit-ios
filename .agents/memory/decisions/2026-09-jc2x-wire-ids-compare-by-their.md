@@ -51,3 +51,12 @@ crafted twin that reaches an Android node before the real frame takes the real f
 This port keeps every byte on purpose, since dropping the mark would port the collision. Until knit-next binds ids
 whole, or both platforms refuse such ids (a paired change), an iPhone sends such a frame again to each Android
 neighbour at every exchange, and a soak that compares custody sets those ids aside (knit-next #178).
+
+**Amended 2026-10-23, by ADR 2026-10.h7xw: both platforms refuse such ids at the door.** `Router.admit` now refuses a
+frame whose id is not the shape its type is minted with, as knit-next does since `a81f2050`. Every admitted id is ASCII,
+so no two admitted ids are canonically equivalent and the router's seen set never meets a crafted twin. `RouterTests`'
+Kelvin-sign case is now `aCraftedIdThatSwiftCallsEqualIsRefused`, and the byte-keyed seen set's guard is `SeenSetTests`'
+`idsSwiftCallsEqualAreDistinctEntries`. The rest of this ADR still holds: rows stored before the gate, the replays past
+the router and the ids inside payloads still carry any string. Only custody rows stored before the gate are still served
+to Android, until they expire. The amendment above was wrong that a soak set those ids aside: neither `scripts/soak.py`
+nor `interop.py`'s custody comparison does.

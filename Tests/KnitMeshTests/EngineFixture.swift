@@ -3,6 +3,7 @@ import KnitStore
 import KnitSync
 import KnitTestSupport
 import KnitWire
+import Testing
 
 @testable import KnitMesh
 
@@ -75,15 +76,42 @@ struct EngineFixture {
         deliver(try peer.profile(publishedAt: clock.wallMilliseconds()), from: peer)
     }
 
-    /// Hands the engine a frame from `neighbor`.
-    func deliver(_ frame: TestFrame, from neighbor: TestPeer) {
+    /// Hands the engine a frame from `neighbor`, which the router's id gate must pass: a label id a test forgot to make
+    /// canonical (``frameIdOf(_:)``) would otherwise be refused silently, and a test asserting a refusal further in would
+    /// pass without reaching it.
+    func deliver(_ frame: TestFrame, from neighbor: TestPeer, sourceLocation: SourceLocation = #_sourceLocation) {
+        engine.receiveAdmitted(
+            InboundFrame(wire: frame.wire, envelope: frame.envelope, from: neighbor.nodeId), sourceLocation: sourceLocation)
+    }
+
+    /// Hands the engine a frame from `neighbor` whose id is not its type's shape on purpose, and checks that the router
+    /// refused it at the door (``Router/Admission/nonCanonical``).
+    func deliverRefused(_ frame: TestFrame, from neighbor: TestPeer, sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect(
+            !FrameId.admits(frame.envelope), "a frame for deliverRefused carries an id the gate refuses", sourceLocation: sourceLocation)
+        let before = engine.routerCounters.nonCanonical
         engine.receive(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: neighbor.nodeId))
+        #expect(engine.routerCounters.nonCanonical == before + 1, "the router refused it as non-canonical", sourceLocation: sourceLocation)
     }
 
     /// Moves time on and fires whatever is due.
     func advance(_ milliseconds: Int64) {
         clock.advance(milliseconds)
         engine.advance()
+    }
+}
+
+extension MeshEngine {
+    /// Receives `frame` after checking that the router's id gate passes it (``FrameId/admits(_:)``), so a test that
+    /// hands the engine a frame directly cannot have it refused at the door unnoticed. A frame refused on purpose goes
+    /// through ``EngineFixture/deliverRefused(_:from:sourceLocation:)``.
+    func receiveAdmitted(_ frame: InboundFrame, sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect(
+            FrameId.admits(frame.envelope),
+            "\(frame.envelope.type.rawValue) \(frame.envelope.id) is not its type's id shape: use frameIdOf",
+            sourceLocation: sourceLocation
+        )
+        receive(frame)
     }
 }
 

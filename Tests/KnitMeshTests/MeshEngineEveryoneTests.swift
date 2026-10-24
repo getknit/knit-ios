@@ -1,6 +1,7 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -33,9 +34,9 @@ import Testing
         #expect(everyone.count == 7)
         let content = MessageContent(body: "@everyone lunch?", mentions: everyone)
         let readers = members.filter { $0.nodeId != bob.nodeId }
-        let frame = try bob.groupMessage("", in: info, to: readers, id: "gm-all", sentAt: start, content: content)
+        let frame = try bob.groupMessage("", in: info, to: readers, id: frameIdOf("gm-all"), sentAt: start, content: content)
         fixture.deliver(frame, from: bob)
-        let stored = try #require(fixture.stores.messages.message("gm-all"))
+        let stored = try #require(fixture.stores.messages.message(frameIdOf("gm-all")))
         #expect(stored.mentions.count == 7 && stored.mentions.allSatisfy { $0.name == "everyone" })
         #expect(stored.mentions.mentions(alice.nodeId))
         let heard = announced(fixture.engine.drainEvents()).map(\.record)
@@ -51,9 +52,9 @@ import Testing
         let listed = members.filter { $0.nodeId != bob.nodeId && $0.nodeId != alice.nodeId }
         let content = MessageContent(body: "@everyone lunch?", mentions: listed.map { Mention(nodeId: $0.nodeId.string, name: "everyone") })
         let readers = members.filter { $0.nodeId != bob.nodeId }
-        let frame = try bob.groupMessage("", in: info, to: readers, id: "gm-not-us", sentAt: start, content: content)
+        let frame = try bob.groupMessage("", in: info, to: readers, id: frameIdOf("gm-not-us"), sentAt: start, content: content)
         fixture.deliver(frame, from: bob)
-        let stored = try #require(fixture.stores.messages.message("gm-not-us"))
+        let stored = try #require(fixture.stores.messages.message(frameIdOf("gm-not-us")))
         #expect(stored.mentions.count == 6 && !stored.mentions.mentions(alice.nodeId))
         #expect(announced(fixture.engine.drainEvents()).map(\.record).first?.mentions.mentions(alice.nodeId) == false)
     }

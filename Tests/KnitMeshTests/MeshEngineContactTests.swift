@@ -212,9 +212,8 @@ import Testing
         let fixture = linked()
         #expect(fixture.engine.addContact(try card(of: bob), from: .link, unblock: false) == .added(bob.nodeId))
         let content = ProfileContent(name: "Liar", status: "", pubKey: carol.keys.bundle.encoded)
-        let envelope = RelayEnvelope(
-            type: .profile, id: "profile-\(bob.nodeId)-9", senderId: bob.nodeId.string, sentAt: now, payload: content.encoded
-        )
+        let id = FrameId.profileId(sender: bob.nodeId.string, publishedAt: now)
+        let envelope = RelayEnvelope(type: .profile, id: id, senderId: bob.nodeId.string, sentAt: now, payload: content.encoded)
         fixture.deliver(try carol.signed(envelope), from: carol)
         #expect(fixture.engine.dropped[.keyMismatch] == 1)
         #expect(fixture.stores.peers.peer(bob.nodeId)?.publicKey == bob.keys.bundle.encoded)

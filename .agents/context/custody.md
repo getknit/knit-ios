@@ -172,9 +172,9 @@ publish it honestly.
 - **Android drops that mark,** a custody difference this port keeps on purpose (knit-next #178). knit-next binds ids
   as UTF-16, and SQLite drops a leading U+FEFF there (and byte-swaps the rest after a leading U+FFFE), so on Android
   such an id is one row with its unmarked twin, and its digest lists it unmarked. Dropping it here would port the
-  collision. Until knit-next binds ids whole, or both platforms refuse such ids (a paired change), an iPhone sends
-  such a frame again to each Android neighbour at every exchange, and a soak that compares custody sets those ids
-  aside.
+  collision. Both platforms now refuse such ids at the door instead (`FrameId.admits`, ADR 2026-10.h7xw), so no new
+  row takes one. A row stored before that gate is still served to Android neighbours, which refuse it, at every
+  exchange until it expires (24 h at most, 6 h for a room post).
 - **The early-receipt memo** is `CustodySync`'s `earlyReceipts`, counted in the `status` footprint as
   `earlyReceipts`. knit-next checks it again after the custody write, for a receipt handled on another dispatcher
   meanwhile; the engine here is synchronous (ADR 2026-09.gq84), so it checks once.

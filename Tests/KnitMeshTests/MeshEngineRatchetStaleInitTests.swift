@@ -27,7 +27,8 @@ import Testing
         let keychain = KeptSecretStore(me.keys.storedForm)
         let before = try EngineFixture.ratcheting(me, keychain: keychain)
         try before.pin(android)
-        before.deliver(try android.dm("the opener", to: me, prekey: try before.ourPrekey(), id: "opener", sentAt: now), from: android)
+        before.deliver(
+            try android.dm("the opener", to: me, prekey: try before.ourPrekey(), id: frameIdOf("opener"), sentAt: now), from: android)
         #expect(before.engine.prekeyRing?.answeredInits.map(\.peer) == [alice.nodeId], "the node kept the init it answered")
         #expect(android.session(with: me)?.confirmed == false, "our answer never reached the phone")
 
@@ -82,15 +83,17 @@ import Testing
         let android = try AndroidPeer(alice)
         let (keychain, fixture) = try reinstalled(android, stores: stores)
         refusing.refusesWrites = true
-        fixture.deliver(try onTheInit(android, fixture, id: "stale"), from: android)
+        fixture.deliver(try onTheInit(android, fixture, id: frameIdOf("stale")), from: android)
         refusing.refusesWrites = false
-        #expect(staleDrops(fixture, "stale").count == 1)
+        #expect(staleDrops(fixture, frameIdOf("stale")).count == 1)
         #expect(fixture.resetsSent(to: alice).isEmpty && fixture.ratchetRecords(of: alice).session == nil, "its reset was declined")
-        #expect(stores.custody.contains("stale") && stores.messages.message("stale") == nil, "custody keeps it, with no row")
+        #expect(
+            stores.custody.contains(frameIdOf("stale")) && stores.messages.message(frameIdOf("stale")) == nil,
+            "custody keeps it, with no row")
 
         let wall = fixture.clock.wallMilliseconds()
         let restarted = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: wall + Self.minute, seed: 22)
-        #expect(staleDrops(restarted, "stale").count == 1, "the start's replay met it, stale: \(restarted.log.all)")
+        #expect(staleDrops(restarted, frameIdOf("stale")).count == 1, "the start's replay met it, stale: \(restarted.log.all)")
         #expect(restarted.engine.dropped == [.ratchetNoSession: 1])
         #expect(restarted.resetsSent(to: alice).isEmpty, "and reset nothing")
         #expect(!restarted.log.all.contains { $0.contains(" at once") }, "nor tried to")
@@ -98,7 +101,7 @@ import Testing
         #expect(restarted.ratchetRecords(of: alice).session == nil)
 
         // Another frame on that init, live, at its first verdict, still resets at once.
-        restarted.deliver(try onTheInit(android, restarted, id: "stale-live"), from: android)
+        restarted.deliver(try onTheInit(android, restarted, id: frameIdOf("stale-live")), from: android)
         #expect(Set(restarted.resetsSent(to: alice).map(\.envelope.id)).count == 1)
     }
 
@@ -112,19 +115,19 @@ import Testing
         let (stores, refusing) = try kind.storesRefusingOpens(blobs: directory, failures: ReportedFailures().record)
         let android = try AndroidPeer(alice)
         let (_, fixture) = try reinstalled(android, stores: stores)
-        let first = try onTheInit(android, fixture, id: "stale-1")
+        let first = try onTheInit(android, fixture, id: frameIdOf("stale-1"))
 
         refusing.refusesWrites = true
         fixture.deliver(first, from: android)
         refusing.refusesWrites = false
-        #expect(staleDrops(fixture, "stale-1").count == 1)
+        #expect(staleDrops(fixture, frameIdOf("stale-1")).count == 1)
         #expect(fixture.log.all.contains("info mesh no session reset to \(alice.nodeId) at once: the store failed"), "\(fixture.log.all)")
         #expect(fixture.engine.dropped[.ratchetNoSession] == 1)
         #expect(fixture.engine.ratchet.floors(for: alice.nodeId).undecryptableIds == 1, "counted as NO_SESSION")
         #expect(fixture.resetsSent(to: alice).isEmpty && fixture.transport.written(.chat).isEmpty, "nothing on the air")
         #expect(fixture.ratchetRecords(of: alice).session == nil, "and no session")
 
-        fixture.deliver(try onTheInit(android, fixture, id: "stale-2"), from: android)
+        fixture.deliver(try onTheInit(android, fixture, id: frameIdOf("stale-2")), from: android)
         #expect(Set(fixture.resetsSent(to: alice).map(\.envelope.id)).count == 1, "the next one resets at once")
     }
 
@@ -142,7 +145,7 @@ import Testing
         try fixture.pin(android)
         fixture.transport.clear()
 
-        let ids = ["no-ring-1", "no-ring-2", "no-ring-3"]
+        let ids = ["no-ring-1", "no-ring-2", "no-ring-3"].map(frameIdOf)
         for (index, id) in ids.enumerated() {
             fixture.deliver(try android.dm("on a lost prekey", to: me, prekey: prekey, id: id, sentAt: now + Int64(index)), from: android)
             if index == 0 {

@@ -29,33 +29,33 @@ import Testing
         try fixture.pin(android)
         _ = fixture.engine.drainEvents()
         fixture.transport.clear()
-        let frame = try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: "dm-1", sentAt: now)
+        let frame = try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now)
 
         refusing.refusesRows = true
         fixture.deliver(frame, from: android)
         #expect(fixture.engine.dropped[.storeRefused] == 1)
-        #expect(fixture.stores.messages.message("dm-1") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1")) == nil)
         #expect(receivedRecords(in: fixture.engine.drainEvents()).isEmpty, "nothing delivered")
         #expect(fixture.transport.written.isEmpty, "nothing acknowledged")
         #expect(fixture.ratchetRecords(of: alice).session == nil, "the chain did not move")
-        #expect(fixture.stores.custody.contains("dm-1"), "carried before its unit opened, so in our digest and ours to open")
+        #expect(fixture.stores.custody.contains(frameIdOf("dm-1")), "carried before its unit opened, so in our digest and ours to open")
         #expect(kind == .memory || failures.count == 1, "the database reports its refusal once")
 
         // The sweep replays it while the store still refuses: kept again, and nothing more.
         fixture.advance(MeshConfiguration().sweepMilliseconds)
         #expect(fixture.engine.dropped[.storeRefused] == 2)
-        #expect(fixture.stores.messages.message("dm-1") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1")) == nil)
 
         refusing.refusesRows = false
         fixture.advance(MeshConfiguration().sweepMilliseconds)
-        #expect(fixture.stores.messages.message("dm-1")?.body == "hello")
-        #expect(receivedRecords(in: fixture.engine.drainEvents()).map(\.id) == ["dm-1"])
-        #expect(fixture.acknowledged(by: android) == ["dm-1"])
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1"))?.body == "hello")
+        #expect(receivedRecords(in: fixture.engine.drainEvents()).map(\.id) == [frameIdOf("dm-1")])
+        #expect(fixture.acknowledged(by: android) == [frameIdOf("dm-1")])
         #expect(fixture.ratchetRecords(of: alice).session?.confirmed == true)
 
         fixture.advance(MeshConfiguration().sweepMilliseconds)
         #expect(receivedRecords(in: fixture.engine.drainEvents()).isEmpty, "delivered exactly once")
-        #expect(fixture.acknowledged(by: android) == ["dm-1"])
+        #expect(fixture.acknowledged(by: android) == [frameIdOf("dm-1")])
     }
 
     /// A photo whose bytes this phone holds but cannot read: the DM's unit commits and the DM is delivered once, and the
@@ -80,12 +80,12 @@ import Testing
 
         let content = MessageContent(
             body: "look", attachmentHash: hash.string, attachmentMime: "image/jpeg", attachmentKey: Base64.encode(sealed.key))
-        let frame = try android.dm(content, to: me, prekey: try fixture.ourPrekey(), id: "photo-1", sentAt: now)
+        let frame = try android.dm(content, to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("photo-1"), sentAt: now)
         fixture.deliver(frame, from: android)
         #expect(fixture.engine.dropped[.storeRefused] == nil, "a blob's file error fails no unit")
-        #expect(fixture.stores.messages.message("photo-1")?.attachment?.hash == hash)
-        #expect(receivedRecords(in: fixture.engine.drainEvents()).map(\.id) == ["photo-1"])
-        #expect(fixture.acknowledged(by: android) == ["photo-1"])
+        #expect(fixture.stores.messages.message(frameIdOf("photo-1"))?.attachment?.hash == hash)
+        #expect(receivedRecords(in: fixture.engine.drainEvents()).map(\.id) == [frameIdOf("photo-1")])
+        #expect(fixture.acknowledged(by: android) == [frameIdOf("photo-1")])
         #expect(failures.count == before + 1, "the file's error is reported")
 
         fixture.deliverPastRouter(frame, from: alice)
@@ -106,9 +106,9 @@ import Testing
         let android = try AndroidPeer(alice)
         try iphone.pin(android)
         try carrier.pin(android)
-        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: "dm-1", sentAt: now)
+        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now)
         carrier.deliver(frame, from: android)
-        #expect(carrier.stores.custody.contains("dm-1"))
+        #expect(carrier.stores.custody.contains(frameIdOf("dm-1")))
 
         // Alice hands it to us point to point, as a phone linked to its addressee does (ADR 2026-09.wkbk), while our
         // store refuses the row.
@@ -116,19 +116,20 @@ import Testing
         let handed = TestFrame(wire: WireEnvelope(relay: false, sig: frame.wire.sig, signed: frame.wire.signed), envelope: frame.envelope)
         iphone.deliver(handed, from: android)
         #expect(iphone.engine.dropped[.storeRefused] == 1)
-        #expect(!iphone.stores.custody.contains("dm-1"), "point to point, so never carried")
+        #expect(!iphone.stores.custody.contains(frameIdOf("dm-1")), "point to point, so never carried")
         refusing.refusesRows = false
         _ = iphone.engine.drainEvents()
 
         iphone.link(carol)
         carrier.link(me)
         exchange(iphone, carrier)
-        #expect(iphone.stores.messages.message("dm-1")?.body == "hello")
-        #expect(receivedRecords(in: iphone.engine.drainEvents()).map(\.id) == ["dm-1"])
+        #expect(iphone.stores.messages.message(frameIdOf("dm-1"))?.body == "hello")
+        #expect(receivedRecords(in: iphone.engine.drainEvents()).map(\.id) == [frameIdOf("dm-1")])
         let ours = Set(iphone.stores.custody.liveIds(now: now))
         let theirs = Set(carrier.stores.custody.liveIds(now: now))
         #expect(ours == theirs, "the custodies differ by \(ours.symmetricDifference(theirs).sorted())")
-        #expect(ours.contains("dm-1") && theirs.contains("dm-1"), "our sealed receipt purged it nowhere, ours included")
+        #expect(
+            ours.contains(frameIdOf("dm-1")) && theirs.contains(frameIdOf("dm-1")), "our sealed receipt purged it nowhere, ours included")
     }
 
     /// Carries what each engine writes to the other until both fall quiet, as a live link between them would
@@ -143,7 +144,7 @@ import Testing
                 from.transport.clear()
                 for frame in written {
                     quiet = false
-                    to.engine.receive(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: from.me.nodeId))
+                    to.engine.receiveAdmitted(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: from.me.nodeId))
                 }
                 for digest in digests {
                     quiet = false

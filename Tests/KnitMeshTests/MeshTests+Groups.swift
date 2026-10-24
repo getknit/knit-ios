@@ -11,7 +11,7 @@ extension MeshTests {
         await rig.mesh.start()
         await linkBob(rig)
         let profile = try bob.profile(publishedAt: EngineFixture.start)
-        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: profile.wire.encoded).encoded ?? []))
+        await rig.mesh.process(.received(channel, LinkRig.admittedRecord(profile)))
         #expect(await rig.mesh.createGroup(with: []) == nil, "a group needs someone else")
         let group = try #require(await rig.mesh.createGroup(with: [bob.nodeId, TestPeer(seed: 3).nodeId]))
         let message = try #require(await rig.mesh.sendGroupMessage("Hi all", to: group.id))

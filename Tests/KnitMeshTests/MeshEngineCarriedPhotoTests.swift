@@ -35,9 +35,9 @@ import Testing
         states: [BlobHolding], files: [SentFile]
     ) {
         fixture.transport.clear()
-        fixture.deliver(asker.blobHave([hash.string], id: "q-\(tag)"), from: asker)
+        fixture.deliver(asker.blobHave([hash.string], id: frameIdOf("q-\(tag)")), from: asker)
         let answers = try fixture.transport.written(.blobHas).map { try BlobHasContent(decoding: $0.envelope.payload) }
-        fixture.deliver(asker.blobRequest(for: hash.string, id: "breq-\(tag)"), from: asker)
+        fixture.deliver(asker.blobRequest(for: hash.string, id: frameIdOf("breq-\(tag)")), from: asker)
         return (answers.flatMap { $0.items.map(\.state) }, fixture.transport.files.filter { $0.hash == hash })
     }
 
@@ -60,7 +60,7 @@ import Testing
         let fixture = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain)
         let android = try AndroidPeer(alice)
         try fixture.pin(android)
-        fixture.deliver(try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: "dm-1", sentAt: now), from: android)
+        fixture.deliver(try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now), from: android)
         #expect(fixture.ratchetRecords(of: alice).session?.confirmed == true)
 
         let oldHash = BlobHash(of: old)
@@ -98,13 +98,13 @@ import Testing
         let photo = BlobHash(of: old)
         stores.blobs.insert(old, hash: photo, mime: "image/jpeg", storedAt: now)
 
-        let sealed = try carol.directMessage("look", to: bob, id: "dm-carol-bob", sentAt: now)
+        let sealed = try carol.directMessage("look", to: bob, id: frameIdOf("dm-carol-bob"), sentAt: now)
         var chat = try ChatContent(decoding: sealed.envelope.payload)
         chat.attachmentHash = photo.string
         var envelope = sealed.envelope
         envelope.payload = chat.encoded
         fixture.deliver(try carol.signed(envelope), from: bob)
-        #expect(stores.custody.contains("dm-carol-bob"))
+        #expect(stores.custody.contains(frameIdOf("dm-carol-bob")))
         #expect(stores.messages.attachmentHashes().isEmpty, "no row of ours names it")
 
         fixture.engine.releaseBlob(photo)
@@ -112,7 +112,8 @@ import Testing
         _ = EngineFixture(me, stores: stores, wall: now + 60_000)
         #expect(stores.blobs.contains(photo), "so does a start while the frame lives")
         _ = EngineFixture(me, stores: stores, wall: aDayOn)
-        #expect(!stores.custody.contains("dm-carol-bob") && !stores.blobs.contains(photo), "and the first start after its day not")
+        #expect(
+            !stores.custody.contains(frameIdOf("dm-carol-bob")) && !stores.blobs.contains(photo), "and the first start after its day not")
     }
 
     /// The switch off: no frame of ours names our photo, so the photo it replaced goes at once, as before, and Carol's ask
@@ -157,13 +158,13 @@ import Testing
         let bobPrekey = try #require(PeerPrekey(verifying: bobPhone.prekey.info, signedBy: bob.keys.bundle))
         let payload = ProfilePayload(name: "Android", status: "", avatarHash: photoA.string, version: 1, openToChat: false)
         let content = MessageContent(body: "", ctl: MessageContent.Control.profile, pr: payload)
-        let sealed = try android.dm(content, to: bob, prekey: bobPrekey, id: "alice-profile-to-bob", sentAt: now, v3: true)
+        let sealed = try android.dm(content, to: bob, prekey: bobPrekey, id: frameIdOf("alice-profile-to-bob"), sentAt: now, v3: true)
         var chat = try ChatContent(decoding: sealed.envelope.payload)
         chat.attachmentHash = photoA.string
         var envelope = sealed.envelope
         envelope.payload = chat.encoded
         fixture.deliver(try alice.signed(envelope), from: bob)
-        #expect(stores.custody.contains("alice-profile-to-bob"))
+        #expect(stores.custody.contains(frameIdOf("alice-profile-to-bob")))
 
         let prekey = android.prekey.info
         let second = try alice.profile(
@@ -179,7 +180,9 @@ import Testing
         #expect(served.files == [SentFile(kind: .attachment, hash: photoA, mime: "image/jpeg", bytes: old, to: carol.nodeId)])
 
         let restarted = EngineFixture(me, stores: stores, wall: aDayOn)
-        #expect(!stores.custody.contains("alice-profile-to-bob") && !stores.blobs.contains(photoA), "gone at the start after its day")
+        #expect(
+            !stores.custody.contains(frameIdOf("alice-profile-to-bob")) && !stores.blobs.contains(photoA), "gone at the start after its day"
+        )
         #expect(stores.blobs.contains(photoB))
         restarted.link(carol)
         let refused = try ask(restarted, as: carol, for: photoA, tag: "2")

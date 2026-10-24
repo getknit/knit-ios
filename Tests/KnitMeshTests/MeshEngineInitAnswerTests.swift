@@ -52,7 +52,7 @@ import Testing
     @Test func anAndroidInitiatorIsAnsweredOnceAndItsInitStopsRiding() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        let first = try android.dm("hello", to: me, prekey: prekey, id: "dm-1", sentAt: now, v3: true)
+        let first = try android.dm("hello", to: me, prekey: prekey, id: frameIdOf("dm-1"), sentAt: now, v3: true)
         #expect(try initial(of: first) != nil, "Android initiated: its init rides")
         fixture.deliver(first, from: android)
 
@@ -70,7 +70,7 @@ import Testing
         #expect(android.session(with: me)?.confirmed == false)
         #expect(plaintext(try android.open(answer, from: me, now: now)) != nil)
         #expect(android.session(with: me)?.confirmed == true, "our answer confirmed Android's side")
-        let second = try android.dm("again", to: me, prekey: prekey, id: "dm-2", sentAt: now + 1, v3: true)
+        let second = try android.dm("again", to: me, prekey: prekey, id: frameIdOf("dm-2"), sentAt: now + 1, v3: true)
         #expect(try initial(of: second) == nil, "and its init rides no more")
         fixture.deliver(second, from: android)
         fixture.deliverPastRouter(first, from: carol)
@@ -82,12 +82,12 @@ import Testing
     @Test func theSameInitIsAnsweredAgainOnlyAfterTheFloor() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        fixture.deliver(try android.dm("one", to: me, prekey: prekey, id: "dm-1", sentAt: now), from: android)
+        fixture.deliver(try android.dm("one", to: me, prekey: prekey, id: frameIdOf("dm-1"), sentAt: now), from: android)
         fixture.clock.advance(RatchetAnswers.floorMilliseconds - 1)
-        fixture.deliver(try android.dm("two", to: me, prekey: prekey, id: "dm-2", sentAt: now + 1), from: android)
+        fixture.deliver(try android.dm("two", to: me, prekey: prekey, id: frameIdOf("dm-2"), sentAt: now + 1), from: android)
         #expect(fixture.engine.answers.introsAnswered == 1, "inside the floor")
         fixture.clock.advance(1)
-        fixture.deliver(try android.dm("three", to: me, prekey: prekey, id: "dm-3", sentAt: now + 2), from: android)
+        fixture.deliver(try android.dm("three", to: me, prekey: prekey, id: frameIdOf("dm-3"), sentAt: now + 2), from: android)
         #expect(fixture.engine.answers.introsAnswered == 2, "and again once it has passed")
     }
 
@@ -97,18 +97,19 @@ import Testing
     @Test func aResetsNewInitIsAnsweredInsideTheOldOnesFloorOnce() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: "dm-1", sentAt: now), from: android)
+        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: frameIdOf("dm-1"), sentAt: now), from: android)
         let first = try #require(answerFrames(fixture).first)
         #expect(plaintext(try android.open(first, from: me, now: now)) != nil)
         let oldRoot = try #require(android.session(with: me)).root
 
         fixture.clock.advance(Self.minute)
-        let reset = try android.resetDm(to: me, prekey: prekey, id: "reset", at: now + Self.minute)
+        let reset = try android.resetDm(to: me, prekey: prekey, id: frameIdOf("reset"), at: now + Self.minute)
         let header = try #require(try ChatContent(decoding: reset.envelope.payload).enc?.ratchet)
         #expect(header.initial != nil && header.flags & RatchetHeader.resetFlag != 0, "a fresh init, flagged")
         fixture.deliver(reset, from: android)
         #expect(fixture.engine.answers.introsAnswered == 2, "the reset's new init, answered inside the floor")
-        fixture.deliver(try android.dm("after", to: me, prekey: prekey, id: "dm-2", sentAt: now + Self.minute + 1), from: android)
+        fixture.deliver(
+            try android.dm("after", to: me, prekey: prekey, id: frameIdOf("dm-2"), sentAt: now + Self.minute + 1), from: android)
         #expect(fixture.engine.answers.introsAnswered == 2, "its own repeats stay floored")
 
         let latest = try #require(answerFrames(fixture).last)
@@ -123,18 +124,19 @@ import Testing
     @Test func aResetMarkedUnderAnInitWeAnsweredEarnsItOneMoreAnswer() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        let first = try android.dm("hello", to: me, prekey: prekey, id: "dm-1", sentAt: now)
+        let first = try android.dm("hello", to: me, prekey: prekey, id: frameIdOf("dm-1"), sentAt: now)
         fixture.deliver(first, from: android)
         #expect(fixture.engine.answers.introsAnswered == 1)
 
         fixture.clock.advance(Self.minute)
-        let marked = try android.resetDm(to: me, prekey: prekey, id: "marked", at: now + Self.minute)
+        let marked = try android.resetDm(to: me, prekey: prekey, id: frameIdOf("marked"), at: now + Self.minute)
         let header = try #require(try ChatContent(decoding: marked.envelope.payload).enc?.ratchet)
         #expect(header.flags & RatchetHeader.resetFlag != 0, "flagged")
         #expect(header.initial?.eph == (try initial(of: first))?.eph, "under the init it still waits on")
         fixture.deliver(marked, from: android)
         #expect(fixture.engine.answers.introsAnswered == 2, "the mark earns its init one more answer")
-        fixture.deliver(try android.dm("plain", to: me, prekey: prekey, id: "dm-2", sentAt: now + Self.minute + 1), from: android)
+        fixture.deliver(
+            try android.dm("plain", to: me, prekey: prekey, id: frameIdOf("dm-2"), sentAt: now + Self.minute + 1), from: android)
         #expect(fixture.engine.answers.introsAnswered == 2, "and the plain frames after it stay floored")
     }
 
@@ -144,8 +146,8 @@ import Testing
     /// frames parked for it land. A re-flooded profile finds nothing more to answer.
     @Test func anInitThatOpensBeforeItsSendersPrekeyPinsIsAnsweredWhenTheProfilePins() throws {
         let (fixture, android) = try rig(prekeyPinned: false)
-        fixture.deliver(try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: "dm-1", sentAt: now), from: android)
-        #expect(fixture.stores.messages.message("dm-1")?.body == "hello", "it opened")
+        fixture.deliver(try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now), from: android)
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1"))?.body == "hello", "it opened")
         #expect(fixture.engine.answers.introsAnswered == 0, "but nothing could be sealed to Android yet")
 
         fixture.deliver(try android.profile(publishedAt: now + 1), from: alice)
@@ -163,11 +165,11 @@ import Testing
     @Test func aDebtIsForgivenWhenAProfileWithoutTheRatchetPins() throws {
         let (fixture, android) = try rig(prekeyPinned: false)
         let prekey = try fixture.ourPrekey()
-        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: "dm-1", sentAt: now), from: android)
+        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: frameIdOf("dm-1"), sentAt: now), from: android)
         fixture.deliver(try alice.profile(publishedAt: now + 1, capabilities: 0xF), from: alice)
         fixture.deliver(try android.profile(publishedAt: now + 2), from: alice)
         #expect(fixture.engine.answers.introsAnswered == 0, "forgiven, so the pin found nothing owed")
-        fixture.deliver(try android.dm("again", to: me, prekey: prekey, id: "dm-2", sentAt: now + 3), from: alice)
+        fixture.deliver(try android.dm("again", to: me, prekey: prekey, id: frameIdOf("dm-2"), sentAt: now + 3), from: alice)
         #expect(fixture.engine.answers.introsAnswered == 1, "nothing was answered, so the next frame owes again")
     }
 
@@ -186,15 +188,15 @@ import Testing
         let prekey = try first.ourPrekey()
 
         refusing.refusesRows = true
-        first.deliver(try android.dm("hello", to: me, prekey: prekey, id: "dm-1", sentAt: now), from: android)
+        first.deliver(try android.dm("hello", to: me, prekey: prekey, id: frameIdOf("dm-1"), sentAt: now), from: android)
         refusing.refusesRows = false
-        #expect(first.engine.dropped[.storeRefused] == 1 && stores.custody.contains("dm-1"), "custody kept it, with no row")
+        #expect(first.engine.dropped[.storeRefused] == 1 && stores.custody.contains(frameIdOf("dm-1")), "custody kept it, with no row")
         #expect(first.engine.answers.introsAnswered == 0, "a unit that failed answers nothing")
 
         let restarted = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + Self.minute)
-        #expect(stores.messages.message("dm-1")?.body == "hello", "the start's replay delivered it")
+        #expect(stores.messages.message(frameIdOf("dm-1"))?.body == "hello", "the start's replay delivered it")
         #expect(restarted.engine.answers.introsAnswered == 0 && restarted.answerIds.isEmpty, "and answered nothing")
-        restarted.deliver(try android.dm("live", to: me, prekey: prekey, id: "dm-2", sentAt: now + Self.minute), from: android)
+        restarted.deliver(try android.dm("live", to: me, prekey: prekey, id: frameIdOf("dm-2"), sentAt: now + Self.minute), from: android)
         #expect(restarted.engine.answers.introsAnswered == 1, "the next live frame is answered")
     }
 
@@ -206,7 +208,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let (stores, refusing) = try kind.storesRefusingOpens(blobs: directory, failures: ReportedFailures().record)
         let (fixture, android) = try rig(stores: stores, prekeyPinned: false)
-        fixture.deliver(try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: "dm-1", sentAt: now), from: android)
+        fixture.deliver(try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now), from: android)
         let held = stores.ratchet.records(of: alice.nodeId)
         fixture.transport.clear()
 
@@ -226,7 +228,7 @@ import Testing
     /// unit takes the joined seal with it.
     @Test func anAnswerSealedInsideAUnitPutsNothingOnTheAirAndKeepsTheDebt() throws {
         let (fixture, android) = try rig()
-        let frame = try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: "dm-1", sentAt: now)
+        let frame = try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now)
         fixture.deliver(frame, from: android)
         #expect(fixture.engine.answers.introsAnswered == 1)
         fixture.clock.advance(RatchetAnswers.floorMilliseconds)
@@ -257,8 +259,8 @@ import Testing
         profiles.locked = false
         let (fixture, android) = try rig(stores: .inMemory(ownProfileStore: profiles))
         profiles.locked = true
-        fixture.deliver(try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: "dm-1", sentAt: now), from: android)
-        #expect(fixture.stores.messages.message("dm-1")?.body == "hello")
+        fixture.deliver(try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now), from: android)
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1"))?.body == "hello")
         #expect(fixture.engine.answers.introsAnswered == 0 && fixture.answerIds.isEmpty, "nothing sealed")
         profiles.locked = false
         fixture.deliver(try android.profile(publishedAt: now + 1), from: alice)

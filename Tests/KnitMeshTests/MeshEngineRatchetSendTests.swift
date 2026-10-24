@@ -197,10 +197,10 @@ import Testing
         let theirs = try #require(android.session(with: me))
         #expect(theirs.confirmed && !theirs.weAreInitiator)
 
-        let answer = try android.dm("hi back", to: me, prekey: try fixture.ourPrekey(), id: "answer", sentAt: now + 1, v3: true)
+        let answer = try android.dm("hi back", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("answer"), sentAt: now + 1, v3: true)
         fixture.deliver(answer, from: android)
         let ours = try #require(fixture.ratchetRecords(of: alice).session)
-        #expect(fixture.stores.messages.message("answer")?.body == "hi back")
+        #expect(fixture.stores.messages.message(frameIdOf("answer"))?.body == "hi back")
         #expect(ours.confirmed && ours.weAreInitiator && ours.root == theirs.root && ours.establishedAt == theirs.establishedAt)
     }
 

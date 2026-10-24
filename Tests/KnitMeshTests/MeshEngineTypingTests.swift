@@ -1,5 +1,6 @@
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -41,13 +42,13 @@ import Testing
 
     @Test func aRoomCueAsAndroidSendsItShowsInTheRoomAndIsNeverCarriedOrRelayed() throws {
         let fixture = try linked()
-        let cue = try bob.typing(id: "t-1")
+        let cue = try bob.typing(id: frameIdOf("t-1"))
         #expect(cue.envelope.payload == [0xA0], "Android's `{}`, pinned by its IosPayloadShapesTest")
         let digest = fixture.engine.digestCue
         fixture.deliver(cue, from: bob)
         #expect(pictures(fixture.engine.drainEvents()) == [[Conversations.nearby: [bob.nodeId]]])
         #expect(fixture.engine.typingNow == [Conversations.nearby: [bob.nodeId]])
-        #expect(!fixture.stores.custody.contains("t-1"))
+        #expect(!fixture.stores.custody.contains(frameIdOf("t-1")))
         #expect(fixture.engine.digestCue == digest, "one digest, whatever this node shows")
         #expect(fixture.engine.dropped.isEmpty)
         fixture.advance(1000)
@@ -57,8 +58,8 @@ import Testing
 
     @Test func aDirectCueShowsInItsSendersThreadAndOneForSomeoneElseIsIgnored() throws {
         let fixture = try linked()
-        fixture.deliver(try bob.typing(id: "t-1", to: alice), from: bob)
-        fixture.deliver(try carol.typing(id: "t-2", to: dave), from: carol)
+        fixture.deliver(try bob.typing(id: frameIdOf("t-1"), to: alice), from: bob)
+        fixture.deliver(try carol.typing(id: frameIdOf("t-2"), to: dave), from: carol)
         #expect(pictures(fixture.engine.drainEvents()) == [[bob.nodeId.string: [bob.nodeId]]])
     }
 
@@ -66,21 +67,21 @@ import Testing
         let fixture = try linked()
         let group = try #require(fixture.engine.createGroup(with: [bob.nodeId, carol.nodeId]))
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try bob.typing(id: "t-1", groupId: group.id), from: bob)
-        fixture.deliver(try dave.typing(id: "t-2", groupId: group.id), from: bob)
-        fixture.deliver(try carol.typing(id: "t-3", groupId: "g-unknown"), from: carol)
+        fixture.deliver(try bob.typing(id: frameIdOf("t-1"), groupId: group.id), from: bob)
+        fixture.deliver(try dave.typing(id: frameIdOf("t-2"), groupId: group.id), from: bob)
+        fixture.deliver(try carol.typing(id: frameIdOf("t-3"), groupId: "g-unknown"), from: carol)
         #expect(pictures(fixture.engine.drainEvents()) == [[group.id: [bob.nodeId]]], "Dave is on no roster, and g-unknown held nowhere")
-        fixture.deliver(try carol.typing(id: "t-4", groupId: group.id), from: carol)
+        fixture.deliver(try carol.typing(id: frameIdOf("t-4"), groupId: group.id), from: carol)
         #expect(fixture.engine.typingNow == [group.id: [bob.nodeId, carol.nodeId].sorted()])
     }
 
     @Test func aCueLapsesAfterTwelveSecondsAndEachCuePushesTheEndOut() throws {
         let fixture = try linked()
-        fixture.deliver(try bob.typing(id: "t-1"), from: bob)
+        fixture.deliver(try bob.typing(id: frameIdOf("t-1")), from: bob)
         _ = fixture.engine.drainEvents()
         #expect(fixture.engine.nextDeadline == fixture.clock.monotonicMilliseconds() + 12_000)
         fixture.advance(11_000)
-        fixture.deliver(try bob.typing(id: "t-2"), from: bob)
+        fixture.deliver(try bob.typing(id: frameIdOf("t-2")), from: bob)
         #expect(fixture.engine.drainEvents().isEmpty, "a refresh changes nobody's picture")
         fixture.advance(11_999)
         #expect(fixture.engine.typingNow == [Conversations.nearby: [bob.nodeId]])
@@ -91,10 +92,10 @@ import Testing
 
     @Test func theirMessageEndsTheirCueAtOnceBeforeItIsAnnounced() throws {
         let fixture = try linked()
-        fixture.deliver(try bob.typing(id: "t-1"), from: bob)
-        fixture.deliver(try carol.typing(id: "t-2"), from: carol)
+        fixture.deliver(try bob.typing(id: frameIdOf("t-1")), from: bob)
+        fixture.deliver(try carol.typing(id: frameIdOf("t-2")), from: carol)
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try bob.roomPost("Here", id: "post-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.roomPost("Here", id: frameIdOf("post-1"), sentAt: start), from: bob)
         let events = fixture.engine.drainEvents()
         #expect(pictures(events) == [[Conversations.nearby: [carol.nodeId]]])
         guard case .typing = events.first else {
@@ -105,16 +106,16 @@ import Testing
 
     @Test func aDirectMessageEndsOnlyItsOwnThreadsCue() throws {
         let fixture = try linked()
-        fixture.deliver(try bob.typing(id: "t-1"), from: bob)
-        fixture.deliver(try bob.typing(id: "t-2", to: alice), from: bob)
+        fixture.deliver(try bob.typing(id: frameIdOf("t-1")), from: bob)
+        fixture.deliver(try bob.typing(id: frameIdOf("t-2"), to: alice), from: bob)
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try bob.directMessage("Psst", to: alice, id: "dm-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.directMessage("Psst", to: alice, id: frameIdOf("dm-1"), sentAt: start), from: bob)
         #expect(fixture.engine.typingNow == [Conversations.nearby: [bob.nodeId]])
     }
 
     @Test func ourOwnCueComingBackIsIgnored() throws {
         let fixture = try linked()
-        fixture.deliver(try alice.typing(id: "t-1"), from: bob)
+        fixture.deliver(try alice.typing(id: frameIdOf("t-1")), from: bob)
         #expect(fixture.engine.drainEvents().isEmpty)
         #expect(fixture.engine.dropped.isEmpty)
     }
@@ -122,7 +123,7 @@ import Testing
     @Test func aBlockedSendersCueIsDroppedAndEarnsNoTick() throws {
         let fixture = try linked()
         fixture.engine.block(bob.nodeId)
-        fixture.deliver(try bob.typing(id: "t-1"), from: bob)
+        fixture.deliver(try bob.typing(id: frameIdOf("t-1")), from: bob)
         #expect(fixture.engine.drainEvents().isEmpty)
         #expect(fixture.engine.dropped == [.blocked: 1])
         #expect(fixture.transport.written(.receipt).isEmpty)
@@ -131,7 +132,7 @@ import Testing
     @Test func aCueThatDoesNotDecodeIsCountedRatherThanReadAsTheRooms() throws {
         // knit-next `03c4c3b1`: a group cue whose id broke would otherwise light the room.
         let fixture = try linked()
-        let broken = RelayEnvelope(type: .typing, id: "t-1", senderId: bob.nodeId.string, payload: [0x61, 0x78])
+        let broken = RelayEnvelope(type: .typing, id: frameIdOf("t-1"), senderId: bob.nodeId.string, payload: [0x61, 0x78])
         fixture.deliver(try bob.signed(broken, relay: false), from: bob)
         #expect(fixture.engine.drainEvents().isEmpty)
         #expect(fixture.engine.dropped == [.undecodable: 1])
@@ -140,7 +141,7 @@ import Testing
     @Test func aCueFromSomeoneWhoseKeyIsMissingAsksForNothing() throws {
         let fixture = try linked()
         let stranger = TestPeer(seed: 9)
-        fixture.deliver(try stranger.typing(id: "t-1"), from: bob)
+        fixture.deliver(try stranger.typing(id: frameIdOf("t-1")), from: bob)
         #expect(fixture.engine.drainEvents().isEmpty)
         #expect(fixture.engine.dropped == [.noSenderKey: 1])
         #expect(fixture.transport.written(.keyRequest).isEmpty, "worthless a moment later")
@@ -148,7 +149,7 @@ import Testing
 
     @Test func stoppingForgetsWhoIsTyping() throws {
         let fixture = try linked()
-        fixture.deliver(try bob.typing(id: "t-1"), from: bob)
+        fixture.deliver(try bob.typing(id: frameIdOf("t-1")), from: bob)
         _ = fixture.engine.drainEvents()
         fixture.engine.forgetTyping()
         fixture.engine.forgetTyping()

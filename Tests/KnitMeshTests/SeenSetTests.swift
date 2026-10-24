@@ -16,6 +16,17 @@ import Testing
         #expect(!seen.contains("y", now: 0))
     }
 
+    @Test func idsSwiftCallsEqualAreDistinctEntries() {
+        // ADR 2026-09.jc2x: the set keys on an id's bytes (`ExactKey`). Swift's == calls a Kelvin sign "K" and folds a
+        // combining acute onto its letter; the router refuses both shapes at the door now, but what the set keeps for a
+        // frame that reached it (our own, a replay) must still be the id it was given.
+        var seen = SeenSet()
+        #expect("idK" == "id\u{212A}" && "caf\u{E9}" == "cafe\u{301}", "equal to Swift")
+        #expect(
+            Self.insert([("idK", 0), ("id\u{212A}", 0), ("caf\u{E9}", 0), ("cafe\u{301}", 0)], into: &seen) == [true, true, true, true])
+        #expect(seen.count == 4)
+    }
+
     @Test func anIdIsNewAgainOnceItsWindowHasPassed() {
         var seen = SeenSet(windowMilliseconds: 1000)
         #expect(Self.insert([("a", 0), ("a", 500)], into: &seen) == [true, false])

@@ -1,5 +1,6 @@
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -31,9 +32,9 @@ import Testing
         fixture.link(bob, carol)
         fixture.transport.clear()
         // The unsigned sender says carol; the request came over bob's link, so bob is the asker.
-        fixture.deliver(carol.blobRequest(for: photoHash.string, id: "breq-1"), from: bob)
+        fixture.deliver(carol.blobRequest(for: photoHash.string, id: frameIdOf("breq-1")), from: bob)
         #expect(fixture.transport.files == [SentFile(kind: .attachment, hash: photoHash, mime: "image/png", bytes: photo, to: bob.nodeId)])
-        #expect(!fixture.stores.custody.contains("breq-1"), "never carried")
+        #expect(!fixture.stores.custody.contains(frameIdOf("breq-1")), "never carried")
         #expect(fixture.transport.written.isEmpty, "never relayed")
         #expect(fixture.engine.dropped.isEmpty, "unsigned by design, so not a drop")
         #expect(
@@ -44,24 +45,24 @@ import Testing
         let fixture = EngineFixture(alice)
         fixture.link(bob, carol)
         fixture.transport.clear()
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-1", relay: true), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1"), relay: true), from: bob)
         fixture.advance(1000)
-        #expect(fixture.transport.written.allSatisfy { $0.envelope.id != "breq-1" })
+        #expect(fixture.transport.written.allSatisfy { $0.envelope.id != frameIdOf("breq-1") })
     }
 
     @Test func aSecondAskInsideTheMemoOrWhileACopyIsOnTheLinkServesNothing() {
         let fixture = EngineFixture(alice)
         holding(fixture)
         fixture.link(bob)
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-1"), from: bob)
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-2"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1")), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-2")), from: bob)
         #expect(fixture.transport.files.count == 1, "the serve memo")
         fixture.clock.advance(BlobExchange.serveMemoMilliseconds)
         fixture.transport.inFlight = [(photoHash, bob.nodeId)]
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-3"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-3")), from: bob)
         #expect(fixture.transport.files.count == 1, "a copy already on the link")
         fixture.transport.inFlight = []
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-4"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-4")), from: bob)
         #expect(fixture.transport.files.count == 2)
         let serving = "serving \(photo.count) bytes"
         #expect(answers(fixture) == [serving, "served to it within the serve memo", "already on its way", serving])
@@ -72,14 +73,14 @@ import Testing
         let fixture = EngineFixture(alice)
         fixture.link(bob, carol)
         fixture.transport.clear()
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-1"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1")), from: bob)
         #expect(fixture.transport.files.isEmpty)
         let asked = fixture.transport.written(.blobRequest)
         #expect(asked.map(\.to) == [carol.nodeId])
         let request = try #require(asked.first)
         #expect(try BlobRequestContent(decoding: request.envelope.payload).hash == photoHash.string)
         #expect(fixture.transport.accepted == [photoHash], "the links keep it when it streams in")
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-2"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-2")), from: bob)
         fixture.advance(BlobExchange.firstAskGraceMilliseconds)
         #expect(fixture.transport.written(.blobRequest).count == 1, "already wanted, and the round has nobody else to widen to")
         #expect(answers(fixture) == ["not held; fetching it", "not held; fetching it"])
@@ -91,7 +92,7 @@ import Testing
         let fixture = EngineFixture(alice)
         fixture.link(bob)
         fixture.transport.clear()
-        fixture.deliver(bob.blobRequest(for: "AB", id: "breq-1"), from: bob)
+        fixture.deliver(bob.blobRequest(for: "AB", id: frameIdOf("breq-1")), from: bob)
         #expect(fixture.transport.written.isEmpty && fixture.transport.files.isEmpty)
         #expect(fixture.engine.dropped[.undecodable] == 1)
     }
@@ -203,10 +204,10 @@ import Testing
         let fixture = EngineFixture(alice)
         holding(fixture)
         // Carol's request came over a link the transport no longer holds, so nothing went out.
-        fixture.deliver(carol.blobRequest(for: photoHash.string, id: "breq-1"), from: carol)
+        fixture.deliver(carol.blobRequest(for: photoHash.string, id: frameIdOf("breq-1")), from: carol)
         #expect(fixture.transport.files.isEmpty)
         fixture.link(carol)
-        fixture.deliver(carol.blobRequest(for: photoHash.string, id: "breq-2"), from: carol)
+        fixture.deliver(carol.blobRequest(for: photoHash.string, id: frameIdOf("breq-2")), from: carol)
         #expect(fixture.transport.files.map(\.to) == [carol.nodeId], "not held off by the memo of a serve that never went out")
         #expect(answers(fixture) == ["no link to it", "serving \(photo.count) bytes"])
     }

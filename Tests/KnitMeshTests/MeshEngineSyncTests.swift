@@ -1,5 +1,6 @@
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -15,12 +16,12 @@ import Testing
         fixture.link(bob, carol)
         try fixture.pin(bob)
         fixture.transport.clear()
-        var post = try bob.roomPost("Tampered", id: "post-1", sentAt: EngineFixture.start)
+        var post = try bob.roomPost("Tampered", id: frameIdOf("post-1"), sentAt: EngineFixture.start)
         post.wire.sig[0] ^= 0xFF
         fixture.deliver(post, from: bob)
         #expect(fixture.engine.dropped[.badSignature] == 1)
-        #expect(!fixture.stores.custody.contains("post-1"))
-        #expect(fixture.stores.messages.message("post-1") == nil)
+        #expect(!fixture.stores.custody.contains(frameIdOf("post-1")))
+        #expect(fixture.stores.messages.message(frameIdOf("post-1")) == nil)
         fixture.advance(150)
         #expect(fixture.transport.written(.chat).map(\.to) == [carol.nodeId], "a relay that drops what it cannot read is a black hole")
     }
@@ -28,29 +29,30 @@ import Testing
     @Test func anUnsignedChatIsDropped() throws {
         let fixture = EngineFixture(alice)
         try fixture.pin(bob)
-        let post = try bob.roomPost("Unsigned", id: "post-2", sentAt: EngineFixture.start)
+        let post = try bob.roomPost("Unsigned", id: frameIdOf("post-2"), sentAt: EngineFixture.start)
         let unsigned = WireEnvelope(sig: [], signed: post.wire.signed)
-        fixture.engine.receive(InboundFrame(wire: unsigned, envelope: post.envelope, from: bob.nodeId))
+        fixture.engine.receiveAdmitted(InboundFrame(wire: unsigned, envelope: post.envelope, from: bob.nodeId))
         #expect(fixture.engine.dropped[.unsigned] == 1)
     }
 
     @Test func anUndecodablePayloadIsDroppedQuietly() throws {
         let fixture = EngineFixture(alice)
         try fixture.pin(bob)
-        let envelope = RelayEnvelope(type: .chat, id: "junk", senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: [0xFF])
+        let envelope = RelayEnvelope(
+            type: .chat, id: frameIdOf("junk"), senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: [0xFF])
         fixture.deliver(try bob.signed(envelope), from: bob)
         #expect(fixture.engine.dropped[.undecodable] == 1)
-        #expect(!fixture.stores.custody.contains("junk"), "a room post that does not decode is not carried")
+        #expect(!fixture.stores.custody.contains(frameIdOf("junk")), "a room post that does not decode is not carried")
     }
 
     @Test func ourOwnFrameComingBackVerifiesWithOurKey() throws {
         // How a node whose custody was wiped carries its own frames again.
         let stores = MeshStores.inMemory()
         let fixture = EngineFixture(alice, stores: stores)
-        let mine = try alice.roomPost("Mine", id: "mine-1", sentAt: EngineFixture.start)
+        let mine = try alice.roomPost("Mine", id: frameIdOf("mine-1"), sentAt: EngineFixture.start)
         fixture.deliver(mine, from: bob)
-        #expect(stores.custody.contains("mine-1"))
-        #expect(stores.custody.frame("mine-1", now: EngineFixture.start)?.signed == mine.wire.signed)
+        #expect(stores.custody.contains(frameIdOf("mine-1")))
+        #expect(stores.custody.frame(frameIdOf("mine-1"), now: EngineFixture.start)?.signed == mine.wire.signed)
     }
 
     @Test func aDigestIsAnsweredWithWhatThePeerLacks() throws {
@@ -97,7 +99,7 @@ import Testing
         let profile = try bob.profile(publishedAt: EngineFixture.start)
         fixture.deliver(profile, from: bob)
         fixture.transport.clear()
-        fixture.deliver(try carol.keyRequest(for: [bob.nodeId], id: "req-1"), from: carol)
+        fixture.deliver(try carol.keyRequest(for: [bob.nodeId], id: frameIdOf("req-1")), from: carol)
         let served = try #require(fixture.transport.written(.profile).first)
         #expect(served.to == carol.nodeId)
         #expect(!served.wire.relay)
@@ -110,7 +112,7 @@ import Testing
         fixture.link(carol, dave)
         try fixture.pin(carol)
         fixture.transport.clear()
-        fixture.deliver(try carol.keyRequest(for: [bob.nodeId], id: "req-2"), from: carol)
+        fixture.deliver(try carol.keyRequest(for: [bob.nodeId], id: frameIdOf("req-2")), from: carol)
         let asked = fixture.transport.written(.keyRequest)
         #expect(Set(asked.map(\.to)) == [carol.nodeId, dave.nodeId])
         #expect(asked.allSatisfy { !$0.wire.relay })
@@ -126,7 +128,7 @@ import Testing
         fixture.link(carol)
         fixture.deliver(try bob.profile(publishedAt: EngineFixture.start), from: bob)
         fixture.transport.clear()
-        fixture.deliver(try carol.keyRequest(for: [bob.nodeId], id: "req-0"), from: carol)
+        fixture.deliver(try carol.keyRequest(for: [bob.nodeId], id: frameIdOf("req-0")), from: carol)
         #expect(fixture.transport.written(.profile).isEmpty)
         #expect(fixture.engine.dropped[.noSenderKey] == 1)
     }
@@ -136,7 +138,7 @@ import Testing
         fixture.link(carol, TestPeer(seed: 4))
         try fixture.pin(carol)
         fixture.transport.clear()
-        fixture.deliver(try carol.keyRequest(for: [alice.nodeId], id: "req-3"), from: carol)
+        fixture.deliver(try carol.keyRequest(for: [alice.nodeId], id: frameIdOf("req-3")), from: carol)
         fixture.advance(1000)
         #expect(fixture.transport.written(.keyRequest).isEmpty, "a request for our own key is skipped, and never flooded")
     }
@@ -144,7 +146,7 @@ import Testing
     @Test func aNewNeighbourIsAskedForEveryKeyStillMissing() throws {
         let fixture = EngineFixture(alice)
         fixture.link(carol)
-        fixture.deliver(try bob.roomPost("Who?", id: "post-3", sentAt: EngineFixture.start), from: carol)
+        fixture.deliver(try bob.roomPost("Who?", id: frameIdOf("post-3"), sentAt: EngineFixture.start), from: carol)
         fixture.transport.clear()
         let dave = TestPeer(seed: 4)
         fixture.link(dave)
@@ -156,8 +158,8 @@ import Testing
     @Test func aMissingKeyIsAskedForAgainWithinTheCooldownOnlyByTheHealPass() throws {
         let fixture = EngineFixture(alice)
         fixture.link(carol)
-        fixture.deliver(try bob.roomPost("One", id: "post-4", sentAt: EngineFixture.start), from: carol)
-        fixture.deliver(try bob.roomPost("Two", id: "post-5", sentAt: EngineFixture.start), from: carol)
+        fixture.deliver(try bob.roomPost("One", id: frameIdOf("post-4"), sentAt: EngineFixture.start), from: carol)
+        fixture.deliver(try bob.roomPost("Two", id: frameIdOf("post-5"), sentAt: EngineFixture.start), from: carol)
         #expect(fixture.transport.written(.keyRequest).count == 1, "the cooldown holds a burst to one request")
         fixture.transport.clear()
         fixture.advance(900_000)

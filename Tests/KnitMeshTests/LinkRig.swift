@@ -134,6 +134,17 @@ struct LinkRig {
         LinkRecord(.frame, payload: wire.encoded).encoded ?? []
     }
 
+    /// The FRAME record for a frame the engine behind the link must take past the router's id gate
+    /// (``FrameId/admits(_:)``): a label id a test forgot to make canonical would otherwise be refused unnoticed.
+    static func admittedRecord(_ frame: TestFrame, sourceLocation: SourceLocation = #_sourceLocation) -> [UInt8] {
+        #expect(
+            FrameId.admits(frame.envelope),
+            "\(frame.envelope.type.rawValue) \(frame.envelope.id) is not its type's id shape: use frameIdOf",
+            sourceLocation: sourceLocation
+        )
+        return frameRecord(frame.wire)
+    }
+
     /// A signed-looking frame from the low peer; the link layer never checks signatures.
     static func signedFrame(_ id: String, sig: UInt8 = 1, type: FrameType = .chat) -> WireEnvelope {
         let envelope = RelayEnvelope(type: type, id: id, senderId: low.string, payload: ChatContent(body: id).encoded)

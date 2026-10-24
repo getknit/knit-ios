@@ -45,11 +45,11 @@ import Testing
         let fixture = try EngineFixture.ratcheting(me, stores: stores)
         try fixture.pin(try AndroidPeer(alice))
         let group = fixture.holdGroup(with: [alice])
-        fixture.deliver(try alice.groupMessage("hers", in: group, to: [me], id: "gm-alice", sentAt: now), from: alice)
+        fixture.deliver(try alice.groupMessage("hers", in: group, to: [me], id: frameIdOf("gm-alice"), sentAt: now), from: alice)
         fixture.transport.clear()
         refusing.refusesWrites = true
         let message = try #require(fixture.engine.sendGroupMessage("not yet", to: group.id))
-        _ = try #require(fixture.engine.react(to: "gm-alice", with: "\u{1F525}"))
+        _ = try #require(fixture.engine.react(to: frameIdOf("gm-alice"), with: "\u{1F525}"))
         refusing.refusesWrites = false
         #expect(fixture.transport.written.isEmpty, "neither the message nor the reaction went, in any form")
         #expect(message.pendingKey && fixture.stores.groupRatchet.holdings(of: group.id) == .empty)

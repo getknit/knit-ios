@@ -1,5 +1,6 @@
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -125,19 +126,19 @@ import Testing
 
     @Test func framesAndDigestsFromALinkReachTheEngine() async throws {
         let rig = rig()
-        let carried = try TestPeer(seed: 3).roomPost("Carried for others", id: "carried-1", sentAt: EngineFixture.start)
+        let carried = try TestPeer(seed: 3).roomPost("Carried for others", id: frameIdOf("carried-1"), sentAt: EngineFixture.start)
         let frame = CarriedFrame(envelope: carried.envelope, sig: carried.wire.sig, signed: carried.wire.signed)
         rig.stores.custody.store(frame, origin: .relayed, now: EngineFixture.start)
         await rig.mesh.start()
         await linkBob(rig)
         let profile = try bob.profile(publishedAt: EngineFixture.start)
-        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: profile.wire.encoded).encoded ?? []))
+        await rig.mesh.process(.received(channel, LinkRig.admittedRecord(profile)))
         #expect(rig.stores.peers.peer(bob.nodeId) != nil)
         let digest = LinkRecord(.digest, payload: LinkJSON.digestPayload(ids: [])).encoded ?? []
         await rig.mesh.process(.received(channel, digest))
         let ids = rig.radio.frames(on: channel).compactMap { try? RelayEnvelope(decoding: $0.signed).id }
         // Our profile and Bob's own already crossed this link, so the answer carries only what it has not.
-        #expect(ids == ["profile-\(alice.nodeId)-\(EngineFixture.start)", "carried-1"])
+        #expect(ids == ["profile-\(alice.nodeId)-\(EngineFixture.start)", frameIdOf("carried-1")])
         #expect(await rig.mesh.dropped.isEmpty)
     }
 
@@ -147,9 +148,9 @@ import Testing
         #expect(await rig.mesh.footprint == MeshFootprint(), "our profile is marked seen when it first goes out")
         await linkBob(rig)
         let profile = try bob.profile(publishedAt: EngineFixture.start)
-        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: profile.wire.encoded).encoded ?? []))
-        let stranger = try TestPeer(seed: 3).roomPost("Whose key?", id: "stranger-1", sentAt: EngineFixture.start)
-        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: stranger.wire.encoded).encoded ?? []))
+        await rig.mesh.process(.received(channel, LinkRig.admittedRecord(profile)))
+        let stranger = try TestPeer(seed: 3).roomPost("Whose key?", id: frameIdOf("stranger-1"), sentAt: EngineFixture.start)
+        await rig.mesh.process(.received(channel, LinkRig.admittedRecord(stranger)))
         let sent = rig.radio.frames(on: channel).compactMap { try? RelayEnvelope(decoding: $0.signed).type }
         #expect(sent == [.profile, .keyRequest])
         let footprint = await rig.mesh.footprint
@@ -222,7 +223,7 @@ import Testing
         await rig.mesh.start()
         await linkBob(rig)
         let profile = try bob.profile(publishedAt: EngineFixture.start)
-        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: profile.wire.encoded).encoded ?? []))
+        await rig.mesh.process(.received(channel, LinkRig.admittedRecord(profile)))
         await rig.mesh.setVerified(bob.nodeId, true)
         #expect(rig.stores.peers.verifiedNodeIds() == [bob.nodeId])
         await rig.mesh.setVerified(alice.nodeId, true)

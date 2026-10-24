@@ -169,7 +169,7 @@ import Testing
         lab.advance(11 * Self.minute)
         let served = try #require(history.backFill.first { $0.envelope.id == history.opener })
         let written = lab[index].transport.written(.chat).count
-        lab[index].engine.receive(InboundFrame(wire: served.wire, envelope: served.envelope, from: lab[other].me.nodeId))
+        lab[index].engine.receiveAdmitted(InboundFrame(wire: served.wire, envelope: served.envelope, from: lab[other].me.nodeId))
         lab.carry()
         #expect(lab.thread(index, with: other).contains { $0.hasPrefix(history.opener) }, "read read-only, and delivered")
         let peer = ExactKey(lab[other].me.nodeId.string)
@@ -311,7 +311,7 @@ import Testing
         )
         let sentAt = lab[1].clock.wallMilliseconds()
         let report = MessageRecord(
-            id: "the-report",
+            id: frameIdOf("the-report"),
             senderId: bob.nodeId,
             recipientId: alice.nodeId,
             conversationId: alice.nodeId.string,
@@ -327,7 +327,7 @@ import Testing
             return
         }
         lab.carry()
-        let row = try #require(lab[0].stores.messages.message("the-report"), "alice holds the file DM")
+        let row = try #require(lab[0].stores.messages.message(frameIdOf("the-report")), "alice holds the file DM")
         #expect(row.attachment?.name == "quarterly-report.pdf", "the re-sealed copy named the file")
         #expect(row.attachment?.size == 1_400_000, "and gave its size")
         #expect(row.attachment?.mime == "application/pdf" && row.attachment?.hash == blob)

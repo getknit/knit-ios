@@ -1,6 +1,7 @@
 import Foundation
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -31,13 +32,13 @@ import Testing
         let android = try AndroidPeer(alice)
         try iphone.pin(android)
         try carrier.pin(android)
-        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: "dm-1", sentAt: now)
+        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now)
         carrier.deliver(frame, from: android)
         refusing.refusesRows = true
         iphone.deliver(frame, from: android)
         refusing.refusesRows = false
         #expect(iphone.engine.dropped[.storeRefused] == 1)
-        #expect(iphone.stores.custody.contains("dm-1") && carrier.stores.custody.contains("dm-1"), "both carry it")
+        #expect(iphone.stores.custody.contains(frameIdOf("dm-1")) && carrier.stores.custody.contains(frameIdOf("dm-1")), "both carry it")
         // Each relays what it took once the router's jitter runs out, before the two meet, as a phone met later would.
         let jitter = Router.Configuration().jitterWindowMilliseconds
         iphone.advance(jitter)
@@ -46,20 +47,21 @@ import Testing
         iphone.link(carol)
         carrier.link(me)
         var served = exchange(iphone, carrier)
-        #expect(iphone.stores.messages.message("dm-1") == nil, "the carrier served nothing that opened it")
+        #expect(iphone.stores.messages.message(frameIdOf("dm-1")) == nil, "the carrier served nothing that opened it")
         _ = iphone.engine.drainEvents()
 
         iphone.advance(sweep)
-        #expect(iphone.stores.messages.message("dm-1")?.body == "hello", "delivered from the copy kept")
-        #expect(receivedRecords(in: iphone.engine.drainEvents()).map(\.id) == ["dm-1"])
+        #expect(iphone.stores.messages.message(frameIdOf("dm-1"))?.body == "hello", "delivered from the copy kept")
+        #expect(receivedRecords(in: iphone.engine.drainEvents()).map(\.id) == [frameIdOf("dm-1")])
         // The carrier's clock keeps step, or our receipt would reach it dated past the five minutes custody allows.
         carrier.advance(sweep)
         served += exchange(iphone, carrier)
-        #expect(!served.contains("dm-1"), "the carrier never served it again")
+        #expect(!served.contains(frameIdOf("dm-1")), "the carrier never served it again")
         let ours = Set(iphone.stores.custody.liveIds(now: iphone.clock.wallMilliseconds()))
         let theirs = Set(carrier.stores.custody.liveIds(now: carrier.clock.wallMilliseconds()))
         #expect(ours == theirs, "the custodies differ by \(ours.symmetricDifference(theirs).sorted())")
-        #expect(ours.contains("dm-1") && theirs.contains("dm-1"), "our sealed receipt purged it nowhere, ours included")
+        #expect(
+            ours.contains(frameIdOf("dm-1")) && theirs.contains(frameIdOf("dm-1")), "our sealed receipt purged it nowhere, ours included")
         #expect(ours.count == theirs.count && iphone.transport.written(.receipt).isEmpty, "and nothing went in the clear")
     }
 
@@ -74,7 +76,7 @@ import Testing
         let iphone = try EngineFixture.ratcheting(me, stores: stores)
         let android = try AndroidPeer(alice)
         try iphone.pin(android)
-        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: "dm-1", sentAt: now)
+        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now)
         refusing.refusesRows = true
         iphone.deliver(frame, from: android)
         refusing.refusesRows = false
@@ -84,14 +86,14 @@ import Testing
         refusing.failsReads = true
         iphone.advance(sweep)
         refusing.failsReads = false
-        #expect(iphone.stores.messages.message("dm-1") == nil)
+        #expect(iphone.stores.messages.message(frameIdOf("dm-1")) == nil)
         #expect(iphone.engine.dropped[.storeRefused] == 1, "kept, and not opened")
         #expect(kind == .memory || failures.count > reported, "the database reports the read it failed")
 
         iphone.advance(sweep)
-        #expect(iphone.stores.messages.message("dm-1")?.body == "hello", "the next sweep delivers it")
-        #expect(receivedRecords(in: iphone.engine.drainEvents()).map(\.id) == ["dm-1"])
-        #expect(iphone.acknowledged(by: android) == ["dm-1"])
+        #expect(iphone.stores.messages.message(frameIdOf("dm-1"))?.body == "hello", "the next sweep delivers it")
+        #expect(receivedRecords(in: iphone.engine.drainEvents()).map(\.id) == [frameIdOf("dm-1")])
+        #expect(iphone.acknowledged(by: android) == [frameIdOf("dm-1")])
     }
 
     /// A kept frame delivered another way before the sweep, here the copy the router let past once, is delivered and
@@ -107,18 +109,18 @@ import Testing
         let iphone = try EngineFixture.ratcheting(me, stores: stores)
         let android = try AndroidPeer(alice)
         try iphone.pin(android)
-        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: "dm-1", sentAt: now)
+        let frame = try android.dm("hello", to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now)
         refusing.refusesRows = true
         iphone.deliver(frame, from: android)
         refusing.refusesRows = false
 
         iphone.deliver(frame, from: carol)
-        #expect(iphone.stores.messages.message("dm-1")?.body == "hello", "the copy the router let past once")
-        #expect(receivedRecords(in: iphone.engine.drainEvents()).map(\.id) == ["dm-1"])
+        #expect(iphone.stores.messages.message(frameIdOf("dm-1"))?.body == "hello", "the copy the router let past once")
+        #expect(receivedRecords(in: iphone.engine.drainEvents()).map(\.id) == [frameIdOf("dm-1")])
         iphone.advance(sweep)
         #expect(receivedRecords(in: iphone.engine.drainEvents()).isEmpty)
-        #expect(iphone.acknowledged(by: android) == ["dm-1"])
-        #expect(iphone.stores.custody.contains("dm-1"), "the sealed receipt purged nothing of ours")
+        #expect(iphone.acknowledged(by: android) == [frameIdOf("dm-1")])
+        #expect(iphone.stores.custody.contains(frameIdOf("dm-1")), "the sealed receipt purged nothing of ours")
 
         let restarted = try EngineFixture.ratcheting(me, stores: stores)
         #expect(receivedRecords(in: restarted.engine.drainEvents()).isEmpty)
@@ -139,7 +141,7 @@ import Testing
         let hash = BlobHash(of: sealed.blob)
         let content = MessageContent(
             body: "look", attachmentHash: hash.string, attachmentMime: "image/jpeg", attachmentKey: Base64.encode(sealed.key))
-        let frame = try android.dm(content, to: me, prekey: try iphone.ourPrekey(), id: "photo-1", sentAt: now)
+        let frame = try android.dm(content, to: me, prekey: try iphone.ourPrekey(), id: frameIdOf("photo-1"), sentAt: now)
         iphone.transport.clear()
 
         refusing.refusesRows = true
@@ -149,7 +151,7 @@ import Testing
         #expect(asks(for: hash, in: iphone).isEmpty, "nothing is asked for while the unit fails")
 
         iphone.advance(sweep)
-        #expect(iphone.stores.messages.message("photo-1")?.attachment?.hash == hash)
+        #expect(iphone.stores.messages.message(frameIdOf("photo-1"))?.attachment?.hash == hash)
         #expect(asks(for: hash, in: iphone) == [carol.nodeId], "one ask, on the one link")
     }
 
@@ -177,7 +179,7 @@ import Testing
                 }
                 for frame in written {
                     quiet = false
-                    to.engine.receive(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: from.me.nodeId))
+                    to.engine.receiveAdmitted(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: from.me.nodeId))
                 }
                 for digest in digests {
                     quiet = false

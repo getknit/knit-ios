@@ -37,7 +37,8 @@ import Testing
         first.clock.advance(Self.minute)
         try first.deliverUnreadable(from: android, tag: "after", sentAt: now + Self.minute, now: now + Self.minute)
         #expect(first.resetsSent(to: alice).count == 1, "inside the floor")
-        #expect(stores.custody.liveIds(now: now + Self.minute).filter { $0.hasPrefix("before-") || $0.hasPrefix("after-") }.count == 6)
+        let tail = Set((0..<3).flatMap { [frameIdOf("before-\($0)"), frameIdOf("after-\($0)")] })
+        #expect(stores.custody.liveIds(now: now + Self.minute).filter(tail.contains).count == 6)
     }
 
     /// The six failures a restart's replay counted, under their reasons.
@@ -88,9 +89,9 @@ import Testing
         let prekey = try first.ourPrekey()
         let ahead = 4 * Self.minute
 
-        first.deliver(try android.resetDm(to: me, prekey: prekey, id: "android-reset", at: now + ahead), from: android)
+        first.deliver(try android.resetDm(to: me, prekey: prekey, id: frameIdOf("android-reset"), at: now + ahead), from: android)
         #expect(first.ratchetRecords(of: alice).session?.establishedAt == now + ahead, "adopted, at Android's stamp")
-        #expect(stores.custody.contains("android-reset"), "carried, so a restart finds it")
+        #expect(stores.custody.contains(frameIdOf("android-reset")), "carried, so a restart finds it")
 
         first.clock.advance(2 * Self.minute)
         guard case .sent(_, reRooted: true) = first.engine.sendRatchetReset(to: alice.nodeId) else {
@@ -100,8 +101,8 @@ import Testing
         let ours = try #require(first.resetsSent(to: alice).last)
         _ = try android.open(ours, from: me, now: now + ahead + 2 * Self.minute)
         let answer = now + ahead + 2 * Self.minute + 1000
-        first.deliver(try android.dm("under yours", to: me, prekey: prekey, id: "under-yours", sentAt: answer), from: android)
-        #expect(first.stores.messages.message("under-yours")?.body == "under yours")
+        first.deliver(try android.dm("under yours", to: me, prekey: prekey, id: frameIdOf("under-yours"), sentAt: answer), from: android)
+        #expect(first.stores.messages.message(frameIdOf("under-yours"))?.body == "under yours")
         let held = try #require(first.ratchetRecords(of: alice).session)
         #expect(held.confirmed && held.weAreInitiator && held.establishedAt == now + 2 * Self.minute)
         #expect(held.root == android.session(with: me)?.root, "Android lost the race to our re-root and took it")
@@ -114,8 +115,8 @@ import Testing
         #expect(restarted.engine.dropped.isEmpty)
         #expect(restarted.resetsSent(to: alice).isEmpty)
         let later = now + ahead + Self.hour
-        restarted.deliver(try android.dm("still yours", to: me, prekey: prekey, id: "still-yours", sentAt: later), from: android)
-        #expect(restarted.stores.messages.message("still-yours")?.body == "still yours", "the pair still reads")
+        restarted.deliver(try android.dm("still yours", to: me, prekey: prekey, id: frameIdOf("still-yours"), sentAt: later), from: android)
+        #expect(restarted.stores.messages.message(frameIdOf("still-yours"))?.body == "still yours", "the pair still reads")
     }
 
     /// The crypto re-review's second finding. Android, its clock 30 minutes fast, sends `older` and, ten minutes later by
@@ -132,16 +133,17 @@ import Testing
         try first.pin(android)
         let prekey = try first.ourPrekey()
         let fast = 30 * Self.minute
-        let olderFrame = try android.dm(older, to: me, prekey: prekey, id: "older", sentAt: now + fast)
+        let olderFrame = try android.dm(older, to: me, prekey: prekey, id: frameIdOf("older"), sentAt: now + fast)
         first.deliver(olderFrame, from: android)
-        #expect(!stores.custody.contains("older"), "refused by custody as dated ahead")
+        #expect(!stores.custody.contains(frameIdOf("older")), "refused by custody as dated ahead")
         first.clock.advance(10 * Self.minute)
-        first.deliver(try android.dm(newer, to: me, prekey: prekey, id: "newer", sentAt: now + fast + 10 * Self.minute), from: android)
+        first.deliver(
+            try android.dm(newer, to: me, prekey: prekey, id: frameIdOf("newer"), sentAt: now + fast + 10 * Self.minute), from: android)
         let shown = held()
 
         first.clock.advance(15 * Self.minute)
         first.deliver(olderFrame, from: carol)
-        #expect(stores.custody.contains("older") && first.engine.dropped[.ratchetDuplicate] == 1)
+        #expect(stores.custody.contains(frameIdOf("older")) && first.engine.dropped[.ratchetDuplicate] == 1)
         #expect(held() == shown)
         guard case .sent = first.engine.sendRatchetReset(to: alice.nodeId) else {
             Issue.record("our reset goes")

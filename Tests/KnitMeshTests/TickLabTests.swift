@@ -122,7 +122,7 @@ import Testing
 
         let original = try #require(lab[0].transport.written(.chat).first { $0.envelope.id == first.id })
         lab.advance(SeenSetWindow.milliseconds)
-        lab[2].engine.receive(InboundFrame(wire: original.wire, envelope: original.envelope, from: carol.nodeId))
+        lab[2].engine.receiveAdmitted(InboundFrame(wire: original.wire, envelope: original.envelope, from: carol.nodeId))
         lab.advance(AckSync.batchDebounceMilliseconds)
         relay(lab)
         #expect(alicesTicks(lab).count == acked + 1, "no second seal")
@@ -191,7 +191,7 @@ import Testing
         }
         let ids = Set(posts.map { ExactKey($0.id) })
         for written in lab[0].transport.written(.chat) where ids.contains(ExactKey(written.envelope.id)) {
-            lab[1].engine.receive(InboundFrame(wire: written.wire, envelope: written.envelope, from: carol.nodeId))
+            lab[1].engine.receiveAdmitted(InboundFrame(wire: written.wire, envelope: written.envelope, from: carol.nodeId))
         }
         #expect(posts.allSatisfy { lab[1].stores.messages.message($0.id) != nil }, "Alice has every post from the carrier")
         #expect(lab[1].engine.ackSync.ridingFor(bob.nodeId) == count, "every tick waits in her ride hold")

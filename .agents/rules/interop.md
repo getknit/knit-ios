@@ -16,6 +16,9 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   type has an encoder test against its golden value.
 - **Custody constants are cross-platform law.** TTLs, quotas, eviction order, `isCustodial` membership and
   the digest fold match `.agents/context/custody.md` exactly, or digests never agree.
+- **An envelope id has the shape its type is minted with,** or `Router.admit` refuses it unseen, as Android does
+  (`FrameId.admits`, ADR 2026-10.h7xw). The table is cross-platform law like `isCustodial`: a new frame type mints a
+  `FrameId`, and a new id shape is a wire break that every build before it drops.
 - **Send a full DIGEST at link-up and every 60 s.** Android back-fills only in answer to one.
 - **Never write a link record tag outside 1..7.** Android drops the link on an unknown tag.
 - **Advertise only what is implemented.** This build sends capabilities `0x15F`: E2E, GROUPS, REACTIONS,

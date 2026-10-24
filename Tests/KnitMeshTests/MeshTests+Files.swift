@@ -1,6 +1,7 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -39,8 +40,8 @@ extension MeshTests {
         }
         #expect(chunks() == 8192, "the starting window")
         let report = BlobProgressContent(hash: BlobHash(of: photo).string, held: 8192, ms: 500)
-        let frame = bob.unsigned(.blobProgress, payload: report.encoded, id: "prog-1")
-        await rig.mesh.process(.received(channel, LinkRig.frameRecord(frame.wire)))
+        let frame = bob.unsigned(.blobProgress, payload: report.encoded, id: frameIdOf("prog-1"))
+        await rig.mesh.process(.received(channel, LinkRig.admittedRecord(frame)))
         #expect(chunks() > 8192, "the report freed the window")
     }
 
@@ -59,8 +60,8 @@ extension MeshTests {
         await rig.mesh.process(.accepted(carols))
         await rig.mesh.process(.received(carols, hello(carol, capabilities: 0x2FFF)))
         for (peer, id) in [(bob, channel), (carol, carols)] {
-            let ask = peer.unsigned(.blobRequest, payload: BlobRequestContent(hash: hash.string).encoded, id: "breq-\(id)")
-            await rig.mesh.process(.received(id, LinkRig.frameRecord(ask.wire)))
+            let ask = peer.unsigned(.blobRequest, payload: BlobRequestContent(hash: hash.string).encoded, id: frameIdOf("breq-\(id)"))
+            await rig.mesh.process(.received(id, LinkRig.admittedRecord(ask)))
         }
         func records(_ tag: LinkRecord.Tag, on id: ChannelID) -> [LinkRecord] {
             rig.radio.records(on: id).filter { $0.tag == tag }
@@ -70,8 +71,8 @@ extension MeshTests {
         for index in 0..<40 where records(.fileEnd, on: channel).isEmpty {
             held = records(.fileChunk, on: channel).reduce(0) { $0 + $1.payload.count }
             let report = BlobProgressContent(hash: hash.string, held: Int64(held), ms: Int64(500 * (index + 1)))
-            let frame = bob.unsigned(.blobProgress, payload: report.encoded, id: "prog-\(index)")
-            await rig.mesh.process(.received(channel, LinkRig.frameRecord(frame.wire)))
+            let frame = bob.unsigned(.blobProgress, payload: report.encoded, id: frameIdOf("prog-\(index)"))
+            await rig.mesh.process(.received(channel, LinkRig.admittedRecord(frame)))
         }
         #expect(held == photo.count && records(.fileEnd, on: channel).count == 1)
         #expect(records(.fileHeader, on: carols).count == 1, "served at the feed's end")

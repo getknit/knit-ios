@@ -82,7 +82,7 @@ import Testing
         for step in profiles.sequence {
             let frame = try #require(profiles.frames[step.deliver])
             let (wire, envelope) = try decode(frame)
-            fixture.engine.receive(InboundFrame(wire: wire, envelope: envelope, from: carrier.nodeId))
+            fixture.engine.receiveAdmitted(InboundFrame(wire: wire, envelope: envelope, from: carrier.nodeId))
             let sender = try identity(frame.sender).nodeId
             let peer = try #require(fixture.stores.peers.peer(sender), "\(step.deliver)")
             #expect(peer.prekey?.id == step.expect.prekeyId, "\(step.deliver)")

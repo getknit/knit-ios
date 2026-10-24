@@ -41,9 +41,9 @@ import Testing
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        try deliverSeed(fixture, author, id: "seed1")
+        try deliverSeed(fixture, author, id: frameIdOf("seed1"))
         #expect(fixture.recvChains(group.id, from: alice).count == 1, "adopted through the real ctl path")
-        #expect(fixture.stores.messages.message("seed1") == nil, "never a row")
+        #expect(fixture.stores.messages.message(frameIdOf("seed1")) == nil, "never a row")
         #expect(
             fixture.transport.written(.receipt).isEmpty && fixture.sealedReceipts(to: android).isEmpty, "never acknowledged as a message")
         #expect(receivedRecords(in: fixture.engine.drainEvents()).isEmpty)
@@ -58,11 +58,11 @@ import Testing
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        try deliverSeed(fixture, author, id: "seed-far")
+        try deliverSeed(fixture, author, id: frameIdOf("seed-far"))
         let far = Int64.max - 1
-        let reaction = try author.reaction(group, id: "ctl-gfar", sentAt: far, on: "gm1", emoji: "\u{1F525}")
+        let reaction = try author.reaction(group, id: frameIdOf("ctl-gfar"), sentAt: far, on: frameIdOf("gm1"), emoji: "\u{1F525}")
         fixture.deliver(reaction, from: alice)
-        let applied = fixture.stores.messages.reaction(on: "gm1", by: alice.nodeId)
+        let applied = fixture.stores.messages.reaction(on: frameIdOf("gm1"), by: alice.nodeId)
         #expect(applied?.updatedAt == now + WireProtocol.maxFutureSkewMilliseconds, "clamped to five minutes past our clock")
     }
 
@@ -70,15 +70,15 @@ import Testing
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        try deliverSeed(fixture, author, id: "seed-x")
+        try deliverSeed(fixture, author, id: frameIdOf("seed-x"))
         _ = fixture.engine.drainEvents()
         fixture.transport.clear()
-        let reaction = try author.reaction(group, id: "ctl-gx1", sentAt: now + 11, on: "gm7", emoji: "\u{1F525}")
+        let reaction = try author.reaction(group, id: frameIdOf("ctl-gx1"), sentAt: now + 11, on: "gm7", emoji: "\u{1F525}")
         fixture.deliver(reaction, from: alice)
         #expect(
             fixture.stores.messages.reaction(on: "gm7", by: alice.nodeId)
                 == ReactionRecord(messageId: "gm7", reactor: alice.nodeId, emoji: "\u{1F525}", updatedAt: now + 11))
-        #expect(fixture.stores.messages.message("ctl-gx1") == nil, "a ctl is never a row")
+        #expect(fixture.stores.messages.message(frameIdOf("ctl-gx1")) == nil, "a ctl is never a row")
         #expect(receivedRecords(in: fixture.engine.drainEvents()).isEmpty)
         #expect(fixture.transport.written(.receipt).isEmpty && fixture.chats(to: alice).isEmpty, "no tick owed for machinery")
         let holdings = fixture.stores.groupRatchet.holdings(of: group.id)
@@ -89,9 +89,9 @@ import Testing
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        try deliverSeed(fixture, author, id: "seed-o")
-        let words = try author.reaction(group, id: "ctl-go1", sentAt: now + 11, on: "gm7", emoji: " ")
-        let fire = try author.reaction(group, id: "ctl-go2", sentAt: now + 12, on: "gm7", emoji: "\u{1F525}")
+        try deliverSeed(fixture, author, id: frameIdOf("seed-o"))
+        let words = try author.reaction(group, id: frameIdOf("ctl-go1"), sentAt: now + 11, on: "gm7", emoji: " ")
+        let fire = try author.reaction(group, id: frameIdOf("ctl-go2"), sentAt: now + 12, on: "gm7", emoji: "\u{1F525}")
         fixture.deliver(words, from: alice)
         fixture.deliver(fire, from: alice)
         #expect(fixture.stores.messages.reaction(on: "gm7", by: alice.nodeId)?.updatedAt == now + 12, "the next frame still opens")
@@ -102,33 +102,33 @@ import Testing
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        try deliverSeed(fixture, author, id: "seed1")
+        try deliverSeed(fixture, author, id: frameIdOf("seed1"))
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try author.frame(group, id: "gm1", body: "sealed team hi", sentAt: now), from: alice)
-        let row = try #require(fixture.stores.messages.message("gm1"))
+        fixture.deliver(try author.frame(group, id: frameIdOf("gm1"), body: "sealed team hi", sentAt: now), from: alice)
+        let row = try #require(fixture.stores.messages.message(frameIdOf("gm1")))
         #expect(row.body == "sealed team hi" && row.conversationId == group.id)
-        #expect(receivedRecords(in: fixture.engine.drainEvents()).map(\.id) == ["gm1"], "announced once its unit committed")
+        #expect(receivedRecords(in: fixture.engine.drainEvents()).map(\.id) == [frameIdOf("gm1")], "announced once its unit committed")
     }
 
     @Test func aGroupRatchetFrameBeforeItsSeedDropsNoKeyAndStillCustodies() throws {
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        fixture.deliver(try author.frame(group, id: "gm-early", body: "too soon", sentAt: now), from: alice)
-        #expect(fixture.stores.messages.message("gm-early") == nil && fixture.engine.dropped[.groupRatchetNoKey] == 1)
-        #expect(fixture.stores.custody.contains("gm-early"), "delivery-local: still carried for the members who can read it")
+        fixture.deliver(try author.frame(group, id: frameIdOf("gm-early"), body: "too soon", sentAt: now), from: alice)
+        #expect(fixture.stores.messages.message(frameIdOf("gm-early")) == nil && fixture.engine.dropped[.groupRatchetNoKey] == 1)
+        #expect(fixture.stores.custody.contains(frameIdOf("gm-early")), "delivery-local: still carried for the members who can read it")
     }
 
     @Test func outOfOrderGroupFramesGapFillAndConsumeSkippedKeys() throws {
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        try deliverSeed(fixture, author, id: "seed1")
-        let frames = try (0...2).map { try author.frame(group, id: "gm\($0)", body: "msg \($0)", sentAt: now + Int64($0)) }
+        try deliverSeed(fixture, author, id: frameIdOf("seed1"))
+        let frames = try (0...2).map { try author.frame(group, id: frameIdOf("gm\($0)"), body: "msg \($0)", sentAt: now + Int64($0)) }
         for index in [2, 0, 1] {
             fixture.deliver(frames[index], from: alice)
         }
-        #expect((0...2).map { fixture.stores.messages.message("gm\($0)")?.body } == ["msg 0", "msg 1", "msg 2"])
+        #expect((0...2).map { fixture.stores.messages.message(frameIdOf("gm\($0)"))?.body } == ["msg 0", "msg 1", "msg 2"])
         #expect(fixture.stores.groupRatchet.skippedKeys(group.id, from: alice.nodeId, epoch: 1, index: 0).isEmpty)
         #expect(fixture.stores.groupRatchet.skippedKeys(group.id, from: alice.nodeId, epoch: 1, index: 1).isEmpty, "both banked keys spent")
     }
@@ -137,12 +137,12 @@ import Testing
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        try deliverSeed(fixture, author, id: "seed1")
-        let frame = try author.frame(group, id: "gm-r", body: "once", sentAt: now)
+        try deliverSeed(fixture, author, id: frameIdOf("seed1"))
+        let frame = try author.frame(group, id: frameIdOf("gm-r"), body: "once", sentAt: now)
         fixture.deliver(frame, from: alice)
         fixture.advance(SeenSet.defaultWindowMilliseconds + 1)
         fixture.deliver(frame, from: alice)
-        #expect(fixture.stores.messages.message("gm-r")?.body == "once")
+        #expect(fixture.stores.messages.message(frameIdOf("gm-r"))?.body == "once")
         #expect(fixture.engine.dropped[.groupRatchetDuplicate] == nil && fixture.engine.dropped[.groupRatchetAeadFail] == nil)
     }
 
@@ -150,14 +150,14 @@ import Testing
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        try deliverSeed(fixture, author, id: "seed1")
-        let preWipe = try author.frame(group, id: "gm-old", body: "old era", sentAt: now)
+        try deliverSeed(fixture, author, id: frameIdOf("seed1"))
+        let preWipe = try author.frame(group, id: frameIdOf("gm-old"), body: "old era", sentAt: now)
         author.wipeAndRemint(at: 60_000)
-        try deliverSeed(fixture, author, id: "seed2", sentAt: now + 1)
-        fixture.deliver(try author.frame(group, id: "gm-new", body: "new era", sentAt: now + 2), from: alice)
+        try deliverSeed(fixture, author, id: frameIdOf("seed2"), sentAt: now + 1)
+        fixture.deliver(try author.frame(group, id: frameIdOf("gm-new"), body: "new era", sentAt: now + 2), from: alice)
         fixture.deliver(preWipe, from: alice)
-        #expect(fixture.stores.messages.message("gm-new")?.body == "new era")
-        #expect(fixture.stores.messages.message("gm-old")?.body == "old era", "the old frame on the drain")
+        #expect(fixture.stores.messages.message(frameIdOf("gm-new"))?.body == "new era")
+        #expect(fixture.stores.messages.message(frameIdOf("gm-old"))?.body == "old era", "the old frame on the drain")
         #expect(fixture.recvChains(group.id, from: alice).count == 2)
     }
 
@@ -166,7 +166,7 @@ import Testing
         let other = try AndroidPeer(carol)
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(other, in: group.id)
-        try deliverSeed(fixture, author, id: "seed-c")
+        try deliverSeed(fixture, author, id: frameIdOf("seed-c"))
         #expect(fixture.recvChains(group.id, from: carol).isEmpty)
         #expect(acks(fixture, to: other).isEmpty, "no adoption, so no ack")
     }
@@ -175,16 +175,18 @@ import Testing
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice], left: true)
         let author = GroupFormAuthor(android, in: group.id)
-        fixture.deliver(try author.frame(group, id: "gm-left", body: "gone", sentAt: now), from: alice)
-        #expect(fixture.stores.messages.message("gm-left") == nil && fixture.engine.dropped[.groupRatchetNoKey] == nil)
+        fixture.deliver(try author.frame(group, id: frameIdOf("gm-left"), body: "gone", sentAt: now), from: alice)
+        #expect(fixture.stores.messages.message(frameIdOf("gm-left")) == nil && fixture.engine.dropped[.groupRatchetNoKey] == nil)
     }
 
     @Test func aGroupAddressedEnvelopeWithoutTheGroupHeaderIsMalformed() throws {
         let (fixture, _) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let enc = EncEnvelope(version: EncEnvelope.Version.ratchet, nonce: [UInt8](repeating: 0, count: 12), ct: [1, 2, 3, 4], keys: [])
+        let id = frameIdOf("v2-grouped")
         let envelope = RelayEnvelope(
-            type: .chat, id: "v2-grouped", senderId: alice.nodeId.string, sentAt: now, group: group, payload: ChatContent(enc: enc).encoded)
+            type: .chat, id: id, senderId: alice.nodeId.string, sentAt: now, group: group, payload: ChatContent(enc: enc).encoded
+        )
         fixture.deliver(try alice.signed(envelope), from: alice)
         #expect(fixture.engine.dropped[.groupRatchetBadHeader] == 1)
     }
@@ -197,7 +199,7 @@ import Testing
             let enc = EncEnvelope(version: EncEnvelope.Version.compactRatchet, nonce: [], ct: [1, 2, 3, 4], keys: [], groupRatchet: header)
             let envelope = RelayEnvelope(
                 type: .chat,
-                id: "v3-grouped-\(index)",
+                id: frameIdOf("v3-grouped-\(index)"),
                 senderId: alice.nodeId.string,
                 sentAt: now,
                 group: group,
@@ -217,14 +219,14 @@ import Testing
         func requests() -> [MessageContent] {
             fixture.controls(to: android).filter { $0.ctl == MessageContent.Control.groupKeyRequest }
         }
-        fixture.deliver(try author.frame(group, id: "nk1", body: "x", sentAt: now), from: alice)
-        fixture.deliver(try author.frame(group, id: "nk2", body: "x", sentAt: now), from: alice)
+        fixture.deliver(try author.frame(group, id: frameIdOf("nk1"), body: "x", sentAt: now), from: alice)
+        fixture.deliver(try author.frame(group, id: frameIdOf("nk2"), body: "x", sentAt: now), from: alice)
         #expect(requests().isEmpty, "two distinct frames are not enough")
-        fixture.deliver(try author.frame(group, id: "nk3", body: "x", sentAt: now), from: alice)
+        fixture.deliver(try author.frame(group, id: frameIdOf("nk3"), body: "x", sentAt: now), from: alice)
         let request = try #require(requests().first, "the third fires one")
         #expect(request.gk == GroupKeyPayload(groupId: group.id) && requests().count == 1)
         for index in 4...6 {
-            fixture.deliver(try author.frame(group, id: "nk\(index)", body: "x", sentAt: now), from: alice)
+            fixture.deliver(try author.frame(group, id: frameIdOf("nk\(index)"), body: "x", sentAt: now), from: alice)
         }
         #expect(requests().count == 1, "inside the floor nothing more")
         #expect(fixture.engine.groupCounts.groupKeyRequestsSent == 1)
@@ -239,7 +241,7 @@ import Testing
         let ancient = now - GroupRatchetSessions.requestMaxFrameAgeMilliseconds - 1
         for index in 0..<4 {
             // Past the age window on our clock: custody refuses it as dead on arrival, and the open still meets it.
-            fixture.deliver(try author.frame(group, id: "old\(index)", body: "x", sentAt: ancient), from: alice)
+            fixture.deliver(try author.frame(group, id: frameIdOf("old\(index)"), body: "x", sentAt: ancient), from: alice)
         }
         #expect(fixture.chats(to: alice).isEmpty)
         #expect((fixture.engine.dropped[.groupRatchetNoKey] ?? 0) >= 4)
@@ -252,8 +254,10 @@ import Testing
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let request = MessageContent(body: "", ctl: MessageContent.Control.groupKeyRequest, gk: GroupKeyPayload(groupId: group.id))
-        fixture.deliver(try android.dm(request, to: me, prekey: try fixture.ourPrekey(), id: "req1", sentAt: now), from: android)
-        #expect(fixture.stores.messages.message("req1") == nil && fixture.ratchetRecords(of: alice).session != nil, "committed, no row")
+        fixture.deliver(try android.dm(request, to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("req1"), sentAt: now), from: android)
+        #expect(
+            fixture.stores.messages.message(frameIdOf("req1")) == nil && fixture.ratchetRecords(of: alice).session != nil,
+            "committed, no row")
         #expect(fixture.controls(to: android).allSatisfy { $0.ctl == MessageContent.Control.profile }, "only our init's answer went")
         #expect(fixture.stores.groupRatchet.holdings(of: group.id) == .empty)
     }
@@ -269,7 +273,7 @@ import Testing
 
     private func unreadable(_ fixture: EngineFixture, _ author: GroupFormAuthor, _ group: GroupInfo, count: Int, from first: Int) throws {
         for index in first..<(first + count) {
-            fixture.deliver(try author.frame(group, id: "nk\(index)", body: "x", sentAt: now), from: author.android.peer)
+            fixture.deliver(try author.frame(group, id: frameIdOf("nk\(index)"), body: "x", sentAt: now), from: author.android.peer)
         }
     }
 
@@ -338,13 +342,13 @@ import Testing
                 body: "", ctl: MessageContent.Control.groupKeyAck, gk: GroupKeyPayload(groupId: groupId, ackEpoch: epoch))
             return try android.dm(content, to: me, prekey: prekey, id: id, sentAt: now)
         }
-        fixture.deliver(try ack(2, id: "ack-2"), from: android)
+        fixture.deliver(try ack(2, id: frameIdOf("ack-2")), from: android)
         #expect(fixture.stores.groupRatchet.keySend(group.id, member: alice.nodeId)?.ackedEpoch == 2)
-        fixture.deliver(try ack(1, id: "ack-1"), from: android)
+        fixture.deliver(try ack(1, id: frameIdOf("ack-1")), from: android)
         #expect(fixture.stores.groupRatchet.keySend(group.id, member: alice.nodeId)?.ackedEpoch == 2, "never lowered")
-        fixture.deliver(try ack(3, id: "ack-x", in: "g-unknown"), from: android)
+        fixture.deliver(try ack(3, id: frameIdOf("ack-x"), in: "g-unknown"), from: android)
         #expect(fixture.stores.groupRatchet.keySend("g-unknown", member: alice.nodeId) == nil)
-        #expect(fixture.stores.messages.message("ack-2") == nil, "machinery, never a row")
+        #expect(fixture.stores.messages.message(frameIdOf("ack-2")) == nil, "machinery, never a row")
     }
 
     /// This port's own: our own group-form frame, which custody serves back after a reinstall, opens nothing we hold and asks
@@ -354,7 +358,7 @@ import Testing
         let group = fixture.holdGroup(with: [alice])
         let ownAuthor = GroupFormAuthor(try AndroidPeer(me), in: group.id)
         for index in 0..<4 {
-            fixture.deliver(try ownAuthor.frame(group, id: "own\(index)", body: "mine", sentAt: now), from: alice)
+            fixture.deliver(try ownAuthor.frame(group, id: frameIdOf("own\(index)"), body: "mine", sentAt: now), from: alice)
         }
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == 4)
         #expect(fixture.transport.written(.chat).isEmpty, "no request, to ourselves or anyone")
@@ -367,9 +371,9 @@ import Testing
         let (fixture, android) = try rig()
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        try deliverSeed(fixture, author, id: "seed1")
-        fixture.deliver(try author.frame(group, id: "gm-junk", sealing: [0x01], sentAt: now), from: alice)
-        #expect(fixture.engine.dropped[.cannotOpen] == 1 && fixture.stores.messages.message("gm-junk") == nil)
+        try deliverSeed(fixture, author, id: frameIdOf("seed1"))
+        fixture.deliver(try author.frame(group, id: frameIdOf("gm-junk"), sealing: [0x01], sentAt: now), from: alice)
+        #expect(fixture.engine.dropped[.cannotOpen] == 1 && fixture.stores.messages.message(frameIdOf("gm-junk")) == nil)
         #expect(fixture.recvChains(group.id, from: alice).first?.next == 0, "nothing spent")
     }
 }

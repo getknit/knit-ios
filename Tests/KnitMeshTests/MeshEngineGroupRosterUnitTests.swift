@@ -60,7 +60,7 @@ import Testing
         let rig = try minted(kind, directory)
         let fixture = rig.fixture
         let group = rig.group
-        fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         #expect(fixture.roster(of: group).departed == [carol.nodeId.string])
         let held = fixture.stores.groupRatchet
         #expect(held.sendChains(group.id).isEmpty && held.sendChain(group.id)?.epoch == 1, "retired, its number kept")
@@ -78,7 +78,7 @@ import Testing
         let refusing = rig.refusing
         let group = rig.group
         refusing.refusesWrites = true
-        fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         refusing.refusesWrites = false
         #expect(fixture.roster(of: group).departed.isEmpty, "the roster's shrink went with the retire")
         #expect(fixture.stores.messages.messages(in: group.id).allSatisfy { $0.kind != .memberLeft }, "and the notice")
@@ -128,14 +128,16 @@ import Testing
         let fixture = rig.fixture
         let refusing = rig.refusing
         let group = rig.group
-        fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         _ = try #require(fixture.engine.sendGroupMessage("without carol", to: group.id))
         refusing.refusesWrites = true
-        fixture.deliver(try carol.groupMessage("back", in: group, to: [me, alice], id: "carol-back", sentAt: now + 2), from: carol)
+        fixture.deliver(
+            try carol.groupMessage("back", in: group, to: [me, alice], id: frameIdOf("carol-back"), sentAt: now + 2), from: carol)
         refusing.refusesWrites = false
-        #expect(fixture.roster(of: group).departed == [carol.nodeId.string] && fixture.stores.messages.message("carol-back") == nil)
+        #expect(
+            fixture.roster(of: group).departed == [carol.nodeId.string] && fixture.stores.messages.message(frameIdOf("carol-back")) == nil)
         #expect(fixture.engine.groupFloors.rejoins.isEmpty && fixture.engine.dropped[.storeRefused] == 1)
-        fixture.deliver(try carol.groupUpdate(group, id: "carol-again", sentAt: now + 3), from: carol)
+        fixture.deliver(try carol.groupUpdate(group, id: frameIdOf("carol-again"), sentAt: now + 3), from: carol)
         #expect(fixture.roster(of: group).departed.isEmpty && fixture.stores.groupRatchet.sendChains(group.id).isEmpty, "rekeyed now")
     }
 
@@ -148,12 +150,12 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let rig = try minted(kind, directory)
         let group = rig.group
-        rig.fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        rig.fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         _ = try #require(rig.fixture.engine.sendGroupMessage("without carol", to: group.id))
         #expect(rig.fixture.stores.groupRatchet.sendChains(group.id).map(\.epoch) == [2])
         let off = try relaunched(rig, ratchet: false, wall: now + 60_000)
-        off.deliver(try carol.groupMessage("back", in: group, to: [me, alice], id: "carol-back", sentAt: now + 2), from: carol)
-        #expect(off.roster(of: group).departed.isEmpty && off.stores.messages.message("carol-back") != nil)
+        off.deliver(try carol.groupMessage("back", in: group, to: [me, alice], id: frameIdOf("carol-back"), sentAt: now + 2), from: carol)
+        #expect(off.roster(of: group).departed.isEmpty && off.stores.messages.message(frameIdOf("carol-back")) != nil)
         #expect(off.stores.groupRatchet.sendChains(group.id).isEmpty, "retired with the switch off")
         #expect(off.engine.groupFloors.rejoins.isEmpty, "and no floor stamped")
         let on = try relaunched(rig, ratchet: true, wall: now + 120_000)
@@ -175,9 +177,9 @@ import Testing
         let rig = try minted(kind, directory)
         let group = rig.group
         rig.refusing.refusesWrites = true
-        rig.fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        rig.fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         rig.refusing.refusesWrites = false
-        #expect(rig.fixture.stores.custody.liveIds(now: now + 1).contains("carol-leaves"), "custodied before the unit failed")
+        #expect(rig.fixture.stores.custody.liveIds(now: now + 1).contains(frameIdOf("carol-leaves")), "custodied before the unit failed")
         #expect(rig.fixture.roster(of: group).departed.isEmpty, "lost for now")
         let restarted = try relaunched(rig, ratchet: true, wall: now + 60_000)
         #expect(restarted.roster(of: group).departed == [carol.nodeId.string])

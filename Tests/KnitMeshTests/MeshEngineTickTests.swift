@@ -1,5 +1,6 @@
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -50,12 +51,12 @@ import Testing
         #expect(fixture.engine.tickSeals is RatchetTickSeals, "the seams this build ships")
         fixture.link(bob)
         fixture.transport.clear()
-        fixture.deliver(try bob.roomPost("Linked", id: "post-1", sentAt: start), from: bob)
-        fixture.deliver(try groupMessage("gm-1"), from: bob)
+        fixture.deliver(try bob.roomPost("Linked", id: frameIdOf("post-1"), sentAt: start), from: bob)
+        fixture.deliver(try groupMessage(frameIdOf("gm-1")), from: bob)
         fixture.unlink(bob)
-        let absentPost = try bob.roomPost("Absent", id: "post-2", sentAt: start + 1)
+        let absentPost = try bob.roomPost("Absent", id: frameIdOf("post-2"), sentAt: start + 1)
         fixture.deliver(absentPost, from: carol)
-        fixture.deliver(try groupMessage("gm-2", at: 1), from: carol)
+        fixture.deliver(try groupMessage(frameIdOf("gm-2"), at: 1), from: carol)
         #expect(fixture.engine.footprint.owedTicks == 2, "two ticks owed to the absent author")
         #expect(fixture.engine.ackSync.nextBatchDue == nil, "no batch waits")
         fixture.advance(debounce)
@@ -67,7 +68,9 @@ import Testing
 
         let ticks = fixture.transport.written(.receipt)
         let acked = try ticks.map { try ReceiptContent(decoding: $0.envelope.payload).ackId }
-        #expect(acked == ["post-1", "gm-1", "post-2", "gm-2", "post-2"], "one per delivery, the re-served post's again")
+        #expect(
+            acked == [frameIdOf("post-1"), frameIdOf("gm-1"), frameIdOf("post-2"), frameIdOf("gm-2"), frameIdOf("post-2")],
+            "one per delivery, the re-served post's again")
         #expect(Set(ticks.map(\.envelope.id)).count == ticks.count, "a fresh id every attempt")
         for (tick, ackId) in zip(ticks, acked) {
             #expect(tick.to == bob.nodeId && !tick.wire.relay)
@@ -115,11 +118,11 @@ import Testing
         fixture.link(carol)
         fixture.link(bob)
         fixture.transport.clear()
-        fixture.deliver(try bob.roomPost("Linked", id: "post-1", sentAt: start), from: bob)
-        fixture.deliver(try groupMessage("gm-1"), from: bob)
+        fixture.deliver(try bob.roomPost("Linked", id: frameIdOf("post-1"), sentAt: start), from: bob)
+        fixture.deliver(try groupMessage(frameIdOf("gm-1")), from: bob)
         fixture.unlink(bob)
-        fixture.deliver(try bob.roomPost("Absent", id: "post-2", sentAt: start + 1), from: carol)
-        fixture.deliver(try groupMessage("gm-2", at: 1), from: carol)
+        fixture.deliver(try bob.roomPost("Absent", id: frameIdOf("post-2"), sentAt: start + 1), from: carol)
+        fixture.deliver(try groupMessage(frameIdOf("gm-2"), at: 1), from: carol)
         #expect(fixture.engine.ackSync.nextBatchDue == nil, "no batch waits: nothing can seal one")
         fixture.advance(debounce)
         fixture.advance(fixture.engine.configuration.healMilliseconds)
@@ -127,7 +130,9 @@ import Testing
 
         let ticks = fixture.transport.written(.receipt)
         let acked = try ticks.map { try ReceiptContent(decoding: $0.envelope.payload).ackId }
-        #expect(acked == ["post-1", "gm-1", "post-2", "gm-2"], "two at once over the link, two at the link-up")
+        #expect(
+            acked == [frameIdOf("post-1"), frameIdOf("gm-1"), frameIdOf("post-2"), frameIdOf("gm-2")],
+            "two at once over the link, two at the link-up")
         for (tick, ackId) in zip(ticks, acked) {
             let today = RelayEnvelope(
                 type: .receipt, id: tick.envelope.id, senderId: alice.nodeId.string, payload: ReceiptContent(ackId: ackId).encoded)
@@ -145,9 +150,9 @@ import Testing
         let fixture = try fixture()
         let seals = EngineSeals(fixture, capable: [bob.nodeId])
         let owedAt = fixture.clock.monotonicMilliseconds()
-        let first = try groupMessage("gm-1")
+        let first = try groupMessage(frameIdOf("gm-1"))
         fixture.deliver(first, from: carol)
-        fixture.deliver(try groupMessage("gm-2", at: 1), from: carol)
+        fixture.deliver(try groupMessage(frameIdOf("gm-2"), at: 1), from: carol)
         // Past the relays' jitter, the batch's debounce is the next thing due.
         fixture.advance(fixture.engine.configuration.router.jitterWindowMilliseconds)
         #expect(seals.originated.isEmpty && sealedTicks(fixture).isEmpty, "nothing before the debounce")
@@ -155,13 +160,13 @@ import Testing
         #expect(fixture.engine.nextDeadline == owedAt + debounce, "the batch's deadline")
 
         fixture.advance(owedAt + debounce - fixture.clock.monotonicMilliseconds())
-        #expect(seals.originated == [["gm-1", "gm-2"]], "one tick for the batch, with no heal")
+        #expect(seals.originated == [[frameIdOf("gm-1"), frameIdOf("gm-2")]], "one tick for the batch, with no heal")
         let ticks = sealedTicks(fixture)
         let tick = try #require(ticks.first)
         #expect(ticks.count == 1 && tick.to == nil && tick.wire.relay, "originated: flooded")
         #expect(tick.envelope.sentAt == fixture.clock.wallMilliseconds(), "dated, so custody keeps it a day")
         #expect(fixture.stores.custody.contains(tick.envelope.id), "and carried in our custody")
-        #expect(EngineSeals.acks(of: tick, as: bob) == ["gm-1", "gm-2"])
+        #expect(EngineSeals.acks(of: tick, as: bob) == [frameIdOf("gm-1"), frameIdOf("gm-2")])
         #expect(fixture.transport.written(.receipt).isEmpty && fixture.engine.footprint.owedTicks == 0)
 
         // A carrier re-serves the message after the router's window; the exists-gate acknowledges it again, and owes nothing.
@@ -177,7 +182,7 @@ import Testing
         let fixture = try fixture()
         let seals = EngineSeals(fixture, capable: [bob.nodeId])
         let carried = Set(fixture.stores.custody.liveIds(now: fixture.clock.wallMilliseconds()))
-        let post = try bob.roomPost("Hello room", id: "post-1", sentAt: start)
+        let post = try bob.roomPost("Hello room", id: frameIdOf("post-1"), sentAt: start)
         fixture.deliver(post, from: carol)
         fixture.advance(AckSync.rideHoldMilliseconds)
         fixture.advance(fixture.engine.configuration.healMilliseconds)
@@ -185,11 +190,11 @@ import Testing
         #expect(seals.sealed.isEmpty && seals.originated.isEmpty && sealedTicks(fixture).isEmpty)
         #expect(fixture.transport.written(.receipt).isEmpty)
         let now = Set(fixture.stores.custody.liveIds(now: fixture.clock.wallMilliseconds()))
-        #expect(now.subtracting(carried) == ["post-1"], "the post is carried, and no row for its tick")
+        #expect(now.subtracting(carried) == [frameIdOf("post-1")], "the post is carried, and no row for its tick")
 
         // A frame sealed toward Bob anyway carries it, as P5d's do: the stand-in takes it and says it rode.
         let riders = fixture.engine.ackSync.takeRiding(bob.nodeId, limit: 4)
-        #expect(riders == ["post-1"])
+        #expect(riders == [frameIdOf("post-1")])
         fixture.engine.ackSync.rode(riders, now: fixture.clock.monotonicMilliseconds())
         fixture.clock.advance(SeenSetWindow.milliseconds)
         fixture.deliver(post, from: carol)
@@ -201,29 +206,32 @@ import Testing
     @Test func aRoomTickRidesTheGroupBatchIntoCustodyWithNoRowOfItsOwn() throws {
         let fixture = try fixture()
         let seals = EngineSeals(fixture, capable: [bob.nodeId])
-        fixture.deliver(try bob.roomPost("Room", id: "post-1", sentAt: start), from: carol)
-        fixture.deliver(try groupMessage("gm-1", at: 1), from: carol)
+        fixture.deliver(try bob.roomPost("Room", id: frameIdOf("post-1"), sentAt: start), from: carol)
+        fixture.deliver(try groupMessage(frameIdOf("gm-1"), at: 1), from: carol)
         fixture.advance(debounce)
-        #expect(seals.originated == [["gm-1", "post-1"]], "the group's batch carries the room's tick")
+        #expect(seals.originated == [[frameIdOf("gm-1"), frameIdOf("post-1")]], "the group's batch carries the room's tick")
         let ticks = sealedTicks(fixture)
         let tick = try #require(ticks.first)
-        #expect(ticks.count == 1 && EngineSeals.acks(of: tick, as: bob) == ["gm-1", "post-1"])
+        #expect(ticks.count == 1 && EngineSeals.acks(of: tick, as: bob) == [frameIdOf("gm-1"), frameIdOf("post-1")])
         #expect(fixture.engine.ackSync.ridingFor(bob.nodeId) == 0 && fixture.engine.footprint.owedTicks == 0)
     }
 
     @Test func aLiveLinkEndsEachHoldAsOneTick() throws {
         let fixture = try fixture()
         let seals = EngineSeals(fixture, capable: [bob.nodeId])
-        fixture.deliver(try groupMessage("gm-1"), from: carol)
-        fixture.deliver(try groupMessage("gm-2", at: 1), from: carol)
-        fixture.deliver(try bob.roomPost("One", id: "post-1", sentAt: start + 2), from: carol)
-        fixture.deliver(try bob.roomPost("Two", id: "post-2", sentAt: start + 3), from: carol)
+        fixture.deliver(try groupMessage(frameIdOf("gm-1")), from: carol)
+        fixture.deliver(try groupMessage(frameIdOf("gm-2"), at: 1), from: carol)
+        fixture.deliver(try bob.roomPost("One", id: frameIdOf("post-1"), sentAt: start + 2), from: carol)
+        fixture.deliver(try bob.roomPost("Two", id: frameIdOf("post-2"), sentAt: start + 3), from: carol)
         fixture.link(bob)
 
         let ticks = sealedTicks(fixture)
         #expect(ticks.count == 2, "the batch and the ride hold, one tick each")
         #expect(ticks.allSatisfy { $0.to == bob.nodeId && !$0.wire.relay }, "point to point, over the link")
-        #expect(ticks.compactMap { EngineSeals.acks(of: $0, as: bob) } == [["gm-1", "gm-2"], ["post-1", "post-2"]])
+        #expect(
+            ticks.compactMap { EngineSeals.acks(of: $0, as: bob) } == [
+                [frameIdOf("gm-1"), frameIdOf("gm-2")], [frameIdOf("post-1"), frameIdOf("post-2")],
+            ])
         #expect(ticks.allSatisfy { !fixture.stores.custody.contains($0.envelope.id) }, "no custody row")
         #expect(seals.originated.isEmpty && fixture.transport.written(.receipt).isEmpty)
         #expect(fixture.engine.footprint.owedTicks == 0)
@@ -237,27 +245,27 @@ import Testing
         let seals = EngineSeals(fixture, capable: [bob.nodeId])
         fixture.link(bob)
         fixture.transport.clear()
-        fixture.deliver(try groupMessage("gm-1"), from: bob)
-        fixture.deliver(try bob.roomPost("Room", id: "post-1", sentAt: start), from: bob)
+        fixture.deliver(try groupMessage(frameIdOf("gm-1")), from: bob)
+        fixture.deliver(try bob.roomPost("Room", id: frameIdOf("post-1"), sentAt: start), from: bob)
         let ticks = sealedTicks(fixture)
         #expect(ticks.map(\.to) == [bob.nodeId, bob.nodeId] && ticks.allSatisfy { !$0.wire.relay })
-        #expect(ticks.compactMap { EngineSeals.acks(of: $0, as: bob) } == [["gm-1"], ["post-1"]])
-        #expect(seals.sealed == [["gm-1"], ["post-1"]] && seals.originated.isEmpty)
+        #expect(ticks.compactMap { EngineSeals.acks(of: $0, as: bob) } == [[frameIdOf("gm-1")], [frameIdOf("post-1")]])
+        #expect(seals.sealed == [[frameIdOf("gm-1")], [frameIdOf("post-1")]] && seals.originated.isEmpty)
     }
 
     @Test func aFailedEscalationLeavesCleartextTicksThatGoAtTheLink() throws {
         let fixture = try fixture()
         let seals = EngineSeals(fixture, capable: [bob.nodeId])
         seals.originates = false
-        fixture.deliver(try groupMessage("gm-1"), from: carol)
-        fixture.deliver(try groupMessage("gm-2", at: 1), from: carol)
+        fixture.deliver(try groupMessage(frameIdOf("gm-1")), from: carol)
+        fixture.deliver(try groupMessage(frameIdOf("gm-2"), at: 1), from: carol)
         fixture.advance(debounce)
         #expect(sealedTicks(fixture).isEmpty && fixture.engine.footprint.owedTicks == 2)
         // Bob is still capable, so the link offers a seal first; with none, cleartext as today.
         seals.capable = []
         fixture.link(bob)
         let acked = try fixture.transport.written(.receipt).map { try ReceiptContent(decoding: $0.envelope.payload).ackId }
-        #expect(acked == ["gm-1", "gm-2"])
+        #expect(acked == [frameIdOf("gm-1"), frameIdOf("gm-2")])
         #expect(sealedTicks(fixture).isEmpty)
     }
 
@@ -266,11 +274,11 @@ import Testing
         // (`MeshManager.kt:1863-1865`): a block stays invisible.
         let fixture = try fixture()
         let seals = EngineSeals(fixture, capable: [bob.nodeId])
-        fixture.deliver(try groupMessage("gm-1"), from: carol)
+        fixture.deliver(try groupMessage(frameIdOf("gm-1")), from: carol)
         fixture.engine.block(bob.nodeId)
-        fixture.deliver(try groupMessage("gm-2", at: 1), from: carol)
+        fixture.deliver(try groupMessage(frameIdOf("gm-2"), at: 1), from: carol)
         #expect(fixture.engine.dropped[.blocked] == 1)
         fixture.advance(debounce)
-        #expect(seals.originated == [["gm-1", "gm-2"]])
+        #expect(seals.originated == [[frameIdOf("gm-1"), frameIdOf("gm-2")]])
     }
 }

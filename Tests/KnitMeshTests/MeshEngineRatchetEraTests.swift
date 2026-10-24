@@ -42,14 +42,15 @@ import Testing
         let prekey = try fixture.ourPrekey()
         let era = now - 60_000
         fixture.deliver(
-            try android.dm(MessageContent(body: "hello"), to: me, prekey: prekey, id: "era-1", sentAt: era, now: era), from: android)
+            try android.dm(MessageContent(body: "hello"), to: me, prekey: prekey, id: frameIdOf("era-1"), sentAt: era, now: era),
+            from: android)
         #expect(fixture.ratchetRecords(of: alice).session?.establishedAt == era)
         for index in 0..<3 {
             let frame = try android.dm(
                 MessageContent(body: "x"),
                 to: me,
                 prekey: prekey,
-                id: "old\(index)",
+                id: frameIdOf("old\(index)"),
                 sentAt: era - 100,
                 now: era
             ) { $0.ratchet = $0.ratchet?.skipping(5) }
@@ -62,7 +63,7 @@ import Testing
                 MessageContent(body: "x"),
                 to: me,
                 prekey: prekey,
-                id: "new\(index)",
+                id: frameIdOf("new\(index)"),
                 sentAt: era,
                 now: era
             ) { $0.ratchet = $0.ratchet?.skipping(9) }
@@ -108,7 +109,8 @@ import Testing
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
         let ahead = now + 600_000
-        fixture.deliver(try android.dm(MessageContent(body: "hi"), to: me, prekey: prekey, id: "fast-0", sentAt: ahead), from: android)
+        fixture.deliver(
+            try android.dm(MessageContent(body: "hi"), to: me, prekey: prekey, id: frameIdOf("fast-0"), sentAt: ahead), from: android)
         #expect(fixture.ratchetRecords(of: alice).session?.establishedAt == ahead)
         for index in 1...3 {
             let stamp = ahead + Int64(index)
@@ -116,7 +118,7 @@ import Testing
                 MessageContent(body: "x"),
                 to: me,
                 prekey: prekey,
-                id: "fast-\(index)",
+                id: frameIdOf("fast-\(index)"),
                 sentAt: stamp,
                 now: ahead
             ) { $0.ratchet = $0.ratchet?.skipping(5) }
@@ -155,7 +157,8 @@ import Testing
         // An epoch of Alice's we hold no chain for, based on the epoch named: the open reaches the fresh derivation and finds
         // no base key.
         func basedOn(_ id: String, pe: Int) throws -> TestFrame {
-            try android.dm(MessageContent(body: "x"), to: me, prekey: prekey, id: id, sentAt: now - 51 * Self.hour, now: now) { envelope in
+            let (label, sentAt) = (frameIdOf(id), now - 51 * Self.hour)
+            return try android.dm(MessageContent(body: "x"), to: me, prekey: prekey, id: label, sentAt: sentAt, now: now) { envelope in
                 guard var header = envelope.ratchet else {
                     return
                 }
@@ -172,9 +175,8 @@ import Testing
         #expect(fixture.engine.dropped[.ratchetEpochGone] == 3)
         #expect(fixture.resetsSent(to: alice).count == before, "ciphertext on a key retention already took is doomed, not divergence")
         #expect(fixture.engine.ratchet.floors(for: alice.nodeId).undecryptableIds == 0, "and never took a slot")
-        #expect(
-            fixture.log.all.contains { $0.contains("mesh reset gate: retired-1 from \(alice.nodeId) retired epoch pe=5 lowestRetained=12") }
-        )
+        let gate = "mesh reset gate: \(frameIdOf("retired-1")) from \(alice.nodeId) retired epoch pe=5 lowestRetained=12"
+        #expect(fixture.log.all.contains { $0.contains(gate) })
 
         // Two holes: had the doomed three entered the ids, these would make five distinct and fire.
         for index in 1...2 {

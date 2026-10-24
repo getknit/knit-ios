@@ -1,5 +1,6 @@
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -26,11 +27,12 @@ import Testing
         let hash = BlobHash(of: sealed.blob)
         let content = MessageContent(
             body: "", attachmentHash: hash.string, attachmentMime: "image/jpeg", attachmentKey: Base64.encode(sealed.key))
-        fixture.deliver(try bob.directMessage("", to: alice, id: "dm-1", sentAt: EngineFixture.start, content: content), from: bob)
+        fixture.deliver(
+            try bob.directMessage("", to: alice, id: frameIdOf("dm-1"), sentAt: EngineFixture.start, content: content), from: bob)
         fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: hash, mime: "image/jpeg", bytes: sealed.blob))
         _ = fixture.engine.drainEvents()
         fixture.transport.clear()
-        return try #require(fixture.stores.messages.message("dm-1")?.attachment)
+        return try #require(fixture.stores.messages.message(frameIdOf("dm-1"))?.attachment)
     }
 
     /// A room post from `author` naming `picture` by its plaintext.
@@ -77,7 +79,7 @@ import Testing
         let fixture = EngineFixture(alice)
         fixture.link(bob)
         try fixture.pin(bob)
-        fixture.deliver(try roomPost(by: bob, id: "post-1"), from: bob)
+        fixture.deliver(try roomPost(by: bob, id: frameIdOf("post-1")), from: bob)
         fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: plainHash, mime: "image/jpeg", bytes: picture))
         fixture.transport.clear()
         let found = try #require(fixture.engine.heldPhoto(picked: picture))
@@ -95,7 +97,7 @@ import Testing
     @Test func theRoomsPublicNameWinsOverASealedCopyWeHold() throws {
         let fixture = EngineFixture(alice)
         _ = try holdingBobsSealedCopy(fixture)
-        fixture.deliver(try roomPost(by: bob, id: "post-1"), from: bob)
+        fixture.deliver(try roomPost(by: bob, id: frameIdOf("post-1")), from: bob)
         #expect(fixture.stores.blobs.contains(plainHash), "copied from the sealed one")
         #expect(fixture.engine.heldPhoto(picked: picture)?.identity == PhotoIdentity(hash: plainHash, key: nil))
     }
@@ -132,7 +134,7 @@ import Testing
             hash: BlobHash(of: blob), mime: "image/jpeg", key: "aw==", plainHash: plainHash, sourceHash: BlobHash(of: original))
         fixture.stores.messages.save(
             MessageRecord(
-                id: "m1",
+                id: frameIdOf("m1"),
                 senderId: alice.nodeId,
                 recipientId: bob.nodeId,
                 conversationId: bob.nodeId.string,
@@ -152,7 +154,8 @@ import Testing
         let fixture = EngineFixture(alice)
         _ = try holdingBobsSealedCopy(fixture)
         let forward = MessageContent(body: "again", attachmentHash: plainHash.string, attachmentMime: "image/jpeg")
-        fixture.deliver(try bob.directMessage("again", to: alice, id: "dm-2", sentAt: EngineFixture.start, content: forward), from: bob)
+        fixture.deliver(
+            try bob.directMessage("again", to: alice, id: frameIdOf("dm-2"), sentAt: EngineFixture.start, content: forward), from: bob)
         #expect(fixture.stores.blobs.bytes(of: plainHash) == picture)
         #expect(fixture.transport.written(.blobRequest).isEmpty && !fixture.engine.blobExchange.isWanted(plainHash))
         #expect(fixture.engine.drainEvents().contains(.attachmentArrived(plainHash)))
@@ -164,7 +167,7 @@ import Testing
         try fixture.pin(carol)
         _ = try #require(fixture.engine.sendDirectMessage("", to: carol.nodeId, photo: OutgoingPhoto(bytes: picture, mime: "image/jpeg")))
         fixture.transport.clear()
-        fixture.deliver(try roomPost(by: carol, id: "post-1"), from: carol)
+        fixture.deliver(try roomPost(by: carol, id: frameIdOf("post-1")), from: carol)
         #expect(fixture.stores.blobs.bytes(of: plainHash) == picture)
         #expect(fixture.transport.written(.blobRequest).isEmpty)
     }
@@ -180,10 +183,11 @@ import Testing
         let content = MessageContent(
             body: "", attachmentHash: hash.string, attachmentMime: "image/jpeg", attachmentKey: Base64.encode(sealed.key))
         fixture.deliver(
-            try bob.groupMessage("", in: info, to: [alice, carol], id: "gm-1", sentAt: EngineFixture.start, content: content), from: bob)
+            try bob.groupMessage("", in: info, to: [alice, carol], id: frameIdOf("gm-1"), sentAt: EngineFixture.start, content: content),
+            from: bob)
         fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: hash, mime: "image/jpeg", bytes: sealed.blob))
         fixture.transport.clear()
-        fixture.deliver(try roomPost(by: carol, id: "post-1"), from: carol)
+        fixture.deliver(try roomPost(by: carol, id: frameIdOf("post-1")), from: carol)
         #expect(fixture.stores.blobs.bytes(of: plainHash) == picture, "Carol was in the group it came through")
         #expect(fixture.transport.written(.blobRequest).isEmpty)
     }
@@ -195,7 +199,7 @@ import Testing
         fixture.link(dave)
         try fixture.pin(dave)
         fixture.transport.clear()
-        fixture.deliver(try roomPost(by: dave, id: "post-1"), from: dave)
+        fixture.deliver(try roomPost(by: dave, id: frameIdOf("post-1")), from: dave)
         #expect(!fixture.stores.blobs.contains(plainHash), "pulled, not copied")
         #expect(fixture.engine.blobExchange.isWanted(plainHash))
     }
@@ -203,7 +207,7 @@ import Testing
     @Test func aBlobRequestNeverOpensOurSealedCopy() throws {
         let fixture = EngineFixture(alice)
         _ = try holdingBobsSealedCopy(fixture)
-        fixture.deliver(bob.blobRequest(for: plainHash.string, id: "breq-1"), from: bob)
+        fixture.deliver(bob.blobRequest(for: plainHash.string, id: frameIdOf("breq-1")), from: bob)
         #expect(!fixture.stores.blobs.contains(plainHash), "a blobreq is signed by nobody")
         #expect(fixture.transport.files.isEmpty)
     }
@@ -212,7 +216,7 @@ import Testing
         let fixture = EngineFixture(alice)
         _ = try holdingBobsSealedCopy(fixture)
         let keyed = MessageContent(body: "", attachmentHash: plainHash.string, attachmentMime: "image/jpeg", attachmentKey: "aw==")
-        fixture.deliver(try bob.directMessage("", to: alice, id: "dm-2", sentAt: EngineFixture.start, content: keyed), from: bob)
+        fixture.deliver(try bob.directMessage("", to: alice, id: frameIdOf("dm-2"), sentAt: EngineFixture.start, content: keyed), from: bob)
         #expect(!fixture.stores.blobs.contains(plainHash))
         #expect(fixture.engine.blobExchange.isWanted(plainHash))
     }
@@ -226,8 +230,9 @@ import Testing
         fixture.stores.blobs.insert(sealed.blob, hash: hash, mime: "image/jpeg", storedAt: 1)
         let content = MessageContent(
             body: "", attachmentHash: hash.string, attachmentMime: "image/jpeg", attachmentKey: Base64.encode(sealed.key))
-        fixture.deliver(try bob.directMessage("", to: alice, id: "dm-1", sentAt: EngineFixture.start, content: content), from: bob)
-        #expect(fixture.stores.messages.message("dm-1")?.attachment?.plainHash == plainHash)
+        fixture.deliver(
+            try bob.directMessage("", to: alice, id: frameIdOf("dm-1"), sentAt: EngineFixture.start, content: content), from: bob)
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1"))?.attachment?.plainHash == plainHash)
     }
 
     @Test func aStrangerToTheGroupItCameThroughIsPulledNotCopied() throws {
@@ -241,9 +246,10 @@ import Testing
         let content = MessageContent(
             body: "", attachmentHash: hash.string, attachmentMime: "image/jpeg", attachmentKey: Base64.encode(sealed.key))
         fixture.deliver(
-            try bob.groupMessage("", in: info, to: [alice, carol], id: "gm-1", sentAt: EngineFixture.start, content: content), from: bob)
+            try bob.groupMessage("", in: info, to: [alice, carol], id: frameIdOf("gm-1"), sentAt: EngineFixture.start, content: content),
+            from: bob)
         fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: hash, mime: "image/jpeg", bytes: sealed.blob))
-        fixture.deliver(try roomPost(by: dave, id: "post-1"), from: dave)
+        fixture.deliver(try roomPost(by: dave, id: frameIdOf("post-1")), from: dave)
         #expect(!fixture.stores.blobs.contains(plainHash) && fixture.engine.blobExchange.isWanted(plainHash))
     }
 
@@ -251,7 +257,7 @@ import Testing
         let fixture = EngineFixture(alice)
         let held = try holdingBobsSealedCopy(fixture)
         fixture.stores.blobs.remove(held.hash)
-        fixture.deliver(try roomPost(by: bob, id: "post-1"), from: bob)
+        fixture.deliver(try roomPost(by: bob, id: frameIdOf("post-1")), from: bob)
         #expect(!fixture.stores.blobs.contains(plainHash) && fixture.engine.blobExchange.isWanted(plainHash))
     }
 

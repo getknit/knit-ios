@@ -200,6 +200,11 @@ Kotlin wins.
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Mirrored ahead of the pin:**
+    - knit-next `a81f2050` (2026-10-18, on its `main`; knit-next ADR 2026-10.9qr4, #178): every inbound door refuses a
+      frame whose id is not the shape its type is minted with. This port's door is `Router.admit`, which refuses before
+      the seen check and the meter and counts `router.nonCanonical`; `FrameId.admits`, `profileId` and `talkLength`
+      mirror `FrameId.kt` (ADR 2026-10.h7xw). Its HELLO half, `99fbcad1` (#199), this port met at `admit` already.
+      When the pin passes `a81f2050`, check `FrameId.kt`'s `admits` against `FrameIdAdmitsTests`.
     - `ContactCard.clampName` from knit-next's `main` at `db18dbde` (2026-10-19), for Add contact (ADR 2026-10.tpr5):
       `3d587088` cuts a card's name at 32 UTF-16 units on a code-point boundary, where the pin's `.take(32)` could split a
       surrogate pair. Nothing else in `ContactCard.kt` or `docs/CONTACT_CARD.md` moved since the pin. `795b0883` (no intro
@@ -248,7 +253,7 @@ Kotlin wins.
         commit reads a frame that predates our session, carrying the init of the root we replaced, under the drained
         root rather than racing it (`RatchetEngine.resolveSession`'s `predatesSession`, `derivesPrevRoot`). The scopes
         are the spool's, which this port leaves out; the race rule changes what a peer accepts and is owed a phase of
-        its own. `a81f2050`, which refuses non-canonical frame ids at the router, belongs to the router's plane.
+        its own. `a81f2050`, which refuses non-canonical frame ids at the router, is mirrored on its own (below).
     - knit-next `d47ad76c` (2026-10-07, on its `main`), a picked mention as a chip that backspace deletes whole, and
       `eafb0721` (2026-10-13), a mention's color moved until it reads 4.5:1 on its bubble. Both are UI only, and nothing
       on the wire moves. They are mirrored by ADR 2026-10.nbhj as `MentionText.keepChipsWhole`, `snapOutOfChips` and
@@ -343,8 +348,8 @@ Kotlin wins.
         `Protocol.parse` refuses a HELLO whose node id does not round-trip through 16 bytes. This port refuses the
         same ids at `admit` already (`ble-transport.md`, "The handshake").
       - **A frame's id has the shape its type is minted with** (`a81f2050`, #178, knit-next ADR 2026-10.9qr4). Its router
-        door is owed here as knit-ios #4, still open. This port mints only admitted shapes, but it custodies and
-        re-serves a crafted id that Android drops at every exchange.
+        door is mirrored ahead of the pin as `FrameId.admits` and `Router.admit` (ADR 2026-10.h7xw, knit-ios #4). Its
+        spool door is Android's alone.
       - **The Coded PHY, more aggressive** (`ba14a876`, #169; the Bluetooth parts of `d7da26f6`; `752922da`, knit-next
         ADR 2026-10.yvn6). The step-up backs off after flaps, a 1M hit weaker than −90 no longer blocks `codedOnly`,
         and a cold sighting starts a bounded hunt. All of it is on in release. An iPhone is never heard on Coded, so
@@ -353,7 +358,7 @@ Kotlin wins.
         pattern ignores it. Its Wi-Fi Aware half is Android's alone.
 
       When the pin passes these, check that `LinkSilence`'s exemption still reads the HELLO's `CAP_DOORBELL`, and that
-      `FrameId.admits` agrees with #4's tests once #4 lands.
+      `FrameId.kt`'s `admits` still agrees with `FrameIdAdmitsTests`.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5f521cb9`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

@@ -60,11 +60,11 @@ import Testing
         let prekey = try fixture.ourPrekey()
         let out = try ourDM(fixture, to: alice)
         let receipt = control(MessageContent.Control.receipt, ack: out)
-        fixture.deliver(try android.dm(receipt, to: me, prekey: prekey, id: "ctl-r1", sentAt: now), from: android)
+        fixture.deliver(try android.dm(receipt, to: me, prekey: prekey, id: frameIdOf("ctl-r1"), sentAt: now), from: android)
         #expect(fixture.stores.messages.message(out)?.delivered == true)
         #expect(deliveredIds(in: fixture.engine.drainEvents()) == [out])
         #expect(fixture.stores.custody.contains(out), "a carrier cannot read a sealed receipt, so nobody purges")
-        #expect(fixture.stores.messages.message("ctl-r1") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("ctl-r1")) == nil)
         #expect(fixture.transport.written(.receipt).isEmpty, "no acknowledgement of an acknowledgement")
     }
 
@@ -73,7 +73,7 @@ import Testing
         let prekey = try fixture.ourPrekey()
         let toCarol = try ourDM(fixture, to: carol)
         let receipt = control(MessageContent.Control.receipt, ack: toCarol)
-        fixture.deliver(try android.dm(receipt, to: me, prekey: prekey, id: "ctl-r2", sentAt: now), from: android)
+        fixture.deliver(try android.dm(receipt, to: me, prekey: prekey, id: frameIdOf("ctl-r2"), sentAt: now), from: android)
         #expect(fixture.stores.messages.message(toCarol)?.delivered == false)
         #expect(deliveredIds(in: fixture.engine.drainEvents()).isEmpty)
     }
@@ -85,11 +85,11 @@ import Testing
         let second = try #require(fixture.engine.postToRoom("b")).id
         let toCarol = try ourDM(fixture, to: carol)
         let receipt = control(MessageContent.Control.receipt, acks: [first, second, toCarol])
-        fixture.deliver(try android.dm(receipt, to: me, prekey: prekey, id: "tick-b1", sentAt: now), from: android)
+        fixture.deliver(try android.dm(receipt, to: me, prekey: prekey, id: frameIdOf("tick-b1"), sentAt: now), from: android)
         #expect(fixture.stores.messages.message(first)?.delivered == true)
         #expect(fixture.stores.messages.message(second)?.delivered == true)
         #expect(fixture.stores.messages.message(toCarol)?.delivered == false, "a DM addressed to someone else never flips")
-        #expect(fixture.stores.messages.message("tick-b1") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("tick-b1")) == nil)
     }
 
     @Test func aSealedTickForAGroupMessageStillFlipsTheTick() throws {
@@ -98,7 +98,7 @@ import Testing
         let group = try #require(fixture.engine.createGroup(with: [alice.nodeId]))
         let message = try #require(fixture.engine.sendGroupMessage("hi all", to: group.id)).id
         let receipt = control(MessageContent.Control.receipt, ack: message)
-        fixture.deliver(try android.dm(receipt, to: me, prekey: prekey, id: "ctl-g1", sentAt: now), from: android)
+        fixture.deliver(try android.dm(receipt, to: me, prekey: prekey, id: frameIdOf("ctl-g1"), sentAt: now), from: android)
         #expect(fixture.stores.messages.message(message)?.delivered == true)
     }
 
@@ -108,7 +108,7 @@ import Testing
         let out = try ourDM(fixture, to: alice)
         // The id once, then 200 others: only the first 128 distinct ids are read (`MAX_RECEIPT_ACKS`).
         let receipt = control(MessageContent.Control.receipt, ack: out, acks: [out] + (0..<200).map { "other-\($0)" })
-        fixture.deliver(try android.dm(receipt, to: me, prekey: prekey, id: "ctl-many", sentAt: now), from: android)
+        fixture.deliver(try android.dm(receipt, to: me, prekey: prekey, id: frameIdOf("ctl-many"), sentAt: now), from: android)
         #expect(deliveredIds(in: fixture.engine.drainEvents()) == [out], "flipped once")
     }
 
@@ -118,13 +118,13 @@ import Testing
         let out = try ourDM(fixture, to: alice)
         let toCarol = try ourDM(fixture, to: carol)
         let reply = MessageContent(body: "thanks", acks: [out, toCarol])
-        let frame = try android.dm(reply, to: me, prekey: prekey, id: "reply-1", sentAt: now)
+        let frame = try android.dm(reply, to: me, prekey: prekey, id: frameIdOf("reply-1"), sentAt: now)
         fixture.deliver(frame, from: android)
-        #expect(fixture.stores.messages.message("reply-1")?.body == "thanks")
+        #expect(fixture.stores.messages.message(frameIdOf("reply-1"))?.body == "thanks")
         #expect(fixture.stores.messages.message(out)?.delivered == true)
         #expect(fixture.stores.messages.message(toCarol)?.delivered == false)
         #expect(deliveredIds(in: fixture.engine.drainEvents()) == [out])
-        #expect(fixture.acknowledged(by: android) == ["reply-1"])
+        #expect(fixture.acknowledged(by: android) == [frameIdOf("reply-1")])
         // A copy re-served later stops at the exists-gate, so nothing re-applies.
         fixture.deliverPastRouter(frame, from: alice)
         #expect(deliveredIds(in: fixture.engine.drainEvents()).isEmpty)
@@ -135,7 +135,7 @@ import Testing
         let prekey = try fixture.ourPrekey()
         let first = try ourDM(fixture, to: alice)
         let second = try ourDM(fixture, to: alice)
-        let id = "v3-acks"
+        let id = frameIdOf("v3-acks")
         let frame = try android.dm(
             MessageContent(body: "compact hello", acks: [first, second]), to: me, prekey: prekey, id: id, sentAt: now, v3: true)
         fixture.deliver(frame, from: android)
@@ -148,14 +148,14 @@ import Testing
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
         let add = control(MessageContent.Control.reaction, rp: ReactionContent(messageId: "m1", emoji: "👍"))
-        fixture.deliver(try android.dm(add, to: me, prekey: prekey, id: "ctl-x1", sentAt: now + 7), from: android)
+        fixture.deliver(try android.dm(add, to: me, prekey: prekey, id: frameIdOf("ctl-x1"), sentAt: now + 7), from: android)
         let added = fixture.stores.messages.reaction(on: "m1", by: alice.nodeId)
         #expect(added == ReactionRecord(messageId: "m1", reactor: alice.nodeId, emoji: "👍", updatedAt: now + 7))
         let retract = control(MessageContent.Control.reaction, rp: ReactionContent(messageId: "m1"))
-        fixture.deliver(try android.dm(retract, to: me, prekey: prekey, id: "ctl-x2", sentAt: now + 9), from: android)
+        fixture.deliver(try android.dm(retract, to: me, prekey: prekey, id: frameIdOf("ctl-x2"), sentAt: now + 9), from: android)
         let retracted = fixture.stores.messages.reaction(on: "m1", by: alice.nodeId)
         #expect(retracted == ReactionRecord(messageId: "m1", reactor: alice.nodeId, emoji: nil, updatedAt: now + 9))
-        #expect(fixture.stores.messages.message("ctl-x1") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("ctl-x1")) == nil)
         #expect(fixture.transport.written(.receipt).isEmpty)
         #expect(receivedRecords(in: fixture.engine.drainEvents()).isEmpty)
     }
@@ -165,7 +165,7 @@ import Testing
         let prekey = try fixture.ourPrekey()
         let out = try ourDM(fixture, to: alice)
         let add = control(MessageContent.Control.reaction, rp: ReactionContent(messageId: out, emoji: "❤️"))
-        fixture.deliver(try android.dm(add, to: me, prekey: prekey, id: "ctl-x3", sentAt: now), from: android)
+        fixture.deliver(try android.dm(add, to: me, prekey: prekey, id: frameIdOf("ctl-x3"), sentAt: now), from: android)
         let announced = fixture.engine.drainEvents().contains { event in
             guard case .reacted(let reaction) = event else {
                 return false
@@ -180,9 +180,9 @@ import Testing
         let prekey = try fixture.ourPrekey()
         let oversized = control(
             MessageContent.Control.reaction, rp: ReactionContent(messageId: "m1", emoji: String(repeating: "👍", count: 17)))
-        fixture.deliver(try android.dm(oversized, to: me, prekey: prekey, id: "ctl-o1", sentAt: now + 7), from: android)
+        fixture.deliver(try android.dm(oversized, to: me, prekey: prekey, id: frameIdOf("ctl-o1"), sentAt: now + 7), from: android)
         let fine = control(MessageContent.Control.reaction, rp: ReactionContent(messageId: "m1", emoji: "👍"))
-        fixture.deliver(try android.dm(fine, to: me, prekey: prekey, id: "ctl-o2", sentAt: now + 9), from: android)
+        fixture.deliver(try android.dm(fine, to: me, prekey: prekey, id: frameIdOf("ctl-o2"), sentAt: now + 9), from: android)
         #expect(fixture.stores.messages.reaction(on: "m1", by: alice.nodeId)?.updatedAt == now + 9)
         #expect(fixture.engine.dropped[.reactionRefused] == 1)
         #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [2], "the refused one still spent its index")
@@ -193,7 +193,8 @@ import Testing
         let prekey = try fixture.ourPrekey()
         let target = canonicalId(11)
         let reaction = control(MessageContent.Control.reaction, rp: ReactionContent(messageId: target, emoji: Self.longestRGI))
-        fixture.deliver(try android.dm(reaction, to: me, prekey: prekey, id: "ctl-v3l", sentAt: now + 7, v3: true), from: android)
+        fixture.deliver(
+            try android.dm(reaction, to: me, prekey: prekey, id: frameIdOf("ctl-v3l"), sentAt: now + 7, v3: true), from: android)
         #expect(fixture.stores.messages.reaction(on: target, by: alice.nodeId)?.emoji == Self.longestRGI)
         #expect(fixture.engine.dropped[.reactionRefused] == nil)
     }
@@ -205,7 +206,8 @@ import Testing
         for (index, ctl) in [MessageContent.Control.reaction, MessageContent.Control.profile].enumerated() {
             let empty = MessageContent(body: "", ctl: ctl)
             fixture.deliver(
-                try android.dm(empty, to: me, prekey: prekey, id: "ctl-empty-\(index)", sentAt: now + Int64(index)), from: android)
+                try android.dm(empty, to: me, prekey: prekey, id: frameIdOf("ctl-empty-\(index)"), sentAt: now + Int64(index)),
+                from: android)
         }
         #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [2])
         #expect(fixture.stores.peers.peer(alice.nodeId) == before)

@@ -118,20 +118,21 @@ import Testing
     @Test func aGroupReactionWithEveryMemberEligibleRidesTheGroupFormAndDistributesItsSeed() throws {
         let (fixture, reader) = try rig()
         let group = fixture.holdGroup(with: [alice])
-        fixture.deliver(try alice.groupMessage("first", in: group, to: [me], id: "gm1", sentAt: now), from: alice)
+        fixture.deliver(try alice.groupMessage("first", in: group, to: [me], id: frameIdOf("gm1"), sentAt: now), from: alice)
         fixture.transport.clear()
-        _ = try #require(fixture.engine.react(to: "gm1", with: "\u{1F525}"))
+        _ = try #require(fixture.engine.react(to: frameIdOf("gm1"), with: "\u{1F525}"))
         #expect(fixture.transport.written(.reaction).isEmpty, "no cleartext reaction names the target or the emoji")
         let frame = try #require(fixture.groupFrames(in: group.id).first)
         let enc = try EngineFixture.sealed(frame)
         #expect(enc.groupRatchet != nil, "the group form's header")
         #expect(fixture.chats(to: alice).count == 1, "the first reaction mints, and its seed goes ahead")
         #expect(fixture.engine.seals == RatchetSealCounts(reactionsSealed: 1))
-        let held = try #require(fixture.stores.messages.reaction(on: "gm1", by: me.nodeId))
+        let held = try #require(fixture.stores.messages.reaction(on: frameIdOf("gm1"), by: me.nodeId))
         #expect(frame.envelope.sentAt == held.updatedAt, "dated by the row's own clock")
         try reader.receive(try #require(fixture.chats(to: alice).first), from: me)
         let opened = try reader.open(frame, from: me).get()
-        #expect(opened.ctl == MessageContent.Control.reaction && opened.rp == ReactionContent(messageId: "gm1", emoji: "\u{1F525}"))
+        #expect(
+            opened.ctl == MessageContent.Control.reaction && opened.rp == ReactionContent(messageId: frameIdOf("gm1"), emoji: "\u{1F525}"))
     }
 
     /// The fallback Kotlin counts (`onGroupSealedV1Fallback`, `MeshManager.kt:1330-1340`): every member eligible, but a

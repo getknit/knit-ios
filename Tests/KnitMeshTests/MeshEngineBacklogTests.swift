@@ -1,6 +1,7 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -27,7 +28,8 @@ import Testing
         let before = EngineFixture(bob, stores: stores)
         try before.pin(alice)
         for n in 0..<Self.posts {
-            before.deliver(try alice.roomPost("Post \(n)", id: "alice-\(n)", sentAt: EngineFixture.start + 1 + Int64(n)), from: alice)
+            before.deliver(
+                try alice.roomPost("Post \(n)", id: frameIdOf("alice-\(n)"), sentAt: EngineFixture.start + 1 + Int64(n)), from: alice)
         }
         let aliceProfiles = stores.custody.liveFrames(now: EngineFixture.start).filter { frame in
             frame.envelope.type == .profile && frame.envelope.senderId == alice.nodeId.string
@@ -53,7 +55,7 @@ import Testing
                     if from.me == carrier.me {
                         crossed.append(frame)
                     }
-                    to.engine.receive(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: from.me.nodeId))
+                    to.engine.receiveAdmitted(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: from.me.nodeId))
                 }
                 for digest in digests {
                     quiet = false
@@ -117,13 +119,14 @@ import Testing
         // A pin from before the proof was kept, as on a phone upgraded to it: the backlog goes, and its reader asks.
         let stores = MeshStores.inMemory()
         stores.peers.upsert(PeerRecord(nodeId: alice.nodeId, name: "", status: "", publicKey: alice.keys.bundle.encoded, updatedAt: 1))
-        let post = try alice.roomPost("Before", id: "alice-0", sentAt: EngineFixture.start)
+        let post = try alice.roomPost("Before", id: frameIdOf("alice-0"), sentAt: EngineFixture.start)
         let carried = CarriedFrame(envelope: post.envelope, sig: post.wire.sig, signed: post.wire.signed)
         #expect(stores.custody.store(carried, origin: .relayed, now: EngineFixture.start))
         let fixture = EngineFixture(bob, stores: stores)
         fixture.link(carol)
         fixture.transport.clear()
         fixture.engine.receiveDigest([], from: carol.nodeId)
-        #expect(fixture.transport.written.filter { $0.envelope.senderId == alice.nodeId.string }.map(\.envelope.id) == ["alice-0"])
+        #expect(
+            fixture.transport.written.filter { $0.envelope.senderId == alice.nodeId.string }.map(\.envelope.id) == [frameIdOf("alice-0")])
     }
 }

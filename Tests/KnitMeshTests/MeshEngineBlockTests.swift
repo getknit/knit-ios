@@ -1,6 +1,7 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -30,7 +31,8 @@ import Testing
     private func carolsGroup(in fixture: EngineFixture, with members: [TestPeer]) throws -> GroupInfo {
         let info = roster(members, createdBy: carol)
         let others = members.filter { $0 != carol }
-        fixture.deliver(try carol.groupMessage("Welcome", in: info, to: others, id: "gm-welcome-\(info.id)", sentAt: start), from: carol)
+        fixture.deliver(
+            try carol.groupMessage("Welcome", in: info, to: others, id: frameIdOf("gm-welcome-\(info.id)"), sentAt: start), from: carol)
         #expect(fixture.stores.groups.group(info.id) != nil)
         fixture.transport.clear()
         _ = fixture.engine.drainEvents()
@@ -42,14 +44,14 @@ import Testing
     @Test func aBlockedSendersRoomPostIsNotSurfacedButStillTickedCarriedAndRelayed() throws {
         // `aBlockedSendersBroadcastIsNotSurfacedButStillAcked` and `canCarryStillCarriesABlockedSender`.
         let fixture = try blockingBob()
-        fixture.deliver(try bob.roomPost("Hi all", id: "post-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.roomPost("Hi all", id: frameIdOf("post-1"), sentAt: start), from: bob)
         #expect(fixture.engine.drainEvents().isEmpty)
-        #expect(fixture.stores.messages.message("post-1") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("post-1")) == nil)
         #expect(fixture.engine.dropped[.blocked] == 1)
         let tick = try #require(fixture.transport.written(.receipt).first)
         #expect(tick.to == bob.nodeId && !tick.wire.relay, "the point-to-point tick, so the block stays invisible")
-        #expect(try ReceiptContent(decoding: tick.envelope.payload).ackId == "post-1")
-        #expect(fixture.stores.custody.contains("post-1"), "carried like anyone's")
+        #expect(try ReceiptContent(decoding: tick.envelope.payload).ackId == frameIdOf("post-1"))
+        #expect(fixture.stores.custody.contains(frameIdOf("post-1")), "carried like anyone's")
         fixture.advance(150)
         #expect(fixture.transport.written(.chat).map(\.to) == [carol.nodeId], "and relayed")
     }
@@ -57,11 +59,11 @@ import Testing
     @Test func aBlockedSendersDmIsNeitherDeliveredNorAcknowledged() throws {
         // `aBlockedSendersDmIsNeitherDeliveredNorAcked`. Its receipt would flood and purge every carrier's copy.
         let fixture = try blockingBob()
-        fixture.deliver(try bob.directMessage("Hello", to: alice, id: "dm-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.directMessage("Hello", to: alice, id: frameIdOf("dm-1"), sentAt: start), from: bob)
         #expect(fixture.engine.drainEvents().isEmpty)
-        #expect(fixture.stores.messages.message("dm-1") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1")) == nil)
         #expect(fixture.transport.written(.receipt).isEmpty)
-        #expect(fixture.stores.custody.contains("dm-1"), "held in our own custody, so our digest folds it")
+        #expect(fixture.stores.custody.contains(frameIdOf("dm-1")), "held in our own custody, so our digest folds it")
     }
 
     @Test func aDmReceivedWhileBlockedStaysUnseenAfterTheUnblockAndEarlierOnesComeBack() throws {
@@ -70,16 +72,16 @@ import Testing
         let fixture = EngineFixture(alice)
         fixture.link(bob)
         try fixture.pin(bob)
-        fixture.deliver(try bob.directMessage("Before", to: alice, id: "dm-0", sentAt: start), from: bob)
+        fixture.deliver(try bob.directMessage("Before", to: alice, id: frameIdOf("dm-0"), sentAt: start), from: bob)
         fixture.engine.block(bob.nodeId)
-        fixture.deliver(try bob.directMessage("During", to: alice, id: "dm-1", sentAt: start + 1), from: bob)
+        fixture.deliver(try bob.directMessage("During", to: alice, id: frameIdOf("dm-1"), sentAt: start + 1), from: bob)
         fixture.engine.unblock(bob.nodeId)
         _ = fixture.engine.drainEvents()
         fixture.advance(60_000)
         #expect(fixture.engine.drainEvents().isEmpty)
-        #expect(fixture.stores.messages.message("dm-0")?.body == "Before", "a block deletes nothing")
-        #expect(fixture.stores.messages.message("dm-1") == nil)
-        #expect(fixture.stores.custody.contains("dm-1"))
+        #expect(fixture.stores.messages.message(frameIdOf("dm-0"))?.body == "Before", "a block deletes nothing")
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1")) == nil)
+        #expect(fixture.stores.custody.contains(frameIdOf("dm-1")))
         #expect(fixture.stores.blocks.blockedNodeIds().isEmpty)
     }
 
@@ -87,12 +89,12 @@ import Testing
         // `aBlockedMembersGroupMessageIsNotSurfacedButStillAcked`.
         let fixture = try blockingBob()
         let info = try carolsGroup(in: fixture, with: [carol, bob, alice])
-        fixture.deliver(try bob.groupMessage("From Bob", in: info, to: [alice, carol], id: "gm-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.groupMessage("From Bob", in: info, to: [alice, carol], id: frameIdOf("gm-1"), sentAt: start), from: bob)
         #expect(announced(fixture.engine.drainEvents()).isEmpty)
-        #expect(fixture.stores.messages.message("gm-1") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("gm-1")) == nil)
         let ticks = fixture.transport.written(.receipt)
         #expect(ticks.map(\.to) == [bob.nodeId])
-        #expect(try ticks.map { try ReceiptContent(decoding: $0.envelope.payload).ackId } == ["gm-1"])
+        #expect(try ticks.map { try ReceiptContent(decoding: $0.envelope.payload).ackId } == [frameIdOf("gm-1")])
         #expect(fixture.stores.groups.group(info.id)?.members == info.members, "Bob stays on the roster")
     }
 
@@ -100,12 +102,12 @@ import Testing
         // `ackBlockedRoomChat`: only a member ticks, as on the delivery path.
         let fixture = try blockingBob()
         let strangers = roster([bob, carol, alice], createdBy: bob)
-        fixture.deliver(try bob.groupMessage("Hi", in: strangers, to: [alice, carol], id: "gm-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.groupMessage("Hi", in: strangers, to: [alice, carol], id: frameIdOf("gm-1"), sentAt: start), from: bob)
         #expect(fixture.stores.groups.group(strangers.id) == nil, "the frame makes no group")
         let left = try carolsGroup(in: fixture, with: [carol, bob, alice, dave])
         #expect(fixture.engine.leaveGroup(left.id))
         fixture.transport.clear()
-        fixture.deliver(try bob.groupMessage("Still here", in: left, to: [carol, dave], id: "gm-2", sentAt: start), from: bob)
+        fixture.deliver(try bob.groupMessage("Still here", in: left, to: [carol, dave], id: frameIdOf("gm-2"), sentAt: start), from: bob)
         #expect(fixture.transport.written(.receipt).isEmpty)
         #expect(fixture.engine.dropped[.blocked] == 2)
     }
@@ -115,13 +117,13 @@ import Testing
         // message, and the start-up replay delivers what it holds and the thread lacks.
         let fixture = try blockingBob()
         let info = try carolsGroup(in: fixture, with: [carol, bob, alice])
-        fixture.deliver(try bob.groupMessage("During", in: info, to: [alice, carol], id: "gm-1", sentAt: start), from: bob)
-        #expect(fixture.stores.messages.message("gm-1") == nil)
+        fixture.deliver(try bob.groupMessage("During", in: info, to: [alice, carol], id: frameIdOf("gm-1"), sentAt: start), from: bob)
+        #expect(fixture.stores.messages.message(frameIdOf("gm-1")) == nil)
         let blockedStart = EngineFixture(alice, stores: fixture.stores)
-        #expect(blockedStart.stores.messages.message("gm-1") == nil, "a start while blocked meets the gate")
+        #expect(blockedStart.stores.messages.message(frameIdOf("gm-1")) == nil, "a start while blocked meets the gate")
         fixture.engine.unblock(bob.nodeId)
         let restarted = EngineFixture(alice, stores: fixture.stores)
-        #expect(restarted.stores.messages.message("gm-1")?.body == "During")
+        #expect(restarted.stores.messages.message(frameIdOf("gm-1"))?.body == "During")
     }
 
     @Test func aBlockedSendersPhotoIsNotFetchedButTheirProfilePhotoIs() throws {
@@ -134,7 +136,7 @@ import Testing
         let posted = BlobHash(of: Array("a sunset".utf8))
         let post = ChatContent(body: "Sunset", attachmentHash: posted.string, attachmentMime: "image/jpeg")
         let frame = try bob.signed(
-            RelayEnvelope(type: .chat, id: "post-1", senderId: bob.nodeId.string, sentAt: start, payload: post.encoded))
+            RelayEnvelope(type: .chat, id: frameIdOf("post-1"), senderId: bob.nodeId.string, sentAt: start, payload: post.encoded))
         fixture.deliver(frame, from: carol)
         #expect(fixture.transport.written(.blobRequest).isEmpty)
         let face = BlobHash(of: Array("a face".utf8))
@@ -149,11 +151,11 @@ import Testing
         let fixture = EngineFixture(alice)
         fixture.link(carol)
         fixture.engine.block(bob.nodeId)
-        fixture.deliver(try bob.roomPost("Early", id: "post-1", sentAt: start), from: carol)
+        fixture.deliver(try bob.roomPost("Early", id: frameIdOf("post-1"), sentAt: start), from: carol)
         #expect(fixture.engine.dropped[.noSenderKey] == 1)
         try fixture.pin(bob)
         #expect(announced(fixture.engine.drainEvents()).isEmpty)
-        #expect(fixture.stores.messages.message("post-1") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("post-1")) == nil)
         #expect(fixture.engine.dropped[.blocked] == 1)
     }
 
@@ -163,9 +165,9 @@ import Testing
         // `aNewGroupWhoseCreatorIsBlockedIsRefused`.
         let fixture = try blockingBob()
         let info = roster([bob, carol, alice], createdBy: bob)
-        fixture.deliver(try carol.groupMessage("Join us", in: info, to: [alice, bob], id: "gm-1", sentAt: start), from: carol)
+        fixture.deliver(try carol.groupMessage("Join us", in: info, to: [alice, bob], id: frameIdOf("gm-1"), sentAt: start), from: carol)
         #expect(fixture.stores.groups.group(info.id) == nil)
-        #expect(fixture.stores.messages.message("gm-1") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("gm-1")) == nil)
         #expect(fixture.transport.written(.receipt).isEmpty)
         #expect(fixture.engine.dropped[.blocked] == 1)
     }
@@ -177,11 +179,11 @@ import Testing
         try fixture.pin(bob)
         try fixture.pin(carol)
         let info = roster([bob, carol, alice], createdBy: bob)
-        fixture.deliver(try bob.groupMessage("Made it", in: info, to: [alice, carol], id: "gm-0", sentAt: start), from: bob)
+        fixture.deliver(try bob.groupMessage("Made it", in: info, to: [alice, carol], id: frameIdOf("gm-0"), sentAt: start), from: bob)
         fixture.engine.block(bob.nodeId)
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try carol.groupMessage("Hi", in: info, to: [alice, bob], id: "gm-1", sentAt: start), from: carol)
-        #expect(announced(fixture.engine.drainEvents()).map(\.record.id) == ["gm-1"])
+        fixture.deliver(try carol.groupMessage("Hi", in: info, to: [alice, bob], id: frameIdOf("gm-1"), sentAt: start), from: carol)
+        #expect(announced(fixture.engine.drainEvents()).map(\.record.id) == [frameIdOf("gm-1")])
     }
 
     @Test func aBlockedMembersRenameIsIgnored() throws {
@@ -189,7 +191,7 @@ import Testing
         let fixture = try blockingBob()
         let info = try carolsGroup(in: fixture, with: [carol, bob, alice])
         let renamed = roster([carol, bob, alice], name: "Bob's now", createdBy: carol)
-        fixture.deliver(try bob.groupUpdate(renamed, id: "gu-1", sentAt: start + 1), from: bob)
+        fixture.deliver(try bob.groupUpdate(renamed, id: frameIdOf("gu-1"), sentAt: start + 1), from: bob)
         #expect(fixture.stores.groups.group(info.id)?.name.isEmpty == true)
         #expect(fixture.engine.drainEvents().isEmpty)
         #expect(fixture.engine.dropped[.blocked] == 1)
@@ -200,7 +202,7 @@ import Testing
         let fixture = try blockingBob()
         let info = try carolsGroup(in: fixture, with: [carol, bob, alice])
         let lines = fixture.stores.messages.messages(in: info.id).count
-        fixture.deliver(try bob.groupLeave(info.id, id: "gl-1", sentAt: start + 1), from: bob)
+        fixture.deliver(try bob.groupLeave(info.id, id: frameIdOf("gl-1"), sentAt: start + 1), from: bob)
         #expect(fixture.stores.groups.group(info.id)?.members == info.members)
         #expect(fixture.stores.messages.messages(in: info.id).count == lines)
         #expect(fixture.engine.drainEvents().isEmpty)
@@ -219,11 +221,11 @@ import Testing
         fixture.engine.block(bob.nodeId)
         #expect(fixture.stores.blocks.isBlocked(deviceTag: tag), "the block takes the tag the profile carried")
         let rekeyed = TestPeer(seed: 5)
-        fixture.deliver(try rekeyed.directMessage("New keys", to: alice, id: "dm-1", sentAt: start), from: carol)
+        fixture.deliver(try rekeyed.directMessage("New keys", to: alice, id: frameIdOf("dm-1"), sentAt: start), from: carol)
         _ = fixture.engine.drainEvents()
         fixture.deliver(try rekeyed.profile(publishedAt: start, deviceTag: tag), from: carol)
         #expect(fixture.stores.blocks.blockedNodeIds() == [bob.nodeId, rekeyed.nodeId])
-        #expect(fixture.stores.messages.message("dm-1") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1")) == nil)
         #expect(fixture.engine.dropped[.blocked] == 1)
         #expect(fixture.engine.drainEvents() == [.peerUpdated(rekeyed.nodeId)])
         fixture.deliver(try dave.profile(publishedAt: start, deviceTag: "ffffffffffffffff"), from: carol)

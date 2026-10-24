@@ -47,12 +47,13 @@ import Testing
         let group = fixture.holdGroup(with: [alice, bob])
         let author = GroupFormAuthor(first, in: group.id)
         let other = GroupFormAuthor(second, in: group.id)
-        fixture.deliver(try author.frame(group, id: "gm-early", body: "too soon", sentAt: now), from: alice)
-        fixture.deliver(try other.frame(group, id: "gm-bob", body: "not yet", sentAt: now), from: bob)
+        fixture.deliver(try author.frame(group, id: frameIdOf("gm-early"), body: "too soon", sentAt: now), from: alice)
+        fixture.deliver(try other.frame(group, id: frameIdOf("gm-bob"), body: "not yet", sentAt: now), from: bob)
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == 2)
-        try seed(fixture, author, id: "seed1")
-        #expect(fixture.stores.messages.message("gm-early")?.body == "too soon", "our custody's copy opened once the seed landed")
-        #expect(fixture.stores.messages.message("gm-bob") == nil, "narrowed to the seed's sender")
+        try seed(fixture, author, id: frameIdOf("seed1"))
+        #expect(
+            fixture.stores.messages.message(frameIdOf("gm-early"))?.body == "too soon", "our custody's copy opened once the seed landed")
+        #expect(fixture.stores.messages.message(frameIdOf("gm-bob")) == nil, "narrowed to the seed's sender")
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == 2, "Bob's frame was not tried again")
     }
 
@@ -60,20 +61,21 @@ import Testing
         let (fixture, first) = try rig()
         let group = roster([me, alice], createdBy: alice)
         let author = GroupFormAuthor(first, in: group.id)
-        try seed(fixture, author, id: "seed-early")
+        try seed(fixture, author, id: frameIdOf("seed-early"))
         #expect(fixture.recvChains(group.id, from: alice).isEmpty, "parked, not consumed")
         #expect(!acked(fixture, by: first) && fixture.stores.groups.group(group.id) == nil)
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: 1))
         #expect(fixture.engine.pendingGroupKeys.parked.count == 1)
-        fixture.deliver(try author.frame(group, id: "g-first", body: "stock group", sentAt: now + 1), from: alice)
+        fixture.deliver(try author.frame(group, id: frameIdOf("g-first"), body: "stock group", sentAt: now + 1), from: alice)
         #expect(fixture.stores.groups.group(group.id) != nil)
         #expect(fixture.engine.groupCounts.groupSeedsReplayed == 1 && fixture.engine.groupCounts.groupSeedsAdopted == 1)
         #expect(fixture.recvChains(group.id, from: alice).count == 1)
-        #expect(fixture.stores.messages.message("g-first")?.body == "stock group")
+        #expect(fixture.stores.messages.message(frameIdOf("g-first"))?.body == "stock group")
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == nil && fixture.engine.dropped[.ratchetDuplicate] == nil)
         #expect(acked(fixture, by: first), "the adoption's ack went as for any seed")
         #expect(
-            fixture.stores.messages.message("seed-early") == nil && fixture.sealedReceipts(to: first).isEmpty, "the ctl kept its contract")
+            fixture.stores.messages.message(frameIdOf("seed-early")) == nil && fixture.sealedReceipts(to: first).isEmpty,
+            "the ctl kept its contract")
     }
 
     @Test func aParkedSeedLeavesTheChainWhereItWasSoItsReServeStillOpens() throws {
@@ -81,17 +83,17 @@ import Testing
         let group = roster([me, alice], createdBy: alice)
         let author = GroupFormAuthor(first, in: group.id)
         // Point to point, so our custody holds no copy for the first sight's replay to open: only a re-serve brings it.
-        let seedFrame = try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: "seed-aged", sentAt: now, relay: false)
+        let seedFrame = try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("seed-aged"), sentAt: now, relay: false)
         fixture.deliver(seedFrame, from: alice)
         fixture.advance(2 * Self.hour)
         #expect(fixture.engine.pendingGroupKeys.parked.isEmpty, "the hold aged out")
-        fixture.deliver(try author.frame(group, id: "g-first", body: "stock group", sentAt: now + 2 * Self.hour), from: alice)
+        fixture.deliver(try author.frame(group, id: frameIdOf("g-first"), body: "stock group", sentAt: now + 2 * Self.hour), from: alice)
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == 1)
-        #expect(fixture.stores.messages.message("g-first") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("g-first")) == nil)
         fixture.deliver(seedFrame, from: alice)
         #expect(fixture.engine.dropped[.ratchetDuplicate] == nil, "the chain never moved past it")
         #expect(fixture.recvChains(group.id, from: alice).count == 1 && fixture.engine.groupCounts.groupSeedsAdopted == 1)
-        #expect(fixture.stores.messages.message("g-first")?.body == "stock group", "the adoption's replay opened it")
+        #expect(fixture.stores.messages.message(frameIdOf("g-first"))?.body == "stock group", "the adoption's replay opened it")
     }
 
     @Test func aDepartedMemberRejoinsByItsOwnFrameAndItsEarlySeedIsReplayed() throws {
@@ -99,13 +101,13 @@ import Testing
         let group = fixture.holdGroup(with: [alice])
         try fixture.depart(alice, from: group, at: now + 10)
         let author = GroupFormAuthor(first, in: group.id)
-        try seed(fixture, author, id: "seed-back", at: 15)
+        try seed(fixture, author, id: frameIdOf("seed-back"), at: 15)
         #expect(fixture.engine.groupCounts.groupSeedsHeld == 1 && fixture.recvChains(group.id, from: alice).isEmpty)
         #expect(fixture.roster(of: group).departed == [alice.nodeId.string])
-        fixture.deliver(try author.frame(group, id: "g-back", body: "back again", sentAt: now + 20), from: alice)
+        fixture.deliver(try author.frame(group, id: frameIdOf("g-back"), body: "back again", sentAt: now + 20), from: alice)
         #expect(fixture.roster(of: group).members == [me.nodeId.string, alice.nodeId.string] && fixture.roster(of: group).departed.isEmpty)
         #expect(fixture.engine.groupCounts.groupSeedsReplayed == 1 && fixture.recvChains(group.id, from: alice).count == 1)
-        #expect(fixture.stores.messages.message("g-back")?.body == "back again")
+        #expect(fixture.stores.messages.message(frameIdOf("g-back"))?.body == "back again")
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == nil)
         // Kotlin's rejoin rekey and its hourly floor (`recordRejoin(rekey:)`) retire our send chain: phase P6b's
         // `GroupSendPairTests.aRejoinRekeysOncePerHourAndADepartureAlways()`.
@@ -116,19 +118,19 @@ import Testing
         let group = fixture.holdGroup(with: [alice, bob])
         try fixture.depart(alice, from: group, at: now + 10)
         let author = GroupFormAuthor(first, in: group.id)
-        try seed(fixture, author, id: "seed-parked", at: 15)
+        try seed(fixture, author, id: frameIdOf("seed-parked"), at: 15)
         #expect(fixture.engine.groupCounts.groupSeedsHeld == 1)
         for offset in Int64(20)...22 {
-            fixture.deliver(try bob.groupUpdate(group, id: "bob-\(offset)", sentAt: now + offset), from: bob)
+            fixture.deliver(try bob.groupUpdate(group, id: frameIdOf("bob-\(offset)"), sentAt: now + offset), from: bob)
         }
         #expect(fixture.roster(of: group).departed == [alice.nodeId.string], "only her own signature lifts it")
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: 1), "Bob's frames leave her seed where it is")
         #expect(fixture.recvChains(group.id, from: alice).isEmpty)
-        fixture.deliver(try author.frame(group, id: "g-back", body: "back again", sentAt: now + 30), from: alice)
+        fixture.deliver(try author.frame(group, id: frameIdOf("g-back"), body: "back again", sentAt: now + 30), from: alice)
         #expect(fixture.roster(of: group).departed.isEmpty)
         #expect(fixture.engine.groupCounts.groupSeedsHeld == 1 && fixture.engine.groupCounts.groupSeedsReplayed == 1)
         #expect(fixture.recvChains(group.id, from: alice).count == 1)
-        #expect(fixture.stores.messages.message("g-back")?.body == "back again")
+        #expect(fixture.stores.messages.message(frameIdOf("g-back"))?.body == "back again")
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == nil)
     }
 
@@ -137,9 +139,9 @@ import Testing
         let group = fixture.holdGroup(with: [alice, bob])
         try fixture.depart(alice, from: group, at: now + 10)
         let author = GroupFormAuthor(first, in: group.id)
-        try seed(fixture, author, id: "seed-stale", at: 15)
+        try seed(fixture, author, id: frameIdOf("seed-stale"), at: 15)
         fixture.clock.advance(2 * Self.hour)
-        fixture.deliver(try bob.groupUpdate(group, id: "bob-20", sentAt: now + 2 * Self.hour), from: bob)
+        fixture.deliver(try bob.groupUpdate(group, id: frameIdOf("bob-20"), sentAt: now + 2 * Self.hour), from: bob)
         #expect(fixture.engine.pendingGroupKeys.sweep(now: fixture.clock.monotonicMilliseconds()) == 1, "parked at its first park")
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: 1))
     }
@@ -148,7 +150,7 @@ import Testing
         let (fixture, _) = try rig()
         let group = fixture.holdGroup(with: [alice])
         try fixture.depart(alice, from: group, at: now + 10)
-        fixture.deliver(try alice.groupUpdate(group, id: "pre-leave", sentAt: now + 5), from: alice)
+        fixture.deliver(try alice.groupUpdate(group, id: frameIdOf("pre-leave"), sentAt: now + 5), from: alice)
         #expect(fixture.roster(of: group).members == [me.nodeId.string] && fixture.roster(of: group).departed == [alice.nodeId.string])
     }
 
@@ -156,7 +158,7 @@ import Testing
         let (fixture, _) = try rig()
         let group = fixture.holdGroup(with: [alice, bob])
         try fixture.depart(alice, from: group, at: now + 10)
-        fixture.deliver(try bob.groupUpdate(group, id: "bob-20", sentAt: now + 20), from: bob)
+        fixture.deliver(try bob.groupUpdate(group, id: frameIdOf("bob-20"), sentAt: now + 20), from: bob)
         #expect(fixture.roster(of: group).members == [me.nodeId.string, bob.nodeId.string])
         #expect(fixture.roster(of: group).departed == [alice.nodeId.string])
     }
@@ -164,7 +166,7 @@ import Testing
     @Test func aSeedForAGroupWeHoldTakesTheOrdinaryPathUntouched() throws {
         let (fixture, first) = try rig()
         let group = fixture.holdGroup(with: [alice])
-        try seed(fixture, GroupFormAuthor(first, in: group.id), id: "seed-known")
+        try seed(fixture, GroupFormAuthor(first, in: group.id), id: frameIdOf("seed-known"))
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsAdopted: 1))
         #expect(fixture.engine.pendingGroupKeys.parked.isEmpty)
     }
@@ -174,7 +176,7 @@ import Testing
         var group = roster([me, alice], createdBy: alice)
         group.name = "Team"
         let author = GroupFormAuthor(first, in: group.id)
-        try seed(fixture, author, id: "seed-roster", at: 7, roster: group)
+        try seed(fixture, author, id: frameIdOf("seed-roster"), at: 7, roster: group)
         let row = try #require(fixture.stores.groups.group(group.id), "pinned from the seed")
         #expect(Set(row.members) == Set(group.members) && row.createdBy == alice.nodeId.string)
         #expect(row.name == "Team" && row.createdAt == now + 7 && row.photoHash == nil)
@@ -185,9 +187,9 @@ import Testing
         // The first sight's replay skipped the seed itself: a nested pass would have spent its chain index under the pin, and
         // this pass's open would then have dropped as a duplicate.
         #expect(fixture.engine.dropped[.ratchetDuplicate] == nil)
-        #expect(fixture.stores.messages.message("seed-roster") == nil && fixture.sealedReceipts(to: first).isEmpty)
-        fixture.deliver(try author.frame(group, id: "g-first", body: "founded across the relay", sentAt: now + 8), from: alice)
-        #expect(fixture.stores.messages.message("g-first")?.body == "founded across the relay")
+        #expect(fixture.stores.messages.message(frameIdOf("seed-roster")) == nil && fixture.sealedReceipts(to: first).isEmpty)
+        fixture.deliver(try author.frame(group, id: frameIdOf("g-first"), body: "founded across the relay", sentAt: now + 8), from: alice)
+        #expect(fixture.stores.messages.message(frameIdOf("g-first"))?.body == "founded across the relay")
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == nil && fixture.engine.dropped[.ratchetDuplicate] == nil)
     }
 
@@ -195,7 +197,7 @@ import Testing
         let (fixture, first) = try rig()
         var forged = roster([me, alice], createdBy: alice)
         forged.id = "g-forged"
-        try seed(fixture, GroupFormAuthor(first, in: forged.id), id: "seed-forged", roster: forged)
+        try seed(fixture, GroupFormAuthor(first, in: forged.id), id: frameIdOf("seed-forged"), roster: forged)
         #expect(fixture.stores.groups.group("g-forged") == nil)
         #expect(fixture.engine.dropped[.rosterRefused] == 1)
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: 1))
@@ -204,7 +206,7 @@ import Testing
     @Test func aSeedWhoseRosterOmitsUsIsParkedSilently() throws {
         let (fixture, first) = try rig()
         let theirs = roster([alice, bob], createdBy: alice)
-        try seed(fixture, GroupFormAuthor(first, in: theirs.id), id: "seed-theirs", roster: theirs)
+        try seed(fixture, GroupFormAuthor(first, in: theirs.id), id: frameIdOf("seed-theirs"), roster: theirs)
         #expect(fixture.stores.groups.group(theirs.id) == nil)
         #expect(fixture.engine.dropped[.rosterRefused] == nil)
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: 1))
@@ -214,7 +216,7 @@ import Testing
         let (fixture, first) = try rig()
         let ours = roster([me, alice], createdBy: alice)
         let other = roster([me, alice, bob], createdBy: alice)
-        try seed(fixture, GroupFormAuthor(first, in: ours.id), id: "seed-mismatch", roster: other)
+        try seed(fixture, GroupFormAuthor(first, in: ours.id), id: frameIdOf("seed-mismatch"), roster: other)
         #expect(fixture.stores.groups.group(ours.id) == nil && fixture.stores.groups.group(other.id) == nil)
         #expect(fixture.engine.dropped[.rosterRefused] == nil)
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: 1))
@@ -225,7 +227,7 @@ import Testing
         let second = try AndroidPeer(bob)
         fixture.stores.blocks.block(alice.nodeId, deviceTag: nil)
         let group = roster([me, alice, bob], createdBy: alice)
-        try seed(fixture, GroupFormAuthor(second, in: group.id), id: "seed-blocked", roster: group)
+        try seed(fixture, GroupFormAuthor(second, in: group.id), id: frameIdOf("seed-blocked"), roster: group)
         #expect(fixture.stores.groups.group(group.id) == nil, "a group a blocked user starts is never made here")
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: 1))
     }
@@ -235,12 +237,12 @@ import Testing
         let group = fixture.holdGroup(with: [alice])
         try fixture.depart(alice, from: group, at: now + 10)
         let author = GroupFormAuthor(first, in: group.id)
-        try seed(fixture, author, id: "seed-rejoin", at: 20, roster: group)
+        try seed(fixture, author, id: frameIdOf("seed-rejoin"), at: 20, roster: group)
         #expect(fixture.roster(of: group).members == [me.nodeId.string, alice.nodeId.string] && fixture.roster(of: group).departed.isEmpty)
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsAdopted: 1))
         #expect(fixture.recvChains(group.id, from: alice).count == 1)
-        fixture.deliver(try author.frame(group, id: "g-back", body: "back again", sentAt: now + 21), from: alice)
-        #expect(fixture.stores.messages.message("g-back")?.body == "back again")
+        fixture.deliver(try author.frame(group, id: frameIdOf("g-back"), body: "back again", sentAt: now + 21), from: alice)
+        #expect(fixture.stores.messages.message(frameIdOf("g-back"))?.body == "back again")
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == nil)
     }
 
@@ -248,7 +250,7 @@ import Testing
         let (fixture, first) = try rig()
         let group = fixture.holdGroup(with: [alice])
         try fixture.depart(alice, from: group, at: now + 10)
-        try seed(fixture, GroupFormAuthor(first, in: group.id), id: "seed-preleave", at: 5, roster: group)
+        try seed(fixture, GroupFormAuthor(first, in: group.id), id: frameIdOf("seed-preleave"), at: 5, roster: group)
         #expect(fixture.roster(of: group).members == [me.nodeId.string] && fixture.roster(of: group).departed == [alice.nodeId.string])
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: 1))
         #expect(fixture.recvChains(group.id, from: alice).isEmpty)
@@ -259,7 +261,7 @@ import Testing
         let group = fixture.holdGroup(with: [alice])
         var renamed = group
         renamed.name = "Renamed"
-        try seed(fixture, GroupFormAuthor(first, in: group.id), id: "seed-held", at: 99, roster: renamed)
+        try seed(fixture, GroupFormAuthor(first, in: group.id), id: frameIdOf("seed-held"), at: 99, roster: renamed)
         #expect(fixture.stores.groups.group(group.id)?.name.isEmpty == true, "the roster it carries is never reconciled")
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsAdopted: 1))
     }
@@ -298,20 +300,22 @@ import Testing
         try fixture.pin(first)
         let group = roster([me, alice], createdBy: alice)
         let author = GroupFormAuthor(first, in: group.id)
-        try seed(fixture, author, id: "seed-parked")
+        try seed(fixture, author, id: frameIdOf("seed-parked"))
         #expect(fixture.engine.pendingGroupKeys.parked.count == 1)
         let restarted = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + 60_000, seed: 8)
         #expect(restarted.engine.pendingGroupKeys.parked.isEmpty, "the park died with the process")
-        #expect(restarted.log.all.contains { $0.contains("mesh group seed seed-parked from \(alice.nodeId) left in custody") })
+        #expect(
+            restarted.log.all.contains { $0.contains("mesh group seed \(frameIdOf("seed-parked")) from \(alice.nodeId) left in custody") })
         #expect(restarted.ratchetRecords(of: alice).session == nil, "nothing committed: the init it carries waits too")
-        #expect(stores.custody.contains("seed-parked"))
+        #expect(stores.custody.contains(frameIdOf("seed-parked")))
     }
 
     /// A parked seed served again is swallowed the same way, uncounted (`hold`, `PendingGroupKeys.kt:58-60`).
     @Test func aParkedSeedServedAgainIsSwallowedAndCountedOnce() throws {
         let (fixture, first) = try rig()
         let group = roster([me, alice], createdBy: alice)
-        let frame = try GroupFormAuthor(first, in: group.id).seedDm(to: me, prekey: try fixture.ourPrekey(), id: "seed-1", sentAt: now)
+        let frame = try GroupFormAuthor(first, in: group.id).seedDm(
+            to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("seed-1"), sentAt: now)
         fixture.deliver(frame, from: alice)
         fixture.advance(SeenSet.defaultWindowMilliseconds + 1)
         fixture.deliver(frame, from: alice)
@@ -326,7 +330,8 @@ import Testing
         let author = GroupFormAuthor(first, in: group.id)
         let prekey = try fixture.ourPrekey()
         for index in 0...PendingGroupKeys.defaultPerGroup {
-            fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: "seed-\(index)", sentAt: now + Int64(index)), from: alice)
+            fixture.deliver(
+                try author.seedDm(to: me, prekey: prekey, id: frameIdOf("seed-\(index)"), sentAt: now + Int64(index)), from: alice)
         }
         #expect(fixture.engine.pendingGroupKeys.parked.count == PendingGroupKeys.defaultPerGroup)
         #expect(fixture.engine.groupCounts == RatchetGroupCounts(groupSeedsHeld: PendingGroupKeys.defaultPerGroup))

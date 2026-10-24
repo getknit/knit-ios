@@ -116,7 +116,9 @@ These only ever grow. A value is never reused, even after it is retired.
   `blobcancel`, each `relay = false` (`FrameType.isUnsignedPointToPoint`), and the v3 live-link tick (a
   `relay = false` DM-form `chat` addressed to us). Anything else with an empty `sig` is refused.
 - **Frame id:** 16 random bytes, base64url, no padding, 22 characters. Profiles use
-  `profile-<nodeId>-<publishedAt>`.
+  `profile-<nodeId>-<publishedAt>`, and Android's walkie chunks (`talk`) the first 11 characters of a fresh id. An id
+  is not opaque on the way in: `Router.admit` refuses any frame whose id is not its type's shape, as Android's router
+  does (`FrameId.admits`, ADR 2026-10.h7xw), so a new id shape is a wire break.
 - **`ttl` is a hop limit, not a time.** A frame is relayed only while `hops < min(ttl, 8)`.
 - **`relay`** is set per frame. `false` means point to point: never flooded, only handed on.
 - **`sentAt`** is the originator's wall clock in epoch milliseconds, and it is signed. Custody expires at

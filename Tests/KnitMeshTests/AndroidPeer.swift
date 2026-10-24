@@ -217,7 +217,7 @@ extension EngineFixture {
                 MessageContent(body: "unreadable"),
                 to: me,
                 prekey: prekey,
-                id: "\(tag)-\(index)",
+                id: frameIdOf("\(tag)-\(index)"),
                 sentAt: sentAt,
                 now: now
             ) { $0.ratchet = $0.ratchet?.steady }
@@ -226,8 +226,8 @@ extension EngineFixture {
     }
 
     /// Hands the engine a frame from `android`.
-    func deliver(_ frame: TestFrame, from android: AndroidPeer) {
-        deliver(frame, from: android.peer)
+    func deliver(_ frame: TestFrame, from android: AndroidPeer, sourceLocation: SourceLocation = #_sourceLocation) {
+        deliver(frame, from: android.peer, sourceLocation: sourceLocation)
     }
 
     /// What the engine's ratchet store holds for `peer`.

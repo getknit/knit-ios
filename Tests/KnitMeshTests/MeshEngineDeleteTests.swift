@@ -1,5 +1,6 @@
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -34,23 +35,23 @@ import Testing
         // long as our custody holds it: knit-next's own roadmap names this gap.
         let fixture = try linked()
         let info = roster([carol, bob, alice], createdBy: carol)
-        fixture.deliver(try carol.groupMessage("Lunch?", in: info, to: [alice, bob], id: "gm-1", sentAt: start), from: carol)
-        #expect(fixture.stores.custody.contains("gm-1"))
-        #expect(fixture.engine.deleteMessage("gm-1"))
-        #expect(fixture.stores.messages.message("gm-1") == nil)
+        fixture.deliver(try carol.groupMessage("Lunch?", in: info, to: [alice, bob], id: frameIdOf("gm-1"), sentAt: start), from: carol)
+        #expect(fixture.stores.custody.contains(frameIdOf("gm-1")))
+        #expect(fixture.engine.deleteMessage(frameIdOf("gm-1")))
+        #expect(fixture.stores.messages.message(frameIdOf("gm-1")) == nil)
         let restarted = EngineFixture(alice, stores: fixture.stores)
         #expect(announced(restarted.engine.drainEvents()).isEmpty)
-        #expect(restarted.stores.messages.message("gm-1") == nil)
-        #expect(restarted.stores.custody.contains("gm-1"), "still carried for the others")
+        #expect(restarted.stores.messages.message(frameIdOf("gm-1")) == nil)
+        #expect(restarted.stores.custody.contains(frameIdOf("gm-1")), "still carried for the others")
     }
 
     @Test func aDeletedDmThatACarrierReServesStaysGoneAndIsStillAcknowledged() throws {
         // A v1 DM opens again however often it is served (ADR 2026-09.qsd9), where Android's ratchet refuses a spent
         // key. The receipt still goes, so the carrier that missed the first one purges its copy.
         let fixture = try linked()
-        let frame = try bob.directMessage("Hello", to: alice, id: "dm-1", sentAt: start)
+        let frame = try bob.directMessage("Hello", to: alice, id: frameIdOf("dm-1"), sentAt: start)
         fixture.deliver(frame, from: carol)
-        #expect(fixture.stores.messages.message("dm-1") != nil)
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1")) != nil)
         #expect(fixture.engine.deleteChat(bob.nodeId.string))
         let restarted = EngineFixture(alice, stores: fixture.stores)
         restarted.link(carol)
@@ -58,16 +59,16 @@ import Testing
         _ = restarted.engine.drainEvents()
         restarted.deliver(frame, from: carol)
         #expect(announced(restarted.engine.drainEvents()).isEmpty)
-        #expect(restarted.stores.messages.message("dm-1") == nil)
+        #expect(restarted.stores.messages.message(frameIdOf("dm-1")) == nil)
         let receipt = try #require(restarted.transport.written(.receipt).first)
-        #expect(try ReceiptContent(decoding: receipt.envelope.payload).ackId == "dm-1")
+        #expect(try ReceiptContent(decoding: receipt.envelope.payload).ackId == frameIdOf("dm-1"))
     }
 
     @Test func aDeletedRoomPostThatIsFloodedAgainStaysGone() throws {
         let fixture = try linked()
-        let post = try bob.roomPost("Anyone near the lake?", id: "post-1", sentAt: start)
+        let post = try bob.roomPost("Anyone near the lake?", id: frameIdOf("post-1"), sentAt: start)
         fixture.deliver(post, from: bob)
-        #expect(fixture.engine.deleteMessage("post-1"))
+        #expect(fixture.engine.deleteMessage(frameIdOf("post-1")))
         let restarted = EngineFixture(alice, stores: fixture.stores)
         restarted.link(carol)
         _ = restarted.engine.drainEvents()
@@ -78,16 +79,16 @@ import Testing
 
     @Test func aDeletedIdIsForgottenAtTheFirstStartAfterNoCarrierCanHoldItsFrame() throws {
         let fixture = try linked()
-        fixture.deliver(try bob.roomPost("Hi", id: "post-1", sentAt: start), from: bob)
-        #expect(fixture.engine.deleteMessage("post-1"))
+        fixture.deliver(try bob.roomPost("Hi", id: frameIdOf("post-1"), sentAt: start), from: bob)
+        #expect(fixture.engine.deleteMessage(frameIdOf("post-1")))
         let early = EngineFixture(alice, stores: fixture.stores, started: false)
         early.clock.advance(DeletedMessages.expiry(sentAt: start, deletedAt: start) - start)
         early.engine.start()
-        #expect(early.stores.messages.contains("post-1"), "kept through its last instant")
+        #expect(early.stores.messages.contains(frameIdOf("post-1")), "kept through its last instant")
         let late = EngineFixture(alice, stores: fixture.stores, started: false)
         late.clock.advance(DeletedMessages.expiry(sentAt: start, deletedAt: start) - start + 1)
         late.engine.start()
-        #expect(!late.stores.messages.contains("post-1"))
+        #expect(!late.stores.messages.contains(frameIdOf("post-1")))
     }
 
     // MARK: What a delete leaves alone
@@ -95,15 +96,15 @@ import Testing
     @Test func aDeleteSendsNothingAndLeavesCustodyAsItWas() throws {
         // ADR 2026-10.5wgg's trap: a per-node input in custody would keep our digest from ever matching a neighbour's.
         let fixture = try linked()
-        fixture.deliver(try bob.roomPost("Hi", id: "post-1", sentAt: start), from: bob)
-        fixture.deliver(try bob.directMessage("Hello", to: alice, id: "dm-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.roomPost("Hi", id: frameIdOf("post-1"), sentAt: start), from: bob)
+        fixture.deliver(try bob.directMessage("Hello", to: alice, id: frameIdOf("dm-1"), sentAt: start), from: bob)
         fixture.engine.postToRoom("Hello all")
         fixture.advance(1000)
         fixture.transport.clear()
         _ = fixture.engine.drainEvents()
         let cue = fixture.engine.digestCue
         let carried = fixture.stores.custody.liveFrames(now: fixture.clock.wallMilliseconds()).map(\.envelope.id)
-        #expect(fixture.engine.deleteMessage("post-1"))
+        #expect(fixture.engine.deleteMessage(frameIdOf("post-1")))
         #expect(fixture.engine.deleteChat(bob.nodeId.string))
         #expect(fixture.engine.deleteChat(Conversations.nearby))
         #expect(fixture.transport.written.isEmpty && fixture.transport.digests.isEmpty)
@@ -128,15 +129,15 @@ import Testing
     @Test func aGroupWhoseChatWasDeletedComesBackWithItsNextMessage() throws {
         let fixture = try linked()
         let info = roster([carol, bob, alice], createdBy: carol)
-        fixture.deliver(try carol.groupMessage("Lunch?", in: info, to: [alice, bob], id: "gm-1", sentAt: start), from: carol)
+        fixture.deliver(try carol.groupMessage("Lunch?", in: info, to: [alice, bob], id: frameIdOf("gm-1"), sentAt: start), from: carol)
         fixture.engine.accept(info.id)
         #expect(fixture.engine.deleteChat(info.id))
         #expect(!fixture.stores.messages.conversationIds().contains(info.id))
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try bob.groupMessage("Sure", in: info, to: [alice, carol], id: "gm-2", sentAt: start + 1), from: bob)
+        fixture.deliver(try bob.groupMessage("Sure", in: info, to: [alice, carol], id: frameIdOf("gm-2"), sentAt: start + 1), from: bob)
         let arrived = announced(fixture.engine.drainEvents())
-        #expect(arrived.map(\.record.id) == ["gm-2"] && arrived.first?.isRequest == false)
-        #expect(fixture.stores.messages.messages(in: info.id).map(\.id) == ["gm-2"])
+        #expect(arrived.map(\.record.id) == [frameIdOf("gm-2")] && arrived.first?.isRequest == false)
+        #expect(fixture.stores.messages.messages(in: info.id).map(\.id) == [frameIdOf("gm-2")])
     }
 
     // MARK: Acceptance
@@ -149,7 +150,7 @@ import Testing
         #expect(fixture.engine.deleteChat(bob.nodeId.string))
         #expect(fixture.stores.conversations.acceptedConversations().contains(bob.nodeId.string))
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try bob.directMessage("Hi Alice", to: alice, id: "dm-2", sentAt: start + 1), from: bob)
+        fixture.deliver(try bob.directMessage("Hi Alice", to: alice, id: frameIdOf("dm-2"), sentAt: start + 1), from: bob)
         #expect(announced(fixture.engine.drainEvents()).map(\.isRequest) == [false])
     }
 
@@ -169,11 +170,11 @@ import Testing
 
     @Test func aDeletedRequestIsNotAcceptedAndTheNextMessageIsARequestAgain() throws {
         let fixture = try linked()
-        fixture.deliver(try bob.directMessage("Hello?", to: alice, id: "dm-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.directMessage("Hello?", to: alice, id: frameIdOf("dm-1"), sentAt: start), from: bob)
         #expect(fixture.engine.deleteChat(bob.nodeId.string))
         #expect(fixture.stores.conversations.acceptedConversations().isEmpty)
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try bob.directMessage("Hello again", to: alice, id: "dm-2", sentAt: start + 1), from: bob)
+        fixture.deliver(try bob.directMessage("Hello again", to: alice, id: frameIdOf("dm-2"), sentAt: start + 1), from: bob)
         #expect(announced(fixture.engine.drainEvents()).map(\.isRequest) == [true])
     }
 
@@ -182,7 +183,7 @@ import Testing
         let fixture = try linked()
         fixture.engine.accept(carol.nodeId.string)
         let info = roster([carol, bob, alice], createdBy: carol)
-        fixture.deliver(try carol.groupMessage("Lunch?", in: info, to: [alice, bob], id: "gm-1", sentAt: start), from: carol)
+        fixture.deliver(try carol.groupMessage("Lunch?", in: info, to: [alice, bob], id: frameIdOf("gm-1"), sentAt: start), from: carol)
         fixture.engine.block(carol.nodeId)
         #expect(fixture.engine.deleteChat(info.id))
         #expect(fixture.stores.conversations.acceptedConversations() == [carol.nodeId.string])
@@ -190,7 +191,7 @@ import Testing
 
     @Test func clearingTheRoomAcceptsNothing() throws {
         let fixture = try linked()
-        fixture.deliver(try bob.roomPost("Hi", id: "post-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.roomPost("Hi", id: frameIdOf("post-1"), sentAt: start), from: bob)
         #expect(fixture.engine.deleteChat(Conversations.nearby))
         #expect(fixture.stores.conversations.acceptedConversations().isEmpty)
         #expect(fixture.stores.messages.messages(in: Conversations.nearby).isEmpty)
@@ -222,7 +223,7 @@ import Testing
         #expect(fixture.stores.custody.contains(sent.id))
         #expect(fixture.stores.blobs.contains(hash), "kept while its frame is carried")
         fixture.transport.clear()
-        fixture.deliver(bob.blobRequest(for: hash.string, id: "breq-1"), from: bob)
+        fixture.deliver(bob.blobRequest(for: hash.string, id: frameIdOf("breq-1")), from: bob)
         #expect(fixture.transport.files.map(\.hash) == [hash], "and served to a member who asks")
         let restarted = EngineFixture(alice, stores: fixture.stores)
         #expect(restarted.stores.blobs.contains(hash), "the start's sweep keeps it too")
@@ -247,7 +248,7 @@ import Testing
         let fixture = try linked()
         let sent = try #require(fixture.engine.sendDirectMessage("", to: bob.nodeId, photo: jpeg))
         let hash = try #require(sent.attachment?.hash)
-        fixture.deliver(try bob.receipt(for: sent.id, id: "receipt-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.receipt(for: sent.id, id: frameIdOf("receipt-1"), sentAt: start), from: bob)
         #expect(!fixture.stores.custody.contains(sent.id))
         #expect(fixture.engine.deleteMessage(sent.id))
         #expect(!fixture.stores.blobs.contains(hash), "not left for the next start's sweep")
@@ -273,7 +274,8 @@ import Testing
         let missing = BlobHash(of: Array("a sunset".utf8))
         let post = ChatContent(body: "Sunset", attachmentHash: missing.string, attachmentMime: "image/jpeg")
         fixture.deliver(
-            try bob.signed(RelayEnvelope(type: .chat, id: "post-1", senderId: bob.nodeId.string, sentAt: start, payload: post.encoded)),
+            try bob.signed(
+                RelayEnvelope(type: .chat, id: frameIdOf("post-1"), senderId: bob.nodeId.string, sentAt: start, payload: post.encoded)),
             from: bob
         )
         #expect(fixture.transport.accepted.contains(missing))

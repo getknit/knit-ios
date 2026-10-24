@@ -161,7 +161,7 @@ import Testing
         let content = ProfileContent(name: "Liar", status: "", pubKey: TestPeer(seed: 9).keys.bundle.encoded)
         let envelope = RelayEnvelope(
             type: .profile,
-            id: "profile-\(bob.nodeId)-1",
+            id: FrameId.profileId(sender: bob.nodeId.string, publishedAt: EngineFixture.start),
             senderId: bob.nodeId.string,
             sentAt: EngineFixture.start,
             payload: content.encoded
@@ -177,7 +177,7 @@ import Testing
         fixture.transport.clear()
         let envelope = RelayEnvelope(
             type: .profile,
-            id: "profile-\(bob.nodeId)-1",
+            id: FrameId.profileId(sender: bob.nodeId.string, publishedAt: EngineFixture.start),
             senderId: bob.nodeId.string,
             sentAt: EngineFixture.start,
             payload: ProfileContent(name: "Keyless", status: "").encoded

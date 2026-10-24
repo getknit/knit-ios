@@ -29,7 +29,7 @@ import Testing
     @Test func aSplitBrainRootRequestsAResetInsteadOfDeadlockingForever() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        for id in ["sb1", "sb2", "sb3"] {
+        for id in [frameIdOf("sb1"), frameIdOf("sb2"), frameIdOf("sb3")] {
             let frame = try android.dm(MessageContent(body: "unreadable"), to: me, prekey: prekey, id: id, sentAt: now) { envelope in
                 envelope.ratchet = envelope.ratchet?.skipping(5)
             }
@@ -45,9 +45,9 @@ import Testing
     @Test func sealingAResetDropsOurOwnRecvStateSoThePeersFreshEpochsAreNotJudgedStale() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: "ok-1", sentAt: now), from: android)
+        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: frameIdOf("ok-1"), sentAt: now), from: android)
         #expect(!fixture.ratchetRecords(of: alice).recvEpochs.isEmpty, "a receive epoch to go stale")
-        for id in ["sb1", "sb2", "sb3"] {
+        for id in [frameIdOf("sb1"), frameIdOf("sb2"), frameIdOf("sb3")] {
             let frame = try android.dm(MessageContent(body: "unreadable"), to: me, prekey: prekey, id: id, sentAt: now) { envelope in
                 envelope.ratchet = envelope.ratchet?.skipping(5)
             }
@@ -60,7 +60,7 @@ import Testing
     @Test func distinctFramesLandingOnConsumedChainIndicesNeverRequestAReset() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        for (index, id) in ["d1", "d2", "d3"].enumerated() {
+        for (index, id) in [frameIdOf("d1"), frameIdOf("d2"), frameIdOf("d3")].enumerated() {
             fixture.deliver(try android.dm("body-\(id)", to: me, prekey: prekey, id: id, sentAt: now + Int64(index)), from: android)
         }
         for index in 0..<3 {
@@ -68,7 +68,7 @@ import Testing
                 MessageContent(body: "x"),
                 to: me,
                 prekey: prekey,
-                id: "replayer-\(index)",
+                id: frameIdOf("replayer-\(index)"),
                 sentAt: now
             ) { $0.ratchet?.n = index }
             fixture.deliver(frame, from: android)
@@ -80,7 +80,7 @@ import Testing
     @Test func oneFrameReservedFromCustodyNeverRequestsAResetHoweverOftenItArrives() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        let once = try android.dm("body", to: me, prekey: prekey, id: "d1", sentAt: now)
+        let once = try android.dm("body", to: me, prekey: prekey, id: frameIdOf("d1"), sentAt: now)
         fixture.deliver(once, from: android)
         for _ in 0..<8 {
             fixture.deliverPastRouter(once, from: alice)
@@ -111,7 +111,7 @@ import Testing
                 MessageContent(body: "malformed"),
                 to: me,
                 prekey: prekey,
-                id: "bad-\(index)",
+                id: frameIdOf("bad-\(index)"),
                 sentAt: now
             ) { $0.ratchet?.pe = -1 }
             fixture.deliver(frame, from: android)
@@ -149,7 +149,8 @@ import Testing
     @Test func aCountedFailureLetsOneCopyOfItsIdPastTheRouter() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
-        let orphan = try android.dm(MessageContent(body: "lost"), to: me, prekey: prekey, id: "orphan", sentAt: now) { envelope in
+        let id = frameIdOf("orphan")
+        let orphan = try android.dm(MessageContent(body: "lost"), to: me, prekey: prekey, id: id, sentAt: now) { envelope in
             envelope.ratchet = envelope.ratchet?.steady
         }
         // The copy our reset's answer re-seals under the same id comes in once inside the window, and only once.
@@ -157,7 +158,8 @@ import Testing
             fixture.deliver(orphan, from: android)
         }
         #expect(fixture.engine.dropped[.ratchetNoSession] == 2)
-        let malformed = try android.dm(MessageContent(body: "bad"), to: me, prekey: prekey, id: "bad", sentAt: now) { $0.ratchet?.pe = -1 }
+        let bad = frameIdOf("bad")
+        let malformed = try android.dm(MessageContent(body: "bad"), to: me, prekey: prekey, id: bad, sentAt: now) { $0.ratchet?.pe = -1 }
         fixture.deliver(malformed, from: android)
         fixture.deliver(malformed, from: android)
         #expect(fixture.engine.dropped[.ratchetBadHeader] == 1, "a failure that counts for nothing reopens nothing")

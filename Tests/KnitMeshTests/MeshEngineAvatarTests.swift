@@ -1,5 +1,6 @@
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -90,7 +91,7 @@ import Testing
         fixture.link(bob)
         fixture.engine.fileSent(BlobHash(of: jpeg), to: bob.nodeId)
         fixture.transport.clear()
-        fixture.deliver(bob.blobRequest(for: BlobHash(of: jpeg).string, id: "breq-1"), from: bob)
+        fixture.deliver(bob.blobRequest(for: BlobHash(of: jpeg).string, id: frameIdOf("breq-1")), from: bob)
         #expect(fixture.transport.files.map(\.kind) == [.attachment], "a serve is an ATTACHMENT, whatever the blob")
     }
 

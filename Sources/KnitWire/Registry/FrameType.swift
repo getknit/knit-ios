@@ -32,6 +32,9 @@ public struct FrameType: RawRepresentable, Hashable, Sendable {
     public static let keyRequest = Self(rawValue: "keyreq")
     /// A one-hop typing cue, never carried.
     public static let typing = Self(rawValue: "typing")
+    /// Android's walkie chunk: unsigned, flooded with ttl 3. This port neither sends nor opens one, but relays Android's,
+    /// so the router's id gate (``FrameId/admits(_:)``) knows its short id (`FrameType.TALK` in knit-next).
+    public static let talk = Self(rawValue: "talk")
     /// A post in a spool relay's commons room; not custodial, and never delivered from a radio.
     public static let commons = Self(rawValue: "commons")
 

@@ -77,11 +77,11 @@ import Testing
     @Test func aReactionToAnIncapablePeerFallsBackToTheCleartextFrame() throws {
         let (fixture, _) = try rig()
         fixture.deliver(try dave.profile(publishedAt: now, capabilities: 0xF), from: dave)
-        fixture.deliver(try dave.directMessage("old style", to: me, id: "v1-dm", sentAt: now), from: dave)
+        fixture.deliver(try dave.directMessage("old style", to: me, id: frameIdOf("v1-dm"), sentAt: now), from: dave)
         fixture.transport.clear()
-        let reaction = try #require(fixture.engine.react(to: "v1-dm", with: "👍"))
+        let reaction = try #require(fixture.engine.react(to: frameIdOf("v1-dm"), with: "👍"))
         let frame = try #require(fixture.transport.written(.reaction).first)
-        #expect(try ReactionContent(decoding: frame.envelope.payload) == ReactionContent(messageId: "v1-dm", emoji: "👍"))
+        #expect(try ReactionContent(decoding: frame.envelope.payload) == ReactionContent(messageId: frameIdOf("v1-dm"), emoji: "👍"))
         #expect(frame.envelope.sentAt == reaction.updatedAt && frame.envelope.recipientId == nil, "today's frame, naming nobody")
         #expect(fixture.transport.written(.chat).isEmpty)
         #expect(fixture.engine.seals == RatchetSealCounts(reactionsSealedFallback: 1))
@@ -91,9 +91,9 @@ import Testing
     /// so its reaction is the cleartext frame and nothing tried to seal it.
     @Test func aBroadcastReactionStaysCleartextByDesignAndCountsNoFallback() throws {
         let (fixture, _) = try rig()
-        fixture.deliver(try alice.roomPost("hello room", id: "room-1", sentAt: now), from: alice)
+        fixture.deliver(try alice.roomPost("hello room", id: frameIdOf("room-1"), sentAt: now), from: alice)
         fixture.transport.clear()
-        _ = try #require(fixture.engine.react(to: "room-1", with: "👍"))
+        _ = try #require(fixture.engine.react(to: frameIdOf("room-1"), with: "👍"))
         #expect(fixture.transport.written(.reaction).count == 1 && fixture.transport.written(.chat).isEmpty)
         #expect(fixture.engine.seals == RatchetSealCounts())
     }
@@ -121,9 +121,9 @@ import Testing
         let (fixture, _) = try rig()
         fixture.deliver(try dave.profile(publishedAt: now, capabilities: AndroidPeer.capabilities), from: dave)
         #expect(fixture.stores.peers.peer(dave.nodeId)?.prekey == nil)
-        fixture.deliver(try dave.directMessage("hi", to: me, id: "v1-dm", sentAt: now), from: dave)
+        fixture.deliver(try dave.directMessage("hi", to: me, id: frameIdOf("v1-dm"), sentAt: now), from: dave)
         fixture.transport.clear()
-        _ = try #require(fixture.engine.react(to: "v1-dm", with: "👍"))
+        _ = try #require(fixture.engine.react(to: frameIdOf("v1-dm"), with: "👍"))
         #expect(fixture.transport.written(.chat).isEmpty, "no v1 envelope for a ctl, ever")
         #expect(fixture.transport.written(.reaction).count == 1)
         #expect(fixture.ratchetRecords(of: dave).session == nil, "no key moved")
@@ -160,21 +160,24 @@ import Testing
     @Test func aGroupReactionWithAnIneligibleMemberFallsBackToTheCleartextFrame() throws {
         let (fixture, _) = try rig()
         let group = roster([alice, bob, me], createdBy: alice)
-        fixture.deliver(try alice.groupMessage("group", in: group, to: [bob, me], id: "gm-1", sentAt: now), from: alice)
-        #expect(fixture.stores.messages.message("gm-1") != nil)
+        fixture.deliver(try alice.groupMessage("group", in: group, to: [bob, me], id: frameIdOf("gm-1"), sentAt: now), from: alice)
+        #expect(fixture.stores.messages.message(frameIdOf("gm-1")) != nil)
         fixture.transport.clear()
-        _ = try #require(fixture.engine.react(to: "gm-1", with: "👍"))
+        _ = try #require(fixture.engine.react(to: frameIdOf("gm-1"), with: "👍"))
         #expect(fixture.transport.written(.reaction).count == 1 && fixture.transport.written(.chat).isEmpty)
         #expect(fixture.engine.seals == RatchetSealCounts(reactionsSealedFallback: 1))
         #expect(fixture.engine.groupCounts.groupSealedV1Fallback == 0, "never eligible, so no group fallback")
         #expect(fixture.stores.groupRatchet.holdings(of: group.id) == .empty)
     }
 
-    /// A message whose id the compact codec cannot carry: the reaction seals named under v2, still never in the clear.
+    /// A message whose id the compact codec cannot carry: the reaction seals named under v2, still never in the clear. The
+    /// router refuses such an id at the door (knit-next ADR 2026-10.9qr4), so it is reached past the router, as a custody
+    /// row or parked frame stored before the gate, or a demo row, still carries one.
     @Test func aReactionToANonCanonicalIdSealsV2() throws {
         let (fixture, android) = try rig()
         let id = "not-a-canonical-id"
-        fixture.deliver(try android.dm("odd id", to: me, prekey: try fixture.ourPrekey(), id: id, sentAt: now + 1), from: android)
+        fixture.deliverPastRouter(
+            try android.dm("odd id", to: me, prekey: try fixture.ourPrekey(), id: id, sentAt: now + 1), from: android.peer)
         fixture.transport.clear()
         _ = try #require(fixture.engine.react(to: id, with: "👍"))
         let frame = try #require(fixture.transport.written(.chat).first)

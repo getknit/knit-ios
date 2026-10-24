@@ -69,22 +69,22 @@ import Testing
         let (lab, android) = try lab(stores)
         let group = roster([me, alice], createdBy: alice)
         let author = GroupFormAuthor(android, in: group.id)
-        arrive(try author.frame(group, id: "g-early", body: "before the seed", sentAt: now), in: lab)
+        arrive(try author.frame(group, id: frameIdOf("g-early"), body: "before the seed", sentAt: now), in: lab)
         #expect(lab[0].engine.dropped[.groupRatchetNoKey] == 1)
-        #expect(lab[0].stores.custody.contains("g-early"), "custodied at once")
-        #expect(lab[1].stores.custody.contains("g-early"), "and relayed to the carrier")
-        #expect(relayed("g-early", in: lab) == 1)
+        #expect(lab[0].stores.custody.contains(frameIdOf("g-early")), "custodied at once")
+        #expect(lab[1].stores.custody.contains(frameIdOf("g-early")), "and relayed to the carrier")
+        #expect(relayed(frameIdOf("g-early"), in: lab) == 1)
         let before = lab[0].transport.written.count
-        arrive(try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: "seed-1", sentAt: now + 1), in: lab)
-        #expect(lab[0].stores.messages.message("g-early")?.body == "before the seed", "the instant replay opened our own copy")
-        #expect(served("g-early", in: lab) == 0, "nobody served it again")
-        #expect(relayed("g-early", in: lab) == 1, "and the replay sent no copy of its own")
+        arrive(try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: frameIdOf("seed-1"), sentAt: now + 1), in: lab)
+        #expect(lab[0].stores.messages.message(frameIdOf("g-early"))?.body == "before the seed", "the instant replay opened our own copy")
+        #expect(served(frameIdOf("g-early"), in: lab) == 0, "nobody served it again")
+        #expect(relayed(frameIdOf("g-early"), in: lab) == 1, "and the replay sent no copy of its own")
         // The seed was Alice's first DM, so its open answers her init with our profile, then acknowledges the seed.
         let answers = [MessageContent.Control.profile, MessageContent.Control.groupKeyAck]
         #expect(ourChats(in: lab, after: before, android: android).map { $0?.ctl } == answers, "nothing of the replay's own")
         exchangeDigests(lab)
-        #expect(served("g-early", in: lab) == 0)
-        #expect(relayed("g-early", in: lab) == 1)
+        #expect(served(frameIdOf("g-early"), in: lab) == 0)
+        #expect(relayed(frameIdOf("g-early"), in: lab) == 1)
         #expect(Set(lab.liveIds(0)) == Set(lab.liveIds(1)), "the same ids in both custodies after a digest")
         #expect(lab[0].stores.groupRatchet.holdings(of: group.id).recvChains[alice.nodeId]?.count == 1)
     }
@@ -96,24 +96,25 @@ import Testing
         let (lab, android) = try lab(stores)
         let group = lab[0].holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        arrive(try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: "seed-1", sentAt: now), in: lab)
+        arrive(try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: frameIdOf("seed-1"), sentAt: now), in: lab)
         _ = lab[0].engine.drainEvents()
         refusing.refusesRows = true
-        arrive(try author.frame(group, id: "g-1", body: "kept", sentAt: now + 1), in: lab)
+        arrive(try author.frame(group, id: frameIdOf("g-1"), body: "kept", sentAt: now + 1), in: lab)
         refusing.refusesRows = false
         #expect(lab[0].engine.dropped[.storeRefused] == 1)
         #expect(
-            lab[0].stores.messages.message("g-1") == nil && receivedRecords(in: lab[0].engine.drainEvents()).isEmpty, "nothing delivered")
-        #expect(lab[0].stores.custody.contains("g-1"), "the frame stays in custody")
+            lab[0].stores.messages.message(frameIdOf("g-1")) == nil && receivedRecords(in: lab[0].engine.drainEvents()).isEmpty,
+            "nothing delivered")
+        #expect(lab[0].stores.custody.contains(frameIdOf("g-1")), "the frame stays in custody")
         #expect(lab[0].recvChains(group.id, from: alice).first?.next == 0, "the chain rolled back with the row")
         exchangeDigests(lab)
-        #expect(lab[0].stores.messages.message("g-1") == nil, "no neighbour serves it again: our digest lists it")
-        let relays = relayed("g-1", in: lab)
+        #expect(lab[0].stores.messages.message(frameIdOf("g-1")) == nil, "no neighbour serves it again: our digest lists it")
+        let relays = relayed(frameIdOf("g-1"), in: lab)
         let before = lab[0].transport.written.count
         lab.advance(Self.hour)
-        #expect(lab[0].stores.messages.message("g-1")?.body == "kept", "the hourly replay delivered it")
-        #expect(receivedRecords(in: lab[0].engine.drainEvents()).map(\.id) == ["g-1"])
-        #expect(relayed("g-1", in: lab) == relays, "the replay sent no copy of its own")
+        #expect(lab[0].stores.messages.message(frameIdOf("g-1"))?.body == "kept", "the hourly replay delivered it")
+        #expect(receivedRecords(in: lab[0].engine.drainEvents()).map(\.id) == [frameIdOf("g-1")])
+        #expect(relayed(frameIdOf("g-1"), in: lab) == relays, "the replay sent no copy of its own")
         let since = ourChats(in: lab, after: before, android: android)
         #expect(since.allSatisfy { $0?.ctl == MessageContent.Control.receipt }, "a tick at most")
         exchangeDigests(lab)
@@ -141,25 +142,32 @@ import Testing
     }
 
     /// The blobs review's trial (d): a frame id that starts with U+FEFF, beside the frame it would shadow, over the database.
+    /// The router now refuses such an id at the door (knit-next ADR 2026-10.9qr4), so the marked row is one stored before
+    /// the gate, which custody keeps until it expires: it is still listed whole and still hides nothing of the real frame.
     @Test func aFrameIdLedByAByteOrderMarkIsListedWholeIsNotServedBackAndHidesNothing() throws {
         let directory = scratchDirectory("bom-frame")
         defer { try? FileManager.default.removeItem(at: directory) }
         let (stores, _) = try StoreKind.sql.storesRefusingRows(blobs: directory, failures: ReportedFailures().record)
         let fixture = try EngineFixture.ratcheting(me, stores: stores)
         try fixture.pin(carol)
-        let marked = "\u{FEFF}x-frame"
-        fixture.deliver(try carol.roomPost("marked", id: marked, sentAt: now), from: carol)
-        fixture.deliver(try carol.roomPost("plain", id: "x-frame", sentAt: now), from: carol)
+        let real = frameIdOf("x-frame")
+        let marked = "\u{FEFF}" + real
+        let twin = try carol.roomPost("marked", id: marked, sentAt: now)
+        let preGate = CarriedFrame(envelope: twin.envelope, sig: twin.wire.sig, signed: twin.wire.signed)
+        #expect(stores.custody.store(preGate, origin: .relayed, now: now), "a row stored before this build refused such ids")
+        fixture.deliverRefused(twin, from: carol)
+        fixture.deliver(try carol.roomPost("plain", id: real, sentAt: now), from: carol)
+        #expect(fixture.stores.messages.message(real)?.body == "plain", "the twin took nothing of the real frame's row")
         fixture.transport.clear()
         fixture.link(carol)
         let digest = try #require(fixture.transport.digests.last { $0.to == carol.nodeId }).ids
-        let listed = digest.filter { $0.hasSuffix("x-frame") }.map { Array($0.utf8) }
-        #expect(Set(listed) == [[0xEF, 0xBB, 0xBF] + Array("x-frame".utf8), Array("x-frame".utf8)], "listed as itself, beside the frame")
+        let listed = digest.filter { $0.hasSuffix(real) }.map { Array($0.utf8) }
+        #expect(Set(listed) == [[0xEF, 0xBB, 0xBF] + Array(real.utf8), Array(real.utf8)], "listed as itself, beside the frame")
         fixture.transport.clear()
         fixture.engine.receiveDigest(digest, from: carol.nodeId)
         #expect(fixture.transport.written.isEmpty, "a digest that lists it whole gets nothing back")
-        fixture.engine.receiveDigest(digest.filter { ExactKey($0) != ExactKey("x-frame") }, from: carol.nodeId)
-        #expect(fixture.transport.written.map(\.envelope.id) == ["x-frame"], "the marked id hides nothing of the real one")
+        fixture.engine.receiveDigest(digest.filter { ExactKey($0) != ExactKey(real) }, from: carol.nodeId)
+        #expect(fixture.transport.written.map(\.envelope.id) == [real], "the marked id hides nothing of the real one")
     }
 
     /// The crypto re-review's trial: a wiped sender's two eras, both in custody, at a receiver that adopted the old seed first,
@@ -176,12 +184,13 @@ import Testing
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id, mintedAt: now - 60_000)
         let prekey = try fixture.ourPrekey()
-        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: "seed-old", sentAt: now), from: android)
+        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: frameIdOf("seed-old"), sentAt: now), from: android)
         var frames: [String: TestFrame] = [:]
         func era(_ name: String) throws {
             for index in 0...5 {
-                let id = "\(name)\(index)"
-                frames[id] =
+                let label = "\(name)\(index)"
+                let id = frameIdOf(label)
+                frames[label] =
                     index == 3
                     ? try author.reaction(group, id: id, sentAt: now + 1, on: "target-\(name)", emoji: "\u{1F525}")
                     : try author.frame(group, id: id, body: "\(name) \(index)", sentAt: now + 1)
@@ -189,17 +198,22 @@ import Testing
         }
         try era("old")
         author.wipeAndRemint(at: now)
-        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: "seed-new", sentAt: now + 2), from: android)
+        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: frameIdOf("seed-new"), sentAt: now + 2), from: android)
         try era("new")
         #expect(fixture.recvChains(group.id, from: alice).count == 2, "both eras adopted, the old first")
         _ = fixture.engine.drainEvents()
         for id in order {
             fixture.deliver(try #require(frames[id]), from: alice)
         }
-        #expect(fixture.stores.messages.message("old5")?.body == "old 5" && fixture.stores.messages.message("new5")?.body == "new 5")
+        #expect(
+            fixture.stores.messages.message(frameIdOf("old5"))?.body == "old 5"
+                && fixture.stores.messages.message(frameIdOf("new5"))?.body == "new 5"
+        )
         #expect(fixture.stores.messages.reaction(on: "target-old", by: alice.nodeId) != nil)
         #expect(fixture.stores.messages.reaction(on: "target-new", by: alice.nodeId) != nil)
-        #expect(Set(receivedRecords(in: fixture.engine.drainEvents()).map(\.id)) == ["old5", "new5"], "each delivered once")
+        #expect(
+            Set(receivedRecords(in: fixture.engine.drainEvents()).map(\.id)) == [frameIdOf("old5"), frameIdOf("new5")],
+            "each delivered once")
         fixture.advance(SeenSet.defaultWindowMilliseconds + 1)
         for id in order {
             fixture.deliver(try #require(frames[id]), from: alice)
@@ -224,7 +238,7 @@ import Testing
         let author = GroupFormAuthor(android, in: group.id)
         fixture.transport.clear()
         refusing.refusesWrites = true
-        fixture.deliver(try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: "seed-1", sentAt: now), from: android)
+        fixture.deliver(try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("seed-1"), sentAt: now), from: android)
         refusing.refusesWrites = false
         #expect(fixture.engine.dropped[.storeRefused] == 1)
         #expect(fixture.recvChains(group.id, from: alice).isEmpty, "the adoption went with the unit")
@@ -247,13 +261,13 @@ import Testing
         try fixture.pin(android)
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
-        fixture.deliver(try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: "seed-1", sentAt: now), from: android)
-        fixture.deliver(try author.frame(group, id: "g-1", body: "delivered", sentAt: now), from: alice)
-        #expect(fixture.stores.messages.message("g-1") != nil)
+        fixture.deliver(try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("seed-1"), sentAt: now), from: android)
+        fixture.deliver(try author.frame(group, id: frameIdOf("g-1"), body: "delivered", sentAt: now), from: alice)
+        #expect(fixture.stores.messages.message(frameIdOf("g-1")) != nil)
         refusing.failsReads = true
         fixture.advance(Self.hour)
         refusing.failsReads = false
-        #expect(fixture.log.all.contains { $0.contains("mesh custody replay of g-1 skipped: a store failed") })
+        #expect(fixture.log.all.contains { $0.contains("mesh custody replay of \(frameIdOf("g-1")) skipped: a store failed") })
         #expect(fixture.engine.dropped[.groupRatchetDuplicate] == nil, "never opened on the fallback")
         fixture.advance(Self.hour)
         #expect(fixture.engine.dropped[.groupRatchetDuplicate] == nil, "a row that reads lets it be")

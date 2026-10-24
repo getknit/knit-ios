@@ -155,11 +155,11 @@ import Testing
         func cycle(_ label: String) throws {
             _ = try #require(fixture.engine.sendGroupMessage(label, to: info.id))
             clock += 10
-            fixture.deliver(try alice.groupLeave(info.id, id: "leave-\(label)", sentAt: clock), from: alice)
+            fixture.deliver(try alice.groupLeave(info.id, id: frameIdOf("leave-\(label)"), sentAt: clock), from: alice)
             #expect(epochs().isEmpty, "\(label): the departure retired our chain")
             _ = try #require(fixture.engine.sendGroupMessage("\(label) without alice", to: info.id))
             clock += 10
-            fixture.deliver(try alice.groupUpdate(info, id: "back-\(label)", sentAt: clock), from: alice)
+            fixture.deliver(try alice.groupUpdate(info, id: frameIdOf("back-\(label)"), sentAt: clock), from: alice)
             #expect(fixture.roster(of: info).departed.isEmpty, "\(label): she is back")
         }
         try cycle("first")

@@ -1,5 +1,6 @@
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -32,7 +33,7 @@ import Testing
         holding(fixture)
         fixture.link(bob)
         fixture.transport.clear()
-        fixture.deliver(bob.blobHave([photoHash.string, other.string, "not-a-hash"], id: "q-1"), from: bob)
+        fixture.deliver(bob.blobHave([photoHash.string, other.string, "not-a-hash"], id: frameIdOf("q-1")), from: bob)
         let answer = try #require(try answers(fixture).first)
         #expect(answer.to == bob.nodeId)
         #expect(
@@ -41,14 +42,14 @@ import Testing
                 BlobHasItem(hash: other.string, state: .notHeld),
                 BlobHasItem(hash: "not-a-hash", state: .notHeld),
             ])
-        #expect(answer.content.load == 0 && answer.content.re == "q-1")
+        #expect(answer.content.load == 0 && answer.content.re == frameIdOf("q-1"))
         let wire = try #require(fixture.transport.written(.blobHas).first)
         #expect(!wire.wire.relay && wire.wire.sig.isEmpty && wire.envelope.senderId == alice.nodeId.string)
         #expect(fixture.transport.files.isEmpty, "a query is not an ask")
         #expect(!fixture.engine.blobExchange.isWanted(other), "and wants nothing")
         #expect(fixture.transport.written(.keyRequest).isEmpty, "unsigned by design, so no key is asked for")
         #expect(fixture.engine.dropped.isEmpty)
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-1"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1")), from: bob)
         #expect(fixture.transport.files.count == 1, "the memo was peeked at, never stamped")
         #expect(fixture.engine.blobExchange.counts.queriesAnswered == 1)
     }
@@ -57,18 +58,21 @@ import Testing
         let fixture = EngineFixture(alice)
         holding(fixture)
         fixture.link(bob, carol)
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-1"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1")), from: bob)
         fixture.transport.inFlight = [(photoHash, carol.nodeId)]
         fixture.transport.arrivingFileKeys = [other]
         fixture.transport.feedingLoad = 2
         fixture.transport.clear()
-        fixture.deliver(bob.blobHave([photoHash.string, other.string], id: "q-1"), from: bob)
-        fixture.deliver(carol.blobHave([photoHash.string], id: "q-2"), from: carol)
+        fixture.deliver(bob.blobHave([photoHash.string, other.string], id: frameIdOf("q-1")), from: bob)
+        fixture.deliver(carol.blobHave([photoHash.string], id: frameIdOf("q-2")), from: carol)
         let states = try answers(fixture).map { $0.content.items.map(\.state) }
         #expect(states == [[.sending, .fetching], [.sending]], "the memo for bob, the link for carol")
         #expect(try answers(fixture).allSatisfy { $0.content.load == 2 })
         let shown = "\(photoHash.string.prefix(8)) SENDING \(photo.count)B, \(other.string.prefix(8)) FETCHING"
-        #expect(fixture.log.all.contains("debug mesh blob has → \(bob.nodeId) #q-1 1/2 held: \(shown) load=2"))
+        #expect(
+            fixture.log.all.contains(
+                "debug mesh blob has → \(bob.nodeId) #\(frameIdOf("q-1").prefix(BlobExchange.shownIdCharacters)) 1/2 held: \(shown) load=2")
+        )
     }
 
     @Test func aQueryMarkedForRelayOrNamingAnotherSenderIsNeitherAnsweredNorFlooded() {
@@ -76,11 +80,11 @@ import Testing
         holding(fixture)
         fixture.link(bob, carol)
         fixture.transport.clear()
-        fixture.deliver(bob.blobHave([photoHash.string], id: "q-relay", relay: true), from: bob)
-        fixture.deliver(carol.blobHave([photoHash.string], id: "q-claimed"), from: bob)
+        fixture.deliver(bob.blobHave([photoHash.string], id: frameIdOf("q-relay"), relay: true), from: bob)
+        fixture.deliver(carol.blobHave([photoHash.string], id: frameIdOf("q-claimed")), from: bob)
         fixture.advance(1000)
         #expect(fixture.transport.written(.blobHas).isEmpty)
-        #expect(fixture.transport.written.allSatisfy { !["q-relay", "q-claimed"].contains($0.envelope.id) })
+        #expect(fixture.transport.written.allSatisfy { ![frameIdOf("q-relay"), frameIdOf("q-claimed")].contains($0.envelope.id) })
     }
 
     @Test func aNeighbourGetsSixteenAnswersInABurst() {
@@ -88,7 +92,7 @@ import Testing
         fixture.link(bob)
         fixture.transport.clear()
         for index in 0..<17 {
-            fixture.deliver(bob.blobHave([photoHash.string], id: "q-\(index)"), from: bob)
+            fixture.deliver(bob.blobHave([photoHash.string], id: frameIdOf("q-\(index)")), from: bob)
         }
         #expect(fixture.transport.written(.blobHas).count == 16)
         #expect(fixture.engine.blobExchange.counts.queriesRefused == 1)
@@ -98,9 +102,9 @@ import Testing
         let fixture = EngineFixture(alice)
         fixture.link(bob)
         fixture.transport.clear()
-        fixture.deliver(bob.unsigned(.blobHave, payload: [0xFF], id: "q-bad"), from: bob)
-        fixture.deliver(bob.blobHave([""], id: "q-empty"), from: bob)
-        fixture.deliver(bob.unsigned(.blobHas, payload: [0xFF], id: "has-bad"), from: bob)
+        fixture.deliver(bob.unsigned(.blobHave, payload: [0xFF], id: frameIdOf("q-bad")), from: bob)
+        fixture.deliver(bob.blobHave([""], id: frameIdOf("q-empty")), from: bob)
+        fixture.deliver(bob.unsigned(.blobHas, payload: [0xFF], id: frameIdOf("has-bad")), from: bob)
         fixture.deliver(carol.blobHas([BlobHasItem(hash: photoHash.string, state: .have)], re: nil), from: bob)
         fixture.deliver(bob.blobHas([BlobHasItem(hash: photoHash.string, state: .have)], re: "q-never"), from: bob)
         #expect(fixture.transport.written(.blobHas).isEmpty && fixture.transport.written(.blobRequest).isEmpty)
@@ -139,18 +143,18 @@ import Testing
         fixture.link(bob)
         fixture.transport.clear()
         let report = BlobProgressContent(hash: photoHash.string, held: 40_960, ms: 2000)
-        fixture.deliver(bob.unsigned(.blobProgress, payload: report.encoded, id: "prog-1"), from: bob)
+        fixture.deliver(bob.unsigned(.blobProgress, payload: report.encoded, id: frameIdOf("prog-1")), from: bob)
         #expect(fixture.engine.blobExchange.counts.progressTaken == 1)
         #expect(fixture.engine.dropped.isEmpty)
         #expect(fixture.transport.written.isEmpty, "no key request, and never relayed")
         let handed = FileProgress(from: bob.nodeId, hash: photoHash, held: 40_960, milliseconds: 2000)
         #expect(fixture.transport.progressReports == [handed], "the link feeding bob clocks its window by it")
-        fixture.deliver(carol.unsigned(.blobProgress, payload: report.encoded, id: "prog-claimed"), from: bob)
+        fixture.deliver(carol.unsigned(.blobProgress, payload: report.encoded, id: frameIdOf("prog-claimed")), from: bob)
         let negative = BlobProgressContent(hash: photoHash.string, held: -1, ms: 2000)
-        fixture.deliver(bob.unsigned(.blobProgress, payload: negative.encoded, id: "prog-negative"), from: bob)
-        fixture.deliver(bob.unsigned(.blobProgress, payload: [0xFF], id: "prog-bad"), from: bob)
+        fixture.deliver(bob.unsigned(.blobProgress, payload: negative.encoded, id: frameIdOf("prog-negative")), from: bob)
+        fixture.deliver(bob.unsigned(.blobProgress, payload: [0xFF], id: frameIdOf("prog-bad")), from: bob)
         let notAHash = BlobProgressContent(hash: "not-a-hash", held: 1, ms: 1)
-        fixture.deliver(bob.unsigned(.blobProgress, payload: notAHash.encoded, id: "prog-not-a-hash"), from: bob)
+        fixture.deliver(bob.unsigned(.blobProgress, payload: notAHash.encoded, id: frameIdOf("prog-not-a-hash")), from: bob)
         #expect(fixture.engine.blobExchange.counts.progressTaken == 2, "not another sender's claim, nor a count that cannot be")
         #expect(fixture.transport.progressReports.count == 1, "a key that is no hash names no file we feed")
         #expect(fixture.engine.dropped[.undecodable] == 1)
@@ -242,7 +246,7 @@ import Testing
         fixture.transport.clear()
         let post = ChatContent(body: "", attachmentHash: photoHash.string, attachmentMime: "image/png")
         let envelope = RelayEnvelope(
-            type: .chat, id: "post-1", senderId: carol.nodeId.string, sentAt: EngineFixture.start, payload: post.encoded)
+            type: .chat, id: frameIdOf("post-1"), senderId: carol.nodeId.string, sentAt: EngineFixture.start, payload: post.encoded)
         fixture.deliver(try carol.signed(envelope), from: dave)
         #expect(fixture.transport.written(.blobRequest).map(\.to) == [dave.nodeId], "the author is not linked, so the hop")
         #expect(fixture.engine.blobExchange.wants[photoHash]?.author == carol.nodeId)
@@ -265,7 +269,8 @@ extension TestPeer {
     /// An unsigned answer to a holder query (`BlobExchange.holderAnswerFrame`).
     func blobHas(_ items: [BlobHasItem], re: String?, load: Int? = nil) -> TestFrame {
         let content = BlobHasContent(items: items, load: load, re: re)
-        let envelope = RelayEnvelope(type: .blobHas, id: "has-\(re ?? "none")", senderId: nodeId.string, payload: content.encoded)
+        let envelope = RelayEnvelope(
+            type: .blobHas, id: frameIdOf("has-\(re ?? "none")"), senderId: nodeId.string, payload: content.encoded)
         return TestFrame(wire: WireEnvelope(relay: false, sig: [], signed: envelope.encoded), envelope: envelope)
     }
 }

@@ -67,7 +67,7 @@ import Testing
         #expect(footprint["seen"] as? Int == (before["seen"] as? Int).map { $0 + 1 }, "our own post is marked seen")
         #expect(footprint["channels"] as? Int == 0)
         let router = try #require(status["router"] as? [String: Any])
-        #expect(router.keys.sorted() == ["admitted", "deduplicated", "handedOn", "refused", "relayed", "suppressed"])
+        #expect(router.keys.sorted() == ["admitted", "deduplicated", "handedOn", "nonCanonical", "refused", "relayed", "suppressed"])
         #expect(router["admitted"] as? Int == 0, "nothing came off a link")
     }
 
@@ -154,7 +154,7 @@ import Testing
         let rig = PeerRig()
         await rig.node.start(name: nil)
         try await rig.link()
-        let request = RelayEnvelope(type: .blobRequest, id: "garbled", senderId: rig.far.nodeId.string, payload: [0xFF])
+        let request = RelayEnvelope(type: .blobRequest, id: frameIdOf("garbled"), senderId: rig.far.nodeId.string, payload: [0xFF])
         rig.radio.emit(.received(PeerRig.channel, record(.frame, WireEnvelope(relay: false, sig: [], signed: request.encoded).encoded)))
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         var dropped: [String: Any] = [:]
@@ -163,6 +163,17 @@ import Testing
             await Task.yield()
         }
         #expect(dropped["undecodable"] as? Int == 1)
+        // An id no build mints stops at the router's door, before anything decodes it (knit-next ADR 2026-10.9qr4).
+        let crafted = RelayEnvelope(type: .blobRequest, id: "garbled", senderId: rig.far.nodeId.string, payload: [0xFF])
+        rig.radio.emit(.received(PeerRig.channel, record(.frame, WireEnvelope(relay: false, sig: [], signed: crafted.encoded).encoded)))
+        var router: [String: Any] = [:]
+        while router["nonCanonical"] as? Int != 1, ContinuousClock.now < deadline {
+            router = try await rig.send(#"{"cmd":"status"}"#)["router"] as? [String: Any] ?? [:]
+            await Task.yield()
+        }
+        #expect(router["nonCanonical"] as? Int == 1)
+        let after = try await rig.send(#"{"cmd":"status"}"#)["dropped"] as? [String: Any] ?? [:]
+        #expect(after["undecodable"] as? Int == 1, "counted at the door, never decoded")
     }
 
     @Test func aFarPeersProfilePostsAndDMsReachTheNodeAndOurDMIsDelivered() async throws {

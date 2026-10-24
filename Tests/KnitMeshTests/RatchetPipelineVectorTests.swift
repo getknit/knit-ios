@@ -34,7 +34,7 @@ import Testing
             Replay.move(bob, to: step.now)
             Replay.expectFloors(step, in: bob, for: alice, label)
             bob.transport.clear()
-            bob.engine.receive(try Replay.frame(of: step))
+            bob.engine.receiveAdmitted(try Replay.frame(of: step))
             if step.expect == "OPENED" {
                 #expect(bob.engine.dropped == drops, "\(label): opened with no drop")
                 Replay.expectApplies(step, in: bob, names: names, label)
@@ -59,7 +59,7 @@ import Testing
         let bob = try Replay.receiver(transcript, as: "bob", peer: "alice", wall: step.now)
         let alice = try Replay.identity("alice").nodeId
         bob.transport.clear()
-        bob.engine.receive(try Replay.frame(of: step))
+        bob.engine.receiveAdmitted(try Replay.frame(of: step))
 
         let drop = try #require(step.drop)
         let stated = try #require(Replay.dropReason(drop))
@@ -119,7 +119,7 @@ import Testing
                 if let id = tick?.frameId {
                     carol.engine.random = try ScriptedFrameIds(id, then: SeededGenerator(seed: UInt64(step.step) &+ 1000))
                 }
-                carol.engine.receive(try Replay.frame(of: step))
+                carol.engine.receiveAdmitted(try Replay.frame(of: step))
                 #expect(step.expect == "OPENED" && carol.engine.dropped == drops, "\(label): opened")
                 Replay.expectApplies(step, in: carol, names: names, label)
                 seals.heard(Replay.ackBacks(in: carol, to: peerKeys.nodeId))

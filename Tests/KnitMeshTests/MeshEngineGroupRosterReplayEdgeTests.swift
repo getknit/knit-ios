@@ -33,16 +33,20 @@ import Testing
         let group = fixture.holdGroup(with: [alice, carol])
         _ = try #require(fixture.engine.sendGroupMessage("minted", to: group.id))
         refusing.refusesSaves = true
-        fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         refusing.refusesSaves = false
-        fixture.deliver(try carol.groupMessage("still here", in: group, to: [me, alice], id: "carol-chat", sentAt: now + 2), from: carol)
+        fixture.deliver(
+            try carol.groupMessage("still here", in: group, to: [me, alice], id: frameIdOf("carol-chat"), sentAt: now + 2), from: carol)
         for index in 0..<3 {
             fixture.deliver(
-                try alice.groupMessage("busy \(index)", in: group, to: [me, carol], id: "alice-\(index)", sentAt: now + 3 + Int64(index)),
+                try alice.groupMessage(
+                    "busy \(index)", in: group, to: [me, carol], id: frameIdOf("alice-\(index)"), sentAt: now + 3 + Int64(index)),
                 from: alice)
         }
-        #expect(stores.messages.message("carol-chat") != nil)
-        #expect(!stores.custody.contains("carol-chat") && stores.custody.contains("carol-leaves"), "evicted from the group's bucket")
+        #expect(stores.messages.message(frameIdOf("carol-chat")) != nil)
+        #expect(
+            !stores.custody.contains(frameIdOf("carol-chat")) && stores.custody.contains(frameIdOf("carol-leaves")),
+            "evicted from the group's bucket")
         let restarted = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + 60_000, seed: 61)
         #expect(restarted.roster(of: group).departed.isEmpty)
         #expect(stores.messages.messages(in: group.id).allSatisfy { $0.kind != .memberLeft })
@@ -68,15 +72,19 @@ import Testing
         let group = fixture.holdGroup(with: [alice, carol])
         _ = try #require(fixture.engine.sendGroupMessage("minted", to: group.id))
         refusing.refusesSaves = true
-        fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         refusing.refusesSaves = false
-        fixture.deliver(try carol.groupMessage("still here", in: group, to: [me, alice], id: "carol-chat", sentAt: now + 2), from: carol)
+        fixture.deliver(
+            try carol.groupMessage("still here", in: group, to: [me, alice], id: frameIdOf("carol-chat"), sentAt: now + 2), from: carol)
         for index in 0..<3 {
             fixture.deliver(
-                try alice.groupMessage("busy \(index)", in: group, to: [me, carol], id: "alice-\(index)", sentAt: now + 3 + Int64(index)),
+                try alice.groupMessage(
+                    "busy \(index)", in: group, to: [me, carol], id: frameIdOf("alice-\(index)"), sentAt: now + 3 + Int64(index)),
                 from: alice)
         }
-        #expect(!stores.custody.contains("carol-chat") && stores.custody.contains("carol-leaves"), "evicted from the group's bucket")
+        #expect(
+            !stores.custody.contains(frameIdOf("carol-chat")) && stores.custody.contains(frameIdOf("carol-leaves")),
+            "evicted from the group's bucket")
         refusing.failsThreadReads = true
         let unread = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + 60_000, seed: 62)
         refusing.failsThreadReads = false
@@ -102,7 +110,7 @@ import Testing
             try fixture.pin(carol)
             let group = fixture.holdGroup(with: [alice, carol])
             refusing.refusesWrites = lost
-            fixture.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+            fixture.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
             refusing.refusesWrites = false
             #expect(fixture.roster(of: group).departed.isEmpty == lost)
             return (stores, group)

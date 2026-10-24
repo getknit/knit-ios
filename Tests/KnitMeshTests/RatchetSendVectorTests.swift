@@ -263,7 +263,7 @@ private final class SendReplay {
         if acknowledgesBack(index) {
             unlisted(ackBackOf: frame, by: actor, from: peer)
         } else {
-            actor.engine.receive(frame)
+            actor.engine.receiveAdmitted(frame)
         }
         if step.expect == "OPENED" {
             #expect(actor.engine.dropped == drops, "\(label): opened with no drop")
@@ -304,13 +304,13 @@ private final class SendReplay {
     /// key and a draw it does not list. The open itself reads only the row's bundle, and the row is put back as it was.
     private func unlisted(ackBackOf frame: InboundFrame, by actor: EngineFixture, from peer: IdentityKeys) {
         guard let pinned = actor.stores.peers.peer(peer.nodeId) else {
-            actor.engine.receive(frame)
+            actor.engine.receiveAdmitted(frame)
             return
         }
         var plain = pinned
         plain.capabilities = Capabilities(rawValue: pinned.capabilities ?? 0).subtracting(.ratchet).rawValue
         actor.stores.peers.upsert(plain)
-        actor.engine.receive(frame)
+        actor.engine.receiveAdmitted(frame)
         actor.stores.peers.upsert(pinned)
     }
 

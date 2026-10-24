@@ -307,6 +307,8 @@ struct PeerRig {
     /// Hands every frame the far engine sent to the node, as if over the link.
     func deliverFromFar() {
         for wire in farTransport.take() {
+            // The far engine mints only canonical ids; one the node's router refused unnoticed would hide a regression.
+            #expect((try? RelayEnvelope(decoding: wire.signed)).map(FrameId.admits) ?? false, "the far engine's frame passes the id gate")
             radio.emit(.received(Self.channel, record(.frame, wire.encoded)))
         }
     }
@@ -317,6 +319,8 @@ struct PeerRig {
             guard let envelope = try? RelayEnvelope(decoding: wire.signed) else {
                 continue
             }
+            // The node mints only canonical ids; a frame the far router refused unnoticed would hide a regression.
+            #expect(FrameId.admits(envelope), "\(envelope.type.rawValue) \(envelope.id) is not its type's id shape")
             farEngine.receive(InboundFrame(wire: wire, envelope: envelope, from: keys.nodeId))
         }
     }

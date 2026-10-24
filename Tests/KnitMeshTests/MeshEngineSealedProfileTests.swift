@@ -28,7 +28,8 @@ import Testing
         let android = try AndroidPeer(alice)
         try fixture.pin(android)
         if confirmed {
-            fixture.deliver(try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: "dm-1", sentAt: now), from: android)
+            fixture.deliver(
+                try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now), from: android)
             #expect(fixture.ratchetRecords(of: alice).session?.confirmed == true)
         }
         _ = fixture.engine.drainEvents()
@@ -81,7 +82,8 @@ import Testing
         #expect(sealedProfiles(fixture, to: android).isEmpty, "our session waits for Android's answer")
 
         #expect(plaintext(try android.open(dm, from: me, now: now)) != nil)
-        fixture.deliver(try android.dm("back", to: me, prekey: try fixture.ourPrekey(), id: "dm-2", sentAt: now + 1), from: android)
+        fixture.deliver(
+            try android.dm("back", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("dm-2"), sentAt: now + 1), from: android)
         #expect(fixture.ratchetRecords(of: alice).session?.confirmed == true, "confirmed by her answer")
         #expect(fixture.answerIds.isEmpty, "a responder's frame carries no init to answer")
         fixture.advance(MeshConfiguration().healMilliseconds)
@@ -120,7 +122,7 @@ import Testing
         let first = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain)
         let android = try AndroidPeer(alice)
         try first.pin(android)
-        first.deliver(try android.dm("hello", to: me, prekey: try first.ourPrekey(), id: "dm-1", sentAt: now), from: android)
+        first.deliver(try android.dm("hello", to: me, prekey: try first.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now), from: android)
         first.engine.updateProfile(name: "Dana", status: "", openToChat: false)
         #expect(sealedProfiles(first, to: android).count == 1)
         return (first, android)
@@ -189,7 +191,7 @@ import Testing
         let (fixture, android) = try rig(confirmed: false)
         fixture.engine.updateProfile(name: "Dana", status: "", openToChat: false)
         let version = fixture.stores.ownProfile.load().version
-        fixture.deliver(try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: "dm-1", sentAt: now), from: android)
+        fixture.deliver(try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now), from: android)
         let answer = try #require(fixture.answers(to: android).first)
         #expect(android.peek(answer, from: me)?.pr?.version == version, "the answer carries the current version")
         fixture.advance(MeshConfiguration().healMilliseconds)
@@ -270,7 +272,8 @@ import Testing
         let dm = try #require(fixture.transport.written(.chat).first { $0.envelope.id == ours.id })
         fixture.engine.updateProfile(name: "Dana", status: "", openToChat: false)
         #expect(plaintext(try android.open(dm, from: me, now: now)) != nil)
-        fixture.deliver(try android.dm("back", to: me, prekey: try fixture.ourPrekey(), id: "dm-2", sentAt: now + 1), from: android)
+        fixture.deliver(
+            try android.dm("back", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("dm-2"), sentAt: now + 1), from: android)
         #expect(fixture.ratchetRecords(of: alice).session?.confirmed == true && fixture.answerIds.isEmpty)
         fixture.transport.clear()
         let outer = fixture.stores.transactor.atomically { () -> Void? in

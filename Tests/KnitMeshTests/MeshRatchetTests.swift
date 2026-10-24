@@ -33,7 +33,7 @@ import Testing
         let hello = LinkRecord(.hello, payload: Hello(nodeId: bob.nodeId.string, capabilities: 0xFFF).payload).encoded ?? []
         await mesh.process(.received(channel, hello))
         let profile = try AndroidPeer(bob).profile(publishedAt: EngineFixture.start)
-        await mesh.process(.received(channel, LinkRecord(.frame, payload: profile.wire.encoded).encoded ?? []))
+        await mesh.process(.received(channel, LinkRig.admittedRecord(profile)))
         let debounce = LinkManager.Configuration().advertDebounceMilliseconds
         clock.advance(debounce)
         await mesh.fireDueTimers()

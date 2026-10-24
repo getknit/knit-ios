@@ -57,13 +57,13 @@ import Testing
         fixture.link(bob)
         let out = try ourDM(fixture, to: alice)
         let frame = try android.dm(
-            tick(acking: out), to: me, prekey: prekey, id: "tick-1", sentAt: now, v3: true, signed: false, relay: false)
+            tick(acking: out), to: me, prekey: prekey, id: frameIdOf("tick-1"), sentAt: now, v3: true, signed: false, relay: false)
         fixture.deliver(frame, from: android)
         fixture.advance(1000)
         #expect(fixture.stores.messages.message(out)?.delivered == true)
         #expect(fixture.engine.dropped[.unsigned] == nil && fixture.engine.dropped[.badSignature] == nil)
-        #expect(fixture.stores.messages.message("tick-1") == nil)
-        #expect(!fixture.stores.custody.contains("tick-1"), "point to point, so never carried")
+        #expect(fixture.stores.messages.message(frameIdOf("tick-1")) == nil)
+        #expect(!fixture.stores.custody.contains(frameIdOf("tick-1")), "point to point, so never carried")
         // The tick carried Android's init, and its open committed, so our sealed profile answers that init, as Kotlin's commit
         // does for any frame that opens (`InboundPipeline.kt:1059-1067`, phase P5e). The tick itself earns nothing.
         let chats = fixture.transport.written(.chat)
@@ -79,14 +79,14 @@ import Testing
 
         // Flooded: the signature is what every relay and carrier needs.
         let flooded = try android.dm(
-            tick(acking: out), to: me, prekey: prekey, id: "u-relay", sentAt: now, v3: true, signed: false, relay: true)
+            tick(acking: out), to: me, prekey: prekey, id: frameIdOf("u-relay"), sentAt: now, v3: true, signed: false, relay: true)
         fixture.deliver(flooded, from: android)
         #expect(fixture.engine.dropped[.unsigned] == 1)
-        #expect(!fixture.stores.custody.contains("u-relay"))
+        #expect(!fixture.stores.custody.contains(frameIdOf("u-relay")))
 
         // Addressed to someone else: not our tick, and not our session.
         let foreign = try android.dm(
-            tick(acking: out), to: me, prekey: prekey, id: "u-foreign", sentAt: now, v3: true, signed: false, relay: false)
+            tick(acking: out), to: me, prekey: prekey, id: frameIdOf("u-foreign"), sentAt: now, v3: true, signed: false, relay: false)
         var readdressed = foreign.envelope
         readdressed.recipientId = bob.nodeId.string
         fixture.deliver(
@@ -94,14 +94,14 @@ import Testing
         #expect(fixture.engine.dropped[.unsigned] == 2)
 
         // v2: the right shape at the door, the wrong scheme behind it.
-        let v2 = try android.dm(tick(acking: out), to: me, prekey: prekey, id: "u-v2", sentAt: now, signed: false, relay: false)
+        let v2 = try android.dm(tick(acking: out), to: me, prekey: prekey, id: frameIdOf("u-v2"), sentAt: now, signed: false, relay: false)
         fixture.deliver(v2, from: android)
         #expect(fixture.engine.dropped[.unsigned] == 3)
 
         // A DM in the clear.
         let clear = RelayEnvelope(
             type: .chat,
-            id: "u-clear",
+            id: frameIdOf("u-clear"),
             senderId: alice.nodeId.string,
             sentAt: now,
             recipientId: me.nodeId.string,
@@ -109,21 +109,22 @@ import Testing
         )
         fixture.deliver(TestFrame(wire: WireEnvelope(relay: false, sig: [], signed: clear.encoded), envelope: clear), from: android)
         #expect(fixture.engine.dropped[.unsigned] == 4)
-        #expect(fixture.stores.messages.message("u-clear") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("u-clear")) == nil)
 
         // A plain v3 DM with its signature stripped opens, and is refused anyway, before its unit commits: the index stays
         // unspent, so the signed copy, past the router's window, still opens.
-        let plain = try android.dm(MessageContent(body: "a real message"), to: me, prekey: prekey, id: "u-plain", sentAt: now, v3: true)
+        let plain = try android.dm(
+            MessageContent(body: "a real message"), to: me, prekey: prekey, id: frameIdOf("u-plain"), sentAt: now, v3: true)
         let stripped = TestFrame(wire: WireEnvelope(relay: false, sig: [], signed: plain.envelope.encoded), envelope: plain.envelope)
         // Our DM above started a session of ours (phase P5b): the refused open must leave it as it was.
         let held = fixture.ratchetRecords(of: alice)
         fixture.deliver(stripped, from: android)
         #expect(fixture.engine.dropped[.unsigned] == 5)
-        #expect(fixture.stores.messages.message("u-plain") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("u-plain")) == nil)
         #expect(fixture.ratchetRecords(of: alice) == held, "nothing committed")
         fixture.advance(SeenSet.defaultWindowMilliseconds + 1000)
         fixture.deliver(plain, from: android)
-        #expect(fixture.stores.messages.message("u-plain")?.body == "a real message")
+        #expect(fixture.stores.messages.message(frameIdOf("u-plain"))?.body == "a real message")
 
         #expect(fixture.stores.messages.message(out)?.delivered == false)
         #expect(fixture.resetsSent(to: alice).isEmpty)
@@ -142,7 +143,7 @@ import Testing
                 tick(acking: real),
                 to: me,
                 prekey: prekey,
-                id: "forged-\(index)",
+                id: frameIdOf("forged-\(index)"),
                 sentAt: now,
                 v3: true,
                 signed: false,
@@ -161,13 +162,14 @@ import Testing
         fixture.deliverPastRouter(oracle, from: alice)
         #expect(fixture.acknowledged(by: android) == [real])
 
-        fixture.deliver(try android.dm("still here", to: me, prekey: prekey, id: "real-2", sentAt: now + 1, v3: true), from: android)
-        #expect(fixture.stores.messages.message("real-2")?.body == "still here", "the genuine session is unharmed")
+        fixture.deliver(
+            try android.dm("still here", to: me, prekey: prekey, id: frameIdOf("real-2"), sentAt: now + 1, v3: true), from: android)
+        #expect(fixture.stores.messages.message(frameIdOf("real-2"))?.body == "still here", "the genuine session is unharmed")
 
         // An unsigned tick from someone never pinned is a missing key, parked for it, not an unsigned refusal.
         let stranger = try AndroidPeer(TestPeer(seed: 9))
         let orphan = try stranger.dm(
-            tick(acking: real), to: me, prekey: prekey, id: "orphan", sentAt: now, v3: true, signed: false, relay: false)
+            tick(acking: real), to: me, prekey: prekey, id: frameIdOf("orphan"), sentAt: now, v3: true, signed: false, relay: false)
         fixture.deliver(orphan, from: stranger)
         #expect(fixture.engine.dropped[.noSenderKey] == 1)
         #expect(fixture.engine.dropped[.unsigned] == nil)
@@ -182,20 +184,21 @@ import Testing
         // A prekey of ours a peer could have pinned while the switch was on: the frames are the real thing.
         let ours = try SignedPrekey.mint(id: 1, signedBy: me.keys, createdAt: 0)
         let prekey = try #require(PeerPrekey(verifying: ours.info, signedBy: me.keys.bundle))
-        fixture.deliver(try android.dm("v2", to: me, prekey: prekey, id: "off-2", sentAt: now), from: android)
-        fixture.deliver(try android.dm("v3", to: me, prekey: prekey, id: "off-3", sentAt: now + 1, v3: true), from: android)
+        fixture.deliver(try android.dm("v2", to: me, prekey: prekey, id: frameIdOf("off-2"), sentAt: now), from: android)
+        fixture.deliver(try android.dm("v3", to: me, prekey: prekey, id: frameIdOf("off-3"), sentAt: now + 1, v3: true), from: android)
         let out = try #require(fixture.engine.sendDirectMessage("hi", to: alice.nodeId)).id
         fixture.transport.clear()
         fixture.deliver(
             try android.dm(
-                tick(acking: out), to: me, prekey: prekey, id: "off-tick", sentAt: now + 2, v3: true, signed: false, relay: false),
+                tick(acking: out), to: me, prekey: prekey, id: frameIdOf("off-tick"), sentAt: now + 2, v3: true, signed: false, relay: false
+            ),
             from: android)
         #expect(fixture.engine.dropped[.cannotOpen] == 2)
         #expect(fixture.engine.dropped[.unsigned] == 1, "the door is shut")
-        #expect(fixture.stores.messages.message("off-2") == nil && fixture.stores.messages.message("off-3") == nil)
+        #expect(fixture.stores.messages.message(frameIdOf("off-2")) == nil && fixture.stores.messages.message(frameIdOf("off-3")) == nil)
         #expect(fixture.stores.messages.message(out)?.delivered == false)
         #expect(fixture.ratchetRecords(of: alice) == RatchetPeerRecords(session: nil, localEpochs: [], recvEpochs: [], skippedKeys: []))
         #expect(fixture.transport.written.isEmpty, "no receipt, no reset")
-        #expect(fixture.stores.custody.contains("off-2") && fixture.stores.custody.contains("off-3"), "still carried")
+        #expect(fixture.stores.custody.contains(frameIdOf("off-2")) && fixture.stores.custody.contains(frameIdOf("off-3")), "still carried")
     }
 }

@@ -29,9 +29,9 @@ import Testing
         let ours = try SignedPrekey.mint(id: 1, signedBy: me.keys, createdAt: 0)
         let prekey = try #require(PeerPrekey(verifying: ours.info, signedBy: me.keys.bundle))
         let author = GroupFormAuthor(android, in: group.id)
-        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: "off-seed", sentAt: now), from: android)
+        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: frameIdOf("off-seed"), sentAt: now), from: android)
         for index in 0..<3 {
-            fixture.deliver(try author.frame(group, id: "off-g\(index)", body: "x", sentAt: now), from: alice)
+            fixture.deliver(try author.frame(group, id: frameIdOf("off-g\(index)"), body: "x", sentAt: now), from: alice)
         }
         fixture.advance(Self.hour)
         #expect(fixture.engine.dropped[.cannotOpen] == 4)
@@ -40,7 +40,8 @@ import Testing
         #expect(fixture.engine.pendingGroupKeys.parked.isEmpty && fixture.engine.groupCounts == RatchetGroupCounts())
         #expect(
             fixture.transport.written(.chat).allSatisfy { ExactKey($0.envelope.senderId) != ExactKey(me.nodeId.string) }, "nothing of ours")
-        #expect(fixture.stores.custody.contains("off-seed") && fixture.stores.custody.contains("off-g0"), "still carried")
+        #expect(
+            fixture.stores.custody.contains(frameIdOf("off-seed")) && fixture.stores.custody.contains(frameIdOf("off-g0")), "still carried")
     }
 
     /// A group sweep the store refuses is logged and changes nothing else, as the DM ratchet's is.

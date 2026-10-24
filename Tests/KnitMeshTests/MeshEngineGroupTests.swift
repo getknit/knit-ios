@@ -1,6 +1,7 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -102,7 +103,7 @@ import Testing
         let group = try #require(fixture.engine.createGroup(with: [bob.nodeId]))
         #expect(fixture.engine.sendGroupMessage("  ", to: group.id) == nil, "blank")
         #expect(fixture.engine.sendGroupMessage("Hi", to: "g-unknown") == nil, "no such group")
-        fixture.deliver(try bob.groupLeave(group.id, id: "leave-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.groupLeave(group.id, id: frameIdOf("leave-1"), sentAt: start), from: bob)
         #expect(fixture.engine.sendGroupMessage("Hi", to: group.id) == nil, "nobody else is left")
         fixture.engine.leaveGroup(group.id)
         #expect(fixture.engine.sendGroupMessage("Hi", to: group.id) == nil, "a group we left")
@@ -129,7 +130,7 @@ import Testing
         let fixture = EngineFixture(alice)
         try fixture.pin(bob)
         let info = bobsGroup
-        fixture.deliver(try bob.groupMessage("Hi", in: info, to: [alice], id: "gm-1", sentAt: start), from: bob)
+        fixture.deliver(try bob.groupMessage("Hi", in: info, to: [alice], id: frameIdOf("gm-1"), sentAt: start), from: bob)
         _ = fixture.engine.drainEvents()
         fixture.transport.clear()
         #expect(fixture.engine.leaveGroup(info.id))
@@ -140,7 +141,7 @@ import Testing
         #expect(fixture.stores.groups.group(info.id)?.hasLeft == true)
         #expect(fixture.engine.drainEvents() == [.groupChanged(info.id)])
         #expect(!fixture.engine.leaveGroup(info.id), "already left")
-        fixture.deliver(try bob.groupMessage("Still here?", in: info, to: [alice], id: "gm-2", sentAt: start), from: bob)
+        fixture.deliver(try bob.groupMessage("Still here?", in: info, to: [alice], id: frameIdOf("gm-2"), sentAt: start), from: bob)
         #expect(fixture.engine.drainEvents().isEmpty, "a group we left never comes back")
         #expect(fixture.stores.messages.messages(in: info.id).isEmpty)
     }
@@ -150,8 +151,8 @@ import Testing
         try fixture.pin(bob)
         try fixture.pin(carol)
         let info = bobsGroup
-        fixture.deliver(try bob.groupMessage("Hi", in: info, to: [alice, carol], id: "gm-1", sentAt: start), from: bob)
-        fixture.deliver(try carol.groupLeave(info.id, id: "leave-1", sentAt: start + 10), from: carol)
+        fixture.deliver(try bob.groupMessage("Hi", in: info, to: [alice, carol], id: frameIdOf("gm-1"), sentAt: start), from: bob)
+        fixture.deliver(try carol.groupLeave(info.id, id: frameIdOf("leave-1"), sentAt: start + 10), from: carol)
         fixture.transport.clear()
         _ = try #require(fixture.engine.sendGroupMessage("Just us", to: info.id))
         let sent = try #require(fixture.transport.written(.chat).first)
@@ -165,9 +166,9 @@ import Testing
         let group = try #require(fixture.engine.createGroup(with: [bob.nodeId, carol.nodeId]))
         let record = try #require(fixture.engine.sendGroupMessage("Hi", to: group.id))
         _ = fixture.engine.drainEvents()
-        fixture.deliver(try bob.receipt(for: "created:\(group.id)", id: "r-0", relay: false), from: bob)
+        fixture.deliver(try bob.receipt(for: "created:\(group.id)", id: frameIdOf("r-0"), relay: false), from: bob)
         #expect(fixture.engine.drainEvents().isEmpty, "a status line is no message to tick")
-        fixture.deliver(try bob.receipt(for: record.id, id: "r-1", relay: false), from: bob)
+        fixture.deliver(try bob.receipt(for: record.id, id: frameIdOf("r-1"), relay: false), from: bob)
         #expect(fixture.engine.drainEvents() == [.delivered(messageId: record.id)])
         #expect(fixture.stores.messages.message(record.id)?.delivered == true)
     }

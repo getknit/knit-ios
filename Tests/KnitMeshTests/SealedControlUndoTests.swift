@@ -53,7 +53,7 @@ import Testing
         let fixture = try EngineFixture.ratcheting(me, stores: stores)
         let android = try AndroidPeer(alice)
         try fixture.pin(android)
-        let dm = try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: "dm-1", sentAt: now)
+        let dm = try android.dm("hello", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("dm-1"), sentAt: now)
         fixture.deliver(dm, from: android)
         fixture.engine.updateProfile(name: "Dana", status: "", openToChat: false)
         #expect(fixture.engine.answers.introsAnswered == 1 && fixture.ratchetRecords(of: alice).session?.confirmed == true)
@@ -67,7 +67,7 @@ import Testing
     private func seal(_ sealing: Sealing, _ fixture: EngineFixture, header: RatchetHeader) {
         switch sealing {
         case .reaction:
-            _ = fixture.engine.react(to: "dm-1", with: "👍")
+            _ = fixture.engine.react(to: frameIdOf("dm-1"), with: "👍")
         case .profile:
             fixture.engine.presentation.sealedProfileVersions[alice.nodeId] = nil
             fixture.engine.broadcastSealedProfile()

@@ -78,14 +78,14 @@ import Testing
         let group = roster([alice, bob, me], createdBy: alice)
         // The same frames to both: a v1 seal draws its own key, so each is sealed once.
         let linked = [
-            try alice.directMessage("hi", to: me, id: "dm-1", sentAt: now),
-            try alice.roomPost("room", id: "post-1", sentAt: now),
-            try alice.groupMessage("group", in: group, to: [bob, me], id: "gm-1", sentAt: now),
+            try alice.directMessage("hi", to: me, id: frameIdOf("dm-1"), sentAt: now),
+            try alice.roomPost("room", id: frameIdOf("post-1"), sentAt: now),
+            try alice.groupMessage("group", in: group, to: [bob, me], id: frameIdOf("gm-1"), sentAt: now),
         ]
         let away = [
-            try alice.directMessage("again", to: me, id: "dm-2", sentAt: now + 1),
-            try alice.roomPost("room again", id: "post-2", sentAt: now + 1),
-            try alice.groupMessage("group again", in: group, to: [bob, me], id: "gm-2", sentAt: now + 1),
+            try alice.directMessage("again", to: me, id: frameIdOf("dm-2"), sentAt: now + 1),
+            try alice.roomPost("room again", id: frameIdOf("post-2"), sentAt: now + 1),
+            try alice.groupMessage("group again", in: group, to: [bob, me], id: frameIdOf("gm-2"), sentAt: now + 1),
         ]
         for fixture in [switchedOff, today] {
             fixture.link(bob)
@@ -113,10 +113,15 @@ import Testing
             #expect(sent.wire.signed == before.wire.signed, "\(sent.envelope.type.rawValue) \(sent.envelope.id): today's bytes")
         }
         let acked = try switchedOff.transport.written(.receipt).map { try ReceiptContent(decoding: $0.envelope.payload).ackId }
-        #expect(Set(acked) == ["dm-1", "post-1", "gm-1", "dm-2", "post-2", "gm-2"] && acked.count == 6)
+        #expect(
+            Set(acked) == [
+                frameIdOf("dm-1"), frameIdOf("post-1"), frameIdOf("gm-1"), frameIdOf("dm-2"), frameIdOf("post-2"), frameIdOf("gm-2"),
+            ] && acked.count == 6)
         #expect(ours.allSatisfy { $0.envelope.type != .chat }, "no DM-form chat of ours")
         #expect(switchedOff.ratchetRecords(of: alice) == RatchetPeerRecords(session: nil, localEpochs: [], recvEpochs: [], skippedKeys: []))
-        #expect(!switchedOff.stores.custody.contains("dm-1") && !switchedOff.stores.custody.contains("dm-2"), "purged, as today")
+        #expect(
+            !switchedOff.stores.custody.contains(frameIdOf("dm-1")) && !switchedOff.stores.custody.contains(frameIdOf("dm-2")),
+            "purged, as today")
     }
 
     /// The presentation plane's leg of the guard (phase P5e), with the real seals: toward an Android phone whose profile
@@ -132,16 +137,16 @@ import Testing
         // The same frames to both: a v1 DM to react to, and a ratchet DM whose init rides, sealed to a prekey of ours.
         let prekey = try #require(PeerPrekey(verifying: try me.prekey(id: 1), signedBy: me.keys.bundle))
         let frames = [
-            try alice.directMessage("hi", to: me, id: "dm-1", sentAt: now),
-            try android.dm("sealed", to: me, prekey: prekey, id: "dm-2", sentAt: now),
+            try alice.directMessage("hi", to: me, id: frameIdOf("dm-1"), sentAt: now),
+            try android.dm("sealed", to: me, prekey: prekey, id: frameIdOf("dm-2"), sentAt: now),
         ]
         for fixture in [switchedOff, today] {
             fixture.transport.clear()
             for frame in frames {
                 fixture.deliver(frame, from: alice)
             }
-            _ = fixture.engine.react(to: "dm-1", with: "👍")
-            _ = fixture.engine.react(to: "dm-1", with: "👍")
+            _ = fixture.engine.react(to: frameIdOf("dm-1"), with: "👍")
+            _ = fixture.engine.react(to: frameIdOf("dm-1"), with: "👍")
             fixture.engine.updateProfile(name: "Dana", status: "", openToChat: false)
             fixture.advance(MeshConfiguration().healMilliseconds)
         }
@@ -173,7 +178,7 @@ import Testing
 
         switchedOff.clock.advance(60_000)
         let prekey = try #require(PeerPrekey(verifying: try me.prekey(id: 1), signedBy: me.keys.bundle))
-        switchedOff.deliver(try android.resetDm(to: me, prekey: prekey, id: "android-reset", at: now + 60_000), from: alice)
+        switchedOff.deliver(try android.resetDm(to: me, prekey: prekey, id: frameIdOf("android-reset"), at: now + 60_000), from: alice)
         #expect(switchedOff.transport.written(.chat).count == 1, "no chat frame: nothing sealed again")
         #expect(switchedOff.ratchetRecords(of: alice) == RatchetPeerRecords(session: nil, localEpochs: [], recvEpochs: [], skippedKeys: []))
         #expect(switchedOff.engine.seals == RatchetSealCounts())

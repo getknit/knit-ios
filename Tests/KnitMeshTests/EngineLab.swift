@@ -174,7 +174,7 @@ final class EngineLab {
         let receiver = nodes[direction.to].fixture.engine
         switch item {
         case .frame(let written):
-            receiver.receive(InboundFrame(wire: written.wire, envelope: written.envelope, from: sender))
+            receiver.receiveAdmitted(InboundFrame(wire: written.wire, envelope: written.envelope, from: sender))
         case .digest(let ids):
             receiver.receiveDigest(ids, from: sender)
         }

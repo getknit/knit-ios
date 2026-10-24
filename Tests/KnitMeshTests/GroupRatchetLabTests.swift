@@ -51,9 +51,9 @@ import Testing
         let (lab, android) = try carried()
         let group = roster([me, alice], createdBy: alice)
         let author = GroupFormAuthor(android, in: group.id)
-        arrive(try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: "seed-1", sentAt: now), at: 1, in: lab)
-        arrive(try author.frame(group, id: "g-welcome", body: "welcome", sentAt: now + 1), at: 1, in: lab)
-        #expect(lab[0].stores.messages.message("g-welcome")?.body == "welcome")
+        arrive(try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: frameIdOf("seed-1"), sentAt: now), at: 1, in: lab)
+        arrive(try author.frame(group, id: frameIdOf("g-welcome"), body: "welcome", sentAt: now + 1), at: 1, in: lab)
+        #expect(lab[0].stores.messages.message(frameIdOf("g-welcome"))?.body == "welcome")
         #expect(lab[0].engine.dropped[.groupRatchetNoKey] == nil && lab[0].engine.dropped[.ratchetDuplicate] == nil)
         #expect(lab[0].engine.groupCounts.groupSeedsHeld == 1 && lab[0].engine.groupCounts.groupSeedsReplayed == 1)
         lab.advance(MeshConfiguration().reofferMilliseconds)
@@ -66,8 +66,9 @@ import Testing
         let (lab, android) = try carried(stores: stores, keychain: keychain, holding: true)
         let group = roster([me, alice], createdBy: alice)
         let author = GroupFormAuthor(android, in: group.id)
-        arrive(try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: "seed-1", sentAt: now, roster: group), at: 1, in: lab)
-        arrive(try author.frame(group, id: "g-welcome", body: "welcome", sentAt: now + 1), at: 1, in: lab)
+        arrive(
+            try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: frameIdOf("seed-1"), sentAt: now, roster: group), at: 1, in: lab)
+        arrive(try author.frame(group, id: frameIdOf("g-welcome"), body: "welcome", sentAt: now + 1), at: 1, in: lab)
         // Only the DMs, the seed among them, through: the group frame stays on the link.
         lab.release(from: 1, to: 0) { $0.filter { !isGroupFrame($0) } }
         #expect(lab[0].stores.groups.group(group.id) != nil, "pinned from the seed")
@@ -75,7 +76,7 @@ import Testing
         lab.replace(0, with: try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + 60_000, seed: 8))
         lab[1].clock.advance(60_000)
         lab.link(0, 1)
-        #expect(lab[0].stores.messages.message("g-welcome")?.body == "welcome", "back-filled, and opened on its first pass")
+        #expect(lab[0].stores.messages.message(frameIdOf("g-welcome"))?.body == "welcome", "back-filled, and opened on its first pass")
         #expect(lab[0].engine.dropped[.groupRatchetNoKey] == nil)
     }
 
@@ -91,11 +92,11 @@ import Testing
         let group = roster([alice, me, dave], createdBy: alice)
         let author = GroupFormAuthor(android, in: group.id)
         // Alice reaches only the first iPhone; the second hears her seed and her frame through its relay.
-        arrive(try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: "seed-me", sentAt: now), at: 0, in: lab)
-        arrive(try author.seedDm(to: dave, prekey: try lab[1].ourPrekey(), id: "seed-dave", sentAt: now), at: 0, in: lab)
-        arrive(try author.frame(group, id: "g-all", body: "all three", sentAt: now + 1), at: 0, in: lab)
-        #expect(lab[0].stores.messages.message("g-all")?.body == "all three")
-        #expect(lab[1].stores.messages.message("g-all")?.body == "all three", "across the relay")
+        arrive(try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: frameIdOf("seed-me"), sentAt: now), at: 0, in: lab)
+        arrive(try author.seedDm(to: dave, prekey: try lab[1].ourPrekey(), id: frameIdOf("seed-dave"), sentAt: now), at: 0, in: lab)
+        arrive(try author.frame(group, id: frameIdOf("g-all"), body: "all three", sentAt: now + 1), at: 0, in: lab)
+        #expect(lab[0].stores.messages.message(frameIdOf("g-all"))?.body == "all three")
+        #expect(lab[1].stores.messages.message(frameIdOf("g-all"))?.body == "all three", "across the relay")
         lab.advance(MeshConfiguration().reofferMilliseconds)
         #expect(Set(lab.liveIds(0)) == Set(lab.liveIds(1)))
     }
@@ -108,14 +109,15 @@ import Testing
         let author = GroupFormAuthor(android, in: group.id)
         for index in 1...3 {
             fixture.deliver(
-                try author.frame(group, id: "sealed-\(index)", body: "sealed \(index)", sentAt: now + Int64(index)), from: alice)
+                try author.frame(group, id: frameIdOf("sealed-\(index)"), body: "sealed \(index)", sentAt: now + Int64(index)), from: alice)
         }
         let requests = fixture.controls(to: android).filter { $0.ctl == MessageContent.Control.groupKeyRequest }
         #expect(requests.count == 1 && fixture.engine.groupCounts.groupKeyRequestsSent == 1, "the three ask once")
         // Android's answer re-seals its current seed (`redistributeGroupKey`); the iPhone's own answer is phase P6b's
         // (`GroupSendPairTests.aMemberThatMissedTheSeedAsksAndOurAnswerOpensEverything()`).
-        fixture.deliver(try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: "seed-answer", sentAt: now + 10), from: android)
-        #expect((1...3).map { fixture.stores.messages.message("sealed-\($0)")?.body } == ["sealed 1", "sealed 2", "sealed 3"])
+        fixture.deliver(
+            try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("seed-answer"), sentAt: now + 10), from: android)
+        #expect((1...3).map { fixture.stores.messages.message(frameIdOf("sealed-\($0)"))?.body } == ["sealed 1", "sealed 2", "sealed 3"])
         #expect(fixture.engine.groupCounts.groupKeyRequestsSent == 1)
     }
 
@@ -126,17 +128,17 @@ import Testing
         let group = fixture.holdGroup(with: [alice, carol])
         let author = GroupFormAuthor(android, in: group.id)
         let earlier = author.seed
-        let before = try author.frame(group, id: "g-before", body: "before the leave", sentAt: now)
+        let before = try author.frame(group, id: frameIdOf("g-before"), body: "before the leave", sentAt: now)
         author.rekey(at: now + 1)
-        let after = try author.frame(group, id: "g-after", body: "after the leave", sentAt: now + 2)
+        let after = try author.frame(group, id: frameIdOf("g-after"), body: "after the leave", sentAt: now + 2)
         let prekey = try fixture.ourPrekey()
-        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: "seed-2", sentAt: now + 2), from: android)
+        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: frameIdOf("seed-2"), sentAt: now + 2), from: android)
         let late = MessageContent(body: "", ctl: MessageContent.Control.groupKey, gk: GroupKeyPayload(groupId: group.id, keys: [earlier]))
-        fixture.deliver(try android.dm(late, to: me, prekey: prekey, id: "seed-1", sentAt: now + 3), from: android)
+        fixture.deliver(try android.dm(late, to: me, prekey: prekey, id: frameIdOf("seed-1"), sentAt: now + 3), from: android)
         fixture.deliver(after, from: alice)
         fixture.deliver(before, from: alice)
-        #expect(fixture.stores.messages.message("g-before")?.body == "before the leave")
-        #expect(fixture.stores.messages.message("g-after")?.body == "after the leave")
+        #expect(fixture.stores.messages.message(frameIdOf("g-before"))?.body == "before the leave")
+        #expect(fixture.stores.messages.message(frameIdOf("g-after"))?.body == "after the leave")
         #expect(fixture.engine.dropped[.groupRatchetAeadFail] == nil, "no seed was lost as stale")
     }
 
@@ -145,14 +147,15 @@ import Testing
         let group = lab[0].holdGroup(with: [alice])
         try lab[0].depart(alice, from: group, at: now + 10)
         let author = GroupFormAuthor(android, in: group.id)
-        arrive(try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: "seed-back", sentAt: now + 20, roster: group), at: 1, in: lab)
-        arrive(try author.frame(group, id: "g-back", body: "i am back", sentAt: now + 21), at: 1, in: lab)
+        let seed = try author.seedDm(to: me, prekey: try lab[0].ourPrekey(), id: frameIdOf("seed-back"), sentAt: now + 20, roster: group)
+        arrive(seed, at: 1, in: lab)
+        arrive(try author.frame(group, id: frameIdOf("g-back"), body: "i am back", sentAt: now + 21), at: 1, in: lab)
         lab.release(from: 1, to: 0) { $0.filter { !isGroupFrame($0) } }
         #expect(lab[0].roster(of: group).departed.isEmpty, "her own seed rejoined her")
         #expect(lab[0].engine.groupCounts.groupSeedsHeld == 0)
         lab.unlink(0, 1)
         lab.link(0, 1)
-        #expect(lab[0].stores.messages.message("g-back")?.body == "i am back", "back-filled, opened on its first pass")
+        #expect(lab[0].stores.messages.message(frameIdOf("g-back"))?.body == "i am back", "back-filled, opened on its first pass")
         #expect(lab[0].roster(of: group).departed.isEmpty)
     }
 }

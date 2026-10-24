@@ -33,7 +33,7 @@ import Testing
         #expect(enc.version == EncEnvelope.Version.ratchet, "every reset seals v2")
         #expect(reset.wire.relay && !reset.wire.sig.isEmpty, "signed once and flooded")
         let opened = try android.open(reset, from: me, now: fixture.clock.wallMilliseconds())
-        #expect(plaintext(opened) == RatchetSessions.resetPlaintext, #"the plaintext is {"body":"","ctl":1}"#)
+        #expect(plaintext(opened) == RatchetSessions.resetPlaintext, #"the plaintext is {"body":"",frameIdOf("ctl"):1}"#)
     }
 
     @Test func ourResetReachesAndroidAndItsNextDmConfirmsTheSession() throws {
@@ -48,9 +48,9 @@ import Testing
         #expect(theirs.confirmed && !theirs.weAreInitiator)
 
         fixture.clock.advance(Self.minute)
-        let reply = try android.dm("got it", to: me, prekey: try fixture.ourPrekey(), id: "after", sentAt: now + Self.minute)
+        let reply = try android.dm("got it", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("after"), sentAt: now + Self.minute)
         fixture.deliver(reply, from: android)
-        #expect(fixture.stores.messages.message("after")?.body == "got it")
+        #expect(fixture.stores.messages.message(frameIdOf("after"))?.body == "got it")
         let ours = try #require(fixture.ratchetRecords(of: alice).session)
         #expect(ours.confirmed && ours.weAreInitiator, "their answer confirms our init")
         #expect(rootHash(ours.root) == rootHash(theirs.root))
@@ -70,16 +70,16 @@ import Testing
         let android = try AndroidPeer(alice)
         try fixture.pin(android)
         let prekey = try fixture.ourPrekey()
-        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: "first", sentAt: now), from: android)
+        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: frameIdOf("first"), sentAt: now), from: android)
         let root = try #require(fixture.ratchetRecords(of: alice).session).root
-        let mark = try androidsReset(android, prekey: prekey, id: "mark", at: now + 1)
+        let mark = try androidsReset(android, prekey: prekey, id: frameIdOf("mark"), at: now + 1)
         let header = try #require(try ChatContent(decoding: mark.envelope.payload).enc?.ratchet)
         #expect(header.flags & RatchetHeader.resetFlag != 0 && header.initial != nil, "flagged, under the init it already sent")
         fixture.deliver(mark, from: android)
         #expect(fixture.ratchetRecords(of: alice).session?.root == root, "the same session")
         #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [2], "its chain advanced")
-        #expect(fixture.stores.messages.message("mark") == nil)
-        #expect(fixture.acknowledged(by: android) == ["first"], "a reset is machinery, never acknowledged")
+        #expect(fixture.stores.messages.message(frameIdOf("mark")) == nil)
+        #expect(fixture.acknowledged(by: android) == [frameIdOf("first")], "a reset is machinery, never acknowledged")
     }
 
     /// knit-next's `anInboundResetReplacesTheSessionAndTriggersTheUnackedReseal` (`InboundPipelineTest.kt:5310-5339`):
@@ -90,19 +90,20 @@ import Testing
         let android = try AndroidPeer(alice)
         try fixture.pin(android)
         let prekey = try fixture.ourPrekey()
-        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: "first", sentAt: now), from: android)
+        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: frameIdOf("first"), sentAt: now), from: android)
         let before = try #require(fixture.ratchetRecords(of: alice).session)
 
         fixture.clock.advance(Self.minute)
         let reborn = try AndroidPeer(alice)
-        fixture.deliver(try androidsReset(reborn, prekey: prekey, id: "reset", at: now + Self.minute), from: reborn)
+        fixture.deliver(try androidsReset(reborn, prekey: prekey, id: frameIdOf("reset"), at: now + Self.minute), from: reborn)
         let after = try #require(fixture.ratchetRecords(of: alice).session)
         #expect(after.root != before.root && after.establishedAt == now + Self.minute, "the flagged init replaced the session")
         #expect(fixture.engine.ratchet.floors(for: alice.nodeId).lastReplacementAt == now + Self.minute, "settled after its commit")
-        #expect(fixture.stores.messages.message("reset") == nil && fixture.acknowledged(by: android) == ["first"])
+        #expect(fixture.stores.messages.message(frameIdOf("reset")) == nil && fixture.acknowledged(by: android) == [frameIdOf("first")])
 
-        fixture.deliver(try reborn.dm("again", to: me, prekey: prekey, id: "second", sentAt: now + Self.minute + 1), from: reborn)
-        #expect(fixture.stores.messages.message("second")?.body == "again")
+        fixture.deliver(
+            try reborn.dm(frameIdOf("again"), to: me, prekey: prekey, id: frameIdOf("second"), sentAt: now + Self.minute + 1), from: reborn)
+        #expect(fixture.stores.messages.message(frameIdOf("second"))?.body == frameIdOf("again"))
         #expect(rootHash(fixture.ratchetRecords(of: alice).session?.root) == rootHash(reborn.session(with: me)?.root))
     }
 
@@ -116,10 +117,10 @@ import Testing
             return
         }
         let ourInit = try #require(fixture.resetsSent(to: alice).last)
-        let theirDM = try android.dm("hi", to: me, prekey: try fixture.ourPrekey(), id: "theirs", sentAt: now)
+        let theirDM = try android.dm("hi", to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("theirs"), sentAt: now)
         fixture.deliver(theirDM, from: android)
         _ = try android.open(ourInit, from: me, now: now)
-        #expect(fixture.stores.messages.message("theirs")?.body == "hi", "the race's other opener still reads")
+        #expect(fixture.stores.messages.message(frameIdOf("theirs"))?.body == "hi", "the race's other opener still reads")
         let ours = try #require(fixture.ratchetRecords(of: alice).session)
         let theirs = try #require(android.session(with: me))
         #expect(rootHash(ours.root) == rootHash(theirs.root), "the smaller node id's root, on both phones")
@@ -136,7 +137,7 @@ import Testing
         try first.pin(android)
         try resetReachesAndroid(first, android)
         let prekey = try first.ourPrekey()
-        first.deliver(try android.dm("before", to: me, prekey: prekey, id: "before", sentAt: now), from: android)
+        first.deliver(try android.dm(frameIdOf("before"), to: me, prekey: prekey, id: frameIdOf("before"), sentAt: now), from: android)
         #expect(first.ratchetRecords(of: alice).session?.confirmed == true)
 
         let reinstalled = try EngineFixture.ratcheting(me, keychain: keychain, wall: now + 2 * Self.minute)
@@ -144,7 +145,8 @@ import Testing
         reinstalled.transport.clear()
         for index in 0..<RatchetResetPolicy.distinctFrames {
             let stamp = now + 2 * Self.minute + Int64(index)
-            reinstalled.deliver(try android.dm("lost", to: me, prekey: prekey, id: "lost-\(index)", sentAt: stamp), from: android)
+            reinstalled.deliver(
+                try android.dm("lost", to: me, prekey: prekey, id: frameIdOf("lost-\(index)"), sentAt: stamp), from: android)
         }
         #expect(reinstalled.engine.dropped[.ratchetNoSession] == 3)
         let reset = try #require(reinstalled.resetsSent(to: alice).last)
@@ -152,8 +154,9 @@ import Testing
         #expect(plaintext(opened) == RatchetSessions.resetPlaintext, "Android adopts it")
 
         let stamp = now + 3 * Self.minute
-        reinstalled.deliver(try android.dm("again", to: me, prekey: prekey, id: "again", sentAt: stamp), from: android)
-        #expect(reinstalled.stores.messages.message("again")?.body == "again")
+        reinstalled.deliver(
+            try android.dm(frameIdOf("again"), to: me, prekey: prekey, id: frameIdOf("again"), sentAt: stamp), from: android)
+        #expect(reinstalled.stores.messages.message(frameIdOf("again"))?.body == frameIdOf("again"))
         #expect(rootHash(reinstalled.ratchetRecords(of: alice).session?.root) == rootHash(android.session(with: me)?.root))
     }
 
@@ -171,29 +174,30 @@ import Testing
         try first.pin(android)
         try resetReachesAndroid(first, android)
         let prekey = try first.ourPrekey()
-        first.deliver(try android.dm("before", to: me, prekey: prekey, id: "before", sentAt: now), from: android)
+        first.deliver(try android.dm(frameIdOf("before"), to: me, prekey: prekey, id: frameIdOf("before"), sentAt: now), from: android)
 
         let reinstalled = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + 2 * Self.minute)
         try reinstalled.pin(android)
         reinstalled.transport.clear()
         let stamp = now + 2 * Self.minute
         for index in 0..<RatchetResetPolicy.distinctFrames {
-            let lost = try android.dm("lost", to: me, prekey: prekey, id: "lost-\(index)", sentAt: stamp + Int64(index))
+            let lost = try android.dm("lost", to: me, prekey: prekey, id: frameIdOf("lost-\(index)"), sentAt: stamp + Int64(index))
             reinstalled.deliver(lost, from: android)
         }
-        #expect(reinstalled.stores.custody.contains("lost-0"), "the old seal, carried")
+        #expect(reinstalled.stores.custody.contains(frameIdOf("lost-0")), "the old seal, carried")
         let reset = try #require(reinstalled.resetsSent(to: alice).last)
         _ = try android.open(reset, from: me, now: stamp)
 
-        let reSeal = try android.dm(MessageContent(body: "lost"), to: me, prekey: prekey, id: "lost-0", sentAt: stamp, now: stamp + 1000)
+        let reSeal = try android.dm(
+            MessageContent(body: "lost"), to: me, prekey: prekey, id: frameIdOf("lost-0"), sentAt: stamp, now: stamp + 1000)
         refusing.refusesRows = true
         reinstalled.deliver(reSeal, from: android)
         refusing.refusesRows = false
         #expect(reinstalled.engine.dropped[.storeRefused] == 1)
 
         reinstalled.advance(MeshConfiguration().sweepMilliseconds)
-        #expect(reinstalled.stores.messages.message("lost-0")?.body == "lost")
-        #expect(reinstalled.acknowledged(by: android).filter { $0 == "lost-0" }.count == 1)
+        #expect(reinstalled.stores.messages.message(frameIdOf("lost-0"))?.body == "lost")
+        #expect(reinstalled.acknowledged(by: android).filter { $0 == frameIdOf("lost-0") }.count == 1)
         #expect(reinstalled.resetsSent(to: alice).count == 1)
     }
 
@@ -209,25 +213,25 @@ import Testing
         try off.pin(android)
         let newest = try #require(ring.newest)
         let prekey = try #require(PeerPrekey(verifying: newest.info, signedBy: me.keys.bundle))
-        off.deliver(try android.dm("while off", to: me, prekey: prekey, id: "while-off", sentAt: now), from: android)
+        off.deliver(try android.dm("while off", to: me, prekey: prekey, id: frameIdOf("while-off"), sentAt: now), from: android)
         #expect(off.engine.dropped[.cannotOpen] == 1)
 
         let dana = TestPeer(seed: 4)
         let stranger = try AndroidPeer(dana)
-        let orphan = try stranger.dm("who", to: me, prekey: prekey, id: "unpinned", sentAt: now)
+        let orphan = try stranger.dm("who", to: me, prekey: prekey, id: frameIdOf("unpinned"), sentAt: now)
         stores.custody.store(
             CarriedFrame(envelope: orphan.envelope, sig: orphan.wire.sig, signed: orphan.wire.signed), origin: .relayed, now: now)
         stores.peers.upsert(PeerRecord(nodeId: dana.nodeId, name: "", status: "", publicKey: "not a bundle", updatedAt: 1))
 
         let on = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain)
-        #expect(stores.messages.message("while-off")?.body == "while off")
-        #expect(receivedRecords(in: on.engine.drainEvents()).map(\.id) == ["while-off"])
-        #expect(on.acknowledged(by: android) == ["while-off"])
+        #expect(stores.messages.message(frameIdOf("while-off"))?.body == "while off")
+        #expect(receivedRecords(in: on.engine.drainEvents()).map(\.id) == [frameIdOf("while-off")])
+        #expect(on.acknowledged(by: android) == [frameIdOf("while-off")])
         #expect(on.engine.dropped[.noSenderKey] == 1, "a pin that cannot be read opens nothing")
 
         // A third start finds the reset marker spent: a duplicate, and nothing else.
-        let spent = try android.dm(
-            MessageContent(body: "", ctl: MessageContent.Control.sessionReset), to: me, prekey: prekey, id: "ctl", sentAt: now + 1)
+        let marker = MessageContent(body: "", ctl: MessageContent.Control.sessionReset)
+        let spent = try android.dm(marker, to: me, prekey: prekey, id: frameIdOf("ctl"), sentAt: now + 1)
         on.deliver(spent, from: android)
         let again = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain)
         #expect(again.engine.dropped[.ratchetDuplicate] == 1)

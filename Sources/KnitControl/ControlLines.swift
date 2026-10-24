@@ -170,6 +170,7 @@ internal enum ControlLines {
             "admitted": .int(Int64(counters.admitted)),
             "deduplicated": .int(Int64(counters.deduplicated)),
             "refused": .int(Int64(counters.refused)),
+            "nonCanonical": .int(Int64(counters.nonCanonical)),
             "relayed": .int(Int64(counters.relayed)),
             "suppressed": .int(Int64(counters.suppressed)),
             "handedOn": .int(Int64(counters.handedOn)),

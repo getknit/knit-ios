@@ -1,5 +1,6 @@
 import KnitCrypto
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -27,13 +28,13 @@ import Testing
         let fixture = EngineFixture(alice)
         fixture.stores.blobs.insert(photo, hash: photoHash, mime: "image/png", storedAt: EngineFixture.start)
         fixture.link(bob, carol)
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-1"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1")), from: bob)
         #expect(fixture.transport.files.count == 1)
         fixture.transport.queued = [(photoHash, bob.nodeId)]
         fixture.transport.inFlight = [(photoHash, bob.nodeId)]
         fixture.transport.clear()
-        fixture.deliver(cancel(from: carol, photoHash.string, id: "cancel-claimed"), from: bob)
-        fixture.deliver(cancel(from: bob, photoHash.string, id: "cancel-1"), from: bob)
+        fixture.deliver(cancel(from: carol, photoHash.string, id: frameIdOf("cancel-claimed")), from: bob)
+        fixture.deliver(cancel(from: bob, photoHash.string, id: frameIdOf("cancel-1")), from: bob)
         #expect(fixture.transport.withdrawn.map(\.to) == [bob.nodeId], "another sender's claim is not taken")
         #expect(fixture.engine.blobExchange.counts.cancelsTaken == 1)
         #expect(fixture.engine.dropped.isEmpty)
@@ -43,7 +44,7 @@ import Testing
             fixture.log.all.filter { $0.contains("blob cancel ←") } == [
                 "debug mesh blob cancel ← \(bob.nodeId) \(shown)…: queued copy dropped"
             ])
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-2"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-2")), from: bob)
         #expect(fixture.transport.files.count == 1, "inside the memo, but the withdrawal forgot it")
     }
 
@@ -51,11 +52,11 @@ import Testing
         let fixture = EngineFixture(alice)
         fixture.stores.blobs.insert(photo, hash: photoHash, mime: "image/png", storedAt: EngineFixture.start)
         fixture.link(bob)
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-1"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1")), from: bob)
         fixture.transport.clear()
-        fixture.deliver(cancel(from: bob, photoHash.string, id: "cancel-1"), from: bob)
-        fixture.deliver(cancel(from: bob, "not-a-hash", id: "cancel-2"), from: bob)
-        fixture.deliver(bob.unsigned(.blobCancel, payload: [0xFF], id: "cancel-bad"), from: bob)
+        fixture.deliver(cancel(from: bob, photoHash.string, id: frameIdOf("cancel-1")), from: bob)
+        fixture.deliver(cancel(from: bob, "not-a-hash", id: frameIdOf("cancel-2")), from: bob)
+        fixture.deliver(bob.unsigned(.blobCancel, payload: [0xFF], id: frameIdOf("cancel-bad")), from: bob)
         #expect(fixture.engine.blobExchange.counts.cancelsTaken == 0)
         #expect(fixture.engine.dropped[.undecodable] == 1)
         let shown = photoHash.string.prefix(BlobExchange.shownHashCharacters)
@@ -64,7 +65,7 @@ import Testing
                 "debug mesh blob cancel ← \(bob.nodeId) \(shown)…: nothing queued",
                 "debug mesh blob cancel ← \(bob.nodeId) not-a-ha…: nothing queued",
             ], "every one taken is logged, so a run can tell a late one from one that never came")
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: "breq-2"), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-2")), from: bob)
         #expect(fixture.transport.files.isEmpty, "a copy that streamed keeps its memo")
     }
 

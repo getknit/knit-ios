@@ -1,6 +1,7 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -187,7 +188,7 @@ import Testing
         carry(from: fixture, to: carols)
         carry(from: carols, to: fixture)
         #expect(fixture.stores.peers.profileFrame(of: bob.nodeId) == nil)
-        fixture.deliver(try carol.keyRequest(for: [bob.nodeId], id: "req-1"), from: carol)
+        fixture.deliver(try carol.keyRequest(for: [bob.nodeId], id: frameIdOf("req-1")), from: carol)
         #expect(fixture.transport.written(.profile).isEmpty, "nothing to serve yet")
         fixture.transport.clear()
         let between = try bob.profile(name: "Clear", version: 15, publishedAt: start, prekey: try bob.prekey(id: 2))
@@ -211,7 +212,7 @@ import Testing
         let written = from.transport.written.filter { $0.to == to.me.nodeId }
         from.transport.clear()
         for frame in written {
-            to.engine.receive(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: from.me.nodeId))
+            to.engine.receiveAdmitted(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: from.me.nodeId))
         }
     }
 

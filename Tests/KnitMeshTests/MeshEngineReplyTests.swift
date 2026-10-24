@@ -1,6 +1,7 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -44,9 +45,9 @@ import Testing
     /// Nothing checks the quote: the message it names is held nowhere here (`InboundPipeline.kt:2714`).
     @Test func aRoomReplyKeepsItsQuoteThoughNothingHereHoldsWhatItQuotes() throws {
         let fixture = try fixture()
-        let post = try bob.roomPost("", id: "r1", sentAt: start, content: ChatContent(body: "on my way", replyTo: ref))
+        let post = try bob.roomPost("", id: frameIdOf("r1"), sentAt: start, content: ChatContent(body: "on my way", replyTo: ref))
         fixture.deliver(post, from: bob)
-        let stored = try #require(fixture.stores.messages.message("r1"))
+        let stored = try #require(fixture.stores.messages.message(frameIdOf("r1")))
         #expect(stored.replyTo == quote)
         #expect(fixture.stores.messages.message(ref.messageId) == nil)
         #expect(announced(fixture.engine.drainEvents()).map(\.record.replyTo) == [quote])
@@ -55,27 +56,27 @@ import Testing
     @Test func aDMReplyKeepsTheQuoteFromInsideItsSeal() throws {
         let fixture = try fixture()
         let content = MessageContent(body: "on my way", replyTo: ref)
-        fixture.deliver(try bob.directMessage("", to: alice, id: "dm-1", sentAt: start, content: content), from: bob)
-        #expect(fixture.stores.messages.message("dm-1")?.replyTo == quote)
+        fixture.deliver(try bob.directMessage("", to: alice, id: frameIdOf("dm-1"), sentAt: start, content: content), from: bob)
+        #expect(fixture.stores.messages.message(frameIdOf("dm-1"))?.replyTo == quote)
     }
 
     /// `plaintextContent` takes the sealed content's quote, or none: a quote in the clear beside `enc` is no part of a
     /// sealed message (`InboundPipeline.kt:979-990`).
     @Test func aQuoteInTheClearBesideASealIsIgnored() throws {
         let fixture = try fixture()
-        let header = MessageCrypto.header(id: "dm-2", senderId: bob.nodeId.string, sentAt: start, thread: alice.nodeId.string)
+        let header = MessageCrypto.header(id: frameIdOf("dm-2"), senderId: bob.nodeId.string, sentAt: start, thread: alice.nodeId.string)
         let sealed = try #require(
             try MessageCrypto.seal(MessageContent(body: "hi").encoded, header: header, to: [alice.nodeId: alice.keys.bundle]))
         let envelope = RelayEnvelope(
             type: .chat,
-            id: "dm-2",
+            id: frameIdOf("dm-2"),
             senderId: bob.nodeId.string,
             sentAt: start,
             recipientId: alice.nodeId.string,
             payload: ChatContent(enc: sealed, replyTo: ref).encoded
         )
         fixture.deliver(try bob.signed(envelope), from: bob)
-        let stored = try #require(fixture.stores.messages.message("dm-2"))
+        let stored = try #require(fixture.stores.messages.message(frameIdOf("dm-2")))
         #expect(stored.body == "hi" && stored.replyTo == nil)
     }
 
@@ -83,8 +84,9 @@ import Testing
         let fixture = try fixture()
         let info = roster([bob, carol, alice], createdBy: bob)
         let content = MessageContent(body: "on my way", replyTo: ref)
-        fixture.deliver(try bob.groupMessage("", in: info, to: [alice, carol], id: "gm-1", sentAt: start, content: content), from: bob)
-        #expect(fixture.stores.messages.message("gm-1")?.replyTo == quote)
+        fixture.deliver(
+            try bob.groupMessage("", in: info, to: [alice, carol], id: frameIdOf("gm-1"), sentAt: start, content: content), from: bob)
+        #expect(fixture.stores.messages.message(frameIdOf("gm-1"))?.replyTo == quote)
     }
 
     /// A peer's frame bounds the name and the words no more than an attachment's text.
@@ -96,8 +98,9 @@ import Testing
             author: String(repeating: "n", count: 300),
             snippet: String(repeating: "w", count: 300)
         )
-        fixture.deliver(try bob.roomPost("", id: "r2", sentAt: start, content: ChatContent(body: "hm", replyTo: long)), from: bob)
-        let stored = try #require(fixture.stores.messages.message("r2")?.replyTo)
+        fixture.deliver(
+            try bob.roomPost("", id: frameIdOf("r2"), sentAt: start, content: ChatContent(body: "hm", replyTo: long)), from: bob)
+        let stored = try #require(fixture.stores.messages.message(frameIdOf("r2"))?.replyTo)
         #expect(stored.author.utf16.count == 256 && stored.snippet.utf16.count == 256)
         #expect(stored.messageId == ref.messageId && !stored.hasAttachment)
     }
@@ -108,13 +111,13 @@ import Testing
         let fixture = try fixture()
         let hash = String(repeating: "a", count: 64)
         let worded = ChatContent(attachmentHash: hash, attachmentMime: "image/jpeg", replyTo: ref)
-        fixture.deliver(try bob.roomPost("", id: "r3", sentAt: start, content: worded), from: bob)
-        #expect(fixture.stores.messages.message("r3")?.moderation == .waiting)
+        fixture.deliver(try bob.roomPost("", id: frameIdOf("r3"), sentAt: start, content: worded), from: bob)
+        #expect(fixture.stores.messages.message(frameIdOf("r3"))?.moderation == .waiting)
         var blank = ref
         blank.snippet = " "
         let wordless = ChatContent(attachmentHash: hash, attachmentMime: "image/jpeg", replyTo: blank)
-        fixture.deliver(try bob.roomPost("", id: "r4", sentAt: start + 1, content: wordless), from: bob)
-        #expect(fixture.stores.messages.message("r4")?.moderation == .clear)
+        fixture.deliver(try bob.roomPost("", id: frameIdOf("r4"), sentAt: start + 1, content: wordless), from: bob)
+        #expect(fixture.stores.messages.message(frameIdOf("r4"))?.moderation == .clear)
     }
 
     // MARK: Sending one

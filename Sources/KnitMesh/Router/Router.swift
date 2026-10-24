@@ -16,8 +16,9 @@ public struct Send: Sendable, Equatable {
 
 /// Floods frames through the mesh and ends each flood (`MeshRouter.kt`).
 ///
-/// A frame off a link is first ``admit(_:now:)``ted: metered if it is a room post, then checked against the seen
-/// set. The caller delivers a new frame locally, then hands it to ``relay(_:neighbors:jitter:now:)``.
+/// A frame off a link is first ``admit(_:now:)``ted: refused if its id is not the shape its type is minted with, metered
+/// if it is a room post, then checked against the seen set. The caller delivers a new frame locally, then hands it to
+/// ``relay(_:neighbors:jitter:now:)``.
 /// Rather than rebroadcasting at once, which storms a dense cluster, a relay waits a random 0–150 ms and is
 /// cancelled if meanwhile the frame is heard from two distinct neighbours: someone nearby already relayed it.
 /// When it fires (``fireDue(now:neighbors:)``) it goes to every neighbour the frame was not heard from, with only
@@ -49,6 +50,10 @@ public struct Router: Sendable {
         case duplicate
         /// A room post over the link's ingress budget: drop it, unmarked, so custody can bring it back later.
         case refused
+        /// An id that is not the shape its type is minted with (``FrameId/admits(_:)``): drop it unseen and unmetered.
+        /// Android refuses it at the same point (`MeshRouter.kt:96` at knit-next `a81f2050`, knit-next ADR 2026-10.9qr4),
+        /// so a copy this port kept would be re-served to every Android neighbour at every exchange.
+        case nonCanonical
     }
 
     /// What the router has done, for diagnostics and tests.
@@ -59,6 +64,8 @@ public struct Router: Sendable {
         public var deduplicated = 0
         /// Room posts refused by the ingress budget.
         public var refused = 0
+        /// Frames refused for an id not of their type's shape (Android's `DropReason.NONCANONICAL_ID`).
+        public var nonCanonical = 0
         /// Relays that fired, whether or not anyone was left to send to.
         public var relayed = 0
         /// Relays cancelled because two neighbours were heard relaying first.
@@ -111,7 +118,15 @@ public struct Router: Sendable {
     /// The ingress meter sits between the seen check and the seen insert, as in knit-next: a duplicate never
     /// costs a token, since it is evidence the frame is already spreading, and a refused post is never marked
     /// seen, so a later custody re-serve can still bring it in.
+    ///
+    /// Before both, the id's shape (`MeshRouter.handleInbound`, `MeshRouter.kt:96` at knit-next `a81f2050`): a twin
+    /// under `"\u{FEFF}" + X` is neither marked seen, so the real `X` after it is still new, nor metered, so it costs the
+    /// link no token an honest post would need, nor counted as overheard toward cancelling a relay.
     public mutating func admit(_ frame: InboundFrame, now: Int64) -> Admission {
+        guard FrameId.admits(frame.envelope) else {
+            counters.nonCanonical += 1
+            return .nonCanonical
+        }
         let id = frame.envelope.id
         if !seen.contains(id, now: now), IngressBudget<NodeId>.meters(frame.envelope), !budget.admit(link: frame.from, now: now) {
             counters.refused += 1

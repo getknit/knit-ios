@@ -1,5 +1,6 @@
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -21,9 +22,9 @@ extension MeshTests {
         await rig.mesh.start()
         await linkBob(rig)
         let profile = try bob.profile(publishedAt: EngineFixture.start)
-        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: profile.wire.encoded).encoded ?? []))
-        let cue = try bob.typing(id: "t-1")
-        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: cue.wire.encoded).encoded ?? []))
+        await rig.mesh.process(.received(channel, LinkRig.admittedRecord(profile)))
+        let cue = try bob.typing(id: frameIdOf("t-1"))
+        await rig.mesh.process(.received(channel, LinkRig.admittedRecord(cue)))
         #expect(await nextTyping(in: &events) == [Conversations.nearby: [bob.nodeId]])
         #expect(await rig.mesh.typing == [Conversations.nearby: [bob.nodeId]])
         // Whatever deadline the timer sleeps on, the first to wake finds the cue due.
@@ -39,9 +40,9 @@ extension MeshTests {
         #expect(await rig.mesh.noteTyping(in: Conversations.nearby))
         #expect(rig.radio.frames(on: channel).compactMap { try? RelayEnvelope(decoding: $0.signed).type }.contains(.typing))
         let profile = try bob.profile(publishedAt: EngineFixture.start)
-        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: profile.wire.encoded).encoded ?? []))
-        let cue = try bob.typing(id: "t-1")
-        await rig.mesh.process(.received(channel, LinkRecord(.frame, payload: cue.wire.encoded).encoded ?? []))
+        await rig.mesh.process(.received(channel, LinkRig.admittedRecord(profile)))
+        let cue = try bob.typing(id: frameIdOf("t-1"))
+        await rig.mesh.process(.received(channel, LinkRig.admittedRecord(cue)))
         #expect(await nextTyping(in: &events) == [Conversations.nearby: [bob.nodeId]])
         await rig.mesh.stop()
         #expect(await nextTyping(in: &events)?.isEmpty == true)

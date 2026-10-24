@@ -30,14 +30,14 @@ import Testing
         let author = GroupFormAuthor(android, in: group.id)
         let prekey = try fixture.ourPrekey()
         // A DM before the seed: the first sight's replay meets both, oldest first, and the DM stops at its row.
-        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: "dm-1", sentAt: now - 1), from: android)
-        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: "seed-1", sentAt: now), from: android)
+        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: frameIdOf("dm-1"), sentAt: now - 1), from: android)
+        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: frameIdOf("seed-1"), sentAt: now), from: android)
         #expect(fixture.engine.groupCounts.groupSeedsHeld == 1)
         let restarted = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + 60_000, seed: 8)
         #expect(restarted.engine.pendingGroupKeys.parked.isEmpty && restarted.recvChains(group.id, from: alice).isEmpty)
-        restarted.deliver(try author.frame(group, id: "g-first", body: "after the restart", sentAt: now + 60_000), from: alice)
+        restarted.deliver(try author.frame(group, id: frameIdOf("g-first"), body: "after the restart", sentAt: now + 60_000), from: alice)
         #expect(restarted.recvChains(group.id, from: alice).count == 1, "the first sight's replay opened the seed")
-        #expect(restarted.stores.messages.message("g-first")?.body == "after the restart")
+        #expect(restarted.stores.messages.message(frameIdOf("g-first"))?.body == "after the restart")
         #expect(restarted.engine.dropped[.groupRatchetNoKey] == nil && restarted.engine.dropped[.ratchetDuplicate] == nil)
         #expect(restarted.controls(to: android).contains { $0.ctl == MessageContent.Control.groupKeyAck })
     }
@@ -54,15 +54,15 @@ import Testing
         try fixture.pin(android)
         let group = roster([me, alice], createdBy: alice)
         let author = GroupFormAuthor(android, in: group.id)
-        fixture.deliver(try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: "seed-1", sentAt: now), from: android)
+        fixture.deliver(try author.seedDm(to: me, prekey: try fixture.ourPrekey(), id: frameIdOf("seed-1"), sentAt: now), from: android)
         #expect(fixture.engine.groupCounts.groupSeedsHeld == 1)
         #expect(stores.ratchet.records(of: alice.nodeId).session == nil, "the abandoned open founded nothing")
         let restarted = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + 60_000, seed: 8)
         #expect(stores.ratchet.records(of: alice.nodeId).session == nil, "the start's replay left the seed unopened")
-        restarted.deliver(try author.frame(group, id: "g-first", body: "first contact", sentAt: now + 60_000), from: alice)
+        restarted.deliver(try author.frame(group, id: frameIdOf("g-first"), body: "first contact", sentAt: now + 60_000), from: alice)
         #expect(stores.ratchet.records(of: alice.nodeId).session != nil, "the init founded the session")
         #expect(restarted.recvChains(group.id, from: alice).count == 1, "the first sight's replay opened the seed")
-        #expect(restarted.stores.messages.message("g-first")?.body == "first contact")
+        #expect(restarted.stores.messages.message(frameIdOf("g-first"))?.body == "first contact")
         #expect(restarted.controls(to: android).contains { $0.ctl == MessageContent.Control.groupKeyAck })
     }
 
@@ -80,19 +80,20 @@ import Testing
         let group = fixture.holdGroup(with: [alice])
         let author = GroupFormAuthor(android, in: group.id)
         let prekey = try fixture.ourPrekey()
-        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: "dm-1", sentAt: now - 1), from: android)
+        fixture.deliver(try android.dm("hello", to: me, prekey: prekey, id: frameIdOf("dm-1"), sentAt: now - 1), from: android)
         refusing.refusesWrites = true
-        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: "seed-1", sentAt: now), from: android)
+        fixture.deliver(try author.seedDm(to: me, prekey: prekey, id: frameIdOf("seed-1"), sentAt: now), from: android)
         refusing.refusesWrites = false
         #expect(fixture.engine.dropped[.storeRefused] == 1)
         let frames = ["g-1", "g-2", "g-3"]
         for (offset, id) in frames.enumerated() {
-            fixture.deliver(try author.frame(group, id: id, body: id, sentAt: now + 1 + Int64(offset)), from: alice)
+            fixture.deliver(try author.frame(group, id: frameIdOf(id), body: id, sentAt: now + 1 + Int64(offset)), from: alice)
         }
         #expect(fixture.engine.dropped[.groupRatchetNoKey] == 3)
         let restarted = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + 60_000, seed: 8)
         #expect(restarted.recvChains(group.id, from: alice).count == 1, "the DM replay adopted the seed")
-        #expect(frames.allSatisfy { restarted.stores.messages.message($0)?.body == $0 }, "and its instant replay opened every frame")
+        #expect(
+            frames.allSatisfy { restarted.stores.messages.message(frameIdOf($0))?.body == $0 }, "and its instant replay opened every frame")
         #expect(restarted.engine.dropped[.groupRatchetNoKey] == nil, "none counted keyless again")
         #expect(!restarted.controls(to: android).contains { $0.ctl == MessageContent.Control.groupKeyRequest }, "nothing asked")
         #expect(restarted.controls(to: android).contains { $0.ctl == MessageContent.Control.groupKeyAck })

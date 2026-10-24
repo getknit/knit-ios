@@ -1,6 +1,7 @@
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -29,13 +30,28 @@ import Testing
         fixture.advance(1000)
         fixture.transport.clear()
         _ = fixture.engine.drainEvents()
-        let future = RelayEnvelope(type: FrameType(rawValue: "future"), id: "future-1", senderId: bob.nodeId.string, payload: [0xA0])
+        let future = RelayEnvelope(
+            type: FrameType(rawValue: "future"), id: frameIdOf("future-1"), senderId: bob.nodeId.string, payload: [0xA0])
         fixture.deliver(try bob.signed(future), from: bob)
-        #expect(!fixture.stores.custody.contains("future-1"))
+        #expect(!fixture.stores.custody.contains(frameIdOf("future-1")))
         #expect(fixture.engine.drainEvents().isEmpty)
         #expect(fixture.engine.dropped.isEmpty)
         fixture.advance(1000)
         #expect(fixture.transport.written(FrameType(rawValue: "future")).map(\.to) == [carol.nodeId])
+    }
+
+    @Test func aFrameOfATypeThisBuildHasNeverHeardOfIsStillHeldToTheMintedIdShape() throws {
+        // `FrameId.admits` (`FrameId.kt:72` at knit-next `a81f2050`): an unknown type is held to the minted shape, so a newer
+        // build's type relays only under the id every build mints.
+        let fixture = EngineFixture(alice)
+        fixture.link(bob, carol)
+        try fixture.pin(bob)
+        fixture.advance(1000)
+        fixture.transport.clear()
+        let future = RelayEnvelope(type: FrameType(rawValue: "future"), id: "future-1", senderId: bob.nodeId.string, payload: [0xA0])
+        fixture.deliverRefused(try bob.signed(future), from: bob)
+        fixture.advance(1000)
+        #expect(fixture.transport.written.isEmpty, "relayed nowhere")
     }
 
     @Test func aSealedRoomPostCannotBeOpened() throws {
@@ -44,7 +60,7 @@ import Testing
         let sealed = EncEnvelope(nonce: Array(repeating: 1, count: 12), ct: Array(repeating: 2, count: 32), keys: [])
         let envelope = RelayEnvelope(
             type: .chat,
-            id: "room-sealed",
+            id: frameIdOf("room-sealed"),
             senderId: bob.nodeId.string,
             sentAt: EngineFixture.start,
             payload: ChatContent(enc: sealed).encoded
@@ -57,7 +73,7 @@ import Testing
         let fixture = EngineFixture(alice)
         try fixture.pin(bob)
         _ = fixture.engine.drainEvents()
-        let forCarol = try bob.directMessage("Not yours", to: carol, id: "dm-x", sentAt: EngineFixture.start)
+        let forCarol = try bob.directMessage("Not yours", to: carol, id: frameIdOf("dm-x"), sentAt: EngineFixture.start)
         var envelope = forCarol.envelope
         envelope.recipientId = alice.nodeId.string
         fixture.deliver(try bob.signed(envelope), from: bob)
@@ -68,8 +84,9 @@ import Testing
     @Test func receiptsAndKeyRequestsThatDoNotDecodeAreDropped() throws {
         let fixture = EngineFixture(alice)
         try fixture.pin(bob)
-        let receipt = RelayEnvelope(type: .receipt, id: "r-bad", senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: [0xFF])
-        let request = RelayEnvelope(type: .keyRequest, id: "k-bad", senderId: bob.nodeId.string, payload: [0xFF])
+        let receipt = RelayEnvelope(
+            type: .receipt, id: frameIdOf("r-bad"), senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: [0xFF])
+        let request = RelayEnvelope(type: .keyRequest, id: frameIdOf("k-bad"), senderId: bob.nodeId.string, payload: [0xFF])
         fixture.deliver(try bob.signed(receipt), from: bob)
         fixture.deliver(try bob.signed(request, relay: false), from: bob)
         #expect(fixture.engine.dropped[.undecodable] == 2)
@@ -112,7 +129,7 @@ import Testing
     @Test func theLogSaysWhatHappened() throws {
         let fixture = EngineFixture(alice)
         fixture.link(bob)
-        var post = try carol.roomPost("Unknown sender", id: "post-1", sentAt: EngineFixture.start)
+        var post = try carol.roomPost("Unknown sender", id: frameIdOf("post-1"), sentAt: EngineFixture.start)
         post.wire.sig[0] ^= 1
         fixture.deliver(post, from: bob)
         fixture.transport.neighbors.removeAll()
@@ -120,7 +137,7 @@ import Testing
         let lines = fixture.log.all
         #expect(lines.contains("info mesh link up \(bob.nodeId)"))
         #expect(lines.contains("info mesh link down \(bob.nodeId)"))
-        #expect(lines.contains("debug mesh drop chat post-1 from \(carol.nodeId): noSenderKey"))
+        #expect(lines.contains("debug mesh drop chat \(frameIdOf("post-1")) from \(carol.nodeId): noSenderKey"))
     }
 
     @Test func aPinChangeIsLoggedAsAWarning() throws {

@@ -96,12 +96,14 @@ import Testing
     }
 
     /// `aTickAckingANonCanonicalIdToAV3AuthorFallsBackToV2` (`MeshManagerTest.kt:2056-2069`): the compact codec cannot carry
-    /// the id, so the tick goes v2, its nonce carried, and signed like every tick of ours.
+    /// the id, so the tick goes v2, its nonce carried, and signed like every tick of ours. The router refuses such an id at
+    /// the door (knit-next ADR 2026-10.9qr4), so the post is reached past the router, as a custody row stored before the
+    /// gate still carries one.
     @Test func aTickAckingANonCanonicalIdToAV3AuthorFallsBackToV2() throws {
         let (fixture, android) = try rig()
         fixture.link(bob)
         fixture.transport.clear()
-        fixture.deliver(try roomPost("not-a-frame-id"), from: bob)
+        fixture.deliverPastRouter(try roomPost("not-a-frame-id"), from: bob)
         let tick = try #require(sealedTicks(fixture).first)
         let enc = try envelope(of: tick)
         #expect(enc.version == EncEnvelope.Version.ratchet && enc.nonce.count == 12)

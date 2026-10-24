@@ -35,7 +35,7 @@ import Testing
         let before = try #require(author.groupFrames(in: group.id).last)
         #expect(carolReader.body(of: before, from: me) == "before", "Carol read the group while in it")
         refusing.refusesSaves = true
-        author.deliver(try carol.groupLeave(group.id, id: "carol-leaves", sentAt: now + 1), from: carol)
+        author.deliver(try carol.groupLeave(group.id, id: frameIdOf("carol-leaves"), sentAt: now + 1), from: carol)
         refusing.refusesSaves = false
         #expect(author.engine.dropped[.storeRefused] == 1)
         let restarted = try EngineFixture.ratcheting(me, stores: stores, keychain: keychain, wall: now + 60_000, seed: 82)
