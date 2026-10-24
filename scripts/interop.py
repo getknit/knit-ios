@@ -1251,9 +1251,10 @@ class KnitFront:
         return {"macSeconds": round(time.monotonic() - started, 1)}
 
 
-# The eviction score each link carries on the phone (knit-next gatt-only-link-score): the last field of a debug build's
-# `bt state` line, `linkScores=<node id>:<dBm>,…`, logged each minute. An eviction logs `bt evicting <id> (score=<dBm>
-# doorbell=<bool>)` too.
+# The eviction score each link carries on the phone (knit-next gatt-only-link-score): a debug build's `bt state` line,
+# logged each minute, carries `linkScores=<node id>:<dBm>,…`. Since knit-next `d7da26f6` it is followed by
+# `near=[<node id>, …]`, whose bare ids the `id:score` pattern in `_scores` never matches. An eviction logs
+# `bt evicting <id> (score=<dBm> doorbell=<bool>)` too.
 SCORE_LINE = " linkScores="
 # The floor a link scores when Android cannot sight its peer (UNSIGHTED_LINK_RSSI), and the score of one that left
 # presence (ABSENT_LINK_RSSI), which a backgrounded iPhone had before the fix.

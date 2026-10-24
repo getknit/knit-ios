@@ -79,7 +79,7 @@ bytes. The tags:
 | 2 | `FILE_HEADER` | UTF-8 JSON `{"kind":"AVATAR"\|"ATTACHMENT","key":"<64 lowercase hex>","mime":"…","size":<bytes>}`; `size` since knit-next ADR 2026-10.y9qh |
 | 3 | `FILE_CHUNK` | raw bytes, 2 to 16 KiB from Android (2 KiB on a Coded link); a file over 8 MiB + 64 KiB is aborted |
 | 4 | `FILE_END` | empty |
-| 5 | `KEEPALIVE` | empty; Android never sends one and ignores it on receipt |
+| 5 | `KEEPALIVE` | empty; since knit-next ADR 2026-10.697m, Android writes one at link-up on a link whose HELLO lacks `CAP_DOORBELL`, answers one there, and probes with it. On a doorbell link it sends none and ignores one. This port never writes one (`interop.md`) |
 | 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|2fff`; the caps may carry `CAP_DOORBELL` (`0x1000`) and `CAP_BLOB_HAVE` (`0x2000`), which no advert can |
 | 7 | `DIGEST` | UTF-8 JSON `{"ids":[…]}` |
 
@@ -135,6 +135,13 @@ that has sighted it refuses, and the phone counts a `HANDSHAKE` failure. One tha
 phone, admits it. This port's `admit()` already gives both verdicts (ADR 2026-09.6es2), so nothing here
 mirrors #103.
 
+Since knit-next `99fbcad1` (#199, an amendment to its ADR 2026-10.9qr4), Android refuses a HELLO whose node id is not
+canonical: 26 lowercase base32 characters that round-trip through 16 bytes (`Protocol.kt:210-212`). On its own dial it
+closes the link and counts a `HANDSHAKE` failure, which bumps the backoff. As responder it just closes. This port
+already refuses the same ids the same way, through `NodeId(_:)`: the dialer retires with a backoff
+(`LinkManager+Admission.swift:188`), and the responder retires without one (`:202`). It only ever sends
+`localId.string`, which is canonical.
+
 ### After link-up
 
 Android runs these at link-up, then every 60 s for each linked neighbour (`MeshManager.kt:2230`):
@@ -172,7 +179,10 @@ radio.
   Android never sighted does. That ranks it with an unsighted link, and a candidate 8 dB stronger than the floor
   still replaces it at the budget.
 - **Backoff** (`ConnectBackoffPolicy`): 10 s × 2^(streak − 1), capped at 180 s, ±20 % jitter. A link that
-  ends at EOF also bumps the streak, and success resets it.
+  ends at EOF also bumps the streak, and success resets it. Since knit-next `9a68b225` (#205, `LinkDownOnce.kt`) a
+  link's end bumps it once. The read and write loops both used to report it, so a single drop bumped the streak
+  twice and the first redial came after about 20 s instead of 10. A link Android closes as silent (697m, below)
+  never bumps it. This port's `retire` already acts once per link (`LinkManager+Channels.swift:9-11`).
 - **Connect:** a 12 s watchdog around each dial (`CONNECT_TIMEOUT_MS`). No MTU request and no bonding.
   - The Coded PHY (debug builds, and release since knit-next `713b29d6`) works only with a peer it hears on Coded. It dials that peer's Coded
     address with a 25 s watchdog, and switches the link's PHY over GATT. An iPhone is never heard on Coded, so its
@@ -183,6 +193,23 @@ radio.
     or up to 30 while Knit is open, which also hunts on its own (knit-next ADR 2026-10.yvn6, amended `ab0d17aa`). Only
     a peer heard on Coded is hunted, so never an iPhone; a hunting window that is Coded-only is deaf to an iPhone's
     advert.
+  - Since knit-next `752922da` (its ADR 2026-10.yvn6, amended 2026-10-20), on in release:
+    - A 1M hit weaker than −90 dBm no longer resets a peer's 1M mark, so a peer that Coded hears well becomes
+      `codedOnly` even while its faint 1M advert still gets through (`BlePresenceTracker.kt:183-186`).
+    - A cold sighting starts a bounded hunt: an unlinked peer heard on Coded alone, with no drop behind it, at −90 or
+      better. The larger id hunts, and only if promotion would dial the peer. The smaller id puts out a fast Coded
+      advert instead (`CodedPhyPolicy.coldHunt`). Each peer gets one per 30 min, and each kind gets 3 min per 30 min
+      across the phone (`ColdSightings.kt`).
+    - A hunt shortens the scan gap to 12 s and makes every other window Coded-only.
+
+    An iPhone is never heard on Coded, so it is never `codedOnly`, never far and never hunted, and it never gets a
+    PHY handle, so `ba14a876`'s step-up backoff never acts on its links. Three costs reach an iPhone anyway, none
+    of them measured yet (roadmap):
+    - Any unlinked far peer turns on Coded-only windows, even on a phone that holds an iPhone link
+      (`ScanPlan.codedWindows`), and those windows are deaf to the iPhone's advert.
+    - A peer ripened by a hunt can shed an out-of-presence iPhone link at the budget. That link scores the −90 floor,
+      so a candidate 8 dB stronger beats it, now on a phone with its screen off too.
+    - A failed Coded dial holds the scan for up to 25 s (`CODED_CONNECT_TIMEOUT_MS`), against 12 s for a 1M dial.
 
 ## What this means for an iPhone
 
@@ -240,6 +267,18 @@ radio.
 - **Stale links block reconnects** until Android's link-supervision timeout notices the drop, because the
   responder refuses a peer it still thinks is linked. A1 lets an unsighted dialer replace its own stale
   link.
+- **Android closes a silent link itself, but never an iPhone's** (knit-next ADR 2026-10.697m, `f8b5d544`,
+  `b49f7f13`, `ec37724e`; `LinkSilence.kt`). On a link whose HELLO lacks `CAP_DOORBELL`, each side writes an
+  announce `KEEPALIVE` at link-up, and one received marks the link as answering. With no byte in for 90 s, the first
+  probe rides the next digest, frame or file this side queues, or goes alone once it has waited 120 s of uptime for
+  one. A second probe follows 30 s after the first, and 30 s after that, with still no byte in, the link closes: about
+  150 to 210 s after the last byte. Android also closes any such link whose write has stalled for 120 s. Toward a peer
+  that never answered, it also closes a link that has been quiet for 90 s once its PHY handle's GATT client has seen
+  the connection end. A link whose HELLO carries the bit is exempt from all of it (`LinkSilence.kt:39`), because iOS suspends Knit
+  with its link up. That covers every CoreBluetooth link. The Linux peer's `android` profile lacks the bit, so Android
+  announces to it, and because it never answers, Android never probes it. Only the write stall applies there. The
+  iPhone's own links still last until the supervision timeout: Android would not answer an iPhone's probe, so this
+  port has no silent-link rule (ADR 2026-09.6es2).
 - **Nothing is encrypted at this layer.** Profiles, room posts and HELLOs are plaintext on the air, and DMs
   carry their own end-to-end encryption.
 

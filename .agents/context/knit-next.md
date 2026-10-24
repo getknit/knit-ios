@@ -130,8 +130,9 @@ Kotlin wins.
       - dials to a peer's Coded address;
       - a GATT client that steps a link between PHYs.
 
-      It is dark in release (`BLE_CODED_PHY`) and touches only peers heard on Coded, which an iPhone never is.
-      Nothing to mirror.
+      It was dark in release then (`BLE_CODED_PHY`, on since `713b29d6`, below) and touches only peers heard on
+      Coded, which an iPhone never is. Nothing to mirror. Its later, more aggressive form is under "Mirrored ahead of
+      the pin".
     - **Relinking** (`17dc62ea`, knit-next ADRs 2026-10.ryak and 2026-10.pj9w; `5e9f267d`, ADR 2026-09.w3xk):
       - the presence advert runs at full power;
       - the connect loop wakes when a candidate's dwell ends, and its waits run on the elapsed clock;
@@ -325,6 +326,34 @@ Kotlin wins.
       `app.getknit.knit.text.ArtTextSemanticsTest` walks the BMP on API 33, 34, 36 and 37, and
       `TextLimits.isKotlinWhitespace` and `isJavaRegexWhitespace` pin its two lists; U+180E is in neither. No Kotlin product code moved, so there is
       nothing to check when the pin passes it but that the test still stands.
+    - knit-next's dead-link, canonical-id and Coded commits of 2026-10-14 to 2026-10-20, read on 2026-10-23 at its
+      `main` `85cf0baa`. No later commit touches their Bluetooth files. No Swift behaviour moves here:
+      - **A link this phone can show is dead goes down** (`f8b5d544`, `b49f7f13`, `ec37724e`; knit-next ADR
+        2026-10.697m, #203). An empty `KEEPALIVE` is now an announce, a probe and an answer, and Android closes a
+        silent link about 150 to 210 s after the last byte in (`LinkSilence.kt`, `ble-transport.md`). A link whose
+        HELLO carries `CAP_DOORBELL` is exempt (`LinkSilence.kt:39,146,158`, `BluetoothMeshTransport.kt:2639`), and
+        every CoreBluetooth HELLO carries the bit. The ADR calls its knit-ios half "a notice, not code". This port
+        takes it as `interop.md`'s rule never to write a keepalive, `LinkRecord.Tag.keepalive`'s comment,
+        `LinkAdmissionTests.aKeepaliveIsNeverWrittenNorAnsweredDoorbellOrNot` and an amendment to ADR 2026-09.6es2.
+        The Linux peer's `android` profile, whose HELLO lacks the bit, gets Android's announce and never answers, so
+        Android never probes it.
+      - **One redial bump per link end** (`9a68b225`, #205, `LinkDownOnce.kt`): Android's first redial now comes at
+        about 10 s. This port's `retire` already acts once per link.
+      - **A link's node id is canonical** (`99fbcad1`, #199, the 2026-10-19 amendment to knit-next ADR 2026-10.9qr4):
+        `Protocol.parse` refuses a HELLO whose node id does not round-trip through 16 bytes. This port refuses the
+        same ids at `admit` already (`ble-transport.md`, "The handshake").
+      - **A frame's id has the shape its type is minted with** (`a81f2050`, #178, knit-next ADR 2026-10.9qr4). Its router
+        door is owed here as knit-ios #4, still open. This port mints only admitted shapes, but it custodies and
+        re-serves a crafted id that Android drops at every exchange.
+      - **The Coded PHY, more aggressive** (`ba14a876`, #169; the Bluetooth parts of `d7da26f6`; `752922da`, knit-next
+        ADR 2026-10.yvn6). The step-up backs off after flaps, a 1M hit weaker than −90 no longer blocks `codedOnly`,
+        and a cold sighting starts a bounded hunt. All of it is on in release. An iPhone is never heard on Coded, so
+        there is nothing to mirror. Three indirect costs to an iPhone are listed in `ble-transport.md` and wait on a
+        trial (roadmap). `d7da26f6` also appends `near=[…]` to `bt state` after `linkScores=`, and `interop.py`'s
+        pattern ignores it. Its Wi-Fi Aware half is Android's alone.
+
+      When the pin passes these, check that `LinkSilence`'s exemption still reads the HELLO's `CAP_DOORBELL`, and that
+      `FrameId.admits` agrees with #4's tests once #4 lands.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5f521cb9`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

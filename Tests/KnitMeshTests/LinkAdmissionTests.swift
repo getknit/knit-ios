@@ -171,6 +171,33 @@ import Testing
         #expect(rig.links.neighbors.count == 1, "the link stays up")
     }
 
+    @Test(arguments: [true, false])
+    func aKeepaliveIsNeverWrittenNorAnsweredDoorbellOrNot(servesDoorbell: Bool) throws {
+        // One keepalive from us and Android closes the link on its unanswered probes (knit-next ADR 2026-10.697m,
+        // `LinkSilence.kt:145-166`).
+        let rig = LinkRig(local: high, servesDoorbell: servesDoorbell)
+        _ = rig.accept(low, on: ChannelID(100))
+        let dialed = try rig.link(middle)
+        let channels = [ChannelID(100), dialed]
+        #expect(rig.links.neighbors.count == 2)
+        let before = channels.map { rig.radio.records(on: $0) }
+        let keepalive = try #require(LinkRecord(.keepalive).encoded)
+        #expect(keepalive == [5, 0, 0, 0, 0])
+        for channel in channels {
+            #expect(rig.handle(.received(channel, keepalive)).isEmpty)
+            #expect(rig.handle(.received(channel, keepalive + keepalive)).isEmpty)
+        }
+        #expect(channels.map { rig.radio.records(on: $0) } == before, "nothing answers a keepalive")
+        #expect(rig.radio.closed.isEmpty)
+        #expect(rig.links.neighbors.count == 2, "the links stay up")
+        // Past Android's probe and close (90 s, then 150-210 s): no timer writes one either.
+        rig.run(until: rig.clock.monotonicMilliseconds() + 240_000)
+        #expect(rig.links.neighbors.count == 2, "both links lived through the run, so a timer had its chance")
+        #expect(rig.radio.closed.isEmpty)
+        let written = (channels + rig.radio.dials.map(\.channel)).flatMap { rig.radio.records(on: $0) }
+        #expect(!written.contains { $0.tag == .keepalive })
+    }
+
     @Test func anUnknownRecordTagDropsTheLinkAsAndroidDoes() {
         let rig = LinkRig(local: high)
         _ = rig.accept(low, on: ChannelID(100))

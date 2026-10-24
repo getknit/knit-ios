@@ -571,6 +571,18 @@ explicit direction.** Update this file in the change that ships an item.
   (`.agents/context/linux-peer.md`, "What the put-back race showed"). Still owed: knit-next's push, and the walk
   again with Wi-Fi Aware off on the Pixels, checking that the snoop shows the 5 s update after `bt doorbell found`
   and none back to 720 ms, and comparing the ranges.
+- **What Android's more aggressive Coded PHY costs an iPhone** (knit-next `752922da`, its ADR 2026-10.yvn6 amended
+  2026-10-20; read 2026-10-23, `.agents/context/knit-next.md`). An iPhone is never heard on Coded, so the change never
+  acts on an iPhone's link directly, but three costs reach one, all unmeasured (`.agents/context/ble-transport.md`, "Connect"):
+  - Coded-only scan windows deaf to the iPhone's advert, even while Android holds its link.
+  - A peer ripened by a cold hunt can shed an out-of-presence iPhone link at the budget, now with the screen off too.
+  - A failed Coded dial holds the scan for 25 s.
+
+  Owed before any Track A ask: a trial with two Coded-capable Pixels and the iPhone, at the 6-link budget or with
+  the bridge's `BLECAP` lowered. The trial reads `interop.py android-keeps-iphone`'s `bt evicting … doorbell=true` lines
+  and the iPhone's sighting gaps. Raise a Track A item only if the iPhone loses its link or its sighting. The candidate
+  asks: a doorbell link is never the weakest for a cold hunt's promotion, and a phone that holds one keeps its 1M
+  windows. The Linux peer cannot stand in for the Coded peer, since it airs nothing on Coded.
 - **Two iPhones both ways:** an iPhone rings only the peers it dialed, so of two iPhones the one with the smaller id
   cannot wake the other. A second GATT connection toward its dialer would let it; nothing needs it before two
   iPhones are on hand.

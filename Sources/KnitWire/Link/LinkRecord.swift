@@ -10,7 +10,9 @@ public struct LinkRecord: Sendable, Equatable {
         case fileChunk = 3
         /// The end of a file.
         case fileEnd = 4
-        /// A keepalive; Android never sends one and ignores it.
+        /// A keepalive. Android writes one at link-up on a link whose HELLO lacks `CAP_DOORBELL`, and answers one there.
+        /// It never does either on a doorbell link (knit-next ADR 2026-10.697m). This port never writes one: after a
+        /// single keepalive, Android expects an answer to each of its probes and closes the link when none comes.
         case keepalive = 5
         /// The handshake: `nodeId|version|capsHex`.
         case hello = 6

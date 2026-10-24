@@ -28,6 +28,11 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
 - **`CAP_DOORBELL` (`0x1000`) lives in the HELLO alone.** The HELLO adds it, reading `315f`, when the radio
   serves the doorbell (`Radio.servesDoorbell`). Nothing else ever advertises it: not `Capabilities.local`, not the
   signed profile, not the advert, and never the Linux peer's `android` profile, which serves no GATT.
+- **Never write a `KEEPALIVE` (tag 5) unless the link answers Android's.** Android closes a silent link to any peer
+  whose HELLO lacks `CAP_DOORBELL` (knit-next ADR 2026-10.697m). One keepalive from us marks the link as answering,
+  and from then on Android closes it after about 150 to 210 s with no byte in. A sender has to answer each keepalive
+  with one of its own, except one that crosses its own unanswered announce or probe. Today no radio here writes one
+  (`LinkAdmissionTests`), so the Linux peer's `android` profile, the only link without the bit, is never probed.
 - **`CAP_BLOB_HAVE` (`0x2000`) lives in the HELLO alone too.** Every HELLO carries it, reading `215f`, because
   every build answers a `blobhave` (knit-next ADR 2026-10.6e5t). Android reads it from the link only, so it stays
   out of `Capabilities.local`, the signed profile and the emitted vectors. Answering is never gated; only asking is

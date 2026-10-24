@@ -1524,7 +1524,8 @@ case linked 2 of 8 within 30 s, with a median of 64.3 s.
   presence set down with the experimental Coded one. Seven more followed the transport's enables of the Coded set
   (`coded advertising enable=true status=4`), and the presence set's own enables were never refused. In samples 2
   and 8 the presence enable reported success and the ATS2851 still heard nothing until the 10 s retry, about 15 s in. knit-next counts that a cost of the Coded experiment (its ADR 2026-10.yvn6), which a
-  shipped build does not have. The other misses were the iPhone's.
+  shipped build did not have then. Since knit-next `713b29d6` (2026-10-09), release runs the Coded set too, in AUTO
+  mode on any controller with Coded and extended advertising. The other misses were the iPhone's.
 - **At 02:38, with the Coded mode off,** the Pixel's stack refused nothing and the ATS2851 never went more than 7.2 s
   without hearing it. Both misses were the iPhone's 8 s gap reset. In sample 2 its gaps of 12.0, 9.9 and 8.9 s each
   restarted the dwell, and it linked at 48.4 s. In sample 6 one gap of 11.1 s made 31.0 s. The ATS2851 heard the Pixel

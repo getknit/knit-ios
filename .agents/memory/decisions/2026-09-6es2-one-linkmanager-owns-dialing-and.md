@@ -81,3 +81,15 @@ a rule the other radio does not have. `LinkManagerTests`, `LinkAdmissionTests` a
 by. `LinkManager` takes each link's files in through a `FileIntake`, under Android's receiving rules, and streams files
 out one chunk at a time behind the radio's report of the last (ADR 2026-10.h6zz). The radios still decide nothing:
 they queue a whole FILE record and report its last byte out. `LinkFileTests` replaces the discard test.
+
+**Amended 2026-10-23, for knit-next's silent-link close (its ADR 2026-10.697m):** this port adds no silent-link rule.
+Since `f8b5d544`, Android closes a link that stops sending: once the peer has sent it an empty `KEEPALIVE`, an
+unanswered probe closes the link about 150 to 210 s after the last byte in. The rule exempts a link whose HELLO carries
+`CAP_DOORBELL` (`LinkSilence.kt:39`), because iOS suspends Knit with its link up. Every CoreBluetooth HELLO carries the
+bit, so Android never probes an iPhone and never answers one. Mirroring the rule here would need Android to answer
+first, which is worth asking for only once an iPhone is seen keeping a link its peer dropped, as a Redmi did in
+knit-next #203. So `LinkManager` still ends a link only on the radio's close, an unknown tag, a replacement or a shed. This port never writes a keepalive: one would mark a
+link without the bit, which is only the Linux peer's `android` profile, as answering on Android, and then its
+unanswered probes would close the link. `.agents/rules/interop.md` holds that rule, and
+`LinkAdmissionTests.aKeepaliveIsNeverWrittenNorAnsweredDoorbellOrNot` pins it. One link end still backs off once
+(`retire`), which knit-next `9a68b225` (#205) brought Android level with.
