@@ -78,6 +78,28 @@ import Testing
         #expect(fixture.engine.dropped[.unsigned] == 1, "and never reached the drop")
     }
 
+    /// A walkie call between two Android phones whose only path is through us, from a caller we never pinned: the chunk
+    /// is still relayed, and we never ask a neighbour for the caller's key, as Android never does (`NO_KEY_REQUEST_TYPES`,
+    /// `InboundPipeline.kt:3996` at knit-next `a81f2050`). Before, every chunk asked once per cooldown.
+    @Test func aStrangersTalkChunkIsRelayedWithoutAKeyRequest() {
+        let fixture = EngineFixture(alice)
+        fixture.link(bob, carol)
+        fixture.advance(1000)
+        fixture.transport.clear()
+        let id = String(frameIdOf("talk-3").prefix(FrameId.talkLength))
+        let envelope = RelayEnvelope(
+            type: .talk, id: id, senderId: mallory.nodeId.string, sentAt: start, recipientId: dave.nodeId.string, payload: [1, 2, 3]
+        )
+        let wire = WireEnvelope(ttl: 3, relay: true, sig: [], signed: envelope.encoded)
+        fixture.deliver(TestFrame(wire: wire, envelope: envelope), from: bob)
+        fixture.advance(1000)
+        #expect(fixture.engine.dropped == [.noSenderKey: 1])
+        #expect(fixture.transport.written(.keyRequest).isEmpty, "no key request for the caller")
+        #expect(fixture.engine.footprint.parked == 0 && fixture.engine.footprint.missingKeys == 0, "nothing parked or wanted")
+        #expect(fixture.transport.written(.talk).map(\.to) == [carol.nodeId], "still relayed, once, to carol")
+        #expect(!fixture.stores.custody.contains(id), "never carried")
+    }
+
     /// Our profile's id is the shape every build's gate admits, or no neighbour of either platform would ever pin us.
     @Test func ourOwnProfileIsAdmitted() throws {
         let fixture = EngineFixture(alice)

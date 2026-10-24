@@ -160,7 +160,9 @@ extension MeshEngine {
         )
         return RelayEnvelope(
             type: .profile,
-            id: "profile-\(nodeId)-\(own.publishedAt)",
+            // The one spelling the router's gate admits (`FrameId.admits`), as `MeshManager.ownProfile` mints it since
+            // knit-next `a81f2050`: a different one here and every node, this one included, refuses our profile.
+            id: FrameId.profileId(sender: nodeId.string, publishedAt: own.publishedAt),
             senderId: nodeId.string,
             sentAt: own.publishedAt,
             payload: content.encoded

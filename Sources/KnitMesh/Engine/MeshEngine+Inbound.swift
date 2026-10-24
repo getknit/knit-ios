@@ -4,9 +4,11 @@ import KnitWire
 
 extension MeshEngine {
     /// Frame types whose missing key is never requested (`NO_KEY_REQUEST_TYPES`): a key request itself, a profile
-    /// (its key is in-band, so a missing one is malformed), a typing cue, worthless a moment later, and a commons
-    /// post, which never arrives by radio on purpose.
-    static let noKeyRequestTypes: Set<FrameType> = [.keyRequest, .profile, .typing, .commons]
+    /// (its key is in-band, so a missing one is malformed), a typing cue, worthless a moment later, a commons
+    /// post, which never arrives by radio on purpose, and Android's walkie chunk, which this port only relays: a
+    /// stranger's call through us would otherwise ask every neighbour for the caller's key each cooldown
+    /// (`InboundPipeline.kt:3996` at knit-next `a81f2050`, added in `14a782f1`). The blob traffic never gets this far.
+    static let noKeyRequestTypes: Set<FrameType> = [.keyRequest, .profile, .typing, .commons, .talk]
 
     /// Delivers one first-seen frame (`InboundPipeline.onDeliver`): verify it, carry it, then hand it to its
     /// type's handler. A frame that fails verification is not carried or shown, and the router still relays it.
