@@ -248,7 +248,8 @@ extension MeshEngine {
         // for at the next re-offer.
         if !stalePresentation {
             if let advertised = record.advertisedAvatarHash, record.avatarHash != advertised, !transport.isLinked(sender) {
-                wantBlob(advertised, author: sender, via: nil, asker: nil)
+                // A want of our own that read no row: it keeps a deadline a re-arm set (knit-next ADR 2026-10.2drc).
+                wantBlob(advertised, author: sender, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
             }
             if let replaced = existing?.avatarHash, replaced != record.avatarHash {
                 releaseBlob(replaced)

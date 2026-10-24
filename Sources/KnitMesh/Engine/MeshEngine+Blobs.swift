@@ -65,31 +65,35 @@ extension MeshEngine {
 
     /// Wants `hash` (`BlobExchange.want`) and takes its first step: a query of the neighbours that can answer one, or
     /// the blind round's first ask (knit-next ADRs 2026-10.6e5t and 2026-10.f7gg). `author` and `via` rank the neighbours
-    /// that cannot be queried, and `asker` is a neighbour we are pulling it for. Answers whether it is wanted: a blob
-    /// held, or on its way in, is not.
+    /// that cannot be queried, and `asker` is a neighbour we are pulling it for. `reach` is the budget and deadline it is
+    /// wanted with (knit-next ADR 2026-10.2drc): ``BlobExchange/Reach/own(until:rederived:)`` for a want of ours,
+    /// ``BlobExchange/Reach/asked(pull:until:)`` for an asker's. Answers whether it is wanted: a blob held, or on its way
+    /// in, is not.
     @discardableResult
-    func wantBlob(_ hash: BlobHash, author: NodeId?, via: NodeId?, asker: NodeId?) -> Bool {
+    func wantBlob(_ hash: BlobHash, author: NodeId?, via: NodeId?, asker: NodeId?, reach: BlobExchange.Reach) -> Bool {
         guard !isBlobOnItsWayOrHeld(hash) else {
             return false
         }
         let now = clock.monotonicMilliseconds()
-        note(blobExchange.recordWant(hash, now: now, author: author, via: via, asker: asker))
-        stepBlob(hash, among: blobCandidates(), now: now)
+        let wall = clock.wallMilliseconds()
+        note(blobExchange.recordWant(hash, now: now, wall: wall, author: author, via: via, asker: asker, reach: reach))
+        stepBlob(hash, among: blobCandidates(), now: now, wall: wall)
         flushBlobQueries()
         return true
     }
 
-    /// Wants each of `wanted`, with its author, stepped together so their queries share one frame per neighbour
-    /// (`wantAll`).
-    func wantBlobs(_ wanted: [(hash: BlobHash, author: NodeId?)]) {
+    /// Wants each of `wanted` of our own, with its author and the budget and deadline it is wanted with, stepped together
+    /// so their queries share one frame per neighbour (`wantAll`).
+    func wantBlobs(_ wanted: [BlobExchange.OwnWant]) {
         guard !wanted.isEmpty else {
             return
         }
         let now = clock.monotonicMilliseconds()
+        let wall = clock.wallMilliseconds()
         let candidates = blobCandidates()
-        for (hash, author) in wanted where !isBlobOnItsWayOrHeld(hash) {
-            note(blobExchange.recordWant(hash, now: now, author: author, via: nil, asker: nil))
-            stepBlob(hash, among: candidates, now: now)
+        for want in wanted where !isBlobOnItsWayOrHeld(want.hash) {
+            note(blobExchange.recordWant(want.hash, now: now, wall: wall, author: want.author, via: nil, asker: nil, reach: want.reach))
+            stepBlob(want.hash, among: candidates, now: now, wall: wall)
         }
         flushBlobQueries()
     }
@@ -107,9 +111,10 @@ extension MeshEngine {
             return
         }
         let now = clock.monotonicMilliseconds()
+        let wall = clock.wallMilliseconds()
         let candidates = blobCandidates()
         for hash in hashes {
-            stepBlob(hash, among: candidates, now: now)
+            stepBlob(hash, among: candidates, now: now, wall: wall)
         }
         flushBlobQueries()
     }
@@ -120,16 +125,18 @@ extension MeshEngine {
         guard !due.isEmpty else {
             return
         }
+        let wall = clock.wallMilliseconds()
         let candidates = blobCandidates()
         for hash in due {
-            stepBlob(hash, among: candidates, now: now)
+            stepBlob(hash, among: candidates, now: now, wall: wall)
         }
         flushBlobQueries()
     }
 
     /// One step of `hash`'s fetch (`step`): never for a blob on its way in or held, which is wanted no more once held.
-    /// The asks it decides go out under one request, the asks it moves on from are withdrawn, and its next step is timed.
-    func stepBlob(_ hash: BlobHash, among candidates: [BlobExchange.Candidate], now: Int64) {
+    /// The asks it decides go out under one request, carrying the want's budget and deadline, the asks it moves on from are
+    /// withdrawn, and its next step is timed. `now` is the monotonic clock and `wall` the wall clock, read together.
+    func stepBlob(_ hash: BlobHash, among candidates: [BlobExchange.Candidate], now: Int64, wall: Int64) {
         if transport.arrivingFileKeys.contains(hash) {
             return
         }
@@ -139,10 +146,10 @@ extension MeshEngine {
             syncAcceptedFiles()
             return
         }
-        let plan = blobExchange.decide(hash, among: candidates, now: now)
+        let plan = blobExchange.decide(hash, among: candidates, now: now, wall: wall)
         note(plan.notes)
         if let line = plan.asks.first?.line {
-            let request = blobRequest(hash)
+            let request = blobRequest(hash, pull: plan.pull, until: plan.until)
             for ask in plan.asks {
                 transport.send(request, to: ask.to)
             }
@@ -173,31 +180,12 @@ extension MeshEngine {
         }
     }
 
-    /// Wants every blob the stores name and the blob store lacks (`rewantMissingBlobs`, knit-next ADR 2026-09.ptv8): the
-    /// photos peers' profiles advertise, each with its owner as the author, and the photos messages carry, each with the
-    /// sender of the earliest message naming it. The wants are a memo of the stores and never their source, so this runs
-    /// at start, at link-up and at each 60 s re-offer. At link-up a linked peer's own photo is left to its push
-    /// (`sparing`), and wanted at the next re-offer if it never came; Android leaves a lost push lost.
-    func rewantMissingBlobs(sparing: Set<NodeId>) {
-        var wanted: [(hash: BlobHash, author: NodeId?)] = []
-        for peer in stores.peers.allPeers() where !sparing.contains(peer.nodeId) {
-            if let advertised = peer.advertisedAvatarHash, !stores.blobs.contains(advertised) {
-                wanted.append((advertised, peer.nodeId))
-            }
-        }
-        let carried = stores.messages.attachmentHashes()
-        let missing = carried.subtracting(stores.blobs.held(among: carried))
-        let senders = stores.messages.attachmentSenders(among: missing)
-        for hash in missing.sorted() {
-            wanted.append((hash, senders[hash]))
-        }
-        wantBlobs(wanted)
-    }
-
-    /// One blob request (`BlobExchange.blobRequest`). This port keeps no prefix of a cut transfer, so it never names an
-    /// offset (knit-ios #2).
-    func blobRequest(_ hash: BlobHash) -> WireEnvelope {
-        unsignedPointToPoint(.blobRequest, id: newFrameId(), payload: BlobRequestContent(hash: hash.string).encoded)
+    /// One blob request (`BlobExchange.blobRequest`), carrying the budget `pull`, 0 included, and the deadline `until`
+    /// when there is one (knit-next ADR 2026-10.2drc): to a neighbour that lacks the blob, any ask is a pull. This port
+    /// keeps no prefix of a cut transfer, so it never names an offset (knit-ios #2).
+    func blobRequest(_ hash: BlobHash, pull: Int, until: Int64?) -> WireEnvelope {
+        let content = BlobRequestContent(hash: hash.string, pull: pull, until: until)
+        return unsignedPointToPoint(.blobRequest, id: newFrameId(), payload: content.encoded)
     }
 
     /// Logs the blob exchange's own lines, as the mesh logs its others.
@@ -227,31 +215,43 @@ extension MeshEngine {
             drop(.undecodable, frame.envelope)
             return
         }
-        serveOrWant(hash, to: frame.from, mayPark: true)
+        serveOrWant(hash, to: frame.from, mayPark: true, reached: BlobExchange.Reached(pull: request.pull, deadline: request.until))
     }
 
-    /// Serves `hash` to `peer` if it is held, and otherwise wants it on the asker's behalf (`serveOrWant`). `mayPark`
-    /// false serves at once whatever else is being fed: a parked ask whose turn came. The log says what became of it.
-    func serveOrWant(_ hash: BlobHash, to peer: NodeId, mayPark: Bool) {
+    /// Serves `hash` to `peer` if it is held, and otherwise wants it on the asker's behalf (`serveOrWant`), with one hop
+    /// less of the ask's budget and its deadline (`reached`, knit-next ADR 2026-10.2drc). `mayPark` false serves at once
+    /// whatever else is being fed: a parked ask whose turn came. The log says what became of it.
+    ///
+    /// A held blob is served whatever the ask allows, `pull = 0` included. A blob we lack makes no want at all for an ask
+    /// with no budget left or past its deadline (`echoFor`): it is logged as Android logs it, beside this port's `blobreq`
+    /// line, and counted.
+    func serveOrWant(_ hash: BlobHash, to peer: NodeId, mayPark: Bool, reached: BlobExchange.Reached) {
         let answer: String
         if let file = outboundFile(hash, kind: .attachment) {
-            answer = serve(file, to: peer, mayPark: mayPark)
+            answer = serve(file, to: peer, mayPark: mayPark, reached: reached)
+        } else if let refused = BlobExchange.echoRefusal(pull: reached.pull, until: reached.deadline, wall: clock.wallMilliseconds()) {
+            blobExchange.counts.echoesDeclined += 1
+            note(["blob no-echo \(hash.string.prefix(BlobExchange.shownHashCharacters))… for \(peer) (\(refused))"])
+            answer = "not held; no echo (\(refused))"
         } else {
             // Wanted on the asker's behalf, which this cycle neither queries nor asks: it lacks the bytes.
-            answer = wantBlob(hash, author: nil, via: nil, asker: peer) ? "not held; fetching it" : "not held; already arriving"
+            let reach = BlobExchange.Reach.asked(pull: reached.pull, until: reached.deadline)
+            answer =
+                wantBlob(hash, author: nil, via: nil, asker: peer, reach: reach) ? "not held; fetching it" : "not held; already arriving"
         }
         log.log(.debug, "mesh blobreq \(LinkManager.shown(hash.string)) from \(peer): \(answer)")
     }
 
     /// Streams a held blob to `peer` as kind ATTACHMENT, whatever it is, as Android serves every blob: not while a
     /// copy is already on the link to it, not while another copy of it is fed live to someone else, when `mayPark`
-    /// (``parkBehindFeed(_:for:bytes:now:)``), and not twice inside the serve memo. Answers what it did, for the log.
-    func serve(_ file: OutboundFile, to peer: NodeId, mayPark: Bool) -> String {
+    /// (``parkBehindFeed(_:for:bytes:reached:now:)``, which keeps what the ask said), and not twice inside the serve memo.
+    /// Answers what it did, for the log.
+    func serve(_ file: OutboundFile, to peer: NodeId, mayPark: Bool, reached: BlobExchange.Reached) -> String {
         guard !transport.isFileInFlight(file.hash, to: peer) else {
             return "already on its way"
         }
         let now = clock.monotonicMilliseconds()
-        if mayPark, parkBehindFeed(file.hash, for: peer, bytes: Int64(file.size), now: now) {
+        if mayPark, parkBehindFeed(file.hash, for: peer, bytes: Int64(file.size), reached: reached, now: now) {
             return "parked behind a feed"
         }
         guard blobExchange.shouldServe(file.hash, to: peer, now: now) else {

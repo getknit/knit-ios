@@ -282,10 +282,11 @@ public protocol MessageStore: AnyObject, Sendable {
     /// missing (`MessageDao.attachmentHashes`).
     func attachmentHashes() -> Set<BlobHash>
 
-    /// Who sent the earliest message carrying each of `hashes`, by `sentAt` and then by id, its bytes compared
-    /// (`MessageDao.attachmentsNeedingFetch`): the one holder a fetch of that blob can name (knit-next ADR 2026-10.f7gg).
-    /// A hash no message carries has no entry.
-    func attachmentSenders(among hashes: Set<BlobHash>) -> [BlobHash: NodeId]
+    /// Every message carrying each of `hashes`, earliest first, by `sentAt` and then by id, its bytes compared
+    /// (`MessageDao.attachmentFetchRows`, knit-next `385bfba0`): what a fetch of that blob is judged on, its one nameable
+    /// holder and its pull-through's deadline (knit-next ADR 2026-10.2drc). A hash no message carries has no entry, and a
+    /// read that fails answers none.
+    func attachmentRows(among hashes: Set<BlobHash>) -> [BlobHash: [AttachmentRow]]
 
     /// The thread of the earliest message carrying blob `hash`, by `sentAt` and then by id, or `nil` when none does
     /// (`MessageDao.conversationOfAttachment`): whom a holder serves first (knit-next ADR 2026-10.nsr7).
@@ -358,6 +359,12 @@ extension MessageRecord {
 }
 
 extension MessageStore {
+    /// Who sent the earliest message carrying each of `hashes` (``attachmentRows(among:)``, `MessageDao.attachmentsNeedingFetch`):
+    /// the one holder a fetch of that blob can name (knit-next ADR 2026-10.f7gg). A hash no message carries has no entry.
+    public func attachmentSenders(among hashes: Set<BlobHash>) -> [BlobHash: NodeId] {
+        attachmentRows(among: hashes).compactMapValues { $0.first?.senderId }
+    }
+
     /// The newest message of every thread, newest thread first, whoever wrote it.
     public func threadHeads() -> [MessageRecord] {
         threadHeads(excludingSenders: [])

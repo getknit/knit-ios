@@ -98,10 +98,11 @@ extension MeshEngine {
         let latency = recorded.latency.map { " in \($0) ms" } ?? ""
         let items = recorded.touched.map(BlobExchange.label).joined(separator: ", ")
         log.log(.debug, "mesh blob answer ← \(frame.from)\(id)\(latency): \(items) load=\(answer.load ?? 0)")
+        let wall = clock.wallMilliseconds()
         let candidates = blobCandidates()
         var stepped = Set<BlobHash>()
         for hash in recorded.touched.compactMap({ BlobHash($0.hash) }) where stepped.insert(hash).inserted {
-            stepBlob(hash, among: candidates, now: now)
+            stepBlob(hash, among: candidates, now: now, wall: wall)
         }
         flushBlobQueries()
     }
@@ -161,8 +162,9 @@ extension MeshEngine {
 
     /// Whether `peer` is sent progress reports and withdrawals (knit-next ADR 2026-10.nsr7): a neighbour whose link
     /// carries ``Capabilities/blobHave``, an iPhone included. An iPhone holder clocks its feed by the reports since ADR
-    /// 2026-10.xwjc; Android sends none to an iPhone yet (`BlobExchange.onFileProgress`). An iPhone on a build before ADR
-    /// 2026-10.ds45 takes either unsigned type for a signed one, and a build that does not know a type drops it.
+    /// 2026-10.xwjc, and Android has sent an iPhone them since knit-next `e658eb6f` (`BlobExchange.onFileProgress`), as it
+    /// has sent withdrawals since its ADR 2026-10.nsr7. An iPhone on a build before ADR 2026-10.ds45 takes either unsigned
+    /// type for a signed one, and a build that does not know a type drops it.
     func readsBlobUpkeep(_ peer: NodeId) -> Bool {
         transport.neighbors.first { $0.nodeId == peer }?.capabilities.contains(.blobHave) ?? false
     }

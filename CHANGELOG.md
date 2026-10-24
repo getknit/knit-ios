@@ -123,6 +123,9 @@ document:
 - A message you send while a photo is going out now arrives in about two seconds instead of minutes, because
   your iPhone paces the photo by what the other phone reports taking in. Until Android phones update to report
   it, photos you send them go more slowly than before.
+- A photo that none of the phones nearby has no longer keeps your iPhone and the Android phones around it
+  asking each other for it every few minutes. After a day, your iPhone looks for a missing photo only a few
+  times a day.
 
 ## About this file
 

@@ -5,30 +5,39 @@ public import KnitWire
 // Which messages carry a blob, and under which names (ADR 2026-10.f3mv), apart from the class only to keep its file inside
 // the lint's length.
 extension SQLMessageStore {
-    /// Who sent the earliest message carrying each of `hashes` (``MessageStore/attachmentSenders(among:)``).
-    public func attachmentSenders(among hashes: Set<BlobHash>) -> [BlobHash: NodeId] {
+    /// Every message carrying each of `hashes`, earliest first (``MessageStore/attachmentRows(among:)``), read in batches
+    /// of ``hashBatchSize`` hashes. A batch whose read fails answers none, so its hashes have no entry.
+    public func attachmentRows(among hashes: Set<BlobHash>) -> [BlobHash: [AttachmentRow]] {
         let sorted = hashes.sorted()
-        var senders: [BlobHash: NodeId] = [:]
+        var rows: [BlobHash: [AttachmentRow]] = [:]
         for start in stride(from: 0, to: sorted.count, by: Self.hashBatchSize) {
             let batch = sorted[start..<min(start + Self.hashBatchSize, sorted.count)]
-            let carriers = database.read(or: []) { db in
+            let carriers: [(hash: BlobHash, row: AttachmentRow)] = database.read(or: []) { db in
                 try Row.fetchAll(
                     db,
                     sql: """
-                        SELECT attachmentHash, senderId FROM messages
+                        SELECT attachmentHash, id, senderId, sentAt, recipientId IS NOT NULL AS dm FROM messages
                         WHERE attachmentHash IN (\(Array(repeating: "?", count: batch.count).joined(separator: ", ")))
                         ORDER BY sentAt, id
                         """,
                     arguments: StatementArguments(batch.map { StoredText.bytes($0.string) })
                 )
-                .map { (hash: try $0.blobHash("attachmentHash"), sender: try $0.nodeId("senderId")) }
+                .map { row -> (hash: BlobHash, row: AttachmentRow) in
+                    let carried = AttachmentRow(
+                        id: try row.text("id"),
+                        senderId: try row.nodeId("senderId"),
+                        sentAt: try row.decode(Int64.self, forColumn: "sentAt"),
+                        isDM: try row.decode(Bool.self, forColumn: "dm")
+                    )
+                    return (hash: try row.blobHash("attachmentHash"), row: carried)
+                }
             }
-            // Earliest first, so the first row for each hash names its sender.
-            for carrier in carriers where senders[carrier.hash] == nil {
-                senders[carrier.hash] = carrier.sender
+            // Earliest first, as read.
+            for carrier in carriers {
+                rows[carrier.hash, default: []].append(carrier.row)
             }
         }
-        return senders
+        return rows
     }
 
     /// The thread of the earliest message carrying `hash` (``MessageStore/conversation(ofAttachment:)``).

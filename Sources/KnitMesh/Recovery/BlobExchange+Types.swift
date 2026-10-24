@@ -7,8 +7,12 @@ extension BlobExchange {
     ///
     /// A cycle queries every capable neighbour once (``queried``, ``answers``), keeps one ask outstanding (``fetch``),
     /// and passes over a holder that brought nothing (``failed``). The neighbours nobody can query get knit-next ADR
-    /// 2026-10.f7gg's round (``blindAsked``, ``blindWidened``). A cycle ends no sooner than ``cycleGap(dead:)``, and only
-    /// with no ask outstanding.
+    /// 2026-10.f7gg's round (``blindAsked``, ``blindWidened``). A cycle ends no sooner than ``cycleGap(now:wall:dead:)``,
+    /// and only with no ask outstanding. Whether it pulls through is bounded by its frame's deadline (``until``) and by
+    /// the hops its budget still allows (``budget``, knit-next ADR 2026-10.2drc).
+    ///
+    /// Two clocks: every time here is on the monotonic clock but ``until``, which is the frame's, so each check of it takes
+    /// the wall clock read at the step (ADR 2026-10.8hek; Kotlin keeps one clock for both).
     struct Want: Sendable {
         let hash: BlobHash
         var wantedAt: Int64
@@ -20,8 +24,21 @@ extension BlobExchange {
         /// Whether this cycle heard of a holder or a fetcher, and how many cycles in a row did not.
         var cycleSawLead = false
         var emptyCycles = 0
-        /// Dead cycles in a row before this one (``isDead``): each doubles the wait for the next.
+        /// Dead cycles in a row before this one (``isDead``): each doubles the wait for the next. When the streak began, on
+        /// the monotonic clock, and how many dead cycles it has opened since it went ``longDead(now:wall:)``.
         var deadCycles = 0
+        var deadSince: Int64?
+        var longDeadCycles = 0
+        /// How many phones deeper this want may ask to pull its blob, counting the one asked (``pullBudget`` for our own,
+        /// one less than the ask allowed for an echo), and until when, epoch ms on the frame's clock: `nil` for no deadline
+        /// (`Want.budget`, `Want.until`). 0 until whatever records the want says otherwise, so a site that forgets mints no
+        /// root. And whether this cycle already counted and logged a pull it did not make.
+        var budget = 0
+        var until: Int64?
+        var pullWithheld = false
+        /// Neighbours that linked in this cycle and have not been pulled since: pulled once, at once
+        /// (``BlobExchange/pullNewcomers(_:_:_:_:)``).
+        var freshLinks: Set<NodeId> = []
         /// Neighbours we are pulling it for: they lack it, so this cycle neither queries nor asks them.
         var pullers: Set<NodeId> = []
         /// Each capable neighbour's query for this blob, when it was queued, and its latest answer, this cycle.
@@ -61,42 +78,96 @@ extension BlobExchange {
         /// The hash as the log shows it.
         var hash8: Substring { hash.string.prefix(BlobExchange.shownHashCharacters) }
 
-        /// Whether this cycle is dead (`dead`): every neighbour asked said it lacks the blob. At least one answered,
-        /// none holds or is fetching it, and nobody was asked blind, since that one may hold it.
-        var isDead: Bool { !cycleSawLead && !answers.isEmpty && blindAsked.isEmpty }
+        /// Whether this cycle is dead (`dead`, `BlobExchange.kt:2408-2412` at knit-next `1ce131fd`): every neighbour asked
+        /// said it lacks the blob. At least one answered or was asked blind, and none holds or is fetching it. A blind ask
+        /// keeps the cycle's pace only for the first ``pullRecheckDeadCycles`` cycles without a lead, since that one may
+        /// hold it; past them a cycle whose blind asks brought nothing is dead too and backs off with the rest (knit-next
+        /// ADR 2026-10.2drc). A blind ask is still made every cycle that opens: an iPhone holder can only be found that way.
+        /// Android's fast-only branch has no twin: one radio, no Wi-Fi Aware link to wait on.
+        var isDead: Bool {
+            let blindSpent = blindAsked.isEmpty || emptyCycles >= BlobExchange.pullRecheckDeadCycles
+            return !cycleSawLead && (!answers.isEmpty || !blindAsked.isEmpty) && blindSpent
+        }
+
+        /// Why this want asks nobody to pull its blob through at `wall`, or `nil` when it may (`pullWithheldWhy`): its frame's
+        /// deadline has passed, or it has no budget left.
+        func pullWithheldWhy(wall: Int64) -> String? {
+            if let until, wall >= until {
+                return "past its deadline"
+            }
+            return budget < 1 ? "fetch only" : nil
+        }
 
         /// How long this cycle stands before the next opens (`cycleGap`): a cycle, doubled for each dead cycle in a row
-        /// before this one while this one is dead too, at most ``maxBackoffShift`` times: 45 s, 90 s, 3 min, then 6 min.
-        func cycleGap(dead: Bool) -> Int64 {
-            dead ? BlobExchange.cycleMilliseconds << min(deadCycles, BlobExchange.maxBackoffShift) : BlobExchange.cycleMilliseconds
+        /// before this one while this one is dead too, at most ``maxBackoffShift`` times: 45 s, 90 s, 3 min, then 6 min. A
+        /// ``longDead(now:wall:)`` streak doubles on with each further dead cycle, to ``maxLongBackoffShift``: 12, 24, 48 and
+        /// 96 min, then about 3.2 h. Any lead ends the streak, and a neighbour that links is still queried at once.
+        func cycleGap(now: Int64, wall: Int64, dead: Bool) -> Int64 {
+            guard dead else {
+                return BlobExchange.cycleMilliseconds
+            }
+            let extra = longDead(now: now, wall: wall) ? longDeadCycles : 0
+            return BlobExchange.cycleMilliseconds
+                << min(min(deadCycles, BlobExchange.maxBackoffShift) + extra, BlobExchange.maxLongBackoffShift)
+        }
+
+        /// Whether this want's dead streak backs off past the 6 min ceiling (`longDead`, `BlobExchange.kt:2442` at knit-next
+        /// `1ce131fd`): it has reached the ceiling, and it has been dead for ``longDeadMilliseconds`` on the monotonic clock,
+        /// or its frame's deadline has passed on the wall clock. The deadline is the trigger a restart cannot forget: the streak is kept in
+        /// memory, and iOS restarts Knit far more often than daily, while the deadline comes back with every re-arm.
+        func longDead(now: Int64, wall: Int64) -> Bool {
+            guard deadCycles >= BlobExchange.maxBackoffShift else {
+                return false
+            }
+            return deadSince.map { now - $0 >= BlobExchange.longDeadMilliseconds } == true || until.map { wall >= $0 } == true
         }
 
         /// Whether the next cycle may open at `now` (`cycleDue`): no ask outstanding, and a cycle's gap since it opened,
         /// or since its first pull when it pulled, so the pull's rechecks run out first.
-        func isCycleDue(at now: Int64) -> Bool {
-            fetch == nil && now - max(cycleAt, pulledAt ?? cycleAt) >= cycleGap(dead: isDead)
+        func isCycleDue(at now: Int64, wall: Int64) -> Bool {
+            fetch == nil && now - max(cycleAt, pulledAt ?? cycleAt) >= cycleGap(now: now, wall: wall, dead: isDead)
+        }
+
+        /// A lead, or a cycle that was not dead: the backoff starts over (`endDeadStreak`).
+        mutating func endDeadStreak() {
+            deadCycles = 0
+            deadSince = nil
+            longDeadCycles = 0
         }
 
         /// A neighbour said it holds the blob or is fetching it (`sawLead`). A backed-off cycle starts over from `now`,
         /// its answers kept: the backoff is over, and the next cycle is due a cycle after the lead.
         mutating func sawLead(at now: Int64) {
             if !cycleSawLead, deadCycles > 0 {
-                deadCycles = 0
+                endDeadStreak()
                 cycleAt = now
             }
             cycleSawLead = true
         }
 
         /// Opens the next cycle at `now` (`Want.openCycle`). A natural one counts the cycle it closes; a forced one
-        /// starts its ask over.
-        mutating func openCycle(at now: Int64, natural: Bool) {
+        /// starts its ask over. A dead streak's start is its first dead cycle's; whether it is long dead is read before the
+        /// count moves, so the 6 min cycle is kept, and a dead cycle that is not long dead forgets the long count, so a
+        /// deadline a re-arm lifted and later restored ramps from 12 min again.
+        mutating func openCycle(at now: Int64, wall: Int64, natural: Bool) {
             if natural {
-                deadCycles = isDead ? deadCycles + 1 : 0
+                if isDead {
+                    if deadCycles == 0 {
+                        deadSince = cycleAt
+                    }
+                    longDeadCycles = longDead(now: now, wall: wall) ? longDeadCycles + 1 : 0
+                    deadCycles += 1
+                } else {
+                    endDeadStreak()
+                }
                 emptyCycles = cycleSawLead ? 0 : emptyCycles + 1
             }
             cycleAt = now
             fetch = nil
             cycleSawLead = false
+            pullWithheld = false
+            // A link-up pulls in its own cycle or not at all.
+            freshLinks.removeAll()
             pullers.removeAll()
             queried.removeAll()
             answers.removeAll()
@@ -129,6 +200,8 @@ extension BlobExchange {
         /// floor and the rule for a peer streaming to us still hold.
         mutating func forgetLinks(_ ids: Set<NodeId>) {
             pullers.subtract(ids)
+            // A newcomer that lacks it is asked to pull it through at once, once per link-up, in this cycle.
+            freshLinks.formUnion(ids)
             blindAsked.subtract(ids)
             pulled.subtract(ids)
             failed.subtract(ids)
@@ -205,6 +278,10 @@ extension BlobExchange {
     /// What one step decided (`Plan`): the neighbours it owes a query, the asks it makes, the neighbours whose ask of ours
     /// it withdraws, when it wants to be stepped again, and the log lines it owes.
     struct Plan: Sendable {
+        /// The want's budget and deadline as the step read them, which every ask it sends carries (knit-next ADR
+        /// 2026-10.2drc): a fetch, a blind ask and a pull alike.
+        var pull = BlobExchange.pullBudget
+        var until: Int64?
         var query: [NodeId] = []
         var asks: [Ask] = []
         var cancels: [NodeId] = []

@@ -132,3 +132,8 @@ load 0 and streams us nothing, when the stream has more than 30 s left. While st
 that said NONE is queried again every 10 s. As a holder, the iPhone now parks a second ask for a blob it is already
 feeding, and its SENDING answers carry `eta`. Guards: `InteropAuditMeshTests`, `BlobStreamWaitTests` and
 `MeshEngineBlobParkTests`.
+
+**Amended 2026-10-24, for knit-next ADR 2026-10.2drc (ADR 2026-10.8hek):** every ask now carries its want's hop
+budget and deadline, and an ask refreshes a want only when it carries at least the want's budget. A want pulls
+through only while its budget is 1 or more and its deadline is ahead. A cycle whose blind asks found nothing backs off
+from its third lead-less cycle, and a dead streak a day old or past its deadline backs off to about 3.2 h.

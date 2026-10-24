@@ -98,3 +98,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.z7a8](decisions/2026-10-z7a8-a-share-extension-hands-what.md) | A share extension hands what it takes to the app through an App Group | share, ui, signing |
 | [2026-10.h7xw](decisions/2026-10-h7xw-an-inbound-frame-s-id.md) | an inbound frame's id has the shape its type is minted with | wire, mesh, custody, interop, security |
 | [2026-10.qhsv](decisions/2026-10-qhsv-crashes-and-hangs-are-kept.md) | Crashes and hangs are kept on the iPhone and filed by the user | privacy, crash-reports, support |
+| [2026-10.8hek](decisions/2026-10-8hek-the-iphone-s-pull-through.md) | The iPhone's pull-through carries a hop budget and a deadline | mesh, blobs, interop, wire |

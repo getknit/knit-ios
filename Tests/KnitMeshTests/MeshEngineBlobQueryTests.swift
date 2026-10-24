@@ -166,7 +166,7 @@ import Testing
     @Test func aBlobThatStartsArrivingIsNotSteppedWhenItsTimerComes() {
         let fixture = EngineFixture(alice)
         fixture.link(bob, carol)
-        fixture.engine.wantBlob(photoHash, author: bob.nodeId, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: bob.nodeId, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         fixture.transport.clear()
         fixture.transport.arrivingFileKeys = [photoHash]
         fixture.advance(BlobExchange.firstAskGraceMilliseconds)
@@ -177,7 +177,7 @@ import Testing
         let fixture = EngineFixture(alice, configuration: MeshConfiguration(queriesBlobHolders: true))
         fixture.link(bob, carol, capabilities: Capabilities.local.union(.blobHave))
         fixture.transport.clear()
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         let queries = fixture.transport.written(.blobHave)
         #expect(queries.map(\.to) == [bob.nodeId, carol.nodeId])
         #expect(try queries.map { try BlobHaveContent(decoding: $0.envelope.payload).hashes } == [[photoHash.string], [photoHash.string]])
@@ -194,7 +194,7 @@ import Testing
         #expect(
             fixture.log.all.contains("debug mesh blob answer ← \(carol.nodeId) #\(toCarol.prefix(6)) in 250 ms: \(shown) HAVE 41B load=0"))
         // The grace gains the 250 ms carol's answer took: our own frames to her may be that far behind (knit-next #140).
-        #expect(fixture.log.all.contains("debug mesh blob fetch \(shown)… → \(carol.nodeId) (link, load 0), grace 5250 ms"))
+        #expect(fixture.log.all.contains("debug mesh blob fetch \(shown)… → \(carol.nodeId) (link, load 0), grace 5250 ms [pull 3]"))
         fixture.advance(BlobExchange.firstAskGraceMilliseconds)
         #expect(fixture.transport.written(.blobHave).count == 2, "inside the stretched grace")
         fixture.advance(250)
@@ -207,7 +207,7 @@ import Testing
         let fixture = EngineFixture(alice, configuration: MeshConfiguration(queriesBlobHolders: true))
         fixture.link(bob, carol, capabilities: Capabilities.local.union(.blobHave))
         fixture.transport.clear()
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         let queries = fixture.transport.written(.blobHave)
         let toBob = try #require(queries.first?.envelope.id)
         let toCarol = try #require(queries.last?.envelope.id)
@@ -222,7 +222,7 @@ import Testing
     @Test func anAnswerNamingNoQueryIsStillTakenFromANeighbourQueriedThisCycle() {
         let fixture = EngineFixture(alice, configuration: MeshConfiguration(queriesBlobHolders: true))
         fixture.link(bob, capabilities: Capabilities.local.union(.blobHave))
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         fixture.transport.clear()
         fixture.deliver(bob.blobHas([BlobHasItem(hash: photoHash.string, state: .have, size: 41)], re: nil), from: bob)
         #expect(fixture.transport.written(.blobRequest).map(\.to) == [bob.nodeId])
@@ -233,7 +233,7 @@ import Testing
         let fixture = EngineFixture(alice, configuration: MeshConfiguration(queriesBlobHolders: true))
         fixture.link(bob)
         fixture.transport.clear()
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         #expect(fixture.transport.written(.blobHave).isEmpty)
         #expect(fixture.transport.written(.blobRequest).map(\.to) == [bob.nodeId])
     }

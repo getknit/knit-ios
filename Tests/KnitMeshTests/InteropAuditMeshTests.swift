@@ -34,18 +34,21 @@ import Testing
     /// every 2 s for the whole stream. Its other half, `idleHolderPast`, has a test of its own below.
     @Test func anAskTheStreamingNeighbourSaidItLacksIsDroppedForAHolder() {
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: author, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: author, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         let quiet = [author, holder].map { BlobExchange.Candidate(id: $0, streaming: false, capable: true) }
-        _ = exchange.decide(photo, among: quiet, now: 0)
+        _ = exchange.decide(photo, among: quiet, now: 0, wall: wallAt(0))
         send(&exchange, at: 0)
-        #expect(exchange.decide(photo, among: quiet, now: wait).asks == [BlobExchange.Ask(to: author, line: .first)], "both silent")
+        #expect(
+            exchange.decide(photo, among: quiet, now: wait, wall: wallAt(wait)).asks == [BlobExchange.Ask(to: author, line: .first)],
+            "both silent")
         answer(&exchange, author, .notHeld, at: wait + 1000)
         answer(&exchange, holder, .have, at: wait + 1000)
         let streaming = [
             BlobExchange.Candidate(id: author, streaming: true, capable: true),
             BlobExchange.Candidate(id: holder, streaming: false, capable: true),
         ]
-        let plan = exchange.decide(photo, among: streaming, now: wait + 1500)
+        let plan = exchange.decide(photo, among: streaming, now: wait + 1500, wall: wallAt(wait + 1500))
         #expect(plan.asks.map(\.to) == [holder])
         #expect(plan.notes.contains { $0.hasPrefix("blob drop ") && $0.hasSuffix("it lacked the blob, nothing of ours is queued") })
         #expect(exchange.counts.fallbacks == 0, "a drop, not a fallback")
@@ -56,12 +59,15 @@ import Testing
     /// streams us nothing; 30 s left or less is waited out.
     @Test func anIdleHolderIsAskedPastAStreamWithMoreThanThirtySecondsLeft() {
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: author, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: author, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         let quiet = [author, holder].map { BlobExchange.Candidate(id: $0, streaming: false, capable: true) }
-        _ = exchange.decide(photo, among: quiet, now: 0)
+        _ = exchange.decide(photo, among: quiet, now: 0, wall: wallAt(0))
         send(&exchange, at: 0)
         answer(&exchange, author, .have, at: 100)
-        #expect(exchange.decide(photo, among: quiet, now: 100).asks == [BlobExchange.Ask(to: author, line: .fetch)], "the author's HAVE")
+        #expect(
+            exchange.decide(photo, among: quiet, now: 100, wall: wallAt(100)).asks == [BlobExchange.Ask(to: author, line: .fetch)],
+            "the author's HAVE")
         answer(&exchange, holder, .have, at: 200)
         func streaming(left: Int64) -> [BlobExchange.Candidate] {
             [
@@ -69,9 +75,9 @@ import Testing
                 BlobExchange.Candidate(id: holder, streaming: false, capable: true),
             ]
         }
-        let waiting = exchange.decide(photo, among: streaming(left: BlobExchange.streamSwitchMilliseconds), now: 1000)
+        let waiting = exchange.decide(photo, among: streaming(left: BlobExchange.streamSwitchMilliseconds), now: 1000, wall: wallAt(1000))
         #expect(waiting.asks.isEmpty && waiting.wake == BlobExchange.streamPollMilliseconds, "30 s left is waited out")
-        let left = exchange.decide(photo, among: streaming(left: BlobExchange.streamSwitchMilliseconds + 1), now: 3000)
+        let left = exchange.decide(photo, among: streaming(left: BlobExchange.streamSwitchMilliseconds + 1), now: 3000, wall: wallAt(3000))
         #expect(left.asks == [BlobExchange.Ask(to: holder, line: .fetch)])
         #expect(left.notes.contains { $0.contains("(streaming another file ~30001 ms, \(holder) idle) → next") })
         #expect(exchange.counts.fallbacks == 1)

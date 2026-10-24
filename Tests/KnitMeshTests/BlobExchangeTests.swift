@@ -16,14 +16,17 @@ import Testing
     }
 
     private func want(_ exchange: inout BlobExchange, _ index: Int, now: Int64) {
-        _ = exchange.recordWant(hash(index), now: now, author: nil, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            hash(index), now: now, wall: wallAt(now), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
     }
 
     @Test func aBlobIsWantedOnceAndARefreshKeepsItsPlaceAndItsFirstHints() {
         var exchange = BlobExchange(queriesHolders: false)
-        _ = exchange.recordWant(hash(1), now: 0, author: alice, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            hash(1), now: 0, wall: wallAt(0), author: alice, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         want(&exchange, 2, now: 0)
-        _ = exchange.recordWant(hash(1), now: 5, author: bob, via: bob, asker: nil)
+        _ = exchange.recordWant(
+            hash(1), now: 5, wall: wallAt(5), author: bob, via: bob, asker: nil, reach: .own(until: nil, rederived: false))
         #expect(exchange.wanted == [hash(1), hash(2)], "a refresh keeps the order it was first wanted in")
         #expect(exchange.wants[hash(1)]?.author == alice, "the first want to name an author wins")
         #expect(exchange.wants[hash(1)]?.via == bob, "a hint the want lacked is filled in")
@@ -49,13 +52,15 @@ import Testing
         var exchange = BlobExchange(queriesHolders: true)
         let hashes = (0...BlobExchange.maxParkedBlobs).map { BlobHash(of: [UInt8(truncatingIfNeeded: $0), 1]) }
         for hash in hashes {
-            _ = exchange.park(hash, for: alice, bytes: 1, now: 0)
+            _ = exchange.park(hash, for: alice, bytes: 1, reached: BlobExchange.Reached(), now: 0)
         }
         #expect(!exchange.isParked(hashes[0], for: alice))
         #expect(exchange.isParked(hashes[1], for: alice) && exchange.parkedOrder.count == BlobExchange.maxParkedBlobs)
-        let fresh = exchange.park(hashes[1], for: alice, bytes: 1, now: 5)
+        // A re-ask takes the newest ask's budget and deadline, as Kotlin rebuilds the record (knit-next ADR 2026-10.2drc).
+        let newest = BlobExchange.Reached(pull: 2, deadline: wallAt(600_000))
+        let fresh = exchange.park(hashes[1], for: alice, bytes: 1, reached: newest, now: 5)
         #expect(!fresh, "a re-ask only refreshes it")
-        #expect(exchange.parked[hashes[1]]?[alice] == BlobExchange.ParkedAsk(bytes: 1, since: 0, at: 5, until: 0))
+        #expect(exchange.parked[hashes[1]]?[alice] == BlobExchange.ParkedAsk(reached: newest, bytes: 1, since: 0, at: 5, until: 0))
     }
 
     @Test func aWantNobodyRefreshedAgesOut() {
@@ -114,7 +119,8 @@ import Testing
 
     @Test func aHashNotWantedGetsAnEmptyPlan() {
         var exchange = BlobExchange(queriesHolders: true)
-        let plan = exchange.decide(hash(9), among: [BlobExchange.Candidate(id: bob, streaming: false, capable: true)], now: 0)
+        let plan = exchange.decide(
+            hash(9), among: [BlobExchange.Candidate(id: bob, streaming: false, capable: true)], now: 0, wall: wallAt(0))
         #expect(plan.query.isEmpty && plan.asks.isEmpty && plan.wake == nil)
         #expect(exchange.takeQueries().isEmpty)
     }

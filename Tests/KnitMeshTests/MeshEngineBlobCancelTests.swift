@@ -77,7 +77,7 @@ import Testing
         let erin = TestPeer(seed: 5)
         fixture.link(bob, carol, erin, capabilities: android)
         fixture.link(dave, capabilities: android.union(.doorbell))
-        fixture.engine.wantBlob(photoHash, author: bob.nodeId, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: bob.nodeId, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         #expect(fixture.transport.written(.blobRequest).map(\.to) == [bob.nodeId])
         fixture.advance(BlobExchange.firstAskGraceMilliseconds)
         let widened = fixture.transport.written(.blobRequest).dropFirst().map(\.to)
@@ -97,7 +97,7 @@ import Testing
     @Test func aBlobHeldSomeOtherWayWithdrawsEveryAskAtItsNextStep() {
         let fixture = EngineFixture(alice)
         fixture.link(bob, capabilities: android)
-        fixture.engine.wantBlob(photoHash, author: bob.nodeId, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: bob.nodeId, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         fixture.stores.blobs.insert(photo, hash: photoHash, mime: "image/png", storedAt: EngineFixture.start)
         fixture.advance(BlobExchange.firstAskGraceMilliseconds)
         #expect(fixture.transport.written(.blobCancel).map(\.to) == [bob.nodeId])

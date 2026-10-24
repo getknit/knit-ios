@@ -21,13 +21,11 @@ import Testing
     }
 
     /// knit-next's fixtures for what this build does not model yet, taken at `9c3d487b`: calls (knit-next ADR
-    /// 2026-10.3tee), supporter badges (knit-next ADR 2026-10.r99s), short videos, and a blob request's `fastOnly` and
-    /// `pull`. Each decodes to the type this build has, the new fields dropped, so a newer Android's frame is read, never
-    /// refused.
+    /// 2026-10.3tee), supporter badges (knit-next ADR 2026-10.r99s), short videos, and a blob request's `fastOnly` (knit-ios
+    /// #8). Each decodes to the type this build has, the new fields dropped, so a newer Android's frame is read, never
+    /// refused. A blob request's `pull` and `until` are modelled since ADR 2026-10.8hek, and are typed fixtures below.
     @Test func whatThisBuildDoesNotModelStillDecodes() throws {
-        for name in ["blobReqContentFastOnly", "blobReqContentPull", "blobReqContentPullSpent"] {
-            #expect(try BlobRequestContent(decoding: GoldenVectors.bytes(name)).hash == "h1", "\(name)")
-        }
+        #expect(try BlobRequestContent(decoding: GoldenVectors.bytes("blobReqContentFastOnly")) == BlobRequestContent(hash: "h1"))
         #expect(try ProfilePayload(decoding: GoldenVectors.bytes("profilePayloadBadges")).name == "Ann")
         for name in GoldenVectors.names where name.hasPrefix("messageContentCall") {
             #expect(try MessageContent(decoding: GoldenVectors.bytes(name)).ctl == 10, "\(name)")
@@ -175,6 +173,9 @@ let typedFixtures: [TypedFixture] = [
     TypedFixture("keyReqContent", KeyRequestContent(nodeIds: ["a", "b"])),
     TypedFixture("blobReqContent", BlobRequestContent(hash: "h1")),
     TypedFixture("blobReqContentResumed", BlobRequestContent(hash: "h1", offset: 400_000)),
+    // knit-next ADR 2026-10.2drc: a root's ask with its DM's deadline, and an echo's with no budget left.
+    TypedFixture("blobReqContentPull", BlobRequestContent(hash: "h1", pull: 3, until: 1_800_000_000_000)),
+    TypedFixture("blobReqContentPullSpent", BlobRequestContent(hash: "h1", pull: 0)),
     TypedFixture("blobHaveContent", BlobHaveContent(hashes: ["h1", "h2"])),
     TypedFixture(
         "blobHasContent",

@@ -139,21 +139,25 @@ extension BlobExchange {
         "\(item.hash.prefix(shownHashCharacters)) \(label(item.state))\(item.size.map { " \($0)B" } ?? "")"
     }
 
-    /// The log line for a step's asks of `hash` (`askLine`), told as `line`, the first ask's. knit-next ADR 2026-10.f7gg's
-    /// two lines are kept word for word for the blind round, so one grep reads an iPhone's log and an Android phone's.
+    /// The log line for a step's asks of `hash` (`askLine`), told as `line`, the first ask's, and ending in the budget and
+    /// deadline the asks carry: ` [pull n]`, or ` [pull n, until <ms>]`. knit-next ADR 2026-10.f7gg's two lines are kept
+    /// word for word for the blind round, so one grep reads an iPhone's log and an Android phone's.
     static func askLine(_ hash: BlobHash, _ plan: Plan, _ line: Ask.Line) -> String {
         let shown = "\(hash.string.prefix(shownHashCharacters))…"
         let to = plan.asks.map(\.to.string).joined(separator: ", ")
         let wake = plan.wake ?? 0
+        // Appended, never woven in: the trials grep the words ahead of it as they stand. The budget and the deadline every
+        // ask carries go last (knit-next ADR 2026-10.2drc).
+        let reach = " [pull \(plan.pull)\(plan.until.map { ", until \($0)" } ?? "")]"
         switch line {
         case .first:
-            return "blob ask \(shown) → \(to) first (\(plan.why)), widen in \(wake) ms"
+            return "blob ask \(shown) → \(to) first (\(plan.why)), widen in \(wake) ms" + reach
         case .widened:
-            return "blob ask \(shown) → \(to) widened"
+            return "blob ask \(shown) → \(to) widened" + reach
         case .pull:
-            return "blob pull \(shown) → \(to) (\(plan.why))"
+            return "blob pull \(shown) → \(to) (\(plan.why))" + reach
         case .fetch:
-            return "blob fetch \(shown) → \(to) (\(plan.why)), grace \(wake) ms"
+            return "blob fetch \(shown) → \(to) (\(plan.why)), grace \(wake) ms" + reach
         }
     }
 }

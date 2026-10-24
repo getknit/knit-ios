@@ -219,13 +219,12 @@ Kotlin wins.
         request fields: `fastOnly`, which asks before a large Bluetooth-only download (`3b03c5f9`), and `pull` with its
         `until` (`385bfba0`).
       - **What this port does with them:** decodes each to the type it already has and drops the new fields, which
-        `GoldenVectorTests.whatThisBuildDoesNotModelStillDecodes` pins. It models none of them, so none has a typed
-        test. `fastOnly` marks an asker that takes the bytes over Wi-Fi Aware alone (knit-next ADR 2026-10.js2p), which
-        this port cannot honour. Android sends one only to a neighbour with a Wi-Fi Aware route
-        (`BlobExchange.kt:493` at `eac3debc`), so an iPhone never gets one. `pull` and `until` carry knit-next ADR
-        2026-10.2drc's hop budget for a pull-through, whose iOS half is owed: until it lands, Android reads an
-        iPhone's ask as a fetch only, and an iPhone's echoes can keep a want alive with no phone behind it that needs
-        the blob.
+        `GoldenVectorTests.whatThisBuildDoesNotModelStillDecodes` pins, except `pull` and `until`. `fastOnly` marks an
+        asker that takes the bytes over Wi-Fi Aware alone (knit-next ADR 2026-10.js2p), which this port cannot honour.
+        Android sends one only to a neighbour with a Wi-Fi Aware route (`BlobExchange.kt:493` at `eac3debc`), so an
+        iPhone never gets one. `pull` and `until` carry knit-next ADR 2026-10.2drc's hop budget and deadline for a
+        pull-through. This port models them since ADR 2026-10.8hek, which ports `385bfba0` and its amendment
+        `1ce131fd`, and `blobReqContentPull` and `blobReqContentPullSpent` have typed tests.
       - **Since then:** knit-next `main` at `eac3debc` adds four fixtures and moves none: two scope-config ctls
         (`messageContentScopeConfigDm` and `Group`, `33d83aca`), which this port takes as the chain-advancing no-op
         Android counts on, and two commons posts (`651cdc25`), which only a spool carries (knit-ios #11).

@@ -181,7 +181,8 @@ extension MeshEngine {
         events.append(.peerUpdated(sender))
         let after = presentation.after
         if let advertised = after.advertisedAvatarHash, after.avatarHash != advertised, !transport.isLinked(sender) {
-            wantBlob(advertised, author: sender, via: nil, asker: nil)
+            // A want of our own that read no row: it keeps a deadline a re-arm set (knit-next ADR 2026-10.2drc).
+            wantBlob(advertised, author: sender, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         }
         if let replaced = presentation.before.avatarHash, replaced != after.avatarHash {
             releaseBlob(replaced)

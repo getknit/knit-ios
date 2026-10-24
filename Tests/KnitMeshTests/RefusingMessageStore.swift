@@ -18,6 +18,7 @@ final class RefusingMessageStore: MessageStore {
     private let failingReads = Lock(false)
     private let refusingSaves = Lock(false)
     private let failingThreads = Lock(false)
+    private let failingAttachmentRows = Lock(false)
 
     init(_ held: any MessageStore, refuse: @escaping @Sendable () -> Void) {
         self.held = held
@@ -46,6 +47,13 @@ final class RefusingMessageStore: MessageStore {
     var failsThreadReads: Bool {
         get { failingThreads.withLock { $0 } }
         set { failingThreads.withLock { $0 = newValue } }
+    }
+
+    /// Whether the read of the rows naming a blob fails now, answering none, as `SQLMessageStore.attachmentRows(among:)`
+    /// falls back.
+    var failsAttachmentRows: Bool {
+        get { failingAttachmentRows.withLock { $0 } }
+        set { failingAttachmentRows.withLock { $0 = newValue } }
     }
 
     func insertIfAbsent(_ message: MessageRecord) -> Bool {
@@ -95,7 +103,9 @@ final class RefusingMessageStore: MessageStore {
     func deletedAttachments() -> [DeletedAttachment] { held.deletedAttachments() }
     func conversationIds() -> Set<String> { held.conversationIds() }
     func attachmentHashes() -> Set<BlobHash> { held.attachmentHashes() }
-    func attachmentSenders(among hashes: Set<BlobHash>) -> [BlobHash: NodeId] { held.attachmentSenders(among: hashes) }
+    func attachmentRows(among hashes: Set<BlobHash>) -> [BlobHash: [AttachmentRow]] {
+        failsAttachmentRows ? [:] : held.attachmentRows(among: hashes)
+    }
     func conversation(ofAttachment hash: BlobHash) -> String? { held.conversation(ofAttachment: hash) }
     func unsizedAttachments(named hash: BlobHash?) -> [MessageAttachment] { held.unsizedAttachments(named: hash) }
     func setAttachmentDimensions(_ hash: BlobHash, to dimensions: PhotoDimensions) -> Bool {

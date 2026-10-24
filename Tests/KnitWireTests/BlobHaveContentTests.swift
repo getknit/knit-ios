@@ -54,4 +54,20 @@ import Testing
     @Test func aPlainBlobRequestIsTheBytesEveryBuildSends() {
         #expect(BlobRequestContent(hash: "h1").encoded == GoldenVectors.bytes("blobReqContent"))
     }
+
+    /// A blob request's `pull` is a Kotlin `Int` (knit-next ADR 2026-10.2drc): its smallest decodes, and is a budget this
+    /// port reads as declining any echo without wrapping (ADR 2026-10.8hek); past 32 bits the request is refused, as an
+    /// out-of-range `ttl` or `ctl` is. An explicit null reads as absent.
+    @Test func aBlobRequestsPullIsAThirtyTwoBitIntAndANullIsAbsent() throws {
+        func request(_ pull: CBOR) -> [UInt8] {
+            CBOR.map([CBOR.Entry(key: .text("hash"), value: .text("h1")), CBOR.Entry(key: .text("pull"), value: pull)]).encoded
+        }
+        #expect(try BlobRequestContent(decoding: request(CBOR(Int64(Int32.min)))).pull == Int(Int32.min))
+        #expect(try BlobRequestContent(decoding: request(CBOR(Int64(Int32.max)))).pull == Int(Int32.max))
+        #expect(throws: WireDecodingError.self) { try BlobRequestContent(decoding: request(CBOR(Int64(Int32.max) + 1))) }
+        #expect(throws: WireDecodingError.self) { try BlobRequestContent(decoding: request(CBOR(Int64(Int32.min) - 1))) }
+        #expect(try BlobRequestContent(decoding: request(.null)) == BlobRequestContent(hash: "h1"))
+        let until = CBOR.map([CBOR.Entry(key: .text("hash"), value: .text("h1")), CBOR.Entry(key: .text("until"), value: .null)])
+        #expect(try BlobRequestContent(decoding: until.encoded) == BlobRequestContent(hash: "h1"))
+    }
 }

@@ -15,7 +15,15 @@ import KnitWire
 /// forgotten after 30 minutes unrefreshed; a 45-second serve memo of at most 512 entries; 256 queries remembered; and a
 /// budget of answers and a round trip per neighbour, for at most 64 neighbours. This type keeps the books and decides;
 /// the engine reads the links and the store, sends what a step decides, and times its next step. Times are on the
-/// monotonic clock.
+/// monotonic clock, but a want's deadline, which is the frame's and is read against the wall clock (ADR 2026-10.8hek).
+///
+/// A pull-through carries a hop budget and a deadline (knit-next ADR 2026-10.2drc, ADR 2026-10.8hek). Every `blobreq`
+/// says how many phones deep the pull may still go, the receiver counted, and until when a pull-through is worth making
+/// at all. A want of our own mints ``pullBudget``; a neighbour that lacks the blob and is asked with `pull = n` wants it
+/// with `n − 1` and passes that on, so the pull reaches three rings past our neighbours and stops. A want is kept alive by
+/// an ask only when that ask carries at least its own budget, so only a root mints liveness and every hop spends some:
+/// no loop between echoes, no link that keeps re-forming and no stream of newcomers can keep a want alive once its root
+/// stops. Past the deadline nobody pulls it through or makes an echo of it; a holder still serves it.
 internal struct BlobExchange: Sendable {
     /// The most blobs wanted at once (`MAX_FETCHING`), the bound on what unsigned requests can make us fetch.
     static let maxWanted = 256
@@ -55,6 +63,16 @@ internal struct BlobExchange: Sendable {
     static let pullRecheckDeadCycles = 2
     /// Dead cycles double the next cycle's wait at most this many times (`MAX_BACKOFF_SHIFT`): 45 s up to 6 min.
     static let maxBackoffShift = 3
+    /// A dead streak this old on the monotonic clock, or past its frame's deadline, doubles on past ``maxBackoffShift``
+    /// (`LONG_DEAD_MS`, knit-next ADR 2026-10.2drc and its amendment), to ``maxLongBackoffShift`` doublings at most
+    /// (`MAX_LONG_BACKOFF_SHIFT`): about 3.2 h. A blob nobody in reach held all day is one nobody is bringing.
+    static let longDeadMilliseconds: Int64 = 86_400_000
+    static let maxLongBackoffShift = 8
+    /// How many phones deep a pull-through goes past our own neighbours, counting the first (`PULL_BUDGET`, knit-next ADR
+    /// 2026-10.2drc). A want of ours asks with this; each phone that lacks the blob wants it with one less and passes that
+    /// on, and at 0 only queries and fetches. 3 reaches a holder four links away, and bounds the echoes one root makes to
+    /// its first three rings.
+    static let pullBudget = 3
     /// The most confirms one ask gets (`MAX_CONFIRMS`).
     static let maxConfirms = 2
     /// How long past a SENDING answer's `eta` the asker holds on that holder (`HOLD_SLACK_MS`, knit-next ADR 2026-10.nsr7),
@@ -95,7 +113,7 @@ internal struct BlobExchange: Sendable {
     var sentQueries: [ExactKey: SentQuery] = [:]
     var sentOrder: [ExactKey] = []
     /// Asks parked behind another copy's feed, by blob and asker, and the blobs in the order their first ask was parked
-    /// (``park(_:for:bytes:now:)``).
+    /// (``park(_:for:bytes:reached:now:)``).
     var parked: [BlobHash: [NodeId: ParkedAsk]] = [:]
     var parkedOrder: [BlobHash] = []
     /// When the parked asks are next looked at, or `nil` while none is parked (`parkPoll`).
@@ -128,10 +146,23 @@ internal struct BlobExchange: Sendable {
 
     /// Wants `hash`, or refreshes the want and fills in the hints it lacked (`recordWant`). `author` and `via` rank the
     /// neighbours that cannot be queried; `asker` is a neighbour we are pulling it for, which this cycle neither queries
-    /// nor asks. A full set drops its oldest want. Answers the log lines it owes.
-    mutating func recordWant(_ hash: BlobHash, now: Int64, author: NodeId?, via: NodeId?, asker: NodeId?) -> [String] {
+    /// nor asks, and `reach` the budget and deadline the want is recorded with (knit-next ADR 2026-10.2drc). A full set
+    /// drops its oldest want. Answers the log lines it owes.
+    ///
+    /// A new want takes `reach` as it is. A want of our own (no `asker`) is a root, re-derived every time: it is refreshed,
+    /// takes the whole budget back, and takes the deadline when its caller read every row naming the hash
+    /// (``Reach/rederived``) or names one, so a caller that read nothing keeps the one the re-arm set. A neighbour's ask
+    /// refreshes it only as ``noteAsker(_:_:_:now:wall:)`` allows. `wall` is the wall clock, which the deadline is read
+    /// against when the ask opens the next cycle. It takes seven parameters, where Kotlin's takes eight: this port has no
+    /// fast-only flags, and has the wall clock instead.
+    mutating func recordWant( // swiftlint:disable:this function_parameter_count
+        _ hash: BlobHash, now: Int64, wall: Int64, author: NodeId?, via: NodeId?, asker: NodeId?, reach: Reach
+    ) -> [String] {
         guard var want = wants[hash] else {
-            wants[hash] = Want(hash: hash, at: now, author: author, via: via, puller: asker)
+            var made = Want(hash: hash, at: now, author: author, via: via, puller: asker)
+            made.budget = reach.budget
+            made.until = reach.until
+            wants[hash] = made
             order.append(hash)
             if order.count > Self.maxWanted {
                 for dropped in order.prefix(order.count - Self.maxWanted) {
@@ -141,21 +172,23 @@ internal struct BlobExchange: Sendable {
             }
             return []
         }
-        // Refreshed in place: the order is when it was first wanted, as in Android's insertion-ordered map.
-        want.wantedAt = now
+        if asker == nil {
+            // Refreshed in place: the order is when it was first wanted, as in Android's insertion-ordered map. No longer
+            // on every recorded want (knit-next ADR 2026-10.2drc): an ask refreshing it is what let echoes keep it alive.
+            want.wantedAt = now
+            want.budget = Self.pullBudget
+            if reach.rederived || reach.until != nil {
+                want.until = reach.until
+            }
+        }
         want.author = want.author ?? author
         want.via = want.via ?? via
-        var plan = Plan()
+        var notes: [String] = []
         if let asker {
-            // It lacks the bytes: not this cycle. Its ask may be what opens the next one, so open it first: opened after,
-            // it would forget the mark and query the asker back, and a dead blob's pulls would go back and forth.
-            if want.isCycleDue(at: now) {
-                openCycle(&want, at: now, &plan)
-            }
-            want.pullers.insert(asker)
+            notes = noteAsker(&want, asker, reach, now: now, wall: wall)
         }
         wants[hash] = want
-        return plan.notes
+        return notes
     }
 
     /// Stops wanting `hash`, now held (`clearFetching`, then `withdrawAsks`), and answers the neighbours asked for it whose
@@ -195,6 +228,14 @@ internal struct BlobExchange: Sendable {
         roundTrips.forget(ids)
         for hash in order {
             wants[hash]?.forgetLinks(ids)
+        }
+    }
+
+    /// Neighbours whose links went (`unlinked`): none is a newcomer any more, so a link-up that went again pulls nobody
+    /// later (knit-next ADR 2026-10.2drc). Call it ahead of the steps the link-down owes.
+    mutating func unlinked(_ ids: Set<NodeId>) {
+        for hash in order {
+            wants[hash]?.freshLinks.subtract(ids)
         }
     }
 

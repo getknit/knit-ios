@@ -50,13 +50,17 @@ The payload types:
 - `ChatContent { body = "", mentions = [], attachmentHash?, attachmentMime?, enc: EncEnvelope?, replyTo: ReplyRef? }`
 - `ProfileContent { name, status, avatarHash?, pubKey?, deviceTag?, protoVersion?, capabilities?, prekey?, version?, openToChat = false, loraNode?, loraKey? }`
 - `ReceiptContent { ackId }`, `ReactionContent { messageId, emoji? }`, `KeyReqContent { nodeIds }`,
-  `BlobReqContent { hash, offset? }`, `TypingContent { groupId? }`
+  `BlobReqContent { hash, offset?, pull?, until? }`, `TypingContent { groupId? }`
 - `BlobHaveContent { hashes }` and `BlobHasContent { items: [BlobHasItem { hash, state, size?, held? }], load?, re? }`,
   the holder query and its answer (knit-next ADR 2026-10.6e5t). `state` has no default, so it is always written, `0`
   included: NONE 0, HAVE 1, SENDING 2, FETCHING 3, and PARTIAL 4, which is reserved. A state a build does not know is
   never taken for HAVE.
 - A `blobreq`'s `offset` is how many bytes of a cut transfer the asker kept, echoed by the `FILE_HEADER` that answers
   it (knit-next ADR 2026-10.wtyc). This port reads it and never sends it, and serves the whole file (knit-ios #2).
+- A `blobreq`'s `pull` is how many phones deep the ask may still pull the blob through, the receiver counted, and its
+  `until` is the root's deadline for that, epoch ms on the frame's clock (knit-next ADR 2026-10.2drc, ADR
+  2026-10.8hek). Every ask carries its want's budget, 0 included, and its deadline when it has one. An absent `pull`
+  reads as 1, a fetch only.
 - `EncEnvelope { v = 1, nonce, ct, keys: [WrappedKey { to, wk }], r: RatchetHeader?, g: GroupRatchetHeader? }`
 
 `ProfileContent.pubKey` is effectively required: a profile without it is dropped. Keep every field we
@@ -160,7 +164,7 @@ photos in chats the same day (ADR 2026-10.6cas), the blob holder query on 2026-1
 | `receipt`, `relay = true`, `sentAt` set | our DM acks | yes: ✓✓ on our DMs |
 | `receipt`, `relay = false`, no `sentAt` | room and group ticks over the link | yes: Android's room and group ticks to us |
 | `keyreq` (`relay = false`, signed) | when a sender's key is missing | answer with cached signed profiles |
-| `blobreq` (unsigned, `relay = false`, `sentAt` 0, no `offset`) | to the best holder a query found, or blind: the author, then the hop the frame came from, then every other neighbour once a 5 s grace is up; a cycle at most every 45 s, on a link-up or the 60 s tick (knit-next ADRs 2026-10.f7gg and 2026-10.6e5t) | serve it if held, as FILE records of kind ATTACHMENT, the whole file whatever `offset` says; otherwise want it, never asking the asker back that cycle; never flood it (ADR 2026-10.ym9y) |
+| `blobreq` (unsigned, `relay = false`, `sentAt` 0, no `offset`, the want's `pull` and `until`) | to the best holder a query found, or blind: the author, then the hop the frame came from, then every other neighbour once a 5 s grace is up; a cycle at most every 45 s, on a link-up or the 60 s tick (knit-next ADRs 2026-10.f7gg and 2026-10.6e5t) | serve it if held, as FILE records of kind ATTACHMENT, the whole file whatever `offset` says; otherwise want it with one hop less of its `pull`, never asking the asker back that cycle, unless that leaves less than none or its `until` has passed; never flood it (ADR 2026-10.ym9y, ADR 2026-10.8hek) |
 | `blobhave` (unsigned, `relay = false`, `sentAt` 0, ≤ 32 hashes) | in every build, the app's and knit-peer's (`MeshConfiguration.queriesBlobHolders`, ADR 2026-10.m9uq's amendment of 2026-10-09): to each neighbour whose HELLO carries `CAP_BLOB_HAVE`, one frame per neighbour per step | answer every one, from the link that carried it and only when its sender is that link's peer, within 16 a burst and one a second; never flood it |
 | `blobhas` (unsigned, `relay = false`, `sentAt` 0) | the answer: NONE, HAVE with the size, SENDING, or FETCHING per hash, our `load` and the query's `re`; never an `eta` | taken only from a neighbour queried this cycle for a hash it names; a state this build does not know is never HAVE; a SENDING `eta` holds the ask on that holder until then plus 30 s, the `eta` taken as at most 15 min (ADR 2026-10.ds45) |
 | `blobprog` (unsigned, `relay = false`, `sentAt` 0, `BlobProgressContent`: hash, held, ms) | while a file streams in, kept or skipped, to its sender: on every chunk that brings 2 KiB, at least every 500 ms, and once more 500 ms after chunks no report carried; every 2 s with the window off. Only when that link's HELLO carries `CAP_BLOB_HAVE`, an iPhone included (knit-next ADR 2026-10.nsr7, ADR 2026-10.xwjc) | counted, from the link that carried it and only when its sender is that link's peer; it clocks the window of the file we feed that peer (`FeedWindow`, ADR 2026-10.xwjc); never flood it (ADR 2026-10.ds45) |

@@ -21,7 +21,7 @@ import Testing
     }
 
     private func step(_ exchange: inout BlobExchange, _ linked: [BlobExchange.Candidate], at now: Int64) -> BlobExchange.Plan {
-        exchange.decide(photo, among: linked, now: now)
+        exchange.decide(photo, among: linked, now: now, wall: wallAt(now))
     }
 
     /// Sends the queries the steps so far owe at `now`, each under an id of its own, as the engine's flush does.
@@ -44,7 +44,8 @@ import Testing
     /// asked, and the confirm's silence holds the ask to its floor. Answers the books at that point, 22 s in.
     private func heldOnTheAuthor() -> BlobExchange {
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: author, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: author, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         let linked = capable(author, holder)
         _ = step(&exchange, linked, at: 0)
         send(&exchange, at: 0)
@@ -94,7 +95,8 @@ import Testing
 
     @Test func aHolderWhoseConfirmIsSilentIsHeldToItsFloorNotPassedOver() {
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: nil, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         let linked = capable(holder, author)
         _ = step(&exchange, linked, at: 0)
         send(&exchange, at: 0)
@@ -118,7 +120,8 @@ import Testing
     @Test func aConfirmSilentPastTheAsksFloorMovesOnAtOnce() {
         // A 20 s round trip stretches the grace and the confirm's wait to 25 s each, past the 45 s floor: nothing to hold.
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: nil, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         _ = step(&exchange, capable(holder), at: 0)
         send(&exchange, at: 0)
         answer(&exchange, holder, have: photo, load: 0, at: 20_000)
@@ -131,7 +134,8 @@ import Testing
     @Test func aHolderOnlyWaitedOnHasNoFloorToHoldAndIsPassedOverAfterTwoConfirms() {
         // It said it was sending before we asked, so no ask of ours stands on it: there is nothing to hold.
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: nil, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         let linked = capable(holder, author)
         _ = step(&exchange, linked, at: 0)
         let sending = BlobHasContent(items: [BlobHasItem(hash: photo.string, state: .sending, size: 1000)], load: 0, re: nil)
@@ -164,7 +168,8 @@ import Testing
         // copy's three-minute feed, and says when ours should land. Asking the next holder at our ask's 45 s floor would
         // buy a second copy of a photo already on its way.
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: nil, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         let linked = capable(holder, author)
         _ = step(&exchange, linked, at: 0)
         send(&exchange, at: 0)
@@ -196,7 +201,8 @@ import Testing
         // No ask of ours stands on it, so there is no floor, but its answer is a promise: `hold` takes the later of the
         // two, and here there is only the promise.
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: nil, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         let linked = capable(holder, author)
         _ = step(&exchange, linked, at: 0)
         sending(&exchange, holder, eta: 60_000, at: 10)
@@ -228,29 +234,33 @@ import Testing
         let second = BlobHash(of: Array("second".utf8))
         let third = BlobHash(of: Array("third".utf8))
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(first, now: 0, author: nil, via: nil, asker: nil)
-        _ = exchange.decide(first, among: capable(holder), now: 0)
+        _ = exchange.recordWant(
+            first, now: 0, wall: wallAt(0), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
+        _ = exchange.decide(first, among: capable(holder), now: 0, wall: wallAt(0))
         send(&exchange, at: 0)
         answer(&exchange, holder, have: first, load: 0, at: 20_000)
         #expect(exchange.queryWait(for: holder) == 20_000 + wait)
-        _ = exchange.recordWant(second, now: 20_000, author: nil, via: nil, asker: nil)
-        _ = exchange.decide(second, among: capable(holder), now: 20_000)
+        _ = exchange.recordWant(
+            second, now: 20_000, wall: wallAt(20_000), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
+        _ = exchange.decide(second, among: capable(holder), now: 20_000, wall: wallAt(20_000))
         send(&exchange, at: 20_000)
-        #expect(exchange.decide(second, among: capable(holder), now: 35_000).asks.isEmpty, "15 s is inside its lag")
-        let blind = exchange.decide(second, among: capable(holder), now: 45_000)
+        #expect(exchange.decide(second, among: capable(holder), now: 35_000, wall: wallAt(35_000)).asks.isEmpty, "15 s is inside its lag")
+        let blind = exchange.decide(second, among: capable(holder), now: 45_000, wall: wallAt(45_000))
         #expect(blind.asks == [BlobExchange.Ask(to: holder, line: .first)], "past the round trip and the wait")
         #expect(blind.wake == grace + 20_000, "and the blind ask's grace gains the round trip too")
         exchange.linked([holder])
         #expect(exchange.queryWait(for: holder) == wait, "a new link, a new queue: the lag is forgotten")
-        _ = exchange.recordWant(third, now: 45_000, author: nil, via: nil, asker: nil)
-        _ = exchange.decide(third, among: capable(holder), now: 45_000)
-        let plain = exchange.decide(third, among: capable(holder), now: 45_000 + wait)
+        _ = exchange.recordWant(
+            third, now: 45_000, wall: wallAt(45_000), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
+        _ = exchange.decide(third, among: capable(holder), now: 45_000, wall: wallAt(45_000))
+        let plain = exchange.decide(third, among: capable(holder), now: 45_000 + wait, wall: wallAt(45_000 + wait))
         #expect(plain.asks == [BlobExchange.Ask(to: holder, line: .first)])
     }
 
     @Test func aRoundTripStretchesTheWaitOnlyUpToItsCap() {
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: nil, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         _ = step(&exchange, capable(holder), at: 0)
         send(&exchange, at: 0)
         answer(&exchange, holder, have: photo, load: 0, at: 60_000)

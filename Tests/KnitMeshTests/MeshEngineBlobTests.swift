@@ -85,7 +85,60 @@ import Testing
         #expect(fixture.transport.written(.blobRequest).count == 1, "already wanted, and the round has nobody else to widen to")
         #expect(answers(fixture) == ["not held; fetching it", "not held; fetching it"])
         let shown = "\(photoHash.string.prefix(BlobExchange.shownHashCharacters))…"
-        #expect(fixture.log.all.contains("debug mesh blob ask \(shown) → \(carol.nodeId) first (neighbour), widen in 5000 ms"))
+        // A fieldless ask is a fetch only: the echo it makes asks with no budget left (knit-next ADR 2026-10.2drc).
+        #expect(fixture.log.all.contains("debug mesh blob ask \(shown) → \(carol.nodeId) first (neighbour), widen in 5000 ms [pull 0]"))
+    }
+
+    /// The `pull` and `until` of every ask for the photo the fixture wrote to `peer`.
+    private func reach(_ fixture: EngineFixture, to peer: TestPeer) throws -> [BlobRequestContent] {
+        try fixture.transport.written(.blobRequest).filter { $0.to == peer.nodeId }.map { written in
+            try BlobRequestContent(decoding: written.envelope.payload)
+        }
+    }
+
+    @Test func anEchoAsksWithOneHopLessThanItWasAskedAndTheAsksDeadline() throws {
+        // knit-next ADR 2026-10.2drc: asked with 3, Alice wants it with 2 and asks Carol with that, and Bob's deadline.
+        for (pull, budget) in [(3, 2), (1, 0)] {
+            let fixture = EngineFixture(alice)
+            fixture.link(bob, carol)
+            fixture.transport.clear()
+            let until = EngineFixture.start + 600_000
+            fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1"), pull: pull, until: until), from: bob)
+            #expect(
+                try reach(fixture, to: carol) == [BlobRequestContent(hash: photoHash.string, pull: budget, until: until)],
+                "asked with \(pull)")
+            #expect(answers(fixture) == ["not held; fetching it"])
+        }
+    }
+
+    @Test func anAskWithNoBudgetLeftOrPastItsDeadlineMakesNoEchoButIsServed() {
+        // `anAskWithNoBudgetFieldIsAFetchOnlyAndOneWithNoneLeftIsServedOnly` and `pastItsDeadlineAnAskMakesNoEcho…`.
+        let fixture = EngineFixture(alice)
+        fixture.link(bob, carol)
+        fixture.transport.clear()
+        let past = EngineFixture.start - 1
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1"), pull: 0), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-2"), pull: 3, until: past), from: bob)
+        #expect(fixture.transport.written(.blobRequest).isEmpty && !fixture.engine.blobExchange.isWanted(photoHash), "no want at all")
+        #expect(answers(fixture) == ["not held; no echo (fetch only)", "not held; no echo (past its deadline)"])
+        let shown = "\(photoHash.string.prefix(BlobExchange.shownHashCharacters))…"
+        #expect(fixture.log.all.contains("debug mesh blob no-echo \(shown) for \(bob.nodeId) (fetch only)"))
+        #expect(fixture.log.all.contains("debug mesh blob no-echo \(shown) for \(bob.nodeId) (past its deadline)"))
+        #expect(fixture.engine.blobCounts.echoesDeclined == 2)
+        // Held, either ask is served: a holder serves past any budget or deadline.
+        holding(fixture)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-3"), pull: 0), from: bob)
+        fixture.deliver(carol.blobRequest(for: photoHash.string, id: frameIdOf("breq-4"), pull: 3, until: past), from: carol)
+        #expect(fixture.transport.files.map(\.to) == [bob.nodeId, carol.nodeId])
+    }
+
+    @Test func aPullOutsideThirtyTwoBitsRefusesTheRequest() {
+        let fixture = EngineFixture(alice)
+        fixture.link(bob)
+        fixture.transport.clear()
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1"), pull: Int(Int32.max) + 1), from: bob)
+        #expect(fixture.engine.dropped[.undecodable] == 1)
+        #expect(fixture.transport.written.isEmpty && !fixture.engine.blobExchange.isWanted(photoHash))
     }
 
     @Test func aRequestWhoseHashIsNotOneIsDropped() {
@@ -99,7 +152,7 @@ import Testing
 
     @Test func aBlobRequestHasTheShapeAndroidGivesIt() throws {
         let fixture = EngineFixture(alice)
-        let wire = fixture.engine.blobRequest(photoHash)
+        let wire = fixture.engine.blobRequest(photoHash, pull: BlobExchange.pullBudget, until: nil)
         #expect(!wire.relay && wire.sig.isEmpty)
         // `{relay: false, sig: h'', signed: …}`: the default ttl and hops left out, as `wireEnvelopeUnsigned` has them.
         #expect(Hex.encode(Array(wire.encoded.prefix(20))) == "a36572656c6179f46373696740667369676e6564")
@@ -107,7 +160,8 @@ import Testing
         #expect(envelope.type == .blobRequest && envelope.senderId == alice.nodeId.string)
         #expect(envelope.sentAt == 0 && envelope.recipientId == nil && envelope.group == nil)
         #expect(envelope.id.utf8.count == 22, "a fresh frame id")
-        #expect(try BlobRequestContent(decoding: envelope.payload) == BlobRequestContent(hash: photoHash.string))
+        #expect(
+            try BlobRequestContent(decoding: envelope.payload) == BlobRequestContent(hash: photoHash.string, pull: BlobExchange.pullBudget))
     }
 
     @Test func aBlobArrivingOnALinkIsNotAskedFor() {
@@ -115,7 +169,7 @@ import Testing
         fixture.link(bob)
         fixture.transport.clear()
         fixture.transport.arrivingFileKeys = [photoHash]
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         #expect(fixture.transport.written(.blobRequest).isEmpty)
         #expect(!fixture.engine.blobExchange.isWanted(photoHash), "not even marked: a torn transfer re-arms from the stores")
     }
@@ -123,7 +177,7 @@ import Testing
     @Test func aWantedBlobIsAskedAgainAtEachReofferUntilItArrives() {
         let fixture = EngineFixture(alice)
         fixture.link(bob)
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         fixture.transport.clear()
         fixture.advance(60_000)
         #expect(fixture.transport.written(.blobRequest).map(\.to) == [bob.nodeId])
@@ -137,7 +191,7 @@ import Testing
     @Test func aNeighbourThatLinksDuringTheFirstAsksGraceIsAskedWhenTheRoundWidens() {
         let fixture = EngineFixture(alice)
         fixture.link(bob)
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         fixture.transport.clear()
         fixture.link(carol)
         #expect(fixture.transport.written(.blobRequest).isEmpty, "the first ask's grace runs")
@@ -148,7 +202,7 @@ import Testing
     @Test func aNeighbourThatLinksAgainIsAskedAgainAtOnce() {
         let fixture = EngineFixture(alice)
         fixture.link(bob)
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         fixture.transport.clear()
         fixture.unlink(bob)
         fixture.link(bob)
@@ -157,7 +211,7 @@ import Testing
 
     @Test func aWantNobodyRefreshedIsSweptAndTheLinksForgetIt() {
         let fixture = EngineFixture(alice)
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         #expect(fixture.transport.accepted == [photoHash])
         fixture.advance(BlobExchange.wantMilliseconds + 600_000)
         #expect(!fixture.engine.blobExchange.isWanted(photoHash))
@@ -166,7 +220,7 @@ import Testing
 
     @Test func aFileWhoseBytesDoNotMatchItsHashIsDropped() {
         let fixture = EngineFixture(alice)
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: photoHash, mime: "image/jpeg", bytes: [1]))
         #expect(!fixture.stores.blobs.contains(photoHash))
         #expect(fixture.engine.filesRejected == 1)
@@ -183,7 +237,7 @@ import Testing
     @Test func aFileIsTakenOffTheLinkOnceTheStoreHasAnsweredKeptOrNot() {
         // knit-next #138: until then a landing file still reads as on its way, so it is neither asked for nor queried.
         let fixture = EngineFixture(alice)
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: photoHash, mime: "image/jpeg", bytes: [1]))
         fixture.engine.receiveFile(InboundFile(from: carol.nodeId, kind: .attachment, hash: photoHash, mime: "image/jpeg", bytes: photo))
         #expect(fixture.transport.taken.map(\.from) == [bob.nodeId, carol.nodeId])
@@ -192,7 +246,7 @@ import Testing
 
     @Test func aWantedFileIsKeptAndWantedNoMore() {
         let fixture = EngineFixture(alice)
-        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil)
+        fixture.engine.wantBlob(photoHash, author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: photoHash, mime: "image/webp", bytes: photo))
         #expect(fixture.stores.blobs.bytes(of: photoHash) == photo)
         #expect(fixture.stores.blobs.mime(of: photoHash) == "image/webp")
@@ -223,9 +277,11 @@ struct SentFile: Equatable {
 }
 
 extension TestPeer {
-    /// An unsigned blob request, as Android builds one (`BlobExchange.blobRequest`).
-    func blobRequest(for hash: String, id: String, relay: Bool = false) -> TestFrame {
-        let envelope = RelayEnvelope(type: .blobRequest, id: id, senderId: nodeId.string, payload: BlobRequestContent(hash: hash).encoded)
+    /// An unsigned blob request, as Android builds one (`BlobExchange.blobRequest`): its budget and deadline when given
+    /// (knit-next ADR 2026-10.2drc), and the bytes a build before them sends when not.
+    func blobRequest(for hash: String, id: String, relay: Bool = false, pull: Int? = nil, until: Int64? = nil) -> TestFrame {
+        let content = BlobRequestContent(hash: hash, pull: pull, until: until)
+        let envelope = RelayEnvelope(type: .blobRequest, id: id, senderId: nodeId.string, payload: content.encoded)
         return TestFrame(wire: WireEnvelope(relay: relay, sig: [], signed: envelope.encoded), envelope: envelope)
     }
 }

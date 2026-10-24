@@ -21,12 +21,13 @@ import Testing
 
     private func exchange(author: NodeId? = nil) -> BlobExchange {
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: author, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: author, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         return exchange
     }
 
     private func step(_ exchange: inout BlobExchange, _ linked: [BlobExchange.Candidate], at now: Int64) -> BlobExchange.Plan {
-        exchange.decide(photo, among: linked, now: now)
+        exchange.decide(photo, among: linked, now: now, wall: wallAt(now))
     }
 
     /// `peer` answers `state` for the photo, with `load`, to the query it was last sent.
@@ -51,7 +52,7 @@ import Testing
         _ = answer(&exchange, carol, .notHeld, at: 200)
         let chosen = step(&exchange, linked, at: 200)
         #expect(chosen.asks == [BlobExchange.Ask(to: bob, line: .fetch)])
-        #expect(BlobExchange.askLine(photo, chosen, .fetch).hasSuffix("(link, load 0), grace \(grace) ms"))
+        #expect(BlobExchange.askLine(photo, chosen, .fetch).hasSuffix("(link, load 0), grace \(grace) ms [pull 3]"))
         #expect(exchange.counts.fetches == 1)
     }
 

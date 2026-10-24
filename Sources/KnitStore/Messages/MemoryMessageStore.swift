@@ -304,18 +304,20 @@ public final class MemoryMessageStore: MessageStore {
 }
 
 extension MemoryMessageStore {
-    /// Who sent the earliest message carrying each of `hashes` (``MessageStore/attachmentSenders(among:)``).
-    public func attachmentSenders(among hashes: Set<BlobHash>) -> [BlobHash: NodeId] {
+    /// Every message carrying each of `hashes`, earliest first (``MessageStore/attachmentRows(among:)``).
+    public func attachmentRows(among hashes: Set<BlobHash>) -> [BlobHash: [AttachmentRow]] {
         state.withLock { state in
             // Earliest first, as the SQL store reads them, so the first message carrying each hash names its sender.
             let carriers = state.rows.values.map(\.record).filter { $0.attachment.map { hashes.contains($0.hash) } ?? false }
-            var senders: [BlobHash: NodeId] = [:]
+            var rows: [BlobHash: [AttachmentRow]] = [:]
             for record in carriers.sorted(by: Self.precedes) {
-                if let hash = record.attachment?.hash, senders[hash] == nil {
-                    senders[hash] = record.senderId
+                if let hash = record.attachment?.hash {
+                    let row = AttachmentRow(
+                        id: record.id, senderId: record.senderId, sentAt: record.sentAt, isDM: record.recipientId != nil)
+                    rows[hash, default: []].append(row)
                 }
             }
-            return senders
+            return rows
         }
     }
 

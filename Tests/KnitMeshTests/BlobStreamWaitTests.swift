@@ -36,12 +36,13 @@ import Testing
     /// A fetch on the author, which said HAVE, beside a holder that said `state`.
     private func asked(_ state: BlobHolding, load: Int = 0) -> BlobExchange {
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: author, via: nil, asker: nil)
-        _ = exchange.decide(photo, among: linked(left: nil), now: 0)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: author, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
+        _ = exchange.decide(photo, among: linked(left: nil), now: 0, wall: wallAt(0))
         send(&exchange, at: 0)
         answer(&exchange, author, .have, at: 100)
         answer(&exchange, holder, state, load: load, at: 100)
-        _ = exchange.decide(photo, among: linked(left: nil), now: 100)
+        _ = exchange.decide(photo, among: linked(left: nil), now: 100, wall: wallAt(100))
         return exchange
     }
 
@@ -49,19 +50,22 @@ import Testing
         // `lackedWhileStuck`: the P8 sat 8 min behind a DM file while the P9 held the photo idle (knit-next 09f70b3e).
         var exchange = asked(.notHeld)
         #expect(exchange.wants[photo]?.fetch?.peer == author)
-        #expect(exchange.decide(photo, among: linked(left: 60_000), now: 1000).query.isEmpty, "not yet due")
-        let due = exchange.decide(photo, among: linked(left: 60_000), now: recheck - BlobExchange.timerCoalesceMilliseconds)
+        #expect(exchange.decide(photo, among: linked(left: 60_000), now: 1000, wall: wallAt(1000)).query.isEmpty, "not yet due")
+        let early = recheck - BlobExchange.timerCoalesceMilliseconds
+        let due = exchange.decide(photo, among: linked(left: 60_000), now: early, wall: wallAt(early))
         #expect(due.query == [holder], "a recheck after its NONE's query, the timer's window early")
         #expect(exchange.wants[photo]?.pullRechecks[holder, default: 0] == 0, "not counted against PULL_RECHECKS")
         send(&exchange, at: recheck)
         answer(&exchange, holder, .have, at: recheck + 100)
         #expect(
-            exchange.decide(photo, among: linked(left: 50_000), now: recheck + 100).asks == [BlobExchange.Ask(to: holder, line: .fetch)])
+            exchange.decide(photo, among: linked(left: 50_000), now: recheck + 100, wall: wallAt(recheck + 100)).asks == [
+                BlobExchange.Ask(to: holder, line: .fetch)
+            ])
     }
 
     @Test func aStreamWithThirtySecondsLeftOrLessRechecksNobody() {
         var exchange = asked(.notHeld)
-        let plan = exchange.decide(photo, among: linked(left: BlobExchange.streamSwitchMilliseconds), now: recheck)
+        let plan = exchange.decide(photo, among: linked(left: BlobExchange.streamSwitchMilliseconds), now: recheck, wall: wallAt(recheck))
         #expect(plan.query.isEmpty && plan.asks.isEmpty)
         #expect(plan.wake == BlobExchange.streamPollMilliseconds)
     }
@@ -69,7 +73,7 @@ import Testing
     @Test func aHolderFeedingSomeoneElseIsNotIdle() {
         var exchange = asked(.have, load: 1)
         #expect(exchange.wants[photo]?.fetch?.peer == author)
-        let plan = exchange.decide(photo, among: linked(left: 60_000), now: 1000)
+        let plan = exchange.decide(photo, among: linked(left: 60_000), now: 1000, wall: wallAt(1000))
         #expect(plan.asks.isEmpty, "load 1: it feeds something, so our copy would wait there too")
         #expect(exchange.counts.fallbacks == 0)
     }
@@ -80,7 +84,7 @@ import Testing
             BlobExchange.Candidate(id: author, streaming: true, capable: true),
             BlobExchange.Candidate(id: holder, streaming: false, capable: true),
         ]
-        let plan = exchange.decide(photo, among: unknown, now: recheck)
+        let plan = exchange.decide(photo, among: unknown, now: recheck, wall: wallAt(recheck))
         #expect(plan.asks.isEmpty && plan.wake == BlobExchange.streamPollMilliseconds)
     }
 }

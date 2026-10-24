@@ -90,6 +90,21 @@ import Testing
         #expect(!fixture.engine.blobExchange.hasParked)
     }
 
+    @Test func aParkedAskThatEchoesOnceTheBlobIsGoneKeepsItsBudgetAndDeadline() throws {
+        // `aParkedAskThatEchoesOnceTheBlobIsGoneKeepsItsBudgetAndDeadline` (knit-next ADR 2026-10.2drc's review: the unpark
+        // dropped both): the blob went meanwhile, so the unpark finds nothing to serve and echoes as Carol asked.
+        let fixture = feeding(carol, dave)
+        let deadline = EngineFixture.start + 600_000
+        fixture.deliver(carol.blobRequest(for: photoHash.string, id: frameIdOf("breq-1"), pull: 3, until: deadline), from: carol)
+        #expect(fixture.engine.blobExchange.isParked(photoHash, for: carol.nodeId))
+        fixture.stores.blobs.remove(photoHash)
+        fixture.transport.feeds = []
+        fixture.engine.fileFeedsChanged()
+        let asks = try fixture.transport.written(.blobRequest).map { try BlobRequestContent(decoding: $0.envelope.payload) }
+        #expect(!asks.isEmpty && asks.allSatisfy { $0.pull == 2 && $0.until == deadline }, "a hop less of Carol's budget, and her deadline")
+        #expect(fixture.engine.blobExchange.wants[photoHash]?.pullers == [carol.nodeId])
+    }
+
     @Test func thePollServesAParkedAskOnceItsFeedStallsAndThenLetsItselfGo() {
         let fixture = feeding(carol)
         ask(fixture, from: carol, frameIdOf("breq-1"))

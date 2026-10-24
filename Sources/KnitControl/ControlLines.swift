@@ -144,7 +144,7 @@ internal enum ControlLines {
     /// What the blob holder query did, by Android's debug bridge's names less their `blob` prefix (knit-next ADR
     /// 2026-10.6e5t): queries sent, answered and refused, answers taken and ignored, and the fetches, confirms, fallbacks,
     /// blind asks and pulls they led to. Then the progress reports and withdrawals sent and taken (knit-next ADR
-    /// 2026-10.nsr7).
+    /// 2026-10.nsr7), and the echoes declined and pulls withheld (knit-next ADR 2026-10.2drc).
     static func describe(_ blobs: BlobCounts) -> JSONValue {
         [
             "queriesSent": .int(Int64(blobs.queriesSent)),
@@ -162,6 +162,8 @@ internal enum ControlLines {
             "cancelsSent": .int(Int64(blobs.cancelsSent)),
             "cancelsTaken": .int(Int64(blobs.cancelsTaken)),
             "asksParked": .int(Int64(blobs.asksParked)),
+            "echoesDeclined": .int(Int64(blobs.echoesDeclined)),
+            "pullsWithheld": .int(Int64(blobs.pullsWithheld)),
         ]
     }
 

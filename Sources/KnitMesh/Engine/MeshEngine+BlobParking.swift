@@ -15,15 +15,16 @@ extension MeshEngine {
     /// (`parkBehindFeed`). True when parked; a re-ask while parked only refreshes it. Never for a copy the serve memo
     /// already covers. The park is kept as long as its turn is expected to take, not only the memo's 45 s: an asker held
     /// elsewhere may not query us again before the feed ends (knit-next's device cell (c), 2026-10-07: dropped 4 s
-    /// before its turn, it came back 10 s late on its own).
-    func parkBehindFeed(_ hash: BlobHash, for asker: NodeId, bytes: Int64, now: Int64) -> Bool {
+    /// before its turn, it came back 10 s late on its own). The park keeps what the ask said, its budget and deadline, so
+    /// its unpark echoes as it was asked if the blob went meanwhile (knit-next ADR 2026-10.2drc).
+    func parkBehindFeed(_ hash: BlobHash, for asker: NodeId, bytes: Int64, reached: BlobExchange.Reached, now: Int64) -> Bool {
         let addressees = addressees(of: hash)
         guard isStarted, !blobExchange.memoHolds(hash, for: asker, now: now),
             waitsBehindFeed(hash, asker: asker, bytes: bytes, to: addressees)
         else {
             return false
         }
-        if blobExchange.park(hash, for: asker, bytes: bytes, now: now) {
+        if blobExchange.park(hash, for: asker, bytes: bytes, reached: reached, now: now) {
             blobExchange.counts.asksParked += 1
             let carrier = Self.isCarrier(asker, of: addressees) ? " (carrier)" : ""
             note(["blob park \(hash.string.prefix(BlobExchange.shownHashCharacters))… for \(asker) behind a feed\(carrier)"])
@@ -157,7 +158,8 @@ extension MeshEngine {
                 next = min(next, rechecks.min() ?? BlobExchange.parkPollMilliseconds)
                 if !waitsBehindFeed(hash, asker: asker, bytes: ask.bytes, to: addressees), blobExchange.takeParked(hash, for: asker) {
                     note(["blob unpark \(hash.string.prefix(BlobExchange.shownHashCharacters))… → \(asker) (waited \(now - ask.since) ms)"])
-                    serveOrWant(hash, to: asker, mayPark: false)
+                    // Its budget and deadline with it: served, unless the blob went meanwhile, when it echoes as it asked.
+                    serveOrWant(hash, to: asker, mayPark: false, reached: ask.reached)
                 }
             }
         }

@@ -109,25 +109,41 @@ public struct BlobRequestContent: CBORRepresentable, Equatable {
     /// port reads it and never sends it: a holder here serves the whole file, the older holder's answer that knit-next's
     /// resume falls back on (knit-ios #2).
     public var offset: Int64?
+    /// How many phones deep this ask may still pull the blob through, the receiver counted (knit-next ADR 2026-10.2drc,
+    /// `Wire.kt:368-375`, ADR 2026-10.8hek). A receiver that lacks the blob wants it with one less and asks its own
+    /// neighbours with that; asked with 0, it serves the blob if it holds it and makes no want. Absent reads as 1, a fetch
+    /// only, which is what a build before the field sends. Read as a Kotlin `Int` and kept as a Swift `Int`, so one less
+    /// than the smallest never wraps.
+    public var pull: Int?
+    /// Until when the asker's root pulls the blob through, epoch ms on the frame's own clock (a DM's `sentAt` plus
+    /// custody's day): past it nobody pulls it through or wants it for someone else. `nil` for no deadline.
+    public var until: Int64?
 
-    /// Makes a blob request.
-    public init(hash: String, offset: Int64? = nil) {
+    /// Makes a blob request. A field left `nil` is left out, so a plain ask is the bytes it always was.
+    public init(hash: String, offset: Int64? = nil, pull: Int? = nil, until: Int64? = nil) {
         self.hash = hash
         self.offset = offset
+        self.pull = pull
+        self.until = until
     }
 
-    /// Reads a blob request from a decoded item.
+    /// Reads a blob request from a decoded item. Android's `fastOnly` is not modelled and is skipped (knit-ios #8); a
+    /// `pull` outside 32 bits refuses the request, as an out-of-range `ttl` or `ctl` does.
     public init(cbor: CBOR) throws(WireDecodingError) {
         let fields = try CBORFields(cbor, type: "BlobReqContent")
         hash = try fields.required("hash", .text)
         offset = try fields.nullable("offset", .int64)
+        pull = try fields.nullable("pull", .int32)
+        until = try fields.nullable("until", .int64)
     }
 
-    /// The request as an item.
+    /// The request as an item, in Kotlin's declaration order less the `fastOnly` it does not model.
     public var cbor: CBOR {
         var writer = CBORFieldWriter()
         writer.text("hash", hash)
         writer.long("offset", optional: offset)
+        writer.int("pull", optional: pull)
+        writer.long("until", optional: until)
         return writer.cbor
     }
 }

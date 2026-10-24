@@ -32,6 +32,12 @@ public struct BlobCounts: Sendable, Equatable {
     public var cancelsTaken: Int
     /// Asks parked behind another copy's feed of the same blob (`blobAsksParked`, knit-next ADR 2026-10.g24x).
     public var asksParked: Int
+    /// Asks for a blob we lack that made no want here, allowing no budget or past their deadline (`blobEchoesDeclined`,
+    /// knit-next ADR 2026-10.2drc).
+    public var echoesDeclined: Int
+    /// Cycles that would have asked their NONE neighbours to pull a blob through and asked nobody, the want past its
+    /// deadline or with no budget left (`blobPullsWithheld`).
+    public var pullsWithheld: Int
 
     /// Bundles the counts.
     public init(
@@ -49,7 +55,9 @@ public struct BlobCounts: Sendable, Equatable {
         progressTaken: Int = 0,
         cancelsSent: Int = 0,
         cancelsTaken: Int = 0,
-        asksParked: Int = 0
+        asksParked: Int = 0,
+        echoesDeclined: Int = 0,
+        pullsWithheld: Int = 0
     ) {
         self.queriesSent = queriesSent
         self.queriesAnswered = queriesAnswered
@@ -66,5 +74,7 @@ public struct BlobCounts: Sendable, Equatable {
         self.cancelsSent = cancelsSent
         self.cancelsTaken = cancelsTaken
         self.asksParked = asksParked
+        self.echoesDeclined = echoesDeclined
+        self.pullsWithheld = pullsWithheld
     }
 }

@@ -6,19 +6,20 @@ extension BlobExchange {
     /// Where `hash`'s fetch stands at `now` against the `linked` neighbours, and the one change that moves it on: the
     /// queries it owes go into the outbox, and the asks, the wake and the log lines come back for the engine to carry
     /// out. A hash not wanted gets an empty plan. The engine reads the link and the store first: a blob on its way or
-    /// held is never stepped.
-    mutating func decide(_ hash: BlobHash, among linked: [Candidate], now: Int64) -> Plan {
+    /// held is never stepped. `wall` is the wall clock at the step, which the want's deadline is read against; every
+    /// ask the step makes carries the want's budget and deadline as it read them.
+    mutating func decide(_ hash: BlobHash, among linked: [Candidate], now: Int64, wall: Int64) -> Plan {
         guard var want = wants[hash] else {
             return Plan()
         }
-        var plan = Plan()
-        decide(&want, linked, now, &plan)
+        var plan = Plan(pull: want.budget, until: want.until)
+        decide(&want, linked, now, wall, &plan)
         wants[hash] = want
         queue(hash, for: plan.query)
         return plan
     }
 
-    private mutating func decide(_ want: inout Want, _ linked: [Candidate], _ now: Int64, _ plan: inout Plan) {
+    private mutating func decide(_ want: inout Want, _ linked: [Candidate], _ now: Int64, _ wall: Int64, _ plan: inout Plan) {
         if let fetch = want.fetch {
             // Queries go out mid-fetch too (a newcomer, a fetching neighbour's recheck): fresh answers for the fallback.
             let stuck = Self.stuckOn(fetch, linked)
@@ -29,8 +30,8 @@ extension BlobExchange {
             }
         }
         // A cycle closes only with no ask outstanding, so an ask's grace always runs out inside the cycle it began in.
-        if want.isCycleDue(at: now) {
-            openCycle(&want, at: now, &plan)
+        if want.isCycleDue(at: now, wall: wall) {
+            openCycle(&want, at: now, wall: wall, &plan)
         }
         let live = linked.filter { !want.pullers.contains($0.id) }
         let capable = capableOf(live)
@@ -41,15 +42,16 @@ extension BlobExchange {
         if askBlind(&want, Self.blind(want, live, capable), now, &plan) {
             return
         }
-        pullThrough(&want, capable, now, &plan)
+        pullThrough(&want, capable, now, wall: wall, &plan)
     }
 
-    /// Opens `want`'s next cycle at `now`, and logs it when the last one was dead.
-    func openCycle(_ want: inout Want, at now: Int64, _ plan: inout Plan) {
-        want.openCycle(at: now, natural: true)
+    /// Opens `want`'s next cycle at `now`, and logs it when the last one was dead. A gap past 360000 ms in the line means
+    /// a want dead for a day or past its deadline (knit-next ADR 2026-10.2drc's oracle).
+    func openCycle(_ want: inout Want, at now: Int64, wall: Int64, _ plan: inout Plan) {
+        want.openCycle(at: now, wall: wall, natural: true)
         if want.deadCycles > 0 {
-            plan.notes.append(
-                "blob cycle \(want.hash8)… after \(want.deadCycles) dead, next if dead in \(want.cycleGap(dead: true)) ms")
+            let gap = want.cycleGap(now: now, wall: wall, dead: true)
+            plan.notes.append("blob cycle \(want.hash8)… after \(want.deadCycles) dead, next if dead in \(gap) ms")
         }
     }
 
@@ -369,24 +371,17 @@ extension BlobExchange {
     /// are asked to pull it through: the hop the frame came from first, every one of them from the next empty cycle on,
     /// or at once when the hop is not among them. Each is queried again shortly, and the next cycle, opened by the tick
     /// or a link-up and never by a timer of its own, queries everyone again.
-    private mutating func pullThrough(_ want: inout Want, _ capable: [Candidate], _ now: Int64, _ plan: inout Plan) {
+    ///
+    /// Nobody is asked (``withholdPull(_:_:_:_:)``) when the want has no budget left or is past its deadline at `wall`
+    /// (knit-next ADR 2026-10.2drc). The cycle is dead all the same, and backs off; the wait for a FETCHING neighbour's
+    /// recheck stands. A neighbour that linked in this cycle is pulled at once, mid-cycle, by any want that may pull
+    /// (``pullNewcomers(_:_:_:_:)``).
+    private mutating func pullThrough(_ want: inout Want, _ capable: [Candidate], _ now: Int64, wall: Int64, _ plan: inout Plan) {
         let fetching = capable.contains { want.answers[$0.id]?.state == .fetching }
         // A neighbour that answered nothing says nothing: one still silent here was asked blind.
         let lacking = capable.filter { want.answers[$0.id].map { !$0.state.isHeld && $0.state != .fetching } ?? false }
-        if !fetching, want.pulled.isEmpty, !lacking.isEmpty {
-            let hop = lacking.first { $0.id == want.via }
-            let pulls = hop.flatMap { want.emptyCycles == 0 ? [$0] : nil } ?? lacking
-            if want.pulledAt == nil {
-                // The cycle's first pull: its rechecks run out inside the cycle.
-                want.pulledAt = now
-            }
-            for candidate in pulls {
-                want.pulled.insert(candidate.id)
-                want.askedAt[candidate.id] = now
-                plan.asks.append(Ask(to: candidate.id, line: .pull))
-            }
-            plan.why = pulls.count == 1 && pulls.first?.id == hop?.id ? "via hop" : "wide"
-            counts.pullThroughs += 1
+        if !fetching {
+            pullOrWithhold(&want, lacking, now, wall: wall, &plan)
         }
         let rechecks = capable.compactMap { candidate in
             want.queried[candidate.id].flatMap { recheckAt(want, candidate.id, queriedAt: $0) }

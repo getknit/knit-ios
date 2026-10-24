@@ -62,14 +62,16 @@ final class EngineLab {
     }
 
     /// Links `first` and `second`, as each one's link layer reports the link up to its engine, and carries what follows.
-    func link(_ first: Int, _ second: Int, holding: [(from: Int, to: Int)] = []) {
+    /// Each side's HELLO claims `capabilities`: the blob labs add ``Capabilities/blobHave``, without which nobody queries a
+    /// holder and nobody answers NONE.
+    func link(_ first: Int, _ second: Int, holding: [(from: Int, to: Int)] = [], capabilities: Capabilities = .local) {
         links.insert(Direction(from: first, to: second))
         links.insert(Direction(from: second, to: first))
         for direction in holding {
             hold(from: direction.from, to: direction.to)
         }
-        nodes[first].fixture.link(nodes[second].fixture.me)
-        nodes[second].fixture.link(nodes[first].fixture.me)
+        nodes[first].fixture.link(nodes[second].fixture.me, capabilities: capabilities)
+        nodes[second].fixture.link(nodes[first].fixture.me, capabilities: capabilities)
         carry()
     }
 

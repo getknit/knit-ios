@@ -61,7 +61,7 @@ extension MeshEngine {
             events.append(.received(stored.record, isRequest: !isAccepted(conversation)))
         }
         if let attachment = stored.record.attachment {
-            receiveAttachment(attachment, author: sender, via: hop)
+            receiveAttachment(attachment, of: stored.record, author: sender, via: hop)
         }
         acknowledge(envelope, sender: sender)
     }
@@ -69,16 +69,35 @@ extension MeshEngine {
     /// Fetches what a delivered message carries, unless its bytes are here already, when a sealed one learns its
     /// plaintext's name. A key-less picture, a room post's or one forwarded under its public name, is held from our own
     /// sealed copy instead when its author was party to the conversation that copy came through (ADR 2026-10.f3mv);
-    /// this is the one door to that copy.
-    private func receiveAttachment(_ attachment: MessageAttachment, author: NodeId, via hop: NodeId?) {
+    /// this is the one door to that copy. Otherwise it is a want of our own, pulled through until `record`'s deadline
+    /// (``deliveredReach(_:)``).
+    private func receiveAttachment(_ attachment: MessageAttachment, of record: MessageRecord, author: NodeId, via hop: NodeId?) {
         let hash = attachment.hash
         if stores.blobs.contains(hash) {
             notePlainHash(hash)
-        } else if attachment.key == nil, !transport.arrivingFileKeys.contains(hash), copyFromOwnStore(hash, author: author) {
+            return
+        }
+        if attachment.key == nil, !transport.arrivingFileKeys.contains(hash), copyFromOwnStore(hash, author: author) {
             events.append(.attachmentArrived(hash))
             return
         }
-        wantBlob(hash, author: author, via: hop, asker: nil)
+        wantBlob(hash, author: author, via: hop, asker: nil, reach: deliveredReach(record))
+    }
+
+    /// The budget and deadline a delivered `record`'s photo is wanted with (`deliveredFetch`'s `until`, knit-next ADR
+    /// 2026-10.2drc): the whole budget, and a deadline the delivery knows, `nil` included. A row that is no DM's (a
+    /// group's, a room's) has none, and lifts an old DM's at once, with no read. A DM's folds every row naming the hash
+    /// (`PullThroughGate`), which this one is among: the row is stored before this runs. It is folded in by its id too,
+    /// so a read that failed, which answers no rows, still leaves this DM's own window, never none.
+    func deliveredReach(_ record: MessageRecord) -> BlobExchange.Reach {
+        guard record.recipientId != nil, let hash = record.attachment?.hash else {
+            return .own(until: nil, rederived: true)
+        }
+        var rows = stores.messages.attachmentRows(among: [hash])[hash] ?? []
+        if !rows.contains(where: { ExactKey($0.id) == ExactKey(record.id) }) {
+            rows.append(AttachmentRow(id: record.id, senderId: record.senderId, sentAt: record.sentAt, isDM: true))
+        }
+        return .own(until: PullThroughGate.until(rows), rederived: true)
     }
 }
 

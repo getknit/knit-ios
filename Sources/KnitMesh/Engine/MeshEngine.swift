@@ -237,6 +237,8 @@ public final class MeshEngine {
     /// is asked at once rather than at the next timer or tick (`BlobExchange.unlinked`, knit-next #140): an ask stands on
     /// a live link until its floor, never on one that is gone.
     public func linkDown(_ nodeId: NodeId) {
+        // A newcomer is one only while its link stands (knit-next ADR 2026-10.2drc): a link-up that went pulls nobody later.
+        blobExchange.unlinked([nodeId])
         stepBlobs(blobExchange.fetches(on: [nodeId]))
         events.append(.neighborsChanged(transport.neighbors))
         log.log(.info, "mesh link down \(nodeId)")

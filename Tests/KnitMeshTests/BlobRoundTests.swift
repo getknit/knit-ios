@@ -19,12 +19,14 @@ import Testing
 
     private func exchange(author: NodeId? = nil, via: NodeId? = nil, asker: NodeId? = nil) -> BlobExchange {
         var exchange = BlobExchange(queriesHolders: true)
-        _ = exchange.recordWant(photo, now: 0, author: author, via: via, asker: asker)
+        let reach: BlobExchange.Reach =
+            asker == nil ? .own(until: nil, rederived: false) : .asked(pull: BlobExchange.pullBudget, until: nil)
+        _ = exchange.recordWant(photo, now: 0, wall: wallAt(0), author: author, via: via, asker: asker, reach: reach)
         return exchange
     }
 
     private func step(_ exchange: inout BlobExchange, _ linked: [BlobExchange.Candidate], at now: Int64) -> BlobExchange.Plan {
-        exchange.decide(photo, among: linked, now: now)
+        exchange.decide(photo, among: linked, now: now, wall: wallAt(now))
     }
 
     @Test func aRoundAsksTheAuthorAloneThenEveryOtherNeighbourOnceItsGraceIsUp() {
@@ -33,12 +35,12 @@ import Testing
         let first = step(&exchange, linked, at: 0)
         #expect(first.asks == [BlobExchange.Ask(to: carol, line: .first)])
         #expect(first.wake == grace && first.why == "author")
-        #expect(BlobExchange.askLine(photo, first, .first).hasSuffix("first (author), widen in \(grace) ms"))
+        #expect(BlobExchange.askLine(photo, first, .first).hasSuffix("first (author), widen in \(grace) ms [pull 3]"))
         let waiting = step(&exchange, linked, at: grace - 1)
         #expect(waiting.asks.isEmpty && waiting.wake == 1)
         let widened = step(&exchange, linked, at: grace)
         #expect(widened.asks == [BlobExchange.Ask(to: alice, line: .widened), BlobExchange.Ask(to: bob, line: .widened)])
-        #expect(BlobExchange.askLine(photo, widened, .widened).hasSuffix(" widened"))
+        #expect(BlobExchange.askLine(photo, widened, .widened).hasSuffix(" widened [pull 3]"))
         #expect(step(&exchange, linked, at: grace + 1000).asks.isEmpty, "everyone asked once this round")
         #expect(exchange.counts.blindAsks == 2)
     }
@@ -98,17 +100,20 @@ import Testing
         #expect(step(&exchange, blind(bob, carol), at: 1000).asks == [BlobExchange.Ask(to: bob, line: .first)])
     }
 
-    @Test func theNextRoundOpensACycleOnWithOneAskAndABlindRoundNeverBacksOff() {
+    @Test func aBlindRoundKeepsItsPaceForTwoCyclesThenBacksOff() {
+        // `aCycleThatAskedANeighbourBlindKeepsItsPaceForTwoCyclesThenBacksOff` (knit-next ADR 2026-10.2drc, amending
+        // f7gg): a blind ask may reach a holder, so the first two lead-less cycles keep the 45 s pace; from the third on a
+        // cycle whose blind asks brought nothing is dead, and backs off. The author is still asked in every cycle that opens.
         var exchange = exchange(author: bob)
-        _ = step(&exchange, blind(bob, carol), at: 0)
-        _ = step(&exchange, blind(bob, carol), at: grace)
-        #expect(step(&exchange, blind(bob, carol), at: BlobExchange.cycleMilliseconds - 1).asks.isEmpty)
-        for round in 1...4 {
-            let now = Int64(round) * BlobExchange.cycleMilliseconds
-            #expect(step(&exchange, blind(bob, carol), at: now).asks == [BlobExchange.Ask(to: bob, line: .first)])
-            _ = step(&exchange, blind(bob, carol), at: now + grace)
+        var asked: [Int64] = []
+        for now in stride(from: Int64(0), through: 1_200_000, by: 5000) {
+            let plan = step(&exchange, blind(bob, carol), at: now)
+            if plan.asks.contains(BlobExchange.Ask(to: bob, line: .first)) {
+                asked.append(now / 1000)
+            }
         }
-        #expect(exchange.wants[photo]?.deadCycles == 0, "a round that asked blind may have reached a holder")
+        #expect(asked == [0, 45, 90, 135, 225, 405, 765, 1125], "f7gg's pace for two cycles, then 90 s, 3 min and 6 min")
+        #expect(exchange.wants[photo]?.deadCycles == 5)
     }
 
     @Test func aBlobPulledForANeighbourIsNotAskedOfItThatRoundButIsTheNext() {
@@ -122,9 +127,10 @@ import Testing
 
     @Test func withQueriesOffACapableNeighbourIsAskedBlindAndNeverQueried() {
         var exchange = BlobExchange(queriesHolders: false)
-        _ = exchange.recordWant(photo, now: 0, author: bob, via: nil, asker: nil)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: bob, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
         let capable = [bob, carol].map { BlobExchange.Candidate(id: $0, streaming: false, capable: true) }
-        let plan = exchange.decide(photo, among: capable, now: 0)
+        let plan = exchange.decide(photo, among: capable, now: 0, wall: wallAt(0))
         #expect(plan.query.isEmpty)
         #expect(plan.asks == [BlobExchange.Ask(to: bob, line: .first)])
     }

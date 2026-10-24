@@ -75,3 +75,7 @@ caption crossed, which ADR 2026-09.p6nb ruled out for frames.
     rejected files;
   - `MeshEngineAvatarTests` for our photo and peers' photos;
   - `BlobStoreTests` and `SQLBlobStoreTests` for the stores.
+
+**Amended 2026-10-24, for knit-next ADR 2026-10.2drc (ADR 2026-10.8hek):** a neighbour that lacks the blob wants it
+in turn only when the ask leaves it a hop of budget, an absent `pull` counting as 1, and the ask's deadline is ahead.
+Otherwise it makes no want, and logs `blob no-echo`. A held blob is served as before.

@@ -101,4 +101,46 @@ import Testing
         #expect(store.conversation(ofAttachment: hash(8)) == Conversations.nearby)
         #expect(store.conversation(ofAttachment: hash(9)) == nil)
     }
+
+    /// `MessageDao.attachmentFetchRows` (knit-next `385bfba0`): every row naming each blob, earliest first, with when it
+    /// was sent and whether it is a DM's, for `PullThroughGate` (knit-next ADR 2026-10.2drc).
+    @Test(arguments: kinds)
+    func everyRowNamingABlobIsReadEarliestFirstWithWhetherItIsADms(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        var dm = message("b-dm", in: alice.string, carrying: MessageAttachment(hash: hash(7)))
+        dm.recipientId = alice
+        dm.sentAt = 4
+        var tied = message("a-post", in: "g-group", carrying: MessageAttachment(hash: hash(7)))
+        tied.senderId = alice
+        tied.sentAt = 4
+        var late = message("c-room", in: Conversations.nearby, carrying: MessageAttachment(hash: hash(8)))
+        late.sentAt = 9
+        for record in [dm, tied, late, message("plain", in: bob.string, carrying: nil)] {
+            store.save(record)
+        }
+        let rows = store.attachmentRows(among: [hash(7), hash(8), hash(9)])
+        #expect(
+            rows[hash(7)] == [
+                AttachmentRow(id: "a-post", senderId: alice, sentAt: 4, isDM: false),
+                AttachmentRow(id: "b-dm", senderId: bob, sentAt: 4, isDM: true),
+            ], "a tie broken by the id's bytes")
+        #expect(rows[hash(8)] == [AttachmentRow(id: "c-room", senderId: bob, sentAt: 9, isDM: false)])
+        #expect(rows[hash(9)] == nil && store.attachmentRows(among: []).isEmpty)
+        #expect(store.attachmentSenders(among: [hash(7), hash(8)]) == [hash(7): alice, hash(8): bob], "the earliest row's sender")
+    }
+
+    /// More hashes than one `IN (…)` list binds are read in batches, every one answered.
+    @Test(arguments: kinds)
+    func manyHashesAreReadInBatches(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        let hashes = (0..<1200).compactMap { index in
+            let hex = String(index, radix: 16)
+            return BlobHash(String(repeating: "0", count: 64 - hex.count) + hex)
+        }
+        for (index, named) in hashes.enumerated() {
+            store.save(message("m-\(index)", in: Conversations.nearby, carrying: MessageAttachment(hash: named)))
+        }
+        let rows = store.attachmentRows(among: Set(hashes))
+        #expect(rows.count == hashes.count && rows.values.allSatisfy { $0.count == 1 })
+    }
 }

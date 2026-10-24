@@ -1,8 +1,9 @@
 import KnitStore
+import KnitWire
 
 /// The engine's periodic passes, which ``MeshEngine/advance()`` fires when each falls due (ADR 2026-09.gq84): the
 /// 60-second re-offer, the sweep and the 15-minute heal (`MeshManager`'s `reofferToNeighborsPeriodically`,
-/// `sweepExpired` and `heal` in knit-next).
+/// `sweepExpired` and `heal` in knit-next), and the blob re-arm the re-offer, a start and a link-up run.
 extension MeshEngine {
     /// The 60-second re-offer to every linked neighbour (`MeshManager.reofferToNeighborsPeriodically`): the blobs and
     /// keys we still lack, our digest, any ticks owed, and with the ratchet's switch on the group seeds it never acknowledged.
@@ -57,5 +58,34 @@ extension MeshEngine {
         broadcastSealedProfile()
         retryWaitingDirectMessages()
         retryWaitingGroupMessages()
+    }
+
+    /// Wants every blob the stores name and the blob store lacks (`rewantMissingBlobs`, knit-next ADR 2026-09.ptv8): the
+    /// photos peers' profiles advertise, each with its owner as the author, and the photos messages carry, each with the
+    /// sender of the earliest message naming it. The wants are a memo of the stores and never their source, so this runs
+    /// at start, at link-up and at each 60 s re-offer. At link-up a linked peer's own photo is left to its push
+    /// (`sparing`), and wanted at the next re-offer if it never came; Android leaves a lost push lost.
+    ///
+    /// Each is a want of our own, and its deadline is re-derived from the rows that name it (`wantAll`'s `until`,
+    /// `PullThroughGate`, knit-next ADR 2026-10.2drc): a DM's custody window from its latest row, none for a group's or a
+    /// room's, and none for a photo. One whose rows read nothing (a store error answers as if none were there) keeps the
+    /// deadline it had, so a failed read never lifts a DM's.
+    func rewantMissingBlobs(sparing: Set<NodeId>) {
+        let carried = stores.messages.attachmentHashes()
+        let missing = carried.subtracting(stores.blobs.held(among: carried))
+        let rows = stores.messages.attachmentRows(among: missing)
+        var wanted: [BlobExchange.OwnWant] = []
+        for peer in stores.peers.allPeers() where !sparing.contains(peer.nodeId) {
+            if let advertised = peer.advertisedAvatarHash, !stores.blobs.contains(advertised) {
+                // A photo has no deadline, unless a message's row names the same blob.
+                let reach = missing.contains(advertised) ? PullThroughGate.reach(rows[advertised] ?? []) : .own(until: nil, rederived: true)
+                wanted.append(BlobExchange.OwnWant(hash: advertised, author: peer.nodeId, reach: reach))
+            }
+        }
+        for hash in missing.sorted() {
+            wanted.append(
+                BlobExchange.OwnWant(hash: hash, author: rows[hash]?.first?.senderId, reach: PullThroughGate.reach(rows[hash] ?? [])))
+        }
+        wantBlobs(wanted)
     }
 }
