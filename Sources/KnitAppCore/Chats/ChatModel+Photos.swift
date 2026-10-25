@@ -65,6 +65,19 @@ extension ChatModel {
         staged = nil
     }
 
+    /// Whether a photo in the thread is still on its way, so the thread samples how far it has got
+    /// (``AppSession/sampleArrivals()``). The set `ChatViewModel.awaitedHashes` gates its `arrivals` on: a settled thread
+    /// never samples.
+    public var awaitsPhotos: Bool {
+        state.messages.contains { $0.attachment.map { $0.kind == .photo && !$0.isHeld } ?? false }
+    }
+
+    /// Reads once how far the photos streaming in have got, and answers how long to wait before the next read
+    /// (``AppSession/sampleArrivals()``). The thread loops on it while ``awaitsPhotos``.
+    public func sampleArrivals() async -> Duration {
+        await session.sampleArrivals()
+    }
+
     /// `data` made ready by `codec`, remembering the picked bytes' hash when they changed, off the main actor, since a
     /// GIF may weigh megabytes.
     @concurrent

@@ -319,8 +319,8 @@ explicit direction.** Update this file in the change that ships an item.
     sealed copy under the same author test as `deliverChat`'s (`copyFromOwnStore`, ADR 2026-10.f3mv), as Android's
     `onCarriedFrame` does.
   - **Android's progress ring** (knit-next ADR 2026-10.y9qh): every header this port writes declares its size since
-    2026-10-04, so an Android phone fills a ring as our photo arrives. Still owed:
-    - the iPhone's own ring for a photo arriving, from the size `FileIntake` already reads;
+    2026-10-04, so an Android phone fills a ring as our photo arrives. The iPhone's own ring for a photo arriving landed
+    on 2026-10-24 (ADR 2026-10.eyad); its device check is owed. Still owed:
     - resuming a cut transfer from the bytes kept (knit-next ADR 2026-10.wtyc, knit-ios #2), in the pin since
       2026-10-05. This port reads a `blobreq`'s `offset` and serves the whole file meanwhile.
   - **The blob holder query, begun 2026-10-05** on `feat/blob-query` (ADR 2026-10.m9uq), with the pin moved to

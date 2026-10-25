@@ -15,6 +15,8 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     private let linked: Lock<[Neighbor]>
     /// Who is shown typing where.
     private let typists: [String: [NodeId]]
+    /// The photos shown on their way, each as far as it has got.
+    private let arriving: [BlobHash: FileIntake.Reading]
     private let mesh: any MeshService
     private let director: DemoDirector?
     private let continuation: AsyncStream<MeshEvent>.Continuation
@@ -24,12 +26,20 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     /// The mesh's events, with every change of the radio's state or the links answered by the links shown now.
     public let events: AsyncStream<MeshEvent>
 
-    /// `mesh`, reporting `linked` as linked and `typing` as typing, and playing `director`'s script once it starts.
-    public init(_ mesh: any MeshService, linked: [NodeId], typing: [String: [NodeId]] = [:], director: DemoDirector? = nil) {
+    /// `mesh`, reporting `linked` as linked, `typing` as typing and `arriving` as streaming in, and playing `director`'s
+    /// script once it starts.
+    public init(
+        _ mesh: any MeshService,
+        linked: [NodeId],
+        typing: [String: [NodeId]] = [:],
+        arriving: [BlobHash: FileIntake.Reading] = [:],
+        director: DemoDirector? = nil
+    ) {
         let shown = Lock(linked.map { Neighbor(nodeId: $0) })
         let (stream, sink) = AsyncStream<MeshEvent>.makeStream()
         self.linked = shown
         typists = typing
+        self.arriving = arriving
         self.mesh = mesh
         self.director = director
         events = stream
@@ -128,6 +138,16 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     /// The peers shown as linked.
     public var neighbors: [Neighbor] {
         get async { await Self.shown(linked, by: mesh) }
+    }
+
+    /// `mesh`, showing what `staging` stages, and playing `director`'s script once it starts.
+    public convenience init(_ mesh: any MeshService, staging: Staging, director: DemoDirector? = nil) {
+        self.init(mesh, linked: staging.linked, typing: staging.typing, arriving: staging.arriving, director: director)
+    }
+
+    /// The files streaming in, with the photos shown on their way laid over them.
+    public var arrivingFiles: [BlobHash: FileIntake.Reading] {
+        get async { await mesh.arrivingFiles.merging(arriving) { _, shown in shown } }
     }
 
     /// The mesh's counters, with the peers shown as linked.
@@ -268,5 +288,28 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     /// Unblocks a person.
     public func unblock(_ peer: NodeId) async {
         await mesh.unblock(peer)
+    }
+}
+
+extension DemoMesh {
+    /// What a scene shows that the demo's radio cannot make true: who is linked, who is typing where, and which photos are
+    /// on their way.
+    public struct Staging: Sendable {
+        /// The peers shown as linked.
+        public var linked: [NodeId] = []
+        /// Who is shown typing where.
+        public var typing: [String: [NodeId]] = [:]
+        /// The photos shown on their way, each as far as it has got.
+        public var arriving: [BlobHash: FileIntake.Reading] = [:]
+
+        /// Nothing staged.
+        public init() {
+            // Nothing is staged yet.
+        }
+
+        /// Whether it stages nothing, so the real mesh can stand alone.
+        public var isEmpty: Bool {
+            linked.isEmpty && typing.isEmpty && arriving.isEmpty
+        }
     }
 }

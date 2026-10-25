@@ -18,6 +18,9 @@ public protocol MeshService: AnyObject, Sendable {
     var neighbors: [Neighbor] { get async }
     /// What Diagnostics shows.
     var diagnostics: MeshDiagnostics { get async }
+    /// The files streaming in now that this node keeps, by hash, each as far as it has got (`MeshTransport.arrivingFiles`,
+    /// knit-next ADR 2026-10.y9qh). A photo's bubble draws its ring from it.
+    var arrivingFiles: [BlobHash: FileIntake.Reading] { get async }
 
     /// Starts the mesh and its radio.
     func start() async

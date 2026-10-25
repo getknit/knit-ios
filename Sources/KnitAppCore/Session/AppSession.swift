@@ -24,6 +24,9 @@ public final class AppSession {
     /// Who is typing where, as the mesh last said: each thread someone is typing in, with their node ids. Like the links,
     /// it moves no ``revision``: the screens lay it over what they read.
     public private(set) var typing: [String: [NodeId]] = [:]
+    /// How far each photo streaming in has got, while a thread waits on one (``sampleArrivals()``). Like the links, it
+    /// moves no ``revision``.
+    public let arrivals = PhotoArrivals()
     /// Whether the mesh runs: false before the first start, and after Settings' Stop.
     public private(set) var isRunning = false
     /// Moves whenever messages, peers, conversations or our own profile may have changed.
@@ -157,6 +160,8 @@ public final class AppSession {
             // Its size first, so the thread that redraws for it holds the photo's place at its shape.
             await measure(stores.messages.unsizedAttachments(named: hash))
             revision += 1
+            // The row now draws the photo, so the full ring held for the gap has done its job.
+            arrivals.byHash[hash] = nil
         case .delivered, .sent, .reacted:
             revision += 1
         case .peerUpdated, .groupChanged:

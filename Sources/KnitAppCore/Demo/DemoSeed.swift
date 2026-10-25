@@ -81,6 +81,43 @@ public enum DemoSeed {
         return typing.mapValues { $0.sorted() }
     }
 
+    /// What ``DemoMesh`` shows of `scene`: who is linked, who is typing where, and which photos are on their way.
+    public static func staging(in scene: DemoScene) -> DemoMesh.Staging {
+        var staging = DemoMesh.Staging()
+        staging.linked = linked(in: scene)
+        staging.typing = typing(in: scene)
+        staging.arriving = arriving(in: scene)
+        return staging
+    }
+
+    /// The photos `scene` shows on their way, each as far as it has got, which only ``DemoMesh`` makes true: the demo's
+    /// radio brings nobody's bytes.
+    public static func arriving(in scene: DemoScene) -> [BlobHash: FileIntake.Reading] {
+        Dictionary(
+            uniqueKeysWithValues: scene.cast.lines.compactMap { line in
+                line.arriving.map { arriving in
+                    let hash = arrivingHash(of: line.id)
+                    return (hash, FileIntake.Reading(key: hash, bytes: arriving.bytes, total: arriving.total))
+                }
+            }
+        )
+    }
+
+    /// What `line` carries: its photo, kept in the blob store, or one on its way, whose bytes nobody keeps.
+    private static func attachment(
+        of line: DemoCast.Line, snapshots: [DemoSnapshot: [UInt8]], in stores: MeshStores, at now: Int64
+    ) -> MessageAttachment? {
+        guard line.arriving != nil else {
+            return photo(line.photo.flatMap { snapshots[$0] }, in: stores, at: now)
+        }
+        return MessageAttachment(hash: arrivingHash(of: line.id), mime: "image/jpeg")
+    }
+
+    /// The blob a line's photo on its way names: one nobody holds, the same every launch.
+    private static func arrivingHash(of line: String) -> BlobHash {
+        BlobHash(of: Array("demo-arriving-\(line)".utf8))
+    }
+
     /// The notification the room's newest post by someone else makes, which `-demoNotification` posts, or `nil` when
     /// nobody else has posted there.
     public static func notification(in stores: MeshStores, me: NodeId) -> LocalNotification? {
@@ -149,7 +186,7 @@ public enum DemoSeed {
                 sentAt: sentAt,
                 arrivedAt: sender == me ? nil : sentAt,
                 delivered: line.delivered,
-                attachment: photo(line.photo.flatMap { snapshots[$0] }, in: stores, at: sentAt),
+                attachment: attachment(of: line, snapshots: snapshots, in: stores, at: sentAt),
                 // As the engine stores them: someone else's words wait for the content filter, which the session
                 // runs over them as it starts listening.
                 moderation: sender == me ? .clear : .waiting

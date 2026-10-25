@@ -105,6 +105,30 @@ extension LinkManager {
         Set(intakes.values.compactMap(\.arriving)).union(landingFiles.map(\.hash))
     }
 
+    /// How far each file being kept has got, by key, for the app to draw (`arrivingFiles()`, knit-next ADR 2026-10.y9qh):
+    /// the bytes in so far and the size its header declared. Only a kept file, since a skipped one never lands here, so
+    /// its keys are always among ``arrivingFileKeys``. When two links stream one key, the copy furthest along shows
+    /// (`furthestByKey`), the lower channel on a tie.
+    ///
+    /// Android adds the files past their END (`landing.all`), because its store runs off the link's thread and a file
+    /// must not vanish from the ring before its bytes are stored (#138). Here ``fileEnd(from:on:)`` and the engine's
+    /// store, which takes the file at once (``MeshEngine/receiveFile(_:)``), run in one turn of the actor, so no reader
+    /// outside it ever sees a file landed, and they are left out. Read afresh each time: a kept copy of an intake would
+    /// share its buffer, and every chunk after would copy the whole file.
+    public var arrivingFiles: [BlobHash: FileIntake.Reading] {
+        var furthest: [BlobHash: FileIntake.Reading] = [:]
+        for id in intakes.keys.sorted(by: Self.inOrder) {
+            guard intakes[id]?.arriving != nil, let file = intakes[id]?.reading else {
+                continue
+            }
+            if let kept = furthest[file.key], kept.bytes >= file.bytes {
+                continue
+            }
+            furthest[file.key] = file
+        }
+        return furthest
+    }
+
     /// The engine has taken a file `peer` sent us, stored or refused, so it is no longer on its way
     /// (`MeshTransport.fileTaken`).
     public func fileTaken(from peer: NodeId, hash: BlobHash) {

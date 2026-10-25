@@ -95,13 +95,15 @@ targets:
           # The demo's pictures are licensed for the demo, and nothing in a store build reads them (ADR 2026-10.2acj).
           EXCLUDED_SOURCE_FILE_NAMES: DemoMedia
   # The Simulator's UI tests and accessibility audit (`scripts/check.sh uitest`). The sources live under Tests/ so
-  # both linters see them, and AccessibilityID.swift comes straight from KnitAppCore, so the ids have one source.
+  # both linters see them, and AccessibilityID.swift and its extension come straight from KnitAppCore, so the ids
+  # have one source.
   KnitUITests:
     type: bundle.ui-testing
     platform: iOS
     sources:
       - path: ../Tests/KnitUITests
       - path: ../Sources/KnitAppCore/AccessibilityID.swift
+      - path: ../Sources/KnitAppCore/AccessibilityID+Attachments.swift
     dependencies:
       - target: KnitApp
     settings:
@@ -121,6 +123,7 @@ targets:
       - path: ../Tests/KnitDeviceTests
       - path: ../Tests/KnitUITests/Walking.swift
       - path: ../Sources/KnitAppCore/AccessibilityID.swift
+      - path: ../Sources/KnitAppCore/AccessibilityID+Attachments.swift
     dependencies:
       - target: KnitApp
     settings:
@@ -142,6 +145,7 @@ targets:
       - path: ../Tests/KnitShots
       - path: ../Tests/KnitUITests/Walking.swift
       - path: ../Sources/KnitAppCore/AccessibilityID.swift
+      - path: ../Sources/KnitAppCore/AccessibilityID+Attachments.swift
     dependencies:
       - target: KnitApp
     settings:

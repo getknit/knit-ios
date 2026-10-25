@@ -159,8 +159,8 @@ Kotlin wins.
 
       This port writes the size whenever it serves or pushes a blob, and reads it leniently: a size that will not
       decode costs the label, never the file (`LinkTests`, `LinkVectorTests`). Android's ring, its `rx` log lines and
-      `arrivingFiles()` carrying a count are its own. The iPhone does not yet show an incoming photo's progress
-      (`.agents/memory/roadmap.md`).
+      `arrivingFiles()` carrying a count are its own. The iPhone shows an incoming photo's progress since 2026-10-24
+      (ADR 2026-10.eyad).
     - `f6ecf8ac` drops an unused `Unit` from a test.
   - **Since then** (30 commits; five vectors added, none moved):
     - **The blob holder query** (`403cd861`, knit-next ADR 2026-10.6e5t), on top of **the likeliest holder first**

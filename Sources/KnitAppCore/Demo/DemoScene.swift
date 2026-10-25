@@ -54,6 +54,10 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// posts them: `KnitClips` shows each hidden, the words shown on a tap, the room refusing flagged words, and Settings'
     /// switch, while `check.sh clips` films it for App Review (ADR 2026-10.yddp).
     case filter = "filter"
+    /// Two room posts whose photos are on their way, one as far as its sender's header declared and one from a sender
+    /// that declared no size, each ringed as its bytes come in (ADR 2026-10.y9qh): for the walk and the shots that draw a
+    /// photo arriving.
+    case photoArriving = "photo-arriving"
 
     /// Who and what the scene seeds.
     var cast: DemoCast {
@@ -72,6 +76,8 @@ public enum DemoScene: String, Sendable, CaseIterable {
             .block
         case .filter:
             .filter
+        case .photoArriving:
+            .photoArriving
         }
     }
 
@@ -151,6 +157,15 @@ internal struct DemoCast {
         var mentions: [Slot] = []
         /// Whether nobody has read it yet, for someone else's line: its row on the chat list counts it (ADR 2026-10.frmj).
         var unread = false
+        /// How far its photo has got, for a photo still on its way: the message names a blob nobody stores, and
+        /// ``DemoMesh`` reports it streaming in.
+        var arriving: Arriving?
+    }
+
+    /// A photo on its way: the bytes in so far, and the size its sender's header declared, if any.
+    struct Arriving {
+        let bytes: Int
+        var total: Int?
     }
 
     /// Someone's reaction to one of the scene's lines, a moment after it (ADR 2026-10.ehe6).

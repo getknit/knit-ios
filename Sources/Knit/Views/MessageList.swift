@@ -29,6 +29,8 @@
         @State private var highlighted: String?
         @Environment(BlobImageCache.self) private var photos: BlobImageCache?
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
+        /// How far each photo streaming in has got: read by its bubble alone, so a moving ring reconfigures no cell.
+        @Environment(PhotoArrivals.self) private var arrivals: PhotoArrivals?
         @Environment(\.calendar) private var calendar
         @Environment(\.openRoute) private var openRoute
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -62,6 +64,7 @@
                     content(of: row)
                         .environment(photos)
                         .environment(screening)
+                        .environment(arrivals)
                         .environment(\.calendar, calendar)
                         .environment(\.openRoute, openRoute)
                         .tint(Palette.accent)

@@ -79,8 +79,8 @@ nothing waits on it.
 Android phone then fills a ring as our photo arrives, where it showed only the bytes in so far. The size is the
 sender's claim: nothing here sizes a buffer, caps a stream or judges a stall by it. `FileIntake` still counts the
 bytes against its own limits. The reader is as lenient as Android's `decodeFileHeader`: a size that is not an integer
-reads as none, and the file still lands. A header with no size is the three keys a build before the field wrote. No capability bit: a reader that predates the key skips it. The iPhone does not yet draw its own ring
-from the size it reads (`.agents/memory/roadmap.md`). Guards:
+reads as none, and the file still lands. A header with no size is the three keys a build before the field wrote. No capability bit: a reader that predates the key skips it. The iPhone draws its own ring
+from the size it reads since 2026-10-24 (ADR 2026-10.eyad). Guards:
 
 - `LinkVectorTests.theFileHeaderRecordMatchesKotlinxByteForByte`, against knit-next's `fileHeader` vector;
 - `LinkTests.aSizeThatWillNotDecodeCostsTheLabelNotTheFile`, Android's bad sizes;

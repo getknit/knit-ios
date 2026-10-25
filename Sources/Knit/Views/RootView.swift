@@ -113,6 +113,7 @@
             }
             .environment(environment.photos)
             .environment(environment.screening)
+            .environment(environment.session.arrivals)
         }
     }
 

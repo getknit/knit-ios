@@ -51,6 +51,8 @@ document:
 - Android phones can now show how much of a photo from your iPhone has arrived, with a ring that fills and a
   count such as 84 kB of 204 kB. Photos your iPhone passes on for other people get the ring too, on Android
   versions that have it.
+- A photo coming to your iPhone now fills a ring as it arrives, with a count such as 84 kB of 205 kB. On a
+  slow Bluetooth link you can tell a photo that's on its way from one still waiting for a phone that has it.
 - Block someone from their profile or a message request, and what they send stops showing on your iPhone,
   without them being told. Your iPhone still passes their messages on to others, and Settings lists everyone
   you've blocked so you can unblock them.

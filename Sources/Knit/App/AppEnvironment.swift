@@ -217,10 +217,8 @@
             /// The content filter's models: the bundled ones, or the demo's stand-ins under `-seedDemo`.
             let classifier: any PhotoClassifier
             let textClassifier: any TextClassifier
-            /// The peers a demo scene shows as linked, which only a demo has.
-            var linked: [NodeId] = []
-            /// Who a demo scene shows typing where.
-            var typing: [String: [NodeId]] = [:]
+            /// Who a demo scene shows linked and typing, and its photos on their way, which only a demo has.
+            var staging = DemoMesh.Staging()
             /// What plays a demo scene's script, under `-demoScene trailer`.
             var director: DemoDirector?
             /// A demo's camera, under `-demoCamera`; otherwise the phone's.
@@ -266,9 +264,8 @@
                 log: parts.log
             )
             let alerts = LocalNotifier()
-            let shows = !parts.linked.isEmpty || !parts.typing.isEmpty || parts.director != nil
-            let service: any MeshService =
-                shows ? DemoMesh(node, linked: parts.linked, typing: parts.typing, director: parts.director) : node
+            let shows = !parts.staging.isEmpty || parts.director != nil
+            let service: any MeshService = shows ? DemoMesh(node, staging: parts.staging, director: parts.director) : node
             let app = session(parts, over: service, notifying: alerts)
             app.director = parts.director
             let environment = AppEnvironment(
@@ -345,8 +342,7 @@
                     textClassifier: DemoTextClassifier(
                         flagsEverything: options.demoSensitive, flagging: options.demoScene.flaggedWords
                     ),
-                    linked: DemoSeed.linked(in: options.demoScene),
-                    typing: DemoSeed.typing(in: options.demoScene),
+                    staging: DemoSeed.staging(in: options.demoScene),
                     director: DemoDirector(
                         scene: options.demoScene,
                         stores: stores,

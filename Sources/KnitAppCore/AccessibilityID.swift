@@ -138,15 +138,6 @@ public enum AccessibilityID {
         "chat_message_\(messageId)"
     }
 
-    /// A photo still on its way.
-    public static let chatAttachmentWaiting = "chat_attachment_wait"
-    /// A photo whose bytes are here and do not open.
-    public static let chatAttachmentUnavailable = "chat_attachment_unavailable"
-    /// A voice message or a file, which this build names and cannot open. Android has no tag here.
-    public static let chatAttachmentTile = "chat_attachment_tile"
-    /// A photo the content filter hides until it is tapped (ADR 2026-10.rpmq). Android has no tag here.
-    public static let chatAttachmentHidden = "chat_attachment_hidden"
-
     /// The chat list's New message, Android's floating button.
     public static let chatListNewMessage = "chatlist_fab"
     /// The New message picker. Android has no tag here.

@@ -262,6 +262,8 @@ public actor Mesh {
 
     /// What the blob holder query has done so far, both ends.
     public var blobs: BlobCounts { engine.blobCounts }
+    /// How far each kept file streaming in has got (``LinkManager/arrivingFiles``); one past its END is stored this turn.
+    public var arrivingFiles: [BlobHash: FileIntake.Reading] { links.arrivingFiles }
     /// Doorbells rung on peers' links, to wake a suspended iPhone (``LinkManager/rings``).
     public var rings: Int { links.rings }
     /// Rings of this node's own doorbell (``LinkManager/ringsHeard``).

@@ -135,6 +135,13 @@
                 await model.appear()
             }
             .onDisappear(perform: model.disappear)
+            // How far the photos on their way have got, sampled only while one is, as Android's window collects its
+            // `arrivals` (ADR 2026-10.y9qh). The loop ends when the thread closes or its last photo lands.
+            .task(id: model.awaitsPhotos) {
+                while model.awaitsPhotos, !Task.isCancelled {
+                    try? await Task.sleep(for: await model.sampleArrivals())
+                }
+            }
         }
 
         /// Whether the composer says why the last photo picked cannot be sent; dismissing it forgets the reason.

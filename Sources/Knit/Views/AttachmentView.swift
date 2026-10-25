@@ -135,22 +135,35 @@
         }
     }
 
-    /// A photo still on its way: Knit's stitches while its arrival is likely, and an hourglass after
-    /// ``Layout/photoPatience`` seconds (`WaitingIndicator.kt`), over the line that says what it waits for.
+    /// A photo still on its way. While a link brings its bytes, a ring fills over how much of how much is in, or, from a
+    /// sender that declared no size, a still arrow over how much is in (`ArrivalIndicator`, ADR 2026-10.y9qh). Until then,
+    /// Knit's stitches while its arrival is likely, and an hourglass after ``Layout/photoPatience`` seconds
+    /// (`WaitingIndicator.kt`), over the line that says what it waits for. The box keeps that line's height throughout,
+    /// so the row neither shrinks when bytes start nor grows back if they stop.
     private struct WaitingPhoto: View {
         let hash: BlobHash
         @State private var stalled = false
+        @Environment(PhotoArrivals.self) private var arrivals: PhotoArrivals?
 
         var body: some View {
-            PhotoPlaceholder(text: Copy.Attachments.photoWaiting) {
-                if stalled {
+            let arrival = arrivals?[hash]
+            PhotoPlaceholder(text: arrival?.caption ?? Copy.Attachments.photoWaiting, reserving: Copy.Attachments.photoWaiting) {
+                if let arrival {
+                    if let fraction = arrival.fraction {
+                        ArrivalRing(fraction: fraction)
+                    } else {
+                        Image(systemName: "arrow.down.circle")
+                            .accessibilityHidden(true)
+                    }
+                } else if stalled {
                     Image(systemName: "hourglass")
                         .accessibilityHidden(true)
                 } else {
                     StitchIndicator()
                 }
             }
-            .accessibilityIdentifier(AccessibilityID.chatAttachmentWaiting)
+            .monospacedDigit()
+            .accessibilityIdentifier(arrival == nil ? AccessibilityID.chatAttachmentWaiting : AccessibilityID.chatAttachmentArriving)
             .task(id: hash) {
                 guard !stalled else {
                     return
@@ -181,28 +194,41 @@
     }
 
     /// The square a photo shows until it can, or the photo's own shape when that is known: a glyph, which is decorative,
-    /// over a line that says why.
+    /// over a line that says why. A line it may swap to, `reserving`, holds its height, laid out unseen behind it.
     private struct PhotoPlaceholder<Glyph: View>: View {
         let text: String
         var place: CGSize?
+        var reserving: String?
         @ViewBuilder let glyph: Glyph
 
         var body: some View {
             VStack(spacing: Layout.small) {
                 glyph
                     .accessibilityHidden(true)
-                Text(text)
-                    .font(.caption)
-                    .multilineTextAlignment(.center)
-                    // Every line it needs: the photo's height below is a floor, and the stack would otherwise share it
-                    // out, cutting the line short at the largest sizes ("Sensitive photo. Ta…"). The place grows instead.
-                    .fixedSize(horizontal: false, vertical: true)
+                ZStack {
+                    if let reserving {
+                        Self.line(reserving)
+                            .hidden()
+                            .accessibilityHidden(true)
+                    }
+                    Self.line(text)
+                }
             }
             .padding(Layout.medium)
             .frame(width: place?.width ?? Layout.photoPlaceholder)
             .frame(minHeight: place?.height ?? Layout.photoPlaceholder)
             .background(Palette.incomingBubble, in: .rect(cornerRadius: Layout.photoCorner))
             .accessibilityElement(children: .combine)
+        }
+
+        /// `text` in the box's caption, on every line it needs: the photo's height below is a floor, and the stack would
+        /// otherwise share it out, cutting the line short at the largest sizes ("Sensitive photo. Ta…"). The place grows
+        /// instead.
+        private static func line(_ text: String) -> some View {
+            Text(text)
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

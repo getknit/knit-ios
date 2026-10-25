@@ -101,6 +101,9 @@ final class FakeMesh: MeshService {
     var radioState: RadioState? { state.withLock { $0.radio } }
     var neighbors: [Neighbor] { [] }
     var diagnostics: MeshDiagnostics { MeshDiagnostics() }
+    /// The files a test reports streaming in.
+    let arriving = Lock<[BlobHash: FileIntake.Reading]>([:])
+    var arrivingFiles: [BlobHash: FileIntake.Reading] { arriving.withLock(\.self) }
 
     func start() {
         state.withLock { state in

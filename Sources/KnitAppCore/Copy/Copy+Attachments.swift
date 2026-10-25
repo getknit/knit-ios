@@ -88,6 +88,34 @@ extension Copy {
             )
         }
 
+        /// How far a photo streaming in has got, under its ring (`chat_attachment_arriving`): `received` and `total` are
+        /// sizes as Files writes them.
+        public static func photoArriving(received: String, total: String) -> String {
+            Copy.format(
+                NSLocalizedString(
+                    "attachments.photo.arriving",
+                    bundle: .main,
+                    value: "%1$@ of %2$@",
+                    comment: "Chat: under an arriving photo's progress ring; %1$@ received so far, %2$@ its full size"
+                ),
+                received,
+                total
+            )
+        }
+
+        /// How much of a photo has arrived when its sender declared no size (`chat_attachment_arriving_bytes`).
+        public static func photoArrivingBytes(received: String) -> String {
+            Copy.format(
+                NSLocalizedString(
+                    "attachments.photo.arrivingBytes",
+                    bundle: .main,
+                    value: "%@ received",
+                    comment: "Chat: under an arriving photo whose sender gave no full size; %@ received so far"
+                ),
+                received
+            )
+        }
+
         /// A photo whose bytes are here and do not open.
         public static var photoUnreadable: String {
             NSLocalizedString(

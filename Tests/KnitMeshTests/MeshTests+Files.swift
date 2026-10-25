@@ -77,4 +77,33 @@ extension MeshTests {
         #expect(held == photo.count && records(.fileEnd, on: channel).count == 1)
         #expect(records(.fileHeader, on: carols).count == 1, "served at the feed's end")
     }
+
+    @Test func aPhotoStreamingInShowsHowFarItHasGotUntilItIsStoredInTheSameTurn() async {
+        // knit-next ADR 2026-10.y9qh's `arrivingFiles()`: the app's ring reads the kept bytes against the declared size.
+        // The END and the engine's store run in one turn of the actor, so a landed file is never seen here, and Android's
+        // `landing.all` has nothing to add on this port.
+        let rig = rig()
+        let photo = (0..<4096).map { UInt8(truncatingIfNeeded: $0 &* 5) }
+        let hash = BlobHash(of: photo)
+        rig.stores.peers.upsert(
+            PeerRecord(
+                nodeId: bob.nodeId,
+                name: "Bob",
+                status: "",
+                publicKey: bob.keys.bundle.encoded,
+                updatedAt: 1,
+                advertisedAvatarHash: hash
+            ))
+        await rig.mesh.start()
+        await rig.mesh.process(.accepted(channel))
+        await rig.mesh.process(.received(channel, hello(bob, capabilities: 0x2FFF)))
+        let header = FileHeader(kind: .avatar, key: hash.string, mime: "image/jpeg", size: photo.count)
+        let headerRecord = LinkRecord(.fileHeader, payload: LinkJSON.fileHeaderPayload(header)).encoded ?? []
+        await rig.mesh.process(.received(channel, headerRecord + (LinkRecord(.fileChunk, payload: Array(photo[..<1024])).encoded ?? [])))
+        #expect(await rig.mesh.arrivingFiles == [hash: FileIntake.Reading(key: hash, bytes: 1024, total: photo.count)])
+        let rest = (LinkRecord(.fileChunk, payload: Array(photo[1024...])).encoded ?? []) + (LinkRecord(.fileEnd).encoded ?? [])
+        await rig.mesh.process(.received(channel, rest))
+        #expect(await rig.mesh.arrivingFiles[hash] == nil)
+        #expect(rig.stores.blobs.allHashes().contains(hash), "stored in the turn its END came in")
+    }
 }
