@@ -215,7 +215,7 @@ Kotlin wins.
       to a peer whose profile lacks `CAP_RATCHET`, an amendment to knit-next ADR 042) is Android's alone while this port
       sends no intro.
     - `vectors/wire-v1.json`, synced alone with `scripts/sync-vectors.py --only wire-v1.json` from knit-next's `main` at
-      `9c3d487b` (2026-10-19):
+      `9c3d487b` (2026-10-19), and again at `e63f15f4` (2026-10-25):
       - **What comes in:** 14 fixtures for features this port has not taken. Calls (`messageContentCall*`, `bd7c905b`,
         knit-next ADR 2026-10.3tee), supporter badges on the profile (`profilePayloadBadges`,
         `messageContentV2ProfileBadges`, `e3e41a2e`, knit-next ADR 2026-10.r99s, knit-ios #10), short videos
@@ -230,9 +230,18 @@ Kotlin wins.
         gets one. `pull` and `until` carry knit-next ADR 2026-10.2drc's hop budget and deadline for a pull-through. This
         port models them since ADR 2026-10.8hek, which ports `385bfba0` and its amendment `1ce131fd`, and
         `blobReqContentPull` and `blobReqContentPullSpent` have typed tests.
-      - **Since then:** knit-next `main` at `eac3debc` adds four fixtures and moves none: two scope-config ctls
-        (`messageContentScopeConfigDm` and `Group`, `33d83aca`), which this port takes as the chain-advancing no-op
-        Android counts on, and two commons posts (`651cdc25`), which only a spool carries (knit-ios #11).
+      - **At `e63f15f4`:** seven more fixtures, and none of the 78 moved:
+        - two scope-config ctls (`messageContentScopeConfigDm` and `Group`, `33d83aca`), which this port takes as the
+          chain-advancing no-op Android counts on;
+        - two commons posts (`commonsPostAttachment`, `commonsReaction`, `651cdc25`), which only a spool carries
+          (knit-ios #11), so they only round-trip;
+        - a message's formatting (`messageContentStyles`, `messageContentV2Styles`, `chatContentStyles`, `8724b6b3`,
+          knit-next ADR 2026-10.p95v): style ranges in one byte string beside a plain body, under `"s"` or compact
+          label 17. This port drops them and shows the body plain, which the ADR expects until the iPhone's half lands.
+          Android refuses a sealed message whose `"s"` or label 17 is not a byte string (`DECRYPT_FAILED`), but this
+          port skips the key unread and opens it, so the iPhone's half must refuse one too.
+
+        `whatThisBuildDoesNotModelStillDecodes` pins the two ctls and the three styled fixtures.
     - knit-next companion change A9 (ADR 2026-10.5sk9), merged into knit-next's local `main` with A10 by 2026-10-18
       (`4f3cd995`, not pushed), past the pin:
       - **What comes in:** `vectors/ratchet-v1.json`, synced alone with `scripts/sync-vectors.py --only

@@ -15,17 +15,18 @@ import Testing
         #expect(item.encoded == bytes, "\(name) did not re-encode to its pinned bytes")
     }
 
-    @Test func thereAreSeventyEightVectors() {
+    @Test func thereAreEightyFiveVectors() {
         // A new fixture in knit-next needs a typed test here when this build models its type.
-        #expect(GoldenVectors.names.count == 78)
+        #expect(GoldenVectors.names.count == 85)
     }
 
     /// knit-next's fixtures for what this build does not model yet, taken at `9c3d487b`: calls (knit-next ADR
     /// 2026-10.3tee), supporter badges (knit-next ADR 2026-10.r99s), short videos, and a blob request's `fastOnly` (knit-ios
-    /// #8). Each decodes to the type this build has, the new fields dropped, so a newer Android's frame is read, never
-    /// refused. `chatContentVideo` now drops only its `video`: its `attachmentSize` is modelled since knit-ios #7, and is
-    /// checked in ``ChatContentSizeTests``. A blob request's `pull` and `until` are modelled since ADR 2026-10.8hek, and
-    /// are typed fixtures below.
+    /// #8); and at `e63f15f4`: a message's formatting (knit-next ADR 2026-10.p95v) and a scope's spool config (ctl 7). Each
+    /// decodes to the type this build has, the new fields dropped, so a newer Android's frame is read, never refused.
+    /// `chatContentVideo` now drops only its `video`: its `attachmentSize` is modelled since knit-ios #7, and is checked in
+    /// ``ChatContentSizeTests``. A blob request's `pull` and `until` are modelled since ADR 2026-10.8hek, and are typed
+    /// fixtures below. The commons posts only round-trip, since only a spool carries one (knit-ios #11).
     @Test func whatThisBuildDoesNotModelStillDecodes() throws {
         #expect(try BlobRequestContent(decoding: GoldenVectors.bytes("blobReqContentFastOnly")) == BlobRequestContent(hash: "h1"))
         #expect(try ProfilePayload(decoding: GoldenVectors.bytes("profilePayloadBadges")).name == "Ann")
@@ -36,6 +37,14 @@ import Testing
         _ = try ChatContent(decoding: GoldenVectors.bytes("chatContentVideo"))
         for name in ["messageContentV2ProfileBadges", "messageContentV2Video"] {
             #expect(MessageContentV2.decode(GoldenVectors.bytes(name)) != nil, "\(name)")
+        }
+        let styled = try ChatContent(decoding: GoldenVectors.bytes("chatContentStyles"))
+        #expect(styled.body.hasPrefix("Bold and italic"))
+        #expect(styled == ChatContent(body: styled.body))
+        #expect(try MessageContent(decoding: GoldenVectors.bytes("messageContentStyles")) == MessageContent(body: styled.body))
+        #expect(MessageContentV2.decode(GoldenVectors.bytes("messageContentV2Styles")) == MessageContent(body: styled.body))
+        for name in ["messageContentScopeConfigDm", "messageContentScopeConfigGroup"] {
+            #expect(try MessageContent(decoding: GoldenVectors.bytes(name)).ctl == 7, "\(name)")
         }
     }
 
