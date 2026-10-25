@@ -9,11 +9,14 @@ the two never agree on what each is missing, and every 60-second exchange re-sen
 
 `MeshRouter.kt` and `SeenSet.kt`, in order, for a frame arriving over a link:
 
-1. **Ingress budget, room posts only:** a burst of 240, then 30 a minute per link (`IngressBudget.kt`). A
+1. **Id shape:** a frame whose id is not the shape its type is minted with is dropped as `NONCANONICAL_ID`, before
+   the meter and the seen check: never marked seen, metered or relayed (`FrameId.admits`, `MeshRouter.kt:96-99`;
+   knit-next ADR 2026-10.9qr4). This port's door is `Router.admit` (ADR 2026-10.h7xw).
+2. **Ingress budget, room posts only:** a burst of 240, then 30 a minute per link (`IngressBudget.kt`). A
    refused post is not marked seen, so it comes back later.
-2. **SeenSet:** keyed by `RelayEnvelope.id`, a 10-minute window, LRU of 4096. A repeat is dropped here.
-3. **Deliver locally,** if the frame verifies.
-4. **Schedule the relay**, under the rules below.
+3. **SeenSet:** keyed by `RelayEnvelope.id`, a 10-minute window, LRU of 4096. A repeat is dropped here.
+4. **Deliver locally,** if the frame verifies.
+5. **Schedule the relay**, under the rules below.
 
 The relay rules:
 
@@ -36,30 +39,40 @@ link, cleared with the link.
 
 A node carries frames for people who are not in range yet. This is store-and-forward.
 
-- **Entry rule** (`InboundPipeline.kt:236`): `verified && isCustodial && (wire.relay || type == "profile")`.
+- **Entry rule** (`InboundPipeline.kt:319`): `verified && isCustodial && (wire.relay || type == "profile")`.
   A profile served point to point through `keyreq` is custodied. A `relay = false` tick never is. DMs and
   group chat are carried only when encrypted. The block list is never consulted: a block stops a frame at
   delivery only (ADR 2026-10.5wgg, after knit-next's ADR 2026-09.bts9).
-- **Our own frames count too** (ORIGIN_SELF), our profile included, under the same quotas.
+- **Our own frames count too** (ORIGIN_SELF), our profile included, under the same quotas. Android custodies each
+  of its own frames before it floods it (`originateWire`, `MeshManager.kt:4016-4031`; knit-next `85baeeb9`, #141), so
+  a link raised between the two learns of the frame from the digest exchange. This port's `originate` sends, then
+  carries, in one synchronous step behind the engine's actor (ADR 2026-09.gq84), so no link comes up between them.
 - **An inbound DM to us is custodied,** then purged by our own cleartext receipt (the self-purge). A sealed receipt,
   ours with the ratchet's switch on toward an author who can read one, purges nothing, ours included: the DM stays in
   our custody, and every carrier's, to its TTL. While our custody holds it, our digest lists it, so no back-fill serves
   it to us, but a copy still reaches us two ways, and each past the router's window earns one more sealed receipt, as
-  in Kotlin (`InboundPipeline.kt:946-955`). Our quotas may evict it first, and then every holder next to us serves it.
+  in Kotlin (`InboundPipeline.kt:1113-1123`). Our quotas may evict it first, and then every holder next to us serves it.
   Or a node that lacks it and links to two holders (a returning phone's or a newcomer's back-fill, or a carrier whose
   quota evicted it) relays the first copy it gets to the other holder before that holder's own copy crosses: a served
   frame floods on (`ForwardSync.kt:14-15`), a serve stamps nothing in the server's seen set, and every node it reaches
-  past its router window relays it on, holders included (`MeshEngine.swift:225-237`, `MeshRouter.kt:113-114`). So the
+  past its router window relays it on, holders included (`MeshEngine.swift:225-237`, `MeshRouter.kt:121-122`). So the
   recipient answers that copy wherever the re-flood finds it, though it still holds the DM.
 - **Expiry:** `sentAt + 24 h`, or 6 h for room *chat*. Room receipts, reactions and profiles keep 24 h.
   Frames already dead on arrival, or dated more than 5 minutes ahead, are refused.
-- **Quotas**, counted over live rows only, applied in this order (`ForwardRepository.kt:145`):
+- **Quotas**, counted over live rows only, applied in this order (`ForwardRepository.kt:146`):
   - 200 per sender
   - 200 per group
   - 200 for the room
   - 1000 overall
 - **Eviction order:** oldest first by `(sentAt ASC, id ASC)`, with the ids compared as SQLite BINARY
   (byte order).
+- **Staged for the next wire break, and not live** (knit-next `docs/NEXT_WIRE_BREAK.md`). Port neither early:
+  - **Item 12** (`8400dd11`): custody for 7 days, with larger quotas, on both platforms in one release. It names
+    `CustodyLimits.swift`. The receipt tombstone stays at least the TTL, `PendingInbound`'s 200 follows the per-sender
+    quota, everything derived from the TTL moves with it, and a migration restamps `expiresAt` from `sentAt`. The room
+    keeps 6 h. Until then, a 7-day node and a 24-hour node never agree on a digest.
+  - **Item 11** (`5c7ce27a`): a group's roster, name and photo sealed. At that break, `ForwardSync`'s member-only
+    offer goes, and group frames are offered like room frames.
 - **Early purge:** a cleartext receipt from a DM's recipient removes that DM and tombstones its id for 24 h.
   Sealed receipts purge nothing.
 - **A receipt that arrives before its DM vaccinates the DM on arrival** (knit-next ADR 2026-09.adpz, #100). The
@@ -100,7 +113,7 @@ publish it honestly.
   `CAP_RATCHET` and a bundle, it is instead a sealed `CTL_RECEIPT` chat to the author, flooded and custodied for its
   day like any DM, carrying up to eleven of that author's room ticks; it purges nothing, ours included. A seal the
   facade cannot make sends the cleartext one in its place, and a store that fails sends neither, as Kotlin's throw
-  sends neither (phase P5d, `InboundPipeline.kt:2831-2958`).
+  sends neither (phase P5d, `acknowledge` and `sealDmReceipt`, `InboundPipeline.kt:3309-3434`).
 - **Room and group ticks:** the cleartext tick is `relay = false`, with no `sentAt` and a fresh id each attempt,
   never custodied, and sent only over a live link. A sealed one is sealed once, with `sentAt` set to now, and every
   send repeats those bytes: over a live link it is `relay = false` and never custodied; escalated, it is originated
@@ -108,7 +121,7 @@ publish it honestly.
   ids, since the author applies at most 128 from one tick (knit-next #173, phase P7g). Android sends the cleartext
   tick to a non-ratchet author for up to 24 h, one per link-up.
   It moves a group tick into custody, as one sealed batch, only for an author who can open a sealed one
-  (`canSealTickTo`, `MeshManager.kt:2066-2068`; `AckSync.kt`): an iPhone with the ratchet's switch on has opened it
+  (`canSealTickTo`, `MeshManager.kt:2460-2463`; `AckSync.kt`): an iPhone with the ratchet's switch on has opened it
   since P5a. The batch is a DM-form ctl 5 frame that every node carries for 24 h and nothing purges. Ours take the
   sealed form with the ratchet's switch on (phase P5d): P5c ported the ledger that sends it, and P5d's seams seal for
   it.
@@ -201,7 +214,7 @@ publish it honestly.
 - **A blob stays while a live frame our custody carries names it,** whoever sent the frame: the hash a `chat` frame
   carries in the clear, a room post's photo, a sealed message's beside its seal, or a sealed profile's photo
   (`MeshEngine.carriedBlobs`, ADR 2026-10.5sk9's P7c amendment). It is Kotlin's `forward.countByAttachmentHash`
-  (`BlobRepository.kt:100-112`), decoded on demand where Kotlin keeps a column. So a photo of ours that our sealed profiles
+  (`BlobRepository.kt:128-141`), decoded on demand where Kotlin keeps a column. So a photo of ours that our sealed profiles
   still name is held and served for their day after it changes, and so, whatever our switch, is a peer's replaced photo that
   its sealed profiles we carry still name. The first start after the last such frame removes it.
   This port pulls no carried frame's photo (ADR 2026-10.ym9y), so it only keeps bytes it already holds. Delivery-side:
@@ -226,11 +239,11 @@ publish it honestly.
   nothing and counts nothing. The replay still reads custody and writes nothing to it, and custody, the digest and
   `isCarriable` read no roster.
 - **With the ratchet's switch on, the same replay runs twice more** (ADR 2026-10.5sk9, phase P6a2): every hour, as the
-  net under the rest (`replayUndeliveredGroupCustody`, `MeshManager.kt:971`), and at once for one sender's frames in one
+  net under the rest (`replayUndeliveredGroupCustody`, `MeshManager.kt:1324`), and at once for one sender's frames in one
   group once that sender's seed is adopted. A group frame that came before its seed is in our custody and our digest, so
   no neighbour serves it again; only these open it. At a group's first sight the ratchet DMs our custody holds from its
   roster open again too, a seed whose park died with the process among them (`replayCustodiedSeedDms`,
-  `MeshManager.kt:1772-1830`). Each replay goes past the router, reads custody and writes nothing to it. Custody never
+  `MeshManager.kt:2181-2216`). Each replay goes past the router, reads custody and writes nothing to it. Custody never
   reads group-ratchet state: a group frame's `NO_KEY`, `AEAD_FAIL`, `BAD_HEADER` or failed unit changes what we deliver,
   never what we carry, and a seed's ack and a key request are ordinary sealed DMs that purge nothing.
 - **Our own group form** (ADR 2026-10.5sk9, phase P6b): each seed DM, and the group frame it goes ahead of, is signed

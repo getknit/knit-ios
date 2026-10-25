@@ -7,10 +7,10 @@ Kotlin wins.
 
 ## The pinned reference
 
-- Release `v2.7.0` is commit `7e73e891`, and `v2.8.0` is `45e09f19`. The port started from HEAD `02051b64`, five
-  test-only commits after `v2.7.0`, on 2026-09-25.
-- **The pin is `5f521cb9`,** knit-next's `main` on 2026-10-05, moved for the blob holder query (knit-next ADR
-  2026-10.6e5t). Every commit since `e4ff84b3` was read for it, and "Since then" below says what each means here.
+- Release `v2.7.0` is commit `7e73e891`, `v2.8.0` is `45e09f19`, `v2.9.0` is `3286edd8`, and `v2.10.0` is
+  `20696bad`. The port started from HEAD `02051b64`, five test-only commits after `v2.7.0`, on 2026-09-25.
+- **The pin is `e63f15f4`,** knit-next's `main` on 2026-10-25, moved to take in what this port had mirrored ahead of
+  the last one. Every commit since `5f521cb9` was read for it, and "Since then" below says what each means here.
   `sync-vectors.py --check` needs a checkout at the pin, since a later one may carry vectors this port has not taken.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
@@ -162,7 +162,7 @@ Kotlin wins.
       `arrivingFiles()` carrying a count are its own. The iPhone shows an incoming photo's progress since 2026-10-24
       (ADR 2026-10.eyad).
     - `f6ecf8ac` drops an unused `Unit` from a test.
-  - **Since then** (30 commits; five vectors added, none moved):
+  - **Up to `5f521cb9`** (the previous pin; 30 commits; five vectors added, none moved):
     - **The blob holder query** (`403cd861`, knit-next ADR 2026-10.6e5t), on top of **the likeliest holder first**
       (`1c82da2d`, #136, knit-next ADR 2026-10.f7gg). Mirrored here (ADR router, "blob holder"):
       - the iPhone answers `blobhave` with `blobhas` in every build, and every HELLO claims `CAP_BLOB_HAVE` (`0x2000`);
@@ -182,12 +182,14 @@ Kotlin wins.
       `blobreq`'s `offset` in `1...length` is served as the tail under a resumed `FILE_HEADER`, and a parked ask keeps
       it. A cut attachment's prefix is kept on disk for the session, the next ask names its length, and a failed
       splice starts over from 0. `blobReqContentResumed` and `fileHeaderResumed` round-trip. The 2026-10-15 amendment
-      (`0e96bb0c`, #161, one resumed header per key per link per 45 s) is mirrored ahead of the pin. Where the Kotlin
+      (`0e96bb0c`, #161, one resumed header per key per link per 45 s) is mirrored too, in the same 45 s window
+      (`FileIntake.swift`), and in the pin since `e63f15f4`. Where the Kotlin
       has moved past wtyc's text (no `onNeighborAdded`; `reaskFromZero` opens a forced cycle rather than asking
       everyone), this port follows the Kotlin at `0108d8df1`.
     - **One file pace budget** (`99ee3f81`, `37dd5f22`, knit-next ADR 2026-10.8jwn): Android feeds at most 4 KiB/s across
-      every 1M and 2M link it feeds, in chunks of 2 to 16 KiB (`ble-transport.md`). Sender-side only; mirrored ahead
-      of the pin with 5buf's window, below (ADR 2026-10.xwjc).
+      every 1M and 2M link it feeds, in chunks of 2 to 16 KiB (`ble-transport.md`). Sender-side only; mirrored with
+      5buf's window, below (ADR 2026-10.xwjc). Since #120, an Android peer's link that earns the boost takes 18 KiB/s
+      of its own; an iPhone's never does.
     - **An attachment keeps its arrival identity** (`01b2fd5d`, knit-next ADR 2026-10.mptm): a sealed DM or group message
       may name a room picture by its plaintext hash with no key, and one blob may recur across messages
       (`crypto.md`). This port took both already, and since ADR 2026-10.f3mv mirrors the rest: a held pick goes as its
@@ -203,194 +205,220 @@ Kotlin wins.
         after a week (ADR 2026-10.k8ge);
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
-  - **Mirrored ahead of the pin:**
-    - knit-next `a81f2050` (2026-10-18, on its `main`; knit-next ADR 2026-10.9qr4, #178): every inbound door refuses a
-      frame whose id is not the shape its type is minted with. This port's door is `Router.admit`, which refuses before
-      the seen check and the meter and counts `router.nonCanonical`; `FrameId.admits`, `profileId` and `talkLength`
-      mirror `FrameId.kt` (ADR 2026-10.h7xw). Its HELLO half, `99fbcad1` (#199), this port met at `admit` already.
-      When the pin passes `a81f2050`, check `FrameId.kt`'s `admits` against `FrameIdAdmitsTests`.
-    - `ContactCard.clampName` from knit-next's `main` at `db18dbde` (2026-10-19), for Add contact (ADR 2026-10.tpr5):
-      `3d587088` cuts a card's name at 32 UTF-16 units on a code-point boundary, where the pin's `.take(32)` could split a
-      surrogate pair. Nothing else in `ContactCard.kt` or `docs/CONTACT_CARD.md` moved since the pin. `795b0883` (no intro
-      to a peer whose profile lacks `CAP_RATCHET`, an amendment to knit-next ADR 042) is Android's alone while this port
-      sends no intro.
-    - `vectors/wire-v1.json`, synced alone with `scripts/sync-vectors.py --only wire-v1.json` from knit-next's `main` at
-      `9c3d487b` (2026-10-19), and again at `e63f15f4` (2026-10-25):
-      - **What comes in:** 14 fixtures for features this port has not taken. Calls (`messageContentCall*`, `bd7c905b`,
-        knit-next ADR 2026-10.3tee), supporter badges on the profile (`profilePayloadBadges`,
-        `messageContentV2ProfileBadges`, `e3e41a2e`, knit-next ADR 2026-10.r99s, knit-ios #10), short videos
-        (`messageContentVideo`, `messageContentV2Video`, `chatContentVideo`, `13387e0a`, knit-ios #9), and two blob
-        request fields: `fastOnly`, which asks before a large Bluetooth-only download (`3b03c5f9`), and `pull` with its
-        `until` (`385bfba0`).
-      - **What this port does with them:** decodes each to the type it already has and drops the new fields, which
-        `GoldenVectorTests.whatThisBuildDoesNotModelStillDecodes` pins, except `pull`, `until` and `chatContentVideo`'s
-        `attachmentSize`, which this port sends since knit-ios #7 (its `video` waits on #9). `fastOnly` marks an asker
-        that takes the bytes over Wi-Fi Aware alone (knit-next ADR 2026-10.js2p), which this port cannot honour. Android
-        sends one only to a neighbour with a Wi-Fi Aware route (`BlobExchange.kt:493` at `eac3debc`), so an iPhone never
-        gets one. `pull` and `until` carry knit-next ADR 2026-10.2drc's hop budget and deadline for a pull-through. This
-        port models them since ADR 2026-10.8hek, which ports `385bfba0` and its amendment `1ce131fd`, and
-        `blobReqContentPull` and `blobReqContentPullSpent` have typed tests.
-      - **At `e63f15f4`:** seven more fixtures, and none of the 78 moved:
-        - two scope-config ctls (`messageContentScopeConfigDm` and `Group`, `33d83aca`), which this port takes as the
-          chain-advancing no-op Android counts on;
-        - two commons posts (`commonsPostAttachment`, `commonsReaction`, `651cdc25`), which only a spool carries
-          (knit-ios #11), so they only round-trip;
-        - a message's formatting (`messageContentStyles`, `messageContentV2Styles`, `chatContentStyles`, `8724b6b3`,
-          knit-next ADR 2026-10.p95v): style ranges in one byte string beside a plain body, under `"s"` or compact
-          label 17. This port drops them and shows the body plain, which the ADR expects until the iPhone's half lands.
-          Android refuses a sealed message whose `"s"` or label 17 is not a byte string (`DECRYPT_FAILED`), but this
-          port skips the key unread and opens it, so the iPhone's half must refuse one too.
+  - **Since then** (396 commits, releases `v2.9.0` and `v2.10.0` among them; 24 fixtures added to `wire-v1.json` and
+    `ratchet-v1.json` new, none moved). Read on 2026-10-25, and the merged code checked at `e63f15f4`:
+    - **Owed here.** Each shows only when a sender's bytes are buggy or hostile, and no honest build of either side
+      sends them:
+      - **A negative `ttl` or `hops`** (`9c56cd31`): Android refuses the `WireEnvelope` at the door (`Wire.kt:1075-1076`).
+        KnitWire reads both as any 32-bit integer (`WireEnvelope.swift:34-35`), so the iPhone delivers, carries and
+        relays a frame Android drops.
+      - **A code point split across text chunks** (`a0a29148`, knit-next ADR 2026-10.qjap): Android joins an
+        indefinite-length string's chunks before its UTF-8 check (`CborText.kt:99-109`), as kotlinx does. KnitWire also
+        checks each chunk (`CBOR+Decoding.swift:191`), so it refuses what Android takes, though the ADR says both
+        platforms pass it. The check on the joined bytes stays.
+      - **Fields Android now types** (`13387e0a`, `651cdc25`, `e3e41a2e`, `33d83aca`, `236f56b5`, `8724b6b3`): a wrong
+        CBOR type under a room post's `video`, `attachmentName`, `attachmentKey` or `"s"`, or a sealed message's `video`,
+        `cl`, `sc`, `"s"` or badges, fails Android's decode (`wire-format.md`). KnitWire skips each key, so it opens
+        such a message. It carries such a post, and offers it to every Android neighbour at each digest exchange until
+        it expires.
+      - **A negative label** (`97e1747f`, kotlinx 1.12.0): Android skips a v3 plaintext's negative integer key as an
+        unknown label, and `CBORLabeledFields` refuses it (`crypto.md`).
+      - **j67x's third rule** (`6d9627b7`): over our own unanswered reset, still draining, Android keeps the drained root
+        as `prevRoot`, and `sealReset` takes the held one (`crypto.md`). It belongs with j67x's other two rules, below.
+      - **`FLAG_NO_AWARE`** (`9552995d`, `438ffc72`, knit-next ADR 2026-10.2t49): advert bit 2, which
+        `BleAdvertPayload.kt:25-26` asks this port to reserve. Android reads it only from service data, so only the
+        Linux peer's advert counts, and its clear bit keeps nearby Pixels' Wi-Fi Aware awake (`ble-transport.md`).
+      - **A blob that fails to store:** Android keeps the want and its asks (`BlobExchange.onReceived`,
+        `BlobExchange.kt:2016-2021`). `receiveFile` here marks the blob obtained and withdraws its asks whether or not
+        the insert landed (`MeshEngine+Blobs.swift:315-320`), and the next re-arm wants it again.
+    - **Mirrored ahead of the last pin, and checked again at this one:**
+      - **Canonical frame ids** (`a81f2050`, #178, and its HELLO half `99fbcad1`, #199; knit-next ADR 2026-10.9qr4):
+        every inbound door refuses a frame whose id is not the shape its type is minted with. This port's door is
+        `Router.admit`, which refuses before the seen check and the meter and counts `router.nonCanonical` (ADR
+        2026-10.h7xw). `FrameId.kt`'s `TALK_LENGTH`, `admits` and `profileId` are unchanged since, and agree with
+        `FrameId.swift` and `FrameIdAdmitsTests`. A HELLO's node id this port checks at `admit`. The spool's door is
+        Android's alone.
+      - **A card's name** (`3d587088`, for Add contact, ADR 2026-10.tpr5): Android cuts it at 32 UTF-16 units on a
+        code-point boundary (`clampToUtf16`), as `ContactCard.clampName` does. `docs/CONTACT_CARD.md` moved only for the
+        spool (`3cd25bc0`). `795b0883` and `f5a6edab`, no intro to a peer whose profile lacks `CAP_RATCHET`, are
+        Android's alone while this port sends no intro.
+      - **The wire vectors,** synced alone at `9c3d487b` (2026-10-19), then with the rest at the pin:
+        - **What came in at `9c3d487b`:** 14 fixtures for features this port has not taken. Calls (`messageContentCall*`,
+          `bd7c905b`, knit-next ADR 2026-10.3tee), supporter badges on the profile (`profilePayloadBadges`,
+          `messageContentV2ProfileBadges`, `e3e41a2e`, knit-next ADR 2026-10.r99s, knit-ios #10), short videos
+          (`messageContentVideo`, `messageContentV2Video`, `chatContentVideo`, `13387e0a`, knit-ios #9), and two blob
+          request fields: `fastOnly`, which asks before a large Bluetooth-only download (`3b03c5f9`), and `pull` with
+          its `until` (`385bfba0`).
+        - **What this port does with them:** decodes each to the type it already has and drops the new fields, which
+          `GoldenVectorTests.whatThisBuildDoesNotModelStillDecodes` pins, except `pull`, `until` and `chatContentVideo`'s
+          `attachmentSize`, which this port sends since knit-ios #7 (its `video` waits on #9). `fastOnly` marks an asker
+          that takes the bytes over Wi-Fi Aware alone (knit-next ADR 2026-10.js2p), which this port cannot honour.
+          Android sends one only to a neighbour with a Wi-Fi Aware route (`BlobExchange.kt:493`), so an iPhone never
+          gets one. `pull` and `until` carry knit-next ADR 2026-10.2drc's hop budget and deadline for a pull-through.
+          This port models them since ADR 2026-10.8hek, which ports `385bfba0` and its amendment `1ce131fd`, and
+          `blobReqContentPull` and `blobReqContentPullSpent` have typed tests.
+        - **What came in after:** seven more fixtures, and none of the 78 moved:
+          - two scope-config ctls (`messageContentScopeConfigDm` and `Group`, `33d83aca`), which this port takes as the
+            chain-advancing no-op Android counts on;
+          - two commons posts (`commonsPostAttachment`, `commonsReaction`, `651cdc25`), which only a spool carries
+            (knit-ios #11), so they only round-trip;
+          - a message's formatting (`messageContentStyles`, `messageContentV2Styles`, `chatContentStyles`, `8724b6b3`,
+            knit-next ADR 2026-10.p95v): style ranges in one byte string beside a plain body, under `"s"` or compact
+            label 17. This port drops them and shows the body plain, which the ADR expects until the iPhone's half
+            lands. Android refuses a sealed message whose `"s"` or label 17 is not a byte string (`DECRYPT_FAILED`),
+            so the iPhone's half must refuse one too (above).
 
-        `whatThisBuildDoesNotModelStillDecodes` pins the two ctls and the three styled fixtures.
-    - knit-next companion change A9 (ADR 2026-10.5sk9), merged into knit-next's local `main` with A10 by 2026-10-18
-      (`4f3cd995`, not pushed), past the pin:
-      - **What comes in:** `vectors/ratchet-v1.json`, synced alone with `scripts/sync-vectors.py --only
-        ratchet-v1.json`, now from `main` at `3e3e044c`, which adds `groupSkippedPerMint` for #177.
-        `Tests/Vectors/ratchet-v1.json` records the commit it came from. `1b5e72fa` regenerated it for #174: 139
-        `state.session.peerBasePub` leaves carry the init's prekey where they had null, and no frame, header, plaintext
-        or ciphertext byte moved (phase P7f).
-      - **Stages in:** all six. Stage 1, the known answers (`95d26b8f`); stage 2, the profiles (`bc47c7d1`); stage
-        3a, the DM transcripts and refusals (`4bb2e816`); stage 3b, the control plane, races, resets and re-seals
-        (`919f8a53`); stage 4, the group form (`a20fba4d`); stage 5, Carol's races and first contacts (`c6edf7df`).
-        The branch also aligns `docs/GROUP_FORWARD_SECRECY.md` §4 rule 5 and §6 with production's order-dependent
-        loss after a wipe re-mint, and makes `RESET_TRIGGERING_DROPS` visible to tests.
-      - **The IV seam:** the branch gives `RatchetEngine` and `GroupRatchetEngine` a constructor IV source
-        (`newIv`, default `AesGcm.randomIv`). It changes nothing in production, and the port's engines mirror it.
-      - **When the pin passes A9's merge:** sync every file the normal way.
-    - knit-next's ratchet fixes past `72684a86`, followed in phase P7f (ADR 2026-10.5sk9's P7f amendment), read at
-      `4f3cd995`:
-      - `458c2eee` (knit-next ADR 2026-10.dmgw): #174, an initiator records the prekey its init names as its base
-        (`RatchetEngine.initiate`, `prekeyBase`); #172, a low-order key is "cannot seal" and a low-order prekey is never
-        pinned (`RatchetCrypto.acceptsPublicKey`, `verifiedPrekey`, `MessageCrypto.seal`, `recipientBundles`,
-        `groupRatchetEligible`); #171, a reset's re-seal goes out once more past the dedup window (`ResetReseal`);
-        #177, a group skipped key spent by its full key, which this port already did. Its #173, `AckSync`'s live-link
-        tick chunked at `MAX_BATCH_ACKS`, is the blobs plane's, followed in phase P7g (`AckSync.flushOverLink`). This
-        port already makes its `MessageContentV2` change, a canonical check on a profile's `loraKey` when encoding
-        (`CanonicalText.keyBytes`).
-      - `09cacf5b` (knit-next ADR 2026-10.9wvr): an `EPOCH_GONE` on a retired local epoch behind the peer's own ack is
-        never reset evidence (`RatchetResetPolicy.isRetiredBase`, `RatchetStore.lowestLocalEpoch`). Its follow-ups #179,
-        #180 and #181 had not landed at `4f3cd995`.
-      - Not followed: `6d9627b7` (knit-next ADR 2026-10.j67x), the spool's scopes for our unanswered reset. The same
-        commit reads a frame that predates our session, carrying the init of the root we replaced, under the drained
-        root rather than racing it (`RatchetEngine.resolveSession`'s `predatesSession`, `derivesPrevRoot`). The scopes
-        are the spool's, which this port leaves out; the race rule changes what a peer accepts and is owed a phase of
-        its own. `a81f2050`, which refuses non-canonical frame ids at the router, is mirrored on its own (below).
-    - knit-next `d47ad76c` (2026-10-07, on its `main`), a picked mention as a chip that backspace deletes whole, and
-      `eafb0721` (2026-10-13), a mention's color moved until it reads 4.5:1 on its bubble. Both are UI only, and nothing
-      on the wire moves. They are mirrored by ADR 2026-10.nbhj as `MentionText.keepChipsWhole`, `snapOutOfChips` and
-      `edited`, and `Swatches.mention`. `3a6f5d08` and `1870384c` make a mention's alert say only that words are hidden
-      when the filter flagged them, which this port's alert already does. When the pin passes `d47ad76c`, check
-      `MentionText.kt` against `MentionTextTests`. Companion change A8, mentions on Android's debug bridge, is owed.
-    - knit-next `ac491f4c` (2026-10-14, on its local `main`, not pushed; ADR 2026-10.6h2g), `@everyone`
-      in a group: the picker's first row, and a pick that writes one `Mention{nodeId, name: "everyone"}` for each
-      roster member but us and the blocked. No wire byte moves, so the pin doesn't either. It is mirrored by ADR
-      2026-10.jwst as `MentionCandidate.everyone` and `MentionText.filter`: `MentionEveryoneTests`. When the pin passes
-      it, check `MentionText.kt`'s `matchesEveryone` and `everyoneMentions` against them.
-    - A photo's declared size, from knit-next `main` at `eac3debc` (knit-next ADRs 2026-10.js2p and 2026-10.hmfe,
-      knit-ios #7): a picture of 1,000,000 bytes or more declares its plaintext length, sealed in a DM or a group and in
-      the clear in a room post, so Android's "Ask before large Bluetooth downloads" can hold it
-      (`BluetoothFetchGate.kt`'s `declaresSize`, `MeshManager.kt:1452-1457`, `:1531-1535`). This port's
-      `BluetoothFetchGate.declaresSize` drops the `named` arm, since it sends no file. An Android carrier holds its own
-      Bluetooth pull of such a room photo too (`roomPostWaits`, `MeshManager.kt:2908-2922`). When the pin passes
-      `eac3debc`, check `BluetoothFetchGate.kt` against `BluetoothFetchGateTests`.
-    - knit-next `03c4c3b1` (2026-10-10, on its `main`) counts a payload that won't decode as `PAYLOAD_DECODE_FAILED`
-      and drops it. For a typing cue that means a broken group cue no longer lights the room (`InboundPipeline.kt:477`).
-      The iPhone's `handleTyping` counts one `undecodable` (ADR 2026-10.29z9): `MeshEngineTypingTests`.
-    - knit-next `79f38d3d`, `09f70b3e`, `e2191bb9` and `3890f16b`, all on knit-next `main` at `8dc60836` (ADR
-      2026-10.ds45's amendment of 2026-10-10, the `ios-blob-parity` order, for the interop audit's IOS-1, AND-5 and
-      AND-7). Read at `8dc60836`:
-      - the asker's `stuckOn`, `streamWait`, `askedLacking`, `idleHolderPast`, `lackedWhileStuck` and `recheckAt`
-        (`BlobExchange.kt:371-528`), with `FramedLink.rxEtaMs`: `InteropAuditMeshTests` and `BlobStreamWaitTests`;
-      - the holder's parking, `waitsBehindFeed`, `serveParked`, `first` and `etaFor` (`BlobExchange.kt:1185-1452`),
-        `onCancel` dropping a parked ask, and `MeshManager.addresseesOf`: `MeshEngineBlobParkTests`,
-        `MeshTests.aSecondAskForAPhotoWeFeedIsParkedAndServedOnceTheFeedEnds` and `MessageAttachmentTests`;
-      - `FeedMeter.kt` whole, `FramedLink.feed` and `notePaced`, and `BluetoothMeshTransport.fileFeed` and
-        `expectedFileRate`: `FeedMeterTests`, which are `FeedMeterTest`'s ten cases, and `LinkFileFeedTests`;
-      - `FileIntake.kt:124-131` and `RxReports.kt:48-70` for a skipped file's reports: `LinkFileProgressTests` and
-        `FileIntakeTests`.
+          `whatThisBuildDoesNotModelStillDecodes` pins the two ctls and the three styled fixtures.
+      - **Companion changes A9 and A10** (ADR 2026-10.5sk9), merged as `2325775f` to `768b6cd0` and `4f3cd995`:
+        `ratchet-v1.json`'s known answers, profiles, DM transcripts and refusals, control plane, group form, and Carol's
+        races and first contacts. It now syncs with the rest at the pin. Its bytes last moved in `3e3e044c`, which adds
+        `groupSkippedPerMint` for #177. `1b5e72fa` regenerated it for #174: 139 `state.session.peerBasePub` leaves carry
+        the init's prekey where they had null, and no frame, header, plaintext or ciphertext byte moved (phase P7f). The
+        IV seam (`newIv`, default `AesGcm.randomIv`) changes nothing in production, and the port's engines mirror it.
+      - **The ratchet's fixes past `72684a86`,** followed in phase P7f (ADR 2026-10.5sk9's P7f amendment):
+        - `458c2eee` (knit-next ADR 2026-10.dmgw): #174, an initiator records the prekey its init names as its base
+          (`RatchetEngine.initiate`, `prekeyBase`); #172, a low-order key is "cannot seal" and a low-order prekey is
+          never pinned (`RatchetCrypto.acceptsPublicKey`, `verifiedPrekey`, `MessageCrypto.seal`, `recipientBundles`,
+          `groupRatchetEligible`); #171, a reset's re-seal goes out once more past the dedup window (`ResetReseal`);
+          #177, a group skipped key spent by its full key, which this port already did. Its #173, `AckSync`'s
+          live-link tick chunked at `MAX_BATCH_ACKS`, is the blobs plane's, followed in phase P7g
+          (`AckSync.flushOverLink`). This port already makes its `MessageContentV2` change, a canonical check on a
+          profile's `loraKey` when encoding (`CanonicalText.keyBytes`).
+        - `09cacf5b` (knit-next ADR 2026-10.9wvr): an `EPOCH_GONE` on a retired local epoch behind the peer's own ack
+          is never reset evidence (`RatchetResetPolicy.isRetiredBase`, `RatchetStore.lowestLocalEpoch`). Its follow-ups
+          #179, #180 and #181 have not landed.
+        - At the pin, every function these touch is byte-identical to `4f3cd995`, and `prekeyBase` and `isRetiredBase`
+          agree with `RatchetEngine.swift` and `RatchetResetPolicy.swift`. The only ratchet commits since are a Qodana
+          refactor (`3b2f624c`) and `sealDm`'s `confirmedOnly`, for scope configs alone (`33d83aca`).
+      - **Not followed: j67x** (`6d9627b7`, knit-next ADR 2026-10.j67x). It gives the spool's scopes to our unanswered
+        reset, reads a frame that predates our session, carrying the init of the root we replaced, under the drained
+        root rather than racing it (`RatchetEngine.resolveSession`'s `predatesSession`, `derivesPrevRoot`), and keeps
+        the drained root over our own reset (above). The scopes are the spool's, which this port leaves out; the other
+        two change what a peer accepts, and are owed a phase of their own.
+      - **Mentions** (ADR 2026-10.nbhj and 2026-10.jwst): a picked mention as a chip that backspace deletes whole
+        (`d47ad76c`), a mention's color moved until it reads 4.5:1 on its bubble (`eafb0721`, merged unchanged as
+        `bb87222c`), and `@everyone` in a group (`ac491f4c`, knit-next ADR 2026-10.6h2g, merged unchanged as
+        `f2be66c5`). UI only, and nothing on the wire moves. `MentionText.kt`'s chip and `@everyone` code is unchanged
+        since, so `MentionTextTests` and `MentionEveryoneTests` stand; `8724b6b3` only draws styles over the mentions,
+        and `ReadableColor.kt` is unchanged. `3a6f5d08` and `1870384c` make a mention's alert say only that words are
+        hidden when the filter flagged them, which this port's alert already does. Companion change A8, mentions on
+        Android's debug bridge, is owed.
+      - **A photo's declared size** (`eac3debc`; knit-next ADRs 2026-10.js2p and 2026-10.hmfe; knit-ios #7): a picture
+        of 1,000,000 bytes or more declares its plaintext length, sealed in a DM or a group and in the clear in a room
+        post, so Android's "Ask before large Bluetooth downloads" can hold it (`BluetoothFetchGate.kt`'s
+        `declaresSize`, `MeshManager.kt:1468`, `:1549`). `BluetoothFetchGate.kt` is unchanged, and this port's
+        `BluetoothFetchGate.declaresSize` drops only the `named` arm, since it sends no file (`BluetoothFetchGateTests`).
+        An Android carrier holds its own Bluetooth pull of such a room photo too (`roomPostWaits`,
+        `MeshManager.kt:2936-2946`).
+      - **A payload that won't decode** (`03c4c3b1`) counts as `PAYLOAD_DECODE_FAILED`, so a broken group typing cue no
+        longer lights the room. The iPhone's `handleTyping` counts one `undecodable` (ADR 2026-10.29z9).
+      - **The blob plane's parity order** (`79f38d3d`, `09f70b3e`, `e2191bb9`, `3890f16b`; ADR 2026-10.ds45's amendment
+        of 2026-10-10, for the interop audit's IOS-1, AND-5 and AND-7), checked against the tests named then:
+        - the asker's `stuckOn`, `streamWait`, `askedLacking`, `idleHolderPast`, `lackedWhileStuck` and `recheckAt`
+          (`BlobExchange.kt:574-731`) are unchanged since `8dc60836`, and `FramedLink.rxEtaMs` equals
+          `fileArrivingLeftMilliseconds`: `InteropAuditMeshTests` and `BlobStreamWaitTests`;
+        - the holder's parking (`BlobExchange.kt:1649-1957`) changed only to keep a parked ask's offset, `pull` and
+          `until` (`385bfba0`), which this port does: `MeshEngineBlobParkTests`;
+        - `FeedMeter.kt`, `FramedLink.feed` and `notePaced`, and `BluetoothMeshTransport.fileFeed` and
+          `expectedFileRate` are unchanged since `8dc60836`, and `FeedMeter.swift` lacks only Coded's `forgetDrain`:
+          `FeedMeterTests` and `LinkFileFeedTests`;
+        - a skipped file's reports (`FileIntake.kt:134-160`, `RxReports.kt:48-70`): `LinkFileProgressTests` and
+          `FileIntakeTests`;
+        - nsr7's rules from `79f38d3d`: `PROGRESS_EVERY_MS` (2 s), `HOLD_SLACK_MS` (30 s), `HOLD_CAP_MS` (15 min),
+          `hold`, the `CAP_BLOB_HAVE` gate `onFileProgress` and `withdrawAsk` share, `onCancel`, `Want.over`,
+          `withdrawAsks` at landing, and `Want.withdraw` with `Answer.receivedAt`, but for the failed store above.
 
-      This closes g24x's per-link budget and one copy at a time, listed as waiting in the entry below. Its carrier's
-      hold still waits on Phase 4. When the pin passes `8dc60836`, check those Kotlin files against these tests.
-    - knit-next `713b29d6` (2026-10-08, on its local `main` and not yet pushed on 2026-10-09) turns every BLE flag on
-      in release: `BLE_SIDE_PLANE`, `BLE_GATT_PEERS`, `BLOB_QUERY`, `BLE_CODED_PHY` (always AUTO), `BLE_LINK_BOOST` and
-      `BLE_FEED_WINDOW`, each ahead of its own trial. `6760b843` documents them in `docs/BLUETOOTH_PLANE.md`. Only
-      `BLOB_QUERY` changes what this port does: the app now queries in every build (ADR 2026-10.m9uq's amendment of
-      2026-10-09). With the others, a release Android phone now finds a foreground iPhone through its GATT payload and
-      dials it, hunts a Coded peer in windows deaf to an iPhone, and never boosts an iPhone link. It fed an iPhone at
-      the paced base until `e658eb6f` let the iPhone's reports window that feed (`ble-transport.md`; knit-next ADR
-      2026-10.5buf, mirrored below).
-    - knit-next ADR 2026-10.5buf, a file clocked by its receiver's reports, with both amendments of 2026-10-08, and
-      knit-next ADR 2026-10.8jwn's budget as its fallback (ADR 2026-10.xwjc, 2026-10-09). Read from the working tree
-      at `713b29d6`: `FeedWindow.kt` (ported whole but for its Coded parts and resume), `RxReports.kt` (the cadence),
-      `FramedLink.kt:367-430` and `:686-828`, `CodedPhyPolicy.kt:311-387` and `BluetoothMeshTransport.kt:1174-1227`.
-      This port also windows and reports to iPhones. Android left iPhones out behind two gates
-      (`BleFeedPolicy.windowed`, `BlobExchange.onFileProgress`) until `e658eb6f` (2026-10-09, on its `main`) lifted
-      both. The device run that checks it is owed (knit-ios #6). When the pin passes 5buf, check
-      `FeedWindow.kt` against `FeedWindowTests` and `FeedWindowSimTests`, and `RxReports.kt` against
-      `LinkFileProgressTests`.
-    - knit-next AND-3, `a03fe167` (`fix/gatt-only-link-score`, built and trialled as `b7c13e57`), merged on knit-next's
-      local `main` and not yet pushed on 2026-10-10, with `a2cec531` noting Android's re-dial from presence. It amends
-      its ADRs 2026-09.shzv and 2026-09.kwq2. A link whose HELLO carried `CAP_DOORBELL` scores −90 out of presence,
-      never −127, and a doorbell dialer counts as sighted for admission only if heard in the last 12 s, with the bit
-      backed by the phone's own evidence. Nothing on the wire moves, and this port changes no Swift for it: an
-      Android peer never leaves presence the way an iPhone does (`LinkManager+Configuration.swift`). Its lines,
-      `bt state … linkScores=` and the admission lines' `doorbell=true heardAgoMs= inPresence=` suffix, are what
-      `interop.py android-keeps-iphone` reads (`ble-transport.md`, `linux-peer.md`).
-    - knit-next ADR 2026-10.g24x's item 2 (`e2191bb9`): a querying asker asks the frame's author on its HAVE, without
-      waiting for the other answers (`BlobExchange.answersIn`, mirrored on 2026-10-09). Its other items are not
-      mirrored: the carrier's hold waits for Phase 4's carrier pulls, and the per-link budget and one copy at a time
-      wait for nsr7's holder half (parking), now that 5buf is in.
-    - knit-next #140, an ask to a holder that stands until its link goes (the 2026-10-06 amendment to ADR
-      2026-10.6e5t), ported from the uncommitted `fix/blob-ask-race` on 2026-10-06 (ADR 2026-10.m9uq's amendment).
-      Check the merged `BlobExchange.kt` against `BlobAskStandsTests` when the pin passes it.
-    - knit-next ADR 2026-10.nsr7, a file's receiver reporting its progress, with its cancel amendment (ADR
-      2026-10.ds45 and its amendment). Ported on 2026-10-07 from uncommitted work on `main` above `3890f16b`, then
-      checked the same day against its commit, `79f38d3d`, which is not yet pushed. This port takes `blobprog`, sends
-      it as a receiver, and holds on a SENDING answer's `eta`; it takes `blobcancel` as a holder and sends it as an
-      asker. The holder's meter and parking are Android's alone. `Tests/Vectors/` records `79f38d3d`, past the pin:
-      the commit's vectors are byte for byte the working tree's, with `blobProgressContent`,
-      `blobHasContentSendingEta` and `blobCancelContent` new. Checked against the commit: `PROGRESS_EVERY_MS` (2 s),
-      `HOLD_SLACK_MS` (30 s), `HOLD_CAP_MS` (15 min), `hold`, the gate `onFileProgress` and `withdrawAsk` share,
-      `onCancel`, `Want.over` (a blind ask kept at the widening), `withdrawAsks` at landing, and `Want.withdraw`, whose
-      commit skips a neighbour only when its answer saying it lacks the blob came at or after the ask
-      (`Answer.receivedAt`, mirrored then). When the pin passes `79f38d3d`, check those again against
-      `LinkFileProgressTests`, `BlobAskStandsTests`, `MeshEngineBlobQueryTests`, `MeshEngineBlobCancelTests`,
-      `LinkFileCancelTests` and `BlobPullThroughTests`.
-    - knit-next ADR 2026-10.swst, whitespace as ART measures it, `e0c8d969` (`fix/art-whitespace`), merged on
-      knit-next's local `main` and not yet pushed on 2026-10-10 (ADR 2026-10.7uyt).
-      `app.getknit.knit.text.ArtTextSemanticsTest` walks the BMP on API 33, 34, 36 and 37, and
-      `TextLimits.isKotlinWhitespace` and `isJavaRegexWhitespace` pin its two lists; U+180E is in neither. No Kotlin product code moved, so there is
-      nothing to check when the pin passes it but that the test still stands.
-    - knit-next's dead-link, canonical-id and Coded commits of 2026-10-14 to 2026-10-20, read on 2026-10-23 at its
-      `main` `85cf0baa`. No later commit touches their Bluetooth files. No Swift behaviour moves here:
-      - **A link this phone can show is dead goes down** (`f8b5d544`, `b49f7f13`, `ec37724e`; knit-next ADR
-        2026-10.697m, #203). An empty `KEEPALIVE` is now an announce, a probe and an answer, and Android closes a
-        silent link about 150 to 210 s after the last byte in (`LinkSilence.kt`, `ble-transport.md`). A link whose
-        HELLO carries `CAP_DOORBELL` is exempt (`LinkSilence.kt:39,146,158`, `BluetoothMeshTransport.kt:2639`), and
-        every CoreBluetooth HELLO carries the bit. The ADR calls its knit-ios half "a notice, not code". This port
-        takes it as `interop.md`'s rule never to write a keepalive, `LinkRecord.Tag.keepalive`'s comment,
-        `LinkAdmissionTests.aKeepaliveIsNeverWrittenNorAnsweredDoorbellOrNot` and an amendment to ADR 2026-09.6es2.
-        The Linux peer's `android` profile, whose HELLO lacks the bit, gets Android's announce and never answers, so
-        Android never probes it.
-      - **One redial bump per link end** (`9a68b225`, #205, `LinkDownOnce.kt`): Android's first redial now comes at
-        about 10 s. This port's `retire` already acts once per link.
-      - **A link's node id is canonical** (`99fbcad1`, #199, the 2026-10-19 amendment to knit-next ADR 2026-10.9qr4):
-        `Protocol.parse` refuses a HELLO whose node id does not round-trip through 16 bytes. This port refuses the
-        same ids at `admit` already (`ble-transport.md`, "The handshake").
-      - **A frame's id has the shape its type is minted with** (`a81f2050`, #178, knit-next ADR 2026-10.9qr4). Its router
-        door is mirrored ahead of the pin as `FrameId.admits` and `Router.admit` (ADR 2026-10.h7xw, knit-ios #4). Its
-        spool door is Android's alone.
-      - **The Coded PHY, more aggressive** (`ba14a876`, #169; the Bluetooth parts of `d7da26f6`; `752922da`, knit-next
-        ADR 2026-10.yvn6). The step-up backs off after flaps, a 1M hit weaker than −90 no longer blocks `codedOnly`,
-        and a cold sighting starts a bounded hunt. All of it is on in release. An iPhone is never heard on Coded, so
-        there is nothing to mirror. Three indirect costs to an iPhone are listed in `ble-transport.md` and wait on a
-        trial (roadmap). `d7da26f6` also appends `near=[…]` to `bt state` after `linkScores=`, and `interop.py`'s
-        pattern ignores it. Its Wi-Fi Aware half is Android's alone.
-
-      When the pin passes these, check that `LinkSilence`'s exemption still reads the HELLO's `CAP_DOORBELL`, and that
-      `FrameId.kt`'s `admits` still agrees with `FrameIdAdmitsTests`.
+        This port took nsr7's holder half, the meter and the parking, and g24x's per-link budget and one copy at a
+        time, on 2026-10-10, and g24x's item 2, asking the author on its HAVE (`BlobExchange.answersIn`), on
+        2026-10-09. Only g24x's carrier hold waits, for Phase 4's carrier pulls: `CarrierPullPolicy.kt` is unchanged
+        since `79f38d3d`.
+      - **#140, an ask to a holder that stands until its link goes** (the 2026-10-06 amendment to knit-next ADR
+        2026-10.6e5t), ported from the uncommitted `fix/blob-ask-race` (ADR 2026-10.m9uq's amendment) and merged as
+        `a294fe30`. `graceUp`, `hold`, `confirmWait`, `askHolder`, `askable`, `answersIn` and the round-trip waits
+        (`BlobExchange.kt:736-892`, `:1047-1076`) match `BlobAskStandsTests`' Swift.
+      - **Every BLE flag on in release** (`713b29d6`; `6760b843` documents them in `docs/BLUETOOTH_PLANE.md`):
+        `BLE_SIDE_PLANE`, `BLE_GATT_PEERS`, `BLOB_QUERY`, `BLE_CODED_PHY` (always AUTO), `BLE_LINK_BOOST` and
+        `BLE_FEED_WINDOW` (`app/build.gradle.kts:456-468`). Only `BLOB_QUERY` changes what this port does: the app
+        queries in every build (ADR 2026-10.m9uq's amendment of 2026-10-09). With the others, a release Android phone
+        finds a foreground iPhone through its GATT payload and dials it, hunts a Coded peer in windows deaf to an
+        iPhone, and never boosts an iPhone link.
+      - **5buf** (knit-next ADR 2026-10.5buf with both amendments of 2026-10-08, and 8jwn's budget as its fallback; ADR
+        2026-10.xwjc): `6dee7666`, `e4624be3`, `e3654bb2` and `e8458feb`, with `e658eb6f` lifting the two gates that left
+        iPhones out (`BleFeedPolicy.windowed`, `BlobExchange.onFileProgress`). `FeedWindow.kt`, `RxReports.kt` and
+        `TransferPacePolicy.kt` are unchanged since `e8458feb`, so `713b29d6`'s tree is the merged code. `FeedWindow`
+        agrees with every branch and constant but the Coded ones (`FeedWindowTests`, `FeedWindowSimTests`), and the
+        report cadence with `LinkFileProgressTests`. Android lets an armed trailing report run to its next wake, where
+        this port drops it at the next file's header, which reports sooner and never later. The device run is owed
+        (knit-ios #6).
+      - **AND-3** (`a03fe167`, built and trialled as `b7c13e57`), with `a2cec531` noting Android's re-dial from
+        presence. It amends knit-next ADRs 2026-09.shzv and 2026-09.kwq2. A link whose HELLO carried `CAP_DOORBELL`
+        scores −90 out of presence, never −127, and a doorbell dialer counts as sighted for admission only if heard in
+        the last 12 s, with the bit backed by the phone's own evidence (`BleAdmissionPolicy.kt:54-125`). Nothing on the
+        wire moves, and this port changes no Swift for it: an Android peer never leaves presence the way an iPhone does
+        (`LinkManager+Configuration.swift`). Its lines, `bt state … linkScores=` and the admission lines'
+        `doorbell=true heardAgoMs= inPresence=` suffix, with ` doorbellTrusted=false` when the evidence fails, are what
+        `interop.py android-keeps-iphone` reads (`ble-transport.md`, `linux-peer.md`).
+      - **Whitespace as ART measures it** (`e0c8d969`, knit-next ADR 2026-10.swst; ADR 2026-10.7uyt):
+        `app.getknit.knit.text.ArtTextSemanticsTest` walks the BMP on API 33, 34, 36 and 37. It is unchanged, and its
+        two lists equal `TextLimits.isKotlinWhitespace` and `isJavaRegexWhitespace`; U+180E is in neither.
+      - **Dead links, canonical HELLO ids and Coded,** 2026-10-14 to 2026-10-20, first read at `85cf0baa`. Since then
+        only `9552995d` touched their Bluetooth files, and not `LinkSilence`. No Swift behaviour moves here:
+        - **A link this phone can show is dead goes down** (`f8b5d544`, `b49f7f13`, `ec37724e`; knit-next ADR
+          2026-10.697m, #203). An empty `KEEPALIVE` is now an announce, a probe and an answer, and Android closes a
+          silent link about 150 to 210 s after the last byte in (`LinkSilence.kt`, `ble-transport.md`). A link whose
+          HELLO carries `CAP_DOORBELL` is exempt (`LinkSilence.kt:39,146,158`; `BluetoothMeshTransport.kt:2744`, where
+          `advert` is the HELLO on a dialed link and an accepted one alike), and every CoreBluetooth HELLO carries the
+          bit. The ADR calls its knit-ios half "a notice, not code". This port takes it as `interop.md`'s rule never to
+          write a keepalive, `LinkRecord.Tag.keepalive`'s comment,
+          `LinkAdmissionTests.aKeepaliveIsNeverWrittenNorAnsweredDoorbellOrNot` and an amendment to ADR 2026-09.6es2.
+          The Linux peer's `android` profile, whose HELLO lacks the bit, gets Android's announce and never answers, so
+          Android never probes it.
+        - **One redial bump per link end** (`9a68b225`, #205, `LinkDownOnce.kt`): Android's first redial now comes at
+          about 10 s. This port's `retire` already acts once per link.
+        - **The Coded PHY, more aggressive** (`ba14a876`, #169; the Bluetooth parts of `d7da26f6`; `752922da`; knit-next
+          ADR 2026-10.yvn6). The step-up backs off after flaps, a 1M hit weaker than −90 no longer blocks `codedOnly`,
+          and a cold sighting starts a bounded hunt. All of it is on in release. An iPhone is never heard on Coded, so
+          there is nothing to mirror. Three indirect costs to an iPhone are listed in `ble-transport.md` and wait on a
+          trial (roadmap). `d7da26f6` also appends `near=[…]` to `bt state` after `linkScores=`, and later commits add
+          `awareNear=`, `awareHeard=`, `noAware=` and `newcomers=` after it and `gattBudget=` after `gattReads=`;
+          `interop.py`'s patterns ignore them. Its Wi-Fi Aware half is Android's alone.
+    - **New since the last pin, and nothing to mirror:**
+      - **Custody before the air** (`85baeeb9`, #141): Android custodies each of its own frames before it floods it.
+        This port sends, then carries, in one synchronous step, so no link comes up between them (`custody.md`).
+        `00a466e7` (#141) reads custody before the rows in Android's carrier re-arm, which this port does not make.
+      - **One builder for a file DM's sealed content** (`7f454603`, #131), so a re-seal keeps its name and size. This
+        port's `MeshEngine.content(of:)` already is one, for the send, the wait and the re-seal.
+      - **The interop audit's IOS-6 and IOS-7:** Android keeps a member's leave and rejoin clocks on the group
+        (`c141ffac`, `group_member_clocks`), as `GroupRoster` does, and seals a ctl DM only to a peer whose profile
+        carries `CAP_RATCHET` (`63101c20` and `c70c08b9`), as `RatchetOutbound.receiptPlan` does.
+      - **AND-9** (`90150f7d`, `23597c28`, cherry-picked from `fix/android-interop-hardening`): Android's copy toward a
+        peer without `CAP_RATCHET` stops promising that an update brings files, direct transfers or forward secrecy, and
+        an iPhone added by its code no longer shows "Waiting to reach…" for good. A current iPhone carries
+        `CAP_RATCHET`, so those strings no longer show toward it.
+      - **Proof queries** (`6ecd4447`): an Android phone asks a DM photo's recipient, over Bluetooth, whether it holds
+        the photo, with an ordinary `blobhave`, at most one per hash and peer every 10 s, and keeps it off the spool on
+        a HAVE. The iPhone answers it like any query.
+      - **Calls** (knit-next ADR 2026-10.3tee and the rest, in release since `v2.10.0`): `CAP_CALL` and `CAP_WALKIE` in
+        the signed profile alone, `CTL_CALL` (ctl 10) only toward a profile carrying `CAP_CALL`, and the unsigned
+        `talk` frame, which this port relays and never opens (`wire-format.md`). An iPhone is offered no call.
+      - **Bluetooth:** the GATT payload read budget (`8246d2ec`, #154), the ACL arms (`8dc95c3e`, `d39759dc`; #142,
+        #150; knit-next ADR 2026-10.b8yf), the link boost toward Android peers (`cdd6ef32`, #120) and keepalives between
+        a file's chunks (#203), all in `ble-transport.md`; the BLE decision glue pulled into pure policies (`6d257161`,
+        `673c1df9`) with every constant unchanged; `a0d8b488` (the Coded fallback dial's watchdog).
+      - **Staged for the next wire break** (`docs/NEXT_WIRE_BREAK.md`): custody for 7 days (`8400dd11`, item 12) and a
+        group's roster, name and photo sealed (`5c7ce27a`, item 11), in `custody.md`. `a871ccb2` adds `WIRE_COMPAT`'s
+        rule 6, and `a81f2050` its rule 7 (`wire-format.md`).
+      - **Builds:** kotlinx-serialization 1.12.0 and Tink 1.24.0 (`97e1747f`); only cbor's key reader moved for this
+        port (above), and every vector is byte-identical. The database is at v25.
+      - **Android's alone:** the spool and Knit Anywhere (tickets, TURN, proof-of-work stamps, several commons rooms per
+        relay, home spools and scope configs), LoRa (MeshCore's id elision, the dedicated setup in release, a DM held
+        until its recipient is heard), Wi-Fi Aware (asleep while no Aware phone is near, and instant mode stood down),
+        low-power mode, offline translation, voice-note transcription, short video re-encoding and screening, the
+        supporter badge's production key, the field log, the developer view, Wear watch faces, pt-BR, notifications,
+        the debug bridge, tooling and tests.
+  - **Mirrored ahead of the pin:** nothing, at this pin.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5f521cb9`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e63f15f4`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 
@@ -417,7 +445,7 @@ Read these for design reasons, never for bytes:
 - `docs/IOS_PORT_REVIEW.md` describes the pre-launch wire. A2 put a list of corrections at its top; the
   body's node id scheme (`knit-node-id-v1:`, 8 bytes mapped `% 36`), 16-byte advert with a version byte,
   one-way HELLO, 64 KiB file chunks and Tink-prefixed signatures were all replaced before v1.
-- `docs/NEXT_WIRE_BREAK.md` gives the database version as 11. The code is at 15.
+- `docs/NEXT_WIRE_BREAK.md` gives the database version as 11. The code is at 25.
 
 A2 also corrected `docs/ARCHITECTURE.md` §14: the L2CAP link is insecure, and two frame types are unsigned.
 

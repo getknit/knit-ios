@@ -189,8 +189,8 @@ bundle rebuilt from `pk`, so that rebuild must be byte-identical to Android's. T
 bytes as received, never a re-encoding. The body leaves out nil, empty and default fields, `iat` 0 included,
 in declaration order. A card travels as `https://getknit.app/c#<base64url>`, `knit://c/<base64url>` or the
 bare base64url string, found anywhere in pasted text, and the legacy `knit-id` code parses as a card with no
-name. The name is clamped to 32 UTF-16 units without splitting a surrogate pair, as knit-next's `main` does
-past the pin. Nothing reads `iat`, so a card can be replayed and forwarded. The goldens are `ContactCardTest`'s
+name. The name is clamped to 32 UTF-16 units without splitting a surrogate pair, as knit-next does since
+`3d587088`. Nothing reads `iat`, so a card can be replayed and forwarded. The goldens are `ContactCardTest`'s
 `fullCard` and `minimalCard`, from the contact-card identity above.
 
 Add contact pins from a card without a profile frame (`MeshEngine.addContact`): from a link it pins, accepts
@@ -262,7 +262,8 @@ Swift must count `utf16`, not `Character`s.
   on Android, so the profile frame is relayed and carried like any other.
 - **Where parsing is stricter than knit-next,** the outcome is the same. A bundle whose keys are not 32
   bytes is refused at parse, where Android fails later at verify or seal. A bundle with trailing CBOR bytes
-  is refused on both sides: kotlinx-serialization-cbor 1.11.0 refuses them too (`Cbor.kt:90-94`). Base64 padding
+  is refused on both sides: kotlinx-serialization-cbor refuses them too, 1.12.0 as 1.11.0 did (`Cbor.kt:90-94` at
+  1.11.0). Base64 padding
   follows `java.util.Base64`: optional, but exact when present.
 - **Where the goldens come from:** `KeyedVectorTests` checks knit-next's own identities, signatures, sealed
   DM and safety number (`keyed-v1.json`). The device tag golden and two further safety numbers were
@@ -302,7 +303,9 @@ Swift must count `utf16`, not `Character`s.
 knit-next's forward secrecy, which this port seals and opens. ADR 2026-10.5sk9 ported all of it dark, behind
 `MeshConfiguration.ratchet`, phase by phase, and P8 turned the capability bits on once, at the end, with the switch on
 by default. Kotlin lines
-in this section are at knit-next `ac491f4c`, past the pin. The DM side is under `mesh/crypto/ratchet/`
+in this section are at knit-next `f2be66c5`, which is `ac491f4c` rebased onto `main` with every file cited here
+unchanged. The pin has moved past it to `e63f15f4`, where a cited line may sit elsewhere; a line cited at another
+commit says so. The DM side is under `mesh/crypto/ratchet/`
 (`RatchetCrypto.kt`, `RatchetEngine.kt`, `RatchetSessions.kt`), `data/ratchet/` and
 `data/crypto/IdentityKeyStore.kt`. The rest is in `InboundPipeline.kt`, `MeshManager.kt`, `IntroSync.kt`,
 `CryptoScheme.kt` and `MessageContentV2.kt`. Where `docs/FORWARD_SECRECY_RATCHET.md` or
@@ -451,8 +454,13 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   | 7 | `ctl` | 15 | `attachmentSize` |
 
   A content the compact codec cannot carry canonically seals as v2 instead: a non-canonical id, hash or key, any
-  `gk` or `xf`, or `v ≠ 1` (`MessageContentV2.kt:53-60`, `:102-108`). The nine `messageContentV2*` fixtures are in
-  `wire-v1.json` already.
+  `gk` or `xf`, or `v ≠ 1` (`MessageContentV2.kt:53-60`, `:102-108`). By `e63f15f4`, Android has added three labels
+  this port does not model: 16 (`video`, knit-next ADR 2026-10.hmfe), 17 (the body's styles, knit-next ADR
+  2026-10.p95v) and `pr`'s label 8 (badges, knit-next ADR 2026-10.r99s). `cl` and `sc` are named-only, as `gk` and
+  `xf` are. `wire-v1.json` holds twelve `messageContentV2*` fixtures, and the codec models nine; the other three
+  decode with their new fields dropped (`GoldenVectorTests`). Since kotlinx 1.12.0 (`97e1747f`), Android skips a
+  negative integer key as an unknown label, while `CBORLabeledFields` refuses one. A v3 plaintext carrying one opens
+  on Android and not here: no encoder writes one, and the fix is owed.
 
 ### Sessions
 
@@ -529,7 +537,10 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   under the roots held, and with no session is `NO_SESSION`. This is Kotlin's anchor rule (`RatchetEngine.kt:575-578`
   at `4f3cd995`), carried past the lost session row and keyed by the ephemeral. An init of our draining `prevRoot`
   keeps this port's rules, the race included. Kotlin's j67x (`6d9627b7`) stops that race for a frame that predates our
-  session; this port has not followed it yet.
+  session; this port has not followed it yet. Nor has it followed j67x's third rule: a re-root over our own reset,
+  still unanswered and still draining, keeps the drained root as `prevRoot` (`reRoot`, `RatchetSessions.kt:491-501` at
+  `e63f15f4`), where `sealReset` here always takes the held root. So a peer that never got our first reset, and goes on
+  sealing under the original root, is read by Android for the 48 h drain and not by this port.
 - **Opening, in three passes, per candidate root:**
   1. the skipped key;
   2. the live chain;
@@ -599,15 +610,17 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 | 4 | group key ack | `gk{groupId, ackEpoch}` | send and handle (P6a2) |
 | 5 | receipt | `ack` and/or `acks`, at most 128 ids, the forged-ack guard | handle and send |
 | 6 | reaction | `rp{messageId, emoji?}`; no emoji retracts; last writer wins on `sentAt` | handle in DM and group form; send in DM form (P5e) and group form (P6b) |
-| 7 | reserved | never reused | — |
-| 8 | profile | `pr{name, status, avatarHash?, version, openToChat, loraNode?, loraKey?}`, no prekey | handle and send, presentation only |
+| 7 | scope config | `sc`, a spool's relays and bounds, on confirmed sessions only (knit-next `33d83aca`) | unknown here: it advances the chain and does nothing, as Android counts on |
+| 8 | profile | `pr{name, status, avatarHash?, version, openToChat, loraNode?, loraKey?, badges?}`, no prekey | handle and send, presentation only; `badges` dropped (knit-ios #10) |
 | 9 | transfer | `xf`, only toward `CAP_DIRECT_TRANSFER` | unknown here |
+| 10 | call | `cl`, only toward a profile carrying `CAP_CALL` (knit-next ADR 2026-10.3tee) | unknown here |
 
 - **A ctl is machinery:** never stored as a message, notified or acknowledged.
 - **An unknown code** still commits the chain advance and does nothing else (`InboundPipeline.kt:1191-1196`).
 - **A ctl is never v1-wrapped.** Toward a peer without the ratchet, a receipt or reaction falls back to the
   cleartext frame, and a seed has no fallback: the group goes v1.
-- **In the group form,** only ctl 6 is applied (`InboundPipeline.kt:1636-1646`).
+- **In the group form,** this port applies only ctl 6 (`InboundPipeline.kt:1636-1646`). Android applies ctl 7 there
+  too since `33d83aca` (`InboundPipeline.kt:1924-1945` at `e63f15f4`), which this port leaves to the spool.
 - **A sealed receipt purges nothing,** anywhere, and a sealed tick is sealed once and re-sent verbatim, only over a
   live link, with a group's batch carried by custody (ADR 2026-09.p6nb, amended twice).
 - **Inline acks** (`CAP_INLINE_ACK`): up to four `acks` ride a plain sealed DM to an author whose profile has
@@ -1020,8 +1033,8 @@ knit-next #174, fixed in `458c2eee`, and this port follows the fix from phase P7
 ### Vectors
 
 `wire-v1.json` pins only the ratchet's shapes. The keyed answers come from companion change A9:
-knit-next's `vectors/ratchet-v1.json`, synced alone into `Tests/Vectors/` from knit-next `main` at `4f3cd995`, ahead
-of the pin (`.agents/context/knit-next.md`, "Mirrored ahead of the pin"). Since `1b5e72fa` an initiator's state holds the
+knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` at the pin, `e63f15f4`; its bytes last moved in
+`3e3e044c` (`.agents/context/knit-next.md`). Since `1b5e72fa` an initiator's state holds the
 prekey its init names as `peerBasePub` at `peerBaseEpoch` 0 (#174); no frame byte moved. Each section serves one phase:
 
 - `kats`, the known answers for each derivation above, which `RatchetVectorTests` checks. Its `export` entry is marked

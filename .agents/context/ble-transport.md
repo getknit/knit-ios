@@ -7,8 +7,9 @@ iPhone. The iPhone's own design decisions are ADRs; this file is the Android gro
 ## GATT on the mesh plane: a payload and a doorbell
 
 On the mesh plane Android serves no GATT, and reads only two things a peer serves: the GATT payload of a node that
-advertises only the `0xFE30` UUID, with companion change A3 (below), and a peer's doorbell (below). No notifications
-and no MTU request of its own. Each phone is both roles at once:
+advertises only the `0xFE30` UUID, with companion change A3 (below), and a peer's doorbell (below). No notifications,
+and toward an iPhone no MTU request of its own: only an Android peer's boosted link asks for one (knit-next #120,
+`BleLinkTuner.kt`). Each phone is both roles at once:
 
 - **Peripheral:** a connectable advert and an L2CAP server (`listenUsingInsecureL2capChannel`).
 - **Central:** a scanner and an L2CAP client (`createInsecureL2capChannel(psm)`).
@@ -61,12 +62,21 @@ There is no local name, no UUID list and no scan response, which is 31 bytes on 
 | 1 | 16 | node id as raw bytes (the 26-character base32 id, decoded) |
 | 17 | 4 | digest cue: the low 32 bits of the custody FNV fold, big-endian; nothing on BLE reads it |
 | 21 | 2 | L2CAP PSM, big-endian, assigned by the stack when the server opens |
-| 23 | 1 | BLE-local flags: bit 0 is `FLAG_SIDE_CHANNEL`, always 0 in release builds; bit 1 is `FLAG_DIALS_GATT_PEERS`, set while the GATT reader runs (debug builds, with A3); bits 2–7 are reserved |
+| 23 | 1 | BLE-local flags: bit 0 is `FLAG_SIDE_CHANNEL`, set while the side channel runs; bit 1 is `FLAG_DIALS_GATT_PEERS`, set while the GATT reader runs (A3); both are on in release since knit-next `713b29d6`. Bit 2 is `FLAG_NO_AWARE` (below); bits 3–7 are reserved |
 
 A payload shorter than 23 bytes is dropped, exactly 23 reads the flags as 0, and anything past 24 is
 ignored. There is no version byte: the UUID implies the version. `0xFE30` sits in the SIG member block and
 is not assigned to Knit, which knit-next accepts as a risk. `0xFE38` carries the side channel's
 extended-advertising pages, which this port never uses.
+
+`FLAG_NO_AWARE` (`0x04`, knit-next ADR 2026-10.2t49, GitHub #44; `9552995d`, `438ffc72`) has inverted polarity: set
+means "this phone will not run Wi-Fi Aware". Android sets it by default and clears it only after Wi-Fi Aware has been
+held clear for 60 s (`NoAwareFlag.kt`). A peer whose service-data advert has it clear is an Aware candidate, and its
+being near wakes Android's dormant Wi-Fi Aware plane (`AwareCandidateTracker.kt`). A GATT-payload sighting never makes
+one, and neither does a link whose HELLO carries `CAP_DOORBELL`, so an iPhone's clear bit costs nothing. The Linux
+peer's `android` profile advertises service data with the bit clear, so it keeps nearby Pixels' Wi-Fi Aware awake.
+`BleAdvertPayload.kt:25-26` asks this port to reserve the bit. That is owed: `AdvertPayload` names bits 0 and 1 only,
+and every radio here advertises bit 2 clear (`LinkManager+Channels.swift`).
 
 ## The link
 
@@ -79,7 +89,7 @@ bytes. The tags:
 | 2 | `FILE_HEADER` | UTF-8 JSON `{"kind":"AVATAR"\|"ATTACHMENT","key":"<64 lowercase hex>","mime":"…","size":<bytes>}`; `size` since knit-next ADR 2026-10.y9qh |
 | 3 | `FILE_CHUNK` | raw bytes, 2 to 16 KiB from Android (2 KiB on a Coded link); a file over 8 MiB + 64 KiB is aborted |
 | 4 | `FILE_END` | empty |
-| 5 | `KEEPALIVE` | empty; since knit-next ADR 2026-10.697m, Android writes one at link-up on a link whose HELLO lacks `CAP_DOORBELL`, answers one there, and probes with it. On a doorbell link it sends none and ignores one. This port never writes one (`interop.md`) |
+| 5 | `KEEPALIVE` | empty; since knit-next ADR 2026-10.697m, Android writes one at link-up on a link whose HELLO lacks `CAP_DOORBELL`, answers one there, and probes with it. On a doorbell link it sends none and ignores one. It may write one between a file's chunks (`FramedLink.sendKeepalive`, #203), which this port ignores like any other. This port never writes one (`interop.md`) |
 | 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|2fff`; the caps may carry `CAP_DOORBELL` (`0x1000`) and `CAP_BLOB_HAVE` (`0x2000`), which no advert can |
 | 7 | `DIGEST` | UTF-8 JSON `{"ids":[…]}` |
 
@@ -100,7 +110,9 @@ bytes. The tags:
   device run has checked either direction since (knit-ios #6). Otherwise, and as the fallback for a silent or
   two-second receiver, it paces by the link's PHY, read again before every chunk (`CodedPhyPolicy.pace`, #114):
   - on 1M and 2M, one budget of 4 KiB/s split evenly across the links feeding at the pace, each chunk two seconds of
-    a link's share, from 2 to 16 KiB (knit-next ADR 2026-10.8jwn; it was 28 KiB/s a link before);
+    a link's share, from 2 to 16 KiB (knit-next ADR 2026-10.8jwn; it was 28 KiB/s a link before). An Android peer's
+    link that has earned the boost (#120) takes 18 KiB/s of its own, or 12 KiB/s with more than four LE links
+    (`CodedPhyPolicy.kt:416-432`). A doorbell link never earns it, so an iPhone's share stays inside the 4 KiB/s;
   - 1 KiB/s in 2 KiB chunks on Coded, outside the split.
 
   The pace is the sender's own choice, and a receiver takes a chunk of any length. This port does the same since ADR
@@ -110,15 +122,21 @@ bytes. The tags:
 ### The handshake
 
 The dialer writes its HELLO first. The responder must see a HELLO as the first record within 5 s
-(`ACCEPT_HELLO_TIMEOUT_MS`), or it closes. Then it checks the tie-break at
-`BluetoothMeshTransport.kt:754`:
+(`ACCEPT_HELLO_TIMEOUT_MS`), or it closes. Then `BleAdmissionPolicy.decide` gives the verdict
+(`BleAdmissionPolicy.kt:54-72`, called at `BluetoothMeshTransport.kt:2685`):
 
 ```kotlin
-if (localNodeId >= clientNodeId || clientNodeId in links.keys) { link.close(); return }
+dialer == local -> Refuse
+seen && local > dialer -> Refuse
+heldLinkAgeMs == null -> if (atCap) Refuse else Admit
+seen -> Refuse
+heldLinkAgeMs < REPLACE_MIN_HOLD_MS -> Refuse
+else -> Replace
 ```
 
-It closes without replying when the dialer's id is not strictly greater, or when the two are already
-linked. Otherwise it replies with its own HELLO, and the dialer checks that the reply's node id matches
+`seen` is presence's sighting. For a dialer whose HELLO carries `CAP_DOORBELL`, and whose claim Android's own evidence
+backs (`doorbellTrusted`), it also needs a sighting in the last 12 s (AND-3, below). `atCap` is a debug link cap, always
+false in release. A refusal closes without replying. Otherwise it replies with its own HELLO, and the dialer checks that the reply's node id matches
 the advert it dialed. There is no negotiation, no identity proof and no key exchange at this layer. Bytes
 after the HELLO belong to the frame loop, and Android may send frames right after its reply.
 
@@ -144,16 +162,18 @@ already refuses the same ids the same way, through `NodeId(_:)`: the dialer reti
 
 ### After link-up
 
-Android runs these at link-up, then every 60 s for each linked neighbour (`MeshManager.kt:2230`):
+Android runs these at link-up (`neighborPass`, `MeshManager.kt:3126`):
 
-1. Push its signed profile as a `FRAME`, plus its avatar as FILE records if this peer has not had that hash
+1. Ask for the blobs it wants, of the new neighbours among the rest.
+2. Push its signed profile as a `FRAME`, plus its avatar as FILE records if this peer has not had that hash
    this session.
-2. Send a `blobreq` for each blob it wants.
 3. Send a `DIGEST` of every live custody id.
 4. Send a `keyreq` for keys it lacks.
-5. Resend owed delivery ticks.
+5. Resend owed delivery ticks, and unacked group seeds.
 
-On receiving a peer's `DIGEST`, Android pushes every live custody frame the list omits (`ForwardSync.kt:97`).
+Every 60 s it runs them again for each linked neighbour, all but the profile (`reofferToNeighbors`, `:3035`).
+
+On receiving a peer's `DIGEST`, Android pushes every live custody frame the list omits (`ForwardSync.kt:136`).
 It never replies with a digest, so each side must send its own.
 
 ## Scanning, promotion and backoff
@@ -172,7 +192,7 @@ radio.
   ahead of a sighted one more often. The connect loop also wakes when a candidate's dwell ends, between scan
   windows (knit-next ADR 2026-10.pj9w), as `LinkManager` already did.
 - **A backgrounded iPhone's link scored −127 until AND-3's fix** (the interop audit's finding, knit-next
-  `fix/gatt-only-link-score`, ahead of the pin). Android sighted the iPhone in front, by its GATT payload. Knit then
+  `a03fe167`, in the pin). Android sighted the iPhone in front, by its GATT payload. Knit then
   left the front, iOS moved its UUID to the overflow area, and Android heard it no more. Ninety seconds later the
   iPhone left presence, and its live link scored `ABSENT_LINK_RSSI`, the first shed at the cap. Since the fix, a
   link whose HELLO carried `CAP_DOORBELL` scores the floor, −90, while its peer is out of presence, as a link
@@ -184,7 +204,12 @@ radio.
   twice and the first redial came after about 20 s instead of 10. A link Android closes as silent (697m, below)
   never bumps it. This port's `retire` already acts once per link (`retire(_:backingOff:keepingCut:now:)` in
   `LinkManager+Channels.swift`).
-- **Connect:** a 12 s watchdog around each dial (`CONNECT_TIMEOUT_MS`). No MTU request and no bonding.
+- **Connect:** a 12 s watchdog around each dial (`CONNECT_TIMEOUT_MS`). No MTU request toward an iPhone, and no
+  bonding.
+  - **Every link's ACL gets an arm** (knit-next #142 and #150, its ADR 2026-10.b8yf; `8dc95c3e`, `d39759dc`): a GATT
+    client that attaches and asks nothing, so the ACL idles out about 4 s after its last channel closes. On an
+    iPhone's link the doorbell lookup is that arm. A refused or failed channel's ACL is armed 2 s after it closes, so
+    that connection ends a few seconds later.
   - The Coded PHY (debug builds, and release since knit-next `713b29d6`) works only with a peer it hears on Coded. It dials that peer's Coded
     address with a 25 s watchdog, and switches the link's PHY over GATT. An iPhone is never heard on Coded, so its
     links stay on 1M.
@@ -223,7 +248,10 @@ radio.
   on in release since knit-next `713b29d6`, ahead of its device trial). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
   of an advert that lists only the UUID, on `GattPayloads`' rules, sights the iPhone with it, and dials it when its
   own id sorts higher. It reads nothing while one of its dials is in flight, and holds its dials while a read runs.
-  Once it sets `FLAG_DIALS_GATT_PEERS`, an iPhone whose id sorts lower waits to be dialed, and Android refuses that
+  Since #154 (`8246d2ec`, the 2026-10-11 amendment to kwq2) it charges at most 12 reads in any 10 minutes across every
+  address, and a link whose HELLO names the payload's node refunds that read's charge. Once strangers, or an iPhone at
+  the edge of range, have spent the budget, a foreground iPhone at a new address can wait up to 10 minutes to be
+  read. Once it sets `FLAG_DIALS_GATT_PEERS`, an iPhone whose id sorts lower waits to be dialed, and Android refuses that
   iPhone's own dial as a sighted dialer below it. It still cannot see a backgrounded iPhone, whose UUID sits in the
   overflow area, and admits one unsighted under A1 when it dials.
 - **Until AND-3's fix, that admission waited 90 s.** A backgrounded iPhone stays in Android's presence for the 90 s

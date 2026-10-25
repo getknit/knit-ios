@@ -59,11 +59,12 @@ tree, so switching between them never rebuilds the plain debug tree.
   `scripts/mac.sh run bash -c 'cd tools/models/toxicity && uv run --frozen python parity.py --coreml'`. After a change
   to the tokenizer's Swift, `uv run python tokens.py` rewrites the ids `SentencePieceTokenizerTests` reads. The bridge's
   `{"cmd":"screen-text","text":"…"}` returns the iPhone's scores for a message, and `score.py "…"` the checkpoint's.
-- **Vectors shared with knit-next:** `python3 scripts/sync-vectors.py` copies `vectors/wire-v1.json` and
-  `vectors/keyed-v1.json` into `Tests/Vectors/`, and generates `Sources/KnitCrypto/AliasWords.swift` from
-  `AliasWords.kt`. Each copy records the knit-next commit, and whether the source had uncommitted changes.
-  `--check` fails when a copy is stale, and `--knit-next PATH` reads another checkout or worktree. Run it
-  whenever the knit-next pin moves.
+- **Vectors shared with knit-next:** `python3 scripts/sync-vectors.py` copies `vectors/wire-v1.json`,
+  `vectors/keyed-v1.json` and `vectors/ratchet-v1.json` into `Tests/Vectors/`, and generates
+  `Sources/KnitCrypto/AliasWords.swift` from `AliasWords.kt`. Each copy records the knit-next commit, and whether the
+  source had uncommitted changes. `--check` fails when a copy is stale, and `--knit-next PATH` reads another checkout
+  or worktree. Run it whenever the knit-next pin moves, from a checkout at the pin: the maintainer's
+  `~/source/knit-next` moves on, so a fresh clone checked out at the pin is the safe source.
 - **Vectors this port emits:** `KNIT_WRITE_VECTORS=1 swift test --filter EmittedVectorTests` rewrites
   `Tests/Vectors/ios-emitted-v1.json`, keeping every committed frame that is still current, so a rewrite
   moves only what changed. `scripts/sync-vectors.py --export` copies it into knit-next, where

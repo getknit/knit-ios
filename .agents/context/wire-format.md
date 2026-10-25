@@ -5,7 +5,7 @@ What a frame looks like on the air, as knit-next's `mesh/protocol/Wire.kt` encod
 
 ## The CBOR profile
 
-knit-next uses kotlinx-serialization-cbor 1.11.0 with `useDefiniteLengthEncoding = true`,
+knit-next uses kotlinx-serialization-cbor 1.12.0 (1.11.0 before `97e1747f`) with `useDefiniteLengthEncoding = true`,
 `encodeDefaults = false` and `ignoreUnknownKeys = true`. For a Swift codec that means:
 
 - **Map keys are text strings**, equal to the Kotlin property names, written in declaration order.
@@ -32,6 +32,18 @@ carried. The frame is dropped with no error sent back. These fields must always 
 | `EncEnvelope` | `nonce` (may be empty), `ct`, `keys` (may be the empty array `80`) |
 | `WrappedKey` | `to`, `wk` |
 | `ReceiptContent` / `ReactionContent` | `ackId` / `messageId` |
+| `BlobHasItem` | `hash`, `state` |
+| `BlobProgressContent` / `BlobCancelContent` | `hash`, `held`, `ms` / `hash` |
+| `VideoInfo` (Android's) | `durationMs`, `width`, `height`, `poster` |
+| `BadgeEntry` (Android's) | `w`, `r` |
+| `ScopeConfigPayload` (Android's) | `spools`, `maxFrames`, `ttlMs`, `maxBlob`, `version` |
+
+A known key whose value has the wrong CBOR type fails Android's decode too. Android drops a sealed message with one as
+`DECRYPT_FAILED` and does not carry a room post with one (`canCarry`, `InboundPipeline.kt:2320-2329`). Since the
+pin, that covers a room post's `video`, `attachmentName`, `attachmentKey` and `"s"`, and a sealed message's `video`,
+`cl`, `sc`, `"s"` and badges. KnitWire skips every key it does not model, whatever its type, so it opens such a message
+and carries such a post. A buggy sender's post then goes to every Android neighbour at each digest exchange until it
+expires. Mirroring the refusal is owed (`knit-next.md`, "Since then").
 
 ## Three layers
 
@@ -48,12 +60,16 @@ carried. The frame is dropped with no error sent back. These fields must always 
 The payload types:
 
 - `ChatContent { body = "", mentions = [], attachmentHash?, attachmentMime?, enc: EncEnvelope?, replyTo: ReplyRef?,
-  attachmentSize: Long? }`. A room post declares `attachmentSize`, its photo's plaintext length, from 1,000,000 bytes
-  (knit-next ADR 2026-10.hmfe); a sealed frame's shell never does.
+  attachmentSize: Long?, video: VideoInfo?, attachmentName?, attachmentKey?, s: bstr = empty }`. A room post declares
+  `attachmentSize`, its photo's plaintext length, from 1,000,000 bytes (knit-next ADR 2026-10.hmfe); a sealed frame's
+  shell never does. This port takes none of the last four: a short video (knit-ios #9), a commons post's file name and
+  key (knit-ios #11), and the body's formatting (knit-next ADR 2026-10.p95v), whose byte string is the same under
+  `MessageContent`'s `"s"` and the v3 plaintext's label 17.
 - `ProfileContent { name, status, avatarHash?, pubKey?, deviceTag?, protoVersion?, capabilities?, prekey?, version?, openToChat = false, loraNode?, loraKey? }`
 - `ReceiptContent { ackId }`, `ReactionContent { messageId, emoji? }`, `KeyReqContent { nodeIds }`,
-  `BlobReqContent { hash, offset?, pull?, until? }`, `TypingContent { groupId? }`
-- `BlobHaveContent { hashes }` and `BlobHasContent { items: [BlobHasItem { hash, state, size?, held? }], load?, re? }`,
+  `BlobReqContent { hash, offset?, pull?, until?, fastOnly? }`, `TypingContent { groupId? }`. Android sets `fastOnly`
+  only toward a Wi-Fi Aware route, so an iPhone never gets one.
+- `BlobHaveContent { hashes }` and `BlobHasContent { items: [BlobHasItem { hash, state, size?, held?, eta? }], load?, re? }`,
   the holder query and its answer (knit-next ADR 2026-10.6e5t). `state` has no default, so it is always written, `0`
   included: NONE 0, HAVE 1, SENDING 2, FETCHING 3, and PARTIAL 4, which is reserved. A state a build does not know is
   never taken for HAVE.
@@ -77,7 +93,8 @@ thinned.
 These only ever grow. A value is never reused, even after it is retired.
 
 - **Frame types are strings:** `chat`, `groupupdate`, `groupleave`, `profile`, `receipt`, `reaction`,
-  `blobreq`, `blobhave`, `blobhas`, `blobprog`, `blobcancel`, `keyreq`, `typing`, `commons`. `meshpost` is burned.
+  `blobreq`, `blobhave`, `blobhas`, `blobprog`, `blobcancel`, `keyreq`, `typing`, `commons`, `talk`. `meshpost` is
+  burned.
   - `isReplayable` covers chat, reaction, receipt, groupupdate and groupleave.
   - `isCustodial` is `isReplayable` plus `profile`.
 - **`MessageContent.ctl`:**
@@ -90,9 +107,10 @@ These only ever grow. A value is never reused, even after it is retired.
   | 4 | group key ack |
   | 5 | receipt |
   | 6 | reaction |
-  | 7 | reserved |
+  | 7 | scope config (`CTL_SCOPE_CONFIG`, a spool's relays and bounds) |
   | 8 | profile |
   | 9 | transfer |
+  | 10 | call (`CTL_CALL`, only toward a profile carrying `CALL`) |
 
   An unknown value is a silent no-op.
 - **`EncEnvelope.v`:** 1 is static keys, 2 is the epoch ratchet, and 3 is the compact ratchet. An envelope
@@ -108,9 +126,12 @@ These only ever grow. A value is never reused, even after it is retired.
   | `0x010` | `RATCHET` | `0x400` | `LINK_PREVIEW` |
   | `0x020` | `FAST_COMPACT` | `0x800` | `DIRECT_TRANSFER` |
   | `0x1000` | `DOORBELL` | `0x2000` | `BLOB_HAVE` |
+  | `0x4000` | `CALL` | `0x8000` | `WALKIE` |
 
   `DOORBELL` and `BLOB_HAVE` sit above the advert's 8 bits and are read from the HELLO alone. Android sends `0x2FFF`
-  since `403cd861`, and `0xFFF` before it; it never claims `DOORBELL`. Only the signed profile copy gates anything, and only at send time: `RATCHET`
+  since `403cd861`, and `0xFFF` before it; it never claims `DOORBELL`. `CALL` and `WALKIE` ride its signed profile
+  alone, in a build that wires calls (`CallWiring.kt:137-138`), so a 2.10 release profile reads `0xEFFF` while its
+  HELLO still reads `0x2FFF`. This port claims neither, so Android offers an iPhone no call. Only the signed profile copy gates anything, and only at send time: `RATCHET`
   (with a prekey) picks v2 DMs, `CRYPTO_V3` picks v3, `INLINE_ACK`, `FILES`, `LINK_PREVIEW` and
   `DIRECT_TRANSFER` gate features. The rest are diagnostic.
 
@@ -123,12 +144,16 @@ These only ever grow. A value is never reused, even after it is retired.
   - everything else verifies with the sender's pinned key.
 - **Unsigned frames** come in two shapes: the blob traffic, `blobreq`, `blobhave`, `blobhas`, `blobprog` and
   `blobcancel`, each `relay = false` (`FrameType.isUnsignedPointToPoint`), and the v3 live-link tick (a
-  `relay = false` DM-form `chat` addressed to us). Anything else with an empty `sig` is refused.
+  `relay = false` DM-form `chat` addressed to us). Anything else with an empty `sig` is refused. Android also admits
+  an unsigned `talk` addressed to it, a walkie chunk its ratchet seal authenticates; this port relays one and never
+  opens it.
 - **Frame id:** 16 random bytes, base64url, no padding, 22 characters. Profiles use
   `profile-<nodeId>-<publishedAt>`, and Android's walkie chunks (`talk`) the first 11 characters of a fresh id. An id
   is not opaque on the way in: `Router.admit` refuses any frame whose id is not its type's shape, as Android's router
   does (`FrameId.admits`, ADR 2026-10.h7xw), so a new id shape is a wire break.
-- **`ttl` is a hop limit, not a time.** A frame is relayed only while `hops < min(ttl, 8)`.
+- **`ttl` is a hop limit, not a time.** A frame is relayed only while `hops < min(ttl, 8)`. Android refuses a
+  `WireEnvelope` whose `ttl` or `hops` is negative (`decodeWire`, `Wire.kt:1075-1076`, knit-next `9c56cd31`). KnitWire
+  reads any 32-bit value, so the refusal is owed.
 - **`relay`** is set per frame. `false` means point to point: never flooded, only handed on.
 - **`sentAt`** is the originator's wall clock in epoch milliseconds, and it is signed. Custody expires at
   `sentAt` plus the TTL. A frame dated more than 5 minutes ahead is refused, and a custodial frame with
@@ -144,6 +169,8 @@ From `docs/WIRE_COMPAT.md`:
 4. The signature covers the `signed` blob verbatim. Never re-encode before verifying. Only `ttl` and `hops`
    change in flight, and they live outside the signature.
 5. A version gate is a delivery gate, never a relay gate.
+6. Every nullable nested type keeps at least one required field, since kotlinx reads an empty map as `null` there.
+7. An envelope id has the shape its type is minted with (`FrameId.admits`), so a new id shape is a break.
 
 Adding a custodial type is a flag day, not an additive change. Breaking changes wait in knit-next's
 `docs/NEXT_WIRE_BREAK.md` so one future break carries them all.
@@ -178,6 +205,7 @@ photos in chats the same day (ADR 2026-10.6cas), the blob holder query on 2026-1
 | a reply's quote, `ReplyRef` | in `ChatContent.replyTo` in the clear for a room post, in `MessageContent.replyTo` sealed for a DM or a group, never in a sealed frame's shell; the snippet cut at 120 UTF-16 units as Android's composer cuts it (ADR 2026-10.mn29) | kept with the message as it came, first copy wins, `author` and `snippet` clipped to 256; a cleartext quote beside `enc` ignored; nothing checked against the original |
 | a message's mentions, `Mention` | in `ChatContent.mentions` in the clear for a room post, in `MessageContent.mentions` sealed for a DM or a group, never in a sealed frame's shell; only those whose `"@" + name` the sent body holds, each once (`MessageMention.carried`, ADR 2026-10.nbhj) | kept with the message, first copy wins, only those whose token the 2000-unit body holds; a cleartext list beside `enc` ignored; "mentions me" by node id alone |
 | `typing`, signed, `relay = false`, a fresh id, `TypingContent`: `{}` for the room or a DM, `{groupId}` for a group, a DM's `recipientId` set | each keystroke that leaves words, at most every 8 s a thread, only while Knit is in front: a DM's to its peer's link alone, the room's and a group's to every link; never carried, relayed or rung (ADR 2026-10.29z9) | held 12 s, pushed out by each cue and ended by the sender's message: a group's from its roster when we hold it, a DM's when it names us, the room's from anyone; a blocked sender's dropped, an undecodable one counted |
+| `talk`, unsigned, Android's walkie chunks | no | relayed like any frame, never opened, carried or asked a key for |
 | `commons`, unknown types | no | carry and relay where custodial; never crash |
 
 FILE records, which are not frames, go both ways too:
@@ -189,7 +217,7 @@ FILE records, which are not frames, go both ways too:
 
 ## Golden vectors
 
-knit-next's `vectors/wire-v1.json` holds 61 fixtures, which `GoldenVectorTest.kt` reads. The inputs are generated:
+knit-next's `vectors/wire-v1.json` holds 85 fixtures, which `GoldenVectorTest.kt` reads. The inputs are generated:
 `bytes(n, seed)[i] = (7 * i + seed) & 0xFF`, with `frameId(seed)` and `nodeId(seed)` built from
 `bytes(16, seed)`. They are codec vectors only, with placeholder ids like `"m1"`; none carries a real
 signature or ciphertext. The bundle probe (`sigPub = bytes(32, 10)`, `hpkePub = bytes(32, 20)`) derives node

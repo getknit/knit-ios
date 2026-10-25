@@ -335,11 +335,11 @@ explicit direction.** Update this file in the change that ships an item.
     as the author. Every Linux gate passes. Still owed:
     - a device run of a release build's first photo fetch, querying, and of the author's HAVE deciding with a carrier
       linked that holds the photo too;
-    - knit-next's second confirm, whose answer `fetchWait` never reads (`BlobExchange.kt:385`): this port mirrors the
-      Kotlin, so the fix lands in knit-next first and comes here with the next pin;
-    - the pin, past knit-next #140 (`fix/blob-ask-race`, the 2026-10-06 amendment to its ADR 2026-10.6e5t), once it
-      merges. This port mirrored it from the working tree that day (ADR 2026-10.m9uq's amendment), so check the merged
-      Kotlin against `BlobAskStandsTests` then;
+    - knit-next's second confirm, whose answer `fetchWait` never reads: once `confirms` reaches `MAX_CONFIRMS`,
+      `graceUp` holds without reading the answer's state (`BlobExchange.kt:765` at `e63f15f4`, still open there). This
+      port mirrors the Kotlin, so the fix lands in knit-next first and comes here with a later pin;
+    - Closed on 2026-10-25: #140 (`fix/blob-ask-race`) merged as `a294fe30`, the pin moved past it, and the merged
+      Kotlin matches `BlobAskStandsTests`' Swift (`.agents/context/knit-next.md`);
     - knit-next ADR 2026-10.nxfb's holder half, a fed file kept in flight while its link feeds that peer more;
     - Closed on 2026-10-10 by ADR 2026-10.ds45's amendment (`fix/ios-blob-parity`): nsr7's holder half, a meter on
       our own feeds for an `eta` and a second ask parked behind a live feed, members served before carriers; nsr7's
@@ -375,7 +375,8 @@ explicit direction.** Update this file in the change that ships an item.
   - **P0, decisions and tooling:** written on 2026-10-15 on `feat/ratchet-p0`. That covers the scope ADR, amendments to
     ADR 2026-09.2ved and ADR 2026-09.p6nb, the ratchet's shapes in the crypto reviewer, and the ratchet reference in
     `.agents/context/crypto.md`. The held `ios-pin-move` order runs from knit-pair before A9.
-  - **P1, companion change A9:** keyed ratchet vectors in knit-next (below). The pin moves to its merge.
+  - **P1, companion change A9:** keyed ratchet vectors in knit-next (below). Done: the pin moved past its merge, to
+    `e63f15f4`, on 2026-10-25.
   - **P2:** the v3 plaintext codec and the ratchet's primitives, alongside P1.
   - **P3:** prekeys, ours in the Keychain beside the identity and our peers' pinned from their profiles.
   - **P4:** a store unit that fails closed, then the DM engine and its store. Written on 2026-10-15 on
@@ -482,7 +483,8 @@ explicit direction.** Update this file in the change that ships an item.
     v3 DMs to Bob (the opener, inline acks, a sealed receipt, profile, reaction and retraction), seed DMs to Alice and
     Bob, and a group-form message and reaction. A `ratchet` section says how Bob and Alice open them (ADR 2026-10.5sk9's
     P7b amendment). Android's half is written too: knit-next `10c12b8b` on `feat/ratchet-vectors-a10`, which opens all
-    ten frames and pins the profile (2026-10-18). It merges after A9.
+    ten frames and pins the profile (2026-10-18). It merged after A9, as `4f3cd995`, and both are in the pin since
+    2026-10-25. Done.
 - **Companion change A1 in knit-next:** the responder accepts a dialer it never sighted (knit-next ADR
   2026-09.shzv). Merged on 2026-09-25 as `05dc2be1`, with a 30 s floor before a held link is replaced and the
   −90 dBm score kept for peers never sighted during the link; `LinkManager` follows both (ADR 2026-09.6es2).
@@ -500,6 +502,24 @@ explicit direction.** Update this file in the change that ships an item.
   that, and with the Coded mode off the Pixel's stack then refused no enable at all. Both commits are on knit-next's
   `main`, and knit-next recorded the runs in its ADR 2026-10.9utz (`.agents/context/linux-peer.md`, "What the
   Meshtastic radio showed"). Done on Android's side.
+- **What the pin move to `e63f15f4` found owed** (2026-10-25; `.agents/context/knit-next.md`, "Since then", "Owed
+  here"). Each shows only with a sender's buggy or hostile bytes, and each goes to its plane's owner and reviewer:
+  - **Wire and crypto** (`crypto-owner`):
+    - refuse a negative `ttl` or `hops` (`9c56cd31`);
+    - pass a code point split across indefinite-length text chunks, as Android and knit-next ADR 2026-10.qjap do
+      (`a0a29148`);
+    - refuse the wrong CBOR type under the keys Android now types, at least for a room post, which this port
+      otherwise carries and re-offers to Android neighbours until it expires;
+    - skip a v3 plaintext's negative integer key, as kotlinx 1.12.0 does (`97e1747f`);
+    - j67x, all three rules: the race rule, the drained root kept over our own reset, and the spool's scopes, which
+      this port leaves out (`6d9627b7`).
+  - **Bluetooth** (`bluetooth-owner`): reserve advert bit 2, `FLAG_NO_AWARE`, and set it, at least in the Linux peer's
+    service-data advert (`9552995d`, knit-next ADR 2026-10.2t49). `BleAdvertPayload.kt:25-26` calls it a follow-up
+    paired change.
+  - **Blobs** (`blobs-owner`): keep a want and its asks when a received blob fails to store, as
+    `BlobExchange.onReceived` does.
+  - **Swift comments that name Android's old behaviour:** `InteropAuditWireTests.swift:28-31`, `TextLimits.swift:54-55`,
+    `CBORLabeledFields.swift:14-22` and `MessageContent.swift:5-7`. Fix each with the change above that touches its file.
 
 ## Next, after the MVP
 
