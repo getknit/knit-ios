@@ -31,10 +31,18 @@ extension AppSession {
     /// The bytes of a message's photo to save to Photos, as ``attachment(_:key:)`` opens them. A sealed one's plaintext
     /// name is recorded on the way, as Android's Save does (`ChatViewModel.saveAttachment`), so the saved picture picked
     /// again goes as the blob it arrived as, whenever its row was stored (ADR 2026-10.f3mv).
+    ///
+    /// A JPEG's EXIF-less name is recorded too, sealed or a room post's, on the rows carrying exactly this blob and key:
+    /// Photos rewrites a JPEG's EXIF on import, so the picture picked again has another hash, and
+    /// ``MeshService/heldPhoto(picked:)`` then finds it by this name (#12). Save is the one way a Knit photo reaches
+    /// Photos, so it alone writes it; a way out added later must write it as well.
     nonisolated public func attachmentToSave(_ hash: BlobHash, key: String?) -> [UInt8]? {
         let bytes = attachment(hash, key: key)
         if key != nil, let bytes {
             stores.messages.setAttachmentPlainHash(hash, to: BlobHash(of: bytes))
+        }
+        if let name = bytes.flatMap(ExiflessJPEG.name(of:)) {
+            stores.messages.setAttachmentExiflessHash(hash, key: key, to: name.hash)
         }
         return bytes
     }

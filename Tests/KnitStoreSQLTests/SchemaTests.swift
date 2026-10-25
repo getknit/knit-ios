@@ -15,7 +15,7 @@ import Testing
 @Suite struct SchemaTests {
     /// The migrations every earlier build has run, in order.
     private static let frozen = [
-        "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18",
+        "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19",
     ]
 
     @Test func migrationsOnlyEverGrowAtTheEnd() {
@@ -221,6 +221,7 @@ enum SchemaPins {
         ("v16", v16),
         ("v17", v17),
         ("v18", v18),
+        ("v19", v19),
     ]
 
     /// Every table, index and trigger this app made, sorted, with the statement SQLite keeps for it. GRDB's own

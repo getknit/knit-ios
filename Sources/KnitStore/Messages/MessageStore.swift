@@ -92,11 +92,15 @@ public struct MessageAttachment: Sendable, Equatable {
     /// The hash of the bytes the picker handed over for one of our sends, when preparing them changed them, so the
     /// same original picked again is found (`attachmentSourceHash`). Local only.
     public var sourceHash: BlobHash?
+    /// The SHA-256 of a JPEG's plaintext with its EXIF APP1 segments left out (`ExiflessJPEG`), which Save writes so a
+    /// saved picture that Photos gave new EXIF is still found when it is picked again (ADR 2026-10.f3mv, #12). It answers
+    /// only a pick, and is checked against the opened plaintext every time. Local only, and no frame ever fills it.
+    public var exiflessHash: BlobHash?
 
     /// An attachment.
     public init(
         hash: BlobHash, mime: String? = nil, key: String? = nil, name: String? = nil, size: Int64? = nil,
-        dimensions: PhotoDimensions? = nil, plainHash: BlobHash? = nil, sourceHash: BlobHash? = nil
+        dimensions: PhotoDimensions? = nil, plainHash: BlobHash? = nil, sourceHash: BlobHash? = nil, exiflessHash: BlobHash? = nil
     ) {
         self.hash = hash
         self.mime = mime
@@ -106,6 +110,7 @@ public struct MessageAttachment: Sendable, Equatable {
         self.dimensions = dimensions
         self.plainHash = plainHash
         self.sourceHash = sourceHash
+        self.exiflessHash = exiflessHash
     }
 }
 
@@ -305,10 +310,16 @@ public protocol MessageStore: AnyObject, Sendable {
 
     /// The pictures held under a name `bytesHash` could be, best first (`MessageDao.identityFor`, ADR 2026-10.f3mv): a
     /// sealed one whose plaintext it is, one of our sends whose picked bytes it is, or a room post's, which it names
-    /// outright. A room post's wins, since its public name is the one most phones nearby hold, then a moving one, then
-    /// the earliest. A sealed one that has no plaintext name never answers, or its ciphertext's hash would stand for
-    /// the plaintext's. Whether each blob is still held is the caller's to ask.
+    /// outright. A moving one comes first, then a room post's, since its public name is the one most phones nearby hold,
+    /// then the earliest. A sealed one that has no plaintext name never answers, or its ciphertext's hash would stand for
+    /// the plaintext's. At most 16 are read. Whether each blob is still held is the caller's to ask.
     func identities(matching bytesHash: BlobHash) -> [MessageAttachment]
+
+    /// The pictures Save named by EXIF-less name `exiflessHash` (``MessageAttachment/exiflessHash``, ADR 2026-10.f3mv,
+    /// #12), in ``identities(matching:)``'s order and under its guard: a picture with a type, and a sealed one only once
+    /// it has a plaintext name. At most 16 are read. The name is never trusted on its own: the caller opens each blob and
+    /// names its plaintext again.
+    func identities(exifless exiflessHash: BlobHash) -> [MessageAttachment]
 
     /// The messages that carry a sealed copy of the plaintext `plainHash`, the earliest first by `sentAt` and then by
     /// id (`MessageDao.sealedHolding`, before its author's test).
@@ -322,6 +333,12 @@ public protocol MessageStore: AnyObject, Sendable {
     /// anything (`MessageDao.setAttachmentPlainHash`).
     @discardableResult
     func setAttachmentPlainHash(_ hash: BlobHash, to plainHash: BlobHash) -> Bool
+
+    /// Records `exiflessHash` as the EXIF-less name of every message carrying blob `hash` under `key`, the pair Save
+    /// opened, sealed or a room post's with no key, and answers whether that changed anything. A name already there is
+    /// overwritten, so a later walk's name replaces an earlier one at the next Save (ADR 2026-10.f3mv, #12).
+    @discardableResult
+    func setAttachmentExiflessHash(_ hash: BlobHash, key: String?, to exiflessHash: BlobHash) -> Bool
 
     /// Records what the content filter made of message `id`'s words, and answers whether that changed anything.
     @discardableResult

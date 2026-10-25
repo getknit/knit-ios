@@ -112,9 +112,13 @@ final class RefusingMessageStore: MessageStore {
         held.setAttachmentDimensions(hash, to: dimensions)
     }
     func identities(matching bytesHash: BlobHash) -> [MessageAttachment] { held.identities(matching: bytesHash) }
+    func identities(exifless exiflessHash: BlobHash) -> [MessageAttachment] { held.identities(exifless: exiflessHash) }
     func sealedCopies(of plainHash: BlobHash) -> [MessageRecord] { held.sealedCopies(of: plainHash) }
     func keyWantingPlainHash(_ hash: BlobHash) -> String? { held.keyWantingPlainHash(hash) }
     func setAttachmentPlainHash(_ hash: BlobHash, to plainHash: BlobHash) -> Bool { held.setAttachmentPlainHash(hash, to: plainHash) }
+    func setAttachmentExiflessHash(_ hash: BlobHash, key: String?, to exiflessHash: BlobHash) -> Bool {
+        held.setAttachmentExiflessHash(hash, key: key, to: exiflessHash)
+    }
     func setModeration(_ id: String, to moderation: MessageModeration) -> Bool { held.setModeration(id, to: moderation) }
     func waitingForModeration() -> [MessageRecord] { held.waitingForModeration() }
     func applyReaction(_ reaction: ReactionRecord) -> Bool { held.applyReaction(reaction) }

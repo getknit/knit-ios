@@ -13,7 +13,7 @@ public final class SQLMessageStore: MessageStore {
         id, senderId, recipientId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind, \
         attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, moderation, attachmentWidth, \
         attachmentHeight, attachmentAnimated, attachmentPlainHash, attachmentSourceHash, replyToId, replyToAuthorId, \
-        replyToAuthor, replyToSnippet, replyToHasAttachment, mentions
+        replyToAuthor, replyToSnippet, replyToHasAttachment, mentions, attachmentExiflessHash
         """
     /// Writes a row with ``columns`` and `unread`, which no read takes and no save's update names: it is set once, when a
     /// row is first stored (ADR 2026-10.frmj).
@@ -83,6 +83,9 @@ public final class SQLMessageStore: MessageStore {
                             THEN coalesce(excluded.attachmentPlainHash, attachmentPlainHash) ELSE excluded.attachmentPlainHash END,
                         attachmentSourceHash = CASE WHEN attachmentHash IS excluded.attachmentHash
                             THEN coalesce(excluded.attachmentSourceHash, attachmentSourceHash) ELSE excluded.attachmentSourceHash END,
+                        attachmentExiflessHash = CASE WHEN attachmentHash IS excluded.attachmentHash
+                            THEN coalesce(excluded.attachmentExiflessHash, attachmentExiflessHash)
+                            ELSE excluded.attachmentExiflessHash END,
                         replyToId = excluded.replyToId, replyToAuthorId = excluded.replyToAuthorId,
                         replyToAuthor = excluded.replyToAuthor, replyToSnippet = excluded.replyToSnippet,
                         replyToHasAttachment = excluded.replyToHasAttachment, mentions = excluded.mentions
@@ -263,7 +266,7 @@ public final class SQLMessageStore: MessageStore {
             attachment?.dimensions?.animated, StoredText.bytes(attachment?.plainHash?.string),
             StoredText.bytes(attachment?.sourceHash?.string), StoredText.bytes(reply?.messageId), StoredText.bytes(reply?.authorId),
             StoredText.bytes(reply?.author), StoredText.bytes(reply?.snippet), reply?.hasAttachment ?? false,
-            mentionsValue(message.mentions), message.arrivesUnread,
+            mentionsValue(message.mentions), StoredText.bytes(attachment?.exiflessHash?.string), message.arrivesUnread,
         ]
     }
 

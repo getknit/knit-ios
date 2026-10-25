@@ -139,7 +139,9 @@ ChatContent { enc, attachmentHash: hash }                the hash alone in the c
   under the hash and key it arrived with, so one blob and key may recur across messages and a carrier can see that
   two frames carry one file. A fresh key is drawn only for a picture this phone has not held. The plaintext's
   SHA-256 is kept beside a sealed row (`attachmentPlainHash`, local only), and a key-less frame naming it, from
-  someone party to the conversation that copy came through, is held from our own copy rather than pulled.
+  someone party to the conversation that copy came through, is held from our own copy rather than pulled. A JPEG
+  saved to Photos also gets a name for its bytes without EXIF (`attachmentExiflessHash`), which only a pick ever
+  reads, so no frame or `blobreq` can test what we hold by it.
 - **The key and the nonce come from the system's generator,** never the injected one, as a message's do.
 - **A room post's photo is not sealed:** its blob is the photo, and its hash is the photo's. A sealed DM or group
   message may name such a photo too, with no `attachmentKey`: a room picture Android forwards under its own hash

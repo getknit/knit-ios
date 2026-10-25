@@ -1,6 +1,6 @@
 import KnitCrypto
 import KnitStore
-import KnitWire
+public import KnitWire
 
 // A picture keeps the identity it arrived under (ADR 2026-10.f3mv, knit-next ADR 2026-10.mptm): a phone seals a given
 // plaintext once. A pick this phone already holds goes out as that blob, and a key-less frame from someone who knows we
@@ -17,6 +17,9 @@ extension MeshEngine {
     /// plaintext its message names, is no identity, and the next is tried. Android also refuses a still matched by a
     /// source that moves, a send flattened before #133; here a source is only ever remembered since moving pictures go
     /// as such.
+    ///
+    /// Only when nothing matches exactly is the pick looked up by its EXIF-less name (``exiflessHeldPhoto(picked:hash:)``),
+    /// for a saved JPEG whose EXIF Photos rewrote on import (#12).
     public func heldPhoto(picked: [UInt8]) -> OutgoingPhoto? {
         let bytesHash = BlobHash(of: picked)
         for held in stores.messages.identities(matching: bytesHash) where stores.blobs.contains(held.hash) {
@@ -34,7 +37,46 @@ extension MeshEngine {
                 sourceHash: bytesHash == plainHash ? nil : bytesHash
             )
         }
+        return exiflessHeldPhoto(picked: picked, hash: bytesHash)
+    }
+
+    /// `picked`, whose SHA-256 is `bytesHash` and which matched nothing exactly, as a JPEG this phone holds that differs
+    /// from it only in EXIF, or `nil` (ADR 2026-10.f3mv, #12). Photos rewrites a JPEG's EXIF APP1 when it imports one, so
+    /// a picture saved from Knit comes back from the picker under another hash. Save named each row's plaintext by its
+    /// EXIF-less hash (``MessageAttachment/exiflessHash``), and the rows that name the pick's are tried in
+    /// ``MessageStore/identities(exifless:)``'s order.
+    ///
+    /// **The stored name is never trusted on its own.** Each blob is opened as the exact match opens one, and its
+    /// plaintext named again: only the same EXIF-less hash and the same orientation answer, so a row whose name no
+    /// longer fits, or a key-less row naming a sealed blob's hash, whose "plaintext" is ciphertext, never does. A picked
+    /// orientation of 1 against a held 6 would draw a quarter turn apart, so the orientations must be equal, no tag
+    /// counting as 1. A (blob, key) pair is opened once a call, though a picture forwarded into many chats has a row in
+    /// each.
+    ///
+    /// What goes is the held plaintext, under the held identity, and `bytesHash` is remembered as its source, so the next
+    /// pick of the same Photos file matches exactly. The name answers only a pick: no want, `blobreq`, re-want or copy
+    /// from our own store reads it.
+    private func exiflessHeldPhoto(picked: [UInt8], hash bytesHash: BlobHash) -> OutgoingPhoto? {
+        guard let name = ExiflessJPEG.name(of: picked) else {
+            return nil
+        }
+        var opened = Set<OpenedBlob>()
+        for held in stores.messages.identities(exifless: name.hash) where stores.blobs.contains(held.hash) {
+            guard opened.insert(OpenedBlob(hash: held.hash, key: held.key.map(ExactKey.init))).inserted, let mime = held.mime,
+                let plain = plaintext(of: held, named: held.plainHash ?? held.hash), ExiflessJPEG.name(of: plain) == name
+            else {
+                continue
+            }
+            log.log(.debug, "mesh picked picture held as \(held.hash)\(held.key == nil ? " (public)" : ""), its EXIF aside")
+            return OutgoingPhoto(bytes: plain, mime: mime, identity: PhotoIdentity(hash: held.hash, key: held.key), sourceHash: bytesHash)
+        }
         return nil
+    }
+
+    /// A blob and the key it was opened with, by the key's bytes.
+    private struct OpenedBlob: Hashable {
+        let hash: BlobHash
+        let key: ExactKey?
     }
 
     // MARK: Naming the plaintext
@@ -102,5 +144,23 @@ extension MeshEngine {
             return nil
         }
         return plain
+    }
+}
+
+/// A JPEG's EXIF-less name: the SHA-256 of its bytes with the EXIF APP1 segments left out, and the orientation that EXIF
+/// gave it (ADR 2026-10.f3mv, #12). Save writes the hash, and ``MeshEngine/heldPhoto(picked:)`` names both the pick and
+/// each held plaintext with it, so the two can never drift. Here and not in KnitWire, which takes no hash.
+extension ExiflessJPEG {
+    /// What a JPEG is named by apart from its EXIF.
+    public struct Name: Sendable, Equatable {
+        /// The SHA-256 of ``ExiflessJPEG/kept``.
+        public let hash: BlobHash
+        /// The orientation its EXIF gave it, 1 without one.
+        public let orientation: Int
+    }
+
+    /// The name of `plaintext`, or `nil` for anything but a JPEG ``read(_:)`` understands.
+    public static func name(of plaintext: [UInt8]) -> Name? {
+        read(plaintext).map { Name(hash: BlobHash(of: $0.kept), orientation: $0.orientation) }
     }
 }

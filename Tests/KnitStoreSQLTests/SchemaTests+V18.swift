@@ -51,4 +51,35 @@ extension SchemaTests {
         #expect(store.sendChain(group) == chain)
         #expect(store.keySends(group) == [GroupKeySendRecord(member: bob, sentEpoch: 1, sentAt: 8, ackedEpoch: 0, ackedAt: 0)])
     }
+
+    @Test func v19StartsEveryHeldPhotoWithNoExiflessName() throws {
+        // Nothing named a JPEG apart from its EXIF before v19 (ADR 2026-10.f3mv, #12): a photo held reads with none, and
+        // is found by it only once it is saved again.
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v18")
+        let bob = fixtureNodeId(2)
+        let blob = BlobHash(String(repeating: "1", count: 64)) ?? .empty
+        let plain = BlobHash(String(repeating: "9", count: 64)) ?? .empty
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO messages (id, senderId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind, moderation,
+                        attachmentHash, attachmentMime, attachmentKey, attachmentPlainHash)
+                    VALUES (?, ?, ?, ?, 3, 3, 0, 0, 0, 0, ?, ?, ?, ?)
+                    """,
+                arguments: [
+                    StoredText.bytes("m1"), StoredText.bytes(bob.string), StoredText.bytes(bob.string), StoredText.bytes(""),
+                    StoredText.bytes(blob.string), StoredText.bytes("image/jpeg"), StoredText.bytes("aw=="), StoredText.bytes(plain.string),
+                ]
+            )
+        }
+        try Schema.migrator.migrate(queue)
+        let messages = SQLMessageStore(try KnitDatabase(writer: queue, failures: recordFailure))
+        let held = try #require(messages.message("m1")?.attachment)
+        #expect(held.exiflessHash == nil && held.plainHash == plain)
+        #expect(messages.identities(exifless: plain).isEmpty)
+        let exifless = BlobHash(String(repeating: "8", count: 64)) ?? .empty
+        #expect(messages.setAttachmentExiflessHash(blob, key: "aw==", to: exifless))
+        #expect(messages.identities(exifless: exifless).map(\.hash) == [blob])
+    }
 }

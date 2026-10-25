@@ -73,6 +73,24 @@ extension SQLMessageStore {
         }
     }
 
+    /// The pictures Save named by EXIF-less name `exiflessHash`, best first (``MessageStore/identities(exifless:)``):
+    /// ``identities(matching:)``'s guard and order over the one name, which `messages_attachmentExiflessHash` finds.
+    public func identities(exifless exiflessHash: BlobHash) -> [MessageAttachment] {
+        database.read(or: []) { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT \(Self.attachmentColumns) FROM messages
+                    WHERE attachmentExiflessHash = ? AND attachmentHash IS NOT NULL AND attachmentMime IS NOT NULL
+                        AND (attachmentKey IS NULL OR attachmentPlainHash IS NOT NULL)
+                    ORDER BY attachmentAnimated IS NOT 1, attachmentKey IS NOT NULL, sentAt, id
+                    LIMIT \(Self.identityLimit)
+                    """,
+                arguments: [StoredText.bytes(exiflessHash.string)]
+            ).compactMap(Self.attachment)
+        }
+    }
+
     /// The messages carrying a sealed copy of plaintext `plainHash` (``MessageStore/sealedCopies(of:)``).
     public func sealedCopies(of plainHash: BlobHash) -> [MessageRecord] {
         database.read(or: []) { db in
@@ -118,13 +136,31 @@ extension SQLMessageStore {
         }
     }
 
+    /// Names the EXIF-less JPEG in blob `hash` under `key` (``MessageStore/setAttachmentExiflessHash(_:key:to:)``):
+    /// every row carrying exactly the pair Save opened, a room post's `NULL` key included, and only where the name
+    /// differs, so an equal one changes nothing.
+    @discardableResult
+    public func setAttachmentExiflessHash(_ hash: BlobHash, key: String?, to exiflessHash: BlobHash) -> Bool {
+        database.write(or: false) { db in
+            let named = StoredText.bytes(exiflessHash.string)
+            try db.execute(
+                sql: """
+                    UPDATE messages SET attachmentExiflessHash = ?
+                    WHERE attachmentHash = ? AND attachmentKey IS ? AND attachmentExiflessHash IS NOT ?
+                    """,
+                arguments: [named, StoredText.bytes(hash.string), StoredText.bytes(key), named]
+            )
+            return db.changesCount > 0
+        }
+    }
+
     /// The most rows one look for a picture's names reads: they are tried in order until one's blob is held.
     private static let identityLimit = 16
 
     /// The columns ``attachment(_:)`` reads.
     static let attachmentColumns = """
         attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, attachmentWidth, attachmentHeight, \
-        attachmentAnimated, attachmentPlainHash, attachmentSourceHash
+        attachmentAnimated, attachmentPlainHash, attachmentSourceHash, attachmentExiflessHash
         """
 
     /// The size a row's photo was read at, and whether it moves. One sized before schema v11 reads as still until a
@@ -149,7 +185,8 @@ extension SQLMessageStore {
                 size: try row.decode(Int64?.self, forColumn: "attachmentSize"),
                 dimensions: try dimensions(row),
                 plainHash: try row.optionalBlobHash("attachmentPlainHash"),
-                sourceHash: try row.optionalBlobHash("attachmentSourceHash")
+                sourceHash: try row.optionalBlobHash("attachmentSourceHash"),
+                exiflessHash: try row.optionalBlobHash("attachmentExiflessHash")
             )
         }
     }

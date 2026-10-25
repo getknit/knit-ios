@@ -6,9 +6,11 @@
 FuzzCBOR gets every golden CBOR item, FuzzLinkRecords gets the same items framed as link records (a chunk-size
 byte, then a FRAME record), whole files as Android streams them (a FILE_HEADER, chunks and a FILE_END), and a file cut
 by a KEEPALIVE, the harness's cut, then resumed from its offset under a header whose size is Int64's largest, and
-FuzzAdvert gets a pinned advert and a node id, and FuzzContactCard knit-next's two contact card vectors in their link forms
-and a verify code (docs/CONTACT_CARD.md §5). `scripts/fuzz.sh` calls this into a scratch directory; the committed
-Fuzz/Corpus/ holds only inputs that once found a bug.
+FuzzAdvert gets a pinned advert and a node id, FuzzContactCard knit-next's two contact card vectors in their link forms
+and a verify code (docs/CONTACT_CARD.md §5), and FuzzExiflessJPEG small JPEGs carrying an orientation in a little-endian
+(II) and a big-endian (MM) EXIF, the two real EXIF blocks from knit-ios #12 (Knit for Android's and the one Photos wrote
+over it, as KnitTestSupport's JPEGFixture pins them), an XMP APP1 alone, and a trailer after EOI. `scripts/fuzz.sh` calls
+this into a scratch directory; the committed Fuzz/Corpus/ holds only inputs that once found a bug.
 """
 
 from __future__ import annotations
@@ -34,6 +36,16 @@ FULL_CARD = (
     "mN-3eQBjc2lnWECn4VUyYreXsIMy1qJZ0Lan7cjpXGgbCijTCfSD68vSkGUrLis_L5ybjYzE86B8"
     "AR6MbQdZ3f6f62UsQPQyRPoH"
 )
+# The EXIF APP1 segments from knit-ios #12, from their FF E1 (Tests/KnitTestSupport/JPEGFixture.swift).
+ANDROID_EXIF = "ffe100344578696600004d4d002a00000008000187690004000000010000001a00000000000190000007000000043032333200000000"
+APPLE_EXIF = (
+    "ffe1012c4578696600004d4d002a000000080006011200030000000100010000011a00050000000100000056011b0005000000010000005e"
+    "012800030000000100020000021300030000000100010000876900040000000100000066000000c00000004800000001000000480000"
+    "00010007900000070000000430323332910100070000000401020300a00000070000000430313030a00100030000000100010000a002"
+    "000400000001000003c3a00300040000000100000500a40600030000000100000000000000000006010300030000000100060000011a"
+    "0005000000010000010e011b0005000000010000011601280003000000010002000002010004000000010000011e02020004000000"
+    "01000000040000000000000048000000010000004800000001ffd8ffd90000"
+)
 MINIMAL_CARD = (
     "omRib2R5WGijYXYBYmlkeBo0Y2dxMnBuaGg2cDNqM2Fmd3N1ZTNjaHJwaWJwa1hA5AMJmM_VrRcj"
     "wWn5VqoLnrhhm1mSvWEsKvQo68efjfBz55lxyREAKXI2MqgLcHv09iwSV2M0bh6HGNbA3MOqOmNz"
@@ -47,7 +59,7 @@ def main() -> int:
         sys.exit(__doc__)
     out = Path(sys.argv[1])
     vectors = json.loads((ROOT / "Tests" / "Vectors" / "wire-v1.json").read_text(encoding="utf-8"))["vectors"]
-    for harness in ("FuzzCBOR", "FuzzLinkRecords", "FuzzAdvert", "FuzzContactCard"):
+    for harness in ("FuzzCBOR", "FuzzLinkRecords", "FuzzAdvert", "FuzzContactCard", "FuzzExiflessJPEG"):
         (out / harness).mkdir(parents=True, exist_ok=True)
     for name, hexed in vectors.items():
         item = bytes.fromhex(hexed)
@@ -67,7 +79,44 @@ def main() -> int:
     }
     for name, text in cards.items():
         (out / "FuzzContactCard" / name).write_bytes(text.encode())
+    pictures = {
+        "jpeg-ii-orientation": jpeg([exif(orientation_tiff(6, little=True))]),
+        "jpeg-mm-orientation": jpeg([exif(orientation_tiff(8, little=False))]),
+        "jpeg-android-exif": jpeg([bytes.fromhex(ANDROID_EXIF)]),
+        "jpeg-apple-exif": jpeg([bytes.fromhex(APPLE_EXIF)]),
+        "jpeg-xmp": jpeg([]),
+        "jpeg-trailer": jpeg([exif(orientation_tiff(1, little=False))], trailer=b"\xff\xd8a gain map\xff\xd9"),
+    }
+    for name, picture in pictures.items():
+        (out / "FuzzExiflessJPEG" / name).write_bytes(picture)
     return 0
+
+
+def segment(marker: int, payload: bytes) -> bytes:
+    """A JPEG segment: FF, its marker, its big-endian length counting itself, then its payload."""
+    return bytes([0xFF, marker]) + struct.pack(">H", len(payload) + 2) + payload
+
+
+def exif(tiff: bytes) -> bytes:
+    return segment(0xE1, b"Exif\0\0" + tiff)
+
+
+def orientation_tiff(orientation: int, little: bool) -> bytes:
+    """A TIFF whose IFD0 holds one entry, the orientation as one SHORT."""
+    order = "<" if little else ">"
+    header = b"II*\0" if little else b"MM\0*"
+    entry = struct.pack(order + "HHIH", 0x0112, 3, 1, orientation) + b"\0\0"
+    return header + struct.pack(order + "IH", 8, 1) + entry + struct.pack(order + "I", 0)
+
+
+def jpeg(exifs: list[bytes], trailer: bytes = b"") -> bytes:
+    """A small baseline JPEG, as JPEGFixture.jpeg builds one: SOI, APP0, the EXIF segments, an XMP APP1, the tables, a
+    frame, a scan with a stuffed FF 00 and a restart marker, EOI, then the trailer."""
+    xmp = segment(0xE1, b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta/>")
+    tables = segment(0xDB, bytes(65)) + segment(0xC0, bytes([8, 0, 16, 0, 16, 1, 1, 0x11, 0])) + segment(0xC4, bytes(20))
+    scan = segment(0xDA, bytes([1, 1, 0, 0, 0x3F, 0])) + bytes([0x12, 0xFF, 0x00, 0x34, 0xFF, 0xD0, 0x56])
+    app0 = segment(0xE0, b"JFIF\0" + bytes([1, 1, 0, 0, 1, 0, 1, 0, 0]))
+    return b"\xff\xd8" + app0 + b"".join(exifs) + xmp + tables + scan + b"\xff\xd9" + trailer
 
 
 def record(tag: int, payload: bytes) -> bytes:

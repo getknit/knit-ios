@@ -108,4 +108,78 @@ import Testing
         store.save(record)
         #expect(store.message("dm")?.attachment?.plainHash == nil, "another blob's name is not this one's")
     }
+
+    // MARK: The EXIF-less name (#12)
+
+    @Test(arguments: kinds)
+    func theExiflessNameFindsWhatSaveNamedInTheSameOrderUnderTheSameGuard(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        store.save(message("later", sentAt: 5, in: bob.string, carrying: sealed(2, named: hash(9))))
+        store.save(message("earlier", sentAt: 3, in: bob.string, carrying: sealed(1, named: hash(9))))
+        store.save(message("room", sentAt: 7, in: Conversations.nearby, carrying: MessageAttachment(hash: hash(9), mime: "image/jpeg")))
+        // Sealed, saved before its plaintext was named: its name could stand for the ciphertext's.
+        let unnamed = MessageAttachment(hash: hash(3), mime: "image/jpeg", key: "aw==")
+        store.save(message("unnamed", sentAt: 1, in: bob.string, carrying: unnamed))
+        store.save(message("untyped", sentAt: 1, in: Conversations.nearby, carrying: MessageAttachment(hash: hash(4))))
+        for seed in [1, 2, 3] {
+            #expect(store.setAttachmentExiflessHash(hash(seed), key: "aw==", to: hash(8)))
+        }
+        #expect(store.setAttachmentExiflessHash(hash(9), key: nil, to: hash(8)))
+        #expect(store.setAttachmentExiflessHash(hash(4), key: nil, to: hash(8)))
+        #expect(store.identities(exifless: hash(8)).map(\.hash) == [hash(9), hash(1), hash(2)])
+        #expect(store.identities(exifless: hash(8)).allSatisfy { $0.exiflessHash == hash(8) })
+        #expect(store.identities(exifless: hash(9)).isEmpty, "the plaintext's own name is not an EXIF-less one")
+        #expect(store.identities(matching: hash(8)).isEmpty, "and an EXIF-less name is no exact one")
+        let moving = try #require(PhotoDimensions(width: 4, height: 3, animated: true))
+        store.setAttachmentDimensions(hash(2), to: moving)
+        #expect(store.identities(exifless: hash(8)).map(\.hash) == [hash(2), hash(9), hash(1)])
+        store.setAttachmentPlainHash(hash(3), to: hash(7))
+        #expect(store.identities(exifless: hash(8)).map(\.hash) == [hash(2), hash(9), hash(3), hash(1)], "named, it answers")
+    }
+
+    @Test(arguments: kinds)
+    func theSetterNamesOnlyThePairSaveOpenedAndOverwritesADifferentName(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        store.save(message("dm", sentAt: 1, in: bob.string, carrying: sealed(1, named: hash(9))))
+        store.save(message("forward", sentAt: 2, in: bob.string, carrying: sealed(1, named: hash(9))))
+        let otherKey = MessageAttachment(hash: hash(1), mime: "image/jpeg", key: "bA==", plainHash: hash(9))
+        store.save(message("other key", sentAt: 3, in: bob.string, carrying: otherKey))
+        store.save(message("keyless", sentAt: 4, in: Conversations.nearby, carrying: MessageAttachment(hash: hash(1), mime: "image/jpeg")))
+        #expect(store.setAttachmentExiflessHash(hash(1), key: "aw==", to: hash(8)))
+        #expect(store.message("dm")?.attachment?.exiflessHash == hash(8) && store.message("forward")?.attachment?.exiflessHash == hash(8))
+        #expect(store.message("other key")?.attachment?.exiflessHash == nil, "another key is another pair")
+        #expect(store.message("keyless")?.attachment?.exiflessHash == nil, "and so is no key")
+        #expect(!store.setAttachmentExiflessHash(hash(1), key: "aw==", to: hash(8)), "an equal name changes nothing")
+        #expect(store.setAttachmentExiflessHash(hash(1), key: "aw==", to: hash(6)), "a different one replaces it")
+        #expect(store.message("dm")?.attachment?.exiflessHash == hash(6))
+        #expect(store.setAttachmentExiflessHash(hash(1), key: nil, to: hash(5)))
+        #expect(store.message("keyless")?.attachment?.exiflessHash == hash(5) && store.message("dm")?.attachment?.exiflessHash == hash(6))
+        #expect(!store.setAttachmentExiflessHash(hash(2), key: nil, to: hash(5)), "a blob no row carries")
+    }
+
+    @Test(arguments: kinds)
+    func aSaveOverTheRowKeepsItsExiflessName(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        var record = message("dm", sentAt: 1, in: bob.string, carrying: sealed(1, named: hash(9)))
+        store.save(record)
+        store.setAttachmentExiflessHash(hash(1), key: "aw==", to: hash(8))
+        record.body = "a caption"
+        store.save(record)
+        #expect(store.message("dm")?.attachment?.exiflessHash == hash(8))
+        #expect(store.identities(exifless: hash(8)).map(\.hash) == [hash(1)])
+        record.attachment = sealed(2, named: hash(9))
+        store.save(record)
+        #expect(store.message("dm")?.attachment?.exiflessHash == nil, "another blob's name is not this one's")
+    }
+
+    @Test(arguments: kinds)
+    func atMostSixteenRowsAreReadForOneName(kind: RepositoryKind) throws {
+        let store = try kind.make().messages
+        for index in 0..<20 {
+            store.save(message("dm-\(index)", sentAt: Int64(index), in: bob.string, carrying: sealed(1, named: hash(9))))
+        }
+        store.setAttachmentExiflessHash(hash(1), key: "aw==", to: hash(8))
+        #expect(store.identities(exifless: hash(8)).count == 16)
+        #expect(store.identities(matching: hash(9)).count == 16)
+    }
 }

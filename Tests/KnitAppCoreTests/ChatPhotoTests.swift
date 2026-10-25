@@ -2,6 +2,7 @@ import Foundation
 import KnitCrypto
 import KnitMesh
 import KnitStore
+import KnitTestSupport
 import KnitWire
 import Testing
 
@@ -185,6 +186,37 @@ import Testing
         #expect(rig.session.attachmentToSave(hash, key: key) == photo)
         #expect(rig.stores.messages.keyWantingPlainHash(hash) == nil, "saved, it has (ADR 2026-10.f3mv)")
         #expect(rig.stores.messages.identities(matching: BlobHash(of: photo)).map(\.hash) == [hash])
+    }
+
+    /// Save names a JPEG apart from its EXIF, sealed or a room post's, so the picture Photos hands back with new EXIF is
+    /// found again (ADR 2026-10.f3mv, #12); anything else gets no such name.
+    @Test func saveNamesAJPEGApartFromItsExif() async throws {
+        let rig = AppRig()
+        await rig.pin(AppRig.sam, name: "Sam")
+        let jpeg = JPEGFixture.jpeg(exif: [JPEGFixture.androidExif])
+        let name = try #require(ExiflessJPEG.name(of: jpeg))
+        let sealed = try #require(AttachmentCrypto.seal(jpeg))
+        let hash = BlobHash(of: sealed.blob)
+        let key = Base64.encode(sealed.key)
+        rig.stores.blobs.insert(sealed.blob, hash: hash, mime: "image/jpeg", storedAt: 1)
+        let dm = await receive(
+            "dm", carrying: MessageAttachment(hash: hash, mime: "image/jpeg", key: key), from: AppRig.sam.nodeId, to: rig.me, in: rig)
+        rig.stores.blobs.insert(jpeg, hash: BlobHash(of: jpeg), mime: "image/jpeg", storedAt: 1)
+        let post = await receive(
+            "post", carrying: MessageAttachment(hash: BlobHash(of: jpeg), mime: "image/jpeg"), from: AppRig.sam.nodeId, in: rig)
+        #expect(rig.session.attachmentToSave(hash, key: key) == jpeg)
+        #expect(rig.stores.messages.message(dm.id)?.attachment?.exiflessHash == name.hash)
+        #expect(rig.stores.messages.message(post.id)?.attachment?.exiflessHash == nil, "another pair")
+        #expect(rig.session.attachmentToSave(BlobHash(of: jpeg), key: nil) == jpeg)
+        #expect(rig.stores.messages.message(post.id)?.attachment?.exiflessHash == name.hash)
+        #expect(rig.stores.messages.identities(exifless: name.hash).map(\.hash) == [BlobHash(of: jpeg), hash])
+        let gif = Array("GIF89a, no JPEG".utf8)
+        rig.stores.blobs.insert(gif, hash: BlobHash(of: gif), mime: "image/gif", storedAt: 1)
+        let moving = await receive(
+            "gif", carrying: MessageAttachment(hash: BlobHash(of: gif), mime: "image/gif"), from: AppRig.sam.nodeId, in: rig)
+        #expect(rig.session.attachmentToSave(BlobHash(of: gif), key: nil) == gif)
+        #expect(rig.stores.messages.message(moving.id)?.attachment?.exiflessHash == nil)
+        #expect(rig.session.attachmentToSave(BlobHash(of: Array("not held".utf8)), key: nil) == nil)
     }
 
     /// What a message carries is told by its name, then its type (`AttachmentKindTest`), and a link's card shows

@@ -92,3 +92,72 @@ with no key, and one blob named by many messages. It never reused anything itsel
   - `ChatPhotoTests`: a held pick skips the codec, a fresh pick remembers its source, and Save names the plaintext.
   - `PhotoScreeningTests`: the room refuses an explicit held pick.
   - `MeshControlPhotoTests`: the `reused` reply.
+
+**Amended 2026-10-25, schema v19, for a photo Photos rewrote (#12):** a JPEG has a second local name, so a picture
+saved to Photos and picked again is still found.
+
+- **What happened.** Photos rewrites a JPEG's EXIF when it imports one, and the picker hands the rewritten file back,
+  so the `.current` pick above matched nothing. On 2026-10-25 a Pixel 9 (knit-next 2.11.0-alpha.0) sent a DM photo to
+  the lab iPhone 12 (iOS 27.0.1). Save gave Photos 189,456 bytes with a 52-byte EXIF APP1 that held only the EXIF
+  version. Photos kept 198,799 bytes, with an EXIF APP1 of 9,395 bytes: orientation, resolution, colour space,
+  dimensions and a 9,099-byte thumbnail. Every other segment matched byte for byte, and so did everything from the
+  scan to the end of the file, gain map included. The pick was sealed afresh, and the Pixel fetched it as a new photo.
+- **The name** (`attachmentExiflessHash`, local only) is the SHA-256 of the file with every APP1 segment that starts
+  `Exif\0\0` left out (`ExiflessJPEG`, in KnitWire so the engine, the app and the fuzzer all reach it). An XMP APP1
+  stays in. So does everything from the first SOS to the end of the file, which is copied without being walked.
+- **Save alone writes it** (`AppSession.attachmentToSave`, `setAttachmentExiflessHash`), on the rows that carry the
+  blob and key it opened, sealed or not. It overwrites rather than sets once. Save is the only way a Knit photo
+  reaches Photos. The plaintext's name is learned on arrival only because `copyFromOwnStore` needs it, and this name
+  must never reach that path.
+- **`heldPhoto` falls back to it** (`identities(exifless:)`) only once the exact match finds nothing. It opens each
+  candidate once, names the opened plaintext again, and requires the same name and the same EXIF orientation. On a
+  hit the pick goes as the held plaintext under the held identity, with the picked file's hash as its source, so the
+  same file picked again matches exactly.
+- **Orientation** changes how a photo draws, so it is compared rather than dropped. A missing tag reads as 1, and
+  so does 0, as Android's `UPRIGHT` does (`AttachmentStore.kt:514`, `:451`, at `5f521cb9`). A walk that cannot read
+  the file or its orientation gives no name, and the photo matches nothing.
+- **The order** is that of `identities(matching:)`. This corrects the Decision above, which has it backwards: a
+  moving picture comes first, then a room post, then the earliest. The code and `AttachmentIdentityStoreTests` always
+  did it that way.
+- **This port only.** knit-next at `5f521cb9` matches the exact bytes alone (`MessageDao.identityFor`), and needs no
+  more, because Android's Save writes the file as it is. No peer can tell the difference: a hit sends the held blob
+  and key, as an exact match does.
+- **Rejected:** Photos' asset id (`localIdentifier` at Save, `itemIdentifier` at the pick). It survives any rewrite,
+  but an edit in Photos keeps the id and changes the pixels, so it would need this check anyway. It would also need
+  `photoLibrary: .shared()` and a map from chats to library assets.
+- **Device trial, 2026-10-25,** on `1853038`: the lab iPhone 12 (iOS 27.0.1), with a Pixel 9 and a Pixel 8 on
+  knit-next 2.11.0-alpha.0. Each photo was saved from the viewer, picked from Photos and sent back into its thread.
+  Every resend named the blob and key that had arrived, logged "its EXIF aside", and kept the Photos file's hash as its
+  source. No member fetched it, and the iPhone served them nothing.
+  - A DM photo and a group photo, which the Pixel 9 re-encoded from a 2000 × 1500 JPEG, arrived with no EXIF.
+    Photos added about 12.6 KB of it and left every other byte alone.
+  - A Pixel 9 camera photo, an Ultra HDR JPEG with XMP, an ISO gain map and MPF, arrived with Android's EXIF. Photos
+    replaced it with 11,033 bytes of its own and kept the rest, which is #12's case.
+  - The carriers, the Pixel 7 and the Pixel 3, pulled each original blob once and nothing more.
+  - Not run: a second pick of a saved file, which its source hash should match exactly, and a PNG, a HEIC or a JPEG
+    the iPhone prepared.
+
+Limits:
+
+- **The name answers a pick and nothing else.** `sealedCopies`, `copyFromOwnStore`, a want, a `blobreq`, the
+  re-want and the sweep never read it. A stored name is only a hint: a hit needs the opened plaintext to give the
+  same name again, so a key-less row naming a sealed blob's hash never answers.
+- **No backfill.** A photo saved before v19 matches only once it is saved again. A row stored after the Save has
+  no name, our own send of it included, so once the saved row is deleted a freshly rewritten pick misses.
+- **The name follows the walk's rules.** A change to them reaches each row at its next Save.
+- **A new way into Photos,** such as a share sheet, must write the name too.
+- **JPEG only.** Whether Photos also rewrites a PNG, a HEIC or a JPEG the iPhone prepared was not checked when this
+  was written.
+- **Where it lives.** The walk is in KnitWire. The name, `ExiflessJPEG.name(of:)`, is in KnitMesh beside
+  `heldPhoto`, because KnitWire takes no hash, and Save reaches it there too.
+- **Guards:**
+  - `ExiflessJPEGTests`, with #12's two EXIF blocks pinned in `KnitTestSupport`'s `JPEGFixture`;
+  - `AttachmentIdentityStoreTests` (both stores): the order, the sealed row's guard, and a setter keyed by blob and
+    key;
+  - `MeshEngineIdentityTests`: `aPickThatDiffersOnlyInExifGoesAsTheHeldSealedPhoto` and its room post twin,
+    `anotherOrientationOtherPixelsAndAGoneBlobMatchNothing`,
+    `aRowWhoseStoredNameNoLongerFitsItsPlaintextNeverAnswers`, `aBlobInManyRowsIsOpenedOnceAPick`,
+    `theDmPeerPostingTheExiflessBytesIsPulledNotCopied` and `aBlobRequestForTheExiflessNameIsServedNothing`;
+  - `PeerPhotoIdentityTests`: a DM photo and a group photo saved, picked with new EXIF and sent back, which the far
+    side and a third member already hold;
+  - `SchemaTests` (v19), `ChatPhotoTests.saveNamesAJPEGApartFromItsExif`, and the `FuzzExiflessJPEG` harness.
