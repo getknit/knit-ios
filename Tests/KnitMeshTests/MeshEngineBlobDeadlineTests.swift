@@ -109,6 +109,26 @@ import Testing
         #expect(fixture.engine.blobExchange.wants[photo]?.until == nil)
     }
 
+    /// A DM the ratchet sealed reaches its want by the same door, once its open's unit commits: from its first ask, the
+    /// row it stored, clamped `sentAt` and all, sets the window (the crypto-reviewer's gap on 2026-10-24).
+    @Test func aRatchetSealedDmIsPulledThroughUntilItsStoredRowsWindow() throws {
+        let lab = EngineLab([try EngineFixture.ratcheting(alice, seed: 11), try EngineFixture.ratcheting(bob, seed: 12)])
+        lab.link(0, 1)
+        let picture = OutgoingPhoto(bytes: Array("a photo bob then loses".utf8), mime: "image/jpeg")
+        let sent = try #require(lab[1].engine.sendDirectMessage("", to: alice.nodeId, photo: picture))
+        let hash = try #require(sent.attachment?.hash)
+        // Neither side holds the bytes, so nothing can serve them and the want stands to be read.
+        lab[1].stores.blobs.remove(hash)
+        lab.carry()
+        let frame = try #require(lab.chats(from: 1, to: 0, id: sent.id).first)
+        #expect(try ChatContent(decoding: frame.envelope.payload).enc?.ratchet != nil, "sealed with the ratchet")
+        let stored = try #require(lab[0].stores.messages.message(sent.id))
+        #expect(stored.attachment?.hash == hash)
+        #expect(lab[0].engine.blobExchange.wants[hash]?.until == stored.sentAt + day)
+        let asked = try lab[0].transport.written(.blobRequest).map { try BlobRequestContent(decoding: $0.envelope.payload) }
+        #expect(asked.last == BlobRequestContent(hash: hash.string, pull: BlobExchange.pullBudget, until: stored.sentAt + day))
+    }
+
     @Test func aDeliveredDmWhoseRowsReadFailsKeepsItsOwnWindow() throws {
         let (stores, messages) = stores()
         let fixture = EngineFixture(alice, stores: stores)
