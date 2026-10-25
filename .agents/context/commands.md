@@ -98,6 +98,7 @@ python3 scripts/interop.py iphone --device <serial> --links 10    # the same, th
 python3 scripts/interop.py iphone-peer --order iphone-above       # the same against a fresh peer on hci0; iphone-below is the other order
 python3 scripts/interop.py iphone-relay --device <serial>         # MVP item 7: phone, iPhone, then a peer on hci0; Knit open on both
 python3 scripts/interop.py iphone-relay … --expect-avatar --peer-avatar <jpeg>   # each end's photo, served by the iPhone between them
+python3 scripts/interop.py iphone-resume --device <serial> --quiet-phone <serial>   # a DM photo cut partway resumes from what its receiver kept, both ways (ADR 2026-10.w6rn); a wtyc build, Knit open, iPhone on USB
 python3 scripts/interop.py iphone-group --device <serial>         # v1 groups along that line, the peer as the third member (ADR 2026-09.n393)
 python3 scripts/interop.py group --device <serial>                # v1 groups between two peers and the phone, which needs two links free
 python3 scripts/interop.py ratchet --device <serial>              # the ratchet against the phone (or an emulator): knit-peer on hci1, a reinstall, resets both ways
@@ -134,6 +135,13 @@ sudo knit-hci [a|b] btmon -w capture.btsnoop                      # root tools o
 scripts/dongle-firmware.sh build                                  # firmware/knit-hci for the nRF52840 dongles
 scripts/dongle-firmware.sh flash /dev/ttyACM0                     # over USB, once its reset button put it in its bootloader
 ```
+
+`iphone-resume` cuts each photo's link by capping the phone at 0 links (`BLECAP`) a few seconds after the photo starts
+arriving. Name every other Android phone in range with `--quiet-phone`, or a carrier that fetched the photo can answer
+the re-ask with the whole file. A cut that kept nothing, or a photo that landed before the cut, prints `"ok": null` with
+its reason and counts in the summary's `inconclusive`, not in `failed`; move `--cut-after` the way the reason says. The
+run never pauses or relaunches either app, since both purge their kept prefixes at every mesh start. The other traps
+are in the function's docstring.
 
 `scripts/mac-peer.sh` runs on the Mac, and `interop.py --mac` calls it over ssh. `build` builds knit-peer and signs
 it in the desktop session with a fixed identifier, so macOS's one Bluetooth grant lasts across builds; `run` starts it

@@ -16,6 +16,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-group --device SERIAL [--udid UDID]
     scripts/interop.py iphone-peer [--order iphone-below|iphone-above] [--skip-offline] [--udid UDID]
     scripts/interop.py iphone-photos --device SERIAL [--animated] [--udid UDID]
+    scripts/interop.py iphone-resume --device SERIAL [--quiet-phone SERIAL ...] [--cut-after 5] [--udid UDID]
     scripts/interop.py iphone-block --device SERIAL [--udid UDID]
     scripts/interop.py iphone-contact --device SERIAL [--udid UDID]
     scripts/interop.py iphone-delete --device SERIAL [--udid UDID]
@@ -46,10 +47,11 @@ bridge (ADR 2026-09.kwa8), and the phone's Requests screen for a pair that has n
 runs the same items between the iPhone and the peer; `iphone-relay` runs MVP item 7's line through the iPhone, and
 `iphone-group` v1 groups along that line, the peer as the third member (`group` runs them with two peers and no
 iPhone, ADR 2026-09.n393); `iphone-photos` sends photos both ways between the iPhone and the phone, in Nearby, a DM
-and a group (ADR 2026-10.6cas); `iphone-block` checks that a block on the iPhone leaves the phone's ✓✓ on its room post
-and its custody converging (ADR 2026-10.5wgg); `iphone-contact` swaps contact links between the iPhone and the phone,
-each adding the other's, then sends a DM each way (ADR 2026-10.tpr5); `iphone-delete` checks that what the iPhone deletes stays deleted across
-a restart of its mesh, and that the delete sends nothing (ADR 2026-10.u7cq); `iphone-react` sends reactions both ways in
+and a group (ADR 2026-10.6cas), each streamed from its first byte; `iphone-resume` cuts a DM photo's link partway
+through, each way, and checks that the next ask streams only the rest (ADR 2026-10.w6rn); `iphone-block` checks
+that a block on the iPhone leaves the phone's ✓✓ on its room post and its custody converging (ADR 2026-10.5wgg);
+`iphone-contact` swaps contact links between the iPhone and the phone, each adding the other's, then sends a DM each
+way (ADR 2026-10.tpr5); `iphone-delete` checks that what the iPhone deletes stays deleted across a restart of its mesh, and that the delete sends nothing (ADR 2026-10.u7cq); `iphone-react` sends reactions both ways in
 every thread, and checks a replacement, a retraction, an emoji outside the iPhone's six and a block (ADR 2026-10.ehe6);
 `iphone-reply` sends quoted replies both ways in every thread, a photo's among them (ADR 2026-10.mn29);
 `iphone-typing` sends typing cues both ways in every thread, and checks their lapse, a post ending one and a block
@@ -97,7 +99,9 @@ or from .private/lab.env when it is there, which stays out of the repository (AD
 the ATS2851; they cost time on the dongles, nothing more.
 
 Each step prints one JSON line, {"step": ..., "ok": ..., ...}, and the run ends with a summary line. The exit code
-is the number of failed steps.
+is the number of failed steps. A step whose premise never happened, such as `iphone-resume`'s cut that kept nothing,
+prints `"ok": null` and `"inconclusive": true` with its reason, and counts in the summary's `inconclusive`, never in
+`failed`: a zero exit with an inconclusive step proves nothing about what that step would have judged.
 """
 
 from __future__ import annotations
@@ -563,9 +567,15 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
+class Inconclusive(Exception):  # noqa: N818 - named for the verdict a step reports, not for an error
+    """What a check raises when the thing it judges never happened, such as a cut that kept no bytes: the step prints
+    `"ok": null` with its reason, and counts in `Run.inconclusive`, never in `Run.failed`."""
+
+
 class Run:
     def __init__(self) -> None:
         self.failed = 0
+        self.inconclusive = 0
         self.steps = 0
         self.results: list[dict] = []
 
@@ -578,6 +588,13 @@ class Run:
             self.results.append(result)
             print(json.dumps(result))
             return detail
+        except Inconclusive as reason:
+            self.inconclusive += 1
+            seconds = round(time.monotonic() - started, 1)
+            result = {"step": name, "ok": None, "inconclusive": True, "seconds": seconds, "reason": str(reason), **context}
+            self.results.append(result)
+            print(json.dumps(result))
+            return None
         except Exception as error:  # noqa: BLE001 - every failure is reported, then the run goes on
             self.failed += 1
             result = {"step": name, "ok": False, "seconds": round(time.monotonic() - started, 1), "error": str(error), **context}
@@ -2600,9 +2617,10 @@ def _phone_log(phone: Phone, needle: str) -> list[str]:
     return [line for line in _phone_lines(phone) if needle in line]
 
 
-def _phone_lines(phone: Phone) -> list[str]:
-    """The messages of every Bluetooth transport log line the phone holds, in order."""
-    log = phone.shell("logcat -d -s BluetoothMeshTransport:*", timeout=60)
+def _phone_lines(phone: Phone, tag: str = "BluetoothMeshTransport") -> list[str]:
+    """The messages of every log line the phone holds under `tag`, in order: the Bluetooth transport's by default, and
+    `PartialBlobs` for its kept prefixes (knit-next `di/MeshModule.kt:200`)."""
+    log = phone.shell(f"logcat -d -s {tag}:*", timeout=60)
     return [line.split(": ", 1)[-1] for line in log.splitlines() if ": " in line]
 
 
@@ -4431,7 +4449,7 @@ def iphone_relay(arguments: argparse.Namespace) -> int:
     peer_id = _keygen("iphone-relay", "--above", max(others | {phone_id}))
     print(json.dumps({"run": "iphone-relay", "phone": phone_id, "iphone": ios.node_id, "peer": peer_id, "refused": sorted(others)}))
     status = ios.command(cmd="status")
-    before, sent_before = status["router"], status["files"]["sent"]
+    before, files_before = status["router"], status["files"]
     stop = threading.Event()
     kept_off: set[str] = set()
     threading.Thread(target=_keep_to, args=(ios, {phone_id, peer_id}, kept_off, stop, "iphone"), daemon=True).start()
@@ -4463,7 +4481,7 @@ def iphone_relay(arguments: argparse.Namespace) -> int:
         if arguments.peer_avatar:
             run.step("peer-photo-served-to-phone", lambda: poll(lambda: _phone_got_file(phone, peer_photo, ios.node_id), 240))
         if arguments.expect_avatar or arguments.peer_avatar:
-            run.step("iphone-served", lambda: _ios_served(ios, sent_before))
+            run.step("iphone-served", lambda: _ios_served(ios, files_before))
         body = f"interop iphone relay room from phone {nonce}"
         phone.send(body)
         run.step("room-phone-to-peer", lambda: _latency(peer.wait(lambda line: _message(line, body), 30)))
@@ -4924,10 +4942,12 @@ def _no_head_start_line(knit, peer_id: str, since: float) -> dict:
 def iphone_photos(arguments: argparse.Namespace) -> int:
     """Photos in chats both ways between the iPhone and an Android phone, in Nearby, a DM and a group (ADR 2026-10.6cas).
     The iPhone sends through its bridge and the phone through SENDIMG, each a fresh picture, so no node holds it yet. The
-    phone's log shows the iPhone's photo come in whole from the iPhone, and the bridge's `messages` shows the phone's
-    photo held on the iPhone. A DM's or a group's photo travels sealed, and only its message's key opens it: the screens
-    show whether it opened. With `--animated` both pictures are GIFs, and the iPhone must play both, the phone's as the
-    animated WebP Android sends. The two must already hold each other's keys."""
+    phone's end line shows the iPhone's photo streamed from the iPhone from its first byte, never spliced onto a prefix
+    the phone kept from a cut, and the bridge's `messages` shows the phone's photo held on the iPhone. The iPhone's
+    `status.files` must count no resumed file either way by the end, so a cut and its resume never pass for this path
+    (`iphone-resume` checks that one). A DM's or a group's photo travels sealed, and only its message's key opens it:
+    the screens show whether it opened. With `--animated` both pictures are GIFs, and the iPhone must play both, the
+    phone's as the animated WebP Android sends. The two must already hold each other's keys."""
     phone = Phone(arguments.device)
     ios = IPhone(arguments.udid, arguments.host)
     run = Run()
@@ -4936,11 +4956,13 @@ def iphone_photos(arguments: argparse.Namespace) -> int:
     try:
         phone_id = phone.state()["self"]["nodeId"]
         print(json.dumps({"run": "iphone-photos", "phone": phone_id, "iphone": ios.node_id, "nonce": nonce}))
+        files_before = ios.command(cmd="status")["files"]
         run.step("link", lambda: _ios_linked(ios, phone, phone_id))
         group = ios.command(cmd="group-create", members=[phone_id])["id"]
         run.step("group-ids-agree", lambda: _agrees(group, phone.make_group([ios.node_id])))
         for kind, on_ios, on_phone in (("room", "nearby", "nearby"), ("dm", phone_id, ios.node_id), ("group", group, group)):
             _photos_both_ways(run, ios, phone, kind, (on_ios, on_phone), nonce, animated=arguments.animated)
+        run.step("iphone-files-whole", lambda: _ios_files_whole(ios, files_before))
     finally:
         ios.stop()
     print(json.dumps({"summary": "iphone-photos", "steps": run.steps, "failed": run.failed}))
@@ -4971,6 +4993,540 @@ def _photos_both_ways(
     if animated:
         run.step(f"{kind}-photos-play-on-iphone", lambda: _ios_plays(ios, on_ios, shown))
     run.step(f"{kind}-phone-screen", lambda: _phone_screen(phone, on_phone, f"{nonce}-{kind}"))
+
+
+# `iphone-resume`'s photo: under the 1,000,000 bytes from which a photo declares its size for Android's "Ask before
+# large Bluetooth downloads" (`BluetoothFetchGate.declareSizeFloor`), and big enough that a cut a few seconds in lands
+# partway through.
+RESUME_PHOTO_BYTES = 700_000
+# What sealing adds to a DM's photo on either platform: AttachmentCrypto's 12-byte nonce and 16-byte tag, as
+# `nonce ‖ ciphertext ‖ tag`.
+SEAL_OVERHEAD = 28
+# The least either store keeps of a cut file (`PartialBlobs.MIN_BYTES`, `PartialBlobBook`): one whole 16 KiB record.
+KEPT_FLOOR = 16 * 1024
+# How long a link must have been up before a photo goes over it: the cap sheds no link younger than 20 s (knit-next's
+# debug-bridge.md, `BLECAP`).
+LINK_AGE = 30
+# How long the receiver's store gets to log what it kept once the link is down; the iPhone's line comes through
+# idevicesyslog.
+KEPT_WAIT = 20
+
+
+def iphone_resume(arguments: argparse.Namespace) -> int:
+    """A DM photo cut partway through resumes from the bytes its receiver kept, both ways between the iPhone and an
+    Android phone on a knit-next debug build with wtyc (ADR 2026-10.w6rn, knit-next ADR 2026-10.wtyc). Each direction
+    sends a fresh noise JPEG of about 700 KB that no node holds. Once the receiver shows it arriving, and `--cut-after`
+    seconds more have passed, the phone's links are capped at 0 (`BLECAP`), which sheds the link. The cap clears once
+    both sides have seen the link go, and the two link again.
+
+    - **The iPhone receives** (`in-…`): the phone sends with SENDIMG. The iPhone logs `mesh partial <h12> kept <n>B`,
+        its received line reads `… resumed at <n>`, `status.files.resumedIn` goes up by one with no splice refused, the
+        phone's serve line ends ` from <n>`, and the iPhone holds the photo. The kept bytes and the tail make the sealed
+        blob: SENDIMG's `plainBytes` and the seal's 28 bytes.
+    - **The iPhone serves** (`out-…`): the iPhone sends through its bridge. The phone logs `partial <h12> kept <n>B`
+        under `PartialBlobs`, its end line reads `rx ATTACHMENT/<hash> <tail>B in <ms>ms ← <iphone> from <n>`, the
+        iPhone's `status.files.resumedOut` goes up by one, its sent line reads `… resumed at <n>`, and the phone holds
+        the photo. The kept bytes and the tail make the size the first stream declared, the photo and its seal.
+
+    A cut that kept nothing, or less than one record, or a photo that landed before the cut, is "no cut": that step
+    prints `"ok": null` and the direction's later steps are left out, and none of it counts as a failure. The summary's
+    `directions` says how each went: `resumed`, `no cut` or `failed`.
+
+    The traps:
+
+    - **A carrier can answer the re-ask.** Every neighbour the receiver asks fetches the photo too, so another phone
+        that took it could serve the whole file first. Each `--quiet-phone` is capped at 0 links for the run, cleared at
+        the end. The cap leaves Wi-Fi Aware alone, and the iPhone has none.
+    - **A young link is not shed.** The cap sheds only links older than 20 s, so no photo goes until the link has been
+        up `LINK_AGE` seconds, as the iPhone's bridge saw it.
+    - **A cut too soon keeps nothing,** since a store keeps a prefix only from one whole 16 KiB record, and a cut too
+        late finds the photo landed. `--cut-after` moves it, and a "no cut" says which way. Neither side reports how far
+        a stream has got, so the cut lands at a time, not at a byte count.
+    - **The holder's serve memo** turns the same asker away from the same photo for 45 s from the first serve, and the
+        asker asks again at most that often. The resume can take the relink, up to `--relink-timeout`, and then 45 s and
+        more (`--resume-timeout`).
+    - **A mesh start purges the kept prefixes,** on Android and the iPhone alike, so nothing here pauses, resumes or
+        relaunches either app. Knit stays open in front on the iPhone for the whole run, with Auto-Lock off, and
+        `knit-stayed-open` fails if the bridge closed.
+    - **The iPhone's own log is the oracle** for what it kept and sent, so the run needs the iPhone on USB, even with
+        `--host`.
+
+    The phone's logcat is cleared as each direction begins. The two must already hold each other's keys, as for
+    `iphone-photos`."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid, arguments.host)
+    quiet = [Phone(serial) for serial in arguments.quiet_phone]
+    capped: list[Phone] = []
+    run = Run()
+    nonce = secrets.token_hex(3)
+    outcomes: dict[str, str] = {}
+    ios.start()
+    knit = _iphone_log(ios, f"interop-iphone-resume-{nonce}.log")
+    try:
+        phone_id = phone.state()["self"]["nodeId"]
+        print(json.dumps({"run": "iphone-resume", "phone": phone_id, "iphone": ios.node_id, "quiet": arguments.quiet_phone, "nonce": nonce}))
+        if run.step("iphone-log", lambda: _log_reading(knit)) is not None and knit is not None:
+            for other in quiet:
+                capped.append(other)
+                run.step(f"quiet-{other.serial}", lambda other=other: _quieted(other))
+            if run.step("link", lambda: {**_ios_linked(ios, phone, phone_id), "alsoLinked": _ios_others(ios, phone_id)}) is not None:
+                pair = _ResumePair(run, ios, phone, phone_id, knit, capped, arguments)
+                outcomes["iphone-receives"] = pair.receives(nonce)
+                outcomes["iphone-serves"] = pair.serves(nonce)
+            run.step("knit-stayed-open", lambda: _bridge_held(ios))
+    finally:
+        # Whatever failed, every cap this run set goes; the cut clears the phone's own as soon as the link is down.
+        for other in capped:
+            run.step(f"cap-cleared-{other.serial}", lambda other=other: {"cap": other.bridge("BLECAP", clear=True).get("cap")})
+        if knit is not None:
+            knit.stop()
+        ios.stop()
+    summary = {"summary": "iphone-resume", "steps": run.steps, "failed": run.failed, "inconclusive": run.inconclusive}
+    print(json.dumps({**summary, "directions": outcomes}))
+    return run.failed
+
+
+class _ResumePair:
+    """The iPhone and the phone through one `iphone-resume` run: each direction's steps, and the cut and the relink
+    they share."""
+
+    def __init__(
+        self, run: Run, ios: IPhone, phone: Phone, phone_id: str, knit: IPhoneLog, capped: list[Phone], arguments: argparse.Namespace
+    ) -> None:
+        self.run = run
+        self.ios = ios
+        self.phone = phone
+        self.phone_id = phone_id
+        self.knit = knit
+        self.capped = capped
+        self.arguments = arguments
+        # When the cut's cap cleared, on the monotonic clock for the bridge's events and on the wall clock for the
+        # iPhone's log.
+        self.cleared = 0.0
+        self.cleared_wall = 0.0
+
+    def receives(self, nonce: str) -> str:
+        """The phone's photo to the iPhone, cut, then resumed from what the iPhone kept; answers how it went."""
+        run, ios, phone, phone_id = self.run, self.ios, self.phone, self.phone_id
+        mark = (run.failed, run.inconclusive)
+        body = f"photo from phone, resume {nonce}"
+        staged = run.step("in-photo-staged", lambda: {"path": _stage_photo(phone, f"{nonce}-phone-resume", size=RESUME_PHOTO_BYTES)})
+        if staged is None or run.step("in-link-aged", self._aged) is None:
+            return self._outcome(mark)
+        phone.shell("logcat -c")
+        before = ios.command(cmd="status")
+        sent = run.step("in-photo-sent", lambda: _sendimg(phone, staged["path"], body, ios.node_id))
+        if sent is None:
+            return self._outcome(mark)
+        row = run.step("in-dm-on-iphone", lambda: poll(lambda: _ios_row(ios, phone_id, body), 60))
+        if row is None:
+            return self._outcome(mark)
+        hash_ = row["hash"]
+
+        def landed() -> bool:
+            return _ios_holds(ios, phone_id, body) is not None
+
+        if run.step("in-arriving", lambda: _ios_arriving(ios, landed, 60), hash=hash_) is None:
+            return self._outcome(mark)
+        if not self._cut("in", landed):
+            return self._outcome(mark)
+        kept = run.step("in-kept", lambda: _ios_kept(self.knit, hash_, landed))
+        if kept is None or run.step("in-relinked", self._back) is None:
+            return self._outcome(mark)
+        took = run.step("in-iphone-took-tail", lambda: _ios_took_tail(self.knit, hash_, phone_id, kept["kept"], self.arguments.resume_timeout))
+        if took is None:
+            return self._outcome(mark)
+        run.step("in-resumed-in-counted", lambda: _counted_once(ios, before, "resumedIn"))
+        run.step("in-phone-served-tail", lambda: _phone_served_tail(phone, hash_, ios.node_id, took, 30))
+        run.step("in-photo-held", lambda: poll(lambda: _ios_holds(ios, phone_id, body), 60))
+        plain = sent.get("plainBytes")
+        whole = plain + SEAL_OVERHEAD if isinstance(plain, int) else None
+        run.step("in-sizes-add-up", lambda: _sizes_add_up(took["offset"], took["tail"], whole, "SENDIMG's plainBytes and the seal's 28 bytes"))
+        return self._outcome(mark)
+
+    def serves(self, nonce: str) -> str:
+        """The iPhone's photo to the phone, cut, then resumed from what the phone kept; answers how it went."""
+        run, ios, phone, phone_id = self.run, self.ios, self.phone, self.phone_id
+        mark = (run.failed, run.inconclusive)
+        body = f"photo from iphone, resume {nonce}"
+        pictures: list[bytes] = []
+        made = run.step("out-photo-made", lambda: _made(pictures, _noise_jpeg(f"{nonce}-iphone-resume", RESUME_PHOTO_BYTES)))
+        if made is None or run.step("out-link-aged", self._aged) is None:
+            return self._outcome(mark)
+        phone.shell("logcat -c")
+        before = ios.command(cmd="status")
+        sent = run.step("out-photo-sent", lambda: _ios_sent_photo(ios, phone_id, body, pictures[0]))
+        if sent is None:
+            return self._outcome(mark)
+        hash_ = sent["hash"]
+
+        def landed() -> bool:
+            return any(line["phase"] == "end" for line in _phone_rx(phone, hash_, ios.node_id))
+
+        began = run.step("out-arriving", lambda: _phone_arriving(phone, hash_, ios.node_id, 60), hash=hash_)
+        if began is None:
+            return self._outcome(mark)
+        if not self._cut("out", landed):
+            return self._outcome(mark)
+        kept = run.step("out-kept", lambda: _kept_or_no_cut(lambda: _kept_in(_phone_lines(phone, "PartialBlobs"), hash_), landed))
+        if kept is None or run.step("out-relinked", self._back) is None:
+            return self._outcome(mark)
+        took = run.step("out-phone-took-tail", lambda: _phone_took_tail(phone, hash_, ios.node_id, kept["kept"], self.arguments.resume_timeout))
+        if took is None:
+            return self._outcome(mark)
+        run.step("out-resumed-out-counted", lambda: _counted_once(ios, before, "resumedOut"))
+        run.step("out-iphone-served-tail", lambda: _ios_served_tail(self.knit, hash_, phone_id, took, 30))
+        run.step("out-photo-held-on-phone", lambda: poll(lambda: _phone_holds(phone, ios.node_id, body), 60))
+
+        def sizes() -> dict:
+            declared = began["declared"]
+            if declared is not None and declared != sent["sealed"]:
+                raise RuntimeError(f"the first stream declared {declared} B, not the sealed photo's {sent['sealed']} B")
+            source = "the first stream's declared size, the photo and the seal's 28 bytes"
+            return _sizes_add_up(took["offset"], took["tail"], sent["sealed"], source)
+
+        run.step("out-sizes-add-up", sizes)
+        return self._outcome(mark)
+
+    def _aged(self) -> dict:
+        """The link, up `LINK_AGE` seconds unbroken; a direction after a cut waits out the relink here."""
+        return _aged_link(self.ios, self.phone, self.phone_id, LINK_AGE, self.arguments.relink_timeout)
+
+    def _cut(self, prefix: str, landed) -> bool:
+        """`<prefix>-cut`, noting when the cap cleared for the relink after it; False when there was no cut."""
+        cut = self.run.step(
+            f"{prefix}-cut", lambda: _cut_link(self.phone, self.ios, self.phone_id, landed, self.arguments.cut_after, self.capped)
+        )
+        if cut is None:
+            return False
+        self.cleared, self.cleared_wall = time.monotonic(), time.time()
+        return True
+
+    def _back(self) -> dict:
+        """The link back after the cut, and who dialed it as the phone's log since this direction began tells it
+        (`_last_dialer`), with the iPhone's own dials since the cap cleared (`link dialing`)."""
+        back = _relinked(self.ios, self.phone, self.phone_id, self.cleared, self.arguments.relink_timeout)
+        dials = [
+            entry
+            for entry in IPhoneLog.entries(self.knit.path)
+            if entry["message"].startswith(f"link dialing {self.phone_id} ") and entry.get("ms", 0) / 1000 >= self.cleared_wall - 1
+        ]
+        return {"seconds": back["seconds"], "dialedBy": _last_dialer(self.phone, self.ios.node_id), "iphoneDials": len(dials)}
+
+    def _outcome(self, mark: tuple[int, int]) -> str:
+        """How the direction begun at `mark`, the run's failed and inconclusive counts then, went."""
+        failed, inconclusive = mark
+        if self.run.failed > failed:
+            return "failed"
+        return "no cut" if self.run.inconclusive > inconclusive else "resumed"
+
+
+def _log_reading(knit: IPhoneLog | None) -> dict:
+    """The iPhone's own log is being read over USB. Its `mesh partial <h12> kept <n>B` line is the only word of what the
+    iPhone kept from a cut, and its file lines of what it took and sent, so a run without it can judge neither way."""
+    if knit is None:
+        raise RuntimeError(
+            "the iPhone's log is unavailable: its `mesh partial … kept` line is this run's oracle, so put the iPhone on USB "
+            "with idevicesyslog installed"
+        )
+    time.sleep(2)
+    if knit.process.poll() is not None:
+        raise RuntimeError(f"idevicesyslog stopped (exit {knit.process.returncode}): see {knit.path}")
+    return {"log": str(knit.path.relative_to(ROOT))}
+
+
+def _quieted(phone: Phone, timeout: float = 60) -> dict:
+    """Caps another phone at 0 links for the run, so it carries no copy of the photo to answer a re-ask with, and waits
+    until it holds none: the cap sheds a link only once it is 20 s old."""
+    reply = phone.bridge("BLECAP", max=0)
+    started = time.monotonic()
+    poll(lambda: not int(phone.bridge("BLECAP").get("linked") or 0), timeout, every=5)
+    return {"cap": reply.get("cap"), "seconds": round(time.monotonic() - started, 1)}
+
+
+def _ios_others(ios: IPhone, phone_id: str) -> list[str]:
+    """The iPhone's links to anyone but the phone, which a quiet run has none of."""
+    return sorted(link["peer"] for link in ios.command(cmd="links")["links"] if link["peer"] != phone_id)
+
+
+def _link_age(ios: IPhone, peer: str) -> float | None:
+    """How long the iPhone's bridge has seen its link to `peer` up unbroken, or None when its last word was the link
+    going down. The bridge reports changes only, so a link up as the bridge connected counts from then."""
+    changes = ios.lines(lambda line: line.get("event") == "link" and line.get("peer") == peer)
+    if changes and not changes[-1].get("up"):
+        return None
+    ready = ios.lines(lambda line: line.get("event") == "ready")
+    since = changes[-1]["_at"] if changes else ready[0]["_at"] if ready else time.monotonic()
+    return time.monotonic() - since
+
+
+def _aged_link(ios: IPhone, phone: Phone, phone_id: str, age: float, timeout: float) -> dict:
+    """The iPhone's link to the phone, once it has been up `age` seconds unbroken, which a cut needs."""
+    started = time.monotonic()
+    while True:
+        _ios_linked(ios, phone, phone_id, max(5.0, timeout - (time.monotonic() - started)))
+        held = _link_age(ios, phone_id)
+        if held is not None and held >= age:
+            return {"linkAgeSeconds": round(held, 1)}
+        if time.monotonic() - started > timeout + age:
+            raise TimeoutError(f"the link never stayed up {age:g} s")
+        time.sleep(min(5.0, max(1.0, age - (held or 0))))
+
+
+def _made(pictures: list[bytes], picture: bytes) -> dict:
+    """Keeps `picture` in `pictures` for the steps after the one that made it, and reports its size."""
+    pictures.append(picture)
+    return {"bytes": len(picture)}
+
+
+def _sendimg(phone: Phone, path: str, body: str, to: str) -> dict:
+    """The phone sends the staged picture at `path` to `to` with `body`, through the production pipeline (SENDIMG)."""
+    reply = phone.bridge("SENDIMG", path=path, text=body, conv=to)
+    if reply.get("status") != "ok":
+        raise RuntimeError(f"SENDIMG refused: {reply}")
+    return {"plainHash": reply.get("hash"), "plainBytes": reply.get("plainBytes"), "mime": reply.get("mime")}
+
+
+def _ios_sent_photo(ios: IPhone, peer: str, body: str, picture: bytes) -> dict:
+    """The iPhone sends `picture` to `peer` with `body`, sealed: the blob is the picture and the seal's 28 bytes."""
+    reply = _ios_photo(ios, "dm", peer, body, picture, timeout=30)
+    return {"hash": reply["attachmentHash"], "bytes": len(picture), "sealed": len(picture) + SEAL_OVERHEAD}
+
+
+def _ios_row(ios: IPhone, conversation: str, body: str) -> dict | None:
+    """The iPhone's message `body` in `conversation` once it is here, with the hash its frame names for the photo: the
+    sealed blob's in a DM, which no line of the phone's SENDIMG reply gives."""
+    for message in ios.command(cmd="messages", conv=conversation, limit=50)["messages"]:
+        if message.get("body") == body and message.get("attachmentHash"):
+            return {"hash": message["attachmentHash"], "held": bool(message.get("attachmentHeld"))}
+    return None
+
+
+def _phone_holds(phone: Phone, conversation: str, body: str) -> dict | None:
+    """The phone's message `body` in `conversation` once its photo's bytes are here (STATE's `attachmentHeld`)."""
+    for message in phone.state(conversation, limit=50).get("messages", []):
+        if message.get("body") == body and message.get("attachmentHeld"):
+            return {"hash": message.get("attachmentHash")}
+    return None
+
+
+def _ios_arriving(ios: IPhone, landed, timeout: float) -> dict:
+    """The iPhone shows a file streaming in (`status.footprint.arrivingFiles`), the photo's, since a quiet link carries
+    nothing else once it is `LINK_AGE` seconds old. A photo held already landed before a cut could start."""
+    started = time.monotonic()
+
+    def arriving() -> int | None:
+        if landed():
+            raise Inconclusive("no cut: the photo landed whole before it was seen arriving")
+        return ios.command(cmd="status")["footprint"].get("arrivingFiles") or None
+
+    count = poll(arriving, timeout, every=0.5)
+    return {"arrivingFiles": count, "seconds": round(time.monotonic() - started, 1)}
+
+
+def _phone_rx(phone: Phone, hash_: str, sender: str) -> list[dict]:
+    """The phone's receive lines for `hash_` from `sender`, in order (`parse_android_rx`)."""
+    lines = (parse_android_rx(line) for line in _phone_lines(phone))
+    return [line for line in lines if line and line["hash"] == hash_ and line["peer"] == sender]
+
+
+def _phone_arriving(phone: Phone, hash_: str, sender: str, timeout: float) -> dict:
+    """The phone's start line for the photo `sender` streams it from the first byte, `rx ATTACHMENT/<hash> <size>B ←
+    <sender>`, which says how big the whole is. An end line already there means the photo landed before a cut could
+    start."""
+    started = time.monotonic()
+
+    def begun() -> dict | None:
+        lines = _phone_rx(phone, hash_, sender)
+        if any(line["phase"] == "end" for line in lines):
+            raise Inconclusive("no cut: the photo landed whole before its start line was read")
+        return next((line for line in lines if line["phase"] == "start" and not line["offset"]), None)
+
+    start = poll(begun, timeout, every=1)
+    return {"declared": start["bytes"], "seconds": round(time.monotonic() - started, 1)}
+
+
+def _cut_link(phone: Phone, ios: IPhone, phone_id: str, landed, cut_after: float, capped: list[Phone]) -> dict:
+    """Cuts the link `cut_after` seconds into the stream: the phone's links are capped at 0, which sheds this one, past
+    the cap's 20 s, and the cap clears once the iPhone's `links` and the phone's `link down:` line both say it went. A
+    photo that landed first is no cut."""
+    time.sleep(cut_after)
+    if landed():
+        raise Inconclusive(f"no cut: the photo landed whole within {cut_after:g} s of arriving; try a smaller --cut-after")
+    if phone not in capped:
+        capped.append(phone)
+    downs = len(_phone_log(phone, f"link down: {ios.node_id}"))
+    capped_at = time.monotonic()
+    gone: dict[str, float] = {}
+
+    def down() -> dict | None:
+        if "iphone" not in gone and all(link["peer"] != phone_id for link in ios.command(cmd="links")["links"]):
+            gone["iphone"] = round(time.monotonic() - capped_at, 1)
+        if "phone" not in gone and len(_phone_log(phone, f"link down: {ios.node_id}")) > downs:
+            gone["phone"] = round(time.monotonic() - capped_at, 1)
+        return dict(gone) if len(gone) == 2 else None
+
+    try:
+        phone.bridge("BLECAP", max=0)
+        went = poll(down, 60, every=1)
+    except TimeoutError:
+        raise RuntimeError(f"the link was not down on both sides 60 s after the cap: {gone or 'on neither'}") from None
+    finally:
+        cleared = phone.bridge("BLECAP", clear=True)
+    return {"cutAfter": cut_after, "downAfter": went, "cap": cleared.get("cap")}
+
+
+def _no_cut(landed: bool) -> str:
+    """Why a cut that kept nothing proves nothing, and which way `--cut-after` should move."""
+    if landed:
+        return "no cut: the photo landed whole before the link went down; try a smaller --cut-after"
+    return (
+        "no cut: nothing kept, so the cut came before the first whole 16 KiB record (try a larger --cut-after), or the "
+        "receiver's build keeps no prefix"
+    )
+
+
+def _kept_or_no_cut(read, landed, timeout: float = KEPT_WAIT) -> dict:
+    """What the receiver's store kept of the cut photo, from its last `partial <h12> kept <n>B` as `read` finds it: the
+    offset its next ask names. No line, or less than one whole record, is no cut."""
+    try:
+        kept = poll(read, timeout, every=1)
+    except TimeoutError:
+        raise Inconclusive(_no_cut(landed())) from None
+    if kept < KEPT_FLOOR:
+        raise Inconclusive(f"no cut: only {kept} B kept, less than one whole 16 KiB record")
+    return {"kept": kept}
+
+
+def _ios_messages(knit: IPhoneLog) -> list[str]:
+    """The messages of Knit's log so far, in order."""
+    knit.file.flush()
+    return [entry["message"] for entry in IPhoneLog.entries(knit.path)]
+
+
+def _ios_kept(knit: IPhoneLog, hash_: str, landed) -> dict:
+    """What the iPhone kept of the cut photo, from its `mesh partial <h12> kept <n>B`. An empty log says nothing of a
+    cut, so it fails rather than reading as no cut."""
+    try:
+        return _kept_or_no_cut(lambda: _kept_in(_ios_messages(knit), hash_), landed)
+    except Inconclusive:
+        if not IPhoneLog.entries(knit.path):
+            raise RuntimeError(f"the iPhone's log holds no line of Knit's ({knit.path.name}): is idevicesyslog reading it?") from None
+        raise
+
+
+def _ios_took_tail(knit: IPhoneLog, hash_: str, sender: str, kept: int, timeout: float) -> dict:
+    """The iPhone's received line for the cut photo, `link file ATTACHMENT <h12> from <phone>: <tail> bytes resumed at
+    <offset>`, its offset the bytes the iPhone kept. A line without one means the photo came again from its first byte:
+    the holder ignored the offset, or the iPhone asked without one."""
+
+    def took() -> dict | None:
+        lines = _ios_file_lines(_ios_messages(knit), "in", hash_, sender)
+        if resumed := [line for line in lines if line["offset"]]:
+            return resumed[0]
+        if lines:
+            raise RuntimeError(f"landed whole, not resumed: {lines[0]['bytes']} B from the first byte")
+        return None
+
+    try:
+        line = poll(took, timeout, every=2)
+    except TimeoutError:
+        raise RuntimeError(f"the iPhone logged no received line for the photo within {timeout:g} s of the relink") from None
+    if line["offset"] != kept:
+        raise RuntimeError(f"resumed at {line['offset']}, but the iPhone kept {kept} B")
+    return {"tail": line["bytes"], "offset": line["offset"]}
+
+
+def _counted_once(ios: IPhone, before: dict, key: str) -> dict:
+    """`status.files[key]` went up by exactly one since `before`, the iPhone's whole status then: the one resumed file,
+    counted as its prefix was spliced on (`resumedIn`) or as its END went out (`resumedOut`). A splice that failed its
+    hash counts in `blobs.splicesRefused`, which must not move."""
+
+    def grew() -> dict | None:
+        status = ios.command(cmd="status")
+        return status if _resumed_since(status["files"], before["files"], key) else None
+
+    try:
+        status = poll(grew, 15, every=1)
+    except TimeoutError:
+        status = ios.command(cmd="status")
+    moved = _resumed_since(status["files"], before["files"], key)
+    refused = status.get("blobs", {}).get("splicesRefused", 0) - before.get("blobs", {}).get("splicesRefused", 0)
+    detail = {key: status["files"].get(key), "before": before["files"].get(key), "splicesRefused": refused}
+    if moved != 1:
+        raise RuntimeError(f"{key} moved by {moved}, not one: {json.dumps(detail)}")
+    if refused:
+        raise RuntimeError(f"a splice failed its hash: {json.dumps(detail)}")
+    return detail
+
+
+def _phone_served_tail(phone: Phone, hash_: str, receiver: str, took: dict, timeout: float) -> dict:
+    """The phone's serve line for the tail the iPhone took, `file ATTACHMENT/<hash> <tail>B in <ms>ms @<rate> →
+    <iphone> from <offset>`, with the iPhone's offset and tail. A serve line from the first byte can come first, for the
+    cut stream, when the stack had taken all of it before the link went."""
+    seen: list[dict] = []
+
+    def served() -> dict | None:
+        lines = (parse_android_file_sent(line) for line in _phone_lines(phone))
+        seen[:] = [line for line in lines if line and line["hash"] == hash_ and line["node"] == receiver]
+        return next((line for line in seen if line["offset"]), None)
+
+    try:
+        line = poll(served, timeout, every=2)
+    except TimeoutError:
+        raise RuntimeError(f"the phone logged no serve of the tail: {seen or 'no serve line for the photo'}") from None
+    if (line["offset"], line["bytes"]) != (took["offset"], took["tail"]):
+        raise RuntimeError(f"the phone served {line['bytes']} B from {line['offset']}; the iPhone took {took['tail']} B from {took['offset']}")
+    detail = {key: line[key] for key in ("offset", "ms", "rate", "windowed")}
+    return {"tail": line["bytes"], **detail, "wholeServes": len([serve for serve in seen if not serve["offset"]])}
+
+
+def _phone_took_tail(phone: Phone, hash_: str, sender: str, kept: int, timeout: float) -> dict:
+    """The phone's end line for the tail, `rx ATTACHMENT/<hash> <tail>B in <ms>ms ← <iphone> from <offset>`, its offset
+    the bytes the phone kept, and the start line that declared the tail. A resume the phone turned away is reported with
+    its reason, and an end line from the first byte means the photo came again whole."""
+    lines: list[dict] = []
+
+    def took() -> dict | None:
+        lines[:] = _phone_rx(phone, hash_, sender)
+        ends = [line for line in lines if line["phase"] == "end"]
+        if resumed := [line for line in ends if line["offset"]]:
+            return resumed[0]
+        if ends:
+            raise RuntimeError(f"landed whole, not resumed: {ends[0]['bytes']} B from the first byte")
+        return None
+
+    try:
+        end = poll(took, timeout, every=2)
+    except TimeoutError:
+        refused = [f"from {line['offset']}: {line['reason']}" for line in lines if line["phase"] == "refused"]
+        raise RuntimeError(f"no resumed end line within {timeout:g} s of the relink" + (f"; refused {refused}" if refused else "")) from None
+    if end["offset"] != kept:
+        raise RuntimeError(f"resumed at {end['offset']}, but the phone kept {kept} B")
+    start = next((line for line in lines if line["phase"] == "start" and line["offset"] == end["offset"]), None)
+    declared = start["bytes"] if start else None
+    if declared is not None and declared != end["bytes"]:
+        raise RuntimeError(f"the resumed stream declared a {declared} B tail and took {end['bytes']} B")
+    return {"tail": end["bytes"], "offset": end["offset"], "ms": end["ms"], "declaredTail": declared}
+
+
+def _ios_served_tail(knit: IPhoneLog, hash_: str, receiver: str, took: dict, timeout: float) -> dict:
+    """The iPhone's sent line for the tail the phone took, `link file ATTACHMENT <h12> to <phone>: <tail> bytes in <ms>
+    ms … resumed at <offset>`, with the phone's offset and tail. A sent line from the first byte can come first, for the
+    cut stream, when its END had gone to the stack before the link went."""
+    seen: list[dict] = []
+
+    def served() -> dict | None:
+        seen[:] = _ios_file_lines(_ios_messages(knit), "out", hash_, receiver)
+        return next((line for line in seen if line["offset"]), None)
+
+    try:
+        line = poll(served, timeout, every=2)
+    except TimeoutError:
+        raise RuntimeError(f"the iPhone logged no sent line for the tail: {seen or 'none for the photo'}") from None
+    if (line["offset"], line["bytes"]) != (took["offset"], took["tail"]):
+        raise RuntimeError(f"the iPhone sent {line['bytes']} B from {line['offset']}; the phone took {took['tail']} B from {took['offset']}")
+    return {"tail": line["bytes"], "offset": line["offset"], "ms": line["ms"], "rate": line["rate"], "windowed": line["windowed"]}
 
 
 def iphone_block(arguments: argparse.Namespace) -> int:
@@ -5540,15 +6096,18 @@ def _agrees(ours: str, theirs: str) -> dict:
     return {"group": ours}
 
 
-def _ios_photo(ios: IPhone, kind: str, conversation: str, body: str, picture: bytes, mime: str = "image/jpeg") -> dict:
-    """Sends `picture` with `body` from the iPhone, as its composer would: to the room, a DM or a group."""
+def _ios_photo(
+    ios: IPhone, kind: str, conversation: str, body: str, picture: bytes, mime: str = "image/jpeg", timeout: float = 10
+) -> dict:
+    """Sends `picture` with `body` from the iPhone, as its composer would: to the room, a DM or a group. A large
+    picture takes the bridge longer to read and seal, hence `timeout`."""
     photo = base64.b64encode(picture).decode()
     if kind == "room":
-        reply = ios.command(cmd="room", text=body, photo=photo, mime=mime)
+        reply = ios.command(timeout, cmd="room", text=body, photo=photo, mime=mime)
     elif kind == "dm":
-        reply = ios.command(cmd="dm", to=conversation, text=body, photo=photo, mime=mime)
+        reply = ios.command(timeout, cmd="dm", to=conversation, text=body, photo=photo, mime=mime)
     else:
-        reply = ios.command(cmd="group-send", conv=conversation, text=body, photo=photo, mime=mime)
+        reply = ios.command(timeout, cmd="group-send", conv=conversation, text=body, photo=photo, mime=mime)
     if not reply.get("attachmentHash") or reply.get("pendingKey"):
         raise RuntimeError(f"the iPhone did not send its photo: {reply}")
     return reply
@@ -5562,17 +6121,40 @@ def _ios_holds(ios: IPhone, conversation: str, body: str) -> dict | None:
     return None
 
 
-def _noise_jpeg(seed: str) -> bytes:
-    """A small picture no node holds yet: noise drawn from `seed`, which no encoder shrinks to anything another run made.
+def _noise_jpeg(seed: str, size: int | None = None) -> bytes:
+    """A picture no node holds yet: noise drawn from `seed`, which no encoder shrinks to anything another run made.
     Pillow's `effect_noise` draws the same noise in every process, so two runs' first pictures could match at one of
-    its 32 levels, and a node that held one from an earlier run never asked for it (2026-10-06)."""
+    its 32 levels, and a node that held one from an earlier run never asked for it (2026-10-06).
+
+    It is 320 by 240, about 40 KB, unless `size` asks for about that many bytes. Then it is square, at most
+    `NOISE_MAX_SIDE` a side, so Android sends it as its own bytes, its metadata stripped, rather than encoding it again
+    (`AttachmentStore.passThrough`, knit-next ADR 2026-10.unqn)."""
+    if size is None:
+        return _noise_frame(seed, 320, 240)
+    side = 256
+    picture = _noise_frame(seed, side, side)
+    # Noise costs the same bytes a pixel at any size, so two or three passes land within 2%.
+    for _ in range(4):
+        side = min(NOISE_MAX_SIDE, max(16, round(side * (size / len(picture)) ** 0.5)))
+        picture = _noise_frame(seed, side, side)
+        if abs(len(picture) - size) <= size // 50 or side == NOISE_MAX_SIDE:
+            break
+    return picture
+
+
+# The longest side Android sends a picture at as it is (`AttachmentStore.MAX_DIMENSION`).
+NOISE_MAX_SIDE = 1280
+
+
+def _noise_frame(seed: str, width: int, height: int) -> bytes:
+    """`width` by `height` of grey noise drawn from `seed`, as a JPEG at quality 70."""
     from PIL import Image  # noqa: PLC0415 - only the photo runs need it
 
     draw = random.Random(seed)
     sigma = 64 + draw.randrange(32)
-    pixels = bytes(min(255, max(0, round(draw.gauss(128, sigma)))) for _ in range(320 * 240))
+    pixels = bytes(min(255, max(0, round(draw.gauss(128, sigma)))) for _ in range(width * height))
     out = io.BytesIO()
-    Image.frombytes("L", (320, 240), pixels).convert("RGB").save(out, "JPEG", quality=70)
+    Image.frombytes("L", (width, height), pixels).convert("RGB").save(out, "JPEG", quality=70)
     return out.getvalue()
 
 
@@ -5587,13 +6169,14 @@ def _noise_gif(seed: str) -> bytes:
     return out.getvalue()
 
 
-def _stage_photo(phone: Phone, seed: str, animated: bool = False) -> str:
+def _stage_photo(phone: Phone, seed: str, animated: bool = False, size: int | None = None) -> str:
     """A fresh picture in the app's own storage, where SENDIMG can read it, as `_stage_image` stages the soak's: a GIF
-    when `animated`, which Android shrinks into an animated WebP as it sends it."""
+    when `animated`, which Android shrinks into an animated WebP as it sends it, and otherwise a JPEG of about `size`
+    bytes when that is given (`_noise_jpeg`)."""
     name = "knit-photo.gif" if animated else "knit-photo.jpg"
     local = ROOT / ".build" / "interop-photos" / f"{seed}{Path(name).suffix}"
     local.parent.mkdir(parents=True, exist_ok=True)
-    local.write_bytes(_noise_gif(seed) if animated else _noise_jpeg(seed))
+    local.write_bytes(_noise_gif(seed) if animated else _noise_jpeg(seed, size))
     subprocess.run(["adb", "-s", phone.serial, "push", str(local), f"/data/local/tmp/{name}"], capture_output=True, check=True, timeout=60)
     phone.shell(f"cat /data/local/tmp/{name} | run-as {PACKAGE} sh -c 'cat > files/{name}'")
     return f"/data/data/{PACKAGE}/files/{name}"
@@ -6202,26 +6785,186 @@ def _unique_jpeg(path: str, nonce: str) -> bytes:
     return data[:2] + b"\xff\xfe" + (len(text) + 2).to_bytes(2, "big") + text + data[2:]
 
 
+# The lines a file leaves on each side, a resumed one's included (knit-next ADR 2026-10.wtyc, ADR 2026-10.w6rn). Each
+# parser below reads one message, as `_phone_lines` or `IPhoneLog.entries` hands it over, and answers None for any
+# other line.
+#
+# Android's receiver (`FileIntake.kt:186`, `:224`, `:301`) logs a stream's start, `rx <KIND>/<hash> <size|?>B ← <peer>`,
+# and its end, `rx <KIND>/<hash> <n>B in <ms>ms ← <peer>`, each with ` from <offset>` last on a resume, where the size
+# and n are the tail's. A resume it turns away reads `rx <KIND>/<hash> refused ← <peer> from <offset>: <reason>`.
+ANDROID_RX_START = re.compile(r"rx (?P<kind>\w+)/(?P<hash>[0-9a-f]{64}) (?P<size>\d+|\?)B ← (?P<peer>\S+)(?: from (?P<offset>\d+))?")
+ANDROID_RX_END = re.compile(r"rx (?P<kind>\w+)/(?P<hash>[0-9a-f]{64}) (?P<bytes>\d+)B in (?P<ms>\d+)ms ← (?P<peer>\S+)(?: from (?P<offset>\d+))?")
+ANDROID_RX_REFUSED = re.compile(r"rx (?P<kind>\w+)/(?P<hash>[0-9a-f]{64}) refused ← (?P<peer>\S+) from (?P<offset>\d+): (?P<reason>.*)")
+# Android's holder (`FramedLink.kt:846`): `file <KIND>/<hash> <n>B in <ms>ms @<rate> → <node>`, then ` from <offset>` on
+# a resume, n being the tail's, and ` window` for a windowed feed. The cut stream logs nothing, since its write fails
+# first, unless the stack had taken all of it before the link went.
+ANDROID_FILE_SENT = re.compile(
+    r"file (?P<kind>\w+)/(?P<hash>[0-9a-f]{64}) (?P<bytes>\d+)B in (?P<ms>\d+)ms @(?P<rate>\d+) → (?P<node>\S+)"
+    r"(?: from (?P<offset>\d+))?(?P<window> window)?"
+)
+# Both stores of kept prefixes (`PartialBlobs.kt` under the `PartialBlobs` tag, and `PartialBlobBook`, whose lines the
+# iPhone's mesh logs behind `mesh `, `AppStorage.partials`): `partial <h12> kept <n>B`, `dropped`, `evicted` and
+# `stale, not kept`, with the hash's first 12 characters.
+PARTIAL_LINE = re.compile(r"(?:mesh )?partial (?P<hash>[0-9a-f]{12}) (?:kept (?P<bytes>\d+)B|(?P<event>dropped|evicted|stale, not kept))")
+# The iPhone's own file lines (`LinkManager+Files.swift`'s `fileEnd`, `LinkManager+Feeds.swift`'s `noteSent`), with the
+# hash's first 12 characters (`shownKeyCharacters`) and the tail's bytes, and ` resumed at <offset>` last on a resume:
+# `link file <KIND> <h12> from <peer>: <n> bytes`, and `link file <KIND> <h12> to <peer>: <n> bytes in <ms> ms`, then
+# ` @<pace>` for a paced feed or ` @<rate> window` for a windowed one.
+IOS_FILE_IN = re.compile(r"link file (?P<kind>\w+) (?P<hash>[0-9a-f]{12}) from (?P<peer>\S+): (?P<bytes>\d+) bytes(?: resumed at (?P<offset>\d+))?")
+IOS_FILE_OUT = re.compile(
+    r"link file (?P<kind>\w+) (?P<hash>[0-9a-f]{12}) to (?P<peer>\S+): (?P<bytes>\d+) bytes in (?P<ms>\d+) ms"
+    r"(?: @(?P<rate>\d+)(?P<window> window)?)?(?: resumed at (?P<offset>\d+))?"
+)
+
+
+def parse_android_rx(message: str) -> dict | None:
+    """An Android receive line: `phase` is `start`, `end` or `refused`, `bytes` the tail's (None for a start that
+    declared no size, and for a refusal), and `offset` 0 for a stream from the first byte."""
+    message = message.strip()
+    if match := ANDROID_RX_END.fullmatch(message):
+        phase, size, ms, reason = "end", match["bytes"], int(match["ms"]), None
+    elif match := ANDROID_RX_START.fullmatch(message):
+        phase, size, ms, reason = "start", match["size"], None, None
+    elif match := ANDROID_RX_REFUSED.fullmatch(message):
+        phase, size, ms, reason = "refused", None, None, match["reason"]
+    else:
+        return None
+    return {
+        "phase": phase,
+        "kind": match["kind"],
+        "hash": match["hash"],
+        "bytes": int(size) if size and size.isdigit() else None,
+        "ms": ms,
+        "peer": match["peer"],
+        "offset": int(match["offset"] or 0),
+        "reason": reason,
+    }
+
+
+def parse_android_file_sent(message: str) -> dict | None:
+    """An Android holder's line for a file it finished feeding: `bytes` the tail's, `offset` 0 for a whole file."""
+    match = ANDROID_FILE_SENT.fullmatch(message.strip())
+    if not match:
+        return None
+    return {
+        "kind": match["kind"],
+        "hash": match["hash"],
+        "bytes": int(match["bytes"]),
+        "ms": int(match["ms"]),
+        "rate": int(match["rate"]),
+        "node": match["node"],
+        "offset": int(match["offset"] or 0),
+        "windowed": bool(match["window"]),
+    }
+
+
+def parse_partial(message: str) -> dict | None:
+    """A kept-prefix line from either store: `event` is `kept` (with `bytes`), `dropped`, `evicted` or `stale`, and
+    `hash` the first 12 characters of the blob's."""
+    match = PARTIAL_LINE.fullmatch(message.strip())
+    if not match:
+        return None
+    if match["bytes"]:
+        return {"hash": match["hash"], "event": "kept", "bytes": int(match["bytes"])}
+    return {"hash": match["hash"], "event": match["event"].split(",")[0], "bytes": None}
+
+
+def parse_ios_file(message: str) -> dict | None:
+    """One of the iPhone's own file lines: `direction` is `in` or `out`, `hash` the first 12 characters of the blob's,
+    `bytes` the tail's, and `offset` 0 for a whole file. `ms`, `rate` and `windowed` are the sent line's."""
+    message = message.strip()
+    if match := IOS_FILE_IN.fullmatch(message):
+        direction, ms, rate, windowed = "in", None, None, False
+    elif match := IOS_FILE_OUT.fullmatch(message):
+        direction, ms, rate, windowed = "out", int(match["ms"]), int(match["rate"]) if match["rate"] else None, bool(match["window"])
+    else:
+        return None
+    return {
+        "direction": direction,
+        "kind": match["kind"],
+        "hash": match["hash"],
+        "peer": match["peer"],
+        "bytes": int(match["bytes"]),
+        "ms": ms,
+        "rate": rate,
+        "windowed": windowed,
+        "offset": int(match["offset"] or 0),
+    }
+
+
+def _kept_in(messages: list[str], hash_: str) -> int | None:
+    """The bytes the last `partial … kept` line among `messages` says the store kept of `hash_`, or None."""
+    kept = None
+    for message in messages:
+        line = parse_partial(message)
+        if line and line["event"] == "kept" and hash_.startswith(line["hash"]):
+            kept = line["bytes"]
+    return kept
+
+
+def _ios_file_lines(messages: list[str], direction: str, hash_: str, peer: str) -> list[dict]:
+    """The iPhone's file lines among `messages` for `hash_`, in `direction`, from or to `peer`, in order."""
+    lines = (parse_ios_file(message) for message in messages)
+    return [
+        line for line in lines if line and line["direction"] == direction and hash_.startswith(line["hash"]) and line["peer"] == peer
+    ]
+
+
+def _sizes_add_up(offset: int, tail: int, whole: int | None, source: str) -> dict:
+    """The kept prefix and the tail make the blob: `offset + tail` is the whole, as far as `source` gives it."""
+    if whole is None:
+        return {"offset": offset, "tail": tail, "whole": None, "note": f"nothing gave the whole ({source})"}
+    if offset + tail != whole:
+        raise RuntimeError(f"{offset} B kept and a {tail} B tail make {offset + tail} B, not the blob's {whole} B ({source})")
+    return {"offset": offset, "tail": tail, "whole": whole, "wholeFrom": source}
+
+
 def _phone_got_file(phone: Phone, key: str, sender: str) -> dict | None:
-    """The phone's log line for a whole file `sender` streamed it (`rx KIND/key NB in Tms ← sender`), once there is one."""
+    """The phone's end line for the file `key` that `sender` streamed it from the first byte (`rx KIND/key NB in Tms ←
+    sender`), once there is one. A line that ends ` from <offset>` was spliced onto a prefix the phone kept from a cut
+    (knit-next ADR 2026-10.wtyc), so it fails the check: resumed, not whole."""
     for line in _phone_lines(phone):
-        match = re.match(rf"rx (\w+)/{key} (\d+)B in (\d+)ms ← {sender}", line)
-        if match:
-            return {"kind": match[1], "bytes": int(match[2]), "ms": int(match[3])}
+        rx = parse_android_rx(line)
+        if not rx or rx["phase"] != "end" or rx["hash"] != key or rx["peer"] != sender:
+            continue
+        if rx["offset"]:
+            raise RuntimeError(f"resumed, not whole: the phone spliced a {rx['bytes']} B tail onto the {rx['offset']} B it kept ({line})")
+        return {"kind": rx["kind"], "bytes": rx["bytes"], "ms": rx["ms"]}
     return None
 
 
-def _ios_served(ios: IPhone, sent_before: int) -> dict:
-    """The files the iPhone sent whole during the run. With no photo of its own it pushes nothing, so each is a serve."""
+def _resumed_since(files: dict, before: dict, key: str) -> int:
+    """How far `status.files[key]` went up since `before`: `resumedIn` or `resumedOut`."""
+    return files.get(key, 0) - before.get(key, 0)
+
+
+def _ios_served(ios: IPhone, before: dict) -> dict:
+    """The files the iPhone sent during the run, `before` being its `status.files` when it began. With no photo of its
+    own it pushes nothing, so each is a serve. A serve of a resuming asker's tail counts in `resumedOut` as well as
+    `sent`, so one that went up fails the check: those went out resumed, not whole."""
     status = ios.command(cmd="status")
-    sent = status["files"]["sent"] - sent_before
+    files = status["files"]
+    sent = files["sent"] - before["sent"]
     if sent < 1:
-        raise RuntimeError(f"the iPhone sent no file: {status['files']}")
-    return {"filesSent": sent, "ownPhoto": status.get("avatarHash"), "files": status["files"]}
+        raise RuntimeError(f"the iPhone sent no file: {files}")
+    if resumed := _resumed_since(files, before, "resumedOut"):
+        raise RuntimeError(f"resumed, not whole: {resumed} of the iPhone's {sent} files out were a tail: {files}")
+    return {"filesSent": sent, "ownPhoto": status.get("avatarHash"), "files": files}
+
+
+def _ios_files_whole(ios: IPhone, before: dict) -> dict:
+    """Every file the iPhone took or sent since `before`, its `status.files` then, went from the first byte: neither
+    `resumedIn` nor `resumedOut` moved, so no photo here crossed as a cut's tail (`iphone-resume` checks that path)."""
+    files = ios.command(cmd="status")["files"]
+    moved = {key: _resumed_since(files, before, key) for key in ("resumedIn", "resumedOut")}
+    if any(moved.values()):
+        raise RuntimeError(f"resumed, not whole: {moved} since the run began: {files}")
+    return {"files": files}
 
 
 def _files_sent(peer: Peer) -> dict | None:
-    """The peer's files out whole, once there is one: its photo pushed at link-up, or a blob it served."""
+    """The peer's files out, once there is one: its photo pushed at link-up, or a blob it served. A profile photo is
+    pushed or served whole, since only an attachment resumes (knit-next ADR 2026-10.wtyc)."""
     files = peer.command(cmd="status").get("files") or {}
     return files if files.get("sent") else None
 
@@ -6856,6 +7599,25 @@ def main() -> int:
     ios_photos = commands.add_parser("iphone-photos")
     ios_photos.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_photos.add_argument("--animated", action="store_true", help="send GIFs both ways, and check that the iPhone plays both")
+    ios_resume = commands.add_parser("iphone-resume")
+    ios_resume.add_argument(
+        "--device", required=True, help="the adb serial of a phone the maintainer approved for this session, on a knit-next debug build with wtyc"
+    )
+    ios_resume.add_argument(
+        "--quiet-phone",
+        action="append",
+        default=[],
+        metavar="SERIAL",
+        help="another approved lab phone in range, capped at 0 links for the run so it carries no copy to serve; repeatable",
+    )
+    ios_resume.add_argument("--cut-after", type=float, default=5, help="seconds after the photo starts arriving before the link is cut")
+    ios_resume.add_argument("--relink-timeout", type=float, default=180, help="seconds for the link to come back after each cut")
+    ios_resume.add_argument(
+        "--resume-timeout",
+        type=float,
+        default=240,
+        help="seconds after the relink for the tail to land: the holder's 45 s serve memo, the asker's 45 s round, then the tail",
+    )
     ios_block = commands.add_parser("iphone-block")
     ios_block.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_contact = commands.add_parser("iphone-contact")
@@ -6976,6 +7738,7 @@ def main() -> int:
         pull,
         ios_peer,
         ios_photos,
+        ios_resume,
         ios_block,
         ios_contact,
         ios_delete,
@@ -7003,8 +7766,8 @@ def main() -> int:
     if arguments.command == "android-reads" and arguments.links > 1 and arguments.order != "peer-above":
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
     if arguments.command in (
-        "iphone", "iphone-wake", "android-keeps-iphone", "iphone-reboot", "iphone-photos", "iphone-block", "iphone-contact",
-        "iphone-delete",
+        "iphone", "iphone-wake", "android-keeps-iphone", "iphone-reboot", "iphone-photos", "iphone-resume", "iphone-block",
+        "iphone-contact", "iphone-delete",
         "iphone-react", "iphone-reply", "iphone-typing", "iphone-mention", "iphone-ratchet", "bridge", "record-pull",
     ):
         return {
@@ -7013,6 +7776,7 @@ def main() -> int:
             "android-keeps-iphone": android_keeps_iphone,
             "iphone-reboot": iphone_reboot,
             "iphone-photos": iphone_photos,
+            "iphone-resume": iphone_resume,
             "iphone-block": iphone_block,
             "iphone-contact": iphone_contact,
             "iphone-delete": iphone_delete,

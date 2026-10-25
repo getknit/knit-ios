@@ -322,8 +322,9 @@ explicit direction.** Update this file in the change that ships an item.
     2026-10-04, so an Android phone fills a ring as our photo arrives. The iPhone's own ring for a photo arriving landed
     on 2026-10-24 (ADR 2026-10.eyad); its device check is owed. Still owed:
     - resuming a cut transfer from the bytes kept (knit-next ADR 2026-10.wtyc, knit-ios #2): code done on
-      2026-10-25 on `feat/attachment-resume` (ADR 2026-10.w6rn), both halves. Still owed: `interop.py iphone-resume`,
-      both ways, against a Pixel on a wtyc build.
+      2026-10-25 on `feat/attachment-resume` (ADR 2026-10.w6rn), both halves. Still owed: a run of `interop.py
+      iphone-resume`, both ways, against a Pixel on a wtyc build. Then, by hand, Bluetooth off and on in the iPhone's
+      Settings mid-photo, and a Settings Stop mid-photo, which keeps nothing.
   - **The blob holder query, begun 2026-10-05** on `feat/blob-query` (ADR 2026-10.m9uq), with the pin moved to
     `5f521cb9`. The iPhone answers `blobhave` in every build and claims `CAP_BLOB_HAVE` in its HELLO. Since 2026-10-09
     it queries before it asks in every build, as Android's release does since knit-next `713b29d6`, and asks the author
