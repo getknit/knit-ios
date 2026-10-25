@@ -1825,3 +1825,28 @@ Reads stopped for three or four minutes each time the budget filled. The forger'
 - **A settled phone scans little.** With links up and nothing to dial, the Pixel sits in its `floor` tier, whose scan
   windows are short and far apart. In the first full run it read 2 addresses in 30 minutes. With the other Pixels
   paused it kept two links, the iPhone's and the paused Pixel 9's, and read two or three addresses a minute.
+
+## What the resume trial showed
+
+`interop.py iphone-resume` on 2026-10-25 (ADR 2026-10.w6rn), with `2c28bf4` on the iPhone 12 (iOS 27.0.1) and the
+Pixel 9 on knit-next 2.11.0-alpha.0. The Pixel 8, 7 and 3 were capped at no links for the run, so no carrier held a
+copy to answer the re-ask. Each way, the photo was a fresh noise JPEG of about 690 KB in a DM: 692,310 B sealed to
+692,338 B into the iPhone, and 692,906 B sealed to 692,934 B out of it. The link had been up for 30 s or more, and the
+Pixel's `BLECAP 0` cut it five seconds into the stream. The run passed every step, with nothing inconclusive.
+
+| | Into the iPhone | Out of the iPhone |
+| --- | --- | --- |
+| Link down after the cap | 0.5 s on the Pixel, 2.5 s on the iPhone | 0.3 s on the iPhone, 0.5 s on the Pixel |
+| Kept by the receiver | 86,017 B (`mesh partial … kept`) | 68,623 B (`PartialBlobs` `kept`) |
+| Redial | the iPhone, 13.2 s after the cap cleared | the Pixel, 9.1 s after |
+| Tail | 606,321 B from 86,017, in 53.0 s at 14.7 KB/s, windowed | 624,311 B from 68,623, in 56.4 s at 13.4 KB/s, windowed |
+| Counters | `resumedIn` 1, `splicesRefused` 0 | `resumedOut` 1 on the iPhone |
+
+- **The tail began well after the relink.** Its END came 78 s after the relink into the iPhone and 141 s after the
+  relink into the Pixel. Less the streams themselves, the tails began about 25 s and 85 s after the relinks. The run
+  does not say what held them: the holder's 45 s serve memo and the asker's round are both candidates (ADR
+  2026-10.m9uq).
+- **Nothing crossed twice.** Neither holder logged a whole serve of the photo after the cut. The prefix and the tail
+  added up to the sealed size each way, and the Pixel's copy passed its hash check.
+- **Still owed by hand:** Bluetooth off and on in the iPhone's Settings mid-photo, which should keep the prefix, and
+  a Settings Stop mid-photo, which should keep nothing.

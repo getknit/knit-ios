@@ -162,3 +162,12 @@ The alternatives:
   - Both sides: the `LinkPipe` scenarios.
   - Fuzzing: `FuzzLinkRecords`, with the `file-resumed` seed.
   - On hardware: `interop.py iphone-resume`, both ways, against a Pixel on a wtyc build.
+- **Device check, passed 2026-10-25** (iPhone 12 on iOS 27.0.1 with `2c28bf4`, the Pixel 9 on knit-next
+  2.11.0-alpha.0, the Pixel 8, 7 and 3 capped at no links). Each way, a DM photo of about 690 KB was cut by the
+  Pixel's `BLECAP 0` five seconds into the stream.
+  - Into the iPhone: it kept 86,017 B, redialed in 13 s, and took a tail of 606,321 B from the Pixel in 53 s, with
+    `resumedIn` 1 and `splicesRefused` 0.
+  - Out of the iPhone: the Pixel kept 68,623 B, redialed in 9 s, and took a tail of 624,311 B in 56 s, with the
+    iPhone's `resumedOut` 1. The Pixel's copy passed its hash check.
+  - In both, the prefix and the tail added up to the sealed photo, and no holder sent the whole file again
+    (`linux-peer.md`, "What the resume trial showed").
