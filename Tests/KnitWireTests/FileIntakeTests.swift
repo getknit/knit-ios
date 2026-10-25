@@ -4,7 +4,7 @@ import Testing
 /// The receiving end of a link's file stream, against Android's receiver rules (`FramedLink.kt:402-520`) and
 /// `FramedLinkTest`'s cases: `attachmentFileStreamsReassemblesAndFinalizes` and
 /// `malformedBlobKeyRejectsFileWithoutCallback`, plus the rules no Kotlin test pins: the 8 MiB and 64 KiB ceiling, a
-/// second header mid-file, and a chunk or END with no header.
+/// second header mid-file, and a chunk or END with no header. The resumed stream's cases are in `FileIntakeResumeTests`.
 @Suite struct FileIntakeTests {
     private let key = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     private let other = "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
@@ -23,7 +23,7 @@ import Testing
         #expect(intake.chunk([4]) == nil)
         #expect(intake.bufferedBytes == 4)
         let hash = try #require(BlobHash(key))
-        #expect(intake.end() == .finished(FileHeader(kind: .attachment, key: key, mime: "image/jpeg"), hash, [1, 2, 3, 4]))
+        #expect(intake.end() == .finished(FileHeader(kind: .attachment, key: key, mime: "image/jpeg"), hash, [1, 2, 3, 4], resumedFrom: 0))
         #expect(intake.arriving == nil)
         #expect(intake.bufferedBytes == 0)
     }
@@ -54,7 +54,7 @@ import Testing
         var intake = FileIntake()
         _ = intake.header(header(.avatar), limit: keepAll)
         let hash = try #require(BlobHash(key))
-        #expect(intake.end() == .finished(FileHeader(kind: .avatar, key: key, mime: "image/jpeg"), hash, []))
+        #expect(intake.end() == .finished(FileHeader(kind: .avatar, key: key, mime: "image/jpeg"), hash, [], resumedFrom: 0))
     }
 
     @Test func aChunkOrAnEndWithNoHeaderIsIgnored() {
@@ -76,7 +76,7 @@ import Testing
             ])
         _ = intake.chunk([5])
         let hash = try #require(BlobHash(other))
-        #expect(intake.end() == .finished(FileHeader(kind: .attachment, key: other, mime: "image/jpeg"), hash, [5]))
+        #expect(intake.end() == .finished(FileHeader(kind: .attachment, key: other, mime: "image/jpeg"), hash, [5], resumedFrom: 0))
     }
 
     @Test func aFilePastItsLimitIsDroppedAndItsRestIgnored() throws {
@@ -140,33 +140,6 @@ import Testing
         #expect(asked == 0)
     }
 
-    /// The rest of a cut transfer (knit-next ADR 2026-10.wtyc) has no prefix to splice onto until this intake keeps one
-    /// (knit-ios #2), so it is skipped with its chunks and END, before the owner is asked, and never taken for a whole
-    /// file. A negative offset is skipped too, and the largest size beside one never traps. An explicit 0 is a whole file.
-    @Test func aResumedHeaderIsSkippedWithItsChunksAndEnd() throws {
-        var asked = 0
-        var intake = FileIntake()
-        let fields = #""kind":"ATTACHMENT","key":"\#(key)","mime":"image/jpeg""#
-        for (offset, size) in [(600, "400"), (-1, "400"), (1, "9223372036854775807")] {
-            let payload = Array("{\(fields),\"size\":\(size),\"offset\":\(offset)}".utf8)
-            let events = intake.header(payload) { _, _ in
-                asked += 1
-                return .max
-            }
-            #expect(events == [.skipped(FileHeader(kind: .attachment, key: key, mime: "image/jpeg", size: Int(size), offset: offset))])
-            #expect(intake.isStreaming && intake.arriving == nil && intake.reading == nil, "\(offset)")
-            #expect(intake.chunk([1, 2]) == nil)
-            #expect(intake.end() == nil, "\(offset)")
-            #expect(!intake.isStreaming)
-        }
-        #expect(asked == 0)
-        let zero = Array("{\(fields),\"size\":2,\"offset\":0}".utf8)
-        let whole = FileHeader(kind: .attachment, key: key, mime: "image/jpeg", size: 2, offset: 0)
-        #expect(intake.header(zero, limit: keepAll) == [.begun(whole)])
-        _ = intake.chunk([1, 2])
-        #expect(intake.end() == .finished(whole, try #require(BlobHash(key)), [1, 2]))
-    }
-
     @Test func aRefusedFileIsSkippedToItsEnd() {
         var intake = FileIntake()
         let refused = intake.header(header()) { _, _ in nil }
@@ -197,5 +170,12 @@ import Testing
         let high = try #require(BlobHash(String(repeating: "f", count: 64)))
         #expect(low < high)
         #expect("\(low)" == low.string)
+    }
+}
+
+extension FileIntake {
+    /// A header with nothing kept to resume, at time 0: every case from before kept prefixes (knit-ios #2).
+    mutating func header(_ payload: [UInt8], limit: (FileHeader, BlobHash) -> Int?) -> [Event] {
+        header(payload, limit: limit, prefix: { _, _ in nil }, now: 0)
     }
 }

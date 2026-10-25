@@ -141,8 +141,9 @@ extension MeshEngine {
             return
         }
         if stores.blobs.contains(hash) {
-            // Held some other way: every ask still standing is withdrawn.
+            // Held some other way: every ask still standing is withdrawn, and a kept prefix has nothing left to resume.
             withdrawAsks(hash, from: blobExchange.obtained(hash, from: nil))
+            partials.drop(hash)
             syncAcceptedFiles()
             return
         }
@@ -283,11 +284,16 @@ extension MeshEngine {
     /// a pushed photo at that blob's next step, the pusher's ask too.
     ///
     /// The link counts the file as on its way until the store has answered, kept or refused (`fileTaken`, knit-next
-    /// #138): read before that, a blob past its END is neither arriving nor held, and would be asked for again.
+    /// #138): read before that, a blob past its END is neither arriving nor held, and would be asked for again. A spliced
+    /// file that fails its hash starts over from 0 (``restartFailedSplice(_:)``); a whole one leaves a kept prefix alone,
+    /// since the bytes were the holder's alone (`BlobExchange.kt:2018-2023`).
     public func receiveFile(_ file: InboundFile) {
         defer { transport.fileTaken(from: file.from, hash: file.hash) }
         guard BlobHash(of: file.bytes) == file.hash else {
             reject(file, "does not match its hash")
+            if file.resumedFrom > 0 {
+                restartFailedSplice(file)
+            }
             return
         }
         switch file.kind {
@@ -307,6 +313,10 @@ extension MeshEngine {
             }
         }
         stores.blobs.insert(file.bytes, hash: file.hash, mime: file.mime, storedAt: clock.wallMilliseconds())
+        // Read back, since a failed insert answers as one already held does: only a blob held has nothing left to resume.
+        if stores.blobs.contains(file.hash) {
+            partials.drop(file.hash)
+        }
         withdrawAsks(file.hash, from: blobExchange.obtained(file.hash, from: file.from))
         syncAcceptedFiles()
         adoptAvatar(file.hash)
@@ -332,67 +342,6 @@ extension MeshEngine {
             if let replaced {
                 releaseBlob(replaced)
             }
-        }
-    }
-
-    // MARK: Collecting
-
-    /// Every blob something here still names: what the rows name (``blobsTheRowsName()``), and the photo every live frame
-    /// our custody carries names in the clear (``carriedBlobs()``).
-    func referencedBlobs() -> Set<BlobHash> {
-        blobsTheRowsName().union(carriedBlobs())
-    }
-
-    /// Every blob the rows name: our photo, each peer's photo, shown or advertised, every photo a message carries, and a
-    /// deleted message's photo while our custody carries its frame (ADR 2026-10.u7cq).
-    func blobsTheRowsName() -> Set<BlobHash> {
-        var named = stores.messages.attachmentHashes()
-        for deleted in stores.messages.deletedAttachments() where stores.custody.contains(deleted.id) {
-            named.insert(deleted.hash)
-        }
-        if let own = stores.ownProfile.load().avatarHash {
-            named.insert(own)
-        }
-        for peer in stores.peers.allPeers() {
-            if let shown = peer.avatarHash {
-                named.insert(shown)
-            }
-            if let advertised = peer.advertisedAvatarHash {
-                named.insert(advertised)
-            }
-        }
-        return named
-    }
-
-    /// The hash each live `chat` frame in our custody names in the clear, whoever sent it: a room post's photo, or a sealed
-    /// message's or profile's beside the seal. Kotlin keeps a blob while any carried frame names it (`BlobRepository.kt:100-112`,
-    /// `BlobDao.kt:59-67`, at knit-next `cbf2a487`), so after our photo changes we still serve the one our sealed profiles
-    /// name for their day. Decoded on demand from at most 1,000 live frames, where Kotlin keeps a column; a failed read reads
-    /// as no frame, so the blob goes as before (ADR 2026-10.5sk9's P7c amendment).
-    func carriedBlobs() -> Set<BlobHash> {
-        var named: Set<BlobHash> = []
-        for carried in stores.custody.liveFrames(now: clock.wallMilliseconds()) where carried.envelope.type == .chat {
-            if let text = (try? ChatContent(decoding: carried.envelope.payload))?.attachmentHash, let hash = BlobHash(text) {
-                named.insert(hash)
-            }
-        }
-        return named
-    }
-
-    /// Removes `hash` once nothing names it (`BlobRepository.deleteIfUnreferenced`). A blob not held reads nothing more.
-    func releaseBlob(_ hash: BlobHash) {
-        if stores.blobs.contains(hash), !referencedBlobs().contains(hash) {
-            stores.blobs.remove(hash)
-        }
-    }
-
-    /// Removes every blob nothing names (`BlobRepository.deleteOrphans`, at each mesh start). A blob fetched on an
-    /// asker's behalf lives until then, so the asker's next ask still finds it here, and one a live carried frame names
-    /// lives until the first start after that frame leaves custody: the start sweeps custody first.
-    func sweepUnreferencedBlobs() {
-        let named = referencedBlobs()
-        for hash in stores.blobs.allHashes() where !named.contains(hash) {
-            stores.blobs.remove(hash)
         }
     }
 }

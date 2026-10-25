@@ -4,8 +4,8 @@ description: >-
   Implementer for Knit for iOS's blob exchange and store-and-forward custody. Use for feature, fix and refactor work
   in Sources/KnitMesh/Router/, Custody/, Receipts/ and Recovery/, MeshEngine+Blobs, +BlobParking, +BlobQueries,
   +Identities and OutgoingPhoto, Sources/KnitStore/Custody/ and Blobs/, SQLCustodyStore, SQLBlobStore,
-  SQLMessageStore+Attachments, KnitWire's FileIntake, FeedMeter and LinkManager+Files, and their tests, when the main
-  session delegates it with a self-contained brief. Loads the plane's ADRs through .agents/rules/decisions.md,
+  FilePartialBlobStore, SQLMessageStore+Attachments, KnitWire's FileIntake, FeedMeter and LinkManager+Files, and
+  their tests, when the main session delegates it with a self-contained brief. Loads the plane's ADRs through .agents/rules/decisions.md,
   .agents/context/custody.md and the blobs-reviewer's defect catalogue before it writes, ports each rule from the
   pinned Kotlin, designs it against every holder, asker and carrier a picture or a frame can meet, keeps decisions
   in pure types with a test that plays both sides, and reports the diff, the decisions it rests on and the test or
@@ -40,7 +40,7 @@ you report. You never review your own change and never stamp a review.
 - in `Sources/KnitMesh/Engine/`, `MeshEngine+Blobs.swift`, `MeshEngine+BlobParking.swift`,
   `MeshEngine+BlobQueries.swift`, `MeshEngine+Identities.swift` and `OutgoingPhoto.swift`;
 - `Sources/KnitStore/Custody/` and `Sources/KnitStore/Blobs/`, and in `KnitStoreSQL`, `SQLCustodyStore.swift`,
-  `SQLBlobStore.swift` and `SQLMessageStore+Attachments.swift`;
+  `SQLBlobStore.swift`, `FilePartialBlobStore.swift` and `SQLMessageStore+Attachments.swift`;
 - `Sources/KnitWire/Link/FileIntake.swift`, and `Sources/KnitMesh/Link/FeedMeter.swift` and
   `LinkManager+Files.swift`, which are the Bluetooth plane's too: a change there owes both reviewers;
 - the tests that cover them, in `Tests/KnitMeshTests/`, `Tests/KnitStoreTests/`, `Tests/KnitStoreSQLTests/` and

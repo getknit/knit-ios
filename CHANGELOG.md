@@ -53,6 +53,9 @@ document:
   versions that have it.
 - A photo coming to your iPhone now fills a ring as it arrives, with a count such as 84 kB of 205 kB. On a
   slow Bluetooth link you can tell a photo that's on its way from one still waiting for a phone that has it.
+- A photo in a chat that's cut off partway, when someone walks out of range or turns Bluetooth off, now
+  picks up where it stopped once the phones reconnect. That works both ways with Android versions that have
+  it, while Knit stays running.
 - Block someone from their profile or a message request, and what they send stops showing on your iPhone,
   without them being told. Your iPhone still passes their messages on to others, and Settings lists everyone
   you've blocked so you can unblock them.

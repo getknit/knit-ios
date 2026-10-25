@@ -100,3 +100,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.qhsv](decisions/2026-10-qhsv-crashes-and-hangs-are-kept.md) | Crashes and hangs are kept on the iPhone and filed by the user | privacy, crash-reports, support |
 | [2026-10.8hek](decisions/2026-10-8hek-the-iphone-s-pull-through.md) | The iPhone's pull-through carries a hop budget and a deadline | mesh, blobs, interop, wire |
 | [2026-10.eyad](decisions/2026-10-eyad-an-incoming-photo-shows-how.md) | An incoming photo shows how far it has got | blobs, app |
+| [2026-10.w6rn](decisions/2026-10-w6rn-a-cut-photo-resumes-from.md) | A cut photo resumes from the bytes the iPhone kept | blobs, transport, interop |

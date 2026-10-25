@@ -178,10 +178,13 @@ Kotlin wins.
       is mirrored (`MeshTransport.isFileArriving(from:)`, which also counts a file this port skips). Its holder half, a
       fed file kept in flight while the link goes on feeding that peer, is not: `isFileInFlight` ends at our own END,
       so an Android asker on an older build can still be served twice across the stack's buffer (roadmap).
-    - **Resuming a cut transfer** (`e13c2c76`, #116, knit-next ADR 2026-10.wtyc): the holder half is mirrored. A
+    - **Resuming a cut transfer** (`e13c2c76`, #116, knit-next ADR 2026-10.wtyc): mirrored (ADR 2026-10.w6rn). A
       `blobreq`'s `offset` in `1...length` is served as the tail under a resumed `FILE_HEADER`, and a parked ask keeps
-      it. The receiver half is still owed (knit-ios #2): this port never sends an offset and skips a resumed header.
-      `blobReqContentResumed` and `fileHeaderResumed` round-trip.
+      it. A cut attachment's prefix is kept on disk for the session, the next ask names its length, and a failed
+      splice starts over from 0. `blobReqContentResumed` and `fileHeaderResumed` round-trip. The 2026-10-15 amendment
+      (`0e96bb0c`, #161, one resumed header per key per link per 45 s) is mirrored ahead of the pin. Where the Kotlin
+      has moved past wtyc's text (no `onNeighborAdded`; `reaskFromZero` opens a forced cycle rather than asking
+      everyone), this port follows the Kotlin at `0108d8df1`.
     - **One file pace budget** (`99ee3f81`, `37dd5f22`, knit-next ADR 2026-10.8jwn): Android feeds at most 4 KiB/s across
       every 1M and 2M link it feeds, in chunks of 2 to 16 KiB (`ble-transport.md`). Sender-side only; mirrored ahead
       of the pin with 5buf's window, below (ADR 2026-10.xwjc).

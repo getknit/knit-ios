@@ -1,3 +1,4 @@
+import KnitStore
 import KnitWire
 
 /// The blob holder query, both ends (`BlobExchange.onHaveQuery` and `onHaveAnswer`, knit-next ADR 2026-10.6e5t), and the
@@ -18,12 +19,36 @@ extension MeshEngine {
         return WireEnvelope(relay: false, sig: [], signed: envelope.encoded)
     }
 
-    /// One blob request (`BlobExchange.blobRequest`), carrying the budget `pull`, 0 included, and the deadline `until`
-    /// when there is one (knit-next ADR 2026-10.2drc): to a neighbour that lacks the blob, any ask is a pull. This port
-    /// keeps no prefix of a cut transfer, so it never names an offset (knit-ios #2).
+    /// One blob request (`BlobExchange.blobRequest`, `BlobExchange.kt:1573-1594`), carrying the budget `pull`, 0 included,
+    /// and the deadline `until` when there is one (knit-next ADR 2026-10.2drc): to a neighbour that lacks the blob, any ask
+    /// is a pull. A cut transfer's kept prefix makes it a resume, its length the offset (knit-ios #2): a holder that reads
+    /// the field streams only the rest, and one that does not sends the whole file, which lands as it always has. With
+    /// nothing kept the offset is left out, so a plain ask is the bytes it always was.
     func blobRequest(_ hash: BlobHash, pull: Int, until: Int64?) -> WireEnvelope {
-        let content = BlobRequestContent(hash: hash.string, pull: pull, until: until)
+        let kept = partials.length(hash)
+        let content = BlobRequestContent(hash: hash.string, offset: kept > 0 ? Int64(kept) : nil, pull: pull, until: until)
         return unsignedPointToPoint(.blobRequest, id: newFrameId(), payload: content.encoded)
+    }
+
+    /// A file spliced onto `file.hash`'s kept prefix failed its hash (`reaskFromZero`, `BlobExchange.kt:2009-2059`): the
+    /// prefix may be what was wrong, so it goes, and a forced cycle asks for the whole blob now rather than resume onto it
+    /// again. The file is taken off its link first, so its own landing never keeps the ask from 0 quiet. Counted whatever
+    /// follows. It asks only when the drop removed a live prefix, so a peer cannot set it off without first having a prefix
+    /// kept, and never while the blob is on its way or held. The holder that sent the tail is passed over this cycle.
+    func restartFailedSplice(_ file: InboundFile) {
+        transport.fileTaken(from: file.from, hash: file.hash)
+        blobExchange.counts.splicesRefused += 1
+        guard partials.drop(file.hash), !isBlobOnItsWayOrHeld(file.hash) else {
+            return
+        }
+        let now = clock.monotonicMilliseconds()
+        let wall = clock.wallMilliseconds()
+        blobExchange.restartFromZero(file.hash, failing: file.from, now: now, wall: wall)
+        log.log(
+            .info,
+            "mesh blob \(file.hash.string.prefix(BlobExchange.shownHashCharacters))… splice from \(file.from) refused; asked again from 0")
+        stepBlob(file.hash, among: blobCandidates(), now: now, wall: wall)
+        flushBlobQueries()
     }
 
     /// A neighbour asked which of some blobs we hold (`onHaveQuery`, `BlobExchange.kt:744-784`). Each is answered from

@@ -1,3 +1,4 @@
+public import KnitStore
 public import KnitWire
 
 /// Owns every link, for every radio: who dials whom, who is admitted, the HELLO exchange, duplicates and stale
@@ -93,6 +94,8 @@ public final class LinkManager: MeshTransport {
     let configuration: Configuration
     let log: any KnitLog
     var random: any RandomNumberGenerator
+    /// The kept prefixes of attachments a cut link left (knit-ios #2): the one store the engine asks with and resumes from.
+    let partials: any PartialBlobStore
 
     var running = false
     var channels: [ChannelID: Channel] = [:]
@@ -151,6 +154,8 @@ public final class LinkManager: MeshTransport {
     /// Of those, the ones that streamed only the tail an asker lacked (`MeshMetrics.onFileResumedOut`, knit-next ADR
     /// 2026-10.wtyc).
     public internal(set) var filesResumedOut = 0
+    /// Files whose stream was spliced onto a prefix we kept, counted at their header (`MeshMetrics.onFileResumedIn`).
+    public internal(set) var filesResumedIn = 0
     /// Rings asked of the radio, on every link since the manager was made. A radio that cannot ring, or a peer with no
     /// doorbell, makes nothing of one.
     public internal(set) var rings = 0
@@ -169,14 +174,15 @@ public final class LinkManager: MeshTransport {
     /// The frame ids the open channels have carried, either way (``LinkCrossings``).
     public var crossingCount: Int { crossings.count }
 
-    /// A link manager for `localId` over `radio`.
+    /// A link manager for `localId` over `radio`, keeping cut attachments' prefixes in `partials`.
     public init(
         localId: NodeId,
         radio: any Radio,
         clock: any MeshClock,
         random: some RandomNumberGenerator,
         configuration: Configuration = Configuration(),
-        log: any KnitLog = SilentLog()
+        log: any KnitLog = SilentLog(),
+        partials: any PartialBlobStore = MemoryPartialBlobStore()
     ) {
         self.localId = localId
         self.radio = radio
@@ -184,6 +190,7 @@ public final class LinkManager: MeshTransport {
         self.random = random
         self.configuration = configuration
         self.log = log
+        self.partials = partials
         presence = PresenceTracker(configuration: configuration.presence)
     }
 
@@ -241,7 +248,7 @@ public final class LinkManager: MeshTransport {
         guard running else {
             return []
         }
-        let events = forgetEverything()
+        let events = forgetEverything(keepingCuts: false)
         running = false
         radio.stop()
         return events + reconsiderSeeking(now: clock.monotonicMilliseconds())
@@ -288,7 +295,9 @@ public final class LinkManager: MeshTransport {
         case .state(let state):
             log.log(.info, "link radio \(state)")
             guard state == .on else {
-                return forgetEverything()
+                // Off from Settings or Control Centre, resetting, unauthorized, or a BlueZ power cycle: the session goes
+                // on, so a cut attachment's bytes are kept for the ask that follows the radio back.
+                return forgetEverything(keepingCuts: true)
             }
             // Bluetooth coming back on is a fresh start, for the wakes too.
             spell = SeekSpell()

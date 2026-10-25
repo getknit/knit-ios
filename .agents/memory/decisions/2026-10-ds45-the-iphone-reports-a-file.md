@@ -37,7 +37,8 @@ what it feeds.
 - **Sending a report** (`LinkManager.fileChunk`, `MeshEngine.fileProgress`). The link stamps each FILE_HEADER. A
   chunk of a kept file that lands 2 s or more after the header or the last report emits `.fileProgress`, with the
   bytes held and the ms since the header on the monotonic clock. A skipped file is never reported, and a stall sends
-  nothing, which is how the sender sees one. This port never resumes a cut transfer, so `held` is the bytes received.
+  nothing, which is how the sender sees one. `held` is the bytes held, a resumed stream's kept prefix included
+  (amended 2026-10-25 by ADR 2026-10.w6rn).
   The engine sends the report only to a neighbour whose HELLO carries `CAP_BLOB_HAVE` and not `CAP_DOORBELL`, the gate
   Android uses: an iPhone holder measures nothing, and an iPhone on an older build would count every report dropped.
 - **Taking a report** (`MeshEngine.handleBlobProgress`). It is taken only from the link's own peer with
@@ -188,7 +189,8 @@ byte moves and no vector changes.
     feeds settle after 2 chunks.
   - `fedWhileBusy`, Android's count of a file fed in full while its link still feeds others: the radio here reports
     each chunk out of its queue.
-  - The carrier's hold, which waits on Phase 4's carrier pulls, and resuming a cut transfer (knit-ios #2).
+  - The carrier's hold, which waits on Phase 4's carrier pulls. Resuming a cut transfer (knit-ios #2) landed with
+    ADR 2026-10.w6rn.
 - **What grew.** `MeshTransport` gains `fileArrivingLeftMilliseconds(from:)`, `fileFeed(of:to:)` with its
   `FeedReading`, and `expectedFileRate(to:)`. Android gives each a default; here every transport answers them.
   `MessageStore.conversation(ofAttachment:)` names whom a holder serves first. `status.blobs` gains `asksParked`,

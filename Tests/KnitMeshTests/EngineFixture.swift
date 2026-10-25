@@ -49,7 +49,8 @@ struct EngineFixture {
             configuration: configuration,
             log: log,
             ratchetEngine: ratchetEngine,
-            groupRatchetEngine: groupRatchetEngine
+            groupRatchetEngine: groupRatchetEngine,
+            partials: MemoryPartialBlobStore()
         )
         if started {
             engine.start()

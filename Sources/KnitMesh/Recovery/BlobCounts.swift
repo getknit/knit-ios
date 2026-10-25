@@ -38,6 +38,9 @@ public struct BlobCounts: Sendable, Equatable {
     /// Cycles that would have asked their NONE neighbours to pull a blob through and asked nobody, the want past its
     /// deadline or with no budget left (`blobPullsWithheld`).
     public var pullsWithheld: Int
+    /// Files spliced onto a prefix we kept that failed their hash, so the prefix went and the blob was asked for from byte
+    /// 0 (`onSpliceRefused`, knit-ios #2). Anything but 0 is a holder or a prefix that was wrong.
+    public var splicesRefused: Int
 
     /// Bundles the counts.
     public init(
@@ -57,7 +60,8 @@ public struct BlobCounts: Sendable, Equatable {
         cancelsTaken: Int = 0,
         asksParked: Int = 0,
         echoesDeclined: Int = 0,
-        pullsWithheld: Int = 0
+        pullsWithheld: Int = 0,
+        splicesRefused: Int = 0
     ) {
         self.queriesSent = queriesSent
         self.queriesAnswered = queriesAnswered
@@ -76,5 +80,6 @@ public struct BlobCounts: Sendable, Equatable {
         self.asksParked = asksParked
         self.echoesDeclined = echoesDeclined
         self.pullsWithheld = pullsWithheld
+        self.splicesRefused = splicesRefused
     }
 }

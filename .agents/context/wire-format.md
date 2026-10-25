@@ -58,9 +58,10 @@ The payload types:
   included: NONE 0, HAVE 1, SENDING 2, FETCHING 3, and PARTIAL 4, which is reserved. A state a build does not know is
   never taken for HAVE.
 - A `blobreq`'s `offset` is how many bytes of a cut transfer the asker kept, echoed by the `FILE_HEADER` that answers
-  it (knit-next ADR 2026-10.wtyc). This port reads it and serves the tail from `1...length`, any other offset the whole
-  file, and never sends one yet (knit-ios #2). The `FILE_HEADER` then writes `offset` after `size`, which is the tail's
-  bytes, and only when it is past 0. A receiver here skips a resumed header until it keeps prefixes.
+  it (knit-next ADR 2026-10.wtyc, ADR 2026-10.w6rn). This port serves the tail from `1...length` and any other
+  offset as the whole file, and asks with the length of a cut prefix it kept. The `FILE_HEADER` then writes `offset`
+  after `size`, which is the tail's bytes, and only when it is past 0. A receiver splices the tail onto its kept
+  prefix, and refuses a resumed header that names more than it kept.
 - A `blobreq`'s `pull` is how many phones deep the ask may still pull the blob through, the receiver counted, and its
   `until` is the root's deadline for that, epoch ms on the frame's clock (knit-next ADR 2026-10.2drc, ADR
   2026-10.8hek). Every ask carries its want's budget, 0 included, and its deadline when it has one. An absent `pull`

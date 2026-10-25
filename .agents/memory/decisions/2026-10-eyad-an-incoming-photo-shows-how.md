@@ -60,7 +60,9 @@ plaintext's and is rarely set, while the link already carries the exact one.
 
 - **The total is the peer's claim.** It labels the ring and bounds nothing; the intake keeps its own ceiling.
 - **A cut transfer starts over at 0** when the next holder streams it, because this port never resumes one (knit-next
-  ADR 2026-10.wtyc, knit-ios #2). The ring resets with it.
+  ADR 2026-10.wtyc, knit-ios #2). The ring resets with it. *Amended 2026-10-25 by ADR 2026-10.w6rn:* a resumed
+  stream's reading starts at its offset and totals `offset + size`, so the ring picks up where the cut left it.
+  Between the cut and the resume the bubble shows its waiting line.
 - **Only the last hop shows.** A relay fetches the whole photo before serving it, so the ring fills only once a
   neighbour streams to us. Until then the stitches and the hourglass stand, as on Android.
 - **A suspended iPhone reads nothing** until a doorbell wakes it, and FILE records never ring (ADR 2026-09.khjj). Back

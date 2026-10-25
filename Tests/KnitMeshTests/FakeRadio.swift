@@ -147,6 +147,11 @@ final class FakeRadio: Radio {
         recorder.yield(.sought(seeking))
     }
 
+    /// Every write on `channel`, in order, as the radio took it.
+    func writes(on channel: ChannelID) -> [[UInt8]] {
+        state.withLock { $0.writes[channel, default: []] }
+    }
+
     /// The size of each write on `channel`.
     func writeSizes(on channel: ChannelID) -> [Int] {
         state.withLock { $0.writes[channel, default: []].map(\.count) }

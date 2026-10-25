@@ -47,6 +47,8 @@ public final class MeshEngine {
     var pendingInbound = PendingInbound()
     var keyExchange: KeyExchange
     var blobExchange: BlobExchange
+    /// The kept prefixes of cut attachments, the link manager's own store (``Mesh``): asked with, and dropped (knit-ios #2).
+    let partials: any PartialBlobStore
     /// The attachments the links were last told to keep as they stream in (``syncAcceptedFiles()``).
     var acceptedFiles: Set<BlobHash> = []
     /// The photo each neighbour has had from us whole, this run (``pushAvatar(to:)``).
@@ -104,7 +106,8 @@ public final class MeshEngine {
         configuration: MeshConfiguration,
         log: any KnitLog,
         ratchetEngine: RatchetEngine,
-        groupRatchetEngine: GroupRatchetEngine
+        groupRatchetEngine: GroupRatchetEngine,
+        partials: any PartialBlobStore
     ) {
         self.identity = identity
         prekeyRing = prekeys.flatMap { $0.identity.bundle == identity.bundle ? $0 : nil }
@@ -121,6 +124,7 @@ public final class MeshEngine {
         self.log = log
         router = Router(configuration: configuration.router)
         blobExchange = BlobExchange(queriesHolders: configuration.queriesBlobHolders)
+        self.partials = partials
         keyExchange = KeyExchange { [peers = stores.peers] in peers.profileFrame(of: $0) }
     }
 
@@ -389,7 +393,8 @@ extension MeshEngine {
             configuration: configuration,
             log: log,
             ratchetEngine: RatchetEngine(),
-            groupRatchetEngine: GroupRatchetEngine()
+            groupRatchetEngine: GroupRatchetEngine(),
+            partials: MemoryPartialBlobStore()
         )
     }
 }

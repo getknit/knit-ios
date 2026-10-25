@@ -40,13 +40,13 @@ import Testing
         #expect(status["displayName"] as? String == Alias.alias(for: rig.keys.nodeId.string), "no name, so the alias")
         #expect(status["links"] as? Int == 0)
         #expect(status["custody"] as? Int == 1, "our own profile")
-        #expect(status["files"] as? [String: Int] == ["received": 0, "refused": 0, "sent": 0, "resumedOut": 0])
+        #expect(status["files"] as? [String: Int] == ["received": 0, "refused": 0, "sent": 0, "resumedOut": 0, "resumedIn": 0])
         let blobs = try #require(status["blobs"] as? [String: Int])
         #expect(
             blobs.keys.sorted() == [
                 "answersIgnored", "answersTaken", "asksParked", "blindAsks", "cancelsSent", "cancelsTaken", "confirms",
                 "echoesDeclined", "fallbacks", "fetches", "progressSent", "progressTaken", "pullThroughs", "pullsWithheld",
-                "queriesAnswered", "queriesRefused", "queriesSent",
+                "queriesAnswered", "queriesRefused", "queriesSent", "splicesRefused",
             ])
         #expect(blobs.values.allSatisfy { $0 == 0 })
     }

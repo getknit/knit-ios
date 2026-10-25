@@ -4,10 +4,9 @@ description: >-
   Mesh-cost and convergence reviewer for Knit for iOS's blob exchange and store-and-forward custody. MUST be used
   whenever a file in the plane's gate is created or modified (Sources/KnitMesh/Router/, Custody/, Receipts/,
   Recovery/, MeshEngine+Blobs, +BlobParking, +BlobQueries, +Identities, OutgoingPhoto, Sources/KnitStore/Custody/ and
-  Blobs/, SQLCustodyStore, SQLBlobStore, SQLMessageStore+Attachments, KnitWire's FileIntake, FeedMeter,
-  LinkManager+Files, and the store unit: Sources/KnitStore/Units/, KnitDatabase and KnitDatabase+Units), before the
-  change is reported done or committed; the Stop hook .claude/hooks/review-gate.sh
-  enforces it. Also use it for a change to the custody, block or delete paths of MeshEngine+Inbound, +Outbound,
+  Blobs/, SQLCustodyStore, SQLBlobStore, FilePartialBlobStore, SQLMessageStore+Attachments, KnitWire's FileIntake,
+  FeedMeter, LinkManager+Files, and the store unit: Sources/KnitStore/Units/, KnitDatabase and KnitDatabase+Units),
+  before the change is reported done or committed; the Stop hook .claude/hooks/review-gate.sh enforces it. Also use it for a change to the custody, block or delete paths of MeshEngine+Inbound, +Outbound,
   +Deletes or +Blocks, which the hook cannot see. Reads the diff for the shapes that have passed single-engine tests
   and cost the mesh (a serve nobody asked for, a memo standing in for the link, a cache standing in for the
   database, a wait on an answer the wire cannot give, every holder acting at once, a guessed bound, a per-node input
@@ -59,7 +58,8 @@ git status --porcelain -- Sources/KnitMesh/Router Sources/KnitMesh/Custody Sourc
   Sources/KnitMesh/Recovery $E/MeshEngine+Blobs.swift $E/MeshEngine+BlobParking.swift \
   $E/MeshEngine+BlobQueries.swift $E/MeshEngine+Identities.swift $E/OutgoingPhoto.swift \
   Sources/KnitStore/Custody Sources/KnitStore/Blobs Sources/KnitStoreSQL/SQLCustodyStore.swift \
-  Sources/KnitStoreSQL/SQLBlobStore.swift Sources/KnitStoreSQL/SQLMessageStore+Attachments.swift \
+  Sources/KnitStoreSQL/SQLBlobStore.swift Sources/KnitStoreSQL/FilePartialBlobStore.swift \
+  Sources/KnitStoreSQL/SQLMessageStore+Attachments.swift \
   Sources/KnitWire/Link/FileIntake.swift Sources/KnitMesh/Link/FeedMeter.swift \
   Sources/KnitMesh/Link/LinkManager+Files.swift Sources/KnitStore/Units Sources/KnitStoreSQL/KnitDatabase.swift \
   Sources/KnitStoreSQL/KnitDatabase+Units.swift $E/MeshEngine+Delivery.swift Sources/KnitStoreSQL/StoredText.swift \
@@ -314,8 +314,11 @@ verify.
   calls a feed stalled after 15 s with no progress.
 - **Taking a file in** (ADR 2026-10.h6zz, ADR 2026-10.ym9y). A file is kept only if its bytes hash to its key. A
   peer's own photo push is kept up to 1 MiB, and adopted only if its signed profile advertises it; an ATTACHMENT is
-  kept only if the engine asked for its hash. Partial files on all links stay under 16 MiB. This port never resumes
-  a cut transfer.
+  kept only if the engine asked for its hash. Partial files on all links stay under 16 MiB.
+- **Resuming a cut file** (knit-next ADR 2026-10.wtyc). A cut attachment's prefix is kept on disk for the session
+  (`PartialBlobStore`, purged at every mesh start and stop), the next ask names its length, and the holder serves the
+  tail. A spliced file that fails its hash drops the prefix and asks again from 0. A resumed header is refused unless
+  the key resumed on that link more than 45 s ago and the prefix holds the offset (#161).
 - **Photos** (ADR 2026-10.f3mv, ADR 2026-10.6cas). A plaintext is sealed once, and a pick already held goes out as
   that blob. A blob goes when nothing names it, at a replacement and in the sweep at each start.
 - **Blocks and deletes** (ADR 2026-10.5wgg, ADR 2026-10.u7cq). A block stops a frame at delivery only; custody, key

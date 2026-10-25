@@ -157,7 +157,10 @@ extension LinkManager {
                 if let channel = channels[id] {
                     log.log(.warning, "link \(id) sent a bad record: \(error) \(channel.trace.explain(channel.reader))")
                 }
-                return events + retire(id, backingOff: true, now: now) + promote(now: now)
+                // Dropped, not kept, unlike Android's every close: a stack that mangles multi-packet SDUs (the Moto G,
+                // `cb440a6`, `04a927b`; tags 87 and 54 on A4, `af87ba4`) appends corrupt bytes before the framing
+                // desyncs, and a prefix holding them would fail its splice and cost a tail as well as the whole file.
+                return events + retire(id, backingOff: true, keepingCut: false, now: now) + promote(now: now)
             }
             guard let record else {
                 break
@@ -218,6 +221,7 @@ extension LinkManager {
                 return retire(id, backingOff: false, now: now)
             }
             log.log(.info, "link \(dialer) replaced its stale link \(existing.channel) with \(id)")
+            // Its cut attachment is kept here, before the new link registers, so an ask crossing the new link resumes.
             events += retire(existing.channel, backingOff: false, now: now)
         }
         writeHello(on: id)

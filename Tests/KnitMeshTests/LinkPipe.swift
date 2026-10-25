@@ -1,0 +1,276 @@
+import KnitCrypto
+import KnitStore
+import KnitTestSupport
+import KnitWire
+import Testing
+
+@testable import KnitMesh
+
+/// One phone in a ``LinkPipe`` lab: an engine and its link manager on a ``FakeRadio`` that reports file writes, sharing one
+/// kept-prefix store as ``Mesh`` makes them, and driven the way ``Mesh`` drives them, synchronously. Synchronous rather
+/// than through the actor: a lab of three phones is then one deterministic loop on one manual clock, with no timer
+/// tasks to race the steps.
+final class PipeNode {
+    let peer: TestPeer
+    let radio = FakeRadio(advertisesServiceData: false, reportsFileWrites: true)
+    let stores = MeshStores.inMemory()
+    let log = RecordingLog()
+    let partials: MemoryPartialBlobStore
+    let links: LinkManager
+    let engine: MeshEngine
+
+    init(_ peer: TestPeer, clock: ManualClock, seed: UInt64) {
+        self.peer = peer
+        let recording = log
+        partials = MemoryPartialBlobStore { line in recording.log(.info, line) }
+        links = LinkManager(
+            localId: peer.nodeId,
+            radio: radio,
+            clock: clock,
+            random: SeededGenerator(seed: seed),
+            log: log,
+            partials: partials
+        )
+        engine = MeshEngine(
+            identity: peer.keys,
+            prekeys: nil,
+            deviceTag: nil,
+            stores: stores,
+            transport: links,
+            clock: clock,
+            random: SeededGenerator(seed: seed + 100),
+            configuration: MeshConfiguration(queriesBlobHolders: true),
+            log: log,
+            ratchetEngine: RatchetEngine(),
+            groupRatchetEngine: GroupRatchetEngine(),
+            partials: partials
+        )
+    }
+
+    var nodeId: NodeId { peer.nodeId }
+
+    func start() {
+        engine.start()
+        links.start()
+    }
+
+    /// Hands the link manager's events to the engine in order, then the feeds' edge, as ``Mesh`` settles.
+    func apply(_ events: [LinkManager.Event]) {
+        for event in events {
+            switch event {
+            case .up(let neighbor):
+                engine.linkUp(neighbor)
+            case .down(let nodeId):
+                engine.linkDown(nodeId)
+            case .frame(let frame):
+                engine.receive(frame)
+            case .digest(let ids, let from):
+                engine.receiveDigest(ids, from: from)
+            case .file(let file):
+                engine.receiveFile(file)
+            case .fileProgress(let progress):
+                engine.fileProgress(progress)
+            case .fileSent(let hash, let peer):
+                engine.fileSent(hash, to: peer)
+            }
+        }
+        if links.takeFeedsChanged() {
+            engine.fileFeedsChanged()
+        }
+    }
+
+    func fireDueTimers() {
+        apply(links.advance())
+        engine.advance()
+        apply([])
+    }
+
+    /// Holds `bytes` as the blob they hash to.
+    func hold(_ bytes: [UInt8]) {
+        stores.blobs.insert(bytes, hash: BlobHash(of: bytes), mime: "image/jpeg", storedAt: EngineFixture.start)
+    }
+}
+
+/// One link between two ``PipeNode``s: the bytes each radio writes are read back as records and handed to the other, record
+/// by record, with the radio's report of each FILE record as it crosses. It records what it carried, and can be cut after
+/// some bytes of a file, as a link at the edge of range is: both channels close, and each side's teardown keeps what it
+/// had (`LinkManager.retire`). One channel each side for the pipe's life, so one intake, and the #161 window, per link.
+final class LinkPipe {
+    /// A file header that crossed, holder to asker, and when.
+    struct Serve: Equatable {
+        var from: NodeId
+        var to: NodeId
+        var hash: BlobHash
+        var offset: Int?
+        var at: Int64
+    }
+
+    /// A `blobreq` that crossed, and when.
+    struct Ask: Equatable {
+        var from: NodeId
+        var to: NodeId
+        var hash: String
+        var offset: Int64?
+        var at: Int64
+    }
+
+    private struct Side {
+        let node: PipeNode
+        let channel: ChannelID
+        var read = 0
+        var reader = LinkRecordReader()
+    }
+
+    private var sides: [Side]
+    private let clock: ManualClock
+    /// When set, the pipe is cut once this many bytes of FILE_CHUNK have crossed it, either way.
+    var cutAfter: Int?
+    private(set) var isUp = true
+    /// The FILE_CHUNK bytes it carried, either way.
+    private(set) var chunkBytes = 0
+    private(set) var serves: [Serve] = []
+    private(set) var asks: [Ask] = []
+
+    /// Links `dialer` and `answerer` on `channel`, each side its own channel number: the answerer accepts and reads the
+    /// dialer's HELLO, and its answer, piped back, admits the dialer. The dialer's own written HELLO is a stray it ignores.
+    init(_ dialer: PipeNode, _ answerer: PipeNode, channel: UInt64, clock: ManualClock) {
+        self.clock = clock
+        sides = [Side(node: dialer, channel: ChannelID(channel)), Side(node: answerer, channel: ChannelID(channel + 1))]
+        dialer.apply(dialer.links.handle(.accepted(ChannelID(channel))))
+        answerer.apply(answerer.links.handle(.accepted(ChannelID(channel + 1))))
+        let hello = Hello(nodeId: dialer.nodeId.string, capabilities: Capabilities.local.union(.blobHave)).payload
+        answerer.apply(answerer.links.handle(.received(ChannelID(channel + 1), LinkRecord(.hello, payload: hello).encoded ?? [])))
+    }
+
+    /// Carries what is waiting either way, once. Answers whether anything crossed.
+    func pumpOnce() -> Bool {
+        guard isUp else {
+            return false
+        }
+        var moved = false
+        for index in sides.indices {
+            let writes = sides[index].node.radio.writes(on: sides[index].channel)
+            guard sides[index].read < writes.count else {
+                continue
+            }
+            for write in writes[sides[index].read...] {
+                sides[index].reader.append(write[...])
+            }
+            sides[index].read = writes.count
+            while isUp, let record = try? sides[index].reader.next() {
+                moved = true
+                deliver(record, from: index)
+            }
+        }
+        return moved
+    }
+
+    private func deliver(_ record: LinkRecord, from index: Int) {
+        let sender = sides[index]
+        let receiver = sides[1 - index]
+        let now = clock.monotonicMilliseconds()
+        if record.tag == .fileHeader, let header = LinkJSON.fileHeader(from: record.payload), let hash = BlobHash(header.key) {
+            serves.append(Serve(from: sender.node.nodeId, to: receiver.node.nodeId, hash: hash, offset: header.offset, at: now))
+        }
+        if record.tag == .frame, let ask = Self.ask(in: record.payload) {
+            asks.append(Ask(from: sender.node.nodeId, to: receiver.node.nodeId, hash: ask.hash, offset: ask.offset, at: now))
+        }
+        receiver.node.apply(receiver.node.links.handle(.received(receiver.channel, record.encoded ?? [])))
+        guard [.fileHeader, .fileChunk, .fileEnd].contains(record.tag) else {
+            return
+        }
+        sender.node.apply(sender.node.links.handle(.wroteFileRecord(sender.channel)))
+        if record.tag == .fileChunk {
+            chunkBytes += record.payload.count
+            if let cutAfter, chunkBytes >= cutAfter {
+                cut()
+            }
+        }
+    }
+
+    /// The `blobreq` a FRAME record carries, if it is one.
+    private static func ask(in payload: [UInt8]) -> BlobRequestContent? {
+        guard let wire = try? WireEnvelope(decoding: payload), let envelope = try? RelayEnvelope(decoding: wire.signed),
+            envelope.type == .blobRequest
+        else {
+            return nil
+        }
+        return try? BlobRequestContent(decoding: envelope.payload)
+    }
+
+    /// Closes both ends, as a link that dies does.
+    func cut() {
+        guard isUp else {
+            return
+        }
+        isUp = false
+        for side in sides {
+            side.node.apply(side.node.links.handle(.closed(side.channel)))
+        }
+    }
+}
+
+/// The phones and their pipes on one manual clock.
+final class PipeLab {
+    let clock = ManualClock(wall: EngineFixture.start, monotonic: 1000)
+    private(set) var pipes: [LinkPipe] = []
+    private var nodes: [PipeNode] = []
+    private var nextChannel: UInt64 = 10
+
+    func node(_ seed: Int) -> PipeNode {
+        let node = PipeNode(TestPeer(seed: seed), clock: clock, seed: UInt64(seed))
+        node.start()
+        nodes.append(node)
+        return node
+    }
+
+    @discardableResult
+    func link(_ dialer: PipeNode, _ answerer: PipeNode, cutAfter: Int? = nil) -> LinkPipe {
+        let pipe = LinkPipe(dialer, answerer, channel: nextChannel, clock: clock)
+        pipe.cutAfter = cutAfter
+        nextChannel += 2
+        pipes.append(pipe)
+        pump()
+        return pipe
+    }
+
+    /// Carries everything waiting on every pipe until nothing more crosses.
+    func pump() {
+        while pipes.map({ $0.pumpOnce() }).contains(true) {
+            // Again: what crossed may have written more.
+        }
+    }
+
+    /// Steps the lab `step` ms at a time, carrying and firing timers, until `done` holds or `limit` ms pass. Answers
+    /// whether `done` held.
+    @discardableResult
+    func run(step: Int64 = 20, limit: Int64 = 600_000, until done: () -> Bool) -> Bool {
+        var elapsed: Int64 = 0
+        pump()
+        while !done() {
+            guard elapsed < limit else {
+                return false
+            }
+            clock.advance(step)
+            elapsed += step
+            for node in nodes {
+                node.fireDueTimers()
+            }
+            pump()
+        }
+        return true
+    }
+
+    /// Every serve of `hash` that crossed any pipe, in the order the pipes were made.
+    func serves(of hash: BlobHash) -> [LinkPipe.Serve] {
+        pipes.flatMap { $0.serves.filter { $0.hash == hash } }
+    }
+
+    /// Every ask for `hash` that crossed any pipe, in the order the pipes were made.
+    func asks(for hash: BlobHash) -> [LinkPipe.Ask] {
+        pipes.flatMap { $0.asks.filter { $0.hash == hash.string } }
+    }
+
+    /// FILE_CHUNK bytes over every pipe.
+    var chunkBytes: Int { pipes.reduce(0) { $0 + $1.chunkBytes } }
+}

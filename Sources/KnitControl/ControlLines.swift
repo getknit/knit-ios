@@ -137,18 +137,20 @@ internal enum ControlLines {
     }
 
     /// What the links did with FILE records: whole files in, files dropped as they streamed, files out, and of those the
-    /// ones that streamed only a resuming asker's tail (knit-next ADR 2026-10.wtyc).
+    /// ones that streamed only a resuming asker's tail (knit-next ADR 2026-10.wtyc), and the files in whose stream was
+    /// spliced onto a prefix we kept (knit-ios #2).
     static func describe(_ files: FileCounts) -> JSONValue {
         [
             "received": .int(Int64(files.received)), "refused": .int(Int64(files.refused)), "sent": .int(Int64(files.sent)),
-            "resumedOut": .int(Int64(files.resumedOut)),
+            "resumedOut": .int(Int64(files.resumedOut)), "resumedIn": .int(Int64(files.resumedIn)),
         ]
     }
 
     /// What the blob holder query did, by Android's debug bridge's names less their `blob` prefix (knit-next ADR
     /// 2026-10.6e5t): queries sent, answered and refused, answers taken and ignored, and the fetches, confirms, fallbacks,
     /// blind asks and pulls they led to. Then the progress reports and withdrawals sent and taken (knit-next ADR
-    /// 2026-10.nsr7), and the echoes declined and pulls withheld (knit-next ADR 2026-10.2drc).
+    /// 2026-10.nsr7), the echoes declined and pulls withheld (knit-next ADR 2026-10.2drc), and the spliced files that failed
+    /// their hash (`splicesRefused`, knit-ios #2).
     static func describe(_ blobs: BlobCounts) -> JSONValue {
         [
             "queriesSent": .int(Int64(blobs.queriesSent)),
@@ -168,6 +170,7 @@ internal enum ControlLines {
             "asksParked": .int(Int64(blobs.asksParked)),
             "echoesDeclined": .int(Int64(blobs.echoesDeclined)),
             "pullsWithheld": .int(Int64(blobs.pullsWithheld)),
+            "splicesRefused": .int(Int64(blobs.splicesRefused)),
         ]
     }
 

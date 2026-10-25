@@ -21,6 +21,9 @@ public actor Mesh {
     /// The engine, reached by this actor's extensions in other files (`Mesh+Ratchet.swift`).
     let engine: MeshEngine
     private let links: LinkManager
+    /// The kept prefixes of cut attachments, which the links and the engine share (knit-ios #2), purged at every start and
+    /// stop: they belong to one session's transfers (`MeshManager.kt:997-998`).
+    private let partials: any PartialBlobStore
     private let radio: any Radio
     private let clock: any MeshClock
     private let continuation: AsyncStream<MeshEvent>.Continuation
@@ -34,7 +37,8 @@ public actor Mesh {
     /// What the radio last said of its state, or `nil` before it has said anything.
     public private(set) var radioState: RadioState?
 
-    /// A mesh node for `identity`, with the ratchet prekeys it keeps beside it, or none, on `radio`.
+    /// A mesh node for `identity`, with the ratchet prekeys it keeps beside it, or none, on `radio`, keeping cut
+    /// attachments' prefixes in `partials`, or in memory.
     public init(
         identity: IdentityKeys,
         prekeys: PrekeyRing? = nil,
@@ -45,15 +49,20 @@ public actor Mesh {
         random: some RandomNumberGenerator & Sendable,
         configuration: MeshConfiguration = MeshConfiguration(),
         linkConfiguration: LinkManager.Configuration = LinkManager.Configuration(),
-        log: any KnitLog = SilentLog()
+        log: any KnitLog = SilentLog(),
+        partials: (any PartialBlobStore)? = nil
     ) {
+        // One store for both, so the engine asks with what the links keep. In memory unless the app hands one on disk.
+        let shared = partials ?? MemoryPartialBlobStore { line in log.log(.info, "mesh \(line)") }
+        self.partials = shared
         let linkManager = LinkManager(
             localId: identity.nodeId,
             radio: radio,
             clock: clock,
             random: random,
             configuration: linkConfiguration,
-            log: log
+            log: log,
+            partials: shared
         )
         links = linkManager
         engine = MeshEngine(
@@ -65,7 +74,10 @@ public actor Mesh {
             clock: clock,
             random: random,
             configuration: configuration,
-            log: log
+            log: log,
+            ratchetEngine: RatchetEngine(),
+            groupRatchetEngine: GroupRatchetEngine(),
+            partials: shared
         )
         self.radio = radio
         self.clock = clock
@@ -85,6 +97,8 @@ public actor Mesh {
             return
         }
         isRunning = true
+        // Before anything asks or links: a prefix from before is no transfer of this session's.
+        partials.purge()
         engine.start()
         links.start()
         if eventLoop == nil {
@@ -107,6 +121,7 @@ public actor Mesh {
         timer = nil
         scheduled = nil
         apply(links.stop())
+        partials.purge()
         engine.forgetTyping()
         publish()
     }
@@ -337,41 +352,6 @@ public actor Mesh {
             scheduled = nil
             fireDueTimers()
         }
-    }
-}
-
-// The app's sends, kept out of the actor's body to hold it under 250 lines; a same-file extension reaches its privates.
-extension Mesh {
-    /// Posts to the Nearby room, with a photo if one is given, quoting the message it replies to if it replies and naming
-    /// the people it mentions (``MeshEngine/postToRoom(_:photo:replyTo:mentions:)``).
-    @discardableResult
-    public func postToRoom(
-        _ text: String, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil, mentions: [MessageMention] = []
-    ) -> MessageRecord? {
-        defer { settle() }
-        return engine.postToRoom(text, photo: photo, replyTo: replyTo, mentions: mentions)
-    }
-
-    /// Sends a DM, with a photo if one is given, quoting the message it replies to if it replies and naming the people it
-    /// mentions (``MeshEngine/sendDirectMessage(_:to:photo:replyTo:mentions:)``).
-    @discardableResult
-    public func sendDirectMessage(
-        _ text: String, to recipient: NodeId, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil,
-        mentions: [MessageMention] = []
-    ) -> MessageRecord? {
-        defer { settle() }
-        return engine.sendDirectMessage(text, to: recipient, photo: photo, replyTo: replyTo, mentions: mentions)
-    }
-
-    /// Sends a message to a group, with a photo if one is given, quoting the message it replies to if it replies and
-    /// naming the people it mentions (``MeshEngine/sendGroupMessage(_:to:photo:replyTo:mentions:)``).
-    @discardableResult
-    public func sendGroupMessage(
-        _ text: String, to groupId: String, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil,
-        mentions: [MessageMention] = []
-    ) -> MessageRecord? {
-        defer { settle() }
-        return engine.sendGroupMessage(text, to: groupId, photo: photo, replyTo: replyTo, mentions: mentions)
     }
 }
 

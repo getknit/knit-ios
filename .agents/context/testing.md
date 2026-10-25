@@ -9,7 +9,7 @@ ladder, not the first.
    under `swift test`, TSan and ASan. Use `@Test` and `#expect`/`#require`; XCTest is disabled
    (`--disable-xctest`) so each target writes one xUnit report. Locks are `KnitSync`'s `Lock`, which TSan
    can see (ADR 2026-09.ahrr), so a TSan report is a real race: fix it, never rerun the gate until it passes.
-2. **Golden and known-answer vectors.** knit-next's `vectors/` (the 61 codec fixtures, and keyed vectors:
+2. **Golden and known-answer vectors.** knit-next's `vectors/` (the 78 codec fixtures, and keyed vectors:
    identities, signed frames, a sealed DM, the safety number, the link records and an advert), its node id,
    alias and card goldens, and the RFC 7748, 8032, 5869 and 9180 vectors. The other direction runs too:
    `EmittedVectorTests` writes frames this port signs, its ratchet frames made by Carol's engine from fixed draws, and
@@ -32,7 +32,12 @@ ladder, not the first.
    `KnitBLETests`, and `test:ios:simulator` walks the screens (P7).
 5. **The mesh lab: deferred.** Multi-node scenarios with `assertConverged`, and seeded chaos, were skipped
    for now at the maintainer's call (`.agents/memory/roadmap.md`). The synchronous engine is what would let
-   a later lab run deterministically from a seed.
+   a later lab run deterministically from a seed. Two miniatures exist:
+   - `EngineLab` carries frames and digests between engines;
+   - `LinkPipe` (`Tests/KnitMeshTests/LinkPipe.swift`) carries link records, files included, between phones built
+     from an engine and its `LinkManager` on `FakeRadio`s, on one `ManualClock`. Each pipe keeps one channel per
+     side for its life, records the headers, asks and chunk bytes that cross it, and can cut itself after N bytes,
+     so `LinkPipeResumeTests` runs a cut photo's resume on both sides of each link (ADR 2026-10.w6rn).
 6. **Fuzzing.** Every parser that reads bytes off the radio has a libFuzzer harness in `Fuzz/`. A crash is
    a finding by construction; its input joins the corpus once the fix lands.
 7. **The Linux peer, without a radio.** `KnitBlueZTests` runs the BlueZ radio against a fake BlueZ on a

@@ -31,7 +31,7 @@ import Testing
                 sighting(AppRig.sam, rssi: -60.4, agoMilliseconds: 500), sighting(AppRig.priya, rssi: -71.6, agoMilliseconds: 3200),
             ],
             dropped: [.badSignature: 2],
-            files: FileCounts(received: 3, refused: 4, sent: 5, resumedOut: 1)
+            files: FileCounts(received: 3, refused: 4, sent: 5, resumedOut: 1, resumedIn: 1)
         )
         let state = DiagnosticsModel.state(mesh, directory: rig.session.directory, stores: rig.stores, radio: .on, running: true)
         #expect(state.radio == Copy.Diagnostics.radio(.on))
@@ -42,7 +42,7 @@ import Testing
         #expect(state.sighted.first?.detail == "-72 dBm, 3 s ago")
         #expect(state.known.map(\.id) == [AppRig.stranger.nodeId])
         #expect(state.knownCount == 1)
-        #expect(state.counters.map(\.count) == [3, 4, 5, 2], "a resumed serve is counted in status, not on this screen")
+        #expect(state.counters.map(\.count) == [3, 4, 5, 2], "a resumed serve or splice is counted in status, not on this screen")
         #expect(state.counters.last?.id == Copy.Drops.reason(.badSignature))
     }
 

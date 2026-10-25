@@ -1,4 +1,5 @@
 import KnitMesh
+import KnitStore
 import KnitTestSupport
 import KnitWire
 import Testing
@@ -13,7 +14,7 @@ struct LinkRig {
 
     let radio: FakeRadio
     let clock: ManualClock
-    let log = RecordingLog()
+    let log: RecordingLog
     let links: LinkManager
 
     init(
@@ -23,8 +24,11 @@ struct LinkRig {
         servesDoorbell: Bool = false,
         reportsFileWrites: Bool = false,
         background: Bool = false,
-        configuration: LinkManager.Configuration = LinkManager.Configuration()
+        configuration: LinkManager.Configuration = LinkManager.Configuration(),
+        log: RecordingLog = RecordingLog(),
+        partials: any PartialBlobStore = MemoryPartialBlobStore()
     ) {
+        self.log = log
         radio = FakeRadio(
             advertisesServiceData: advertisesServiceData,
             dialsGattPeers: dialsGattPeers,
@@ -38,7 +42,8 @@ struct LinkRig {
             clock: clock,
             random: SeededGenerator(seed: 3),
             configuration: configuration,
-            log: log
+            log: log,
+            partials: partials
         )
         links.start()
         if background {

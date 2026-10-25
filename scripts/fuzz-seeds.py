@@ -4,7 +4,8 @@
     python3 scripts/fuzz-seeds.py <directory>
 
 FuzzCBOR gets every golden CBOR item, FuzzLinkRecords gets the same items framed as link records (a chunk-size
-byte, then a FRAME record) and whole files as Android streams them (a FILE_HEADER, chunks and a FILE_END), and
+byte, then a FRAME record), whole files as Android streams them (a FILE_HEADER, chunks and a FILE_END), and a file cut
+by a KEEPALIVE, the harness's cut, then resumed from its offset under a header whose size is Int64's largest, and
 FuzzAdvert gets a pinned advert and a node id, and FuzzContactCard knit-next's two contact card vectors in their link forms
 and a verify code (docs/CONTACT_CARD.md §5). `scripts/fuzz.sh` calls this into a scratch directory; the committed
 Fuzz/Corpus/ holds only inputs that once found a bug.
@@ -20,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FRAME_TAG = 1
-FILE_HEADER_TAG, FILE_CHUNK_TAG, FILE_END_TAG = 2, 3, 4
+FILE_HEADER_TAG, FILE_CHUNK_TAG, FILE_END_TAG, KEEPALIVE_TAG = 2, 3, 4, 5
 CHUNK_BYTE = 7
 ADVERT = "ff294213fa67091e03c2f2ae8d071b9d6700000000008100"
 NODE_ID = b"ffbbh6thbepahqxsv2gqog45m4"
@@ -55,6 +56,7 @@ def main() -> int:
         (out / "FuzzLinkRecords" / name).write_bytes(record)
     for kind, size in (("AVATAR", 300), ("ATTACHMENT", 5000)):
         (out / "FuzzLinkRecords" / f"file-{kind.lower()}").write_bytes(bytes([CHUNK_BYTE]) + file_records(kind, size))
+    (out / "FuzzLinkRecords" / "file-resumed").write_bytes(bytes([CHUNK_BYTE]) + resumed_records(6000, 4096))
     (out / "FuzzAdvert" / "advert").write_bytes(bytes.fromhex(ADVERT))
     (out / "FuzzAdvert" / "node-id").write_bytes(NODE_ID)
     cards = {
@@ -79,6 +81,32 @@ def file_records(kind: str, size: int) -> bytes:
     header = json.dumps({"kind": kind, "key": key, "mime": "image/jpeg"}, separators=(",", ":")).encode()
     chunks = b"".join(record(FILE_CHUNK_TAG, body[i : i + 2048]) for i in range(0, size, 2048))
     return record(FILE_HEADER_TAG, header) + chunks + record(FILE_END_TAG, b"")
+
+
+def resumed_records(size: int, cut: int) -> bytes:
+    """A file cut after `cut` bytes, then its tail under a resumed header (`FileHeaderWire`'s `offset`, knit-ios #2) whose
+    size is the largest a Kotlin Long holds, which no sum may trap on. The body is picked so the harness keeps its key."""
+    seed = 1
+    while True:
+        body = bytes((seed * i + 1) & 0xFF for i in range(size))
+        key = hashlib.sha256(body).hexdigest()
+        if key[0] < "8":
+            break
+        seed += 2
+    whole = json.dumps({"kind": "ATTACHMENT", "key": key, "mime": "image/jpeg", "size": size}, separators=(",", ":"))
+    resumed = json.dumps(
+        {"kind": "ATTACHMENT", "key": key, "mime": "image/jpeg", "size": 2**63 - 1, "offset": cut}, separators=(",", ":")
+    )
+    head = b"".join(record(FILE_CHUNK_TAG, body[i : min(i + 2048, cut)]) for i in range(0, cut, 2048))
+    tail = b"".join(record(FILE_CHUNK_TAG, body[i : i + 2048]) for i in range(cut, size, 2048))
+    return (
+        record(FILE_HEADER_TAG, whole.encode())
+        + head
+        + record(KEEPALIVE_TAG, b"")
+        + record(FILE_HEADER_TAG, resumed.encode())
+        + tail
+        + record(FILE_END_TAG, b"")
+    )
 
 
 if __name__ == "__main__":

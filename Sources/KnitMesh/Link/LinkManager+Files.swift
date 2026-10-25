@@ -1,3 +1,4 @@
+import KnitStore
 public import KnitWire
 
 /// When a link's incoming file began and was last reported (`RxReports`, knit-next ADRs 2026-10.nsr7 and 2026-10.5buf),
@@ -107,7 +108,8 @@ extension LinkManager {
 
     /// How far each file being kept has got, by key, for the app to draw (`arrivingFiles()`, knit-next ADR 2026-10.y9qh):
     /// the bytes in so far and the size its header declared. Only a kept file, since a skipped one never lands here, so
-    /// its keys are always among ``arrivingFileKeys``. When two links stream one key, the copy furthest along shows
+    /// its keys are always among ``arrivingFileKeys``, and a resumed one from its kept prefix, so the ring starts where it
+    /// was. A prefix kept from a cut link is never on its way. When two links stream one key, the copy furthest along shows
     /// (`furthestByKey`), the lower channel on a tie.
     ///
     /// Android adds the files past their END (`landing.all`), because its store runs off the link's thread and a file
@@ -142,19 +144,20 @@ extension LinkManager {
     }
 
     /// How long the file streaming in from `peer` has left at the rate it has come in since its header
-    /// (`FramedLink.rxEtaMs`): the bytes its header declared that are still to come, over the bytes in so far per
-    /// millisecond. Kept or skipped, so the asker can weigh any stream it waits behind. `nil` with none, with no declared
-    /// size, or before a byte of it. This port never resumes a cut transfer, so the bytes are all this stream's.
+    /// (`FramedLink.rxEtaMs`): the bytes its header declared that are still to come, over the bytes in since the header
+    /// per millisecond. A resumed stream's kept prefix came in on another link, so its rate counts the tail alone. Kept or
+    /// skipped, so the asker can weigh any stream it waits behind. `nil` with none, with no declared size, or before a byte
+    /// of it.
     public func fileArrivingLeftMilliseconds(from peer: NodeId) -> Int64? {
         guard let id = liveChannel(to: peer), let file = intakes[id]?.reading, let total = file.total, let clock = arrivalClocks[id] else {
             return nil
         }
-        let got = Int64(file.bytes)
+        let got = Int64(file.bytes - file.from)
         let elapsed = self.clock.monotonicMilliseconds() - clock.startedAt
         guard got > 0, elapsed > 0 else {
             return nil
         }
-        return max(Int64(total) - got, 0) * elapsed / got
+        return max(Int64(total - file.bytes), 0) * elapsed / got
     }
 
     /// How many links are streaming a file out now (`feedingLoad`): one radio, so the count is over every link.
@@ -174,22 +177,42 @@ extension LinkManager {
 
     // MARK: In
 
+    /// A header on `id`. One that resumes a cut transfer is spliced onto the prefix ``partials`` kept, read only once the
+    /// intake's gates pass and the room every link's partial files share holds it (knit-ios #2).
     func fileHeader(_ payload: [UInt8], from peer: NodeId, on id: ChannelID, now: Int64) {
         // Stamped at every header, kept or not, as Android's is.
         arrivalClocks[id] = ArrivalClock(peer: peer, startedAt: now)
         let accepted = acceptedFileKeys
         let avatarLimit = configuration.maxAvatarFileBytes
-        let events = intakes[id, default: FileIntake()].header(payload) { header, key in
-            switch header.kind {
-            case .avatar:
-                avatarLimit
-            case .attachment:
-                accepted.contains(key) ? FileIntake.maxFileBytes : nil
-            }
-        }
+        let others = intakes.reduce(0) { $1.key == id ? $0 : $0 + $1.value.bufferedBytes }
+        let partials = partials
+        let events = intakes[id, default: FileIntake()].header(
+            payload,
+            room: configuration.maxBufferedFileBytes - others,
+            limit: { header, key in
+                switch header.kind {
+                case .avatar:
+                    avatarLimit
+                case .attachment:
+                    accepted.contains(key) ? FileIntake.maxFileBytes : nil
+                }
+            },
+            prefix: { key, offset in partials.open(key, offset: offset).map { ($0.bytes, $0.epoch) } },
+            now: now
+        )
         for event in events {
             note(event, on: id)
         }
+    }
+
+    /// The link `id` was cut mid-file (`FileIntake.cut`, `FileIntake.kt:232-243`): an attachment being kept goes to
+    /// ``partials`` as a prefix the next ask resumes from, which keeps it only if it is the longest held and was not
+    /// spliced onto a prefix dropped since. Anything else is dropped. Which teardowns cut and which drop is the caller's.
+    func keepCutFile(on id: ChannelID, now: Int64) {
+        guard let cut = intakes[id]?.cut() else {
+            return
+        }
+        partials.keep(cut.key, bytes: cut.bytes, basedOn: cut.basedOn, now: now)
     }
 
     func fileChunk(_ payload: [UInt8], from peer: NodeId, on id: ChannelID, now: Int64) -> [Event] {
@@ -206,8 +229,8 @@ extension LinkManager {
     /// How much of the file streaming in on `id` has been read, kept or skipped, after the chunk is in, so a stall reports
     /// nothing (`RxReports.chunk`). With the window's switch on, on a chunk that brings ``windowedProgressEveryBytes`` since the
     /// last report or once ``windowedProgressEveryMilliseconds`` have passed, else arming the trailing report; with it
-    /// off, every ``progressEveryMilliseconds``. A resumed stream would count its kept prefix too; this port never asks
-    /// for one (knit-ios #2).
+    /// off, every ``progressEveryMilliseconds``. A resumed stream's report holds its kept prefix too, the blob's bytes held,
+    /// as the wire means it: its sender takes the offset off (`FeedWindow.kt:210-226`).
     private func fileProgress(from peer: NodeId, on id: ChannelID, now: Int64) -> [Event] {
         guard let file = intakes[id]?.reading, var clock = arrivalClocks[id] else {
             return []
@@ -266,27 +289,53 @@ extension LinkManager {
     }
 
     func fileEnd(from peer: NodeId, on id: ChannelID) -> [Event] {
-        guard case .finished(let header, let key, let bytes)? = intakes[id]?.end() else {
+        guard case .finished(let header, let key, let bytes, let resumedFrom)? = intakes[id]?.end() else {
             return []
         }
         filesReceived += 1
         landingFiles.insert(LandingFile(from: peer, hash: key))
-        log.log(.info, "link file \(header.kind.rawValue) \(Self.shown(key.string)) from \(peer): \(bytes.count) bytes")
-        return [.file(InboundFile(from: peer, kind: header.kind, hash: key, mime: header.mime, bytes: bytes))]
+        // The tail's bytes, and where it resumed last, as the sent line has it (`LinkManager+Feeds`).
+        let resumed = resumedFrom > 0 ? " resumed at \(resumedFrom)" : ""
+        log.log(
+            .info, "link file \(header.kind.rawValue) \(Self.shown(key.string)) from \(peer): \(bytes.count - resumedFrom) bytes\(resumed)")
+        return [.file(InboundFile(from: peer, kind: header.kind, hash: key, mime: header.mime, bytes: bytes, resumedFrom: resumedFrom))]
     }
 
-    /// Counts and logs a file the intake dropped. A file begun streams on, and a finished one reaches the engine from
-    /// ``fileEnd(from:on:)``.
+    /// Counts and logs a file the intake dropped, and a resume it took. A file begun streams on, and a finished one
+    /// reaches the engine from ``fileEnd(from:on:)``.
     private func note(_ event: FileIntake.Event, on id: ChannelID) {
         switch event {
         case .skipped(let header):
             filesRefused += 1
             log.log(.debug, "link \(id) file \(header.map { Self.shown($0.key) } ?? "unreadable") skipped")
+        case .refused(let header, let why):
+            filesRefused += 1
+            // A refused header always resumes, under a well-formed key.
+            if let offset = header.offset, let key = BlobHash(header.key) {
+                log.log(.info, "link \(id) file \(Self.shown(key.string)) refused resumed at \(offset): \(reason(why, key, offset))")
+            }
         case .abandoned(let header):
             filesRefused += 1
             log.log(.info, "link \(id) file \(Self.shown(header.key)) dropped before its end")
-        case .begun, .finished:
-            break
+        case .begun(let header), .finished(let header, _, _, _):
+            // A finished file comes through ``fileEnd(from:on:)``, never here.
+            if let offset = header.offset, offset > 0 {
+                // Counted as the prefix is spliced on (`FramedLink.kt:933`).
+                filesResumedIn += 1
+                log.log(.info, "link \(id) file \(Self.shown(header.key)) resumed at \(offset)")
+            }
+        }
+    }
+
+    /// A refused resume's reason, in Android's words where it has them (`FileIntake.kt:149`).
+    private func reason(_ why: FileIntake.Refusal, _ key: BlobHash, _ offset: Int) -> String {
+        switch why {
+        case .resumedRecently(let milliseconds):
+            "resumed \(milliseconds)ms ago"
+        case .notKept:
+            "\(partials.length(key))B kept"
+        case .noRoom:
+            "no room for \(offset)B"
         }
     }
 

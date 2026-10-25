@@ -86,7 +86,7 @@ import Testing
         expectWithinArriving(rig, "undeclared")
     }
 
-    @Test func aCutLinkDropsItsFile() {
+    @Test func aCutLinkTakesItsFileOffTheArrivals() {
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
         let file = bytes(4096)

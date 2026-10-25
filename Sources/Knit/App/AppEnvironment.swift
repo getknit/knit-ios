@@ -165,7 +165,7 @@
             let keyStore = KeychainSecretStore()
             let identity = try IdentityKeys.load(from: keyStore).keys
             let log = UnifiedLog(clock: SystemClock())
-            let directory = try databaseDirectory()
+            let directory = try AppStorage.databaseDirectory()
             let database = try KnitDatabase.open(in: directory) { error in log.log(.warning, "store failed: \(error)") }
             let stores = MeshStores(
                 custody: SQLCustodyStore(database),
@@ -194,6 +194,7 @@
                 textClassifier: DeviceTextClassifier(log: log)
             )
             parts.shareInbox = ShareContainer.inbox()
+            parts.partials = AppStorage.partials(in: directory, database: database, log: log)
             #if DEBUG
                 parts.storage = StorageReport(
                     nodeId: identity.nodeId, keyStore: keyStore, directory: directory, preferences: defaults, launch: launch)
@@ -229,6 +230,8 @@
             var notification: LocalNotification?
             /// The share sheet's inbox: the App Group's in a live launch, or a folder of the demo's own under `-demoShare`.
             var shareInbox: ShareInbox?
+            /// Where cut attachments' prefixes are kept: on disk beside the blobs in a live launch, in memory otherwise.
+            var partials: (any PartialBlobStore)?
             #if DEBUG
                 /// What the debug bridge's `storage` reply reads, which only a live launch has.
                 var storage: StorageReport?
@@ -261,7 +264,8 @@
                 // Every build queries a blob's holders before it asks, as Android's does since its `BLOB_QUERY` shipped
                 // on in release (knit-next `713b29d6`, ADR 2026-10.m9uq's amendment); the ratchet too, unless a debug `-ratchet off`.
                 configuration: MeshConfiguration(queriesBlobHolders: true, ratchet: ratchet),
-                log: parts.log
+                log: parts.log,
+                partials: parts.partials
             )
             let alerts = LocalNotifier()
             let shows = !parts.staging.isEmpty || parts.director != nil
@@ -384,13 +388,6 @@
             if let textModel {
                 Task { await textModel.release() }
             }
-        }
-
-        /// The database's own directory, under Application Support, which is backed up unless told otherwise; the
-        /// store excludes it (ADR 2026-09.nyya).
-        private static func databaseDirectory() throws -> URL {
-            try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-                .appending(path: "Database", directoryHint: .isDirectory)
         }
     }
 #endif

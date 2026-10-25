@@ -4,15 +4,27 @@ import KnitWire
 extension LinkManager {
     // MARK: Teardown and writes
 
-    /// Closes a channel and forgets it, and answers the link that went down with it, if it was registered.
+    /// Closes a channel and forgets it, and answers the link that went down with it, if it was registered. An attachment
+    /// cut off mid-stream leaves its bytes in ``partials`` for the next ask to resume from, as Android's every
+    /// `FramedLink.close()` does (`FramedLink.kt:528-536`, `FileIntake.kt:232-243`; knit-next ADR 2026-10.wtyc), unless
+    /// `keepingCut` is false: a stop, whose prefixes ``Mesh`` purges right after, or bytes the link itself made suspect. A
+    /// channel retired before a HELLO holds no intake, and one already retired is not here, so either keeps nothing.
     func retire(_ id: ChannelID, backingOff: Bool, now: Int64) -> [Event] {
+        retire(id, backingOff: backingOff, keepingCut: true, now: now)
+    }
+
+    /// ``retire(_:backingOff:now:)``, keeping a cut attachment's bytes only when `keepingCut` says to.
+    func retire(_ id: ChannelID, backingOff: Bool, keepingCut: Bool, now: Int64) -> [Event] {
         guard let channel = channels.removeValue(forKey: id) else {
             return []
         }
         radio.close(id)
         crossings.forget(link: id)
         doorbells[id] = nil
-        // A file cut off mid-stream is dropped either way; the next re-ask fetches it whole (`FramedLink.kt:183-190`).
+        if keepingCut {
+            // Before the intake goes, and so before any link that replaces this one is live to carry an ask.
+            keepCutFile(on: id, now: now)
+        }
         intakes[id] = nil
         arrivalClocks[id] = nil
         if feeds.removeValue(forKey: id)?.streaming != nil {
@@ -58,10 +70,13 @@ extension LinkManager {
         return Double(random.next() >> UInt64(UInt64.bitWidth - mantissaBits)) / Double(UInt64(1) << UInt64(mantissaBits))
     }
 
-    func forgetEverything() -> [Event] {
+    /// Closes every channel and forgets what the session learnt of the air. A radio that went off, reset or lost its
+    /// authorization keeps its cut attachments like any other teardown (`keepingCuts`); ``stop()`` does not, since
+    /// ``Mesh/stop()`` purges them next and writing up to a buffer's worth only to delete it is waste.
+    func forgetEverything(keepingCuts: Bool) -> [Event] {
         let now = clock.monotonicMilliseconds()
         let ids = channels.keys.sorted(by: Self.inOrder)
-        let events = ids.flatMap { retire($0, backingOff: false, now: now) }
+        let events = ids.flatMap { retire($0, backingOff: false, keepingCut: keepingCuts, now: now) }
         // A file that landed in a session is taken in it; nothing landed before a start is one the engine will take.
         landingFiles.removeAll()
         presence = PresenceTracker(configuration: configuration.presence)

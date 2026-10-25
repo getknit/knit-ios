@@ -94,6 +94,22 @@ import Testing
         #expect(fixture.engine.blobExchange.wants[photo]?.until == EngineFixture.start + day, "no rows read is no news")
     }
 
+    @Test func aPeersPhotoAMessageAlsoNamesKeepsItsDeadlineWhenTheRowsReadFails() {
+        // The same blob as a profile photo and a DM's: its rows give it the DM's window, and a read of them that fails
+        // keeps the window it had, from either door.
+        let (stores, messages) = stores()
+        stores.peers.upsert(
+            PeerRecord(
+                nodeId: bob.nodeId, name: "Bob", status: "", publicKey: bob.keys.bundle.encoded, updatedAt: 1, advertisedAvatarHash: photo))
+        let fixture = EngineFixture(alice, stores: stores)
+        stores.messages.save(row("dm-1", sentAt: EngineFixture.start))
+        fixture.advance(60_000)
+        #expect(fixture.engine.blobExchange.wants[photo]?.until == EngineFixture.start + day)
+        messages.failsAttachmentRows = true
+        fixture.advance(60_000)
+        #expect(fixture.engine.blobExchange.wants[photo]?.until == EngineFixture.start + day)
+    }
+
     @Test func aDeliveredDmIsPulledThroughUntilItsWindowAndARoomPostLiftsIt() throws {
         let fixture = EngineFixture(alice)
         fixture.link(carol)

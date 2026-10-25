@@ -40,6 +40,8 @@ final class RecordingTransport: MeshTransport {
     private(set) var accepted: Set<BlobHash> = []
     /// What a link would say is streaming in, as a test sets it.
     var arrivingFileKeys: Set<BlobHash> = []
+    /// Whether a file taken leaves ``arrivingFileKeys``, as a landed file leaves a real link's.
+    var takenLeavesArriving = false
     /// The files a link would say are still on their way, by hash and peer, as a test sets them.
     var inFlight: [(hash: BlobHash, to: NodeId)] = []
     /// The files a link would say are queued and not yet streaming, by hash and peer, as a test sets them. A withdrawal
@@ -106,6 +108,9 @@ final class RecordingTransport: MeshTransport {
 
     func fileTaken(from peer: NodeId, hash: BlobHash) {
         taken.append((peer, hash))
+        if takenLeavesArriving {
+            arrivingFileKeys.remove(hash)
+        }
     }
 
     func fileProgressReported(from peer: NodeId, hash: BlobHash, held: Int64, milliseconds: Int64) {

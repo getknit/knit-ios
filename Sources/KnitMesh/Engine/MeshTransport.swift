@@ -173,16 +173,19 @@ public struct InboundFile: Sendable, Equatable {
     public var hash: BlobHash
     /// The type the header named.
     public var mime: String
-    /// The bytes, as they arrived.
+    /// The bytes, as they arrived: the whole blob, a resumed one's kept prefix included.
     public var bytes: [UInt8]
+    /// The byte its stream started at: 0, or the kept prefix it was spliced onto (`ReceivedFile.resumedFrom`, knit-ios #2).
+    public var resumedFrom: Int
 
     /// A file that arrived.
-    public init(from: NodeId, kind: FileHeader.Kind, hash: BlobHash, mime: String, bytes: [UInt8]) {
+    public init(from: NodeId, kind: FileHeader.Kind, hash: BlobHash, mime: String, bytes: [UInt8], resumedFrom: Int = 0) {
         self.from = from
         self.kind = kind
         self.hash = hash
         self.mime = mime
         self.bytes = bytes
+        self.resumedFrom = resumedFrom
     }
 }
 
@@ -203,12 +206,15 @@ public struct FileCounts: Sendable, Equatable {
     public var sent: Int
     /// Of those, the ones that streamed only the tail an asker lacked (`onFileResumedOut`, knit-next ADR 2026-10.wtyc).
     public var resumedOut: Int
+    /// Files whose stream was spliced onto a prefix kept from a cut link (`onFileResumedIn`, knit-ios #2).
+    public var resumedIn: Int
 
     /// Bundles the counts.
-    public init(received: Int = 0, refused: Int = 0, sent: Int = 0, resumedOut: Int = 0) {
+    public init(received: Int = 0, refused: Int = 0, sent: Int = 0, resumedOut: Int = 0, resumedIn: Int = 0) {
         self.received = received
         self.refused = refused
         self.sent = sent
         self.resumedOut = resumedOut
+        self.resumedIn = resumedIn
     }
 }

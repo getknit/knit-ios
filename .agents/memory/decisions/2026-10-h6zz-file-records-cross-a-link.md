@@ -69,8 +69,9 @@ nothing waits on it.
 - **No resume.** A file cut off by a dying link is dropped on both ends, and the next request fetches it whole.
   *Amended 2026-10-24 (knit-next ADR 2026-10.wtyc, knit-ios #2):* the holder half is in. An ask whose `offset` is in
   `1...size` is served as the tail, under a header that declares the tail's `size` and the `offset`. An offset equal
-  to the size gets a header and its END with no chunk. The receiver half is still owed, so `FileIntake` skips a header
-  with a non-zero offset, and this port still asks for whole files.
+  to the size gets a header and its END with no chunk. *Amended 2026-10-25 by ADR 2026-10.w6rn:* the receiver half
+  is in too. A cut attachment keeps its prefix, the next ask names its length, and `FileIntake` splices a resumed
+  header's tail onto it.
 - **Guards:**
   - `FileIntakeTests` for Android's receiving rules, and `LinkTests.fileHeaderBytesArePinned` for the header.
   - `LinkFileTests` for the stream, the pace, the gate, frames between chunks, one file at a time, and teardown.

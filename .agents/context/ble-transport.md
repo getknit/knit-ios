@@ -182,7 +182,8 @@ radio.
   ends at EOF also bumps the streak, and success resets it. Since knit-next `9a68b225` (#205, `LinkDownOnce.kt`) a
   link's end bumps it once. The read and write loops both used to report it, so a single drop bumped the streak
   twice and the first redial came after about 20 s instead of 10. A link Android closes as silent (697m, below)
-  never bumps it. This port's `retire` already acts once per link (`LinkManager+Channels.swift:9-11`).
+  never bumps it. This port's `retire` already acts once per link (`retire(_:backingOff:keepingCut:now:)` in
+  `LinkManager+Channels.swift`).
 - **Connect:** a 12 s watchdog around each dial (`CONNECT_TIMEOUT_MS`). No MTU request and no bonding.
   - The Coded PHY (debug builds, and release since knit-next `713b29d6`) works only with a peer it hears on Coded. It dials that peer's Coded
     address with a 25 s watchdog, and switches the link's PHY over GATT. An iPhone is never heard on Coded, so its
@@ -322,6 +323,10 @@ Files cross a link as Android's do (ADR 2026-10.h6zz).
 - **In:** each link's records pass through a `FileIntake` under Android's receiving rules.
   - A peer's own AVATAR push is kept up to 1 MiB, and an ATTACHMENT only when the engine asked for its hash.
   - Partial files on all links together stay under 16 MiB.
+  - A teardown cuts an ATTACHMENT that is streaming in and keeps its bytes as a prefix for the next ask to name. That
+    covers a closed link, a stale link replaced, and a radio that goes off, resets or loses permission. A
+    bad record and `LinkManager.stop()` drop the bytes instead. A new teardown path has to make the same choice (ADR
+    2026-10.w6rn).
   - A whole file stays on its way, to the fetch and to a holder query, from its END until the engine has taken it
     (`MeshTransport.fileTaken`, knit-next #138), since a radio read runs all its records before the engine sees one.
   - The engine tells the sender how much of a kept file is in with a `blobprog`: on every chunk that brings 2 KiB, at

@@ -67,7 +67,7 @@ only every 2 s (ADR 2026-10.ds45), a cadence that the window cannot be clocked b
 - **The resume offset.** This port never resumes a cut transfer (knit-ios #2). *Amended 2026-10-24, for knit-next ADR 2026-10.wtyc:* the
   holder half is in. A feed serving an asker's kept prefix starts at `OutboundFile.start`, and its window
   (`FeedWindow.start(offset:now:)`, `held - offset` once at `report`'s entry) and its meter (sized by the tail) count
-  from there, as `FramedLink.kt:816-825` does. The receiver half, keeping a cut file's prefix, is still owed.
+  from there, as `FramedLink.kt:816-825` does. The receiver half landed on 2026-10-25 (ADR 2026-10.w6rn).
 - **nsr7's holder half.** That is the meter, parking a second ask behind a live feed, and `eta` on a SENDING answer.
   The window replaces the pace the meter would time, but nothing here parks yet (`.agents/memory/roadmap.md`).
 - **The boost** (knit-next ADR 2026-10.2da4). An iPhone cannot ask for a connection interval as a central. As a

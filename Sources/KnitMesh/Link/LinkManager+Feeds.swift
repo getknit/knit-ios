@@ -116,7 +116,13 @@ extension LinkManager {
 
     /// What the links did with FILE records so far, with `rejected` more that the engine refused once they arrived.
     public func fileCounts(rejected: Int) -> FileCounts {
-        FileCounts(received: filesReceived, refused: filesRefused + rejected, sent: filesSent, resumedOut: filesResumedOut)
+        FileCounts(
+            received: filesReceived,
+            refused: filesRefused + rejected,
+            sent: filesSent,
+            resumedOut: filesResumedOut,
+            resumedIn: filesResumedIn
+        )
     }
 
     /// The radio reported a FILE record's last byte out on `id`: the next one may go once its window or pace allows.
