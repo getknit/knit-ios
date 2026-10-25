@@ -171,3 +171,8 @@ The alternatives:
     iPhone's `resumedOut` 1. The Pixel's copy passed its hash check.
   - In both, the prefix and the tail added up to the sealed photo, and no holder sent the whole file again
     (`linux-peer.md`, "What the resume trial showed").
+- **Bluetooth off mid-photo, checked by hand the same day.** A radio state that is not `.on` keeps the cut. Bluetooth
+  went off on the iPhone 10 s into a photo from the Pixel 9, and the iPhone kept 59,358 B. 14 s after it came back,
+  the iPhone took a 130,126 B tail from the Pixel 7, a second holder. iOS kept the connections under the links Knit
+  dropped, so the Pixels whose ids sort above the iPhone's refused its redials for 56 s to 14 min
+  (knit/knit-next#216). A Settings Stop mid-photo is still owed.

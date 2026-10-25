@@ -1848,5 +1848,14 @@ Pixel's `BLECAP 0` cut it five seconds into the stream. The run passed every ste
   2026-10.m9uq).
 - **Nothing crossed twice.** Neither holder logged a whole serve of the photo after the cut. The prefix and the tail
   added up to the sealed size each way, and the Pixel's copy passed its hash check.
-- **Still owed by hand:** Bluetooth off and on in the iPhone's Settings mid-photo, which should keep the prefix, and
-  a Settings Stop mid-photo, which should keep nothing.
+- **Bluetooth off mid-photo kept the prefix (by hand, later that day).** The iPhone was fetching a 189,484 B DM photo
+  from the Pixel 9 when Bluetooth was turned off on it, 10 s in, and back on 14 s later. Whether that was in Settings
+  or Control Centre wasn't recorded. At `ble off` Knit dropped all four links and kept 59,358 B. 14 s after `ble on`
+  it linked to the Pixel 7, a release build that held a copy by then, and took a 130,126 B tail from it in 8.6 s
+  (`resumed at 59358`). The joined blob was stored and the prefix dropped. That is a resume from a second holder,
+  which the scripted run never covers.
+- **The toggle left Android's links up.** iOS kept the connections under the links Knit dropped: the Pixel 9 wrote
+  the rest of the photo into its channel with no error. The three Pixels whose ids sort above the iPhone's refused
+  its redials until each had gone 12 s without hearing it. That took the Pixel 3 56 s, the Pixel 8 87 s and the
+  Pixel 9, the closest, 14 min (knit/knit-next#216).
+- **Still owed by hand:** a Settings Stop mid-photo, which should keep nothing.
