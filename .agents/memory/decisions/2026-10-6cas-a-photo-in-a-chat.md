@@ -35,6 +35,15 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
   - A room post keeps its photo as it is. A DM or group message keeps the ciphertext, and the key stays in the
     message's row.
   - A message that waits for a key keeps its photo, and is sealed with it once the key pins.
+  - (Amended 2026-10-24: a picture of 1,000,000 bytes or more declares its plaintext length, sealed in
+    `MessageContent.attachmentSize` in a DM or a group and in the clear in a room post's `ChatContent.attachmentSize`.
+    An Android phone set to ask before large Bluetooth downloads then holds one over its own limit until its user taps
+    it. Below the floor, the frame is what it was (`BluetoothFetchGate.declaresSize`, knit-next ADRs 2026-10.js2p and
+    2026-10.hmfe; knit-ios #7). The size is kept on the message's row, so a message sealed later from its row declares
+    it too. An Android carrier that asks first holds its own Bluetooth pull of a large room photo the same way, so the
+    photo reaches it only after a tap or over Wi-Fi Aware. A received room post's size is read as kotlinx-cbor reads a
+    `Long`, wrapping past `Int64.max` (`FieldKind.wrappingInt64`). The carry gate decodes every chat frame, so a strict
+    read would refuse a frame Android's `canCarry` keeps, and the two custodies would never agree.)
 - **The store:** schema v5 adds `attachmentHash`, `attachmentMime`, `attachmentKey`, `attachmentName` and
   `attachmentSize` to `messages`, with a partial index on the hash. A message names its blob, so the sweep keeps the
   blob while the message stays, and every re-offer wants it while its bytes are missing (knit-next ADR 2026-09.ptv8).
@@ -94,7 +103,7 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
 **Consequences / limits:**
 
 - **What a carrier sees:** a DM's or a group's photo blob is ciphertext, but its hash, its size and the fact that a
-  message carries a photo travel in the clear. A Nearby photo is as public as the post.
+  message carries a photo travel in the clear. A Nearby photo is as public as the post, its declared size included.
 - **A GIF shows its first frame here;** Android animates it. (Amended 2026-10-08: a GIF, an animated WebP or an APNG
   plays here too, and a list's line names a GIF from its frames; ADR 2026-10.ytvx.)
 - **A transparent photo goes as PNG,** which weighs more than Android's WebP. (Amended 2026-10-08: it goes as lossy
@@ -110,6 +119,9 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
     for a photo's size. `PhotoSizeTests` covers when the session reads it, a sealed photo through its key.
   - `MeshEnginePhotoTests`: sending in all three threads, a pending photo's reseal, receiving, the hash and length
     checks, and the sweep.
+  - `MeshEnginePhotoSizeTests`: a large photo's declared size in all three threads, v1, v3 and the group form, from the
+    row once a key pins and from a held picture, and none below the floor. `ChatContentSizeTests` pins the room field
+    against `chatContentVideo`, and `BluetoothFetchGateTests` the floor.
   - `ChatPhotoTests` and `CopyTests` for the app's state, the lines, and the plist's words.
   - `MeshControlPhotoTests` for the control lines, and `KnitUITests`' photo walk for the composer, the bubble and the
     viewer at both text sizes. The walk's picked picture stands upright, a hundred points taller than a spinner's

@@ -47,7 +47,9 @@ carried. The frame is dropped with no error sent back. These fields must always 
 
 The payload types:
 
-- `ChatContent { body = "", mentions = [], attachmentHash?, attachmentMime?, enc: EncEnvelope?, replyTo: ReplyRef? }`
+- `ChatContent { body = "", mentions = [], attachmentHash?, attachmentMime?, enc: EncEnvelope?, replyTo: ReplyRef?,
+  attachmentSize: Long? }`. A room post declares `attachmentSize`, its photo's plaintext length, from 1,000,000 bytes
+  (knit-next ADR 2026-10.hmfe); a sealed frame's shell never does.
 - `ProfileContent { name, status, avatarHash?, pubKey?, deviceTag?, protoVersion?, capabilities?, prekey?, version?, openToChat = false, loraNode?, loraKey? }`
 - `ReceiptContent { ackId }`, `ReactionContent { messageId, emoji? }`, `KeyReqContent { nodeIds }`,
   `BlobReqContent { hash, offset?, pull?, until? }`, `TypingContent { groupId? }`
@@ -153,8 +155,8 @@ photos in chats the same day (ADR 2026-10.6cas), the blob holder query on 2026-1
 | --- | --- | --- |
 | `profile` | on every new link, on edit, and at least every 12 h; `avatarHash` names our photo | pin, verify, carry; the photo shows once its bytes are held |
 | `chat` DM, `enc.v = 1` | toward a peer whose profile carries no `CAP_RATCHET`, and toward every peer with the ratchet's switch off | yes, always |
-| a photo in a DM or a group | sealed with `AttachmentCrypto`: the hash, type and key inside the sealed content, the hash alone beside `enc`; a picture held already goes as its blob and key, or a room picture under its own hash with no key (ADR 2026-10.f3mv) | kept with the message, its blob wanted, or held from our own sealed copy when a key-less one's author was in that chat; opened in memory with the key when shown |
-| a photo in a room post | `attachmentHash` and `attachmentMime` in the clear; the blob is the photo | kept with the post, its blob wanted |
+| a photo in a DM or a group | sealed with `AttachmentCrypto`: the hash, type and key inside the sealed content, the hash alone beside `enc`; from 1,000,000 bytes its plaintext length too, sealed (`attachmentSize`, knit-next ADR 2026-10.js2p); a picture held already goes as its blob and key, or a room picture under its own hash with no key (ADR 2026-10.f3mv) | kept with the message, its blob wanted, or held from our own sealed copy when a key-less one's author was in that chat; opened in memory with the key when shown |
+| a photo in a room post | `attachmentHash` and `attachmentMime` in the clear, and `attachmentSize` from 1,000,000 bytes; the blob is the photo | kept with the post, its blob wanted |
 | `chat` DM, `enc.v = 2` or `3` (the ratchet) | toward a peer whose profile carries `CAP_RATCHET`: v3 when it also carries `CAP_CRYPTO_V3` and the content has a compact form, v2 otherwise (ADR 2026-10.b4yk) | yes, with the switch on (`crypto.md`) |
 | `chat` room post (no recipient, no group) | yes, signed and cleartext | yes |
 | `chat` group message, `enc.v = 1`, roster in `group` | while any other member lacks `CAP_RATCHET` or a valid prekey, or with the switch off: wrapped to each keyed member | yes, after the roster rules (`GroupRoster`) |

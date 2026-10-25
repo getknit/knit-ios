@@ -93,6 +93,22 @@ extension FieldKind where Value == Int64 {
     static var int64: Self {
         Self { item in item.int64 }
     }
+
+    /// A Kotlin `Long` as kotlinx-cbor 1.12.0 reads it (`Decoder.readNumber`, `readExact`): any integer, its magnitude
+    /// wrapped into 64 bits with no range check, so a value past `Int64.max` comes back negative instead of refused. For
+    /// a field a carry gate decodes, where refusing what Android accepts would split custody between the two.
+    static var wrappingInt64: Self {
+        Self { item in
+            switch item {
+            case .unsigned(let value):
+                Int64(truncatingIfNeeded: value)
+            case .negative(let magnitude):
+                0 &- (Int64(truncatingIfNeeded: magnitude) &+ 1)
+            default:
+                nil
+            }
+        }
+    }
 }
 
 extension FieldKind where Value == Bool {

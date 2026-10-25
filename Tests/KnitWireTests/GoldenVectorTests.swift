@@ -23,7 +23,9 @@ import Testing
     /// knit-next's fixtures for what this build does not model yet, taken at `9c3d487b`: calls (knit-next ADR
     /// 2026-10.3tee), supporter badges (knit-next ADR 2026-10.r99s), short videos, and a blob request's `fastOnly` (knit-ios
     /// #8). Each decodes to the type this build has, the new fields dropped, so a newer Android's frame is read, never
-    /// refused. A blob request's `pull` and `until` are modelled since ADR 2026-10.8hek, and are typed fixtures below.
+    /// refused. `chatContentVideo` now drops only its `video`: its `attachmentSize` is modelled since knit-ios #7, and is
+    /// checked in ``ChatContentSizeTests``. A blob request's `pull` and `until` are modelled since ADR 2026-10.8hek, and
+    /// are typed fixtures below.
     @Test func whatThisBuildDoesNotModelStillDecodes() throws {
         #expect(try BlobRequestContent(decoding: GoldenVectors.bytes("blobReqContentFastOnly")) == BlobRequestContent(hash: "h1"))
         #expect(try ProfilePayload(decoding: GoldenVectors.bytes("profilePayloadBadges")).name == "Ann")

@@ -79,7 +79,8 @@ public struct MessageAttachment: Sendable, Equatable {
     public var key: String?
     /// A file's name, which only a file carries.
     public var name: String?
-    /// A file's size in bytes, before sealing, which only a file carries.
+    /// The plaintext length in bytes, before sealing, that its sender declared: always for a file, and for a photo from
+    /// 1,000,000 bytes (knit-next ADR 2026-10.js2p). A label, never a bound.
     public var size: Int64?
     /// A photo's size, and whether it moves, read from its bytes on this phone: `nil` until they are here and have been
     /// read, and for anything but a photo. It never crosses the wire, as knit-next's voice-note fields never do.

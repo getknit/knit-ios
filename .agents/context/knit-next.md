@@ -219,12 +219,13 @@ Kotlin wins.
         request fields: `fastOnly`, which asks before a large Bluetooth-only download (`3b03c5f9`), and `pull` with its
         `until` (`385bfba0`).
       - **What this port does with them:** decodes each to the type it already has and drops the new fields, which
-        `GoldenVectorTests.whatThisBuildDoesNotModelStillDecodes` pins, except `pull` and `until`. `fastOnly` marks an
-        asker that takes the bytes over Wi-Fi Aware alone (knit-next ADR 2026-10.js2p), which this port cannot honour.
-        Android sends one only to a neighbour with a Wi-Fi Aware route (`BlobExchange.kt:493` at `eac3debc`), so an
-        iPhone never gets one. `pull` and `until` carry knit-next ADR 2026-10.2drc's hop budget and deadline for a
-        pull-through. This port models them since ADR 2026-10.8hek, which ports `385bfba0` and its amendment
-        `1ce131fd`, and `blobReqContentPull` and `blobReqContentPullSpent` have typed tests.
+        `GoldenVectorTests.whatThisBuildDoesNotModelStillDecodes` pins, except `pull`, `until` and `chatContentVideo`'s
+        `attachmentSize`, which this port sends since knit-ios #7 (its `video` waits on #9). `fastOnly` marks an asker
+        that takes the bytes over Wi-Fi Aware alone (knit-next ADR 2026-10.js2p), which this port cannot honour. Android
+        sends one only to a neighbour with a Wi-Fi Aware route (`BlobExchange.kt:493` at `eac3debc`), so an iPhone never
+        gets one. `pull` and `until` carry knit-next ADR 2026-10.2drc's hop budget and deadline for a pull-through. This
+        port models them since ADR 2026-10.8hek, which ports `385bfba0` and its amendment `1ce131fd`, and
+        `blobReqContentPull` and `blobReqContentPullSpent` have typed tests.
       - **Since then:** knit-next `main` at `eac3debc` adds four fixtures and moves none: two scope-config ctls
         (`messageContentScopeConfigDm` and `Group`, `33d83aca`), which this port takes as the chain-advancing no-op
         Android counts on, and two commons posts (`651cdc25`), which only a spool carries (knit-ios #11).
@@ -272,6 +273,13 @@ Kotlin wins.
       roster member but us and the blocked. No wire byte moves, so the pin doesn't either. It is mirrored by ADR
       2026-10.jwst as `MentionCandidate.everyone` and `MentionText.filter`: `MentionEveryoneTests`. When the pin passes
       it, check `MentionText.kt`'s `matchesEveryone` and `everyoneMentions` against them.
+    - A photo's declared size, from knit-next `main` at `eac3debc` (knit-next ADRs 2026-10.js2p and 2026-10.hmfe,
+      knit-ios #7): a picture of 1,000,000 bytes or more declares its plaintext length, sealed in a DM or a group and in
+      the clear in a room post, so Android's "Ask before large Bluetooth downloads" can hold it
+      (`BluetoothFetchGate.kt`'s `declaresSize`, `MeshManager.kt:1452-1457`, `:1531-1535`). This port's
+      `BluetoothFetchGate.declaresSize` drops the `named` arm, since it sends no file. An Android carrier holds its own
+      Bluetooth pull of such a room photo too (`roomPostWaits`, `MeshManager.kt:2908-2922`). When the pin passes
+      `eac3debc`, check `BluetoothFetchGate.kt` against `BluetoothFetchGateTests`.
     - knit-next `03c4c3b1` (2026-10-10, on its `main`) counts a payload that won't decode as `PAYLOAD_DECODE_FAILED`
       and drops it. For a typing cue that means a broken group cue no longer lights the room (`InboundPipeline.kt:477`).
       The iPhone's `handleTyping` counts one `undecodable` (ADR 2026-10.29z9): `MeshEngineTypingTests`.

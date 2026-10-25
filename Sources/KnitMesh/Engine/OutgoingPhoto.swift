@@ -18,6 +18,16 @@ public struct OutgoingPhoto: Sendable, Equatable {
     /// the same original picked again is found.
     public var sourceHash: BlobHash?
 
+    /// The length the message declares, its bytes' count from ``BluetoothFetchGate/declareSizeFloor`` up and `nil` below
+    /// it, so an Android receiver's "Ask before large Bluetooth downloads" can hold a large one (knit-next ADR 2026-10.js2p,
+    /// `MeshManager.kt:1452-1457` and `:1531-1535` at `eac3debc`). ``bytes`` are the plaintext even for a held picture:
+    /// both arms of ``MeshEngine/heldPhoto(picked:)`` hand back the picture itself, never its ciphertext, and
+    /// ``MeshEngine/sealPhoto(_:at:)`` names them as the plaintext's hash, so this is Android's `Ingested.sizeBytes`.
+    var declaredSize: Int64? {
+        let size = Int64(bytes.count)
+        return BluetoothFetchGate.declaresSize(size) ? size : nil
+    }
+
     /// A photo of type `mime`.
     public init(bytes: [UInt8], mime: String, identity: PhotoIdentity? = nil, sourceHash: BlobHash? = nil) {
         self.bytes = bytes

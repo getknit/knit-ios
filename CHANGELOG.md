@@ -126,6 +126,9 @@ document:
 - A photo that none of the phones nearby has no longer keeps your iPhone and the Android phones around it
   asking each other for it every few minutes. After a day, your iPhone looks for a missing photo only a few
   times a day.
+- Android phones set to ask before large Bluetooth downloads now ask before fetching a photo from your iPhone
+  that's over their limit, as they already do for photos from Android. A big photo in Nearby also spreads more
+  slowly between those phones.
 
 ## About this file
 

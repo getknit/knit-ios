@@ -36,7 +36,9 @@ extension MeshEngine {
             mentions: record.mentions.map(Self.wire),
             attachmentHash: attachment?.hash.string,
             attachmentMime: attachment?.mime,
-            replyTo: replyTo.map(Self.wire)
+            replyTo: replyTo.map(Self.wire),
+            // Off the row, so the frame and the row agree, as Kotlin's `roomSize` sets both (`MeshManager.kt:1452-1491`).
+            attachmentSize: attachment?.size
         )
         originate(chatEnvelope(id: record.id, sentAt: sentAt, recipient: nil, group: nil, content: content))
         return record
@@ -103,12 +105,13 @@ extension MeshEngine {
         return photo == nil ? nil : ""
     }
 
-    /// Keeps a room post's photo as it is, under its own hash, and answers what the message carries. A picture held
-    /// sealed goes to the room under its plaintext's name all the same, as on Android.
+    /// Keeps a room post's photo as it is, under its own hash, and answers what the message carries, its declared size
+    /// included (``OutgoingPhoto/declaredSize``). A picture held sealed goes to the room under its plaintext's name all
+    /// the same, as on Android.
     func keepPhoto(_ photo: OutgoingPhoto, at now: Int64) -> MessageAttachment {
         let hash = BlobHash(of: photo.bytes)
         stores.blobs.insert(photo.bytes, hash: hash, mime: photo.mime, storedAt: now)
-        return MessageAttachment(hash: hash, mime: photo.mime, sourceHash: photo.sourceHash)
+        return MessageAttachment(hash: hash, mime: photo.mime, size: photo.declaredSize, sourceHash: photo.sourceHash)
     }
 
     /// What a DM or a group message carries: nothing without a photo, or `photo` sealed and kept (``sealPhoto(_:at:)``).
@@ -123,8 +126,10 @@ extension MeshEngine {
     /// What a DM's or a group message's photo goes as (`MeshManager.sealAttachment`): the blob this phone already holds
     /// it as, if its identity's blob is still here, so a picture is sealed once (ADR 2026-10.f3mv); otherwise sealed
     /// under a fresh key, the ciphertext kept under its own hash. A room post's picture goes as its key-less self. The
-    /// message carries the blob's hash, the type and the key, which travel sealed, and remembers the plaintext's name and
-    /// the picked bytes', which never leave this phone. `nil` only if sealing fails.
+    /// message carries the blob's hash, the type, the key and a large photo's declared size (``OutgoingPhoto/declaredSize``),
+    /// which travel sealed, and remembers the plaintext's name and the picked bytes', which never leave this phone. The
+    /// size is kept on the row, so a message sealed later from it declares it too (`row.sealedContent()`,
+    /// `MeshManager.kt:1531-1552`). `nil` only if sealing fails.
     func sealPhoto(_ photo: OutgoingPhoto, at now: Int64) -> MessageAttachment? {
         let plainHash = BlobHash(of: photo.bytes)
         if let held = photo.identity, stores.blobs.contains(held.hash) {
@@ -132,6 +137,7 @@ extension MeshEngine {
                 hash: held.hash,
                 mime: photo.mime,
                 key: held.key,
+                size: photo.declaredSize,
                 plainHash: held.key == nil ? nil : plainHash,
                 sourceHash: photo.sourceHash
             )
@@ -144,16 +150,17 @@ extension MeshEngine {
                 hash: hash,
                 mime: photo.mime,
                 key: Base64.encode(sealed.key),
+                size: photo.declaredSize,
                 plainHash: plainHash,
                 sourceHash: photo.sourceHash
             )
         }
     }
 
-    /// The sealed content of one of our messages: its body and mentions, its attachment's hash, type, key, and a file's
-    /// name and size, and the quote of the message it replies to, all inside the ciphertext (`MessageContent.mentions`,
-    /// `MessageContent.replyTo`). A message that waited for a key is sealed from its stored row, so it keeps them
-    /// (`MeshManager.resealAndFlood`, `MeshManager.kt:3268-3276`).
+    /// The sealed content of one of our messages: its body and mentions, its attachment's hash, type, key, a file's name
+    /// and the size a sender declares (``OutgoingPhoto/declaredSize``), and the quote of the message it replies to, all
+    /// inside the ciphertext (`MessageContent.mentions`, `MessageContent.replyTo`). A message that waited for a key is
+    /// sealed from its stored row, so it keeps them (`MeshManager.resealAndFlood`, `MeshManager.kt:3268-3276`).
     static func content(of message: MessageRecord) -> MessageContent {
         let attachment = message.attachment
         return MessageContent(

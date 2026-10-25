@@ -15,6 +15,11 @@ public struct ChatContent: CBORRepresentable, Equatable {
     public var enc: EncEnvelope?
     /// A room post's quoted reply; a sealed message carries its quote inside ``enc``.
     public var replyTo: ReplyRef?
+    /// A room attachment's plaintext length, which its sender declares from 1,000,000 bytes, so a receiver's "Ask before
+    /// large Bluetooth downloads" can judge a room post (knit-next ADRs 2026-10.hmfe and 2026-10.js2p, `Wire.kt:226-230` at
+    /// `eac3debc`). A label, never a bound. Room only: a sealed message carries its size inside ``enc``
+    /// (`MessageContent.attachmentSize`), and its shell never supplies one (knit-next ADR 2026-10.hmfe, section 4).
+    public var attachmentSize: Int64?
 
     /// Makes chat content; the defaults are an empty room post.
     public init(
@@ -23,7 +28,8 @@ public struct ChatContent: CBORRepresentable, Equatable {
         attachmentHash: String? = nil,
         attachmentMime: String? = nil,
         enc: EncEnvelope? = nil,
-        replyTo: ReplyRef? = nil
+        replyTo: ReplyRef? = nil,
+        attachmentSize: Int64? = nil
     ) {
         self.body = body
         self.mentions = mentions
@@ -31,6 +37,7 @@ public struct ChatContent: CBORRepresentable, Equatable {
         self.attachmentMime = attachmentMime
         self.enc = enc
         self.replyTo = replyTo
+        self.attachmentSize = attachmentSize
     }
 
     /// Reads chat content from a decoded item.
@@ -42,6 +49,9 @@ public struct ChatContent: CBORRepresentable, Equatable {
         attachmentMime = try fields.nullable("attachmentMime", .text)
         enc = try fields.nullable("enc", .object(EncEnvelope.self))
         replyTo = try fields.nullable("replyTo", .object(ReplyRef.self))
+        // Wrapped as kotlinx wraps it: `isCarriable` decodes every chat frame, as Android's `canCarry` does, so a size
+        // Android reads must never refuse the frame here (`InboundPipeline.kt:2311-2320` at `eac3debc`).
+        attachmentSize = try fields.nullable("attachmentSize", .wrappingInt64)
     }
 
     /// The content as an item, defaults omitted.
@@ -53,6 +63,7 @@ public struct ChatContent: CBORRepresentable, Equatable {
         writer.text("attachmentMime", optional: attachmentMime)
         writer.object("enc", optional: enc)
         writer.object("replyTo", optional: replyTo)
+        writer.long("attachmentSize", optional: attachmentSize)
         return writer.cbor
     }
 }

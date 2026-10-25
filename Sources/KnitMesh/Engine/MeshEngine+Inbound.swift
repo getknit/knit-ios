@@ -283,7 +283,8 @@ extension MeshEngine {
     }
 
     /// What a sealed message carries, from its opened content: the ciphertext's hash, the type, the key that opens it,
-    /// and a file's name and size. The cleartext beside the envelope repeats only the hash, and the sealed one wins.
+    /// a file's name, and the plaintext length its sender declared: always for a file, and for a photo from 1,000,000 bytes
+    /// (knit-next ADR 2026-10.js2p). The cleartext beside the envelope repeats only the hash, and the sealed one wins.
     static func attachment(of content: MessageContent) -> MessageAttachment? {
         content.attachmentHash.flatMap { BlobHash($0) }.map { hash in
             MessageAttachment(
