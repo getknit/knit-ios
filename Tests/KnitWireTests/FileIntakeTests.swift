@@ -140,6 +140,33 @@ import Testing
         #expect(asked == 0)
     }
 
+    /// The rest of a cut transfer (knit-next ADR 2026-10.wtyc) has no prefix to splice onto until this intake keeps one
+    /// (knit-ios #2), so it is skipped with its chunks and END, before the owner is asked, and never taken for a whole
+    /// file. A negative offset is skipped too, and the largest size beside one never traps. An explicit 0 is a whole file.
+    @Test func aResumedHeaderIsSkippedWithItsChunksAndEnd() throws {
+        var asked = 0
+        var intake = FileIntake()
+        let fields = #""kind":"ATTACHMENT","key":"\#(key)","mime":"image/jpeg""#
+        for (offset, size) in [(600, "400"), (-1, "400"), (1, "9223372036854775807")] {
+            let payload = Array("{\(fields),\"size\":\(size),\"offset\":\(offset)}".utf8)
+            let events = intake.header(payload) { _, _ in
+                asked += 1
+                return .max
+            }
+            #expect(events == [.skipped(FileHeader(kind: .attachment, key: key, mime: "image/jpeg", size: Int(size), offset: offset))])
+            #expect(intake.isStreaming && intake.arriving == nil && intake.reading == nil, "\(offset)")
+            #expect(intake.chunk([1, 2]) == nil)
+            #expect(intake.end() == nil, "\(offset)")
+            #expect(!intake.isStreaming)
+        }
+        #expect(asked == 0)
+        let zero = Array("{\(fields),\"size\":2,\"offset\":0}".utf8)
+        let whole = FileHeader(kind: .attachment, key: key, mime: "image/jpeg", size: 2, offset: 0)
+        #expect(intake.header(zero, limit: keepAll) == [.begun(whole)])
+        _ = intake.chunk([1, 2])
+        #expect(intake.end() == .finished(whole, try #require(BlobHash(key)), [1, 2]))
+    }
+
     @Test func aRefusedFileIsSkippedToItsEnd() {
         var intake = FileIntake()
         let refused = intake.header(header()) { _, _ in nil }

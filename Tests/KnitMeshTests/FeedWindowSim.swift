@@ -42,7 +42,7 @@ final class FeedWindowSim {
         self.lag = lag
         self.reportEvery = reportEvery
         self.asleep = asleep
-        window.start(now: 0)
+        window.start(offset: 0, now: 0)
     }
 
     func measure(from at: Int64) {

@@ -13,8 +13,9 @@ internal struct FileFeed {
         /// Whether its receiver's reports clock it (``FeedWindow``): the switch is on and the peer's HELLO carries
         /// ``Capabilities/blobHave`` (`BleFeedPolicy.windowed`, with Android's iPhone exclusion lifted here).
         let windowed: Bool
-        /// How many of the file's bytes are written.
-        var offset = 0
+        /// The blob's byte the next chunk starts at: ``OutboundFile/start`` when the header goes, then past each chunk
+        /// written, so `file.size - offset` is what is left to write and `offset - file.start` what was.
+        var offset: Int
         /// FILE records handed to a radio that reports writes, whose last byte it has not reported out yet.
         var unreported = 0
         /// Whether the END is written.
@@ -113,6 +114,11 @@ extension LinkManager {
         pump(id, now: now)
     }
 
+    /// What the links did with FILE records so far, with `rejected` more that the engine refused once they arrived.
+    public func fileCounts(rejected: Int) -> FileCounts {
+        FileCounts(received: filesReceived, refused: filesRefused + rejected, sent: filesSent, resumedOut: filesResumedOut)
+    }
+
     /// The radio reported a FILE record's last byte out on `id`: the next one may go once its window or pace allows.
     func fileRecordWritten(on id: ChannelID, now: Int64) -> [Event] {
         if let unreported = feeds[id]?.streaming?.unreported, unreported > 0 {
@@ -189,21 +195,28 @@ extension LinkManager {
 
     /// Starts the next waiting file with its header, or answers `false` when none waits. A peer that reports is
     /// windowed, and its window starts before the header, which it does not count (`FramedLink.kt:790-797`).
+    ///
+    /// A resumed file streams only its tail, from ``OutboundFile/start`` (knit-next ADR 2026-10.wtyc,
+    /// `FramedLink.kt:816-825`): the window and the meter count from there, since the receiver's reports name its kept
+    /// prefix too, and the meter is sized by the tail, so what remains and its ETA are the tail's. An empty tail, a
+    /// prefix already whole, writes its header and then its END, with no chunk, through the same ordered writes.
     private func startNextFile(_ feed: inout FileFeed, on id: ChannelID, now: Int64) -> Bool {
         guard !feed.waiting.isEmpty else {
             return false
         }
         let file = feed.waiting.removeFirst()
+        let start = Int64(file.start)
         let windowed = configuration.feedWindow && feed.reports
         if windowed {
-            feed.window.start(now: now)
+            feed.window.start(offset: start, now: now)
         }
         feed.meter.start(file.hash, now: now)
-        feed.meter.sized(offset: 0, length: Int64(file.size))
+        feed.meter.sized(offset: start, length: Int64(file.size) - start)
         if let header = LinkRecord(.fileHeader, payload: LinkJSON.fileHeaderPayload(file.header)).encoded {
             write(header, on: id)
         }
-        feed.streaming = FileFeed.Streaming(file: file, peer: feed.peer, startedAt: now, windowed: windowed, nextAt: now, wroteAt: now)
+        feed.streaming = FileFeed.Streaming(
+            file: file, peer: feed.peer, startedAt: now, windowed: windowed, offset: file.start, nextAt: now, wroteAt: now)
         return true
     }
 
@@ -339,16 +352,22 @@ extension LinkManager {
     }
 
     /// A file's END is out: it counts as sent, the log says so as it says a file arrived, with the rate it went at, and
-    /// the engine hears so.
+    /// the engine hears so. A resumed one counts as resumed too, after its END (`FramedLink.kt:855-860`), and its line
+    /// names the tail's bytes and, last, where it resumed; a whole file's line is the one it always was.
     private func noteSent(_ streaming: FileFeed.Streaming, window: FeedWindow, on id: ChannelID, now: Int64) {
+        let file = streaming.file
         filesSent += 1
+        if file.start > 0 {
+            filesResumedOut += 1
+        }
         if let peer = liveLinks.first(where: { $0.channel == id })?.neighbor.nodeId {
-            let file = streaming.file
             let took = now - streaming.startedAt
             let rate = streaming.windowedNow ? " @\(window.rate) window" : streaming.paceShown > 0 ? " @\(streaming.paceShown)" : ""
+            let bytes = streaming.offset - file.start
+            let resumed = file.start > 0 ? " resumed at \(file.start)" : ""
             log.log(
                 .info,
-                "link file \(file.kind.rawValue) \(Self.shown(file.hash.string)) to \(peer): \(streaming.offset) bytes in \(took) ms\(rate)"
+                "link file \(file.kind.rawValue) \(Self.shown(file.hash.string)) to \(peer): \(bytes) bytes in \(took) ms\(rate)\(resumed)"
             )
             finishedFiles.append(.fileSent(file.hash, to: peer))
         }

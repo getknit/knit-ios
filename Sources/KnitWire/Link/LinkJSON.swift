@@ -22,14 +22,19 @@ public enum LinkJSON {
         (try? JSONDecoder().decode(DigestJSON.self, from: Data(payload)))?.ids
     }
 
-    /// A file header's payload, `{"kind":…,"key":…,"mime":…,"size":…}`, compact and in that order, as kotlinx's `Json`
-    /// writes `FileHeaderWire` (`LinkFraming.encodeFileHeader`, `LinkFraming.kt:150-195`). A header with no size is the
-    /// three keys every build before knit-next ADR 2026-10.y9qh wrote; a sender always fills it.
+    /// A file header's payload, `{"kind":…,"key":…,"mime":…,"size":…,"offset":…}`, compact and in that order, as
+    /// kotlinx's `Json` writes `FileHeaderWire` (`LinkFraming.encodeFileHeader`, `LinkFraming.kt:150-195`). A header with
+    /// no size is the three keys every build before knit-next ADR 2026-10.y9qh wrote; a sender always fills it. The
+    /// offset is written only past 0, never as `null` (`EncodeDefault.Mode.NEVER`, knit-next ADR 2026-10.wtyc), so a
+    /// whole file's header is the bytes it was before the field.
     public static func fileHeaderPayload(_ header: FileHeader) -> [UInt8] {
         var output = Array(#"{"kind":"#.utf8) + quoted(header.kind.rawValue) + Array(#","key":"#.utf8) + quoted(header.key)
         output += Array(#","mime":"#.utf8) + quoted(header.mime)
         if let size = header.size {
             output += Array(#","size":"#.utf8) + Array(String(size).utf8)
+        }
+        if let offset = header.offset, offset > 0 {
+            output += Array(#","offset":"#.utf8) + Array(String(offset).utf8)
         }
         output.append(UInt8(ascii: "}"))
         return output
@@ -38,7 +43,9 @@ public enum LinkJSON {
     /// A file header's fields, or `nil` when it is not one (`LinkFraming.decodeFileHeader`): all three keys present as
     /// strings, in any order, with unknown keys ignored. Android drops the file after a header it cannot read and keeps
     /// the link (`FramedLink.kt:404-410`). A size that is not an integer is read as none, so it costs the label and
-    /// never the file.
+    /// never the file. An offset is one of the fields the receiver routes on, since it says where the bytes go, so one
+    /// that is not an integer makes no header at all (`FileHeaderCore`, `LinkFraming.kt:153-168`, knit-next #116); a
+    /// `null` one is a whole file.
     public static func fileHeader(from payload: [UInt8]) -> FileHeader? {
         let data = Data(payload)
         guard let decoded = try? JSONDecoder().decode(FileHeaderJSON.self, from: data) else {
@@ -46,7 +53,8 @@ public enum LinkJSON {
         }
         // Decoded apart, as Android falls back to `FileHeaderCore`: a failed header aborts the file behind it.
         let size = (try? JSONDecoder().decode(FileHeaderSizeJSON.self, from: data))?.size
-        return FileHeader(kind: FileHeader.Kind(wire: decoded.kind), key: decoded.key, mime: decoded.mime, size: size)
+        return FileHeader(
+            kind: FileHeader.Kind(wire: decoded.kind), key: decoded.key, mime: decoded.mime, size: size, offset: decoded.offset)
     }
 
     /// A JSON string literal, escaped as kotlinx's `Json` escapes one (`ESCAPE_STRINGS` in its `StringOps.kt`): the
@@ -112,13 +120,19 @@ public struct FileHeader: Sendable, Equatable {
     /// The length of the stream that follows, as its sender declared it, so the receiver can show how far it has got
     /// (knit-next ADR 2026-10.y9qh). The sender's claim: a label, never a bound. `nil` from a build before the field.
     public var size: Int?
+    /// The blob's byte the stream starts at, when it is the rest of a transfer a link drop cut off (knit-next ADR
+    /// 2026-10.wtyc, `LinkFraming.kt:185-200`): the receiver asked with that many bytes kept, and ``size`` is still the
+    /// bytes that follow, so the whole blob is `offset + size`. The sender's claim, never checked against the size here:
+    /// `nil` for a whole file, and from a build before the field.
+    public var offset: Int?
 
     /// Makes a header.
-    public init(kind: Kind, key: String, mime: String, size: Int? = nil) {
+    public init(kind: Kind, key: String, mime: String, size: Int? = nil, offset: Int? = nil) {
         self.kind = kind
         self.key = key
         self.mime = mime
         self.size = size
+        self.offset = offset
     }
 }
 
@@ -126,10 +140,12 @@ private struct DigestJSON: Decodable {
     let ids: [String]
 }
 
+/// The fields a receiver routes on (`FileHeaderCore`): a header whose offset will not decode is no header.
 private struct FileHeaderJSON: Decodable {
     let kind: String
     let key: String
     let mime: String
+    let offset: Int?
 }
 
 private struct FileHeaderSizeJSON: Decodable {

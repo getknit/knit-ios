@@ -67,6 +67,10 @@ nothing waits on it.
 - **No Coded PHY.** An iPhone cannot tell when a link runs on the Coded PHY. Android feeds such a link at 1 KiB/s in
   2 KiB chunks (#114). This port keeps 28 KiB/s, and the gate bounds the damage to one chunk ahead of the frames.
 - **No resume.** A file cut off by a dying link is dropped on both ends, and the next request fetches it whole.
+  *Amended 2026-10-24 (knit-next ADR 2026-10.wtyc, knit-ios #2):* the holder half is in. An ask whose `offset` is in
+  `1...size` is served as the tail, under a header that declares the tail's `size` and the `offset`. An offset equal
+  to the size gets a header and its END with no chunk. The receiver half is still owed, so `FileIntake` skips a header
+  with a non-zero offset, and this port still asks for whole files.
 - **Guards:**
   - `FileIntakeTests` for Android's receiving rules, and `LinkTests.fileHeaderBytesArePinned` for the header.
   - `LinkFileTests` for the stream, the pace, the gate, frames between chunks, one file at a time, and teardown.

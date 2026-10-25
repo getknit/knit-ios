@@ -257,7 +257,7 @@ public actor Mesh {
 
     /// What the links did with FILE records so far.
     public var files: FileCounts {
-        FileCounts(received: links.filesReceived, refused: links.filesRefused + engine.filesRejected, sent: links.filesSent)
+        links.fileCounts(rejected: engine.filesRejected)
     }
 
     /// What the blob holder query has done so far, both ends.

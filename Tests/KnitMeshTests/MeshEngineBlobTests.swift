@@ -267,20 +267,87 @@ import Testing
     }
 }
 
-/// A file the engine streamed, read back whole (``RecordingTransport/files``).
+/// Serving the rest of a cut transfer from the offset its asker kept (knit-next ADR 2026-10.wtyc, knit-ios #2).
+extension MeshEngineBlobTests {
+    /// `BlobExchangeTest.aServeStreamsFromTheAskersOffsetUpToTheWholeLength` (knit-next ADR 2026-10.wtyc): a resume
+    /// streams from the asker's offset, up to the whole length, so a prefix already complete gets an empty tail and its
+    /// END, and anything else the asker claims is the whole file. The log names the tail and, last, where it starts.
+    @Test func aServeStreamsFromTheAskersOffsetUpToTheWholeLength() {
+        let fixture = EngineFixture(alice)
+        let image = Array("image".utf8)
+        let hash = BlobHash(of: image)
+        fixture.stores.blobs.insert(image, hash: hash, mime: "image/jpeg", storedAt: EngineFixture.start)
+        fixture.link(bob)
+        for (index, asked) in [2, 5, 6, 0, -1, nil].enumerated() {
+            fixture.deliver(bob.blobRequest(for: hash.string, id: frameIdOf("breq-\(index)"), offset: asked.map(Int64.init)), from: bob)
+            fixture.clock.advance(BlobExchange.serveMemoMilliseconds) // each ask a fresh one
+        }
+        let sent = fixture.transport.files
+        #expect(sent.map(\.start) == [2, 5, 0, 0, 0, 0], "a resume, an empty tail, and the asker's nonsense as the whole file")
+        #expect(sent.map(\.bytes) == [Array("age".utf8), [], image, image, image, image])
+        #expect(
+            sent.first == SentFile(kind: .attachment, hash: hash, mime: "image/jpeg", bytes: Array("age".utf8), to: bob.nodeId, start: 2))
+        let prefix = "debug mesh blobreq \(hash.string.prefix(12)) from \(bob.nodeId): "
+        let lines = fixture.log.all.filter { $0.hasPrefix(prefix) }.map { $0.dropFirst(prefix.count) }
+        #expect(lines == ["serving 3 bytes resumed at 2", "serving 0 bytes resumed at 5"] + Array(repeating: "serving 5 bytes", count: 4))
+    }
+
+    /// The header a resumed serve streams under declares the tail and the byte it starts at, and a whole file's is the
+    /// header it always was (`FramedLink.streamFile`): the file keeps the whole blob's size, so a feed from `start` has
+    /// `size - start` left.
+    @Test func aResumedServesHeaderDeclaresTheTailAndItsOffset() throws {
+        let fixture = EngineFixture(alice)
+        holding(fixture)
+        let resumed = try #require(fixture.engine.outboundFile(photoHash, kind: .attachment, from: 10))
+        #expect(resumed.size == photo.count && resumed.start == 10)
+        #expect(
+            resumed.header == FileHeader(kind: .attachment, key: photoHash.string, mime: "image/png", size: photo.count - 10, offset: 10))
+        let complete = try #require(fixture.engine.outboundFile(photoHash, kind: .attachment, from: Int64(photo.count)))
+        #expect(complete.header.size == 0 && complete.header.offset == photo.count, "an empty tail")
+        #expect(OutboundFile.start(asked: 1, size: 0) == 0 && OutboundFile.start(asked: 0, size: 0) == 0, "an empty blob is whole")
+        for whole in [nil, 0, -1, Int64(photo.count + 1), .max] as [Int64?] {
+            let file = try #require(fixture.engine.outboundFile(photoHash, kind: .attachment, from: whole))
+            #expect(
+                file.start == 0 && file.header == FileHeader(kind: .attachment, key: photoHash.string, mime: "image/png", size: photo.count)
+            )
+        }
+    }
+
+    /// The serve memo is keyed by the blob and the asker alone (knit-next's `servedRecently`): an unsigned asker that names
+    /// another offset inside it is served nothing more.
+    @Test func anotherOffsetInsideTheMemoServesNothingMore() {
+        let fixture = EngineFixture(alice)
+        holding(fixture)
+        fixture.link(bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1"), offset: 20), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-2"), offset: 10), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-3")), from: bob)
+        #expect(fixture.transport.files.map(\.start) == [20])
+        #expect(
+            answers(fixture) == ["serving \(photo.count - 20) bytes resumed at 20"]
+                + Array(repeating: "served to it within the serve memo", count: 2))
+    }
+}
+
+/// A file the engine streamed, read back from where it starts (``RecordingTransport/files``): the whole blob, or the
+/// tail a resuming asker lacked, from `start`.
 struct SentFile: Equatable {
     var kind: FileHeader.Kind
     var hash: BlobHash
     var mime: String
     var bytes: [UInt8]
     var to: NodeId
+    var start = 0
 }
 
 extension TestPeer {
     /// An unsigned blob request, as Android builds one (`BlobExchange.blobRequest`): its budget and deadline when given
     /// (knit-next ADR 2026-10.2drc), and the bytes a build before them sends when not.
-    func blobRequest(for hash: String, id: String, relay: Bool = false, pull: Int? = nil, until: Int64? = nil) -> TestFrame {
-        let content = BlobRequestContent(hash: hash, pull: pull, until: until)
+    /// An `offset` is the bytes of a cut transfer it kept (knit-next ADR 2026-10.wtyc).
+    func blobRequest(
+        for hash: String, id: String, relay: Bool = false, pull: Int? = nil, until: Int64? = nil, offset: Int64? = nil
+    ) -> TestFrame {
+        let content = BlobRequestContent(hash: hash, offset: offset, pull: pull, until: until)
         let envelope = RelayEnvelope(type: .blobRequest, id: id, senderId: nodeId.string, payload: content.encoded)
         return TestFrame(wire: WireEnvelope(relay: relay, sig: [], signed: envelope.encoded), envelope: envelope)
     }

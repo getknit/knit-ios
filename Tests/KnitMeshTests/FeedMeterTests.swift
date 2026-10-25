@@ -68,6 +68,22 @@ import Testing
         #expect(abs(meter.drainRatio - 0.25) < 1e-9, "it drained well under its pace: the link keeps the shortfall")
     }
 
+    @Test func aResumedStreamReadsWhatRemainsOfItsTailNotOfTheWholeBlob() {
+        // knit-next ADR 2026-10.wtyc: a holder serving the last quarter of a MiB sizes its meter by the tail
+        // (`FramedLink.kt:819-823`), and the receiver's reports count its kept prefix. Sized by the whole blob, the
+        // prefix would read as still to come and stretch the ETA, and the deadline and the parks behind it, fourfold.
+        let start = 3 * Self.mib / 4
+        var meter = streaming(offset: start, length: Self.mib - start)
+        let before = meter.reading(left: Self.mib - start, wroteAt: 0, pace: 4096, settled: true, now: 0)
+        #expect(before.etaMilliseconds == 64_000, "a quarter MiB at 4 KiB/s, before a report")
+        meter.paced(65_536)
+        let ours = meter.report(key, held: start + 65_536, milliseconds: 1000, now: 1000)
+        #expect(ours)
+        let measured = meter.reading(left: 0, wroteAt: 1000, pace: 65_536, settled: true, now: 1000)
+        #expect(measured.measured)
+        #expect(measured.etaMilliseconds == 3000, "the tail's 192 KiB left at 64 KiB/s, the rate from the prefix's end")
+    }
+
     @Test func aDeadlineMovesBackWhenTheSendersOwnSplitCutsThePace() {
         var meter = streaming(length: 1_000_000)
         _ = meter.report(key, held: 100_000, milliseconds: 1000, now: 0)

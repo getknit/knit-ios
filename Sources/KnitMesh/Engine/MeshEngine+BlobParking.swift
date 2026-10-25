@@ -16,7 +16,8 @@ extension MeshEngine {
     /// already covers. The park is kept as long as its turn is expected to take, not only the memo's 45 s: an asker held
     /// elsewhere may not query us again before the feed ends (knit-next's device cell (c), 2026-10-07: dropped 4 s
     /// before its turn, it came back 10 s late on its own). The park keeps what the ask said, its budget and deadline, so
-    /// its unpark echoes as it was asked if the blob went meanwhile (knit-next ADR 2026-10.2drc).
+    /// its unpark echoes as it was asked if the blob went meanwhile (knit-next ADR 2026-10.2drc), and its offset, so it is
+    /// served the tail it lacks; `bytes` is that tail (knit-next ADR 2026-10.wtyc).
     func parkBehindFeed(_ hash: BlobHash, for asker: NodeId, bytes: Int64, reached: BlobExchange.Reached, now: Int64) -> Bool {
         let addressees = addressees(of: hash)
         guard isStarted, !blobExchange.memoHolds(hash, for: asker, now: now),
@@ -158,7 +159,8 @@ extension MeshEngine {
                 next = min(next, rechecks.min() ?? BlobExchange.parkPollMilliseconds)
                 if !waitsBehindFeed(hash, asker: asker, bytes: ask.bytes, to: addressees), blobExchange.takeParked(hash, for: asker) {
                     note(["blob unpark \(hash.string.prefix(BlobExchange.shownHashCharacters))… → \(asker) (waited \(now - ask.since) ms)"])
-                    // Its budget and deadline with it: served, unless the blob went meanwhile, when it echoes as it asked.
+                    // Its budget, deadline and offset with it: served from the bytes it kept, unless the blob went
+                    // meanwhile, when it echoes as it asked (`BlobExchange.kt:1904`).
                     serveOrWant(hash, to: asker, mayPark: false, reached: ask.reached)
                 }
             }

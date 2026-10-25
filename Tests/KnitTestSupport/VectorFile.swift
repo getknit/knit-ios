@@ -135,11 +135,9 @@ public struct VectorSafetyNumber: Codable, Sendable, Equatable {
     }
 }
 
-/// knit-next's link vectors: the HELLO, DIGEST and FILE_HEADER records, the custody fingerprint and an advert.
-///
-/// `fileHeaderResumed`, the header that answers a `blobreq` naming an offset (knit-next ADR 2026-10.wtyc), is left
-/// undecoded: this port never asks with an offset, so no such header is ever sent to it. It is read once resuming a cut
-/// transfer lands (knit-ios #2).
+/// knit-next's link vectors: the HELLO, DIGEST and FILE_HEADER records, the custody fingerprint and an advert. The
+/// headers are a whole photo's and the rest of a cut one's, which answers a `blobreq` naming an offset (knit-next ADR
+/// 2026-10.wtyc).
 public struct VectorLink: Decodable, Sendable {
     /// A HELLO record and its text payload.
     public struct Hello: Decodable, Sendable {
@@ -175,6 +173,8 @@ public struct VectorLink: Decodable, Sendable {
         public let mime: String
         /// The length of the stream that follows.
         public let size: Int
+        /// The blob's byte the stream starts at, for the rest of a cut transfer; absent from a whole file's.
+        public let offset: Int?
         /// The whole record, as hex.
         public let record: String
     }
@@ -203,6 +203,8 @@ public struct VectorLink: Decodable, Sendable {
     public let digestFold: Fold
     /// A photo's header, as a sender writes it.
     public let fileHeader: FileHeader
+    /// The header of the rest of a photo whose transfer a link drop cut off, as a holder writes it.
+    public let fileHeaderResumed: FileHeader
     /// The advert.
     public let advert: Advert
 }

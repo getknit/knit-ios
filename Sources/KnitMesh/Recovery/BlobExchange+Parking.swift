@@ -14,17 +14,20 @@ extension BlobExchange {
     /// eldest goes past the cap, and its askers ask again.
     static let maxParkedBlobs = 64
 
-    /// What an ask said beyond its hash (`Reached`, knit-next ADR 2026-10.2drc): its budget and its deadline as it carried
-    /// them, the deadline epoch ms on the frame's clock. Android's also keeps the prefix it named; this port never
-    /// resumes (knit-ios #2).
+    /// What an ask said beyond its hash (`Reached`, `BlobExchange.kt:2574-2578`, knit-next ADR 2026-10.2drc and ADR
+    /// 2026-10.wtyc): its budget and its deadline as it carried them, the deadline epoch ms on the frame's clock, and the
+    /// bytes of a cut transfer the asker kept, as it named them. A parked ask is served from that offset when its turn
+    /// comes, and a re-ask while parked brings its own.
     struct Reached: Sendable, Equatable {
         var pull: Int?
         var deadline: Int64?
+        var offset: Int64?
     }
 
     /// An ask parked behind another copy's feed (`ParkedAsk`): what it said, the copy's length, when it was parked, when its
     /// asker last asked or queried for it, and until when on the monotonic clock a SENDING answer promised it, with its
-    /// slack. A re-ask while parked takes the newest ask's budget and deadline, as Kotlin rebuilds the record.
+    /// slack. A re-ask while parked takes the newest ask's budget, deadline, offset and the tail that offset leaves, as
+    /// Kotlin rebuilds the record.
     struct ParkedAsk: Sendable, Equatable {
         var reached: Reached
         var bytes: Int64

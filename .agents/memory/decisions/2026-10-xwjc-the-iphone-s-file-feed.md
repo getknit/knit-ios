@@ -64,7 +64,10 @@ only every 2 s (ADR 2026-10.ds45), a cadence that the window cannot be clocked b
 
 - **Android's Coded parts.** CoreBluetooth never shows the PHY, so `forgetLink`, `stepBacklog` and a smaller Coded
   chunk have nothing to trigger them. A 1M↔2M step is followed by the drain filter and the 10 s probe, as on Android.
-- **The resume offset.** This port never resumes a cut transfer (knit-ios #2).
+- **The resume offset.** This port never resumes a cut transfer (knit-ios #2). *Amended 2026-10-24, for knit-next ADR 2026-10.wtyc:* the
+  holder half is in. A feed serving an asker's kept prefix starts at `OutboundFile.start`, and its window
+  (`FeedWindow.start(offset:now:)`, `held - offset` once at `report`'s entry) and its meter (sized by the tail) count
+  from there, as `FramedLink.kt:816-825` does. The receiver half, keeping a cut file's prefix, is still owed.
 - **nsr7's holder half.** That is the meter, parking a second ask behind a live feed, and `eta` on a SENDING answer.
   The window replaces the pace the meter would time, but nothing here parks yet (`.agents/memory/roadmap.md`).
 - **The boost** (knit-next ADR 2026-10.2da4). An iPhone cannot ask for a connection interval as a central. As a

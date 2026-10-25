@@ -148,6 +148,9 @@ public final class LinkManager: MeshTransport {
     public internal(set) var filesRefused = 0
     /// Files that left the radio whole.
     public internal(set) var filesSent = 0
+    /// Of those, the ones that streamed only the tail an asker lacked (`MeshMetrics.onFileResumedOut`, knit-next ADR
+    /// 2026-10.wtyc).
+    public internal(set) var filesResumedOut = 0
     /// Rings asked of the radio, on every link since the manager was made. A radio that cannot ring, or a peer with no
     /// doorbell, makes nothing of one.
     public internal(set) var rings = 0

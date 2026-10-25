@@ -47,7 +47,7 @@ extension MeshEngine {
     /// is out (``fileSent(_:to:)``), so a link that died mid-push pushes again at the next link-up.
     func pushAvatar(to peer: NodeId) {
         guard let hash = stores.ownProfile.load().avatarHash, avatarPushes[peer] != hash,
-            let file = outboundFile(hash, kind: .avatar)
+            let file = outboundFile(hash, kind: .avatar, from: nil)
         else {
             return
         }
@@ -180,14 +180,6 @@ extension MeshEngine {
         }
     }
 
-    /// One blob request (`BlobExchange.blobRequest`), carrying the budget `pull`, 0 included, and the deadline `until`
-    /// when there is one (knit-next ADR 2026-10.2drc): to a neighbour that lacks the blob, any ask is a pull. This port
-    /// keeps no prefix of a cut transfer, so it never names an offset (knit-ios #2).
-    func blobRequest(_ hash: BlobHash, pull: Int, until: Int64?) -> WireEnvelope {
-        let content = BlobRequestContent(hash: hash.string, pull: pull, until: until)
-        return unsignedPointToPoint(.blobRequest, id: newFrameId(), payload: content.encoded)
-    }
-
     /// Logs the blob exchange's own lines, as the mesh logs its others.
     func note(_ lines: [String]) {
         for line in lines {
@@ -215,19 +207,21 @@ extension MeshEngine {
             drop(.undecodable, frame.envelope)
             return
         }
-        serveOrWant(hash, to: frame.from, mayPark: true, reached: BlobExchange.Reached(pull: request.pull, deadline: request.until))
+        let reached = BlobExchange.Reached(pull: request.pull, deadline: request.until, offset: request.offset)
+        serveOrWant(hash, to: frame.from, mayPark: true, reached: reached)
     }
 
     /// Serves `hash` to `peer` if it is held, and otherwise wants it on the asker's behalf (`serveOrWant`), with one hop
     /// less of the ask's budget and its deadline (`reached`, knit-next ADR 2026-10.2drc). `mayPark` false serves at once
     /// whatever else is being fed: a parked ask whose turn came. The log says what became of it.
     ///
-    /// A held blob is served whatever the ask allows, `pull = 0` included. A blob we lack makes no want at all for an ask
-    /// with no budget left or past its deadline (`echoFor`): it is logged as Android logs it, beside this port's `blobreq`
-    /// line, and counted.
+    /// A held blob is served whatever the ask allows, `pull = 0` included, from the offset it named (Kotlin's order: the
+    /// file, where it starts, then ``serve(_:to:mayPark:reached:)``, `BlobExchange.kt:1665-1690`). A blob we lack makes no
+    /// want at all for an ask with no budget left or past its deadline (`echoFor`): it is logged as Android logs it,
+    /// beside this port's `blobreq` line, and counted.
     func serveOrWant(_ hash: BlobHash, to peer: NodeId, mayPark: Bool, reached: BlobExchange.Reached) {
         let answer: String
-        if let file = outboundFile(hash, kind: .attachment) {
+        if let file = outboundFile(hash, kind: .attachment, from: reached.offset) {
             answer = serve(file, to: peer, mayPark: mayPark, reached: reached)
         } else if let refused = BlobExchange.echoRefusal(pull: reached.pull, until: reached.deadline, wall: clock.wallMilliseconds()) {
             blobExchange.counts.echoesDeclined += 1
@@ -244,14 +238,16 @@ extension MeshEngine {
 
     /// Streams a held blob to `peer` as kind ATTACHMENT, whatever it is, as Android serves every blob: not while a
     /// copy is already on the link to it, not while another copy of it is fed live to someone else, when `mayPark`
-    /// (``parkBehindFeed(_:for:bytes:reached:now:)``, which keeps what the ask said), and not twice inside the serve memo.
-    /// Answers what it did, for the log.
+    /// (``parkBehindFeed(_:for:bytes:reached:now:)``, which keeps what the ask said, sized by its tail), and not twice inside
+    /// the serve memo, which an unsigned asker's other offset never gets past. Answers what it did, for the log: a resumed
+    /// serve's tail, then where it starts, so a whole file's line is the one it always was.
     func serve(_ file: OutboundFile, to peer: NodeId, mayPark: Bool, reached: BlobExchange.Reached) -> String {
         guard !transport.isFileInFlight(file.hash, to: peer) else {
             return "already on its way"
         }
         let now = clock.monotonicMilliseconds()
-        if mayPark, parkBehindFeed(file.hash, for: peer, bytes: Int64(file.size), reached: reached, now: now) {
+        let tail = file.size - file.start
+        if mayPark, parkBehindFeed(file.hash, for: peer, bytes: Int64(tail), reached: reached, now: now) {
             return "parked behind a feed"
         }
         guard blobExchange.shouldServe(file.hash, to: peer, now: now) else {
@@ -262,16 +258,18 @@ extension MeshEngine {
             blobExchange.forgetServe(file.hash, to: peer)
             return "no link to it"
         }
-        return "serving \(file.size) bytes"
+        return "serving \(tail) bytes" + (file.start > 0 ? " resumed at \(file.start)" : "")
     }
 
-    /// A held blob as a file to stream, its bytes read from the store as the link needs them.
-    func outboundFile(_ hash: BlobHash, kind: FileHeader.Kind) -> OutboundFile? {
+    /// A held blob as a file to stream, its bytes read from the store as the link needs them, from the bytes a resuming
+    /// asker kept, `from` (``OutboundFile/start(asked:size:)``, knit-next ADR 2026-10.wtyc).
+    func outboundFile(_ hash: BlobHash, kind: FileHeader.Kind, from: Int64?) -> OutboundFile? {
         let blobs = stores.blobs
         guard let size = blobs.size(of: hash), let mime = blobs.mime(of: hash) else {
             return nil
         }
-        return OutboundFile(kind: kind, hash: hash, mime: mime, size: size) { offset, count in
+        let start = OutboundFile.start(asked: from, size: size)
+        return OutboundFile(kind: kind, hash: hash, mime: mime, size: size, start: start) { offset, count in
             blobs.read(hash, offset: offset, count: count)
         }
     }

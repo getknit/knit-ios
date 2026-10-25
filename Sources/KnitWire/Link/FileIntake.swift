@@ -2,7 +2,8 @@
 /// (`FramedLink.kt:402-520` in knit-next, with `rxKey`, `rxOut` and `rxAborted`). It applies Android's receiver rules:
 ///
 /// - **A header** starts a file. One that arrives mid-file drops the partial file first (`closeRx`, `:405`), and one
-///   that does not decode leaves the file's chunks unread (`:404-410`).
+///   that does not decode leaves the file's chunks unread (`:404-410`). So does one that resumes a cut transfer from
+///   an offset, since this intake keeps no prefix to splice it onto yet (knit-ios #2).
 /// - **A chunk** joins the file being kept. One with no file is ignored (`:428`), and one that takes the file past
 ///   its limit drops it, so its later chunks are ignored and its END yields nothing (`abortRx`, `:430-433`).
 /// - **An END** finishes the file being kept. One with no file does nothing (`:444-458`).
@@ -82,7 +83,8 @@ public struct FileIntake: Sendable {
     }
 
     /// The file streaming in, kept or skipped, as its sender is told of it (`FramedLink.rxFile`): `nil` with none, and
-    /// for one whose header did not decode, whose key is malformed, or that passed ``maxFileBytes``.
+    /// for one whose header did not decode, whose key is malformed, that resumes from an offset, or that passed
+    /// ``maxFileBytes``.
     public var reading: Reading? {
         switch state {
         case .idle:
@@ -113,7 +115,11 @@ public struct FileIntake: Sendable {
             events.append(.abandoned(cut))
         }
         let decoded = LinkJSON.fileHeader(from: payload)
-        guard let header = decoded, let key = BlobHash(header.key) else {
+        // A resumed stream (knit-next ADR 2026-10.wtyc) is the rest of a blob whose prefix this intake does not keep yet
+        // (knit-ios #2), so it is skipped as an unreadable header is, and never taken for a whole file. An explicit 0 is
+        // a whole file, as Android reads it (`FileIntake.kt:137-144`), and a negative one, which Android refuses, has
+        // nothing to splice onto.
+        guard let header = decoded, let key = BlobHash(header.key), (header.offset ?? 0) == 0 else {
             state = .skipping(nil)
             return events + [.skipped(decoded)]
         }

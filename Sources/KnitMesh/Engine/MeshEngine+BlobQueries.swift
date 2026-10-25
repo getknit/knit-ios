@@ -18,6 +18,14 @@ extension MeshEngine {
         return WireEnvelope(relay: false, sig: [], signed: envelope.encoded)
     }
 
+    /// One blob request (`BlobExchange.blobRequest`), carrying the budget `pull`, 0 included, and the deadline `until`
+    /// when there is one (knit-next ADR 2026-10.2drc): to a neighbour that lacks the blob, any ask is a pull. This port
+    /// keeps no prefix of a cut transfer, so it never names an offset (knit-ios #2).
+    func blobRequest(_ hash: BlobHash, pull: Int, until: Int64?) -> WireEnvelope {
+        let content = BlobRequestContent(hash: hash.string, pull: pull, until: until)
+        return unsignedPointToPoint(.blobRequest, id: newFrameId(), payload: content.encoded)
+    }
+
     /// A neighbour asked which of some blobs we hold (`onHaveQuery`, `BlobExchange.kt:744-784`). Each is answered from
     /// reads alone, in the order the bytes move, backwards:
     ///
@@ -60,7 +68,7 @@ extension MeshEngine {
             guard let hash = BlobHash(named) else {
                 return BlobHasItem(hash: named, state: .notHeld)
             }
-            if let size = outboundFile(hash, kind: .attachment)?.size {
+            if let size = outboundFile(hash, kind: .attachment, from: nil)?.size {
                 guard sending.contains(hash) else {
                     return BlobHasItem(hash: named, state: .have, size: Int64(size))
                 }

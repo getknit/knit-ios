@@ -136,9 +136,13 @@ internal enum ControlLines {
         ]
     }
 
-    /// What the links did with FILE records: whole files in, files dropped as they streamed, and files out.
+    /// What the links did with FILE records: whole files in, files dropped as they streamed, files out, and of those the
+    /// ones that streamed only a resuming asker's tail (knit-next ADR 2026-10.wtyc).
     static func describe(_ files: FileCounts) -> JSONValue {
-        ["received": .int(Int64(files.received)), "refused": .int(Int64(files.refused)), "sent": .int(Int64(files.sent))]
+        [
+            "received": .int(Int64(files.received)), "refused": .int(Int64(files.refused)), "sent": .int(Int64(files.sent)),
+            "resumedOut": .int(Int64(files.resumedOut)),
+        ]
     }
 
     /// What the blob holder query did, by Android's debug bridge's names less their `blob` prefix (knit-next ADR

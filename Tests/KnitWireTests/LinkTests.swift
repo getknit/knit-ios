@@ -280,3 +280,44 @@ import Testing
         #expect(AdvertPayload.doorbellUUID == "f34c056b-5830-4243-a888-01f92f49e446")
     }
 }
+
+/// A FILE_HEADER that resumes a cut transfer from an offset (knit-next ADR 2026-10.wtyc, `LinkFramingTest`'s offset cases).
+extension LinkTests {
+    /// The rest of a cut transfer (knit-next ADR 2026-10.wtyc, `LinkFramingTest.aResumedHeaderCarriesItsOffsetAfterTheTailsSize`
+    /// and `aWholeFileHeaderIsByteIdenticalToTheOneBeforeTheOffset`): the size keeps its meaning, the bytes that follow,
+    /// and the offset rides last. An offset of 0 or none is written as none, never as `null`.
+    @Test func aResumedHeaderCarriesItsOffsetAfterTheTailsSize() {
+        let empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        let header = FileHeader(kind: .attachment, key: empty, mime: "image/jpeg", size: 400, offset: 600)
+        let payload = LinkJSON.fileHeaderPayload(header)
+        #expect(
+            String(bytes: payload, encoding: .utf8)
+                == #"{"kind":"ATTACHMENT","key":"\#(empty)","mime":"image/jpeg","size":400,"offset":600}"#)
+        #expect(LinkJSON.fileHeader(from: payload) == header)
+        let whole = #"{"kind":"ATTACHMENT","key":"\#(empty)","mime":"image/jpeg","size":203807}"#
+        for offset in [nil, 0, -1] {
+            let bytes = LinkJSON.fileHeaderPayload(
+                FileHeader(kind: .attachment, key: empty, mime: "image/jpeg", size: 203_807, offset: offset))
+            #expect(String(bytes: bytes, encoding: .utf8) == whole, "\(String(describing: offset))")
+        }
+    }
+
+    /// The offset says where the bytes go, so one that will not decode refuses the file
+    /// (`LinkFramingTest.anOffsetThatWillNotDecodeRefusesTheFile`), where a size that will not decode keeps the offset
+    /// (`aSizeThatWillNotDecodeStillKeepsTheOffset`). A `null` one is a whole file, and an offset beside the largest size
+    /// decodes as it stands: what they add up to is the receiver's to check.
+    @Test func anOffsetThatWillNotDecodeRefusesTheFile() {
+        for bad in [#""far""#, "1.5", "99999999999999999999", "{}"] {
+            let json = #"{"kind":"ATTACHMENT","key":"k","mime":"image/jpeg","size":10,"offset":\#(bad)}"#
+            #expect(LinkJSON.fileHeader(from: Array(json.utf8)) == nil, "\(bad)")
+        }
+        let badSize = #"{"kind":"ATTACHMENT","key":"k","mime":"image/jpeg","size":"big","offset":600}"#
+        #expect(LinkJSON.fileHeader(from: Array(badSize.utf8)) == FileHeader(kind: .attachment, key: "k", mime: "image/jpeg", offset: 600))
+        let null = #"{"kind":"ATTACHMENT","key":"k","mime":"image/jpeg","size":10,"offset":null}"#
+        #expect(LinkJSON.fileHeader(from: Array(null.utf8)) == FileHeader(kind: .attachment, key: "k", mime: "image/jpeg", size: 10))
+        let largest = #"{"kind":"ATTACHMENT","key":"k","mime":"image/jpeg","size":9223372036854775807,"offset":1}"#
+        #expect(
+            LinkJSON.fileHeader(from: Array(largest.utf8))
+                == FileHeader(kind: .attachment, key: "k", mime: "image/jpeg", size: .max, offset: 1))
+    }
+}

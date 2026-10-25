@@ -79,7 +79,8 @@ final class RecordingTransport: MeshTransport {
         guard isLinked(peer) else {
             return false
         }
-        let sent = SentFile(kind: file.kind, hash: file.hash, mime: file.mime, bytes: file.read(0, file.size) ?? [], to: peer)
+        let bytes = file.read(file.start, file.size - file.start) ?? []
+        let sent = SentFile(kind: file.kind, hash: file.hash, mime: file.mime, bytes: bytes, to: peer, start: file.start)
         files.append(sent)
         sequence.append(.file(sent))
         return true

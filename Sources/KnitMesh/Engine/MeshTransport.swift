@@ -102,24 +102,42 @@ public struct OutboundFile {
     public var hash: BlobHash
     /// The blob's type.
     public var mime: String
-    /// The blob's length in bytes.
+    /// The blob's length in bytes: the whole blob, a resumed one too, so a feed that starts at ``start`` has
+    /// `size - start` left.
     public var size: Int
+    /// The blob's byte the stream starts at: 0 for a whole file, or the bytes a resuming asker kept, `1...size`
+    /// (knit-next ADR 2026-10.wtyc, `FramedLink.streamFile`).
+    public var start: Int
     /// Reads at most `count` bytes from `offset`, or `nil` when the blob is gone or cannot be read.
     public var read: (_ offset: Int, _ count: Int) -> [UInt8]?
 
     /// A file to stream.
-    public init(kind: FileHeader.Kind, hash: BlobHash, mime: String, size: Int, read: @escaping (_ offset: Int, _ count: Int) -> [UInt8]?) {
+    public init(
+        kind: FileHeader.Kind, hash: BlobHash, mime: String, size: Int, start: Int = 0,
+        read: @escaping (_ offset: Int, _ count: Int) -> [UInt8]?
+    ) {
         self.kind = kind
         self.hash = hash
         self.mime = mime
         self.size = size
+        self.start = start
         self.read = read
     }
 
+    /// Where a stream of a blob of `size` bytes starts for an asker that kept `asked` of them (`serveOrWant`,
+    /// `BlobExchange.kt:1670-1673`): there when it is in `1...size`, so a prefix already complete gets an empty tail and
+    /// its END, and at 0 for any other claim, which is a whole file. Compared, never as a range, which traps on an empty
+    /// blob.
+    public static func start(asked: Int64?, size: Int) -> Int {
+        asked.flatMap { $0 >= 1 && $0 <= Int64(size) ? Int($0) : nil } ?? 0
+    }
+
     /// The header this file streams under. Its size lets the receiver draw how far the file has got, as Android's
-    /// `streamFile` declares it (`FramedLink.kt:332-337`, knit-next ADR 2026-10.y9qh).
+    /// `streamFile` declares it (`FramedLink.kt:332-337`, knit-next ADR 2026-10.y9qh). A resumed stream declares the
+    /// tail's bytes and the byte it starts at, and a whole one no offset, so its header is the bytes it always was
+    /// (`FramedLink.kt:816-828`, knit-next ADR 2026-10.wtyc).
     public var header: FileHeader {
-        FileHeader(kind: kind, key: hash.string, mime: mime, size: size)
+        FileHeader(kind: kind, key: hash.string, mime: mime, size: size - start, offset: start > 0 ? start : nil)
     }
 }
 
@@ -183,11 +201,14 @@ public struct FileCounts: Sendable, Equatable {
     public var refused: Int
     /// Files that left the radio whole.
     public var sent: Int
+    /// Of those, the ones that streamed only the tail an asker lacked (`onFileResumedOut`, knit-next ADR 2026-10.wtyc).
+    public var resumedOut: Int
 
     /// Bundles the counts.
-    public init(received: Int = 0, refused: Int = 0, sent: Int = 0) {
+    public init(received: Int = 0, refused: Int = 0, sent: Int = 0, resumedOut: Int = 0) {
         self.received = received
         self.refused = refused
         self.sent = sent
+        self.resumedOut = resumedOut
     }
 }

@@ -136,14 +136,17 @@ internal struct FeedWindow {
     // Where the stream stood when it was last taken for a two-second reporter: only a chunk written after it can be
     // answered on time.
     private var pacedFrom: Int64 = 0
+    // The blob's byte the stream starts at; a resumed one's reports count the kept prefix (`FeedWindow.kt:140-144`).
+    private var offset: Int64 = 0
 
     /// A window whose chunks are at most `maxChunkBytes`, a record's: Android's `FILE_CHUNK_BYTES`.
     init(maxChunkBytes: Int) {
         self.maxChunkBytes = max(Self.minChunkBytes, maxChunkBytes)
     }
 
-    /// A stream starts at `now`. The round trip is the link's and outlives it.
-    mutating func start(now: Int64) {
+    /// A stream starts at `offset` of its blob, at `now`. The round trip is the link's and outlives it.
+    mutating func start(offset: Int64, now: Int64) {
+        self.offset = offset
         written = 0
         lastHeld = -1
         heardAt = now
@@ -171,8 +174,11 @@ internal struct FeedWindow {
 
     /// The receiver holds `held` bytes, `milliseconds` after the stream's header reached it, and the report came at
     /// `now`. A report older than the last, or naming more than was written, moves nothing past what it can prove.
+    /// `held` counts a resumed stream's kept prefix too: taken from the stream's start once here, all after is the stream's
+    /// (knit-next ADR 2026-10.wtyc, `FeedWindow.kt:210-226`). Both are never negative, so the difference cannot overflow.
     mutating func report(held: Int64, milliseconds: Int64, now: Int64) {
-        let proven = min(held, written)
+        let streamHeld = held - offset
+        let proven = min(streamHeld, written)
         guard proven >= max(lastHeld, 0) else {
             return
         }

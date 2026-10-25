@@ -4,7 +4,7 @@ import Testing
 
 /// The window's rules one report at a time, and the paced fallback's arithmetic (knit-next ADRs 2026-10.5buf and
 /// 2026-10.8jwn). Ported from knit-next's `FeedWindowTest` and `CodedPhyPolicyTest`, their bounds unchanged; the Coded
-/// cases, the PHY step and the resume are Android's alone (ADR 2026-10.xwjc says why). ``FeedWindowSimTests`` runs the
+/// cases and the PHY step are Android's alone (ADR 2026-10.xwjc says why). ``FeedWindowSimTests`` runs the
 /// window on a simulated link.
 @Suite struct FeedWindowTests {
     /// A windowed feed's paced fallback at the 4 KiB/s base, in the pace's 8 KiB chunks.
@@ -12,7 +12,7 @@ import Testing
 
     private func fresh() -> FeedWindow {
         var window = FeedWindow(maxChunkBytes: 16_384)
-        window.start(now: 0)
+        window.start(offset: 0, now: 0)
         return window
     }
 
@@ -26,6 +26,21 @@ import Testing
         #expect(window.waitMilliseconds == FeedWindow.reportWaitMilliseconds, "the starting window is full: wait for a report")
         #expect(!window.pacing(now: FeedWindow.noReportMilliseconds - 1))
         #expect(window.pacing(now: FeedWindow.noReportMilliseconds), "a receiver silent this long gets the pace")
+    }
+
+    @Test func aResumedStreamCountsFromItsOffset() {
+        // knit-next ADR 2026-10.wtyc (`FeedWindowTest.aResumedStreamCountsFromItsOffset`): the receiver reports the
+        // whole length held, its kept prefix included.
+        var window = FeedWindow(maxChunkBytes: 16_384)
+        window.start(offset: 100_000, now: 0)
+        window.wrote(8192, now: 0)
+        window.report(held: 104_096, milliseconds: 500, now: 500)
+        #expect(window.rate == 8192, "4 KiB in half a second")
+        #expect(window.queued == 4096)
+        window.report(held: 99_999, milliseconds: 600, now: 600)
+        #expect(window.queued == 4096, "a report under the offset proves nothing")
+        window.report(held: 200_000, milliseconds: 700, now: 700)
+        #expect(window.queued == 0, "nor one past what was written more than it")
     }
 
     @Test func theWritersOwnSleepCountsTowardTheSilenceOnlyWhenNothingWasOwed() {
@@ -49,7 +64,7 @@ import Testing
         #expect(window.pacing(now: 6100), "two two-second gaps of several chunks: paced")
         window.report(held: 12_288, milliseconds: 6100, now: 6200)
         #expect(window.pacing(now: 6200), "for the rest of the stream")
-        window.start(now: 7000)
+        window.start(offset: 0, now: 7000)
         #expect(!window.pacing(now: 7000), "a new stream asks again")
     }
 
@@ -152,7 +167,7 @@ import Testing
         window.wrote(4096, now: 0)
         window.report(held: 4096, milliseconds: 400, now: 400)
         #expect(window.roundTripMilliseconds == 400)
-        window.start(now: 1000)
+        window.start(offset: 0, now: 1000)
         window.wrote(4096, now: 1000)
         // Behind the last file's tail.
         window.report(held: 4096, milliseconds: 1000, now: 2200)
@@ -164,7 +179,7 @@ import Testing
         window.wrote(2048, now: 0)
         // A fast file: round trip 60 ms.
         window.report(held: 2048, milliseconds: 60, now: 60)
-        window.start(now: 1000)
+        window.start(offset: 0, now: 1000)
         window.wrote(2048, now: 1000)
         window.wrote(2048, now: 1000)
         // 5 KB/s.

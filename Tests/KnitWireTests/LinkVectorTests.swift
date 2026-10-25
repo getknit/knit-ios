@@ -37,6 +37,19 @@ import Testing
         let record = try #require(LinkRecord(.fileHeader, payload: payload).encoded)
         #expect(Hex.encode(record) == vector.record)
         #expect(LinkJSON.fileHeader(from: payload) == header)
+        #expect(vector.offset == nil, "a whole file's header names no offset")
+    }
+
+    @Test func theResumedFileHeaderRecordMatchesKotlinxByteForByte() throws {
+        // `fileHeaderResumed` (knit-next ADR 2026-10.wtyc): the rest of a cut photo, its size the tail's and its offset last.
+        let vector = link.fileHeaderResumed
+        let offset = try #require(vector.offset)
+        let header = FileHeader(
+            kind: FileHeader.Kind(wire: vector.kind), key: vector.key, mime: vector.mime, size: vector.size, offset: offset)
+        let payload = LinkJSON.fileHeaderPayload(header)
+        let record = try #require(LinkRecord(.fileHeader, payload: payload).encoded)
+        #expect(Hex.encode(record) == vector.record)
+        #expect(LinkJSON.fileHeader(from: payload) == header)
     }
 
     @Test func theFingerprintMatchesKnitNext() {

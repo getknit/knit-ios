@@ -106,8 +106,7 @@ public struct BlobRequestContent: CBORRepresentable, Equatable {
     public var hash: String
     /// How many bytes of the blob the asker kept from a cut transfer, so a holder streams only the rest (knit-next ADR
     /// 2026-10.wtyc, `Wire.kt:300-304`). Omitted when `nil`, so a plain ask is the bytes every build has sent. This
-    /// port reads it and never sends it: a holder here serves the whole file, the older holder's answer that knit-next's
-    /// resume falls back on (knit-ios #2).
+    /// port reads it and serves only the tail it names, and never sends it yet (knit-ios #2).
     public var offset: Int64?
     /// How many phones deep this ask may still pull the blob through, the receiver counted (knit-next ADR 2026-10.2drc,
     /// `Wire.kt:368-375`, ADR 2026-10.8hek). A receiver that lacks the blob wants it with one less and asks its own

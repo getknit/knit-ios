@@ -254,4 +254,25 @@ import Testing
             fixture.log.all.contains(
                 "debug mesh blobreq \(LinkManager.shown(photoHash.string)) from \(bob.nodeId): served to it within the serve memo"))
     }
+
+    /// A parked ask keeps the offset it named (`Reached.offset`, `BlobExchange.kt:1904`, knit-next ADR 2026-10.wtyc): it
+    /// waits as long as the tail it lacks takes, a re-ask while parked brings its own offset and tail, and its turn
+    /// serves from the last one.
+    @Test func aParkedAskIsServedFromTheOffsetItLastNamed() throws {
+        let fixture = feeding(carol)
+        fixture.deliver(carol.blobRequest(for: photoHash.string, id: frameIdOf("breq-1"), offset: 10), from: carol)
+        #expect(fixture.engine.blobExchange.parked[photoHash]?[carol.nodeId]?.bytes == Int64(photo.count - 10), "sized by the tail")
+        fixture.deliver(carol.blobRequest(for: photoHash.string, id: frameIdOf("breq-2"), offset: 30), from: carol)
+        let parked = try #require(fixture.engine.blobExchange.parked[photoHash]?[carol.nodeId])
+        #expect(parked.reached.offset == 30 && parked.bytes == Int64(photo.count - 30), "the re-ask's own")
+        #expect(served(fixture).isEmpty)
+        fixture.transport.feeds = []
+        fixture.engine.fileFeedsChanged()
+        #expect(
+            fixture.transport.files == [
+                SentFile(kind: .attachment, hash: photoHash, mime: "image/png", bytes: Array(photo[30...]), to: carol.nodeId, start: 30)
+            ])
+        let line = "debug mesh blobreq \(LinkManager.shown(photoHash.string)) from \(carol.nodeId): serving \(photo.count - 30) bytes"
+        #expect(fixture.log.all.contains(line + " resumed at 30"))
+    }
 }

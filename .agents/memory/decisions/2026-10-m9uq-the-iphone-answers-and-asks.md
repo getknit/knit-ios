@@ -60,7 +60,8 @@ leaves the iPhone paying a copy per holder in range whenever it asks.
 - **One round trip** before a capable neighbour is asked, up to 5 s on a busy link. A miss in the blind round costs a
   5 s grace before everyone is asked.
 - **Not covered:**
-  - resuming a cut transfer (knit-next ADR 2026-10.wtyc, knit-ios #2);
+  - resuming a cut transfer (knit-next ADR 2026-10.wtyc, knit-ios #2). *Amended 2026-10-24:* the holder half is in,
+    and an asker's `offset` is served as the tail. Keeping a cut prefix and asking with its length are still owed;
   - knit-next ADR 2026-10.nxfb's holder half, which keeps a fed file in flight while its link feeds that peer more;
   - the 4 KiB/s pace budget (knit-next ADR 2026-10.8jwn).
 
