@@ -120,10 +120,19 @@ custom_rules:
     message: Only the app's debug bridge imports Network; Knit meshes over Bluetooth alone (ADR 2026-09.zwdp).
     severity: error
   seam_codes:
-    name: The camera and QR frameworks stay in the app's Codes
-    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+(AVFoundation|Vision|VisionKit|CoreImage)\b'
+    name: The QR frameworks stay in the app's Codes
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+(Vision|VisionKit|CoreImage)\b'
     excluded: 'Sources/Knit/Codes/'
     message: Only the app's Codes directory draws and scans verify codes (ADR 2026-10.65xx); the scan's logic lives in KnitAppCore.
+    severity: error
+  seam_audio:
+    name: The camera's and the sound's frameworks stay in the app's Codes and Voice
+    regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+(AVFoundation|AVFAudio|AudioToolbox|CoreAudio)\b'
+    # Codes holds the camera's permission; Voice records, plays and decodes voice notes (knit-next ADR 034).
+    excluded:
+      - 'Sources/Knit/Codes/'
+      - 'Sources/Knit/Voice/'
+    message: Only the app's Codes and Voice directories reach AVFoundation and AudioToolbox; a voice note's rules live in KnitAppCore.
     severity: error
   seam_images:
     name: The photo frameworks stay in the app's Images

@@ -1,3 +1,4 @@
+import Foundation
 import GRDB
 public import KnitStore
 public import KnitWire
@@ -13,7 +14,8 @@ public final class SQLMessageStore: MessageStore {
         id, senderId, recipientId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind, \
         attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, moderation, attachmentWidth, \
         attachmentHeight, attachmentAnimated, attachmentPlainHash, attachmentSourceHash, replyToId, replyToAuthorId, \
-        replyToAuthor, replyToSnippet, replyToHasAttachment, mentions, attachmentExiflessHash, replyCheck, replyToFlagged
+        replyToAuthor, replyToSnippet, replyToHasAttachment, mentions, attachmentExiflessHash, replyCheck, replyToFlagged, \
+        voiceDurationMs, voicePeaks
         """
     /// Writes a row with ``columns`` and `unread`, which no read takes and no save's update names: it is set once, when a
     /// row is first stored (ADR 2026-10.frmj).
@@ -86,6 +88,10 @@ public final class SQLMessageStore: MessageStore {
                         attachmentExiflessHash = CASE WHEN attachmentHash IS excluded.attachmentHash
                             THEN coalesce(excluded.attachmentExiflessHash, attachmentExiflessHash)
                             ELSE excluded.attachmentExiflessHash END,
+                        voiceDurationMs = CASE WHEN attachmentHash IS excluded.attachmentHash
+                            THEN coalesce(excluded.voiceDurationMs, voiceDurationMs) ELSE excluded.voiceDurationMs END,
+                        voicePeaks = CASE WHEN attachmentHash IS excluded.attachmentHash
+                            THEN coalesce(excluded.voicePeaks, voicePeaks) ELSE excluded.voicePeaks END,
                         replyToId = excluded.replyToId, replyToAuthorId = excluded.replyToAuthorId,
                         replyToAuthor = excluded.replyToAuthor, replyToSnippet = excluded.replyToSnippet,
                         replyToHasAttachment = excluded.replyToHasAttachment, mentions = excluded.mentions,
@@ -198,41 +204,6 @@ public final class SQLMessageStore: MessageStore {
         }
     }
 
-    public func unsizedAttachments(named hash: BlobHash?) -> [MessageAttachment] {
-        let named = hash.map { _ in "AND attachmentHash = ?" } ?? ""
-        return database.read(or: []) { db in
-            var seen = Set<BlobHash>()
-            return try Row.fetchAll(
-                db,
-                sql: """
-                    SELECT \(Self.attachmentColumns)
-                    FROM messages
-                    WHERE attachmentHash IS NOT NULL AND (attachmentWidth IS NULL OR attachmentAnimated IS NULL) \(named)
-                    ORDER BY seq DESC
-                    """,
-                arguments: StatementArguments(hash.map { [StoredText.bytes($0.string)] } ?? [])
-            ).compactMap(Self.attachment).filter { seen.insert($0.hash).inserted }
-        }
-    }
-
-    @discardableResult
-    public func setAttachmentDimensions(_ hash: BlobHash, to dimensions: PhotoDimensions) -> Bool {
-        database.write(or: false) { db in
-            try db.execute(
-                sql: """
-                    UPDATE messages SET attachmentWidth = ?, attachmentHeight = ?, attachmentAnimated = ?
-                    WHERE attachmentHash = ?
-                        AND (attachmentWidth IS NOT ? OR attachmentHeight IS NOT ? OR attachmentAnimated IS NOT ?)
-                    """,
-                arguments: [
-                    dimensions.width, dimensions.height, dimensions.animated, StoredText.bytes(hash.string), dimensions.width,
-                    dimensions.height, dimensions.animated,
-                ]
-            )
-            return db.changesCount > 0
-        }
-    }
-
     /// The values for ``insert``, in ``columns`` order, then `unread`.
     private static func arguments(_ message: MessageRecord) -> StatementArguments {
         let attachment = message.attachment
@@ -247,7 +218,8 @@ public final class SQLMessageStore: MessageStore {
             StoredText.bytes(attachment?.sourceHash?.string), StoredText.bytes(reply?.messageId), StoredText.bytes(reply?.authorId),
             StoredText.bytes(reply?.author), StoredText.bytes(reply?.snippet), reply?.hasAttachment ?? false,
             mentionsValue(message.mentions), StoredText.bytes(attachment?.exiflessHash?.string), message.replyCheck.rawValue,
-            message.quoteModeration.rawValue, message.arrivesUnread,
+            message.quoteModeration.rawValue, attachment?.voice?.durationMs, attachment?.voice?.peaks.map { Data($0) },
+            message.arrivesUnread,
         ]
     }
 

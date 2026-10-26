@@ -39,6 +39,7 @@ internal enum Schema {
         ("v20", v20),
         ("v21", v21),
         ("v22", v22),
+        ("v23", v23),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.

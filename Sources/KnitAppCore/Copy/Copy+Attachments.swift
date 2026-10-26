@@ -1,8 +1,8 @@
 import Foundation
 
 extension Copy {
-    /// What a message carries beside its words: a photo in a thread and in the composer, and a voice message or a file
-    /// this build names. A list's and a notification's lines lead with an emoji, as Android's do.
+    /// What a message carries beside its words: a photo in a thread and in the composer, a voice message (its player's
+    /// words are ``Copy/Voice``), and a file this build names. A list's and a notification's lines lead with an emoji, as Android's do.
     public enum Attachments {
         /// The line for a message that is a photo and no words.
         public static var photoPreview: String {
@@ -30,7 +30,7 @@ extension Copy {
                 "attachments.preview.voice",
                 bundle: .main,
                 value: "🎤 Voice message",
-                comment: "Chat list and notifications: a voice message sent from Android"
+                comment: "Chat list and notifications: a voice message and no words"
             )
         }
 

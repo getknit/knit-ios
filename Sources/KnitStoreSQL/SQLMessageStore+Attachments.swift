@@ -189,7 +189,7 @@ extension SQLMessageStore {
     /// The columns ``attachment(_:)`` reads.
     static let attachmentColumns = """
         attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, attachmentWidth, attachmentHeight, \
-        attachmentAnimated, attachmentPlainHash, attachmentSourceHash, attachmentExiflessHash
+        attachmentAnimated, attachmentPlainHash, attachmentSourceHash, attachmentExiflessHash, voiceDurationMs, voicePeaks
         """
 
     /// The size a row's photo was read at, and whether it moves. One sized before schema v11 reads as still until a
@@ -215,7 +215,8 @@ extension SQLMessageStore {
                 dimensions: try dimensions(row),
                 plainHash: try row.optionalBlobHash("attachmentPlainHash"),
                 sourceHash: try row.optionalBlobHash("attachmentSourceHash"),
-                exiflessHash: try row.optionalBlobHash("attachmentExiflessHash")
+                exiflessHash: try row.optionalBlobHash("attachmentExiflessHash"),
+                voice: voice(row)
             )
         }
     }

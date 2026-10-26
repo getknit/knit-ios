@@ -247,7 +247,8 @@
             #endif
         }
 
-        /// The app's session over `service`, which reads words with the text classifier and photos' sizes with ImageIO.
+        /// The app's session over `service`, which reads words with the text classifier and photos' sizes with ImageIO,
+        /// and in a debug build records, plays and reads voice notes.
         private static func session(_ parts: Parts, over service: any MeshService, notifying alerts: LocalNotifier?) -> AppSession {
             AppSession(
                 identity: OwnIdentity(bundle: parts.identity.bundle),
@@ -256,6 +257,7 @@
                 notifier: alerts,
                 textScreening: .bundled(classifier: parts.textClassifier, log: parts.log),
                 photoDimensions: { PhotoDecoder.dimensions($0) },
+                voiceNotes: voiceNotes(log: parts.log),
                 preferences: parts.preferences
             )
         }

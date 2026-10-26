@@ -52,6 +52,9 @@ public final class AppSession {
     /// Reads a photo's upright size from its bytes without decoding it, or `nil` for bytes that are no photo. Without
     /// it no size is read, and a thread holds a photo's place at a square until the photo decodes.
     @ObservationIgnored let photoDimensions: (@Sendable ([UInt8]) -> PhotoDimensions?)?
+    /// What records, plays and reads voice notes, or `nil` in a build without them: a release build until the maintainer
+    /// approves them for the store (``VoiceNotes``).
+    @ObservationIgnored public let voiceNotes: VoiceNotes?
 
     @ObservationIgnored let mesh: any MeshService
     @ObservationIgnored let notifier: (any Notifier)?
@@ -64,16 +67,15 @@ public final class AppSession {
     @ObservationIgnored private var cachedDirectory = Cached<Int, Directory>()
 
     /// A session over `mesh` and the stores it writes, posting notifications through `notifier`, screening words with
-    /// `textScreening`, reading photos' sizes with `photoDimensions`, and keeping the content filter's toggle in
-    /// `preferences`.
+    /// `textScreening`, reading photos' sizes with `photoDimensions`, recording, playing and reading voice notes with
+    /// `voiceNotes`, and keeping the content filter's toggle in `preferences`.
     @preconcurrency
     public init(
-        identity: OwnIdentity,
-        stores: MeshStores,
-        mesh: any MeshService,
+        identity: OwnIdentity, stores: MeshStores, mesh: any MeshService,
         notifier: (any Notifier)? = nil,
         textScreening: TextScreening? = nil,
         photoDimensions: (@Sendable ([UInt8]) -> PhotoDimensions?)? = nil,
+        voiceNotes: VoiceNotes? = nil,
         preferences: any AppPreferences = MemoryPreferences()
     ) {
         self.identity = identity
@@ -82,6 +84,7 @@ public final class AppSession {
         self.notifier = notifier
         self.textScreening = textScreening
         self.photoDimensions = photoDimensions
+        self.voiceNotes = voiceNotes
         self.preferences = preferences
         filtersContent = preferences.filtersContent
     }
@@ -119,13 +122,14 @@ public final class AppSession {
         isRunning = await mesh.isRunning
         await screenWaiting()
         syncBadge()
-        // Read beside the mesh, not before it: the first launch of a build that keeps sizes reads every photo held.
-        async let sized: Void = measure(stores.messages.unsizedAttachments(named: nil))
+        // Read beside the mesh, not before it: the first launch of a build that keeps sizes reads every photo held, and the
+        // first that reads voice notes every note.
+        async let read: Void = readHeldAttachments()
         for await event in mesh.events {
             await handle(event)
             eventTap?(event)
         }
-        await sized
+        await read
     }
 
     /// Starts the mesh and its radio. On a first run this is what asks for Bluetooth.
@@ -156,9 +160,10 @@ public final class AppSession {
             revision += 1
             await notify(message, isRequest: isRequest)
             syncBadge()
+            await describeVoice(carriedBy: message)
         case .attachmentArrived(let hash):
-            // Its size first, so the thread that redraws for it holds the photo's place at its shape.
-            await measure(stores.messages.unsizedAttachments(named: hash))
+            // Read first, so the thread that redraws for it holds the photo's place at its shape, or shows the note's length.
+            await readArrival(hash)
             revision += 1
             // The row now draws the photo, so the full ring held for the gap has done its job.
             arrivals.byHash[hash] = nil

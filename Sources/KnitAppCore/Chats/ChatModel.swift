@@ -42,61 +42,6 @@ public struct ChatMessage: Sendable, Equatable, Identifiable {
     public var links: [MessageLink] = []
 }
 
-/// What a thread is.
-public enum ThreadKind: Sendable, Equatable {
-    /// The Nearby room.
-    case room
-    /// A DM.
-    case direct
-    /// A group.
-    case group
-}
-
-/// A thread, as one value.
-public struct ChatState: Sendable, Equatable {
-    /// The room's name, the peer's label, or the group's title.
-    public var title: String
-    /// What the thread is.
-    public var kind: ThreadKind
-    /// The DM's peer, or `nil` for the room and a group.
-    public var peer: NodeId?
-    /// The messages and status lines in reading order.
-    public var messages: [ChatMessage]
-    /// Whether this DM or group is a stranger's message request, which waits for Accept.
-    public var isRequest: Bool
-    /// What a request's bar says.
-    public var requestTitle: String
-    /// What accepting the request does.
-    public var requestBody: String
-    /// Whether the DM's peer is linked now.
-    public var isLinked: Bool
-    /// Whether the DM's peer is verified.
-    public var isVerified: Bool
-    /// How many people a group holds, us included; `nil` outside a group.
-    public var memberCount: Int?
-    /// Whether everyone else has left the group, so nothing can be sent.
-    public var nobodyElse: Bool
-    /// Whether the group is still ours: `false` once we left it, or for one we never held.
-    public var exists: Bool
-    /// The thread's face, beside its title: the room's, the peer's, or the group's.
-    public var face = Face.room
-    /// Whether the DM's peer is blocked: the thread shows only what we wrote, and Unblock in the composer's place
-    /// (ADR 2026-10.5wgg).
-    public var isBlocked = false
-    /// Who is typing here now, in name order: the row at the thread's foot.
-    public var typing: [Typist] = []
-
-    /// Whether this is the room.
-    public var isRoom: Bool { kind == .room }
-    /// Whether this is a group.
-    public var isGroup: Bool { kind == .group }
-    /// Whether its messages take a reaction: wherever the composer is, so not on a request, a blocked person's DM or a
-    /// group nobody else is left in (ADR 2026-10.ehe6).
-    public var canReact: Bool { exists && !isRequest && !isBlocked && !nobodyElse }
-    /// Whether its messages take a reply: wherever the composer is, as for a reaction (ADR 2026-10.mn29).
-    public var canReply: Bool { canReact }
-}
-
 /// A thread's view model: its messages and status lines, the composer, and a request's Accept.
 @preconcurrency
 @MainActor
@@ -112,6 +57,9 @@ public final class ChatModel {
     var text = ""
     /// The photo the composer holds, which Send sends with the draft or alone.
     public internal(set) var staged: StagedPhoto?
+    /// The composer's recorder, and the voice note it holds, which Send sends as a photo is sent; `nil` in a build without
+    /// voice notes (``VoiceNotes``).
+    @ObservationIgnored public let voice: VoiceRecorder?
     /// The quote the composer holds, which Send sends with the draft and the photo (ADR 2026-10.mn29).
     public internal(set) var replying: ComposerReply?
     /// How many replies were started here, so the composer's field takes focus at each.
@@ -149,6 +97,7 @@ public final class ChatModel {
         self.session = session
         self.codec = codec
         self.screening = screening
+        voice = session.voiceNotes?.recorder()
         text = Composer.clamp(draft)
     }
 
@@ -178,13 +127,13 @@ public final class ChatModel {
     /// Whether Send has anything to send, to anyone.
     public var canSend: Bool {
         let thread = state
-        return (Composer.body(of: text) != nil || staged != nil) && !thread.nobodyElse && !thread.isBlocked
+        return (Composer.body(of: text) != nil || staged != nil || voice?.staged != nil) && !thread.nobodyElse && !thread.isBlocked
     }
 
     /// Whether the composer's button adds a photo rather than sending: nothing is typed and no photo is held, so there
     /// is nothing to send (`SendAction.Attach` in knit-next).
     public var offersPhoto: Bool {
-        Composer.body(of: text) == nil && staged == nil
+        Composer.body(of: text) == nil && staged == nil && voice?.staged == nil
     }
 
     /// The thread, rebuilt only when something changed. Who is linked and who is typing are laid over it each time, since
@@ -214,6 +163,7 @@ public final class ChatModel {
         defer { isSending = false }
         let sending = text
         let photo = staged
+        let note = photo == nil ? voice?.staged : nil
         let reply = replying
         // The picks the words still hold, in the order they were picked, read from the words as typed
         // (`ChatScreen.kt:535-540`).
@@ -222,7 +172,8 @@ public final class ChatModel {
             wordsRefused = true
             return false
         }
-        guard await session.send(sending, photo: photo?.photo, replyTo: reply?.reply, mentions: mentions, in: conversationId) != nil
+        let attachment = photo?.photo ?? note.map { OutgoingPhoto(bytes: $0.bytes, mime: VoiceAudio.mime) }
+        guard await session.send(sending, photo: attachment, replyTo: reply?.reply, mentions: mentions, in: conversationId) != nil
         else {
             return false
         }
@@ -233,6 +184,9 @@ public final class ChatModel {
         }
         if staged == photo {
             staged = nil
+        }
+        if let note, voice?.staged == note {
+            voice?.removeStaged()
         }
         if replying == reply {
             replying = nil

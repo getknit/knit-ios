@@ -88,11 +88,12 @@ targets:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit.dev
           KNIT_APP_GROUP: group.app.getknit.knit.dev
-          # The bridge's screen recordings take the microphone (ADR 2026-10.x2cq), and iOS ends an app that asks for it
-          # without this key. Debug only: a store build never records, and `check.sh release` checks the key is absent.
+          # Voice notes and the bridge's screen recordings take the microphone (knit-next ADR 034, ADR 2026-10.x2cq), and
+          # iOS ends an app that asks for it without this key. Debug only: voice notes are a debug build's alone until
+          # they are approved for the store, and `check.sh release` checks the key is absent.
           INFOPLIST_KEY_NSMicrophoneUsageDescription: >-
-            This debug build of Knit records sound with the screen when a test script asks, so a demo film can line
-            up its audio.
+            This debug build of Knit records voice messages while you record one, and sound with the screen when a test
+            script asks, so a demo film can line up its audio.
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit
           KNIT_APP_GROUP: group.app.getknit.knit

@@ -16,10 +16,11 @@
     /// bridge answers `wifi`, `wifi-pin` and `wifi-unpin` itself (``WiFiCommand``); `scan-filter`, since only the
     /// iPhone's radio has a scan probe (``ScanProbeCommand``); `storage`, since only the app keeps its identity in the
     /// Keychain and its database under Data Protection (``StorageCommand``); `photos`, since only the app decodes them
-    /// (``PhotosCommand``); `screen`, since only the app runs the content filter's model (``ScreenCommand``); the
-    /// `record-` commands, since only the app has ReplayKit (``RecordCommand``, ADR 2026-10.x2cq); `crash-now`, `hang-now`
-    /// and `crash-reports`, since only the app saves MetricKit's reports (``CrashCommand``, ADR 2026-10.qhsv); and `sample`,
-    /// since only the launch holds the sample chats (``SampleCommand``, ADR 2026-11.pydf).
+    /// (``PhotosCommand``); `voice`, since only the app records, plays and decodes voice notes (``VoiceCommand``);
+    /// `screen`, since only the app runs the content filter's model (``ScreenCommand``); the `record-` commands, since only
+    /// the app has ReplayKit (``RecordCommand``, ADR 2026-10.x2cq); `crash-now`, `hang-now` and `crash-reports`, since only
+    /// the app saves MetricKit's reports (``CrashCommand``, ADR 2026-10.qhsv); and `sample`, since only the launch holds the
+    /// sample chats (``SampleCommand``, ADR 2026-11.pydf).
     /// Each `status` carries `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its
     /// memory grow.
     @MainActor
@@ -59,37 +60,25 @@
                 ["memoryAvailableKb": .int(Int64(os_proc_available_memory() / Self.bytesPerKilobyte))]
             }
             let gate = WiFiGate(log: log, defaults: .standard)
-            let takes = BridgeRecorder.start(clock: clock)
-            let door = sample
+            let commands = AppCommands(
+                session: session,
+                radio: radio,
+                storage: storage,
+                photos: photos,
+                screening: screening,
+                classifier: classifier,
+                textClassifier: textClassifier,
+                takes: BridgeRecorder.start(clock: clock),
+                door: sample
+            )
             let channel = BridgeListener(log: log) {
                 control.ready
             } answer: { line, origin in
                 if let command = WiFiCommand.parse(line) {
                     return (await gate.answer(command, from: origin), false)
                 }
-                if let probe = ScanProbeCommand.parse(line) {
-                    return (await probe.answer(radio), false)
-                }
-                if let ask = StorageCommand.parse(line) {
-                    return (await ask.answer(storage), false)
-                }
-                if let ask = PhotosCommand.parse(line) {
-                    return (await ask.answer(session, photos: photos, screening: screening), false)
-                }
-                if let ask = ScreenCommand.parse(line) {
-                    return (await ask.answer(classifier), false)
-                }
-                if let ask = ScreenTextCommand.parse(line) {
-                    return (await ask.answer(textClassifier), false)
-                }
-                if let ask = RecordCommand.parse(line) {
-                    return (await ask.answer(takes), false)
-                }
-                if let ask = CrashCommand.parse(line) {
-                    return (await ask.answer(.live), false)
-                }
-                if let ask = SampleCommand.parse(line) {
-                    return (await ask.answer(door), false)
+                if let reply = await commands.answer(line) {
+                    return (reply, false)
                 }
                 let reply = await control.handle(line)
                 return (reply.line, reply.quits)

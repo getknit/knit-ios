@@ -31,11 +31,15 @@ public struct MessageAttachment: Sendable, Equatable {
     /// saved picture that Photos gave new EXIF is still found when it is picked again (ADR 2026-10.f3mv, #12). It answers
     /// only a pick, and is checked against the opened plaintext every time. Local only, and no frame ever fills it.
     public var exiflessHash: BlobHash?
+    /// A voice note's length and waveform, read from its bytes on this phone (`MessageEntity.voiceDurationMs` and
+    /// `voicePeaks`): `nil` until they are here and have been read, and for anything but a voice note. Local only.
+    public var voice: VoiceDescription?
 
     /// An attachment.
     public init(
         hash: BlobHash, mime: String? = nil, key: String? = nil, name: String? = nil, size: Int64? = nil,
-        dimensions: PhotoDimensions? = nil, plainHash: BlobHash? = nil, sourceHash: BlobHash? = nil, exiflessHash: BlobHash? = nil
+        dimensions: PhotoDimensions? = nil, plainHash: BlobHash? = nil, sourceHash: BlobHash? = nil, exiflessHash: BlobHash? = nil,
+        voice: VoiceDescription? = nil
     ) {
         self.hash = hash
         self.mime = mime
@@ -46,28 +50,7 @@ public struct MessageAttachment: Sendable, Equatable {
         self.plainHash = plainHash
         self.sourceHash = sourceHash
         self.exiflessHash = exiflessHash
-    }
-}
-
-/// A photo's size in pixels, upright: turned as its orientation says, so a portrait stands taller than it is wide. A
-/// thread holds a photo's place at this shape from its first frame, before the photo decodes. Read beside it, from
-/// the same bytes, is whether the photo moves, which a line about the message names a GIF (knit-next `0b9d19ea`).
-public struct PhotoDimensions: Sendable, Hashable {
-    /// The width, in pixels.
-    public let width: Int
-    /// The height, in pixels.
-    public let height: Int
-    /// Whether it has more than one frame: a GIF, an animated WebP or an APNG that plays.
-    public let animated: Bool
-
-    /// A size, or `nil` unless both sides are at least a pixel.
-    public init?(width: Int, height: Int, animated: Bool = false) {
-        guard width > 0, height > 0 else {
-            return nil
-        }
-        self.width = width
-        self.height = height
-        self.animated = animated
+        self.voice = voice
     }
 }
 
@@ -259,6 +242,17 @@ public protocol MessageStore: MessageRetaining {
     /// anything.
     @discardableResult
     func setAttachmentDimensions(_ hash: BlobHash, to dimensions: PhotoDimensions) -> Bool
+
+    /// Every message carrying a voice note this phone has not read the length of, one per message, the latest stored first,
+    /// with no limit: all of them for a launch, or only blob `hash`'s. A voice note is an `audio/` type, its bytes compared
+    /// as `VoiceAudio.isVoice`'s `startsWith` compares them, and a row is read until it has a duration
+    /// (`MessageDao.voiceMetaWanted`). Whether its blob is held is the caller's to ask.
+    func undescribedVoiceNotes(named hash: BlobHash?) -> [MessageAttachment]
+
+    /// Records `description` as it is, both halves, on every message carrying blob `hash` (`MessageDao.setVoiceMeta`), and
+    /// answers whether that changed anything. An empty one writes nothing, as Android skips it.
+    @discardableResult
+    func setVoiceDescription(_ description: VoiceDescription, named hash: BlobHash) -> Bool
 
     /// The pictures held under a name `bytesHash` could be, best first (`MessageDao.identityFor`, ADR 2026-10.f3mv): a
     /// sealed one whose plaintext it is, one of our sends whose picked bytes it is, or a room post's, which it names

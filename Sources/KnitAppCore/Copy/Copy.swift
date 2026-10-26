@@ -89,6 +89,16 @@ extension Copy {
             )
         }
 
+        /// `NSMicrophoneUsageDescription`: why Knit asks for the microphone.
+        public static var microphoneUsage: String {
+            NSLocalizedString(
+                "system.microphone-usage",
+                bundle: .main,
+                value: "Knit uses the microphone to record voice messages. It listens only while you're recording one.",
+                comment: "The system's microphone permission prompt"
+            )
+        }
+
         /// `NSPhotoLibraryAddUsageDescription`: why Knit asks to add to Photos.
         public static var photoLibraryAddUsage: String {
             NSLocalizedString(

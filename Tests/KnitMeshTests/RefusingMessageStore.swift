@@ -142,6 +142,10 @@ final class RefusingMessageStore: MessageStore {
     func setAttachmentDimensions(_ hash: BlobHash, to dimensions: PhotoDimensions) -> Bool {
         held.setAttachmentDimensions(hash, to: dimensions)
     }
+    func undescribedVoiceNotes(named hash: BlobHash?) -> [MessageAttachment] { held.undescribedVoiceNotes(named: hash) }
+    func setVoiceDescription(_ description: VoiceDescription, named hash: BlobHash) -> Bool {
+        held.setVoiceDescription(description, named: hash)
+    }
     func identities(matching bytesHash: BlobHash) -> [MessageAttachment] { held.identities(matching: bytesHash) }
     func identities(exifless exiflessHash: BlobHash) -> [MessageAttachment] { held.identities(exifless: exiflessHash) }
     func sealedCopies(of plainHash: BlobHash) -> [MessageRecord] { held.sealedCopies(of: plainHash) }

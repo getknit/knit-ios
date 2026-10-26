@@ -36,13 +36,21 @@ public final class MemoryMessageStore: MessageStore {
 
         mutating func put(_ message: MessageRecord) {
             let key = ExactKey(message.id)
+            var message = message
+            // Both voice columns null read back as no description in SQL, so an empty one is none here too.
+            if message.attachment?.voice?.isEmpty == true {
+                message.attachment?.voice = nil
+            }
             if let existing = rows[key] {
-                var message = message
                 // A save that names the same blob keeps what this phone learned of its names, as the SQL upsert does.
                 if let held = existing.record.attachment, var kept = message.attachment, kept.hash == held.hash {
                     kept.plainHash = kept.plainHash ?? held.plainHash
                     kept.sourceHash = kept.sourceHash ?? held.sourceHash
                     kept.exiflessHash = kept.exiflessHash ?? held.exiflessHash
+                    // And each half of a voice note's description on its own, as the upsert coalesces each column.
+                    let voice = VoiceDescription(
+                        durationMs: kept.voice?.durationMs ?? held.voice?.durationMs, peaks: kept.voice?.peaks ?? held.voice?.peaks)
+                    kept.voice = voice.isEmpty ? nil : voice
                     message.attachment = kept
                 }
                 rows[key] = Row(record: message, order: existing.order, unread: existing.unread)
@@ -213,26 +221,6 @@ public final class MemoryMessageStore: MessageStore {
 
     public func attachmentHashes() -> Set<BlobHash> {
         state.withLock { Set($0.rows.values.compactMap(\.record.attachment?.hash)) }
-    }
-
-    public func unsizedAttachments(named hash: BlobHash?) -> [MessageAttachment] {
-        state.withLock { state in
-            var seen = Set<BlobHash>()
-            return state.rows.values.sorted { $0.order > $1.order }.compactMap(\.record.attachment)
-                .filter { $0.dimensions == nil && (hash == nil || $0.hash == hash) && seen.insert($0.hash).inserted }
-        }
-    }
-
-    @discardableResult
-    public func setAttachmentDimensions(_ hash: BlobHash, to dimensions: PhotoDimensions) -> Bool {
-        state.withLock { state in
-            var changed = false
-            for (key, row) in state.rows where row.record.attachment?.hash == hash && row.record.attachment?.dimensions != dimensions {
-                state.rows[key]?.record.attachment?.dimensions = dimensions
-                changed = true
-            }
-            return changed
-        }
     }
 
     @discardableResult

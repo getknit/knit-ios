@@ -21,7 +21,7 @@ public enum MeshEvent: Sendable, Equatable {
     /// Retention removed rows from these threads, the Nearby room's oldest or message requests' (knit-ios #21), each once
     /// in the order of its id's bytes: their counts and the list may have moved.
     case trimmed(conversations: [String])
-    /// The bytes of a photo a message carries landed, so the message can show it.
+    /// The bytes of an attachment a message carries landed, a photo or a voice note, so the message can show or play it.
     case attachmentArrived(BlobHash)
     /// The live links changed.
     case neighborsChanged([Neighbor])

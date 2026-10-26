@@ -65,11 +65,14 @@ extension ChatModel {
         staged = nil
     }
 
-    /// Whether a photo in the thread is still on its way, so the thread samples how far it has got
-    /// (``AppSession/sampleArrivals()``). The set `ChatViewModel.awaitedHashes` gates its `arrivals` on: a settled thread
-    /// never samples.
+    /// Whether a photo in the thread, or a voice note where this build plays them, is still on its way, so the thread
+    /// samples how far it has got (``AppSession/sampleArrivals()``). The set `ChatViewModel.awaitedHashes` gates its
+    /// `arrivals` on: a settled thread never samples. A voice note in the room, which never plays, shows no ring.
     public var awaitsPhotos: Bool {
-        state.messages.contains { $0.attachment.map { $0.kind == .photo && !$0.isHeld } ?? false }
+        let voiceRings = voice != nil && !state.isRoom
+        return state.messages.contains { message in
+            message.attachment.map { !$0.isHeld && ($0.kind == .photo || voiceRings && $0.playsAsVoice) } ?? false
+        }
     }
 
     /// Reads once how far the photos streaming in have got, and answers how long to wait before the next read

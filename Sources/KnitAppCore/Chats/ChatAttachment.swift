@@ -8,7 +8,7 @@ public import KnitWire
 public enum AttachmentKind: Sendable, Equatable {
     /// A photo or a GIF, which a thread draws.
     case photo
-    /// A voice message, which this build names and cannot play.
+    /// A voice message, which a build with voice notes plays (``VoiceNotes``) and any other names.
     case voice
     /// A file, which this build names and cannot open.
     case file
@@ -20,7 +20,7 @@ public enum AttachmentKind: Sendable, Equatable {
         let mime = attachment.mime
         if attachment.name != nil {
             self = .file
-        } else if mime?.hasPrefix("audio/") == true {
+        } else if VoiceAudio.isVoice(mime) {
             self = .voice
         } else if mime == MessageAttachment.linkCardType {
             self = .link
@@ -98,6 +98,12 @@ public struct ChatAttachment: Sendable, Equatable {
     /// A photo's upright size, once its bytes have been read on this phone: the shape its bubble holds from its first
     /// frame, before the photo decodes.
     public var dimensions: PhotoDimensions?
+    /// Whether its bubble is a voice player: any `audio/` type, a named one too. Android's bubble asks for a voice note
+    /// before it asks for a file's name (`ChatScreen.kt:2741`), while its lines ask for the name first
+    /// (`AttachmentKind.kt:34-35`), so a named audio file plays as a voice note and is listed by its name.
+    public var playsAsVoice = false
+    /// A voice note's length and waveform, once its bytes have been read on this phone.
+    public var voice: VoiceDescription?
 }
 
 extension ChatAttachment {
@@ -121,6 +127,8 @@ extension ChatAttachment {
         self.isHeld = isHeld
         waits = nil
         dimensions = attachment.dimensions
+        playsAsVoice = VoiceAudio.isVoice(attachment.mime)
+        voice = attachment.voice
     }
 }
 

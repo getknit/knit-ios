@@ -16,7 +16,7 @@ import Testing
     /// The migrations every earlier build has run, in order.
     private static let frozen = [
         "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19",
-        "v20", "v21", "v22",
+        "v20", "v21", "v22", "v23",
     ]
 
     @Test func migrationsOnlyEverGrowAtTheEnd() {
@@ -227,6 +227,7 @@ enum SchemaPins {
         ("v20", v20),
         ("v21", v21),
         ("v22", v22),
+        ("v23", v23),
     ]
 
     /// Every table, index and trigger this app made, sorted, with the statement SQLite keeps for it. GRDB's own
@@ -299,87 +300,6 @@ enum SchemaPins {
             openToChat INTEGER NOT NULL,
             version INTEGER NOT NULL,
             publishedAt INTEGER NOT NULL
-        ) STRICT;
-
-        table peers
-        CREATE TABLE peers (
-            nodeId BLOB NOT NULL PRIMARY KEY,
-            name BLOB NOT NULL,
-            status BLOB NOT NULL,
-            publicKey BLOB NOT NULL,
-            deviceTag BLOB,
-            protocolVersion INTEGER,
-            capabilities INTEGER,
-            updatedAt INTEGER NOT NULL,
-            verified INTEGER NOT NULL,
-            openToChat INTEGER NOT NULL
-        ) STRICT;
-
-        """
-
-    private static let v2 = """
-        index forward_store_expiresAt
-        CREATE INDEX forward_store_expiresAt ON forward_store (expiresAt);
-
-        index messages_conversationId_sentAt_seq
-        CREATE INDEX messages_conversationId_sentAt_seq ON messages (conversationId, sentAt, seq);
-
-        index messages_pendingKey
-        CREATE INDEX messages_pendingKey ON messages (recipientId, sentAt, seq) WHERE pendingKey = 1;
-
-        index messages_senderId_conversationId
-        CREATE INDEX messages_senderId_conversationId ON messages (senderId, conversationId);
-
-        table accepted_conversations
-        CREATE TABLE accepted_conversations (conversationId BLOB NOT NULL PRIMARY KEY) STRICT;
-
-        table forward_store
-        CREATE TABLE forward_store (
-            seq INTEGER PRIMARY KEY,
-            id BLOB NOT NULL UNIQUE,
-            senderId BLOB NOT NULL,
-            recipientId BLOB,
-            groupId BLOB,
-            type BLOB NOT NULL,
-            isRoomChat INTEGER NOT NULL,
-            origin INTEGER NOT NULL,
-            signed BLOB NOT NULL,
-            sig BLOB NOT NULL,
-            sentAt INTEGER NOT NULL,
-            receivedAt INTEGER NOT NULL,
-            expiresAt INTEGER NOT NULL
-        ) STRICT;
-
-        table messages
-        CREATE TABLE messages (
-            seq INTEGER PRIMARY KEY,
-            id BLOB NOT NULL UNIQUE,
-            senderId BLOB NOT NULL,
-            recipientId BLOB,
-            conversationId BLOB NOT NULL,
-            body BLOB NOT NULL,
-            sentAt INTEGER NOT NULL,
-            arrivedAt INTEGER,
-            delivered INTEGER NOT NULL,
-            pendingKey INTEGER NOT NULL
-        ) STRICT;
-
-        table own_profile
-        CREATE TABLE own_profile (
-            slot INTEGER PRIMARY KEY CHECK (slot = 0),
-            name BLOB NOT NULL,
-            status BLOB NOT NULL,
-            openToChat INTEGER NOT NULL,
-            version INTEGER NOT NULL,
-            publishedAt INTEGER NOT NULL
-        ) STRICT;
-
-        table peer_profiles
-        CREATE TABLE peer_profiles (
-            nodeId BLOB NOT NULL PRIMARY KEY,
-            signed BLOB NOT NULL,
-            sig BLOB NOT NULL,
-            sentAt INTEGER NOT NULL
         ) STRICT;
 
         table peers

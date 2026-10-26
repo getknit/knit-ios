@@ -28,12 +28,17 @@ extension AppSession {
     /// Sends `text` in a thread, with `photo` if one is given, quoting `replyTo` if it replies, and mentioning `mentions`
     /// (ADR 2026-10.nbhj): the room, a group, or a DM to the node id the thread is named for. A photo may go with no words.
     /// Answers what was stored, or `nil` when there is nothing to send. The engine keeps the mentions the words carry.
+    ///
+    /// A voice note never goes to the room: no model screens its sound, and the room floods to everyone in range (knit-next
+    /// ADR 034 §4, where only the composer refuses it). Refusing it here also closes the debug bridge's `room` command.
     @discardableResult
     public func send(
         _ text: String, photo: OutgoingPhoto? = nil, replyTo: MessageReply? = nil, mentions: [MessageMention] = [],
         in conversationId: String
     ) async -> MessageRecord? {
-        guard let body = Composer.body(of: text) ?? (photo == nil ? nil : "") else {
+        guard let body = Composer.body(of: text) ?? (photo == nil ? nil : ""),
+            conversationId != Conversations.nearby || !VoiceAudio.isVoice(photo?.mime)
+        else {
             return nil
         }
         let sent: MessageRecord?
@@ -47,6 +52,9 @@ extension AppSession {
             return nil
         }
         await measure(sent?.attachment.map { [$0] } ?? [])
+        if let photo {
+            await describeSent(sent, plaintext: photo.bytes)
+        }
         revision += 1
         return sent
     }

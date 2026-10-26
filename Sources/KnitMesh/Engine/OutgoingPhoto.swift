@@ -1,15 +1,17 @@
 public import KnitWire
 
-/// A photo to send in a message: its bytes as they leave this phone, and their type. The app prepares it as Android's
-/// `AttachmentStore.ingest` does: upright, at most 1280 pixels on its long side, with the metadata gone. In a DM or a
-/// group it is sealed on the way out (`AttachmentCrypto`), and in the room it goes as it is.
+/// An attachment to send in a message, a photo or a voice note: its bytes as they leave this phone, and their type. The
+/// name is the photo's, which came first; the engine is blind to what the bytes are. The app prepares a photo as Android's
+/// `AttachmentStore.ingest` does: upright, at most 1280 pixels on its long side, with the metadata gone. A voice note is
+/// AAC-LC in ADTS, `audio/aac`, sent as it was recorded (knit-next ADR 034). In a DM or a group either is sealed on the
+/// way out (`AttachmentCrypto`), and in the room it goes as it is.
 public struct OutgoingPhoto: Sendable, Equatable {
-    /// The most a photo may weigh, 8 MiB (`AttachmentStore.MAX_BYTES`): what a FILE record's receiver takes whole.
+    /// The most an attachment may weigh, 8 MiB (`AttachmentStore.MAX_BYTES`): what a FILE record's receiver takes whole.
     public static let maxBytes = 8_388_608
 
-    /// The photo's bytes.
+    /// The attachment's bytes.
     public var bytes: [UInt8]
-    /// Their type, `image/jpeg` for most.
+    /// Their type: `image/jpeg` for most photos, `audio/aac` for a voice note.
     public var mime: String
     /// The blob this phone already holds the same picture as, which a DM or a group sends instead of sealing it again
     /// (``MeshEngine/heldPhoto(picked:)``, ADR 2026-10.f3mv); `nil` for a picture this phone has not held.
@@ -28,7 +30,7 @@ public struct OutgoingPhoto: Sendable, Equatable {
         return BluetoothFetchGate.declaresSize(size) ? size : nil
     }
 
-    /// A photo of type `mime`.
+    /// An attachment of type `mime`.
     public init(bytes: [UInt8], mime: String, identity: PhotoIdentity? = nil, sourceHash: BlobHash? = nil) {
         self.bytes = bytes
         self.mime = mime
