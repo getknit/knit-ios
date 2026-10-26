@@ -726,8 +726,10 @@ def check(arguments: argparse.Namespace) -> int:
         )
         # A new link starts with the phone back-filling every frame our digest lacks, one record per write, and
         # anything the phone sends meanwhile queues behind it. MVP item 4 times a post over a live link, so the
-        # timed steps wait for that sync to finish.
-        run.step("custody-converges", lambda: _converges(peer, phone, 180))
+        # timed steps wait for that sync to finish. Our side answers each 60 s digest with a round of at most 200 frames
+        # or 256 KiB (ADR 2026-10.f5zs), so a phone lacking a full custody of 1,000 frames from us takes
+        # ceil(1000/200) + 1 = 6 digests, about 360 s, where Android serves everything in one.
+        run.step("custody-converges", lambda: _converges(peer, phone, 420))
         # The aliases as this port computes them, to hold against what the phone's own screens show.
         run.step("aliases", lambda: _aliases(peer, phone_id))
         # A phone with a photo pushes it as FILE records right behind its profile, and the peer shows it once it is the
@@ -879,7 +881,9 @@ def iphone(arguments: argparse.Namespace) -> int:
                 ups = ios.lines(lambda line: _link(line, phone_id))
                 time.sleep(max(0.0, ups[-1]["_at"] + arguments.hold - time.monotonic()) if ups else 0.0)
                 balanced = run.step("relink-balanced", lambda: _balanced(phone, ios.node_id, tally, head_start=head_start)) is not None
-        run.step("custody-converges", lambda: _converges(ios, phone, 180))
+        # The iPhone back-fills a capped round per 60 s digest (ADR 2026-10.f5zs): a phone lacking a full custody of
+        # 1,000 frames takes ceil(1000/200) + 1 = 6 digests, about 360 s.
+        run.step("custody-converges", lambda: _converges(ios, phone, 420))
         if balanced and above:
             _relinks(run, ios, phone, phone_id, arguments.links, arguments.hold, 180, tally)
         elif balanced and arguments.links > 1:

@@ -5,38 +5,7 @@ import KnitWire
 import Testing
 
 /// What a node carries and serves, ported from knit-next's `ForwardSyncTest`.
-@Suite struct CustodySyncTests {
-    private let now: Int64 = 1_756_200_000_000
-    private let alice = fixtureNodeId(1)
-    private let bob = fixtureNodeId(2)
-    private let zed = fixtureNodeId(26)
-
-    private func frame(
-        _ id: String,
-        type: FrameType = .chat,
-        from sender: NodeId? = nil,
-        to recipient: NodeId? = nil,
-        members: [NodeId]? = nil,
-        sentAt: Int64? = nil
-    ) -> CarriedFrame {
-        let author = sender ?? alice
-        let group = members.map { GroupInfo(id: "g1", members: $0.map(\.string), createdBy: author.string) }
-        let envelope = RelayEnvelope(
-            type: type,
-            id: id,
-            senderId: author.string,
-            sentAt: sentAt ?? now,
-            recipientId: recipient?.string,
-            group: group,
-            payload: []
-        )
-        return CarriedFrame(envelope: envelope, sig: Array(repeating: 1, count: 64), signed: envelope.encoded)
-    }
-
-    private func ids(_ reply: CustodySync.DigestReply) -> [String] {
-        reply.frames.compactMap { try? RelayEnvelope(decoding: $0.signed).id }
-    }
-
+@Suite struct CustodySyncTests: CustodySyncCase {
     @Test func aRelayedFrameIsCarriedOnlyWhenItAuthenticates() {
         let store = MemoryCustodyStore()
         var sync = CustodySync()
@@ -161,8 +130,9 @@ import Testing
         for (id, sender) in [("r1", alice), ("r2", alice), ("s1", bob)] {
             _ = sync.carry(frame(id, from: sender), in: store, now: now) { true }
         }
-        let reply = sync.missing(from: [], for: zed, in: store, now: now)
+        let reply = round(sync, for: zed, in: store)
         #expect(reply.keysAhead.sorted() == [alice, bob].sorted())
+        #expect(reply.keys.map(Self.frameKey) == reply.keysAhead.map { Self.frameKey(Self.key(of: $0)) })
         #expect(reply.frames.count == 3)
     }
 
@@ -172,8 +142,8 @@ import Testing
         var sync = CustodySync()
         _ = sync.carry(frame("p1", type: .profile), in: store, now: now) { true }
         _ = sync.carry(frame("r1"), in: store, now: now) { true }
-        #expect(sync.missing(from: [], for: zed, in: store, now: now).keysAhead.isEmpty)
-        #expect(sync.missing(from: ["p1"], for: zed, in: store, now: now).keysAhead.isEmpty)
+        #expect(round(sync, for: zed, in: store).keysAhead.isEmpty)
+        #expect(round(sync, from: ["p1"], for: zed, in: store).keysAhead.isEmpty)
     }
 
     @Test func noKeyGoesToAPeerHoldingAFrameOfTheSenders() {
@@ -183,7 +153,7 @@ import Testing
         var sync = CustodySync()
         _ = sync.carry(frame("r1"), in: store, now: now) { true }
         _ = sync.carry(frame("r2"), in: store, now: now) { true }
-        let reply = sync.missing(from: ["r1"], for: zed, in: store, now: now)
+        let reply = round(sync, from: ["r1"], for: zed, in: store)
         #expect(ids(reply) == ["r2"])
         #expect(reply.keysAhead.isEmpty)
     }
@@ -193,7 +163,7 @@ import Testing
         let store = MemoryCustodyStore()
         var sync = CustodySync()
         _ = sync.carry(frame("r1", from: zed), in: store, now: now) { true }
-        let reply = sync.missing(from: [], for: zed, in: store, now: now)
+        let reply = round(sync, for: zed, in: store)
         #expect(ids(reply) == ["r1"])
         #expect(reply.keysAhead.isEmpty)
     }
@@ -204,7 +174,7 @@ import Testing
         var sync = CustodySync()
         _ = sync.carry(frame("r1"), in: store, now: now) { true }
         _ = sync.carry(frame("g1", from: bob, members: [bob, alice]), in: store, now: now) { true }
-        let reply = sync.missing(from: ["r1"], for: zed, in: store, now: now)
+        let reply = round(sync, from: ["r1"], for: zed, in: store)
         #expect(reply.frames.isEmpty)
         #expect(reply.keysAhead.isEmpty)
     }
@@ -215,7 +185,7 @@ import Testing
         let envelope = RelayEnvelope(type: .chat, id: "odd", senderId: "not-a-node", sentAt: now, payload: [])
         var sync = CustodySync()
         _ = sync.carry(CarriedFrame(envelope: envelope, sig: [1], signed: envelope.encoded), in: store, now: now) { true }
-        let reply = sync.missing(from: [], for: zed, in: store, now: now)
+        let reply = round(sync, for: zed, in: store)
         #expect(ids(reply) == ["odd"])
         #expect(reply.keysAhead.isEmpty)
     }

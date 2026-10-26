@@ -69,6 +69,14 @@ public final class MemoryCustodyStore: CustodyStore {
         }
     }
 
+    public func liveIndex(now: Int64) -> [CustodyIndexEntry] {
+        state.withLock { state in
+            state.live(now: now)
+                .sorted { ($0.receivedAt, $0.sequence) > ($1.receivedAt, $1.sequence) }
+                .map { CustodyIndexEntry($0.frame) }
+        }
+    }
+
     public func liveIds(now: Int64) -> [String] {
         state.withLock { state in
             state.live(now: now).sorted { $0.sequence < $1.sequence }.map(\.entry.id)

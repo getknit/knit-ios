@@ -44,6 +44,8 @@ public final class MeshEngine {
 
     var router: Router
     var custody = CustodySync()
+    /// The digests whose reply round waits on a link still holding a round unwritten (ADR 2026-10.f5zs).
+    var heldDigests = HeldDigests()
     var pendingInbound = PendingInbound()
     var keyExchange: KeyExchange
     var blobExchange: BlobExchange
@@ -169,7 +171,8 @@ public final class MeshEngine {
         let blobs = [blobExchange.nextDeadline, blobExchange.parkPollAt]
         let ratchetSweep = configuration.ratchet ? timers.ratchetSweep : nil
         let ticks = ackSync.nextBatchDue
-        return ([router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ticks, ratchetSweep] + blobs)
+        let rounds = heldDigests.nextCheck
+        return ([router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ticks, ratchetSweep, rounds] + blobs)
             .compactMap(\.self).min()
     }
 
@@ -241,6 +244,8 @@ public final class MeshEngine {
     /// is asked at once rather than at the next timer or tick (`BlobExchange.unlinked`, knit-next #140): an ask stands on
     /// a live link until its floor, never on one that is gone.
     public func linkDown(_ nodeId: NodeId) {
+        // Its round waits on a link that is gone: the next link's digest says what it lacks then.
+        heldDigests.drop(nodeId)
         // A newcomer is one only while its link stands (knit-next ADR 2026-10.2drc): a link-up that went pulls nobody later.
         blobExchange.unlinked([nodeId])
         stepBlobs(blobExchange.fetches(on: [nodeId]))
@@ -272,23 +277,6 @@ public final class MeshEngine {
         perform(router.relay(frame, neighbors: neighborIds, jitter: drawJitter(), now: now))
     }
 
-    /// A neighbour's custody digest arrived (`ForwardSync.onDigest`): serve every live frame it lacks, each sender's
-    /// key ahead of a backlog the neighbour could not otherwise verify.
-    public func receiveDigest(_ ids: [String], from neighbor: NodeId) {
-        // When each one lands shows what a slow link spends on them: every 60 s, the whole live id set each way.
-        log.log(.debug, "mesh digest from \(neighbor): \(ids.count) ids")
-        let reply = custody.missing(from: ids, for: neighbor, in: stores.custody, now: clock.wallMilliseconds())
-        for sender in reply.keysAhead {
-            // Point to point, as a key request's answer goes, so it is never flooded (knit-next ADR 2026-09.7bu7).
-            if let key = keyExchange.serveKey(sender) {
-                transport.send(key, to: neighbor)
-            }
-        }
-        for wire in reply.frames {
-            transport.send(wire, to: neighbor)
-        }
-    }
-
     // MARK: Time
 
     /// Fires every relay and timer that is due.
@@ -300,6 +288,7 @@ public final class MeshEngine {
         }
         stepDueBlobs(now: now)
         pollParkedAsks(now: now)
+        answerHeldDigests(now: now)
         lapseTyping(now: now)
         flushDueTickBatches(now: now)
         if now >= due.reoffer {

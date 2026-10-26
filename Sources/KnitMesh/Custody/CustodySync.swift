@@ -5,8 +5,9 @@ public import KnitWire
 /// neighbour whose digest lists what it holds, and what a receipt purges.
 ///
 /// The link-up and 60-second digest exchange is the whole protocol. Each side sends the ids of every live frame
-/// it carries; on receiving the other's, it serves every live frame the list omits. Android serves custody only
-/// in answer to a digest, so a node that never sends one never gets back-filled (`.agents/context/custody.md`).
+/// it carries; on receiving the other's, it serves the live frames the list omits, a capped round at a time here
+/// (``missing(from:for:in:now:crossed:key:)``, ADR 2026-10.f5zs). Android serves custody only in answer to a digest,
+/// so a node that never sends one never gets back-filled (`.agents/context/custody.md`).
 public struct CustodySync: Sendable {
     /// How long a purged DM's id stays tombstoned: the custody TTL, so the tombstone outlives every copy still
     /// in flight (`ACK_TOMBSTONE_TTL_MS`).
@@ -55,17 +56,55 @@ public struct CustodySync: Sendable {
         return store.store(frame, origin: .own, now: now)
     }
 
+    /// The most frames one reply round serves (ADR 2026-10.f5zs). Android serves every frame a digest omits at once
+    /// (`ForwardSync.kt:136-163` at knit-next `e63f15f4`), so an empty digest of 15 bytes bought the whole custody; the
+    /// cap is this port's rule alone, and no custody constant moves with it. Each 60 s digest answers the next slice.
+    public static let roundFrames = 200
+
+    /// The most bytes one reply round serves, keys ahead included, each counted as its encoded ``WireEnvelope``, as
+    /// `LinkManager.send` writes it. The first pick always goes, so a round can pass it by that one frame.
+    public static let roundBytes = 262_144 // 256 KiB
+
     /// What a neighbour's digest is answered with (`ForwardSync.onDigest`).
     public struct DigestReply: Sendable, Equatable {
-        /// The senders whose key goes ahead of ``frames``, each as its signed profile from the pin store, point to
-        /// point (knit-next ADR 2026-09.g64k).
+        /// The senders whose key goes ahead of ``frames``, in the order of ``keys``.
         public var keysAhead: [NodeId]
-        /// Every live frame the digest omits, profiles first.
+        /// Each of ``keysAhead``'s keys, its signed profile from the pin store in the point-to-point wrapper it is served
+        /// in (knit-next ADR 2026-09.g64k). Every one goes out before every frame.
+        public var keys: [WireEnvelope]
+        /// The live frames the digest omits that this round serves, profiles first.
         public var frames: [WireEnvelope]
+        /// The bytes the round is charged: ``keys`` and ``frames``, each as encoded.
+        public var bytes: Int
+        /// Whether the round stopped at its budget with frames still to serve, which the next digest answers.
+        public var isCapped: Bool
+
+        /// Bundles a reply.
+        public init(
+            keysAhead: [NodeId] = [], keys: [WireEnvelope] = [], frames: [WireEnvelope] = [], bytes: Int = 0, isCapped: Bool = false
+        ) {
+            self.keysAhead = keysAhead
+            self.keys = keys
+            self.frames = frames
+            self.bytes = bytes
+            self.isCapped = isCapped
+        }
     }
 
-    /// Every live frame a neighbour's digest omits, each in a fresh ``WireEnvelope`` around its verbatim bytes,
-    /// with a full hop budget, and the senders whose key goes ahead of them (`ForwardSync.onDigest`).
+    /// One reply round to a neighbour's digest (`ForwardSync.onDigest`): the live frames it omits, at most
+    /// ``roundFrames`` of them and ``roundBytes`` with the keys ahead, each in a fresh ``WireEnvelope`` around its
+    /// verbatim bytes, with a full hop budget, and the senders' keys that go ahead of them.
+    ///
+    /// The round picks from ``CustodyStore/liveIndex(now:)``, which decodes nothing: profiles first, then newest received
+    /// first, minus the digest's ids (by their bytes, ADR 2026-09.jc2x) and minus every frame `crossed` says crossed this
+    /// link either way inside its window (`LinkCrossings`). It loads only the frames it serves, and each group frame to
+    /// read its roster: one whose roster lacks the peer takes no slot and no bytes, and nothing caps those loads, so
+    /// busy groups the peer is not in cannot starve the older frames it is owed. The digest meter bounds their cost
+    /// (ADR 2026-10.f5zs). A frame the round served and the peer did not keep is skipped while its crossing lasts, so a
+    /// peer that refuses a slice gets the next one at its next digest rather than the same slice again.
+    ///
+    /// **The round stops; it never skips.** The first pick always goes, whatever its size, and the round stops at the
+    /// first later pick that would pass the budget, so a large profile is never passed over for its sender's chat.
     ///
     /// A frame the peer authored is served too when its digest lacks it: that is how a node whose custody was
     /// wiped gets its own frames back. A group frame goes only to a member of its roster.
@@ -74,40 +113,77 @@ public struct CustodySync: Sendable {
     /// profile, usually the oldest frame held of theirs, behind all of their chat, so a peer meeting that sender
     /// for the first time dropped the backlog for want of the key it was about to be handed.
     ///
-    /// When custody holds no profile, the pin store does (knit-next ADR 2026-09.g64k). The per-sender quota evicts
-    /// a chatty sender's profile, and the TTL takes a departed sender's up to a republish period before their last
-    /// posts, so a carrier often serves frames whose author's profile it no longer carries. ``DigestReply/keysAhead``
-    /// names each sender of the frames served whose key the peer may lack: not the peer itself, with no live profile
-    /// in our custody, and with none of our live frames of theirs in the peer's digest. A peer that custodies one of
-    /// their frames verified it, so it holds the key; that rule keeps two carriers of one chatty sender from trading
-    /// the key on every reconcile.
-    public func missing(from theirIds: [String], for peer: NodeId, in store: some CustodyStore, now: Int64) -> DigestReply {
+    /// When custody holds no profile, the pin store does (knit-next ADR 2026-09.g64k): `key` answers it, the signed
+    /// profile in its point-to-point wrapper. The per-sender quota evicts a chatty sender's profile, and the TTL takes a
+    /// departed sender's up to a republish period before their last posts, so a carrier often serves frames whose author's
+    /// profile it no longer carries. ``DigestReply/keysAhead`` names each sender of the frames this round serves whose key
+    /// the peer may lack: not the peer itself, with no live profile in our custody, and with none of our live frames of
+    /// theirs in the peer's digest. A peer that custodies one of their frames verified it, so it holds the key; that rule
+    /// keeps two carriers of one chatty sender from trading the key on every reconcile. A key is charged to the round
+    /// ahead of the frame that needs it, and a key `crossed` says the link carried is neither sent nor charged.
+    public func missing(
+        from theirIds: [String],
+        for peer: NodeId,
+        in store: some CustodyStore,
+        now: Int64,
+        crossed: (String) -> Bool = { _ in false },
+        key: (NodeId) -> WireEnvelope? = { _ in nil }
+    ) -> DigestReply {
         let held = Set(theirIds.map(ExactKey.init))
         let peerKey = ExactKey(peer.string)
-        let live = store.liveFrames(now: now)
-        let keysFirst = live.filter { $0.envelope.type == .profile } + live.filter { $0.envelope.type != .profile }
-        let outgoing = keysFirst.filter { frame in
-            guard !held.contains(ExactKey(frame.envelope.id)) else {
-                return false
-            }
-            guard let members = frame.envelope.group?.members else {
-                return true
-            }
-            return members.contains { ExactKey($0) == peerKey }
-        }
+        let index = store.liveIndex(now: now)
         // Senders whose key the peer holds or gets anyway: a live profile goes first or the peer has it, and a frame
-        // the peer holds, it verified. Each keyless sender joins the set as it is named, so it is named once.
-        let keyedFrames = live.filter { $0.envelope.type == .profile || held.contains(ExactKey($0.envelope.id)) }
-        var keyed = Set(keyedFrames.map { ExactKey($0.envelope.senderId) })
-        var keysAhead: [NodeId] = []
-        for frame in outgoing {
-            guard keyed.insert(ExactKey(frame.envelope.senderId)).inserted, let sender = NodeId(frame.envelope.senderId), sender != peer
-            else {
+        // the peer holds, it verified. Each sender of a served frame joins the set as it is served, so it is named once.
+        let keyedEntries = index.filter { $0.type == .profile || held.contains(ExactKey($0.id)) }
+        var keyed = Set(keyedEntries.map { ExactKey($0.senderId) })
+        let picks = index.filter { $0.type == .profile } + index.filter { $0.type != .profile }
+        var reply = DigestReply()
+        for entry in picks {
+            guard !held.contains(ExactKey(entry.id)), !(entry.frameKey.map(crossed) ?? false) else {
                 continue
             }
-            keysAhead.append(sender)
+            var loaded: CarriedFrame?
+            if entry.groupId != nil {
+                guard let frame = store.frame(entry.id, now: now), let members = frame.envelope.group?.members,
+                    members.contains(where: { ExactKey($0) == peerKey })
+                else {
+                    continue
+                }
+                loaded = frame
+            }
+            let keyAhead =
+                keyed.contains(ExactKey(entry.senderId)) ? nil : Self.keyAhead(of: entry.senderId, to: peer, crossed: crossed, key: key)
+            let cost = entry.reservedBytes + (keyAhead?.wire.encoded.count ?? 0)
+            if !reply.frames.isEmpty, reply.frames.count >= Self.roundFrames || reply.bytes + cost > Self.roundBytes {
+                reply.isCapped = true
+                break
+            }
+            guard let frame = loaded ?? store.frame(entry.id, now: now) else {
+                continue
+            }
+            keyed.insert(ExactKey(entry.senderId))
+            if let keyAhead {
+                reply.keysAhead.append(keyAhead.sender)
+                reply.keys.append(keyAhead.wire)
+            }
+            reply.frames.append(frame.reserved)
+            reply.bytes += cost
         }
-        return DigestReply(keysAhead: keysAhead, frames: outgoing.map(\.reserved))
+        return reply
+    }
+
+    /// The key that goes ahead of a frame from `senderId` to `peer`, if one goes: never the peer's own, none for a sender
+    /// that is no node id, nor one the pin store lacks, and none the link already carried either way.
+    private static func keyAhead(
+        of senderId: String, to peer: NodeId, crossed: (String) -> Bool, key: (NodeId) -> WireEnvelope?
+    ) -> (sender: NodeId, wire: WireEnvelope)? {
+        guard let sender = NodeId(senderId), sender != peer, let wire = key(sender) else {
+            return nil
+        }
+        if let frameKey = FrameKey.ofSigned(wire), crossed(frameKey) {
+            return nil
+        }
+        return (sender, wire)
     }
 
     /// Applies a verified receipt for `ackId` from `sender` (`ForwardSync.onAck`): the carried DM is purged, and its

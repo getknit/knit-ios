@@ -1,0 +1,140 @@
+import KnitMesh
+import KnitStore
+import KnitTestSupport
+import KnitWire
+import Testing
+
+/// A capped reply round (ADR 2026-10.f5zs): at most ``CustodySync/roundFrames`` frames or ``CustodySync/roundBytes`` with
+/// the keys ahead, picked from the index, minus what crossed the link, stopping at its budget and never skipping.
+@Suite struct CustodySyncRoundTests: CustodySyncCase {
+    @Test func aDMBehindFourHundredGroupFramesThePeerIsNotInGoesInTheFirstRound() {
+        // Each group frame costs a load to read its roster, but one without the peer takes no slot: busy groups the
+        // peer is not in never starve the older frames it is owed.
+        let store = MemoryCustodyStore()
+        var sync = CustodySync()
+        _ = sync.carry(frame("dm", to: bob), in: store, now: now) { true }
+        for index in 0..<400 {
+            let sender = fixtureNodeId(60 + index % 4)
+            let group = index < 200 ? "ga" : "gb"
+            _ = sync.carry(frame("g\(index)", from: sender, members: [alice, bob, sender], group: group), in: store, now: now + 1) { true }
+        }
+        #expect(store.liveIds(now: now).count == 401)
+        let reply = round(sync, for: zed, in: store)
+        #expect(ids(reply) == ["dm"])
+        #expect(!reply.isCapped)
+    }
+
+    @Test func aLargeProfileGoesFirstAloneAndItsChatFollowsWithNoKey() {
+        // The first pick always goes, and the round stops at the next one rather than skipping it for the chat
+        // behind: the chat would otherwise reach the peer before the key that verifies it.
+        let store = MemoryCustodyStore()
+        var sync = CustodySync()
+        _ = sync.carry(frame("profile-b", type: .profile, from: bob, payloadBytes: 300 * 1024), in: store, now: now) { true }
+        for id in ["c1", "c2", "c3"] {
+            _ = sync.carry(frame(id, from: bob), in: store, now: now + 1) { true }
+        }
+        let first = round(sync, for: zed, in: store)
+        #expect(ids(first) == ["profile-b"])
+        #expect(first.isCapped)
+        #expect(first.bytes > CustodySync.roundBytes, "the first pick goes whatever its size")
+        #expect(first.keys.isEmpty, "the profile is the key")
+        let crossed = Set(first.frames.map(Self.frameKey))
+        let second = round(sync, from: ["profile-b"], for: zed, in: store, crossed: crossed)
+        #expect(ids(second) == ["c3", "c2", "c1"])
+        #expect(second.keys.isEmpty)
+        // A peer that did not keep the profile still holds it from the crossing, and its chat is not given a key.
+        #expect(round(sync, for: zed, in: store, crossed: crossed).keys.isEmpty)
+    }
+
+    @Test func keysAheadAreChargedToTheRoundBeforeTheirFrames() {
+        let store = MemoryCustodyStore()
+        var sync = CustodySync()
+        let senders = (0..<150).map { fixtureNodeId(100 + $0) }
+        for (index, sender) in senders.enumerated() {
+            _ = sync.carry(frame("s\(index)", from: sender, to: bob, payloadBytes: 1000), in: store, now: now + Int64(index)) { true }
+        }
+        let reply = round(sync, for: zed, in: store, keyBytes: 1000)
+        let keyBytes = reply.keys.reduce(0) { $0 + $1.encoded.count }
+        let frameBytes = reply.frames.reduce(0) { $0 + $1.encoded.count }
+        #expect(reply.isCapped, "150 frames alone fit; with their keys they do not")
+        #expect(reply.keys.count == reply.frames.count)
+        #expect(reply.bytes == keyBytes + frameBytes)
+        #expect(reply.bytes <= CustodySync.roundBytes)
+        #expect(
+            reply.bytes + 2 * (reply.frames.first?.encoded.count ?? 0) > CustodySync.roundBytes,
+            "it stopped at the first pick past the budget")
+    }
+
+    @Test func aKeyTheLinkCarriedIsNeitherSentNorCharged() {
+        let store = MemoryCustodyStore()
+        var sync = CustodySync()
+        _ = sync.carry(frame("r1", from: alice), in: store, now: now) { true }
+        _ = sync.carry(frame("s1", from: bob), in: store, now: now) { true }
+        let reply = round(sync, for: zed, in: store, crossed: [Self.frameKey(Self.key(of: alice))])
+        #expect(reply.keysAhead == [bob])
+        #expect(ids(reply).sorted() == ["r1", "s1"])
+        #expect(reply.bytes == reply.frames.reduce(0) { $0 + $1.encoded.count } + Self.key(of: bob).encoded.count)
+    }
+
+    @Test func aRoundServesAtMostTwoHundredFrames() {
+        let store = MemoryCustodyStore()
+        var sync = CustodySync()
+        for index in 0..<250 {
+            _ = sync.carry(frame("m\(index)", from: fixtureNodeId(40 + index % 5), to: bob), in: store, now: now + Int64(index)) { true }
+        }
+        let first = round(sync, for: zed, in: store)
+        #expect(first.frames.count == CustodySync.roundFrames)
+        #expect(first.isCapped)
+        #expect(ids(first).first == "m249", "newest received first")
+        let second = round(sync, for: zed, in: store, crossed: Set((first.frames + first.keys).map(Self.frameKey)))
+        #expect(second.frames.count == 50)
+        #expect(!second.isCapped)
+        #expect(Set(ids(first) + ids(second)).count == 250)
+    }
+
+    @Test func aRoundServesAtMostItsBytes() {
+        let store = MemoryCustodyStore()
+        var sync = CustodySync()
+        for index in 0..<40 {
+            _ = sync.carry(frame("m\(index)", to: bob, payloadBytes: 10 * 1024), in: store, now: now + Int64(index)) { true }
+        }
+        let reply = round(sync, for: zed, in: store, keyBytes: 0)
+        let each = reply.frames.first?.encoded.count ?? 0
+        #expect(reply.isCapped)
+        #expect(reply.bytes <= CustodySync.roundBytes)
+        #expect(reply.bytes + each > CustodySync.roundBytes)
+        #expect(reply.frames.count == 25)
+    }
+
+    @Test func aFrameThatCrossedTheLinkIsLeftOut() {
+        // Either way: one the peer gave us, or one we served it inside the crossing's window.
+        let store = MemoryCustodyStore()
+        var sync = CustodySync()
+        for id in ["r1", "r2", "r3"] {
+            _ = sync.carry(frame(id), in: store, now: now) { true }
+        }
+        let crossed = Self.frameKey(WireEnvelope(sig: Self.signature("r2"), signed: []))
+        let served = round(sync, for: zed, in: store, crossed: [crossed])
+        #expect(ids(served).sorted() == ["r1", "r3"])
+    }
+
+    @Test func aPeerThatKeepsOneFrameInFiveIsServedEveryKeepableFrameInFiveRounds() {
+        // A slice the peer refuses is not served again while its crossing lasts, so each round moves on to the next.
+        let store = MemoryCustodyStore()
+        var sync = CustodySync()
+        for index in 0..<1000 {
+            _ = sync.carry(frame("m\(index)", from: fixtureNodeId(40 + index % 5), to: bob), in: store, now: now + Int64(index)) { true }
+        }
+        #expect(store.liveIds(now: now).count == 1000)
+        let keepable = Set((0..<1000).filter { $0.isMultiple(of: 5) }.map { "m\($0)" })
+        var kept: [String] = []
+        var crossed: Set<String> = []
+        for _ in 0..<5 {
+            let reply = round(sync, from: kept, for: zed, in: store, crossed: crossed)
+            crossed.formUnion((reply.keys + reply.frames).map(Self.frameKey))
+            kept += ids(reply).filter(keepable.contains)
+        }
+        #expect(Set(kept) == keepable)
+        #expect(kept.count == keepable.count, "no frame twice")
+    }
+}

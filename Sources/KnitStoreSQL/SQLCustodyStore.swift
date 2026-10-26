@@ -69,6 +69,23 @@ public final class SQLCustodyStore: CustodyStore {
         }
     }
 
+    /// Reads the columns the rows already hold, and only the signature's first eight bytes and the lengths of the rest, so
+    /// no frame is read whole or decoded. On a database error it lists nothing, so the round serves nothing, and the
+    /// next digest asks again.
+    public func liveIndex(now: Int64) -> [CustodyIndexEntry] {
+        database.read(or: []) { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT id, senderId, type, groupId, substr(sig, 1, ?) AS sigHead, length(sig) AS sigLength,
+                        length(signed) AS signedLength
+                    FROM forward_store WHERE expiresAt >= ? ORDER BY receivedAt DESC, seq DESC
+                    """,
+                arguments: [Self.frameKeyBytes, now]
+            ).map(Self.indexEntry)
+        }
+    }
+
     public func liveIds(now: Int64) -> [String] {
         database.read(or: []) { db in
             try Row.fetchAll(db, sql: "SELECT id FROM forward_store WHERE expiresAt >= ? ORDER BY seq", arguments: [now])
@@ -115,6 +132,22 @@ public final class SQLCustodyStore: CustodyStore {
             try db.execute(sql: "DELETE FROM forward_store WHERE expiresAt < ?", arguments: [now])
             return db.changesCount
         }
+    }
+
+    /// How much of a signature a link's frame key reads (``FrameKey``).
+    private static let frameKeyBytes = 8
+
+    /// What a digest answer reads of a row.
+    private static func indexEntry(_ row: Row) throws -> CustodyIndexEntry {
+        CustodyIndexEntry(
+            id: try row.text("id"),
+            senderId: try row.text("senderId"),
+            type: FrameType(rawValue: try row.text("type")),
+            groupId: try row.optionalText("groupId"),
+            frameKey: CustodyIndexEntry.frameKey(sigHead: try row.optionalBytes("sigHead") ?? []),
+            reservedBytes: CustodyIndexEntry.reservedBytes(
+                sig: try row.decode(Int.self, forColumn: "sigLength"), signed: try row.decode(Int.self, forColumn: "signedLength"))
+        )
     }
 
     /// What the quotas read of a row.

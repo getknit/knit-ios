@@ -114,6 +114,17 @@ final class LinkPipe {
         var at: Int64
     }
 
+    /// A FRAME record that crossed, and when.
+    struct Frame: Equatable {
+        var from: NodeId
+        var to: NodeId
+        var id: String
+        var type: FrameType
+        /// The record's payload: the encoded `WireEnvelope`.
+        var bytes: Int
+        var at: Int64
+    }
+
     private struct Side {
         let node: PipeNode
         let channel: ChannelID
@@ -130,6 +141,11 @@ final class LinkPipe {
     private(set) var chunkBytes = 0
     private(set) var serves: [Serve] = []
     private(set) var asks: [Ask] = []
+    /// Every FRAME record it carried, either way, its envelope decoded.
+    private(set) var frames: [Frame] = []
+    /// When set, what this node writes waits on its radio, unread, as on a link whose air is slow: nothing it writes
+    /// crosses, and no FILE record it writes is reported written, until this is cleared.
+    var holding: PipeNode?
 
     /// Links `dialer` and `answerer` on `channel`, each side its own channel number: the answerer accepts and reads the
     /// dialer's HELLO, and its answer, piped back, admits the dialer. The dialer's own written HELLO is a stray it ignores.
@@ -148,7 +164,7 @@ final class LinkPipe {
             return false
         }
         var moved = false
-        for index in sides.indices {
+        for index in sides.indices where sides[index].node !== holding {
             let writes = sides[index].node.radio.writes(on: sides[index].channel)
             guard sides[index].read < writes.count else {
                 continue
@@ -172,6 +188,9 @@ final class LinkPipe {
         if record.tag == .fileHeader, let header = LinkJSON.fileHeader(from: record.payload), let hash = BlobHash(header.key) {
             serves.append(Serve(from: sender.node.nodeId, to: receiver.node.nodeId, hash: hash, offset: header.offset, at: now))
         }
+        if record.tag == .frame, let crossed = Self.frame(record, from: sender.node, to: receiver.node, at: now) {
+            frames.append(crossed)
+        }
         if record.tag == .frame, let ask = Self.ask(in: record.payload) {
             asks.append(Ask(from: sender.node.nodeId, to: receiver.node.nodeId, hash: ask.hash, offset: ask.offset, at: now))
         }
@@ -186,6 +205,36 @@ final class LinkPipe {
                 cut()
             }
         }
+    }
+
+    /// Hands `record` to the far side of `node` as if `node` had written it, recorded as anything that crossed is: a
+    /// peer that writes what its engine never would.
+    func inject(_ record: LinkRecord, from node: PipeNode) {
+        guard isUp, let index = sides.firstIndex(where: { $0.node === node }) else {
+            return
+        }
+        deliver(record, from: index)
+    }
+
+    /// The bytes `node` wrote that have not crossed yet.
+    func undelivered(from node: PipeNode) -> Int {
+        guard let side = sides.first(where: { $0.node === node }) else {
+            return 0
+        }
+        return side.node.radio.writes(on: side.channel).dropFirst(side.read).reduce(0) { $0 + $1.count }
+    }
+
+    /// The channel `node` reads this pipe on.
+    func channel(of node: PipeNode) -> ChannelID? {
+        sides.first { $0.node === node }?.channel
+    }
+
+    /// The frame a FRAME record carries, as it crossed from `sender` to `receiver`, if its envelope decodes.
+    private static func frame(_ record: LinkRecord, from sender: PipeNode, to receiver: PipeNode, at now: Int64) -> Frame? {
+        guard let wire = try? WireEnvelope(decoding: record.payload), let envelope = try? RelayEnvelope(decoding: wire.signed) else {
+            return nil
+        }
+        return Frame(from: sender.nodeId, to: receiver.nodeId, id: envelope.id, type: envelope.type, bytes: record.payload.count, at: now)
     }
 
     /// The `blobreq` a FRAME record carries, if it is one.
@@ -225,9 +274,10 @@ final class PipeLab {
     }
 
     @discardableResult
-    func link(_ dialer: PipeNode, _ answerer: PipeNode, cutAfter: Int? = nil) -> LinkPipe {
+    func link(_ dialer: PipeNode, _ answerer: PipeNode, cutAfter: Int? = nil, holding: PipeNode? = nil) -> LinkPipe {
         let pipe = LinkPipe(dialer, answerer, channel: nextChannel, clock: clock)
         pipe.cutAfter = cutAfter
+        pipe.holding = holding
         nextChannel += 2
         pipes.append(pipe)
         pump()

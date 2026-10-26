@@ -15,6 +15,11 @@ public protocol CustodyStore: AnyObject, Sendable {
     /// Every live frame, the most recently received first: the order a digest answer serves them in.
     func liveFrames(now: Int64) -> [CarriedFrame]
 
+    /// Every live frame as a digest answer picks from it, in ``liveFrames(now:)``'s order, with nothing decoded from a
+    /// frame's bytes (ADR 2026-10.f5zs). A row whose bytes no longer decode is listed here, as in ``liveIds(now:)``, and
+    /// ``frame(_:now:)`` then answers `nil` for it.
+    func liveIndex(now: Int64) -> [CustodyIndexEntry]
+
     /// Every live frame's id: what a `DIGEST` record lists.
     func liveIds(now: Int64) -> [String]
 
