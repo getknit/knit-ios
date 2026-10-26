@@ -46,6 +46,15 @@ public struct LinkOutbox: Sendable {
     /// Every byte still waiting, the waiting digest's included.
     public private(set) var queuedBytes = 0
 
+    /// The most a link may hold waiting: past it, the peer has stopped reading, and its radio closes the channel rather
+    /// than grow our memory until iOS ends Knit (ADR 2026-10.f5zs). Four MiB is several hundred frames, far more than a
+    /// healthy link ever queues: a reply round is capped at 256 KiB, and a file holds one chunk here at a time. Both radios
+    /// read it, BlueZ since it began and `L2CAPLink` since knit-ios #19.
+    public static let maximumQueuedBytes = 4 << 20
+
+    /// Whether more than ``maximumQueuedBytes`` wait, so the radio closes the channel.
+    public var isOverfull: Bool { queuedBytes > Self.maximumQueuedBytes }
+
     /// An empty outbox.
     public init() {
         // Nothing waits yet.

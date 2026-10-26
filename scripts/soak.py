@@ -463,6 +463,10 @@ def link_endings(log: Path) -> tuple[list[dict], Counter]:
         (re.compile(r"^bluez (ch\d+) stopped reading"), lambda _: "ours: stopped reading"),
         (re.compile(r"^link (ch\d+) sent a bad record: (.*)"), lambda m: f"ours: bad record ({m[2][:60]})"),
         (re.compile(r"^link (ch\d+) timed out"), lambda _: "ours: HELLO timed out"),
+        # ADR 2026-10.f5zs: a Mac peer's CoreBluetooth radio cuts a peer that stops reading as BlueZ does, and either
+        # radio's link manager closes a link whose writes stall for 120 s.
+        (re.compile(r"^ble (ch\d+) stopped reading"), lambda _: "ours: stopped reading"),
+        (re.compile(r"^link (ch\d+) write stalled for (\d+) ms"), lambda m: f"ours: write stalled for {m[2]} ms"),
     ]
     down = re.compile(r"^link down (\S+) on (ch\d+)$")
     sighted = re.compile(r"^bluez (dev_\S+) changed")

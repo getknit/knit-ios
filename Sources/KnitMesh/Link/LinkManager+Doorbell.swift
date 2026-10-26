@@ -15,6 +15,14 @@ extension LinkManager {
         .typing, .blobRequest, .blobHave, .blobHas, .blobProgress, .blobCancel, .keyRequest,
     ]
 
+    /// A peer rang this node's doorbell, which resumed the app if iOS had it suspended. The time it slept wrote nothing,
+    /// so every link's write-stall count starts again (``WriteStallWatch``). Answers no event.
+    func heardRing(now: Int64) -> [Event] {
+        ringsHeard += 1
+        stallWatch.restamp(now: now)
+        return []
+    }
+
     /// Whether writing `wire` rings: every frame but upkeep's. One whose type cannot be read rings, as on Android.
     static func rings(_ wire: WireEnvelope) -> Bool {
         guard let envelope = try? RelayEnvelope(decoding: wire.signed) else {

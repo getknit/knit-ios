@@ -121,6 +121,16 @@ final class CapturingTransport: MeshTransport {
         // The peer under test learns nothing from the far side's digest here.
     }
 
+    func queuedBytes(to _: NodeId) -> Int {
+        // The far side takes every write at once.
+        0
+    }
+
+    func hasCrossed(_: String, to _: NodeId) -> Bool {
+        // Nothing here remembers what crossed.
+        false
+    }
+
     func sendFile(_: OutboundFile, to _: NodeId) -> Bool {
         // The far side here takes frames only.
         false

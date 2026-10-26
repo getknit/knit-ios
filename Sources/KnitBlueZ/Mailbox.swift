@@ -22,6 +22,9 @@
     /// Hands commands to the radio's thread and wakes it through a pipe, and numbers channels for both sides:
     /// ``BlueZRadio/dial(_:psm:)`` must answer an id at once, and the loop numbers the channels it accepts from the
     /// same counter, so no two ever share one.
+    ///
+    /// It is the radio's entry point, so it counts each channel's level too (``OutboxLevels``): a write's bytes are queued
+    /// as it is posted, before the loop takes them, and a channel counts from the moment it is numbered.
     internal final class Mailbox: Sendable {
         private struct State {
             var commands: [RadioCommand] = []
@@ -31,6 +34,8 @@
         private static let drainSize = 64
 
         private let state = Lock(State())
+        /// Every open channel's queued and written bytes, which the loop moves as its sockets take them.
+        let levels = OutboxLevels()
         /// The pipe's read end, which the loop polls. If `pipe` failed both ends are -1, which `poll` skips; the
         /// loop then sees commands at its next timeout instead of at once.
         let descriptor: Int32
@@ -55,6 +60,12 @@
 
         /// Queues `command` and wakes the loop. A full pipe already holds a wake-up, so a failed write loses nothing.
         func post(_ command: RadioCommand) {
+            switch command {
+            case .write(let id, let bytes), .writeDigest(let id, let bytes), .writeFileRecord(let id, let bytes):
+                levels.queued(bytes.count, on: id)
+            default:
+                break
+            }
             state.withLock { $0.commands.append(command) }
             var wake: UInt8 = 1
             _ = Glibc.write(wakeEnd, &wake, 1)
@@ -72,12 +83,14 @@
             }
         }
 
-        /// A channel id never used before.
+        /// A channel id never used before, counted from now (``levels``).
         func nextChannel() -> ChannelID {
-            state.withLock { state in
+            let id = state.withLock { state in
                 defer { state.nextChannel += 1 }
                 return ChannelID(state.nextChannel)
             }
+            levels.open(id)
+            return id
         }
     }
 #endif

@@ -53,6 +53,7 @@ import Testing
     @Test func chunksThatAllLandedInsideOneIntervalAreReportedOnceMoreAfterIt() {
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
+        let writeCheck = rig.clock.monotonicMilliseconds() + 30_000
         let file = bytes(8192)
         rig.links.acceptFiles([BlobHash(of: file)])
         _ = rig.handle(.received(channel, header(file)))
@@ -63,7 +64,7 @@ import Testing
         #expect(rig.advance(400) == [progress(file, held: 1024, at: 500)])
         #expect(rig.links.nextDeadline == start + 1000, "armed again while it could owe one")
         #expect(rig.advance(500).isEmpty, "a stall sends nothing")
-        #expect(rig.links.nextDeadline == nil, "and nothing more is armed")
+        #expect(rig.links.nextDeadline == writeCheck, "and nothing more is armed but the link's write check (ADR 2026-10.f5zs)")
         rig.clock.advance(100)
         #expect(rig.handle(.received(channel, chunk(file[1024..<1536]))) == [progress(file, held: 1536, at: 1100)], "half a second since")
     }
@@ -110,13 +111,14 @@ import Testing
     @Test func aNewHeaderStartsItsOwnClockAndDropsTheTrailingReport() {
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
+        let writeCheck = rig.clock.monotonicMilliseconds() + 30_000
         let first = bytes(4096)
         let second = bytes(4096, seed: 3)
         rig.links.acceptFiles([BlobHash(of: first), BlobHash(of: second)])
         _ = rig.handle(.received(channel, header(first)))
         _ = rig.handle(.received(channel, chunk(first[0..<1024])))
         _ = rig.handle(.received(channel, header(second)))
-        #expect(rig.links.nextDeadline == nil, "the first file's trailing report went with it")
+        #expect(rig.links.nextDeadline == writeCheck, "the first file's trailing report went with it; the write check stays")
         rig.clock.advance(600)
         #expect(rig.handle(.received(channel, chunk(second[0..<1024]))) == [progress(second, held: 1024, at: 600)])
     }

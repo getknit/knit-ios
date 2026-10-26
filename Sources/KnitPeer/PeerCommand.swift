@@ -8,6 +8,7 @@ public import KnitWire
 ///           [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
 ///           [--log debug|info|warning|off] [--rssi-floor DBM] [--never-sight NODE_ID[,NODE_ID…]]
 ///           [--no-gatt-payload] [--gatt-reads | --no-gatt-reads] [--feed window|pace] [--ratchet | --no-ratchet]
+///           [--stop-reading-after SECONDS]
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
 /// knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
 ///                [--advertise android|ios] [--instance NAME | --state DIR]
@@ -41,7 +42,7 @@ public enum PeerCommand: Equatable, Sendable {
                 [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
                 [--log debug|info|warning|off] [--rssi-floor DBM] [--receive-mtu BYTES] [--send-mtu BYTES]
                 [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload] [--gatt-reads | --no-gatt-reads]
-                [--feed window|pace] [--ratchet | --no-ratchet]
+                [--feed window|pace] [--ratchet | --no-ratchet] [--stop-reading-after SECONDS]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
             knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
@@ -54,6 +55,7 @@ public enum PeerCommand: Equatable, Sendable {
         refused unless --shared-adapter says other devices use them too; the peer then leaves every link it did not
         make alone. The forward-secrecy ratchet is on, as in the app, and keeps the peer's prekeys beside its
         identity; --no-ratchet runs the peer as a build from before it, and --ratchet, the default, is still taken.
+        --stop-reading-after is for trials: that many seconds after it starts, the peer stops reading its channels.
         `stranger` is a test stimulus that never links: it advertises the 0xFE30
         UUID as a device that is not Knit's, registering its advert afresh every --rotate seconds.
         """
@@ -152,7 +154,8 @@ public struct RunOptions: Equatable, Sendable {
     /// identity, publishes one with the ratchet's bits in its profile, and seals and opens DMs with the ratchet.
     /// `--no-ratchet` turns it off, and the peer is what it was before the ratchet.
     public var ratchet = true
-
+    /// Seconds after start the radio stops reading its channels, a trial's switch (`--stop-reading-after`); `nil` never stops.
+    public var stopReadingAfterSeconds: Int?
     static let profiles = ["android", "ios"]
     static let feeds = ["window", "pace"]
     static let logLevels = ["debug", "info", "warning", "off"]
@@ -195,6 +198,7 @@ public struct RunOptions: Equatable, Sendable {
             throw .invalid(flag: "--ratchet", value: "--no-ratchet")
         }
         ratchet = !ratchetOff
+        stopReadingAfterSeconds = try Self.stopReadingAfter(flags.take("--stop-reading-after"))
     }
 
     private static func mtu(_ text: String?, flag: String) throws(UsageError) -> Int? {

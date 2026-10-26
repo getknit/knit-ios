@@ -8,6 +8,8 @@
 
     extension BLECore {
         func close(_ channel: ChannelID) {
+            // A dial cancelled before it opened reports nothing, so it stops counting here.
+            levels.close(channel)
             if let dial = dials.removeValue(forKey: channel) {
                 releaseIfIdle(dial.peripheral)
             }
@@ -19,12 +21,37 @@
             forgetConnection(of: channel)
         }
 
+        func write(_ bytes: [UInt8], to channel: ChannelID) {
+            guard let link = links[channel] else {
+                log.log(.debug, "ble dropped \(bytes.count) bytes for \(channel), which has no link")
+                return
+            }
+            link.write(bytes)
+        }
+
+        func writeDigest(_ record: [UInt8], to channel: ChannelID) {
+            guard let link = links[channel] else {
+                log.log(.debug, "ble dropped a digest of \(record.count) bytes for \(channel), which has no link")
+                return
+            }
+            link.writeDigest(record)
+        }
+
+        func writeFileRecord(_ record: [UInt8], to channel: ChannelID) {
+            guard let link = links[channel] else {
+                log.log(.debug, "ble dropped a file record of \(record.count) bytes for \(channel), which has no link")
+                return
+            }
+            link.writeFileRecord(record)
+        }
+
         /// Starts a link over an open channel, dialed or accepted, once its opening is reported.
         func adopt(_ channel: CBL2CAPChannel, as id: ChannelID, owner: UUID?) {
             let link = L2CAPLink(
                 id: id,
                 channel: channel,
                 thread: streams,
+                levels: levels,
                 log: log,
                 received: { [emit] bytes in emit(.received(id, bytes)) },
                 ended: { [weak self] in self?.onQueue { $0.ended(id) } },

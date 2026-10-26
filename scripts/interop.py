@@ -6608,6 +6608,9 @@ IOS_CHANNEL_ENDINGS = [
     (re.compile(r"^link (ch\d+) sent a bad record: (.*)"), lambda m: f"ours: bad record ({m[2][:60]})"),
     (re.compile(r"^link (ch\d+) timed out"), lambda _: "ours: HELLO timed out"),
     (re.compile(r"^link \S+ replaced its stale link (ch\d+) with ch\d+$"), lambda _: "replaced: the far end dialed again"),
+    # ADR 2026-10.f5zs: the far end stopped reading, past the outbox's 4 MiB bound or for 120 s of running time.
+    (re.compile(r"^ble (ch\d+) stopped reading"), lambda _: "ours: stopped reading, past the outbox bound"),
+    (re.compile(r"^link (ch\d+) write stalled for (\d+) ms"), lambda m: f"ours: write stalled for {m[2]} ms"),
 ]
 
 

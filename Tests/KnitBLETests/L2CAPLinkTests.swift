@@ -90,6 +90,48 @@
             #expect(rig.ends.times == 0)
         }
 
+        /// A far end that stops reading fills the stream, and the link closes itself once more than the bound waits,
+        /// reporting its end once, as BlueZ's channels do (ADR 2026-10.f5zs).
+        @Test func aFarEndThatStopsReadingIsCutOnceItsQueuePassesTheBound() async throws {
+            let rig = try LinkRig(bufferSize: 1024, farReads: false)
+            let slice = [UInt8](repeating: 0x5A, count: 8192)
+            let slices = LinkOutbox.maximumQueuedBytes / slice.count
+            for _ in 0..<slices {
+                rig.send(slice)
+            }
+            await rig.settled()
+            #expect(rig.ends.times == 0, "at the bound, with the stream's buffer full, nothing is over it yet")
+            rig.send(slice)
+            try await rig.ends.wait()
+            rig.send(slice)
+            rig.link.writeDigest([0xD1])
+            await rig.settled()
+            #expect(rig.ends.times == 1)
+            #expect(rig.log.all.contains("ble ch1 stopped reading; closing it"))
+        }
+
+        /// The level counts what the radio handed over as queued until the stream takes it, then as written, and gives
+        /// back a digest replaced unwritten, so queued and written add up to what was handed over (ADR 2026-10.f5zs).
+        @Test func theLevelCountsBytesQueuedThenWritten() async throws {
+            let rig = try LinkRig(bufferSize: 1024, farReads: false)
+            let backfill = [UInt8](repeating: 0xAA, count: 4096)
+            rig.send(backfill)
+            rig.send([0xD1, 0xD1], by: L2CAPLink.writeDigest)
+            rig.send([0xD2, 0xD2, 0xD2], by: L2CAPLink.writeDigest)
+            rig.send([UInt8](repeating: 0xCC, count: 2048), by: L2CAPLink.writeFileRecord)
+            await rig.settled()
+            let handed = backfill.count + 3 + 2048
+            let waiting = rig.level
+            #expect(waiting.queuedBytes > 0, "the far end is not reading")
+            #expect(waiting.writtenBytes > 0, "the stream's own buffer took some")
+            #expect(Int64(waiting.queuedBytes) + waiting.writtenBytes == Int64(handed), "the replaced digest is given back")
+            rig.far.startReading()
+            _ = try await rig.far.read(handed)
+            try await rig.fileWrites.wait()
+            await rig.settled()
+            #expect(rig.level == OutboxLevel(queuedBytes: 0, writtenBytes: Int64(handed)))
+        }
+
         @Test func nothingIsWrittenUntilTheStreamsAreOpen() async throws {
             let rig = try LinkRig(opens: false)
             rig.link.write([1, 2])
@@ -110,6 +152,8 @@
         let fileWrites: Ends
         let link: L2CAPLink
         let far: FarEnd
+        /// The radio's levels, which ``send(_:)`` and its kin count into as the radio's entry points do.
+        let levels = OutboxLevels()
         private let thread: StreamThread
 
         init(bufferSize: Int = 65_536, farReads: Bool = true, opens: Bool = true) throws {
@@ -136,14 +180,25 @@
                 output: linkOutput,
                 owner: nil,
                 thread: streams,
+                levels: levels,
                 log: lines,
                 received: { sink.append($0) },
                 ended: { endings.record() },
                 wroteFileRecord: { reports.record() }
             )
+            levels.open(ChannelID(1))
             if opens {
                 link.open()
             }
+        }
+
+        /// The channel's level now.
+        var level: OutboxLevel { levels.level(on: ChannelID(1)) }
+
+        /// Hands `bytes` to the link's `write`, or a kin of it, as `BLERadio`'s entry points do: counted queued first.
+        func send(_ bytes: [UInt8], by write: (L2CAPLink) -> ([UInt8]) -> Void = L2CAPLink.write) {
+            levels.queued(bytes.count, on: ChannelID(1))
+            write(link)(bytes)
         }
 
         /// Returns once the link's thread has run everything handed to it before.

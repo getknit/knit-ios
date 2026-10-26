@@ -53,5 +53,54 @@
             #expect(received == chunk + [9])
             #expect(rig.events.filter { $0 == .wroteFileRecord(id) }.count == 1, "one report for one record, none for the frame")
         }
+
+        /// The mailbox counts a write queued as it is posted, the loop counts each byte the socket takes as written, and a
+        /// digest replaced unwritten is given back, so a reader of the level never waits on the loop (ADR 2026-10.f5zs).
+        @Test func theLevelCountsBytesQueuedThenWritten() throws {
+            let rig = try LoopRig(limit: 60_000)
+            rig.start()
+            let remote = try RemoteEnd.dial(rig.sockets)
+            rig.settle { rig.lastAccepted != nil }
+            let id = try #require(rig.lastAccepted)
+            let backfill = [UInt8](repeating: 1, count: 1 << 20)
+            rig.post(.write(id, backfill))
+            rig.post(.writeDigest(id, [0xD1]))
+            rig.post(.writeDigest(id, [0xD2, 0xD2]))
+            rig.post(.writeFileRecord(id, [3, 3, 3]))
+            let handed = Int64(backfill.count + 2 + 3)
+            #expect(rig.mailbox.levels.level(on: id).queuedBytes == backfill.count + 1 + 2 + 3, "counted as posted")
+            rig.turn(3)
+            let backedUp = rig.mailbox.levels.level(on: id)
+            #expect(backedUp.queuedBytes > 0, "the peer is not reading")
+            #expect(Int64(backedUp.queuedBytes) + backedUp.writtenBytes == handed, "the replaced digest is given back")
+            var received = 0
+            rig.settle("never drained") {
+                while let sdu = remote.receive(timeoutMilliseconds: 0) {
+                    received += sdu.count
+                }
+                return Int64(received) >= handed
+            }
+            #expect(rig.mailbox.levels.level(on: id) == OutboxLevel(queuedBytes: 0, writtenBytes: handed))
+            rig.post(.close(id))
+            rig.settle { rig.events.last == .closed(id) }
+            #expect(rig.mailbox.levels.isEmpty, "a closed channel is no longer counted")
+        }
+
+        /// `--stop-reading-after`, a trial's switch: once its time is up the loop polls no channel for input, so what the
+        /// peer writes waits in its own socket, and its writes stall.
+        @Test func aLoopToldToStopReadingReadsNothingMore() throws {
+            let rig = try LoopRig(stopReadingAfter: 0)
+            rig.start()
+            let remote = try RemoteEnd.dial(rig.sockets)
+            rig.settle { rig.lastAccepted != nil }
+            let id = try #require(rig.lastAccepted)
+            remote.send([1, 2, 3])
+            rig.turn()
+            #expect(rig.received(on: id).isEmpty)
+            #expect(rig.log.all.contains("bluez channels are no longer read, for a trial (--stop-reading-after)"))
+            rig.post(.write(id, [9]))
+            rig.turn(3)
+            #expect(remote.receive() == [9], "it still writes")
+        }
     }
 #endif

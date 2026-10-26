@@ -122,7 +122,8 @@
                 rig.post(.write(id, [UInt8](repeating: 1, count: 60_000)))
             }
             rig.settle("never cut") { rig.events.last == .closed(id) }
-            #expect(rig.log.all.contains { $0.contains("stopped reading") })
+            #expect(rig.log.all.contains("bluez \(id) stopped reading; closing it"), "soak.py matches this line")
+            #expect(rig.mailbox.levels.isEmpty, "the cut channel is no longer counted")
             _ = remote
         }
 

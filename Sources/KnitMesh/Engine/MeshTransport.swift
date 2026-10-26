@@ -36,6 +36,15 @@ public protocol MeshTransport: AnyObject {
     /// Writes a custody digest, the ids of every live carried frame, to one neighbour.
     func sendDigest(_ ids: [String], to peer: NodeId)
 
+    /// The bytes written to `peer`'s link and not yet out of the radio: frames, a FILE record's chunk and a waiting
+    /// digest alike (``Radio/outboxLevel(on:)``). 0 when unlinked. A reply round waits while it is high, so a peer that
+    /// reads slowly is not handed more than it takes (ADR 2026-10.f5zs).
+    func queuedBytes(to peer: NodeId) -> Int
+
+    /// Whether the frame with `key` (`FrameKey`) crossed `peer`'s link either way inside the window, on the channel
+    /// ``send(_:to:)`` would write to: a reply round leaves it out. Records nothing. False when unlinked.
+    func hasCrossed(_ key: String, to peer: NodeId) -> Bool
+
     /// Streams `file` to one neighbour as FILE records, behind any file already queued or streaming to it, and answers
     /// whether a link took it (`MeshTransport.sendFile`). A file already queued or streaming to that neighbour is not
     /// queued again.

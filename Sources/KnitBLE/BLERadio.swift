@@ -23,12 +23,24 @@
         public let servesDoorbell = true
         public let events: AsyncStream<RadioEvent>
         let core: BLECore
+        /// Every channel's queued and written bytes, counted here as each write is handed over and on the stream thread as
+        /// each byte goes out, so the link manager reads them without a hop to the queue (ADR 2026-10.f5zs).
+        private let levels: OutboxLevels
 
         /// A radio that logs to `log`.
         public init(log: any KnitLog = SilentLog()) {
             let (stream, continuation) = AsyncStream<RadioEvent>.makeStream()
+            let counted = OutboxLevels()
             events = stream
-            core = BLECore(emit: { continuation.yield($0) }, log: log)
+            levels = counted
+            core = BLECore(
+                emit: { event in
+                    counted.note(event)
+                    continuation.yield(event)
+                },
+                levels: counted,
+                log: log
+            )
         }
 
         public func start() {
@@ -62,10 +74,12 @@
         }
 
         public func write(_ bytes: [UInt8], to channel: ChannelID) {
+            levels.queued(bytes.count, on: channel)
             core.onQueue { $0.write(bytes, to: channel) }
         }
 
         public func writeDigest(_ record: [UInt8], to channel: ChannelID) {
+            levels.queued(record.count, on: channel)
             core.onQueue { $0.writeDigest(record, to: channel) }
         }
 
@@ -73,7 +87,14 @@
         public var reportsFileWrites: Bool { true }
 
         public func writeFileRecord(_ record: [UInt8], to channel: ChannelID) {
+            levels.queued(record.count, on: channel)
             core.onQueue { $0.writeFileRecord(record, to: channel) }
+        }
+
+        /// Counted at this radio's entry points, so bytes still crossing to the CoreBluetooth queue or the stream thread
+        /// count as queued.
+        public func outboxLevel(on channel: ChannelID) -> OutboxLevel {
+            levels.level(on: channel)
         }
 
         public func close(_ channel: ChannelID) {
@@ -126,6 +147,8 @@
 
         let queue = DispatchQueue(label: "app.getknit.knit.ble")
         let emit: @Sendable (RadioEvent) -> Void
+        /// Every channel's level (``BLERadio/outboxLevel(on:)``): a channel counts from ``newChannel()``.
+        let levels: OutboxLevels
         let log: any KnitLog
         let streams = StreamThread()
         let clock = SystemClock()
@@ -170,8 +193,9 @@
             var probe = ScanProbe()
         #endif
 
-        init(emit: @escaping @Sendable (RadioEvent) -> Void, log: any KnitLog) {
+        init(emit: @escaping @Sendable (RadioEvent) -> Void, levels: OutboxLevels, log: any KnitLog) {
             self.emit = emit
+            self.levels = levels
             self.log = log
         }
 
@@ -179,8 +203,12 @@
             queue.async { [self] in work(self) }
         }
 
+        /// A channel id never used before, counted from now: before any event names it, so before the link manager can
+        /// write to it.
         func newChannel() -> ChannelID {
-            ChannelID(nextChannel.add(1, ordering: .relaxed).oldValue)
+            let id = ChannelID(nextChannel.add(1, ordering: .relaxed).oldValue)
+            levels.open(id)
+            return id
         }
 
         // MARK: Lifecycle
@@ -285,8 +313,12 @@
 
         /// Drops every link, dial and read: the radio went off or stopped, and the link manager forgets them too.
         func forgetLinks() {
-            for link in links.values {
+            for (id, link) in links {
                 link.close()
+                levels.close(id)
+            }
+            for id in dials.keys {
+                levels.close(id)
             }
             links.removeAll()
             owners.removeAll()
@@ -363,38 +395,5 @@
                 peripheral.openL2CAPChannel(CBL2CAPPSM(dial.psm))
             }
         }
-
-        func write(_ bytes: [UInt8], to channel: ChannelID) {
-            guard let link = links[channel] else {
-                log.log(.debug, "ble dropped \(bytes.count) bytes for \(channel), which has no link")
-                return
-            }
-            link.write(bytes)
-        }
-
-        func writeDigest(_ record: [UInt8], to channel: ChannelID) {
-            guard let link = links[channel] else {
-                log.log(.debug, "ble dropped a digest of \(record.count) bytes for \(channel), which has no link")
-                return
-            }
-            link.writeDigest(record)
-        }
-
-        func writeFileRecord(_ record: [UInt8], to channel: ChannelID) {
-            guard let link = links[channel] else {
-                log.log(.debug, "ble dropped a file record of \(record.count) bytes for \(channel), which has no link")
-                return
-            }
-            link.writeFileRecord(record)
-        }
-    }
-
-    // MARK: The GATT identifiers
-
-    extension BLECore {
-        /// `CBUUID` is not `Sendable`, so these are built where they are used rather than stored.
-        static var serviceUUID: CBUUID { CBUUID(string: AdvertPayload.serviceUUID) }
-        static var characteristicUUID: CBUUID { CBUUID(string: AdvertPayload.characteristicUUID) }
-        static var doorbellUUID: CBUUID { CBUUID(string: AdvertPayload.doorbellUUID) }
     }
 #endif

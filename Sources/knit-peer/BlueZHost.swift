@@ -45,6 +45,10 @@
             if !options.servesGattPayload {
                 log.log(.info, "serving the doorbell without the payload, so readers take this peer for a stranger")
             }
+            if let seconds = options.stopReadingAfterSeconds {
+                configuration.stopReadingAfterMilliseconds = Int64(seconds) * Self.millisecondsPerSecond
+                log.log(.info, "reading no channel after \(seconds) s, so writes to this peer stall: a trial's switch")
+            }
             let receiveMTU = options.receiveMTU.flatMap(UInt16.init(exactly:))
             let sendMTU = options.sendMTU.flatMap(UInt16.init(exactly:))
             if receiveMTU != nil || sendMTU != nil {

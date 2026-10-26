@@ -62,6 +62,10 @@ public final class LinkManager: MeshTransport {
         let since: Int64
         /// Whether the peer has been sighted since the link came up; a dialer we dial always has.
         var sighted: Bool
+        /// Whether the peer has been heard through service data while linked, or was when the link came up: an advert
+        /// with a digest cue. A GATT payload carries none, by ADR 2026-09.xzpt's shared law, so a peer only ever heard
+        /// that way, or never heard, looks like an iPhone (``isExemptFromStallClose(_:)``). Sticky for the link.
+        var heardServiceData = false
     }
 
     struct Channel {
@@ -140,6 +144,10 @@ public final class LinkManager: MeshTransport {
     var advertDue: Int64?
     /// Whether the app is in the background, where iOS may suspend it (``setInBackground(_:)``).
     var inBackground = false
+    /// Each live link's write progress, polled to close one whose writes have stalled (ADR 2026-10.f5zs). Its own
+    /// field, never a channel's `deadline` or `putOff`: a link's HELLO may have spent the put-off, and the deadline's
+    /// expiry logs `timed out`, which the harness reads as a missed HELLO.
+    var stallWatch = WriteStallWatch(configuration: WriteStallWatch.Configuration(lateMilliseconds: suspendedLatenessMilliseconds))
     /// The wakes the current spell of seeking has spent.
     var spell = SeekSpell()
 
@@ -283,14 +291,14 @@ public final class LinkManager: MeshTransport {
     }
 
     /// When ``advance()`` next has work, on the monotonic clock: a dial or HELLO timing out, the advert, a doorbell, a
-    /// backoff running out, a dwell or a head start ending between a peer's adverts, a file's next chunk, or a trailing
-    /// report.
+    /// backoff running out, a dwell or a head start ending between a peer's adverts, a file's next chunk, a trailing
+    /// report, or the next look at the live links' writes (``WriteStallWatch``).
     public var nextDeadline: Int64? {
         let now = clock.monotonicMilliseconds()
         let backoffDue = backoffs.values.map(\.nextAt).filter { $0 > now }.min()
         let ringDue = doorbells.values.compactMap(\.due).min()
         let fileDue = finishedFiles.isEmpty ? feeds.values.compactMap(\.due).min() : now
-        let due = [advertDue, backoffDue, ringDue, dwellDue(now: now), fileDue, trailingReportDue].compactMap(\.self)
+        let due = [advertDue, backoffDue, ringDue, dwellDue(now: now), fileDue, trailingReportDue, stallWatch.due].compactMap(\.self)
         return (channels.values.compactMap(\.deadline) + due).min()
     }
 
@@ -326,6 +334,7 @@ public final class LinkManager: MeshTransport {
             addresses[sighting.advert.nodeId] = sighting.address
             for index in liveLinks.indices where liveLinks[index].neighbor.nodeId == sighting.advert.nodeId {
                 liveLinks[index].sighted = true
+                liveLinks[index].heardServiceData = liveLinks[index].heardServiceData || Self.isServiceData(sighting.advert)
             }
             if isSeeking {
                 countSeekWake(now: now)
@@ -344,8 +353,7 @@ public final class LinkManager: MeshTransport {
         case .closed(let id):
             return retire(id, backingOff: true, now: now) + promote(now: now)
         case .rung:
-            ringsHeard += 1
-            return []
+            return heardRing(now: now)
         case .wroteFileRecord(let id):
             return fileRecordWritten(on: id, now: now)
         }
@@ -370,6 +378,7 @@ public final class LinkManager: MeshTransport {
             advertiseNow()
         }
         ringDue(now: now)
+        events += checkWriteStalls(now: now)
         events += reportTrailing(now: now)
         events += feedDueFiles(now: now)
         return events + promote(now: now) + reconsiderSeeking(now: now)

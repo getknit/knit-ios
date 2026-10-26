@@ -27,9 +27,6 @@
             case channel(ChannelID)
         }
 
-        /// A peer that stops reading must not grow our memory without bound: past this much queued, its channel
-        /// closes. Four MiB is several hundred frames, far more than a healthy link ever queues.
-        static let maximumQueuedBytes = 4 << 20
         static let readBufferSize = 65_536
         /// How many SDUs one channel may deliver per turn of the loop, so a busy one cannot starve the rest.
         static let readsPerTurn = 64
@@ -83,13 +80,22 @@
         var listener: ListeningSocket?
         var channels: [ChannelID: Channel] = [:]
         var readBuffer = [UInt8](repeating: 0, count: readBufferSize)
+        /// When the loop stops reading its channels, a trial's switch (``Configuration/stopReadingAfterMilliseconds``).
+        let stopReadingAt: Int64?
+        /// Whether the loop has said it stopped reading.
+        var saidStoppedReading = false
         private(set) var isFinished = false
 
         init(configuration: Configuration, mailbox: Mailbox, emit: @escaping (RadioEvent) -> Void) {
             self.configuration = configuration
             self.mailbox = mailbox
-            self.emit = emit
+            // A channel reported closed, or a dial failed, is no longer counted (``Mailbox/levels``).
+            self.emit = { [levels = mailbox.levels] event in
+                levels.note(event)
+                emit(event)
+            }
             gatt = GattPayloads(configuration: configuration.gatt)
+            stopReadingAt = configuration.stopReadingAfterMilliseconds.map { Monotonic.milliseconds() + $0 }
         }
 
         // MARK: Running
@@ -114,10 +120,12 @@
                 polled.append(.listener)
                 descriptors.append(pollfd(fd: listener.descriptor, events: Int16(POLLIN), revents: 0))
             }
+            let reading = readsChannels(now: Monotonic.milliseconds())
             for (id, channel) in channels.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
                 let writing = channel.connecting || !channel.outbox.isEmpty
                 polled.append(.channel(id))
-                descriptors.append(pollfd(fd: channel.descriptor, events: Int16(POLLIN) | (writing ? Int16(POLLOUT) : 0), revents: 0))
+                let events = (reading ? Int16(POLLIN) : 0) | (writing ? Int16(POLLOUT) : 0)
+                descriptors.append(pollfd(fd: channel.descriptor, events: events, revents: 0))
             }
             _ = poll(&descriptors, nfds_t(descriptors.count), wait(atMost: maximumWaitMilliseconds, now: Monotonic.milliseconds()))
 
@@ -257,8 +265,9 @@
             withdrawAdvertisements(now: now)
             withdrawApplication(now: now)
             stopDiscovery(now: now)
-            for (_, channel) in channels {
+            for (id, channel) in channels {
                 Descriptor.close(channel.descriptor)
+                mailbox.levels.close(id)
             }
             let linked = Set(channels.values.compactMap(\.devicePath) + [cancelGattRead()].compactMap(\.self))
             channels.removeAll()
@@ -321,6 +330,9 @@
             var forgetSweepMilliseconds: Int64 = 30_000
             /// How often the advert is registered afresh, or `nil` to keep it (``BlueZRadio/Configuration/rotateAdvertMilliseconds``).
             var rotateAdvertMilliseconds: Int64?
+            /// How long after the loop starts it stops reading its channels, or `nil` to read them always
+            /// (``BlueZRadio/Configuration/stopReadingAfterMilliseconds``).
+            var stopReadingAfterMilliseconds: Int64?
         }
     }
 #endif

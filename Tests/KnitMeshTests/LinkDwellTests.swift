@@ -86,9 +86,10 @@ import Testing
         #expect(refused.links.nextDeadline == nil, "refused")
         let linked = LinkRig(local: high)
         _ = linked.accept(low, on: ChannelID(40))
+        let writeCheck = linked.clock.monotonicMilliseconds() + 30_000
         linked.hear(low)
         #expect(linked.links.neighbors.map(\.nodeId) == [low])
-        #expect(linked.links.nextDeadline == nil, "already linked")
+        #expect(linked.links.nextDeadline == writeCheck, "already linked: only the link's write check (ADR 2026-10.f5zs)")
     }
 
     @Test func aPeerBackingOffWakesForItsBackoffNotItsDwell() throws {

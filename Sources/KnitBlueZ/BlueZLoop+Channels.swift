@@ -23,6 +23,19 @@
             }
         }
 
+        /// Whether to poll the channels for what they read: always, unless a trial asked the loop to stop
+        /// (``Configuration/stopReadingAfterMilliseconds``). A hang-up still reaches the loop, which `poll` reports unasked.
+        func readsChannels(now: Int64) -> Bool {
+            guard let stopReadingAt, now >= stopReadingAt else {
+                return true
+            }
+            if !saidStoppedReading {
+                saidStoppedReading = true
+                log.log(.warning, "bluez channels are no longer read, for a trial (--stop-reading-after)")
+            }
+            return false
+        }
+
         func acceptAll(now: Int64) {
             guard let listener else {
                 return
@@ -112,8 +125,11 @@
             guard var channel = channels[id] else {
                 return
             }
+            let before = channel.outbox.queuedBytes
             if channel.outbox.offerDigest(record) {
                 log.log(.debug, "bluez \(id) digest of \(record.count) bytes replaced the one waiting")
+                // The mailbox counted the whole record; the one it replaced will never be written.
+                mailbox.levels.discarded(record.count - (channel.outbox.queuedBytes - before), on: id)
             }
             channels[id] = channel
             flushWithinBound(id)
@@ -129,12 +145,12 @@
             flushWithinBound(id)
         }
 
-        /// Closes a channel whose peer stopped reading, and otherwise writes what it can.
+        /// Closes a channel whose peer stopped reading (``LinkOutbox/isOverfull``), and otherwise writes what it can.
         private func flushWithinBound(_ id: ChannelID) {
             guard let channel = channels[id] else {
                 return
             }
-            guard channel.outbox.queuedBytes <= Self.maximumQueuedBytes else {
+            guard !channel.outbox.isOverfull else {
                 log.log(.warning, "bluez \(id) stopped reading; closing it")
                 closeChannel(id)
                 return
@@ -149,6 +165,7 @@
                 case .wrote(let count):
                     let finishedFileRecord = channel.outbox.wrote(count)
                     channels[id] = channel
+                    mailbox.levels.wrote(count, on: id)
                     if finishedFileRecord {
                         emit(.wroteFileRecord(id))
                     }

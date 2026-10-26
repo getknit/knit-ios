@@ -71,7 +71,7 @@ let package = Package(
         // The app's store: the KnitStore protocols on SQLite through GRDB, and the store unit they commit in, whose state
         // sits behind KnitSync's Lock. Tests and the Linux peer keep the in-memory stores.
         .target(name: "KnitStoreSQL", dependencies: ["KnitSync", "KnitStore", "KnitWire", grdb], swiftSettings: pure),
-        .target(name: "KnitMesh", dependencies: ["KnitWire", "KnitCrypto", "KnitStore"], swiftSettings: pure),
+        .target(name: "KnitMesh", dependencies: ["KnitSync", "KnitWire", "KnitCrypto", "KnitStore"], swiftSettings: pure),
         // View models, UI state and the copy catalog: everything the screens show, tested on Linux.
         .target(name: "KnitAppCore", dependencies: ["KnitSync", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire"], swiftSettings: strict),
 

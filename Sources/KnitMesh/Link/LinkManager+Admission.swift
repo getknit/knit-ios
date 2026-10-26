@@ -236,7 +236,10 @@ extension LinkManager {
         let neighbor = Neighbor(nodeId: peer, protocolVersion: hello.version, capabilities: hello.capabilities)
         channels[id]?.stage = .live(peer)
         channels[id]?.deadline = nil
-        liveLinks.append(LiveLink(channel: id, neighbor: neighbor, since: now, sighted: sighted))
+        var link = LiveLink(channel: id, neighbor: neighbor, since: now, sighted: sighted)
+        link.heardServiceData = presence.isPresent(peer, now: now) && presence.advert(of: peer).map(Self.isServiceData) == true
+        liveLinks.append(link)
+        stallWatch.watch(id, written: radio.outboxLevel(on: id).writtenBytes, now: now)
         dialing[peer] = nil
         backoffs[peer] = nil
         crossings.forget(link: id)

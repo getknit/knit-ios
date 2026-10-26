@@ -34,6 +34,10 @@
             /// own resolvable private address, but the lab dongles' controller advertises from the device's random
             /// address instead, so this alone does not move the address a phone hears (`.agents/context/linux-peer.md`).
             public var rotateAdvertMilliseconds: Int64?
+            /// How long after the radio's thread starts it stops reading its L2CAP channels, or `nil` to read them always.
+            /// A trial's switch (`knit-peer --stop-reading-after`): the far end's writes then stall, which is what its
+            /// overfull bound and its link manager's stall close are tested against (ADR 2026-10.f5zs).
+            public var stopReadingAfterMilliseconds: Int64?
             /// Where channels come from.
             public var sockets: any SocketProvider
             /// Where D-Bus objects of this process live.
@@ -59,6 +63,7 @@
                 configuration.servesGattPayload = servesGattPayload
                 configuration.neverSighted = neverSighted
                 configuration.rotateAdvertMilliseconds = rotateAdvertMilliseconds
+                configuration.stopReadingAfterMilliseconds = stopReadingAfterMilliseconds
                 return configuration
             }
         }
@@ -133,6 +138,12 @@
 
         public func close(_ channel: ChannelID) {
             mailbox.post(.close(channel))
+        }
+
+        /// Counted as each write is posted and as the loop's sockets take its bytes (``Mailbox/levels``), so it reads
+        /// without waiting on the loop.
+        public func outboxLevel(on channel: ChannelID) -> OutboxLevel {
+            mailbox.levels.level(on: channel)
         }
 
         public func ring(_ channel: ChannelID) {

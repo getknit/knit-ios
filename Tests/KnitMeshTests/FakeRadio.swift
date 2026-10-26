@@ -34,6 +34,7 @@ final class FakeRadio: Radio {
         var rings: [ChannelID] = []
         var hellos: [HeardHello] = []
         var seeks: [Bool] = []
+        var levels: [ChannelID: OutboxLevel] = [:]
         var nextChannel: UInt64 = 1
     }
 
@@ -140,6 +141,16 @@ final class FakeRadio: Radio {
     func heardHello(from node: NodeId, on channel: ChannelID) {
         state.withLock { $0.hellos.append(HeardHello(node: node, channel: channel)) }
         recorder.yield(.heardHello(node, channel))
+    }
+
+    /// What a test said waits on `channel` and has left it; empty unless set (``setLevel(_:on:)``).
+    func outboxLevel(on channel: ChannelID) -> OutboxLevel {
+        state.withLock { $0.levels[channel] ?? OutboxLevel() }
+    }
+
+    /// Sets what ``outboxLevel(on:)`` answers for `channel`, as a real radio's queue would read.
+    func setLevel(_ level: OutboxLevel, on channel: ChannelID) {
+        state.withLock { $0.levels[channel] = level }
     }
 
     func seekPeers(_ seeking: Bool) {

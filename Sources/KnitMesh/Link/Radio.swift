@@ -136,6 +136,12 @@ public protocol Radio: AnyObject, Sendable {
     /// Closes a channel.
     func close(_ channel: ChannelID)
 
+    /// How full `channel`'s queue is: bytes handed over and not yet written, and every byte written so far. Answered at
+    /// once from any thread, never through the radio's own queue, since the link manager polls it to close a link whose
+    /// writes have stalled (``WriteStallWatch``) and the engine reads it to hold a reply round (ADR 2026-10.f5zs). A radio
+    /// counts at its entry points, in an ``OutboxLevels``.
+    func outboxLevel(on channel: ChannelID) -> OutboxLevel
+
     /// Rings the doorbell of the peer on `channel`, which wakes its app if iOS has suspended it: data arriving on
     /// an open link does not, and a write to the doorbell does (ADR router: `.agents/memory/decisions.md`). A radio
     /// that cannot ring, or a peer without a doorbell, does nothing.
@@ -166,6 +172,12 @@ extension Radio {
     /// Writes the FILE record like any record, and reports nothing.
     public func writeFileRecord(_ record: [UInt8], to channel: ChannelID) {
         write(record, to: channel)
+    }
+
+    /// Nothing queued and nothing written: a radio with no queue of its own takes each write at once, so its links never
+    /// stall and never hold a round back.
+    public func outboxLevel(on _: ChannelID) -> OutboxLevel {
+        OutboxLevel()
     }
 
     /// Rings nothing: a radio that cannot reach a doorbell.

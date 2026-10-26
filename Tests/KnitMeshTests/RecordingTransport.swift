@@ -77,6 +77,19 @@ final class RecordingTransport: MeshTransport {
         digests.append((ids, peer))
     }
 
+    /// What a link would say waits unwritten to each neighbour, as a test sets it: 0 unless set.
+    var unwritten: [NodeId: Int] = [:]
+    /// The frame keys a link would say crossed to each neighbour, either way, as a test sets them: none unless set.
+    var crossed: [NodeId: Set<String>] = [:]
+
+    func queuedBytes(to peer: NodeId) -> Int {
+        unwritten[peer] ?? 0
+    }
+
+    func hasCrossed(_ key: String, to peer: NodeId) -> Bool {
+        crossed[peer]?.contains(key) ?? false
+    }
+
     func sendFile(_ file: OutboundFile, to peer: NodeId) -> Bool {
         guard isLinked(peer) else {
             return false

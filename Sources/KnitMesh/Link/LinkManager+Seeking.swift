@@ -24,8 +24,14 @@ extension LinkManager {
     static let suspendedLatenessMilliseconds: Int64 = 1000
 
     /// Tells the manager whether the app is in the background, where iOS may suspend it. Coming to the front ends the
-    /// spell, so the next one has every wake. Kept while stopped. Answers the links that went down, which is none.
+    /// spell, so the next one has every wake, and starts every link's write-stall count again. Kept while stopped. Answers
+    /// the links that went down, which is none.
     public func setInBackground(_ background: Bool) -> [Event] {
+        if !background {
+            // At every report of the front, even one that changes nothing here: iOS may have held the app suspended, and
+            // that time wrote nothing (``WriteStallWatch``).
+            stallWatch.restamp(now: clock.monotonicMilliseconds())
+        }
         guard background != inBackground else {
             return []
         }

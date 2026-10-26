@@ -130,4 +130,22 @@ import Testing
         let reported = outbox.wrote(1)
         #expect(!reported)
     }
+
+    /// Past four MiB waiting the far end has stopped reading, and both radios close the channel (ADR 2026-10.f5zs).
+    @Test func anOutboxIsOverfullOnlyPastItsBound() {
+        #expect(LinkOutbox.maximumQueuedBytes == 4 << 20, "BlueZ's bound since it began")
+        var outbox = LinkOutbox()
+        outbox.append([UInt8](repeating: 1, count: LinkOutbox.maximumQueuedBytes - 1))
+        outbox.offerDigest([0xD1])
+        #expect(outbox.queuedBytes == LinkOutbox.maximumQueuedBytes)
+        #expect(!outbox.isOverfull, "at the bound")
+        outbox.appendFileRecord([3])
+        #expect(outbox.isOverfull, "one byte past it, a FILE record's included")
+        outbox.wrote(1)
+        #expect(!outbox.isOverfull, "back at the bound once a byte is out")
+        outbox.offerDigest([0xD2, 0xD2])
+        #expect(outbox.isOverfull, "a digest counts too")
+        outbox.removeAll()
+        #expect(!outbox.isOverfull)
+    }
 }

@@ -2,6 +2,7 @@
     import CoreBluetooth
     import Foundation
     import KnitMesh
+    import KnitWire
 
     /// Ringing a peer's doorbell (``Radio/ring(_:)``, ADR 2026-09.khjj): a write to the doorbell of the peripheral a
     /// dialed link runs to, over the connection that link already uses. The peer on an accepted link is a central, and
@@ -102,5 +103,14 @@
         func peripheral(_ peripheral: CBPeripheral, didModifyServices _: [CBService]) {
             doorbells.forget(peripheral.identifier)
         }
+    }
+
+    // MARK: The GATT identifiers
+
+    extension BLECore {
+        /// `CBUUID` is not `Sendable`, so these are built where they are used rather than stored.
+        static var serviceUUID: CBUUID { CBUUID(string: AdvertPayload.serviceUUID) }
+        static var characteristicUUID: CBUUID { CBUUID(string: AdvertPayload.characteristicUUID) }
+        static var doorbellUUID: CBUUID { CBUUID(string: AdvertPayload.doorbellUUID) }
     }
 #endif

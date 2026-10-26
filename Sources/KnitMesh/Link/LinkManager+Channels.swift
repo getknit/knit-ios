@@ -20,6 +20,7 @@ extension LinkManager {
         }
         radio.close(id)
         crossings.forget(link: id)
+        stallWatch.forget(id)
         doorbells[id] = nil
         if keepingCut {
             // Before the intake goes, and so before any link that replaces this one is live to carry an ask.
