@@ -252,7 +252,7 @@ extension LinkManager {
                 return []
             }
             // In counts as a crossing too: nothing we later write to this link may be the frame it just gave us.
-            _ = crossings.firstCrossing(link: id, key: FrameKey.of(wire, envelope), now: now)
+            crossings.arrived(link: id, key: FrameKey.of(wire, envelope), now: now)
             return [.frame(InboundFrame(wire: wire, envelope: envelope, from: peer))]
         case .digest:
             guard let ids = LinkJSON.digestIds(from: record.payload) else {
