@@ -124,6 +124,16 @@ public final class LinkManager: MeshTransport {
     /// Whether a feed's reading moved since ``takeFeedsChanged()`` last ran (``noteFeedsChanged()``).
     var feedsChanged = false
     var crossings = LinkCrossings<ChannelID>()
+    /// Inbound digests each peer may hand over: a burst of 2, then one per 30 s (ADR 2026-10.f5zs). Each admitted digest
+    /// makes the engine serve every live frame it omits, so a neighbour looping empty digests would have us re-serve our
+    /// whole custody. Keyed by node id, not channel, and never cleared on `retire` or `register`, so a relink under the
+    /// same id gets no fresh burst; its own LRU of 64 bounds it. An honest peer sends one at link-up and one every 60 s
+    /// (`MeshManager.kt:3025-3048` at `e63f15f4`), and a link-up then a relink inside 30 s still finds a token.
+    var digestBudget = IngressBudget<NodeId>(burst: digestBurst, perMinute: digestsPerMinute)
+    /// The digests a peer may send at once: its link-up digest and one more, a relink's (ADR 2026-10.f5zs).
+    static let digestBurst = 2
+    /// The digests a peer may sustain, one per 30 s: twice the honest 60 s re-offer (ADR 2026-10.f5zs).
+    static let digestsPerMinute = 2
     var psm: UInt16?
     var digestCue: UInt32 = 0
     var advertised: AdvertPayload?
@@ -145,6 +155,8 @@ public final class LinkManager: MeshTransport {
 
     /// Frames dropped because they did not decode; the link stays up, as on Android.
     public internal(set) var undecodableFrames = 0
+    /// Digests dropped because their peer was over its budget (``digestBudget``, ADR 2026-10.f5zs); the link stays up.
+    public internal(set) var refusedDigests = 0
     /// Whole files that arrived, their hashes not yet checked.
     public internal(set) var filesReceived = 0
     /// Files dropped as they streamed in: unwanted, malformed, too large, or cut off by another header.

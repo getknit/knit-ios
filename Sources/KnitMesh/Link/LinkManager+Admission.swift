@@ -258,6 +258,12 @@ extension LinkManager {
             guard let ids = LinkJSON.digestIds(from: record.payload) else {
                 return []
             }
+            // Metered per peer, so a neighbour looping digests cannot make us serve our custody over and over (ADR 2026-10.f5zs).
+            guard digestBudget.admit(link: peer, now: now) else {
+                refusedDigests += 1
+                log.log(.debug, "link \(id) digest from \(peer) refused: over its budget")
+                return []
+            }
             return [.digest(ids, from: peer)]
         case .fileHeader:
             fileHeader(record.payload, from: peer, on: id, now: now)
