@@ -150,6 +150,7 @@ struct TestPeer: Equatable {
 
     func profile(
         name: String = "Peer",
+        status: String = "",
         version: Int64? = nil,
         publishedAt: Int64,
         relay: Bool = true,
@@ -160,7 +161,7 @@ struct TestPeer: Equatable {
     ) throws -> TestFrame {
         let content = ProfileContent(
             name: name,
-            status: "",
+            status: status,
             avatarHash: avatarHash,
             pubKey: keys.bundle.encoded,
             deviceTag: deviceTag,

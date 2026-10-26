@@ -338,15 +338,23 @@ extension MeshEngine {
         return message.recipientId == nil || message.recipientId == NodeId(sender)
     }
 
-    /// A neighbour asked for keys (`KeyExchange.onRequest`): serve what we hold, and ask on its behalf for the rest.
+    /// A neighbour asked for keys (`KeyExchange.onRequest`): serve what we hold, and ask on its behalf for the rest. What
+    /// is served is charged to the link peer's budget, never the request's signer (ADR 2026-10.f5zs).
     func handleKeyRequest(_ envelope: RelayEnvelope, from neighbor: NodeId) {
         guard let request = try? KeyRequestContent(decoding: envelope.payload) else {
             drop(.undecodable, envelope)
             return
         }
-        let answer = keyExchange.onRequest(request.nodeIds, from: neighbor, me: nodeId, now: clock.monotonicMilliseconds())
+        let now = clock.monotonicMilliseconds()
+        let answer = keyExchange.onRequest(request.nodeIds, from: neighbor, me: nodeId, now: now) { transport.hasCrossed($0, to: neighbor) }
         for wire in answer.serve {
             transport.send(wire, to: neighbor)
+        }
+        if answer.skipped > 0 || answer.crossed > 0 {
+            log.log(
+                .debug,
+                "mesh keyreq from \(neighbor): \(answer.serve.count) keys served, \(answer.skipped) skipped over its budget, "
+                    + "\(answer.crossed) already crossed")
         }
         sendKeyRequests(for: answer.ask, to: neighborIds)
     }

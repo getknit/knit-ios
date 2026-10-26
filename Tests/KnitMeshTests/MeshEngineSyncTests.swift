@@ -143,6 +143,34 @@ import Testing
         #expect(fixture.transport.written(.keyRequest).isEmpty, "a request for our own key is skipped, and never flooded")
     }
 
+    @Test func aKeyRequestNamingManyLargeProfilesIsAnsweredWithinTheBudgetAndTheRestOnRefill() throws {
+        // Twenty pinned profiles of about 20 KiB, 400 KiB in all, past one neighbour's 256 KiB burst (ADR 2026-10.f5zs).
+        let fixture = EngineFixture(alice)
+        fixture.link(carol)
+        try fixture.pin(carol)
+        let owners = (10..<30).map { TestPeer(seed: $0) }
+        for owner in owners {
+            fixture.deliver(try owner.profile(status: String(repeating: "s", count: 20_000), publishedAt: EngineFixture.start), from: owner)
+        }
+        fixture.transport.clear()
+        fixture.deliver(try carol.keyRequest(for: owners.map(\.nodeId), id: frameIdOf("req-many-1")), from: carol)
+        let first = fixture.transport.written(.profile)
+        let bytes = first.map(\.wire.encoded.count)
+        #expect(first.allSatisfy { $0.to == carol.nodeId && !$0.wire.relay })
+        #expect(!first.isEmpty && first.count < owners.count, "\(first.count) of \(owners.count) served")
+        #expect(bytes.dropLast().reduce(0, +) < KeyExchange.answerBurstBytes, "served while the balance stood above zero")
+        #expect(bytes.reduce(0, +) >= KeyExchange.answerBurstBytes, "and not one fewer")
+        #expect(fixture.transport.written(.keyRequest).isEmpty, "a held key skipped is not asked on")
+        let served = Set(first.map(\.envelope.senderId))
+        let rest = owners.filter { !served.contains($0.nodeId.string) }
+        fixture.transport.clear()
+        fixture.deliver(try carol.keyRequest(for: rest.map(\.nodeId), id: frameIdOf("req-many-2")), from: carol)
+        #expect(fixture.transport.written(.profile).isEmpty, "nothing more until the debt is repaid")
+        fixture.clock.advance(Int64(KeyExchange.answerBurstBytes / KeyExchange.answerRefillBytesPerSecond) * 1000)
+        fixture.deliver(try carol.keyRequest(for: rest.map(\.nodeId), id: frameIdOf("req-many-3")), from: carol)
+        #expect(Set(fixture.transport.written(.profile).map(\.envelope.senderId)) == Set(rest.map(\.nodeId.string)), "the rest on refill")
+    }
+
     @Test func aNewNeighbourIsAskedForEveryKeyStillMissing() throws {
         let fixture = EngineFixture(alice)
         fixture.link(carol)

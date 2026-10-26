@@ -125,11 +125,26 @@ final class LinkPipe {
         var at: Int64
     }
 
+    /// A record read off a radio under ``delay``, its encoded size, and when it may cross.
+    private struct InFlight {
+        var record: LinkRecord
+        var bytes: Int
+        var due: Int64
+    }
+
     private struct Side {
         let node: PipeNode
         let channel: ChannelID
         var read = 0
         var reader = LinkRecordReader()
+        // While the side's writes are out but unread (``LinkPipe/unread``): how far they were parsed, and how many FILE
+        // records each way of reporting has reported, so a record is reported written once, whichever reports it first.
+        var aired = 0
+        var airReader = LinkRecordReader()
+        var airedFileRecords = 0
+        var deliveredFileRecords = 0
+        // Records read off the side's radio that have not crossed yet, under ``LinkPipe/delay``, each with when it may.
+        var inFlight: [InFlight] = []
     }
 
     private var sides: [Side]
@@ -146,6 +161,14 @@ final class LinkPipe {
     /// When set, what this node writes waits on its radio, unread, as on a link whose air is slow: nothing it writes
     /// crosses, and no FILE record it writes is reported written, until this is cleared.
     var holding: PipeNode?
+    /// When set, what this node writes leaves its radio but the far side never reads it, as on a link whose reader
+    /// stalled: each FILE record is reported written at once, and nothing crosses until this is cleared. So a feed runs
+    /// on into the air where ``holding`` stops it after one chunk.
+    var unread: PipeNode?
+    /// When set, what the node writes crosses this many ms after the pipe first sees it, each FILE record reported written
+    /// at once, as on a link whose round trip is long: a feed's window grows to cover it. ``unread`` then stops even what
+    /// is under way.
+    var delay: (node: PipeNode, milliseconds: Int64)?
 
     /// Links `dialer` and `answerer` on `channel`, each side its own channel number: the answerer accepts and reads the
     /// dialer's HELLO, and its answer, piped back, admits the dialer. The dialer's own written HELLO is a stray it ignores.
@@ -164,18 +187,34 @@ final class LinkPipe {
             return false
         }
         var moved = false
+        let now = clock.monotonicMilliseconds()
         for index in sides.indices where sides[index].node !== holding {
             let writes = sides[index].node.radio.writes(on: sides[index].channel)
-            guard sides[index].read < writes.count else {
+            let delayed = delay.flatMap { $0.node === sides[index].node ? $0.milliseconds : nil }
+            if sides[index].node === unread || delayed != nil {
+                moved = air(writes, from: index) || moved
+            }
+            if sides[index].node === unread {
                 continue
             }
-            for write in writes[sides[index].read...] {
-                sides[index].reader.append(write[...])
+            if sides[index].read < writes.count {
+                for write in writes[sides[index].read...] {
+                    sides[index].reader.append(write[...])
+                }
+                sides[index].read = writes.count
             }
-            sides[index].read = writes.count
             while isUp, let record = try? sides[index].reader.next() {
+                if let delayed {
+                    sides[index].inFlight.append(InFlight(record: record, bytes: record.encoded?.count ?? 0, due: now + delayed))
+                } else {
+                    moved = true
+                    deliver(record, from: index)
+                }
+            }
+            while isUp, let first = sides[index].inFlight.first, first.due <= now {
+                sides[index].inFlight.removeFirst()
                 moved = true
-                deliver(record, from: index)
+                deliver(first.record, from: index)
             }
         }
         return moved
@@ -198,13 +237,39 @@ final class LinkPipe {
         guard [.fileHeader, .fileChunk, .fileEnd].contains(record.tag) else {
             return
         }
-        sender.node.apply(sender.node.links.handle(.wroteFileRecord(sender.channel)))
+        sides[index].deliveredFileRecords += 1
+        if sides[index].deliveredFileRecords > sides[index].airedFileRecords {
+            sender.node.apply(sender.node.links.handle(.wroteFileRecord(sender.channel)))
+        }
         if record.tag == .fileChunk {
             chunkBytes += record.payload.count
             if let cutAfter, chunkBytes >= cutAfter {
                 cut()
             }
         }
+    }
+
+    /// Reports each FILE record among the side's new `writes` written, delivering nothing. Answers whether any was.
+    private func air(_ writes: [[UInt8]], from index: Int) -> Bool {
+        guard sides[index].aired < writes.count else {
+            return false
+        }
+        for write in writes[sides[index].aired...] {
+            sides[index].airReader.append(write[...])
+        }
+        sides[index].aired = writes.count
+        var reported = false
+        while let record = try? sides[index].airReader.next() {
+            guard [.fileHeader, .fileChunk, .fileEnd].contains(record.tag) else {
+                continue
+            }
+            sides[index].airedFileRecords += 1
+            if sides[index].airedFileRecords > sides[index].deliveredFileRecords {
+                reported = true
+                sides[index].node.apply(sides[index].node.links.handle(.wroteFileRecord(sides[index].channel)))
+            }
+        }
+        return reported
     }
 
     /// Hands `record` to the far side of `node` as if `node` had written it, recorded as anything that crossed is: a
@@ -222,6 +287,7 @@ final class LinkPipe {
             return 0
         }
         return side.node.radio.writes(on: side.channel).dropFirst(side.read).reduce(0) { $0 + $1.count }
+            + side.inFlight.reduce(0) { $0 + $1.bytes }
     }
 
     /// The channel `node` reads this pipe on.

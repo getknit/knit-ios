@@ -264,8 +264,14 @@ extension MeshEngine {
         // restart and after custody has lost it to the quota or the TTL (knit-next ADR 2026-09.g64k). The newest
         // publish stamp wins, clamped, because the peer picks it.
         stores.peers.recordProfileFrame(wire, of: sender, sentAt: clampFuture(envelope.sentAt))
-        for neighbor in keyExchange.onProfilePinned(sender, wire: wire) {
+        // Each neighbour that waited on this key is served on its own budget (ADR 2026-10.f5zs); one past it asks again.
+        let skipped = keyExchange.skippedAnswers
+        let pinned = clock.monotonicMilliseconds()
+        for neighbor in keyExchange.onProfilePinned(sender, wire: wire, now: pinned, crossed: { transport.hasCrossed($0, to: $1) }) {
             transport.send(KeyExchange.served(wire), to: neighbor)
+        }
+        if keyExchange.skippedAnswers > skipped {
+            log.log(.debug, "mesh key \(sender): \(keyExchange.skippedAnswers - skipped) waiting neighbours skipped over their budgets")
         }
         // An init of theirs that opened before we could seal to them is answered now, before the parked frames land, as
         // Kotlin calls `onProfilePinned` ahead of its release (`InboundPipeline.kt:3229-3236`), so one of them carrying the

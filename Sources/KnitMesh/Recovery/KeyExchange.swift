@@ -14,8 +14,10 @@ public import KnitWire
 /// it: a digest reply sends a key ahead of a backlog its reader could not otherwise verify.
 ///
 /// Every key here is an unauthenticated sender id, so everything is bounded: 256 wanted ids and 256 relayed
-/// wants, oldest first, a 30-second cooldown per id, and 128 ids per request each way. This type is bookkeeping
-/// only: the engine builds, signs and sends the requests it asks for. Times are on the monotonic clock.
+/// wants, oldest first, a 30-second cooldown per id, and 128 ids per request each way. What a neighbour is served,
+/// on request or when a key it waited for pins, draws on its byte budget (``KeyAnswerBudget``, ADR 2026-10.f5zs);
+/// a digest round's keys ahead (``serveKey(_:)``) are that round's to bound. This type is bookkeeping only: the
+/// engine builds, signs and sends the requests it asks for. Times are on the monotonic clock.
 public struct KeyExchange: Sendable {
     /// The shortest gap between two broadcast requests for one id (`REQUEST_COOLDOWN_MS`).
     public static let requestCooldownMilliseconds: Int64 = 30_000
@@ -29,6 +31,12 @@ public struct KeyExchange: Sendable {
     public static let maxIdsPerRequest = 128
     /// The most ids read from one request we receive (`MAX_REQUEST_IDS`).
     public static let maxRequestIds = 128
+    /// The profile bytes a neighbour may be served in a burst (ADR 2026-10.f5zs); Android has no such bound.
+    public static let answerBurstBytes = Int(KeyAnswerBudget.burstBytes)
+    /// The bytes a second a neighbour's answer budget refills by.
+    public static let answerRefillBytesPerSecond = Int(KeyAnswerBudget.refillBytesPerSecond)
+    /// The most neighbours whose answer budgets are remembered.
+    public static let maxAnswerPeers = KeyAnswerBudget.maxPeers
 
     /// What an inbound request asks of the engine.
     public struct Answer: Sendable, Equatable {
@@ -36,6 +44,11 @@ public struct KeyExchange: Sendable {
         public var serve: [WireEnvelope] = []
         /// Ids to ask every neighbour for now.
         public var ask: [NodeId] = []
+        /// Held ids not served, the requester over its budget: neither wanted nor asked on, since we hold them.
+        public var skipped = 0
+        /// Held ids not served because their profile already crossed the requester's link, so the link would not write it
+        /// again: neither charged, wanted nor asked on. Counted apart from ``skipped``, and only here.
+        public var crossed = 0
     }
 
     /// Every pinned peer's verbatim signed profile, to serve on request: each one pinned since launch, and each one
@@ -47,6 +60,11 @@ public struct KeyExchange: Sendable {
     private var missing: [(id: NodeId, askedAt: Int64)] = []
     /// Ids we are fetching for neighbours, oldest first, each with the neighbours waiting.
     private var wanters: [(id: NodeId, neighbors: Set<NodeId>)] = []
+    /// What each neighbour may still be served.
+    private var answerBudget = KeyAnswerBudget()
+
+    /// Profiles held but not served, their asker over its budget, on request and at pin time: a count only.
+    public private(set) var skippedAnswers = 0
 
     /// An empty exchange over `storedProfile`, the pin store's signed profiles. The default holds none.
     @preconcurrency
@@ -86,12 +104,30 @@ public struct KeyExchange: Sendable {
     }
 
     /// A neighbour asked us for `ids`: serve what we hold, and for the rest remember the neighbour and ask on its
-    /// behalf. Our own id is skipped, and so is anything past ``maxRequestIds`` or not a node id.
-    public mutating func onRequest(_ ids: [String], from requester: NodeId, me: NodeId, now: Int64) -> Answer {
+    /// behalf. Our own id is skipped, and so is anything past ``maxRequestIds`` or not a node id. Each profile served is
+    /// charged to `requester`, the link peer's HELLO id and never the request's signer, on a budget remembered for
+    /// ``maxAnswerPeers`` peers. A held one past it is skipped, neither wanted nor asked on. The asker still wants the key,
+    /// so it asks again on its own schedule: this port at its next dropped frame from that sender past the cooldown, at
+    /// link-up, at the 60 s re-offer and at the heal; Android at the dropped frame, at link-up (`onNeighborAdded`) and at
+    /// its 15-minute heal's `retryMissing` (`MeshManager.kt:1320` at knit-next `e63f15f4`).
+    ///
+    /// A held profile whose `FrameKey` `crossed` says already crossed the requester's link is neither sent nor charged,
+    /// as a digest round skips one (``CustodySync``): the link would not write it twice inside its window
+    /// (`LinkManager.send`), so charging it would spend an honest asker's budget on bytes that never go.
+    public mutating func onRequest(
+        _ ids: [String], from requester: NodeId, me: NodeId, now: Int64, crossed: (String) -> Bool = { _ in false }
+    ) -> Answer {
         var answer = Answer()
         for id in ids.prefix(Self.maxRequestIds).compactMap(NodeId.init) where id != me {
             if let profile = serveKey(id) {
-                answer.serve.append(profile)
+                if let key = FrameKey.ofSigned(profile), crossed(key) {
+                    answer.crossed += 1
+                } else if answerBudget.charge(profile.encoded.count, to: requester, now: now) {
+                    answer.serve.append(profile)
+                } else {
+                    answer.skipped += 1
+                    skippedAnswers += 1
+                }
                 continue
             }
             addWanter(requester, for: id)
@@ -116,14 +152,25 @@ public struct KeyExchange: Sendable {
     }
 
     /// A profile for `nodeId` pinned, delivered as `wire`: caches it, stops wanting it, and answers the
-    /// neighbours that asked us for it, to serve now.
-    public mutating func onProfilePinned(_ nodeId: NodeId, wire: WireEnvelope) -> Set<NodeId> {
+    /// neighbours that asked us for it, to serve now. Each is charged the served profile on its own budget, keyed on its
+    /// HELLO id, and one past it is dropped unserved. It still wants the key, so it asks again as ``onRequest(_:from:me:now:)``
+    /// says, and we hold the key then. A wanter whose link `crossed` says already carried the profile, by its `FrameKey`, is
+    /// neither served nor charged, and not counted as skipped.
+    public mutating func onProfilePinned(
+        _ nodeId: NodeId, wire: WireEnvelope, now: Int64, crossed: (String, NodeId) -> Bool = { _, _ in false }
+    ) -> Set<NodeId> {
         cache[nodeId] = wire
         missing.removeAll { $0.id == nodeId }
         guard let index = wanters.firstIndex(where: { $0.id == nodeId }) else {
             return []
         }
-        return wanters.remove(at: index).neighbors
+        let bytes = Self.served(wire).encoded.count
+        let key = FrameKey.ofSigned(wire)
+        let waiting = wanters.remove(at: index).neighbors.filter { neighbor in !(key.map { crossed($0, neighbor) } ?? false) }
+        // In id order, so which buckets the LRU keeps never rests on a set's hash seed.
+        let admitted = Set(waiting.sorted().filter { answerBudget.charge(bytes, to: $0, now: now) })
+        skippedAnswers += waiting.count - admitted.count
+        return admitted
     }
 
     /// Drops wants nobody refreshed for ``missingMilliseconds``. Hygiene only: the caps are the bound.
