@@ -69,9 +69,8 @@ extension ChatModel {
     /// samples how far it has got (``AppSession/sampleArrivals()``). The set `ChatViewModel.awaitedHashes` gates its
     /// `arrivals` on: a settled thread never samples. A voice note in the room, which never plays, shows no ring.
     public var awaitsPhotos: Bool {
-        let voiceRings = voice != nil && !state.isRoom
-        return state.messages.contains { message in
-            message.attachment.map { !$0.isHeld && ($0.kind == .photo || voiceRings && $0.playsAsVoice) } ?? false
+        state.messages.contains { message in
+            message.attachment.map { !$0.isHeld && ($0.kind == .photo || $0.voiceShowing == .player) } ?? false
         }
     }
 

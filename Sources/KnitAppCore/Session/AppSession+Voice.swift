@@ -69,6 +69,38 @@ extension AppSession {
         }
     }
 
+    /// A tap on a voice note's play button: the note loaded pauses or plays on, and any other plays from its start, its
+    /// sealed bytes opened in memory (`VoicePlayer.toggle`).
+    public func toggleVoice(_ note: ChatAttachment) async {
+        let hash = note.hash
+        let key = note.key
+        await voiceNotes?.playback.toggle(hash) { [self] in attachment(hash, key: key) }
+    }
+
+    /// A tap on a voice note's waveform, `fraction` of the way along it: the loaded note moves there, and only once its
+    /// length is known (`ChatScreen.kt:2761-2762`).
+    public func seekVoice(_ note: ChatAttachment, to fraction: Double) {
+        guard let length = note.voice?.durationMs, length > 0, fraction.isFinite else {
+            return
+        }
+        voiceNotes?.playback.seek(note.hash, to: Int((Double(length) * min(max(fraction, 0), 1)).rounded(.down)))
+    }
+
+    /// A tap on the held note's play button in the composer: its plaintext plays from memory, before anything is stored.
+    public func toggleVoice(_ staged: StagedVoice) async {
+        let bytes = staged.bytes
+        await voiceNotes?.playback.toggle(staged.hash) { bytes }
+    }
+
+    /// A tap on the held note's waveform, `fraction` of the way along it.
+    public func seekVoice(_ staged: StagedVoice, to fraction: Double) {
+        guard fraction.isFinite else {
+            return
+        }
+        let place = Double(staged.durationMilliseconds) * min(max(fraction, 0), 1)
+        voiceNotes?.playback.seek(staged.hash, to: Int(place.rounded(.down)))
+    }
+
     @concurrent
     nonisolated private static func descriptions(
         of notes: [MessageAttachment], in session: AppSession, decoder: any VoiceDecoder

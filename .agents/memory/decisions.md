@@ -102,6 +102,7 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.eyad](decisions/2026-10-eyad-an-incoming-photo-shows-how.md) | An incoming photo shows how far it has got | blobs, app |
 | [2026-10.w6rn](decisions/2026-10-w6rn-a-cut-photo-resumes-from.md) | A cut photo resumes from the bytes the iPhone kept | blobs, transport, interop |
 | [2026-10.f5zs](decisions/2026-10-f5zs-a-neighbour-s-digests-and.md) | a neighbour's digests and asks are metered and its link queues bounded | mesh, transport, custody, security |
+| [2026-10.ue3y](decisions/2026-10-ue3y-voice-notes-record.md) | Voice notes record, play and travel as Android's do, in debug builds until approved | voice, blobs, app |
 | [2026-10.7kxj](decisions/2026-10-7kxj-an-asker-s-echoes-are.md) | an asker's echoes are budgeted and unnamed blobs swept on the tick | mesh, blobs, security |
 | [2026-10.9e7g](decisions/2026-10-9e7g-custody-s-cap-evicts-from.md) | custody's cap evicts from the largest sender, and a group frame is carried only under its own roster | custody, convergence, security, groups |
 | [2026-10.s64c](decisions/2026-10-s64c-requests-and-the-room-are.md) | requests and the room are trimmed as Android trims them, and a trim never comes back | mesh, storage, security |

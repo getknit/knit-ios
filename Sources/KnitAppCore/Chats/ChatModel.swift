@@ -261,6 +261,9 @@ public final class ChatModel {
     /// The thread left the screen.
     public func disappear() {
         session.hide(conversationId)
+        // A recording is kept for the composer's next visit, and a note playing here stops (`ChatViewModel.onCleared`).
+        voice?.leave()
+        session.voiceNotes?.playback.stop()
     }
 
     private func build() -> (state: ChatState, audience: ReactionAudience) {
@@ -333,7 +336,7 @@ public final class ChatModel {
             authorLabel: named ? directory.label(for: message.senderId).text : nil,
             status: isMine ? DeliveryStatus(message) : nil,
             authorFace: named ? directory.face(for: message.senderId) : nil,
-            attachment: photos.attachment(of: message),
+            attachment: photos.attachment(of: message).map(showVoice(kind: kind)),
             hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message) : nil,
             mentionSpans: MentionText.spans(in: message.body, mentions: message.mentions),
             links: LinkText.links(in: message.body)

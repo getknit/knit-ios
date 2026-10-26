@@ -711,7 +711,10 @@ explicit direction.** Update this file in the change that ships an item.
   - a Swift doc-lint like knit-next's, which flags a symbol a persona or a doc names after the code has dropped it.
     `PersonaTests` checks only the paths and ADR ids the personas cite.
 
-- **Message features:** files and voice notes, and Android's full emoji picker for reactions. Profile photos and photos
+- **Message features:** files, and Android's full emoji picker for reactions. Voice notes are in a debug build, on par
+  with Android's and held from the store until the maintainer approves them, since nothing screens speech (ADR
+  2026-10.ue3y, whose limits list what opening the gate takes); `interop.py iphone-voice` and Android's tap-to-transcribe
+  (knit-next ADR 2026-10.am8d) are still to come. Profile photos and photos
   in chats are in flight (ADR 2026-10.nh55), reactions are in with a fixed six (ADR 2026-10.ehe6), quoted replies are
   in, in every thread (ADR 2026-10.mn29), and so are typing indicators, Android's row at a thread's foot (ADR
   2026-10.29z9), and mentions, with Android's chips and an alert of their own (ADR 2026-10.nbhj). `interop.py

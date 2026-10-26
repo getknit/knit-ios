@@ -1,5 +1,7 @@
+import KnitCrypto
 import KnitMesh
 import KnitSync
+import KnitWire
 import Testing
 
 @testable import KnitAppCore
@@ -73,9 +75,21 @@ import Testing
     let capture = FakeCapture()
     let clock = Clock()
 
-    func recorder(_ access: FakeAccess = FakeAccess(.allowed)) -> VoiceRecorder {
+    func recorder(_ access: FakeAccess = FakeAccess(.allowed), decoder: (any VoiceDecoder)? = nil) -> VoiceRecorder {
         let time = clock
-        return VoiceRecorder(capture: capture, access: access) { time.now }
+        return VoiceRecorder(capture: capture, access: access, decoder: decoder) { time.now }
+    }
+
+    /// The note kept is drawn with its waveform once the decoder reads it, as Android's preview draws its staged note.
+    @Test func theKeptNoteGainsItsWaveform() async {
+        let voice = recorder(decoder: SessionVoiceTests.FakeDecoder())
+        voice.press()
+        clock.now += 2000
+        voice.release()
+        #expect(voice.staged?.peaks == nil, "read off the main actor, after the note is kept")
+        await waitFor { voice.staged?.peaks != nil }
+        #expect(voice.staged?.peaks?.count == VoicePeaks.count)
+        #expect(voice.staged?.hash == BlobHash(of: capture.recorded))
     }
 
     @Test func aHeldPressRecordsAndAReleaseKeepsIt() throws {

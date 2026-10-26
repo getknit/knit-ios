@@ -22,9 +22,10 @@ extension KnitUITests {
         try walkLongRoomDrags()
     }
 
-    /// A thread's photos and its scrolling, for the walks every screen takes again.
-    func walkThreadPhotosAndScrolling() throws {
+    /// A thread's photos and voice notes, and its scrolling, for the walks every screen takes again.
+    func walkThreadMediaAndScrolling() throws {
         try walkChatPhotos()
+        try walkVoiceNotes()
         try walkScrolling()
         try walkLongRoom()
         try walkLongRoomDrags()

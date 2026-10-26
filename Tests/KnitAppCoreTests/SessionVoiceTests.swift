@@ -47,12 +47,12 @@ import Testing
 
     let decoder = FakeDecoder()
 
-    func rig(decoder: FakeDecoder? = nil) -> AppRig {
+    func rig(decoder: FakeDecoder? = nil, output: VoicePlaybackTests.FakeOutput? = nil) -> AppRig {
         AppRig(
             voice: VoiceNotes(
                 capture: VoiceRecorderTests.FakeCapture(),
                 access: VoiceRecorderTests.FakeAccess(.allowed),
-                playback: VoicePlayback(output: VoicePlaybackTests.FakeOutput()),
+                playback: VoicePlayback(output: output ?? VoicePlaybackTests.FakeOutput()),
                 decoder: decoder ?? self.decoder
             ) { 0 })
     }

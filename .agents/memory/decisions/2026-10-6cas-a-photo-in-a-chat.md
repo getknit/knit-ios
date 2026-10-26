@@ -57,6 +57,8 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
 - **What a message carries** follows Android's `attachmentKindOf`: a file by its name, a voice message by an
   `audio/` type, a link's card by its type, and a photo for any image or no type at all.
   - A voice message or a file shows a tile with its name and a line saying this build can't open it.
+    (Amended 2026-10-26: a debug build plays a voice message in a DM or a group, and says a Nearby post's plays in DMs
+    and groups; a release build keeps this tile until voice notes are approved for the store; ADR 2026-10.ue3y.)
   - A link's card shows nothing the link in the text doesn't already show.
   - A list's or a notification's line for a message with no words says what it carries, as Android's does:
     "📷 Photo", "🎞️ GIF", "🎤 Voice message", or "📎" and the file's name.
@@ -108,7 +110,8 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
   plays here too, and a list's line names a GIF from its frames; ADR 2026-10.ytvx.)
 - **A transparent photo goes as PNG,** which weighs more than Android's WebP. (Amended 2026-10-08: it goes as lossy
   WebP, through libwebp; ADR 2026-10.m4ah.)
-- **A file or a voice message** from Android is named here and can't be opened.
+- **A file or a voice message** from Android is named here and can't be opened. (Amended 2026-10-26: a debug build
+  records and plays voice notes; ADR 2026-10.ue3y.)
 - **Save keeps the sender's file as it is,** metadata and all. Android strips metadata from what it sends, but a
   modified peer might not.
 - **The iPhone doesn't pull the photo of a frame it only carries** until Phase 4 of ADR 2026-10.nh55. Until then, a

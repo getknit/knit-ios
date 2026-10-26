@@ -1,4 +1,7 @@
+import KnitCrypto
 import KnitMesh
+import KnitStore
+public import KnitWire
 public import Observation
 
 /// Whether Knit may use the microphone.
@@ -41,11 +44,21 @@ public protocol VoiceCapture: AnyObject {
 /// and their length, which the preview shows.
 public struct StagedVoice: Sendable, Equatable {
     /// The note, AAC-LC in ADTS.
-    public var bytes: [UInt8]
+    public let bytes: [UInt8]
+    /// The hash of ``bytes``, which the player knows the held note by.
+    public let hash: BlobHash
     /// How long it plays, in milliseconds, from its headers.
-    public var durationMilliseconds: Int
+    public let durationMilliseconds: Int
     /// Its waveform, once read (``VoicePeaks``).
     public var peaks: [UInt8]?
+
+    /// The note `bytes`, `durationMilliseconds` long, drawn with `peaks` once they are read.
+    public init(bytes: [UInt8], durationMilliseconds: Int, peaks: [UInt8]? = nil) {
+        self.bytes = bytes
+        hash = BlobHash(of: bytes)
+        self.durationMilliseconds = durationMilliseconds
+        self.peaks = peaks
+    }
 }
 
 /// Why the composer holds no voice note after a press.
@@ -83,6 +96,7 @@ public final class VoiceRecorder {
 
     @ObservationIgnored private let capture: any VoiceCapture
     @ObservationIgnored private let access: any MicrophoneAccess
+    @ObservationIgnored private let decoder: (any VoiceDecoder)?
     @ObservationIgnored private let now: () -> Int64
     @ObservationIgnored private var startedAt: Int64 = 0
 
@@ -98,10 +112,12 @@ public final class VoiceRecorder {
     public var failure: VoiceFailure?
 
     /// A recorder over `capture`, asking `access` for the microphone, timed by `now`: the monotonic clock, in
-    /// milliseconds.
-    public init(capture: any VoiceCapture, access: any MicrophoneAccess, now: @escaping () -> Int64) {
+    /// milliseconds. The note it keeps is drawn with the waveform `decoder` reads, as Android's preview draws its staged
+    /// note's (`VoiceNotePreview`).
+    public init(capture: any VoiceCapture, access: any MicrophoneAccess, decoder: (any VoiceDecoder)? = nil, now: @escaping () -> Int64) {
         self.capture = capture
         self.access = access
+        self.decoder = decoder
         self.now = now
     }
 
@@ -223,7 +239,22 @@ public final class VoiceRecorder {
             failure = sayingWhyNot ? .tooShort : nil
             return
         }
-        staged = StagedVoice(bytes: bytes, durationMilliseconds: length)
+        let note = StagedVoice(bytes: bytes, durationMilliseconds: length)
+        staged = note
+        if let decoder {
+            Task { @MainActor [weak self] in
+                let peaks = await Self.peaks(of: note, decoder: decoder)
+                if self?.staged?.hash == note.hash {
+                    self?.staged?.peaks = peaks
+                }
+            }
+        }
+    }
+
+    /// The held note's waveform, read off the main actor.
+    @concurrent
+    nonisolated private static func peaks(of note: StagedVoice, decoder: any VoiceDecoder) async -> [UInt8]? {
+        decoder.describe(note.bytes).peaks
     }
 
     /// Milliseconds since the recording started, never negative.

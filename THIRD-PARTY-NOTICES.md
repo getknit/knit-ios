@@ -44,15 +44,16 @@ SwiftPM resolves these while building the packages above, and none of their code
 | --- | --- | --- | --- |
 | `swift-asn1` | [apple/swift-asn1](https://github.com/apple/swift-asn1) | Apache-2.0 | Only swift-crypto's `CryptoExtras` uses it, and Knit doesn't link that |
 
-## Demo faces (debug builds only)
+## Demo faces and sound (debug builds only)
 
-`App/DemoMedia/` holds the faces the demo shows in screenshots, the store's video and the UI tests. Only a debug build
-bundles them; `check.sh release` fails a build that carries them. They are not covered by the GPL: each stays under
-its own license, below. The faces are AI-generated, so none shows a real person.
+`App/DemoMedia/` holds the faces and voice notes the demo shows in screenshots, the store's video and the UI tests. Only
+a debug build bundles them; `check.sh release` fails a build that carries them. They are not covered by the GPL unless
+the table says so: each stays under its own license, below. The faces are AI-generated, so none shows a real person.
 
 | Files | Source | License |
 | --- | --- | --- |
 | `face-maya.jpg`, `face-sam.jpg`, `face-dani.jpg`, `face-theo.jpg`, `face-priya.jpg`, `face-jonas.jpg`, `face-lena.jpg`, `face-river.jpg` | [UI Faces](https://uifaces.co/category/human), human faces 143, 65, 87, 80, 68, 62, 125 and 118 | [UI Faces licenses](https://uifaces.co/licenses), AI-generated images: internal and commercial use |
+| `voice-note.aac`, `voice-reply.aac` | Made for Knit with ffmpeg from band-passed pink noise, so no voice is in them | GPL-3.0-or-later, as the rest of Knit |
 
 ## Sample photos (every build)
 

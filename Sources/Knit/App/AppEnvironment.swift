@@ -206,6 +206,7 @@
                     nodeId: identity.nodeId, keyStore: keyStore, directory: directory, preferences: defaults, launch: launch)
                 // The device tests pick a demo photo too: the system's picker is out of their reach.
                 parts.demoPhoto = options.demoPhoto ? DemoPictures.picked(moving: options.demoPhotoMoves) : nil
+                parts.demoVoice = options.demoVoice ? DemoVoice.reply() : nil
                 return compose(parts, ratchet: options.ratchet) { keys in try keyStore.write(keys.storedForm) }
             #else
                 return compose(parts, ratchet: options.ratchet, replace: nil)
@@ -232,6 +233,8 @@
             var camera: (any CameraAccess)?
             /// The picture Choose photo picks, under `-demoPhoto`.
             var demoPhoto: Data?
+            /// The clip the mic records, under `-demoVoice`; a release build has none.
+            var demoVoice: [UInt8]?
             /// What the demo posts as Knit goes to the background, under `-demoNotification`.
             var notification: LocalNotification?
             /// The share sheet's inbox: the App Group's in a live launch, or a folder of the demo's own under `-demoShare`.
@@ -257,7 +260,7 @@
                 notifier: alerts,
                 textScreening: .bundled(classifier: parts.textClassifier, log: parts.log),
                 photoDimensions: { PhotoDecoder.dimensions($0) },
-                voiceNotes: voiceNotes(log: parts.log),
+                voiceNotes: voiceNotes(log: parts.log, demoClip: parts.demoVoice),
                 preferences: parts.preferences
             )
         }

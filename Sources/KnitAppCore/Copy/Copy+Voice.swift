@@ -28,6 +28,21 @@ extension Copy {
             )
         }
 
+        /// A voice message for VoiceOver while it plays or rests part played: its length, and how far it has got, which its
+        /// clock shows.
+        public static func playing(length: String, at place: String) -> String {
+            Copy.format(
+                NSLocalizedString(
+                    "voice.playing",
+                    bundle: .main,
+                    value: "Voice message, %1$@, at %2$@",
+                    comment: "Chat: VoiceOver's name for a voice message part played; %1$@ is its length, %2$@ how far it has played"
+                ),
+                length,
+                place
+            )
+        }
+
         /// What a voice message still on its way says (`chat_voice_loading`), in the iPhone's words for a photo's.
         public static var waiting: String {
             NSLocalizedString(
@@ -56,16 +71,6 @@ extension Copy {
                 bundle: .main,
                 value: "Voice messages play in direct messages and groups, not in Nearby",
                 comment: "Chat: under a voice message someone posted in the Nearby room, which Knit doesn't play there"
-            )
-        }
-
-        /// The composer's mic, for VoiceOver (`chat_voice_record`).
-        public static var record: String {
-            NSLocalizedString(
-                "voice.record",
-                bundle: .main,
-                value: "Hold to record a voice message",
-                comment: "Chat: VoiceOver's name for the composer's microphone button"
             )
         }
 

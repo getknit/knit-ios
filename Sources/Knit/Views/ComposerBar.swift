@@ -3,10 +3,11 @@
     import KnitAppCore
     import SwiftUI
 
-    /// The composer: the people an "@" offers, the quote it holds, the photo it holds, the field, what is left near the
-    /// limit, and Send, or Add photo while there is nothing to send (`SendAction` in knit-next). From iOS 26 it sits in a
-    /// glass panel (``SwiftUI/View/glassPanel()``), with the quote, the field and the count on opaque fills of their own. A
-    /// reply started from a message gives the field focus (ADR 2026-10.mn29).
+    /// The composer: the people an "@" offers, the quote it holds, the photo or voice note it holds, the field, what is
+    /// left near the limit, the mic in a build with voice notes, and Send, or Add photo while there is nothing to send
+    /// (`SendAction` in knit-next). While a note records, the recording bar takes the field's place (knit-next ADR 034).
+    /// From iOS 26 it sits in a glass panel (``SwiftUI/View/glassPanel()``), with the quote, the field and the count on
+    /// opaque fills of their own. A reply started from a message gives the field focus (ADR 2026-10.mn29).
     internal struct ComposerBar: View {
         @Bindable var model: ChatModel
         let demoPhoto: Data?
@@ -41,6 +42,13 @@
                 held
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if let note = model.voice?.staged {
+                StagedVoiceView(staged: note, remove: model.removeVoice)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let voice = model.voice, voice.failure == .tooShort {
+                VoiceHint(voice: voice)
+            }
         }
 
         var body: some View {
@@ -54,30 +62,59 @@
                         // The screen's own color, opaque: the background style turns translucent inside the glass.
                         .background(Color(uiColor: .systemBackground), in: .capsule)
                 }
-                HStack(alignment: .bottom, spacing: Layout.small) {
-                    ComposerField(model: model, typing: $typing)
-                        .padding(.horizontal, Layout.medium)
-                        .padding(.vertical, Layout.small)
-                        .frame(minHeight: Layout.hitTarget)
-                        .background(Palette.incomingBubble, in: .rect(cornerRadius: Layout.composerCorner, style: .continuous))
-                        .overlay {
-                            // On the opaque bar the field needs an edge; inside the glass panel the panel draws one, and
-                            // a second ring inside it looked heavy.
-                            if !isGlass {
-                                RoundedRectangle(cornerRadius: Layout.composerCorner, style: .continuous)
-                                    .strokeBorder(.separator)
-                            }
-                        }
-                    SendButton(model: model, demoPhoto: demoPhoto)
-                        .frame(minWidth: Layout.hitTarget, minHeight: Layout.hitTarget)
-                        // Add photo turns into Send, and back, with a quick swap rather than a cut.
-                        .animation(.snappy, value: model.offersPhoto)
-                }
+                row
             }
             .padding(Layout.small)
             .glassPanel()
             .onChange(of: model.repliesStarted) {
                 typing = true
+            }
+        }
+
+        /// The field, or the recording bar in its place; the mic; and the trailing button.
+        private var row: some View {
+            HStack(alignment: .bottom, spacing: Layout.small) {
+                Group {
+                    if let voice = model.voice, voice.isRecording {
+                        VoiceRecordingBar(voice: voice)
+                    } else {
+                        ComposerField(model: model, typing: $typing)
+                    }
+                }
+                .padding(.horizontal, Layout.medium)
+                .padding(.vertical, Layout.small)
+                .frame(minHeight: Layout.hitTarget)
+                .background(Palette.incomingBubble, in: .rect(cornerRadius: Layout.composerCorner, style: .continuous))
+                .overlay {
+                    // On the opaque bar the field needs an edge; inside the glass panel the panel draws one, and
+                    // a second ring inside it looked heavy.
+                    if !isGlass {
+                        RoundedRectangle(cornerRadius: Layout.composerCorner, style: .continuous)
+                            .strokeBorder(.separator)
+                    }
+                }
+                if let voice = model.voice, model.offersVoice {
+                    MicButton(model: model, voice: voice)
+                }
+                trailing
+                    .frame(minWidth: Layout.hitTarget, minHeight: Layout.hitTarget)
+                    // Add photo turns into Send, and back, with a quick swap rather than a cut.
+                    .animation(.snappy, value: model.offersPhoto)
+            }
+        }
+
+        /// The trailing button: Send or Add photo; nothing while a held press records, so the thumb has the mic alone; and
+        /// Stop once the recording locks (`ChatScreen.kt:4747-4762`).
+        @ViewBuilder private var trailing: some View {
+            if let voice = model.voice, voice.isRecording {
+                if voice.isLocked {
+                    StopRecordingButton(voice: voice)
+                } else {
+                    Color.clear
+                        .accessibilityHidden(true)
+                }
+            } else {
+                SendButton(model: model, demoPhoto: demoPhoto)
             }
         }
 

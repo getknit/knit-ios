@@ -31,6 +31,8 @@
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
         /// How far each photo streaming in has got: read by its bubble alone, so a moving ring reconfigures no cell.
         @Environment(PhotoArrivals.self) private var arrivals: PhotoArrivals?
+        /// What voice notes play through: read by their bubbles alone, so moving bars reconfigure no cell.
+        @Environment(\.voiceSession) private var voiceSession
         @Environment(\.calendar) private var calendar
         @Environment(\.openRoute) private var openRoute
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -65,6 +67,7 @@
                         .environment(photos)
                         .environment(screening)
                         .environment(arrivals)
+                        .environment(\.voiceSession, voiceSession)
                         .environment(\.calendar, calendar)
                         .environment(\.openRoute, openRoute)
                         .tint(Palette.accent)

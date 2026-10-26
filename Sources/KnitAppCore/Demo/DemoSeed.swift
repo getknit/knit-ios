@@ -104,18 +104,22 @@ public enum DemoSeed {
         )
     }
 
-    /// What `line` carries: its photo, kept in the blob store, or one on its way, whose bytes nobody keeps.
+    /// What `line` carries: its photo or its voice note, kept in the blob store, or one on its way or still owed, whose
+    /// bytes nobody keeps.
     private static func attachment(
-        of line: DemoCast.Line, snapshots: [DemoSnapshot: [UInt8]], in stores: MeshStores, at now: Int64
+        of line: DemoCast.Line, snapshots: [DemoSnapshot: [UInt8]], clip: [UInt8]?, in stores: MeshStores, at now: Int64
     ) -> MessageAttachment? {
+        if let voice = line.voice {
+            return note(voice, of: line, clip: clip, in: stores, at: now)
+        }
         guard line.arriving != nil else {
             return photo(line.photo.flatMap { snapshots[$0] }, in: stores, at: now)
         }
         return MessageAttachment(hash: arrivingHash(of: line.id), mime: "image/jpeg")
     }
 
-    /// The blob a line's photo on its way names: one nobody holds, the same every launch.
-    private static func arrivingHash(of line: String) -> BlobHash {
+    /// The blob a line's photo or voice note on its way names: one nobody holds, the same every launch.
+    static func arrivingHash(of line: String) -> BlobHash {
         BlobHash(of: Array("demo-arriving-\(line)".utf8))
     }
 
@@ -148,7 +152,8 @@ public enum DemoSeed {
         now: Int64,
         scene: DemoScene,
         face: (DemoPortrait) -> [UInt8]? = { _ in nil },
-        snap: (DemoSnapshot) -> [UInt8]? = { _ in nil }
+        snap: (DemoSnapshot) -> [UInt8]? = { _ in nil },
+        voice: [UInt8]? = nil
     ) {
         let cast = scene.cast
         if let own = cast.me {
@@ -187,7 +192,7 @@ public enum DemoSeed {
                 sentAt: sentAt,
                 arrivedAt: sender == me ? nil : sentAt,
                 delivered: line.delivered,
-                attachment: attachment(of: line, snapshots: snapshots, in: stores, at: sentAt),
+                attachment: attachment(of: line, snapshots: snapshots, clip: voice, in: stores, at: sentAt),
                 // As the engine stores them: someone else's words wait for the content filter, which the session
                 // runs over them as it starts listening.
                 moderation: sender == me ? .clear : .waiting

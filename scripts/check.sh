@@ -278,9 +278,10 @@ PY
 	# A Debug build keeps the app's code in Knit.debug.dylib, and Knit is a launcher for it.
 	if [ -f "$app/Knit.debug.dylib" ]; then
 		check_delegates "$app/Knit.debug.dylib"
-		# A debug build carries the demo's faces, every one App/DemoMedia holds (ADR 2026-10.2acj).
-		if [ "$(find "$app/DemoMedia" -name '*.jpg' 2>/dev/null | wc -l)" -ne "$(find App/DemoMedia -name '*.jpg' | wc -l)" ]; then
-			echo "$app lacks App/DemoMedia's pictures: the demo would show initials" >&2
+		# A debug build carries the demo's faces and voice notes, every one App/DemoMedia holds (ADR 2026-10.2acj).
+		if [ "$(find "$app/DemoMedia" \( -name '*.jpg' -o -name '*.aac' \) 2>/dev/null | wc -l)" -ne \
+			"$(find App/DemoMedia \( -name '*.jpg' -o -name '*.aac' \) | wc -l)" ]; then
+			echo "$app lacks App/DemoMedia's faces or sound: the demo would show initials and no voice notes" >&2
 			return 1
 		fi
 	else

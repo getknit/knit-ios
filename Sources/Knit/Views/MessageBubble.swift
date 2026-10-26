@@ -38,6 +38,7 @@
         let highlighted: Bool
         @Environment(\.dynamicTypeSize) private var typeSize
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
+        @Environment(\.voiceSession) var voiceSession
         @Environment(\.openRoute) private var openRoute
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @Environment(\.openURL) private var openURL
@@ -95,6 +96,7 @@
                         Button(Copy.Attachments.viewPhoto) { open(photo) }
                     }
                 }
+                voiceActions
                 if let react {
                     ForEach(ReactionChoices.six, id: \.self) { emoji in
                         Button(message.isOurReaction(emoji) ? Copy.Reactions.remove(emoji) : Copy.Reactions.react(emoji)) { react(emoji) }
@@ -106,7 +108,7 @@
                 }
             }
             .accessibilityValue(value)
-            .accessibilityIdentifier(photo.map { _ in AccessibilityID.chatPhoto(message.id) } ?? AccessibilityID.chatMessage(message.id))
+            .accessibilityIdentifier(identifier)
         }
 
         /// How strongly the tint shows where a quote's tap landed (`ChatScreen.kt`'s 22% blend), and how long it takes to

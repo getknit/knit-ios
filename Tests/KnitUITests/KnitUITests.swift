@@ -151,7 +151,7 @@ final class KnitUITests: XCTestCase {
         try walkNewGroup()
         try walkScan()
         try walkPhotos()
-        try walkThreadPhotosAndScrolling()
+        try walkThreadMediaAndScrolling()
         try walkSettings()
         try walkContentFilter()
         try walkBlocked()

@@ -104,6 +104,19 @@ public struct ChatAttachment: Sendable, Equatable {
     public var playsAsVoice = false
     /// A voice note's length and waveform, once its bytes have been read on this phone.
     public var voice: VoiceDescription?
+    /// How the thread shows a voice note, or `nil` for anything else.
+    public var voiceShowing: VoiceShowing?
+}
+
+/// How a thread shows a voice note.
+public enum VoiceShowing: Sendable, Equatable {
+    /// Its player, in a DM or a group, in a build with voice notes (``VoiceNotes``).
+    case player
+    /// A tile saying voice notes play in DMs and groups: a room post's, whose sound no model screens and which the room
+    /// floods to everyone in range (knit-next ADR 034 §4).
+    case notInNearby
+    /// A tile saying this build can't play it: any voice note, in a build without voice notes.
+    case unsupported
 }
 
 extension ChatAttachment {
@@ -129,6 +142,7 @@ extension ChatAttachment {
         dimensions = attachment.dimensions
         playsAsVoice = VoiceAudio.isVoice(attachment.mime)
         voice = attachment.voice
+        voiceShowing = playsAsVoice ? .unsupported : nil
     }
 }
 

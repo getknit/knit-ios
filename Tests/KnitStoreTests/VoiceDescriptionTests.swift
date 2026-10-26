@@ -4,7 +4,7 @@ import KnitWire
 import Testing
 
 /// A voice note's length and waveform, read on this phone and kept on every message that carries the note, by every
-/// message store (schema v20 for the SQL one, knit-next ADR 034). It never crosses the wire.
+/// message store (schema v23 for the SQL one, knit-next ADR 034). It never crosses the wire.
 @Suite struct VoiceDescriptionTests {
     private static let kinds = RepositoryKind.allCases
 

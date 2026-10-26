@@ -4,7 +4,7 @@ public import KnitStore
 public import KnitWire
 
 // What this phone reads from an attachment's own bytes, a photo's size (schema v10) and a voice note's length and
-// waveform (schema v20), apart from the class only to keep its body inside the lint's length.
+// waveform (schema v23), apart from the class only to keep its body inside the lint's length.
 extension SQLMessageStore {
     /// What the messages carry whose size this phone has not read, each blob once (``MessageStore/unsizedAttachments(named:)``).
     public func unsizedAttachments(named hash: BlobHash?) -> [MessageAttachment] {

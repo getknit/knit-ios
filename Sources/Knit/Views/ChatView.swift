@@ -18,6 +18,7 @@
         /// 2026-10.rpmq, ADR 2026-10.e4kz).
         @State private var revealed: Set<String> = []
         @Environment(\.dismiss) private var dismiss
+        @Environment(\.scenePhase) private var scenePhase
         /// What Add photo picks under `-demoPhoto`, in place of the photo library.
         private let demoPhoto: Data?
         /// Where a share held back for this thread waits for its composer (ADR 2026-10.z7a8).
@@ -114,6 +115,7 @@
                 }
             }
             .answersExplicitPhotos(of: model)
+            .voiceAlerts(of: model)
             .alert(Copy.Moderation.wordsRefusedTitle, isPresented: $model.wordsRefused) {
                 Button(Copy.Common.done, role: .cancel) {
                     // The alert closes itself, and the words stay in the composer.
@@ -135,6 +137,12 @@
                 await model.appear()
             }
             .onDisappear(perform: model.disappear)
+            // Leaving Knit keeps a recording for the composer and pauses a note: Knit records and plays only in front.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background {
+                    model.leave()
+                }
+            }
             // How far the photos on their way have got, sampled only while one is, as Android's window collects its
             // `arrivals` (ADR 2026-10.y9qh). The loop ends when the thread closes or its last photo lands.
             .task(id: model.awaitsPhotos) {

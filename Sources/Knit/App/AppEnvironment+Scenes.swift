@@ -25,7 +25,8 @@
                     now: clock.wallMilliseconds(),
                     scene: options.demoScene,
                     face: DemoPictures.profilePhoto,
-                    snap: made.snap
+                    snap: made.snap,
+                    voice: DemoVoice.clip()
                 )
                 var parts = Parts(
                     identity: identity,
@@ -50,6 +51,7 @@
                     ),
                     camera: options.demoCamera.map(DemoCamera.init),
                     demoPhoto: options.demoPhoto ? DemoPictures.picked(moving: options.demoPhotoMoves) : nil,
+                    demoVoice: options.demoVoice ? DemoVoice.reply() : nil,
                     notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
                 )
                 parts.shareInbox = options.demoShare.map(ShareContainer.demoInbox)

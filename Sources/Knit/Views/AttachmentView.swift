@@ -6,7 +6,8 @@
     import SwiftUI
 
     /// What a message carries beside its words, in its bubble (`AttachmentImage` in knit-next's `ChatScreen.kt`): a photo,
-    /// which opens the viewer, or a voice message or a file, which this build names and cannot open.
+    /// which opens the viewer; a voice note's player, in a build with voice notes; or a tile naming a voice message or a
+    /// file this build doesn't open there.
     internal struct AttachmentView: View {
         let attachment: ChatAttachment
         /// Whether we sent it: the content filter never hides our own.
@@ -22,7 +23,12 @@
             case .photo:
                 MessagePhoto(attachment: attachment, isMine: isMine, covered: covered, reveal: reveal, open: open)
             case .voice, .file:
-                AttachmentTile(attachment: attachment)
+                // A named audio file plays as a voice note too, as Android's bubble asks for a voice note first.
+                if attachment.voiceShowing == .player {
+                    VoiceNoteView(attachment: attachment, isMine: isMine)
+                } else {
+                    AttachmentTile(attachment: attachment)
+                }
             case .link:
                 // A thread never holds one: a link's card shows nothing the link in the text does not.
                 EmptyView()
@@ -249,18 +255,19 @@
         }
     }
 
-    /// A voice message or a file from Android: its name, and that this build cannot open it.
+    /// A voice message or a file from Android: its name, and that this build doesn't open it here. A voice note posted in
+    /// Nearby says where voice notes play.
     private struct AttachmentTile: View {
         let attachment: ChatAttachment
 
         var body: some View {
             HStack(alignment: .firstTextBaseline, spacing: Layout.medium) {
-                Image(systemName: attachment.kind == .voice ? "waveform" : "doc")
+                Image(systemName: attachment.voiceShowing == nil ? "doc" : "waveform")
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: Layout.hairline) {
                     Text(attachment.label)
                         .font(.subheadline.bold())
-                    Text(attachment.kind == .voice ? Copy.Attachments.voiceUnsupported : Copy.Attachments.fileUnsupported)
+                    Text(line)
                         .font(.caption)
                 }
             }
@@ -270,6 +277,18 @@
             .background(Palette.incomingBubble, in: .rect(cornerRadius: Layout.bubbleCorner))
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier(AccessibilityID.chatAttachmentTile)
+        }
+
+        /// What it says under its name.
+        private var line: String {
+            switch attachment.voiceShowing {
+            case .notInNearby:
+                Copy.Voice.notInNearby
+            case .unsupported, .player:
+                Copy.Attachments.voiceUnsupported
+            case nil:
+                Copy.Attachments.fileUnsupported
+            }
         }
     }
 

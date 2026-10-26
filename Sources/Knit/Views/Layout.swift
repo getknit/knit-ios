@@ -118,5 +118,16 @@
         /// (`SPINNER_PATIENCE_MS`): an endless spinner keeps the screen drawing every frame for as long as the photo is
         /// owed.
         static let photoPatience = 30
+        /// A voice note's play disc, inside its hit target (`VoiceNote.kt`'s 40.dp).
+        static let voiceDisc: CGFloat = 40
+        /// A voice note's waveform's height (`WAVEFORM_HEIGHT`).
+        static let voiceWaveform: CGFloat = 28
+        /// The recording dot at rest, and how much the input's loudness adds to it (`8 + amplitude * 6` dp).
+        static let recordingDot: CGFloat = 8
+        static let recordingDotGrowth: CGFloat = 6
+        /// How far up a held press slides to lock the recording, and how far back to cancel it: Android's 120 and 160
+        /// pixels at a Pixel's density (`LOCK_SLOP_PX`, `CANCEL_SLOP_PX`).
+        static let recordingLock: CGFloat = 46
+        static let recordingCancel: CGFloat = 61
     }
 #endif

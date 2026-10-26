@@ -53,6 +53,6 @@ public struct VoiceNotes {
 
     /// A recorder for one thread's composer.
     public func recorder() -> VoiceRecorder {
-        VoiceRecorder(capture: capture, access: access, now: now)
+        VoiceRecorder(capture: capture, access: access, decoder: decoder, now: now)
     }
 }

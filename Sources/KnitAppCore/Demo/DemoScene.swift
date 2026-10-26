@@ -36,8 +36,8 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// A first launch: nobody met and nothing in the room, so the chat list shows its first-run card.
     case fresh = "fresh"
     /// A day on the trail for store screenshots and social posts, with three peers linked, and most people wearing a
-    /// profile photo. After knit-next's hiking theme (`DemoScenarios.kt`), less what the iPhone does not do yet: voice
-    /// notes, LoRa and Internet relays.
+    /// profile photo. After knit-next's hiking theme (`DemoScenarios.kt`), less what the iPhone does not do yet, or does
+    /// in a debug build alone: voice notes, LoRa and Internet relays.
     case marketing = "marketing"
     /// The marketing scene with a room far longer than the screen, for the walk that opens one: the lazy stack opens it on
     /// rows whose height it has only guessed.
@@ -61,6 +61,9 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// The sample chats anyone can open, in a store build too (ADR 2026-11.pydf): the marketing scene's people and
     /// threads, with a stranger whose posts show report, block and the filter, and answers for what the user sends.
     case sample = "sample"
+    /// A DM with Sam's voice notes, one played and one ours, one streaming in and one still owed, for the walk and the
+    /// shots that draw them (knit-next ADR 034). Only a debug build plays them.
+    case voice = "voice"
 
     /// Who and what the scene seeds.
     var cast: DemoCast {
@@ -83,6 +86,8 @@ public enum DemoScene: String, Sendable, CaseIterable {
             .photoArriving
         case .sample:
             .sample
+        case .voice:
+            .voice
         }
     }
 
@@ -171,12 +176,8 @@ internal struct DemoCast {
         /// How far its photo has got, for a photo still on its way: the message names a blob nobody stores, and
         /// ``DemoMesh`` reports it streaming in.
         var arriving: Arriving?
-    }
-
-    /// A photo on its way: the bytes in so far, and the size its sender's header declared, if any.
-    struct Arriving {
-        let bytes: Int
-        var total: Int?
+        /// The voice note it carries in place of a photo, the clip the demo bundles; ``arriving`` says how far one has got.
+        var voice: Voice?
     }
 
     /// Someone's reaction to one of the scene's lines, a moment after it (ADR 2026-10.ehe6).

@@ -166,7 +166,7 @@ import Testing
             Copy.Diagnostics.clockAhead(seconds: 5),
             Copy.Diagnostics.clockBehind(seconds: 5),
         ] + Self.groupStrings + Self.newMessageStrings + Self.verifyStrings + Self.photoStrings + Self.blockStrings + Self.deleteStrings
-            + Self.moderationStrings + Self.reactionStrings + Self.reportStrings + Self.termsStrings + Self.infoStrings
+            + Self.moderationStrings + Self.reactionStrings + Self.reportStrings + Self.termsStrings + Self.infoStrings + Self.voiceStrings
             + Self.supportStrings + Self.replyStrings + Self.typingStrings + Self.mentionStrings + Self.unreadStrings
             + Self.shareStrings + Self.sampleStrings + Self.addContactStrings + Self.crashReportStrings + Self.linkStrings
     }

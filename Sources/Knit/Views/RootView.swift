@@ -130,6 +130,17 @@
             .environment(environment.photos)
             .environment(environment.screening)
             .environment(environment.session.arrivals)
+            .environment(\.voiceSession, environment.session.voiceNotes == nil ? nil : environment.session)
+            // The one player's place, read while a note plays, as Android's player polls its own (`TICK_MS`).
+            .task(id: environment.session.voiceNotes?.playback.nowPlaying?.playing) {
+                guard let playback = environment.session.voiceNotes?.playback else {
+                    return
+                }
+                while playback.nowPlaying?.playing == true, !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(VoicePlayback.tickMilliseconds))
+                    playback.tick()
+                }
+            }
         }
     }
 

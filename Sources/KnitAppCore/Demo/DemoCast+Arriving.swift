@@ -1,5 +1,12 @@
-// The scene of photos on their way, apart from `DemoScene.swift` only to keep that file under the lint's length.
+// The scene of photos on their way, and what says how far one has got, apart from `DemoScene.swift` only to keep that
+// file under the lint's length.
 extension DemoCast {
+    /// A photo on its way: the bytes in so far, and the size its sender's header declared, if any.
+    struct Arriving {
+        let bytes: Int
+        var total: Int?
+    }
+
     /// How much of Sam's photo is in, of the size its header declared: a ring part full.
     private static let samsBytes = 84_000
     private static let samsTotal = 204_800

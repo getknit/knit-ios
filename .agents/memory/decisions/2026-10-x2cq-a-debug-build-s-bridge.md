@@ -37,7 +37,9 @@ over Wi-Fi (ADR 2026-10.dz8d), but had no way to record.
   away, so the phone is never recording while the script believes it is off.
 - **The microphone key is debug-only.** iOS ends an app that turns on the microphone without
   `NSMicrophoneUsageDescription`. The key comes from `App/project.yml`'s Debug config, not `App/Info.plist`, and
-  `check.sh release` fails a store build that has it.
+  `check.sh release` fails a store build that has it. (Amended 2026-10-26: a debug build records voice notes too, and
+  the key's words say so. It stays debug-only while voice notes are, until they are approved for the store; ADR
+  2026-10.ue3y.)
 
 **Consequences / limits:**
 
@@ -59,7 +61,9 @@ over Wi-Fi (ADR 2026-10.dz8d), but had no way to record.
 - **A take does not outlive the app.** The file sits in the app's temporary directory. A relaunch forgets it, and
   the next start clears the directory. If iOS stops a recording itself, it keeps nothing, and the next `record-stop`
   answers `lost`.
-- **Knit itself plays and records no sound,** so the recorder's microphone has nothing to share.
+- **Knit itself plays and records no sound,** so the recorder's microphone has nothing to share. (Amended 2026-10-26:
+  a debug build records and plays voice notes, ADR 2026-10.ue3y. A take with the microphone and a voice note's
+  recording both take the session, so a script records the screen with no note recording at the time.)
 - **Guards.** `RecordCommandTests` covers parsing, the start, the stop and its repeat, chunked fetches with their
   SHA-256, a take that ended at the background, a start that replaces a take, refusals, a lost take, and the consent
   timeout with a late start. `check.sh release` checks that a store build has no bridge (its queue label) and no

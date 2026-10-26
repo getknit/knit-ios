@@ -23,7 +23,9 @@ ladder, not the first.
 4. **The app's logic, without a screen.** `KnitAppCoreTests` drives `AppSession` and every view model
    through a `FakeMesh` that writes to in-memory stores as the engine would, and reads every catalog string. A fake
    `ImageCodec` stands in for ImageIO, so choosing, cropping and saving a profile photo run there too, and so do
-   picking, holding and sending a photo in a chat (`ChatPhotoTests`). A fake `PhotoClassifier` stands in for Core
+   picking, holding and sending a photo in a chat (`ChatPhotoTests`). Fakes stand in for the microphone, the player and
+   AudioToolbox's decoder, so recording, playing and reading a voice note run there too (`VoiceRecorderTests`,
+   `VoicePlaybackTests`, `SessionVoiceTests`, `ChatVoiceTests`). A fake `PhotoClassifier` stands in for Core
    ML, so the content filter's policy, what it hides and what a pick asks run there as well (`PhotoScreeningTests`),
    and so do the words' tokenizer, word list, screening on arrival and refusal on send (`SentencePieceTokenizerTests`,
    `WordFilterTests`, `TextScreeningTests`). The models' own scores are checked on the Mac, against Android's TFLite by
@@ -56,7 +58,9 @@ ladder, not the first.
    them. `KnitUITests` walks every MVP screen in the Simulator on `-seedDemo` (`scripts/check.sh uitest`,
    `test:ios:simulator`), each through `performAccessibilityAudit`, once at the default text size and once at the
    largest, where it keeps a screenshot of every screen. The Simulator has no scanner, so the scan walk reaches the
-   scanner's refused and failed states through `-demoCamera` (ADR 2026-10.65xx). The system's photo picker runs
+   scanner's refused and failed states through `-demoCamera` (ADR 2026-10.65xx). The Simulator has no microphone to speak
+   into, so the voice walk records through `-demoVoice`, whose mic hands over a clip a debug build bundles, on the
+   `voice` scene's DM with Sam (ADR 2026-10.ue3y). The system's photo picker runs
    outside Knit, so the photo walks pick a demo photo through `-demoPhoto`, on the `marketing` scene, whose
    people wear faces and whose post by the fire carries a photo (ADR 2026-10.sepc, ADR 2026-10.6cas). The faces are
    files in `App/DemoMedia/`, which only a debug build bundles (ADR 2026-10.2acj), and the photos are in
