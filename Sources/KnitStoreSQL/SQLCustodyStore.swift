@@ -129,8 +129,11 @@ public final class SQLCustodyStore: CustodyStore {
         )
     }
 
-    /// The frame in a row of `sig` and `signed`, or `nil` if its bytes no longer decode, which only a damaged file
-    /// can do: they decoded on the way in.
+    /// The frame in a row of `sig` and `signed`, or `nil` if its bytes no longer decode. They decoded on the way in, so
+    /// that takes a damaged file or a row an older build stored under looser rules (knit-ios #14), which still counts
+    /// in ``liveIds(now:)`` until it expires. Custody never re-checks a stored frame against the carry gate either: a
+    /// room post an older build carried and this one refuses still decodes here, and is listed and served until it
+    /// expires.
     private static func frame(_ row: Row) throws -> CarriedFrame? {
         let signed = try row.bytes("signed")
         guard let envelope = try? RelayEnvelope(decoding: signed) else {

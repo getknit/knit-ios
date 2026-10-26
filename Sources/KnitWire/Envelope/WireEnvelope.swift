@@ -28,11 +28,20 @@ public struct WireEnvelope: CBORRepresentable, Equatable {
         self.signed = signed
     }
 
-    /// Reads an envelope from a decoded item.
+    /// Reads an envelope from a decoded item, refusing a negative ``ttl`` or ``hops`` as `WireCodec.decodeWire` does
+    /// once kotlinx has read them (`Wire.kt:1071-1076` at knit-next `e63f15f4`): no encoder writes one, and a Kotlin `Int`
+    /// reads `1A FFFFFFFF` as −1. It runs where Android's `FramedLink.handleFrame` decodes a frame
+    /// (`FramedLink.kt:608-613`), in `LinkManager.dispatch`, before the crossing, the seen set and custody.
     public init(cbor: CBOR) throws(WireDecodingError) {
         let fields = try CBORFields(cbor, type: "WireEnvelope")
         ttl = try fields.optional("ttl", .int32) ?? Self.defaultTTL
         hops = try fields.optional("hops", .int32) ?? 0
+        guard ttl >= 0 else {
+            throw .invalidValue(type: "WireEnvelope", field: "ttl")
+        }
+        guard hops >= 0 else {
+            throw .invalidValue(type: "WireEnvelope", field: "hops")
+        }
         relay = try fields.optional("relay", .bool) ?? true
         sig = try fields.required("sig", .bytes)
         signed = try fields.required("signed", .bytes)

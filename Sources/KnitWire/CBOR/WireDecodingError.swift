@@ -7,13 +7,14 @@ public enum WireDecodingError: Error, Sendable, Equatable {
     case cbor(CBORError)
     /// A named-layout type was not encoded as a map.
     case notAMap(type: String)
-    /// A named-layout map had a key that is not text, or a labelled one (``MessageContentV2``) a key that is neither
-    /// text nor an unsigned label.
+    /// A named-layout map had a key that is neither text nor an integer, or a labelled one (``MessageContentV2``) a key
+    /// that is neither text nor an unsigned label.
     case nonTextKey(type: String)
     /// A field with no default was absent.
     case missingField(type: String, field: String)
     /// A field that is not nullable was present as `null`.
     case unexpectedNull(type: String, field: String)
-    /// A field held the wrong kind of value, or an integer outside its Kotlin type's range.
+    /// A field held the wrong kind of value, an integer outside its Kotlin type's range, or a value knit-next refuses
+    /// once it has decoded, such as a negative ``WireEnvelope/ttl`` or ``WireEnvelope/hops``.
     case invalidValue(type: String, field: String)
 }

@@ -77,6 +77,24 @@ import Testing
         #expect(bundle.encoded.utf8.count == 112)
     }
 
+    /// A bundle written any way kotlinx reads it parses, as Android's `PublicKeyBundle.decode` parses it (knit-ios #14):
+    /// a tag, a long-form map header, an integer key and a duplicated key. It keeps its own text, and its node id is that
+    /// text's, never the canonical bundle's, so a pin or a comparison, which reads the text, never takes one for the other.
+    @Test func aBundleWrittenAnotherWayKeepsItsOwnTextAndNodeId() throws {
+        let canonical = IdentityKeys.generate().bundle
+        let body =
+            CBOR.unsigned(7).encoded + CBOR.text("x").encoded + CBOR.text("sigPub").encoded + CBOR.bytes(fixtureBytes(32, seed: 9)).encoded
+            + CBOR.text("sigPub").encoded + CBOR.bytes(canonical.signingKey).encoded + CBOR.tagged(2, .text("hpkePub")).encoded
+            + CBOR.bytes(canonical.agreementKey).encoded
+        let text = Base64.encode([0xC0, 0xB9, 0x00, 0x04] + body)
+        let bundle = try #require(PublicKeyBundle(encoded: text))
+        #expect(bundle.encoded == text)
+        #expect(bundle.nodeId == NodeId(deriving: text))
+        #expect(bundle.nodeId != canonical.nodeId)
+        #expect(bundle.signingKey == canonical.signingKey && bundle.agreementKey == canonical.agreementKey)
+        #expect(bundle != canonical)
+    }
+
     @Test func identityKeysRefuseWrongLengths() {
         #expect(IdentityKeys(signingSeed: fixtureBytes(31, seed: 1), agreementScalar: fixtureBytes(32, seed: 2)) == nil)
         #expect(IdentityKeys(signingSeed: fixtureBytes(32, seed: 1), agreementScalar: fixtureBytes(33, seed: 2)) == nil)

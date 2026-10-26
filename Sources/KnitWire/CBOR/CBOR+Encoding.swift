@@ -34,6 +34,8 @@ extension CBOR {
                 entry.key.append(to: &output)
                 entry.value.append(to: &output)
             }
+        case .longFormEmptyMap:
+            appendHeader(major: MajorType.map, argument: 0, to: &output)
         case .tagged(let tag, let item):
             appendHeader(major: MajorType.tag, argument: tag, to: &output)
             item.append(to: &output)

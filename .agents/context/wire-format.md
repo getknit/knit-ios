@@ -14,11 +14,43 @@ knit-next uses kotlinx-serialization-cbor 1.12.0 (1.11.0 before `97e1747f`) with
 - **Default-valued fields are omitted**, never written as null. An absent field and a null field are not
   the same thing.
 - **Byte arrays are byte strings** (major type 2). Integers use the shortest encoding, booleans are `F4` and
-  `F5`, and there are no tags.
+  `F5`, and no encoder writes a tag.
 - **Unknown keys are ignored** on decode. That is how the wire grows.
 - **The exception is the v3 DM plaintext** (`MessageContentV2`), which uses integer keys and raw ids. KnitWire
   has its codec, and the ratchet seals and opens v3 toward a peer whose profile carries `CAP_CRYPTO_V3` (ADR
   2026-10.5sk9).
+
+Decoding is looser than any encoder. Since knit-ios #14, KnitWire reads every field the way kotlinx does, so both
+platforms refuse and carry the same frames, apart from the gaps the last item names (`Decoder.kt` in the 1.12.0
+sources):
+
+- **A nullable field is null** when its value is the byte `F6` or the single byte `A0`. An empty map written any other
+  way (`B8 00`, `BF FF`) goes to the field's own decoder, which fails unless the field's type has no required field.
+- **An `Int` is a 64-bit reading,** wrapped, then held to −2³¹ through 2³²−1 and truncated to 32 bits: `1A FFFFFFFF`
+  reads as −1, and `3B FFFFFFFFFFFFFFFE` as 1. A `Long` wraps with no range check.
+- **Tags are skipped** before every value and every key, a run of them included. A tagged `F6` is not null, so it
+  fails a nullable field.
+- **An integer key in a named map is skipped** as unknown. A key of any other non-text kind fails.
+- **Every copy of a duplicated key is decoded,** and the last one wins.
+- **Keys compare by their UTF-8 bytes,** as Kotlin's `getElementIndex` compares strings, never by Swift's canonical
+  equivalence: a key spelled with a Kelvin sign is unknown, not `attachmentKey` (ADR 2026-09.jc2x).
+- **Depth and trailing bytes match where it counts for custody.** Android walks the signed envelope and every payload
+  it checks with `CborText` before kotlinx (`Wire.kt:1086`, `:1097`). The walk refuses nesting past 32 levels,
+  counting each tag, and any byte after the top-level item, as `CBOR.decode` does. Android skips that walk for the
+  outer `WireEnvelope`, the sealed plaintexts and the public key bundle, and three gaps stay there:
+  - A value nested past 32 levels under an unknown key reads on Android and is refused here. Matching it would let a
+    large frame recurse deep enough to exhaust the stack.
+  - One stray byte after the top-level item reads on Android, whose parser has already read it ahead when it checks
+    for leftovers (`Cbor.kt:86-95`), and is refused here.
+  - Bad UTF-8 in a sealed plaintext shows on Android as U+FFFD and drops here as `cannotOpen`.
+
+  For a key bundle, the first two mean we never pin that sender. All three are recorded, not closed.
+- **One parser split reaches the checked paths too.** Under an unknown key, `CborText` takes a two-byte simple value
+  below 32 (`F8 00` to `F8 1F`) and an indefinite map with an odd number of items (`BF 01 FF`), and so does kotlinx's
+  `skipElement`. RFC 8949 calls both malformed, and `CBOR.decode` refuses them, so Android carries a signed frame
+  holding one and back-fills it to us until it expires. Off the checked paths kotlinx also skips additional info 28 to
+  30 on majors 0, 1 and 7. The fix belongs in `CborText`, whose own doc says it refuses CBOR that isn't well formed,
+  not in loosening this parser (knit/knit-next#217).
 
 A required field that is missing makes Android's decode fail, and the frame is neither delivered nor
 carried. The frame is dropped with no error sent back. These fields must always be written, even when empty:
@@ -39,11 +71,11 @@ carried. The frame is dropped with no error sent back. These fields must always 
 | `ScopeConfigPayload` (Android's) | `spools`, `maxFrames`, `ttlMs`, `maxBlob`, `version` |
 
 A known key whose value has the wrong CBOR type fails Android's decode too. Android drops a sealed message with one as
-`DECRYPT_FAILED` and does not carry a room post with one (`canCarry`, `InboundPipeline.kt:2320-2329`). Since the
-pin, that covers a room post's `video`, `attachmentName`, `attachmentKey` and `"s"`, and a sealed message's `video`,
-`cl`, `sc`, `"s"` and badges. KnitWire skips every key it does not model, whatever its type, so it opens such a message
-and carries such a post. A buggy sender's post then goes to every Android neighbour at each digest exchange until it
-expires. Mirroring the refusal is owed (`knit-next.md`, "Since then").
+`DECRYPT_FAILED` and does not carry a chat frame with one (`canCarry`, `InboundPipeline.kt:2320-2329`). KnitWire
+checks the type of every key Android types, including the ones it does not model, so it refuses the same frames: a
+room post's `video`, `attachmentName`, `attachmentKey` and `"s"`; a sealed message's `video`, `cl`, `sc`, `xf`, `"s"`
+and badges; the v3 plaintext's labels 16 and 17 and `pr`'s label 8; and a blob request's `fastOnly` (knit-ios #14).
+The open path drops a sealed message that fails before its commit, so its chain index stays unspent, as on Android.
 
 ## Three layers
 
@@ -62,9 +94,9 @@ The payload types:
 - `ChatContent { body = "", mentions = [], attachmentHash?, attachmentMime?, enc: EncEnvelope?, replyTo: ReplyRef?,
   attachmentSize: Long?, video: VideoInfo?, attachmentName?, attachmentKey?, s: bstr = empty }`. A room post declares
   `attachmentSize`, its photo's plaintext length, from 1,000,000 bytes (knit-next ADR 2026-10.hmfe); a sealed frame's
-  shell never does. This port takes none of the last four: a short video (knit-ios #9), a commons post's file name and
-  key (knit-ios #11), and the body's formatting (knit-next ADR 2026-10.p95v), whose byte string is the same under
-  `MessageContent`'s `"s"` and the v3 plaintext's label 17.
+  shell never does. This port models none of the last four, but checks each one's type (knit-ios #14): a short video
+  (knit-ios #9), a commons post's file name and key (knit-ios #11), and the body's formatting (knit-next ADR
+  2026-10.p95v), whose byte string is the same under `MessageContent`'s `"s"` and the v3 plaintext's label 17.
 - `ProfileContent { name, status, avatarHash?, pubKey?, deviceTag?, protoVersion?, capabilities?, prekey?, version?, openToChat = false, loraNode?, loraKey? }`
 - `ReceiptContent { ackId }`, `ReactionContent { messageId, emoji? }`, `KeyReqContent { nodeIds }`,
   `BlobReqContent { hash, offset?, pull?, until?, fastOnly? }`, `TypingContent { groupId? }`. Android sets `fastOnly`

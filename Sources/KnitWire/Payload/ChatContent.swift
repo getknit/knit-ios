@@ -49,9 +49,17 @@ public struct ChatContent: CBORRepresentable, Equatable {
         attachmentMime = try fields.nullable("attachmentMime", .text)
         enc = try fields.nullable("enc", .object(EncEnvelope.self))
         replyTo = try fields.nullable("replyTo", .object(ReplyRef.self))
-        // Wrapped as kotlinx wraps it: `isCarriable` decodes every chat frame, as Android's `canCarry` does, so a size
-        // Android reads must never refuse the frame here (`InboundPipeline.kt:2311-2320` at `eac3debc`).
-        attachmentSize = try fields.nullable("attachmentSize", .wrappingInt64)
+        // Wrapped as kotlinx wraps every `Long`: `isCarriable` decodes every chat frame, as Android's `canCarry` does, so
+        // a size Android reads must never refuse the frame here (`InboundPipeline.kt:2320-2329` at `e63f15f4`).
+        attachmentSize = try fields.nullable("attachmentSize", .int64)
+        // The last four keys Android types and this build does not model (`Wire.kt:231-250` at `e63f15f4`): each is read
+        // and dropped, so a value Android's `canCarry` refuses is refused here too, and the two carry the same posts
+        // (knit-ios #14). `"s"`, the styles, is a defaulted byte string, so `null` and `A0` fail it; its contents are never
+        // read, since `StyleSpans.unpack` never throws (`StyleSpans.kt:128-145`).
+        _ = try fields.nullable("video", .checked(as: VideoInfo.self))
+        _ = try fields.nullable("attachmentName", .text)
+        _ = try fields.nullable("attachmentKey", .text)
+        _ = try fields.optional("s", .bytes)
     }
 
     /// The content as an item, defaults omitted.
@@ -65,6 +73,19 @@ public struct ChatContent: CBORRepresentable, Equatable {
         writer.object("replyTo", optional: replyTo)
         writer.long("attachmentSize", optional: attachmentSize)
         return writer.cbor
+    }
+}
+
+/// A short video's duration, upright size and poster (`VideoInfo`, `Wire.kt:264-286` at knit-next `e63f15f4`), which a
+/// room post (``ChatContent``) and a sealed message (``MessageContent``) may carry. This build plays no video, so it only
+/// checks the shape: all four fields required, none nullable, as kotlinx reads them.
+internal struct VideoInfo: CBORShape {
+    init(cbor: CBOR) throws(WireDecodingError) {
+        let fields = try CBORFields(cbor, type: "VideoInfo")
+        _ = try fields.required("durationMs", .int64)
+        _ = try fields.required("width", .int32)
+        _ = try fields.required("height", .int32)
+        _ = try fields.required("poster", .bytes)
     }
 }
 

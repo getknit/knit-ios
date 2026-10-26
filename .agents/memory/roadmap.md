@@ -503,23 +503,27 @@ explicit direction.** Update this file in the change that ships an item.
   `main`, and knit-next recorded the runs in its ADR 2026-10.9utz (`.agents/context/linux-peer.md`, "What the
   Meshtastic radio showed"). Done on Android's side.
 - **What the pin move to `e63f15f4` found owed** (2026-10-25; `.agents/context/knit-next.md`, "Since then", "Owed
-  here"). Each shows only with a sender's buggy or hostile bytes, and each goes to its plane's owner and reviewer:
-  - **Wire and crypto** (`crypto-owner`):
-    - refuse a negative `ttl` or `hops` (`9c56cd31`);
+  here"), filed as knit-ios #13 to #17. The decoder and typed-field ones show only with a sender's buggy or hostile
+  bytes; j67x's rule can bite between honest phones. Each goes to its plane's owner and reviewer:
+  - **Wire and crypto** (`crypto-owner`; knit-ios #13 for the decoder, #15 for j67x):
     - pass a code point split across indefinite-length text chunks, as Android and knit-next ADR 2026-10.qjap do
       (`a0a29148`);
-    - refuse the wrong CBOR type under the keys Android now types, at least for a room post, which this port
-      otherwise carries and re-offers to Android neighbours until it expires;
     - skip a v3 plaintext's negative integer key, as kotlinx 1.12.0 does (`97e1747f`);
     - j67x, all three rules: the race rule, the drained root kept over our own reset, and the spool's scopes, which
       this port leaves out (`6d9627b7`).
-  - **Bluetooth** (`bluetooth-owner`): reserve advert bit 2, `FLAG_NO_AWARE`, and set it, at least in the Linux peer's
-    service-data advert (`9552995d`, knit-next ADR 2026-10.2t49). `BleAdvertPayload.kt:25-26` calls it a follow-up
-    paired change.
-  - **Blobs** (`blobs-owner`): keep a want and its asks when a received blob fails to store, as
-    `BlobExchange.onReceived` does.
-  - **Swift comments that name Android's old behaviour:** `InteropAuditWireTests.swift:28-31`, `TextLimits.swift:54-55`,
-    `CBORLabeledFields.swift:14-22` and `MessageContent.swift:5-7`. Fix each with the change above that touches its file.
+
+    The negative `ttl`/`hops` refusal and the typed fields shipped with knit-ios #14, which also brought KnitWire's
+    decoding in line with kotlinx 1.12.0's (`.agents/context/wire-format.md`, "The CBOR profile").
+  - **Bluetooth** (`bluetooth-owner`, knit-ios #16): reserve advert bit 2, `FLAG_NO_AWARE`, and set it, at least in
+    the Linux peer's service-data advert (`9552995d`, knit-next ADR 2026-10.2t49). `BleAdvertPayload.kt:25-26` calls it
+    a follow-up paired change.
+  - **Blobs** (`blobs-owner`, knit-ios #17, with three benign differences): keep a want and its asks when a received
+    blob fails to store, as `BlobExchange.onReceived` does.
+  - **Track A, on Android** (knit/knit-next#217, found with knit-ios #14): `CborText` passes a two-byte simple value
+    below 32 and an odd-length indefinite map, which `CBOR.decode` refuses as malformed. Android carries a hostile frame
+    holding one and back-fills it to us until it expires. The fix belongs in the walk, and nothing changes here.
+  - **Swift comments that name Android's old behaviour:** `InteropAuditWireTests.swift:28-31` and
+    `TextLimits.swift:54-55`. Fix each with the change above that touches its file.
 
 ## Next, after the MVP
 

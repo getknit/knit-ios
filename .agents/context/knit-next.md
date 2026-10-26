@@ -207,30 +207,34 @@ Kotlin wins.
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Since then** (396 commits, releases `v2.9.0` and `v2.10.0` among them; 24 fixtures added to `wire-v1.json` and
     `ratchet-v1.json` new, none moved). Read on 2026-10-25, and the merged code checked at `e63f15f4`:
-    - **Owed here.** Each shows only when a sender's bytes are buggy or hostile, and no honest build of either side
-      sends them:
-      - **A negative `ttl` or `hops`** (`9c56cd31`): Android refuses the `WireEnvelope` at the door (`Wire.kt:1075-1076`).
-        KnitWire reads both as any 32-bit integer (`WireEnvelope.swift:34-35`), so the iPhone delivers, carries and
-        relays a frame Android drops.
-      - **A code point split across text chunks** (`a0a29148`, knit-next ADR 2026-10.qjap): Android joins an
+    - **Owed here.** The first two show only when a sender's bytes are buggy or hostile, which no honest build of
+      either side writes. j67x's rule can bite between honest phones, `FLAG_NO_AWARE` costs the Linux peer on every
+      advert, and the last needs a failed database write:
+      - **A code point split across text chunks** (`a0a29148`, knit-next ADR 2026-10.qjap, knit-ios #13): Android joins an
         indefinite-length string's chunks before its UTF-8 check (`CborText.kt:99-109`), as kotlinx does. KnitWire also
         checks each chunk (`CBOR+Decoding.swift:191`), so it refuses what Android takes, though the ADR says both
         platforms pass it. The check on the joined bytes stays.
-      - **Fields Android now types** (`13387e0a`, `651cdc25`, `e3e41a2e`, `33d83aca`, `236f56b5`, `8724b6b3`): a wrong
-        CBOR type under a room post's `video`, `attachmentName`, `attachmentKey` or `"s"`, or a sealed message's `video`,
-        `cl`, `sc`, `"s"` or badges, fails Android's decode (`wire-format.md`). KnitWire skips each key, so it opens
-        such a message. It carries such a post, and offers it to every Android neighbour at each digest exchange until
-        it expires.
-      - **A negative label** (`97e1747f`, kotlinx 1.12.0): Android skips a v3 plaintext's negative integer key as an
-        unknown label, and `CBORLabeledFields` refuses it (`crypto.md`).
-      - **j67x's third rule** (`6d9627b7`): over our own unanswered reset, still draining, Android keeps the drained root
+      - **A negative label** (`97e1747f`, kotlinx 1.12.0, knit-ios #13): Android skips a v3 plaintext's negative integer key as an
+        unknown label, and `CBORLabeledFields` refuses it (`crypto.md`). A negative key of huge magnitude wraps to a
+        real label there: `3B FFFFFFFFFFFFFFEF` reads as 16, `video`.
+      - **j67x's third rule** (`6d9627b7`, knit-ios #15): over our own unanswered reset, still draining, Android keeps the drained root
         as `prevRoot`, and `sealReset` takes the held one (`crypto.md`). It belongs with j67x's other two rules, below.
-      - **`FLAG_NO_AWARE`** (`9552995d`, `438ffc72`, knit-next ADR 2026-10.2t49): advert bit 2, which
+      - **`FLAG_NO_AWARE`** (`9552995d`, `438ffc72`, knit-next ADR 2026-10.2t49, knit-ios #16): advert bit 2, which
         `BleAdvertPayload.kt:25-26` asks this port to reserve. Android reads it only from service data, so only the
         Linux peer's advert counts, and its clear bit keeps nearby Pixels' Wi-Fi Aware awake (`ble-transport.md`).
-      - **A blob that fails to store:** Android keeps the want and its asks (`BlobExchange.onReceived`,
+      - **A blob that fails to store** (knit-ios #17): Android keeps the want and its asks (`BlobExchange.onReceived`,
         `BlobExchange.kt:2016-2021`). `receiveFile` here marks the blob obtained and withdraws its asks whether or not
         the insert landed (`MeshEngine+Blobs.swift:315-320`), and the next re-arm wants it again.
+    - **Taken since the pin** (knit-ios #14), each refused or accepted here as Android refuses or accepts it:
+      - **A negative `ttl` or `hops`** (`9c56cd31`, from #13): `WireEnvelope` refuses one once it has decoded, as
+        `decodeWire` does (`Wire.kt:1071-1076`), before the crossing and the seen set.
+      - **Fields Android now types** (`13387e0a`, `651cdc25`, `e3e41a2e`, `33d83aca`, `236f56b5`, `8724b6b3`): KnitWire
+        checks each one's CBOR type without modelling it, so a wrong-typed room post stays out of custody and a
+        wrong-typed sealed message fails to open (`wire-format.md`). `xf` and a blob request's `fastOnly`, older but
+        unchecked, are checked too.
+      - **kotlinx 1.12.0's decoding:** the null mark, the `Int` and `Long` wraps, tags, integer keys and duplicated keys
+        read as on Android. Three gaps stay where Android skips its `CborText` walk (`wire-format.md`, "The CBOR
+        profile").
     - **Mirrored ahead of the last pin, and checked again at this one:**
       - **Canonical frame ids** (`a81f2050`, #178, and its HELLO half `99fbcad1`, #199; knit-next ADR 2026-10.9qr4):
         every inbound door refuses a frame whose id is not the shape its type is minted with. This port's door is

@@ -11,9 +11,12 @@
 /// `:102-108`).
 ///
 /// Decoding follows kotlinx's `compactCbor` (`Crypto.kt:111-119`): unknown labels are skipped, the reserved 12 (`pad`)
-/// and 13 (`gk`) included (`:157-163`), and a text key reads as the property it names. Kotlin also repairs an
-/// attachment's name at this boundary (`MessageContent.normalized()`, `MessageContent.kt:95-99`). This port's named
-/// decoder does not, so neither does this one: the two decoders agree, and delivery clips the name.
+/// and 13 (`gk`) included (`:157-163`), and a text key reads as the property it names. A short video (label 16), the
+/// body's styles (17) and a profile's supporter badges (`pr`'s 8) are checked as kotlinx types them and dropped, since
+/// this build has none of them, so a plaintext Android drops as `DECRYPT_FAILED` fails here too (knit-ios #14).
+///
+/// Kotlin also repairs an attachment's name at this boundary (`MessageContent.normalized()`, `MessageContent.kt:95-99`).
+/// This port's named decoder does not, so neither does this one: the two decoders agree, and delivery clips the name.
 public enum MessageContentV2 {
     /// The compact layout's version this build writes, label 0, never written while it is the default (`VERSION`, `:47`).
     public static let version = 1
@@ -79,6 +82,8 @@ private enum WireLabel: UInt64, CBORLabel {
     case pr = 11
     case attachmentName = 14
     case attachmentSize = 15
+    case video = 16
+    case st = 17
 }
 
 /// `MentionV2`'s labels (`:202-209`).
@@ -111,6 +116,7 @@ private enum ProfileLabel: UInt64, CBORLabel {
     case openToChat = 5
     case loraNode = 6
     case loraKey = 7
+    case badges = 8
 }
 
 /// The top-level layout (`Wire`, `:169-200`): every field defaulted, so an empty map is an empty message.
@@ -163,6 +169,8 @@ private struct Wire: CBORRepresentable {
         pr = try fields.nullable(.pr, .object(ProfileV2.self))
         attachmentName = try fields.nullable(.attachmentName, .text)
         attachmentSize = try fields.nullable(.attachmentSize, .int64)
+        _ = try fields.nullable(.video, .checked(as: MessageContentV2.VideoV2.self))
+        _ = try fields.nullable(.st, .bytes)
     }
 
     /// The layout as kotlinx writes it: labels in declaration order, defaults left out. Label 0 never appears, because
@@ -344,6 +352,7 @@ private struct ProfileV2: CBORRepresentable {
         openToChat = try fields.optional(.openToChat, .bool) ?? false
         loraNode = try fields.nullable(.loraNode, .int64)
         loraKey = try fields.nullable(.loraKey, .bytes)
+        _ = try fields.nullable(.badges, .checked(asListOf: MessageContentV2.BadgeV2.self))
     }
 
     var cbor: CBOR {

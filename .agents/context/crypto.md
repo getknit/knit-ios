@@ -455,12 +455,14 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 
   A content the compact codec cannot carry canonically seals as v2 instead: a non-canonical id, hash or key, any
   `gk` or `xf`, or `v ≠ 1` (`MessageContentV2.kt:53-60`, `:102-108`). By `e63f15f4`, Android has added three labels
-  this port does not model: 16 (`video`, knit-next ADR 2026-10.hmfe), 17 (the body's styles, knit-next ADR
-  2026-10.p95v) and `pr`'s label 8 (badges, knit-next ADR 2026-10.r99s). `cl` and `sc` are named-only, as `gk` and
-  `xf` are. `wire-v1.json` holds twelve `messageContentV2*` fixtures, and the codec models nine; the other three
-  decode with their new fields dropped (`GoldenVectorTests`). Since kotlinx 1.12.0 (`97e1747f`), Android skips a
-  negative integer key as an unknown label, while `CBORLabeledFields` refuses one. A v3 plaintext carrying one opens
-  on Android and not here: no encoder writes one, and the fix is owed.
+  this port checks but does not model: 16 (`video`, knit-next ADR 2026-10.hmfe), 17 (the body's styles, knit-next ADR
+  2026-10.p95v) and `pr`'s label 8 (badges, knit-next ADR 2026-10.r99s). A wrong type under any of them fails the open
+  here, as on Android (knit-ios #14). `cl` and `sc` are named-only, as `gk` and `xf` are, and the named layout checks
+  them too. `wire-v1.json` holds twelve `messageContentV2*` fixtures, and the codec models nine; the other three
+  decode with their new fields checked and dropped (`GoldenVectorTests`). Since kotlinx 1.12.0 (`97e1747f`), Android
+  skips a negative integer key as an unknown label, and one of huge magnitude wraps to a real label, while
+  `CBORLabeledFields` refuses both. A v3 plaintext carrying one opens on Android and not here: no encoder writes one,
+  and the fix is owed (knit-ios #13).
 
 ### Sessions
 

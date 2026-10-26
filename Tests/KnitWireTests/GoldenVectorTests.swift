@@ -23,7 +23,8 @@ import Testing
     /// knit-next's fixtures for what this build does not model yet, taken at `9c3d487b`: calls (knit-next ADR
     /// 2026-10.3tee), supporter badges (knit-next ADR 2026-10.r99s), short videos, and a blob request's `fastOnly` (knit-ios
     /// #8); and at `e63f15f4`: a message's formatting (knit-next ADR 2026-10.p95v) and a scope's spool config (ctl 7). Each
-    /// decodes to the type this build has, the new fields dropped, so a newer Android's frame is read, never refused.
+    /// decodes to the type this build has, the new fields checked as kotlinx types them and dropped, so a newer Android's
+    /// frame is read, never refused, and one Android refuses is refused here too (knit-ios #14, ``TypedKeysTests``).
     /// `chatContentVideo` now drops only its `video`: its `attachmentSize` is modelled since knit-ios #7, and is checked in
     /// ``ChatContentSizeTests``. A blob request's `pull` and `until` are modelled since ADR 2026-10.8hek, and are typed
     /// fixtures below. The commons posts only round-trip, since only a spool carries one (knit-ios #11).

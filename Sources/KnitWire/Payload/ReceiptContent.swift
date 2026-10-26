@@ -126,12 +126,16 @@ public struct BlobRequestContent: CBORRepresentable, Equatable {
         self.until = until
     }
 
-    /// Reads a blob request from a decoded item. Android's `fastOnly` is not modelled and is skipped (knit-ios #8); a
-    /// `pull` outside 32 bits refuses the request, as an out-of-range `ttl` or `ctl` does.
+    /// Reads a blob request from a decoded item. Android's `fastOnly` is not modelled (knit-ios #8). It is checked as the
+    /// nullable boolean kotlinx reads (`Wire.kt:412-418` at knit-next `e63f15f4`) and dropped, so a request Android
+    /// refuses is refused here too (knit-ios #14). A request that carries it is served like any other, as a holder that
+    /// predates the field would serve it. A `pull` outside a Kotlin `Int`'s range refuses the request, as an
+    /// out-of-range `ttl` or `ctl` does.
     public init(cbor: CBOR) throws(WireDecodingError) {
         let fields = try CBORFields(cbor, type: "BlobReqContent")
         hash = try fields.required("hash", .text)
         offset = try fields.nullable("offset", .int64)
+        _ = try fields.nullable("fastOnly", .bool)
         pull = try fields.nullable("pull", .int32)
         until = try fields.nullable("until", .int64)
     }

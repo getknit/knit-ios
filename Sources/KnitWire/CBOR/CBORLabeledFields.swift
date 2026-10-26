@@ -11,31 +11,30 @@ extension CBORLabel {
 
 /// The integer-keyed map a kotlinx class with `@CborLabel`s encodes to, read one field at a time.
 ///
-/// kotlinx 1.11.0's lenient key lookup (`CborReader.decodeElementNameWithTagsLenient`), which this mirrors:
+/// kotlinx-cbor 1.12.0's lenient key lookup (`decodeElementNameWithTagsLenient`, `Decoder.kt:102-108`), which this
+/// mirrors, with the value rules ``CBORFields`` lists (tags skipped, every occurrence decoded, the null mark):
 ///
 /// - An unsigned integer key is a label, and a label the class does not have is skipped (`ignoreUnknownKeys`).
 /// - A text key is a property name, so `"body"` reads as label 1, and an unknown name is skipped. Names compare by
 ///   their UTF-8 bytes, as Kotlin compares strings, never by Swift's canonical equivalence (ADR 2026-09.jc2x).
-/// - A duplicated key takes its last value.
+/// - Tags before a key are skipped (`nextTaggedStringOrNumber`, `:346-358`).
+/// - A key of any other major type is refused, as `readNumber` throws on it (`:406-415`).
 ///
-/// A key of any other kind is refused. kotlinx reads one as a label taken from its header's argument, whatever its
-/// major type, which no encoder writes; refusing it costs only bytes no honest peer sends.
+/// A negative key is refused here too, while kotlinx reads it as a label and skips it unless it wraps to a real one
+/// (`3B FFFFFFFFFFFFFFEF` reads as 16). No encoder writes one; knit-ios #13 owes the port.
 internal struct CBORLabeledFields<Label: CBORLabel> {
     private let typeName: String
-    private let values: [UInt64: CBOR]
+    private let values: [UInt64: [CBOR]]
 
     init(_ item: CBOR, type typeName: String) throws(WireDecodingError) {
-        guard case .map(let entries) = item else {
-            throw .notAMap(type: typeName)
-        }
-        var collected: [UInt64: CBOR] = [:]
-        for entry in entries {
-            switch entry.key {
+        var collected: [UInt64: [CBOR]] = [:]
+        for entry in try item.fieldEntries(type: typeName) {
+            switch entry.key.untagged {
             case .unsigned(let label):
-                collected[label] = entry.value
+                collected[label, default: []].append(entry.value)
             case .text(let name):
                 if let label = Label.allCases.first(where: { $0.name.utf8.elementsEqual(name.utf8) }) {
-                    collected[label.rawValue] = entry.value
+                    collected[label.rawValue, default: []].append(entry.value)
                 }
             default:
                 throw .nonTextKey(type: typeName)
@@ -55,28 +54,12 @@ internal struct CBORLabeledFields<Label: CBORLabel> {
 
     /// A non-nullable field with a default: `nil` when absent, an error when `null`.
     func optional<Value>(_ label: Label, _ kind: FieldKind<Value>) throws(WireDecodingError) -> Value? {
-        guard let item = values[label.rawValue] else {
-            return nil
-        }
-        guard item != .null else {
-            throw .unexpectedNull(type: typeName, field: label.name)
-        }
-        return try extract(label, item, kind)
+        try FieldReading.optional(values[label.rawValue], kind, type: typeName, field: label.name)
     }
 
-    /// A nullable field: `nil` when absent or `null`.
+    /// A nullable field: `nil` when absent, `null` or `A0`.
     func nullable<Value>(_ label: Label, _ kind: FieldKind<Value>) throws(WireDecodingError) -> Value? {
-        guard let item = values[label.rawValue], item != .null else {
-            return nil
-        }
-        return try extract(label, item, kind)
-    }
-
-    private func extract<Value>(_ label: Label, _ item: CBOR, _ kind: FieldKind<Value>) throws(WireDecodingError) -> Value {
-        guard let value = try kind.extract(item) else {
-            throw .invalidValue(type: typeName, field: label.name)
-        }
-        return value
+        try FieldReading.nullable(values[label.rawValue], kind, type: typeName, field: label.name)
     }
 }
 
@@ -99,8 +82,8 @@ internal struct CBORLabeledWriter<Label: CBORLabel> {
 }
 
 extension FieldKind where Value == [[UInt8]] {
-    /// A list of byte strings: `compactCbor` writes every `ByteArray`, list elements included, as one
-    /// (`alwaysUseByteString`).
+    /// A list of byte strings, each read under its own tags: `compactCbor` writes every `ByteArray`, list elements
+    /// included, as one (`alwaysUseByteString`).
     static var byteStrings: Self {
         Self { item in
             guard case .array(let items) = item else {
@@ -109,7 +92,7 @@ extension FieldKind where Value == [[UInt8]] {
             var strings: [[UInt8]] = []
             strings.reserveCapacity(items.count)
             for element in items {
-                guard case .bytes(let bytes) = element else {
+                guard case .bytes(let bytes) = element.untagged else {
                     return nil
                 }
                 strings.append(bytes)

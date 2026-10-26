@@ -41,6 +41,7 @@ private enum Header {
     static let eightByteArgument: UInt8 = 27
     static let indefinite: UInt8 = 31
     static let breakByte: UInt8 = 0xFF
+    static let emptyMap: UInt8 = 0xA0
 }
 
 private enum Major: UInt8 {
@@ -104,7 +105,9 @@ private struct CBORReader {
         case .array:
             return .array(try readArray(info, initial: initial, depth: depth))
         case .map:
-            return .map(try readMap(info, initial: initial, depth: depth))
+            let entries = try readMap(info, initial: initial, depth: depth)
+            // Only the byte `A0` is kotlinx's null mark (``CBOR/longFormEmptyMap``).
+            return entries.isEmpty && initial != Header.emptyMap ? .longFormEmptyMap : .map(entries)
         case .tag:
             let tag = try readArgument(info, initial: initial)
             return .tagged(tag, try readNested(depth: depth))

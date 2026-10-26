@@ -132,12 +132,16 @@ import Testing
         #expect(fixture.transport.files.map(\.to) == [bob.nodeId, carol.nodeId])
     }
 
-    @Test func aPullOutsideThirtyTwoBitsRefusesTheRequest() {
+    /// A `pull` is a Kotlin `Int`: past `UInt.MAX_VALUE` the request is refused, and 2³¹ reads as `Int.MIN_VALUE`, as
+    /// kotlinx's `decodeInt` truncates it (knit-ios #14), a budget that pulls nothing through.
+    @Test func aPullOutsideAKotlinIntRefusesTheRequest() {
         let fixture = EngineFixture(alice)
         fixture.link(bob)
         fixture.transport.clear()
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1"), pull: Int(Int32.max) + 1), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1"), pull: Int(UInt32.max) + 1), from: bob)
         #expect(fixture.engine.dropped[.undecodable] == 1)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-2"), pull: Int(Int32.max) + 1), from: bob)
+        #expect(fixture.engine.dropped[.undecodable] == 1, "read as Int.MIN_VALUE, not refused")
         #expect(fixture.transport.written.isEmpty && !fixture.engine.blobExchange.isWanted(photoHash))
     }
 

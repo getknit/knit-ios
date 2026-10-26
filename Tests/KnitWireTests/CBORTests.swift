@@ -81,6 +81,17 @@ import Testing
         #expect(try CBOR.decode(bytes) == .bytes([1, 2, 3, 4, 5]))
     }
 
+    /// Only the byte `A0` is kotlinx's null mark (`isNull`, `Decoder.kt:193`), so an empty map in any longer form decodes
+    /// to its own case, and the encoder writes it back in the shortest form, as it writes every item (knit-ios #14).
+    @Test(arguments: ["b800", "b90000", "ba00000000", "bb0000000000000000", "bfff"])
+    func anEmptyMapInALongerFormIsNotTheNullMark(hex: String) throws {
+        let item = try CBOR.decode(try #require(Hex.decode(hex)))
+        #expect(item == .longFormEmptyMap)
+        #expect(item != .map([]))
+        #expect(item.encoded == [0xA0])
+        #expect(try CBOR.decode([0xA0]) == .map([]))
+    }
+
     @Test func floatsWidenToDouble() throws {
         #expect(try CBOR.decode([0xF9, 0x3C, 0x00]) == .float(1.0))
         #expect(try CBOR.decode([0xF9, 0x00, 0x01]) == .float(0x1p-24))
@@ -134,8 +145,11 @@ import Testing
     }
 
     @Test func typedDecodingMirrorsKotlinxRules() throws {
-        // A map key that is not text.
+        // A map key that is neither text nor an integer; an integer key is skipped as an unknown one.
         #expect(throws: WireDecodingError.nonTextKey(type: "ReceiptContent")) {
+            try ReceiptContent(cbor: .map([CBOR.Entry(key: .bytes([1]), value: .text("m1"))]))
+        }
+        #expect(throws: WireDecodingError.missingField(type: "ReceiptContent", field: "ackId")) {
             try ReceiptContent(cbor: .map([CBOR.Entry(key: .unsigned(1), value: .text("m1"))]))
         }
         // A missing field that has no default.
@@ -152,11 +166,11 @@ import Testing
                 ])
             )
         }
-        // A Kotlin Int outside 32 bits.
+        // A Kotlin Int past `UInt.MAX_VALUE`.
         #expect(throws: WireDecodingError.invalidValue(type: "WireEnvelope", field: "hops")) {
             try WireEnvelope(
                 cbor: .map([
-                    CBOR.Entry(key: .text("hops"), value: .unsigned(UInt64(Int32.max) + 1)),
+                    CBOR.Entry(key: .text("hops"), value: .unsigned(UInt64(UInt32.max) + 1)),
                     CBOR.Entry(key: .text("sig"), value: .bytes([])),
                     CBOR.Entry(key: .text("signed"), value: .bytes([])),
                 ])

@@ -2,9 +2,14 @@
 /// `mesh/crypto/MessageContent.kt`). A v3 message carries the same facts in ``MessageContentV2``'s compact layout.
 ///
 /// A message with a non-nil ``ctl`` is machinery (a receipt, a reaction, a key or profile update): it is never
-/// rendered, notified or acknowledged. The group-key and profile payloads (``gk``, ``pr``) are typed, as kotlinx types
-/// them, so a payload Android cannot decode fails here too; the transfer payload (``xf``) is kept as an undecoded
-/// item, because this build carries it but never reads it (ADR 2026-10.5sk9).
+/// rendered, notified or acknowledged.
+///
+/// Every key kotlinx types is read as kotlinx reads it (`MessageContent.kt:48-112` at knit-next `e63f15f4`), so a
+/// plaintext Android drops as `DECRYPT_FAILED` fails to decode here too, before the open commits (knit-ios #14). The
+/// group-key and profile payloads (``gk``, ``pr``) are modelled. The transfer payload (``xf``) is checked against
+/// Android's `TransferPayload` and kept as an undecoded item, because this build carries it but never reads it (ADR
+/// 2026-10.5sk9). A short video (`video`), a call (`cl`), a scope's spool config (`sc`) and the body's styles (`"s"`)
+/// are checked and dropped, since this build has none of them.
 public struct MessageContent: CBORRepresentable, Equatable {
     /// Control codes (`MessageContent.CTL_*`). An unknown code is a silent no-op.
     public enum Control {
@@ -59,7 +64,7 @@ public struct MessageContent: CBORRepresentable, Equatable {
     public var pr: ProfilePayload?
     /// Batched acknowledgements, for a sealed receipt.
     public var acks: [String]?
-    /// A transfer payload, undecoded.
+    /// A transfer payload, kept as received once it reads as Android's `TransferPayload`.
     public var xf: CBOR?
 
     /// Makes plaintext content; only ``body`` is required.
@@ -110,6 +115,7 @@ public struct MessageContent: CBORRepresentable, Equatable {
         attachmentKey = try fields.nullable("attachmentKey", .text)
         attachmentName = try fields.nullable("attachmentName", .text)
         attachmentSize = try fields.nullable("attachmentSize", .int64)
+        _ = try fields.nullable("video", .checked(as: VideoInfo.self))
         replyTo = try fields.nullable("replyTo", .object(ReplyRef.self))
         ctl = try fields.nullable("ctl", .int32)
         gk = try fields.nullable("gk", .object(GroupKeyPayload.self))
@@ -117,7 +123,11 @@ public struct MessageContent: CBORRepresentable, Equatable {
         rp = try fields.nullable("rp", .object(ReactionContent.self))
         pr = try fields.nullable("pr", .object(ProfilePayload.self))
         acks = try fields.nullable("acks", .texts)
-        xf = try fields.nullable("xf", .raw)
+        xf = try fields.nullable("xf", .checked(as: TransferPayload.self))
+        _ = try fields.nullable("cl", .checked(as: CallPayload.self))
+        _ = try fields.nullable("sc", .checked(as: ScopeConfigPayload.self))
+        // The styles: a defaulted byte string, so `null` and `A0` fail it (`MessageContent.kt:104-111`).
+        _ = try fields.optional("s", .bytes)
     }
 
     /// The content as an item, defaults omitted.
@@ -197,6 +207,8 @@ public struct ProfilePayload: CBORRepresentable, Equatable {
         openToChat = try fields.optional("openToChat", .bool) ?? false
         loraNode = try fields.nullable("loraNode", .int64)
         loraKey = try fields.nullable("loraKey", .text)
+        // The supporter badges (`Wire.kt:822-830`), which this build neither shows nor sends, checked and dropped.
+        _ = try fields.nullable("badges", .checked(asListOf: MessageContent.BadgeEntry.self))
     }
 
     /// The update as an item, defaults omitted.
@@ -301,7 +313,7 @@ public struct GroupSeed: CBORRepresentable, Equatable {
 
 /// The spool's shared group root (`GroupRootPayload` in knit-next's `Wire.kt:622-627`). This port has no spool, so it
 /// only checks that ``GroupKeyPayload/gr`` has this shape, and never sends one (ADR 2026-10.5sk9).
-public struct GroupRootPayload: CBORRepresentable, Equatable {
+public struct GroupRootPayload: CBORRepresentable, CBORShape, Equatable {
     /// The raw 32-byte root.
     public var root: [UInt8]
     /// Its version, which is also the spool scope's epoch.

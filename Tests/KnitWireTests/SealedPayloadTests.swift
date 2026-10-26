@@ -90,8 +90,10 @@ import Testing
         #expect(throws: WireDecodingError.notAMap(type: "GroupKeyPayload")) {
             try MessageContent(cbor: .map([entry("body", .text("")), entry("ctl", .unsigned(2)), entry("gk", .unsigned(5))]))
         }
+        // `A0` is kotlinx's null mark, so it reads as no payload; an empty map in a longer form is a payload with no name.
+        #expect(try MessageContent(cbor: .map([entry("body", .text("")), entry("ctl", .unsigned(8)), entry("pr", .map([]))])).pr == nil)
         #expect(throws: WireDecodingError.missingField(type: "ProfilePayload", field: "name")) {
-            try MessageContent(cbor: .map([entry("body", .text("")), entry("ctl", .unsigned(8)), entry("pr", .map([]))]))
+            try MessageContent(cbor: .map([entry("body", .text("")), entry("ctl", .unsigned(8)), entry("pr", .longFormEmptyMap)]))
         }
     }
 }
