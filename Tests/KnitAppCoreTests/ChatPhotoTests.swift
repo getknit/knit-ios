@@ -168,7 +168,8 @@ import Testing
     /// A DM's photo is sealed: its blob opens with the key its message carried, in memory, and with nothing else.
     @Test func aSealedPhotoOpensWithItsKeyAlone() async throws {
         let rig = AppRig()
-        await rig.pin(AppRig.sam, name: "Sam")
+        // A contact's, not a request's, which waits for accept whatever is here (knit-ios #21).
+        await rig.pin(AppRig.sam, name: "Sam", verified: true)
         let photo = Array("for your eyes".utf8)
         let sealed = try #require(AttachmentCrypto.seal(photo))
         let hash = BlobHash(of: sealed.blob)

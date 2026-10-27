@@ -4,6 +4,9 @@ extension AccessibilityID {
     public static let chatAttachmentWaiting = "chat_attachment_wait"
     /// A photo streaming in, under its ring and how much of it is in (`chat_attachment_progress`).
     public static let chatAttachmentArriving = "chat_attachment_progress"
+    /// A photo that is not fetched until something changes: a message request's, or a stranger's past the room's bound
+    /// (knit-ios #21). Android has no tag here.
+    public static let chatAttachmentHeldBack = "chat_attachment_held_back"
     /// A photo whose bytes are here and do not open.
     public static let chatAttachmentUnavailable = "chat_attachment_unavailable"
     /// A voice message or a file, which this build names and cannot open. Android has no tag here.

@@ -329,7 +329,7 @@ public final class ChatModel {
         // What blocked people wrote stays stored and hidden, and shows again once they are unblocked
         // (`ChatViewModel.kt:780-795`).
         let stored = session.stores.messages.messages(in: conversationId).filter { !directory.blocked.contains($0.senderId) }
-        let held = session.stores.blobs.held(among: Set(stored.compactMap(\.attachment?.hash)))
+        let photos = ThreadPhotos(session.stores, conversationId: conversationId, shown: stored, threads: threads)
         let filtering = session.filtersContent
         let audience = ReactionAudience.of(conversationId, kind: kind, group: group, me: me)
         let chips = ReactionChips.chips(
@@ -337,7 +337,7 @@ public final class ChatModel {
         // The messages a quote can take the thread to: the ones it shows, status lines aside.
         let shown = Set(stored.filter { !$0.kind.isNotice }.map { ExactKey($0.id) })
         let messages = stored.compactMap { message in
-            chatMessage(message, kind: kind, directory: directory, held: held, filtering: filtering)
+            chatMessage(message, kind: kind, directory: directory, photos: photos, filtering: filtering)
                 .map { $0.reacted(chips[ExactKey(message.id)] ?? []) }
                 .map { $0.quoting(message.replyTo.map { ChatQuote($0, me: me, directory: directory, shown: shown) }) }
         }
@@ -373,7 +373,7 @@ public final class ChatModel {
 
     /// One row of the thread: a message, or a status line this build has words for.
     private func chatMessage(
-        _ message: MessageRecord, kind: ThreadKind, directory: Directory, held: Set<BlobHash>, filtering: Bool
+        _ message: MessageRecord, kind: ThreadKind, directory: Directory, photos: ThreadPhotos, filtering: Bool
     ) -> ChatMessage? {
         let me = session.identity.nodeId
         let isMine = message.senderId == me
@@ -388,7 +388,7 @@ public final class ChatModel {
                 authorLabel: named ? directory.label(for: message.senderId).text : nil,
                 status: isMine ? DeliveryStatus(message) : nil,
                 authorFace: named ? directory.face(for: message.senderId) : nil,
-                attachment: message.attachment.flatMap { ChatAttachment($0, isHeld: held.contains($0.hash)) },
+                attachment: photos.attachment(of: message),
                 hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message.moderation) : nil,
                 mentionSpans: MentionText.spans(in: message.body, mentions: message.mentions)
             )

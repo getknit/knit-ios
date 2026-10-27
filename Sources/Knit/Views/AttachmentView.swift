@@ -61,6 +61,8 @@
             Group {
                 if covered {
                     HiddenPhoto(place: place, reveal: reveal)
+                } else if let waits = attachment.waits {
+                    HeldBackPhoto(waits: waits)
                 } else if let image {
                     // The stored shape where there is one: a thumbnail's sides are rounded, and the row would shift a hair.
                     let size = place ?? Self.frame(for: image.size)
@@ -132,6 +134,21 @@
                     .resizable()
                     .scaledToFill()
             }
+        }
+    }
+
+    /// A photo the engine does not fetch until something changes (knit-ios #21, ADR 2026-10.vzem): a message request's,
+    /// until it is accepted, or a stranger's Nearby photo past the bound on strangers' photos. A still glyph, since nothing
+    /// is on its way.
+    private struct HeldBackPhoto: View {
+        let waits: AttachmentWait
+
+        var body: some View {
+            PhotoPlaceholder(text: waits == .accept ? Copy.Attachments.photoAwaitsAccept : Copy.Attachments.photoPastRoomBound) {
+                Image(systemName: waits == .accept ? "hand.raised" : "photo.badge.exclamationmark")
+                    .accessibilityHidden(true)
+            }
+            .accessibilityIdentifier(AccessibilityID.chatAttachmentHeldBack)
         }
     }
 

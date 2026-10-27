@@ -28,6 +28,7 @@ public struct ThreadTable: Sendable {
     /// group has its "created" line from the start, so only one whose chat was deleted is missing, and its next row
     /// brings it back (ADR 2026-10.u7cq).
     public let listedGroups: [GroupRecord]
+    private let me: NodeId
     private let accepted: Set<String>
     private let authored: Set<String>
     private let verified: Set<NodeId>
@@ -42,6 +43,7 @@ public struct ThreadTable: Sendable {
         groups = stores.groups.groups().filter { !$0.hasLeft }
         let threads = Set(stores.messages.conversationIds().map(ExactKey.init))
         listedGroups = groups.filter { threads.contains(ExactKey($0.id)) }
+        self.me = me
         accepted = stores.conversations.acceptedConversations()
         authored = stores.messages.conversations(authoredBy: me)
         self.verified = verified
@@ -64,6 +66,12 @@ public struct ThreadTable: Sendable {
         let groupSenders = senders[ExactKey(conversationId)] ?? []
         return !Conversations.isAccepted(
             conversationId, accepted: accepted, verified: verified, authored: authored, groupSenders: groupSenders)
+    }
+
+    /// Whether `sender` is someone the user knows, as the engine reads it for the bound on strangers' room photos
+    /// (Android's `knownSenders`): us, a peer whose DM thread is accepted or written in, or a verified peer.
+    public func knows(_ sender: NodeId) -> Bool {
+        sender == me || accepted.contains(sender.string) || verified.contains(sender) || authored.contains(sender.string)
     }
 
     /// How many of `conversationId`'s messages nobody has read, never counting what blocked people wrote (ADR

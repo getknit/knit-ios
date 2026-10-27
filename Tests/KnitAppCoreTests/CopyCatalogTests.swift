@@ -338,6 +338,7 @@ extension CopyCatalogTests {
             Copy.Attachments.voiceMessage,
             Copy.Attachments.file,
             Copy.Attachments.photoWaiting,
+            Copy.Attachments.photoAwaitsAccept, Copy.Attachments.photoPastRoomBound,
             Copy.Attachments.photoUnreadable,
             Copy.Attachments.voiceUnsupported,
             Copy.Attachments.fileUnsupported,

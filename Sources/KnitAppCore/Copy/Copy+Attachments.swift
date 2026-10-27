@@ -88,6 +88,26 @@ extension Copy {
             )
         }
 
+        /// What a message request's photo says: it is fetched only once the request is accepted (knit-ios #21).
+        public static var photoAwaitsAccept: String {
+            NSLocalizedString(
+                "attachments.photo.awaitsAccept",
+                bundle: .main,
+                value: "Accept to download this photo",
+                comment: "Chat: a photo in a message request, which downloads only once the request is accepted"
+            )
+        }
+
+        /// What a stranger's Nearby photo past the bound says: Knit keeps only their newest (knit-ios #21).
+        public static var photoPastRoomBound: String {
+            NSLocalizedString(
+                "attachments.photo.pastRoomBound",
+                bundle: .main,
+                value: "Knit downloads only the newest photos from people you don't know",
+                comment: "Chat: a Nearby photo from someone the user doesn't know, older than their newest, which is not downloaded"
+            )
+        }
+
         /// How far a photo streaming in has got, under its ring (`chat_attachment_arriving`): `received` and `total` are
         /// sizes as Files writes them.
         public static func photoArriving(received: String, total: String) -> String {

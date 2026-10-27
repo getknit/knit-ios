@@ -81,6 +81,8 @@ public struct ChatAttachment: Sendable, Equatable {
     public var key: String?
     /// Whether its bytes are on this phone.
     public var isHeld: Bool
+    /// Why a photo that is not here is never fetched until something changes, or `nil` when it is here or on its way.
+    public var waits: AttachmentWait?
     /// What it is, in words: a file's name, or what a voice message or a photo is called.
     public var label: String
     /// A photo's upright size, once its bytes have been read on this phone: the shape its bubble holds from its first
@@ -107,8 +109,17 @@ extension ChatAttachment {
         self.kind = kind
         key = attachment.key
         self.isHeld = isHeld
+        waits = nil
         dimensions = attachment.dimensions
     }
+}
+
+/// Why a photo is not fetched, which its tile says in place of waiting (knit-ios #21, ADR 2026-10.vzem).
+public enum AttachmentWait: Sendable, Equatable {
+    /// A message request's: nothing is fetched until the user accepts it.
+    case accept
+    /// A stranger's Nearby photo past the bound on strangers' photos (`StrangerRoomPhotos`), which is not fetched.
+    case roomBound
 }
 
 /// A photo the composer holds until Send: what goes out, and the hash of its bytes, which the composer draws it by
