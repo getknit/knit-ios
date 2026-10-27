@@ -103,4 +103,5 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.w6rn](decisions/2026-10-w6rn-a-cut-photo-resumes-from.md) | A cut photo resumes from the bytes the iPhone kept | blobs, transport, interop |
 | [2026-10.f5zs](decisions/2026-10-f5zs-a-neighbour-s-digests-and.md) | a neighbour's digests and asks are metered and its link queues bounded | mesh, transport, custody, security |
 | [2026-10.7kxj](decisions/2026-10-7kxj-an-asker-s-echoes-are.md) | an asker's echoes are budgeted and unnamed blobs swept on the tick | mesh, blobs, security |
+| [2026-10.s64c](decisions/2026-10-s64c-requests-and-the-room-are.md) | requests and the room are trimmed as Android trims them, and a trim never comes back | mesh, storage, security |
 | [2026-10.vzem](decisions/2026-10-vzem-a-request-s-photos-wait.md) | a request's photos wait for accept, and strangers' room photos are bounded | mesh, blobs, security |

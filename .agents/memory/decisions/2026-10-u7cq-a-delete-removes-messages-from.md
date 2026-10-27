@@ -117,3 +117,7 @@ at least 30 minutes old. In practice that is the same sweep, since such a frame 
 for the DM and every group the peer posted in. Acceptance decides which photos are kept, so a basis for it is never
 removed before acceptance is written. `release` forgets a want only when no row in a thread we fetch for names its hash,
 and it reads the rows inside a store unit.
+
+**Amended 2026-10-27, by ADR 2026-10.s64c (knit-ios #21):** retention also writes `deleted_messages` rows, by id
+alone with no photo, for the rows it trims that a carrier could still re-serve. An upsert keeps a user delete's photo and
+the later expiry. `pruneDeleted` now runs on every 600 s pass as well as at start. Custody still never reads a delete.

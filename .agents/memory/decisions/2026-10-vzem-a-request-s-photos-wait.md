@@ -74,8 +74,9 @@ Android has fixed none of this at knit-next `4408e0fca` except the room's types.
      photo arrives and at every re-want, unless its bytes are already streaming in.
    - **Not an eviction budget.** A blob evicted while a row names it is wanted again at the next re-offer, and that
      loops.
-4. **The screens read the same rules** (a later change in #21): a request's tile waits for accept, and a room photo past
-   the bound says it is not downloaded.
+4. **The screens read the same rules** (`ThreadPhotos`). A request's photo says "Accept to download this photo" whatever
+   bytes are here, and a stranger's room photo past the bound and not here says "Knit downloads only the newest photos
+   from people you don't know". Both use a still glyph, since nothing is on its way.
 
 The alternatives the design pass turned down:
 

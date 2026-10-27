@@ -552,6 +552,10 @@ explicit direction.** Update this file in the change that ships an item.
   in all. Android fetches every room photo and every request's. Left for later:
   - want tiers, ranking strangers' photos below accepted threads in a full want set;
   - honouring a photo's declared size when it lands (knit-ios #8).
+- **Requests and the room are trimmed** (knit-ios #21, ADR 2026-10.s64c, 2026-10-27), as Android's `sweepRetention`
+  trims them, with id-only tombstones so a trim never comes back and a group's anchor rows kept. Left for later:
+  - a `blobcancel` when a trim drops a room photo's standing want;
+  - Kotlin's 2,000-peer cap (`peers.sweepCap`), with knit-ios #22.
 
 ## Next, after the MVP
 
