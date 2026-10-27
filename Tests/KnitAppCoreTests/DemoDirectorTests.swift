@@ -48,6 +48,7 @@ import Testing
             await Task.yield()
         }
         #expect(mine().map(\.body) == ["Anyone still up top?"], "typed and sent in the composer")
+        await Self.untilSettled { chat.draft.isEmpty }
         #expect(chat.draft.isEmpty, "the composer emptied by the send")
         #expect(stores.messages.message("trailer-3")?.attachment != nil, "Dani's post carries the fire")
 
@@ -55,6 +56,7 @@ import Testing
             await Task.yield()
         }
         #expect(mine().map(\.body) == ["Anyone still up top?"])
+        await Self.untilSettled { session.neighbors.count == 3 }
         #expect(session.neighbors.count == 3)
         #expect(chat.state.messages.first { $0.id == "trailer-2" }?.reactions == [ReactionChip(emoji: "\u{1F64F}", count: 2, mine: false)])
         following.cancel()
@@ -146,6 +148,21 @@ import Testing
         #expect(stores.messages.messages(in: Conversations.nearby).allSatisfy { $0.body != DemoCast.filteredReply }, "the room took it")
         following.cancel()
         listening.cancel()
+    }
+
+    /// How many times ``untilSettled(_:)`` yields before it lets the check that follows it fail.
+    private static let settleYields = 10_000
+
+    /// Yields until `settled` holds, or ``settleYields`` times. The director writes to the stores, which the room reads
+    /// at once, and announces on the session's stream, which the session hears on its own task, so under a loaded run
+    /// the session can still be a few announcements behind the room. A check of what the session holds waits for it,
+    /// and fails rather than hangs if it never comes (main's CI hit this race on 2026-10-20, job 9409).
+    private static func untilSettled(_ settled: () -> Bool) async {
+        var yields = 0
+        while !settled(), yields < settleYields {
+            await Task.yield()
+            yields += 1
+        }
     }
 
     /// `scene`'s director over `stores`, with no pause between cues and a byte or two for each photo.
