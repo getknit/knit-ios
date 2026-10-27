@@ -79,3 +79,9 @@ caption crossed, which ADR 2026-09.p6nb ruled out for frames.
 **Amended 2026-10-24, for knit-next ADR 2026-10.2drc (ADR 2026-10.8hek):** a neighbour that lacks the blob wants it
 in turn only when the ask leaves it a hop of budget, an absent `pull` counting as 1, and the ask's deadline is ahead.
 Otherwise it makes no want, and logs `blob no-echo`. A held blob is served as before.
+
+**Amended 2026-10-27, by ADR 2026-10.7kxj (knit-ios #20):** a blob fetched on an asker's behalf no longer lives until
+the next start. The 600 s sweep removes a blob that nothing names, that nothing here is using and that was stored at
+least 30 minutes ago, through the start sweep's own predicate, read inside a store unit. An echo also has a byte cost
+now. What we hold for others stays within 128 MiB, a full want set evicts from the asker holding the most echoes, and an
+echo never costs a want of ours.

@@ -176,3 +176,10 @@ The alternatives:
   the iPhone took a 130,126 B tail from the Pixel 7, a second holder. iOS kept the connections under the links Knit
   dropped, so the Pixels whose ids sort above the iPhone's refused its redials for 56 s to 14 min
   (knit/knit-next#216). A Settings Stop mid-photo is still owed.
+
+**Amended 2026-10-27, by ADR 2026-10.7kxj (knit-ios #20):** a link teardown now keeps a cut prefix only for a want of
+our own. `MeshTransport.acceptFiles(_:resumable:)` names those beside the wanted set, and `keepCutFile` reads it at the
+cut. Eight echo streams cut past 16 KiB can no longer evict our prefixes. A resumed header for a key that is wanted but
+not ours still splices onto any prefix held. This differs from Android on purpose: knit-next's `FileIntake.cut` keeps
+any cut attachment (`FileIntake.kt:232-243` at `4408e0fca`). An echo's stream from its holder now restarts from byte 0
+after a cut. The asker's hop from us still resumes.

@@ -538,6 +538,15 @@ explicit direction.** Update this file in the change that ships an item.
     still costs one read;
   - knit-ios #18, the port of knit-next's fair custody eviction (its ADR 2026-10.7mqm), touches the stores
     `liveIndex` reads, and lands after this.
+- **An asker's echoes, budgeted** (knit-ios #20, ADR 2026-10.7kxj, 2026-10-27), from knit-next's malicious-fork review
+  H3 and H2's prefix item (`eccabcd72`). An echo is told apart from a want of ours and never costs one. A full set
+  evicts from the asker holding the most echoes. What we hold for others stays within 128 MiB, unnamed blobs go
+  on the 600 s sweep, only our own wants keep a cut prefix, and a link queues at most 8 waiting serves. Android has none
+  of it yet. When knit-next fixes H3, read its numbers against this port's. Left for later:
+  - a small allowance of cut prefixes for echoes of their own, so a pull-through on an edge link resumes on the hop
+    from its holder;
+  - own wants minted by room posts and strangers' advertised photos: knit-ios #21 ranks them, and #22 bounds the
+    photos.
 
 ## Next, after the MVP
 

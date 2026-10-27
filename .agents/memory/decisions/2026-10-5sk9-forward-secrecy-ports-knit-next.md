@@ -1934,3 +1934,11 @@ on`, against the Pixel 8 on knit-next 2.9.0, with the maintainer's go-ahead. Cry
 Still owed: the P3 amendment's restore from the phone's own backup (open, the maintainer's call), `6d9627b7`'s race
 rule, a run against knit-next `main` past 2.9.0 and against 2.8.0, a device trial of a build that names no `-ratchet`,
 and reading `PRAGMA secure_delete` on the iPhone. The maintainer flipped before the runs and the trial.
+
+**Amended 2026-10-27, by ADR 2026-10.7kxj (knit-ios #20):** P7c's item 4 and its stranger limit move.
+
+- A blob nothing names now also goes in the 600 s sweep, once it is 30 minutes old, through the start sweep's predicate
+  read inside a store unit.
+- The sweep's `releaseDeletedPhotos` is gone (ADR 2026-10.u7cq's amendment).
+- A blob a carried frame names is still kept, but it counts toward the 128 MiB that echoes may hold for others. So the
+  two-stranger hold above is now bounded by bytes as well as by custody's quotas.

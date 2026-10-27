@@ -119,3 +119,12 @@ backoffs that came with them.
 
   A photo nobody holds is wanted by no phone about 2 h 40 min after its root stops. A live photo still arrives through
   a one-hop pull.
+
+**Amended 2026-10-27, by ADR 2026-10.7kxj (knit-ios #20):** an echo can now also be declined for its cost, with these
+reasons, this port's alone:
+
+- `blob no-echo … (over budget)`: what we hold for others has reached 128 MiB;
+- `(every want is ours)`: a full set with no echo left to evict.
+
+An echo's next fetch can be held back too (`blob no-fetch … (over budget)`). The hop budget and deadline above are
+unchanged and are checked first.

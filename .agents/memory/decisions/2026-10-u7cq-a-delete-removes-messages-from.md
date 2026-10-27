@@ -107,3 +107,8 @@ frame our custody carries names it in the clear, whoever sent that frame, as Kot
 keeps it (`BlobRepository.kt:100-112`). `referencedBlobs()` counts those frames, so the delete's release, every sweep's
 `releaseDeletedPhotos` and the start's sweep all keep it until the last such frame's day ends. Custody still never reads a
 delete, and the frame alone decides what is kept.
+
+**Amended 2026-10-27, by ADR 2026-10.7kxj (knit-ios #20):** `releaseDeletedPhotos` is gone. It read the rows and
+custody outside a store unit, so a failed read could remove a photo a carried frame or another message still names. A
+deleted message's photo now goes in the 600 s sweep's guarded pass, once its frame has left custody and the blob is
+at least 30 minutes old. In practice that is the same sweep, since such a frame is at least 6 h past its `sentAt`.

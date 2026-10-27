@@ -317,12 +317,13 @@ verify.
 - **Taking a file in** (ADR 2026-10.h6zz, ADR 2026-10.ym9y). A file is kept only if its bytes hash to its key. A
   peer's own photo push is kept up to 1 MiB, and adopted only if its signed profile advertises it; an ATTACHMENT is
   kept only if the engine asked for its hash. Partial files on all links stay under 16 MiB.
-- **Resuming a cut file** (knit-next ADR 2026-10.wtyc). A cut attachment's prefix is kept on disk for the session
-  (`PartialBlobStore`, purged at every mesh start and stop), the next ask names its length, and the holder serves the
+- **Resuming a cut file** (knit-next ADR 2026-10.wtyc). A cut prefix of a want of our own, never an echo's (ADR 2026-10.7kxj), is kept on disk
+  for the session (`PartialBlobStore`, purged at every mesh start and stop), the next ask names its length, and the holder serves the
   tail. A spliced file that fails its hash drops the prefix and asks again from 0. A resumed header is refused unless
   the key resumed on that link more than 45 s ago and the prefix holds the offset (#161).
 - **Photos** (ADR 2026-10.f3mv, ADR 2026-10.6cas). A plaintext is sealed once, and a pick already held goes out as
-  that blob. A blob goes when nothing names it, at a replacement and in the sweep at each start.
+  that blob. A blob goes when nothing names it: at a replacement, in the sweep at each start, and in
+  the 600 s sweep once it is 30 minutes old, read inside a store unit (ADR 2026-10.7kxj).
 - **Blocks and deletes** (ADR 2026-10.5wgg, ADR 2026-10.u7cq). A block stops a frame at delivery only; custody, key
   requests, receipts and the relay never read it. A deleted id is remembered until no carrier can hold its frame,
   and a deleted message's photo stays while our custody carries its frame.
