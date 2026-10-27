@@ -20,6 +20,7 @@ final class RefusingMessageStore: MessageStore {
     private let failingThreads = Lock(false)
     private let failingAttachmentRows = Lock(false)
     private let failingAttachmentHashes = Lock(false)
+    private let refusingTrims = Lock(false)
 
     init(_ held: any MessageStore, refuse: @escaping @Sendable () -> Void) {
         self.held = held
@@ -62,6 +63,13 @@ final class RefusingMessageStore: MessageStore {
     var failsAttachmentHashes: Bool {
         get { failingAttachmentHashes.withLock { $0 } }
         set { failingAttachmentHashes.withLock { $0 = newValue } }
+    }
+
+    /// Whether retention's trim is refused now, removing nothing and answering none, as `SQLMessageStore.trimMessages(_:at:)`
+    /// falls back when its write fails.
+    var refusesTrims: Bool {
+        get { refusingTrims.withLock { $0 } }
+        set { refusingTrims.withLock { $0 = newValue } }
     }
 
     func insertIfAbsent(_ message: MessageRecord) -> Bool {
@@ -108,6 +116,8 @@ final class RefusingMessageStore: MessageStore {
     func deleteMessage(_ id: String, at now: Int64) -> MessageRecord? { held.deleteMessage(id, at: now) }
     func deleteMessages(in conversationId: String, at now: Int64) -> [MessageRecord] { held.deleteMessages(in: conversationId, at: now) }
     func pruneDeleted(before now: Int64) { held.pruneDeleted(before: now) }
+    func retentionRows(in conversationIds: Set<String>) -> [RetentionRow] { held.retentionRows(in: conversationIds) }
+    func trimMessages(_ ids: [String], at now: Int64) -> [MessageRecord] { refusesTrims ? [] : held.trimMessages(ids, at: now) }
     func deletedAttachments() -> [DeletedAttachment] { held.deletedAttachments() }
     func conversationIds() -> Set<String> { held.conversationIds() }
     func attachmentHashes() -> Set<BlobHash> {

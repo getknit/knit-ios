@@ -18,7 +18,7 @@ extension MeshEngine {
             return false
         }
         keepAccepted(record.conversationId)
-        release([stores.messages.deleteMessage(id, at: clock.wallMilliseconds())].compactMap(\.self))
+        release([stores.messages.deleteMessage(id, at: clock.wallMilliseconds())].compactMap(\.self), removingUnnamed: true)
         return true
     }
 
@@ -29,7 +29,7 @@ extension MeshEngine {
     public func deleteChat(_ conversationId: String) -> Bool {
         keepAccepted(conversationId)
         let removed = stores.messages.deleteMessages(in: conversationId, at: clock.wallMilliseconds())
-        release(removed)
+        release(removed, removingUnnamed: true)
         return !removed.isEmpty
     }
 
@@ -65,7 +65,10 @@ extension MeshEngine {
     /// them, a frame our custody still carries included, and otherwise at the first sweep once that frame goes and the blob
     /// is past an echo's life, read in one store unit (``sweepUnnamedBlobs(storedBefore:)``, knit-ios #20): a frame leaves
     /// custody 6 h after its `sentAt` at the soonest, so the photo outlives it by at most 30 minutes and a sweep's interval.
-    private func release(_ removed: [MessageRecord]) {
+    ///
+    /// Retention passes `removingUnnamed` false (knit-ios #21): its photos are left to that sweep alone, which keeps one in
+    /// use and one younger than an echo's life, so only the wants go here.
+    func release(_ removed: [MessageRecord], removingUnnamed: Bool) {
         let hashes = Set(removed.compactMap(\.attachment?.hash))
         guard !hashes.isEmpty else {
             return
@@ -73,8 +76,9 @@ extension MeshEngine {
         // Read in one store unit, as the sweep reads them: outside one a failed read takes nothing for fetched or named,
         // and would remove a photo another thread still shows, our own sent one included. A unit that fails lets go of
         // nothing; the sweep and the re-offer settle it later.
+        // Retention counts its own photos as named, so none of them goes here.
         let unit = stores.transactor.atomically { () -> (fetched: Set<BlobHash>, named: Set<BlobHash>)? in
-            (Set(rowsTaken(stores.messages.allAttachmentRows(), fetching: true).keys), referencedBlobs())
+            (Set(rowsTaken(stores.messages.allAttachmentRows(), fetching: true).keys), removingUnnamed ? referencedBlobs() : hashes)
         }
         guard case .committed(let read) = unit else {
             return

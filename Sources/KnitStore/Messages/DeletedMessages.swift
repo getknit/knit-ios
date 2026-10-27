@@ -16,6 +16,35 @@ public enum DeletedMessages {
         // Wrapping, as custody's own expiry does, so a hostile `sentAt` cannot trap.
         max(sentAt, deletedAt) &+ limits.ttlMilliseconds &+ WireProtocol.maxFutureSkewMilliseconds
     }
+
+    /// When the id of a row retention removed at `now` may be forgotten (``MessageRetention``, knit-ios #21), or `nil` when
+    /// it needs no tombstone: a status line, whose id is our own, or a message sent two of its thread's TTLs and the five
+    /// minutes a frame may be dated ahead before now. The TTL is custody's for its thread, six hours for a room post and a
+    /// day for anything else.
+    ///
+    /// Two TTLs, not one: a carrier whose clock runs behind ours by up to a TTL took the frame while it was live and holds it
+    /// until our `sentAt` plus the TTL plus that lag, long after our own custody let it go and our digest stopped listing it.
+    /// Such a carrier may refuse the frame as dated ahead until its own clock catches up, and then hold it to our `sentAt`
+    /// plus two TTLs, however soon after arrival a count trims the row. So a tombstone lasts to the later of that and one TTL
+    /// past the trim, plus the skew: `max(sentAt + ttl, now) + ttl + skew`, the same window it is written in. A delete's
+    /// longer tombstone over the same id keeps its own expiry. Tombstones stay bounded by about two TTLs of what arrives.
+    ///
+    /// Android removes the rows and remembers nothing, so a carrier that re-serves one past the router's ten minutes
+    /// opens it again as new, notifies, and the next sweep removes it again. The tombstone names no photo: a delete's
+    /// would keep a stranger's trimmed photo named while its frame is carried (``MessageStore/deletedAttachments()``), and
+    /// out of the bytes an asker's echoes may hold (ADR 2026-10.7kxj).
+    public static func trimmedExpiry(
+        sentAt: Int64, kind: MessageKind, conversationId: String, at now: Int64, limits: CustodyLimits = CustodyLimits()
+    ) -> Int64? {
+        let isRoom = ExactKey(conversationId) == ExactKey(Conversations.nearby)
+        let ttl = isRoom ? limits.roomChatTTLMilliseconds : limits.ttlMilliseconds
+        let skew = WireProtocol.maxFutureSkewMilliseconds
+        guard !kind.isNotice, sentAt > now &- ttl &- ttl &- skew else {
+            return nil
+        }
+        // Wrapping, as custody's own expiry does, so a hostile `sentAt` cannot trap: past the top it lasts one TTL from the trim.
+        return max(sentAt &+ ttl, now) &+ ttl &+ skew
+    }
 }
 
 /// The photo a deleted message carried, by the id of the frame it came in on (ADR 2026-10.u7cq). Its bytes stay while

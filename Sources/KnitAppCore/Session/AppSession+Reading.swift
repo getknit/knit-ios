@@ -51,6 +51,16 @@ extension AppSession {
         }
     }
 
+    /// Retention took rows from some threads, as a delete takes them (knit-ios #21): the counts, the list and the requests
+    /// may have moved, and the requests notification goes once none is left.
+    func noteTrimmed() async {
+        revision += 1
+        syncBadge()
+        if threads().requests.isEmpty {
+            await notifier?.withdraw(threadId: NotificationPolicy.requestsThread)
+        }
+    }
+
     /// Shows on Knit's icon what nobody has read in the DMs and groups, when that changed
     /// (``ChatListAssembler/badgeTotal(_:)``, ADR 2026-10.frmj). The first call always sets it, so a launch clears what an
     /// earlier run left there. Called wherever a count, or the list's set of threads, can move.

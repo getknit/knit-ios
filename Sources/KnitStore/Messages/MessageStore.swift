@@ -206,7 +206,7 @@ public struct MessageRecord: Sendable, Equatable {
 }
 
 /// The message threads (`MessageRepository` in knit-next).
-public protocol MessageStore: AnyObject, Sendable {
+public protocol MessageStore: MessageRetaining {
     /// The message `id`, or `nil`.
     func message(_ id: String) -> MessageRecord?
 

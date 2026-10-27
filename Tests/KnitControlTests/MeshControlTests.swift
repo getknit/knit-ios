@@ -204,6 +204,8 @@ import Testing
         let hash = BlobHash(of: Array("a photo".utf8))
         let arrived = try #require(try await rig.report(.attachmentArrived(hash)).first)
         #expect(arrived["event"] as? String == "attachment" && arrived["hash"] as? String == hash.string)
+        let trimmed = try #require(try await rig.report(.trimmed(conversations: ["nearby", "g-1"])).first)
+        #expect(trimmed["event"] as? String == "trimmed" && trimmed["convs"] as? [String] == ["nearby", "g-1"])
     }
 
     @Test func aGroupChangeNamesTheGroupAsHeld() async throws {

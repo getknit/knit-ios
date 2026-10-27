@@ -168,6 +168,8 @@ public final class AppSession {
             // A profile's device tag can block someone, and a group can lose us: either can take a thread off the list.
             revision += 1
             syncBadge()
+        case .trimmed:
+            await noteTrimmed()
         case .neighborsChanged(let linked):
             neighbors = linked
         case .typing(let picture):

@@ -159,6 +159,31 @@ import Testing
         #expect(ChatListModel(session: rig.session).state.rows.map(\.unreadCount) == [0])
     }
 
+    @Test func aRetentionTrimMovesTheCountsAndTakesTheLastRequestsNotification() async {
+        // The engine trims the stores and says which threads lost rows (knit-ios #21), as a delete moves the revision.
+        let rig = await rigTalkingToSam()
+        await rig.receive("Hi", from: sam.nodeId, to: rig.me)
+        let old = await rig.receive("Anyone around?", from: priya.nodeId, sentAt: 100)
+        await rig.receive("Here", from: priya.nodeId, sentAt: 200)
+        let request = await rig.receive("Who's this?", from: stranger.nodeId, to: rig.me, sentAt: 300)
+        #expect(row(Conversations.nearby, in: rig)?.unreadCount == 2)
+        #expect(rig.notifier.badges == [0, 1])
+        let before = rig.session.revision
+        rig.stores.messages.trimMessages([old.id, request.id], at: 1000)
+        await rig.session.handle(.trimmed(conversations: [Conversations.nearby, stranger.nodeId.string]))
+        #expect(rig.session.revision == before + 1)
+        #expect(row(Conversations.nearby, in: rig)?.unreadCount == 1)
+        #expect(ChatListModel(session: rig.session).state.requestCount == 0)
+        #expect(rig.notifier.withdrawn == [NotificationPolicy.requestsThread], "no request is left")
+        #expect(rig.notifier.badges == [0, 1], "a trim never takes an accepted thread's row, so the icon stands")
+
+        await rig.receive("Again", from: stranger.nodeId, to: rig.me, sentAt: 400)
+        await rig.receive("Twice", from: priya.nodeId, to: rig.me, sentAt: 500)
+        rig.stores.messages.trimMessages(["\(stranger.nodeId)-400-Again"], at: 1000)
+        await rig.session.handle(.trimmed(conversations: [stranger.nodeId.string]))
+        #expect(rig.notifier.withdrawn == [NotificationPolicy.requestsThread], "Priya's request is still waiting, so it stays")
+    }
+
     @Test func deletingAnUnreadMessageTakesItOffTheCount() async {
         let rig = await rigTalkingToSam()
         let first = await rig.receive("One", from: sam.nodeId, to: rig.me, sentAt: 100)

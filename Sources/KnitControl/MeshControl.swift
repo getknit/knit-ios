@@ -178,6 +178,8 @@ public actor MeshControl {
             return [JSONValue.object(fields).line]
         case .attachmentArrived(let hash):
             return [JSONValue.object(["event": "attachment", "hash": .string(hash.string)]).line]
+        case .trimmed(let conversations):
+            return [JSONValue.object(["event": "trimmed", "convs": .array(conversations.map(JSONValue.string))]).line]
         case .typing(let picture):
             return [JSONValue.object(["event": "typing", "typing": ControlLines.typing(picture)]).line]
         }

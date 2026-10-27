@@ -27,15 +27,18 @@ extension MeshEngine {
         }
     }
 
-    /// Expired custody, parked frames, stale key wants, aged-out ticks, reactions left with no message and stale kept
-    /// prefixes (`MeshManager.sweepExpired`), then the ratchet frames whose unit failed, opened again from the copies kept,
-    /// and last the blobs nothing names that are older than an echo's life (knit-ios #20), which weighs the echo budget
-    /// anew.
+    /// Expired custody, the room's and the message requests' retention (`sweepLocalStorage`), parked frames, stale key
+    /// wants, aged-out ticks, reactions left with no message and stale kept prefixes (`MeshManager.sweepExpired`), then the
+    /// ratchet frames whose unit failed, opened again from the copies kept, and last the blobs nothing names that are older
+    /// than an echo's life (knit-ios #20), which weighs the echo budget anew.
     func sweep() {
         let now = clock.monotonicMilliseconds()
         if stores.custody.sweepExpired(now: clock.wallMilliseconds()) > 0 {
             noteCustodyChanged()
         }
+        // Before the orphan reactions, which then take a trimmed message's, and before the blobs, which then take its photo
+        // once nothing names it (knit-ios #21).
+        sweepRetention()
         pruneOrphanReactions()
         pendingInbound.sweep(now: now)
         // Beside the key-wait park, as Android sweeps both (`sweepExpired`, `MeshManager.kt:2333-2334`).
