@@ -36,6 +36,21 @@
             return false
         }
 
+        /// Whether `id` may be read under its inbound credit (``InboxCredits``): not while 256 KiB it delivered wait
+        /// unprocessed, until the consumer brings that below half and the mailbox wakes the loop. Says so once when the
+        /// channel pauses.
+        func creditAllowsReading(_ id: ChannelID) -> Bool {
+            switch mailbox.credits.gate(id) {
+            case .read:
+                return true
+            case .pause(let unprocessed):
+                log.log(.debug, "bluez \(id) reads paused: \(unprocessed) bytes unprocessed")
+                return false
+            case .paused:
+                return false
+            }
+        }
+
         func acceptAll(now: Int64) {
             guard let listener else {
                 return
@@ -80,22 +95,28 @@
                 return
             }
             if events & Int16(POLLIN) != 0 || failed {
-                drain(id)
+                drain(id, hungUp: failed)
             }
             if events & Int16(POLLOUT) != 0 {
                 flush(id)
             }
         }
 
-        /// Reads what has arrived, a turn's worth at most, and closes the channel at end of stream or on an error.
-        private func drain(_ id: ChannelID) {
+        /// Reads what has arrived, a turn's worth at most, and closes the channel at end of stream or on an error. It
+        /// stops at the channel's inbound credit, except after a hang-up or an error, which `poll` would otherwise report on
+        /// every turn. After a hang-up the peer can send no more, so what is left is the socket's buffer at most, and it is
+        /// read through to the end, past the credit, with nothing dropped. An error close (POLLERR, then `read failed`) does
+        /// drop what the socket still held: the kernel returns the pending error before those bytes, and the channel
+        /// closes on it.
+        private func drain(_ id: ChannelID, hungUp: Bool) {
             for _ in 0..<Self.readsPerTurn {
-                guard let descriptor = channels[id]?.descriptor else {
+                guard let descriptor = channels[id]?.descriptor, hungUp || creditAllowsReading(id) else {
                     return
                 }
                 switch Descriptor.read(descriptor, into: &readBuffer) {
                 case .bytes(let count):
                     log.log(.debug, "bluez \(id) read \(count): \(Hex.encode(Array(readBuffer[0..<min(count, Self.loggedPrefix)])))")
+                    mailbox.credits.delivered(count, on: id)
                     emit(.received(id, Array(readBuffer[0..<count])))
                 case .wouldBlock:
                     return

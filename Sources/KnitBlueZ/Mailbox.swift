@@ -16,6 +16,9 @@
         case close(ChannelID)
         case ring(ChannelID)
         case heardHello(ChannelID, NodeId)
+        /// A paused channel fell below half its credit (``Mailbox/consumed(_:on:)``), with this many bytes still
+        /// unprocessed: the loop polls it for input again.
+        case resumeReading(ChannelID, unprocessed: Int)
         case shutdown
     }
 
@@ -24,7 +27,9 @@
     /// same counter, so no two ever share one.
     ///
     /// It is the radio's entry point, so it counts each channel's level too (``OutboxLevels``): a write's bytes are queued
-    /// as it is posted, before the loop takes them, and a channel counts from the moment it is numbered.
+    /// as it is posted, before the loop takes them, and a channel counts from the moment it is numbered. Its inbound
+    /// credit counts from then as well (``InboxCredits``), and what the consumer reports processed comes off it here,
+    /// on the consumer's thread, waking the loop only to resume a paused channel.
     internal final class Mailbox: Sendable {
         private struct State {
             var commands: [RadioCommand] = []
@@ -36,6 +41,9 @@
         private let state = Lock(State())
         /// Every open channel's queued and written bytes, which the loop moves as its sockets take them.
         let levels = OutboxLevels()
+        /// Every open channel's bytes delivered and not yet processed, which the loop reads before it polls a channel
+        /// for input (ADR 2026-10.f5zs, rule 6).
+        let credits = InboxCredits()
         /// The pipe's read end, which the loop polls. If `pipe` failed both ends are -1, which `poll` skips; the
         /// loop then sees commands at its next timeout instead of at once.
         let descriptor: Int32
@@ -90,7 +98,17 @@
                 return ChannelID(state.nextChannel)
             }
             levels.open(id)
+            credits.open(id)
             return id
+        }
+
+        /// The consumer processed `count` of `id`'s bytes. Once that resumes a paused channel, the loop is woken to poll it
+        /// for input again, as a write wakes it: it may be waiting in `poll` for the idle second.
+        func consumed(_ count: Int, on id: ChannelID) {
+            guard let unprocessed = credits.consumed(count, on: id) else {
+                return
+            }
+            post(.resumeReading(id, unprocessed: unprocessed))
         }
     }
 #endif

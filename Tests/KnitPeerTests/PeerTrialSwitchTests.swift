@@ -21,4 +21,18 @@ import Testing
         #expect(throws: UsageError.self) { try run(["--stop-reading-after", "soon"]) }
         #expect(PeerCommand.usage.contains("--stop-reading-after is for trials"))
     }
+
+    /// `--flood`: undecodable frames to every live link, which the far end's inbound credit is tried against (ADR
+    /// 2026-10.f5zs, rule 6).
+    @Test func thePeerFloodsOnlyWhenATrialAsks() throws {
+        #expect(try run([]).floodBytesPerSecond == nil, "the peer writes no junk unless a trial asks")
+        #expect(try run(["--flood", "65536"]).floodBytesPerSecond == 65_536)
+        #expect(try run(["--flood", "1"]).floodBytesPerSecond == 1)
+        #expect(try run(["--flood", "16777216"]).floodBytesPerSecond == 16_777_216)
+        for bad in ["0", "-5", "16777217", "lots"] {
+            #expect(throws: UsageError.invalid(flag: "--flood", value: bad)) { try run(["--flood", bad]) }
+        }
+        #expect(PeerCommand.usage.contains("[--flood BYTES_PER_SECOND]"))
+        #expect(PeerCommand.usage.contains("--flood is for trials too"))
+    }
 }

@@ -146,6 +146,11 @@
             mailbox.levels.level(on: channel)
         }
 
+        /// Taken off the channel's credit here, at once; the loop hears only a resume (``Mailbox/consumed(_:on:)``).
+        public func consumed(_ count: Int, on channel: ChannelID) {
+            mailbox.consumed(count, on: channel)
+        }
+
         public func ring(_ channel: ChannelID) {
             mailbox.post(.ring(channel))
         }

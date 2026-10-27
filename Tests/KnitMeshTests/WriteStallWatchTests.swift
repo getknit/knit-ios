@@ -12,11 +12,14 @@ import Testing
         #expect(watch.due == nil)
         watch.watch(link, written: 5, now: 0)
         watch.watch(ChannelID(8), written: 0, now: 10_000)
+        watch.watch(link, written: 5, now: 0)
+        #expect(watch.count == 2, "a link watched again keeps one baseline")
         #expect(watch.due == 30_000, "the first link sets the cadence")
         #expect(watch.check(now: 29_999, level: { _ in stuck }, exempt: { _ in false }) == .notDue)
         #expect(watch.check(now: 30_000, level: { _ in stuck }, exempt: { _ in false }) == .checked(stalled: []))
         #expect(watch.due == 60_000)
         watch.forget(link)
+        #expect(watch.count == 1)
         #expect(watch.due == 60_000, "one link is still watched")
         watch.forget(ChannelID(8))
         #expect(watch.due == nil)
@@ -30,6 +33,27 @@ import Testing
         }
         let found = watch.check(now: 120_000, level: { _ in stuck }, exempt: { _ in false })
         #expect(found == .checked(stalled: [WriteStallWatch.Stall(link: link, milliseconds: 120_000)]))
+    }
+
+    @Test func everyWatchedLinkIsJudgedInChannelOrder() {
+        var watch = WriteStallWatch()
+        for raw in [UInt64(9), 3, 7] {
+            watch.watch(ChannelID(raw), written: 5, now: 0)
+        }
+        var read: [ChannelID] = []
+        for now in stride(from: Int64(30_000), through: 90_000, by: 30_000) {
+            _ = watch.check(now: now, level: { _ in stuck }, exempt: { _ in false })
+        }
+        let found = watch.check(
+            now: 120_000,
+            level: { link in
+                read.append(link)
+                return stuck
+            },
+            exempt: { $0 == ChannelID(7) }
+        )
+        #expect(read == [ChannelID(3), ChannelID(7), ChannelID(9)])
+        #expect(found == .checked(stalled: [3, 9].map { WriteStallWatch.Stall(link: ChannelID($0), milliseconds: 120_000) }))
     }
 
     @Test func movementAnEmptyQueueOrAnExemptionTakesAFreshBaseline() {

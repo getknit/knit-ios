@@ -130,6 +130,12 @@
             _ = bytes.withUnsafeBytes { Glibc.send(descriptor, $0.baseAddress, $0.count, Int32(MSG_NOSIGNAL)) }
         }
 
+        /// Sends one SDU unless the socket would block, as a peer whose L2CAP credits have run out waits; whether it went.
+        func trySend(_ bytes: [UInt8]) -> Bool {
+            let sent = bytes.withUnsafeBytes { Glibc.send(descriptor, $0.baseAddress, $0.count, Int32(MSG_NOSIGNAL) | Int32(MSG_DONTWAIT)) }
+            return sent == bytes.count
+        }
+
         /// The next SDU, or `nil` at end of stream or when nothing comes within the timeout.
         func receive(timeoutMilliseconds: Int32 = 2000) -> [UInt8]? {
             var ready = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)

@@ -7,9 +7,35 @@
     // MARK: Links and the connections under them
 
     extension BLECore {
+        func dial(_ channel: ChannelID, _ address: RadioAddress, psm: UInt16) {
+            guard running, let central, let uuid = UUID(uuidString: address.rawValue),
+                let peripheral = peripherals[uuid] ?? central.retrievePeripherals(withIdentifiers: [uuid]).first
+            else {
+                emit(.dialFailed(channel))
+                return
+            }
+            peripherals[uuid] = peripheral
+            peripheral.delegate = self
+            dials[channel] = Dial(peripheral: uuid, psm: psm)
+            if peripheral.state == .connected {
+                openPending(on: peripheral)
+            } else if peripheral.state != .connecting {
+                central.connect(peripheral)
+            }
+        }
+
+        /// Asks for an L2CAP channel for every dial waiting on `peripheral`.
+        func openPending(on peripheral: CBPeripheral) {
+            for (channel, dial) in dials where dial.peripheral == peripheral.identifier && !dial.opening {
+                dials[channel]?.opening = true
+                peripheral.openL2CAPChannel(CBL2CAPPSM(dial.psm))
+            }
+        }
+
         func close(_ channel: ChannelID) {
             // A dial cancelled before it opened reports nothing, so it stops counting here.
             levels.close(channel)
+            credits.close(channel)
             if let dial = dials.removeValue(forKey: channel) {
                 releaseIfIdle(dial.peripheral)
             }
@@ -52,6 +78,7 @@
                 channel: channel,
                 thread: streams,
                 levels: levels,
+                credits: credits,
                 log: log,
                 received: { [emit] bytes in emit(.received(id, bytes)) },
                 ended: { [weak self] in self?.onQueue { $0.ended(id) } },

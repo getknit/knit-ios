@@ -1,5 +1,6 @@
 import KnitMesh
 import KnitStore
+import KnitStoreSQL
 import KnitTestSupport
 import KnitWire
 import Testing
@@ -136,5 +137,39 @@ import Testing
         }
         #expect(Set(kept) == keepable)
         #expect(kept.count == keepable.count, "no frame twice")
+    }
+
+    @Test func aRowWhoseBytesNoLongerDecodeIsSkippedAtItsLoadAndTakesNoSlot() throws {
+        // The index lists it, as liveIds does (knit-ios #14), and only the load finds it damaged: the round moves on to
+        // the frames behind it and charges it nothing.
+        let store = SQLCustodyStore(try KnitDatabase.inMemory { Issue.record($0) })
+        let older = frame("m1", to: bob)
+        let newer = frame("m2", to: bob)
+        let damaged = frame("m3", to: bob)
+        store.store(older, origin: .relayed, now: now)
+        store.store(newer, origin: .relayed, now: now + 1)
+        store.store(CarriedFrame(envelope: damaged.envelope, sig: damaged.sig, signed: [0xFF]), origin: .relayed, now: now + 2)
+        #expect(store.liveIndex(now: now).map(\.id) == ["m3", "m2", "m1"])
+        #expect(store.frame("m3", now: now) == nil)
+        let reply = CustodySync().missing(from: [], for: zed, in: store, now: now)
+        #expect(ids(reply) == ["m2", "m1"])
+        #expect(reply.bytes == newer.reserved.encoded.count + older.reserved.encoded.count)
+        #expect(!reply.isCapped)
+    }
+
+    @Test func anUnsignedRowHasNoFrameKeySoTheLinkIsNeverAskedAndItIsServed() {
+        // A row an older build stored without a signature: nothing the link carried can match it.
+        let store = MemoryCustodyStore()
+        var sync = CustodySync()
+        _ = sync.carry(frame("s1", to: bob), in: store, now: now) { true }
+        let bare = frame("u1", to: bob)
+        store.store(CarriedFrame(envelope: bare.envelope, sig: [], signed: bare.signed), origin: .relayed, now: now + 1)
+        var asked: [String] = []
+        let reply = sync.missing(from: [], for: zed, in: store, now: now) { key in
+            asked.append(key)
+            return true
+        }
+        #expect(ids(reply) == ["u1"], "every signed frame crossed; the unsigned one cannot have")
+        #expect(asked == [Self.frameKey(WireEnvelope(sig: Self.signature("s1"), signed: []))])
     }
 }

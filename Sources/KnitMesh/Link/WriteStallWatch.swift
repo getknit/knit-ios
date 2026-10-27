@@ -114,10 +114,8 @@ public struct WriteStallWatch: Sendable {
             return .late(milliseconds: lateness)
         }
         var stalled: [Stall] = []
-        for link in baselines.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
-            guard let baseline = baselines[link] else {
-                continue
-            }
+        // Each pass writes only its own link's baseline, so the sorted copy reads what the loop would.
+        for (link, baseline) in baselines.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
             let reading = level(link)
             if reading.queuedBytes == 0 || reading.writtenBytes != baseline.written || exempt(link) {
                 baselines[link] = Baseline(written: reading.writtenBytes, since: now)

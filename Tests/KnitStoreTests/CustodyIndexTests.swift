@@ -91,4 +91,20 @@ private func carried(
             #expect(CustodyIndexEntry.reservedBytes(sig: sig, signed: signed) == wire.encoded.count)
         }
     }
+
+    @Test func aByteStringPastFourGigabytesTakesCBORsEightByteHeader() {
+        // No custody frame comes near this, so it is reckoned from lengths alone, with nothing allocated. RFC 8949: major
+        // type 2 with additional info 27 (initial byte 0x5B), then the length in eight bytes. Every major type shares that
+        // argument rule, so an unsigned integer of the same value checks the encoder without four gigabytes of string.
+        let signed = Int(UInt32.max) + 1
+        let eightByteHeader = 1 + 8
+        #expect(CBOR.unsigned(UInt64(signed)).encoded.count == eightByteHeader, "the encoder's own shortest argument")
+        #expect(CBOR.unsigned(UInt64(signed)).encoded.first.map { $0 & 0x1F } == 27)
+        let fourByteHeader = 1 + 4
+        let atFourBytes = CustodyIndexEntry.reservedBytes(sig: 64, signed: Int(UInt32.max))
+        #expect(CustodyIndexEntry.reservedBytes(sig: 64, signed: signed) == atFourBytes - fourByteHeader + eightByteHeader + 1)
+        let mapAndKeys = 1 + (1 + 3) + (1 + 6)
+        let sigHeader = 1 + 1
+        #expect(CustodyIndexEntry.reservedBytes(sig: 64, signed: signed) == mapAndKeys + sigHeader + 64 + eightByteHeader + signed)
+    }
 }

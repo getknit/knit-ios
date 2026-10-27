@@ -142,6 +142,12 @@ public protocol Radio: AnyObject, Sendable {
     /// counts at its entry points, in an ``OutboxLevels``.
     func outboxLevel(on channel: ChannelID) -> OutboxLevel
 
+    /// The consumer processed `count` bytes the radio delivered on `channel` as ``RadioEvent/received(_:_:)``. `Mesh`
+    /// reports every delivery once the link manager has taken it, running or stopped, so a channel is never left
+    /// waiting. A radio stops reading a channel while 256 KiB it delivered wait unprocessed, and reads it again below
+    /// half, counting in an ``InboxCredits``; answered at once from any thread (ADR 2026-10.f5zs, rule 6).
+    func consumed(_ count: Int, on channel: ChannelID)
+
     /// Rings the doorbell of the peer on `channel`, which wakes its app if iOS has suspended it: data arriving on
     /// an open link does not, and a write to the doorbell does (ADR router: `.agents/memory/decisions.md`). A radio
     /// that cannot ring, or a peer without a doorbell, does nothing.
@@ -178,6 +184,11 @@ extension Radio {
     /// stall and never hold a round back.
     public func outboxLevel(on _: ChannelID) -> OutboxLevel {
         OutboxLevel()
+    }
+
+    /// Keeps no count: a radio that holds nothing it delivered, and never stops reading.
+    public func consumed(_: Int, on _: ChannelID) {
+        // KnitBLE and KnitBlueZ bound what they deliver; the test radios and the demo hand every event over at once.
     }
 
     /// Rings nothing: a radio that cannot reach a doorbell.

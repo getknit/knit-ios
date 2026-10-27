@@ -26,19 +26,26 @@
         /// Every channel's queued and written bytes, counted here as each write is handed over and on the stream thread as
         /// each byte goes out, so the link manager reads them without a hop to the queue (ADR 2026-10.f5zs).
         private let levels: OutboxLevels
+        /// Every channel's bytes delivered and not yet processed, counted on the stream thread as each read is delivered and
+        /// here as `Mesh` reports it processed, so neither waits on the other (ADR 2026-10.f5zs, rule 6).
+        private let credits: InboxCredits
 
         /// A radio that logs to `log`.
         public init(log: any KnitLog = SilentLog()) {
             let (stream, continuation) = AsyncStream<RadioEvent>.makeStream()
             let counted = OutboxLevels()
+            let inbound = InboxCredits()
             events = stream
             levels = counted
+            credits = inbound
             core = BLECore(
                 emit: { event in
                     counted.note(event)
+                    inbound.note(event)
                     continuation.yield(event)
                 },
                 levels: counted,
+                credits: inbound,
                 log: log
             )
         }
@@ -101,6 +108,16 @@
             core.onQueue { $0.close(channel) }
         }
 
+        /// Taken off the channel's credit here, at once. Only a resume hops: to the queue, to find the link, and from it to
+        /// the stream thread, where the link reads again of its own accord, since its stream will not say
+        /// `hasBytesAvailable` again until it does (``L2CAPLink/resumeReading(unprocessed:)``).
+        public func consumed(_ count: Int, on channel: ChannelID) {
+            guard let unprocessed = credits.consumed(count, on: channel) else {
+                return
+            }
+            core.onQueue { $0.links[channel]?.resumeReading(unprocessed: unprocessed) }
+        }
+
         public func ring(_ channel: ChannelID) {
             core.onQueue { $0.ring(channel) }
         }
@@ -149,6 +166,9 @@
         let emit: @Sendable (RadioEvent) -> Void
         /// Every channel's level (``BLERadio/outboxLevel(on:)``): a channel counts from ``newChannel()``.
         let levels: OutboxLevels
+        /// Every channel's inbound credit (``InboxCredits``), which its link reads before each read: a channel counts from
+        /// ``newChannel()`` too.
+        let credits: InboxCredits
         let log: any KnitLog
         let streams = StreamThread()
         let clock = SystemClock()
@@ -193,9 +213,10 @@
             var probe = ScanProbe()
         #endif
 
-        init(emit: @escaping @Sendable (RadioEvent) -> Void, levels: OutboxLevels, log: any KnitLog) {
+        init(emit: @escaping @Sendable (RadioEvent) -> Void, levels: OutboxLevels, credits: InboxCredits, log: any KnitLog) {
             self.emit = emit
             self.levels = levels
+            self.credits = credits
             self.log = log
         }
 
@@ -208,6 +229,7 @@
         func newChannel() -> ChannelID {
             let id = ChannelID(nextChannel.add(1, ordering: .relaxed).oldValue)
             levels.open(id)
+            credits.open(id)
             return id
         }
 
@@ -316,9 +338,11 @@
             for (id, link) in links {
                 link.close()
                 levels.close(id)
+                credits.close(id)
             }
             for id in dials.keys {
                 levels.close(id)
+                credits.close(id)
             }
             links.removeAll()
             owners.removeAll()
@@ -367,33 +391,6 @@
             service.characteristics = [characteristic, doorbell]
             peripheralManager.add(service)
             servedValue = value
-        }
-
-        // MARK: Channels
-
-        func dial(_ channel: ChannelID, _ address: RadioAddress, psm: UInt16) {
-            guard running, let central, let uuid = UUID(uuidString: address.rawValue),
-                let peripheral = peripherals[uuid] ?? central.retrievePeripherals(withIdentifiers: [uuid]).first
-            else {
-                emit(.dialFailed(channel))
-                return
-            }
-            peripherals[uuid] = peripheral
-            peripheral.delegate = self
-            dials[channel] = Dial(peripheral: uuid, psm: psm)
-            if peripheral.state == .connected {
-                openPending(on: peripheral)
-            } else if peripheral.state != .connecting {
-                central.connect(peripheral)
-            }
-        }
-
-        /// Asks for an L2CAP channel for every dial waiting on `peripheral`.
-        func openPending(on peripheral: CBPeripheral) {
-            for (channel, dial) in dials where dial.peripheral == peripheral.identifier && !dial.opening {
-                dials[channel]?.opening = true
-                peripheral.openL2CAPChannel(CBL2CAPPSM(dial.psm))
-            }
         }
     }
 #endif

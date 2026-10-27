@@ -128,7 +128,16 @@ public actor Mesh {
 
     /// Handles one radio event: what the radio's stream delivers, one at a time. While stopped, only a change of
     /// state is heard.
+    ///
+    /// Every delivery is reported consumed once the link manager has taken it, and while stopped too, so the radio
+    /// reads the channel on (``Radio/consumed(_:on:)``, ADR 2026-10.f5zs). A stopped mesh that kept quiet would leave
+    /// every channel paused at its credit.
     public func process(_ event: RadioEvent) {
+        defer {
+            if case .received(let channel, let bytes) = event {
+                radio.consumed(bytes.count, on: channel)
+            }
+        }
         if case .state(let state) = event, state != radioState {
             radioState = state
             continuation.yield(.radioChanged(state))

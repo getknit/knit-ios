@@ -89,9 +89,10 @@
         init(configuration: Configuration, mailbox: Mailbox, emit: @escaping (RadioEvent) -> Void) {
             self.configuration = configuration
             self.mailbox = mailbox
-            // A channel reported closed, or a dial failed, is no longer counted (``Mailbox/levels``).
-            self.emit = { [levels = mailbox.levels] event in
+            // A channel reported closed, or a dial failed, is no longer counted (``Mailbox/levels``, ``Mailbox/credits``).
+            self.emit = { [levels = mailbox.levels, credits = mailbox.credits] event in
                 levels.note(event)
+                credits.note(event)
                 emit(event)
             }
             gatt = GattPayloads(configuration: configuration.gatt)
@@ -124,7 +125,9 @@
             for (id, channel) in channels.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
                 let writing = channel.connecting || !channel.outbox.isEmpty
                 polled.append(.channel(id))
-                let events = (reading ? Int16(POLLIN) : 0) | (writing ? Int16(POLLOUT) : 0)
+                // A channel at its credit is not polled for input: what its peer sends waits in the socket, and L2CAP's
+                // credits hold the peer back. A hang-up or an error still comes, since `poll` reports those unasked.
+                let events = (reading && creditAllowsReading(id) ? Int16(POLLIN) : 0) | (writing ? Int16(POLLOUT) : 0)
                 descriptors.append(pollfd(fd: channel.descriptor, events: events, revents: 0))
             }
             _ = poll(&descriptors, nfds_t(descriptors.count), wait(atMost: maximumWaitMilliseconds, now: Monotonic.milliseconds()))
@@ -206,6 +209,11 @@
                 ring(id, now: now)
             case .heardHello(let id, let node):
                 gattHeardHello(node, on: id)
+            case .resumeReading(let id, let unprocessed):
+                // The next turn polls the channel for input again, unless a trial stopped every read.
+                if channels[id] != nil {
+                    log.log(.debug, "bluez \(id) reads resumed: \(unprocessed) bytes unprocessed")
+                }
             case .shutdown:
                 shutdown(now: now)
             }
@@ -268,6 +276,7 @@
             for (id, channel) in channels {
                 Descriptor.close(channel.descriptor)
                 mailbox.levels.close(id)
+                mailbox.credits.close(id)
             }
             let linked = Set(channels.values.compactMap(\.devicePath) + [cancelGattRead()].compactMap(\.self))
             channels.removeAll()

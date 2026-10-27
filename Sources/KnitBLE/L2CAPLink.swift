@@ -47,6 +47,11 @@
     /// ``LinkOutbox/maximumQueuedBytes`` waiting the link closes itself and reports its end, as BlueZ's channels do, rather
     /// than hold what the link manager queues until iOS ends Knit for its memory (ADR 2026-10.f5zs). Each byte the stream
     /// takes is counted in the radio's ``OutboxLevels``, which counted it queued when the radio was handed it.
+    ///
+    /// Reads are bounded the other way by the channel's inbound credit (``InboxCredits``): the link stops reading once
+    /// 256 KiB it delivered wait unprocessed, and leaves the rest in the input stream, where iOS's own buffer fills and
+    /// L2CAP's credits hold the far end back. The stream says `hasBytesAvailable` again only after a read, so a resume
+    /// below half comes from the radio (``resumeReading(unprocessed:)``), never from the stream (ADR 2026-10.f5zs).
     internal final class L2CAPLink: NSObject, StreamDelegate, @unchecked Sendable {
         // @unchecked: every mutable member is touched on the stream thread only.
         private static let readSize = 65_536
@@ -62,6 +67,7 @@
         private let output: OutputStream?
         private let thread: StreamThread
         private let levels: OutboxLevels
+        private let credits: InboxCredits
         private let log: any KnitLog
         private let received: @Sendable ([UInt8]) -> Void
         private let ended: @Sendable () -> Void
@@ -74,12 +80,13 @@
 
         /// A link over `channel`'s streams. `received` hears every read; `ended` hears once that the far side closed it, it
         /// failed, or it closed itself overfull, and never after ``close()``; `wroteFileRecord` hears each FILE record's
-        /// last byte go out. `levels` hears each byte written.
+        /// last byte go out. `levels` hears each byte written, and `credits` each byte read and is asked before each read.
         convenience init(
             id: ChannelID,
             channel: CBL2CAPChannel,
             thread: StreamThread,
             levels: OutboxLevels,
+            credits: InboxCredits,
             log: any KnitLog,
             received: @escaping @Sendable ([UInt8]) -> Void,
             ended: @escaping @Sendable () -> Void,
@@ -92,6 +99,7 @@
                 owner: channel,
                 thread: thread,
                 levels: levels,
+                credits: credits,
                 log: log,
                 received: received,
                 ended: ended,
@@ -107,6 +115,7 @@
             owner: AnyObject?,
             thread: StreamThread,
             levels: OutboxLevels,
+            credits: InboxCredits,
             log: any KnitLog,
             received: @escaping @Sendable ([UInt8]) -> Void,
             ended: @escaping @Sendable () -> Void,
@@ -118,6 +127,7 @@
             self.owner = owner
             self.thread = thread
             self.levels = levels
+            self.credits = credits
             self.log = log
             self.received = received
             self.ended = ended
@@ -179,6 +189,18 @@
             }
         }
 
+        /// Reads again once the radio's consumer has brought the channel below half its credit, with `unprocessed` bytes
+        /// still waiting on it: the stream will not say `hasBytesAvailable` again until the link reads, so it reads now.
+        func resumeReading(unprocessed: Int) {
+            thread.perform { [self] in
+                guard isOpen, !isClosed else {
+                    return
+                }
+                log.log(.debug, "ble \(id) reads resumed: \(unprocessed) bytes unprocessed")
+                readAvailable()
+            }
+        }
+
         /// Closes both streams. What was still waiting to be written is dropped: the link manager closes a link only
         /// when it is done with it.
         func close() {
@@ -198,6 +220,13 @@
             case .endEncountered, .errorOccurred:
                 log.log(.debug, "ble \(id) \(event == .endEncountered ? "ended" : "failed: \(String(describing: stream.streamError))")")
                 if !isClosed {
+                    // At the input's end the far end can send no more, so whatever a paused read left is all there is,
+                    // and goes on before the end, past the credit: nothing the far end sent is dropped.
+                    if event == .endEncountered, stream === input {
+                        // What a paused read left, for the trial to see that the end dropped none of it.
+                        let past = readAvailable(pastCredit: true)
+                        log.log(.debug, "ble \(id) read \(past) bytes past its credit at its end")
+                    }
                     shutDown()
                     ended()
                 }
@@ -206,19 +235,46 @@
             }
         }
 
-        private func readAvailable() {
-            guard let input else {
-                return
+        /// Reads in 64 KiB gulps while the stream has bytes, asking the channel's credit before each, and stops at it
+        /// unless `pastCredit`: what is left waits in the stream until ``resumeReading(unprocessed:)``. Answers how many bytes
+        /// it delivered.
+        @discardableResult
+        private func readAvailable(pastCredit: Bool = false) -> Int {
+            guard !isClosed, let input else {
+                return 0
             }
+            var delivered = 0
             var buffer = [UInt8](repeating: 0, count: Self.readSize)
             while input.hasBytesAvailable {
+                if !pastCredit {
+                    switch credits.gate(id) {
+                    case .read:
+                        break
+                    case .pause(let unprocessed):
+                        log.log(.debug, "ble \(id) reads paused: \(unprocessed) bytes unprocessed")
+                        return delivered
+                    case .paused:
+                        return delivered
+                    }
+                }
                 let count = input.read(&buffer, maxLength: buffer.count)
                 guard count > 0 else {
                     break
                 }
                 log.log(.debug, "ble \(id) read \(count)")
+                // Counted before it is delivered, so the consumer never reports bytes the credit has not seen.
+                credits.delivered(count, on: id)
+                delivered += count
                 received(Array(buffer[0..<count]))
             }
+            // A stream that reached its end while reads were paused need not say so again after the read a resume makes,
+            // so the end is taken from the stream's status as well as from its event.
+            if !pastCredit, input.streamStatus == .atEnd {
+                log.log(.debug, "ble \(id) ended")
+                shutDown()
+                ended()
+            }
+            return delivered
         }
 
         /// Closes the link and reports its end when the far end has stopped reading (``LinkOutbox/isOverfull``), and
@@ -265,6 +321,8 @@
                 return
             }
             isClosed = true
+            // The credit dies with the link, however it ended, so nothing waits on a count no consumer will bring down.
+            credits.close(id)
             for stream in [input, output].compactMap(\.self) as [Stream] {
                 stream.delegate = nil
                 stream.close()

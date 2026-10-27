@@ -1,6 +1,6 @@
-import KnitMesh
 import KnitWire
 import Testing
+@testable import KnitMesh
 
 /// A live link whose writes stall is closed after 120 s of running time, unless its peer looks like an iPhone that
 /// asked to be rung (ADR 2026-10.f5zs, Android's `WRITE_STALL_MS` in `LinkSilence.kt`). The radio's level is set by
@@ -175,6 +175,15 @@ import Testing
         _ = rig.handle(.sighted(Self.sighting(high, cue: 7)))
         rig.run(until: linkedAt + 200_000 + 150_000)
         #expect(!isLinked(rig, high), "judged from the check that found it no longer exempt")
+    }
+
+    @Test func onlyALiveLinkCanBeExempt() {
+        // The watch holds only live links, so it never asks about another channel; asked anyway, the answer is to judge.
+        let (rig, _) = linked(capabilities: Self.doorbellHello, level: stuck)
+        #expect(rig.links.isExemptFromStallClose(channel))
+        #expect(!rig.links.isExemptFromStallClose(ChannelID(41)), "no link on it, so no iPhone to leave alone")
+        _ = rig.handle(.closed(channel))
+        #expect(!rig.links.isExemptFromStallClose(channel), "its link is down")
     }
 
     private static func sighting(_ peer: NodeId, cue: UInt32) -> RadioSighting {

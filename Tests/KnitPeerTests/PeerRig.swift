@@ -37,6 +37,8 @@ final class PeerRadio: Radio {
         var stopped = false
         var writes: [ChannelID: [UInt8]] = [:]
         var closed: [ChannelID] = []
+        var consumed: [ChannelID: Int] = [:]
+        var queued: [ChannelID: Int] = [:]
     }
 
     private let state = Lock(State())
@@ -48,6 +50,24 @@ final class PeerRadio: Radio {
     var started: Bool { state.withLock { $0.started } }
     var stopped: Bool { state.withLock { $0.stopped } }
     var closed: [ChannelID] { state.withLock { $0.closed } }
+
+    /// The bytes reported processed on `channel` (``Radio/consumed(_:on:)``).
+    func consumed(on channel: ChannelID) -> Int {
+        state.withLock { $0.consumed[channel, default: 0] }
+    }
+
+    func consumed(_ count: Int, on channel: ChannelID) {
+        state.withLock { $0.consumed[channel, default: 0] += count }
+    }
+
+    /// Says `bytes` wait unwritten on `channel`, as a real radio's queue would.
+    func setQueued(_ bytes: Int, on channel: ChannelID) {
+        state.withLock { $0.queued[channel] = bytes }
+    }
+
+    func outboxLevel(on channel: ChannelID) -> OutboxLevel {
+        OutboxLevel(queuedBytes: state.withLock { $0.queued[channel, default: 0] })
+    }
 
     func emit(_ event: RadioEvent) {
         emitter.yield(event)

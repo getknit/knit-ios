@@ -79,6 +79,12 @@ final class PipeNode {
         }
     }
 
+    /// Hands `bytes` read on `channel` to the link manager, then reports them processed to the radio, as ``Mesh`` does.
+    func receive(_ bytes: [UInt8], on channel: ChannelID) {
+        apply(links.handle(.received(channel, bytes)))
+        radio.consumed(bytes.count, on: channel)
+    }
+
     func fireDueTimers() {
         apply(links.advance())
         engine.advance()
@@ -178,7 +184,7 @@ final class LinkPipe {
         dialer.apply(dialer.links.handle(.accepted(ChannelID(channel))))
         answerer.apply(answerer.links.handle(.accepted(ChannelID(channel + 1))))
         let hello = Hello(nodeId: dialer.nodeId.string, capabilities: Capabilities.local.union(.blobHave)).payload
-        answerer.apply(answerer.links.handle(.received(ChannelID(channel + 1), LinkRecord(.hello, payload: hello).encoded ?? [])))
+        answerer.receive(LinkRecord(.hello, payload: hello).encoded ?? [], on: ChannelID(channel + 1))
     }
 
     /// Carries what is waiting either way, once. Answers whether anything crossed.
@@ -233,7 +239,7 @@ final class LinkPipe {
         if record.tag == .frame, let ask = Self.ask(in: record.payload) {
             asks.append(Ask(from: sender.node.nodeId, to: receiver.node.nodeId, hash: ask.hash, offset: ask.offset, at: now))
         }
-        receiver.node.apply(receiver.node.links.handle(.received(receiver.channel, record.encoded ?? [])))
+        receiver.node.receive(record.encoded ?? [], on: receiver.channel)
         guard [.fileHeader, .fileChunk, .fileEnd].contains(record.tag) else {
             return
         }

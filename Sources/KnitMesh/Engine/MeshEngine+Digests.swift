@@ -1,4 +1,3 @@
-import KnitStore
 public import KnitWire
 
 /// The digest exchange's answer (`ForwardSync.onDigest`): a capped round of what a neighbour's digest omits, sent once its

@@ -281,3 +281,22 @@ import Testing
         #expect(exchange.onRequest([held.string], from: other, me: me, now: 0).serve.isEmpty, "the served wanter was")
     }
 }
+
+extension KeyExchangeTests {
+    @Test func aProfileWithNoSignatureHasNoFrameKeySoNoWanterCountsAsCrossed() {
+        // The pin store holds verified profiles, so this is a guard: with no key to ask after, every wanter is served.
+        var exchange = KeyExchange()
+        let other = fixtureNodeId(4)
+        _ = exchange.onRequest([wanted.string], from: neighbor, me: me, now: 0)
+        _ = exchange.onRequest([wanted.string], from: other, me: me, now: 0)
+        let unsigned = WireEnvelope(sig: [], signed: [7, 7])
+        var asked = 0
+        let waiting = exchange.onProfilePinned(wanted, wire: unsigned, now: 0) { _, _ in
+            asked += 1
+            return true
+        }
+        #expect(waiting == [neighbor, other])
+        #expect(asked == 0, "no frame key, so the link is never asked")
+        #expect(exchange.skippedAnswers == 0)
+    }
+}

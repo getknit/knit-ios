@@ -35,6 +35,7 @@ final class FakeRadio: Radio {
         var hellos: [HeardHello] = []
         var seeks: [Bool] = []
         var levels: [ChannelID: OutboxLevel] = [:]
+        var consumed: [Consumed] = []
         var nextChannel: UInt64 = 1
     }
 
@@ -74,6 +75,15 @@ final class FakeRadio: Radio {
     var hellos: [HeardHello] { state.withLock { $0.hellos } }
     /// Every change of seeking asked, in order.
     var seeks: [Bool] { state.withLock { $0.seeks } }
+
+    /// Every delivery reported processed (``Radio/consumed(_:on:)``), in order.
+    var consumed: [Consumed] { state.withLock { $0.consumed } }
+
+    /// One delivery reported processed.
+    struct Consumed: Equatable {
+        var count: Int
+        var channel: ChannelID
+    }
 
     /// A HELLO the link manager reported (``Radio/heardHello(from:on:)``).
     struct HeardHello: Equatable {
@@ -151,6 +161,10 @@ final class FakeRadio: Radio {
     /// Sets what ``outboxLevel(on:)`` answers for `channel`, as a real radio's queue would read.
     func setLevel(_ level: OutboxLevel, on channel: ChannelID) {
         state.withLock { $0.levels[channel] = level }
+    }
+
+    func consumed(_ count: Int, on channel: ChannelID) {
+        state.withLock { $0.consumed.append(Consumed(count: count, channel: channel)) }
     }
 
     func seekPeers(_ seeking: Bool) {

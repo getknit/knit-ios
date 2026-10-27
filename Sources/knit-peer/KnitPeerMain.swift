@@ -78,7 +78,8 @@ import Foundation
             if !options.feedWindow {
                 log.log(.info, "files paced and reported every 2 s, the window off for an A/B (--feed pace)")
             }
-            let node = makeNode(options, host: host, links: links, log: log)
+            let (radio, flood) = flooding(host.radio, options, log: log)
+            let node = makeNode(options, host: host, radio: radio, links: links, log: log)
             let signals = stopOnSignals(node, host)
             await node.start(name: options.name)
             for await line in StandardInput.lines() where !line.isEmpty {
@@ -86,6 +87,7 @@ import Foundation
                     break
                 }
             }
+            flood?.cancel()
             await node.stop()
             await host.shutdown()
             for source in signals {
@@ -93,11 +95,39 @@ import Foundation
             }
         }
 
+        /// How often `--flood` writes its share of the rate.
+        private static let floodTickMilliseconds: Int64 = 100
+        private static let millisecondsPerSecond: Int64 = 1000
+        private static let attosecondsPerMillisecond: Int64 = 1_000_000_000_000_000
+
+        /// `radio`, or with `--flood` the radio wrapped to flood every live link, and the task that drives it each
+        /// ``floodTickMilliseconds`` by the time that really passed (``FloodRadio``).
+        private static func flooding(_ radio: any Radio, _ options: RunOptions, log: any KnitLog) -> (any Radio, Task<Void, Never>?) {
+            guard let rate = options.floodBytesPerSecond else {
+                return (radio, nil)
+            }
+            let flood = FloodRadio(wrapping: radio, bytesPerSecond: rate)
+            log.log(.info, "flooding every live link with \(rate) bytes a second of undecodable frames: a trial's switch")
+            let ticks = Task {
+                let clock = ContinuousClock()
+                var last = clock.now
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(floodTickMilliseconds), clock: clock)
+                    let now = clock.now
+                    let (seconds, attoseconds) = (now - last).components
+                    last = now
+                    flood.tick(milliseconds: seconds * millisecondsPerSecond + attoseconds / attosecondsPerMillisecond)
+                }
+            }
+            return (flood, ticks)
+        }
+
         /// The node, on the identity and profile kept in the state directory, with everything else in memory. With
         /// the ratchet on, as it is unless `--no-ratchet`, the prekeys kept beside the identity too (ADR 2026-10.5sk9).
         private static func makeNode(
             _ options: RunOptions,
             host: any PeerRadioHost,
+            radio: any Radio,
             links: LinkManager.Configuration,
             log: any KnitLog
         ) -> PeerNode {
@@ -122,7 +152,7 @@ import Foundation
                 prekeys: prekeys,
                 ratchet: options.ratchet,
                 stores: stores,
-                radio: host.radio,
+                radio: radio,
                 radioProfile: host.profile,
                 clock: SystemClock(),
                 random: SystemRandomNumberGenerator(),
