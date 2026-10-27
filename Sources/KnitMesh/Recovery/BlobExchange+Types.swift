@@ -63,6 +63,12 @@ extension BlobExchange {
         var pulledAt: Int64?
         /// When its next step is due, or `nil` when no timer is armed.
         var timerDue: Int64?
+        /// Whose want it is (knit-ios #20): ours, from a row, a profile or a re-ask from 0, or an echo made for the
+        /// neighbour whose ask created it (``echoFor``), until a want of ours promotes it. Android keeps no origin; this
+        /// port's eviction, echo budget and kept prefixes read it (``BlobExchange/Origin``).
+        var origin: Origin
+        /// Whether this cycle already counted and logged a fetch held back by the echo budget.
+        var fetchHeld = false
 
         init(hash: BlobHash, at: Int64, author: NodeId?, via: NodeId?, puller: NodeId?) {
             self.hash = hash
@@ -70,9 +76,18 @@ extension BlobExchange {
             cycleAt = at
             self.author = author
             self.via = via
+            origin = puller.map(Origin.echo) ?? .own
             if let puller {
                 pullers.insert(puller)
             }
+        }
+
+        /// The asker an echo was made for, or `nil` for a want of ours.
+        var echoFor: NodeId? {
+            if case .echo(let asker) = origin {
+                return asker
+            }
+            return nil
         }
 
         /// The hash as the log shows it.
@@ -166,6 +181,7 @@ extension BlobExchange {
             fetch = nil
             cycleSawLead = false
             pullWithheld = false
+            fetchHeld = false
             // A link-up pulls in its own cycle or not at all.
             freshLinks.removeAll()
             pullers.removeAll()

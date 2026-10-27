@@ -51,8 +51,10 @@ public final class MeshEngine {
     var blobExchange: BlobExchange
     /// The kept prefixes of cut attachments, the link manager's own store (``Mesh``): asked with, and dropped (knit-ios #2).
     let partials: any PartialBlobStore
-    /// The attachments the links were last told to keep as they stream in (``syncAcceptedFiles()``).
+    /// The attachments the links were last told to keep as they stream in, and of those our own, which a cut leaves a
+    /// prefix of (``syncAcceptedFiles()``).
     var acceptedFiles: Set<BlobHash> = []
+    var resumableFiles: Set<BlobHash> = []
     /// The photo each neighbour has had from us whole, this run (``pushAvatar(to:)``).
     var avatarPushes: [NodeId: BlobHash] = [:]
     var ackSync = AckSync()

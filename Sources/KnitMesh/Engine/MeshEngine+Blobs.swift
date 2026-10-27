@@ -68,15 +68,22 @@ extension MeshEngine {
     /// that cannot be queried, and `asker` is a neighbour we are pulling it for. `reach` is the budget and deadline it is
     /// wanted with (knit-next ADR 2026-10.2drc): ``BlobExchange/Reach/own(until:rederived:)`` for a want of ours,
     /// ``BlobExchange/Reach/asked(pull:until:)`` for an asker's. Answers whether it is wanted: a blob held, or on its way
-    /// in, is not.
+    /// in, is not. An echo the want set would turn away (``BlobExchange/echoRefusal(_:)``) never gets here: the one caller
+    /// that passes an asker, ``serveOrWant(_:to:mayPark:reached:)``, declines it first, and ``makeRoom(for:asker:)`` leaves the room it found.
+    /// A want of ours for an echo whose bytes are already on their way makes it ours (``promoteArriving(_:)``).
     @discardableResult
     func wantBlob(_ hash: BlobHash, author: NodeId?, via: NodeId?, asker: NodeId?, reach: BlobExchange.Reach) -> Bool {
         guard !isBlobOnItsWayOrHeld(hash) else {
+            if asker == nil {
+                promoteArriving(hash)
+            }
             return false
         }
         let now = clock.monotonicMilliseconds()
         let wall = clock.wallMilliseconds()
+        makeRoom(for: hash, asker: asker)
         note(blobExchange.recordWant(hash, now: now, wall: wall, author: author, via: via, asker: asker, reach: reach))
+        withdrawEvicted()
         stepBlob(hash, among: blobCandidates(), now: now, wall: wall)
         flushBlobQueries()
         return true
@@ -91,8 +98,14 @@ extension MeshEngine {
         let now = clock.monotonicMilliseconds()
         let wall = clock.wallMilliseconds()
         let candidates = blobCandidates()
-        for want in wanted where !isBlobOnItsWayOrHeld(want.hash) {
+        for want in wanted {
+            guard !isBlobOnItsWayOrHeld(want.hash) else {
+                promoteArriving(want.hash)
+                continue
+            }
+            makeRoom(for: want.hash, asker: nil)
             note(blobExchange.recordWant(want.hash, now: now, wall: wall, author: want.author, via: nil, asker: nil, reach: want.reach))
+            withdrawEvicted()
             stepBlob(want.hash, among: candidates, now: now, wall: wall)
         }
         flushBlobQueries()
@@ -147,7 +160,9 @@ extension MeshEngine {
             syncAcceptedFiles()
             return
         }
-        let plan = blobExchange.decide(hash, among: candidates, now: now, wall: wall)
+        // An echo's next fetch reserves a whole file's room in the echo budget (knit-ios #20), its own fetch's set aside.
+        let echoRoom = !blobExchange.isEcho(hash) || echoBudgetFits(Int64(FileIntake.maxFileBytes), excluding: hash)
+        let plan = blobExchange.decide(hash, among: candidates, now: now, wall: wall, echoRoom: echoRoom)
         note(plan.notes)
         if let line = plan.asks.first?.line {
             let request = blobRequest(hash, pull: plan.pull, until: plan.until)
@@ -188,14 +203,18 @@ extension MeshEngine {
         }
     }
 
-    /// Tells the links which attachments to keep as they stream in: the blobs wanted.
+    /// Tells the links which attachments to keep as they stream in, the blobs wanted, and which of those leave a prefix
+    /// kept when cut, our own (knit-ios #20). Sent when either changes: a want of ours that takes over an echo changes no
+    /// key wanted, and only makes it resumable.
     func syncAcceptedFiles() {
         let wanted = Set(blobExchange.wanted)
-        guard wanted != acceptedFiles else {
+        let own = blobExchange.ownWanted
+        guard wanted != acceptedFiles || own != resumableFiles else {
             return
         }
         acceptedFiles = wanted
-        transport.acceptFiles(wanted)
+        resumableFiles = own
+        transport.acceptFiles(wanted, resumable: own)
     }
 
     // MARK: Serving
@@ -219,12 +238,13 @@ extension MeshEngine {
     /// A held blob is served whatever the ask allows, `pull = 0` included, from the offset it named (Kotlin's order: the
     /// file, where it starts, then ``serve(_:to:mayPark:reached:)``, `BlobExchange.kt:1665-1690`). A blob we lack makes no
     /// want at all for an ask with no budget left or past its deadline (`echoFor`): it is logged as Android logs it,
-    /// beside this port's `blobreq` line, and counted.
+    /// beside this port's `blobreq` line, and counted. So, in the same words, is an echo this port turns away for what it
+    /// would cost (knit-ios #20, ``echoDecline(_:reached:)``).
     func serveOrWant(_ hash: BlobHash, to peer: NodeId, mayPark: Bool, reached: BlobExchange.Reached) {
         let answer: String
         if let file = outboundFile(hash, kind: .attachment, from: reached.offset) {
             answer = serve(file, to: peer, mayPark: mayPark, reached: reached)
-        } else if let refused = BlobExchange.echoRefusal(pull: reached.pull, until: reached.deadline, wall: clock.wallMilliseconds()) {
+        } else if let refused = echoDecline(hash, reached: reached) {
             blobExchange.counts.echoesDeclined += 1
             note(["blob no-echo \(hash.string.prefix(BlobExchange.shownHashCharacters))… for \(peer) (\(refused))"])
             answer = "not held; no echo (\(refused))"
@@ -239,7 +259,8 @@ extension MeshEngine {
 
     /// Streams a held blob to `peer` as kind ATTACHMENT, whatever it is, as Android serves every blob: not while a
     /// copy is already on the link to it, not while another copy of it is fed live to someone else, when `mayPark`
-    /// (``parkBehindFeed(_:for:bytes:reached:now:)``, which keeps what the ask said, sized by its tail), and not twice inside
+    /// (``parkBehindFeed(_:for:bytes:reached:now:)``, which keeps what the ask said, sized by its tail), not while
+    /// ``BlobExchange/maxWaitingServes`` files wait on its link, when `mayPark` (knit-ios #20), and not twice inside
     /// the serve memo, which an unsigned asker's other offset never gets past. Answers what it did, for the log: a resumed
     /// serve's tail, then where it starts, so a whole file's line is the one it always was.
     func serve(_ file: OutboundFile, to peer: NodeId, mayPark: Bool, reached: BlobExchange.Reached) -> String {
@@ -250,6 +271,15 @@ extension MeshEngine {
         let tail = file.size - file.start
         if mayPark, parkBehindFeed(file.hash, for: peer, bytes: Int64(tail), reached: reached, now: now) {
             return "parked behind a feed"
+        }
+        // The queue on the asker's link, which Android leaves unbounded: an unsigned ask per held hash would otherwise
+        // queue every blob held. Nothing is stamped, so the asker's ask at its floor is served once the queue drains. A
+        // parked ask whose turn came is queued whatever waits: it waited its turn already.
+        let waiting = transport.filesWaiting(to: peer)
+        if mayPark, waiting >= BlobExchange.maxWaitingServes {
+            blobExchange.counts.servesRefused += 1
+            note(["blob no-serve \(file.hash.string.prefix(BlobExchange.shownHashCharacters))… to \(peer) (\(waiting) waiting)"])
+            return "not queued behind \(waiting) files waiting"
         }
         guard blobExchange.shouldServe(file.hash, to: peer, now: now) else {
             return "served to it within the serve memo"
@@ -287,6 +317,10 @@ extension MeshEngine {
     /// #138): read before that, a blob past its END is neither arriving nor held, and would be asked for again. A spliced
     /// file that fails its hash starts over from 0 (``restartFailedSplice(_:)``); a whole one leaves a kept prefix alone,
     /// since the bytes were the holder's alone (`BlobExchange.kt:2018-2023`).
+    ///
+    /// A file wanted only as an echo, which no row names, is weighed against the echo budget at its measured size before
+    /// it is stored, and refused when it does not fit (``refuseEchoFile(_:)``, knit-ios #20): the links keep any file
+    /// wanted, so a peer can stream one for an echo it was never asked for. One stored adds its size to the budget.
     public func receiveFile(_ file: InboundFile) {
         defer { transport.fileTaken(from: file.from, hash: file.hash) }
         guard BlobHash(of: file.bytes) == file.hash else {
@@ -312,7 +346,19 @@ extension MeshEngine {
                 return
             }
         }
-        stores.blobs.insert(file.bytes, hash: file.hash, mime: file.mime, storedAt: clock.wallMilliseconds())
+        // Read before the want is forgotten: fetched for an asker alone, and named by no row (knit-ios #20). The rows are
+        // read outside a store unit, so a failed read names nothing, and a file a row does name can be refused once while
+        // the budget is full. That is the worst of it: the refused memo gates echoes alone, and the next 60 s re-offer
+        // wants the blob as ours from the rows, which a cut, a landing and the budget then treat as ours.
+        let echoOnly = file.kind == .attachment && blobExchange.isEcho(file.hash) && !blobsTheRowsName().contains(file.hash)
+        if echoOnly, !echoBudgetFits(Int64(file.bytes.count), excluding: file.hash) {
+            refuseEchoFile(file)
+            return
+        }
+        let kept = stores.blobs.insert(file.bytes, hash: file.hash, mime: file.mime, storedAt: clock.wallMilliseconds())
+        if echoOnly, kept {
+            blobExchange.echoBudget.landed(Int64(file.bytes.count))
+        }
         // Read back, since a failed insert answers as one already held does: only a blob held has nothing left to resume.
         if stores.blobs.contains(file.hash) {
             partials.drop(file.hash)
@@ -326,7 +372,7 @@ extension MeshEngine {
         }
     }
 
-    private func reject(_ file: InboundFile, _ reason: String) {
+    func reject(_ file: InboundFile, _ reason: String) {
         filesRejected += 1
         log.log(.info, "mesh file \(LinkManager.shown(file.hash.string)) from \(file.from) \(reason); dropped")
     }

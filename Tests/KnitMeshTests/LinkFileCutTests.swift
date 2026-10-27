@@ -33,7 +33,7 @@ import Testing
     /// `peer`'s link on `id`, halfway through the photo.
     private func streaming(_ rig: LinkRig, from peer: NodeId = LinkRig.low, on id: ChannelID) {
         _ = rig.accept(peer, on: id)
-        rig.links.acceptFiles([hash])
+        rig.links.acceptFiles([hash], resumable: [hash])
         _ = rig.handle(.received(id, header(photo) + chunk(photo[..<20_000])))
     }
 
@@ -106,11 +106,56 @@ import Testing
         #expect(partialLines(rig).count == 1, "only the prefix the test kept")
     }
 
+    /// When the resumable keys (our own wants) change around a stream past the store's floor (knit-ios #20).
+    enum Resumable: CaseIterable, Sendable, CustomTestStringConvertible {
+        /// Accepted, as an asker's echo, and never resumable.
+        case never
+        /// Resumable from its header to its cut.
+        case throughout
+        /// Resumable at its header, no longer by its cut: our want went, and an echo still wants it.
+        case lostMidStream
+        /// An echo's at its header, ours by its cut.
+        case gainedMidStream
+
+        var testDescription: String { "\(self)" }
+        var atHeader: Bool {
+            switch self {
+            case .throughout, .lostMidStream:
+                true
+            case .never, .gainedMidStream:
+                false
+            }
+        }
+        var atCut: Bool {
+            switch self {
+            case .throughout, .gainedMidStream:
+                true
+            case .never, .lostMidStream:
+                false
+            }
+        }
+    }
+
+    /// A cut keeps a prefix only of a key resumable as the link is cut, whatever it was at the header: an asker's cut
+    /// streams never evict ours from the eight the store keeps (knit-ios #20, knit-next's fork review H2).
+    @Test(arguments: Resumable.allCases)
+    func aCutKeepsAPrefixOnlyOfAWantOfOursAsTheLinkGoes(_ resumable: Resumable) {
+        let rig = rig()
+        _ = rig.accept(LinkRig.low, on: channel)
+        rig.links.acceptFiles([hash], resumable: resumable.atHeader ? [hash] : [])
+        _ = rig.handle(.received(channel, header(photo) + chunk(photo[..<10_000])))
+        rig.links.acceptFiles([hash], resumable: resumable.atCut ? [hash] : [])
+        _ = rig.handle(.received(channel, chunk(photo[10_000..<20_000])))
+        #expect(rig.handle(.closed(channel)) == [.down(LinkRig.low)])
+        #expect(rig.links.partials.length(hash) == (resumable.atCut ? 20_000 : 0))
+        #expect(partialLines(rig) == (resumable.atCut ? [kept] : []))
+    }
+
     @Test func aStreamUnderTheFloorKeepsNothing() {
         let rig = rig()
         _ = rig.accept(LinkRig.low, on: channel)
         let small = Array(photo[..<10_000])
-        rig.links.acceptFiles([BlobHash(of: small)])
+        rig.links.acceptFiles([BlobHash(of: small)], resumable: [BlobHash(of: small)])
         _ = rig.handle(.received(channel, header(small) + chunk(small[..<8000])))
         _ = rig.handle(.closed(channel))
         #expect(rig.links.partials.length(BlobHash(of: small)) == 0, "under the store's 16 KiB floor")

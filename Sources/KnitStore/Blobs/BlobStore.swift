@@ -40,6 +40,10 @@ public protocol BlobStore: AnyObject, Sendable {
     /// Every held hash, in byte order, for the sweep that removes blobs nothing names.
     func allHashes() -> [BlobHash]
 
+    /// Every held hash stamped before `cutoff`, wall-clock ms, in byte order: the blobs old enough for the periodic sweep
+    /// to remove when nothing names them (knit-ios #20). One stamped at `cutoff` itself is not old enough.
+    func hashes(storedBefore cutoff: Int64) -> [BlobHash]
+
     /// The bytes held under `hashes`, counting only those held: what a budget over some blobs weighs.
     func totalBytes(among hashes: Set<BlobHash>) -> Int
 }
@@ -49,6 +53,7 @@ public final class MemoryBlobStore: BlobStore {
     private struct Blob {
         var bytes: [UInt8]
         var mime: String
+        var storedAt: Int64
     }
 
     private let blobs = Lock<[BlobHash: Blob]>([:])
@@ -88,12 +93,12 @@ public final class MemoryBlobStore: BlobStore {
     }
 
     @discardableResult
-    public func insert(_ bytes: [UInt8], hash: BlobHash, mime: String, storedAt _: Int64) -> Bool {
+    public func insert(_ bytes: [UInt8], hash: BlobHash, mime: String, storedAt: Int64) -> Bool {
         blobs.withLock { held in
             guard held[hash] == nil else {
                 return false
             }
-            held[hash] = Blob(bytes: bytes, mime: mime)
+            held[hash] = Blob(bytes: bytes, mime: mime, storedAt: storedAt)
             return true
         }
     }
@@ -104,6 +109,10 @@ public final class MemoryBlobStore: BlobStore {
 
     public func allHashes() -> [BlobHash] {
         blobs.withLock { $0.keys.sorted() }
+    }
+
+    public func hashes(storedBefore cutoff: Int64) -> [BlobHash] {
+        blobs.withLock { held in held.filter { $0.value.storedAt < cutoff }.keys.sorted() }
     }
 
     public func totalBytes(among hashes: Set<BlobHash>) -> Int {

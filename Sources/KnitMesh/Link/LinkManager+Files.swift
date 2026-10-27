@@ -28,7 +28,8 @@ internal struct LandingFile: Hashable {
 ///
 /// **In,** each link's file passes through a ``FileIntake``, which applies Android's receiver rules. A peer's own AVATAR
 /// push is kept up to ``Configuration/maxAvatarFileBytes``. An ATTACHMENT is kept only when the engine asked for its
-/// hash (``acceptFiles(_:)``), up to Android's 8 MiB and 64 KiB, and partial files on every link together stay within
+/// hash (``acceptFiles(_:resumable:)``), up to Android's 8 MiB and 64 KiB, and leaves a prefix kept when cut only when the
+/// engine wants it of its own, and partial files on every link together stay within
 /// ``Configuration/maxBufferedFileBytes``. A whole file goes to the engine, which checks its hash. How much of a file is
 /// in goes to the engine too, kept or skipped, which tells the sender (knit-next ADR 2026-10.nsr7): on every chunk that
 /// brings 2 KiB, at least every half second, and once more half a second after chunks no report carried, so a windowed
@@ -165,9 +166,16 @@ extension LinkManager {
         feeds.values.count { $0.streaming != nil }
     }
 
-    /// The attachments to keep as they stream in: the blobs the engine wants.
-    public func acceptFiles(_ keys: Set<BlobHash>) {
+    /// The attachments to keep as they stream in: the blobs the engine wants. Of those, `resumable`, the engine's own
+    /// wants, leave a prefix kept when their link is cut (``keepCutFile(on:now:)``, knit-ios #20).
+    public func acceptFiles(_ keys: Set<BlobHash>, resumable: Set<BlobHash>) {
         acceptedFileKeys = keys
+        resumableFileKeys = resumable
+    }
+
+    /// How many files wait on `peer`'s link behind the one streaming, 0 when unlinked.
+    public func filesWaiting(to peer: NodeId) -> Int {
+        liveChannel(to: peer).flatMap { feeds[$0] }?.waiting.count ?? 0
     }
 
     /// Files streaming out or waiting to, over every link.
@@ -208,8 +216,13 @@ extension LinkManager {
     /// The link `id` was cut mid-file (`FileIntake.cut`, `FileIntake.kt:232-243`): an attachment being kept goes to
     /// ``partials`` as a prefix the next ask resumes from, which keeps it only if it is the longest held and was not
     /// spliced onto a prefix dropped since. Anything else is dropped. Which teardowns cut and which drop is the caller's.
+    ///
+    /// Only for a key the engine wants of its own as the link is cut (``resumableFileKeys``, knit-ios #20). Android keeps
+    /// any cut attachment, so a peer that has us fetch eight hashes for it and cuts each stream past 16 KiB evicts every
+    /// prefix of ours from the eight the store keeps; an echo's cut stream is dropped here instead, and its next ask starts
+    /// from byte 0.
     func keepCutFile(on id: ChannelID, now: Int64) {
-        guard let cut = intakes[id]?.cut() else {
+        guard let cut = intakes[id]?.cut(), resumableFileKeys.contains(cut.key) else {
             return
         }
         partials.keep(cut.key, bytes: cut.bytes, basedOn: cut.basedOn, now: now)

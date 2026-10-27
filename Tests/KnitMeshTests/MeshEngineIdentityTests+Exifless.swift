@@ -265,5 +265,6 @@ private final class CountingBlobStore: BlobStore {
     }
 
     func allHashes() -> [BlobHash] { held.allHashes() }
+    func hashes(storedBefore cutoff: Int64) -> [BlobHash] { held.hashes(storedBefore: cutoff) }
     func totalBytes(among hashes: Set<BlobHash>) -> Int { held.totalBytes(among: hashes) }
 }

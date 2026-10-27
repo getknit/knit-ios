@@ -28,7 +28,7 @@ import Testing
     @Test func aCutKeepsTheAttachmentItWasStreamingAndNothingElse() {
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
-        rig.links.acceptFiles([hash])
+        rig.links.acceptFiles([hash], resumable: [hash])
         _ = rig.handle(.received(channel, header(offset: nil, size: photo.count) + chunk(photo[..<20_000])))
         rig.links.keepCutFile(on: channel, now: 2000)
         #expect(rig.links.partials.length(hash) == 20_000)
@@ -38,10 +38,23 @@ import Testing
         #expect(rig.links.partials.length(hash) == 20_000, "an avatar keeps nothing, and costs the prefix nothing")
     }
 
+    /// The splice reads the accepted keys alone (knit-ios #20): an echo whose ask named the prefix we kept, from a want of
+    /// ours since gone, is resumed onto it, though a cut of it now would keep nothing.
+    @Test func aResumedHeaderForAnAcceptedKeyNotResumableStillSplices() throws {
+        let rig = LinkRig(local: LinkRig.high)
+        _ = rig.accept(LinkRig.low, on: channel)
+        rig.links.acceptFiles([hash], resumable: [])
+        rig.links.partials.keep(hash, bytes: Array(photo[..<20_000]), basedOn: nil, now: 1000)
+        let events = rig.handle(.received(channel, header(offset: 20_000, size: 20_000) + chunk(photo[20_000...]) + end))
+        #expect(rig.links.filesResumedIn == 1)
+        let file = try #require(events.compactMap { if case .file(let file) = $0 { file } else { nil } }.first)
+        #expect(file.bytes == photo && file.resumedFrom == 20_000)
+    }
+
     @Test func aResumedStreamReadsReportsAndTimesFromItsPrefix() throws {
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
-        rig.links.acceptFiles([hash])
+        rig.links.acceptFiles([hash], resumable: [hash])
         rig.links.partials.keep(hash, bytes: Array(photo[..<20_000]), basedOn: nil, now: 1000)
         _ = rig.handle(.received(channel, header(offset: 20_000, size: 20_000)))
         #expect(rig.links.filesResumedIn == 1)
@@ -71,7 +84,7 @@ import Testing
         _ = rig.accept(LinkRig.low, on: channel)
         _ = rig.accept(LinkRig.middle, on: other)
         let elsewhere = (0..<15_000).map { UInt8(truncatingIfNeeded: $0) }
-        rig.links.acceptFiles([hash, BlobHash(of: elsewhere)])
+        rig.links.acceptFiles([hash, BlobHash(of: elsewhere)], resumable: [hash, BlobHash(of: elsewhere)])
         _ = rig.handle(.received(other, header(offset: nil, size: 15_000, key: BlobHash(of: elsewhere)) + chunk(elsewhere[...])))
         rig.links.partials.keep(hash, bytes: Array(photo[..<20_000]), basedOn: nil, now: 1000)
         _ = rig.handle(.received(channel, header(offset: 20_000, size: 20_000)))
@@ -92,7 +105,7 @@ import Testing
         let events = rig.handle(.received(channel, chunk(photo[20_000..<24_096])))
         #expect(events == [.fileProgress(FileProgress(from: LinkRig.low, hash: hash, held: 24_096, milliseconds: 500))])
         #expect(rig.log.all.contains("debug link \(channel) file \(hash.string.prefix(12)) skipped"))
-        rig.links.acceptFiles([hash])
+        rig.links.acceptFiles([hash], resumable: [hash])
         _ = rig.handle(.received(channel, end + header(offset: 20_000, size: 20_000)))
         #expect(
             rig.log.all.contains("info link \(channel) file \(hash.string.prefix(12)) refused resumed at 20000: 0B kept"),
@@ -103,7 +116,7 @@ import Testing
         // knit-next #161: one read of a kept prefix per key per link per 45 s.
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
-        rig.links.acceptFiles([hash])
+        rig.links.acceptFiles([hash], resumable: [hash])
         rig.links.partials.keep(hash, bytes: Array(photo[..<20_000]), basedOn: nil, now: 1000)
         _ = rig.handle(.received(channel, header(offset: 20_000, size: 20_000) + end))
         rig.clock.advance(1000)

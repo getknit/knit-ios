@@ -150,7 +150,8 @@ internal enum ControlLines {
     /// 2026-10.6e5t): queries sent, answered and refused, answers taken and ignored, and the fetches, confirms, fallbacks,
     /// blind asks and pulls they led to. Then the progress reports and withdrawals sent and taken (knit-next ADR
     /// 2026-10.nsr7), the echoes declined and pulls withheld (knit-next ADR 2026-10.2drc), and the spliced files that failed
-    /// their hash (`splicesRefused`, knit-ios #2).
+    /// their hash (`splicesRefused`, knit-ios #2). Last, the echoes' fetches held back and files refused for the echo budget,
+    /// and the serves not queued behind a full link (`echoFetchesHeld`, `echoFilesRefused`, `servesRefused`, knit-ios #20).
     static func describe(_ blobs: BlobCounts) -> JSONValue {
         [
             "queriesSent": .int(Int64(blobs.queriesSent)),
@@ -171,6 +172,9 @@ internal enum ControlLines {
             "echoesDeclined": .int(Int64(blobs.echoesDeclined)),
             "pullsWithheld": .int(Int64(blobs.pullsWithheld)),
             "splicesRefused": .int(Int64(blobs.splicesRefused)),
+            "echoFetchesHeld": .int(Int64(blobs.echoFetchesHeld)),
+            "echoFilesRefused": .int(Int64(blobs.echoFilesRefused)),
+            "servesRefused": .int(Int64(blobs.servesRefused)),
         ]
     }
 

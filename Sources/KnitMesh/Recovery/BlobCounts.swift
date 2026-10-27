@@ -33,7 +33,8 @@ public struct BlobCounts: Sendable, Equatable {
     /// Asks parked behind another copy's feed of the same blob (`blobAsksParked`, knit-next ADR 2026-10.g24x).
     public var asksParked: Int
     /// Asks for a blob we lack that made no want here, allowing no budget or past their deadline (`blobEchoesDeclined`,
-    /// knit-next ADR 2026-10.2drc).
+    /// knit-next ADR 2026-10.2drc), and, this port's alone, past the echo budget or a want set full of our own
+    /// (knit-ios #20).
     public var echoesDeclined: Int
     /// Cycles that would have asked their NONE neighbours to pull a blob through and asked nobody, the want past its
     /// deadline or with no budget left (`blobPullsWithheld`).
@@ -41,6 +42,15 @@ public struct BlobCounts: Sendable, Equatable {
     /// Files spliced onto a prefix we kept that failed their hash, so the prefix went and the blob was asked for from byte
     /// 0 (`onSpliceRefused`, knit-ios #2). Anything but 0 is a holder or a prefix that was wrong.
     public var splicesRefused: Int
+    /// Steps of an echo, a want made for an asker, that asked nobody because the echo budget was spent, once a cycle
+    /// (knit-ios #20). This port's alone.
+    public var echoFetchesHeld: Int
+    /// Whole files refused on landing because they were fetched for an asker alone and the echo budget had no room for
+    /// them (knit-ios #20).
+    public var echoFilesRefused: Int
+    /// Asks for a held blob not queued because ``BlobExchange/maxWaitingServes`` files already wait on the asker's link
+    /// (knit-ios #20). The asker asks again at its floor.
+    public var servesRefused: Int
 
     /// Bundles the counts.
     public init(
@@ -61,7 +71,10 @@ public struct BlobCounts: Sendable, Equatable {
         asksParked: Int = 0,
         echoesDeclined: Int = 0,
         pullsWithheld: Int = 0,
-        splicesRefused: Int = 0
+        splicesRefused: Int = 0,
+        echoFetchesHeld: Int = 0,
+        echoFilesRefused: Int = 0,
+        servesRefused: Int = 0
     ) {
         self.queriesSent = queriesSent
         self.queriesAnswered = queriesAnswered
@@ -81,5 +94,8 @@ public struct BlobCounts: Sendable, Equatable {
         self.echoesDeclined = echoesDeclined
         self.pullsWithheld = pullsWithheld
         self.splicesRefused = splicesRefused
+        self.echoFetchesHeld = echoFetchesHeld
+        self.echoFilesRefused = echoFilesRefused
+        self.servesRefused = servesRefused
     }
 }

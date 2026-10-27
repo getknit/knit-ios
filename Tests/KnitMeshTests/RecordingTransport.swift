@@ -36,8 +36,13 @@ final class RecordingTransport: MeshTransport {
     private(set) var digests: [(ids: [String], to: NodeId)] = []
     /// Every file streamed, in order. A file to a peer that is not a neighbour goes nowhere, as on a link.
     private(set) var files: [SentFile] = []
-    /// The attachments the engine last said to keep.
+    /// The attachments the engine last said to keep, and of those the ones a cut would leave a prefix of.
     private(set) var accepted: Set<BlobHash> = []
+    private(set) var resumable: Set<BlobHash> = []
+    /// Every `acceptFiles` call, in order: what it accepted and what it made resumable.
+    private(set) var acceptCalls: [(keys: Set<BlobHash>, resumable: Set<BlobHash>)] = []
+    /// How many files a link would say wait on each neighbour's link, as a test sets it.
+    var waiting: [NodeId: Int] = [:]
     /// What a link would say is streaming in, as a test sets it.
     var arrivingFileKeys: Set<BlobHash> = []
     /// Whether a file taken leaves ``arrivingFileKeys``, as a landed file leaves a real link's.
@@ -115,8 +120,14 @@ final class RecordingTransport: MeshTransport {
         return true
     }
 
-    func acceptFiles(_ keys: Set<BlobHash>) {
+    func acceptFiles(_ keys: Set<BlobHash>, resumable: Set<BlobHash>) {
         accepted = keys
+        self.resumable = resumable
+        acceptCalls.append((keys, resumable))
+    }
+
+    func filesWaiting(to peer: NodeId) -> Int {
+        waiting[peer] ?? 0
     }
 
     func fileTaken(from peer: NodeId, hash: BlobHash) {

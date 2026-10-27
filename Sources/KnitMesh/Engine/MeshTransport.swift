@@ -97,9 +97,16 @@ public protocol MeshTransport: AnyObject {
     /// first. 0 when unknown, which never goes ahead of a feed.
     func expectedFileRate(to peer: NodeId) -> Int64
 
-    /// The attachments worth keeping when their bytes stream in: the blobs this node wants. Any other ATTACHMENT file
-    /// is dropped as it streams by. A peer's own AVATAR push is kept whatever this says.
-    func acceptFiles(_ keys: Set<BlobHash>)
+    /// The attachments worth keeping when their bytes stream in: `keys`, the blobs this node wants, ours and those it
+    /// fetches for an asker alike. Any other ATTACHMENT file is dropped as it streams by. A peer's own AVATAR push is kept
+    /// whatever this says. Of those, `resumable` are the blobs wanted of our own, the only ones whose stream leaves a
+    /// prefix kept when its link is cut (knit-ios #20), so an asker's cut streams never evict ours from the few kept.
+    /// Whether a header resumes onto a prefix already kept still reads `keys` alone.
+    func acceptFiles(_ keys: Set<BlobHash>, resumable: Set<BlobHash>)
+
+    /// How many files wait on `peer`'s link behind the one streaming to it, if any: 0 when unlinked. A serve is not queued
+    /// past ``BlobExchange/maxWaitingServes`` of them (knit-ios #20).
+    func filesWaiting(to peer: NodeId) -> Int
 }
 
 /// A file to stream on a link: its header's fields, its size, and a reader for its bytes, so a file waiting behind

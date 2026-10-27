@@ -99,7 +99,7 @@ import Testing
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
         let file = bytes(8192)
-        rig.links.acceptFiles([])
+        rig.links.acceptFiles([], resumable: [])
         let header = FileHeader(kind: .attachment, key: BlobHash(of: file).string, mime: "image/jpeg", size: file.count)
         _ = rig.handle(.received(channel, LinkRecord(.fileHeader, payload: LinkJSON.fileHeaderPayload(header)).encoded ?? []))
         rig.clock.advance(100)

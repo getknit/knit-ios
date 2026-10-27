@@ -146,6 +146,13 @@ public final class SQLBlobStore: BlobStore {
         }
     }
 
+    public func hashes(storedBefore cutoff: Int64) -> [BlobHash] {
+        database.read(or: []) { db in
+            try Row.fetchAll(db, sql: "SELECT hash FROM blobs WHERE storedAt < ? ORDER BY hash", arguments: [cutoff])
+                .map { try $0.blobHash("hash") }
+        }
+    }
+
     public func totalBytes(among hashes: Set<BlobHash>) -> Int {
         Self.batches(of: hashes).reduce(0) { total, batch in
             total

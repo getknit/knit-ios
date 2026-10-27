@@ -4,7 +4,7 @@ import KnitWire
 /// The engine's periodic passes, which ``MeshEngine/advance()`` fires when each falls due (ADR 2026-09.gq84): the
 /// 60-second re-offer, the sweep and the 15-minute heal (`MeshManager`'s `reofferToNeighborsPeriodically`,
 /// `sweepExpired` and `heal` in knit-next), the blob re-arm the re-offer, a start and a link-up run, and the blob
-/// collection a start runs (`BlobRepository.deleteOrphans`), with the reads it shares with a photo's replacement.
+/// collection a start and the sweep run (`BlobRepository.deleteOrphans`), with the reads it shares with a photo's replacement.
 extension MeshEngine {
     /// The 60-second re-offer to every linked neighbour (`MeshManager.reofferToNeighborsPeriodically`): the blobs and
     /// keys we still lack, our digest, any ticks owed, and with the ratchet's switch on the group seeds it never acknowledged.
@@ -28,13 +28,14 @@ extension MeshEngine {
     }
 
     /// Expired custody, parked frames, stale key wants, aged-out ticks, reactions left with no message and stale kept
-    /// prefixes (`MeshManager.sweepExpired`), then the ratchet frames whose unit failed, opened again from the copies kept.
+    /// prefixes (`MeshManager.sweepExpired`), then the ratchet frames whose unit failed, opened again from the copies kept,
+    /// and last the blobs nothing names that are older than an echo's life (knit-ios #20), which weighs the echo budget
+    /// anew.
     func sweep() {
         let now = clock.monotonicMilliseconds()
         if stores.custody.sweepExpired(now: clock.wallMilliseconds()) > 0 {
             noteCustodyChanged()
         }
-        releaseDeletedPhotos()
         pruneOrphanReactions()
         pendingInbound.sweep(now: now)
         // Beside the key-wait park, as Android sweeps both (`sweepExpired`, `MeshManager.kt:2333-2334`).
@@ -48,6 +49,7 @@ extension MeshEngine {
         // error reads as not held, which keeps the prefix to its hour.
         partials.sweep(now: now) { stores.blobs.contains($0) }
         replayFailedRatchetOpens()
+        sweepUnnamedBlobs(storedBefore: clock.wallMilliseconds() - BlobExchange.wantMilliseconds)
     }
 
     /// The 15-minute heal pass (`MeshManager.heal`): re-ask for missing keys, go over the ticks we owe, rotate our prekey
@@ -144,13 +146,50 @@ extension MeshEngine {
         }
     }
 
-    /// Removes every blob nothing names (`BlobRepository.deleteOrphans`, at each mesh start). A blob fetched on an
-    /// asker's behalf lives until then, so the asker's next ask still finds it here, and one a live carried frame names
-    /// lives until the first start after that frame leaves custody: the start sweeps custody first.
+    /// Removes every blob nothing names, whatever its age (`BlobRepository.deleteOrphans`, at each mesh start). One a live
+    /// carried frame names lives until the first sweep after that frame leaves custody: the start sweeps custody first.
     func sweepUnreferencedBlobs() {
-        let named = referencedBlobs()
-        for hash in stores.blobs.allHashes() where !named.contains(hash) {
-            stores.blobs.remove(hash)
+        sweepUnnamedBlobs(storedBefore: nil)
+    }
+
+    /// Removes the blobs nothing names, stored before `cutoff` on the wall clock, or of any age with none: the start's
+    /// sweep, and the 600 s sweep's (knit-ios #20). Android collects orphans only at its mesh start too
+    /// (`MeshManager.kt:2756-2758`), so a blob fetched for an asker stayed until Knit next started, which on an iPhone in
+    /// the background can be days; the fork review's H3 filled a phone that way.
+    ///
+    /// The sweep's cutoff is ``BlobExchange/wantMilliseconds``, an echo's life, so an asker whose copy was cut still finds
+    /// the blob here at its re-asks. One goes only when, besides:
+    /// - no row and no live carried frame names it (``referencedBlobs()``), read with the candidates in one store unit, so
+    ///   a read that fails fails the unit and removes nothing, where outside one it would read as nothing named;
+    /// - and, read after the unit, nothing here is using it: it is not wanted, not arriving, not queued or streaming to any
+    ///   neighbour (a file reads its bytes from the store as it streams), and no ask for it is parked
+    ///   (``isBlobInUse(_:)``).
+    ///
+    /// The removals run once the unit has committed, as a store unit's body leaves a blob's file to the work after it. The
+    /// echo budget is weighed afterwards, and the hashes refused for it may be fetched again.
+    func sweepUnnamedBlobs(storedBefore cutoff: Int64?) {
+        let blobs = stores.blobs
+        let unit = stores.transactor.atomically { () -> [BlobHash]? in
+            let candidates = cutoff.map { blobs.hashes(storedBefore: $0) } ?? blobs.allHashes()
+            guard !candidates.isEmpty else {
+                return []
+            }
+            let named = referencedBlobs()
+            return candidates.filter { !named.contains($0) }
         }
+        if case .committed(let unnamed) = unit {
+            for hash in unnamed where !isBlobInUse(hash) {
+                blobs.remove(hash)
+            }
+        }
+        measureEchoBudget()
+        blobExchange.echoBudget.forgetRefused()
+    }
+
+    /// Whether `hash` is in use here whatever names it: wanted, on its way in, queued or streaming to a neighbour, or with
+    /// an ask parked for it.
+    func isBlobInUse(_ hash: BlobHash) -> Bool {
+        blobExchange.isWanted(hash) || transport.arrivingFileKeys.contains(hash) || blobExchange.parked[hash] != nil
+            || neighborIds.contains { transport.isFileInFlight(hash, to: $0) }
     }
 }

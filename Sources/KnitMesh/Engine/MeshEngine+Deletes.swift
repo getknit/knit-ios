@@ -59,7 +59,9 @@ extension MeshEngine {
 
     /// Lets go of the photos `removed` carried. One no message shows stops being wanted, since nothing here pulls a
     /// carried frame's photo (ADR 2026-10.ym9y). Its bytes leave the store at once when nothing names them, a frame our
-    /// custody still carries included, and otherwise once that frame goes (``releaseDeletedPhotos()``).
+    /// custody still carries included, and otherwise at the first sweep once that frame goes and the blob is past an echo's
+    /// life, read in one store unit (``sweepUnnamedBlobs(storedBefore:)``, knit-ios #20): a frame leaves custody 6 h after
+    /// its `sentAt` at the soonest, so the photo outlives it by at most 30 minutes and a sweep's interval.
     private func release(_ removed: [MessageRecord]) {
         let hashes = Set(removed.compactMap(\.attachment?.hash))
         guard !hashes.isEmpty else {
@@ -74,18 +76,5 @@ extension MeshEngine {
             }
         }
         syncAcceptedFiles()
-    }
-
-    /// Removes each deleted message's photo whose frame our custody no longer carries, once nothing else names it: at
-    /// every sweep, so a photo outlives its frame by at most one sweep's interval.
-    func releaseDeletedPhotos() {
-        let held = stores.messages.deletedAttachments().filter { !stores.custody.contains($0.id) && stores.blobs.contains($0.hash) }
-        guard !held.isEmpty else {
-            return
-        }
-        let named = referencedBlobs()
-        for deleted in held where !named.contains(deleted.hash) {
-            stores.blobs.remove(deleted.hash)
-        }
     }
 }

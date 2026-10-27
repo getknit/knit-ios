@@ -119,8 +119,10 @@ public final class LinkManager: MeshTransport {
     var arrivalClocks: [ChannelID: ArrivalClock] = [:]
     /// Each live link's outgoing files: the one streaming and those waiting behind it.
     var feeds: [ChannelID: FileFeed] = [:]
-    /// The attachments the engine wants kept when they stream in (``acceptFiles(_:)``).
+    /// The attachments the engine wants kept when they stream in, ours and those it fetches for an asker
+    /// (``acceptFiles(_:resumable:)``), and of those its own, the only ones a cut leaves a prefix of (knit-ios #20).
     var acceptedFileKeys: Set<BlobHash> = []
+    var resumableFileKeys: Set<BlobHash> = []
     /// Whole files past their END that the engine has not taken yet (``fileTaken(from:hash:)``), still on their way.
     var landingFiles: Set<LandingFile> = []
     /// Files that finished streaming outside ``handle(_:)`` and ``advance()``, handed over by the next of either.

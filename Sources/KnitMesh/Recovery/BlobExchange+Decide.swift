@@ -7,19 +7,22 @@ extension BlobExchange {
     /// queries it owes go into the outbox, and the asks, the wake and the log lines come back for the engine to carry
     /// out. A hash not wanted gets an empty plan. The engine reads the link and the store first: a blob on its way or
     /// held is never stepped. `wall` is the wall clock at the step, which the want's deadline is read against; every
-    /// ask the step makes carries the want's budget and deadline as it read them.
-    mutating func decide(_ hash: BlobHash, among linked: [Candidate], now: Int64, wall: Int64) -> Plan {
+    /// ask the step makes carries the want's budget and deadline as it read them. Without `echoRoom`, the echo budget's
+    /// room for a file (knit-ios #20), an echo asks nobody new, and an ask standing runs to its floor (``holdsEcho(_:room:_:)``).
+    mutating func decide(_ hash: BlobHash, among linked: [Candidate], now: Int64, wall: Int64, echoRoom: Bool) -> Plan {
         guard var want = wants[hash] else {
             return Plan()
         }
         var plan = Plan(pull: want.budget, until: want.until)
-        decide(&want, linked, now, wall, &plan)
+        decide(&want, linked, now, wall, echoRoom, &plan)
         wants[hash] = want
         queue(hash, for: plan.query)
         return plan
     }
 
-    private mutating func decide(_ want: inout Want, _ linked: [Candidate], _ now: Int64, _ wall: Int64, _ plan: inout Plan) {
+    private mutating func decide( // swiftlint:disable:this function_parameter_count
+        _ want: inout Want, _ linked: [Candidate], _ now: Int64, _ wall: Int64, _ echoRoom: Bool, _ plan: inout Plan
+    ) {
         if let fetch = want.fetch {
             // Queries go out mid-fetch too (a newcomer, a fetching neighbour's recheck): fresh answers for the fallback.
             let stuck = Self.stuckOn(fetch, linked)
@@ -32,6 +35,9 @@ extension BlobExchange {
         // A cycle closes only with no ask outstanding, so an ask's grace always runs out inside the cycle it began in.
         if want.isCycleDue(at: now, wall: wall) {
             openCycle(&want, at: now, wall: wall, &plan)
+        }
+        if holdsEcho(&want, room: echoRoom, &plan) {
+            return
         }
         let live = linked.filter { !want.pullers.contains($0.id) }
         let capable = capableOf(live)

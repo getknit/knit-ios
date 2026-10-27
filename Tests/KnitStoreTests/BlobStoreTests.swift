@@ -193,6 +193,24 @@ enum BlobRemovalUndone: CaseIterable, Sendable, CustomTestStringConvertible {
         }
     }
 
+    /// The periodic sweep's candidates (knit-ios #20): the blobs stamped strictly before a cutoff, in byte order, and a
+    /// stamp kept as it was first stored, since a second insert leaves the blob as it is.
+    @Test(arguments: kinds)
+    func theBlobsStoredBeforeACutoffAreListedInByteOrder(kind: BlobStoreKind) throws {
+        try kind.withStore { store in
+            store.insert([1, 2, 3], hash: third, mime: "image/jpeg", storedAt: 10)
+            store.insert([4], hash: second, mime: "image/jpeg", storedAt: 20)
+            store.insert([], hash: first, mime: "image/gif", storedAt: 30)
+            #expect(!store.insert([4], hash: second, mime: "image/jpeg", storedAt: 1), "the first stamp stands")
+            #expect(store.hashes(storedBefore: 10).isEmpty, "one stored at the cutoff is not before it")
+            #expect(store.hashes(storedBefore: 11) == [third])
+            #expect(store.hashes(storedBefore: 30) == [second, third], "in byte order")
+            #expect(store.hashes(storedBefore: .max) == [second, first, third])
+            store.remove(third)
+            #expect(store.hashes(storedBefore: .max) == [second, first])
+        }
+    }
+
     @Test(arguments: BlobUnitKind.allCases, BlobRemovalUndone.allCases)
     func aRemovalInAUnitThatComesUndoneLeavesTheBlobWhole(kind: BlobUnitKind, undone: BlobRemovalUndone) throws {
         // A row back without its file would read as held: the photo never fetched again, and every holder query

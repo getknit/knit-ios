@@ -103,6 +103,10 @@ internal struct BlobExchange: Sendable {
     let queriesHolders: Bool
     /// What the query has done so far.
     var counts = BlobCounts()
+    /// What the blobs fetched for askers weigh, and the hashes refused for it since the last sweep (knit-ios #20).
+    var echoBudget = EchoBudget()
+    /// The wants ``admit(_:)`` dropped for a full set, with the neighbours our asks for each still stand on.
+    var evicted: [(hash: BlobHash, asks: [NodeId])] = []
 
     /// The wanted blobs and how far each fetch has got, and the order they were first wanted in, oldest first.
     var wants: [BlobHash: Want] = [:]
@@ -146,8 +150,13 @@ internal struct BlobExchange: Sendable {
 
     /// Wants `hash`, or refreshes the want and fills in the hints it lacked (`recordWant`). `author` and `via` rank the
     /// neighbours that cannot be queried; `asker` is a neighbour we are pulling it for, which this cycle neither queries
-    /// nor asks, and `reach` the budget and deadline the want is recorded with (knit-next ADR 2026-10.2drc). A full set
-    /// drops its oldest want. Answers the log lines it owes.
+    /// nor asks, and `reach` the budget and deadline the want is recorded with (knit-next ADR 2026-10.2drc). Answers the
+    /// log lines it owes.
+    ///
+    /// A new want with no `asker` is our own, and one with an `asker` an echo made for it (``Origin``, knit-ios #20). A full
+    /// set drops an echo of the asker holding the most (``admit(_:)``), so no echo ever costs a want of ours; a new echo
+    /// that would is not recorded (``echoRefusal(_:)``), and the caller counts and logs it. Android drops the oldest want
+    /// whoever made it (`BlobExchange.kt`'s `MAX_FETCHING`).
     ///
     /// A new want takes `reach` as it is. A want of our own (no `asker`) is a root, re-derived every time: it is refreshed,
     /// takes the whole budget back, and takes the deadline when its caller read every row naming the hash
@@ -159,22 +168,20 @@ internal struct BlobExchange: Sendable {
         _ hash: BlobHash, now: Int64, wall: Int64, author: NodeId?, via: NodeId?, asker: NodeId?, reach: Reach
     ) -> [String] {
         guard var want = wants[hash] else {
+            if asker != nil, echoRefusal(hash) != nil {
+                return []
+            }
             var made = Want(hash: hash, at: now, author: author, via: via, puller: asker)
             made.budget = reach.budget
             made.until = reach.until
-            wants[hash] = made
-            order.append(hash)
-            if order.count > Self.maxWanted {
-                for dropped in order.prefix(order.count - Self.maxWanted) {
-                    wants[dropped] = nil
-                }
-                order.removeFirst(order.count - Self.maxWanted)
-            }
+            admit(made)
             return []
         }
         if asker == nil {
             // Refreshed in place: the order is when it was first wanted, as in Android's insertion-ordered map. No longer
             // on every recorded want (knit-next ADR 2026-10.2drc): an ask refreshing it is what let echoes keep it alive.
+            // An echo a want of ours names is ours from now on (knit-ios #20).
+            want.origin = .own
             want.wantedAt = now
             want.budget = Self.pullBudget
             if reach.rederived || reach.until != nil {

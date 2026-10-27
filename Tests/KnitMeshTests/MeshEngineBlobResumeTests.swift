@@ -253,5 +253,6 @@ private final class RefusingBlobStore: BlobStore {
         // Nothing is held.
     }
     func allHashes() -> [BlobHash] { [] }
+    func hashes(storedBefore _: Int64) -> [BlobHash] { [] }
     func totalBytes(among _: Set<BlobHash>) -> Int { 0 }
 }

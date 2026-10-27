@@ -43,7 +43,9 @@ extension MeshEngine {
         }
         let now = clock.monotonicMilliseconds()
         let wall = clock.wallMilliseconds()
+        makeRoom(for: file.hash, asker: nil)
         blobExchange.restartFromZero(file.hash, failing: file.from, now: now, wall: wall)
+        withdrawEvicted()
         log.log(
             .info,
             "mesh blob \(file.hash.string.prefix(BlobExchange.shownHashCharacters))… splice from \(file.from) refused; asked again from 0")

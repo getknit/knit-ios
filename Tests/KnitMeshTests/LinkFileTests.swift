@@ -35,7 +35,7 @@ import Testing
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
         let file = bytes(40_000)
-        rig.links.acceptFiles([BlobHash(of: file)])
+        rig.links.acceptFiles([BlobHash(of: file)], resumable: [BlobHash(of: file)])
         let events = rig.handle(.received(channel, records(.attachment, file)))
         #expect(
             events.last
@@ -76,7 +76,7 @@ import Testing
         _ = rig.accept(LinkRig.middle, on: other)
         let first = bytes(12)
         let second = bytes(12, seed: 2)
-        rig.links.acceptFiles([BlobHash(of: first), BlobHash(of: second)])
+        rig.links.acceptFiles([BlobHash(of: first), BlobHash(of: second)], resumable: [BlobHash(of: first), BlobHash(of: second)])
         // Each file's header and first chunk of 6 bytes, then nothing more: the second link has only 4 bytes left.
         let partial = { (file: [UInt8]) in
             [
@@ -105,7 +105,7 @@ import Testing
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
         let file = bytes(100)
-        rig.links.acceptFiles([BlobHash(of: file)])
+        rig.links.acceptFiles([BlobHash(of: file)], resumable: [BlobHash(of: file)])
         let header = LinkRecord(
             .fileHeader, payload: LinkJSON.fileHeaderPayload(FileHeader(kind: .attachment, key: BlobHash(of: file).string, mime: "x")))
         _ = rig.handle(.received(channel, header.encoded ?? []))
@@ -280,7 +280,7 @@ extension LinkFileTests {
         _ = rig.accept(LinkRig.low, on: channel)
         let file = bytes(100)
         let hash = BlobHash(of: file)
-        rig.links.acceptFiles([hash])
+        rig.links.acceptFiles([hash], resumable: [hash])
         _ = rig.handle(.received(channel, records(.attachment, file)))
         #expect(rig.links.arrivingFileKeys == [hash])
         #expect(!rig.links.isFileArriving(from: LinkRig.low), "a landed file is no longer streaming")
@@ -296,7 +296,7 @@ extension LinkFileTests {
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
         let file = bytes(100)
-        rig.links.acceptFiles([BlobHash(of: file)])
+        rig.links.acceptFiles([BlobHash(of: file)], resumable: [BlobHash(of: file)])
         _ = rig.handle(.received(channel, records(.attachment, file)))
         _ = rig.links.stop()
         #expect(rig.links.arrivingFileKeys.isEmpty)
