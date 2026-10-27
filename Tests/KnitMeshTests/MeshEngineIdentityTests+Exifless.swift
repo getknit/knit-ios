@@ -23,6 +23,7 @@ extension MeshEngineIdentityTests {
         func holdBobsSealedCopy(
             _ fixture: EngineFixture, id: String, sealed: AttachmentCrypto.Sealed
         ) throws -> MessageAttachment {
+            fixture.befriend(bob)
             let hash = BlobHash(of: sealed.blob)
             let content = MessageContent(
                 body: "", attachmentHash: hash.string, attachmentMime: "image/jpeg", attachmentKey: Base64.encode(sealed.key))

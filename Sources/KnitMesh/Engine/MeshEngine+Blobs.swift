@@ -330,6 +330,10 @@ extension MeshEngine {
             }
             return
         }
+        // What the rows name, read once and only when it decides something: a file not wanted, or wanted as an echo.
+        let wanted = blobExchange.isWanted(file.hash)
+        let echo = blobExchange.isEcho(file.hash)
+        let named = file.kind == .attachment && (!wanted || echo) ? blobsTheRowsName() : []
         switch file.kind {
         case .avatar:
             // The HELLO that names the pusher is unauthenticated, so a push proves nothing alone. Android writes the
@@ -341,7 +345,7 @@ extension MeshEngine {
             }
         case .attachment:
             // Never what a carried frame names: this port pulls no carried frame's photo (ADR 2026-10.ym9y).
-            guard blobExchange.isWanted(file.hash) || blobsTheRowsName().contains(file.hash) else {
+            guard wanted || named.contains(file.hash) else {
                 reject(file, "was not asked for")
                 return
             }
@@ -350,7 +354,7 @@ extension MeshEngine {
         // read outside a store unit, so a failed read names nothing, and a file a row does name can be refused once while
         // the budget is full. That is the worst of it: the refused memo gates echoes alone, and the next 60 s re-offer
         // wants the blob as ours from the rows, which a cut, a landing and the budget then treat as ours.
-        let echoOnly = file.kind == .attachment && blobExchange.isEcho(file.hash) && !blobsTheRowsName().contains(file.hash)
+        let echoOnly = file.kind == .attachment && echo && !named.contains(file.hash)
         if echoOnly, !echoBudgetFits(Int64(file.bytes.count), excluding: file.hash) {
             refuseEchoFile(file)
             return

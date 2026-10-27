@@ -26,8 +26,12 @@ public enum Conversations {
     /// Whether `conversationId` is accepted rather than a stranger's message request (`Conversations.isAccepted`).
     /// The room always is. Any thread is when the user accepted it or wrote in it, a DM also when the user verified
     /// the peer, and a group also when one of `groupSenders`, who wrote ordinary messages in it, is someone the user
-    /// accepted, verified or wrote to. Being on a group's roster is not enough. A presentation decision only: custody
-    /// and relaying never read it.
+    /// accepted, verified or wrote to. Being on a group's roster is not enough.
+    ///
+    /// Besides the screens, the engine reads it for what a thread's photos cost (knit-ios #21): a blob is fetched only for
+    /// a message in an accepted thread, a group's blocked senders left out as the screens leave them, and kept only while
+    /// a message in an accepted thread names it, blocked senders counted, so blocking someone never sweeps a thread's
+    /// photos. Custody and relaying never read it.
     public static func isAccepted(
         _ conversationId: String,
         accepted: Set<String>,

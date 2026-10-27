@@ -5126,6 +5126,9 @@ class _ResumePair:
         if row is None:
             return self._outcome(mark)
         hash_ = row["hash"]
+        # A request's photo waits for accept (knit-ios #21, ADR 2026-10.vzem), and an iPhone that never wrote to this
+        # phone holds its DM as one.
+        ios.command(cmd="accept", conv=phone_id)
 
         def landed() -> bool:
             return _ios_holds(ios, phone_id, body) is not None

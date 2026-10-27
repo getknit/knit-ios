@@ -87,9 +87,11 @@ extension MeshEngine {
         return record
     }
 
-    /// Accepts a message request, so the thread is a chat and its messages notify.
+    /// Accepts a message request, so the thread is a chat and its messages notify, and its photos, which a request's never
+    /// are, are fetched from their authors now (``wantAcceptedPhotos()``, knit-ios #21).
     public func accept(_ conversationId: String) {
         stores.conversations.accept(conversationId)
+        wantAcceptedPhotos()
     }
 
     /// The body we send: at most 2000 UTF-16 units, and `nil` when blank, unless a photo goes with it, which may go

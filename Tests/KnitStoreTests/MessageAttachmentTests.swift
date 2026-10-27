@@ -113,7 +113,7 @@ import Testing
         var tied = message("a-post", in: "g-group", carrying: MessageAttachment(hash: hash(7)))
         tied.senderId = alice
         tied.sentAt = 4
-        var late = message("c-room", in: Conversations.nearby, carrying: MessageAttachment(hash: hash(8)))
+        var late = message("c-room", in: Conversations.nearby, carrying: MessageAttachment(hash: hash(8), mime: "image/png"))
         late.sentAt = 9
         for record in [dm, tied, late, message("plain", in: bob.string, carrying: nil)] {
             store.save(record)
@@ -121,12 +121,15 @@ import Testing
         let rows = store.attachmentRows(among: [hash(7), hash(8), hash(9)])
         #expect(
             rows[hash(7)] == [
-                AttachmentRow(id: "a-post", senderId: alice, sentAt: 4, isDM: false),
-                AttachmentRow(id: "b-dm", senderId: bob, sentAt: 4, isDM: true),
+                AttachmentRow(id: "a-post", senderId: alice, sentAt: 4, isDM: false, conversationId: "g-group"),
+                AttachmentRow(id: "b-dm", senderId: bob, sentAt: 4, isDM: true, conversationId: alice.string),
             ], "a tie broken by the id's bytes")
-        #expect(rows[hash(8)] == [AttachmentRow(id: "c-room", senderId: bob, sentAt: 9, isDM: false)])
+        let room = AttachmentRow(
+            id: "c-room", senderId: bob, sentAt: 9, isDM: false, conversationId: Conversations.nearby, mime: "image/png")
+        #expect(rows[hash(8)] == [room], "with its thread and its type")
         #expect(rows[hash(9)] == nil && store.attachmentRows(among: []).isEmpty)
         #expect(store.attachmentSenders(among: [hash(7), hash(8)]) == [hash(7): alice, hash(8): bob], "the earliest row's sender")
+        #expect(store.allAttachmentRows() == [hash(7): rows[hash(7)] ?? [], hash(8): [room]], "every row naming a blob, in the same order")
     }
 
     /// More hashes than one `IN (…)` list binds are read in batches, every one answered.

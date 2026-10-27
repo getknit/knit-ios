@@ -31,6 +31,7 @@ import Testing
         let picture: [UInt8] = (0..<1_000_000).map { UInt8(truncatingIfNeeded: ($0 &* 2_654_435_761) >> 13) }
         let hash = BlobHash(of: picture)
         holder.hold(picture)
+        newcomer.stores.conversations.accept(holder.nodeId.string)
         newcomer.stores.messages.save(
             MessageRecord(
                 id: frameIdOf("dm-picture"),

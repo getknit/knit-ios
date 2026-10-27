@@ -1,4 +1,5 @@
 import KnitStore
+import KnitWire
 
 /// Deleting a message or a whole chat from this iPhone (ADR 2026-10.u7cq, after `ChatViewModel.deleteMessage` and
 /// `ChatListViewModel.deleteConversation` in knit-next). A delete sends nothing and is read on the delivery path only.
@@ -37,7 +38,8 @@ extension MeshEngine {
     /// group's ordinary messages came from (``Conversations/isAccepted(_:accepted:verified:authored:groupSenders:)``).
     /// On Android a DM accepted only because the user wrote in it becomes a request once deleted (`Conversations.kt:134`
     /// derives it the same way); here it stays accepted. The group rule leaves blocked people out, as the screens do.
-    private func keepAccepted(_ conversationId: String) {
+    /// Un-verifying a peer runs it too, for the same reason (``setVerified(_:_:)``).
+    func keepAccepted(_ conversationId: String) {
         let accepted = stores.conversations.acceptedConversations()
         guard conversationId != Conversations.nearby, !accepted.contains(conversationId) else {
             return
@@ -57,21 +59,29 @@ extension MeshEngine {
         }
     }
 
-    /// Lets go of the photos `removed` carried. One no message shows stops being wanted, since nothing here pulls a
-    /// carried frame's photo (ADR 2026-10.ym9y). Its bytes leave the store at once when nothing names them, a frame our
-    /// custody still carries included, and otherwise at the first sweep once that frame goes and the blob is past an echo's
-    /// life, read in one store unit (``sweepUnnamedBlobs(storedBefore:)``, knit-ios #20): a frame leaves custody 6 h after
-    /// its `sentAt` at the soonest, so the photo outlives it by at most 30 minutes and a sweep's interval.
+    /// Lets go of the photos `removed` carried. One no message we fetch for still names stops being wanted, since nothing
+    /// here pulls a carried frame's photo (ADR 2026-10.ym9y), and a message request naming it would otherwise keep the want
+    /// for its 30 minutes (``rowsTaken(_:fetching:)``, knit-ios #21). Its bytes leave the store at once when nothing names
+    /// them, a frame our custody still carries included, and otherwise at the first sweep once that frame goes and the blob
+    /// is past an echo's life, read in one store unit (``sweepUnnamedBlobs(storedBefore:)``, knit-ios #20): a frame leaves
+    /// custody 6 h after its `sentAt` at the soonest, so the photo outlives it by at most 30 minutes and a sweep's interval.
     private func release(_ removed: [MessageRecord]) {
         let hashes = Set(removed.compactMap(\.attachment?.hash))
         guard !hashes.isEmpty else {
             return
         }
-        let shown = stores.messages.attachmentHashes()
-        let named = referencedBlobs()
-        for hash in hashes where !shown.contains(hash) {
+        // Read in one store unit, as the sweep reads them: outside one a failed read takes nothing for fetched or named,
+        // and would remove a photo another thread still shows, our own sent one included. A unit that fails lets go of
+        // nothing; the sweep and the re-offer settle it later.
+        let unit = stores.transactor.atomically { () -> (fetched: Set<BlobHash>, named: Set<BlobHash>)? in
+            (Set(rowsTaken(stores.messages.allAttachmentRows(), fetching: true).keys), referencedBlobs())
+        }
+        guard case .committed(let read) = unit else {
+            return
+        }
+        for hash in hashes where !read.fetched.contains(hash) {
             blobExchange.forget(hash)
-            if !named.contains(hash) {
+            if !read.named.contains(hash) {
                 stores.blobs.remove(hash)
             }
         }

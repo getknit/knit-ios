@@ -16,9 +16,11 @@ import Testing
     /// The same picture as Photos handed it back, its EXIF rewritten.
     private let rewritten = JPEGFixture.jpeg(exif: [JPEGFixture.appleExif])
 
-    /// The node and the far engine linked, each holding the other's profile.
+    /// The node and the far engine linked, each holding the other's profile, the node having accepted the far peer's DM
+    /// thread long ago, so its photos and those of the groups it posts in are fetched (knit-ios #21).
     private func linked() async throws -> PeerRig {
         let rig = PeerRig()
+        rig.stores.conversations.accept(rig.far.nodeId.string)
         await rig.node.start(name: "Near")
         try await rig.link()
         rig.farEngine.start()
@@ -83,6 +85,7 @@ import Testing
     @Test func aGroupPhotoSavedAndPickedWithNewExifGoesBackAsTheBlobAThirdMemberHolds() async throws {
         let rig = try await linked()
         let third = ThirdMember(rig)
+        third.engine.stores.conversations.accept(rig.far.nodeId.string)
         #expect(await eventually { rig.stores.peers.peer(third.keys.nodeId) != nil }, "the node pinned the third")
         // Nothing is sent yet: the others learn of the group from its first message.
         let group = try #require(rig.farEngine.createGroup(with: [rig.keys.nodeId, third.keys.nodeId]))

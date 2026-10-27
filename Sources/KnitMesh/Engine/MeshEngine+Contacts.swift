@@ -101,6 +101,10 @@ extension MeshEngine {
         }
         if source == .link {
             requestKey(peer)
+        } else {
+            // A scan verifies, which accepts the peer's DM and the groups they post in: their photos are fetched now. A
+            // link's accept above has wanted them (knit-ios #21).
+            wantAcceptedPhotos()
         }
         return .added(peer)
     }

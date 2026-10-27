@@ -284,9 +284,15 @@ public protocol MessageStore: AnyObject, Sendable {
     /// leaves the chat list until its next row (ADR 2026-10.u7cq).
     func conversationIds() -> Set<String>
 
-    /// The blobs the messages carry: what keeps a photo from being swept, and what is fetched while its bytes are
-    /// missing (`MessageDao.attachmentHashes`).
+    /// The blobs the messages carry, whatever their thread (`MessageDao.attachmentHashes`): whether a photo landing is
+    /// one a message shows. What is fetched and kept reads ``allAttachmentRows()``, which says whose thread each is in
+    /// (knit-ios #21).
     func attachmentHashes() -> Set<BlobHash>
+
+    /// Every message carrying a blob, by its blob, earliest first as ``attachmentRows(among:)`` orders them: what the
+    /// engine fetches and keeps, read with each row's thread so a message request's photo is neither (knit-ios #21). A read
+    /// that fails answers none.
+    func allAttachmentRows() -> [BlobHash: [AttachmentRow]]
 
     /// Every message carrying each of `hashes`, earliest first, by `sentAt` and then by id, its bytes compared
     /// (`MessageDao.attachmentFetchRows`, knit-next `385bfba0`): what a fetch of that blob is judged on, its one nameable

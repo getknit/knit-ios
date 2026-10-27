@@ -183,10 +183,26 @@ extension MeshEngine {
                 drop(.cleartextDirect, envelope)
                 return
             }
-            deliverChat(envelope, Self.delivered(chat), sender: sender, recipient: nil, via: hop)
+            deliverRoomPost(envelope, chat, sender: sender, via: hop)
             return
         }
         receiveSealed(envelope, enc, sender: sender, route: RatchetInbound.Route(hop: hop, signed: signed, origin: origin))
+    }
+
+    /// A cleartext room post (`decryptAndDeliver`'s clear branch, `InboundPipeline.kt:1115-1124` at knit-next `4408e0fca`).
+    /// The room admits a picture, a card or a video (``RoomAttachments``, knit-ios #21): any other attachment is left off
+    /// the row, and a post that was only that keeps no row and is acknowledged, as a blocked sender's post is. Here and not
+    /// in `storeDelivered`, which the sealed paths share.
+    private func deliverRoomPost(_ envelope: RelayEnvelope, _ chat: ChatContent, sender: NodeId, via hop: NodeId?) {
+        if RoomAttachments.dropsWhole(envelope, chat) {
+            acknowledge(envelope, sender: sender)
+            return
+        }
+        var delivered = Self.delivered(chat)
+        if RoomAttachments.refuses(envelope, chat) {
+            delivered.attachment = nil
+        }
+        deliverChat(envelope, delivered, sender: sender, recipient: nil, via: hop)
     }
 
     /// A sealed chat that is no group's: a DM to us, or a sealed room post, which nothing opens (`decryptAndDeliver`,
@@ -299,18 +315,6 @@ extension MeshEngine {
 
     private static func clipped(_ text: String?) -> String? {
         text.map { TextLimits.truncated($0, toUTF16: attachmentTextLimit) }
-    }
-
-    /// Whether a conversation is accepted rather than a message request (`InboundPipeline.isAccepted`). A group is
-    /// also accepted once someone we know writes in it.
-    func isAccepted(_ conversation: String) -> Bool {
-        Conversations.isAccepted(
-            conversation,
-            accepted: stores.conversations.acceptedConversations(),
-            verified: stores.peers.verifiedNodeIds(),
-            authored: stores.messages.conversations(authoredBy: nodeId),
-            groupSenders: Conversations.isGroup(conversation) ? stores.messages.senders(in: conversation) : []
-        )
     }
 
     /// A delivery receipt (`InboundPipeline.handleReceipt`). It flips ✓✓ on one of our messages only if it is a room

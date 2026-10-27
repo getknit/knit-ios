@@ -118,6 +118,7 @@ import Testing
         let iphone = try EngineFixture.ratcheting(me, stores: stores, configuration: configuration)
         let android = try AndroidPeer(alice)
         try iphone.pin(android)
+        iphone.befriend(alice)
         let hop = TestPeer(seed: 4)
         let other = TestPeer(seed: 5)
         iphone.link(hop, other, capabilities: Capabilities.local.union(.blobHave))

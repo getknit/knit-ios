@@ -163,9 +163,10 @@ public actor Mesh {
         engine.heldPhoto(picked: picked)
     }
 
-    /// Accepts a message request.
+    /// Accepts a message request, and fetches its photos (``MeshEngine/accept(_:)``).
     public func accept(_ conversationId: String) {
         engine.accept(conversationId)
+        settle()
     }
 
     /// Makes a group with `others`, or opens the one they already share (``MeshEngine/createGroup(with:)``).
@@ -231,10 +232,11 @@ public actor Mesh {
         settle()
     }
 
-    /// Marks a pinned peer verified, or not (``MeshEngine/setVerified(_:_:)``).
+    /// Marks a pinned peer verified, or not (``MeshEngine/setVerified(_:_:)``), and fetches the photos a verification
+    /// accepts.
     public func setVerified(_ peer: NodeId, _ verified: Bool) {
         engine.setVerified(peer, verified)
-        publish()
+        settle()
     }
 
     /// Blocks `peer`: nothing they send is shown, and the mesh carries and relays it as before

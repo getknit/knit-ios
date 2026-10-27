@@ -196,13 +196,29 @@ extension MeshEngine {
 
     /// Marks a pinned peer verified, or not, once the user has compared safety numbers (`PeerRepository.setVerified`).
     /// A verified peer's DMs are never a message request. A peer that has not pinned has no key to verify.
+    ///
+    /// An acceptance is persisted before its basis goes (knit-ios #21): un-verifying first accepts outright the peer's DM
+    /// and every group they posted in that read as accepted (``keepAccepted(_:)``). A thread accepted only by the
+    /// verification would otherwise turn back into a request, and the next sweep would remove every photo in it, since a
+    /// request's photos are not kept. Verifying wants the photos of the threads it accepts (``wantAcceptedPhotos()``).
     public func setVerified(_ peer: NodeId, _ verified: Bool) {
         guard var record = stores.peers.peer(peer), record.verified != verified else {
             return
         }
+        if !verified {
+            keepAccepted(peer.string)
+            for group in stores.messages.conversationIds() where Conversations.isGroup(group) {
+                if stores.messages.senders(in: group).contains(peer) {
+                    keepAccepted(group)
+                }
+            }
+        }
         record.verified = verified
         stores.peers.upsert(record)
         events.append(.peerUpdated(peer))
+        if verified {
+            wantAcceptedPhotos()
+        }
     }
 
     /// A verified profile (`InboundPipeline.handleProfile` and `storeProfileRow`, `InboundPipeline.kt:3159-3345`). Its

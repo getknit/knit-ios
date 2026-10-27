@@ -136,6 +136,7 @@ import Testing
         let iphone = try EngineFixture.ratcheting(me, stores: stores)
         let android = try AndroidPeer(alice)
         try iphone.pin(android)
+        iphone.befriend(alice)
         iphone.link(carol)
         let sealed = try #require(AttachmentCrypto.seal(Array("a picture".utf8)))
         let hash = BlobHash(of: sealed.blob)

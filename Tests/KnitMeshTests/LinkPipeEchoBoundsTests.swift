@@ -20,6 +20,7 @@ import Testing
 
     /// A DM from `sender` to `node` naming `hash`, so `node` wants it from its next re-arm.
     private func wants(_ node: PipeNode, _ hash: BlobHash, from sender: PipeNode, tag: String) {
+        node.stores.conversations.accept(sender.nodeId.string)
         node.stores.messages.save(
             MessageRecord(
                 id: frameIdOf("dm-\(tag)"),

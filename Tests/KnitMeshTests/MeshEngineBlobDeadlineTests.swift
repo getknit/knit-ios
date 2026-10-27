@@ -61,6 +61,7 @@ import Testing
 
     @Test func everyAskCarriesTheBudgetAndTheDmsWindowAndAGroupRowLiftsIt() throws {
         let fixture = EngineFixture(alice)
+        fixture.befriend(bob)
         let sent = EngineFixture.start - 1000
         fixture.stores.messages.save(row("dm-1", sentAt: sent))
         fixture.link(carol)
@@ -86,6 +87,7 @@ import Testing
     @Test func aReArmWhoseRowsReadFailsKeepsTheDeadlineItHad() {
         let (stores, messages) = stores()
         let fixture = EngineFixture(alice, stores: stores)
+        fixture.befriend(bob)
         stores.messages.save(row("dm-1", sentAt: EngineFixture.start))
         fixture.advance(60_000)
         #expect(fixture.engine.blobExchange.wants[photo]?.until == EngineFixture.start + day)
@@ -102,6 +104,7 @@ import Testing
             PeerRecord(
                 nodeId: bob.nodeId, name: "Bob", status: "", publicKey: bob.keys.bundle.encoded, updatedAt: 1, advertisedAvatarHash: photo))
         let fixture = EngineFixture(alice, stores: stores)
+        fixture.befriend(bob)
         stores.messages.save(row("dm-1", sentAt: EngineFixture.start))
         fixture.advance(60_000)
         #expect(fixture.engine.blobExchange.wants[photo]?.until == EngineFixture.start + day)
@@ -112,6 +115,7 @@ import Testing
 
     @Test func aDeliveredDmIsPulledThroughUntilItsWindowAndARoomPostLiftsIt() throws {
         let fixture = EngineFixture(alice)
+        fixture.befriend(bob)
         fixture.link(carol)
         try fixture.pin(bob)
         let content = MessageContent(body: "", attachmentHash: photo.string, attachmentMime: "image/jpeg")
@@ -130,6 +134,7 @@ import Testing
     @Test func aRatchetSealedDmIsPulledThroughUntilItsStoredRowsWindow() throws {
         let lab = EngineLab([try EngineFixture.ratcheting(alice, seed: 11), try EngineFixture.ratcheting(bob, seed: 12)])
         lab.link(0, 1)
+        lab[0].befriend(bob)
         let picture = OutgoingPhoto(bytes: Array("a photo bob then loses".utf8), mime: "image/jpeg")
         let sent = try #require(lab[1].engine.sendDirectMessage("", to: alice.nodeId, photo: picture))
         let hash = try #require(sent.attachment?.hash)
@@ -148,6 +153,7 @@ import Testing
     @Test func aDeliveredDmWhoseRowsReadFailsKeepsItsOwnWindow() throws {
         let (stores, messages) = stores()
         let fixture = EngineFixture(alice, stores: stores)
+        fixture.befriend(bob)
         try fixture.pin(bob)
         messages.failsAttachmentRows = true
         let content = MessageContent(body: "", attachmentHash: photo.string, attachmentMime: "image/jpeg")
@@ -158,6 +164,7 @@ import Testing
 
     @Test func aDmPastItsWindowAsksNobodyToPullItFromItsFirstStep() {
         let fixture = EngineFixture(alice, configuration: MeshConfiguration(queriesBlobHolders: true))
+        fixture.befriend(bob)
         fixture.stores.messages.save(row("dm-1", sentAt: EngineFixture.start - day - 1))
         fixture.link(carol, capabilities: Capabilities.local.union(.blobHave))
         let query = fixture.transport.written(.blobHave)

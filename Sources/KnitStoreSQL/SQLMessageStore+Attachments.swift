@@ -16,21 +16,13 @@ extension SQLMessageStore {
                 try Row.fetchAll(
                     db,
                     sql: """
-                        SELECT attachmentHash, id, senderId, sentAt, recipientId IS NOT NULL AS dm FROM messages
+                        SELECT \(Self.attachmentRowColumns) FROM messages
                         WHERE attachmentHash IN (\(Array(repeating: "?", count: batch.count).joined(separator: ", ")))
                         ORDER BY sentAt, id
                         """,
                     arguments: StatementArguments(batch.map { StoredText.bytes($0.string) })
                 )
-                .map { row -> (hash: BlobHash, row: AttachmentRow) in
-                    let carried = AttachmentRow(
-                        id: try row.text("id"),
-                        senderId: try row.nodeId("senderId"),
-                        sentAt: try row.decode(Int64.self, forColumn: "sentAt"),
-                        isDM: try row.decode(Bool.self, forColumn: "dm")
-                    )
-                    return (hash: try row.blobHash("attachmentHash"), row: carried)
-                }
+                .map(Self.attachmentRow)
             }
             // Earliest first, as read.
             for carrier in carriers {
@@ -38,6 +30,43 @@ extension SQLMessageStore {
             }
         }
         return rows
+    }
+
+    /// Every message carrying a blob, earliest first (``MessageStore/allAttachmentRows()``), in one read, which answers
+    /// none when it fails.
+    public func allAttachmentRows() -> [BlobHash: [AttachmentRow]] {
+        let carriers: [(hash: BlobHash, row: AttachmentRow)] = database.read(or: []) { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT \(Self.attachmentRowColumns) FROM messages WHERE attachmentHash IS NOT NULL ORDER BY sentAt, id
+                    """
+            )
+            .map(Self.attachmentRow)
+        }
+        var rows: [BlobHash: [AttachmentRow]] = [:]
+        for carrier in carriers {
+            rows[carrier.hash, default: []].append(carrier.row)
+        }
+        return rows
+    }
+
+    /// The columns ``attachmentRow(_:)`` reads.
+    private static let attachmentRowColumns = """
+        attachmentHash, id, senderId, sentAt, recipientId IS NOT NULL AS dm, conversationId, attachmentMime
+        """
+
+    /// One row naming a blob, and the blob.
+    private static func attachmentRow(_ row: Row) throws -> (hash: BlobHash, row: AttachmentRow) {
+        let carried = AttachmentRow(
+            id: try row.text("id"),
+            senderId: try row.nodeId("senderId"),
+            sentAt: try row.decode(Int64.self, forColumn: "sentAt"),
+            isDM: try row.decode(Bool.self, forColumn: "dm"),
+            conversationId: try row.text("conversationId"),
+            mime: try row.optionalText("attachmentMime")
+        )
+        return (hash: try row.blobHash("attachmentHash"), row: carried)
     }
 
     /// The thread of the earliest message carrying `hash` (``MessageStore/conversation(ofAttachment:)``).

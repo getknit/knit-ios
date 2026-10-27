@@ -69,30 +69,45 @@ extension MeshEngine {
     /// Wants every blob the stores name and the blob store lacks (`rewantMissingBlobs`, knit-next ADR 2026-09.ptv8): the
     /// photos peers' profiles advertise, each with its owner as the author, and the photos messages carry, each with the
     /// sender of the earliest message naming it. The wants are a memo of the stores and never their source, so this runs
-    /// at start, at link-up and at each 60 s re-offer. At link-up a linked peer's own photo is left to its push
-    /// (`sparing`), and wanted at the next re-offer if it never came; Android leaves a lost push lost.
+    /// at start, at link-up, at each 60 s re-offer, and when a thread is accepted. At link-up a linked peer's own photo is
+    /// left to its push (`sparing`), and wanted at the next re-offer if it never came; Android leaves a lost push lost.
+    ///
+    /// A message's photo is wanted only for a row in a thread we fetch for, and a stranger's room photo only inside the
+    /// room's bound (``rowsTaken(_:fetching:)``, knit-ios #21), read once for the pass. The rows are filtered before the
+    /// author and the deadline are chosen, so a message request naming a contact's photo with an earlier `sentAt` never
+    /// becomes its author, and a want of ours for a room photo the bound now leaves out is withdrawn. Android wants every
+    /// row's (`MeshManager.kt` `rewantMissingBlobs`).
     ///
     /// Each is a want of our own, and its deadline is re-derived from the rows that name it (`wantAll`'s `until`,
     /// `PullThroughGate`, knit-next ADR 2026-10.2drc): a DM's custody window from its latest row, none for a group's or a
-    /// room's, and none for a photo. One whose rows read nothing (a store error answers as if none were there) keeps the
-    /// deadline it had, so a failed read never lifts a DM's.
+    /// room's, and none for a photo. A read of the rows that fails answers none, so nothing is wanted from them until the
+    /// next pass, and a photo a message also names keeps the deadline it had, so a failed read never lifts a DM's.
     func rewantMissingBlobs(sparing: Set<NodeId>) {
+        withdrawLeftOutRoomPhotos()
+        let rows = rowsTaken(stores.messages.allAttachmentRows(), fetching: true)
+        let missing = Set(rows.keys).subtracting(stores.blobs.held(among: Set(rows.keys)))
         let carried = stores.messages.attachmentHashes()
-        let missing = carried.subtracting(stores.blobs.held(among: carried))
-        let rows = stores.messages.attachmentRows(among: missing)
         var wanted: [BlobExchange.OwnWant] = []
         for peer in stores.peers.allPeers() where !sparing.contains(peer.nodeId) {
             if let advertised = peer.advertisedAvatarHash, !stores.blobs.contains(advertised) {
-                // A photo has no deadline, unless a message's row names the same blob.
-                let reach = missing.contains(advertised) ? PullThroughGate.reach(rows[advertised] ?? []) : .own(until: nil, rederived: true)
+                // A photo has no deadline, unless a message's row names the same blob. A message request's row is no
+                // reason to lift or set one: its rows fold to none taken, which keeps the deadline the want had.
+                let reach = carried.contains(advertised) ? PullThroughGate.reach(rows[advertised] ?? []) : .own(until: nil, rederived: true)
                 wanted.append(BlobExchange.OwnWant(hash: advertised, author: peer.nodeId, reach: reach))
             }
         }
-        for hash in missing.sorted() {
-            wanted.append(
-                BlobExchange.OwnWant(hash: hash, author: rows[hash]?.first?.senderId, reach: PullThroughGate.reach(rows[hash] ?? [])))
+        for (hash, named) in rows.sorted(by: { $0.key < $1.key }) where missing.contains(hash) {
+            wanted.append(BlobExchange.OwnWant(hash: hash, author: named.first?.senderId, reach: PullThroughGate.reach(named)))
         }
         wantBlobs(wanted)
+    }
+
+    /// Wants the photos of a thread the user just accepted, by accepting it, verifying its peer or scanning their code
+    /// (knit-ios #21): the re-arm, then every want's next step, as a re-offer runs them. A group a known sender's first post
+    /// accepts is left to the next re-offer.
+    func wantAcceptedPhotos() {
+        rewantMissingBlobs(sparing: [])
+        stepBlobs()
     }
 
     // MARK: Collecting
@@ -103,10 +118,15 @@ extension MeshEngine {
         blobsTheRowsName().union(carriedBlobs())
     }
 
-    /// Every blob the rows name: our photo, each peer's photo, shown or advertised, every photo a message carries, and a
-    /// deleted message's photo while our custody carries its frame (ADR 2026-10.u7cq).
+    /// Every blob the rows name: our photo, each peer's photo, shown or advertised, every photo a message in an accepted
+    /// thread carries, a stranger's room photo only inside the room's bound (``rowsTaken(_:fetching:)``, knit-ios #21), and
+    /// a deleted message's photo while our custody carries its frame (ADR 2026-10.u7cq). A message request's photo is named
+    /// by none of them, so bytes an echo brought for it count toward the echo budget and go on the sweep.
+    ///
+    /// Every read here is the caller's, made anew on each call: a sweep reads it inside its store unit, where a failed
+    /// read fails the unit and removes nothing, since outside one it would read as no thread accepted.
     func blobsTheRowsName() -> Set<BlobHash> {
-        var named = stores.messages.attachmentHashes()
+        var named = Set(rowsTaken(stores.messages.allAttachmentRows(), fetching: false).keys)
         for deleted in stores.messages.deletedAttachments() where stores.custody.contains(deleted.id) {
             named.insert(deleted.hash)
         }
@@ -129,10 +149,22 @@ extension MeshEngine {
     /// `BlobDao.kt:59-67`, at knit-next `cbf2a487`), so after our photo changes we still serve the one our sealed profiles
     /// name for their day. Decoded on demand from at most 1,000 live frames, where Kotlin keeps a column; a failed read reads
     /// as no frame, so the blob goes as before (ADR 2026-10.5sk9's P7c amendment).
+    ///
+    /// A room post's attachment the room refuses is left out, as Kotlin leaves it out of its carrier column
+    /// (`ForwardRepository.kt`, knit-next `eccabcd72`). So is a stranger's room photo the room's bound leaves out of the rows
+    /// (``StrangerRoomPhotos``, knit-ios #21), this port's alone: the frame stays carried for six hours, and naming its photo
+    /// would keep every one a flood brought in while it was inside the bound, which would then bound nothing.
     func carriedBlobs() -> Set<BlobHash> {
+        let leftOut = StrangerRoomPhotos.leftOut(
+            Array(stores.messages.allAttachmentRows().values.joined()), isKnown: Acquaintances(reading: self).knows)
         var named: Set<BlobHash> = []
         for carried in stores.custody.liveFrames(now: clock.wallMilliseconds()) where carried.envelope.type == .chat {
-            if let text = (try? ChatContent(decoding: carried.envelope.payload))?.attachmentHash, let hash = BlobHash(text) {
+            guard let chat = try? ChatContent(decoding: carried.envelope.payload), !RoomAttachments.refuses(carried.envelope, chat),
+                !leftOut.contains(ExactKey(carried.envelope.id))
+            else {
+                continue
+            }
+            if let text = chat.attachmentHash, let hash = BlobHash(text) {
                 named.insert(hash)
             }
         }
@@ -140,8 +172,16 @@ extension MeshEngine {
     }
 
     /// Removes `hash` once nothing names it (`BlobRepository.deleteIfUnreferenced`). A blob not held reads nothing more.
+    /// What names it is read inside a store unit, and the blob goes only once that unit commits: outside one a failed
+    /// read names nothing, no thread accepted included, and would take a photo a row still shows (knit-ios #21).
     func releaseBlob(_ hash: BlobHash) {
-        if stores.blobs.contains(hash), !referencedBlobs().contains(hash) {
+        guard stores.blobs.contains(hash) else {
+            return
+        }
+        let unit = stores.transactor.atomically { () -> Set<BlobHash>? in
+            referencedBlobs()
+        }
+        if case .committed(let named) = unit, !named.contains(hash) {
             stores.blobs.remove(hash)
         }
     }

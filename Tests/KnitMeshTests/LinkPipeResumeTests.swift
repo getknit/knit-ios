@@ -21,6 +21,7 @@ import Testing
 
     /// A DM from `sender` to `node` naming the picture, so `node` wants it from its next link-up.
     private func wants(_ node: PipeNode, from sender: PipeNode) {
+        node.stores.conversations.accept(sender.nodeId.string)
         node.stores.messages.save(
             MessageRecord(
                 id: frameIdOf("dm-picture"),

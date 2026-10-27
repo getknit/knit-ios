@@ -51,14 +51,14 @@ final class RefusingMessageStore: MessageStore {
     }
 
     /// Whether the read of the rows naming a blob fails now, answering none, as `SQLMessageStore.attachmentRows(among:)`
-    /// falls back.
+    /// and `allAttachmentRows()` fall back.
     var failsAttachmentRows: Bool {
         get { failingAttachmentRows.withLock { $0 } }
         set { failingAttachmentRows.withLock { $0 = newValue } }
     }
 
-    /// Whether the read of every hash the rows name fails now, failing the unit it runs in and answering none, as
-    /// `SQLMessageStore.attachmentHashes()` falls back.
+    /// Whether the read of every hash the rows name, or of every row naming one, fails now, failing the unit it runs in
+    /// and answering none, as `SQLMessageStore.attachmentHashes()` and `allAttachmentRows()` fall back.
     var failsAttachmentHashes: Bool {
         get { failingAttachmentHashes.withLock { $0 } }
         set { failingAttachmentHashes.withLock { $0 = newValue } }
@@ -120,6 +120,13 @@ final class RefusingMessageStore: MessageStore {
     func attachmentRows(among hashes: Set<BlobHash>) -> [BlobHash: [AttachmentRow]] {
         failsAttachmentRows ? [:] : held.attachmentRows(among: hashes)
     }
+    func allAttachmentRows() -> [BlobHash: [AttachmentRow]] {
+        if failsAttachmentHashes {
+            refuse()
+            return [:]
+        }
+        return failsAttachmentRows ? [:] : held.allAttachmentRows()
+    }
     func conversation(ofAttachment hash: BlobHash) -> String? { held.conversation(ofAttachment: hash) }
     func unsizedAttachments(named hash: BlobHash?) -> [MessageAttachment] { held.unsizedAttachments(named: hash) }
     func setAttachmentDimensions(_ hash: BlobHash, to dimensions: PhotoDimensions) -> Bool {
@@ -176,6 +183,15 @@ enum StoreKind: CaseIterable, Sendable {
         return (refusing.stores, refusing.peers)
     }
 
+    /// Stores of this kind whose conversation store fails its read of the accepted threads when told to, and the refusing
+    /// store: a unit that reads them then fails (knit-ios #21).
+    func storesRefusingConversationReads(
+        blobs: URL, failures: @escaping @Sendable (any Error) -> Void
+    ) throws -> (MeshStores, RefusingConversationReads) {
+        let refusing = try refusingStores(blobs: blobs, failures: failures, custodyLimits: CustodyLimits())
+        return (refusing.stores, refusing.conversations)
+    }
+
     private func refusingStores(
         blobs: URL, failures: @escaping @Sendable (any Error) -> Void, custodyLimits: CustodyLimits
     ) throws -> RefusingStores {
@@ -187,11 +203,12 @@ enum StoreKind: CaseIterable, Sendable {
             let messages = RefusingMessageStore(memory.messages, refuse: refuse)
             let ratchet = RefusingRatchetWrites(memory.ratchet, refuse: refuse)
             let peers = RefusingPeerReads(memory.peers, refuse: refuse)
+            let conversations = RefusingConversationReads(memory.conversations, refuse: refuse)
             let stores = MeshStores(
                 custody: memory.custody,
                 peers: peers,
                 messages: messages,
-                conversations: memory.conversations,
+                conversations: conversations,
                 blocks: memory.blocks,
                 groups: memory.groups,
                 ownProfile: memory.ownProfile,
@@ -200,7 +217,7 @@ enum StoreKind: CaseIterable, Sendable {
                 groupRatchet: memory.groupRatchet,
                 transactor: memory.transactor
             )
-            return RefusingStores(stores: stores, messages: messages, ratchet: ratchet, peers: peers)
+            return RefusingStores(stores: stores, messages: messages, ratchet: ratchet, peers: peers, conversations: conversations)
         case .sql:
             let database = try KnitDatabase.inMemory(failures: failures)
             let groups = SQLGroupStore(database)
@@ -212,11 +229,12 @@ enum StoreKind: CaseIterable, Sendable {
             let messages = RefusingMessageStore(SQLMessageStore(database), refuse: refuse)
             let ratchet = RefusingRatchetWrites(SQLRatchetStore(database), refuse: refuse)
             let peers = RefusingPeerReads(SQLPeerStore(database), refuse: refuse)
+            let conversations = RefusingConversationReads(SQLConversationStore(database), refuse: refuse)
             let stores = MeshStores(
                 custody: SQLCustodyStore(database, limits: custodyLimits),
                 peers: peers,
                 messages: messages,
-                conversations: SQLConversationStore(database),
+                conversations: conversations,
                 blocks: SQLBlockStore(database),
                 groups: groups,
                 ownProfile: SQLOwnProfileStore(database),
@@ -225,17 +243,18 @@ enum StoreKind: CaseIterable, Sendable {
                 groupRatchet: SQLGroupRatchetStore(database),
                 transactor: database
             )
-            return RefusingStores(stores: stores, messages: messages, ratchet: ratchet, peers: peers)
+            return RefusingStores(stores: stores, messages: messages, ratchet: ratchet, peers: peers, conversations: conversations)
         }
     }
 }
 
-/// Stores that refuse when told to, and the three refusing stores in them.
+/// Stores that refuse when told to, and the four refusing stores in them.
 private struct RefusingStores {
     let stores: MeshStores
     let messages: RefusingMessageStore
     let ratchet: RefusingRatchetWrites
     let peers: RefusingPeerReads
+    let conversations: RefusingConversationReads
 }
 
 /// Counts the errors a database reported.

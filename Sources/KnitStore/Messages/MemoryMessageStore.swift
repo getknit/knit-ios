@@ -307,15 +307,31 @@ public final class MemoryMessageStore: MessageStore {
 extension MemoryMessageStore {
     /// Every message carrying each of `hashes`, earliest first (``MessageStore/attachmentRows(among:)``).
     public func attachmentRows(among hashes: Set<BlobHash>) -> [BlobHash: [AttachmentRow]] {
+        attachmentRows { hashes.contains($0) }
+    }
+
+    /// Every message carrying a blob, earliest first (``MessageStore/allAttachmentRows()``).
+    public func allAttachmentRows() -> [BlobHash: [AttachmentRow]] {
+        attachmentRows { _ in true }
+    }
+
+    /// The messages carrying a blob `included` takes, by blob, earliest first.
+    private func attachmentRows(_ included: (BlobHash) -> Bool) -> [BlobHash: [AttachmentRow]] {
         state.withLock { state in
             // Earliest first, as the SQL store reads them, so the first message carrying each hash names its sender.
-            let carriers = state.rows.values.map(\.record).filter { $0.attachment.map { hashes.contains($0.hash) } ?? false }
+            let carriers = state.rows.values.map(\.record).filter { $0.attachment.map { included($0.hash) } ?? false }
             var rows: [BlobHash: [AttachmentRow]] = [:]
             for record in carriers.sorted(by: Self.precedes) {
-                if let hash = record.attachment?.hash {
+                if let attachment = record.attachment {
                     let row = AttachmentRow(
-                        id: record.id, senderId: record.senderId, sentAt: record.sentAt, isDM: record.recipientId != nil)
-                    rows[hash, default: []].append(row)
+                        id: record.id,
+                        senderId: record.senderId,
+                        sentAt: record.sentAt,
+                        isDM: record.recipientId != nil,
+                        conversationId: record.conversationId,
+                        mime: attachment.mime
+                    )
+                    rows[attachment.hash, default: []].append(row)
                 }
             }
             return rows

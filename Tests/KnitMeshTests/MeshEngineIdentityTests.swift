@@ -21,6 +21,7 @@ import Testing
 
     /// Bob's DM to Alice carrying `picture` sealed, delivered and its blob landed: the copy Alice holds.
     private func holdingBobsSealedCopy(_ fixture: EngineFixture) throws -> MessageAttachment {
+        fixture.befriend(bob)
         fixture.link(bob)
         try fixture.pin(bob)
         let sealed = try #require(AttachmentCrypto.seal(picture))
@@ -174,6 +175,7 @@ import Testing
 
     @Test func aMemberOfTheGroupItCameThroughMayHaveItShownFromOurCopy() throws {
         let fixture = EngineFixture(alice)
+        fixture.befriend(bob)
         fixture.link(bob, carol)
         try fixture.pin(bob)
         try fixture.pin(carol)
@@ -237,6 +239,7 @@ import Testing
 
     @Test func aStrangerToTheGroupItCameThroughIsPulledNotCopied() throws {
         let fixture = EngineFixture(alice)
+        fixture.befriend(bob)
         fixture.link(bob, dave)
         try fixture.pin(bob)
         try fixture.pin(dave)
@@ -249,6 +252,7 @@ import Testing
             try bob.groupMessage("", in: info, to: [alice, carol], id: frameIdOf("gm-1"), sentAt: EngineFixture.start, content: content),
             from: bob)
         fixture.engine.receiveFile(InboundFile(from: bob.nodeId, kind: .attachment, hash: hash, mime: "image/jpeg", bytes: sealed.blob))
+        #expect(fixture.stores.blobs.contains(hash), "the group's copy is held")
         fixture.deliver(try roomPost(by: dave, id: frameIdOf("post-1")), from: dave)
         #expect(!fixture.stores.blobs.contains(plainHash) && fixture.engine.blobExchange.isWanted(plainHash))
     }

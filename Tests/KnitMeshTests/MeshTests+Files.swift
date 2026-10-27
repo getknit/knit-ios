@@ -115,6 +115,7 @@ extension MeshTests {
         let clock = ManualClock(wall: EngineFixture.start, monotonic: 1000)
         let stores = MeshStores.inMemory()
         let log = RecordingLog()
+        stores.conversations.accept(bob.nodeId.string)
         stores.messages.save(
             MessageRecord(
                 id: frameIdOf("dm-photo"),
@@ -258,6 +259,7 @@ extension MeshTests {
         let radio = FakeRadio(advertisesServiceData: false)
         let stores = MeshStores.inMemory()
         let log = RecordingLog()
+        stores.conversations.accept(bob.nodeId.string)
         stores.messages.save(
             MessageRecord(
                 id: frameIdOf("dm-photo"),

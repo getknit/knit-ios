@@ -144,6 +144,8 @@ import Testing
             try bob.directMessage("", to: alice, id: frameIdOf("dm-1"), sentAt: EngineFixture.start, content: content), from: bob)
         let attachment = try #require(fixture.stores.messages.message(frameIdOf("dm-1"))?.attachment)
         #expect(attachment == MessageAttachment(hash: hash, mime: "image/png", key: Base64.encode(sealed.key)))
+        #expect(!fixture.engine.blobExchange.isWanted(hash), "a stranger's DM is a message request, whose photo waits (knit-ios #21)")
+        fixture.engine.accept(bob.nodeId.string)
         #expect(fixture.engine.blobExchange.isWanted(hash))
     }
 
@@ -200,7 +202,7 @@ import Testing
         fixture.deliver(frame, from: bob)
         #expect(fixture.stores.messages.message(frameIdOf("post-bad"))?.attachment == nil)
         let long = ChatContent(
-            body: "", attachmentHash: BlobHash(of: jpeg.bytes).string, attachmentMime: String(repeating: "x", count: 5000))
+            body: "", attachmentHash: BlobHash(of: jpeg.bytes).string, attachmentMime: "image/" + String(repeating: "x", count: 5000))
         let frame2 = try bob.signed(
             RelayEnvelope(
                 type: .chat, id: frameIdOf("post-long"), senderId: bob.nodeId.string, sentAt: EngineFixture.start, payload: long.encoded))

@@ -10,7 +10,7 @@ import Testing
     private let day = PullThroughGate.windowMilliseconds
 
     private func row(_ id: String, sentAt: Int64, dm: Bool, from sender: Int = 2) -> AttachmentRow {
-        AttachmentRow(id: id, senderId: TestPeer(seed: sender).nodeId, sentAt: sentAt, isDM: dm)
+        AttachmentRow(id: id, senderId: TestPeer(seed: sender).nodeId, sentAt: sentAt, isDM: dm, conversationId: "")
     }
 
     @Test func aDmsAttachmentIsPulledThroughForACustodyWindowFromItsLatestRow() {

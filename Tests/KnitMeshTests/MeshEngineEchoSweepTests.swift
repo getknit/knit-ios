@@ -74,6 +74,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let stores = try kind.storesRefusingRows(blobs: directory, failures: ReportedFailures().record).0
         let fixture = EngineFixture(alice, stores: stores)
+        fixture.befriend(bob)
         fixture.link(bob, dave)
         echoBlob(fixture)
         // An echo's life on: the sweep itself forgets a want older than that, so each reason is set up now.
@@ -113,6 +114,7 @@ import Testing
         let failures = ReportedFailures()
         let (stores, messages) = try kind.storesRefusingRows(blobs: directory, failures: failures.record)
         let fixture = EngineFixture(alice, stores: stores)
+        fixture.befriend(bob)
         fixture.link(bob, dave)
         echoBlob(fixture)
         stores.messages.save(

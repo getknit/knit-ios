@@ -35,6 +35,7 @@ import Testing
 
     /// A DM from the author to node `index`, sent at `sentAt` on the frame's clock, naming the photo.
     private func dm(_ lab: EngineLab, to index: Int, sentAt: Int64) {
+        lab[index].stores.conversations.accept(author.nodeId.string)
         lab[index].stores.messages.save(
             MessageRecord(
                 id: frameIdOf("m-root"),
