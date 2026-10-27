@@ -79,3 +79,10 @@ With the switch off nothing changes. `MeshEngineSealedReceiptTests` and `SealedR
 DM our quotas evicted re-acked once per router window until no custody holds it, and a back-fill fed by two holders
 buying one more sealed receipt from a recipient that holds the DM, next to the returning node or two hops away.
 Bounding the re-ack is knit-next #176's, for both platforms to take.
+
+**Amended 2026-10-26, for knit-ios #19 (ADR 2026-10.f5zs):** the iPhone no longer serves every live frame a digest
+omits in one answer. A round sends up to 200 frames or 256 KiB, picked from `CustodyStore.liveIndex` in the old order,
+profiles first and then newest received first, minus what already crossed the link. Each 60 s digest answers the next
+slice. Android still serves everything at once (`ForwardSync.kt:136-163`). The custody limits above are untouched, so
+digests still agree, only later for a newcomer facing a full custody. No count pinned by `SealedReceiptLabTests` or
+`MeshEngineSealedReceiptTests` moved.

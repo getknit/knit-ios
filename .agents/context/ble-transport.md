@@ -305,9 +305,13 @@ radio.
   that never answered, it also closes a link that has been quiet for 90 s once its PHY handle's GATT client has seen
   the connection end. A link whose HELLO carries the bit is exempt from all of it (`LinkSilence.kt:39`), because iOS suspends Knit
   with its link up. That covers every CoreBluetooth link. The Linux peer's `android` profile lacks the bit, so Android
-  announces to it, and because it never answers, Android never probes it. Only the write stall applies there. The
-  iPhone's own links still last until the supervision timeout: Android would not answer an iPhone's probe, so this
-  port has no silent-link rule (ADR 2026-09.6es2).
+  announces to it, and because it never answers, Android never probes it. Only the write stall applies there. This
+  port has no probe or silent-link rule, since Android would not answer an iPhone's probe (ADR 2026-09.6es2). It does
+  port the write stall (ADR 2026-10.f5zs): a link with bytes queued and none written for 120 s of Knit's running time
+  ends with `link chN write stalled for <ms> ms`. A `CAP_DOORBELL` peer that never advertised a digest cue, which is
+  how an iPhone looks, is exempt. A link's queue also closes past 4 MiB on both radios (`ble chN stopped reading`,
+  `bluez chN stopped reading`). A radio stops reading a channel once 256 KiB it delivered waits unprocessed, so L2CAP
+  credits push back on the sender.
 - **Nothing is encrypted at this layer.** Profiles, room posts and HELLOs are plaintext on the air, and DMs
   carry their own end-to-end encryption.
 
@@ -378,7 +382,9 @@ failed on the PSM they had read until they read it again. With nothing outstandi
 carry the next channel's PSM, so answers are matched by count, and one that comes after the 5 s is logged and
 ignored. The payload is served only while the listener is published on its PSM, and a resetting manager counts as
 off (`linux-peer.md`, "What the restart trial showed"). Each channel's streams run on one run-loop thread, read in
-64 KiB gulps and written 8 KiB at a time.
+64 KiB gulps and written 8 KiB at a time. A channel stops reading once 256 KiB it delivered wait unprocessed by `Mesh`
+(`InboxCredits`), and the radio restarts the read itself below half, since the stream sends no new
+`hasBytesAvailable` until something reads (ADR 2026-10.f5zs). The writes stop at 4 MiB queued (`LinkOutbox`).
 The managers carry restoration identifiers. A restored connection is dropped, since its channels did not
 survive, but only once the central is powered on: CoreBluetooth refuses the command earlier, and a connection
 left up kept every dial to that phone waiting. It first ran on an iPhone 12 on 2026-09-26

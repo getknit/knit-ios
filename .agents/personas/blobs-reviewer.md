@@ -302,7 +302,9 @@ verify.
 - **Sync** (`custody.md`, "Sync over a link"). A full DIGEST at link-up and every 60 s; Android back-fills only in
   answer to one. A reply serves profiles first, then the rest newest-received first, and sends a keyless sender's
   key ahead of its frames. A link holds at most one queued digest (ADR 2026-09.3ch7, fa87bac; `bluetooth-reviewer`'s
-  shape 4 too).
+  shape 4 too). This port meters a peer's digests and answers in capped rounds of 200 frames or 256 KiB from
+  `liveIndex`, minus what crossed the link either way, holding a round while the link has 128 KiB unwritten; keyreq
+  answers draw on a byte bucket per peer (ADR 2026-10.f5zs). Android does neither.
 - **Parking** (`custody.md`, "Key recovery"). `PendingInbound` holds a frame 2 minutes, at most 512 frames and
   4 MiB, and 200 per sender. A `keyreq` goes to neighbours with a 30 s cooldown.
 - **Asking** (ADR 2026-10.m9uq and amendments). A query is answered SENDING, HAVE, FETCHING or NONE, in the order

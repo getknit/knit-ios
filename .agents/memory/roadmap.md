@@ -524,6 +524,20 @@ explicit direction.** Update this file in the change that ships an item.
     holding one and back-fills it to us until it expires. The fix belongs in the walk, and nothing changes here.
   - **Swift comments that name Android's old behaviour:** `InteropAuditWireTests.swift:28-31` and
     `TextLimits.swift:54-55`. Fix each with the change above that touches its file.
+- **A neighbour's digests and asks, bounded** (knit-ios #19, ADR 2026-10.f5zs, 2026-10-26), from knit-next's
+  malicious-fork review H1 (`eccabcd72`). The iPhone meters digests, caps a reply round, keeps its crossing memos
+  apart, bounds a link's queue and its inbound bytes, closes a stalled write, and budgets keyreq answers. Android has
+  none of it but the write stall yet. When knit-next fixes H1 on its side, read its numbers against this port's and
+  re-align any that differ for a reason Android found. Left for later:
+  - a cap on what all links together hold queued: six links at 4 MiB each is 24 MiB in a backgrounded Knit;
+  - an additive "via GATT" bit on `RadioSighting`, so the write-stall exemption reads how a sighting arrived instead
+    of inferring it from the digest cue;
+  - counting late write checks in the footprint, so a soak can see a link whose judgment keeps being put off;
+  - keeping only a peer's newest digest when a waking iPhone reads several at once (the meter keeps the oldest two);
+  - skipping the pin store's read for a keyreq id once its asker's answer budget is overdrawn: today each refused id
+    still costs one read;
+  - knit-ios #18, the port of knit-next's fair custody eviction (its ADR 2026-10.7mqm), touches the stores
+    `liveIndex` reads, and lands after this.
 
 ## Next, after the MVP
 

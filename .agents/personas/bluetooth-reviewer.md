@@ -333,7 +333,10 @@ One line per invariant, with the ADR to read. Not exhaustive and not authoritati
 - **Seeking** (ADR 2026-10.mueg). Only in the background with no link: a scan filtered on `0xFE30`, at most eight
   wakes a spell, a dial on the first sighting whatever the order. Every accepted link is attached as a peripheral,
   so its end reaches `didDisconnectPeripheral`.
-- **Writes** (ADR 2026-09.3ch7). One queued digest per link, and the radio writes from its `LinkOutbox`.
+- **Writes** (ADR 2026-09.3ch7, ADR 2026-10.f5zs). One queued digest per link, and the radio writes from its
+  `LinkOutbox`, which closes the link past 4 MiB on both radios. Each radio counts a channel's queued and written
+  bytes at its entry points (`OutboxLevels`), and the link manager closes a link whose writes make no progress for
+  120 s of running time, exempting a `CAP_DOORBELL` peer that never advertised a digest cue.
 - **Files** (ADR 2026-10.h6zz, ADR 2026-10.xwjc). One file per link at a time. A peer whose HELLO carries
   `CAP_BLOB_HAVE` is fed by `FeedWindow`, clocked by its `blobprog` reports; any other is paced at a 4 KiB/s budget
   split among the links feeding. Each chunk waits for `RadioEvent.wroteFileRecord`. `FeedMeter` and

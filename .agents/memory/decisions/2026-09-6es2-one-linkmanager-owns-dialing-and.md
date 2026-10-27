@@ -93,3 +93,11 @@ link without the bit, which is only the Linux peer's `android` profile, as answe
 unanswered probes would close the link. `.agents/rules/interop.md` holds that rule, and
 `LinkAdmissionTests.aKeepaliveIsNeverWrittenNorAnsweredDoorbellOrNot` pins it. One link end still backs off once
 (`retire`), which knit-next `9a68b225` (#205) brought Android level with.
+
+**Amended 2026-10-26, for knit-ios #19 (ADR 2026-10.f5zs):** the 2026-10-23 list of how a link ends gains one. A link
+with bytes queued and none written for 120 s of Knit's running time ends with `link chN write stalled for <ms> ms`,
+Android's `WRITE_STALL_MS` (`LinkSilence.kt:35-37`, `:389` at `e63f15f4`). It backs off nobody, as Android's
+`closeSilent` does not. A `CAP_DOORBELL` peer that never advertised a digest cue is exempt, since a suspended iPhone
+reads nothing by design. Knit's own suspension never counts: a late check, a ring and coming to the front each
+re-stamp the baselines. The link manager also meters a peer's digests now, a burst of 2 and then one per 30 s, keyed
+by node id. `LinkWriteStallTests`, `WriteStallWatchTests` and `LinkDigestBudgetTests` pin both.

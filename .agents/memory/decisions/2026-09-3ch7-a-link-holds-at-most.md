@@ -52,3 +52,13 @@ it cannot tell whether the last digest has gone out.
 whether the bytes just written finished one, and the radio reports `RadioEvent.wroteFileRecord` when they did.
 That report is how the link manager keeps at most one chunk of a file in the queue, so frames written meanwhile go
 out between chunks. `LinkOutboxTests` and `BlueZOutboxTests` pin it.
+
+**Amended 2026-10-26, for knit-ios #19 (ADR 2026-10.f5zs):** the outbox now has a bound, and the link manager can see
+its level. `LinkOutbox.maximumQueuedBytes` (4 MiB, moved from `BlueZLoop`) is the one bound both radios read: past it,
+`L2CAPLink` closes with `ble chN stopped reading` as BlueZ did with `bluez chN stopped reading`. Each radio counts a
+channel's queued and written bytes at its entry points (`OutboxLevels`, `Radio.outboxLevel(on:)`), so a round still in
+transit through the CoreBluetooth queue or the BlueZ mailbox is counted. "`LinkManager` cannot see the radio's queue"
+no longer holds: it reads that level for the write-stall close and for `MeshTransport.queuedBytes(to:)`, which holds
+a digest's reply round while the link has half a round unwritten. The digest slot is unchanged, and a digest that
+takes another's place hands its bytes back to the count. `LinkOutboxTests`, `BlueZOutboxTests`, `BlueZChannelTests`
+and `L2CAPLinkTests` pin the bound and the level.

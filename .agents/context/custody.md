@@ -32,8 +32,9 @@ exception is a DM-form chat addressed to a peer we hold a live link to, which we
 not delivered.
 
 `LinkCrossings` keeps a frame from crossing one Bluetooth link twice. Frames are keyed by the first 8
-signature bytes as lowercase hex, or `u:<id>` when unsigned, with a 10-minute window, 1024 entries per
-link, cleared with the link.
+signature bytes as lowercase hex, or `u:<id>` when unsigned, with a 10-minute window, cleared with the link. Each
+link keeps 1024 entries for what we wrote and 1024 for what the link gave us, so junk a neighbour sends can evict
+only its own stamps (ADR 2026-10.f5zs). Kotlin keeps one memo of 1024 per link.
 
 ## Custody
 
@@ -89,18 +90,27 @@ A node carries frames for people who are not in range yet. This is store-and-for
 ## Sync over a link
 
 - At link-up and every 60 s, each side sends a `DIGEST` record listing every live custody id.
-- On receiving the peer's `DIGEST`, a node pushes every live frame the list omits. Each goes out as a fresh
-  `WireEnvelope` with `ttl = 8` and `hops = 0`, with `sig` and `signed` copied verbatim. Group frames go
-  only to roster members.
+- On receiving the peer's `DIGEST`, Android pushes every live frame the list omits (`ForwardSync.kt:136-163`). Each
+  goes out as a fresh `WireEnvelope` with `ttl = 8` and `hops = 0`, with `sig` and `signed` copied verbatim. Group
+  frames go only to roster members.
+- **This port answers in capped rounds** (ADR 2026-10.f5zs), its own rule and not a custody constant. A peer's
+  digests are metered, a burst of 2 and then one per 30 s, and the rest are dropped. A round picks from
+  `CustodyStore.liveIndex`, which decodes nothing: profiles first, then newest received first, minus the digest's ids
+  and whatever already crossed the link either way. It sends up to 200 frames or 256 KiB as encoded, keys ahead
+  counted in the bytes. The first pick always goes, and the round stops at the first pick that would pass the budget.
+  A group frame whose roster lacks the peer takes no slot. While the link still holds 128 KiB unwritten, the newest
+  digest waits in one slot per link. Each 60 s digest answers the next slice, so a newcomer facing a full custody
+  fills in about five exchanges, newest first.
 - **Android pushes custody only in answer to a DIGEST.** A node that sends none gets no back-fill. A node
   whose digest under-reports gets the missing frames re-pushed at each exchange, though on a Bluetooth link
   `LinkCrossings` lets one frame cross only once in 10 minutes, so the repeat comes that often while the link
   lasts.
 - **A link's writer is first in, first out, on both platforms, but holds at most one digest not yet written**
-  (ADR 2026-09.3ch7, knit-next's ADR 2026-09.tjfb). A back-fill is queued whole. A digest made while an older
-  one still waits takes that one's place, so a slow link writes one current digest behind a back-fill, not one
-  per 60 s tick. What the socket already holds goes out as it was: on `hci1` that can still be minutes of
-  digests (`.agents/context/linux-peer.md`, "Why the frames were late").
+  (ADR 2026-09.3ch7, knit-next's ADR 2026-09.tjfb). Android queues a back-fill whole; this port queues one round at
+  a time. A digest made while an older one still waits takes that one's place, so a slow link writes one current
+  digest behind a back-fill, not one per 60 s tick. What the socket already holds goes out as it was: on `hci1` that
+  can still be minutes of digests (`.agents/context/linux-peer.md`, "Why the frames were late"). This port's queue
+  holds at most 4 MiB per link, and a link whose writes stop for 120 s ends, as on Android (ADR 2026-10.f5zs).
 
 The advert's digest cue is the low 32 bits of an FNV-1a-64 fold (offset `0xCBF29CE484222325`, prime
 `0x100000001B3`) over each live id's UTF-8 bytes, XORed across the set. Nothing on BLE reads it, but we
