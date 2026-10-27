@@ -1942,3 +1942,8 @@ and reading `PRAGMA secure_delete` on the iPhone. The maintainer flipped before 
 - The sweep's `releaseDeletedPhotos` is gone (ADR 2026-10.u7cq's amendment).
 - A blob a carried frame names is still kept, but it counts toward the 128 MiB that echoes may hold for others. So the
   two-stranger hold above is now bounded by bytes as well as by custody's quotas.
+
+**Amended 2026-10-27, by ADR 2026-10.vzem (knit-ios #21):** P7c's carried frames name less. `carriedBlobs()` leaves out
+a room post's hash whose type the room refuses (`RoomAttachments`), and a stranger's room photo past the bound
+(`StrangerRoomPhotos`). The frames themselves are carried as before. A frame of ours, a sealed one or a profile is never
+a stranger's room post, so our own photos stay served as P7c says.

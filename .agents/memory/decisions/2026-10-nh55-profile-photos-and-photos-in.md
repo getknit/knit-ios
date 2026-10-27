@@ -80,3 +80,8 @@ Two choices differ from Android's on purpose:
   - `LinkTests`, which pins `0xB`;
   - `EmittedVectorTests`, which keeps Carol's profile;
   - the tests each phase's ADR names.
+
+**Amended 2026-10-27, by ADR 2026-10.vzem (knit-ios #21):** Nearby photos from strangers are fetched only inside the
+bound: a sender's newest 8 and, of those, the newest 32 of all strangers. The room's attachment types follow Android's
+`RoomAttachments`: a picture, a link card or a video. A request's photos wait for accept. Peers' advertised photos are
+unchanged (knit-ios #22).

@@ -126,3 +126,7 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
   - `MeshControlPhotoTests` for the control lines, and `KnitUITests`' photo walk for the composer, the bubble and the
     viewer at both text sizes. The walk's picked picture stands upright, a hundred points taller than a spinner's
     square, and the walk checks that the thread shows the photo whole, its stamp above the composer.
+
+**Amended 2026-10-27, by ADR 2026-10.vzem (knit-ios #21):** a blob is wanted the moment its message lands only in a
+thread we may fetch for: accepted, verified or written to, with blocked senders left out of a group's known posters. A
+request's photo waits for accept. A stranger's room photo is fetched only inside the bound on strangers' room photos.

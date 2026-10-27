@@ -123,7 +123,8 @@ evicts its oldest want whatever made it, keeps any cut prefix, collects orphans 
   echoes in a full set costs that traffic per ask. Metering it belongs to knit-ios #24.
 - **Under a flood, an honest root's backlog can still strand** past its share of the set: about 128 echoes against one
   fork.
-- **Our own wants can still be minted** by room posts and strangers' advertised photos: knit-ios #21 and #22.
+- **Our own wants can still be minted** by strangers' advertised photos (knit-ios #22). Room posts and requests are
+  bounded by ADR 2026-10.vzem.
 - **The echo state is in memory.** A restart drops every echo and the refused memo, and measures the budget afresh. Our
   own wants come back from the stores' re-arm.
 - **When knit-next fixes H3,** read its numbers against these and re-align any that differ for a reason Android found.

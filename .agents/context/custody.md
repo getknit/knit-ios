@@ -228,6 +228,7 @@ publish it honestly.
   still name is held and served for their day after it changes, and so, whatever our switch, is a peer's replaced photo that
   its sealed profiles we carry still name. Once the last such frame leaves, the next 600 s sweep or start removes it
   (ADR 2026-10.7kxj). Such a blob counts toward the 128 MiB an asker's echoes may hold here.
+  A room post whose type the room refuses, or a stranger's room photo past the bound, names nothing (ADR 2026-10.vzem).
   This port pulls no carried frame's photo (ADR 2026-10.ym9y), so it only keeps bytes it already holds. Delivery-side:
   custody's carry, quotas and digest read nothing of it.
 - **Our own ratchet DM is custodied inside its send unit,** with the switch on (ADR 2026-10.5sk9, phase P5b): the seal,

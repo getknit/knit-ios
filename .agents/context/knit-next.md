@@ -420,7 +420,9 @@ Kotlin wins.
         low-power mode, offline translation, voice-note transcription, short video re-encoding and screening, the
         supporter badge's production key, the field log, the developer view, Wear watch faces, pt-BR, notifications,
         the debug bridge, tooling and tests.
-  - **Mirrored ahead of the pin:** nothing, at this pin.
+  - **Mirrored ahead of the pin:** `eccabcd72`'s `RoomAttachments` (its ADR 2026-10.79j9): a room post's attachment
+    that is not a picture, a link card or a video is left off the row, and a post that is nothing else keeps none
+    (`RoomAttachments.swift`, ADR 2026-10.vzem, knit-ios #21). The frame and the wire are unchanged.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e63f15f4`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

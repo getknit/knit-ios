@@ -112,3 +112,8 @@ delete, and the frame alone decides what is kept.
 custody outside a store unit, so a failed read could remove a photo a carried frame or another message still names. A
 deleted message's photo now goes in the 600 s sweep's guarded pass, once its frame has left custody and the blob is
 at least 30 minutes old. In practice that is the same sweep, since such a frame is at least 6 h past its `sentAt`.
+
+**Amended 2026-10-27, by ADR 2026-10.vzem (knit-ios #21):** `keepAccepted` now also runs when a peer is un-verified,
+for the DM and every group the peer posted in. Acceptance decides which photos are kept, so a basis for it is never
+removed before acceptance is written. `release` forgets a want only when no row in a thread we fetch for names its hash,
+and it reads the rows inside a store unit.

@@ -545,8 +545,13 @@ explicit direction.** Update this file in the change that ships an item.
   of it yet. When knit-next fixes H3, read its numbers against this port's. Left for later:
   - a small allowance of cut prefixes for echoes of their own, so a pull-through on an edge link resumes on the hop
     from its holder;
-  - own wants minted by room posts and strangers' advertised photos: knit-ios #21 ranks them, and #22 bounds the
-    photos.
+  - own wants minted by strangers' advertised photos: knit-ios #22.
+- **A request's photos wait for accept** (knit-ios #21, ADR 2026-10.vzem, 2026-10-27), from knit-next's malicious-fork
+  review H7 (`eccabcd72`). A photo is fetched only for a thread we may fetch for, the room's attachment types follow
+  Android's `RoomAttachments` (ported ahead of the pin), and strangers' room photos are bounded at 8 per sender and 32
+  in all. Android fetches every room photo and every request's. Left for later:
+  - want tiers, ranking strangers' photos below accepted threads in a full want set;
+  - honouring a photo's declared size when it lands (knit-ios #8).
 
 ## Next, after the MVP
 
