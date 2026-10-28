@@ -2,7 +2,7 @@
   "source": {
     "repository": "knit-next",
     "path": "vectors/custody-v1.json",
-    "commit": "f172d7c64ec5ce8b1984fa49bb21aca59b63a141",
+    "commit": "ce56fec6ef5bd784afe3cc0997a339cb4a695147",
     "uncommitted": false,
     "sha256": "61fed9bb22a9ef2c9cf4a1d4af710baab51285dca88b98bd20dcf5bd3231f938"
   },

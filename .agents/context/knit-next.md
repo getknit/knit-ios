@@ -428,10 +428,11 @@ Kotlin wins.
     `FLAG_NO_AWARE` at the pin (`9552995d`, `438ffc72`), becomes `FLAG_AWARE` with the opposite meaning, "count on my
     Wi-Fi Aware now". `AdvertPayload.awareFlag` reserves it, and no advert this port writes sets it
     (`ble-transport.md`). The clear bit it always wrote already reads right, so only names, comments and tests moved.
-    And `f172d7c64` on knit-next's unmerged `fix/custody-byte-cap` (its ADR 2026-10.mqzv, knit-next #227, knit-ios
-    #34, ADR 2026-10.6n48): custody refuses a frame whose `signed` is longer than 61,440 bytes, before every other
-    refusal, and the sweep deletes the rows over the cap. Its `vectors/custody-v1.json` (30 steps, a 2,048-byte rig
-    cap) was copied with `sync-vectors.py --only custody-v1.json` from that commit. The wire is unchanged.
+    And `ce56fec6e` (its ADR 2026-10.mqzv, knit-next #227, knit-ios #34, ADR 2026-10.6n48), merged to knit-next's
+    `main` from `fix/custody-byte-cap`: custody refuses a frame whose `signed` is longer than 61,440 bytes, before
+    every other refusal, and the sweep deletes the rows over the cap. Its `vectors/custody-v1.json` (30 steps, a
+    2,048-byte rig cap) was copied with `sync-vectors.py --only custody-v1.json` from `ce56fec6e`. The wire is
+    unchanged.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e63f15f4`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

@@ -134,7 +134,7 @@ public final class SQLCustodyStore: CustodyStore {
     }
 
     /// One delete for the expired rows and the oversize ones (`ForwardDao.deleteExpired` and `deleteLongerThan` at
-    /// knit-next `f172d7c64`), each row counted once. `signed` is a `BLOB` in a `STRICT` table, so `length` counts its
+    /// knit-next `ce56fec6e`), each row counted once. `signed` is a `BLOB` in a `STRICT` table, so `length` counts its
     /// bytes, as Room's column does. On a database error it answers 0 and deletes nothing, and the next sweep tries
     /// again.
     @discardableResult

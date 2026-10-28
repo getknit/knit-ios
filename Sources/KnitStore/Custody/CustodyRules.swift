@@ -69,7 +69,7 @@ public enum CustodyRules {
     }
 
     /// Whether custody takes a frame, and when it ends if so (`ForwardRepository.store`, `ForwardRepository.kt:79-132`
-    /// at knit-next `f172d7c64`, knit-next ADR 2026-10.mqzv). The refusals come in Kotlin's order: a `signed` longer
+    /// at knit-next `ce56fec6e`, knit-next ADR 2026-10.mqzv). The refusals come in Kotlin's order: a `signed` longer
     /// than ``CustodyLimits/maxSignedBytes``, then dead on arrival, then past the future window, then a group frame
     /// whose roster is not its own (``carriesGroup(_:from:)``, knit-next ADR 2026-10.7mqm). Each is a function of the
     /// frame and `now` alone, so every node refuses alike, and it binds every origin, our own frames included. The

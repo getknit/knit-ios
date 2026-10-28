@@ -8,7 +8,7 @@ topics: [custody, convergence, security]
 
 # ADR 2026-10.6n48 — custody refuses a frame whose signed bytes exceed 60 KiB
 
-Status: Accepted (2026-10-28). Mirrors knit-next ADR 2026-10.mqzv (`f172d7c64`, ahead of the pin `e63f15f4`;
+Status: Accepted (2026-10-28). Mirrors knit-next ADR 2026-10.mqzv (`ce56fec6e`, ahead of the pin `e63f15f4`;
 knit-next #227), a paired change shipped in the same release (knit-ios #34). Amends ADR 2026-10.9e7g, whose "still
 open" list named the per-frame byte cap, and ADR 2026-09.p6nb: one more admission refusal, and a sweep delete.
 
@@ -62,7 +62,7 @@ eight members with seven mentioned:
 | room post, widest body | 6,787 |
 | room post, most mentions (666 chips, an upper bound) | 31,435 |
 
-Android's own headroom test (`CustodyHeadroomLabTest`, knit-next `f172d7c64`) measures more, because its limits are
+Android's own headroom test (`CustodyHeadroomLabTest`, knit-next `ce56fec6e`) measures more, because its limits are
 looser: a DM of 13,709 bytes, a group frame of 15,335, a sealed profile of 1,547, and a room post of 56,144. That post
 is 1,000 `@x` mentions with no spaces between them, the most a 2,000-unit body binds, since Android's room-post mentions
 have no count clamp. It is the worst honest case on either platform, and still under the cap. The iPhone's 666-chip
