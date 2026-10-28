@@ -514,9 +514,11 @@ explicit direction.** Update this file in the change that ships an item.
 
     The negative `ttl`/`hops` refusal and the typed fields shipped with knit-ios #14, which also brought KnitWire's
     decoding in line with kotlinx 1.12.0's (`.agents/context/wire-format.md`, "The CBOR profile").
-  - **Bluetooth** (`bluetooth-owner`, knit-ios #16): reserve advert bit 2, `FLAG_NO_AWARE`, and set it, at least in
-    the Linux peer's service-data advert (`9552995d`, knit-next ADR 2026-10.2t49). `BleAdvertPayload.kt:25-26` calls it
-    a follow-up paired change.
+  - **Bluetooth** (`bluetooth-owner`, knit-ios #16): advert bit 2 is reserved as Android's `FLAG_AWARE` and never
+    set here (2026-10-28). knit-next `808472a3` turned `FLAG_NO_AWARE` around, so the to-do that said to set the bit
+    was dropped. The trial is still owed: `knit-peer` beside a dormant Pixel on `808472a3` or later. The Pixel's
+    `bt state` should leave it out of `awareNear=` and `awareHeard=`, and it should log no `aware awake: SIGHTING`
+    for it.
   - **Blobs** (`blobs-owner`, knit-ios #17, with three benign differences): keep a want and its asks when a received
     blob fails to store, as `BlobExchange.onReceived` does.
   - **Track A, on Android** (knit/knit-next#217, found with knit-ios #14): `CborText` passes a two-byte simple value

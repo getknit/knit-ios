@@ -208,8 +208,9 @@ Kotlin wins.
   - **Since then** (396 commits, releases `v2.9.0` and `v2.10.0` among them; 24 fixtures added to `wire-v1.json` and
     `ratchet-v1.json` new, none moved). Read on 2026-10-25, and the merged code checked at `e63f15f4`:
     - **Owed here.** The first two show only when a sender's bytes are buggy or hostile, which no honest build of
-      either side writes. j67x's rule can bite between honest phones, `FLAG_NO_AWARE` costs the Linux peer on every
-      advert, and the last needs a failed database write:
+      either side writes. j67x's rule can bite between honest phones, and the last needs a failed database
+      write. `FLAG_NO_AWARE` (knit-ios #16) was owed here too, until `808472a3` turned it around past the pin
+      ("Mirrored ahead of the pin", below):
       - **A code point split across text chunks** (`a0a29148`, knit-next ADR 2026-10.qjap, knit-ios #13): Android joins an
         indefinite-length string's chunks before its UTF-8 check (`CborText.kt:99-109`), as kotlinx does. KnitWire also
         checks each chunk (`CBOR+Decoding.swift:191`), so it refuses what Android takes, though the ADR says both
@@ -219,9 +220,6 @@ Kotlin wins.
         real label there: `3B FFFFFFFFFFFFFFEF` reads as 16, `video`.
       - **j67x's third rule** (`6d9627b7`, knit-ios #15): over our own unanswered reset, still draining, Android keeps the drained root
         as `prevRoot`, and `sealReset` takes the held one (`crypto.md`). It belongs with j67x's other two rules, below.
-      - **`FLAG_NO_AWARE`** (`9552995d`, `438ffc72`, knit-next ADR 2026-10.2t49, knit-ios #16): advert bit 2, which
-        `BleAdvertPayload.kt:25-26` asks this port to reserve. Android reads it only from service data, so only the
-        Linux peer's advert counts, and its clear bit keeps nearby Pixels' Wi-Fi Aware awake (`ble-transport.md`).
       - **A blob that fails to store** (knit-ios #17): Android keeps the want and its asks (`BlobExchange.onReceived`,
         `BlobExchange.kt:2016-2021`). `receiveFile` here marks the blob obtained and withdraws its asks whether or not
         the insert landed (`MeshEngine+Blobs.swift:315-320`), and the next re-arm wants it again.
@@ -384,7 +382,7 @@ Kotlin wins.
           and a cold sighting starts a bounded hunt. All of it is on in release. An iPhone is never heard on Coded, so
           there is nothing to mirror. Three indirect costs to an iPhone are listed in `ble-transport.md` and wait on a
           trial (roadmap). `d7da26f6` also appends `near=[…]` to `bt state` after `linkScores=`, and later commits add
-          `awareNear=`, `awareHeard=`, `noAware=` and `newcomers=` after it and `gattBudget=` after `gattReads=`;
+          `awareNear=`, `awareHeard=`, `noAware=` (`aware=` since `808472a3`) and `newcomers=` after it and `gattBudget=` after `gattReads=`;
           `interop.py`'s patterns ignore them. Its Wi-Fi Aware half is Android's alone.
     - **New since the last pin, and nothing to mirror:**
       - **Custody before the air** (`85baeeb9`, #141): Android custodies each of its own frames before it floods it.
@@ -427,6 +425,10 @@ Kotlin wins.
     sender, and custody refuses a group frame whose roster does not derive to its id or name its sender. Its
     `vectors/custody-v1.json` was copied with `sync-vectors.py --only custody-v1.json` from `820187443e`, where the
     file is unchanged since `e0cbb842a`. `015fff823`, blob traffic marked for relay, is not mirrored.
+    And `808472a3` (GitHub #44, the 2026-10-27 amendment of its ADR 2026-10.2t49, knit-ios #16): advert bit 2,
+    `FLAG_NO_AWARE` at the pin (`9552995d`, `438ffc72`), becomes `FLAG_AWARE` with the opposite meaning, "count on my
+    Wi-Fi Aware now". `AdvertPayload.awareFlag` reserves it, and no advert this port writes sets it
+    (`ble-transport.md`). The clear bit it always wrote already reads right, so only names, comments and tests moved.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e63f15f4`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

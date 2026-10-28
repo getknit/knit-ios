@@ -267,6 +267,28 @@ import Testing
         #expect(AdvertPayload(serviceData: flagged.bytes)?.flags == AdvertPayload.dialsGattPeersFlag)
     }
 
+    /// The flags this port writes never claim Android's side channel or its Wi-Fi Aware (knit-next `808472a3`,
+    /// `BleAdvertPayload.kt:74-86`), and the initializer's default, which knit-peer's `scan` and `stranger` adverts
+    /// take, claims nothing either.
+    @Test func theFlagsThisPortWritesNeverSetTheAwareBit() throws {
+        #expect(AdvertPayload.writtenFlags(dialsGattPeers: true) == AdvertPayload.dialsGattPeersFlag)
+        #expect(AdvertPayload.writtenFlags(dialsGattPeers: false) == 0)
+        let node = try #require(NodeId(nodeA))
+        #expect(AdvertPayload(capabilities: .local, nodeId: node, digestCue: 0, psm: 0x80).flags == 0)
+    }
+
+    /// The codec masks nothing: an Android advert with every flag set, bit 2 among them, parses and re-encodes as it
+    /// came, in its service data and its GATT value alike.
+    @Test func anAndroidAdvertWithTheAwareBitRoundTrips() throws {
+        let node = try #require(NodeId(nodeA))
+        let all = AdvertPayload.sideChannelFlag | AdvertPayload.dialsGattPeersFlag | AdvertPayload.awareFlag
+        let android = AdvertPayload(capabilities: Capabilities(rawValue: 0x9), nodeId: node, digestCue: 7, psm: 0x80, flags: all)
+        let parsed = try #require(AdvertPayload(serviceData: android.bytes))
+        #expect(parsed.flags == 0x07)
+        #expect(parsed.bytes == android.bytes)
+        #expect(parsed.gattValue.last == 0x07)
+    }
+
     @Test func theGATTValueIsThePayloadWithItsCueZeroed() throws {
         let node = try #require(NodeId(nodeA))
         let payload = AdvertPayload(capabilities: Capabilities(rawValue: 0x9), nodeId: node, digestCue: 0x1234_5678, psm: 0x80, flags: 2)

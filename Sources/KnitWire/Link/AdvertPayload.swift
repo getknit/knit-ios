@@ -8,18 +8,31 @@
 /// | 17 | 4 | digest cue, big-endian |
 /// | 21 | 2 | L2CAP PSM, big-endian |
 /// | 23 | 1 | BLE-local flags (optional on the wire) |
+///
+/// Byte 23 holds bit 0 ``sideChannelFlag``, bit 1 ``dialsGattPeersFlag`` and bit 2 ``awareFlag``; bits 3-7 are
+/// reserved (0), and a parser tests only the bits it knows, so a new bit is additive.
 public struct AdvertPayload: Sendable, Equatable {
     /// The shortest payload a scanner accepts: everything but the flags byte.
     public static let minimumSize = 23
     /// The full payload.
     public static let size = 24
 
-    /// Bit 0: this node sends side-channel pages. Always clear in release builds, and never set by this build.
+    /// Bit 0: this node advertises and scans the BLE side channel. Android sets it while its side channel runs, in
+    /// release since knit-next `713b29d6` (`FLAG_SIDE_CHANNEL`, `BleAdvertPayload.kt:54` at `808472a3`). This port runs
+    /// no side channel, so it never sets the bit.
     public static let sideChannelFlag: UInt8 = 0x01
     /// Bit 1: this node reads the GATT payload of peers that advertise no service data, and dials them
     /// itself. An iPhone uses it to tell whether an Android peer can see it (ADR router:
     /// `.agents/memory/decisions.md`).
     public static let dialsGattPeersFlag: UInt8 = 0x02
+    /// Bit 2: Android's `FLAG_AWARE`, said positively: set, a peer may count on this phone's Wi-Fi Aware now (knit-next
+    /// `808472a3`, `BleAdvertPayload.kt:64-72`; knit-next ADR 2026-10.2t49's 2026-10-27 amendment, GitHub #44). Android
+    /// makes a peer an Aware candidate only from a service-data sighting with the bit set, and a GATT-payload sighting
+    /// never makes one (`AwareCandidateTracker.kt:63-70` and `:79`, called at `BluetoothMeshTransport.kt:2295`).
+    /// No radio here runs Wi-Fi Aware, so the bit is reserved: no advert this port writes sets it
+    /// (``writtenFlags(dialsGattPeers:)``, for knit-peer's service data and the iPhone's GATT payload alike), and
+    /// nothing here reads it. The codec keeps it, so a parsed Android advert round-trips.
+    public static let awareFlag: UInt8 = 0x04
 
     /// The 16-bit service UUID under which Android puts the payload in its advert's service data, and under which
     /// a node that cannot advertise service data (an iPhone) lists a GATT service instead.
@@ -30,6 +43,15 @@ public struct AdvertPayload: Sendable, Equatable {
     /// The writable characteristic beside it, which a peer writes to wake a node whose app iOS has suspended: data on
     /// an open link does not wake it, and a write does. The value means nothing. Minted by this port on 2026-09-27.
     public static let doorbellUUID = "f34c056b-5830-4243-a888-01f92f49e446"
+
+    /// The flags byte this port advertises, mirroring Kotlin's `flags(sideLive:gattPeers:aware:)`
+    /// (`BleAdvertPayload.kt:74-86` at knit-next `808472a3`) with its other two inputs always false: no side channel
+    /// runs here, so ``sideChannelFlag`` stays clear, and no Wi-Fi Aware does, so ``awareFlag`` stays clear.
+    /// ``dialsGattPeersFlag`` is set only while the radio reads GATT payloads (`Radio.dialsGattPeers`), so it never
+    /// claims a read it cannot make.
+    public static func writtenFlags(dialsGattPeers: Bool) -> UInt8 {
+        dialsGattPeers ? dialsGattPeersFlag : 0
+    }
 
     private static let capabilitiesMask: Int64 = 0xFF
 

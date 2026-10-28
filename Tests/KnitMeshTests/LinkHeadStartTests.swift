@@ -38,6 +38,22 @@ import Testing
         #expect(marked.map { $0 + 1 } == dialed, "the head start's line comes right before the dial's own")
     }
 
+    /// The head start reads bit 1 alone: a peer above flagged only with Android's `FLAG_AWARE` (bit 2, knit-next
+    /// `808472a3`, `BleAdvertPayload.kt:64-72`) cannot see us, so it is dialed at the ordinary 12 s with no head start,
+    /// and one with both bits waits out the head start as one with bit 1 alone does.
+    @Test func theAwareBitNeitherGivesNorTakesAHeadStart() {
+        let awareOnly = iPhone(low)
+        awareOnly.sightToPromotion(high, flags: AdvertPayload.awareFlag)
+        #expect(awareOnly.radio.dials.map(\.address) == [RadioAddress("addr-\(high)")], "dialed at 12 s")
+        #expect(headStartLines(awareOnly).isEmpty)
+        let both = iPhone(low)
+        both.sightToPromotion(high, flags: AdvertPayload.awareFlag | flagged)
+        #expect(both.radio.dials.isEmpty, "not at the ordinary 12 s")
+        both.advance(12_000, hearing: high)
+        #expect(both.radio.dials.map(\.address) == [RadioAddress("addr-\(high)")])
+        #expect(headStartLines(both).count == 1)
+    }
+
     @Test func theManagerWakesWhenAHeadStartEndsWithNothingHeard() {
         let rig = iPhone(low)
         let first = rig.clock.monotonicMilliseconds()

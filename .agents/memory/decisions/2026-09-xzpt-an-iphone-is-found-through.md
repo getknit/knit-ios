@@ -112,6 +112,17 @@ are Android additions, like its 64-address cap. Revisit this if a device trial s
 keeping an iPhone's read slot full; the stimulus built for knit-next's trial (knit-ios #3) can run beside an iPhone
 too.
 
+**Amended 2026-10-28, after knit-next `808472a3` (knit-ios #16): bit 2 of the flags byte is Android's Wi-Fi Aware
+bit, and no advert here sets it.** Android's `FLAG_AWARE` (`0x04`) means "a peer may count on this phone's Wi-Fi Aware
+now". Android counts a peer as an Aware candidate only from a service-data sighting with the bit set. No radio here runs
+Wi-Fi Aware, so `AdvertPayload.awareFlag` names the bit as reserved. `AdvertPayload.writtenFlags(dialsGattPeers:)` is
+the one place this port makes its flags: bit 1 while the radio reads GATT payloads, bits 0 and 2 always clear. The
+codec keeps what it parses, so an Android advert with bit 2 set round-trips. Masking the bit in `bytes` was the
+alternative, and it would have broken that round trip to guard a writer that already has one call site. Until now
+the bit was clear only because nothing set it. Nothing named it either, so a later change could have spent it on
+something else, and Android would have read that as "runs Wi-Fi Aware". From 2026-10-24 to 2026-10-27, knit-next's
+`main` gave the bit the opposite meaning (`FLAG_NO_AWARE`), which never shipped (`.agents/context/ble-transport.md`).
+
 **Consequences / limits:**
 
 - **Cross-platform law.** The UUID is law once A3 ships. Change it only together with knit-next.
@@ -119,4 +130,7 @@ too.
   `KnitBlueZ` should before P8, so both dial orders of MVP item 8 work. Until then the Linux peer's advert
   leaves the flag clear.
 - **Guards.** `LinkTests`' `theGATTIdentifiersArePinned` and `theGATTValueIsThePayloadWithItsCueZeroed`,
-  `LinkManagerTests`' `aRadioThatCannotReadGATTPayloadsLeavesTheFlagClear`, and `BlueZAdvertTests`.
+  `LinkManagerTests`' `aRadioThatCannotReadGATTPayloadsLeavesTheFlagClear`, and `BlueZAdvertTests`. For bit 2:
+  `LinkTests`' `theFlagsThisPortWritesNeverSetTheAwareBit` and `anAndroidAdvertWithTheAwareBitRoundTrips`,
+  `LinkManagerTests`' `noAdvertWeWriteSetsTheAwareBit` and the two that read the bit beside a dial,
+  `LinkHeadStartTests`' `theAwareBitNeitherGivesNorTakesAHeadStart`, and `BlueZAdvertTests`' two `NoAwareBit` tests.

@@ -27,6 +27,23 @@ import Testing
         #expect(rig.radio.advertised.last?.flags == 0)
     }
 
+    /// No radio here runs Wi-Fi Aware, so no advert this port writes may claim it: Android counts a peer as an Aware
+    /// candidate from bit 2 alone (knit-next `808472a3`, `BleAdvertPayload.kt:64-72`, `AwareCandidateTracker.kt:63-70`).
+    /// The link manager is the one writer for the iPhone and knit-peer's mesh, with either GATT reader setting.
+    @Test(arguments: [true, false]) func noAdvertWeWriteSetsTheAwareBit(dialsGattPeers: Bool) {
+        let rig = LinkRig(local: high, dialsGattPeers: dialsGattPeers)
+        _ = rig.handle(.listening(psm: 0x81))
+        rig.links.updateDigestCue(7)
+        _ = rig.advance(1500)
+        _ = rig.handle(.listening(psm: 0x82))
+        let flags = rig.radio.advertised.map(\.flags)
+        #expect(flags.count == 3)
+        #expect(flags.allSatisfy { $0 & AdvertPayload.awareFlag == 0 }, "\(flags)")
+        #expect(flags.allSatisfy { $0 & AdvertPayload.sideChannelFlag == 0 }, "\(flags)")
+        #expect(flags.allSatisfy { $0 == (dialsGattPeers ? AdvertPayload.dialsGattPeersFlag : 0) }, "\(flags)")
+        #expect(rig.radio.advertised.allSatisfy { $0.gattValue[AdvertPayload.minimumSize] & AdvertPayload.awareFlag == 0 })
+    }
+
     @Test func aCustodyChangeReAdvertisesOnceTheBurstSettles() {
         let rig = LinkRig(local: high)
         _ = rig.handle(.listening(psm: 0x81))
@@ -104,6 +121,23 @@ import Testing
         let rig = LinkRig(local: low, advertisesServiceData: false)
         rig.sightToPromotion(high, flags: 0)
         #expect(rig.radio.dials.count == 1)
+    }
+
+    /// Who dials reads bit 1 alone: Android's `FLAG_AWARE` (bit 2, knit-next `808472a3`, `BleAdvertPayload.kt:64-72`)
+    /// says nothing about whether a peer reads our GATT payload.
+    @Test func theAwareBitAloneDoesNotTellUsAPeerAboveCanSeeUs() {
+        let rig = LinkRig(local: low, advertisesServiceData: false)
+        rig.sightToPromotion(high, flags: AdvertPayload.awareFlag)
+        #expect(rig.radio.dials.count == 1, "bit 2 is not bit 1: the peer cannot see us, so we dial")
+    }
+
+    @Test func theAwareBitBesideTheGATTFlagReadsAsTheGATTFlagAlone() {
+        let both = LinkRig(local: low, advertisesServiceData: false)
+        both.sightToPromotion(high, flags: AdvertPayload.awareFlag | AdvertPayload.dialsGattPeersFlag)
+        let gattOnly = LinkRig(local: low, advertisesServiceData: false)
+        gattOnly.sightToPromotion(high, flags: AdvertPayload.dialsGattPeersFlag)
+        #expect(both.radio.dials.isEmpty, "a peer that reads GATT payloads dials us")
+        #expect(both.radio.dials == gattOnly.radio.dials)
     }
 
     @Test func ourOwnAdvertIsIgnored() {

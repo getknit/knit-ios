@@ -62,21 +62,26 @@ There is no local name, no UUID list and no scan response, which is 31 bytes on 
 | 1 | 16 | node id as raw bytes (the 26-character base32 id, decoded) |
 | 17 | 4 | digest cue: the low 32 bits of the custody FNV fold, big-endian; nothing on BLE reads it |
 | 21 | 2 | L2CAP PSM, big-endian, assigned by the stack when the server opens |
-| 23 | 1 | BLE-local flags: bit 0 is `FLAG_SIDE_CHANNEL`, set while the side channel runs; bit 1 is `FLAG_DIALS_GATT_PEERS`, set while the GATT reader runs (A3); both are on in release since knit-next `713b29d6`. Bit 2 is `FLAG_NO_AWARE` (below); bits 3–7 are reserved |
+| 23 | 1 | BLE-local flags: bit 0 is `FLAG_SIDE_CHANNEL`, set while the side channel runs; bit 1 is `FLAG_DIALS_GATT_PEERS`, set while the GATT reader runs (A3); both are on in release since knit-next `713b29d6`. Bit 2 is `FLAG_AWARE` (below); bits 3–7 are reserved |
 
 A payload shorter than 23 bytes is dropped, exactly 23 reads the flags as 0, and anything past 24 is
 ignored. There is no version byte: the UUID implies the version. `0xFE30` sits in the SIG member block and
 is not assigned to Knit, which knit-next accepts as a risk. `0xFE38` carries the side channel's
 extended-advertising pages, which this port never uses.
 
-`FLAG_NO_AWARE` (`0x04`, knit-next ADR 2026-10.2t49, GitHub #44; `9552995d`, `438ffc72`) has inverted polarity: set
-means "this phone will not run Wi-Fi Aware". Android sets it by default and clears it only after Wi-Fi Aware has been
-held clear for 60 s (`NoAwareFlag.kt`). A peer whose service-data advert has it clear is an Aware candidate, and its
-being near wakes Android's dormant Wi-Fi Aware plane (`AwareCandidateTracker.kt`). A GATT-payload sighting never makes
-one, and neither does a link whose HELLO carries `CAP_DOORBELL`, so an iPhone's clear bit costs nothing. The Linux
-peer's `android` profile advertises service data with the bit clear, so it keeps nearby Pixels' Wi-Fi Aware awake.
-`BleAdvertPayload.kt:25-26` asks this port to reserve the bit. That is owed: `AdvertPayload` names bits 0 and 1 only,
-and every radio here advertises bit 2 clear (`LinkManager+Channels.swift`).
+`FLAG_AWARE` (`0x04`, knit-next `808472a3`, GitHub #44, the 2026-10-27 amendment of knit-next ADR 2026-10.2t49) means
+"a peer may count on this phone's Wi-Fi Aware now". Android sets it once "will run Aware" has held for 60 s, and
+clears it at once when the phone won't run Aware or goes into deep idle (`AwareFlag.kt`, `BleAdvertPayload.kt:64-86`).
+A peer is an Aware candidate only when its service-data advert has the bit set, and a candidate nearby wakes Android's
+dormant Wi-Fi Aware plane (`AwareCandidateTracker.kt:63-70`). A GATT-payload sighting never makes one, and neither does
+a link whose HELLO carries `CAP_DOORBELL`. No radio here runs Wi-Fi Aware, so `AdvertPayload.awareFlag` reserves the
+bit, and neither the Linux peer's service data nor the iPhone's GATT payload ever sets it. A clear bit wakes nobody,
+so the Linux peer leaves nearby Pixels' Wi-Fi Aware asleep.
+
+The bit first meant the opposite. `FLAG_NO_AWARE` (`9552995d`, `438ffc72`, both in the pin) was set for "won't run
+Aware", and a clear bit made a candidate. It never shipped in a release and lived on knit-next's `main` only from
+2026-10-24 to 2026-10-27. A Pixel on one of those builds still counts the Linux peer's clear bit as a candidate, so
+reflash it before a trial. knit-next ADR 2026-10.2t49's trials forbid mixing the two forms on the bench.
 
 ## The link
 

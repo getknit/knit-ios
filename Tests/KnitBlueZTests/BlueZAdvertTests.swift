@@ -37,6 +37,31 @@
             #expect(service.properties["Primary"]?.bool == true)
         }
 
+        /// BlueZ registers the flags the link manager wrote and adds none: in particular not bit 2, Android's
+        /// `FLAG_AWARE` (knit-next `808472a3`, `BleAdvertPayload.kt:64-72`), which no radio here may claim.
+        @Test func theServiceDataCarriesTheWrittenFlagsAndNoAwareBit() throws {
+            var payload = LoopRig.ours
+            payload.flags = AdvertPayload.writtenFlags(dialsGattPeers: true)
+            let rig = try LoopRig()
+            rig.startAdvertising(payload)
+            let properties = try #require(rig.fake.registered.first.flatMap { rig.fake.advertisements[$0] })
+            let bytes = try #require(properties["ServiceData"]?["FE30"]?.byteArray)
+            #expect(bytes.count == AdvertPayload.size)
+            #expect(bytes.last == AdvertPayload.dialsGattPeersFlag)
+        }
+
+        @Test func theGATTValueCarriesTheWrittenFlagsAndNoAwareBit() throws {
+            var payload = LoopRig.ours
+            payload.flags = AdvertPayload.writtenFlags(dialsGattPeers: true)
+            let rig = try LoopRig(profile: .ios)
+            rig.startAdvertising(payload)
+            try rig.fake.read(characteristic: rig.loop.application.characteristicPath)
+            rig.settle { rig.fake.readResult != nil }
+            let value = try #require(try rig.fake.readResult?.get())
+            #expect(value.count == AdvertPayload.size)
+            #expect(value.last == AdvertPayload.dialsGattPeersFlag)
+        }
+
         @Test func aRotatingAdvertIsRegisteredAfreshOnItsDeadlineAndTheOldOneWithdrawn() throws {
             let rig = try LoopRig(profile: .ios, rotateAdvert: 50)
             rig.startAdvertising()
