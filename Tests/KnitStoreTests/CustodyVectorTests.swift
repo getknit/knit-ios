@@ -3,9 +3,9 @@ import KnitTestSupport
 import KnitWire
 import Testing
 
-/// knit-next's custody contract (`vectors/custody-v1.json`, knit-next ADR 2026-10.7mqm), replayed as `CustodyVectorTest`
-/// replays it through Android's store: every step in order through one store of each kind. A step this port answers
-/// differently is a frame an iPhone and a Pixel hold differently, so their digests never agree.
+/// knit-next's custody contract (`vectors/custody-v1.json`, knit-next ADR 2026-10.7mqm and 2026-10.mqzv), replayed as
+/// `CustodyVectorTest` replays it through Android's store: every step in order through one store of each kind. A step
+/// this port answers differently is a frame an iPhone and a Pixel hold differently, so their digests never agree.
 @Suite struct CustodyVectorTests {
     private static let file = CustodyVectors.file
 
@@ -19,8 +19,7 @@ import Testing
             maxPerSender: stated.maxPerSender,
             maxPerGroup: stated.maxPerGroup,
             maxRoomChat: stated.maxBroadcast,
-            // Absent from a file older than the byte cap: the production cap, which none of its frames nears.
-            maxSignedBytes: stated.maxSignedBytes ?? CustodyLimits().maxSignedBytes
+            maxSignedBytes: stated.maxSignedBytes
         )
     }
 
@@ -44,7 +43,7 @@ import Testing
 
     @Test func theFileStatesTheSameFutureWindow() {
         #expect(Self.file.limits.maxFutureSkewMs == WireProtocol.maxFutureSkewMilliseconds)
-        #expect(Self.file.steps.count == 27)
+        #expect(Self.file.steps.count == 30)
     }
 
     @Test(arguments: CustodyStoreKind.allCases)
@@ -53,9 +52,8 @@ import Testing
         for (index, step) in Self.file.steps.enumerated() {
             let label = Comment(rawValue: "step \(index + 1) (\(step.note))")
             let frame = Self.carried(step.frame)
-            if let signedBytes = step.signedBytes {
-                #expect(frame.signed.count == signedBytes, label)
-            }
+            // First, so a builder that encodes differently fails as that and not as a custody disagreement.
+            try #require(frame.signed.count == step.signedBytes, label)
             #expect(frame.envelope.isRoomPost == step.isRoomChat, label)
             #expect(CustodyRules.expiresAt(of: frame.envelope, limits: Self.limits) == step.expiresAt, label)
             let before = store.liveIds(now: step.now)

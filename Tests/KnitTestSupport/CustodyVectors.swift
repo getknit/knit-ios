@@ -1,6 +1,7 @@
-/// knit-next's custody contract, `vectors/custody-v1.json` (knit-next ADR 2026-10.7mqm), copied into `Tests/Vectors/` by
-/// `scripts/sync-vectors.py`: small limits, frames stored one at a time, and after each the store's answer, the live ids
-/// its write evicted and the live set it holds. Every port replays the steps through its own stores.
+/// knit-next's custody contract, `vectors/custody-v1.json` (knit-next ADR 2026-10.7mqm and 2026-10.mqzv), copied into
+/// `Tests/Vectors/` by `scripts/sync-vectors.py`: small limits, frames stored one at a time, and after each the store's
+/// answer, the live ids its write evicted and the live set it holds. Every port replays the steps through its own
+/// stores.
 public enum CustodyVectors {
     /// The file's shape.
     public struct File: Decodable, Sendable {
@@ -28,8 +29,8 @@ public enum CustodyVectors {
         public let broadcastTtlMs: Int64
         /// The future window.
         public let maxFutureSkewMs: Int64
-        /// The byte cap on a frame's `signed` (knit-next #227). Optional until the file that states it is synced.
-        public let maxSignedBytes: Int?
+        /// The byte cap on a frame's `signed` (knit-next ADR 2026-10.mqzv).
+        public let maxSignedBytes: Int
     }
 
     /// One store and what it must answer.
@@ -41,9 +42,8 @@ public enum CustodyVectors {
         /// The frame stored.
         public let frame: Frame
         /// The length of the `signed` bytes the store is handed, checked before the step replays, so a padded frame that
-        /// encodes differently fails as that and not as a custody disagreement. Optional until the file that states it is
-        /// synced.
-        public let signedBytes: Int?
+        /// encodes differently fails as that and not as a custody disagreement.
+        public let signedBytes: Int
         /// Whether the frame is a room post.
         public let isRoomChat: Bool
         /// When custody of the frame ends, refused or not.
@@ -70,7 +70,8 @@ public enum CustodyVectors {
         public let group: Group?
         /// The originator's clock.
         public let sentAt: Int64
-        /// The length of the chat body of "x"s that pads the frame, absent for an empty body (knit-next #227).
+        /// The length of the chat body of "x"s that pads the frame, absent for an empty body (knit-next ADR
+        /// 2026-10.mqzv).
         public let bodyLength: Int?
     }
 

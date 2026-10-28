@@ -68,14 +68,14 @@ public enum CustodyRules {
         return expiresAt
     }
 
-    /// Whether custody takes a frame, and when it ends if so (`ForwardRepository.store`, `ForwardRepository.kt:96-117`
-    /// at knit-next `e0cbb842a`, and the byte cap of knit-next #227). The refusals come in Kotlin's order: a `signed` longer
-    /// than ``CustodyLimits/maxSignedBytes``, then dead on arrival, then past the future window, then a group frame whose
-    /// roster is not its own (``carriesGroup(_:from:)``, knit-next ADR 2026-10.7mqm). Each is a function of the frame and
-    /// `now` alone, so every node refuses alike, and it binds every origin, our own frames included. The order decides
-    /// only which reason is counted: an oversize frame naming a foreign roster is ``CustodyRefusal/oversize``, and the
-    /// roster counter does not move. Both stores call it before they write, so neither can skip the gate, and a refusal
-    /// writes and evicts nothing.
+    /// Whether custody takes a frame, and when it ends if so (`ForwardRepository.store`, `ForwardRepository.kt:79-132`
+    /// at knit-next `f172d7c64`, knit-next ADR 2026-10.mqzv). The refusals come in Kotlin's order: a `signed` longer
+    /// than ``CustodyLimits/maxSignedBytes``, then dead on arrival, then past the future window, then a group frame
+    /// whose roster is not its own (``carriesGroup(_:from:)``, knit-next ADR 2026-10.7mqm). Each is a function of the
+    /// frame and `now` alone, so every node refuses alike, and it binds every origin, our own frames included. The
+    /// order decides only which reason is counted: an oversize frame naming a foreign roster is
+    /// ``CustodyRefusal/oversize``, and the roster counter does not move. Both stores call it before they write, so
+    /// neither can skip the gate, and a refusal writes and evicts nothing.
     ///
     /// The byte cap counts ``CarriedFrame/signed`` alone, never `sig`, and keeps a frame of exactly the cap.
     public static func admission(of frame: CarriedFrame, now: Int64, limits: CustodyLimits) -> Admission {

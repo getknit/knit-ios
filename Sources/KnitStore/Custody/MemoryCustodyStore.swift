@@ -118,8 +118,8 @@ public final class MemoryCustodyStore: CustodyStore {
         state.withLock { $0.rows[ExactKey(id)] = nil }
     }
 
-    /// Drops the expired rows and the oversize ones (`deleteExpired` and `deleteLongerThan`, knit-next #227) in one pass,
-    /// each row counted once.
+    /// Drops the expired rows and the oversize ones (`ForwardDao.deleteExpired` and `deleteLongerThan` at
+    /// knit-next `f172d7c64`) in one pass, each row counted once.
     @discardableResult
     public func sweepExpired(now: Int64) -> Int {
         state.withLock { state in

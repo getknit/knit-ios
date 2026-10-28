@@ -43,9 +43,9 @@ public struct CustodySync: Sendable {
     /// ADR 2026-10.7mqm), Android's `groupCustodyRefused`. Not a drop: each was still delivered and relayed.
     public private(set) var groupRefusedCount = 0
 
-    /// Frames custody refused because their `signed` is longer than its byte cap (``CustodyRefusal/oversize``, knit-next
-    /// #227), Android's `custodyOversizeRefused`. Not a drop: each was still delivered and relayed. Our own count too, since
-    /// the cap binds them.
+    /// Frames custody refused because their `signed` is longer than its byte cap (``CustodyRefusal/oversize``,
+    /// knit-next ADR 2026-10.mqzv), Android's `custodyOversizeRefused` (`MeshMetrics.kt` at `f172d7c64`). Not a drop:
+    /// each was still delivered and relayed. Our own count too, since the cap binds them.
     public private(set) var oversizeRefusedCount = 0
 
     /// Takes a relayed frame into custody (`ForwardSync.onSeen`) if `authenticate` says so, and answers whether custody
