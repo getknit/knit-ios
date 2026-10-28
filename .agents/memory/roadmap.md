@@ -536,8 +536,14 @@ explicit direction.** Update this file in the change that ships an item.
   - keeping only a peer's newest digest when a waking iPhone reads several at once (the meter keeps the oldest two);
   - skipping the pin store's read for a keyreq id once its asker's answer budget is overdrawn: today each refused id
     still costs one read;
-  - knit-ios #18, the port of knit-next's fair custody eviction (its ADR 2026-10.7mqm), touches the stores
-    `liveIndex` reads, and lands after this.
+- **Custody's cap evicts from the largest sender** (knit-ios #18, ADR 2026-10.9e7g, 2026-10-27), from knit-next's
+  malicious-fork review C2, ported from knit-next `e0cbb842a` (its ADR 2026-10.7mqm) ahead of the pin. Past the
+  1,000-frame cap, the sender holding the most loses its oldest frame. A group frame is carried only under a roster
+  that derives to its id and names its sender. `store` answers whether it holds the frame. Both stores replay
+  `custody-v1.json`. Android shipped it first. Left for later:
+  - a per-frame byte cap on custody, a paired change (filed separately);
+  - a trial that binds the 1,000-frame cap across an iPhone and a Pixel on `e0cbb842a` or later, which needs a Sybil
+    injector neither harness has. Until one exists, the vector replay is the cross-platform check.
 - **An asker's echoes, budgeted** (knit-ios #20, ADR 2026-10.7kxj, 2026-10-27), from knit-next's malicious-fork review
   H3 and H2's prefix item (`eccabcd72`). An echo is told apart from a want of ours and never costs one. A full set
   evicts from the asker holding the most echoes. What we hold for others stays within 128 MiB, unnamed blobs go

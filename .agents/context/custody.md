@@ -44,6 +44,11 @@ A node carries frames for people who are not in range yet. This is store-and-for
   A profile served point to point through `keyreq` is custodied. A `relay = false` tick never is. DMs and
   group chat are carried only when encrypted. The block list is never consulted: a block stops a frame at
   delivery only (ADR 2026-10.5wgg, after knit-next's ADR 2026-09.bts9).
+- **A group frame is carried only under its own roster** (`ForwardRepository.carriesGroup`, knit-next ADR
+  2026-10.7mqm, ADR 2026-10.9e7g). The store refuses a frame naming a group unless `members + departed` derive to the
+  group's id and the sender is one of `members`, by bytes. It checks after the two time refusals, for every origin,
+  ours included. It is custody's refusal alone: delivery and relay still go through `GroupRoster.vet`. A pre-2.3.0
+  Android frame after a departure lists no `departed`, so custody refuses it while delivery takes it.
 - **Our own frames count too** (ORIGIN_SELF), our profile included, under the same quotas. Android custodies each
   of its own frames before it floods it (`originateWire`, `MeshManager.kt:4016-4031`; knit-next `85baeeb9`, #141), so
   a link raised between the two learns of the frame from the digest exchange. This port's `originate` sends, then
@@ -60,13 +65,24 @@ A node carries frames for people who are not in range yet. This is store-and-for
   recipient answers that copy wherever the re-flood finds it, though it still holds the DM.
 - **Expiry:** `sentAt + 24 h`, or 6 h for room *chat*. Room receipts, reactions and profiles keep 24 h.
   Frames already dead on arrival, or dated more than 5 minutes ahead, are refused.
-- **Quotas**, counted over live rows only, applied in this order (`ForwardRepository.kt:146`):
+- **Quotas**, counted over live rows only, applied in this order (`ForwardRepository.insertAndTrim`):
   - 200 per sender
   - 200 per group
   - 200 for the room
   - 1000 overall
-- **Eviction order:** oldest first by `(sentAt ASC, id ASC)`, with the ids compared as SQLite BINARY
-  (byte order).
+- **Eviction order:** the sender, group and room quotas each keep their newest N by `(sentAt ASC, id ASC)`, with
+  the ids compared as SQLite BINARY (byte order). The 1000 overall evicts one frame at a time from the largest
+  sender: the oldest `(sentAt, id)` frame of the sender holding the most live frames, recounted after each
+  (`ForwardDao.evictFairest`, knit-next ADR 2026-10.7mqm, ADR 2026-10.9e7g). Senders count by their bytes too.
+  Before `e0cbb842a` the cap took the oldest frame in custody, so five free identities flooding just inside the
+  future window evicted every honest frame on every node. Lab Pixels on the pin still run that rule, so a mixed
+  fleet keeps different sets while the cap binds.
+  - **Don't make the room or group trims fair** unless every build moves together. A busy room at its quota is the
+    ordinary case, and a fair room trim would split an old node from a new one for good.
+  - **What it leaves open:** identities are free, so about 1,000 of them, one frame each, can still wear the honest
+    buckets down. So can 200 fresh identities in the room (`IngressBudget` keys on a claimed id), or a member
+    flooding their own group. Bounding how fast a link brings in identities is H5, link authentication. A
+    per-frame byte cap is a separate paired change.
 - **Staged for the next wire break, and not live** (knit-next `docs/NEXT_WIRE_BREAK.md`). Port neither early:
   - **Item 12** (`8400dd11`): custody for 7 days, with larger quotas, on both platforms in one release. It names
     `CustodyLimits.swift`. The receipt tombstone stays at least the TTL, `PendingInbound`'s 200 follows the per-sender
@@ -186,7 +202,17 @@ publish it honestly.
   holds key requests and parked frames (ADR 2026-09.p6nb).
 - **Two stores apply them:** `MemoryCustodyStore` for the Linux peer and the tests, and `SQLCustodyStore`
   (`KnitStoreSQL`) for the app. Both run `CustodyRules` over their live rows and the same `CustodyStoreTests`
-  (ADR 2026-09.nyya).
+  (ADR 2026-09.nyya), and both replay knit-next's `vectors/custody-v1.json` (`CustodyVectorTests`).
+- **Both admit a frame through `CustodyRules.admission`:** dead on arrival, then past the future window, then the
+  group gate (`carriesGroup`, which reads `GroupId.derive`, so `KnitStore` depends on `KnitCrypto`). `store`
+  answers a `CustodyStoreResult`, with three fields:
+  - `held`: the frame is in custody after its own write, Android's `kept` and the vector's;
+  - `changed`: the frame went in or any row went out;
+  - the `CustodyRefusal`, if refused.
+
+  `CustodySync.carry` returns `changed`, which bumps the advert's digest cue. One write can evict an older frame and
+  then the new one, so "held" alone would leave the cue stale. A roster refusal is counted (`groupCustodyRefused` in
+  `stats`, Android's name) and logged as `custody refused <id> from <sender>: roster of <group> is not its own`.
 - **Ids compare by their bytes** (`ExactKey`), never by Swift's `String` equality (ADR 2026-09.jc2x). That
   includes the sender and group buckets and the ids an eviction removes. The SQL store keeps every id as a
   UTF-8 `BLOB`, which SQLite orders exactly as BINARY orders text, and reads it back with every byte. Before

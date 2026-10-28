@@ -423,6 +423,10 @@ Kotlin wins.
   - **Mirrored ahead of the pin:** `eccabcd72`'s `RoomAttachments` (its ADR 2026-10.79j9): a room post's attachment
     that is not a picture, a link card or a video is left off the row, and a post that is nothing else keeps none
     (`RoomAttachments.swift`, ADR 2026-10.vzem, knit-ios #21). The frame and the wire are unchanged.
+    And `e0cbb842a` (its ADR 2026-10.7mqm, knit-ios #18, ADR 2026-10.9e7g): the custody cap evicts from the largest
+    sender, and custody refuses a group frame whose roster does not derive to its id or name its sender. Its
+    `vectors/custody-v1.json` was copied with `sync-vectors.py --only custody-v1.json` from `820187443e`, where the
+    file is unchanged since `e0cbb842a`. `015fff823`, blob traffic marked for relay, is not mirrored.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e63f15f4`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

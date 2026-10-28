@@ -86,3 +86,9 @@ profiles first and then newest received first, minus what already crossed the li
 slice. Android still serves everything at once (`ForwardSync.kt:136-163`). The custody limits above are untouched, so
 digests still agree, only later for a newcomer facing a full custody. No count pinned by `SealedReceiptLabTests` or
 `MeshEngineSealedReceiptTests` moved.
+
+**Amended 2026-10-27, for knit-ios #18 (ADR 2026-10.9e7g):** the 1,000-frame cap no longer evicts the oldest frame in
+custody. Past it, one frame goes at a time: the oldest `(sentAt, id)` frame of the sender holding the most live frames,
+recounted after each. The sender, group and room trims still keep their newest N. Custody also refuses a group frame
+whose `members + departed` do not derive to its id or do not name its sender. Both are knit-next ADR 2026-10.7mqm's
+rules, checked against its `vectors/custody-v1.json`.

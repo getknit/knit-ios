@@ -285,8 +285,10 @@ verify.
 
 - **Custody** (`custody.md`, "Custody"). Entry is `verified && isCustodial && (relay || type == "profile")`.
   Frames expire at `sentAt` plus 24 h, or 6 h for room chat; one dead on arrival or dated more than 5 minutes
-  ahead is refused. Quotas over live rows: 200 per sender, 200 per group, 200 for the room, 1,000 overall, evicted
-  oldest first by `(sentAt, id)` in byte order. Our own frames count, under the same quotas.
+  ahead is refused. Quotas over live rows: 200 per sender, 200 per group, 200 for the room, each keeping its newest
+  by `(sentAt, id)` in byte order, then 1,000 overall, which evicts one frame at a time from the sender holding the
+  most (ADR 2026-10.9e7g). A group frame whose roster does not derive to its id or name its sender is refused. Our
+  own frames count, under the same quotas and the same gate.
 - **Receipts** (`custody.md`, "Custody" and "Receipts and ticks"). A cleartext receipt from a DM's recipient purges
   the DM and tombstones its id for 24 h. Every receipt is also remembered as `(ackId, acker)` for 24 h, at most
   4,096 (`earlyReceipts`), so a DM that arrives later is refused. Room and group ticks are never custodied.

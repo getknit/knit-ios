@@ -65,8 +65,9 @@ Touch one only as far as the brief says, and say so in the report: the hook cann
   `BlobProgressContent`, `BlobCancelContent` or the FILE header. An addition is a paired change
   (`.agents/rules/paired-change.md`), and the Android half is never yours. A change that can only be made by
   breaking the wire goes in knit-next's `docs/NEXT_WIRE_BREAK.md` through the caller; you stop and report it;
-- a convergence constant or rule: the TTLs, the quotas, the eviction order `(sentAt, id)`, `isCustodial`
-  membership, the SeenSet's window, what the digest lists, the carry gate's inputs. Each is cross-platform law
+- a convergence constant or rule: the TTLs, the quotas, the eviction order (`(sentAt, id)`, and the cap's largest
+  sender first), the group gate, `isCustodial` membership, the SeenSet's window, what the digest lists, the carry
+  gate's inputs. Each is cross-platform law
   (`.agents/rules/interop.md`), and the same on every node, or custody churns;
 - a schema change without a new migration. v1 to v13 are frozen; a new table is `STRICT`, with strings as UTF-8
   `BLOB`s (ADR 2026-09.nyya);
