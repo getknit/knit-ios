@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitStore
 import KnitWire
 import Testing
@@ -74,5 +75,124 @@ import Testing
         let entry = CustodyRules.Entry(grouped, expiresAt: 9)
         #expect(entry == CustodyRules.Entry(id: "g", senderId: "a", groupId: "g1", isRoomChat: false, sentAt: 5, expiresAt: 9))
         #expect(CustodyRules.Entry(envelope(sentAt: 1), expiresAt: 2).isRoomChat)
+    }
+
+    // MARK: The global cap's fair trim (knit-next ADR 2026-10.7mqm)
+
+    private func entry(_ id: String, _ sender: String, sentAt: Int64, group: String? = nil, room: Bool = false) -> CustodyRules.Entry {
+        CustodyRules.Entry(id: id, senderId: sender, groupId: group, isRoomChat: room, sentAt: sentAt, expiresAt: 1000)
+    }
+
+    @Test func theLargestSenderLosesItsOldestFrame() {
+        let live = [entry("b1", "B", sentAt: 1), entry("a2", "A", sentAt: 2), entry("a3", "A", sentAt: 3)]
+        #expect(CustodyRules.evictions(after: live[2], among: live, limits: CustodyLimits(maxFrames: 2)) == ["a2"])
+    }
+
+    @Test func aTieForMostGoesToTheSenderWhoseOldestFrameIsOldest() {
+        let live = [entry("a5", "A", sentAt: 5), entry("a6", "A", sentAt: 6), entry("b4", "B", sentAt: 4), entry("b9", "B", sentAt: 9)]
+        #expect(CustodyRules.evictions(after: live[3], among: live, limits: CustodyLimits(maxFrames: 3)) == ["b4"])
+        // On a tie in sentAt too, the smaller id's bytes.
+        let tied = [entry("y", "A", sentAt: 1), entry("x", "B", sentAt: 1)]
+        #expect(CustodyRules.evictions(after: tied[0], among: tied, limits: CustodyLimits(maxFrames: 1)) == ["x"])
+    }
+
+    @Test func theCountsAreRecountedBetweenEvictions() {
+        // A holds three and B two. The first eviction takes A's oldest; then both hold two, and B's oldest is older than
+        // A's next, so B pays the second. Counting once would take two of A's.
+        let live = [
+            entry("a1", "A", sentAt: 10), entry("a2", "A", sentAt: 20), entry("a3", "A", sentAt: 30),
+            entry("b1", "B", sentAt: 15), entry("b2", "B", sentAt: 40),
+        ]
+        #expect(CustodyRules.evictions(after: live[4], among: live, limits: CustodyLimits(maxFrames: 3)) == ["a1", "b1"])
+    }
+
+    @Test func theBucketTrimsStayNewestNWhoeverWroteTheFrames() {
+        // The room holds A's three posts and B's one; its quota of three takes the oldest post, though A holds the most.
+        let room = [
+            entry("b1", "B", sentAt: 1, room: true), entry("a2", "A", sentAt: 2, room: true), entry("a3", "A", sentAt: 3, room: true),
+            entry("a4", "A", sentAt: 4, room: true),
+        ]
+        #expect(CustodyRules.evictions(after: room[3], among: room, limits: CustodyLimits(maxRoomChat: 3)) == ["b1"])
+        let group = [
+            entry("g1", "B", sentAt: 1, group: "g"), entry("g2", "A", sentAt: 2, group: "g"), entry("g3", "A", sentAt: 3, group: "g"),
+        ]
+        #expect(CustodyRules.evictions(after: group[2], among: group, limits: CustodyLimits(maxPerGroup: 2)) == ["g1"])
+        let sender = [entry("s1", "A", sentAt: 1), entry("s2", "A", sentAt: 2)]
+        #expect(CustodyRules.evictions(after: sender[1], among: sender, limits: CustodyLimits(maxPerSender: 1)) == ["s1"])
+    }
+
+    @Test func sendersThatSwiftCallsEqualAreTwoBucketsInTheFairTrim() {
+        // "e\u{301}" and "\u{E9}" are one String to Swift and two senders to Android's GROUP BY. As two buckets, the
+        // composed sender holds two frames and loses its oldest; as one bucket of three, the oldest frame of all would go.
+        let decomposed = "e\u{301}"
+        let composed = "\u{E9}"
+        let live = [entry("d1", decomposed, sentAt: 1), entry("c2", composed, sentAt: 2), entry("c3", composed, sentAt: 3)]
+        #expect(CustodyRules.evictions(after: live[2], among: live, limits: CustodyLimits(maxFrames: 2)) == ["c2"])
+    }
+
+    // MARK: The group gate (knit-next ADR 2026-10.7mqm)
+
+    private func grouped(_ sender: String, _ group: GroupInfo?) -> RelayEnvelope {
+        RelayEnvelope(type: .chat, id: "g", senderId: sender, sentAt: 10, group: group, payload: [])
+    }
+
+    private let founders = ["alice", "bob", "carol"]
+
+    @Test func aMemberUnderTheFoundingRosterIsAdmitted() {
+        let group = GroupInfo(id: GroupId.derive(founders), members: founders, createdBy: "alice")
+        #expect(CustodyRules.admission(of: grouped("bob", group), now: 10, limits: limits) == .admitted(expiresAt: 10 + 86_400_000))
+        #expect(CustodyRules.carriesGroup(group, from: "bob"))
+    }
+
+    @Test func aStrangerNamingTheGroupIsRefused() {
+        let group = GroupInfo(id: GroupId.derive(founders), members: founders, createdBy: "alice")
+        #expect(CustodyRules.admission(of: grouped("mallory", group), now: 10, limits: limits) == .refused(.foreignRoster))
+    }
+
+    @Test func aSmuggledMemberNoLongerDerivesAndIsRefused() {
+        let group = GroupInfo(id: GroupId.derive(founders), members: founders + ["mallory"], createdBy: "alice")
+        #expect(!CustodyRules.carriesGroup(group, from: "mallory"))
+        #expect(!CustodyRules.carriesGroup(group, from: "alice"), "the roster is wrong whoever sends under it")
+    }
+
+    @Test func aPreDepartedRosterAfterADepartureIsRefusedAndOneWithDepartedPasses() {
+        let truncated = GroupInfo(id: GroupId.derive(founders), members: ["alice", "carol"], createdBy: "alice")
+        #expect(!CustodyRules.carriesGroup(truncated, from: "alice"), "a pre-2.3.0 frame lists no departed")
+        var current = truncated
+        current.departed = ["bob"]
+        #expect(CustodyRules.carriesGroup(current, from: "carol"))
+        #expect(!CustodyRules.carriesGroup(current, from: "bob"), "a departed member is not a member")
+    }
+
+    @Test func aSenderCanonicallyEqualToAMemberButDifferentInBytesIsRefused() {
+        let members = ["caf\u{E9}", "bob"]
+        let group = GroupInfo(id: GroupId.derive(members), members: members, createdBy: "bob")
+        #expect(CustodyRules.carriesGroup(group, from: "caf\u{E9}"))
+        #expect(!CustodyRules.carriesGroup(group, from: "cafe\u{301}"))
+    }
+
+    @Test func aFrameWithNoGroupPassesTheGate() {
+        #expect(CustodyRules.admission(of: grouped("anyone", nil), now: 10, limits: limits) == .admitted(expiresAt: 10 + 21_600_000))
+    }
+
+    @Test func theRefusalsComeInKotlinsOrder() {
+        // A group frame that is dead, or ahead of the window, is refused for its time first, as `ForwardRepository.store`
+        // checks it, so the roster counter never counts it.
+        let foreign = GroupInfo(id: "g-0", members: ["x"], createdBy: "x")
+        var dead = grouped("mallory", foreign)
+        dead.sentAt = 0
+        #expect(CustodyRules.admission(of: dead, now: 1_756_200_000_000, limits: limits) == .refused(.deadOnArrival))
+        var ahead = grouped("mallory", foreign)
+        ahead.sentAt = 10 + 300_001
+        #expect(CustodyRules.admission(of: ahead, now: 10, limits: limits) == .refused(.aheadOfWindow))
+        #expect(CustodyRules.admission(of: grouped("mallory", foreign), now: 10, limits: limits) == .refused(.foreignRoster))
+    }
+
+    @Test func expiresAtIsComputedForARefusedFrameToo() {
+        var ahead = envelope(sentAt: 10 + 300_001, recipient: "b")
+        #expect(CustodyRules.expiresAt(of: ahead, limits: limits) == 10 + 300_001 + 86_400_000)
+        #expect(CustodyRules.expiry(of: ahead, now: 10, limits: limits) == nil)
+        ahead.recipientId = nil
+        #expect(CustodyRules.expiresAt(of: ahead, limits: limits) == 10 + 300_001 + 21_600_000, "a room post's TTL")
     }
 }

@@ -154,7 +154,7 @@ import Testing
         let marked = "\u{FEFF}" + real
         let twin = try carol.roomPost("marked", id: marked, sentAt: now)
         let preGate = CarriedFrame(envelope: twin.envelope, sig: twin.wire.sig, signed: twin.wire.signed)
-        #expect(stores.custody.store(preGate, origin: .relayed, now: now), "a row stored before this build refused such ids")
+        #expect(stores.custody.store(preGate, origin: .relayed, now: now).held, "a row stored before this build refused such ids")
         fixture.deliverRefused(twin, from: carol)
         fixture.deliver(try carol.roomPost("plain", id: real, sentAt: now), from: carol)
         #expect(fixture.stores.messages.message(real)?.body == "plain", "the twin took nothing of the real frame's row")

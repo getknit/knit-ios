@@ -43,7 +43,7 @@ public final class MeshEngine {
     var random: any RandomNumberGenerator
 
     var router: Router
-    var custody = CustodySync()
+    var custody: CustodySync
     /// The digests whose reply round waits on a link still holding a round unwritten (ADR 2026-10.f5zs).
     var heldDigests = HeldDigests()
     var pendingInbound = PendingInbound()
@@ -126,6 +126,7 @@ public final class MeshEngine {
         self.random = random
         self.configuration = configuration
         self.log = log
+        custody = CustodySync(log: log)
         router = Router(configuration: configuration.router)
         blobExchange = BlobExchange(queriesHolders: configuration.queriesBlobHolders)
         self.partials = partials
@@ -137,6 +138,9 @@ public final class MeshEngine {
 
     /// What the router has done so far.
     public var routerCounters: Router.Counters { router.counters }
+
+    /// Group frames custody refused because their roster is not their own (knit-next ADR 2026-10.7mqm).
+    public var groupCustodyRefused: Int { custody.groupRefusedCount }
 
     /// What the blob holder query has done so far (knit-next ADR 2026-10.6e5t).
     public var blobCounts: BlobCounts { blobExchange.counts }

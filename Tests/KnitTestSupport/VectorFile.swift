@@ -1,7 +1,8 @@
 public import Foundation
 
-/// The JSON files in `Tests/Vectors/`. `scripts/sync-vectors.py` copies `wire-v1.json` and `keyed-v1.json` from
-/// knit-next's `vectors/`; `ios-emitted-v1.json` is written here and copied the other way.
+/// The JSON files in `Tests/Vectors/`. `scripts/sync-vectors.py` copies `wire-v1.json`, `keyed-v1.json`,
+/// `ratchet-v1.json` and `custody-v1.json` from knit-next's `vectors/`; `ios-emitted-v1.json` is written here and copied
+/// the other way.
 public enum VectorFile {
     /// Where the files live.
     public static let directory = URL(fileURLWithPath: #filePath)

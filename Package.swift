@@ -67,7 +67,8 @@ let package = Package(
         // Platform-free protocol core (Linux + Apple).
         .target(name: "KnitWire", swiftSettings: pure),
         .target(name: "KnitCrypto", dependencies: ["KnitWire", crypto], swiftSettings: pure),
-        .target(name: "KnitStore", dependencies: ["KnitSync", "KnitWire"], swiftSettings: pure),
+        // KnitCrypto for the custody group gate's `GroupId.derive` (knit-next ADR 2026-10.7mqm); both stay platform-free.
+        .target(name: "KnitStore", dependencies: ["KnitSync", "KnitWire", "KnitCrypto"], swiftSettings: pure),
         // The app's store: the KnitStore protocols on SQLite through GRDB, and the store unit they commit in, whose state
         // sits behind KnitSync's Lock. Tests and the Linux peer keep the in-memory stores.
         .target(name: "KnitStoreSQL", dependencies: ["KnitSync", "KnitStore", "KnitWire", grdb], swiftSettings: pure),
@@ -140,7 +141,7 @@ let package = Package(
         // The store contract tests run against every implementation, the SQL one included.
         .testTarget(
             name: "KnitStoreTests",
-            dependencies: ["KnitStore", "KnitStoreSQL", "KnitWire", "KnitTestSupport"],
+            dependencies: ["KnitStore", "KnitStoreSQL", "KnitCrypto", "KnitWire", "KnitTestSupport"],
             swiftSettings: strict
         ),
         .testTarget(

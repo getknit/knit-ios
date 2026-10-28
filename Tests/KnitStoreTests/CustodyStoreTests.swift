@@ -44,7 +44,7 @@ private func carried(
     sender: String = "peer",
     sentAt: Int64 = 1,
     recipient: String? = "bob",
-    group: String? = nil,
+    group: GroupInfo? = nil,
     type: FrameType = .chat,
     payload: [UInt8] = ChatContent().encoded
 ) -> CarriedFrame {
@@ -54,7 +54,7 @@ private func carried(
         senderId: sender,
         sentAt: sentAt,
         recipientId: recipient,
-        group: group.map { GroupInfo(id: $0, members: [sender], createdBy: sender) },
+        group: group,
         payload: payload
     )
     return CarriedFrame(envelope: envelope, sig: [], signed: envelope.encoded)
@@ -77,8 +77,8 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     @Test(arguments: kinds)
     func aHeldIdIsNeverStoredTwice(kind: CustodyStoreKind) throws {
         let store = try kind.make()
-        #expect(store.store(carried("f1", sender: "first"), origin: .relayed, now: 0))
-        #expect(store.store(carried("f1", sender: "second"), origin: .relayed, now: 0), "already held still answers true")
+        #expect(store.store(carried("f1", sender: "first"), origin: .relayed, now: 0) == CustodyStoreResult(held: true, changed: true))
+        #expect(store.store(carried("f1", sender: "second"), origin: .relayed, now: 0) == .alreadyHeld, "held, and nothing changed")
         #expect(store.liveFrames(now: 0).map(\.envelope.senderId) == ["first"])
     }
 
@@ -86,7 +86,7 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     func aPayloadThatDoesNotDecodeIsStillCarried(kind: CustodyStoreKind) throws {
         // The id set is what the digests compare, so nothing about the payload may gate the insert.
         let store = try kind.make()
-        #expect(store.store(carried("d3", payload: [0xFF, 0xFF, 0xFF]), origin: .relayed, now: 0))
+        #expect(store.store(carried("d3", payload: [0xFF, 0xFF, 0xFF]), origin: .relayed, now: 0).held)
         #expect(store.contains("d3"))
     }
 
@@ -157,17 +157,17 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     @Test(arguments: kinds)
     func aFramePastItsExpiryIsRefused(kind: CustodyStoreKind) throws {
         let store = try kind.make(CustodyLimits(ttlMilliseconds: 1000))
-        #expect(!store.store(carried("dead", sentAt: 500), origin: .relayed, now: 2000))
+        #expect(store.store(carried("dead", sentAt: 500), origin: .relayed, now: 2000) == .refused(.deadOnArrival))
         #expect(!store.contains("dead"))
         #expect(store.fingerprint(now: 2000) == 0)
-        #expect(store.store(carried("live", sentAt: 1900), origin: .relayed, now: 2000))
+        #expect(store.store(carried("live", sentAt: 1900), origin: .relayed, now: 2000).held)
     }
 
     @Test(arguments: kinds)
     func aFrameWithNoSentAtIsRefused(kind: CustodyStoreKind) throws {
         // A custodial frame whose sender forgot `sentAt` expired in 1970, so nobody carries it (work item #16).
         let store = try kind.make()
-        #expect(!store.store(carried("r1", sentAt: 0, type: .receipt), origin: .own, now: 1_756_200_000_000))
+        #expect(store.store(carried("r1", sentAt: 0, type: .receipt), origin: .own, now: 1_756_200_000_000) == .refused(.deadOnArrival))
     }
 
     @Test(arguments: kinds)
@@ -177,10 +177,10 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
             store.store(carried("h\(index)", sentAt: 1000 + Int64(index)), origin: .relayed, now: 1000)
         }
         let window = WireProtocol.maxFutureSkewMilliseconds
-        #expect(!store.store(carried("evil", sentAt: 1000 + window + 60_000), origin: .relayed, now: 1000))
-        #expect(!store.store(carried("edge", sentAt: 1000 + window + 1), origin: .relayed, now: 1000))
+        #expect(store.store(carried("evil", sentAt: 1000 + window + 60_000), origin: .relayed, now: 1000) == .refused(.aheadOfWindow))
+        #expect(store.store(carried("edge", sentAt: 1000 + window + 1), origin: .relayed, now: 1000) == .refused(.aheadOfWindow))
         #expect(liveSet(store, now: 1000) == ["h1", "h2", "h3", "h4", "h5"])
-        #expect(store.store(carried("skewed", sender: "other", sentAt: 1000 + window), origin: .relayed, now: 1000))
+        #expect(store.store(carried("skewed", sender: "other", sentAt: 1000 + window), origin: .relayed, now: 1000).held)
     }
 
     @Test(arguments: kinds)
@@ -245,23 +245,28 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
     @Test(arguments: kinds)
     func groupAndRoomBucketsTrimOnlyThemselves(kind: CustodyStoreKind) throws {
         let store = try kind.make(CustodyLimits(maxPerGroup: 1, maxRoomChat: 1))
-        store.store(carried("g_old", sender: "a", sentAt: 1, recipient: nil, group: "g1"), origin: .relayed, now: 0)
-        store.store(carried("g_other", sender: "b", sentAt: 1, recipient: nil, group: "g2"), origin: .relayed, now: 0)
-        store.store(carried("g_new", sender: "c", sentAt: 9, recipient: nil, group: "g1"), origin: .relayed, now: 0)
+        let first = roster(["a", "c"])
+        let second = roster(["b"])
+        store.store(carried("g_old", sender: "a", sentAt: 1, recipient: nil, group: first), origin: .relayed, now: 0)
+        store.store(carried("g_other", sender: "b", sentAt: 1, recipient: nil, group: second), origin: .relayed, now: 0)
+        store.store(carried("g_new", sender: "c", sentAt: 9, recipient: nil, group: first), origin: .relayed, now: 0)
         store.store(roomPost("bc_old", sender: "d", sentAt: 1), origin: .relayed, now: 0)
         store.store(roomPost("bc_new", sender: "e", sentAt: 9), origin: .relayed, now: 0)
         #expect(liveSet(store, now: 0) == ["bc_new", "g_new", "g_other"])
     }
 
     @Test(arguments: kinds)
-    func theGlobalCapEvictsTheOldestAcrossSenders(kind: CustodyStoreKind) throws {
+    func theGlobalCapEvictsFromTheLargestSenderFirst(kind: CustodyStoreKind) throws {
+        // knit-next ADR 2026-10.7mqm: A holds two and B one, so A's oldest goes though B's frame is older.
         let store = try kind.make(CustodyLimits(maxFrames: 2))
         store.store(carried("x2", sender: "A", sentAt: 2), origin: .relayed, now: 0)
         store.store(carried("x1", sender: "B", sentAt: 1), origin: .relayed, now: 0)
-        store.store(carried("x3", sender: "A", sentAt: 3), origin: .relayed, now: 0)
-        #expect(liveSet(store, now: 0) == ["x2", "x3"])
-        store.store(carried("x0", sender: "C", sentAt: 0), origin: .relayed, now: 0)
-        #expect(liveSet(store, now: 0) == ["x2", "x3"], "a frame older than the newest two is evicted on arrival")
+        #expect(store.store(carried("x3", sender: "A", sentAt: 3), origin: .relayed, now: 0).held)
+        #expect(liveSet(store, now: 0) == ["x1", "x3"])
+        // Now each sender holds one: the tie goes to the oldest frame, which is the one just written.
+        let late = store.store(carried("x0", sender: "C", sentAt: 0), origin: .relayed, now: 0)
+        #expect(late == CustodyStoreResult(held: false, changed: true), "evicted by its own write")
+        #expect(liveSet(store, now: 0) == ["x1", "x3"])
     }
 
     @Test(arguments: kinds)
@@ -269,7 +274,7 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
         let store = try kind.make(CustodyLimits(maxRoomChat: 1))
         store.store(roomPost("bc", sender: "a", sentAt: 1), origin: .relayed, now: 0)
         store.store(carried("dm", sender: "b", sentAt: 2), origin: .relayed, now: 0)
-        store.store(carried("gp", sender: "c", sentAt: 3, recipient: nil, group: "g1"), origin: .relayed, now: 0)
+        store.store(carried("gp", sender: "c", sentAt: 3, recipient: nil, group: roster(["c"])), origin: .relayed, now: 0)
         store.store(carried("rx", sender: "d", sentAt: 4, recipient: nil, type: .receipt), origin: .relayed, now: 0)
         store.store(carried("pf", sender: "e", sentAt: 5, recipient: nil, type: .profile), origin: .relayed, now: 0)
         #expect(store.liveIds(now: 0).count == 5)

@@ -14,10 +14,11 @@ import Testing
         let store = MemoryCustodyStore()
         var sync = CustodySync()
         _ = sync.carry(frame("dm", to: bob), in: store, now: now) { true }
+        let senders = (60..<64).map(fixtureNodeId)
         for index in 0..<400 {
-            let sender = fixtureNodeId(60 + index % 4)
-            let group = index < 200 ? "ga" : "gb"
-            _ = sync.carry(frame("g\(index)", from: sender, members: [alice, bob, sender], group: group), in: store, now: now + 1) { true }
+            // Two groups, each with every sender in it, so each roster derives and names its sender.
+            let members = (index < 200 ? [alice, bob] : [alice]) + senders
+            _ = sync.carry(frame("g\(index)", from: senders[index % 4], members: members), in: store, now: now + 1) { true }
         }
         #expect(store.liveIds(now: now).count == 401)
         let reply = round(sync, for: zed, in: store)

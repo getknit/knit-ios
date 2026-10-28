@@ -116,6 +116,7 @@ import Testing
         #expect(status["seeking"] as? Bool == false, "a peer at the front never seeks")
         #expect(status["seekWakes"] as? Int == 0)
         #expect(status["seekSpells"] as? Int == 0)
+        #expect(status["groupCustodyRefused"] as? Int == 0, "Android's name for custody's group gate refusals")
     }
 
     @Test func statusSaysWhenTheLinksSeek() async throws {

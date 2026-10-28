@@ -111,7 +111,8 @@ private func carried(_ id: String, sentAt: Int64 = 1) -> CarriedFrame {
             try db.execute(sql: "DROP TABLE forward_store")
             try db.execute(sql: "DROP TABLE messages")
         }
-        #expect(!custody.store(carried("f1"), origin: .relayed, now: 0), "a frame that cannot be kept was not kept")
+        #expect(
+            custody.store(carried("f1"), origin: .relayed, now: 0) == .refused(.writeFailed), "a frame that cannot be kept was not kept")
         #expect(custody.liveIds(now: 0).isEmpty)
         #expect(!custody.contains("f1"))
         #expect(custody.sweepExpired(now: 0) == 0)

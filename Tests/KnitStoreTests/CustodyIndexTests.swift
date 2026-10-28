@@ -7,7 +7,7 @@ private func carried(
     _ id: String,
     sender: String = "peer",
     recipient: String? = "bob",
-    group: String? = nil,
+    group: GroupInfo? = nil,
     type: FrameType = .chat,
     payload: [UInt8] = ChatContent().encoded,
     sentAt: Int64 = 1
@@ -18,7 +18,7 @@ private func carried(
         senderId: sender,
         sentAt: sentAt,
         recipientId: recipient,
-        group: group.map { GroupInfo(id: $0, members: [sender], createdBy: sender) },
+        group: group,
         payload: payload
     )
     return CarriedFrame(envelope: envelope, sig: [], signed: envelope.encoded)
@@ -44,7 +44,7 @@ private func carried(
     @Test(arguments: kinds)
     func theLiveIndexReadsEachFieldWithoutDecoding(kind: CustodyStoreKind) throws {
         let store = try kind.make()
-        let group = carried("g1", sender: "alice", recipient: nil, group: "grp")
+        let group = carried("g1", sender: "alice", recipient: nil, group: roster(["alice"]))
         let profile = carried("p1", sender: "bob", recipient: nil, type: .profile)
         let big = carried("big", payload: Array(repeating: 7, count: 70_000))
         let signed = [

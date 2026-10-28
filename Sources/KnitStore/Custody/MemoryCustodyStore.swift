@@ -41,24 +41,29 @@ public final class MemoryCustodyStore: CustodyStore {
     }
 
     @discardableResult
-    public func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> Bool {
-        guard let expiresAt = CustodyRules.expiry(of: frame.envelope, now: now, limits: limits) else {
-            return false
+    public func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> CustodyStoreResult {
+        let expiresAt: Int64
+        switch CustodyRules.admission(of: frame.envelope, now: now, limits: limits) {
+        case .refused(let reason):
+            return .refused(reason)
+        case .admitted(let at):
+            expiresAt = at
         }
         let entry = CustodyRules.Entry(frame.envelope, expiresAt: expiresAt)
         let key = ExactKey(entry.id)
-        state.withLock { state in
+        return state.withLock { state in
             guard state.rows[key] == nil else {
-                return
+                return .alreadyHeld
             }
             state.rows[key] = Row(frame: frame, entry: entry, origin: origin, receivedAt: now, sequence: state.nextSequence)
             state.nextSequence += 1
             let live = state.live(now: now).map(\.entry)
-            for id in CustodyRules.evictions(after: entry, among: live, limits: limits) {
+            let evicted = CustodyRules.evictions(after: entry, among: live, limits: limits)
+            for id in evicted {
                 state.rows[ExactKey(id)] = nil
             }
+            return .inserted(entry.id, evicted: evicted)
         }
-        return true
     }
 
     public func liveFrames(now: Int64) -> [CarriedFrame] {

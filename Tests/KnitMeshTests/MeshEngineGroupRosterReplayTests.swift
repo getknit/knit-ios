@@ -93,13 +93,23 @@ import Testing
         let smuggled = GroupInfo(
             id: group.id, members: group.members + [dave.nodeId.string], createdBy: group.createdBy, departed: nil)
         fixture.deliver(try carol.groupUpdate(smuggled, id: frameIdOf("smuggled"), sentAt: now + 1), from: carol)
+        // A group of nine whose roster derives to its id and names Carol: custody carries it, so every start replays it,
+        // and delivery refuses it, since a group holds at most eight.
+        let nine = [me, carol].map(\.nodeId.string) + (40..<47).map { fixtureNodeId($0).string }
+        let crowded = GroupInfo(id: GroupId.derive(nine), members: nine, createdBy: carol.nodeId.string)
+        fixture.deliver(try carol.groupUpdate(crowded, id: frameIdOf("crowded"), sentAt: now + 1), from: carol)
         let garbled = RelayEnvelope(
             type: .groupLeave, id: frameIdOf("garbled"), senderId: carol.nodeId.string, sentAt: now + 2, payload: [0xFF])
         fixture.deliver(try carol.signed(garbled), from: carol)
-        #expect(fixture.engine.dropped[.rosterRefused] == 1 && fixture.engine.dropped[.undecodable] == 1)
-        #expect(stores.custody.contains(frameIdOf("smuggled")) && stores.custody.contains(frameIdOf("garbled")))
+        #expect(fixture.engine.dropped[.rosterRefused] == 2 && fixture.engine.dropped[.undecodable] == 1)
+        // The smuggled roster no longer derives, so custody refuses it and no start meets it (knit-next ADR 2026-10.7mqm).
+        #expect(!stores.custody.contains(frameIdOf("smuggled")) && fixture.engine.groupCustodyRefused == 1)
+        #expect(stores.custody.contains(frameIdOf("crowded")) && stores.custody.contains(frameIdOf("garbled")))
         let restarted = relaunched(stores, ratchet: true, wall: now + 60_000)
         #expect(restarted.engine.dropped.isEmpty)
+        // The start did meet the refusal again, so the empty count above is the first-verdict rule and not a skipped replay.
+        let replayed = "debug mesh replayed groupupdate \(frameIdOf("crowded")) "
+        #expect(restarted.log.all.contains { $0.hasPrefix(replayed) && $0.hasSuffix("changes nothing: rosterRefused") })
         #expect(restarted.roster(of: group).members == Set(group.members))
     }
 

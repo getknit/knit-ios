@@ -301,6 +301,9 @@ public actor Mesh {
     /// Times seeking began (``LinkManager/seekSpells``).
     public var seekSpells: Int { links.seekSpells }
 
+    /// Group frames custody refused because their roster is not their own (``MeshEngine/groupCustodyRefused``).
+    public var groupCustodyRefused: Int { engine.groupCustodyRefused }
+
     /// What the router has done so far.
     public var routerCounters: Router.Counters { engine.routerCounters }
 

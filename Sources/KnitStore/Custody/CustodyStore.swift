@@ -6,11 +6,12 @@ import KnitWire
 /// plus a TTL. An implementation applies ``CustodyRules`` on every ``store(_:origin:now:)``, and every read
 /// sees live frames only.
 public protocol CustodyStore: AnyObject, Sendable {
-    /// Takes `frame` into custody and trims every bucket it lands in to its quota. Returns `false` only when
-    /// the frame was refused, dead on arrival or dated too far ahead, so the caller does no follow-on work. A
-    /// frame already held is left as it is and answers `true`.
+    /// Takes `frame` into custody and trims every bucket it lands in to its quota, after ``CustodyRules/admission(of:now:limits:)``
+    /// admits it. Answers whether the frame is held after its own write, which the trims may have undone, and whether
+    /// custody changed (`ForwardStore.store` at knit-next `e0cbb842a`). A frame whose id a row already holds is left as it
+    /// is and answers held and unchanged. A write that fails answers ``CustodyRefusal/writeFailed``.
     @discardableResult
-    func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> Bool
+    func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> CustodyStoreResult
 
     /// Every live frame, the most recently received first: the order a digest answer serves them in.
     func liveFrames(now: Int64) -> [CarriedFrame]
@@ -46,5 +47,43 @@ extension CustodyStore {
     /// cue.
     public func fingerprint(now: Int64) -> UInt64 {
         StoreDigest.fingerprint(of: liveIds(now: now))
+    }
+}
+
+/// What ``CustodyStore/store(_:origin:now:)`` did with a frame.
+///
+/// "Held" and "changed" differ under the trims: one write can evict an older row and then the frame itself, as when the
+/// sender trim takes an older frame and the group trim takes the new one. Android answers only the first
+/// (`ForwardRepository.store` returns `kept`, knit-next ADR 2026-10.7mqm), so a frame its own write evicted pulls no
+/// attachment. The engine reads the second, to re-read the advert's digest cue.
+public struct CustodyStoreResult: Sendable, Equatable {
+    /// Whether custody holds the frame after its write: the shared vector's `kept`. A frame already held answers `true`.
+    public var held: Bool
+    /// Whether the frame went in or any row went out. A frame that went in and was evicted by its own write answers `true`
+    /// here and `false` for ``held``: the cue is re-read for nothing, which costs nothing.
+    public var changed: Bool
+    /// Why the frame was refused, when it was.
+    public var refusal: CustodyRefusal?
+
+    /// Makes an answer.
+    public init(held: Bool, changed: Bool, refusal: CustodyRefusal? = nil) {
+        self.held = held
+        self.changed = changed
+        self.refusal = refusal
+    }
+
+    /// A frame refused for `reason`: not held, and nothing changed.
+    public static func refused(_ reason: CustodyRefusal) -> Self {
+        Self(held: false, changed: false, refusal: reason)
+    }
+
+    /// A frame whose id a row already held: left as it is.
+    public static let alreadyHeld = Self(held: true, changed: false)
+
+    /// A frame written, and `evicted` the ids its write's trims removed: held unless its own id, by its bytes, is among
+    /// them.
+    public static func inserted(_ id: String, evicted: [String]) -> Self {
+        let key = ExactKey(id)
+        return Self(held: !evicted.contains { ExactKey($0) == key }, changed: true)
     }
 }

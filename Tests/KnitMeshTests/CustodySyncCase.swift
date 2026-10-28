@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitMesh
 import KnitStore
 import KnitTestSupport
@@ -18,12 +19,12 @@ extension CustodySyncCase {
         from sender: NodeId? = nil,
         to recipient: NodeId? = nil,
         members: [NodeId]? = nil,
-        group groupId: String = "g1",
         sentAt: Int64? = nil,
         payloadBytes: Int = 0
     ) -> CarriedFrame {
         let author = sender ?? alice
-        let group = members.map { GroupInfo(id: groupId, members: $0.map(\.string), createdBy: author.string) }
+        // The id derives from the roster, as custody's group gate checks (knit-next ADR 2026-10.7mqm).
+        let group = members.map { GroupInfo(id: GroupId.derive($0.map(\.string)), members: $0.map(\.string), createdBy: author.string) }
         let envelope = RelayEnvelope(
             type: type,
             id: id,

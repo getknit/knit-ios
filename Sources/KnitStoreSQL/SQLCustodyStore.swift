@@ -22,14 +22,20 @@ public final class SQLCustodyStore: CustodyStore {
         self.limits = limits
     }
 
+    /// A database error answers ``CustodyRefusal/writeFailed``, with the unit rolled back, so nothing follows on a frame
+    /// that was not kept and no roster refusal is counted for it.
     @discardableResult
-    public func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> Bool {
-        guard let expiresAt = CustodyRules.expiry(of: frame.envelope, now: now, limits: limits) else {
-            return false
+    public func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> CustodyStoreResult {
+        let expiresAt: Int64
+        switch CustodyRules.admission(of: frame.envelope, now: now, limits: limits) {
+        case .refused(let reason):
+            return .refused(reason)
+        case .admitted(let at):
+            expiresAt = at
         }
         let entry = CustodyRules.Entry(frame.envelope, expiresAt: expiresAt)
         let envelope = frame.envelope
-        return database.write(or: false) { db in
+        return database.write(or: .refused(.writeFailed)) { db in
             try db.execute(
                 sql: """
                     INSERT INTO forward_store
@@ -45,17 +51,18 @@ public final class SQLCustodyStore: CustodyStore {
             )
             // A frame already held, live or not yet swept, is left as it is.
             guard db.changesCount > 0 else {
-                return true
+                return .alreadyHeld
             }
             let live = try Row.fetchAll(
                 db,
                 sql: "SELECT id, senderId, groupId, isRoomChat, sentAt, expiresAt FROM forward_store WHERE expiresAt >= ?",
                 arguments: [now]
             ).map(Self.entry)
-            for id in CustodyRules.evictions(after: entry, among: live, limits: limits) {
+            let evicted = CustodyRules.evictions(after: entry, among: live, limits: limits)
+            for id in evicted {
                 try db.execute(sql: "DELETE FROM forward_store WHERE id = ?", arguments: [StoredText.bytes(id)])
             }
-            return true
+            return .inserted(entry.id, evicted: evicted)
         }
     }
 

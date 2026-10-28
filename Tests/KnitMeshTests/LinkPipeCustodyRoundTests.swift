@@ -48,10 +48,12 @@ import Testing
         let custody = holder.stores.custody
         let groupSenders = (0..<4).map { TestPeer(seed: 600 + $0) }
         for index in 0..<400 {
-            let sender = groupSenders[index % 4]
-            let members = (index < 200 ? groupSenders.prefix(2) : groupSenders.suffix(2)).map(\.nodeId.string) + [recipient.nodeId.string]
-            let group = GroupInfo(id: index < 200 ? "ga" : "gb", members: members, createdBy: sender.nodeId.string)
-            // Older than anything else, so the global cap takes these first.
+            // Each group's two senders are its members, and its id derives from its roster (knit-next ADR 2026-10.7mqm).
+            let pair = index < 200 ? groupSenders.prefix(2) : groupSenders.suffix(2)
+            let sender = pair[pair.startIndex + index % 2]
+            let members = pair.map(\.nodeId.string) + [recipient.nodeId.string]
+            let group = GroupInfo(id: GroupId.derive(members), members: members, createdBy: sender.nodeId.string)
+            // Older than anything else held.
             let envelope = RelayEnvelope(
                 type: .chat,
                 id: frameIdOf("group-\(index)"),
@@ -60,25 +62,25 @@ import Testing
                 group: group,
                 payload: ChatContent(body: "g").encoded
             )
-            #expect(custody.store(carried(try sender.signed(envelope)), origin: .relayed, now: wall))
+            #expect(custody.store(carried(try sender.signed(envelope)), origin: .relayed, now: wall).held)
         }
         for index in 0..<200 {
             let sender = TestPeer(seed: 1000 + index)
             let key = try profile(of: sender, publishedAt: wall - 1000)
             holder.stores.peers.recordProfileFrame(key.wire, of: sender.nodeId, sentAt: wall - 1000)
             let dm = try sender.directMessage("k", to: recipient, id: frameIdOf("keyless-\(index)"), sentAt: wall - 1000)
-            #expect(custody.store(carried(dm), origin: .relayed, now: wall))
+            #expect(custody.store(carried(dm), origin: .relayed, now: wall).held)
         }
         let keyed = (0..<3).map { TestPeer(seed: 700 + $0) }
         for index in 0..<396 {
             let dm = try keyed[index % 3].directMessage("d", to: recipient, id: frameIdOf("keyed-\(index)"), sentAt: wall - 1000)
-            #expect(custody.store(carried(dm), origin: .relayed, now: wall))
+            #expect(custody.store(carried(dm), origin: .relayed, now: wall).held)
         }
         for sender in keyed {
-            #expect(custody.store(carried(try profile(of: sender, publishedAt: wall - 1000)), origin: .relayed, now: wall))
+            #expect(custody.store(carried(try profile(of: sender, publishedAt: wall - 1000)), origin: .relayed, now: wall).held)
         }
         let large = try profile(of: TestPeer(seed: 800), publishedAt: wall - 1000, statusBytes: largeProfileBytes)
-        #expect(custody.store(carried(large), origin: .relayed, now: wall))
+        #expect(custody.store(carried(large), origin: .relayed, now: wall).held)
     }
 
     /// The frames `holder` would serve a newcomer: every live one but the group frames it is not in.

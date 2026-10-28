@@ -10,8 +10,10 @@
 knit-next keeps its vectors in `vectors/` (its ADR 2026-09.fzh7). `wire-v1.json` holds the codec fixtures and
 the bundle probe, and `keyed-v1.json` holds fixed identities, their signed frames, a sealed DM, the safety
 number, the link records and an advert. Both are copied into `Tests/Vectors/` under the same names.
-`ratchet-v1.json` (companion change A9, ADR 2026-10.5sk9) holds the ratchet's known answers and transcripts. A
-checkout from before A9 has none, so it is copied and checked only where it exists.
+`ratchet-v1.json` (companion change A9, ADR 2026-10.5sk9) holds the ratchet's known answers and transcripts, and
+`custody-v1.json` (knit-next ADR 2026-10.7mqm) the custody contract: steps stored through one store and what each
+must keep, evict and hold. A checkout from before either change has none of that file, so each is copied and checked
+only where it exists.
 
 `--only` copies or checks the files it names and nothing else, and leaves the alias words alone. It is for a
 file that lands on a knit-next branch before the pin moves: the other copies keep the provenance they have.
@@ -40,8 +42,9 @@ WIRE = "wire-v1.json"
 KEYED = "keyed-v1.json"
 EMITTED = "ios-emitted-v1.json"
 RATCHET = "ratchet-v1.json"
+CUSTODY = "custody-v1.json"
 # Copied where the knit-next checkout has them; a checkout from before the change that added one has none.
-OPTIONAL = (RATCHET,)
+OPTIONAL = (RATCHET, CUSTODY)
 ALIAS_OUTPUT = ROOT / "Sources" / "KnitCrypto" / "AliasWords.swift"
 ALIAS_SOURCE = Path("app/src/main/java/app/getknit/knit/identity/AliasWords.kt")
 ALIAS_LISTS = (("ALIAS_ADVERBS", "adverbs"), ("ALIAS_ADJECTIVES", "adjectives"), ("ALIAS_NOUNS", "nouns"))
@@ -136,7 +139,7 @@ def main() -> int:
     parser.add_argument(
         "--only",
         action="append",
-        choices=(WIRE, KEYED, RATCHET),
+        choices=(WIRE, KEYED, RATCHET, CUSTODY),
         help="copy or check only this vector file (repeatable); the alias words are left alone",
     )
     args = parser.parse_args()
@@ -149,7 +152,7 @@ def main() -> int:
         print(f"sync-vectors: copied {EMITTED} to {target}")
         return 0
 
-    names = args.only or [WIRE, KEYED, RATCHET]
+    names = args.only or [WIRE, KEYED, RATCHET, CUSTODY]
     files: dict[str, dict] = {}
     absent: list[str] = []
     for name in names:

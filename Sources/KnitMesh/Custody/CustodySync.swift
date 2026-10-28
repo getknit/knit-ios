@@ -21,10 +21,15 @@ public struct CustodySync: Sendable {
     /// 2026-09.adpz).
     private var earlyReceipts: SeenSet
 
-    /// Custody bookkeeping with knit-next's tombstone window unless told otherwise.
-    public init(tombstoneMilliseconds: Int64 = Self.tombstoneMilliseconds) {
+    /// Where a refused group frame is noted, at `.debug`: the engine's log, or none.
+    private let log: (any KnitLog)?
+
+    /// Custody bookkeeping with knit-next's tombstone window unless told otherwise, noting group frames custody refuses
+    /// to `log`.
+    public init(tombstoneMilliseconds: Int64 = Self.tombstoneMilliseconds, log: (any KnitLog)? = nil) {
         tombstones = SeenSet(windowMilliseconds: tombstoneMilliseconds)
         earlyReceipts = SeenSet(windowMilliseconds: tombstoneMilliseconds)
+        self.log = log
     }
 
     /// The purged ids tombstoned now.
@@ -34,27 +39,54 @@ public struct CustodySync: Sendable {
     /// evicts them.
     public var earlyReceiptCount: Int { earlyReceipts.count }
 
-    /// Takes a relayed frame into custody (`ForwardSync.onSeen`) if `authenticate` says so, and answers whether it
-    /// was stored just now.
+    /// Group frames custody refused because their roster is not their own (``CustodyRefusal/foreignRoster``, knit-next
+    /// ADR 2026-10.7mqm), Android's `groupCustodyRefused`. Not a drop: each was still delivered and relayed.
+    public private(set) var groupRefusedCount = 0
+
+    /// Takes a relayed frame into custody (`ForwardSync.onSeen`) if `authenticate` says so, and answers whether custody
+    /// changed, which is what re-reads the advert's digest cue.
     ///
     /// Only custodial types are carried, never an id already held or tombstoned, nor a DM whose recipient's receipt
-    /// came first. The store applies the TTL and the quotas, and refuses a frame that is dead on arrival or dated too
-    /// far ahead. Times are on the wall clock.
+    /// came first. The store applies the TTL and the quotas, and refuses a frame that is dead on arrival, dated too
+    /// far ahead, or a group frame whose roster is not its own. Times are on the wall clock.
+    ///
+    /// "Changed" is not "held": a frame its own write evicted changed custody and is not held (``CustodyStoreResult``).
+    /// Nothing here pulls a carried frame's photo (ADR 2026-10.ym9y), so nothing reads ``CustodyStoreResult/held`` yet.
     public mutating func carry(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64, authenticate: () -> Bool) -> Bool {
         guard admits(frame, in: store, now: now), authenticate() else {
             return false
         }
-        return store.store(frame, origin: .relayed, now: now)
+        return noted(store.store(frame, origin: .relayed, now: now), for: frame)
     }
 
-    /// Takes a frame of ours into custody (ORIGIN_SELF): trivially authentic, and under the same quotas as
-    /// everyone's, so every node keeps the same newest frames.
+    /// Takes a frame of ours into custody (ORIGIN_SELF): trivially authentic, and under the same quotas and the same group
+    /// gate as everyone's, so every node keeps the same newest frames. Answers whether custody changed, as
+    /// ``carry(_:in:now:authenticate:)`` does.
     public mutating func carryOwn(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64) -> Bool {
         guard admits(frame, in: store, now: now) else {
             return false
         }
-        return store.store(frame, origin: .own, now: now)
+        return noted(store.store(frame, origin: .own, now: now), for: frame)
     }
+
+    /// Counts and logs a roster refusal (`ForwardRepository.store`'s, in Android's words), and answers whether custody
+    /// changed. No other refusal is counted here: the dead and the future-dated are the clock's, and a failed write is
+    /// the database's, which reports it.
+    private mutating func noted(_ result: CustodyStoreResult, for frame: CarriedFrame) -> Bool {
+        if result.refusal == .foreignRoster {
+            groupRefusedCount += 1
+            let envelope = frame.envelope
+            log?.log(
+                .debug,
+                "custody refused \(envelope.id.prefix(Self.idCharacters)) from \(envelope.senderId.prefix(Self.idCharacters)): "
+                    + "roster of \(envelope.group?.id ?? "") is not its own"
+            )
+        }
+        return result.changed
+    }
+
+    /// How much of a frame or node id the log line names (`ID_CHARS`): enough to find it in a dump.
+    private static let idCharacters = 8
 
     /// The most frames one reply round serves (ADR 2026-10.f5zs). Android serves every frame a digest omits at once
     /// (`ForwardSync.kt:136-163` at knit-next `e63f15f4`), so an empty digest of 15 bytes bought the whole custody; the

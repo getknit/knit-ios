@@ -303,6 +303,8 @@ public actor MeshControl {
             "peers": .int(Int64(stores.peers.allPeers().count)),
             "groups": .int(Int64(stores.groups.groups().count)),
             "custody": .int(Int64(stores.custody.liveIds(now: clock.wallMilliseconds()).count)),
+            // Android's word (`MeshMetrics.groupCustodyRefused`), so a harness reads one name on both phones.
+            "groupCustodyRefused": .int(Int64(await mesh.groupCustodyRefused)),
             "dropped": .object(Dictionary(dropped) { first, _ in first }),
             "files": ControlLines.describe(await mesh.files),
             "blobs": ControlLines.describe(await mesh.blobs),

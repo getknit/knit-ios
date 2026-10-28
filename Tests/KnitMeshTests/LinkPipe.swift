@@ -13,14 +13,15 @@ import Testing
 final class PipeNode {
     let peer: TestPeer
     let radio = FakeRadio(advertisesServiceData: false, reportsFileWrites: true)
-    let stores = MeshStores.inMemory()
+    let stores: MeshStores
     let log = RecordingLog()
     let partials: MemoryPartialBlobStore
     let links: LinkManager
     let engine: MeshEngine
 
-    init(_ peer: TestPeer, clock: ManualClock, seed: UInt64) {
+    init(_ peer: TestPeer, clock: ManualClock, seed: UInt64, custodyLimits: CustodyLimits = CustodyLimits()) {
         self.peer = peer
+        stores = MeshStores.inMemory(custodyLimits: custodyLimits)
         let recording = log
         partials = MemoryPartialBlobStore { line in recording.log(.info, line) }
         links = LinkManager(
@@ -338,8 +339,9 @@ final class PipeLab {
     private var nodes: [PipeNode] = []
     private var nextChannel: UInt64 = 10
 
-    func node(_ seed: Int) -> PipeNode {
-        let node = PipeNode(TestPeer(seed: seed), clock: clock, seed: UInt64(seed))
+    /// A started phone for `seed`, its custody under `custodyLimits`.
+    func node(_ seed: Int, custodyLimits: CustodyLimits = CustodyLimits()) -> PipeNode {
+        let node = PipeNode(TestPeer(seed: seed), clock: clock, seed: UInt64(seed), custodyLimits: custodyLimits)
         node.start()
         nodes.append(node)
         return node

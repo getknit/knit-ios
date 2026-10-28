@@ -96,7 +96,7 @@ import Testing
         #expect(fixture.stores.groups.group(info.id) == nil)
     }
 
-    @Test func aGroupFrameWhoseRosterDoesNotHashToItsIdIsCarriedAndRelayedButRefused() throws {
+    @Test func aGroupFrameWhoseRosterDoesNotHashToItsIdIsRelayedButRefusedAndNotCarried() throws {
         let fixture = EngineFixture(alice)
         fixture.link(bob, carol)
         try fixture.pin(bob)
@@ -107,9 +107,38 @@ import Testing
         fixture.deliver(try bob.groupMessage("Forged", in: forged, to: [alice], id: frameIdOf("group-1"), sentAt: start), from: bob)
         #expect(announced(fixture.engine.drainEvents()).isEmpty)
         #expect(fixture.engine.dropped[.rosterRefused] == 1)
-        #expect(fixture.stores.custody.contains(frameIdOf("group-1")))
+        // Custody's group gate refuses it too, and counts it (knit-next ADR 2026-10.7mqm); the relay still goes on.
+        #expect(!fixture.stores.custody.contains(frameIdOf("group-1")))
+        #expect(fixture.engine.groupCustodyRefused == 1)
+        #expect(
+            fixture.log.all.contains { $0.hasPrefix("debug custody refused ") && $0.hasSuffix("roster of \(forged.id) is not its own") })
         fixture.advance(150)
         #expect(fixture.transport.written(.chat).map(\.to) == [carol.nodeId])
+    }
+
+    @Test func aTruncatedPreDepartedRosterWithinThePinIsDeliveredButNotCarried() throws {
+        // A 2.0.0 to 2.2.3 build sends the effective roster alone after a departure, with no `departed`. Delivery takes it
+        // within our pin; custody refuses it, since the members alone no longer derive to the id (knit-next ADR
+        // 2026-10.7mqm), and counts the refusal. The frame still floods on.
+        let fixture = EngineFixture(alice)
+        fixture.link(bob, dave)
+        try fixture.pin(bob)
+        let info = bobsGroup
+        fixture.deliver(try bob.groupMessage("First", in: info, to: [alice, carol], id: frameIdOf("gm-1"), sentAt: start), from: bob)
+        #expect(fixture.stores.custody.contains(frameIdOf("gm-1")))
+        fixture.advance(150)
+        _ = fixture.engine.drainEvents()
+        fixture.transport.clear()
+        var truncated = info
+        truncated.members.removeAll { $0 == carol.nodeId.string }
+        truncated.departed = nil
+        fixture.deliver(try bob.groupMessage("After", in: truncated, to: [alice], id: frameIdOf("gm-2"), sentAt: start + 1), from: bob)
+        #expect(announced(fixture.engine.drainEvents()).map(\.record.body) == ["After"])
+        #expect(fixture.engine.dropped.isEmpty)
+        #expect(!fixture.stores.custody.contains(frameIdOf("gm-2")))
+        #expect(fixture.engine.groupCustodyRefused == 1)
+        fixture.advance(150)
+        #expect(fixture.transport.written(.chat).map(\.to) == [dave.nodeId], "relayed as before")
     }
 
     @Test func aGroupWeAreNotInIsCarriedQuietly() throws {
@@ -227,7 +256,13 @@ import Testing
         var stray = early.envelope
         stray.id = "stray-1"
         stray.senderId = "not a node id"
-        stores.custody.store(CarriedFrame(envelope: stray, sig: early.wire.sig, signed: early.wire.signed), origin: .relayed, now: start)
+        // In a roster that derives and names it, so custody's group gate takes it (knit-next ADR 2026-10.7mqm).
+        let strayMembers = info.members + [stray.senderId]
+        stray.group = GroupInfo(id: GroupId.derive(strayMembers), members: strayMembers, createdBy: stray.senderId)
+        #expect(
+            stores.custody.store(
+                CarriedFrame(envelope: stray, sig: early.wire.sig, signed: early.wire.signed), origin: .relayed, now: start
+            ).held)
         let fixture = EngineFixture(alice, stores: stores)
         #expect(announced(fixture.engine.drainEvents()).map(\.record.id) == [frameIdOf("gm-1")])
         #expect(fixture.stores.groups.group(info.id) != nil)

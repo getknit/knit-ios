@@ -121,7 +121,7 @@ import Testing
         stores.peers.upsert(PeerRecord(nodeId: alice.nodeId, name: "", status: "", publicKey: alice.keys.bundle.encoded, updatedAt: 1))
         let post = try alice.roomPost("Before", id: frameIdOf("alice-0"), sentAt: EngineFixture.start)
         let carried = CarriedFrame(envelope: post.envelope, sig: post.wire.sig, signed: post.wire.signed)
-        #expect(stores.custody.store(carried, origin: .relayed, now: EngineFixture.start))
+        #expect(stores.custody.store(carried, origin: .relayed, now: EngineFixture.start).held)
         let fixture = EngineFixture(bob, stores: stores)
         fixture.link(carol)
         fixture.transport.clear()
