@@ -3,16 +3,18 @@ import KnitWire
 
 /// What a DM ratchet frame that opened applies, inside its open's store unit, and the work it leaves for after the
 /// commit (ADR 2026-10.5sk9, phase P5a): `handleCtlDm`, `applyCtlInTxn`, `applySealedReceipt`, `applySealedReaction`,
-/// `applySealedProfile` and `persistWithInlineAcks` in knit-next's `InboundPipeline.kt` (at `cbf2a487`, `:1088-1235` and
-/// `:1353-1438`).
+/// `applySealedProfile` and `persistWithInlineAcks` in knit-next's `InboundPipeline.kt` (at `e63f15f4`, `:1261-1433` and
+/// `:1602-1701`).
 ///
-/// A ctl is machinery: never a row, a notification or an acknowledgement. Inside the unit everything here reads and writes
+/// A ctl is machinery: never a row, a notification or an acknowledgement. Android has since made one exception, which
+/// this port has not taken: a sealed reaction to a message we wrote posts a notification once its commit lands
+/// (`handleCtlDm`, `:1349-1353`, knit-next ADR 2026-10.59fu). Inside the unit everything here reads and writes
 /// stores and nothing else; the events, the drop counts, the photo's fetch and the acknowledgement wait in a
 /// ``RatchetArrival`` until the unit commits.
 extension MeshEngine {
     /// Applies what `content`, opened from `sender`'s `envelope`, carries, inside its open's unit, and answers the work
-    /// for after the commit (`handleCtlDm`, `InboundPipeline.kt:1128-1195`, and `applyCtlInTxn`, `:1197-1235`):
-    /// - a plain DM: its row, and the acks it carries inline (`CAP_INLINE_ACK`, `persistWithInlineAcks`, `:1088-1116`);
+    /// for after the commit (`handleCtlDm`, `InboundPipeline.kt:1304-1365`, and `applyCtlInTxn`, `:1385-1433`):
+    /// - a plain DM: its row, and the acks it carries inline (`CAP_INLINE_ACK`, `persistWithInlineAcks`, `:1261-1289`);
     /// - a receipt (5): our ticks flipped;
     /// - a reaction (6): applied last writer wins, at its first verdict;
     /// - a profile (8): its presentation, never its prekey, at its first verdict;
@@ -23,8 +25,13 @@ extension MeshEngine {
     ///   sender (phase P6a2, ``adoptGroupSeeds(_:from:)``), the ack and the custody replay after the commit;
     /// - a group key's ack (4): the seed outbox's row moved (``recordSeedAck(_:from:)``);
     /// - a key request (3): nothing beyond the chain's advance; at its first verdict, once the unit commits, our current
-    ///   seeds go to the requester, floored (phase P6b, ``redistributeGroupKey(in:to:)``, `:1163-1165`);
-    /// - every code this build does not know: nothing beyond the chain's advance, which still commits (`:1191-1196`).
+    ///   seeds go to the requester, floored (phase P6b, ``redistributeGroupKey(in:to:)``, `:1339-1341`);
+    /// - every code this build does not know: nothing beyond the chain's advance, which still commits, as Kotlin does with
+    ///   one it does not know (`:1379-1384`, the no-op at `:1430`). That includes a scope config (7), which Android
+    ///   applies since knit-next ADR 2026-10.8kfx (`:1425-1428`), writing the pair's spool relays in the same commit. This
+    ///   port takes it as unknown on purpose: knit-next's `docs/WIRE_COMPAT.md` (`:818-828`) promises that a build without
+    ///   the spool consumes ctl 7 as a chain-advancing no-op, and the spool's scopes are left out here (`crypto.md`,
+    ///   "Control codes"; knit-ios #15). `aSealedScopeConfigAdvancesTheChainAndLeavesNothing` pins it.
     ///
     /// A group key and its ack apply at every origin, the start's replay included: an adoption goes by the sender's own
     /// `(epoch, mintedAt)` against the newest mint held, never a stamp of ours, so a seed opened again is acknowledged
@@ -61,7 +68,7 @@ extension MeshEngine {
             arrival.keyRequest = content.gk?.groupId
         case MessageContent.Control.sessionReset where origin == .firstVerdict:
             // However its open went: a root adopted, a race won or lost, or a marker under the session held
-            // (`InboundPipeline.kt:1137-1148`). The re-seal is a send, so it waits for the commit.
+            // (`InboundPipeline.kt:1313-1324`). The re-seal is a send, so it waits for the commit.
             arrival.resealsUnacked = true
         default:
             break
@@ -73,8 +80,8 @@ extension MeshEngine {
     /// announced, a refused reaction counted, a moved profile's photo fetched or let go, a message delivered as
     /// ``deliverChat(_:_:sender:recipient:via:)``'s second half delivers one, its acknowledgement included, a reset's
     /// first verdict answered with our unacked DMs sealed again and our group seeds sent again (`handleCtlDm`'s follow-up,
-    /// `InboundPipeline.kt:1140-1148`), a key request answered (`:1163-1165`), and a seed worth acknowledging acknowledged,
-    /// then the sender's frames in that group our custody holds opened again (`:1150-1156`). The group facade's floor moved
+    /// `InboundPipeline.kt:1316-1324`), a key request answered (`:1339-1341`), and a seed worth acknowledging acknowledged,
+    /// then the sender's frames in that group our custody holds opened again (`:1327-1332`). The group facade's floor moved
     /// before this ran (``settleSeeds(_:)``).
     func finish(_ arrival: RatchetArrival, _ envelope: RelayEnvelope, from sender: NodeId, via hop: NodeId?) {
         for id in arrival.delivered {
@@ -95,7 +102,7 @@ extension MeshEngine {
         if arrival.resealsUnacked {
             resealRecentDirectMessages(to: sender)
             // A ctl is never a row, so the re-seal cannot bring back a seed the wiped peer lost: forced, since its outbox
-            // row's ack predates the wipe (`InboundPipeline.kt:1144-1148`).
+            // row's ack predates the wipe (`InboundPipeline.kt:1320-1324`).
             flushPendingGroupKeys(for: sender, force: true)
         }
         if let group = arrival.keyRequest {
@@ -108,7 +115,7 @@ extension MeshEngine {
         }
     }
 
-    /// Sealed receipts, inside the unit (`applySealedReceipt`, `InboundPipeline.kt:1408-1418`): each id flips our tick
+    /// Sealed receipts, inside the unit (`applySealedReceipt`, `InboundPipeline.kt:1669-1679`): each id flips our tick
     /// only under the forged-ack guard (``isOurs(_:acknowledgedBy:)``), and the ids whose tick moved are answered. A sealed
     /// receipt purges nothing, here or anywhere: a carrier cannot read it, so the delivered DM leaves every custody, ours
     /// included, on its TTL (ADR 2026-09.p6nb, amended).
@@ -116,7 +123,7 @@ extension MeshEngine {
         ids.filter { isOurs($0, acknowledgedBy: sender.string) && stores.messages.markDelivered($0) }
     }
 
-    /// A sealed reaction in DM form, inside the unit (`applySealedReaction`, `InboundPipeline.kt:1426-1438`): applied last
+    /// A sealed reaction in DM form, inside the unit (`applySealedReaction`, `InboundPipeline.kt:1689-1701`): applied last
     /// writer wins on the frame's signed `sentAt`, clamped, with the authenticated sender as the reactor, under the rule
     /// the cleartext frame meets here, one emoji of at most 32 UTF-16 units (ADR 2026-10.ehe6), which the chain's advance
     /// never waits on. Answers the reaction to announce, for a held message, and whether it was refused.
@@ -134,11 +141,13 @@ extension MeshEngine {
         return (reaction, false)
     }
 
-    /// A sealed profile, inside the unit (`applySealedProfile`, `InboundPipeline.kt:1353-1396`): the presentation alone,
+    /// A sealed profile, inside the unit (`applySealedProfile`, `InboundPipeline.kt:1602-1654`): the presentation alone,
     /// on the presentation's watermark, the sender's own `version` clamped, which a re-served stale one cannot undo. It
     /// never touches the pinned key, the prekey, the device tag or the capabilities, which move only on the cleartext
     /// profile, the one that certifies itself, and it never makes a row for a sender nobody pinned. An unversioned one
-    /// cannot be ordered, so it is ignored. Answers the row before and after, when it moved.
+    /// cannot be ordered, so it is ignored. Answers the row before and after, when it moved. Android also replaces the
+    /// sender's supporter badges here since knit-next ADR 2026-10.r99s (`:1635-1646`), which this port drops
+    /// (knit-ios #10).
     private func applySealedPresentation(_ payload: ProfilePayload?, from sender: NodeId) -> RatchetArrival.Presentation? {
         guard let payload, let existing = stores.peers.peer(sender) else {
             return nil
@@ -162,7 +171,7 @@ extension MeshEngine {
     }
 
     /// The photo a sealed profile leaves its sender with, by the rule a cleartext one meets (`photoFrom`, and
-    /// `resolveAvatarHash`, `InboundPipeline.kt:3416-3425`): the hash it advertises, and the photo shown, which follows it
+    /// `resolveAvatarHash`, `InboundPipeline.kt:3992-4001`): the hash it advertises, and the photo shown, which follows it
     /// once its bytes are held and otherwise stays. None clears both, and a hash that is not one leaves the shown photo.
     private func photo(advertised text: String?, over existing: PeerRecord) -> (advertised: BlobHash?, shown: BlobHash?) {
         guard let text else {

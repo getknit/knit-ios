@@ -167,30 +167,41 @@ public enum CustodyRules {
         if inserted.isRoomChat {
             trim(to: limits.maxRoomChat, \.isRoomChat)
         }
-        while remaining.count > limits.maxFrames {
+        // `!remaining.isEmpty` holds whenever `maxFrames` is not negative; it is here so the first entry below always
+        // exists, and a negative cap still evicts everything, as it did.
+        while !remaining.isEmpty, remaining.count > limits.maxFrames {
             // Counted by bytes, as SQLite's `GROUP BY senderId` groups BINARY text: two senders Swift calls equal are two
-            // buckets on Android.
-            var counts: [ExactKey: Int] = [:]
-            for entry in remaining {
-                counts[ExactKey(entry.senderId), default: 0] += 1
-            }
-            guard let victim = remaining.indices.min(by: { fairlyEvictsBefore(remaining[$0], remaining[$1], counts: counts) })
-            else {
-                break
+            // buckets on Android. Each entry's count sits beside it, so no lookup can miss.
+            let held = senderCounts(of: remaining)
+            var victim = remaining.startIndex
+            for index in remaining.indices.dropFirst()
+            where fairlyEvictsBefore(remaining[index], held[index], remaining[victim], held[victim]) {
+                // Strictly before, so a tie keeps the earlier entry, as `min(by:)` did.
+                victim = index
             }
             evicted.append(remaining.remove(at: victim).id)
         }
         return evicted
     }
 
-    /// Whether the global trim takes `lhs` before `rhs`, given each sender's live count: the frame of the sender holding
-    /// more first, then ``evictsBefore(_:_:)``. That is `ORDER BY b.n DESC, f.sentAt ASC, f.id ASC` (`ForwardDao.evictFairest`),
-    /// so on a tie for most the sender whose oldest frame is oldest loses it.
-    private static func fairlyEvictsBefore(_ lhs: Entry, _ rhs: Entry, counts: [ExactKey: Int]) -> Bool {
-        let left = counts[ExactKey(lhs.senderId)] ?? 0
-        let right = counts[ExactKey(rhs.senderId)] ?? 0
-        guard left == right else {
-            return left > right
+    /// How many of `entries` share each entry's sender, by index, the senders compared by their bytes (ADR 2026-09.jc2x).
+    private static func senderCounts(of entries: [Entry]) -> [Int] {
+        let bySender = Dictionary(grouping: entries.indices) { ExactKey(entries[$0].senderId) }
+        var counts = [Int](repeating: 0, count: entries.count)
+        for indices in bySender.values {
+            for index in indices {
+                counts[index] = indices.count
+            }
+        }
+        return counts
+    }
+
+    /// Whether the global trim takes `lhs` before `rhs`, given each one's sender's live count: the frame of the sender
+    /// holding more first, then ``evictsBefore(_:_:)``. That is `ORDER BY b.n DESC, f.sentAt ASC, f.id ASC`
+    /// (`ForwardDao.evictFairest`), so on a tie for most the sender whose oldest frame is oldest loses it.
+    private static func fairlyEvictsBefore(_ lhs: Entry, _ lhsCount: Int, _ rhs: Entry, _ rhsCount: Int) -> Bool {
+        guard lhsCount == rhsCount else {
+            return lhsCount > rhsCount
         }
         return evictsBefore(lhs, rhs)
     }

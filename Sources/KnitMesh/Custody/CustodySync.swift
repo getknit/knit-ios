@@ -73,13 +73,17 @@ public struct CustodySync: Sendable {
     /// changed. No other refusal is counted here: the dead and the future-dated are the clock's, and a failed write is
     /// the database's, which reports it.
     private mutating func noted(_ result: CustodyStoreResult, for frame: CarriedFrame) -> Bool {
-        if result.refusal == .foreignRoster {
-            groupRefusedCount += 1
+        guard result.refusal == .foreignRoster else {
+            return result.changed
+        }
+        groupRefusedCount += 1
+        // Only a group frame is refused for its roster (`CustodyRules.admission`), so both stores' refusals name one.
+        if let group = frame.envelope.group {
             let envelope = frame.envelope
             log?.log(
                 .debug,
                 "custody refused \(envelope.id.prefix(Self.idCharacters)) from \(envelope.senderId.prefix(Self.idCharacters)): "
-                    + "roster of \(envelope.group?.id ?? "") is not its own"
+                    + "roster of \(group.id) is not its own"
             )
         }
         return result.changed
