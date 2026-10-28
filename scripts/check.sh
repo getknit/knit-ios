@@ -55,6 +55,9 @@ step() { printf '\n== %s\n' "$*"; }
 
 gate_format() {
 	step "swift-format lint --strict"
+	# `--parallel` keeps every file it lints open until the run ends. The tree has passed the 1024 descriptors of a
+	# login shell's or Docker's soft limit, where it fails with "Unable to open", so lift it to the hard limit.
+	ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
 	swift format lint --strict --recursive --parallel "${swift_sources[@]}"
 }
 
