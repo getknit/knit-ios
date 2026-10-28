@@ -33,9 +33,9 @@ change.
    `admission`, and it binds our own frames (`carryOwn`) as everyone's. The refusal comes before any write, never as
    a failed write inside a ratchet unit.
 3. **It is counted and logged.** `CustodySync` counts it in `oversizeRefusedCount`, which `MeshEngine` and `Mesh`
-   expose as `custodyOversizeRefused`, Android's metric name. It logs one `.debug` line with the id's first eight
-   characters, the type and the byte count, never the payload. Android logs at warning. The roster line here is `.debug` for the
-   reason ADR 2026-10.9e7g gives, and this one matches it.
+   expose as `custodyOversizeRefused`, Android's metric name, as KnitControl's `stats` does too. It logs one `.debug`
+   line with the id's first eight characters, the type and the byte count, never the payload. Android logs at
+   warning. The roster line here is `.debug` for the reason ADR 2026-10.9e7g gives, and this one matches it.
 4. **The sweep deletes old over-cap rows.** `sweepExpired` in both stores also deletes every row whose `signed` is
    longer than the cap: SQL by `length(signed)` on the `BLOB` column, without reading rows. It counts them in its
    return, so `MeshEngine.sweep` bumps the digest cue. Custody's TTL is 24 hours. Without the delete, a node

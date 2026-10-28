@@ -305,6 +305,8 @@ public actor MeshControl {
             "custody": .int(Int64(stores.custody.liveIds(now: clock.wallMilliseconds()).count)),
             // Android's word (`MeshMetrics.groupCustodyRefused`), so a harness reads one name on both phones.
             "groupCustodyRefused": .int(Int64(await mesh.groupCustodyRefused)),
+            // Android's word too (`MeshMetrics.custodyOversizeRefused`): frames custody refused for their size.
+            "custodyOversizeRefused": .int(Int64(await mesh.custodyOversizeRefused)),
             "dropped": .object(Dictionary(dropped) { first, _ in first }),
             "files": ControlLines.describe(await mesh.files),
             "blobs": ControlLines.describe(await mesh.blobs),

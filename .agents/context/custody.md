@@ -223,7 +223,7 @@ publish it honestly.
   `CustodySync.carry` returns `changed`, which bumps the advert's digest cue. One write can evict an older frame and
   then the new one, so "held" alone would leave the cue stale. A roster refusal is counted (`groupCustodyRefused` in
   `stats`, Android's name) and logged as `custody refused <id> from <sender>: roster of <group> is not its own`. A
-  byte-cap refusal is counted as `custodyOversizeRefused` (Android's name, on `Mesh`, not yet in `stats`) and logged
+  byte-cap refusal is counted as `custodyOversizeRefused` (in `stats` too, Android's name) and logged
   with the id, the type and the byte count. The roster counter doesn't move for a frame that is both.
 - **Ids compare by their bytes** (`ExactKey`), never by Swift's `String` equality (ADR 2026-09.jc2x). That
   includes the sender and group buckets and the ids an eviction removes. The SQL store keeps every id as a

@@ -117,6 +117,7 @@ import Testing
         #expect(status["seekWakes"] as? Int == 0)
         #expect(status["seekSpells"] as? Int == 0)
         #expect(status["groupCustodyRefused"] as? Int == 0, "Android's name for custody's group gate refusals")
+        #expect(status["custodyOversizeRefused"] as? Int == 0, "Android's name for custody's byte cap refusals")
     }
 
     @Test func statusSaysWhenTheLinksSeek() async throws {
