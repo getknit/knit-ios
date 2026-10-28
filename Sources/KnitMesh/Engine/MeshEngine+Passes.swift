@@ -27,10 +27,10 @@ extension MeshEngine {
         }
     }
 
-    /// Expired custody, the room's and the message requests' retention (`sweepLocalStorage`), parked frames, stale key
-    /// wants, aged-out ticks, reactions left with no message and stale kept prefixes (`MeshManager.sweepExpired`), then the
-    /// ratchet frames whose unit failed, opened again from the copies kept, and last the blobs nothing names that are older
-    /// than an echo's life (knit-ios #20), which weighs the echo budget anew.
+    /// Expired and oversize custody (knit-next #227), the room's and the message requests' retention (`sweepLocalStorage`),
+    /// parked frames, stale key wants, aged-out ticks, reactions left with no message and stale kept prefixes
+    /// (`MeshManager.sweepExpired`), then the ratchet frames whose unit failed, opened again from the copies kept, and last
+    /// the blobs nothing names that are older than an echo's life (knit-ios #20), which weighs the echo budget anew.
     func sweep() {
         let now = clock.monotonicMilliseconds()
         if stores.custody.sweepExpired(now: clock.wallMilliseconds()) > 0 {

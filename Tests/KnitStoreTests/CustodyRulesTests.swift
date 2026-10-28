@@ -11,6 +11,11 @@ import Testing
         RelayEnvelope(type: type, id: "m1", senderId: "a", sentAt: sentAt, recipientId: recipient, payload: [])
     }
 
+    /// `envelope` as custody is handed it: its own bytes, unsigned.
+    private func carried(_ envelope: RelayEnvelope) -> CarriedFrame {
+        CarriedFrame(envelope: envelope, sig: [], signed: envelope.encoded)
+    }
+
     @Test func roomPostsLastSixHoursAndEverythingElseADay() {
         let sixHours: Int64 = 10 + 21_600_000
         let aDay: Int64 = 10 + 86_400_000
@@ -140,13 +145,14 @@ import Testing
 
     @Test func aMemberUnderTheFoundingRosterIsAdmitted() {
         let group = GroupInfo(id: GroupId.derive(founders), members: founders, createdBy: "alice")
-        #expect(CustodyRules.admission(of: grouped("bob", group), now: 10, limits: limits) == .admitted(expiresAt: 10 + 86_400_000))
+        #expect(
+            CustodyRules.admission(of: carried(grouped("bob", group)), now: 10, limits: limits) == .admitted(expiresAt: 10 + 86_400_000))
         #expect(CustodyRules.carriesGroup(group, from: "bob"))
     }
 
     @Test func aStrangerNamingTheGroupIsRefused() {
         let group = GroupInfo(id: GroupId.derive(founders), members: founders, createdBy: "alice")
-        #expect(CustodyRules.admission(of: grouped("mallory", group), now: 10, limits: limits) == .refused(.foreignRoster))
+        #expect(CustodyRules.admission(of: carried(grouped("mallory", group)), now: 10, limits: limits) == .refused(.foreignRoster))
     }
 
     @Test func aSmuggledMemberNoLongerDerivesAndIsRefused() {
@@ -172,7 +178,8 @@ import Testing
     }
 
     @Test func aFrameWithNoGroupPassesTheGate() {
-        #expect(CustodyRules.admission(of: grouped("anyone", nil), now: 10, limits: limits) == .admitted(expiresAt: 10 + 21_600_000))
+        #expect(
+            CustodyRules.admission(of: carried(grouped("anyone", nil)), now: 10, limits: limits) == .admitted(expiresAt: 10 + 21_600_000))
     }
 
     @Test func theRefusalsComeInKotlinsOrder() {
@@ -181,11 +188,60 @@ import Testing
         let foreign = GroupInfo(id: "g-0", members: ["x"], createdBy: "x")
         var dead = grouped("mallory", foreign)
         dead.sentAt = 0
-        #expect(CustodyRules.admission(of: dead, now: 1_756_200_000_000, limits: limits) == .refused(.deadOnArrival))
+        #expect(CustodyRules.admission(of: carried(dead), now: 1_756_200_000_000, limits: limits) == .refused(.deadOnArrival))
         var ahead = grouped("mallory", foreign)
         ahead.sentAt = 10 + 300_001
-        #expect(CustodyRules.admission(of: ahead, now: 10, limits: limits) == .refused(.aheadOfWindow))
-        #expect(CustodyRules.admission(of: grouped("mallory", foreign), now: 10, limits: limits) == .refused(.foreignRoster))
+        #expect(CustodyRules.admission(of: carried(ahead), now: 10, limits: limits) == .refused(.aheadOfWindow))
+        #expect(CustodyRules.admission(of: carried(grouped("mallory", foreign)), now: 10, limits: limits) == .refused(.foreignRoster))
+    }
+
+    // MARK: The byte cap (knit-next #227)
+
+    @Test func theByteCapIsAndroidsSixtyKibibytes() {
+        #expect(CustodyLimits().maxSignedBytes == 61_440, "`ForwardRepository.DEFAULT_MAX_SIGNED_BYTES`")
+    }
+
+    /// `envelope` padded with a chat body to exactly `signedBytes` of `signed`, the body's length searched upward: CBOR's
+    /// length prefixes grow at 24, 256 and 65,536, so no fixed offset holds (`CustodyVectorTest.sized`).
+    private func sized(_ signedBytes: Int, _ envelope: RelayEnvelope) throws -> CarriedFrame {
+        var padded = envelope
+        for length in 0...signedBytes {
+            padded.payload = ChatContent(body: String(repeating: "x", count: length)).encoded
+            if padded.encoded.count >= signedBytes {
+                break
+            }
+        }
+        try #require(padded.encoded.count == signedBytes, "no body length makes \(signedBytes) signed bytes")
+        return carried(padded)
+    }
+
+    @Test func exactlyTheCapIsAdmittedAndOneByteOverIsRefused() throws {
+        let tight = CustodyLimits(maxSignedBytes: 2048)
+        let base = envelope(sentAt: 10, recipient: "b")
+        #expect(CustodyRules.admission(of: try sized(2048, base), now: 10, limits: tight) == .admitted(expiresAt: 10 + 86_400_000))
+        #expect(CustodyRules.admission(of: try sized(2049, base), now: 10, limits: tight) == .refused(.oversize))
+    }
+
+    @Test func theSignatureIsNotCounted() throws {
+        let tight = CustodyLimits(maxSignedBytes: 2048)
+        var frame = try sized(2048, envelope(sentAt: 10, recipient: "b"))
+        frame.sig = [UInt8](repeating: 7, count: 64)
+        #expect(CustodyRules.admission(of: frame, now: 10, limits: tight) == .admitted(expiresAt: 10 + 86_400_000))
+    }
+
+    @Test func theByteCapComesFirstInKotlinsOrder() throws {
+        // `ForwardRepository.store` checks the size before anything else, so an oversize frame that also fails the clock or
+        // the roster is counted as oversize, and the roster counter never moves for it.
+        let tight = CustodyLimits(maxSignedBytes: 2048)
+        let foreign = GroupInfo(id: "g-0", members: ["x"], createdBy: "x")
+        #expect(CustodyRules.admission(of: try sized(2049, grouped("mallory", foreign)), now: 10, limits: tight) == .refused(.oversize))
+        var dead = grouped("a", nil)
+        dead.sentAt = 0
+        #expect(CustodyRules.admission(of: try sized(2049, dead), now: 1_756_200_000_000, limits: tight) == .refused(.oversize))
+        var ahead = grouped("a", nil)
+        ahead.sentAt = 10 + 300_001
+        #expect(CustodyRules.admission(of: try sized(2049, ahead), now: 10, limits: tight) == .refused(.oversize))
+        #expect(CustodyRules.admission(of: try sized(2048, dead), now: 1_756_200_000_000, limits: tight) == .refused(.deadOnArrival))
     }
 
     @Test func expiresAtIsComputedForARefusedFrameToo() {

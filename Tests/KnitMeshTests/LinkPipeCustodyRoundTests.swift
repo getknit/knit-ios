@@ -9,8 +9,9 @@ import Testing
 /// A capped reply round played on both sides (ADR 2026-10.f5zs): engines and link managers joined by a ``LinkPipe``, the
 /// far side's digests and floods its own. The oracles are the frames that crossed the pipe and the two custodies.
 @Suite struct LinkPipeCustodyRoundTests {
-    /// The bytes of the large profile, past a round's whole budget.
-    private static let largeProfileBytes = 300 * 1024
+    /// The bytes of the large profile's status: as large as custody's byte cap lets a frame be (knit-next #227), a quarter of
+    /// a round's budget. A frame past the whole budget is over the cap, which both engines here refuse.
+    private static let largeProfileBytes = 60_000
 
     /// A frame as custody keeps it.
     private static func carried(_ frame: TestFrame) -> CarriedFrame {
@@ -42,7 +43,7 @@ import Testing
 
     /// Fills `holder`'s custody with 999 frames beside its own profile, the oldest received first: 400 group frames in two
     /// groups the newcomer is not in, one DM from each of 200 senders whose key only the pin store keeps, 396 DMs from
-    /// three senders whose profiles custody holds, and those three profiles, then a profile of 300 KiB.
+    /// three senders whose profiles custody holds, and those three profiles, then a profile near custody's byte cap.
     private static func fillFull(_ holder: PipeNode, wall: Int64) throws {
         let recipient = TestPeer(seed: 999)
         let custody = holder.stores.custody
@@ -80,6 +81,8 @@ import Testing
             #expect(custody.store(carried(try profile(of: sender, publishedAt: wall - 1000)), origin: .relayed, now: wall).held)
         }
         let large = try profile(of: TestPeer(seed: 800), publishedAt: wall - 1000, statusBytes: largeProfileBytes)
+        #expect(
+            large.wire.signed.count > CustodyLimits().maxSignedBytes - 2048 && large.wire.signed.count <= CustodyLimits().maxSignedBytes)
         #expect(custody.store(carried(large), origin: .relayed, now: wall).held)
     }
 

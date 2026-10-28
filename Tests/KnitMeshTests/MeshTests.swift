@@ -165,6 +165,7 @@ import Testing
         #expect(footprint.earlyReceipts == 0)
         #expect(footprint.owedTicks == 0)
         #expect(await rig.mesh.routerCounters.admitted == 2)
+        #expect(await rig.mesh.custodyOversizeRefused == 0, "nothing over custody's byte cap")
     }
 
     @Test func stoppingTakesTheLinksDownAndStopsTheRadio() async {

@@ -18,12 +18,14 @@ import Testing
             maxFrames: stated.maxRows,
             maxPerSender: stated.maxPerSender,
             maxPerGroup: stated.maxPerGroup,
-            maxRoomChat: stated.maxBroadcast
+            maxRoomChat: stated.maxBroadcast,
+            // Absent from a file older than the byte cap: the production cap, which none of its frames nears.
+            maxSignedBytes: stated.maxSignedBytes ?? CustodyLimits().maxSignedBytes
         )
     }
 
-    /// The step's frame as `CustodyVectorTest.frameOf` builds it: an empty chat, unsigned, its group's founder the first
-    /// member.
+    /// The step's frame as `CustodyVectorTest.frameOf` builds it: a chat whose body is `bodyLength` "x"s (empty when absent),
+    /// unsigned, its group's founder the first member.
     private static func carried(_ frame: CustodyVectors.Frame) -> CarriedFrame {
         let group = frame.group.map { roster in
             GroupInfo(id: roster.id, members: roster.members, createdBy: roster.members.first ?? "", departed: roster.departed)
@@ -35,7 +37,7 @@ import Testing
             sentAt: frame.sentAt,
             recipientId: frame.recipientId,
             group: group,
-            payload: ChatContent(body: "").encoded
+            payload: ChatContent(body: String(repeating: "x", count: frame.bodyLength ?? 0)).encoded
         )
         return CarriedFrame(envelope: envelope, sig: [], signed: envelope.encoded)
     }
@@ -51,6 +53,9 @@ import Testing
         for (index, step) in Self.file.steps.enumerated() {
             let label = Comment(rawValue: "step \(index + 1) (\(step.note))")
             let frame = Self.carried(step.frame)
+            if let signedBytes = step.signedBytes {
+                #expect(frame.signed.count == signedBytes, label)
+            }
             #expect(frame.envelope.isRoomPost == step.isRoomChat, label)
             #expect(CustodyRules.expiresAt(of: frame.envelope, limits: Self.limits) == step.expiresAt, label)
             let before = store.liveIds(now: step.now)

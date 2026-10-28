@@ -45,6 +45,38 @@ import Testing
         #expect(dated)
     }
 
+    @Test func anOversizeFrameIsRefusedCountedAndLoggedOnEveryOrigin() {
+        // knit-next #227: the cap binds our own frames as it binds a relayed one, and the counter moves for each.
+        let store = MemoryCustodyStore(limits: CustodyLimits(maxSignedBytes: 2048))
+        let log = RecordingLog()
+        var sync = CustodySync(log: log)
+        let relayed = sync.carry(frame("big-relayed", to: bob, payloadBytes: 2100), in: store, now: now) { true }
+        let own = sync.carryOwn(frame("big-own", to: bob, payloadBytes: 2100), in: store, now: now)
+        let small = sync.carryOwn(frame("small", to: bob, payloadBytes: 100), in: store, now: now)
+        #expect(!relayed && !own && small)
+        #expect(store.liveIds(now: now) == ["small"])
+        #expect(sync.oversizeRefusedCount == 2)
+        #expect(sync.groupRefusedCount == 0)
+        let lines = log.all.filter { $0.contains("signed bytes over the cap") }
+        #expect(lines.count == 2)
+        #expect(lines.first?.hasPrefix("debug custody refused big-rela (chat): ") == true, "the id truncated, the type, the length")
+        #expect(!(lines.first?.contains("*") ?? true), "never the payload")
+    }
+
+    @Test func anOversizeFrameNamingAForeignRosterCountsAsOversizeAlone() {
+        let store = MemoryCustodyStore(limits: CustodyLimits(maxSignedBytes: 2048))
+        var sync = CustodySync()
+        // alice sends under a roster that does not name her: the group gate's refusal, were the frame not oversize first.
+        let foreign = frame("g-big", members: [bob, zed], payloadBytes: 2100)
+        let carried = sync.carry(foreign, in: store, now: now) { true }
+        #expect(!carried)
+        #expect(sync.oversizeRefusedCount == 1)
+        #expect(sync.groupRefusedCount == 0, "Android's order: the byte cap first")
+        let small = sync.carry(frame("g-small", members: [bob, zed]), in: store, now: now) { true }
+        #expect(!small)
+        #expect(sync.oversizeRefusedCount == 1 && sync.groupRefusedCount == 1)
+    }
+
     @Test func aHeldFrameIsNotAuthenticatedAgain() {
         let store = MemoryCustodyStore()
         var sync = CustodySync()

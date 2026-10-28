@@ -106,3 +106,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.9e7g](decisions/2026-10-9e7g-custody-s-cap-evicts-from.md) | custody's cap evicts from the largest sender, and a group frame is carried only under its own roster | custody, convergence, security, groups |
 | [2026-10.s64c](decisions/2026-10-s64c-requests-and-the-room-are.md) | requests and the room are trimmed as Android trims them, and a trim never comes back | mesh, storage, security |
 | [2026-10.vzem](decisions/2026-10-vzem-a-request-s-photos-wait.md) | a request's photos wait for accept, and strangers' room photos are bounded | mesh, blobs, security |
+| [2026-10.6n48](decisions/2026-10-6n48-custody-refuses-a-frame-whose.md) | custody refuses a frame whose signed bytes exceed 60 KiB | custody, convergence, security |

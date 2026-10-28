@@ -57,8 +57,8 @@ after the router had marked it seen, and peers' digests would differ for a seen 
 - **Identities are still free.** The wipe now needs roughly 1,000 pinned identities, one frame each, instead of 5.
   Bounding how fast a link brings in identities is H5, link authentication.
 - **Still open:** the room flood (200 posts from fresh identities, since `IngressBudget` keys on a claimed id, H5),
-  a member flooding their own group's bucket, and a per-frame byte cap. The byte cap is its own paired change, because a
-  cap on one platform alone would split digests.
+  a member flooding their own group's bucket, and a per-frame byte cap. The byte cap was its own paired change, because
+  a cap on one platform alone would split digests. ADR 2026-10.6n48 closed it (amendment of 2026-10-28).
 - **A mixed fleet** holds different sets while the global cap binds, until every node runs this rule. Honest traffic
   rarely reaches the cap, so this is a cost of the transition and not a standing split. Lab Pixels on the pin run the
   old rule.

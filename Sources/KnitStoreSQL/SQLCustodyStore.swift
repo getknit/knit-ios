@@ -27,7 +27,7 @@ public final class SQLCustodyStore: CustodyStore {
     @discardableResult
     public func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> CustodyStoreResult {
         let expiresAt: Int64
-        switch CustodyRules.admission(of: frame.envelope, now: now, limits: limits) {
+        switch CustodyRules.admission(of: frame, now: now, limits: limits) {
         case .refused(let reason):
             return .refused(reason)
         case .admitted(let at):
@@ -133,10 +133,16 @@ public final class SQLCustodyStore: CustodyStore {
         }
     }
 
+    /// One delete for the expired rows and the oversize ones (`deleteExpired` and `deleteLongerThan`, knit-next #227), each
+    /// row counted once. `signed` is a `BLOB` in a `STRICT` table, so `length` counts its bytes, as Room's column does. On a
+    /// database error it answers 0 and deletes nothing, and the next sweep tries again.
     @discardableResult
     public func sweepExpired(now: Int64) -> Int {
         database.write(or: 0) { db in
-            try db.execute(sql: "DELETE FROM forward_store WHERE expiresAt < ?", arguments: [now])
+            try db.execute(
+                sql: "DELETE FROM forward_store WHERE expiresAt < ? OR length(signed) > ?",
+                arguments: [now, limits.maxSignedBytes]
+            )
             return db.changesCount
         }
     }

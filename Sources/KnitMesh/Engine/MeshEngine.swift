@@ -142,6 +142,10 @@ public final class MeshEngine {
     /// Group frames custody refused because their roster is not their own (knit-next ADR 2026-10.7mqm).
     public var groupCustodyRefused: Int { custody.groupRefusedCount }
 
+    /// Frames custody refused because their `signed` is longer than its byte cap (knit-next #227). Each was still delivered
+    /// and relayed.
+    public var custodyOversizeRefused: Int { custody.oversizeRefusedCount }
+
     /// What the blob holder query has done so far (knit-next ADR 2026-10.6e5t).
     public var blobCounts: BlobCounts { blobExchange.counts }
 

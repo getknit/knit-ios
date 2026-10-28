@@ -1,5 +1,5 @@
-/// Custody's cross-platform law (`ForwardRepository.kt` in knit-next): how long a frame is carried, and how many
-/// frames each bucket holds.
+/// Custody's cross-platform law (`ForwardRepository.kt` in knit-next): how long a frame is carried, how many frames
+/// each bucket holds, and how long one frame's `signed` bytes may be.
 ///
 /// Every node must bound its carried set exactly this way. If the iPhone kept a frame Android drops, or dropped
 /// one Android keeps, the two would never agree on what the other lacks, and every 60-second digest exchange
@@ -18,15 +18,21 @@ public struct CustodyLimits: Sendable, Equatable {
     public var maxPerGroup: Int
     /// The most room posts carried (`DEFAULT_MAX_BROADCAST`), so ambient chatter cannot crowd out DMs.
     public var maxRoomChat: Int
+    /// The longest `signed` custody carries, in bytes: 60 KiB (`DEFAULT_MAX_SIGNED_BYTES`, knit-next #227). A longer
+    /// frame is refused, and the sweep deletes one a build without the cap stored. Only `signed` is counted, never `sig`.
+    /// With it the row cap bounds what custody holds on disk and re-serves: 1000 rows of 60 KiB, where any size went
+    /// before. No honest build of either platform authors a longer frame.
+    public var maxSignedBytes: Int
 
-    /// knit-next's values unless told otherwise: 24 h, 6 h, 1000, 200, 200 and 200.
+    /// knit-next's values unless told otherwise: 24 h, 6 h, 1000, 200, 200, 200 and 61,440 bytes.
     public init(
         ttlMilliseconds: Int64 = 86_400_000,
         roomChatTTLMilliseconds: Int64 = 21_600_000,
         maxFrames: Int = 1000,
         maxPerSender: Int = 200,
         maxPerGroup: Int = 200,
-        maxRoomChat: Int = 200
+        maxRoomChat: Int = 200,
+        maxSignedBytes: Int = 61_440
     ) {
         self.ttlMilliseconds = ttlMilliseconds
         self.roomChatTTLMilliseconds = roomChatTTLMilliseconds
@@ -34,5 +40,6 @@ public struct CustodyLimits: Sendable, Equatable {
         self.maxPerSender = maxPerSender
         self.maxPerGroup = maxPerGroup
         self.maxRoomChat = maxRoomChat
+        self.maxSignedBytes = maxSignedBytes
     }
 }

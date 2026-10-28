@@ -36,8 +36,12 @@ public protocol CustodyStore: AnyObject, Sendable {
     /// Drops `id`, if held.
     func remove(_ id: String)
 
-    /// Drops every frame past its expiry and answers how many. Pure storage housekeeping: expired frames were
-    /// already invisible to every read.
+    /// Drops every frame past its expiry, and every frame whose `signed` is longer than ``CustodyLimits/maxSignedBytes``,
+    /// and answers how many (`ForwardRepository.sweepExpired`, knit-next #227). The expiry delete is pure storage
+    /// housekeeping: expired frames were already invisible to every read. The oversize delete can move the live set: it
+    /// reclaims what a build without the byte cap stored. It is a function of the row alone, so every upgraded node
+    /// deletes the same rows, and once those are gone it finds nothing. Until a node's first sweep after the upgrade, such
+    /// a row still counts toward the quotas.
     @discardableResult
     func sweepExpired(now: Int64) -> Int
 }

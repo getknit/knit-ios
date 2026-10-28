@@ -46,9 +46,10 @@ A node carries frames for people who are not in range yet. This is store-and-for
   delivery only (ADR 2026-10.5wgg, after knit-next's ADR 2026-09.bts9).
 - **A group frame is carried only under its own roster** (`ForwardRepository.carriesGroup`, knit-next ADR
   2026-10.7mqm, ADR 2026-10.9e7g). The store refuses a frame naming a group unless `members + departed` derive to the
-  group's id and the sender is one of `members`, by bytes. It checks after the two time refusals, for every origin,
-  ours included. It is custody's refusal alone: delivery and relay still go through `GroupRoster.vet`. A pre-2.3.0
-  Android frame after a departure lists no `departed`, so custody refuses it while delivery takes it.
+  group's id and the sender is one of `members`, by bytes. It checks after the byte cap and the two time refusals,
+  for every origin, ours included. It is custody's refusal alone: delivery and relay still go through
+  `GroupRoster.vet`. A pre-2.3.0 Android frame after a departure lists no `departed`, so custody refuses it while
+  delivery takes it.
 - **Our own frames count too** (ORIGIN_SELF), our profile included, under the same quotas. Android custodies each
   of its own frames before it floods it (`originateWire`, `MeshManager.kt:4016-4031`; knit-next `85baeeb9`, #141), so
   a link raised between the two learns of the frame from the digest exchange. This port's `originate` sends, then
@@ -65,6 +66,14 @@ A node carries frames for people who are not in range yet. This is store-and-for
   recipient answers that copy wherever the re-flood finds it, though it still holds the DM.
 - **Expiry:** `sentAt + 24 h`, or 6 h for room *chat*. Room receipts, reactions and profiles keep 24 h.
   Frames already dead on arrival, or dated more than 5 minutes ahead, are refused.
+- **A byte cap, checked first** (`ForwardRepository.store`, knit-next ADR 2026-10.mqzv, ADR 2026-10.6n48): a frame
+  whose `signed` is longer than 61,440 bytes (60 KiB, `maxSignedBytes`) is refused, before every other refusal, for
+  every origin. `sig` doesn't count. Exactly the cap is kept. The sweep also deletes every row over the cap, which
+  clears rows held from before the upgrade. Those rows are live, so this delete is the one exception to the sweep
+  being digest-neutral. Until a node's first sweep after the upgrade, such a row still counts toward its quotas. No
+  honest frame either side builds reaches the cap (the sizes are in the ADR), so only a hostile frame is refused. It
+  is still delivered and relayed, but never back-filled, and a group or ratchet replay that reads custody never finds
+  it.
 - **Quotas**, counted over live rows only, applied in this order (`ForwardRepository.insertAndTrim`):
   - 200 per sender
   - 200 per group
@@ -81,8 +90,9 @@ A node carries frames for people who are not in range yet. This is store-and-for
     ordinary case, and a fair room trim would split an old node from a new one for good.
   - **What it leaves open:** identities are free, so about 1,000 of them, one frame each, can still wear the honest
     buckets down. So can 200 fresh identities in the room (`IngressBudget` keys on a claimed id), or a member
-    flooding their own group. Bounding how fast a link brings in identities is H5, link authentication. A
-    per-frame byte cap is a separate paired change.
+    flooding their own group. Bounding how fast a link brings in identities is H5, link authentication. The
+    byte cap bounds the store at 1,000 × 60 KiB, about 60 MiB, but the replays still read whole rows (paging them
+    is knit-next #227 option 3).
 - **Staged for the next wire break, and not live** (knit-next `docs/NEXT_WIRE_BREAK.md`). Port neither early:
   - **Item 12** (`8400dd11`): custody for 7 days, with larger quotas, on both platforms in one release. It names
     `CustodyLimits.swift`. The receipt tombstone stays at least the TTL, `PendingInbound`'s 200 follows the per-sender
@@ -203,16 +213,18 @@ publish it honestly.
 - **Two stores apply them:** `MemoryCustodyStore` for the Linux peer and the tests, and `SQLCustodyStore`
   (`KnitStoreSQL`) for the app. Both run `CustodyRules` over their live rows and the same `CustodyStoreTests`
   (ADR 2026-09.nyya), and both replay knit-next's `vectors/custody-v1.json` (`CustodyVectorTests`).
-- **Both admit a frame through `CustodyRules.admission`:** dead on arrival, then past the future window, then the
-  group gate (`carriesGroup`, which reads `GroupId.derive`, so `KnitStore` depends on `KnitCrypto`). `store`
-  answers a `CustodyStoreResult`, with three fields:
+- **Both admit a frame through `CustodyRules.admission`:** over the byte cap, then dead on arrival, then past the
+  future window, then the group gate (`carriesGroup`, which reads `GroupId.derive`, so `KnitStore` depends on
+  `KnitCrypto`). `store` answers a `CustodyStoreResult`, with three fields:
   - `held`: the frame is in custody after its own write, Android's `kept` and the vector's;
   - `changed`: the frame went in or any row went out;
   - the `CustodyRefusal`, if refused.
 
   `CustodySync.carry` returns `changed`, which bumps the advert's digest cue. One write can evict an older frame and
   then the new one, so "held" alone would leave the cue stale. A roster refusal is counted (`groupCustodyRefused` in
-  `stats`, Android's name) and logged as `custody refused <id> from <sender>: roster of <group> is not its own`.
+  `stats`, Android's name) and logged as `custody refused <id> from <sender>: roster of <group> is not its own`. A
+  byte-cap refusal is counted as `custodyOversizeRefused` (Android's name, on `Mesh`, not yet in `stats`) and logged
+  with the id, the type and the byte count. The roster counter doesn't move for a frame that is both.
 - **Ids compare by their bytes** (`ExactKey`), never by Swift's `String` equality (ADR 2026-09.jc2x). That
   includes the sender and group buckets and the ids an eviction removes. The SQL store keeps every id as a
   UTF-8 `BLOB`, which SQLite orders exactly as BINARY orders text, and reads it back with every byte. Before

@@ -370,6 +370,10 @@ public actor Mesh {
 }
 
 extension Mesh {
+    /// Frames custody refused because their `signed` is longer than its byte cap (``MeshEngine/custodyOversizeRefused``),
+    /// the counterpart of ``groupCustodyRefused``.
+    public var custodyOversizeRefused: Int { engine.custodyOversizeRefused }
+
     /// Hands each link event to the engine, in order.
     private func apply(_ linkEvents: [LinkManager.Event]) {
         for event in linkEvents {

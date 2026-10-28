@@ -21,11 +21,11 @@ public struct CustodySync: Sendable {
     /// 2026-09.adpz).
     private var earlyReceipts: SeenSet
 
-    /// Where a refused group frame is noted, at `.debug`: the engine's log, or none.
+    /// Where a refused oversize or group frame is noted, at `.debug`: the engine's log, or none.
     private let log: (any KnitLog)?
 
-    /// Custody bookkeeping with knit-next's tombstone window unless told otherwise, noting group frames custody refuses
-    /// to `log`.
+    /// Custody bookkeeping with knit-next's tombstone window unless told otherwise, noting oversize and group frames custody
+    /// refuses to `log`.
     public init(tombstoneMilliseconds: Int64 = Self.tombstoneMilliseconds, log: (any KnitLog)? = nil) {
         tombstones = SeenSet(windowMilliseconds: tombstoneMilliseconds)
         earlyReceipts = SeenSet(windowMilliseconds: tombstoneMilliseconds)
@@ -43,12 +43,18 @@ public struct CustodySync: Sendable {
     /// ADR 2026-10.7mqm), Android's `groupCustodyRefused`. Not a drop: each was still delivered and relayed.
     public private(set) var groupRefusedCount = 0
 
+    /// Frames custody refused because their `signed` is longer than its byte cap (``CustodyRefusal/oversize``, knit-next
+    /// #227), Android's `custodyOversizeRefused`. Not a drop: each was still delivered and relayed. Our own count too, since
+    /// the cap binds them.
+    public private(set) var oversizeRefusedCount = 0
+
     /// Takes a relayed frame into custody (`ForwardSync.onSeen`) if `authenticate` says so, and answers whether custody
     /// changed, which is what re-reads the advert's digest cue.
     ///
     /// Only custodial types are carried, never an id already held or tombstoned, nor a DM whose recipient's receipt
-    /// came first. The store applies the TTL and the quotas, and refuses a frame that is dead on arrival, dated too
-    /// far ahead, or a group frame whose roster is not its own. Times are on the wall clock.
+    /// came first. The store applies the byte cap, the TTL and the quotas, and refuses a frame whose `signed` is over
+    /// the cap, one that is dead on arrival or dated too far ahead, or a group frame whose roster is not its own. A refusal
+    /// stops nothing but custody: the caller delivers and relays without reading the answer. Times are on the wall clock.
     ///
     /// "Changed" is not "held": a frame its own write evicted changed custody and is not held (``CustodyStoreResult``).
     /// Nothing here pulls a carried frame's photo (ADR 2026-10.ym9y), so nothing reads ``CustodyStoreResult/held`` yet.
@@ -59,9 +65,10 @@ public struct CustodySync: Sendable {
         return noted(store.store(frame, origin: .relayed, now: now), for: frame)
     }
 
-    /// Takes a frame of ours into custody (ORIGIN_SELF): trivially authentic, and under the same quotas and the same group
-    /// gate as everyone's, so every node keeps the same newest frames. Answers whether custody changed, as
-    /// ``carry(_:in:now:authenticate:)`` does.
+    /// Takes a frame of ours into custody (ORIGIN_SELF): trivially authentic, and under the same quotas, the same byte cap
+    /// and the same group gate as everyone's, so every node keeps the same newest frames. Answers whether custody changed,
+    /// as ``carry(_:in:now:authenticate:)`` does. A refusal is the rules' answer before any write, never a thrown error, so
+    /// the ratchet's store units that read it only to re-read the digest cue go on; the send itself still goes.
     public mutating func carryOwn(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64) -> Bool {
         guard admits(frame, in: store, now: now) else {
             return false
@@ -69,22 +76,32 @@ public struct CustodySync: Sendable {
         return noted(store.store(frame, origin: .own, now: now), for: frame)
     }
 
-    /// Counts and logs a roster refusal (`ForwardRepository.store`'s, in Android's words), and answers whether custody
-    /// changed. No other refusal is counted here: the dead and the future-dated are the clock's, and a failed write is
-    /// the database's, which reports it.
+    /// Counts and logs an oversize or a roster refusal (`ForwardRepository.store`'s, in Android's words), and answers whether
+    /// custody changed. No other refusal is counted here: the dead and the future-dated are the clock's, and a failed write
+    /// is the database's, which reports it. An oversize frame is counted as that alone, whatever its roster, as Android's
+    /// cap comes first. The line names the id, the type and the length, never the payload.
     private mutating func noted(_ result: CustodyStoreResult, for frame: CarriedFrame) -> Bool {
-        guard result.refusal == .foreignRoster else {
-            return result.changed
-        }
-        groupRefusedCount += 1
-        // Only a group frame is refused for its roster (`CustodyRules.admission`), so both stores' refusals name one.
-        if let group = frame.envelope.group {
-            let envelope = frame.envelope
+        let envelope = frame.envelope
+        switch result.refusal {
+        case .oversize:
+            oversizeRefusedCount += 1
             log?.log(
                 .debug,
-                "custody refused \(envelope.id.prefix(Self.idCharacters)) from \(envelope.senderId.prefix(Self.idCharacters)): "
-                    + "roster of \(group.id) is not its own"
+                "custody refused \(envelope.id.prefix(Self.idCharacters)) (\(envelope.type.rawValue)): "
+                    + "\(frame.signed.count) signed bytes over the cap"
             )
+        case .foreignRoster:
+            groupRefusedCount += 1
+            // Only a group frame is refused for its roster (`CustodyRules.admission`), so both stores' refusals name one.
+            if let group = envelope.group {
+                log?.log(
+                    .debug,
+                    "custody refused \(envelope.id.prefix(Self.idCharacters)) from \(envelope.senderId.prefix(Self.idCharacters)): "
+                        + "roster of \(group.id) is not its own"
+                )
+            }
+        case .deadOnArrival, .aheadOfWindow, .writeFailed, nil:
+            break
         }
         return result.changed
     }

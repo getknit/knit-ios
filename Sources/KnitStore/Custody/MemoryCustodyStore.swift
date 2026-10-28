@@ -14,6 +14,7 @@ public final class MemoryCustodyStore: CustodyStore {
     }
 
     private struct State: Sendable {
+        var limits: CustodyLimits
         var rows: [ExactKey: Row] = [:]
         var nextSequence = 0
 
@@ -22,12 +23,19 @@ public final class MemoryCustodyStore: CustodyStore {
         }
     }
 
-    private let limits: CustodyLimits
-    private let state = Lock(State())
+    private let state: Lock<State>
 
     /// An empty store with knit-next's limits unless told otherwise.
     public init(limits: CustodyLimits = CustodyLimits()) {
-        self.limits = limits
+        state = Lock(State(limits: limits))
+    }
+
+    /// The limits every rule here runs under. Settable only by a test, which stands for the SQL store reopened by a newer
+    /// build: rows stored under looser limits, then swept under the current ones, as an upgrade meets a row a build without
+    /// the byte cap kept (knit-next #227).
+    var limits: CustodyLimits {
+        get { state.withLock { $0.limits } }
+        set { state.withLock { $0.limits = newValue } }
     }
 
     /// Which frames came from where, for a test or a diagnostic.
@@ -42,8 +50,9 @@ public final class MemoryCustodyStore: CustodyStore {
 
     @discardableResult
     public func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> CustodyStoreResult {
+        let current = limits
         let expiresAt: Int64
-        switch CustodyRules.admission(of: frame.envelope, now: now, limits: limits) {
+        switch CustodyRules.admission(of: frame, now: now, limits: current) {
         case .refused(let reason):
             return .refused(reason)
         case .admitted(let at):
@@ -58,7 +67,7 @@ public final class MemoryCustodyStore: CustodyStore {
             state.rows[key] = Row(frame: frame, entry: entry, origin: origin, receivedAt: now, sequence: state.nextSequence)
             state.nextSequence += 1
             let live = state.live(now: now).map(\.entry)
-            let evicted = CustodyRules.evictions(after: entry, among: live, limits: limits)
+            let evicted = CustodyRules.evictions(after: entry, among: live, limits: current)
             for id in evicted {
                 state.rows[ExactKey(id)] = nil
             }
@@ -109,14 +118,17 @@ public final class MemoryCustodyStore: CustodyStore {
         state.withLock { $0.rows[ExactKey(id)] = nil }
     }
 
+    /// Drops the expired rows and the oversize ones (`deleteExpired` and `deleteLongerThan`, knit-next #227) in one pass,
+    /// each row counted once.
     @discardableResult
     public func sweepExpired(now: Int64) -> Int {
         state.withLock { state in
-            let expired = state.rows.filter { $0.value.entry.expiresAt < now }.keys
-            for key in expired {
+            let cap = state.limits.maxSignedBytes
+            let swept = state.rows.filter { $0.value.entry.expiresAt < now || $0.value.frame.signed.count > cap }.keys
+            for key in swept {
                 state.rows[key] = nil
             }
-            return expired.count
+            return swept.count
         }
     }
 }

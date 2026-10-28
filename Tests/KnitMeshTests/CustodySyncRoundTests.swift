@@ -28,8 +28,10 @@ import Testing
 
     @Test func aLargeProfileGoesFirstAloneAndItsChatFollowsWithNoKey() {
         // The first pick always goes, and the round stops at the next one rather than skipping it for the chat
-        // behind: the chat would otherwise reach the peer before the key that verifies it.
-        let store = MemoryCustodyStore()
+        // behind: the chat would otherwise reach the peer before the key that verifies it. A frame past the round's whole
+        // budget is over custody's byte cap (knit-next #227), so it stands for a row a build without the cap stored, which
+        // the round serves until the sweep deletes it.
+        let store = MemoryCustodyStore(limits: CustodyLimits(maxSignedBytes: 1_000_000))
         var sync = CustodySync()
         _ = sync.carry(frame("profile-b", type: .profile, from: bob, payloadBytes: 300 * 1024), in: store, now: now) { true }
         for id in ["c1", "c2", "c3"] {

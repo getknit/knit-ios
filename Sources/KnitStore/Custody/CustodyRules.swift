@@ -60,7 +60,7 @@ public enum CustodyRules {
     /// When custody of a frame ends (``expiresAt(of:limits:)``), or `nil` when its time alone refuses it: already past
     /// that instant (a skewed peer re-serving what everyone has swept, or a `sentAt` of 0), or dated more than five
     /// minutes ahead of `now`, which would make it unsweepable and the newest frame in every bucket. A store admits a
-    /// frame through ``admission(of:now:limits:)``, which also applies the group gate.
+    /// frame through ``admission(of:now:limits:)``, which also applies the byte cap and the group gate.
     public static func expiry(of envelope: RelayEnvelope, now: Int64, limits: CustodyLimits) -> Int64? {
         guard case .admitted(let expiresAt) = timing(of: envelope, now: now, limits: limits) else {
             return nil
@@ -69,11 +69,20 @@ public enum CustodyRules {
     }
 
     /// Whether custody takes a frame, and when it ends if so (`ForwardRepository.store`, `ForwardRepository.kt:96-117`
-    /// at knit-next `e0cbb842a`). The refusals come in Kotlin's order: dead on arrival, then past the future window, then
-    /// a group frame whose roster is not its own (``carriesGroup(_:from:)``, knit-next ADR 2026-10.7mqm). Each is a
-    /// function of the frame and `now` alone, so every node refuses alike, and it binds every origin, our own frames
-    /// included. Both stores call it before they write, so neither can skip the gate.
-    public static func admission(of envelope: RelayEnvelope, now: Int64, limits: CustodyLimits) -> Admission {
+    /// at knit-next `e0cbb842a`, and the byte cap of knit-next #227). The refusals come in Kotlin's order: a `signed` longer
+    /// than ``CustodyLimits/maxSignedBytes``, then dead on arrival, then past the future window, then a group frame whose
+    /// roster is not its own (``carriesGroup(_:from:)``, knit-next ADR 2026-10.7mqm). Each is a function of the frame and
+    /// `now` alone, so every node refuses alike, and it binds every origin, our own frames included. The order decides
+    /// only which reason is counted: an oversize frame naming a foreign roster is ``CustodyRefusal/oversize``, and the
+    /// roster counter does not move. Both stores call it before they write, so neither can skip the gate, and a refusal
+    /// writes and evicts nothing.
+    ///
+    /// The byte cap counts ``CarriedFrame/signed`` alone, never `sig`, and keeps a frame of exactly the cap.
+    public static func admission(of frame: CarriedFrame, now: Int64, limits: CustodyLimits) -> Admission {
+        guard frame.signed.count <= limits.maxSignedBytes else {
+            return .refused(.oversize)
+        }
+        let envelope = frame.envelope
         let timed = timing(of: envelope, now: now, limits: limits)
         guard case .admitted = timed else {
             return timed
@@ -207,15 +216,18 @@ public enum CustodyRules {
     }
 }
 
-/// Why custody did not take a frame. Only ``foreignRoster`` is counted (`groupCustodyRefused`); none is a drop, since the
-/// frame is still delivered and relayed.
+/// Why custody did not take a frame. Only ``oversize`` (`custodyOversizeRefused`) and ``foreignRoster``
+/// (`groupCustodyRefused`) are counted; none is a drop, since the frame is still delivered and relayed.
 public enum CustodyRefusal: Sendable, Equatable {
+    /// Its `signed` bytes are longer than ``CustodyLimits/maxSignedBytes`` (knit-next #227). Checked first, so it is the
+    /// reason given whatever else the frame fails.
+    case oversize
     /// Past its frame-global expiry already: a skewed peer re-serving what every node has swept, or a `sentAt` of 0.
     case deadOnArrival
     /// Dated more than ``WireProtocol/maxFutureSkewMilliseconds`` ahead of the store's clock.
     case aheadOfWindow
     /// A group frame whose roster does not derive to its id, or does not name its sender (knit-next ADR 2026-10.7mqm).
     case foreignRoster
-    /// The store's write failed, and it holds nothing new. Never the rules' answer, and never counted as a roster refusal.
+    /// The store's write failed, and it holds nothing new. Never the rules' answer, and never counted as a refusal.
     case writeFailed
 }

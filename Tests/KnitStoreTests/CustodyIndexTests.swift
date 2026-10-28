@@ -43,7 +43,9 @@ private func carried(
 
     @Test(arguments: kinds)
     func theLiveIndexReadsEachFieldWithoutDecoding(kind: CustodyStoreKind) throws {
-        let store = try kind.make()
+        // Over the byte cap (knit-next #227), so the big frame's `signed` takes CBOR's four-byte length: a row a build
+        // without the cap stored is listed at that width until the sweep deletes it.
+        let store = try kind.make(CustodyLimits(maxSignedBytes: 1_000_000))
         let group = carried("g1", sender: "alice", recipient: nil, group: roster(["alice"]))
         let profile = carried("p1", sender: "bob", recipient: nil, type: .profile)
         let big = carried("big", payload: Array(repeating: 7, count: 70_000))
