@@ -459,10 +459,10 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   2026-10.p95v) and `pr`'s label 8 (badges, knit-next ADR 2026-10.r99s). A wrong type under any of them fails the open
   here, as on Android (knit-ios #14). `cl` and `sc` are named-only, as `gk` and `xf` are, and the named layout checks
   them too. `wire-v1.json` holds twelve `messageContentV2*` fixtures, and the codec models nine; the other three
-  decode with their new fields checked and dropped (`GoldenVectorTests`). Since kotlinx 1.12.0 (`97e1747f`), Android
-  skips a negative integer key as an unknown label, and one of huge magnitude wraps to a real label, while
-  `CBORLabeledFields` refuses both. A v3 plaintext carrying one opens on Android and not here: no encoder writes one,
-  and the fix is owed (knit-ios #13).
+  decode with their new fields checked and dropped (`GoldenVectorTests`). As kotlinx 1.12.0 does (`97e1747f`),
+  `CBORLabeledFields` reads a negative integer key with argument `n` as the label `~n`, the bits of kotlinx's wrapped
+  `Long`: `20` (−1) is skipped as an unknown label, and one of huge magnitude wraps to a real one
+  (`3B FFFFFFFFFFFFFFEF` reads as 16). No encoder writes one (knit-ios #13).
 
 ### Sessions
 

@@ -365,6 +365,27 @@ import Testing
         #expect(fixture.engine.groupRatchet.floors(in: group.id, for: me.nodeId, now: now).undecryptableIds == 0, "never evidence")
     }
 
+    /// A sealed group scope config (ctl 7, knit-next ADR 2026-10.8kfx), which Android applies (`InboundPipeline.kt:1939` at
+    /// `e63f15f4`), commits our chain's advance and nothing else, as `WIRE_COMPAT.md` asks: the vector's bytes, `sc` included.
+    @Test func aSealedGroupScopeConfigAdvancesTheChainAndLeavesNothing() throws {
+        let (fixture, android) = try rig()
+        let group = fixture.holdGroup(with: [alice])
+        let author = GroupFormAuthor(android, in: group.id)
+        try deliverSeed(fixture, author, id: frameIdOf("seed-sc"))
+        _ = fixture.engine.drainEvents()
+        fixture.transport.clear()
+        let config = GoldenVectors.bytes("messageContentScopeConfigGroup")
+        #expect(try MessageContent(decoding: config).ctl == 7)
+        fixture.deliver(try author.frame(group, id: frameIdOf("gsc1"), sealing: config, sentAt: now + 3), from: alice)
+        #expect(fixture.recvChains(group.id, from: alice).first?.next == 1, "committed, its index spent")
+        #expect(fixture.stores.messages.message(frameIdOf("gsc1")) == nil && fixture.engine.drainEvents().isEmpty, "no row, no event")
+        #expect(fixture.engine.dropped.isEmpty && fixture.transport.written(.receipt).isEmpty && fixture.controls(to: android).isEmpty)
+        // The chain goes on: the next message opens at index 1 and delivers.
+        fixture.deliver(try author.frame(group, id: frameIdOf("gsc2"), body: "after", sentAt: now + 4), from: alice)
+        #expect(fixture.stores.messages.message(frameIdOf("gsc2"))?.body == "after")
+        #expect(fixture.recvChains(group.id, from: alice).first?.next == 2)
+    }
+
     /// A group frame whose plaintext will not decode drops before its commit, the chain index unspent, as Kotlin drops it
     /// on the peek (`InboundPipeline.kt:1621-1629`).
     @Test func aGroupFrameThatWillNotDecodeLeavesTheChainWhereItWas() throws {

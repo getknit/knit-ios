@@ -50,8 +50,9 @@ public enum TextLimits {
         return String(output)
     }
 
-    /// The longest prefix of `text` within `limit` UTF-16 code units. Kotlin's `take` can split a surrogate
-    /// pair; this stops before one, which only differs on a name that ends mid-emoji.
+    /// The longest prefix of `text` within `limit` UTF-16 code units that ends on a code-point boundary: a cut that
+    /// would split a surrogate pair stops before the pair. Kotlin's `clampToUtf16` does the same (`TextLimits.kt:48-53`
+    /// at knit-next e63f15f4, since 3d587088), so both platforms cut the same text to the same prefix.
     public static func truncated(_ text: String, toUTF16 limit: Int) -> String {
         guard text.utf16.count > limit else {
             return text

@@ -70,9 +70,9 @@ import Testing
         #expect(content == MessageContent(body: "hi"))
     }
 
-    /// A key that is neither text nor an unsigned label is refused; kotlinx would read it as a label taken from its
-    /// header, which nothing writes.
-    @Test(arguments: [CBOR.negative(0), CBOR.bytes([1]), CBOR.bool(true)])
+    /// A key that is neither text nor an integer is refused, as kotlinx's `readNumber` throws on it. A negative key is
+    /// a wrapped label (``KotlinxRulesTests``).
+    @Test(arguments: [CBOR.bytes([1]), CBOR.bool(true), CBOR.array([]), CBOR.null])
     func aKeyThatIsNeitherTextNorALabelIsRefused(key: CBOR) {
         #expect(decode([(key, .unsigned(1)), (.unsigned(1), .text("hi"))]) == nil)
     }

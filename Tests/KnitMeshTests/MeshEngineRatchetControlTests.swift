@@ -199,6 +199,28 @@ import Testing
         #expect(fixture.engine.dropped[.reactionRefused] == nil)
     }
 
+    /// A scope's spool config (ctl 7, knit-next ADR 2026-10.8kfx) is a code this build does not know. Android applies it
+    /// (`applyCtlInTxn`, `InboundPipeline.kt:1425-1428` at `e63f15f4`), while `WIRE_COMPAT.md` counts on a build without
+    /// the spool opening it, committing the chain's advance and applying nothing (`arrival(of:)`'s `default`). Sealed as
+    /// Android seals one, the `messageContentScopeConfigDm` vector's bytes with their `sc`, which ``MessageContent`` drops.
+    @Test func aSealedScopeConfigAdvancesTheChainAndLeavesNothing() throws {
+        let (fixture, android) = try rig()
+        let prekey = try fixture.ourPrekey()
+        let config = GoldenVectors.bytes("messageContentScopeConfigDm")
+        #expect(try MessageContent(decoding: config).ctl == 7)
+        #expect(try MessageContent(decoding: config).encoded != config, "the vector carries what a re-encoding drops")
+        fixture.deliver(try android.dm(sealing: config, to: me, prekey: prekey, id: frameIdOf("ctl-sc1"), sentAt: now + 3), from: android)
+        #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [1], "committed, its index spent")
+        #expect(fixture.stores.messages.message(frameIdOf("ctl-sc1")) == nil, "never a row")
+        #expect(fixture.engine.drainEvents().isEmpty)
+        #expect(fixture.engine.dropped.isEmpty)
+        #expect(fixture.transport.written(.receipt).isEmpty && fixture.sealedReceipts(to: android).isEmpty, "never acknowledged")
+        // The chain goes on from there: the next message opens at index 1 and delivers.
+        fixture.deliver(try android.dm("after", to: me, prekey: prekey, id: frameIdOf("ctl-sc2"), sentAt: now + 4), from: android)
+        #expect(fixture.stores.messages.message(frameIdOf("ctl-sc2"))?.body == "after")
+        #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [2])
+    }
+
     @Test func aCtlWithoutItsPayloadAdvancesTheChainAndAppliesNothing() throws {
         let (fixture, android) = try rig(version: 10)
         let prekey = try fixture.ourPrekey()

@@ -177,7 +177,10 @@ private struct CBORReader {
             defer { index += length }
             return Array(bytes[index..<index + length])
         }
-        // Indefinite: definite chunks of the same major type until a break.
+        // Indefinite: definite chunks of the same major type until a break, joined. A text's UTF-8 is checked once on
+        // the joined bytes (`readItem`), so a code point may straddle two chunks, as knit-next's `CborText.chunks`
+        // (`CborText.kt:52`, `:99-109` at e63f15f4, ADR 2026-10.qjap) and kotlinx's
+        // `readIndefiniteLengthStringChunks` (`Decoder.kt:607`) join before they decode.
         var joined: [UInt8] = []
         while true {
             let chunkInitial = try readByte()
@@ -189,12 +192,8 @@ private struct CBORReader {
                 throw .invalidChunk
             }
             let length = try readCount(chunkInfo, initial: chunkInitial, unitSize: 1)
-            let chunk = Array(bytes[index..<index + length])
+            joined += bytes[index..<index + length]
             index += length
-            if major == .text, String(validating: chunk, as: UTF8.self) == nil {
-                throw .invalidUTF8
-            }
-            joined += chunk
         }
     }
 

@@ -25,11 +25,12 @@ import Testing
         #expect(TextLimits.normalizeSingleLine("\u{180E}Ann\u{180E}") == "\u{180E}Ann\u{180E}")
     }
 
-    /// IOS-5: a signed frame whose text is not UTF-8 is refused here (RFC 8949), while kotlinx-serialization-cbor 1.11.0
-    /// reads it with `decodeToString()` (`Decoder.kt:285`), which puts U+FFFD in place of the bad bytes. Android then
-    /// verifies it over the raw `signed` bytes, carries it and lists the lossy id in its digest, which never agrees with
-    /// this port's. This pins the half this port owns: the item is refused, not repaired.
-    @Test func textThatIsNotUTF8IsRefusedWhereKotlinxRepairsIt() {
+    /// IOS-5: a signed frame whose text is not UTF-8 is refused here (RFC 8949). Since knit-next a0a29148 (ADR
+    /// 2026-10.qjap) Android refuses it too on every path it walks with `CborText`: the signed envelope and each
+    /// payload it checks. kotlinx-serialization-cbor 1.12.0 still repairs it off those paths, reading text with
+    /// `decodeToString()`, which puts U+FFFD in place of the bad bytes: the sealed-plaintext gap `wire-format.md`
+    /// records. This pins the half this port owns: the item is refused, not repaired.
+    @Test func textThatIsNotUTF8IsRefusedAsCborTextRefusesIt() {
         // {"id": "a\u{FF}"}: a one-entry map whose value is a two-byte text string holding an invalid byte.
         let item: [UInt8] = [0xA1, 0x62, 0x69, 0x64, 0x62, 0x61, 0xFF]
         #expect(throws: CBORError.invalidUTF8) {

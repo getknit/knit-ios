@@ -105,6 +105,18 @@ import Testing
         #expect(nan.isNaN)
     }
 
+    /// The chunks of an indefinite-length text are joined before their UTF-8 is checked, as knit-next's `CborText`
+    /// (`CborText.kt:52`, `:99-109`, ADR 2026-10.qjap) and kotlinx (`readIndefiniteLengthStringChunks`) join them, so
+    /// a code point may straddle two chunks; joined bytes that are still not UTF-8 stay refused (the table below).
+    @Test func aCodePointSplitAcrossTextChunksDecodes() throws {
+        // U+1F600 is F0 9F 98 80, split two and two.
+        let split: [UInt8] = [0x7F, 0x62, 0xF0, 0x9F, 0x62, 0x98, 0x80, 0xFF]
+        #expect(try CBOR.decode(split) == .text("\u{1F600}"))
+        // A three-way split with an empty chunk, and the same text as a map key.
+        #expect(try CBOR.decode([0x7F, 0x61, 0xF0, 0x60, 0x62, 0x9F, 0x98, 0x61, 0x80, 0xFF]) == .text("\u{1F600}"))
+        #expect(try CBOR.decode([0xA1] + split + [0x01]) == .map([CBOR.Entry(key: .text("\u{1F600}"), value: .unsigned(1))]))
+    }
+
     @Test(
         arguments: [
             ([], CBORError.truncated),
@@ -121,6 +133,8 @@ import Testing
             ([0xFF], .unexpectedBreak),
             ([0x81, 0xFF], .unexpectedBreak),
             ([0x62, 0xC3, 0x28], .invalidUTF8),
+            ([0x7F, 0x62, 0xF0, 0x9F, 0xFF], .invalidUTF8),
+            ([0x7F, 0x62, 0xF0, 0x9F, 0x61, 0x61, 0xFF], .invalidUTF8),
             ([0x5F, 0x61, 0x61, 0xFF], .invalidChunk),
             ([0x5F, 0x5F, 0xFF, 0xFF], .invalidChunk),
             ([0x5B, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF], .lengthExceedsInput),

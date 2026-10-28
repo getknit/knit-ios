@@ -15,13 +15,15 @@ extension CBORLabel {
 /// mirrors, with the value rules ``CBORFields`` lists (tags skipped, every occurrence decoded, the null mark):
 ///
 /// - An unsigned integer key is a label, and a label the class does not have is skipped (`ignoreUnknownKeys`).
+/// - A negative integer key with argument `n` is a label too: `readNumber` (`:406-415`) reads it as the Kotlin `Long`
+///   `-(n + 1)`, which wraps, and `getElementNameForCborLabel` (`:728-730`) compares that `Long` with each element's
+///   label. So it is the label whose 64-bit pattern is `~n`: `20` (−1) matches nothing and is skipped, and
+///   `3B FFFFFFFFFFFFFFFE` reads as label 1. An unsigned key of 2^63 or more is a negative `Long` there, and matches
+///   nothing either, as here.
 /// - A text key is a property name, so `"body"` reads as label 1, and an unknown name is skipped. Names compare by
 ///   their UTF-8 bytes, as Kotlin compares strings, never by Swift's canonical equivalence (ADR 2026-09.jc2x).
 /// - Tags before a key are skipped (`nextTaggedStringOrNumber`, `:346-358`).
-/// - A key of any other major type is refused, as `readNumber` throws on it (`:406-415`).
-///
-/// A negative key is refused here too, while kotlinx reads it as a label and skips it unless it wraps to a real one
-/// (`3B FFFFFFFFFFFFFFEF` reads as 16). No encoder writes one; knit-ios #13 owes the port.
+/// - A key of any other major type is refused, as `readNumber` throws on it.
 internal struct CBORLabeledFields<Label: CBORLabel> {
     private let typeName: String
     private let values: [UInt64: [CBOR]]
@@ -32,6 +34,8 @@ internal struct CBORLabeledFields<Label: CBORLabel> {
             switch entry.key.untagged {
             case .unsigned(let label):
                 collected[label, default: []].append(entry.value)
+            case .negative(let argument):
+                collected[~argument, default: []].append(entry.value)
             case .text(let name):
                 if let label = Label.allCases.first(where: { $0.name.utf8.elementsEqual(name.utf8) }) {
                     collected[label.rawValue, default: []].append(entry.value)

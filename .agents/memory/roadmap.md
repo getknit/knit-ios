@@ -505,15 +505,15 @@ explicit direction.** Update this file in the change that ships an item.
 - **What the pin move to `e63f15f4` found owed** (2026-10-25; `.agents/context/knit-next.md`, "Since then", "Owed
   here"), filed as knit-ios #13 to #17. The decoder and typed-field ones show only with a sender's buggy or hostile
   bytes; j67x's rule can bite between honest phones. Each goes to its plane's owner and reviewer:
-  - **Wire and crypto** (`crypto-owner`; knit-ios #13 for the decoder, #15 for j67x):
-    - pass a code point split across indefinite-length text chunks, as Android and knit-next ADR 2026-10.qjap do
-      (`a0a29148`);
-    - skip a v3 plaintext's negative integer key, as kotlinx 1.12.0 does (`97e1747f`);
+  - **Wire and crypto** (`crypto-owner`; knit-ios #15 for j67x):
     - j67x, all three rules: the race rule, the drained root kept over our own reset, and the spool's scopes, which
       this port leaves out (`6d9627b7`).
 
-    The negative `ttl`/`hops` refusal and the typed fields shipped with knit-ios #14, which also brought KnitWire's
-    decoding in line with kotlinx 1.12.0's (`.agents/context/wire-format.md`, "The CBOR profile").
+    knit-ios #13's decoder items are done: the negative `ttl`/`hops` refusal and the typed fields shipped with
+    knit-ios #14, which also brought KnitWire's decoding in line with kotlinx 1.12.0's, and on 2026-10-28 a code point
+    split across indefinite-length text chunks passes (`a0a29148`, knit-next ADR 2026-10.qjap) and a v3 plaintext's
+    negative integer key reads as kotlinx's wrapped label (`97e1747f`) (`.agents/context/wire-format.md`, "The CBOR
+    profile").
   - **Bluetooth** (`bluetooth-owner`, knit-ios #16): advert bit 2 is reserved as Android's `FLAG_AWARE` and never
     set here (2026-10-28). knit-next `808472a3` turned `FLAG_NO_AWARE` around, so the to-do that said to set the bit
     was dropped. The trial is still owed: `knit-peer` beside a dormant Pixel on `808472a3` or later. The Pixel's

@@ -57,17 +57,40 @@ final class AndroidPeer {
         relay: Bool = true,
         edit: (inout EncEnvelope) -> Void = asSealed
     ) throws -> TestFrame {
-        let aad = MessageCrypto.header(id: id, senderId: nodeId.string, sentAt: sentAt, thread: recipient.nodeId.string)
         let bytes = content.sealBytes(v3: v3)
         #expect(!v3 || bytes.scheme == EncEnvelope.Version.compactRatchet, "v3 asked for content with a compact form")
-        let answer = sessions.sealDm(
-            to: recipient.keys.bundle,
+        return try dm(
+            sealing: bytes.plaintext,
+            v3: bytes.scheme == EncEnvelope.Version.compactRatchet,
+            to: recipient,
             prekey: recipientPrekey,
-            plaintext: bytes.plaintext,
-            aad: aad,
-            now: now ?? sentAt,
-            v3: bytes.scheme == EncEnvelope.Version.compactRatchet
+            id: id,
+            sentAt: sentAt,
+            now: now,
+            signed: signed,
+            relay: relay,
+            edit: edit
         )
+    }
+
+    /// A DM to `recipient` sealing `plaintext` as it is, compact under v3 when `v3` says so and named under v2 otherwise,
+    /// with the rest as ``dm(_:to:prekey:id:sentAt:now:v3:signed:relay:edit:)`` takes it: for a vector's bytes carrying a
+    /// field ``MessageContent`` checks and drops, which a re-encoding would leave out.
+    func dm(
+        sealing plaintext: [UInt8],
+        v3: Bool = false,
+        to recipient: TestPeer,
+        prekey recipientPrekey: PeerPrekey,
+        id: String,
+        sentAt: Int64,
+        now: Int64? = nil,
+        signed: Bool = true,
+        relay: Bool = true,
+        edit: (inout EncEnvelope) -> Void = asSealed
+    ) throws -> TestFrame {
+        let aad = MessageCrypto.header(id: id, senderId: nodeId.string, sentAt: sentAt, thread: recipient.nodeId.string)
+        let answer = sessions.sealDm(
+            to: recipient.keys.bundle, prekey: recipientPrekey, plaintext: plaintext, aad: aad, now: now ?? sentAt, v3: v3)
         guard case .settled(.sealed(var envelope)) = answer else {
             Issue.record("Android's seal failed: \(answer)")
             throw Refused()

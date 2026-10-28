@@ -190,6 +190,66 @@ import Testing
         }
     }
 
+    /// In a labelled class a negative key is a label too: kotlinx reads argument `n` as the `Long` `-(n + 1)`, which
+    /// wraps (`readNumber`, `Decoder.kt:406-415`), and matches it against each element's label (`:728-730`). So `20`
+    /// (−1) is an unknown label and skipped, at the top and in every nested class.
+    @Test func aNegativeKeyInALabelledClassIsAnUnknownLabelAndSkipped() throws {
+        let minusOne = CBOR.negative(0)
+        func labelled(_ entries: [(UInt64, CBOR)]) -> CBOR {
+            .map(entries.map { CBOR.Entry(key: .unsigned($0.0), value: $0.1) })
+        }
+        let mention = labelled([(1, .bytes(fixtureBytes(16, seed: 3))), (2, .text("Ann"))])
+        let quote = labelled([
+            (1, .bytes(fixtureBytes(16, seed: 6))), (2, .bytes(fixtureBytes(16, seed: 3))), (3, .text("A")), (4, .text("s")),
+        ])
+        let reaction = labelled([(1, .bytes(fixtureBytes(16, seed: 7))), (2, .text("👍"))])
+        let plain = labelled([(1, .text("hi")), (2, .array([mention])), (6, quote), (10, reaction)])
+        let expected = try #require(MessageContentV2.decode(plain.encoded))
+        #expect(expected.body == "hi" && expected.mentions.count == 1 && expected.replyTo != nil && expected.rp != nil)
+
+        let skipped = labelled([
+            (1, .text("hi")), (2, .array([mention.adding(minusOne, .text("x"))])), (6, quote.adding(minusOne, .null)),
+            (10, reaction.adding(minusOne, .bytes([1]), first: true)),
+        ]).adding(minusOne, .text("x"), first: true)
+        #expect(MessageContentV2.decode(skipped.encoded) == expected)
+        // Every negative key that wraps to no label is skipped, `3B 7FFFFFFFFFFFFFFF` (`Long.MIN_VALUE`) included.
+        for argument: UInt64 in [4, 1 << 32, .max - 0x7FFF, UInt64(Int64.max)] {
+            #expect(MessageContentV2.decode(plain.adding(.negative(argument), .text("x")).encoded) == expected, "\(argument)")
+        }
+    }
+
+    /// A negative key whose wrapped `Long` is a real label reads as that field: `3B FFFFFFFFFFFFFFFE` is −2^64+1, which
+    /// wraps to 1, the body, and the field's value rules hold under it.
+    @Test func aNegativeKeyThatWrapsToALabelReadsAsThatField() throws {
+        let body = CBOR.negative(~UInt64(1))
+        #expect(
+            CBOR.map([CBOR.Entry(key: body, value: .text("hi"))]).encoded == [0xA1, 0x3B] + [UInt8](repeating: 0xFF, count: 7) + [
+                0xFE, 0x62, 0x68, 0x69,
+            ])
+        #expect(MessageContentV2.decode(CBOR.map([CBOR.Entry(key: body, value: .text("hi"))]).encoded) == MessageContent(body: "hi"))
+        #expect(MessageContentV2.decode(CBOR.map([CBOR.Entry(key: body, value: .unsigned(1))]).encoded) == nil, "a body is text")
+        // `3B FFFFFFFFFFFFFFFF` wraps to 0, the version, which must be an Int.
+        #expect(
+            MessageContentV2.decode(CBOR.map([CBOR.Entry(key: .negative(.max), value: .unsigned(1))]).encoded) == MessageContent(body: ""))
+        #expect(MessageContentV2.decode(CBOR.map([CBOR.Entry(key: .negative(.max), value: .text("x"))]).encoded) == nil)
+        // The last spelling wins, as for a text key and its label.
+        let twice = CBOR.map([CBOR.Entry(key: .unsigned(1), value: .text("a")), CBOR.Entry(key: body, value: .text("b"))])
+        #expect(MessageContentV2.decode(twice.encoded)?.body == "b")
+        // In a nested class: a mention's name under −3 wrapped to 2.
+        let mention = CBOR.map([
+            CBOR.Entry(key: .unsigned(1), value: .bytes(fixtureBytes(16, seed: 3))),
+            CBOR.Entry(key: .negative(~UInt64(2)), value: .text("Ann")),
+        ])
+        let content = try #require(MessageContentV2.decode(CBOR.map([CBOR.Entry(key: .unsigned(2), value: .array([mention]))]).encoded))
+        #expect(content.mentions.map(\.name) == ["Ann"])
+        // `3B FFFFFFFFFFFFFFEF` is the video's 16, whose shape is checked: a video missing its fields refuses the plaintext.
+        let durationOnly = CBOR.map([CBOR.Entry(key: .unsigned(1), value: .unsigned(5))])
+        #expect(MessageContentV2.decode(CBOR.map([CBOR.Entry(key: .unsigned(16), value: durationOnly)]).encoded) == nil)
+        #expect(MessageContentV2.decode(CBOR.map([CBOR.Entry(key: .negative(~UInt64(16)), value: durationOnly)]).encoded) == nil)
+        #expect(
+            MessageContentV2.decode(CBOR.map([CBOR.Entry(key: .negative(~UInt64(16)), value: .null)]).encoded) == MessageContent(body: ""))
+    }
+
     /// Keys compare by their bytes, as kotlinx's name lookup compares Kotlin strings: a Kelvin sign is not a `K`.
     @Test func aKeySwiftCallsEqualIsAnUnknownKey() throws {
         let content = try MessageContent(cbor: .map([entry("body", .text("")), entry("attachment\u{212A}ey", .text("k"))]))

@@ -207,17 +207,9 @@ Kotlin wins.
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Since then** (396 commits, releases `v2.9.0` and `v2.10.0` among them; 24 fixtures added to `wire-v1.json` and
     `ratchet-v1.json` new, none moved). Read on 2026-10-25, and the merged code checked at `e63f15f4`:
-    - **Owed here.** The first two show only when a sender's bytes are buggy or hostile, which no honest build of
-      either side writes. j67x's rule can bite between honest phones, and the last needs a failed database
-      write. `FLAG_NO_AWARE` (knit-ios #16) was owed here too, until `808472a3` turned it around past the pin
-      ("Mirrored ahead of the pin", below):
-      - **A code point split across text chunks** (`a0a29148`, knit-next ADR 2026-10.qjap, knit-ios #13): Android joins an
-        indefinite-length string's chunks before its UTF-8 check (`CborText.kt:99-109`), as kotlinx does. KnitWire also
-        checks each chunk (`CBOR+Decoding.swift:191`), so it refuses what Android takes, though the ADR says both
-        platforms pass it. The check on the joined bytes stays.
-      - **A negative label** (`97e1747f`, kotlinx 1.12.0, knit-ios #13): Android skips a v3 plaintext's negative integer key as an
-        unknown label, and `CBORLabeledFields` refuses it (`crypto.md`). A negative key of huge magnitude wraps to a
-        real label there: `3B FFFFFFFFFFFFFFEF` reads as 16, `video`.
+    - **Owed here.** j67x's rule can bite between honest phones, and the last needs a failed database write.
+      `FLAG_NO_AWARE` (knit-ios #16) was owed here too, until `808472a3` turned it around past the pin ("Mirrored
+      ahead of the pin", below), and #13's two decoder items were too, until they landed ("Taken since the pin"):
       - **j67x's third rule** (`6d9627b7`, knit-ios #15): over our own unanswered reset, still draining, Android keeps the drained root
         as `prevRoot`, and `sealReset` takes the held one (`crypto.md`). It belongs with j67x's other two rules, below.
       - **A blob that fails to store** (knit-ios #17): Android keeps the want and its asks (`BlobExchange.onReceived`,
@@ -226,6 +218,13 @@ Kotlin wins.
     - **Taken since the pin** (knit-ios #14), each refused or accepted here as Android refuses or accepts it:
       - **A negative `ttl` or `hops`** (`9c56cd31`, from #13): `WireEnvelope` refuses one once it has decoded, as
         `decodeWire` does (`Wire.kt:1071-1076`), before the crossing and the seen set.
+      - **A code point split across text chunks** (`a0a29148`, knit-next ADR 2026-10.qjap, from #13): KnitWire joins an
+        indefinite-length string's chunks before its one UTF-8 check, as `CborText.chunks` (`CborText.kt:52`,
+        `:99-109`) and kotlinx do, so a code point may straddle two chunks; joined bytes that are not UTF-8 stay
+        refused.
+      - **A negative label** (`97e1747f`, kotlinx 1.12.0, from #13): `CBORLabeledFields` reads a v3 plaintext's
+        negative key with argument `n` as the label `~n`, the bits of kotlinx's wrapped `Long`: `20` (−1) is skipped as
+        unknown, and `3B FFFFFFFFFFFFFFEF` reads as 16, `video`.
       - **Fields Android now types** (`13387e0a`, `651cdc25`, `e3e41a2e`, `33d83aca`, `236f56b5`, `8724b6b3`): KnitWire
         checks each one's CBOR type without modelling it, so a wrong-typed room post stays out of custody and a
         wrong-typed sealed message fails to open (`wire-format.md`). `xf` and a blob request's `fastOnly`, older but

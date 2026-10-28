@@ -30,7 +30,11 @@ sources):
   reads as −1, and `3B FFFFFFFFFFFFFFFE` as 1. A `Long` wraps with no range check.
 - **Tags are skipped** before every value and every key, a run of them included. A tagged `F6` is not null, so it
   fails a nullable field.
-- **An integer key in a named map is skipped** as unknown. A key of any other non-text kind fails.
+- **An integer key in a named map is skipped** as unknown. A key of any other non-text kind fails. In a labelled class
+  (the v3 plaintext) a negative key with argument `n` is the label `~n`, the bits of kotlinx's wrapped `Long`: `20`
+  (−1) is unknown and skipped, and `3B FFFFFFFFFFFFFFFE` reads as label 1.
+- **An indefinite-length text's chunks are joined, then checked** as UTF-8 once, as `CborText.chunks` and kotlinx
+  do, so a code point may straddle two chunks (knit-next ADR 2026-10.qjap).
 - **Every copy of a duplicated key is decoded,** and the last one wins.
 - **Keys compare by their UTF-8 bytes,** as Kotlin's `getElementIndex` compares strings, never by Swift's canonical
   equivalence: a key spelled with a Kelvin sign is unknown, not `attachmentKey` (ADR 2026-09.jc2x).
