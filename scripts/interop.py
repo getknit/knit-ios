@@ -4476,7 +4476,7 @@ def iphone_relay(arguments: argparse.Namespace) -> int:
         )
         # The phone and the iPhone back-fill the newcomer, and new frames queue behind that, as in `relay`.
         run.step("custody-iphone-phone", lambda: _converges(ios, phone, 900))
-        run.step("custody-peer-iphone", lambda: _peers_converge(peer, ios, 300))
+        run.step("custody-peer-iphone", lambda: _peers_converge(peer, ios, 300, frozenset()))
         # Neither end links the other, and the iPhone refuses every other node, so a photo crosses only as the
         # iPhone's serve: each end wants the other's photo and asks its neighbours, and the iPhone holds the copy
         # the photo's owner pushed it (ADR 2026-10.ym9y). Android pulls only a photo whose owner it does not link.
@@ -4671,10 +4671,12 @@ def _group_walk(run: Run, hub: Node, phone: Phone, phone_id: str, far: Node, gho
     # 2
     hub.command(cmd="accept", conv=trio)
     reply = f"interop group reply {nonce}"
+    # The hub's first send in the group mints, so in the group form it seeds each member.
+    seeds = _node_ratchet_counts(hub).get("groupSeedsSent", 0)
     sent = hub.command(cmd="group-send", conv=trio, text=reply)
     run.step("reply-on-phone", lambda: _timed(lambda: _has(phone.state(trio), reply), 30))
     run.step("reply-on-far-end", lambda: _latency(far.wait(lambda line: _message(line, reply), 60)))
-    run.step("reply-sealed-to-both", lambda: _sealed_to(hub, sent["id"], {phone_id, far_id}))
+    run.step("reply-sealed-to-both", lambda: _sealed_to(hub, sent["id"], {phone_id, far_id}, seeds))
     run.step("reply-ticked", lambda: _delivered(hub, sent, 60))
     run.step("phone-message-ticked", lambda: _timed(lambda: _received(phone.state(trio), first), 60))
     # 3
@@ -4700,8 +4702,10 @@ def _group_walk(run: Run, hub: Node, phone: Phone, phone_id: str, far: Node, gho
     run.step("far-leave-on-phone", lambda: _timed(lambda: _phone_row(phone, trio, f"leave:{trio}:{far_id}"), 60))
     run.step("hub-roster-without-far-end", lambda: _roster(hub, trio, [hub_id, phone_id], departed=[far_id]))
     body = f"interop group after a leave {nonce}"
+    # The departure retired the hub's send chain, so this send mints again and seeds the phone alone.
+    seeds = _node_ratchet_counts(hub).get("groupSeedsSent", 0)
     sent = hub.command(cmd="group-send", conv=trio, text=body)
-    run.step("after-leave-sealed-to-phone-alone", lambda: _sealed_to(hub, sent["id"], {phone_id}))
+    run.step("after-leave-sealed-to-phone-alone", lambda: _sealed_to(hub, sent["id"], {phone_id}, seeds))
     run.step("after-leave-on-phone", lambda: _timed(lambda: _has(phone.state(trio), body), 60))
     run.step("after-leave-not-on-far-end", lambda: _left_out(far, body, 20))
     # 6
@@ -4784,12 +4788,25 @@ def _roster(node: Node, group: str, members: list[str], departed: list[str] | No
     return {"members": len(members)}
 
 
-def _sealed_to(node: Node, message_id: str, expected: set[str]) -> dict:
-    """The sealed chat `message_id`, as the node carries it, is wrapped to `expected` and to nobody else."""
+def _sealed_to(node: Node, message_id: str, expected: set[str], seeds_before: int | None = None) -> dict:
+    """The sealed chat `message_id`, as the node carries it, is sealed to `expected` and to nobody else. A v1 frame names
+    them in the keys it wraps. A frame in the group ratchet's form wraps none, and whoever holds its chain can open it
+    (`ControlLines.describe`), so the check reads where the chain went: the node's roster without itself, and, given its
+    `groupSeedsSent` from before the send, a seed for each of `expected` since, which a send that minted has sent."""
     frame = next((frame for frame in node.command(cmd="custody")["frames"] if frame["id"] == message_id), None)
     if frame is None or "wrappedTo" not in frame:
         raise RuntimeError(f"carries no sealed frame {message_id}")
     wrapped = set(frame["wrappedTo"])
+    if frame.get("groupForm"):
+        roster = set(_group_of(node, frame["group"])["members"]) - {node.node_id}
+        if wrapped or roster != expected:
+            raise RuntimeError(f"group form wrapped to {sorted(wrapped)} under roster {sorted(roster)}, not {sorted(expected)}")
+        if seeds_before is None:
+            return {"groupForm": True, "roster": len(roster)}
+        seeds = _node_ratchet_counts(node).get("groupSeedsSent", 0) - seeds_before
+        if seeds < len(expected):
+            raise RuntimeError(f"group form with {seeds} seeds sent since, not {len(expected)}")
+        return {"groupForm": True, "roster": len(roster), "seeds": seeds}
     if wrapped != expected:
         raise RuntimeError(f"wrapped to {sorted(wrapped)}, not {sorted(expected)}")
     return {"wrappedTo": len(wrapped)}
@@ -6247,7 +6264,8 @@ def iphone_soak(arguments: argparse.Namespace) -> int:
         # The back-fill comes first, as in `soak`: a newcomer takes the other side's whole custody, one record per write.
         run.step("custody-converges-first", lambda: _converges(ios, phone, 900))
         if peer:
-            run.step("custody-peer-converges-first", lambda: _peers_converge(peer, ios, 420))
+            # The peer is a fresh identity in no group, so nobody serves it a group frame the iPhone carries.
+            run.step("custody-peer-converges-first", lambda: _peers_converge(peer, ios, 420, frozenset()))
             # Android trims its room to 2,000 rows every 10 minutes, a stranger's posts first, so a lab phone full of
             # earlier runs kept only the peer's last few minutes. A DM from the phone makes the peer someone it
             # talks to, whose posts it keeps; it crosses the iPhone too.
@@ -6289,7 +6307,7 @@ def iphone_soak(arguments: argparse.Namespace) -> int:
             run.step("peer-memory-flat", lambda: _memory(peer_samples))
         run.step("custody-converges-at-end", lambda: _converges(ios, phone, 300))
         if peer:
-            run.step("custody-peer-converges-at-end", lambda: _peers_converge(peer, ios, 300))
+            run.step("custody-peer-converges-at-end", lambda: _peers_converge(peer, ios, 300, frozenset()))
     finally:
         stop.set()
         if peer:

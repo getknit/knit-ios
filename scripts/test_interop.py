@@ -197,6 +197,51 @@ class WholeFileChecksTest(unittest.TestCase):
         self.assertEqual(interop._resumed_since({"sent": 3}, {}, "resumedIn"), 0)
 
 
+FAR = "kdlj2wquj6kcfzo6ykciiyuviy"
+GROUP = "g-cb9d8ca1db033848ec74d40f"
+
+
+class FakeNode:
+    """Answers a node's `custody`, `groups` and `ratchet` control commands with one carried frame, one group and a
+    `groupSeedsSent` count, as `ControlLines` shapes them."""
+
+    def __init__(self, frame: dict, members: list[str], seeds: int = 0) -> None:
+        self.node_id = IPHONE
+        self.frame = {"id": "m1", "type": "chat", "from": IPHONE, "group": GROUP, **frame}
+        self.members = members
+        self.seeds = seeds
+
+    def command(self, **command: str) -> dict:
+        return {
+            "custody": {"frames": [self.frame]},
+            "groups": {"groups": [{"id": GROUP, "members": self.members, "departed": []}]},
+            "ratchet": {"groups": {"groupSeedsSent": self.seeds}},
+        }[command["cmd"]]
+
+
+class SealedToTest(unittest.TestCase):
+    def test_a_v1_frame_is_read_by_its_wrapped_keys(self) -> None:
+        node = FakeNode({"v": 1, "groupForm": False, "wrappedTo": [PHONE, FAR]}, [IPHONE, PHONE, FAR])
+        self.assertEqual(interop._sealed_to(node, "m1", {PHONE, FAR}), {"wrappedTo": 2})
+        with self.assertRaisesRegex(RuntimeError, "wrapped to"):
+            interop._sealed_to(node, "m1", {PHONE})
+
+    def test_a_group_form_frame_is_read_by_the_roster_and_the_seeds_since(self) -> None:
+        node = FakeNode({"v": 2, "groupForm": True, "wrappedTo": []}, [IPHONE, PHONE, FAR], seeds=6)
+        self.assertEqual(interop._sealed_to(node, "m1", {PHONE, FAR}, 4), {"groupForm": True, "roster": 2, "seeds": 2})
+        self.assertEqual(interop._sealed_to(node, "m1", {PHONE, FAR}), {"groupForm": True, "roster": 2})
+        with self.assertRaisesRegex(RuntimeError, "1 seeds sent since, not 2"):
+            interop._sealed_to(node, "m1", {PHONE, FAR}, 5)
+
+    def test_a_group_form_frame_under_another_roster_or_with_a_wrap_fails(self) -> None:
+        after_a_leave = FakeNode({"v": 2, "groupForm": True, "wrappedTo": []}, [IPHONE, PHONE, FAR])
+        with self.assertRaisesRegex(RuntimeError, "under roster"):
+            interop._sealed_to(after_a_leave, "m1", {PHONE})
+        wrapped = FakeNode({"v": 2, "groupForm": True, "wrappedTo": [PHONE]}, [IPHONE, PHONE])
+        with self.assertRaisesRegex(RuntimeError, "group form wrapped to"):
+            interop._sealed_to(wrapped, "m1", {PHONE})
+
+
 class RunTest(unittest.TestCase):
     def test_an_inconclusive_step_is_no_failure(self) -> None:
         run = interop.Run()
