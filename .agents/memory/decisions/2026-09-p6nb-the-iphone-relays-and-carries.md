@@ -92,3 +92,7 @@ custody. Past it, one frame goes at a time: the oldest `(sentAt, id)` frame of t
 recounted after each. The sender, group and room trims still keep their newest N. Custody also refuses a group frame
 whose `members + departed` do not derive to its id or do not name its sender. Both are knit-next ADR 2026-10.7mqm's
 rules, checked against its `vectors/custody-v1.json`.
+
+**Amended 2026-10-29, for knit-next #176 and #235 (ADR 2026-10.metv):** a digest reply serves group frames to any peer
+that lacks them, member or not, as knit-next ADR 2026-10.hr9f does on Android. A non-member never back-filled kept a
+smaller bucket for each member, held DMs the members' quotas had evicted, and served them back at every exchange.

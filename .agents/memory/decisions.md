@@ -123,3 +123,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-11.gjtd](decisions/2026-11-gjtd-a-name-is-screened-by.md) | A name is screened by the word lists when it is set and when it is drawn | moderation, interop, text |
 | [2026-11.adrq](decisions/2026-11-adrq-text-dms-ride-spool-relays.md) | Text DMs ride spool relays, in debug builds until approved | scope, transport, spool, interop |
 | [2026-11.xfcq](decisions/2026-11-xfcq-our-own-profile-frame-is.md) | Our own profile frame is kept, so an evicted stamp goes back as its bytes | crypto, custody, profiles |
+| [2026-10.metv](decisions/2026-10-metv-custody-serves-a-group-s.md) | custody serves a group's frames to any peer | custody, convergence, groups |

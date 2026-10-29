@@ -108,8 +108,9 @@ A node carries frames for people who are not in range yet. This is store-and-for
     `CustodyLimits.swift`. The receipt tombstone stays at least the TTL, `PendingInbound`'s 200 follows the per-sender
     quota, everything derived from the TTL moves with it, and a migration restamps `expiresAt` from `sentAt`. The room
     keeps 6 h. Until then, a 7-day node and a 24-hour node never agree on a digest.
-  - **Item 11** (`5c7ce27a`): a group's roster, name and photo sealed. At that break, `ForwardSync`'s member-only
-    offer goes, and group frames are offered like room frames.
+  - **Item 11** (`5c7ce27a`): a group's roster, name and photo sealed. The member-only offer it was to drop at that
+    break is gone already, with no wire break: both ports offer group frames like room frames (knit-next ADR
+    2026-10.hr9f, ADR 2026-10.metv).
 - **Early purge:** a cleartext receipt from a DM's recipient removes that DM and tombstones its id for 24 h.
   Sealed receipts purge nothing.
 - **A receipt that arrives before its DM vaccinates the DM on arrival** (knit-next ADR 2026-09.adpz, #100). The
@@ -127,17 +128,16 @@ A node carries frames for people who are not in range yet. This is store-and-for
 
 - At link-up and every 60 s, each side sends a `DIGEST` record listing every live custody id.
 - On receiving the peer's `DIGEST`, Android pushes every live frame the list omits (`ForwardSync.kt:136-163`). Each
-  goes out as a fresh `WireEnvelope` with `ttl = 8` and `hops = 0`, with `sig` and `signed` copied verbatim. Since
-  knit-next `9f53dc34f` (its ADR 2026-10.hr9f, #176, #235) a group's frames go to any peer whose digest lacks them, as
-  every other frame does (`ForwardSync.kt:186`): a non-member's per-sender bucket otherwise drifted from the members'
-  and re-served frames they had evicted. This port still serves a group frame only to a roster member
-  (`CustodySync.swift:213-219`), which is owed (knit-next.md, "Owed here").
+  goes out as a fresh `WireEnvelope` with `ttl = 8` and `hops = 0`, with `sig` and `signed` copied verbatim. Group
+  frames go to any peer that lacks them, member or not, as room posts do (knit-next ADR 2026-10.hr9f, `9f53dc34f`).
+  A non-member that is never back-filled keeps a smaller bucket for each member, so it holds frames the members
+  evicted and serves them back at every exchange.
 - **This port answers in capped rounds** (ADR 2026-10.f5zs), its own rule and not a custody constant. A peer's
   digests are metered, a burst of 2 and then one per 30 s, and the rest are dropped. A round picks from
   `CustodyStore.liveIndex`, which decodes nothing: profiles first, then newest received first, minus the digest's ids
   and whatever already crossed the link either way. It sends up to 200 frames or 256 KiB as encoded, keys ahead
   counted in the bytes. The first pick always goes, and the round stops at the first pick that would pass the budget.
-  A group frame whose roster lacks the peer takes no slot. While the link still holds 128 KiB unwritten, the newest
+  A group frame takes a slot like any other, member or not. While the link still holds 128 KiB unwritten, the newest
   digest waits in one slot per link. Each 60 s digest answers the next slice, so a newcomer facing a full custody
   fills in about five exchanges, newest first.
 - **Android pushes custody only in answer to a DIGEST.** A node that sends none gets no back-fill. A node

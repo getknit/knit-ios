@@ -464,9 +464,8 @@ Kotlin wins.
         `FeedWindow` resets and refreshes `heardAt` only when a report lands a new whole chunk (`FeedWindow.kt:237`,
         `:239`). `FeedMeter.swift:174-188` takes the count raw, and `FeedWindow.swift:202-204` always refreshes, so a
         peer repeating one count holds the window shut and an inflated one poisons the rate.
-      - **Custody and blobs:** group frames served to any peer (`9f53dc34f`, its ADR 2026-10.hr9f; `custody.md`); the
-        member-first serve reading every conversation that names a blob (`c39177b66`, `BlobExchange.addresseesAcross`),
-        where `MeshEngine+BlobParking.swift:100-108` reads the earliest row's one; and the echo door of `905aa6370` (its
+      - **Custody and blobs:** the member-first serve reading every conversation that names a blob (`c39177b66`,
+        `BlobExchange.addresseesAcross`), where `MeshEngine+BlobParking.swift:100-108` reads the earliest row's one; and the echo door of `905aa6370` (its
         ADR 2026-11.qu98): a carrier's pull-through ask for a hash only held request rows name is declined
         (`BlobExchange.kt:197`), where `MeshEngine+Blobs.swift:206-218` fetches it within the echo budget. qu98's other
         two doors are held here already (knit-ios #21). Not settled: `81e49a22b` (its ADR 2026-11.4ckq) re-wants at most

@@ -1,0 +1,109 @@
+import KnitCrypto
+import KnitStore
+import KnitTestSupport
+import KnitWire
+import Testing
+
+@testable import KnitMesh
+
+/// A non-member's custody across engines of this port (knit-next ADR 2026-10.hr9f, #176, #235): Kotlin's
+/// `CustodyQuotaLabTest.aNonMemberBackFilledAGroupDropsTheDmTheMembersEvicted` at knit-next `9f53dc34f`, on links a test
+/// makes and breaks (``EngineLab``).
+@Suite struct CustodyNonMemberLabTests {
+    private let alice = TestPeer(seed: 1)
+    private let bob = TestPeer(seed: 5)
+    private let carol = TestPeer(seed: 6)
+    private var hop: Int64 { Router.Configuration().jitterWindowMilliseconds + 1 }
+
+    /// Lets every flood cross the lab: a hop for each node it may have to cross.
+    private func settle(_ lab: EngineLab) {
+        for _ in 0..<3 {
+            lab.advance(hop)
+        }
+    }
+
+    /// The links of the meeting's triangle, each direction by node index.
+    private static let triangle = [(0, 1), (1, 0), (1, 2), (2, 1), (0, 2), (2, 0)]
+
+    /// How many times node `from` wrote `id` over its link to node `to` since its `since`th write: addressed to `to`, or a
+    /// flood, which reaches every node it is linked to. The meeting's links stay up from `since` on.
+    private func copies(of id: String, from: Int, to: Int, since: [Int], in lab: EngineLab) -> Int {
+        let peer = lab[to].me.nodeId
+        return lab[from].transport.written.dropFirst(since[from]).filter { written in
+            ExactKey(written.envelope.id) == ExactKey(id) && (written.to == nil || written.to == peer)
+        }.count
+    }
+
+    /// Five frames per sender everywhere. Carol, outside Alice and Bob's group, takes Alice's DM to Bob, and Bob's sealed
+    /// receipt for it, and is cut; Alice then posts six times to the group, so Alice's and Bob's buckets keep her newest five
+    /// and drop the DM. Carol holds it still. When the three meet, the members back-fill Carol the posts, her own bucket
+    /// evicts the DM, and she sends it over each of her links at most once: the meeting's diff, before the posts land.
+    /// Served to members only, she never got the posts, her digest listed the DM at every exchange, she served it at each
+    /// one, and custody never agreed.
+    ///
+    /// The lab models no `LinkCrossings`, so the meeting falls inside the routers' seen window, where Alice and Bob take
+    /// Carol's copy as the duplicate it is and relay nothing; past the window nobody holds the DM to serve it.
+    @Test func aNonMemberBackFilledAGroupDropsTheDmTheMembersEvicted() throws {
+        let limits = CustodyLimits(maxPerSender: 5)
+        let lab = EngineLab(
+            try [alice, bob, carol].enumerated().map { index, peer in
+                try EngineFixture.ratcheting(peer, stores: .inMemory(custodyLimits: limits), seed: UInt64(61 + index))
+            })
+        lab.link(0, 1)
+        lab.link(1, 2)
+        settle(lab)
+        let group = try #require(lab[0].engine.createGroup(with: [bob.nodeId])).id
+        settle(lab)
+
+        // Bob relays the DM on to Carol: she custodies it, and his sealed receipt for it, before the cut.
+        let dm = try #require(lab[0].engine.sendDirectMessage("d", to: bob.nodeId)).id
+        settle(lab)
+        #expect(lab[1].stores.messages.message(dm)?.body == "d")
+        #expect(lab.liveIds(2).contains(dm), "carol custodies the DM")
+        lab.advance(lab[0].engine.configuration.reofferMilliseconds)
+        #expect(Set(lab.liveIds(1)) == Set(lab.liveIds(2)), "bob and carol agree before the cut")
+        lab.unlink(1, 2)
+
+        let posts = try (1...6).map { index in
+            let id = try #require(lab[0].engine.sendGroupMessage("post \(index)", to: group)).id
+            settle(lab)
+            return id
+        }
+        #expect(lab[1].stores.messages.messages(in: group).filter { $0.kind == .message }.count == 6)
+        for member in 0...1 {
+            let held = Set(lab.liveIds(member))
+            #expect(!held.contains(dm), "node \(member): its quota evicted the DM")
+            #expect(Set(posts.dropFirst()).isSubset(of: held) && !held.contains(posts[0]), "node \(member): the newest five posts")
+        }
+        #expect(lab.liveIds(2).contains(dm), "carol, cut before the posts, still holds the DM")
+        #expect(posts.allSatisfy { !lab.liveIds(2).contains($0) }, "and none of the posts")
+
+        // The meeting: a triangle, inside every router's seen window for the DM.
+        let since = (0...2).map { lab[$0].transport.written.count }
+        lab.link(1, 2)
+        lab.link(0, 2)
+        settle(lab)
+        lab.advance(lab[0].engine.configuration.reofferMilliseconds)
+        expectConverged(lab, dm: dm, since: since, "at the meeting")
+
+        // Past the seen window and two re-offers, each digest is answered again, and nothing moves.
+        lab.advance(SeenSetWindow.milliseconds)
+        lab.advance(lab[0].engine.configuration.reofferMilliseconds)
+        lab.advance(lab[0].engine.configuration.reofferMilliseconds)
+        expectConverged(lab, dm: dm, since: since, "past the window")
+    }
+
+    /// The oracle: no node wrote the DM over any link of the meeting more than once, the three custodies hold the same live
+    /// ids, and the DM is held nowhere.
+    private func expectConverged(
+        _ lab: EngineLab, dm: String, since: [Int], _ comment: Comment, sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        for (from, to) in Self.triangle {
+            let sent = copies(of: dm, from: from, to: to, since: since, in: lab)
+            #expect(sent <= 1, "\(comment): node \(from) wrote the DM toward node \(to) \(sent) times", sourceLocation: sourceLocation)
+        }
+        let held = (0...2).map { Set(lab.liveIds($0)) }
+        #expect(held[0] == held[1] && held[1] == held[2], "\(comment): the same live ids everywhere", sourceLocation: sourceLocation)
+        #expect(held.allSatisfy { !$0.contains(dm) }, "\(comment): the evicted DM is held nowhere", sourceLocation: sourceLocation)
+    }
+}

@@ -175,17 +175,19 @@ public struct CustodySync: Sendable {
     ///
     /// The round picks from ``CustodyStore/liveIndex(now:)``, which decodes nothing: profiles first, then newest received
     /// first, minus the digest's ids (by their bytes, ADR 2026-09.jc2x) and minus every frame `crossed` says crossed this
-    /// link either way inside its window (`LinkCrossings`). It loads only the frames it serves, and each group frame to
-    /// read its roster: one whose roster lacks the peer takes no slot and no bytes, and nothing caps those loads, so
-    /// busy groups the peer is not in cannot starve the older frames it is owed. The digest meter bounds their cost
-    /// (ADR 2026-10.f5zs). A frame the round served and the peer did not keep is skipped while its crossing lasts, so a
-    /// peer that refuses a slice gets the next one at its next digest rather than the same slice again.
+    /// link either way inside its window (`LinkCrossings`). It loads only the frames it serves. A group frame takes a slot
+    /// like any other, so a non-member's first round may go on a busy group's frames, and the older frames it is owed
+    /// follow at its next digest: that is the back-fill, once per frame. A frame the round served and the peer did not
+    /// keep is skipped while its crossing lasts, so a peer that refuses a slice gets the next one at its next digest
+    /// rather than the same slice again.
     ///
     /// **The round stops; it never skips.** The first pick always goes, whatever its size, and the round stops at the
     /// first later pick that would pass the budget, so a large profile is never passed over for its sender's chat.
     ///
     /// A frame the peer authored is served too when its digest lacks it: that is how a node whose custody was
-    /// wiped gets its own frames back. A group frame goes only to a member of its roster.
+    /// wiped gets its own frames back. A group frame goes to any peer that lacks it, as a room post does (knit-next ADR
+    /// 2026-10.hr9f, `ForwardSync.onDigest` at `9f53dc34f`): served to members only, a non-member short of a member's
+    /// posts kept the frames every member's quota had evicted and re-served them at every exchange (#176, #235).
     ///
     /// Profiles go first (knit-next ADR 2026-09.9xuu). The store reads newest-received first, which put a sender's
     /// profile, usually the oldest frame held of theirs, behind all of their chat, so a peer meeting that sender
@@ -208,7 +210,6 @@ public struct CustodySync: Sendable {
         key: (NodeId) -> WireEnvelope? = { _ in nil }
     ) -> DigestReply {
         let held = Set(theirIds.map(ExactKey.init))
-        let peerKey = ExactKey(peer.string)
         let index = store.liveIndex(now: now)
         // Senders whose key the peer holds or gets anyway: a live profile goes first or the peer has it, and a frame
         // the peer holds, it verified. Each sender of a served frame joins the set as it is served, so it is named once.
@@ -220,15 +221,6 @@ public struct CustodySync: Sendable {
             guard !held.contains(ExactKey(entry.id)), !(entry.frameKey.map(crossed) ?? false) else {
                 continue
             }
-            var loaded: CarriedFrame?
-            if entry.groupId != nil {
-                guard let frame = store.frame(entry.id, now: now), let members = frame.envelope.group?.members,
-                    members.contains(where: { ExactKey($0) == peerKey })
-                else {
-                    continue
-                }
-                loaded = frame
-            }
             let keyAhead =
                 keyed.contains(ExactKey(entry.senderId)) ? nil : Self.keyAhead(of: entry.senderId, to: peer, crossed: crossed, key: key)
             let cost = entry.reservedBytes + (keyAhead?.wire.encoded.count ?? 0)
@@ -236,7 +228,7 @@ public struct CustodySync: Sendable {
                 reply.isCapped = true
                 break
             }
-            guard let frame = loaded ?? store.frame(entry.id, now: now) else {
+            guard let frame = store.frame(entry.id, now: now) else {
                 continue
             }
             keyed.insert(ExactKey(entry.senderId))

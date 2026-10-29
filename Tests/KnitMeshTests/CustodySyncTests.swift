@@ -171,16 +171,21 @@ import Testing
         #expect(serves == ["m1", "m1", "m1"])
     }
 
-    @Test func aGroupFrameIsServedOnlyToItsMembers() {
+    @Test func aNonMemberThatLacksAGroupFrameIsServedIt() {
+        // Kotlin's `ForwardSyncTest.aNonMemberThatLacksAGroupFrameIsServedIt` (knit-next ADR 2026-10.hr9f, `9f53dc34f`): a
+        // non-member left short of a member's posts kept the frames every member evicted and re-served them (#176, #235).
         let store = MemoryCustodyStore()
         var sync = CustodySync()
         _ = sync.carryOwn(frame("g1", members: [alice, bob]), in: store, now: now)
-        #expect(sync.missing(from: [], for: zed, in: store, now: now).frames.isEmpty)
-        #expect(ids(sync.missing(from: [], for: bob, in: store, now: now)) == ["g1"])
+        #expect(ids(sync.missing(from: [], for: zed, in: store, now: now)) == ["g1"], "not in the roster, served once")
+        #expect(sync.missing(from: ["g1"], for: zed, in: store, now: now).frames.isEmpty, "a non-member holding it is not served it")
+        #expect(ids(sync.missing(from: [], for: bob, in: store, now: now)) == ["g1"], "a member lacking it is, as before")
     }
+}
 
-    // MARK: The key ahead of a backlog (knit-next ADR 2026-09.g64k, `ForwardSyncTest`'s `onDigestServes…Key…`)
+// MARK: - The key ahead of a backlog (knit-next ADR 2026-09.g64k, `ForwardSyncTest`'s `onDigestServes…Key…`)
 
+extension CustodySyncTests {
     @Test func aKeylessSendersKeyGoesAheadOfTheirBacklogOncePerSender() {
         // Custody holds no profile of theirs, and the peer holds none of their frames: each key goes first, once.
         let store = MemoryCustodyStore()
@@ -227,14 +232,28 @@ import Testing
     }
 
     @Test func noKeyGoesWhenNothingOfTheSendersGoesOut() {
-        // A key rides only with a backlog: here the peer holds Alice's post, and is not in Bob's group.
+        // A key rides only with a backlog: here the peer holds Alice's post and Bob's group frame. A group it is not in is
+        // served like anything else (knit-next ADR 2026-10.hr9f), so only the digest withholds it.
         let store = MemoryCustodyStore()
         var sync = CustodySync()
         _ = sync.carry(frame("r1"), in: store, now: now) { true }
         _ = sync.carry(frame("g1", from: bob, members: [bob, alice]), in: store, now: now) { true }
-        let reply = round(sync, from: ["r1"], for: zed, in: store)
+        let reply = round(sync, from: ["r1", "g1"], for: zed, in: store)
         #expect(reply.frames.isEmpty)
         #expect(reply.keysAhead.isEmpty)
+    }
+
+    @Test func theKeyGoesAheadOfAGroupBacklogToANonMember() {
+        // Kotlin's `onDigestServesTheKeyAheadOfAGroupBacklogToANonMember` (`9f53dc34f`): a group's backlog to a non-member
+        // is a backlog like any other, so the sender's key goes first, once, or the peer refuses what it cannot verify.
+        let store = MemoryCustodyStore()
+        var sync = CustodySync()
+        _ = sync.carry(frame("g1", from: bob, members: [bob, alice]), in: store, now: now) { true }
+        _ = sync.carry(frame("g2", from: bob, members: [bob, alice]), in: store, now: now) { true }
+        let reply = round(sync, for: zed, in: store)
+        #expect(reply.keysAhead == [bob])
+        #expect(reply.keys.map(Self.frameKey) == [Self.frameKey(Self.key(of: bob))])
+        #expect(ids(reply).sorted() == ["g1", "g2"])
     }
 
     @Test func noKeyGoesForASenderThatIsNoNodeId() {

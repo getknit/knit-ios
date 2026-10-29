@@ -45,55 +45,43 @@ import Testing
         return try peer.signed(envelope)
     }
 
-    /// Fills `holder`'s custody with 999 frames beside its own profile, the oldest received first: 400 group frames in two
-    /// groups the newcomer is not in, one DM from each of 200 senders whose key only the pin store keeps, 396 DMs from
-    /// three senders whose profiles custody holds, and those three profiles, then a profile near custody's byte cap.
+    /// Fills `holder`'s custody with 1000 frames beside its own profile, the oldest received first: 400 group frames in two
+    /// groups the newcomer is not in, whose four senders' keys only the pin store keeps, one DM from each of 200 senders whose
+    /// key only the pin store keeps, 396 DMs from three senders whose profiles custody holds, and those three profiles, then
+    /// a profile near custody's byte cap.
     private static func fillFull(_ holder: PipeNode, wall: Int64) throws {
-        let recipient = TestPeer(seed: 999)
-        let custody = holder.stores.custody
-        let groupSenders = (0..<4).map { TestPeer(seed: 600 + $0) }
-        for index in 0..<400 {
-            // Each group's two senders are its members, and its id derives from its roster (knit-next ADR 2026-10.7mqm).
-            let pair = index < 200 ? groupSenders.prefix(2) : groupSenders.suffix(2)
-            let sender = pair[pair.startIndex + index % 2]
-            let members = pair.map(\.nodeId.string) + [recipient.nodeId.string]
-            let group = GroupInfo(id: GroupId.derive(members), members: members, createdBy: sender.nodeId.string)
-            // Older than anything else held.
-            let envelope = RelayEnvelope(
-                type: .chat,
-                id: frameIdOf("group-\(index)"),
-                senderId: sender.nodeId.string,
-                sentAt: wall - 100_000 + Int64(index),
-                group: group,
-                payload: ChatContent(body: "g").encoded
-            )
-            #expect(custody.store(carried(try sender.signed(envelope)), origin: .relayed, now: wall).held)
+        try #require(wall == EngineFixture.start, "the shared fill is built at the lab's start")
+        let fill = try fullFill.get()
+        let large = try #require(fill.frames.last).signed.count
+        #expect(large > CustodyLimits().maxSignedBytes - 2048 && large <= CustodyLimits().maxSignedBytes)
+        for key in fill.keys {
+            holder.stores.peers.recordProfileFrame(key.profile.wire, of: key.of, sentAt: key.profile.envelope.sentAt)
         }
-        for index in 0..<200 {
-            let sender = TestPeer(seed: 1000 + index)
-            let key = try profile(of: sender, publishedAt: wall - 1000)
-            holder.stores.peers.recordProfileFrame(key.wire, of: sender.nodeId, sentAt: wall - 1000)
-            let dm = try sender.directMessage("k", to: recipient, id: frameIdOf("keyless-\(index)"), sentAt: wall - 1000)
-            #expect(custody.store(carried(dm), origin: .relayed, now: wall).held)
+        for frame in fill.frames {
+            #expect(holder.stores.custody.store(frame, origin: .relayed, now: wall).held)
         }
-        let keyed = (0..<3).map { TestPeer(seed: 700 + $0) }
-        for index in 0..<396 {
-            let dm = try keyed[index % 3].directMessage("d", to: recipient, id: frameIdOf("keyed-\(index)"), sentAt: wall - 1000)
-            #expect(custody.store(carried(dm), origin: .relayed, now: wall).held)
-        }
-        for sender in keyed {
-            #expect(custody.store(carried(try profile(of: sender, publishedAt: wall - 1000)), origin: .relayed, now: wall).held)
-        }
-        let large = try profile(of: TestPeer(seed: 800), publishedAt: wall - 1000, statusBytes: largeProfileBytes)
-        #expect(
-            large.wire.signed.count > CustodyLimits().maxSignedBytes - 2048 && large.wire.signed.count <= CustodyLimits().maxSignedBytes)
-        #expect(custody.store(carried(large), origin: .relayed, now: wall).held)
     }
 
-    /// The frames `holder` would serve a newcomer: every live one but the group frames it is not in.
+    /// The frames `holder` would serve a newcomer: every live one, the group frames it is not in included (knit-next ADR
+    /// 2026-10.hr9f).
     private static func owed(by holder: PipeNode, wall: Int64) -> Set<String> {
-        let groups = Set(holder.stores.custody.liveIndex(now: wall).filter { $0.groupId != nil }.map(\.id))
-        return Set(holder.stores.custody.liveIds(now: wall)).subtracting(groups)
+        Set(holder.stores.custody.liveIds(now: wall))
+    }
+
+    /// `custodiesAgree` read again only once a frame has crossed `pipe` since it last answered `false`, which it answers
+    /// meanwhile. Within a run both custodies move only as frames cross (no frame here comes near its TTL), and reading
+    /// two thousand live ids at each of a lab's hundreds of steps was most of these tests' time under the thread sanitizer,
+    /// beside the actor suites' time limits. A stale answer is only ever `false`, so this can delay the loop's end, never
+    /// end it early.
+    private static func onceFramesCross(_ pipe: LinkPipe, _ custodiesAgree: @escaping () -> Bool) -> () -> Bool {
+        var read = -1
+        return {
+            guard pipe.frames.count != read else {
+                return false
+            }
+            read = pipe.frames.count
+            return custodiesAgree()
+        }
     }
 
     /// How many of `from`'s digests `node`'s engine answered or held: each is one round.
@@ -102,26 +90,33 @@ import Testing
     }
 
     @Test func aNewcomerFacingAFullCustodyConvergesInCappedRounds() throws {
+        // The newcomer is owed every frame, the group frames it is not in included (knit-next ADR 2026-10.hr9f), and it
+        // custodies the 204 keys served ahead of them besides. Under the default row cap of 1000 its custody would overflow
+        // and trim while the rounds run, and the holder's again once those keys came back to it: the cap's own convergence,
+        // which `CustodyFairExchangeTests` pins. Room on both sides, with `Self.limits`'s profile cap, keeps it on the rounds.
+        let roomy = CustodyLimits(maxFrames: 1300, maxProfileSignedBytes: CustodyLimits().maxSignedBytes)
         let lab = PipeLab()
         let wall = lab.clock.wallMilliseconds()
-        let holder = lab.node(1, custodyLimits: Self.limits)
+        let holder = lab.node(1, custodyLimits: roomy)
         try Self.fillFull(holder, wall: wall)
-        #expect(holder.stores.custody.liveIds(now: wall).count == 1000)
+        #expect(holder.stores.custody.liveIds(now: wall).count == 1001)
         let missing = Self.owed(by: holder, wall: wall).count
         let groups = Set((0..<400).map { frameIdOf("group-\($0)") })
-        let newcomer = lab.node(2, custodyLimits: Self.limits)
+        let newcomer = lab.node(2, custodyLimits: roomy)
         let pipe = lab.link(holder, newcomer)
-        let converged = lab.run(step: 1000, limit: 900_000) {
+        let caughtUp = Self.onceFramesCross(pipe) {
             let now = lab.clock.wallMilliseconds()
             return Self.owed(by: holder, wall: now).isSubset(of: newcomer.stores.custody.liveIds(now: now))
         }
+        let converged = lab.run(step: 1000, limit: 900_000, until: caughtUp)
         #expect(converged)
         let rounds = Self.digests(at: holder, from: newcomer)
         let bound = (missing + CustodySync.roundFrames - 1) / CustodySync.roundFrames + 1
         #expect(rounds <= bound, "\(rounds) digests for \(missing) frames")
-        // No group frame it is not in ever crossed, and every round stayed within its budget plus its one first pick.
+        // Every group frame it is not in crossed, as any frame it lacked does (knit-next ADR 2026-10.hr9f), and every round
+        // stayed within its budget plus its one first pick.
         let served = pipe.frames.filter { $0.from == holder.nodeId }
-        #expect(!served.contains { groups.contains($0.id) })
+        #expect(groups.isSubset(of: served.map(\.id)))
         for at in Set(served.map(\.at)) {
             let round = served.filter { $0.at == at }
             let bytes = round.reduce(0) { $0 + $1.bytes }
@@ -302,5 +297,104 @@ import Testing
         #expect(copies.count == 10)
         #expect(copies.values.allSatisfy { $0 == 1 }, "\(copies)")
         #expect(far.stores.custody.liveIds(now: lab.clock.wallMilliseconds()).allSatisfy { !ids.contains($0) })
+    }
+}
+
+/// The default row cap binding on both sides while the rounds run (knit-next ADR 2026-10.hr9f).
+extension LinkPipeCustodyRoundTests {
+    @Test func aNonMemberNewcomerFacingAFullCustodyConvergesUnderTheDefaultCap() throws {
+        // The common case since knit-next ADR 2026-10.hr9f: a newcomer outside every group meets a carrier at the default row
+        // cap. It is owed every frame, group frames included, and custodies the 204 keys served ahead of them besides, so its
+        // cap trims while the rounds run, and the holder's does again once those keys come back to it. The fair trim decides
+        // the same on both sides (knit-next ADR 2026-10.7mqm), so the two agree once each frame a trim took has been offered
+        // again past its crossing. Observed: 13 holder-side digests and no id served more than twice.
+        let lab = PipeLab()
+        let wall = lab.clock.wallMilliseconds()
+        let holder = lab.node(1, custodyLimits: Self.limits)
+        try Self.fillFull(holder, wall: wall)
+        let filled = Set(holder.stores.custody.liveIds(now: wall).map(ExactKey.init))
+        #expect(filled.count == CustodyLimits().maxFrames)
+        let newcomer = lab.node(2, custodyLimits: Self.limits)
+        let pipe = lab.link(holder, newcomer)
+        let agree = Self.onceFramesCross(pipe) {
+            let now = lab.clock.wallMilliseconds()
+            return Set(holder.stores.custody.liveIds(now: now)) == Set(newcomer.stores.custody.liveIds(now: now))
+        }
+        let converged = lab.run(step: 1000, limit: 3 * SeenSet.defaultWindowMilliseconds, until: agree)
+        #expect(converged, "the same live ids on both nodes")
+        // 13 observed, with two rounds' margin.
+        let rounds = Self.digests(at: holder, from: newcomer)
+        #expect(rounds <= 15, "\(rounds) digests")
+        // A frame either trim took is offered again once its crossing lapses, and then kept: never a third time.
+        var copies: [String: Int] = [:]
+        for frame in pipe.frames where frame.from == holder.nodeId {
+            copies[frame.id, default: 0] += 1
+        }
+        let repeated = copies.filter { $0.value > 2 }
+        #expect(repeated.isEmpty, "\(repeated.count) ids served more than twice")
+        // Each key served ahead, a profile from the pin store that custody did not hold, is custodied on both sides or
+        // trimmed on both.
+        let servedKeys = Set(
+            pipe.frames.filter { $0.from == holder.nodeId && $0.type == .profile && !filled.contains(ExactKey($0.id)) }.map(\.id))
+        #expect(!servedKeys.isEmpty, "keys went ahead of their senders' backlogs")
+        let split = servedKeys.filter { holder.stores.custody.contains($0) != newcomer.stores.custody.contains($0) }
+        #expect(split.isEmpty, "\(split.count) keys held on one side only")
+    }
+}
+
+/// The full fill, built once (``fillFull(_:wall:)``).
+extension LinkPipeCustodyRoundTests {
+    /// What ``fillFull(_:wall:)`` writes into a holder: the keys its pin store keeps, then the frames its custody takes, in the
+    /// order received.
+    private struct FullFill: Sendable {
+        var keys: [(profile: TestFrame, of: NodeId)] = []
+        var frames: [CarriedFrame] = []
+    }
+
+    /// The full fill at the lab's start, built once and shared by every test that fills a holder. Sealing and signing a
+    /// thousand frames under the thread sanitizer takes seconds of a test thread, while the actor suites' time limits run
+    /// beside it, and the frames are the same each time: every lab's wall clock starts at ``EngineFixture/start``.
+    private static let fullFill = Result { try buildFullFill(wall: EngineFixture.start) }
+
+    /// The keys and frames ``fillFull(_:wall:)`` writes, at `wall`.
+    private static func buildFullFill(wall: Int64) throws -> FullFill {
+        var fill = FullFill()
+        let recipient = TestPeer(seed: 999)
+        let groupSenders = (0..<4).map { TestPeer(seed: 600 + $0) }
+        for sender in groupSenders {
+            // A carrier verified each frame it holds, so its pin store keeps the sender's key: the key ahead of a group's
+            // backlog to a newcomer outside it (knit-next ADR 2026-10.hr9f).
+            let key = try profile(of: sender, publishedAt: wall - 100_000)
+            fill.keys.append((key, sender.nodeId))
+        }
+        for index in 0..<400 {
+            // Each group's two senders are its members, and its id derives from its roster (knit-next ADR 2026-10.7mqm).
+            let pair = index < 200 ? groupSenders.prefix(2) : groupSenders.suffix(2)
+            let sender = pair[pair.startIndex + index % 2]
+            let members = pair.map(\.nodeId.string) + [recipient.nodeId.string]
+            let group = GroupInfo(id: GroupId.derive(members), members: members, createdBy: sender.nodeId.string)
+            // Older than anything else held, and sealed, as a carrier takes a group's chat only sealed (`isCarriable`).
+            let others = pair.filter { $0 != sender } + [recipient]
+            let message = try sender.groupMessage(
+                "g", in: group, to: others, id: frameIdOf("group-\(index)"), sentAt: wall - 100_000 + Int64(index))
+            fill.frames.append(carried(message))
+        }
+        for index in 0..<200 {
+            let sender = TestPeer(seed: 1000 + index)
+            let key = try profile(of: sender, publishedAt: wall - 1000)
+            fill.keys.append((key, sender.nodeId))
+            let dm = try sender.directMessage("k", to: recipient, id: frameIdOf("keyless-\(index)"), sentAt: wall - 1000)
+            fill.frames.append(carried(dm))
+        }
+        let keyed = (0..<3).map { TestPeer(seed: 700 + $0) }
+        for index in 0..<396 {
+            let dm = try keyed[index % 3].directMessage("d", to: recipient, id: frameIdOf("keyed-\(index)"), sentAt: wall - 1000)
+            fill.frames.append(carried(dm))
+        }
+        for sender in keyed {
+            fill.frames.append(carried(try profile(of: sender, publishedAt: wall - 1000)))
+        }
+        fill.frames.append(carried(try profile(of: TestPeer(seed: 800), publishedAt: wall - 1000, statusBytes: largeProfileBytes)))
+        return fill
     }
 }

@@ -8,9 +8,11 @@ import Testing
 /// A capped reply round (ADR 2026-10.f5zs): at most ``CustodySync/roundFrames`` frames or ``CustodySync/roundBytes`` with
 /// the keys ahead, picked from the index, minus what crossed the link, stopping at its budget and never skipping.
 @Suite struct CustodySyncRoundTests: CustodySyncCase {
-    @Test func aDMBehindFourHundredGroupFramesThePeerIsNotInGoesInTheFirstRound() {
-        // Each group frame costs a load to read its roster, but one without the peer takes no slot: busy groups the
-        // peer is not in never starve the older frames it is owed.
+    @Test func aDMBehindFourHundredGroupFramesThePeerIsNotInFollowsThemOnceEach() {
+        // A group frame goes to a non-member that lacks it (knit-next ADR 2026-10.hr9f), so each takes a slot: the newer
+        // group frames fill the first two rounds of 200, and the DM goes in the third. That is the back-fill, once per frame,
+        // the crossings keeping each slice from coming again. Before, a group frame without the peer skipped ahead of the
+        // budget check, and the DM went alone in the first round.
         let store = MemoryCustodyStore()
         var sync = CustodySync()
         _ = sync.carry(frame("dm", to: bob), in: store, now: now) { true }
@@ -21,9 +23,22 @@ import Testing
             _ = sync.carry(frame("g\(index)", from: senders[index % 4], members: members), in: store, now: now + 1) { true }
         }
         #expect(store.liveIds(now: now).count == 401)
-        let reply = round(sync, for: zed, in: store)
-        #expect(ids(reply) == ["dm"])
-        #expect(!reply.isCapped)
+        var crossed: Set<String> = []
+        var rounds: [[String]] = []
+        for _ in 0..<5 {
+            let reply = round(sync, for: zed, in: store, crossed: crossed)
+            crossed.formUnion((reply.keys + reply.frames).map(Self.frameKey))
+            rounds.append(ids(reply))
+            #expect(reply.bytes <= CustodySync.roundBytes, "200 group frames and their keys fit the bytes: the frame count caps")
+            guard reply.isCapped else {
+                break
+            }
+        }
+        #expect(rounds.map(\.count) == [CustodySync.roundFrames, CustodySync.roundFrames, 1], "three rounds, the budget's own")
+        #expect(rounds.last == ["dm"], "the DM, oldest received, in the last")
+        let served = rounds.flatMap(\.self)
+        #expect(Set(served).count == served.count, "no id twice across the rounds")
+        #expect(Set(served) == Set(store.liveIds(now: now)), "every frame the peer lacks")
     }
 
     @Test func aLargeProfileGoesFirstAloneAndItsChatFollowsWithNoKey() {

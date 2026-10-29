@@ -111,6 +111,13 @@ meters no digest, caps no round, and its link writer is `Channel.UNLIMITED`. One
   - rule 6: `InboxCreditsTests` and `BlueZChannelTests`;
   - on the Mac: `L2CAPLinkTests`, for the bound, the level and the credit over bound streams.
 
+**Amended 2026-10-29, for knit-next #176 and #235 (ADR 2026-10.metv):** rule 4's group exception is gone. A round no
+longer loads a group frame to read its roster, and a frame whose roster lacks the peer now takes a slot like any
+other, as knit-next ADR 2026-10.hr9f serves it. Busy groups the peer is not in can now fill its first rounds, and an
+older frame it is owed follows at a later digest. The budget, the order and the crossings skip are unchanged.
+`CustodySyncRoundTests.aDMBehindFourHundredGroupFramesThePeerIsNotInFollowsThemOnceEach` replaces the test that
+pinned the exception.
+
 **Amended 2026-11-01, for the link proof (ADR 2026-11.hpmt):** the meters keyed by the HELLO's node id (rule 1's
 digests, rule 5's keyreq bucket) are keyed by a proven id on a link where both sides carry `CAP_LINK_PROOF`. There, a
 node claiming an honest peer's id can no longer empty that peer's buckets: its claim is refused or fails its proof

@@ -4,8 +4,7 @@ public import KnitWire
 /// nothing decoded from the frame's bytes (ADR 2026-10.f5zs).
 ///
 /// A reply round once read and decoded every live row, up to the 1,000 custody holds, for each digest a neighbour sent,
-/// however empty. The round now picks from this index and loads only the frames it serves, and the group frames whose
-/// roster it must read.
+/// however empty. The round now picks from this index and loads only the frames it serves.
 public struct CustodyIndexEntry: Sendable, Equatable {
     /// The frame's id.
     public var id: String
@@ -13,7 +12,8 @@ public struct CustodyIndexEntry: Sendable, Equatable {
     public var senderId: String
     /// Its type.
     public var type: FrameType
-    /// Its group's id, or `nil` for a DM or a room frame. Only a group frame has a roster to read.
+    /// Its group's id, or `nil` for a DM or a room frame. The round no longer reads it: a group frame goes to any peer that
+    /// lacks it (knit-next ADR 2026-10.hr9f), so no roster is loaded to pick one.
     public var groupId: String?
     /// The key a link remembers it by (``FrameKey/ofSigned(_:)``), or `nil` for an unsigned row.
     public var frameKey: String?

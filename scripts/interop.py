@@ -6747,7 +6747,8 @@ def iphone_peer(arguments: argparse.Namespace) -> int:
         run.step("profile-on-peer", lambda: _peer_pinned(peer, ios))
         run.step("safety-numbers-match", lambda: _same_safety_number(ios, peer))
         # The iPhone back-fills the newcomer first, and new frames queue behind that, so posts are timed after it. Group
-        # frames are left out: a group frame is served only to its members, and the fresh peer is in no group.
+        # frames are left out: a build before knit-next ADR 2026-10.hr9f (ADR 2026-10.metv here) serves a group frame
+        # only to its members, and the fresh peer is in no group.
         run.step("custody-converges", lambda: _peers_converge(peer, ios, 300, frozenset()))
         body = f"interop room from iphone {nonce}"
         sent = ios.command(cmd="room", text=body)
