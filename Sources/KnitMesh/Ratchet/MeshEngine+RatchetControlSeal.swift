@@ -26,9 +26,9 @@ extension MeshEngine {
     /// `sendCtlDm`, `:2922-2949`). A signature that fails abandons the unit.
     ///
     /// A frame asked ``ControlFrame/confirmedOnly`` is sealed only under a confirmed session
-    /// (``RatchetSessions/sealDm(to:prekey:plaintext:aad:now:v3:confirmedOnly:)``), and then carries the tag of the root its
-    /// seal committed, read inside the same unit (``SealedControl/rootTag``; `sealDmTagged`, `RatchetSessions.kt:367-379` at
-    /// knit-next `cad69c77b`).
+    /// (``RatchetSessions/sealDm(to:prekey:plaintext:aad:now:v3:confirmedOnly:)``). Every seal carries the tag of the root it
+    /// committed under, out of the seal's own result (``SealedControl/rootTag``; `sealDmTagged`, `RatchetSessions.kt:367-379`
+    /// at knit-next `cad69c77b`).
     func sealControl(
         _ content: MessageContent, to peer: NodeId, in frame: ControlFrame, plan readPlan: () -> RatchetOutbound.ReceiptPlan?
     ) -> ControlSealing {
@@ -48,7 +48,7 @@ extension MeshEngine {
                 content.sealBytes(v3: plan.readsCryptoV3), under: plan, aad: aad, now: now, confirmedOnly: frame.confirmedOnly)
             // Joined is the one answer a seal inside our unit gives that may go, once our unit commits. The facade's
             // `unavailable` and `refusedKey` abandon it, and a store that failed has failed it already.
-            guard case .joined(.sealed(let enc), let settlement) = sealing else {
+            guard case .joined(.sealed(let enc, let rootTag), let settlement) = sealing else {
                 return nil
             }
             let chat = ChatContent(attachmentHash: frame.attachmentHash, enc: enc)
@@ -58,12 +58,8 @@ extension MeshEngine {
                 let carried =
                     frame.relay
                     && custody.carryOwn(CarriedFrame(envelope: envelope, sig: wire.sig, signed: wire.signed), in: stores.custody, now: now)
-                return SealedControl(
-                    frame: SignedFrame(wire: wire, envelope: envelope),
-                    settlement: settlement,
-                    carried: carried,
-                    rootTag: sealedRootTag(peer, in: frame)
-                )
+                let own = SignedFrame(wire: wire, envelope: envelope)
+                return SealedControl(frame: own, settlement: settlement, carried: carried, rootTag: rootTag, sealedAt: now)
             }
         }
         switch unit {
@@ -91,12 +87,6 @@ extension MeshEngine {
             v3: bytes.scheme == EncEnvelope.Version.compactRatchet,
             confirmedOnly: confirmedOnly
         )
-    }
-
-    /// The tag of the root a seal asked ``ControlFrame/confirmedOnly`` just committed toward `peer`, read in its unit: the
-    /// era a ctl 11's record names. `nil` for any other seal.
-    private func sealedRootTag(_ peer: NodeId, in frame: ControlFrame) -> Int64? {
-        frame.confirmedOnly ? stores.ratchet.session(peer).map { RatchetCrypto.rootTag($0.root) } : nil
     }
 
     /// After an originated ctl's unit committed: the floors its seal settles move, and it goes on the air at once to every
@@ -177,6 +167,10 @@ internal struct SealedControl {
     let settlement: RatchetSessions.Settlement
     /// Whether our custody stored it just now: an originated one, which is fresh.
     let carried: Bool
-    /// The tag of the root the seal committed, read in its unit, for a seal asked `confirmedOnly`; `nil` otherwise.
-    let rootTag: Int64?
+    /// The ``KnitCrypto/RatchetCrypto/rootTag(_:)`` of the session root the seal committed under, out of the seal's own
+    /// result: the era a DM's receipt is filed under in ``DmReAckLedger`` (ADR 2026-10.8hn6).
+    let rootTag: Int64
+    /// Our wall clock's now the seal was drawn at, which a receipt also carries as its `sentAt`: when ``DmReAckLedger``
+    /// dates the receipt.
+    let sealedAt: Int64
 }

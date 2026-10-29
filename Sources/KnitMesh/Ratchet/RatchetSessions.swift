@@ -80,6 +80,15 @@ public final class RatchetSessions {
         store.session(peer).map(RatchetRecords.session)
     }
 
+    /// The ``RatchetCrypto/rootTag(_:)`` of the session root held with `peer` now, never the root (`rootTagFor`, knit-next
+    /// `RatchetSessions.kt` at `afdd37204`): the era a ``Sealing/sealed(_:rootTag:)`` tag is compared against (ADR
+    /// 2026-10.8hn6). A plain store read like ``session(of:)``, though a decision read: its `nil`, with no session held or a
+    /// store that cannot answer, always means "not the same era", and its caller then re-seals the receipt, which is what it
+    /// did before the memo. Asked inside a caller's unit it reads that unit's state.
+    public func rootTag(of peer: NodeId) -> Int64? {
+        store.session(peer).map { RatchetCrypto.rootTag($0.root) }
+    }
+
     /// Our epochs for `peer`, the most recently minted first, as `(epoch, createdAt)`: the ground truth for an
     /// `EPOCH_GONE` diagnosis (`debugLocalEpochs`, `RatchetSessions.kt:540-541`).
     public func localEpochs(of peer: NodeId) -> [(epoch: Int, createdAt: Int64)] {

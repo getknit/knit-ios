@@ -134,4 +134,48 @@ import Testing
         #expect(resealed == ids, "the smaller id's DM first: \(resealed)")
         #expect(peers.allSatisfy { iphone.engine.resetReseal.pending[$0.nodeId] == nil })
     }
+
+    /// The recipient's side of the two passes (ADR 2026-10.8hn6): Alice, an Android phone holding a confirmed session with
+    /// us, resets toward us while our receipt for her DM never reached her, then re-seals the DM under its own id, twice, the second pass
+    /// ``ResetReseal/secondPassMilliseconds`` after the first. We hold the DM's row, so each copy meets our exists-gate. The
+    /// first draws exactly one receipt, in the era her reset started; the second, eleven minutes on, is inside that
+    /// receipt's 15-minute floor under the same root, with the receipt in our custody, so it draws none, where the gate
+    /// before the floor sealed one per pass.
+    @Test func aSecondPassInsideTheFloorDrawsNoSecondReceiptFromAPeerThatHoldsTheDm() throws {
+        let iphone = try EngineFixture.ratcheting(me)
+        let android = try AndroidPeer(alice)
+        try iphone.pin(android)
+        let prekey = try iphone.ourPrekey()
+        let id = frameIdOf("resealed")
+        iphone.deliver(try android.dm("hello", to: me, prekey: prekey, id: id, sentAt: now), from: android)
+        #expect(iphone.stores.messages.message(id)?.body == "hello")
+        #expect(iphone.engine.receipts.receiptsSealed == 1, "our receipt in the first era, which never reaches her")
+        let firstTag = try #require(iphone.engine.ratchet.rootTag(of: alice.nodeId))
+        // A DM of ours that she opens confirms her session, so her reset re-roots rather than marking her pending init.
+        let ours = try #require(iphone.engine.sendDirectMessage("hi", to: alice.nodeId))
+        let written = try #require(iphone.transport.written(.chat).last { $0.envelope.id == ours.id })
+        #expect(plaintext(try android.open(written, from: me, now: now + 1)) != nil)
+        #expect(android.session(with: me)?.confirmed == true)
+
+        iphone.clock.advance(SeenSetWindow.milliseconds)
+        let stamp = iphone.clock.wallMilliseconds()
+        iphone.deliver(try android.resetDm(to: me, prekey: prekey, id: frameIdOf("reset"), at: stamp), from: android)
+        let newTag = try #require(iphone.engine.ratchet.rootTag(of: alice.nodeId))
+        #expect(newTag != firstTag, "her reset adopted: a new era")
+
+        // Her first pass: the DM sealed again in the new era, under its own id.
+        iphone.deliver(
+            try android.dm(MessageContent(body: "hello"), to: me, prekey: prekey, id: id, sentAt: now, now: stamp + 1), from: android)
+        #expect(iphone.engine.receipts.receiptsSealed == 2, "one receipt for the new era")
+        #expect(iphone.engine.reAcks.entry(id)?.rootTag == newTag && iphone.engine.reAcks.entry(id)?.step == 0)
+
+        // Her second pass, past our router's window and inside the receipt's floor.
+        iphone.clock.advance(ResetReseal.secondPassMilliseconds)
+        let second = try android.dm(
+            MessageContent(body: "hello"), to: me, prekey: prekey, id: id, sentAt: now, now: stamp + ResetReseal.secondPassMilliseconds)
+        iphone.deliver(second, from: android)
+        #expect(iphone.engine.receipts.receiptsSealed == 2, "no second receipt in the era")
+        #expect(iphone.engine.receipts.receiptsReAckSkipped == 1)
+        #expect(iphone.stores.messages.messages(in: alice.nodeId.string).count == 2, "hers delivered once, beside ours")
+    }
 }

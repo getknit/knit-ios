@@ -215,7 +215,7 @@ extension MeshEngine {
         let id = newFrameId()
         let aad = MessageCrypto.header(id: id, senderId: nodeId.string, sentAt: now, thread: target.member.string)
         let sealing = ratchet.sealDm(to: target.bundle, prekey: target.prekey, plaintext: content.encoded, aad: aad, now: now)
-        guard case .joined(.sealed(let enc), let settlement) = sealing,
+        guard case .joined(.sealed(let enc, rootTag: _), let settlement) = sealing,
             case .joined = groupRatchet.markKeySent(epoch, to: target.member, in: group, now: now)
         else {
             return nil

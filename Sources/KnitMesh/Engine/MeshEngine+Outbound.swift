@@ -299,10 +299,30 @@ extension MeshEngine {
     /// nothing, as Kotlin's throw does. Kotlin's LoRa hold of a DM's receipt (`DmAckCoalescer`, `:2836-2845`) is not this
     /// port's: every receipt goes at once. It runs only in a delivery's second half, after the unit that stored the row, as
     /// a group open in a unit must keep it (phase P6).
+    ///
+    /// `reDelivery` is the pre-decrypt exists-gate's call alone, for a DM whose row we already hold (knit-next #176, ADR
+    /// 2026-10.8hn6; `acknowledge(reDelivery)` and `answeredInEra`, `InboundPipeline.kt` at `afdd37204`). Toward an author
+    /// who can read a sealed receipt it seals none while the receipt we last sealed for that DM's id was sealed under the
+    /// session root we hold now, is younger than its re-arm floor, and is still live in our own custody
+    /// (``DmReAckLedger``); it counts `receiptsReAckSkipped` instead. Any one of those failing seals exactly as before: a
+    /// new root after a reset, a floor passed (the author may hold our receipt without ever having applied it), a receipt
+    /// our quota or the TTL dropped (nobody re-serves it). A first delivery, a room post and a group message are never
+    /// gated, and neither is a cleartext receipt, which purges the DM and ends the loop by itself. No LoRa exemption: no plane.
     func acknowledge(_ envelope: RelayEnvelope, sender: NodeId) {
+        acknowledge(envelope, sender: sender, reDelivery: false)
+    }
+
+    /// ``acknowledge(_:sender:)``, told whether this is the exists-gate's call for a DM whose row we already hold.
+    func acknowledge(_ envelope: RelayEnvelope, sender: NodeId, reDelivery: Bool) {
         if envelope.recipientId == nil {
             tickPost(envelope.id, author: sender, escalatable: envelope.group != nil)
-        } else if sendSealedReceipt(for: envelope.id, to: sender) == .unsealed {
+            return
+        }
+        if reDelivery, answeredInEra(envelope.id, author: sender) {
+            receiptCounts.receiptsReAckSkipped += 1
+            return
+        }
+        if sendSealedReceipt(for: envelope.id, to: sender) == .unsealed {
             sendReceipt(for: envelope.id)
         }
     }

@@ -113,15 +113,19 @@ import Testing
         }
     }
 
-    /// The reply's `receipts`, beside `seals`, under the names of Android's `MeshMetrics.Receipts` (phase P5d): the four
+    /// The reply's `receipts`, beside `seals`, under the names of Android's `MeshMetrics.Receipts` (phase P5d): the five
     /// this port counts, each zero before anything was acknowledged, with the switch on or off. The engine's tests count
-    /// them (`MeshEngineSealedReceiptTests`, `MeshEngineSealedTickTests`, `MeshEngineInlineAckTests`).
+    /// them (`MeshEngineSealedReceiptTests`, `MeshEngineSealedTickTests`, `MeshEngineInlineAckTests`, and
+    /// `MeshEngineReAckTests` for the skipped re-acks, ADR 2026-10.8hn6).
     @Test func theDumpCountsOurReceiptsUnderAndroidsNames() async throws {
         for on in [true, false] {
             let rig = ControlRig(configuration: MeshConfiguration(ratchet: on))
             let receipts = try #require(try await rig.send(#"{"cmd":"ratchet"}"#)["receipts"] as? [String: Int])
             #expect(
-                receipts == ["receiptsSealed": 0, "receiptsSealedFallback": 0, "receiptsCustodied": 0, "receiptsRidden": 0],
+                receipts == [
+                    "receiptsSealed": 0, "receiptsSealedFallback": 0, "receiptsReAckSkipped": 0, "receiptsCustodied": 0,
+                    "receiptsRidden": 0,
+                ],
                 "switch \(on)")
         }
     }

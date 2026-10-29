@@ -214,7 +214,7 @@ import Testing
         // A v2 plaintext that is no `MessageContent`: Kotlin drops it as DECRYPT_FAILED before its commit (`:1043-1047`).
         let aad = MessageCrypto.header(id: frameIdOf("junk"), senderId: alice.nodeId.string, sentAt: now, thread: me.nodeId.string)
         let answer = android.sessions.sealDm(to: me.keys.bundle, prekey: prekey, plaintext: [0xFF, 0x00], aad: aad, now: now)
-        guard case .settled(.sealed(let envelope)) = answer else {
+        guard case .settled(.sealed(let envelope, rootTag: _)) = answer else {
             Issue.record("the seal: \(answer)")
             return
         }

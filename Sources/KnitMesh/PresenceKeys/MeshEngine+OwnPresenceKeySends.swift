@@ -85,15 +85,12 @@ extension MeshEngine {
         }
         // The advance committed: its floors move whatever follows.
         ratchet.settle(sealed.settlement)
-        // A ctl 11's seal always reads its root (``ControlFrame/confirmedOnly``).
-        presenceKeyFeed.sent[peer] = sealed.rootTag.map { rootTag in
-            PresenceKeyFeed.SentKeys(
-                generations: generations,
-                rootTag: rootTag,
-                link: presenceKeyFeed.linkSequence[peer],
-                queuedAt: clock.monotonicMilliseconds()
-            )
-        }
+        presenceKeyFeed.sent[peer] = PresenceKeyFeed.SentKeys(
+            generations: generations,
+            rootTag: sealed.rootTag,
+            link: presenceKeyFeed.linkSequence[peer],
+            queuedAt: clock.monotonicMilliseconds()
+        )
         router.markOwn(sealed.frame.envelope.id, now: clock.monotonicMilliseconds())
         guard transport.sendOverProvenLink(sealed.frame.wire, to: peer) else {
             // Sealed and never left (`onSendFailed`, `:363-370`): forgotten, so the next pass seals them again.

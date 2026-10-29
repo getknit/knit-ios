@@ -91,7 +91,7 @@ final class AndroidPeer {
         let aad = MessageCrypto.header(id: id, senderId: nodeId.string, sentAt: sentAt, thread: recipient.nodeId.string)
         let answer = sessions.sealDm(
             to: recipient.keys.bundle, prekey: recipientPrekey, plaintext: plaintext, aad: aad, now: now ?? sentAt, v3: v3)
-        guard case .settled(.sealed(var envelope)) = answer else {
+        guard case .settled(.sealed(var envelope, rootTag: _)) = answer else {
             Issue.record("Android's seal failed: \(answer)")
             throw Refused()
         }

@@ -111,7 +111,8 @@ extension MeshEngine {
     /// Our receipt for DM `ackId` from `author`, sealed and originated (`sealDmReceipt`, `InboundPipeline.kt:2895-2958`),
     /// with the room ticks waiting for a ride toward `author` beside it. It purges nothing, ours included: carriers cannot
     /// read it, so the DM leaves every custody on its TTL alike (ADR 2026-09.p6nb, amended). The author's row is read
-    /// inside the seal's unit, so a read that fails fails the unit. Answers what it came to: only
+    /// inside the seal's unit, so a read that fails fails the unit. A committed seal is filed in ``reAcks`` for the
+    /// exists-gate to read (ADR 2026-10.8hn6); nothing else is. Answers what it came to: only
     /// ``SealedReceiptAttempt/unsealed`` asks the caller for the cleartext receipt.
     func sendSealedReceipt(for ackId: String, to author: NodeId) -> SealedReceiptAttempt {
         guard configuration.ratchet else {
@@ -129,8 +130,27 @@ extension MeshEngine {
         }
         originateSealed(receipt)
         receiptCounts.receiptsSealed += 1
+        // Filed under the DM's own id alone, never the riders' (AckSync owns those), with the root this seal committed
+        // under, out of its own result, once its unit committed (`sealDmReceipt`'s record, ADR 2026-10.8hn6).
+        reAcks.record(acked: ackId, rootTag: receipt.rootTag, receiptId: receipt.frame.envelope.id, now: receipt.sealedAt)
         ackSync.rode(riders, now: clock.monotonicMilliseconds())
         return .sent
+    }
+
+    /// Whether our re-delivered DM `dmId` from `author` is already answered by a sealed receipt of ours in the session's
+    /// current era (`answeredInEra`, ADR 2026-10.8hn6), checked in Kotlin's order: the author can read a sealed receipt,
+    /// the memo holds one under the root held now inside its floor, and that receipt is live in our custody, read with
+    /// `frame`, never `contains`, which counts an expired row the sweep has not reached. All three on the wall clock, the
+    /// one custody's `now` reads. Any read that cannot answer (no session, a store that fails) answers `false`: re-seal.
+    func answeredInEra(_ dmId: String, author: NodeId) -> Bool {
+        guard canSealTick(to: author) else {
+            return false
+        }
+        let now = clock.wallMilliseconds()
+        guard let receiptId = reAcks.heldReceipt(acked: dmId, currentRootTag: ratchet.rootTag(of: author), now: now) else {
+            return false
+        }
+        return stores.custody.frame(receiptId, now: now) != nil
     }
 
     /// What a DM's receipt whose seal did not commit comes to, its riders already given back.
@@ -172,19 +192,22 @@ internal enum SealedReceiptAttempt: Equatable {
     /// commits, the receipt stands in our custody and goes at the next exchange, carrying the riders it also gave back,
     /// which the author then applies twice, idempotently.
     case heldBack
-    /// A store failed, the author's row read or the unit: nothing goes, sealed or cleartext, and nothing is purged, as
-    /// Kotlin's throw sends nothing. The DM's tick waits until a copy reaches us again. Our digest lists the DM while our
-    /// custody holds it, so only a copy past the router's window brings one: a back-fill once our quotas evict it, or a
-    /// re-flood of a copy some node took from one holder while linked to another, through whatever neighbour relays it
-    /// (ADR 2026-10.5sk9's P5d amendment).
+    /// A store failed, the author's row read or the unit: nothing goes, sealed or cleartext, nothing is purged, as
+    /// Kotlin's throw sends nothing, and nothing is filed in ``MeshEngine/reAcks``. The DM's tick waits until a copy reaches
+    /// us again. Our digest lists the DM while our custody holds it, so only a copy past the router's window brings one: a
+    /// back-fill once our quotas evict it, or a re-flood of a copy some node took from one holder while linked to another,
+    /// through whatever neighbour relays it (ADR 2026-10.5sk9's P5d amendment). That copy re-seals: the memo holds no
+    /// receipt of this attempt, so the exists-gate's bound (ADR 2026-10.8hn6) answers only with an earlier one, sealed in
+    /// the era held now, inside its floor and still in our custody.
     case failed
 }
 
 /// How our receipts and ticks went, under the names of Android's metrics (`MeshMetrics.Receipts`, `MeshMetrics.kt:1489-1498`,
 /// at `cbf2a487`), counted where Kotlin counts them (`onReceiptSealed`, `onReceiptSealedFallback`, `onReceiptCustodied`
-/// and `onReceiptRidden`, `MeshManager.kt:1887-1890`, `:1955-1957`, `:1194` and `InboundPipeline.kt:2939-2955`). Four of
-/// Android's eight: its `receiptsResent` counts the ledger's re-sends, which this port leaves uncounted, and its
-/// coalesced, spooled and unsigned ticks have no plane or form here. The control surface's `ratchet` reports them.
+/// and `onReceiptRidden`, `MeshManager.kt:1887-1890`, `:1955-1957`, `:1194` and `InboundPipeline.kt:2939-2955`), with
+/// `receiptsReAckSkipped` (`onReAckSkipped`, `MeshMetrics.kt` at `afdd37204`). Five of Android's nine: its `receiptsResent`
+/// counts the ledger's re-sends, which this port leaves uncounted, and its coalesced, spooled and unsigned ticks have no
+/// plane or form here. The control surface's `ratchet` reports them.
 public struct RatchetReceiptCounts: Sendable, Equatable {
     /// Receipts and ticks sealed with the ratchet: a DM's receipt, a live-link tick and an escalated batch alike
     /// (`receiptsSealed`).
@@ -197,13 +220,20 @@ public struct RatchetReceiptCounts: Sendable, Equatable {
     /// Room ticks that rode a frame sealed toward their author anyway: a batch, a DM's receipt, or our DM's inline acks
     /// (`receiptsRidden`).
     public internal(set) var receiptsRidden = 0
+    /// Re-delivered DMs to us that drew no new sealed receipt, since ours, sealed in the session's current era inside its
+    /// re-arm floor, is still live in our custody (`receiptsReAckSkipped`, ADR 2026-10.8hn6): each one a receipt not minted.
+    public internal(set) var receiptsReAckSkipped = 0
 
     /// Counts as stated, each zero unless given: nothing sealed yet.
-    public init(receiptsSealed: Int = 0, receiptsSealedFallback: Int = 0, receiptsCustodied: Int = 0, receiptsRidden: Int = 0) {
+    public init(
+        receiptsSealed: Int = 0, receiptsSealedFallback: Int = 0, receiptsCustodied: Int = 0, receiptsRidden: Int = 0,
+        receiptsReAckSkipped: Int = 0
+    ) {
         self.receiptsSealed = receiptsSealed
         self.receiptsSealedFallback = receiptsSealedFallback
         self.receiptsCustodied = receiptsCustodied
         self.receiptsRidden = receiptsRidden
+        self.receiptsReAckSkipped = receiptsReAckSkipped
     }
 }
 

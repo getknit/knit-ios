@@ -12,12 +12,23 @@ import Testing
 /// the lab's holds let them, so a held side's custody still answers the other's digest into its hold. A frame written to
 /// a node that is not linked is lost, as on the air; our own frames and the ones we carry come back by custody's back-fill
 /// at the next link-up, which is how the lab's merges work. Each node keeps its own clock, moved together.
+///
+/// A lab made with `crossings` also models each link layer's ``LinkCrossings``: a frame goes over a link at most once per
+/// window, either way, and a digest reply leaves out what the link already carried, as ``LinkManager`` has it. Without it
+/// every write is carried, which the older labs pin.
 final class EngineLab {
     /// A node and the link-level state the lab keeps for it.
     private final class Node {
         var fixture: EngineFixture
         var framesRead = 0
         var digestsRead = 0
+        /// Its link layer's memo of what crossed each link, by neighbour: read only in a lab that models crossings.
+        var crossings = LinkCrossings<NodeId>()
+        /// The neighbours each write, by its index in the transport's log, did not go to, its frame having crossed that link
+        /// already: decided as the engine wrote it.
+        var skipped: [Int: Set<NodeId>] = [:]
+        /// Each write the gate let onto a link, by its index in the transport's log and the neighbour: what the link wrote.
+        var passed: [(index: Int, peer: NodeId)] = []
 
         init(_ fixture: EngineFixture) {
             self.fixture = fixture
@@ -50,10 +61,71 @@ final class EngineLab {
     private var links: Set<Direction> = []
     private var holds: Set<Direction> = []
     private var held: [Direction: [Carried]] = [:]
+    private let modelsCrossings: Bool
+    /// One frame a link carried: from node `from` to node `to`, its id.
+    struct Carriage {
+        let from: Int
+        let to: Int
+        let id: String
+    }
 
-    /// A lab over `fixtures`, none of them linked yet.
-    init(_ fixtures: [EngineFixture]) {
+    /// Every frame a link carried, in order.
+    private(set) var carriedFrames: [Carriage] = []
+
+    /// A lab over `fixtures`, none of them linked yet, modelling each link's crossings memo when `crossings` says so.
+    init(_ fixtures: [EngineFixture], crossings: Bool = false) {
         nodes = fixtures.map(Node.init)
+        modelsCrossings = crossings
+        for node in nodes {
+            watchCrossings(node)
+        }
+    }
+
+    /// Has `node`'s transport answer `hasCrossed` from its memo, in a lab that models crossings.
+    private func watchCrossings(_ node: Node) {
+        guard modelsCrossings else {
+            return
+        }
+        node.fixture.transport.crossings = { [weak node] key, peer in
+            guard let node else {
+                return false
+            }
+            return node.crossings.hasCrossed(link: peer, key: key, now: node.fixture.clock.monotonicMilliseconds())
+        }
+        // One write per link per frame, either way, decided as the engine writes, on its clock, before any hold
+        // (``LinkManager/send(_:to:)``); the far end stamps it in when it arrives (``deliver(_:_:)``).
+        node.fixture.transport.onWrite = { [weak node] written in
+            guard let node, let key = FrameKey.ofSigned(written.wire) else {
+                return
+            }
+            let index = node.fixture.transport.written.count - 1
+            let now = node.fixture.clock.monotonicMilliseconds()
+            for peer in written.to.map({ [$0] }) ?? node.fixture.transport.neighbors.map(\.nodeId) {
+                if node.crossings.firstCrossing(link: peer, key: key, now: now) {
+                    node.passed.append((index: index, peer: peer))
+                } else {
+                    node.skipped[index, default: []].insert(peer)
+                }
+            }
+        }
+    }
+
+    /// How many times node `from`'s link to node `to` wrote frame `id`, counting from the `since`th entry of its transport's
+    /// log: the engine's writes the crossings gate let through, as the radio's `LinkManager.send` writes them (a lab that
+    /// models crossings only). A write the gate dropped, such as a router relay of a frame that already crossed, is not one.
+    func delivered(of id: String, from: Int, to: Int, since: Int) -> Int {
+        let node = nodes[from]
+        let peer = nodes[to].fixture.me.nodeId
+        let written = node.fixture.transport.written
+        return node.passed.filter { pass in
+            pass.index >= since && pass.peer == peer && ExactKey(written[pass.index].envelope.id) == ExactKey(id)
+        }.count
+    }
+
+    /// Forgets what crossed the link between `first` and `second`, as a link going down or coming up anew does.
+    private func forgetCrossings(_ first: Int, _ second: Int) {
+        nodes[first].crossings.forget(link: nodes[second].fixture.me.nodeId)
+        nodes[second].crossings.forget(link: nodes[first].fixture.me.nodeId)
     }
 
     /// Node `index`'s engine and stores.
@@ -67,6 +139,7 @@ final class EngineLab {
     func link(_ first: Int, _ second: Int, holding: [(from: Int, to: Int)] = [], capabilities: Capabilities = .local) {
         links.insert(Direction(from: first, to: second))
         links.insert(Direction(from: second, to: first))
+        forgetCrossings(first, second)
         for direction in holding {
             hold(from: direction.from, to: direction.to)
         }
@@ -83,6 +156,7 @@ final class EngineLab {
             holds.remove(direction)
             held[direction] = nil
         }
+        forgetCrossings(first, second)
         nodes[first].fixture.unlink(nodes[second].fixture.me)
         nodes[second].fixture.unlink(nodes[first].fixture.me)
     }
@@ -120,6 +194,7 @@ final class EngineLab {
             unlink(index, other)
         }
         nodes[index] = Node(fixture)
+        watchCrossings(nodes[index])
     }
 
     /// Carries everything written since the last call, both ways, until no node writes anything more.
@@ -142,13 +217,15 @@ final class EngineLab {
     private func drain(_ index: Int) -> Bool {
         let node = nodes[index]
         let transport = node.fixture.transport
-        let frames = transport.written.dropFirst(min(node.framesRead, transport.written.count))
+        let first = min(node.framesRead, transport.written.count)
+        let frames = transport.written.dropFirst(first)
         let digests = transport.digests.dropFirst(min(node.digestsRead, transport.digests.count))
         node.framesRead = transport.written.count
         node.digestsRead = transport.digests.count
-        for written in frames {
+        for (position, written) in frames.enumerated() {
+            let skipped = node.skipped.removeValue(forKey: first + position) ?? []
             let targets = written.to.map { peer in nodes.indices.filter { nodes[$0].fixture.me.nodeId == peer } } ?? Array(nodes.indices)
-            for target in targets where target != index {
+            for target in targets where target != index && !skipped.contains(nodes[target].fixture.me.nodeId) {
                 route(.frame(written), Direction(from: index, to: target))
             }
         }
@@ -176,6 +253,11 @@ final class EngineLab {
         let receiver = nodes[direction.to].fixture.engine
         switch item {
         case .frame(let written):
+            if modelsCrossings, let key = FrameKey.ofSigned(written.wire) {
+                let to = nodes[direction.to]
+                to.crossings.arrived(link: sender, key: key, now: to.fixture.clock.monotonicMilliseconds())
+            }
+            carriedFrames.append(Carriage(from: direction.from, to: direction.to, id: written.envelope.id))
             receiver.receiveAdmitted(InboundFrame(wire: written.wire, envelope: written.envelope, from: sender))
         case .digest(let ids):
             receiver.receiveDigest(ids, from: sender)

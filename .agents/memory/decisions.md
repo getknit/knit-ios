@@ -108,7 +108,9 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.s64c](decisions/2026-10-s64c-requests-and-the-room-are.md) | requests and the room are trimmed as Android trims them, and a trim never comes back | mesh, storage, security |
 | [2026-10.vzem](decisions/2026-10-vzem-a-request-s-photos-wait.md) | a request's photos wait for accept, and strangers' room photos are bounded | mesh, blobs, security |
 | [2026-10.6n48](decisions/2026-10-6n48-custody-refuses-a-frame-whose.md) | custody refuses a frame whose signed bytes exceed 60 KiB | custody, convergence, security |
+| [2026-10.2ehy](decisions/2026-10-2ehy-a-sealed-dm-receipt-is.md) | a sealed DM receipt is re-sealed only for a new era, a lost receipt, or past its re-arm floor | receipts, ratchet, custody |
 | [2026-10.k99b](decisions/2026-10-k99b-a-lookalike-or-invisible-name.md) | A lookalike or invisible name gets a discriminator, and received names are cleaned | interop, text |
+| [2026-10.metv](decisions/2026-10-metv-custody-serves-a-group-s.md) | custody serves a group's frames to any peer | custody, convergence, groups |
 | [2026-10.r88m](decisions/2026-10-r88m-custody-refuses-a-profile-whose.md) | custody refuses a profile whose signed bytes exceed 8 KiB | custody, convergence, security, keys, blobs |
 | [2026-10.x246](decisions/2026-10-x246-a-received-quote-is-checked.md) | A received quote is checked against the original it names | messages, moderation, interop, ui |
 | [2026-11.hpmt](decisions/2026-11-hpmt-a-link-proves-the-node.md) | A link proves the node id its HELLO claims | ble, crypto, security, interop |
@@ -123,4 +125,3 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-11.gjtd](decisions/2026-11-gjtd-a-name-is-screened-by.md) | A name is screened by the word lists when it is set and when it is drawn | moderation, interop, text |
 | [2026-11.adrq](decisions/2026-11-adrq-text-dms-ride-spool-relays.md) | Text DMs ride spool relays, in debug builds until approved | scope, transport, spool, interop |
 | [2026-11.xfcq](decisions/2026-11-xfcq-our-own-profile-frame-is.md) | Our own profile frame is kept, so an evicted stamp goes back as its bytes | crypto, custody, profiles |
-| [2026-10.metv](decisions/2026-10-metv-custody-serves-a-group-s.md) | custody serves a group's frames to any peer | custody, convergence, groups |

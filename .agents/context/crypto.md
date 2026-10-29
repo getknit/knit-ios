@@ -1126,7 +1126,15 @@ epoch export             "knit/dm/v2/export/epoch": reserved for a spool seal ve
   - The fallback is the cleartext receipt or tick, never v1. The cleartext receipt purges the DM from our custody;
     the sealed one purges nothing, ours included (ADR 2026-09.p6nb, amended).
   - The counts are Android's `MeshMetrics.Receipts` names, in the control surface's `ratchet` reply beside `seals`:
-    `receiptsSealed`, `receiptsSealedFallback`, `receiptsCustodied` and `receiptsRidden` (`RatchetReceiptCounts`).
+    `receiptsSealed`, `receiptsSealedFallback`, `receiptsReAckSkipped`, `receiptsCustodied` and `receiptsRidden`
+    (`RatchetReceiptCounts`).
+  - A re-delivered DM to us draws a new sealed receipt only when the one we last sealed for its id was sealed under
+    another session root than the one held now, has left our custody (`CustodyStore.frame(_:now:)`, never `contains`),
+    or is older than its re-arm floor: 15 min, doubling per same-era re-seal to 4 h (ADR 2026-10.2ehy, knit-next ADR
+    2026-10.8hn6). The era is the root tag the seal itself committed under, never a read after it. The memo
+    (`DmReAckLedger`) lives in memory and records the DM's own id only, never the room ticks riding it. A skip counts
+    `receiptsReAckSkipped`. Only the exists-gate's call is gated: a first delivery, a group or room tick, and the
+    cleartext receipt toward an author who cannot read a sealed one go as before.
   - No blocked gate on a tick (`MeshManager.kt:1863-1865`); a blocked sender's DM is never delivered, so it earns no
     receipt at all.
   - Room ticks waiting for a ride also ride a DM's first seal toward a peer whose profile carries `CAP_INLINE_ACK`,

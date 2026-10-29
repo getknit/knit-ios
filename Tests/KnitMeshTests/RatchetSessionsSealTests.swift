@@ -117,4 +117,31 @@ import Testing
         // The prekey the init names still serves the legacy row.
         #expect(plaintext(try bob.open(alice.seal("named", now: later, pkid: 1), now: later + 1)) == Array("named".utf8))
     }
+
+    /// `aTaggedSealNamesTheRootItCommitted` (knit-next `RatchetSessionsSealTest`, at `afdd37204`, ADR 2026-10.8hn6): the tag a
+    /// seal answers names the root that very seal committed. On first contact that is the session its own initiation
+    /// created, which no read before the seal could see; it is the pair's root, so the peer that opens it holds the same;
+    /// and after a reset re-roots, the next seal names the new one.
+    @Test func aTaggedSealNamesTheRootItCommitted() throws {
+        let (alice, bob) = try RatchetSessionSide.pair()
+        #expect(alice.sessions.rootTag(of: bob.nodeId) == nil, "no session yet")
+        let first = sealing(alice, try alice.prekey(), now: Self.start)
+        guard case .settled(.sealed(let envelope, let firstTag)) = first else {
+            Issue.record("expected a sealed DM, got \(first)")
+            return
+        }
+        #expect(alice.sessions.rootTag(of: bob.nodeId) == firstTag, "the session the seal's own initiation created")
+        #expect(plaintext(try bob.open(envelope, now: Self.start + 1)) == Array("x".utf8))
+        #expect(bob.sessions.rootTag(of: alice.nodeId) == firstTag, "the pair's root")
+
+        let reset = try sealedReset(try bob.reset(now: Self.start + 2))
+        #expect(reset.reRooted)
+        let after = sealing(bob, try bob.prekey(), now: Self.start + 3)
+        guard case .settled(.sealed(_, let afterTag)) = after else {
+            Issue.record("expected a sealed DM, got \(after)")
+            return
+        }
+        #expect(afterTag != firstTag, "a new era")
+        #expect(bob.sessions.rootTag(of: alice.nodeId) == afterTag, "the root held now")
+    }
 }

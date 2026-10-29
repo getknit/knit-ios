@@ -109,7 +109,7 @@ import Testing
                 #expect(bob.session == nil, "the initiation rolled back with the unit")
                 continue
             }
-            guard case .committed(.joined(.sealed(let envelope), let settlement)) = outer else {
+            guard case .committed(.joined(.sealed(let envelope, rootTag: _), let settlement)) = outer else {
                 Issue.record("a seal inside the caller's unit joins it: \(outer)")
                 return
             }

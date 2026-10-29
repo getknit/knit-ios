@@ -108,7 +108,7 @@ import Testing
         let committed = alice.transactor.atomically { () -> RatchetSessions.Answer<RatchetSessions.Sealing>? in
             alice.sessions.sealDm(to: bob.identity.bundle, prekey: prekey, plaintext: [1], aad: Self.aad, now: Self.now)
         }
-        guard case .committed(.joined(.sealed(let envelope), _)) = committed else {
+        guard case .committed(.joined(.sealed(let envelope, rootTag: _), _)) = committed else {
             Issue.record("expected a joined seal under a committed unit, got \(committed)")
             return
         }

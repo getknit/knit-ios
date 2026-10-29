@@ -20,8 +20,12 @@ extension RatchetSessions {
 
     /// A DM seal's result (`sealDm`'s `EncEnvelope?`, `RatchetSessions.kt:223-277`).
     public enum Sealing: Sendable, Equatable {
-        /// The envelope, persisted with the chain it spent.
-        case sealed(EncEnvelope)
+        /// The envelope, persisted with the chain it spent, and the ``RatchetCrypto/rootTag(_:)`` of the session root that
+        /// very seal committed under (`TaggedSeal`, knit-next `RatchetSessions.kt` at `afdd37204`, ADR 2026-10.8hn6): on
+        /// first contact the session its own initiation created, which no read before the seal could see. It is the era a
+        /// caller files the frame under (the sealed receipt's re-ack memo, ``DmReAckLedger``); compare it with
+        /// ``RatchetSessions/rootTag(of:)``, and never re-read the session after the seal to stand in for it.
+        case sealed(EncEnvelope, rootTag: Int64)
         /// No session and no prekey to start one, or a new epoch due with no base: nothing changed. A chat then goes as
         /// v1, a ctl as its cleartext frame, and a seed waits.
         case unavailable

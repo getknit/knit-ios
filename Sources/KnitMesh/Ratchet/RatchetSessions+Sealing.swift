@@ -61,7 +61,10 @@ extension RatchetSessions {
                     return nil
                 }
                 let version = v3 ? EncEnvelope.Version.compactRatchet : EncEnvelope.Version.ratchet
-                return .sealed(Self.envelope(sealed, version: version, flags: sealed.header.flags))
+                // The tag of the root this seal committed under, out of its own result (ADR 2026-10.8hn6).
+                return .sealed(
+                    Self.envelope(sealed, version: version, flags: sealed.header.flags), rootTag: RatchetCrypto.rootTag(sealed.session.root)
+                )
             } catch {
                 unsealed = .refusedKey
                 refused(peer.nodeId, error)

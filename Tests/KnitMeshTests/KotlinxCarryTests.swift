@@ -181,7 +181,7 @@ import Testing
     ) throws -> (frame: TestFrame, header: RatchetHeader) {
         let aad = MessageCrypto.header(id: id, senderId: alice.nodeId.string, sentAt: now, thread: me.nodeId.string)
         let answer = android.sessions.sealDm(to: me.keys.bundle, prekey: prekey, plaintext: plaintext, aad: aad, now: now, v3: true)
-        guard case .settled(.sealed(let envelope)) = answer, let header = envelope.ratchet else {
+        guard case .settled(.sealed(let envelope, rootTag: _)) = answer, let header = envelope.ratchet else {
             Issue.record("the seal: \(answer)")
             throw Unsealed()
         }

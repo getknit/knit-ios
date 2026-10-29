@@ -86,7 +86,10 @@ import Testing
             fixture.deliverPastRouter(once, from: alice)
         }
         #expect(fixture.resetsSent(to: alice).isEmpty)
-        #expect(fixture.acknowledged(by: android).count == 9, "each copy acknowledged, sealed, as Kotlin re-acks each")
+        // Every copy lands inside the first receipt's floor, under the root it was sealed under, with that receipt in our
+        // custody: one sealed receipt answers all nine (ADR 2026-10.8hn6), where the gate before the floor sealed one each.
+        #expect(fixture.acknowledged(by: android).count == 1, "one receipt, sealed")
+        #expect(fixture.engine.receipts.receiptsReAckSkipped == 8, "and each later copy answered by it")
     }
 
     @Test func repeatedUndecryptableFramesTriggerExactlyOneRateLimitedResetRequest() throws {

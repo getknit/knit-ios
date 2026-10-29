@@ -131,20 +131,6 @@ import Testing
         #expect(fixture.ratchetRecords(of: dave) == RatchetPeerRecords(session: nil, localEpochs: [], recvEpochs: [], skippedKeys: []))
     }
 
-    /// `aReServedDeliveredDmReAcksInTheSealedForm` (`InboundPipelineTest.kt:6204-6219`): delivered once, re-acknowledged per
-    /// copy at the exists-gate, both sealed, each under an id of its own.
-    @Test func aReServedDeliveredDmReAcksInTheSealedForm() throws {
-        let (fixture, android) = try rig()
-        let id = canonicalId(1)
-        let frame = try android.dm("again", to: me, prekey: try fixture.ourPrekey(), id: id, sentAt: now, v3: true)
-        fixture.deliver(frame, from: android)
-        fixture.deliverPastRouter(frame, from: alice)
-        #expect(fixture.stores.messages.messages(in: alice.nodeId.string).count == 1, "delivered once")
-        #expect(fixture.transport.written(.receipt).isEmpty)
-        #expect(fixture.acknowledged(by: android) == [id, id], "re-acked per copy, sealed")
-        #expect(Set(fixture.sealedReceipts(to: android).map(\.envelope.id)).count == 2, "a fresh id each")
-    }
-
     // MARK: The prekey path, and seals that fail
 
     /// The prekey path (`sealDmReceipt`'s doc, `InboundPipeline.kt:2888-2894`): a capable author whose DM came v1, sent before

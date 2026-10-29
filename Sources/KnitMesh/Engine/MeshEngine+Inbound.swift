@@ -219,11 +219,11 @@ extension MeshEngine {
         let recipient = envelope.recipientId.flatMap(NodeId.init)
         // Custody re-serves the same ciphertext routinely; once the row exists, only the receipt is owed. A signed frame's
         // only (`:950`): this gate never opens, so it is what lets the ratchet delete a spent key, and an unsigned frame
-        // proves nothing until it opens.
+        // proves nothing until it opens. A DM's sealed re-ack here is bounded per era (`reDelivery`, ADR 2026-10.8hn6).
         if route.signed, stores.messages.contains(envelope.id) {
             // A relay's copy of a DM this phone already holds is never acknowledged again (ADR 2026-11.adrq, P4a).
             if !route.isSpool {
-                acknowledge(envelope, sender: sender)
+                acknowledge(envelope, sender: sender, reDelivery: true)
             }
             return
         }

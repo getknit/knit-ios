@@ -155,7 +155,7 @@ private final class SendReplay {
             let aad = try Replay.bytes(step.aad ?? "")
             let answer = actor.engine.ratchet.sealDm(
                 to: peer.bundle, prekey: try pinned(by: actor, peer), plaintext: plaintext, aad: aad, now: step.now, v3: v3)
-            guard case .settled(.sealed(let envelope)) = answer else {
+            guard case .settled(.sealed(let envelope, rootTag: _)) = answer else {
                 Issue.record("\(label): the facade's seal \(answer)")
                 return
             }

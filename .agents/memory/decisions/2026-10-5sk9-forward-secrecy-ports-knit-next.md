@@ -859,7 +859,8 @@ keyed vectors for it (`.agents/context/crypto.md`). Kotlin lines here are at kni
     on, and every holder past its window relays it, so a phone returning next to two holders can buy one more receipt
     for each delivered DM it takes, from that DM's recipient anywhere the flood reaches. That is up to about 144 in a
     DM's day, more if 4,096 ids churn through a seen set first, each flooded and carried for a day and taking a row in
-    the acker's 200, as in Kotlin. Bounding the re-ack is knit-next #176's, for both platforms to take (the roadmap).
+    the acker's 200, as in Kotlin. Bounding the re-ack is knit-next #176's, for both platforms to take (the roadmap);
+    ADR 2026-10.2ehy bounds it (the 2026-10-29 amendment).
   - A re-sealed DM's receiver keeps whichever seal reached its custody first, and its sender the original: one id, two
     sets of bytes on two nodes, which the digests, comparing ids, do not see. Kotlin does the same.
   - A receipt or tick for an id the compact codec cannot carry goes v2
@@ -1947,3 +1948,13 @@ and reading `PRAGMA secure_delete` on the iPhone. The maintainer flipped before 
 a room post's hash whose type the room refuses (`RoomAttachments`), and a stranger's room photo past the bound
 (`StrangerRoomPhotos`). The frames themselves are carried as before. A frame of ours, a sealed one or a profile is never
 a stranger's room post, so our own photos stay served as P7c says.
+
+**Amended 2026-10-29, by ADR 2026-10.2ehy (knit-next #176):** P5d's re-ack is bounded, as knit-next ADR 2026-10.8hn6
+bounds it (`afdd37204`). When the exists-gate answers a re-delivered DM to us from an author who can read a sealed
+receipt, it seals no new receipt while the one we last sealed for that DM was sealed under the session root we hold
+now, is still live in our custody, and is younger than its re-arm floor: 15 min, doubling with each re-seal in the same
+era, up to 4 h. Each skip counts `receiptsReAckSkipped`. The worst case falls from about 144 receipts per DM per day
+to ten. #171's second pass (phase P7f) is bounded with it. The reset is a new era, so the first copy past it still draws one
+receipt under the new root, and the second pass eleven minutes later finds that receipt held, in the same era and inside
+its floor, and seals nothing. At a peer that already read the first copy, the two passes now buy one receipt where they
+bought two.

@@ -268,6 +268,12 @@ final class ManualClock: MeshClock {
         state.withLock { $0.monotonic }
     }
 
+    /// Steps the wall clock alone by `milliseconds`, back when negative, as a network fix after weeks offline steps it: the
+    /// monotonic clock does not move, so no sleeper wakes and the router's window stays where it was.
+    func stepWall(_ milliseconds: Int64) {
+        state.withLock { $0.wall += milliseconds }
+    }
+
     /// Moves both clocks on, and wakes every sleeper now due.
     func advance(_ milliseconds: Int64) {
         let due = state.withLock { state in
@@ -369,22 +375,5 @@ final class ManualClock: MeshClock {
     /// How many sleepers wait, for a test that must know a timer is parked.
     var sleeperCount: Int {
         state.withLock { $0.sleepers.count }
-    }
-}
-
-/// SplitMix64, so a run draws the same jitter and frame ids every time.
-struct SeededGenerator: RandomNumberGenerator, Sendable {
-    private var state: UInt64
-
-    init(seed: UInt64) {
-        state = seed
-    }
-
-    mutating func next() -> UInt64 {
-        state &+= 0x9E37_79B9_7F4A_7C15
-        var value = state
-        value = (value ^ (value >> 30)) &* 0xBF58_476D_1CE4_E5B9
-        value = (value ^ (value >> 27)) &* 0x94D0_49BB_1331_11EB
-        return value ^ (value >> 31)
     }
 }

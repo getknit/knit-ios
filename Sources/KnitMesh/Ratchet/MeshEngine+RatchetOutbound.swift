@@ -197,7 +197,7 @@ extension MeshEngine {
         let answer = ratchet.sealDm(
             to: plan.bundle, prekey: plan.prekey, plaintext: plan.bytes.plaintext, aad: aad, now: now, v3: plan.v3)
         switch answer {
-        case .joined(.sealed(let envelope), let settlement):
+        case .joined(.sealed(let envelope, rootTag: _), let settlement):
             return RatchetSealed(envelope: envelope, form: .ratchet(v3: plan.v3), settlement: settlement)
         case .settled(.unavailable), .settled(.refusedKey), .joined(.unavailable, _), .joined(.refusedKey, _):
             // v1 refuses a low-order identity key as the ratchet does, and the DM then waits (Kotlin throws, `:1307`).

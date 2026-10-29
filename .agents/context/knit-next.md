@@ -465,17 +465,16 @@ Kotlin wins.
         `:239`). `FeedMeter.swift:174-188` takes the count raw, and `FeedWindow.swift:202-204` always refreshes, so a
         peer repeating one count holds the window shut and an inflated one poisons the rate.
       - **Custody and blobs:** the member-first serve reading every conversation that names a blob (`c39177b66`,
-        `BlobExchange.addresseesAcross`), where `MeshEngine+BlobParking.swift:100-108` reads the earliest row's one; and the echo door of `905aa6370` (its
-        ADR 2026-11.qu98): a carrier's pull-through ask for a hash only held request rows name is declined
-        (`BlobExchange.kt:197`), where `MeshEngine+Blobs.swift:206-218` fetches it within the echo budget. qu98's other
-        two doors are held here already (knit-ios #21). Not settled: `81e49a22b` (its ADR 2026-11.4ckq) re-wants at most
-        64 faces, contacts first, fetch-only, and keeps over-ceiling refusals across restarts; this port re-wants every
-        advertised photo each pass (`MeshEngine+Passes.swift:99-118`) with the pull budget and keeps refusals per
-        session. For `blobs-owner` to judge.
-      - **The ratchet** (`crypto.md`): a sealed DM receipt re-sealed only once per era (`afdd37204`, its ADR
-        2026-10.8hn6, #176, the iOS half the roadmap waits on; `9dfe9f626` keys its ledger by author and DM id, worth
-        taking); the race loser's reclaim (`d9993ed51`, its ADR 2026-10.4mjm); and the floored reset held and opened
-        again (`57b2a85c6`, its ADR 2026-11.sfms).
+        `BlobExchange.addresseesAcross`), where `MeshEngine+BlobParking.swift:100-108` reads the earliest row's one; and
+        the echo door of `905aa6370` (its ADR 2026-11.qu98): a carrier's pull-through ask for a hash only held request
+        rows name is declined (`BlobExchange.kt:197`), where `MeshEngine+Blobs.swift:206-218` fetches it within the echo
+        budget. qu98's other two doors are held here already (knit-ios #21). Not settled: `81e49a22b` (its ADR
+        2026-11.4ckq) re-wants at most 64 faces, contacts first, fetch-only, and keeps over-ceiling refusals across
+        restarts; this port re-wants every advertised photo each pass (`MeshEngine+Passes.swift:99-118`) with the pull
+        budget and keeps refusals per session. For `blobs-owner` to judge.
+      - **The ratchet** (`crypto.md`): `9dfe9f626` keys the re-ack ledger by author and DM id, worth taking (this port's
+        ledger came with `afdd37204`, ADR 2026-10.2ehy); the race loser's reclaim (`d9993ed51`, its ADR 2026-10.4mjm);
+        and the floored reset held and opened again (`57b2a85c6`, its ADR 2026-11.sfms).
       - **A typing cue in a request** (`ba26a7904`): Android drops one in a conversation that is still a message request
         (`InboundPipeline.kt:809`), and `MeshEngine+Typing.swift:37` does not. Its typing-indicators switch is product
         scope.
@@ -612,6 +611,10 @@ Kotlin wins.
     claim after putting a link in its table (this port's admission and registration are one synchronous step in the
     `Mesh` actor), and it re-runs an id's link-up after a displacement (this port's `.down` then `.up` does). The wire
     change is additive.
+    And `9f53dc34f` and `afdd37204` (knit-next #176 and #235, a paired change). `9f53dc34f` (its ADR 2026-10.hr9f,
+    ADR 2026-10.metv here) serves a group's frames to any peer whose digest lacks them. `afdd37204` (its ADR
+    2026-10.8hn6, ADR 2026-10.2ehy here; it replaced `4b09d91cc`, which differs only in `CHANGELOG.md`) re-seals a DM's
+    receipt only for a new era, a lost receipt, or past its re-arm floor. No vector, wire field or capability bit moves.
   - **Mirrored ahead of the pin, after `f018bc8ce`** (knit-ios #54, ADR 2026-11.gjtd): the name screen, knit-next ADR
     2026-11.y4pc, as `ec44d865a` shipped it on `main` (the issue cites it as `4e782849e`, the same patch before a
     rebase), and the lone-x fix before it, `df7d33012` (`4e47bc518`). The port took only those two:

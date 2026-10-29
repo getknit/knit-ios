@@ -109,11 +109,13 @@ import Testing
     /// The blobs re-review's back-fill pin, at Kotlin's level: a node that lacks a delivered DM and links to two holders
     /// relays the first copy it gets to the other before that holder's own copy crosses. Dave (3), new, links to Alice,
     /// whose frames to him are held, and then to Carol, whose back-fill brings him Bob's DM. Dave relays it to Alice past
-    /// her router's window, and Alice, though her custody holds the DM throughout, answers that copy with one more sealed
-    /// receipt, as Kotlin's exists-gate does (`InboundPipeline.kt:946-955`; a served frame floods on, `ForwardSync.kt:14-15`).
-    /// Released, her own back-fill to Dave brings nothing more, past a window and a re-offer. It drops to one under
-    /// knit-next #176's option 1 or 3; option 2 leaves it at two.
-    @Test func aBackFillFedByTwoHoldersBuysTheRecipientOneMoreSealedReceipt() throws {
+    /// her router's window (a served frame floods on, `ForwardSync.kt:14-15`), and her exists-gate meets it about ten
+    /// minutes after her receipt: inside its 15-minute floor, under the root she still holds, with that receipt still in her
+    /// custody, so it draws no second one (knit-next #176, ADR 2026-10.8hn6; `CustodyLabTest`'s
+    /// `aDeliveredDmBackFilledToItsRecipientPastItsSeenWindowDrawsNoSecondReceipt`). What bounds it is the floor, not the
+    /// router's window: a copy past 15 minutes would draw one more. Released, her own back-fill to Dave brings nothing more,
+    /// past a window and a re-offer.
+    @Test func aBackFillFedByTwoHoldersInsideTheFloorDrawsNoSecondSealedReceipt() throws {
         let dave = TestPeer(seed: 4)
         let lab = EngineLab([
             try EngineFixture.ratcheting(bob, seed: 21), EngineFixture(carol, seed: 22), try EngineFixture.ratcheting(alice, seed: 23),
@@ -133,13 +135,14 @@ import Testing
         lab.link(3, 1)
         lab.advance(lab[1].engine.configuration.router.jitterWindowMilliseconds)
         #expect(lab[3].stores.custody.contains(dm.id), "Dave took Carol's copy")
-        #expect(sealed(from: 2, to: 0, in: lab).count == 2, "and relayed it to Alice, who acknowledged it again")
-        #expect(lab[2].stores.custody.contains(dm.id), "though her custody held it throughout")
+        #expect(lab[2].engine.receipts.receiptsReAckSkipped == 1, "and relayed it to Alice, whose exists-gate met it")
+        #expect(sealed(from: 2, to: 0, in: lab).count == 1, "and answered it with the receipt she holds")
+        #expect(lab[2].stores.custody.contains(dm.id), "her custody held the DM throughout")
 
         lab.release(from: 2, to: 3)
         lab.advance(SeenSetWindow.milliseconds)
         lab.advance(lab[0].engine.configuration.reofferMilliseconds)
-        #expect(sealed(from: 2, to: 0, in: lab).count == 2, "her own back-fill to Dave brings nothing more")
+        #expect(sealed(from: 2, to: 0, in: lab).count == 1, "her own back-fill to Dave brings nothing more")
         #expect(lab[2].stores.custody.contains(dm.id))
     }
 
@@ -147,9 +150,10 @@ import Testing
     /// server's seen set, and every node past its router window relays it on, holders included (`MeshEngine.swift:225-237`,
     /// `MeshRouter.kt:113-114`). Dave (3), new, links to Bob, whose frames to him are held, and then to Carol, and never
     /// to Alice. Carol's back-fill brings him Bob's DM; he relays it to Bob, Bob to Carol and Carol to Alice, each past its
-    /// window, and Alice, though every custody holds the DM, answers it with one more sealed receipt. Released, Bob's own
-    /// back-fill to Dave brings nothing more, past a window and a re-offer. It drops to one under knit-next #176's option 1
-    /// or 3; option 2 leaves it at two.
+    /// window, and Alice, though every custody holds the DM, meets it at her exists-gate. It reaches her about ten minutes
+    /// after her receipt, inside its 15-minute floor and under the root she still holds, with that receipt in her custody,
+    /// so it draws no second one (ADR 2026-10.8hn6): the floor bounds it, not the router's window. Released, Bob's own
+    /// back-fill to Dave brings nothing more, past a window and a re-offer.
     @Test func aServedCopyReFloodsPastEveryHoldersWindowToARecipientTwoHopsAway() throws {
         let dave = TestPeer(seed: 4)
         let lab = EngineLab([
@@ -171,22 +175,26 @@ import Testing
         for _ in 0..<3 {
             lab.advance(jitter)
         }
-        #expect(sealed(from: 2, to: 0, in: lab).count == 2, "Dave's copy went Dave, Bob, Carol, Alice, and she answered it")
-        #expect((0...3).allSatisfy { lab[$0].stores.custody.contains(dm.id) }, "though every custody holds the DM")
+        #expect(lab[2].engine.receipts.receiptsReAckSkipped == 1, "Dave's copy went Dave, Bob, Carol, Alice, and she met it")
+        #expect(sealed(from: 2, to: 0, in: lab).count == 1, "answered by the receipt she holds")
+        #expect((0...3).allSatisfy { lab[$0].stores.custody.contains(dm.id) }, "every custody holds the DM")
 
         lab.release(from: 0, to: 3)
         lab.advance(SeenSetWindow.milliseconds)
         lab.advance(lab[0].engine.configuration.reofferMilliseconds)
-        #expect(sealed(from: 2, to: 0, in: lab).count == 2, "Bob's own back-fill to Dave brings nothing more")
+        #expect(sealed(from: 2, to: 0, in: lab).count == 1, "Bob's own back-fill to Dave brings nothing more")
     }
 
     /// The blobs review's parity pin (`InboundPipeline.kt:946-955`, whose comment names a copy our quotas evicted): our
     /// digest lists a delivered DM only while our custody holds it. Alice keeps two of Bob's frames and Carol and Bob four,
     /// so Bob's two room posts evict his DM from Alice's custody while every other node keeps it. Carol then serves it at
-    /// each exchange, Alice's router lets one copy through per window, and her exists-gate answers each with one more
-    /// sealed receipt, as Kotlin's does. Once two more posts evict the DM from Carol's custody and Bob's too, nobody serves
-    /// it, and Alice sends nothing more.
-    @Test func aDMOurQuotaEvictedIsReAckedOncePerRouterWindowUntilEveryCustodyEvictsIt() throws {
+    /// each exchange, and Alice's router lets one copy through per ten-minute window. Her exists-gate answers them by the
+    /// re-arm floor (ADR 2026-10.8hn6), never by the window: her receipt stays in her custody under the root she holds, so
+    /// the copy at about 10 minutes is inside the 15-minute floor and skipped, the one at about 20 is past it and re-seals
+    /// (the floor doubles to 30), and the one at about 30 is 10 minutes past that re-seal and skipped. Where Kotlin's gate
+    /// before the floor sealed one per window (2, 3, 4), this is 1, 2, 2. Once two more posts evict the DM from Carol's
+    /// custody and Bob's too, nobody serves it, and Alice sends nothing more.
+    @Test func aDMOurQuotaEvictedIsReAckedOncePerFloorUntilEveryCustodyEvictsIt() throws {
         let lab = EngineLab([
             try EngineFixture.ratcheting(bob, stores: .inMemory(custodyLimits: CustodyLimits(maxPerSender: 4)), seed: 21),
             EngineFixture(carol, stores: .inMemory(custodyLimits: CustodyLimits(maxPerSender: 4)), seed: 22),
@@ -207,11 +215,14 @@ import Testing
         #expect(lab[1].stores.custody.contains(dm.id) && lab[0].stores.custody.contains(dm.id), "Carol and Bob keep it")
 
         let reoffer = lab[0].engine.configuration.reofferMilliseconds
-        for window in 1...3 {
+        // Receipts in all and copies skipped after each window: skip, re-seal past 15 minutes, skip inside 30.
+        let schedule = [(sealed: 1, skipped: 1), (sealed: 2, skipped: 1), (sealed: 2, skipped: 2)]
+        for (window, expected) in schedule.enumerated() {
             for _ in 0..<(SeenSetWindow.milliseconds / reoffer) {
                 lab.advance(reoffer)
             }
-            #expect(sealed(from: 2, to: 0, in: lab).count == 1 + window, "one more sealed receipt in window \(window)")
+            #expect(sealed(from: 2, to: 0, in: lab).count == expected.sealed, "window \(window + 1)")
+            #expect(lab[2].engine.receipts.receiptsReAckSkipped == expected.skipped, "window \(window + 1)")
         }
         #expect(lab[2].stores.messages.messages(in: bob.nodeId.string).count == 1, "delivered once")
 

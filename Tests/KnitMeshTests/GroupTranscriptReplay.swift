@@ -90,7 +90,7 @@ struct GroupTranscriptReplay {
             envelope = try seal(seedDM, from: actor, to: peer)
         } else {
             let answer = actor.dm.sealDm(to: peer.identity.bundle, prekey: prekey, plaintext: plaintext, aad: aad, now: step.now)
-            guard case .settled(.sealed(let sealed)) = answer else {
+            guard case .settled(.sealed(let sealed, rootTag: _)) = answer else {
                 Issue.record("\(label): expected a sealed DM, got \(answer)")
                 return
             }
@@ -121,7 +121,7 @@ struct GroupTranscriptReplay {
     private func seal(_ seed: SeedDM, from actor: GroupTranscriptParty, to peer: GroupTranscriptParty) throws -> EncEnvelope {
         let unit = actor.transactor.atomically { () -> (EncEnvelope, RatchetSessions.Settlement)? in
             guard case .joined(.some, _) = actor.group.markKeySent(seed.epoch, to: peer.nodeId, in: seed.group, now: seed.now),
-                case .joined(.sealed(let envelope), let settlement) = actor.dm.sealDm(
+                case .joined(.sealed(let envelope, rootTag: _), let settlement) = actor.dm.sealDm(
                     to: peer.identity.bundle, prekey: seed.prekey, plaintext: seed.plaintext, aad: seed.aad, now: seed.now)
             else {
                 return nil

@@ -78,7 +78,7 @@ author whose pinned profile carries `CAP_RATCHET` and a bundle (ADR 2026-10.5sk9
 With the switch off nothing changes. `MeshEngineSealedReceiptTests` and `SealedReceiptLabTests` keep it, the lab with a
 DM our quotas evicted re-acked once per router window until no custody holds it, and a back-fill fed by two holders
 buying one more sealed receipt from a recipient that holds the DM, next to the returning node or two hops away.
-Bounding the re-ack is knit-next #176's, for both platforms to take.
+Bounding the re-ack is knit-next #176's, for both platforms to take; ADR 2026-10.2ehy bounds it.
 
 **Amended 2026-10-26, for knit-ios #19 (ADR 2026-10.f5zs):** the iPhone no longer serves every live frame a digest
 omits in one answer. A round sends up to 200 frames or 256 KiB, picked from `CustodyStore.liveIndex` in the old order,
@@ -96,3 +96,8 @@ rules, checked against its `vectors/custody-v1.json`.
 **Amended 2026-10-29, for knit-next #176 and #235 (ADR 2026-10.metv):** a digest reply serves group frames to any peer
 that lacks them, member or not, as knit-next ADR 2026-10.hr9f does on Android. A non-member never back-filled kept a
 smaller bucket for each member, held DMs the members' quotas had evicted, and served them back at every exchange.
+
+**Amended 2026-10-29, by ADR 2026-10.2ehy (knit-next #176):** the re-ack above is bounded per era. A re-delivered DM to
+us draws a new sealed receipt only under a new session root, once our last one has left our custody, or past its
+re-arm floor, 15 min doubling to 4 h. A DM our quota evicted is no longer re-acked in every router window, and a
+back-fill fed by two holders buys no second receipt inside the floor. `SealedReceiptLabTests` pins the new counts.

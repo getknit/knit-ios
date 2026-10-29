@@ -118,7 +118,7 @@ struct SessionReplay {
         let plaintext = hexBytes(try #require(step.plaintext))
         let answer = actor.sessions.sealDm(
             to: peer.replay.identity.bundle, prekey: pin.prekey, plaintext: plaintext, aad: aad, now: step.now, v3: v3)
-        guard case .settled(.sealed(let envelope)) = answer else {
+        guard case .settled(.sealed(let envelope, rootTag: _)) = answer else {
             Issue.record("\(label): expected a sealed DM, got \(answer)")
             return
         }

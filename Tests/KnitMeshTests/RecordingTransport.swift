@@ -83,6 +83,7 @@ final class RecordingTransport: MeshTransport {
         let frame = Written(wire: wire, envelope: envelope, to: peer)
         written.append(frame)
         sequence.append(.frame(frame))
+        onWrite?(frame)
     }
 
     /// The neighbours a link would say never proved their id, as a test sets them: every other neighbour has.
@@ -127,6 +128,9 @@ final class RecordingTransport: MeshTransport {
         presenceKeySource = source
     }
 
+    /// Told of each frame as the engine writes it, when a lab models a link layer's write gate (``EngineLab``'s `crossings`).
+    var onWrite: ((Written) -> Void)?
+
     func sendDigest(_ ids: [String], to peer: NodeId) {
         digests.append((ids, peer))
     }
@@ -135,13 +139,16 @@ final class RecordingTransport: MeshTransport {
     var unwritten: [NodeId: Int] = [:]
     /// The frame keys a link would say crossed to each neighbour, either way, as a test sets them: none unless set.
     var crossed: [NodeId: Set<String>] = [:]
+    /// What a link layer's own crossings memo says crossed to a neighbour, either way, inside its window, when a lab models
+    /// one (``EngineLab``'s `crossings`), beside ``crossed``.
+    var crossings: ((String, NodeId) -> Bool)?
 
     func queuedBytes(to peer: NodeId) -> Int {
         unwritten[peer] ?? 0
     }
 
     func hasCrossed(_ key: String, to peer: NodeId) -> Bool {
-        crossed[peer]?.contains(key) ?? false
+        crossed[peer]?.contains(key) == true || crossings?(key, peer) == true
     }
 
     func sendFile(_ file: OutboundFile, to peer: NodeId) -> Bool {

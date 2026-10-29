@@ -421,16 +421,12 @@ explicit direction.** Update this file in the change that ships an item.
     pin fails once the fix lands; the second is the lab repro #89 asks for. The rules are Kotlin's, so the fix is
     knit-next's to choose; port it when it lands. P5e's answers widen both orders, as Kotlin's IntroSync does. It does not
     block the flip on its own, since Kotlin behaves the same, but it stays with the flip's open items.
-  - **knit-next #176, the iOS half, from P5d:** a delivered DM earns one more sealed receipt in each router window in
-    which a copy reaches its recipient: from the recipient's own quota eviction, or from a re-flood. Any node that takes
-    a served copy from one holder while linked to another sends it on, and every holder past its window relays it, so
-    a phone returning next to two holders can buy one more receipt for each delivered DM it takes, from that DM's
-    recipient anywhere the flood reaches. That is up to about 144 in a DM's day, more if 4,096 ids churn through a seen
-    set first, each flooded, carried for a day and taking a row in the acker's 200, as in Kotlin (ADR 2026-10.5sk9's P5d
-    limits). #176 bounds the re-ack on both platforms. When it lands in knit-next, this port takes the same rule, and
-    `SealedReceiptLabTests`' re-ack pins move with it: the back-fill and two-hop pins drop to one receipt under #176's
-    option 1 or 3, and option 2 leaves them at two. It is Kotlin's level, so it is tracked here rather than pinned as a
-    known issue.
+  - **Closed on 2026-10-29: knit-next #176, the iOS half, from P5d.** A delivered DM earned one more sealed receipt in
+    each router window in which a copy reached its recipient, up to about 144 in a DM's day. knit-next bounded it (ADR
+    2026-10.8hn6, `afdd37204`), and this port took the same rule (ADR 2026-10.2ehy): a re-delivered DM draws a new
+    sealed receipt only under a new session root, once our last one has left our custody, or past its re-arm floor
+    (15 min, doubling to 4 h), so at most 10 a day. Its main feed, a non-member's smaller buckets, closed beside it (ADR
+    2026-10.metv). `SealedReceiptLabTests`' re-ack pins moved to the new counts.
   - **P6:** the group form received, which the flip waits on, then the group form sent.
   - **P7:** companion change A10, interop runs against knit-next `main` and the release APKs, a Debug iPhone trial, the
     flip to `0x15F`, and the security claims. P7a, done on 2026-10-16, replays a lost departure: the start's replay,

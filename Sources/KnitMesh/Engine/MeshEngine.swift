@@ -64,6 +64,7 @@ public final class MeshEngine {
     /// What the spool's door keeps between candidates: the engine's one bridge budget and its counts
     /// (``receiveFromSpool(_:relay:)``, ADR 2026-11.adrq, P4a).
     var spoolInbound = SpoolInbound()
+    var reAcks = DmReAckLedger() // Our sealed DM receipts, by era, in memory (ADR 2026-10.8hn6).
     /// What a sealed tick needs from us (ADR 2026-10.5sk9, phase P5d): seals made with the ratchet toward an author who can
     /// read one, which answer "cannot seal" by themselves with the switch off, so every tick ``ackSync`` owes is then
     /// today's cleartext one. A test may hand the ledger others.

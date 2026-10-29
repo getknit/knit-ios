@@ -155,6 +155,9 @@ document:
 - Android phones set to ask before large Bluetooth downloads now ask before fetching a photo from your iPhone
   that's over their limit, as they already do for photos from Android. A big photo in Nearby also spreads more
   slowly between those phones.
+- Your iPhone now sends far less repeat traffic, which saves airtime and battery on every phone nearby.
+  Outside a busy group, it stops resending the members old messages their phones had dropped, and it no longer
+  answers a message you already have with a fresh delivery tick every ten minutes.
 
 ### Fixed
 
