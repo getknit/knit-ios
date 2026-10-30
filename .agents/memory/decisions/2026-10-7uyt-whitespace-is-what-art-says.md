@@ -61,7 +61,7 @@ accepted. `NameKey` drops U+180E as a format character on both sides, so the cla
 The tests that keep this true are `TextLimitsTests.everyCodePointIsWhitespaceExactlyWhereARTSaysSo`, which walks
 every scalar against the pinned lists, the audit repros in `InteropAuditWireTests`
 (`mongolianVowelSeparatorIsNotWhitespaceAsOnCurrentART` pins the U+180E ruling), and
-`PeerLabelsTests.aNameKeyFoldsTheSpacesARTMatches`. Search screening (`WordFilter`, `GeoTokens`, the tokenizer)
+`NameKeyTests.aNameKeyFoldsTheSpacesARTMatches`. Search screening (`WordFilter`, `GeoTokens`, the tokenizer)
 and `Monogram` keep their own whitespace rules. They decide nothing another phone sees.
 
 A lone surrogate is out of scope here. On ART, `toByteArray(UTF_8)` turns one into `?`. A Swift `String` can't

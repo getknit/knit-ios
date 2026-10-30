@@ -34,12 +34,49 @@ import Testing
         #expect(GroupNaming.title(of: alone, me: rig.me, directory: directory) == Copy.Groups.unnamed)
     }
 
+    /// knit-next #228 and contract revision 2: a received group name is cleaned where it is shown and kept raw where it
+    /// is stored, and a name that cleans to nothing visible titles the group as an unnamed one.
+    @Test func aGroupNameIsCleanedWhereItIsShown() async {
+        let rig = AppRig()
+        await rig.pin(sam, name: "Sam")
+        await rig.pin(priya, name: "Priya")
+        let directory = rig.session.directory
+        var group = await rig.group([sam, priya], createdBy: sam)
+        func title(_ name: String) -> String {
+            group.name = name
+            return GroupNaming.title(of: group, me: rig.me, directory: directory)
+        }
+        #expect(title("Hikers\nclub\u{202E}") == "Hikers club")
+        #expect(title("Hiking  club") == "Hiking club")
+        for blank in ["\u{3164}", "\u{2800}", "\u{01}\u{07}", "\u{202E}\u{0085}"] {
+            #expect(title(blank) == "Sam & Priya", "a display-blank name titles the group from its members")
+        }
+        let long = String(repeating: "a", count: 31) + " " + String(repeating: "b", count: 8)
+        #expect(title(long) == String(repeating: "a", count: 31))
+    }
+
+    @Test func aRenameNoticeShowsTheCleanedNameOrTheMembersTitle() async {
+        let rig = AppRig()
+        await rig.pin(sam, name: "Sam")
+        await rig.pin(priya, name: "Priya")
+        let directory = rig.session.directory
+        let group = await rig.group([sam, priya], createdBy: sam)
+        func words(_ name: String, in group: GroupRecord?) -> String? {
+            GroupNaming.notice(
+                StatusNotices.groupRenamed(group?.id ?? "g-1", by: sam.nodeId, to: name, at: 1), in: group, me: rig.me, directory: directory
+            )
+        }
+        #expect(words("Hikers\u{2028}club", in: group) == Copy.Groups.renamed(by: "Sam", to: "Hikers club"))
+        #expect(words("\u{01}\u{07}", in: group) == Copy.Groups.renamed(by: "Sam", to: "Sam & Priya"))
+        #expect(words("\u{3164}", in: nil) == Copy.Groups.renamed(by: "Sam", to: Copy.Groups.unnamed))
+    }
+
     @Test func aStatusLineReadsInTheCatalogsWords() async {
         let rig = AppRig()
         await rig.pin(sam, name: "Sam")
         let directory = rig.session.directory
         func words(_ line: MessageRecord) -> String? {
-            GroupNaming.notice(line, me: rig.me, directory: directory)
+            GroupNaming.notice(line, in: nil, me: rig.me, directory: directory)
         }
         #expect(words(StatusNotices.groupCreated("g-1", by: rig.me, at: 1)) == Copy.Groups.createdByYou)
         #expect(words(StatusNotices.groupCreated("g-1", by: sam.nodeId, at: 1)) == Copy.Groups.created(by: "Sam"))

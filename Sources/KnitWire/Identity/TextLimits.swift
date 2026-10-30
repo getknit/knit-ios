@@ -69,6 +69,29 @@ public enum TextLimits {
         return String(output)
     }
 
+    /// Display text received from a peer, a profile's name or status or a group's name, made safe to show in one line
+    /// (`TextLimits.cleanReceived`, knit-next #228): every C0 and C1 control that is not regex `\s` removed, and every
+    /// bidi control, then ``normalizeSingleLine(_:)``, so a line break becomes one space, then cut to `limit` UTF-16
+    /// units, then ``trimmed(_:)`` again, since a cut can land after a space and a leading U+0085 survives the first
+    /// trim as a space (contract revision 1). Idempotent. ZWJ and ZWNJ stay, for emoji sequences and Persian names.
+    public static func cleanReceived(_ text: String, limit: Int) -> String {
+        var kept = String.UnicodeScalarView()
+        kept.append(contentsOf: text.unicodeScalars.filter { !isStrippedOnReceipt($0) })
+        return trimmed(truncated(normalizeSingleLine(String(kept)), toUTF16: limit))
+    }
+
+    /// The controls ``cleanReceived(_:limit:)`` removes before normalizing: C0 and C1 outside ART's regex `\s`, and the
+    /// bidi marks, embeddings, overrides and isolates.
+    private static func isStrippedOnReceipt(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar {
+        case "\u{00}"..."\u{08}", "\u{0E}"..."\u{1F}", "\u{7F}"..."\u{84}", "\u{86}"..."\u{9F}", "\u{061C}", "\u{200E}", "\u{200F}",
+            "\u{202A}"..."\u{202E}", "\u{2066}"..."\u{2069}":
+            true
+        default:
+            false
+        }
+    }
+
     /// Kotlin's `indexOf(other, startIndex)`: the first UTF-16 offset at or after `start` where `needle`'s code units
     /// occur in `text`'s, or `nil`. Kotlin compares code units. Swift's `String.contains` compares characters up to
     /// canonical equivalence, so it misses an "@Ann" followed by a combining accent, which Kotlin finds.

@@ -36,9 +36,10 @@ public enum Alias {
             }
     }
 
-    /// knit-next's `displayNameFor`: the stored profile name, or the alias when the name is missing or blank.
+    /// knit-next's `displayNameFor`: the stored profile name, or the alias when the name is missing or its
+    /// ``NameKey`` is empty, such as a name of U+3164 or U+2800 alone (``NameKey/isBlankName(_:)``, knit-next #228).
     public static func displayName(stored name: String?, nodeId: String) -> String {
-        guard let name, !TextLimits.isBlank(name) else {
+        guard let name, !NameKey.isBlankName(name) else {
             return alias(for: nodeId)
         }
         return name

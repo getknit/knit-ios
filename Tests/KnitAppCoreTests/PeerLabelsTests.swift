@@ -135,44 +135,34 @@ import Testing
         #expect(PeerLabelIndex.empty.label(for: "a", storedName: "Alice").text == "Alice")
     }
 
-    // MARK: NameKey
+    // MARK: Lookalikes and invisible names (knit-next #228)
 
-    @Test func aNameKeyFoldsCaseAndTrims() {
-        #expect(NameKey.of("Alice") == "alice")
-        #expect(NameKey.of("  ALICE ") == "alice")
-        #expect(NameKey.of("   ").isEmpty)
+    /// A stranger named with a Cyrillic letter, an invisible mark or a capital I for an l reads as "Alice", so it and the
+    /// contact both show their alias, where before the key kept them apart and both showed a plain "Alice".
+    @Test(arguments: ["Alic\u{0435}", "Alice\u{FE0F}", "Al\u{034F}ice", "Alice\u{2800}", "AIice", "Al\u{0456}ce", "\u{0410}lice"])
+    func aLookalikeOfAContactsNameDiscriminatesBoth(lookalike: String) {
+        let labels = index(("a", "Alice"), ("b", lookalike))
+        #expect(labels.label(for: "a").text == "Alice (\(alias("a")))")
+        #expect(labels.label(for: "b").text == "\(lookalike) (\(alias("b")))", "the stored name renders verbatim")
     }
 
-    @Test func aNameKeyCollapsesWhitespaceRunsIncludingUnicodeSpaces() {
-        #expect(NameKey.of("Alice \t  Smith") == "alice smith")
-        #expect(NameKey.of("Alice\u{00A0}Smith") == "alice smith")
-        #expect(NameKey.of("Alice\u{2003}Smith") == "alice smith")
-        #expect(NameKey.of("Alice\u{3000}Smith") == "alice smith")
+    /// A name of invisible characters alone shows the alias, spending its first token, so it never reads
+    /// `Alias (Alias)`: ``Alias/displayName(stored:nodeId:)`` and the index agree on what is blank.
+    @Test(arguments: ["\u{3164}", "\u{2800}\u{2800}", "\u{115F}", "\u{FFA0}", "\u{FE0F}\u{034F}"])
+    func anInvisibleNameShowsTheAliasAlone(name: String) {
+        let labels = index(("a", name), ("b", "Bob"))
+        let label = labels.label(for: "a")
+        #expect(Alias.displayName(stored: name, nodeId: "a") == alias("a"))
+        #expect(label.text == alias("a"))
+        #expect(label.discriminator == nil)
     }
 
-    /// `PeerLabels.kt:270-272` on ART: `\s` is Unicode White_Space, and runs collapse before `trim()`, so a U+0085 at an
-    /// end goes with its run though `trim()` alone would keep it.
-    @Test(arguments: ["\u{0085}", "\u{1680}", "\u{2028}", "\u{2029}"])
-    func aNameKeyFoldsTheSpacesARTMatches(space: String) {
-        #expect(NameKey.of("Ana\(space)Bell") == "ana bell", "ArtTextSemanticsTest's pin")
-        #expect(NameKey.of("Alice\(space)Smith") == "alice smith")
-        #expect(NameKey.of("\(space)Alice\(space)") == "alice")
-        #expect(NameKey.of(" \(space)Alice\(space) ") == "alice")
-    }
-
-    @Test func aNameKeyNormalizesCompatibilityForms() {
-        #expect(NameKey.of("\u{FF21}\u{FF4C}\u{FF49}\u{FF43}\u{FF45}") == "alice")
-        #expect(NameKey.of("\u{FB01}sh") == "fish")
-        #expect(NameKey.of("e\u{0301}").unicodeScalars.map(\.value) == [0xE9])
-    }
-
-    @Test func aNameKeyStripsFormatCharacters() {
-        for name in ["Al\u{200B}ice", "Al\u{200D}ice", "\u{202E}Alice", "\u{FEFF}Alice", "Alice\u{200E}"] {
-            #expect(NameKey.of(name) == "alice")
-        }
-    }
-
-    @Test func aNameKeyDoesNotFoldConfusables() {
-        #expect(NameKey.of("alice") != NameKey.of("\u{0430}lice"), "a Cyrillic а stays apart, a recorded limit")
+    /// Someone who names themselves another's alias, against an invisible name that shows as that alias, still reads
+    /// apart: the invisible one grows its continuation as a blank-named peer does.
+    @Test func anInvisibleNameGrowsAContinuationWhenSomeoneChoosesItsAlias() {
+        let labels = index(("a", "\u{3164}"), ("b", alias("a")))
+        let tokens = Alias.tokens(for: "a", count: 2)
+        #expect(labels.label(for: "a").text == "\(alias("a")) (\(tokens[1]))")
+        #expect(labels.label(for: "a").text != labels.label(for: "b").text)
     }
 }

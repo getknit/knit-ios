@@ -433,6 +433,13 @@ Kotlin wins.
     every other refusal, and the sweep deletes the rows over the cap. Its `vectors/custody-v1.json` (30 steps, a
     2,048-byte rig cap) was copied with `sync-vectors.py --only custody-v1.json` from `ce56fec6e`. The wire is
     unchanged.
+    And `7439fd9cc` on knit-next's `fix/name-confusables`, not yet merged (its ADR 2026-10.2kfr, knit-next #228,
+    knit-ios #30, ADR 2026-10.k99b): `NameKey` folds 73 Latin, Greek and Cyrillic lookalikes and I/l to i, and
+    drops marks, default-ignorables and U+2800, so a lookalike or invisible name gets a discriminator. A received
+    profile's name and status are cleaned of controls and bidi overrides at store (`TextLimits.cleanReceived`), and
+    a group's name is cleaned where it shows. Its new `vectors/name-key-v1.json` was copied with `sync-vectors.py
+    --only name-key-v1.json` from `7439fd9cc`. Android's rename line for a peer compares the cleaned old name; this
+    port writes none. The wire is unchanged.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e63f15f4`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

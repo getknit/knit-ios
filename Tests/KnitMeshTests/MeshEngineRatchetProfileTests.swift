@@ -139,6 +139,39 @@ import Testing
         #expect(fixture.stores.blobs.contains(newHash))
     }
 
+    /// knit-next #228 (`InboundPipeline.kt:1662,1667`): a sealed profile's name and status are cleaned as a cleartext
+    /// one's are, so a line break or a bidi override cannot reach a header by the sealed path either.
+    @Test func aSealedProfileStoresACleanedNameAndStatus() throws {
+        let (fixture, android) = try rig(version: 10)
+        let prekey = try fixture.ourPrekey()
+        let update = ProfilePayload(name: "Ann\u{2066}\nLee\u{202E}", status: "back\u{2029}\u{0085}soon\u{1B}", version: 20)
+        fixture.deliver(
+            try android.dm(profileUpdate(update), to: me, prekey: prekey, id: frameIdOf("ctl-clean-1"), sentAt: now), from: android)
+        let peer = try #require(fixture.stores.peers.peer(alice.nodeId))
+        #expect(peer.name == "Ann Lee")
+        #expect(peer.status == "back soon")
+    }
+
+    /// A re-serve at the stored version that differs only by what the clean strips moves nothing. A row stored raw before
+    /// this build is cleaned by the peer's next sealed profile at its version, once.
+    @Test func aSealedReServeThatOnlyAddsAControlAnnouncesNothingAndARawRowConvergesOnce() throws {
+        let (fixture, android) = try rig(version: 10)
+        let prekey = try fixture.ourPrekey()
+        func deliver(_ name: String, _ tag: String) throws -> [MeshEvent] {
+            let update = ProfilePayload(name: name, status: "", version: 20)
+            fixture.deliver(try android.dm(profileUpdate(update), to: me, prekey: prekey, id: frameIdOf(tag), sentAt: now), from: android)
+            return fixture.engine.drainEvents().filter { $0 == .peerUpdated(alice.nodeId) }
+        }
+        #expect(try deliver("Ann", "ctl-raw-1").count == 1)
+        #expect(try deliver("Ann\u{202E}", "ctl-raw-2").isEmpty, "the cleaned row is the row held")
+        var raw = try #require(fixture.stores.peers.peer(alice.nodeId))
+        raw.name = "Ann\u{202E}"
+        fixture.stores.peers.upsert(raw)
+        #expect(try deliver("Ann", "ctl-raw-3").count == 1)
+        #expect(fixture.stores.peers.peer(alice.nodeId)?.name == "Ann")
+        #expect(try deliver("Ann\u{2066}", "ctl-raw-4").isEmpty)
+    }
+
     private func profileUpdate(_ payload: ProfilePayload) -> MessageContent {
         MessageContent(body: "", ctl: MessageContent.Control.profile, pr: payload)
     }

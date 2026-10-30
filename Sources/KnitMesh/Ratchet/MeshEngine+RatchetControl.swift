@@ -157,9 +157,9 @@ extension MeshEngine {
             return nil
         }
         var record = existing
-        // Our own limits bound what we send, not what a peer does.
-        record.name = TextLimits.truncated(payload.name, toUTF16: TextLimits.displayName)
-        record.status = TextLimits.truncated(payload.status, toUTF16: TextLimits.status)
+        // Cleaned to one line and cut, as a cleartext profile is (`InboundPipeline.kt:1662,1667`, knit-next #228).
+        record.name = TextLimits.cleanReceived(payload.name, limit: TextLimits.displayName)
+        record.status = TextLimits.cleanReceived(payload.status, limit: TextLimits.status)
         record.openToChat = payload.openToChat
         (record.advertisedAvatarHash, record.avatarHash) = photo(advertised: payload.avatarHash, over: existing)
         record.updatedAt = version

@@ -337,7 +337,9 @@ public final class ChatModel {
         // The messages a quote can take the thread to: the ones it shows, status lines aside.
         let shown = Set(stored.filter { !$0.kind.isNotice }.map { ExactKey($0.id) })
         let messages = stored.compactMap { message in
-            chatMessage(message, kind: kind, directory: directory, photos: photos, filtering: filtering)
+            (message.kind.isNotice
+                ? GroupNaming.row(of: message, in: group, me: me, directory: directory)
+                : chatMessage(message, kind: kind, directory: directory, photos: photos, filtering: filtering))
                 .map { $0.reacted(chips[ExactKey(message.id)] ?? []) }
                 .map { $0.quoting(message.replyTo.map { ChatQuote($0, me: me, directory: directory, shown: shown) }) }
         }
@@ -371,30 +373,25 @@ public final class ChatModel {
         return (built, audience)
     }
 
-    /// One row of the thread: a message, or a status line this build has words for.
+    /// A message's row in the thread.
     private func chatMessage(
         _ message: MessageRecord, kind: ThreadKind, directory: Directory, photos: ThreadPhotos, filtering: Bool
     ) -> ChatMessage? {
         let me = session.identity.nodeId
         let isMine = message.senderId == me
-        guard message.kind.isNotice else {
-            let named = kind != .direct && !isMine
-            return ChatMessage(
-                id: message.id,
-                body: message.body,
-                sentAt: message.sentAt,
-                isMine: isMine,
-                author: message.senderId,
-                authorLabel: named ? directory.label(for: message.senderId).text : nil,
-                status: isMine ? DeliveryStatus(message) : nil,
-                authorFace: named ? directory.face(for: message.senderId) : nil,
-                attachment: photos.attachment(of: message),
-                hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message.moderation) : nil,
-                mentionSpans: MentionText.spans(in: message.body, mentions: message.mentions)
-            )
-        }
-        return GroupNaming.notice(message, me: me, directory: directory).map { words in
-            ChatMessage(id: message.id, body: "", sentAt: message.sentAt, isMine: false, author: message.senderId, notice: words)
-        }
+        let named = kind != .direct && !isMine
+        return ChatMessage(
+            id: message.id,
+            body: message.body,
+            sentAt: message.sentAt,
+            isMine: isMine,
+            author: message.senderId,
+            authorLabel: named ? directory.label(for: message.senderId).text : nil,
+            status: isMine ? DeliveryStatus(message) : nil,
+            authorFace: named ? directory.face(for: message.senderId) : nil,
+            attachment: photos.attachment(of: message),
+            hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message.moderation) : nil,
+            mentionSpans: MentionText.spans(in: message.body, mentions: message.mentions)
+        )
     }
 }

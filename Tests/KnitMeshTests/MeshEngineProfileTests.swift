@@ -119,6 +119,38 @@ import Testing
         #expect(fixture.engine.drainEvents() == [.peerUpdated(bob.nodeId)])
     }
 
+    /// knit-next #228: the row keeps a name and status cleaned to one line with no control or bidi override in them, while
+    /// the signed frame we keep and serve as the sender's proof of key stays as it came.
+    @Test func aReceivedProfileStoresACleanedNameAndKeepsItsFrame() throws {
+        let fixture = EngineFixture(alice)
+        let profile = try bob.profile(
+            name: "Bob\nSmith\u{202E}evil", status: "\u{0085}out\u{2028}walking\u{07}", version: 5, publishedAt: EngineFixture.start)
+        fixture.deliver(profile, from: bob)
+        let peer = try #require(fixture.stores.peers.peer(bob.nodeId))
+        #expect(peer.name == "Bob Smithevil")
+        #expect(peer.status == "out walking")
+        let kept = try #require(fixture.stores.peers.profileFrame(of: bob.nodeId))
+        #expect(kept == WireEnvelope(relay: false, sig: profile.wire.sig, signed: profile.wire.signed), "the frame is untouched")
+        #expect(try ProfileContent(decoding: RelayEnvelope(decoding: kept.signed).payload).name == "Bob\nSmith\u{202E}evil")
+    }
+
+    /// The cleartext twin of the sealed re-serve: a profile at the stored version differing only by a stripped control
+    /// announces nothing, and a row stored raw before this build converges with one announcement.
+    @Test func aReServeThatOnlyAddsAControlAnnouncesNothingAndARawRowConvergesOnce() throws {
+        let fixture = EngineFixture(alice)
+        func deliver(_ name: String, at publishedAt: Int64) throws -> [MeshEvent] {
+            fixture.deliver(try bob.profile(name: name, version: 5, publishedAt: publishedAt), from: bob)
+            return fixture.engine.drainEvents().filter { $0 == .peerUpdated(bob.nodeId) }
+        }
+        #expect(try deliver("Bob", at: EngineFixture.start).count == 1)
+        #expect(try deliver("Bob\u{202E}", at: EngineFixture.start + 1).isEmpty, "the cleaned row is the row held")
+        var raw = try #require(fixture.stores.peers.peer(bob.nodeId))
+        raw.name = "Bob\u{202E}"
+        fixture.stores.peers.upsert(raw)
+        #expect(try deliver("Bob", at: EngineFixture.start + 2).count == 1)
+        #expect(fixture.stores.peers.peer(bob.nodeId)?.name == "Bob")
+    }
+
     @Test func anOlderProfileIsIgnoredAndANewerOneApplies() throws {
         let fixture = EngineFixture(alice)
         fixture.deliver(try bob.profile(name: "New", version: 20, publishedAt: EngineFixture.start), from: bob)

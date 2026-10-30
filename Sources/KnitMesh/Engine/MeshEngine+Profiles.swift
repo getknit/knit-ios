@@ -315,9 +315,9 @@ extension MeshEngine {
     ) -> PeerRecord {
         var record = base
         if !stale.presentation {
-            // Our own limits bound what we send, not what a peer does.
-            record.name = TextLimits.truncated(content.name, toUTF16: TextLimits.displayName)
-            record.status = TextLimits.truncated(content.status, toUTF16: TextLimits.status)
+            // Cleaned to one line and cut (knit-next #228). The signed frame stays as it came, in `recordProfileFrame`.
+            record.name = TextLimits.cleanReceived(content.name, limit: TextLimits.displayName)
+            record.status = TextLimits.cleanReceived(content.status, limit: TextLimits.status)
             record.openToChat = content.openToChat
             (record.advertisedAvatarHash, record.avatarHash) = photoFrom(content, existing: base)
         }

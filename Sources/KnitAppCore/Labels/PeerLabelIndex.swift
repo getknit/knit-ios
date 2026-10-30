@@ -1,4 +1,3 @@
-import Foundation
 import KnitCrypto
 import KnitWire
 
@@ -161,12 +160,11 @@ public struct PeerLabelIndex: Sendable {
         }
     }
 
-    /// The tokens a rendered name already spends: one when it is the alias, a blank profile's name.
+    /// The tokens a rendered name already spends: one when it is the alias, a blank profile's name. Blank is
+    /// ``NameKey/isBlankName(_:)``, as in ``Alias/displayName(stored:nodeId:)``: if the two disagreed, a name of U+3164
+    /// alone would render as `Alias (Alias)`.
     private static func tokensInName(_ storedName: String?) -> Int {
-        guard let storedName, !TextLimits.isBlank(storedName) else {
-            return 1
-        }
-        return 0
+        NameKey.isBlankName(storedName) ? 1 : 0
     }
 
     /// The tokens after those the name spends, up to `spent`, or `nil` when there are none.
@@ -176,18 +174,5 @@ public struct PeerLabelIndex: Sendable {
             return nil
         }
         return words[from..<min(spent, words.count)].joined(separator: " ")
-    }
-}
-
-/// The collision key of a display name (`NameKey` in `PeerLabels.kt`): NFKC-normalized, Unicode format characters
-/// removed (zero-width joiners and spaces, bidi overrides), lower-cased, whitespace runs collapsed and trimmed, so
-/// "Alice", "alice", "Ａlice" and "Al\u{200B}ice" are one name. Confusables are deliberately not folded: a Cyrillic
-/// "а" stays apart from a Latin "a", a recorded limit.
-public enum NameKey {
-    /// The key of `name`. Runs are collapsed before the ends are trimmed (`PeerLabels.kt:270-272`), the reverse of
-    /// `normalizeSingleLine`, so a U+0085 at an end, which `trim()` keeps but `\s` takes, goes with its run.
-    public static func of(_ name: String) -> String {
-        let folded = name.precomposedStringWithCompatibilityMapping.unicodeScalars.filter { $0.properties.generalCategory != .format }
-        return TextLimits.trimmed(TextLimits.collapsingWhitespaceRuns(String(String.UnicodeScalarView(folded)).lowercased()))
     }
 }

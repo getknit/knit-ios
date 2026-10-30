@@ -238,6 +238,64 @@ import Testing
         #expect(TextLimits.incomingGroupName("   ") == nil)
         #expect(TextLimits.incomingGroupName(nil) == nil)
     }
+
+    /// knit-next #228: what a received name or status shows is one line, with no control or bidi override in it.
+    @Test func aReceivedNameIsCleanedToOneSafeLine() {
+        let name = TextLimits.displayName
+        #expect(TextLimits.cleanReceived("Alice\nSmith", limit: name) == "Alice Smith")
+        #expect(TextLimits.cleanReceived("Bob\u{202E}evil", limit: name) == "Bobevil")
+        #expect(TextLimits.cleanReceived("\u{2067}Bob\u{2069}\u{200F}", limit: name) == "Bob")
+        #expect(TextLimits.cleanReceived("A\u{00}B\u{07}C\u{1B}D\u{7F}E\u{9B}F", limit: name) == "ABCDEF")
+        #expect(TextLimits.cleanReceived("A\u{1C}B\u{1F}C", limit: name) == "ABC", "Kotlin whitespace, but not regex \\s")
+        #expect(TextLimits.cleanReceived("A\u{2028}B\u{2029}C\u{0085}D", limit: name) == "A B C D")
+        #expect(TextLimits.cleanReceived("\u{0085}Bob", limit: name) == "Bob", "contract revision 1: both ends trimmed again")
+        #expect(TextLimits.cleanReceived("\u{01}\u{07}", limit: name).isEmpty)
+        #expect(TextLimits.cleanReceived("Hiking  club", limit: TextLimits.groupName) == "Hiking club")
+    }
+
+    @Test func aCleanedNameKeepsJoinersForEmojiAndPersian() {
+        let developer = "\u{1F469}\u{200D}\u{1F4BB} Dev"
+        #expect(TextLimits.cleanReceived(developer, limit: TextLimits.displayName) == developer)
+        #expect(
+            TextLimits.cleanReceived("\u{0645}\u{06CC}\u{200C}\u{062E}\u{0648}\u{0627}\u{0645}", limit: 32).unicodeScalars.contains(
+                "\u{200C}"))
+    }
+
+    /// The cut never leaves a trailing space or half a surrogate pair.
+    @Test func aCleanedNameIsCutWithNoTrailingSpaceOrHalfAPair() {
+        let spaced = String(repeating: "a", count: 31) + " " + String(repeating: "b", count: 8)
+        #expect(spaced.utf16.count == 40)
+        #expect(TextLimits.cleanReceived(spaced, limit: 32) == String(repeating: "a", count: 31))
+        let paired = String(repeating: "a", count: 31) + "\u{1F600}x"
+        #expect(TextLimits.cleanReceived(paired, limit: 32) == String(repeating: "a", count: 31))
+    }
+
+    @Test(arguments: [
+        "\u{0085}Bob", " Bob\u{2028} ", "Alice\nSmith", String(repeating: "a", count: 31) + " b", "\u{01}\u{0085}x\u{1C}",
+        "\u{202E} \u{0085} Bob", "a\u{1F}\u{0085}\u{1F} b", String(repeating: "\u{1F600}", count: 20),
+    ])
+    func cleaningIsIdempotent(text: String) {
+        for limit in [TextLimits.displayName, TextLimits.status, 3] {
+            let once = TextLimits.cleanReceived(text, limit: limit)
+            #expect(TextLimits.cleanReceived(once, limit: limit) == once)
+        }
+    }
+
+    /// Every code point the clean strips from inside a name is a C0 or C1 control outside regex `\s`, or a bidi control,
+    /// and nothing else in the BMP, where all of them lie.
+    @Test func theStripSetIsTheContracts() {
+        let stripped = (0...0xFFFF).compactMap(Unicode.Scalar.init).filter { scalar in
+            var text = String.UnicodeScalarView([" ", "a"])
+            text.append(scalar)
+            text.append("b")
+            return TextLimits.cleanReceived(String(text), limit: 8) == "ab"
+        }
+        .map(\.value)
+        let expected =
+            Array(0x00...0x08) + Array(0x0E...0x1F) + Array(0x7F...0x84) + Array(0x86...0x9F) + [0x061C, 0x200E, 0x200F]
+            + Array(0x202A...0x202E) + Array(0x2066...0x2069)
+        #expect(stripped == expected.map(UInt32.init))
+    }
 }
 
 @Suite struct GroupInfoTests {
