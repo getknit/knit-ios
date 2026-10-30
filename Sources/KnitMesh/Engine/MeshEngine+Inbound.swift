@@ -257,7 +257,7 @@ extension MeshEngine {
         DeliveredChat(
             body: chat.body,
             attachment: attachment(of: chat),
-            replyTo: chat.replyTo.map(reply),
+            replyTo: chat.replyTo.flatMap(reply),
             mentions: chat.mentions.map(mention)
         )
     }
@@ -268,7 +268,7 @@ extension MeshEngine {
         DeliveredChat(
             body: content.body,
             attachment: attachment(of: content),
-            replyTo: content.replyTo.map(reply),
+            replyTo: content.replyTo.flatMap(reply),
             mentions: content.mentions.map(mention)
         )
     }
@@ -279,15 +279,26 @@ extension MeshEngine {
         MessageMention(nodeId: mention.nodeId, name: mention.name)
     }
 
-    /// The quote a delivered message carries, as the replier wrote it: nothing checks that the message it names is held,
-    /// or is in this thread, as nothing does on Android (`InboundPipeline.deliverChat`). Only the name and the words are
-    /// clipped, which a peer's frame bounds no more than an attachment's text.
-    static func reply(_ ref: ReplyRef) -> MessageReply {
-        MessageReply(
+    /// The longest quoted id a quote may name (`MAX_QUOTED_ID`, `InboundPipeline.kt:4361` at knit-next `7439fd9cc`), in
+    /// UTF-16 units: past a frame id's 22 and a node id's 32, with room to spare.
+    static let maximumQuotedId = 64
+
+    /// The quote a delivered message carries, bounded as its body is, or `nil` when it cannot name an original: an id or an
+    /// author id that is blank or longer than ``maximumQuotedId`` (`InboundPipeline.admitReply`, `:3123-3136`). The
+    /// message is kept, quoting nothing. The author's name is kept as a record only, on one line and at a name's length,
+    /// and is never drawn: the reader's own label for the author's id is (knit-next ADR 2026-10.gpa3). The words are cut
+    /// to what a replier's composer ever writes. Whether the quote names a message held here is judged as it is stored
+    /// (``storeDelivered(_:_:sender:recipient:)``).
+    static func reply(_ ref: ReplyRef) -> MessageReply? {
+        let admits = { (id: String) in !TextLimits.isBlank(id) && id.utf16.count <= maximumQuotedId }
+        guard admits(ref.messageId), admits(ref.authorId) else {
+            return nil
+        }
+        return MessageReply(
             messageId: ref.messageId,
             authorId: ref.authorId,
-            author: TextLimits.truncated(ref.author, toUTF16: attachmentTextLimit),
-            snippet: TextLimits.truncated(ref.snippet, toUTF16: attachmentTextLimit),
+            author: TextLimits.truncated(TextLimits.normalizeSingleLine(ref.author), toUTF16: TextLimits.displayName),
+            snippet: TextLimits.truncated(TextLimits.normalizeSingleLine(ref.snippet), toUTF16: MessageReply.snippetLimit),
             hasAttachment: ref.hasAttachment
         )
     }

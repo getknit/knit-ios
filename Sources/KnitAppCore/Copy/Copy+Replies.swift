@@ -79,6 +79,28 @@ extension Copy {
             )
         }
 
+        /// The line under a quote whose original this phone does not hold, so its words are the replier's own word for
+        /// it (`chat_quote_unverified`, knit-next ADR 2026-10.gpa3).
+        public static var unverifiedQuote: String {
+            NSLocalizedString(
+                "replies.quote.unverified",
+                bundle: .main,
+                value: "Unverified — original not on this phone",
+                comment: "Thread: under a quote whose original message this phone does not have, so it could not be checked"
+            )
+        }
+
+        /// What a quote shows, with no author and no words, when the message it names is not what it claims, or is one of
+        /// ours this phone no longer holds (`chat_quote_unavailable`).
+        public static var unavailableQuote: String {
+            NSLocalizedString(
+                "replies.quote.unavailable",
+                bundle: .main,
+                value: "Quoted message unavailable",
+                comment: "Thread: in place of a quote that does not match the message it names"
+            )
+        }
+
         /// The line a quote shows in place of the words of someone the user blocked.
         public static var blockedQuote: String {
             NSLocalizedString(

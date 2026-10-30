@@ -28,7 +28,12 @@ extension ChatModel {
             words: message.body,
             sentAt: message.sentAt,
             hadPhoto: message.attachment?.kind == .photo,
-            quote: message.quote.map { quote in
+            // An unavailable quote kept nothing of its claim, so a report has nothing of it to name (knit-next ADR
+            // 2026-10.gpa3).
+            quote: message.quote.flatMap { quote in
+                guard quote.state != .unavailable else {
+                    return nil
+                }
                 let carried = session.stores.messages.message(message.id)?.replyTo?.snippet ?? ""
                 return AbuseReport.Quote(author: quote.author, words: carried.isEmpty ? quote.line ?? "" : carried)
             }

@@ -263,7 +263,9 @@
                 random: SystemRandomNumberGenerator(),
                 // Every build queries a blob's holders before it asks, as Android's does since its `BLOB_QUERY` shipped
                 // on in release (knit-next `713b29d6`, ADR 2026-10.m9uq's amendment); the ratchet too, unless a debug `-ratchet off`.
-                configuration: MeshConfiguration(queriesBlobHolders: true, ratchet: ratchet),
+                // A quote rebuilt from its original names a GIF, a file or a voice note as the composer does
+                // (knit-next ADR 2026-10.gpa3).
+                configuration: MeshConfiguration(queriesBlobHolders: true, ratchet: ratchet) { AttachmentKind.quoteLabel(of: $0) },
                 log: parts.log,
                 partials: parts.partials
             )

@@ -43,6 +43,22 @@ import Testing
         #expect(fixture.ratchetRecords(of: alice).recvEpochs.map(\.next) == [2])
     }
 
+    /// A sealed reply lands ahead of its original: inside the open's unit it finds nothing to judge against, and once the
+    /// original's unit commits, the reply settles against it (knit-next ADR 2026-10.gpa3, ADR 2026-10.x246).
+    @Test func aSealedReplyAheadOfItsOriginalSettlesOnceTheOriginalCommits() throws {
+        let (fixture, android) = try rig()
+        let prekey = try fixture.ourPrekey()
+        let quote = ReplyRef(messageId: frameIdOf("v2-q0"), authorId: alice.nodeId.string, author: "Alice", snippet: "forged")
+        let original = try android.dm("lunch at noon?", to: me, prekey: prekey, id: frameIdOf("v2-q0"), sentAt: now)
+        let reply = try android.dm(
+            MessageContent(body: "well?", replyTo: quote), to: me, prekey: prekey, id: frameIdOf("v2-q1"), sentAt: now + 1)
+        fixture.deliver(reply, from: android)
+        #expect(fixture.stores.messages.message(frameIdOf("v2-q1"))?.replyCheck == .unchecked)
+        fixture.deliver(original, from: android)
+        let settled = try #require(fixture.stores.messages.message(frameIdOf("v2-q1")))
+        #expect(settled.replyCheck == .verified && settled.replyTo?.snippet == "lunch at noon?")
+    }
+
     @Test func v2OutOfOrderDeliveryDrainsThroughSkippedKeys() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()

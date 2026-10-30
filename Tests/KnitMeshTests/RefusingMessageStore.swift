@@ -152,6 +152,13 @@ final class RefusingMessageStore: MessageStore {
     }
     func setModeration(_ id: String, to moderation: MessageModeration) -> Bool { held.setModeration(id, to: moderation) }
     func waitingForModeration() -> [MessageRecord] { held.waitingForModeration() }
+    func setQuoteModeration(_ id: String, to moderation: MessageModeration) -> Bool { held.setQuoteModeration(id, to: moderation) }
+    func settleQuote(_ id: String, _ settlement: QuoteSettlement) -> Bool { held.settleQuote(id, settlement) }
+    func refreshQuoteModeration(_ id: String) -> Bool { held.refreshQuoteModeration(id) }
+    func repliesAwaiting(_ originalId: String, me: NodeId, limit: Int) -> [MessageRecord] {
+        held.repliesAwaiting(originalId, me: me, limit: limit)
+    }
+    func unsettledQuotes(me: NodeId, limit: Int) -> [MessageRecord] { held.unsettledQuotes(me: me, limit: limit) }
     func applyReaction(_ reaction: ReactionRecord) -> Bool { held.applyReaction(reaction) }
     func reaction(on messageId: String, by reactor: NodeId) -> ReactionRecord? { held.reaction(on: messageId, by: reactor) }
     func reactions(in conversationId: String) -> [ReactionRecord] { held.reactions(in: conversationId) }

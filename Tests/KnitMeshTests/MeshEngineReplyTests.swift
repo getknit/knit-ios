@@ -42,13 +42,13 @@ import Testing
 
     // MARK: Taking one
 
-    /// Nothing checks the quote: the message it names is held nowhere here (`InboundPipeline.kt:2714`).
+    /// A quote whose original is held nowhere here is kept as its sender wrote it, unchecked (knit-next ADR 2026-10.gpa3).
     @Test func aRoomReplyKeepsItsQuoteThoughNothingHereHoldsWhatItQuotes() throws {
         let fixture = try fixture()
         let post = try bob.roomPost("", id: frameIdOf("r1"), sentAt: start, content: ChatContent(body: "on my way", replyTo: ref))
         fixture.deliver(post, from: bob)
         let stored = try #require(fixture.stores.messages.message(frameIdOf("r1")))
-        #expect(stored.replyTo == quote)
+        #expect(stored.replyTo == quote && stored.replyCheck == .unchecked)
         #expect(fixture.stores.messages.message(ref.messageId) == nil)
         #expect(announced(fixture.engine.drainEvents()).map(\.record.replyTo) == [quote])
     }
@@ -89,35 +89,55 @@ import Testing
         #expect(fixture.stores.messages.message(frameIdOf("gm-1"))?.replyTo == quote)
     }
 
-    /// A peer's frame bounds the name and the words no more than an attachment's text.
+    /// A quote is bounded as its body is (`InboundPipeline.admitReply`): the name on one line at a name's length, kept as a
+    /// record only, and the words at what a composer ever writes.
     @Test func anOversizedQuoteIsClipped() throws {
         let fixture = try fixture()
         let long = ReplyRef(
             messageId: ref.messageId,
             authorId: ref.authorId,
-            author: String(repeating: "n", count: 300),
+            author: "n\n" + String(repeating: "n", count: 300),
             snippet: String(repeating: "w", count: 300)
         )
         fixture.deliver(
             try bob.roomPost("", id: frameIdOf("r2"), sentAt: start, content: ChatContent(body: "hm", replyTo: long)), from: bob)
         let stored = try #require(fixture.stores.messages.message(frameIdOf("r2"))?.replyTo)
-        #expect(stored.author.utf16.count == 256 && stored.snippet.utf16.count == 256)
+        #expect(stored.author == "n " + String(repeating: "n", count: 30))
+        #expect(stored.snippet.utf16.count == MessageReply.snippetLimit)
         #expect(stored.messageId == ref.messageId && !stored.hasAttachment)
     }
 
-    /// A quote is someone's words too: a reply waits for the content filter when its body or its snippet has any
-    /// (ADR 2026-10.mn29), and only a reply with neither shows at once.
-    @Test func aPhotoOnlyReplyWaitsForTheFilterWhenItsQuoteHasWords() throws {
+    /// A quote whose ids are blank or past 64 UTF-16 units names no original, so it is dropped and the reply kept as a
+    /// message quoting nothing (`MAX_QUOTED_ID`).
+    @Test(arguments: [
+        ("", "author"), (" ", "author"), ("id", ""), (String(repeating: "i", count: 65), "author"),
+        ("id", String(repeating: "a", count: 65)),
+    ])
+    func aQuoteNamingNoOriginalIsDropped(messageId: String, authorId: String) throws {
+        let fixture = try fixture()
+        let malformed = ReplyRef(
+            messageId: messageId, authorId: authorId == "author" ? carol.nodeId.string : authorId, author: "Ann", snippet: "hi")
+        fixture.deliver(
+            try bob.roomPost("", id: frameIdOf("r5"), sentAt: start, content: ChatContent(body: "hm", replyTo: malformed)), from: bob)
+        let stored = try #require(fixture.stores.messages.message(frameIdOf("r5")))
+        #expect(stored.body == "hm" && stored.replyTo == nil && stored.quoteModeration == .clear)
+    }
+
+    /// A quote's words wait for the content filter apart from the body's while its original is not held (knit-next ADR
+    /// 2026-10.gpa3): a photo-only reply's body has nothing to screen, and a blank quote nothing either.
+    @Test func aQuotesWordsWaitForTheFilterApartFromTheBody() throws {
         let fixture = try fixture()
         let hash = String(repeating: "a", count: 64)
         let worded = ChatContent(attachmentHash: hash, attachmentMime: "image/jpeg", replyTo: ref)
         fixture.deliver(try bob.roomPost("", id: frameIdOf("r3"), sentAt: start, content: worded), from: bob)
-        #expect(fixture.stores.messages.message(frameIdOf("r3"))?.moderation == .waiting)
+        let waiting = try #require(fixture.stores.messages.message(frameIdOf("r3")))
+        #expect(waiting.moderation == .clear && waiting.quoteModeration == .waiting && waiting.replyCheck == .unchecked)
         var blank = ref
         blank.snippet = " "
         let wordless = ChatContent(attachmentHash: hash, attachmentMime: "image/jpeg", replyTo: blank)
         fixture.deliver(try bob.roomPost("", id: frameIdOf("r4"), sentAt: start + 1, content: wordless), from: bob)
-        #expect(fixture.stores.messages.message(frameIdOf("r4"))?.moderation == .clear)
+        let clear = try #require(fixture.stores.messages.message(frameIdOf("r4")))
+        #expect(clear.moderation == .clear && clear.quoteModeration == .clear)
     }
 
     // MARK: Sending one

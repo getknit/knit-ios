@@ -109,3 +109,12 @@ wire changes, and Android needs no change.
 
     `DemoTests` seeds two replies, and `CopyCatalogTests` reads the strings.
   - `MeshControlReplyTests`, and `KnitUITests.walkReplies`, audited with every screen at both sizes and in dark mode.
+
+**Amended 2026-10-30 (ADR 2026-10.x246), for knit-next ADR 2026-10.gpa3:** a received quote is no longer taken as sent.
+"Taking one" now drops a quote whose ids are blank or longer than 64 UTF-16 units, cuts the name to 32 units and the
+words to 120, and judges the quote against the original it names. A verified quote is rebuilt from the original, a
+mismatch keeps nothing, and an unchecked one shows the sender's words marked unverified. Difference 1 changes: a
+quote's words have a verdict of their own (`replyToFlagged`), the sender's screened only while the quote is unchecked,
+and the original's own once verified; either verdict still hides the whole reply behind one tap. Difference 2 is no
+longer a difference: Android also names the author by the reader's label since gpa3, and neither phone ever draws the
+replier's name. A quote of our own id with no original shows as unavailable, never "You".

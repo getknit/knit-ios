@@ -5776,8 +5776,9 @@ def iphone_reply(arguments: argparse.Namespace) -> int:
     each quote, naming its own message and itself. The iPhone replies to each of the phone's replies, and the phone must
     show those quotes and their words. A photo the iPhone posts with no words is quoted by the phone with no snippet,
     and the iPhone must read that it carried one. The group adds a fresh ghost nobody runs, as `iphone-react`'s does. A
-    stop and start of the iPhone's mesh changes no quote, and the custody sets converge. The two must already hold each
-    other's keys."""
+    stop and start of the iPhone's mesh changes no quote, and the custody sets converge. Each quote must read verified on
+    the phone that receives it (knit-next ADR 2026-10.gpa3, ADR 2026-10.x246): the receiver held the original, in the
+    same thread, under the author the quote names. The two must already hold each other's keys."""
     phone = Phone(arguments.device)
     ios = IPhone(arguments.udid, arguments.host)
     run = Run()
@@ -5979,6 +5980,8 @@ def _ios_quote(
             continue
         if (quote["id"], quote["authorId"], quote["snippet"], quote["hasAttachment"]) != (quoted, author, snippet, attachment):
             raise RuntimeError(f"the iPhone's quote of {quoted} reads {quote}")
+        if quote.get("check") != 1:
+            raise RuntimeError(f"the iPhone did not verify its quote of {quoted}: {quote}")
         return {"author": quote["author"]}
     return None
 
@@ -5991,6 +5994,9 @@ def _phone_quote(phone: Phone, conversation: str, body: str, snippet: str) -> di
             continue
         if message.get("replyToSnippet") != snippet or not message.get("replyToAuthor"):
             raise RuntimeError(f"the phone's quote reads {message}")
+        # Android's bridge reports its verdict since knit-next ADR 2026-10.gpa3: 1 is verified.
+        if message.get("replyCheck") != 1:
+            raise RuntimeError(f"the phone did not verify the iPhone's quote: {message}")
         return {"quoted": message["replyToId"], "author": message["replyToAuthor"]}
     return None
 

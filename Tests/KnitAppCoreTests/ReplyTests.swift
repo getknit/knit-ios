@@ -145,7 +145,9 @@ import Testing
 
     // MARK: Showing a quote
 
-    /// The replier names the author, but a name is free text: a peer this phone knows shows under its own label.
+    /// The replier names the author, but a name is free text: the quote names its author by this phone's own label for the
+    /// quoted id, for someone it has never met too, and a quote of our own id with no original here is unavailable
+    /// (knit-next ADR 2026-10.gpa3).
     @Test func aQuoteNamesTheAuthorAsThisPhoneDoes() async {
         let rig = AppRig()
         await rig.pin(sam, name: "Sam")
@@ -158,10 +160,33 @@ import Testing
         await rig.receive("c", from: sam.nodeId, sentAt: 3, replyTo: named(stranger.nodeId, "Blue tent"))
         await rig.receive("d", from: sam.nodeId, sentAt: 4, replyTo: named(stranger.nodeId, " "))
         let thread = ChatModel(conversationId: Conversations.nearby, session: rig.session)
-        #expect(
-            thread.state.messages.map(\.quote?.author) == [
-                "Priya", Copy.Common.you, "Blue tent", Alias.alias(for: stranger.nodeId.string),
-            ])
+        let alias = Alias.alias(for: stranger.nodeId.string)
+        #expect(thread.state.messages.map(\.quote?.author) == ["Priya", "", alias, alias])
+        #expect(thread.state.messages.map(\.quote?.state) == [.unverified, .unavailable, .unverified, .unverified])
+    }
+
+    /// An unverified quote shows the replier's words and says so under them; an unavailable one shows neither author nor
+    /// words, only that it is unavailable, and never jumps.
+    @Test func aQuoteSaysHowFarItWasChecked() async throws {
+        let rig = AppRig()
+        await rig.pin(priya, name: "Priya")
+        let original = await rig.receive("Lunch?", from: priya.nodeId, sentAt: 1)
+        let claim = { (id: String, author: NodeId) in
+            MessageReply(messageId: id, authorId: author.string, author: "Priya", snippet: "forged")
+        }
+        await rig.receive("yes", from: sam.nodeId, sentAt: 2, replyTo: claim(original.id, priya.nodeId))
+        await rig.receive("hm", from: sam.nodeId, sentAt: 3, replyTo: claim("never-held", priya.nodeId))
+        await rig.receive("no", from: sam.nodeId, sentAt: 4, replyTo: claim(original.id, sam.nodeId))
+        let thread = ChatModel(conversationId: Conversations.nearby, session: rig.session)
+        let quotes = thread.state.messages.compactMap(\.quote)
+        #expect(quotes.map(\.state) == [.verified, .unverified, .unavailable])
+        #expect(quotes.map(\.line) == ["Lunch?", "forged", Copy.Replies.unavailableQuote])
+        #expect(quotes.map(\.jumps) == [true, false, false])
+        #expect(quotes[1].accessibilityLabel == "\(Copy.Replies.quote("Priya", line: "forged")), \(Copy.Replies.unverifiedQuote)")
+        #expect(quotes[2].author.isEmpty && quotes[2].accessibilityLabel == Copy.Replies.unavailableQuote)
+        let last = try #require(thread.state.messages.last)
+        let report = try #require(thread.reporting(last))
+        #expect(report.quote == nil, "an unavailable quote kept nothing to report")
     }
 
     /// A photo quoted without words shows the receiver's own label (`chat_reply_photo`); a quote with nothing to show
@@ -207,7 +232,8 @@ import Testing
 
     // MARK: The filter
 
-    /// A quote is someone's words too: either the reply's words or its quote flags it, and one tap shows both.
+    /// An unchecked quote's words are screened apart from the body's, and a flagged one hides its reply; a reply with
+    /// neither shows (knit-next ADR 2026-10.gpa3).
     @Test func aFlaggedQuoteHidesItsReply() async {
         let rig = Self.screened()
         let flagged = MessageReply(messageId: "m0", authorId: priya.nodeId.string, author: "Priya", snippet: Self.threat)
@@ -215,9 +241,41 @@ import Testing
         let wordless = await rig.receive("", from: sam.nodeId, sentAt: 2, replyTo: flagged)
         let fine = MessageReply(messageId: "m1", authorId: priya.nodeId.string, author: "Priya", snippet: "lunch?")
         let clear = await rig.receive("yes", from: sam.nodeId, sentAt: 3, replyTo: fine)
-        #expect([worded, wordless, clear].map { rig.stores.messages.message($0.id)?.moderation } == [.flagged, .flagged, .clear])
+        let stored = [worded, wordless, clear].compactMap { rig.stores.messages.message($0.id) }
+        #expect(stored.map(\.moderation) == [.clear, .clear, .clear])
+        #expect(stored.map(\.quoteModeration) == [.flagged, .flagged, .clear])
         let thread = ChatModel(conversationId: Conversations.nearby, session: rig.session)
         #expect(thread.state.messages.map(\.hiddenWords) == [.flagged, .flagged, nil])
+    }
+
+    /// A verified quote is hidden exactly when its original is flagged here, and a reply to that reply, hidden only for its
+    /// quote, stays shown: the verdict a quote carries is its original's own.
+    @Test func aFlaggedOriginalHidesItsVerifiedReplyAndNoFurther() async {
+        let rig = Self.screened()
+        let original = await rig.receive(Self.threat, from: priya.nodeId, sentAt: 1)
+        let quoting = { (record: MessageRecord) in
+            MessageReply(messageId: record.id, authorId: record.senderId.string, author: "", snippet: "whatever")
+        }
+        let reply = await rig.receive("calm down", from: sam.nodeId, sentAt: 2, replyTo: quoting(original))
+        let replyToReply = await rig.receive("agreed", from: priya.nodeId, sentAt: 3, replyTo: quoting(reply))
+        let thread = ChatModel(conversationId: Conversations.nearby, session: rig.session)
+        #expect(thread.state.messages.map(\.hiddenWords) == [.flagged, .flagged, nil])
+        #expect(thread.state.messages.map { $0.quote?.state } == [nil, .verified, .verified])
+        #expect(rig.stores.messages.message(replyToReply.id)?.quoteModeration == .clear)
+    }
+
+    /// A reply whose quote was flagged on the sender's word shows once its original lands clear: the original's verdict
+    /// replaces the screen's, and the words become the original's.
+    @Test func theOriginalLandingRecomputesAnUnverifiedQuotesVerdict() async {
+        let rig = Self.screened()
+        let claim = MessageReply(messageId: "orig", authorId: priya.nodeId.string, author: "Priya", snippet: Self.threat)
+        let reply = await rig.receive("yes", from: sam.nodeId, sentAt: 2, replyTo: claim)
+        let thread = ChatModel(conversationId: Conversations.nearby, session: rig.session)
+        #expect(thread.state.messages.map(\.hiddenWords) == [.flagged])
+        await rig.receive("Lunch at noon?", from: priya.nodeId, id: "orig", sentAt: 1)
+        #expect(thread.state.messages.map(\.hiddenWords) == [nil, nil])
+        #expect(thread.state.messages.last?.quote?.line == "Lunch at noon?")
+        #expect(rig.stores.messages.message(reply.id)?.replyCheck == .verified)
     }
 
     /// A report of a reply carries what it quoted, as the reply carried it, whatever this phone hides of it.

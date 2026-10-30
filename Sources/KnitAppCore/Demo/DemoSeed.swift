@@ -236,7 +236,8 @@ public enum DemoSeed {
 
     /// Gives each line that replies the quote of the line it answers, as Android's composer writes one
     /// (``MessageReply/quoting(_:authorName:hidesWords:attachmentLabel:)``): the author's own name, and the words, which no
-    /// filter hid when they were written.
+    /// filter hid when they were written. Someone else's reply is settled against the line it answers, as the engine
+    /// settles one whose original it holds (knit-next ADR 2026-10.gpa3), so it shows verified.
     private static func quote(_ lines: [DemoCast.Line], me: NodeId, in stores: MeshStores) {
         let ownName = stores.ownProfile.load().name
         for line in lines {
@@ -247,6 +248,9 @@ public enum DemoSeed {
             let stored = parent.senderId == me ? ownName : stores.peers.peer(parent.senderId)?.name
             let name = Alias.displayName(stored: stored, nodeId: parent.senderId.string)
             reply.replyTo = MessageReply.quoting(parent, authorName: name, hidesWords: false, attachmentLabel: nil)
+            if reply.senderId != me {
+                reply = reply.settled(with: MessageReply.settlement(of: reply, against: parent) { AttachmentKind.quoteLabel(of: $0) })
+            }
             stores.messages.save(reply)
         }
     }

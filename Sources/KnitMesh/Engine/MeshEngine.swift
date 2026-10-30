@@ -187,10 +187,10 @@ public final class MeshEngine {
     }
 
     /// Starts the node (`MeshManager.seedOwnProfileCustody`): seeds our sealed profile's dedupe, brings our prekey in step
-    /// with the ring and the switch, republishes our profile if its stamp is stale, puts it in custody, sweeps what
-    /// expired while we were down, the ratchet's retention included, forgets deleted messages no carrier can still hold,
-    /// opens again the ratchet DMs to us custody holds with no row, delivers group chats custody holds and our threads lack,
-    /// and starts the timers. Idempotent.
+    /// with the ring and the switch, republishes our profile if its stamp is stale, puts it in custody, settles the quote
+    /// backlog after it as Android does (`MeshManager.kt:1050`), sweeps what expired while we were down, the ratchet's too,
+    /// forgets deleted messages no carrier can still hold, opens again the ratchet DMs to us custody holds with no row,
+    /// delivers group chats custody holds and our threads lack, and starts the timers. Idempotent.
     public func start() {
         guard !isStarted else {
             return
@@ -202,6 +202,7 @@ public final class MeshEngine {
         syncPrekey(atStart: true)
         republishIfStale()
         _ = ownProfile()
+        settleQuoteBacklog()
         sweep()
         // Before anything opens a frame, as Android's start sweeps the ratchet before its replay (`MeshManager.kt:2552`).
         sweepRatchet()

@@ -53,6 +53,19 @@ import Testing
         #expect((thread["messages"] as? [[String: Any]])?.isEmpty == true)
     }
 
+    /// A reply quotes only a message in its own thread: Android reads any other as unavailable (knit-next ADR 2026-10.gpa3),
+    /// and its own bridge refuses one too.
+    @Test func aReplyToAMessageInAnotherThreadSendsNothing() async throws {
+        let rig = ControlRig()
+        let posted = try #require(try await rig.send(#"{"cmd":"room","text":"in the room"}"#)["id"] as? String)
+        let peer = fixtureNodeId(4)
+        let refused = try await rig.send(#"{"cmd":"dm","to":"\#(peer)","text":"yes","replyTo":"\#(posted)"}"#)
+        #expect(refused["ok"] as? Bool == false)
+        #expect((refused["error"] as? String)?.contains("another thread") == true)
+        let inGroup = try await rig.send(#"{"cmd":"group-send","conv":"g-1","text":"yes","replyTo":"\#(posted)"}"#)
+        #expect((inGroup["error"] as? String)?.contains("another thread") == true)
+    }
+
     @Test func someonesReplyCarriesItsQuoteInItsEventLine() async throws {
         let rig = ControlRig()
         let sender = fixtureNodeId(4)
@@ -62,6 +75,8 @@ import Testing
         let line = try #require(try await rig.report(.received(record, isRequest: false)).first)
         let carried = try #require(line["replyTo"] as? [String: Any])
         #expect(carried["id"] as? String == "m0" && carried["author"] as? String == "Ann" && carried["hasAttachment"] as? Bool == true)
+        // How far it was checked, and the filter's verdict on its words, as Android's bridge reports `replyCheck`.
+        #expect(carried["check"] as? Int == 0 && carried["moderation"] as? Int == 0)
     }
 
     /// The app's bridge writes its own quote, as its composer would; the control surface's is the fallback.

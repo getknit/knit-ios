@@ -1,70 +1,5 @@
 public import KnitWire
 
-/// What a thread row is (`MessageEntity.kind`, `MessageEntity.kt:225-277`): an ordinary message, or a status line
-/// this node wrote about an event, such as a member leaving a group.
-///
-/// The codes are knit-next's, and never leave this phone. Anything but ``message`` is a notice, including a code
-/// this build has no words for, which a newer build may have written. Reading one never fails, because one row
-/// that failed would empty a whole thread (ADR 2026-09.n393).
-public struct MessageKind: RawRepresentable, Hashable, Sendable, ExpressibleByIntegerLiteral {
-    /// An ordinary message (`KIND_NORMAL`).
-    public static let message: Self = 0
-    /// A member left a group by their own signed `groupleave` (`KIND_MEMBER_LEFT`).
-    public static let memberLeft: Self = 1
-    /// A member renamed a group; the row's body is the new name (`KIND_GROUP_RENAMED`).
-    public static let groupRenamed: Self = 4
-    /// A group was created (`KIND_GROUP_CREATED`).
-    public static let groupCreated: Self = 6
-    /// A member who left came back by a frame of their own (`KIND_MEMBER_REJOINED`).
-    public static let memberRejoined: Self = 9
-
-    /// The stored code.
-    public let rawValue: Int
-
-    /// Wraps a stored code, known or not.
-    public init(rawValue: Int) {
-        self.rawValue = rawValue
-    }
-
-    /// A code written out, for the registry above.
-    public init(integerLiteral value: Int) {
-        self.init(rawValue: value)
-    }
-
-    /// Whether the row is a status line rather than a message: never a preview, never acknowledged, and never what
-    /// makes someone a sender in a thread (`isStatusNotice`).
-    public var isNotice: Bool { self != .message }
-}
-
-/// What the content filter made of a message's words (`MessageEntity.moderation`, ADR 2026-10.e4kz): clear, flagged, or
-/// not yet asked.
-///
-/// The first two codes are knit-next's, and none leaves this phone. Android classifies a message before it stores it,
-/// so it never needs ``waiting``; here the engine stores someone else's message first, and the app screens it before it
-/// shows or notifies it. A code this build does not know reads as ``clear``, as an unknown kind reads as a notice.
-public struct MessageModeration: RawRepresentable, Hashable, Sendable, ExpressibleByIntegerLiteral {
-    /// The words passed, or were never screened: our own, a status line, a message stored before v7, or one the model
-    /// could not score (`MODERATION_NONE`).
-    public static let clear: Self = 0
-    /// The on-device text filter flagged the words (`MODERATION_TEXT_FLAGGED`).
-    public static let flagged: Self = 1
-    /// Someone else's words, stored and not yet screened. Nothing shows them while the filter is on.
-    public static let waiting: Self = 2
-
-    /// The stored code.
-    public let rawValue: Int
-
-    /// Wraps a stored code, known or not.
-    public init(rawValue: Int) {
-        self.rawValue = rawValue
-    }
-
-    /// A code written out, for the registry above.
-    public init(integerLiteral value: Int) {
-        self.init(rawValue: value)
-    }
-}
-
 /// What a message carries besides its text (`MessageEntity.attachment*` in knit-next): a photo, or a file or voice
 /// note this build shows only as a label.
 ///
@@ -170,6 +105,13 @@ public struct MessageRecord: Sendable, Equatable {
     public var replyTo: MessageReply?
     /// The people it mentions, in the order its author picked them, each carried in ``body``.
     public var mentions: [MessageMention]
+    /// How far ``replyTo`` was checked against the original it names (`replyCheck`, knit-next ADR 2026-10.gpa3). Ours, and
+    /// a row that quotes nothing, stay ``QuoteCheck/unchecked``: we quoted a row we held.
+    public var replyCheck: QuoteCheck
+    /// What the content filter made of ``replyTo``'s words (`replyToFlagged`), apart from ``moderation``, which is the
+    /// body's: the sender's words screened while the quote is unchecked, else the original's own verdict. Android's column
+    /// holds 0 or 1; ``MessageModeration/waiting`` is this port's, as it is for the body.
+    public var quoteModeration: MessageModeration
 
     /// Makes a record.
     public init(
@@ -186,7 +128,9 @@ public struct MessageRecord: Sendable, Equatable {
         attachment: MessageAttachment? = nil,
         moderation: MessageModeration = .clear,
         replyTo: MessageReply? = nil,
-        mentions: [MessageMention] = []
+        mentions: [MessageMention] = [],
+        replyCheck: QuoteCheck = .unchecked,
+        quoteModeration: MessageModeration = .clear
     ) {
         self.id = id
         self.senderId = senderId
@@ -202,6 +146,8 @@ public struct MessageRecord: Sendable, Equatable {
         self.moderation = moderation
         self.replyTo = replyTo
         self.mentions = mentions
+        self.replyCheck = replyCheck
+        self.quoteModeration = quoteModeration
     }
 }
 
@@ -346,13 +292,44 @@ public protocol MessageStore: MessageRetaining {
     @discardableResult
     func setAttachmentExiflessHash(_ hash: BlobHash, key: String?, to exiflessHash: BlobHash) -> Bool
 
-    /// Records what the content filter made of message `id`'s words, and answers whether that changed anything.
+    /// Records what the content filter made of message `id`'s words, and answers whether that changed anything. In the
+    /// same write, every reply whose quote of `id` was verified takes the new verdict as its quote's
+    /// (``MessageRecord/quoteModeration``): an original screened after its reply settled reaches the reply, and none is
+    /// missed between the two (knit-next ADR 2026-10.gpa3; Android screens before it stores, so it never needs this).
     @discardableResult
     func setModeration(_ id: String, to moderation: MessageModeration) -> Bool
 
-    /// The messages still ``MessageModeration/waiting`` to be screened, in the order they were stored: what a launch
-    /// screens when the app stopped before it could.
+    /// Records what the content filter made of reply `id`'s quoted words, only while the quote is unchecked and its screen
+    /// waits, and answers whether it did: an original that landed meanwhile settled the quote with its own verdict, which
+    /// the sender's words no longer speak for (`InboundPipeline.quoteOnArrival`).
+    @discardableResult
+    func setQuoteModeration(_ id: String, to moderation: MessageModeration) -> Bool
+
+    /// The messages whose words, or whose unchecked quote's words, are still ``MessageModeration/waiting`` to be
+    /// screened, in the order they were stored: what a launch screens when the app stopped before it could.
     func waitingForModeration() -> [MessageRecord]
+
+    /// Writes `settlement` into reply `id`'s quote columns, once: only while it is still ``QuoteCheck/unchecked``, and
+    /// touching only the quote's words, its attachment flag, its check and its verdict, never the rest of the row
+    /// (`MessageDao.applyQuoteVerdict`). A verified settlement takes its verdict from the original as held when it writes,
+    /// in the same write, so a screen of the original that lands between the judging and the write is not lost. Answers
+    /// whether it wrote.
+    @discardableResult
+    func settleQuote(_ id: String, _ settlement: QuoteSettlement) -> Bool
+
+    /// Gives reply `id`, verified and still waiting on its original's screen, the original's verdict as held now, and
+    /// answers whether that changed anything: for a reply judged before its insert, whose original's screen may have landed
+    /// between that judging and the insert.
+    @discardableResult
+    func refreshQuoteModeration(_ id: String) -> Bool
+
+    /// Up to `limit` unchecked replies quoting `originalId`, by anyone but `me` (`MessageDao.repliesAwaiting`): what an
+    /// original settles as it lands. A settled reply leaves the set, so the caller pages by asking again.
+    func repliesAwaiting(_ originalId: String, me: NodeId, limit: Int) -> [MessageRecord]
+
+    /// Up to `limit` unchecked replies by anyone but `me` whose original is held (`MessageDao.unsettledQuotes`): the backlog
+    /// a start settles. A reply whose original is not held stays out, so the set only shrinks as it is worked.
+    func unsettledQuotes(me: NodeId, limit: Int) -> [MessageRecord]
 
     /// Stores `reaction` unless the one held for its message and reactor is as new or newer, or its message is
     /// remembered as deleted, and answers whether it did (`ReactionRepository.apply`). Strictly newer wins and a tie

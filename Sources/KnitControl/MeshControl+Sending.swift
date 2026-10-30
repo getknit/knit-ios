@@ -14,13 +14,18 @@ extension MeshControl {
     }
 
     /// Sends `text`, with `photo`, to `destination`, quoting the message `replyTo` names when it names one and mentioning
-    /// `mentions`, and answers the sent message's reply. A `replyTo` this node does not hold sends nothing; a mention whose
-    /// "@" and label the text doesn't carry is dropped, as the composer drops one.
+    /// `mentions`, and answers the sent message's reply. A `replyTo` this node does not hold sends nothing, and nor does
+    /// one held in another thread, which the receiver would read as unavailable (knit-next ADR 2026-10.gpa3; Android's bridge
+    /// refuses one too, `DebugBridgeReceiver.kt:716-720`); a mention whose "@" and label the text doesn't carry is dropped,
+    /// as the composer drops one.
     func send(
         _ text: String, photo: OutgoingPhoto?, replyTo: String?, mentions: [NodeId], to destination: Destination
     ) async -> Result<[String: JSONValue], ControlError> {
         var quoting: MessageReply?
         if let replyTo {
+            if let held = stores.messages.message(replyTo), ExactKey(held.conversationId) != ExactKey(thread(of: destination)) {
+                return .failure(.refused("message \(replyTo) is in another thread, and a reply quotes only its own"))
+            }
             guard let quote = await quote(of: replyTo) else {
                 return .failure(.refused("no message \(replyTo) is held here to reply to"))
             }
@@ -48,6 +53,18 @@ extension MeshControl {
             return .failure(.refused(refusal))
         }
         return .success(Self.sent(record, reusing: sending))
+    }
+
+    /// The thread `destination` names, as this node keys it.
+    private func thread(of destination: Destination) -> String {
+        switch destination {
+        case .room:
+            Conversations.nearby
+        case .direct(let recipient):
+            Conversations.id(sender: nodeId, recipient: recipient, me: nodeId)
+        case .group(let conversation):
+            conversation
+        }
     }
 
     /// The mention of `person`: the actions' own, as the app's composer writes it under its label, or else one under the

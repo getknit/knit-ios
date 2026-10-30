@@ -4,7 +4,8 @@
 
     /// The message a reply quotes (`QuotedMessage` in knit-next's `ChatScreen.kt`, ADR 2026-10.mn29): an accent bar, the
     /// author on one line, and what they said on up to two. It sits above a reply's photo and words in the thread, and above
-    /// the field while the composer holds one. A blocked author's quote says so, in the hidden words' italic.
+    /// the field while the composer holds one. A blocked author's quote says so, in the hidden words' italic, and so does an
+    /// unavailable one, with no author. An unverified quote says so under its words (knit-next ADR 2026-10.gpa3).
     ///
     /// It takes the colors of the bubble it belongs to, so its words read as the bubble's own do: on ours, the bubble's text
     /// color throughout; on someone else's, the tint for the bar and the secondary text for the words, as a hidden message's
@@ -28,8 +29,13 @@
                     }
                     if let line = quote.line {
                         Text(line)
-                            .font(quote.blocked ? .caption.italic() : .caption)
+                            .font(quote.blocked || quote.state == .unavailable ? .caption.italic() : .caption)
                             .lineLimit(Layout.previewLines)
+                            .foregroundStyle(isMine ? Palette.onOwnBubble : Palette.secondaryText)
+                    }
+                    if quote.state == .unverified {
+                        Text(Copy.Replies.unverifiedQuote)
+                            .font(.caption2.italic())
                             .foregroundStyle(isMine ? Palette.onOwnBubble : Palette.secondaryText)
                     }
                 }
@@ -42,7 +48,7 @@
                 isMine ? Palette.ownBubble : Palette.incomingBubble, in: .rect(cornerRadius: Layout.quoteCorner, style: .continuous)
             )
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Copy.Replies.quote(quote.author, line: quote.line))
+            .accessibilityLabel(quote.accessibilityLabel)
         }
     }
 

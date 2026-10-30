@@ -64,9 +64,19 @@ public enum AttachmentKind: Sendable, Equatable {
 
 extension MessageRecord {
     /// Whether the content filter hides these words from `me` (ADR 2026-10.e4kz): it is on, someone else wrote them, and
-    /// it flagged them or has yet to screen them. Nothing shows someone else's words before the filter has read them.
+    /// it flagged them or has yet to screen them, the body or the words its quote shows (`hiddenByFilter`,
+    /// `MessageEntity.kt:457`, knit-next ADR 2026-10.gpa3). Nothing shows someone else's words before the filter has read
+    /// them. The one predicate every surface that hides a message reads: the thread, the chat list, a notification and the
+    /// composer's quote.
     func hidesWords(filtering: Bool, me: NodeId) -> Bool {
-        filtering && senderId != me && (moderation == .flagged || moderation == .waiting)
+        filtering && senderId != me && (moderation.hides || quoteModeration.hides)
+    }
+}
+
+extension MessageModeration {
+    /// Whether words under this verdict stay out of sight while the filter is on: flagged, or not yet read.
+    var hides: Bool {
+        self == .flagged || self == .waiting
     }
 }
 

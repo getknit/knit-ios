@@ -61,6 +61,10 @@ internal enum ControlLines {
                 "author": .string(reply.author),
                 "snippet": .string(reply.snippet),
                 "hasAttachment": .bool(reply.hasAttachment),
+                // How far this node checked it, and the filter's verdict on its words (knit-next ADR 2026-10.gpa3), as
+                // Android's bridge reports `replyCheck` and `replyToFlagged`.
+                "check": .int(Int64(record.replyCheck.rawValue)),
+                "moderation": .int(Int64(record.quoteModeration.rawValue)),
             ])
         }
         return fields

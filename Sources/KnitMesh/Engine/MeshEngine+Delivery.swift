@@ -14,7 +14,8 @@ extension MeshEngine {
     ///
     /// Someone else's words are stored waiting for the content filter (ADR 2026-10.e4kz). Android classifies them
     /// before the row is written (`InboundPipeline.inboundModeration`); here the app screens them as it hears the
-    /// event, off this actor, and nothing shows them until it has.
+    /// event, off this actor, and nothing shows them until it has. A quote is judged against the original it names, and
+    /// its words wait for the filter apart from the body's while it cannot be (knit-next ADR 2026-10.gpa3).
     func deliverChat(_ envelope: RelayEnvelope, _ delivered: DeliveredChat, sender: NodeId, recipient: NodeId?, via hop: NodeId?) {
         announce(storeDelivered(envelope, delivered, sender: sender, recipient: recipient), envelope, sender: sender, via: hop)
     }
@@ -28,9 +29,7 @@ extension MeshEngine {
         let isNew = !stores.messages.contains(envelope.id)
         // Our own limit bounds what we send, not what a peer floods.
         let body = TextLimits.truncated(delivered.body, toUTF16: TextLimits.message)
-        // A quote is someone's words too, and the filter reads them with the reply's (ADR 2026-10.mn29).
-        let wordless = TextLimits.isBlank(body) && TextLimits.isBlank(delivered.replyTo?.snippet ?? "")
-        let record = MessageRecord(
+        var record = MessageRecord(
             id: envelope.id,
             senderId: sender,
             recipientId: recipient,
@@ -39,20 +38,28 @@ extension MeshEngine {
             sentAt: clampFuture(envelope.sentAt),
             arrivedAt: sender == nodeId ? nil : clock.wallMilliseconds(),
             attachment: delivered.attachment,
-            moderation: sender == nodeId || wordless ? .clear : .waiting,
+            moderation: sender == nodeId || TextLimits.isBlank(body) ? .clear : .waiting,
             replyTo: delivered.replyTo,
             // Only the mentions the kept body still holds: that bounds a peer's list, where Android keeps any
             // (`InboundPipeline.kt:2660`, ADR 2026-10.nbhj).
             mentions: MessageMention.carried(delivered.mentions, in: body)
         )
+        if isNew, sender != nodeId {
+            record = quoteOnArrival(record)
+        }
         stores.messages.insertIfAbsent(record)
         return StoredDelivery(record: record, isNew: isNew)
     }
 
-    /// The half of ``deliverChat(_:_:sender:recipient:via:)`` after the row: the sender's typing cue ends, a new message
-    /// is announced, what it carries is fetched or held, and the frame is acknowledged. For a ratchet DM it runs only once
+    /// The half of ``deliverChat(_:_:sender:recipient:via:)`` after the row: a new message's quote, and the quotes of the
+    /// replies waiting on it, are settled (``settleQuotes(after:)``), the sender's typing cue ends, a new message
+    /// is announced as stored, what it carries is fetched or held, and the frame is acknowledged. For a ratchet DM it runs only once
     /// the unit that stored the row has committed, so the acceptance it reads is never read inside that unit.
     func announce(_ stored: StoredDelivery, _ envelope: RelayEnvelope, sender: NodeId, via hop: NodeId?) {
+        var stored = stored
+        if stored.isNew, let settled = settleQuotes(after: stored.record) {
+            stored.record = settled
+        }
         let conversation = stored.record.conversationId
         // Every delivery ends the sender's cue in the thread, a re-delivery too (`InboundPipeline.kt:2728`), and before
         // the message is announced, so no screen shows both.
@@ -243,8 +250,8 @@ internal struct Acquaintances {
 /// A message delivered to us and stored (``MeshEngine/storeDelivered(_:_:sender:recipient:)``): its row, and whether the
 /// row is new, for the work after the unit that stored it commits.
 internal struct StoredDelivery {
-    /// The row as delivered.
-    let record: MessageRecord
+    /// The row as delivered, and as stored once its quote is settled.
+    var record: MessageRecord
     /// Whether no row held its id before: only a new message is announced.
     let isNew: Bool
 }

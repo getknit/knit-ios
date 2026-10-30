@@ -33,7 +33,8 @@ public struct ChatMessage: Sendable, Equatable, Identifiable {
     /// The emoji people reacted with, each where it first appeared; empty for none and for a status line
     /// (ADR 2026-10.ehe6).
     public var reactions: [ReactionChip] = []
-    /// The message it replies to, as its author quoted it, or `nil` (ADR 2026-10.mn29). Its words hide with the reply's.
+    /// The message it replies to, as this phone checked the quote, or `nil` (ADR 2026-10.mn29, knit-next ADR 2026-10.gpa3).
+    /// Its words hide with the reply's, and a reply whose quoted words are flagged hides whole.
     public var quote: ChatQuote?
     /// Where the names it mentions sit in ``body``, in UTF-16 offsets, which the bubble sets apart (ADR 2026-10.nbhj).
     public var mentionSpans: [Range<Int>] = []
@@ -46,9 +47,10 @@ public enum HiddenWords: Sendable, Equatable {
     /// The filter has not read them yet, which takes a moment after they land; they show, or stay hidden, once it has.
     case unscreened
 
-    /// Why words the filter `moderation` describes are hidden, given that they are.
-    init(_ moderation: MessageModeration) {
-        self = moderation == .flagged ? .flagged : .unscreened
+    /// Why `message`'s words are hidden, given that they are: unscreened while the filter has yet to read its words or
+    /// its quote's, so a tap shows neither, and flagged once it has read both (knit-next ADR 2026-10.gpa3).
+    init(_ message: MessageRecord) {
+        self = message.moderation == .waiting || message.quoteModeration == .waiting ? .unscreened : .flagged
     }
 }
 
@@ -341,7 +343,7 @@ public final class ChatModel {
                 ? GroupNaming.row(of: message, in: group, me: me, directory: directory)
                 : chatMessage(message, kind: kind, directory: directory, photos: photos, filtering: filtering))
                 .map { $0.reacted(chips[ExactKey(message.id)] ?? []) }
-                .map { $0.quoting(message.replyTo.map { ChatQuote($0, me: me, directory: directory, shown: shown) }) }
+                .map { $0.quoting(ChatQuote(quotedBy: message, me: me, directory: directory, shown: shown)) }
         }
         let members = group?.members ?? []
         let isBlocked = peer.map(directory.blocked.contains) ?? false
@@ -390,7 +392,7 @@ public final class ChatModel {
             status: isMine ? DeliveryStatus(message) : nil,
             authorFace: named ? directory.face(for: message.senderId) : nil,
             attachment: photos.attachment(of: message),
-            hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message.moderation) : nil,
+            hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message) : nil,
             mentionSpans: MentionText.spans(in: message.body, mentions: message.mentions)
         )
     }

@@ -13,6 +13,8 @@ extension CopyCatalogTests {
             Copy.Replies.quote("Sam", line: nil),
             Copy.Replies.showOriginal,
             Copy.Replies.blockedQuote,
+            Copy.Replies.unverifiedQuote,
+            Copy.Replies.unavailableQuote,
             Copy.Report.emailQuote("Sam", "North gate"),
         ]
     }

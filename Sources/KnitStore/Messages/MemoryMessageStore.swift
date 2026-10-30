@@ -243,13 +243,15 @@ public final class MemoryMessageStore: MessageStore {
                 return false
             }
             state.rows[key]?.record.moderation = moderation
+            state.passQuoteModeration(moderation.ofQuote, of: key)
             return true
         }
     }
 
     public func waitingForModeration() -> [MessageRecord] {
         state.withLock { state in
-            state.rows.values.filter { $0.record.moderation == .waiting }.sorted { $0.order < $1.order }.map(\.record)
+            state.rows.values.filter { $0.record.moderation == .waiting || $0.record.quoteAwaitsScreening }
+                .sorted { $0.order < $1.order }.map(\.record)
         }
     }
 

@@ -146,8 +146,8 @@ public final class AppSession {
     func handle(_ event: MeshEvent) async {
         switch event {
         case .received(var message, let isRequest):
-            if message.moderation == .waiting {
-                message.moderation = await screen(message)
+            if message.moderation == .waiting || message.quoteAwaitsScreening {
+                message = await screen(message)
             }
             // A message into the thread being read is read as it lands, as Android's window stamps it (ADR 2026-10.frmj).
             if isReading(message.conversationId) {
@@ -308,38 +308,6 @@ public final class AppSession {
     /// What Diagnostics shows now.
     public func diagnostics() async -> MeshDiagnostics {
         await mesh.diagnostics
-    }
-
-    // MARK: Screening
-
-    /// Screens what the engine stored and the app never got to: a launch that follows one stopped mid-screen, or events
-    /// heard by nobody. In the order they were stored, before the first event is heard.
-    func screenWaiting() async {
-        let waiting = stores.messages.waitingForModeration()
-        for message in waiting {
-            _ = await screen(message)
-        }
-        if !waiting.isEmpty {
-            revision += 1
-        }
-    }
-
-    /// What the content filter makes of `message`'s words, stored on its row (`InboundPipeline.inboundModeration`).
-    /// Words the filter could not read are let through, as Android lets them through: `clear`, for good. A reply's quote
-    /// is someone's words too, which Android does not screen: here either flags the message, and one tap shows both
-    /// (ADR 2026-10.mn29).
-    private func screen(_ message: MessageRecord) async -> MessageModeration {
-        if let stored = stores.messages.message(message.id)?.moderation, stored != .waiting {
-            return stored
-        }
-        let inRoom = message.conversationId == Conversations.nearby
-        var flagged = await textScreening?.isAbusive(message.body, inRoom: inRoom) ?? false
-        if !flagged, let quoted = message.replyTo?.snippet {
-            flagged = await textScreening?.isAbusive(quoted, inRoom: inRoom) ?? false
-        }
-        let verdict: MessageModeration = flagged ? .flagged : .clear
-        stores.messages.setModeration(message.id, to: verdict)
-        return verdict
     }
 
     private func notify(_ message: MessageRecord, isRequest: Bool) async {

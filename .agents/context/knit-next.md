@@ -304,6 +304,15 @@ Kotlin wins.
         and `ReadableColor.kt` is unchanged. `3a6f5d08` and `1870384c` make a mention's alert say only that words are
         hidden when the filter flagged them, which this port's alert already does. Companion change A8, mentions on
         Android's debug bridge, is owed.
+      - **The quote check** (`1870384c`, knit-next ADR 2026-10.gpa3; ADR 2026-10.x246): followed since 2026-10-30, ported
+        from knit-next `main` at `7439fd9cc`, where `QuoteCheck.kt` and `QuoteVerifier.kt` differ from `1870384c` only by
+        a Qodana cleanup (`3b2f624c`) and a reaction quote's ellipsis (`0d64a1b6`). Until then this port stored a
+        received quote as sent, and the ledger never said `1870384c`'s main change was not followed. A received quote is
+        admitted as `admitReply` admits one, judged against the original by `quoteVerdict`, rebuilt by `settleQuote`, and
+        settled on whichever of reply and original lands second, with the start's backlog (`MeshEngine+Quotes`). Schema
+        v20 takes Android's `replyCheck` and `replyToFlagged` (its DB v22), and `QuoteState` mirrors `quoteViewFor`. The
+        one difference: the app screens after the engine stores, so a verified quote can wait on its original's screen,
+        and the store passes the verdict on when it lands.
       - **A photo's declared size** (`eac3debc`; knit-next ADRs 2026-10.js2p and 2026-10.hmfe; knit-ios #7): a picture
         of 1,000,000 bytes or more declares its plaintext length, sealed in a DM or a group and in the clear in a room
         post, so Android's "Ask before large Bluetooth downloads" can hold it (`BluetoothFetchGate.kt`'s

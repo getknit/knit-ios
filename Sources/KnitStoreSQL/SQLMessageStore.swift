@@ -13,7 +13,7 @@ public final class SQLMessageStore: MessageStore {
         id, senderId, recipientId, conversationId, body, sentAt, arrivedAt, delivered, pendingKey, kind, \
         attachmentHash, attachmentMime, attachmentKey, attachmentName, attachmentSize, moderation, attachmentWidth, \
         attachmentHeight, attachmentAnimated, attachmentPlainHash, attachmentSourceHash, replyToId, replyToAuthorId, \
-        replyToAuthor, replyToSnippet, replyToHasAttachment, mentions, attachmentExiflessHash
+        replyToAuthor, replyToSnippet, replyToHasAttachment, mentions, attachmentExiflessHash, replyCheck, replyToFlagged
         """
     /// Writes a row with ``columns`` and `unread`, which no read takes and no save's update names: it is set once, when a
     /// row is first stored (ADR 2026-10.frmj).
@@ -88,7 +88,8 @@ public final class SQLMessageStore: MessageStore {
                             ELSE excluded.attachmentExiflessHash END,
                         replyToId = excluded.replyToId, replyToAuthorId = excluded.replyToAuthorId,
                         replyToAuthor = excluded.replyToAuthor, replyToSnippet = excluded.replyToSnippet,
-                        replyToHasAttachment = excluded.replyToHasAttachment, mentions = excluded.mentions
+                        replyToHasAttachment = excluded.replyToHasAttachment, mentions = excluded.mentions,
+                        replyCheck = excluded.replyCheck, replyToFlagged = excluded.replyToFlagged
                     """,
                 arguments: Self.arguments(message)
             )
@@ -232,27 +233,6 @@ public final class SQLMessageStore: MessageStore {
         }
     }
 
-    @discardableResult
-    public func setModeration(_ id: String, to moderation: MessageModeration) -> Bool {
-        database.write(or: false) { db in
-            try db.execute(
-                sql: "UPDATE messages SET moderation = ? WHERE id = ? AND moderation != ?",
-                arguments: [moderation.rawValue, StoredText.bytes(id), moderation.rawValue]
-            )
-            return db.changesCount > 0
-        }
-    }
-
-    public func waitingForModeration() -> [MessageRecord] {
-        database.read(or: []) { db in
-            // The code is written into the SQL, not bound: SQLite uses a partial index only for a term it can see
-            // matches the index's own, and `messages_waiting` is `WHERE moderation = 2`.
-            let waiting = MessageModeration.waiting.rawValue
-            return try Row.fetchAll(db, sql: "SELECT \(Self.columns) FROM messages WHERE moderation = \(waiting) ORDER BY seq")
-                .map(Self.record)
-        }
-    }
-
     /// The values for ``insert``, in ``columns`` order, then `unread`.
     private static func arguments(_ message: MessageRecord) -> StatementArguments {
         let attachment = message.attachment
@@ -266,7 +246,8 @@ public final class SQLMessageStore: MessageStore {
             attachment?.dimensions?.animated, StoredText.bytes(attachment?.plainHash?.string),
             StoredText.bytes(attachment?.sourceHash?.string), StoredText.bytes(reply?.messageId), StoredText.bytes(reply?.authorId),
             StoredText.bytes(reply?.author), StoredText.bytes(reply?.snippet), reply?.hasAttachment ?? false,
-            mentionsValue(message.mentions), StoredText.bytes(attachment?.exiflessHash?.string), message.arrivesUnread,
+            mentionsValue(message.mentions), StoredText.bytes(attachment?.exiflessHash?.string), message.replyCheck.rawValue,
+            message.quoteModeration.rawValue, message.arrivesUnread,
         ]
     }
 
@@ -286,7 +267,9 @@ public final class SQLMessageStore: MessageStore {
             attachment: try attachment(row),
             moderation: MessageModeration(rawValue: try row.decode(Int.self, forColumn: "moderation")),
             replyTo: try reply(row),
-            mentions: try mentions(row)
+            mentions: try mentions(row),
+            replyCheck: QuoteCheck(rawValue: try row.decode(Int.self, forColumn: "replyCheck")),
+            quoteModeration: MessageModeration(rawValue: try row.decode(Int.self, forColumn: "replyToFlagged"))
         )
     }
 }

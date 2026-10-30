@@ -104,6 +104,9 @@ document:
 
 ### Changed
 
+- A reply's quote now shows the answered message's words as your iPhone has them, under the name you know
+  its author by. When your iPhone lacks that message, the quote says so, and one that doesn't match shows as
+  unavailable.
 - Your iPhone now links with any nearby Android phone within about 30 seconds of both opening Knit. Some
   Android phones used to take several minutes to find it, and longer when their screen was off.
 - Knit now wears Knit for Android's coral, groups each person's messages with a date over every day, and puts

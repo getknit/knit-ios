@@ -11,7 +11,7 @@ extension ChatModel {
         guard message.notice == nil, state.canReply, let reply = session.quote(of: message.id) else {
             return
         }
-        let quote = ChatQuote(reply, me: session.identity.nodeId, directory: session.directory, shown: [])
+        let quote = ChatQuote(reply, state: .verified, me: session.identity.nodeId, directory: session.directory, shown: [])
         replying = ComposerReply(reply: reply, quote: quote)
         repliesStarted += 1
     }

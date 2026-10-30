@@ -131,6 +131,10 @@ public struct MeshConfiguration: Sendable {
     /// since Android reads these bits from the pinned profile alone (`CryptoScheme.kt:11-13`). Taking peers' prekeys runs
     /// either way, since it sends nothing.
     public var ratchet: Bool
+    /// The label a quote rebuilt from its original carries for what the original carried with no words: a GIF, a file or
+    /// a voice note, in the reader's language (`QuoteLabels`, knit-next ADR 2026-10.gpa3). The app passes its composer's
+    /// own; without one, as in knit-peer and the tests, such a quote carries no words, and a photo reads as one.
+    public var quoteLabel: @Sendable (MessageAttachment) -> String?
 
     /// What our signed profile advertises while it carries our prekey: ``Capabilities/local`` (`0x15F`) with the switch
     /// on, and without ``Capabilities/ratchetSuite`` (`0xF`) with it off.
@@ -140,6 +144,7 @@ public struct MeshConfiguration: Sendable {
 
     /// knit-next's cadences unless told otherwise: 60 s, 10 min, 15 min and 12 h, and typing's 12 s and 8 s. The ratchet
     /// is off unless asked for, as the blob query is: the app and the peer ask, and a test starts from the build before it.
+    @preconcurrency
     public init(
         router: Router.Configuration = Router.Configuration(),
         reofferMilliseconds: Int64 = 60_000,
@@ -149,7 +154,8 @@ public struct MeshConfiguration: Sendable {
         queriesBlobHolders: Bool = false,
         typingLifetimeMilliseconds: Int64 = 12_000,
         typingIntervalMilliseconds: Int64 = 8000,
-        ratchet: Bool = false
+        ratchet: Bool = false,
+        quoteLabel: @escaping @Sendable (MessageAttachment) -> String? = { _ in nil }
     ) {
         self.router = router
         self.reofferMilliseconds = reofferMilliseconds
@@ -160,5 +166,6 @@ public struct MeshConfiguration: Sendable {
         self.typingLifetimeMilliseconds = typingLifetimeMilliseconds
         self.typingIntervalMilliseconds = typingIntervalMilliseconds
         self.ratchet = ratchet
+        self.quoteLabel = quoteLabel
     }
 }
