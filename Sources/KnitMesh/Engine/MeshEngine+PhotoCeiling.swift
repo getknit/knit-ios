@@ -38,13 +38,17 @@ extension MeshEngine {
 
     /// `peer`'s copy of `hash` is over the photo's ceiling, as `why` says. A want made only for a photo passes `peer` over,
     /// its ask on `peer` withdrawn, and goes on to the next holder now rather than at the next timer. Logged in the blob
-    /// exchange's words, the hash's first characters and the holder named.
+    /// exchange's words, the hash's first characters and the holder named, once per want: only when `peer` is newly
+    /// passed over, as Kotlin logs its `blob pass` line beside the count (`BlobExchange.kt:505`, `:514-516` at knit-next
+    /// `a0b52f865`). The withdrawal, the step and the links' sync run whether or not it was new.
     private func overPhotoCeiling(_ hash: BlobHash, from peer: NodeId, _ why: String) {
-        guard let cancels = blobExchange.overPhotoCeiling(hash, from: peer) else {
+        guard let pass = blobExchange.overPhotoCeiling(hash, from: peer) else {
             return
         }
-        note(["blob photo \(hash.string.prefix(BlobExchange.shownHashCharacters))… from \(peer) \(why): passed over"])
-        withdrawAsks(hash, from: cancels)
+        if pass.isNew {
+            note(["blob photo \(hash.string.prefix(BlobExchange.shownHashCharacters))… from \(peer) \(why): passed over"])
+        }
+        withdrawAsks(hash, from: pass.cancels)
         stepBlobs([hash])
         syncAcceptedFiles()
     }

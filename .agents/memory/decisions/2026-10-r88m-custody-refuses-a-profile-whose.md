@@ -25,6 +25,11 @@ Amended 2026-10-31 (knit-ios `fix/ios-avatar-push-mark`, paired change `ios-avat
 its sender over. Before, a pushed AVATAR cut off at the ceiling marked its pusher whenever a photo-only want of the same
 hash stood: trial run 20261031-021140 saw a 1,429,545-byte leftover photo pushed at link-up cut at its header, and
 `photosOverCeiling` went from 0 to 1 with no ask made.
+Amended 2026-10-31 (knit-ios `fix/ios-pass-over-count`, paired change `ios-pass-over-count`, iOS alone moving):
+"The photo ceiling" Decision 5 now counts and logs a holder once per want, where it is newly added to the want's
+`passedOver`, as knit-next `a0b52f865`'s `passOver` does (`BlobExchange.kt:505`, `:514-516`). Before, every signal
+counted: trial run 20261031-030424 saw a holder's `blobhas` size claim pass it over, then a crossing stream's header from
+the same holder reach the hash, and `photosOverCeiling` moved by 2 for one holder.
 
 **Context:** a profile is the one frame every node pins, caches and serves to anyone who asks for its sender's key. Its
 size was bounded only by custody's 60 KiB byte cap (ADR 2026-10.6n48) and the link's record size, so each pinned sender
@@ -192,9 +197,21 @@ fetched at most once per holder per session.
    revision 5): the author is whoever advertised the hash, and any peer can sign a profile naming someone else's photo,
    so the author is marked as any holder is. The holder is the link's node id the ask went to, never a signer.
    `PhotoRefusals` keeps at most 1,024 pairs and 1,024 refused hashes, the oldest dropped first, and the engine forgets
-   both at every start, the `Mesh`'s after a stop included. A relink under the same node id stays marked. Counted in
-   `BlobCounts.photosOverCeiling`, `photosOverCeiling` in `status`, and logged as
-   `blob photo <hash8>… from <holder> <why>: passed over`. A pushed AVATAR cut off at the ceiling is none of these: it
+   both at every start, the `Mesh`'s after a stop included (Kotlin keeps 256 hashes and at most 16 holders per hash,
+   `PartialBlobs.kt:302-306`; this port's 1,024 pairs across hashes is a known difference, left for a follow-up). A
+   relink under the same node id stays marked. **A holder is counted once per want:** `BlobCounts.photosOverCeiling`,
+   `photosOverCeiling` in `status`, moves exactly when a holder is newly added to a photo-only want's `passedOver`,
+   whichever signal marked it, and one line goes with it, `blob photo <hash8>… from <holder> <why>: passed over`
+   (Kotlin's `blob pass <hash>… <holder>: over its ceiling → next`, `BlobExchange.kt:505`, `:514-516`). A second signal
+   from a holder already passed over for that want, or a holder the 64 bound keeps out, counts and logs nothing; the
+   mark, the withdrawal and the step happen either way. `why` is `claims <n>B` or `streamed past the ceiling`
+   (`BlobExchange.overPhotoCeiling`, logged by the engine), or `marked earlier this session` when a step copies a
+   session mark into the want (`BlobExchange.passOver`, in the step's notes). A new want of the same hash starts with an
+   empty `passedOver`, so its first step counts the session's marked holders again, as Kotlin's does. Kotlin counts at
+   one site, `step`'s `passOver` (`:464`); this port counts at the signal and at the step, which differs in two timings,
+   both known: a want that ends or widens between a signal and its next step counts 1 here and 0 on Android, and a new
+   photo-only want that finds earlier marks while its bytes are arriving or held counts on Android at its first step
+   and here only when it is next decided. A pushed AVATAR cut off at the ceiling is none of these: it
    answers no want, so it marks nobody, withdraws no ask (no `blobcancel`), steps no want and moves no count, even with
    a photo-only want of the same hash standing (contract `ios-avatar-push-mark`).
 6. **No resume past the ceiling.** A photo-only want's `blobreq` never names an offset past the ceiling: such a prefix
@@ -262,9 +279,12 @@ both ways, the shared room reporting nobody), `MeshEngineAvatarPushMarkTests` (a
 link marking, withdrawing and stepping nothing while the fetch's own stream still passes the holder over), `BlobPhotoCeilingTests` (the flag, an ask that never lifts it, our photo want on an echo, a promoted echo and a fresh
 want from zero, a refused photo want leaving an echo alone, both signals, the author passed over like any holder, a
 passed-over holder that asks, the want's own passed-over set outliving the session's mark and its 64 bound, a held
-copy's refusal, the bound), `MeshEngineAvatarCeilingRowsTests` (a message request's row never makes the photo an attachment, an in-ceiling
+copy's refusal, the bound, a holder counted once per want whichever signal and however many, a new want counting the
+session's marks again, the 64 bound counting nothing past it), `MeshEngineAvatarCeilingRowsTests` (a message request's row never makes the photo an attachment, an in-ceiling
 push of a refused hash kept past the sweep, an echo's oversize bytes served to its asker) and
-`MeshEngineAvatarCeilingTests` (two holders, the author passed over, a peer advertising another's photo unable to hide
+`MeshEngineAvatarCeilingTests` (two holders, Kotlin's
+`aHolderWhoseSizePassesThePhotoCeilingIsPassedOverAndAnHonestOneServes`, a claim and a stream from one holder counted
+and logged once in either order, the author passed over, a peer advertising another's photo unable to hide
 it, three re-offers that never ask a marked holder, a passed-over holder's `blobreq` leaving the ceiling in place, a
 refused photo want answering false with an echo standing, a message's want keeping the attachment limit, an oversize held photo never shown and gone, the pre-ceiling face cleared,
 the sealed profile's want under the ceiling, and a sealed profile's oversize held photo never shown and let go once

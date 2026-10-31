@@ -286,3 +286,55 @@ import Testing
         #expect(fixture.transport.photoOnly == [smallHash])
     }
 }
+
+/// A holder counted and logged once per want, whichever signal passed it over (`BlobExchange.kt:505`, `:514-516` at
+/// knit-next `a0b52f865`), apart from the suite's body for its length.
+extension MeshEngineAvatarCeilingTests {
+    @Test func aHolderWhoseSizePassesThePhotoCeilingIsPassedOverAndAnHonestOneServes() throws {
+        // BlobHolderQueryTest's, by name (knit-next `a0b52f865`, `BlobHolderQueryTest.kt:2686`): the liar's claim speaks
+        // for it alone, the honest holder serves, and the liar is counted once.
+        let fixture = try wanting(smallHash)
+        fixture.deliver(has(bob, smallHash, size: tooLarge), from: bob)
+        fixture.deliver(has(carol, smallHash, size: Int64(small.count)), from: carol)
+        #expect(fixture.engine.blobExchange.photoRefusals.isMarked(smallHash, holder: bob.nodeId))
+        #expect(try asked(fixture, for: smallHash) == [carol.nodeId], "the liar is never asked, the honest holder is")
+        fixture.engine.receiveFile(InboundFile(from: carol.nodeId, kind: .attachment, hash: smallHash, mime: "image/jpeg", bytes: small))
+        #expect(fixture.stores.blobs.contains(smallHash))
+        #expect(!fixture.engine.blobExchange.isPhotoRefused(smallHash), "one holder's claim refuses no photo")
+        #expect(fixture.engine.blobExchange.counts.photosOverCeiling == 1)
+    }
+
+    /// The lines that say `holder` was passed over for `hash`.
+    private func passedOverLines(_ fixture: EngineFixture, _ hash: BlobHash, _ holder: TestPeer) -> [String] {
+        let shown = hash.string.prefix(BlobExchange.shownHashCharacters)
+        return fixture.log.all.filter { $0.contains("blob photo \(shown)… from \(holder.nodeId) ") && $0.hasSuffix(": passed over") }
+    }
+
+    @Test func aHoldersClaimAndThenItsStreamPastTheCeilingCountAndLogOnce() throws {
+        // Trial run 20261031-030424: bob's `blobhas` size passed him over, then a crossing stream's header from him reached
+        // the same hash, and `photosOverCeiling` moved by two. Kotlin counts where a holder is newly passed over
+        // (`BlobExchange.kt:505`, `:514-516`).
+        let fixture = try wanting(smallHash)
+        fixture.deliver(has(bob, smallHash, size: tooLarge), from: bob)
+        fixture.engine.fileOverLimit(smallHash, from: bob.nodeId)
+        #expect(fixture.engine.blobExchange.counts.photosOverCeiling == 1)
+        let shown = smallHash.string.prefix(BlobExchange.shownHashCharacters)
+        let line = "debug mesh blob photo \(shown)… from \(bob.nodeId) claims \(tooLarge)B: passed over"
+        #expect(passedOverLines(fixture, smallHash, bob) == [line], "the claim's line, and none for the stream")
+    }
+
+    @Test func aHoldersStreamPastTheCeilingAndThenItsClaimCountAndLogOnce() throws {
+        let fixture = try wanting(smallHash)
+        fixture.deliver(has(bob, smallHash, size: Int64(small.count)), from: bob)
+        fixture.deliver(has(carol, smallHash, size: Int64(small.count), load: 3), from: carol)
+        #expect(try asked(fixture, for: smallHash) == [bob.nodeId])
+        fixture.transport.clear()
+        fixture.engine.fileOverLimit(smallHash, from: bob.nodeId)
+        #expect(fixture.transport.written(.blobCancel).map(\.to) == [bob.nodeId])
+        fixture.engine.notePhotoClaims([BlobHasItem(hash: smallHash.string, state: .have, size: tooLarge)], from: bob.nodeId)
+        #expect(fixture.engine.blobExchange.counts.photosOverCeiling == 1)
+        #expect(passedOverLines(fixture, smallHash, bob).count == 1)
+        #expect(passedOverLines(fixture, smallHash, bob).first?.hasSuffix("streamed past the ceiling: passed over") == true)
+        #expect(fixture.transport.written(.blobCancel).map(\.to) == [bob.nodeId], "withdrawn once")
+    }
+}
