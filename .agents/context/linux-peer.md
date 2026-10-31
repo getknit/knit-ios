@@ -392,6 +392,26 @@ leaves A declining that photo. Each prints `PASS` or `FAIL` with its evidence, a
 `results.json` under `.build/door-cap/<start>/`. It needs the go-ahead for both phones and both dongles, and every
 other Knit phone out of range.
 
+What the first trial (2026-10-31) taught the staging, each now in `door_cap.py`:
+
+- **The liar holds junk, never the real photo.** A receiver whose first frames to a new neighbour wait behind its
+  link-up backlog asks that neighbour blind once its query wait runs out (Android logs `blob ask … first (neighbour)`
+  5 s after `blob query`), and the ask can cross the lie on air. A liar holding the real bytes then serves them, and
+  the case shows nothing. Junk at the lied size gets a header the receiver cuts instead.
+- **Both phones are refused from the peers' `ready` line.** A fence that swept three seconds in let a peer push a
+  1.4 MB photo left in its state from an earlier trial, which the iPhone counted. Clear a liar's own photo too.
+- **Against an Android receiver, the peers are keyed above it.** The phone dials peers whose ids sort below its own,
+  and backs off every dial a pass refuses: its streak reached 30 and its retry 3.5 minutes. A peer above dials it
+  itself as soon as it is allowed. The phone is kept awake (`Phone.wake`), since a dozing Pixel 3 sighted nobody.
+- **Wi-Fi Aware carries the trial too.** A Pixel 8 with its Bluetooth off relayed the peers' profiles to the receiver
+  over Aware. The receiver's own Aware is switched off for the pass with the debug bridge's `NANOFF --ez off true`, and
+  back on after.
+- **A phone can hold a dongle.** The Pixel 3 kept a GATT connection to dongle A as central after a pass, and the next
+  pass's dials to A timed out. `hcitool -i hci0 con` shows it, and `bluetoothctl` (`select` the dongle, `disconnect`
+  the address) frees it without root.
+- **Junk to an Android phone is slow.** Its window stays silent, so the liar's feed runs at the paced budget it shares
+  with its own pulls, about 750 bytes a second. Case 2 waits up to 30 minutes there.
+
 ## What P4 found
 
 Measured on 2026-09-25 against the Pixel 3, less than a metre from the dongle, with three other Knit phones

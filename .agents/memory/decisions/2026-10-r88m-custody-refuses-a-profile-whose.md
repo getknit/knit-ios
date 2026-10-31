@@ -290,3 +290,18 @@ refused photo want answering false with an echo standing, a message's want keepi
 the sealed profile's want under the ceiling, and a sealed profile's oversize held photo never shown and let go once
 its unit commits).
 
+
+**Amendment (2026-10-31): tried on air with a lying peer** (paired change `door-cap-lying-peers`, knit-ios
+`test/door-cap-lying-peers`; `.agents/context/linux-peer.md`, "Lying on purpose"). knit-peer, run with `--lying`, lied
+to the lab iPhone (knit-ios main `c8e9f60`) and the Pixel 3 (knit-next `a0b52f865`), one receiver at a time with the
+other phones' Bluetooth off. Every rule held on both. A holder claiming 1,500,000 bytes in `blobhas` was passed over
+once and never asked again across four minutes of re-wants, and the photo came from its honest owner. Junk streamed
+past the ceiling under a header that declared no size was cut on a chunk and kept nowhere. A profile of 8,193 signed
+bytes was refused at the door with the link kept, and one of 8,192 pinned with its status cut to 100 characters. A
+passed-over holder's own `blobreq` left the ceiling in place. A peer advertising someone else's photo was passed over on
+the iPhone; on Android it is never asked, since Android leaves a linked author's photo to its push
+(`InboundPipeline.kt:4086-4096`). Two counts differ from Android's and are fixed apart: this port moves
+`photosOverCeiling` for each signal from one holder, a size claim and then a stream's header, where Android counts the
+holder once; and it counts an AVATAR push cut at its header. A receiver whose first frames to a new neighbour wait
+behind its link-up backlog asks it blind after the query wait, so that ask can cross a lie on air. A real holder then
+serves the honest bytes, which the trial avoids by having the liar hold junk.
