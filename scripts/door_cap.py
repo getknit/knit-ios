@@ -126,6 +126,19 @@ class AndroidReceiver(Receiver):
         self.process = subprocess.Popen(
             ["adb", "-s", phone.serial, "logcat", "-v", "epoch", "-T", "1"], stdout=self.file, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL
         )
+        phone.wake()
+
+        # A phone dozing with its screen off scans and advertises too seldom to link (the Pixel 3, 2026-10-30 and 31): kept
+        # awake for the pass as interop.py's `--wake heal` keeps one, the screen woken and a scan nudged every half minute.
+        self.awake = threading.Event()
+        threading.Thread(target=self._keep_awake, daemon=True).start()
+
+    def _keep_awake(self) -> None:
+        while not self.awake.wait(30):
+            try:
+                self.phone.wake()
+            except (RuntimeError, subprocess.TimeoutExpired, OSError):
+                continue
 
     def counters(self) -> dict:
         metrics = find(self.phone.state(), "metrics") or {}
@@ -139,6 +152,7 @@ class AndroidReceiver(Receiver):
         return self.path.read_text(encoding="utf-8", errors="replace").splitlines()
 
     def stop(self) -> None:
+        self.awake.set()
         if self.process.poll() is None:
             self.process.terminate()
         self.file.close()
