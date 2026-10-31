@@ -63,6 +63,11 @@ def find(value, name: str):
 class Receiver:
     """The phone under test: its counters, its links, and what it shows for a peer."""
 
+    # How long a peer may take to link the receiver once a step allows it. An Android phone dials the peers, whose ids
+    # sort below its own, and backs off a refused dial for minutes, refused as it is while a pass keeps it off: its streak
+    # reached 30 and its retry 3.5 minutes on the Pixel 3 (2026-10-31).
+    link_seconds = 300
+
     def __init__(self, label: str) -> None:
         self.label = label
         self.node_id = ""
@@ -115,6 +120,8 @@ class IPhoneReceiver(Receiver):
 
 
 class AndroidReceiver(Receiver):
+    link_seconds = 900
+
     def __init__(self, phone: interop.Phone, out: Path) -> None:
         super().__init__("android")
         self.phone = phone
@@ -398,7 +405,7 @@ class Trial:
             raise RuntimeError("A never took B's profile naming the photo")
         before = self.receiver.counters()
         self.fence_a.allow({self.b.node_id, self.receiver.node_id})
-        if not self.link(self.fence_a, self.receiver.node_id):
+        if not self.link(self.fence_a, self.receiver.node_id, self.receiver.link_seconds):
             raise RuntimeError("A never linked the receiver")
         return photo, before
 
@@ -407,7 +414,7 @@ class Trial:
         assert self.fence_b
         mark_b = self.b.log_mark()
         self.fence_b.allow({self.a.node_id, self.receiver.node_id})
-        linked = self.link(self.fence_b, self.receiver.node_id)
+        linked = self.link(self.fence_b, self.receiver.node_id, self.receiver.link_seconds)
         face = self.face(self.b.node_id, photo, timeout) if linked else None
         if self.receiver.label == "android" and linked:
             try:
@@ -505,7 +512,7 @@ class Trial:
         before = self.receiver.counters()
         mark = self.a.log_mark()
         self.fence_a.allow({self.receiver.node_id})
-        if not self.link(self.fence_a, self.receiver.node_id):
+        if not self.link(self.fence_a, self.receiver.node_id, self.receiver.link_seconds):
             raise RuntimeError("A never linked the receiver")
         passed_over = self.wait_counter(before, "photosOverCeiling", 300)
         time.sleep(REWANT_SECONDS)
@@ -538,7 +545,7 @@ class Trial:
         assert self.fence_a and self.fence_b
         self.isolate()
         self.fence_a.allow({self.receiver.node_id})
-        if not self.link(self.fence_a, self.receiver.node_id):
+        if not self.link(self.fence_a, self.receiver.node_id, self.receiver.link_seconds):
             raise RuntimeError("A never linked the receiver")
         row_before = self.receiver.peer(self.a.node_id)
         before = self.receiver.counters()
