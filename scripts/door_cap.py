@@ -67,6 +67,10 @@ class Receiver:
     # sort below its own, and backs off a refused dial for minutes, refused as it is while a pass keeps it off: its streak
     # reached 30 and its retry 3.5 minutes on the Pixel 3 (2026-10-31).
     link_seconds = 300
+    # How long case 2's junk may take to pass the ceiling. An iPhone reports a skipped file as it streams, so the peer's
+    # window stays open; to an Android phone the peer's feed runs paced, sharing the 4 KiB/s budget with its own pulls,
+    # and crossed only 503,808 bytes in 11 minutes on the Pixel 3 (2026-10-31).
+    junk_seconds = 420
 
     def __init__(self, label: str) -> None:
         self.label = label
@@ -121,6 +125,7 @@ class IPhoneReceiver(Receiver):
 
 class AndroidReceiver(Receiver):
     link_seconds = 900
+    junk_seconds = 1800
 
     def __init__(self, phone: interop.Phone, out: Path) -> None:
         super().__init__("android")
@@ -617,7 +622,7 @@ class Trial:
     def case_2(self) -> None:
         photo, before = self.stage_liar("case 2", junk=True)
         mark = self.a.log_mark()
-        passed_over = self.wait_counter(before, "photosOverCeiling", 420)
+        passed_over = self.wait_counter(before, "photosOverCeiling", self.receiver.junk_seconds)
         after_mark = self.a.log_mark()
         time.sleep(REWANT_SECONDS)
         a_saw = self.asks_seen(self.a, mark, photo)
