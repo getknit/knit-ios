@@ -281,10 +281,10 @@ class Trial:
         except TimeoutError:
             return False
 
-    def a_holds_bs_photo(self, photo: str, timeout: float = 300) -> bool:
+    def a_knows_bs_photo(self, photo: str, timeout: float = 300) -> bool:
         def holds() -> bool | None:
             for row in self.a.command(cmd="peers").get("peers", []):
-                if row.get("peer") == self.b.node_id and row.get("avatarHash") == photo:
+                if row.get("peer") == self.b.node_id and row.get("advertisedAvatarHash") == photo:
                     return True
             return None
 
@@ -307,6 +307,19 @@ class Trial:
             "queriesAnswered": sum(1 for line in lines if line.startswith("mesh blob has →") and receiver in line),
             "asksForPhoto": [line for line in lines if line.startswith("mesh blobreq") and short in line and receiver in line],
             "lies": [line for line in lines if line.startswith("lying:") and (short in line or photo[:8] in line)],
+        }
+
+    def pass_over_signal(self, a_saw: dict) -> dict:
+        """Which signal passed A over: its `blobhas` size claim, or the header of a stream an ask that crossed the lie made
+        A send. No ask for the photo reaching A means the claim alone; with one, the receiver met both, and the counter's
+        move says whether it counted them once."""
+        counts = self.lying().get("counts", {})
+        crossed = bool(a_saw["asksForPhoto"])
+        return {
+            "signal": "blobhas size claim, and a crossing stream's header after it" if crossed else "blobhas size claim alone",
+            "asksForPhotoReachingA": len(a_saw["asksForPhoto"]),
+            "junkHeadersWritten": counts.get("junkHeadersRewritten"),
+            "blobhasLiesWritten": counts.get("blobhasRewritten"),
         }
 
     def passed_over_lines(self, photo: str) -> list[str]:
@@ -352,19 +365,23 @@ class Trial:
         assert self.fence_a and self.fence_b
         self.isolate()
         photo = self.fresh_photo(case)
+        # Junk under the photo before A links B, so A never holds a servable copy (the contract's "without holding H"):
+        # its engine counts the hash held, never asks anyone for it, and an ask that crosses a lie on air gets junk, never
+        # the real bytes (2026-10-31, the first pass's case 1). Cases 1 and 5 claim the lied size and declare it in the
+        # header, which the receiver cuts; case 2 claims the photo's real size and streams junk past the ceiling with a
+        # header that declares no size, so the cut lands on a chunk.
         if junk:
-            # Junk first, so A's engine counts the hash held and never asks anyone for it.
             say("junk", reply=self.a.command(cmd="junk", hash=photo, bytes=JUNK_BYTES))
             say("lie-blobhas", reply=self.a.command(cmd="lie-blobhas", hash=photo, size=self.photo_bytes))
+        else:
+            say("junk", reply=self.a.command(cmd="junk", hash=photo, bytes=LIED_SIZE, declare=LIED_SIZE))
         self.fence_a.allow({self.b.node_id})
         self.fence_b.allow({self.a.node_id})
         if not self.link(self.fence_a, self.b.node_id):
             raise RuntimeError("A and B never linked")
-        if not junk:
-            # A holds the real photo before it lies, so A's engine never asks the receiver for it (the iOS asker split).
-            if not self.a_holds_bs_photo(photo):
-                raise RuntimeError("A never took B's photo")
-            say("lie-blobhas", reply=self.a.command(cmd="lie-blobhas", hash=photo, size=LIED_SIZE))
+        # A must have B's profile naming the photo before it links the receiver, or the receiver never learns of it.
+        if not self.a_knows_bs_photo(photo):
+            raise RuntimeError("A never took B's profile naming the photo")
         before = self.receiver.counters()
         self.fence_a.allow({self.b.node_id, self.receiver.node_id})
         if not self.link(self.fence_a, self.receiver.node_id):
@@ -399,10 +416,11 @@ class Trial:
         after_rewants = self.receiver.counters()
         rewritten_after = self.lying().get("counts", {}).get("blobhasRewritten")
         a_saw = self.asks_seen(self.a, mark, photo)
+        signal = self.pass_over_signal(a_saw)
         b = self.finish_with_b(photo)
         after = self.receiver.counters()
         a_links = self.fence_a.links() if self.fence_a else set()
-        self.a.command(cmd="lie-blobhas", hash=photo, clear=True)
+        self.a.command(cmd="junk", hash=photo, clear=True)
         once = (passed_over["photosOverCeiling"] or 0) - (before["photosOverCeiling"] or 0) == 1
         quiet = rewritten == rewritten_after and not a_saw["asksForPhoto"] and after_rewants["photosOverCeiling"] == passed_over["photosOverCeiling"]
         shown = b["bLinked"] and (b["bFace"] is None or (b["bFace"] or {}).get("avatarHash") == photo)
@@ -410,12 +428,13 @@ class Trial:
         self.record(
             "1 lying size",
             once and quiet and shown and held,
-            note="A holds the real photo, so it never asks the receiver for it; its blobhas still claims the lied size",
+            note="A holds junk under the photo at the lied size, never the real bytes, so its blobhas claims that size",
             photo=photo,
             before=before,
             afterPassOver=passed_over,
             after=after,
             passedOverOnce=once,
+            passOver=signal,
             neverAskedAgain=quiet,
             fromB=shown,
             linkToAHeld=held,
@@ -435,12 +454,13 @@ class Trial:
         say("ask-blob", reply=ask)
         time.sleep(REWANT_SECONDS)
         a_saw = self.asks_seen(self.a, mark, photo)
+        signal = self.pass_over_signal(a_saw)
         rewritten_after = self.lying().get("counts", {}).get("blobhasRewritten")
         after_ask = self.receiver.counters()
         # The reply's `sent` says the ask was queued; the count says it went out on a ready link.
         asks_sent = self.lying().get("counts", {}).get("blobAsksSent", {}).get(self.receiver.node_id, 0) - asks_before
         b = self.finish_with_b(photo)
-        self.a.command(cmd="lie-blobhas", hash=photo, clear=True)
+        self.a.command(cmd="junk", hash=photo, clear=True)
         kept = rewritten == rewritten_after and not a_saw["asksForPhoto"]
         self.record(
             "5 passed-over liar asks",
@@ -450,6 +470,7 @@ class Trial:
             before=before,
             afterPassOver=passed_over,
             afterAsk=after_ask,
+            passOver=signal,
             askQueued=ask.get("sent"),
             asksWritten=asks_sent,
             blobhasRewrittenBefore=rewritten,
