@@ -14,6 +14,11 @@ Status: Accepted (2026-10-30). Mirrors knit-next ADR 2026-10.jgeg (`a0b52f865`, 
 parts: custody's cap, below; the engine's door, the stored-proof sweep and the summed counter, under "The door"; and the
 profile photo's ceiling, under "The photo ceiling". Amends ADR 2026-10.6n48, whose "still open" list named this cap, and
 ADR 2026-10.nh55, which left peers' photos as they were.
+Amended 2026-10-31 (knit-ios `fix/ios-photo-ask-ceiling`, paired change `ios-photo-ask-ceiling`, iOS alone moving):
+"The photo ceiling" Decisions 3, 5 and 8 now port knit-next `a0b52f865`'s `recordWant` and `mergeCeiling`
+(`BlobExchange.kt:2211`, `:2233-2253`), `want`'s refusal check (`:289`) and `Want.passedOver` (`:491-521`, `:3002`): a
+neighbour's ask never lifts the ceiling, our photo want on an echo makes it photo-only, and a want remembers the holders
+it passed over. Before, any ask cleared the flag, so a holder passed over could lift it by asking us for the hash.
 
 **Context:** a profile is the one frame every node pins, caches and serves to anyone who asks for its sender's key. Its
 size was bounded only by custody's 60 KiB byte cap (ADR 2026-10.6n48) and the link's record size, so each pinned sender
@@ -146,8 +151,15 @@ fetched at most once per holder per session.
    `LinkManager.Event.fileOverLimit(hash, from:)` to the engine with the link's own node id. The log keeps its line and
    appends `: over its limit`.
 3. **A want's kind.** `wantBlob` and `OwnWant` take a `BlobExchange.WantKind`. A want of ours of `.photo` is
-   `Want.photoOnly`; any other record of the same hash (a row's want, an echo, an asker's ask) clears it for the want's
-   life, so the larger limit wins. The cleartext profile's want and the re-want's advertised branch pass `.photo`, the
+   `Want.photoOnly`; any other want of ours of the same hash (a row's want, an attachment) clears it for the want's
+   life, so the larger limit wins. A neighbour's ask (an echo, or an ask on our want) never moves it, or a holder passed
+   over could lift it by asking us for the hash; and our photo want on a want only asks made, the first want of ours on
+   it, makes it photo-only (`Want.ownRecorded`, Kotlin's `ownWant`: `recordWant` and `mergeCeiling`, `BlobExchange.kt:2211`
+   and `:2233-2253` at knit-next `a0b52f865`). Promoting an echo whose bytes are arriving is not a want of ours recording
+   (Kotlin has none: its own want returns at on-the-way, `:295`), and `restartFromZero`'s fresh want is ours, an
+   attachment's (`:2151`). A photo want of a hash refused this session records nothing and changes no standing want
+   (`want`, `:289`): `MeshEngine.wantBlob` and `wantBlobs` check it before the on-the-way check, so it promotes no
+   arriving echo either. The cleartext profile's want and the re-want's advertised branch pass `.photo`, the
    latter `.attachment` only when a row the re-want takes names the same hash: a message request's row, or a room post
    outside the bound, is no row the collector names, so an attachment want for it would fetch an over-ceiling photo at
    8 MiB only to let it go again, every re-offer. The sealed profile's want passes `.photo` too, through
@@ -157,7 +169,10 @@ fetched at most once per holder per session.
 5. **Holder-keyed refusal, Android's shape.** A holder whose stream passes the ceiling, or whose `blobhas` claims a
    size over it, for a photo-only want: (hash, holder) is marked for the session in `PhotoRefusals`, the holder joins the
    cycle's failed holders, a standing ask on it is withdrawn, and every later step, re-want and new want leaves it out of
-   its queries, asks and pulls (`BlobExchange.askable`). The want goes on to the others, and with none left it sits as an
+   its queries, asks and pulls (`BlobExchange.askable`). Each want also keeps the holders it passed over, at most 64
+   (`Want.passedOver`, `BlobExchange.maxPassedOver`; Kotlin's `passOver` and `MAX_PASSED_OVER`, `BlobExchange.kt:491-521`
+   and `:3002`), copied from the session's marks in the order they were made at every step while it is photo-only, so a
+   mark `PhotoRefusals` has since dropped never lets that live want ask the holder again. The want goes on to the others, and with none left it sits as an
    exhausted want does. No holder's signal refuses the hash outright, not even the want's author's (contract
    revision 5): the author is whoever advertised the hash, and any peer can sign a profile naming someone else's photo,
    so the author is marked as any holder is. The holder is the link's node id the ask went to, never a signer.
@@ -181,8 +196,10 @@ fetched at most once per holder per session.
    ceiling, refuses the hash as a photo for the session, and releases the blob. The pin
    stays, and the monogram shows. The advertised hash stays named in the row but no want or re-want fetches it again.
    `receiveFile` rejects an AVATAR push, or a photo-only ATTACHMENT, over the ceiling whatever link brought it.
-8. **Echoes are their askers'.** An asker's ask for a refused or marked hash makes an echo as before, kept to the
-   attachment ceiling: the asker's want is its own, and the refusal binds only our photo wants.
+8. **Echoes are their askers'.** An asker's ask for a refused or marked hash makes an echo as before. An echo nobody
+   else wants stays at the attachment ceiling: the asker's want is its own. Our photo want of a refused hash leaves it
+   alone (`BlobExchange.kt:289`); our photo want of any other hash makes it photo-only, and its marked holders are left
+   out of its steps (`:2233-2253`).
 
 **Consequences / limits:**
 
@@ -190,8 +207,11 @@ fetched at most once per holder per session.
   session, the author included; it cannot hide a photo an honest holder carries. Only held bytes refuse a hash.
 - A feed already running can't be stopped from the receiving end (`FramedLink.kt:474`, knit-next ADR nsr7, #197): its
   bytes keep arriving until its END and are read past, not kept.
-- An echo's pull-through can still fetch an over-ceiling blob for an asker, bounded by the echo budget (ADR 2026-10.7kxj),
-  and that blob is never shown here as a face.
+- An echo nobody of ours wants as a photo can still pull an over-ceiling blob through for its asker, bounded by the echo
+  budget (ADR 2026-10.7kxj), and that blob is never shown here as a face.
+- A forged profile naming a large attachment's hash as its photo makes a node that is pulling that attachment through as
+  an echo, with no want of its own, cap it at 1 MiB: each holder sends one cut copy per session and is passed over, and
+  the asker is not served from here. Android pays the same.
 - A blob over the ceiling that a carried frame names in the clear (`carriedBlobs`, a sealed profile's hash beside its
   seal) stays held until that frame leaves custody, and is never shown.
 - The refusals are per session: after a restart each marked holder may cost one more fetch.
@@ -213,11 +233,14 @@ fetched at most once per holder per session.
 
 **Kept true by** `FileIntakeLimitTests` (the header and chunk cases, the room's abandon), `LinkFilePhotoCeilingTests`
 (a photo-only fetch past the ceiling reported once with nothing landed, a push refused at its header, the shared room
-reporting nobody), `BlobPhotoCeilingTests` (the flag, both signals, the author passed over like any holder, a held
+reporting nobody), `BlobPhotoCeilingTests` (the flag, an ask that never lifts it, our photo want on an echo, a promoted echo and a fresh
+want from zero, a refused photo want leaving an echo alone, both signals, the author passed over like any holder, a
+passed-over holder that asks, the want's own passed-over set outliving the session's mark and its 64 bound, a held
 copy's refusal, the bound), `MeshEngineAvatarCeilingRowsTests` (a message request's row never makes the photo an attachment, an in-ceiling
 push of a refused hash kept past the sweep, an echo's oversize bytes served to its asker) and
 `MeshEngineAvatarCeilingTests` (two holders, the author passed over, a peer advertising another's photo unable to hide
-it, three re-offers that never ask a marked holder, a message's want keeping the attachment limit, an oversize held photo never shown and gone, the pre-ceiling face cleared,
+it, three re-offers that never ask a marked holder, a passed-over holder's `blobreq` leaving the ceiling in place, a
+refused photo want answering false with an echo standing, a message's want keeping the attachment limit, an oversize held photo never shown and gone, the pre-ceiling face cleared,
 the sealed profile's want under the ceiling, and a sealed profile's oversize held photo never shown and let go once
 its unit commits).
 

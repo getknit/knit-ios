@@ -19,20 +19,24 @@ extension BlobExchange {
     /// against when the ask opens the next cycle. It takes eight parameters, as Kotlin's does: this port has no fast-only
     /// flags, and has the wall clock and the want's `kind` instead.
     ///
-    /// A new want of our own of ``WantKind/photo`` is photo-only, its bytes kept to the photo's ceiling, unless the hash is
-    /// refused as a photo this session, when nothing is recorded. Any other record clears the flag for the want's life:
-    /// the larger limit wins (``overPhotoCeiling(_:from:)``).
+    /// A photo want of ours (``WantKind/photo``) of a hash refused as a photo this session records nothing, a want standing
+    /// on the hash left as it was (`want`, `BlobExchange.kt:289` at knit-next `a0b52f865`). Otherwise a new want of our own
+    /// of ``WantKind/photo`` is photo-only, its bytes kept to the photo's ceiling (``overPhotoCeiling(_:from:)``). On a want
+    /// that stands, only a want of ours moves the ceiling (`recordWant`, `BlobExchange.kt:2211`): our first on a want only
+    /// neighbours' asks made sets its own, so a photo want of ours makes an echo photo-only, and any later want of ours that
+    /// is not a photo's clears it for the want's life, the larger limit winning (`mergeCeiling`, `:2233-2253`). A
+    /// neighbour's ask moves no ceiling (`:116`), or a holder passed over could lift it by asking us for the hash.
     mutating func recordWant( // swiftlint:disable:this function_parameter_count
         _ hash: BlobHash, now: Int64, wall: Int64, author: NodeId?, via: NodeId?, asker: NodeId?, reach: Reach,
         // A want of any kind but a profile photo's, as every site but a profile's records.
         kind: WantKind = .attachment // swiftlint:disable:this discouraged_default_parameter
     ) -> [String] {
         let photo = asker == nil && kind == .photo
+        if photo, photoRefusals.isRefused(hash) {
+            return []
+        }
         guard var want = wants[hash] else {
             if asker != nil, echoRefusal(hash) != nil {
-                return []
-            }
-            if photo, photoRefusals.isRefused(hash) {
                 return []
             }
             var made = Want(hash: hash, at: now, author: author, via: via, puller: asker)
@@ -42,10 +46,14 @@ extension BlobExchange {
             admit(made)
             return []
         }
-        if !photo {
-            want.photoOnly = false
-        }
         if asker == nil {
+            // `mergeCeiling`: one photo ceiling here, so two photo wants keep it, and `max` is the identity.
+            if !want.ownRecorded {
+                want.photoOnly = photo
+            } else if !photo {
+                want.photoOnly = false
+            }
+            want.ownRecorded = true
             // Refreshed in place: the order is when it was first wanted, as in Android's insertion-ordered map. No longer
             // on every recorded want (knit-next ADR 2026-10.2drc): an ask refreshing it is what let echoes keep it alive.
             // An echo a want of ours names is ours from now on (knit-ios #20).

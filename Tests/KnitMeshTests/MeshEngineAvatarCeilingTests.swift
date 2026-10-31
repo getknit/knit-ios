@@ -93,6 +93,37 @@ import Testing
         #expect(fixture.engine.blobExchange.photoRefusals.isMarked(smallHash, holder: bob.nodeId))
     }
 
+    @Test func aHolderPassedOverThatAsksForThePhotoIsNotAskedAgain() throws {
+        // A neighbour's ask moves no ceiling (`BlobExchange.kt:116`, `:2211` at knit-next `a0b52f865`): bob, passed over
+        // on his claim, cannot lift it by asking us for the hash.
+        let fixture = try wanting(smallHash)
+        fixture.deliver(has(bob, smallHash, size: tooLarge), from: bob)
+        fixture.deliver(bob.blobRequest(for: smallHash.string, id: frameIdOf("breq-bob")), from: bob)
+        #expect(fixture.engine.blobExchange.isPhotoOnly(smallHash))
+        #expect(fixture.transport.photoOnly == [smallHash], "the links still keep it to the photo's ceiling")
+        fixture.transport.clear()
+        for _ in 0..<3 {
+            fixture.advance(60_000)
+        }
+        #expect(try !asked(fixture, for: smallHash).contains(bob.nodeId))
+        #expect(try !queried(fixture, for: smallHash).contains(bob.nodeId))
+        #expect(try queried(fixture, for: smallHash).contains(carol.nodeId), "the want goes on with carol")
+    }
+
+    @Test func aRefusedPhotoWantLeavesAStandingEchoAtTheAttachmentsCeiling() {
+        // `want` returns before `recordWant` for a refused photo (`BlobExchange.kt:289`), an echo standing or not.
+        let fixture = EngineFixture(alice, configuration: Self.querying)
+        fixture.link(bob, carol, capabilities: android)
+        fixture.engine.blobExchange.refusePhoto(smallHash)
+        fixture.deliver(carol.blobRequest(for: smallHash.string, id: frameIdOf("breq-carol")), from: carol)
+        #expect(fixture.engine.blobExchange.isEcho(smallHash))
+        let wanted = fixture.engine.wantBlob(
+            smallHash, author: dave.nodeId, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
+        #expect(!wanted)
+        #expect(fixture.engine.blobExchange.isEcho(smallHash) && !fixture.engine.blobExchange.isPhotoOnly(smallHash))
+        #expect(fixture.transport.photoOnly.isEmpty)
+    }
+
     // MARK: The author
 
     @Test func theAuthorsOversizeClaimPassesHimOverLikeAnyHolder() throws {

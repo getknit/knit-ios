@@ -24,13 +24,14 @@ extension MeshEngine {
         // Every site's kind but a profile photo's, cleartext or sealed, which passes `.photo`.
         kind: BlobExchange.WantKind = .attachment // swiftlint:disable:this discouraged_default_parameter
     ) -> Bool {
+        // Kotlin's order (`BlobExchange.kt:289` before `:295`): a refused photo want promotes no arriving echo either.
+        if asker == nil, kind == .photo, isRefusedPhoto(hash) {
+            return false
+        }
         guard !isBlobOnItsWayOrHeld(hash) else {
             if asker == nil {
                 promoteArriving(hash)
             }
-            return false
-        }
-        if asker == nil, kind == .photo, isRefusedPhoto(hash) {
             return false
         }
         let now = clock.monotonicMilliseconds()
@@ -53,11 +54,11 @@ extension MeshEngine {
         let wall = clock.wallMilliseconds()
         let candidates = blobCandidates()
         for want in wanted {
-            guard !isBlobOnItsWayOrHeld(want.hash) else {
-                promoteArriving(want.hash)
+            if want.kind == .photo, isRefusedPhoto(want.hash) {
                 continue
             }
-            if want.kind == .photo, isRefusedPhoto(want.hash) {
+            guard !isBlobOnItsWayOrHeld(want.hash) else {
+                promoteArriving(want.hash)
                 continue
             }
             makeRoom(for: want.hash, asker: nil)
@@ -165,7 +166,7 @@ extension MeshEngine {
     /// Tells the links which attachments to keep as they stream in, the blobs wanted, which of those leave a prefix kept
     /// when cut, our own (knit-ios #20), and which are kept only to the photo's ceiling, those wanted only as a profile
     /// photo. Sent when any changes: a want of ours that takes over an echo changes no key wanted, and only makes it
-    /// resumable, and a row's want of a photo's hash changes only its limit.
+    /// resumable, and a row's want of a photo's hash, or our photo want on an echo, changes only its limit.
     func syncAcceptedFiles() {
         let now = AcceptedFiles(keys: Set(blobExchange.wanted), resumable: blobExchange.ownWanted, photoOnly: blobExchange.photoOnlyWanted)
         guard now != acceptedFiles else {

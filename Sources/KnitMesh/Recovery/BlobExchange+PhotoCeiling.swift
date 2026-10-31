@@ -14,9 +14,17 @@ import KnitWire
 /// serves junk under its hash, costs one fetch from that neighbour and cannot hide the photo honest holders carry. Only
 /// held bytes over the ceiling, which prove the size, refuse the hash (``refusePhoto(_:)``).
 ///
-/// A want stays photo-only only while nothing else wants the blob: a row's want, an echo for an asker, or an asker's ask
-/// on the want clears the flag for the want's life, and the larger limit, the attachment's, wins.
+/// A want stays photo-only only while no other want of ours names the blob: a row's want of ours clears the flag for the
+/// want's life, and the larger limit, the attachment's, wins. A neighbour's ask moves no ceiling (`BlobExchange.kt:116`
+/// at knit-next `a0b52f865`): an echo nobody else wants takes the attachment's, and our photo want on it, the first want
+/// of ours, makes it photo-only (`recordWant` and `mergeCeiling`, `:2211`, `:2233-2253`), so a holder passed over cannot
+/// lift the ceiling by asking us for the hash.
 extension BlobExchange {
+    /// The most holders one photo-only want remembers passing over (``Want/passedOver``, `MAX_PASSED_OVER`,
+    /// `BlobExchange.kt:3002`): far more than a phone links in a session; past it the session's own marks still filter them
+    /// while they last.
+    static let maxPassedOver = 64
+
     /// Why a want of ours names a blob, which sets the limit its bytes are kept to.
     enum WantKind: Sendable, Equatable {
         /// A message's photo, or anything else: Android's ceiling, ``FileIntake/maxFileBytes``.
@@ -65,6 +73,7 @@ extension BlobExchange {
         }
         counts.photosOverCeiling += 1
         photoRefusals.mark(hash, holder: holder)
+        want.passOver(holder)
         let cancels = want.withdraw(holder) ? [holder] : []
         want.failed.insert(holder)
         if want.fetch?.peer == holder {
@@ -74,13 +83,47 @@ extension BlobExchange {
         return cancels
     }
 
+    /// Copies the session's marks for `want`'s hash into its own ``Want/passedOver`` when it is photo-only, as Kotlin's
+    /// `passOver` does on every step (`BlobExchange.kt:491-521`, the filter at `:503-505`), so a mark the bounded set
+    /// drops later still leaves the holder out, whoever asks for the hash later: in the order they were marked, so the
+    /// bound keeps the same holders every run. Answers the holders it newly passes over that are owed a `blobcancel` for
+    /// an ask standing on them, as Kotlin withdraws them (`:506-510`): an echo our photo want made photo-only may have
+    /// asked a holder an earlier want marked. Neither counted nor logged again: ``overPhotoCeiling(_:from:)`` did both
+    /// when the mark was made. A want that is not photo-only passes over nobody (`:502`).
+    func passOver(_ want: inout Want) -> [NodeId] {
+        guard want.photoOnly else {
+            return []
+        }
+        var cancels: [NodeId] = []
+        for holder in photoRefusals.markedHolders(want.hash) where !want.passedOver.contains(holder) {
+            want.passOver(holder)
+            // Withdrawn whatever it answered (`:506-510`), unlike ``Want/withdraw(_:)``: its copy is unwanted.
+            if want.passedOver.contains(holder), let asked = want.askedAt[holder], want.withdrawnAt[holder] != asked {
+                want.withdrawnAt[holder] = asked
+                cancels.append(holder)
+            }
+        }
+        return cancels
+    }
+
     /// `linked` as `want` may ask them: all of them, unless it is photo-only, when the holders passed over for its hash
-    /// this session are left out of every query, ask and pull.
+    /// this session, by the session's marks or the want's own (``Want/passedOver``), are left out of every query, ask and
+    /// pull.
     func askable(_ linked: [Candidate], for want: Want) -> [Candidate] {
         guard want.photoOnly else {
             return linked
         }
-        return linked.filter { !photoRefusals.isMarked(want.hash, holder: $0.id) }
+        return linked.filter { !photoRefusals.isMarked(want.hash, holder: $0.id) && !want.passedOver.contains($0.id) }
+    }
+}
+
+extension BlobExchange.Want {
+    /// Remembers `holder` as passed over for this want's photo, while fewer than ``BlobExchange/maxPassedOver`` are: the
+    /// count alone bounds it, so two runs of the same calls keep the same set.
+    mutating func passOver(_ holder: NodeId) {
+        if passedOver.count < BlobExchange.maxPassedOver {
+            passedOver.insert(holder)
+        }
     }
 }
 
@@ -106,6 +149,11 @@ internal struct PhotoRefusals: Sendable {
 
     func isMarked(_ hash: BlobHash, holder: NodeId) -> Bool {
         marked.contains(Pair(hash: hash, holder: holder))
+    }
+
+    /// The holders marked for `hash`, oldest mark first (`markedHolders`).
+    func markedHolders(_ hash: BlobHash) -> [NodeId] {
+        markedOrder.filter { $0.hash == hash }.map(\.holder)
     }
 
     func isRefused(_ hash: BlobHash) -> Bool {

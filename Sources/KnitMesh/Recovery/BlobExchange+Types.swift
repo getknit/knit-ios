@@ -70,9 +70,21 @@ extension BlobExchange {
         /// Whether this cycle already counted and logged a fetch held back by the echo budget.
         var fetchHeld = false
         /// Whether only a profile photo of ours names the blob, so its bytes are kept to the photo's ceiling and a holder
-        /// past it is passed over (``BlobExchange/overPhotoCeiling(_:from:)``). Set only when the want is made, and cleared
-        /// for its life by any other record of it: this port's alone, as Android's is its own plumbing.
+        /// past it is passed over (``BlobExchange/overPhotoCeiling(_:from:)``): this port's `Want.ceiling != null`. Set by
+        /// the first want of ours to record on it, made or standing, and cleared for its life by any later want of ours that
+        /// is not a photo's (`mergeCeiling`, `BlobExchange.kt:2233-2253` at knit-next `a0b52f865`). A neighbour's ask never
+        /// moves it (`:116`, `:2211`).
         var photoOnly = false
+        /// Whether a want of ours recorded on it (`Want.ownWant`, `BlobExchange.kt:2513-2516`): true when made with no
+        /// puller, ``BlobExchange/restartFromZero(_:failing:now:wall:)``'s fresh want included (`:2151`), and set by
+        /// ``BlobExchange/recordWant(_:now:wall:author:via:asker:reach:kind:)`` with no asker. Until then only asks made
+        /// it, and our first want's ceiling is the one it takes. Not ``origin``: ``BlobExchange/promote(_:)`` moves that and
+        /// never this, as Kotlin has no promotion (an own want returns at on-the-way, `:295`).
+        var ownRecorded: Bool
+        /// The holders this want has passed over for its photo (`Want.passedOver`, `BlobExchange.kt:2509-2512`), at most
+        /// ``BlobExchange/maxPassedOver``, so a mark the session's bounded ``PhotoRefusals`` has since dropped never lets
+        /// this live want ask that holder again. Read only while ``photoOnly`` (``BlobExchange/askable(_:for:)``).
+        var passedOver: Set<NodeId> = []
 
         init(hash: BlobHash, at: Int64, author: NodeId?, via: NodeId?, puller: NodeId?) {
             self.hash = hash
@@ -81,6 +93,7 @@ extension BlobExchange {
             self.author = author
             self.via = via
             origin = puller.map(Origin.echo) ?? .own
+            ownRecorded = puller == nil
             if let puller {
                 pullers.insert(puller)
             }

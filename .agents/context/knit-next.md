@@ -454,7 +454,8 @@ Kotlin wins.
     door, ahead of verify, custody and every write, and custody refuses and sweeps it too. Each side's local sweep
     deletes a stored proof of key over the cap and keeps the pin. A profile photo over 1 MiB is never fetched past
     the ceiling or shown as a face: a holder that streams or claims more is passed over for that photo for the
-    session, and a held one is cleared. Its `vectors/custody-v1.json` (33 steps, a 1,024-byte rig profile cap) and
+    session, whoever asks for the hash later (a neighbour's ask moves no ceiling, `BlobExchange.kt:116`, ported
+    2026-10-31 with `Want.ownWant` and `Want.passedOver`), and a held one is cleared. Its `vectors/custody-v1.json` (33 steps, a 1,024-byte rig profile cap) and
     `vectors/keyed-v1.json` (`aliceProfileAtCap`, `aliceProfileOverCap`) were copied with `sync-vectors.py --only`
     from `a0b52f865`, merged to knit-next's `main` from `fix/profile-door-cap` (`295e54dca`, `d97cfd36b`, `a0b52f865`),
     unchanged since `295e54dca`. The wire is unchanged.

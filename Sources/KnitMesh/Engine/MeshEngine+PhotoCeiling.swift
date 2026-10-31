@@ -53,10 +53,11 @@ extension MeshEngine {
         fileOverLimit(file.hash, from: file.from)
     }
 
-    /// Whether a photo want of `hash` is refused this session: the hash is refused as a photo, and nothing else wants it.
-    /// A message's want of the same hash goes on under the attachment's ceiling.
+    /// Whether a photo want of `hash` is refused this session: the hash is refused as a photo (`want`, `BlobExchange.kt:289`
+    /// at knit-next `a0b52f865`). The caller then records nothing, so a want already standing on the hash, an echo or a
+    /// message's, goes on as it was, under the attachment's ceiling: never made photo-only by a want that was refused.
     func isRefusedPhoto(_ hash: BlobHash) -> Bool {
-        blobExchange.isPhotoRefused(hash) && !blobExchange.isWanted(hash)
+        blobExchange.isPhotoRefused(hash)
     }
 
     /// Forgets the session's photo refusals (``BlobExchange/forgetPhotoRefusals()``), beside the kept prefixes, at the

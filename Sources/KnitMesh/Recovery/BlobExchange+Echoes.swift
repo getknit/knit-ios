@@ -131,7 +131,9 @@ extension BlobExchange {
 
     /// Makes the echo of `hash` a want of ours, its bytes already on their way in, so the links keep a prefix of them if
     /// the stream is cut. Its budget and timers stay as they were: the next re-arm from the stores, once nothing is
-    /// arriving, refreshes it as any want of ours. Answers whether anything changed.
+    /// arriving, refreshes it as any want of ours. Answers whether anything changed. It is not a want of ours recording on
+    /// it (``Want/ownRecorded`` stays as it was): Kotlin has no promotion, an own want returning at on-the-way
+    /// (`BlobExchange.kt:295` at knit-next `a0b52f865`), so a photo want of ours after it still sets its ceiling.
     mutating func promote(_ hash: BlobHash) -> Bool {
         guard wants[hash]?.echoFor != nil else {
             return false

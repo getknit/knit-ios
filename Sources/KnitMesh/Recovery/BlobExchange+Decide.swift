@@ -14,7 +14,7 @@ extension BlobExchange {
             return Plan()
         }
         var plan = Plan(pull: want.budget, until: want.until)
-        // A holder passed over for a photo is neither queried, asked nor pulled again this session.
+        plan.cancels = passOver(&want)
         decide(&want, askable(linked, for: want), now, wall, echoRoom, &plan)
         wants[hash] = want
         queue(hash, for: plan.query)

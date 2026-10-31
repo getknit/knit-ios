@@ -37,7 +37,7 @@ import Testing
 
     // MARK: The want's kind
 
-    @Test func aPhotoWantIsPhotoOnlyUntilAnythingElseRecordsIt() {
+    @Test func aPhotoWantIsPhotoOnlyUntilAnotherWantOfOursRecordsIt() {
         var row = exchange()
         #expect(row.isPhotoOnly(photo) && row.photoOnlyWanted == [photo])
         _ = row.recordWant(photo, now: 1, wall: wallAt(1), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: true))
@@ -46,9 +46,12 @@ import Testing
             photo, now: 2, wall: wallAt(2), author: bob, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
         #expect(!row.isPhotoOnly(photo), "cleared for the want's life")
 
-        var echoed = exchange()
-        _ = echoed.recordWant(photo, now: 1, wall: wallAt(1), author: nil, via: nil, asker: carol, reach: .asked(pull: 3, until: nil))
-        #expect(!echoed.isPhotoOnly(photo), "an asker's ask on it")
+        var asked = exchange()
+        _ = asked.recordWant(photo, now: 1, wall: wallAt(1), author: nil, via: nil, asker: carol, reach: .asked(pull: 3, until: nil))
+        #expect(asked.isPhotoOnly(photo), "a neighbour's ask moves no ceiling (BlobExchange.kt:116)")
+        _ = asked.recordWant(
+            photo, now: 2, wall: wallAt(2), author: bob, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
+        #expect(asked.isPhotoOnly(photo), "two photo wants keep the photo's ceiling")
 
         let attachment = exchange(kind: .attachment)
         #expect(!attachment.isPhotoOnly(photo))
@@ -56,6 +59,65 @@ import Testing
         _ = echo.recordWant(
             photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: carol, reach: .asked(pull: 3, until: nil), kind: .photo)
         #expect(!echo.isPhotoOnly(photo), "an echo is its asker's, never photo-only")
+    }
+
+    @Test func aPhotoWantOnAWantOnlyANeighboursAskMadeTakesThePhotoCeiling() {
+        // BlobHolderQueryTest's, by name (knit-next `a0b52f865`): `mergeCeiling`'s `!w.ownWant -> ceiling`.
+        var exchange = BlobExchange(queriesHolders: true)
+        _ = exchange.recordWant(photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: bob, reach: .asked(pull: 3, until: nil))
+        #expect(exchange.isWanted(photo) && !exchange.isPhotoOnly(photo), "a pull-through opens the want, uncapped")
+        _ = exchange.recordWant(
+            photo, now: 1, wall: wallAt(1), author: carol, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
+        #expect(exchange.isPhotoOnly(photo) && exchange.photoOnlyWanted == [photo], "our first want sets its own ceiling")
+        _ = exchange.recordWant(photo, now: 2, wall: wallAt(2), author: nil, via: nil, asker: bob, reach: .asked(pull: 3, until: nil))
+        #expect(exchange.isPhotoOnly(photo), "a neighbour's ask still lifts nothing")
+        _ = exchange.recordWant(
+            photo, now: 3, wall: wallAt(3), author: carol, via: nil, asker: nil, reach: .own(until: nil, rederived: true))
+        #expect(!exchange.isPhotoOnly(photo), "an attachment want of ours does")
+    }
+
+    @Test func anEchoOurPhotoWantTouchesLeavesAMarkedHolderOut() {
+        var exchange = BlobExchange(queriesHolders: true)
+        _ = exchange.recordWant(photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: carol, reach: .asked(pull: 3, until: nil))
+        exchange.photoRefusals.mark(photo, holder: bob) // its stream passed the ceiling earlier this session
+        _ = exchange.recordWant(
+            photo, now: 1, wall: wallAt(1), author: dave, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
+        #expect(exchange.isPhotoOnly(photo))
+        let linked = capable(bob, carol)
+        for now: Int64 in [1, 60_000, 120_000] {
+            let plan = step(&exchange, linked, at: now)
+            #expect(!plan.query.contains(bob) && !plan.asks.map(\.to).contains(bob), "at \(now)")
+        }
+    }
+
+    @Test func aPromotedEchoTakesOurPhotoWantsCeiling() {
+        // Promotion is this port's alone and no want of ours recording (Kotlin's own want returns at on-the-way, `:295`).
+        var exchange = BlobExchange(queriesHolders: true)
+        _ = exchange.recordWant(photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: carol, reach: .asked(pull: 3, until: nil))
+        #expect(exchange.promote(photo) && !exchange.isEcho(photo))
+        _ = exchange.recordWant(
+            photo, now: 1, wall: wallAt(1), author: dave, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
+        #expect(exchange.isPhotoOnly(photo))
+    }
+
+    @Test func aWantMadeAfreshFromZeroKeepsTheAttachmentsCeiling() {
+        // `reaskFromZero`'s fresh want is ours, an attachment's (`BlobExchange.kt:2151`): a photo want after it lifts nothing.
+        var exchange = BlobExchange(queriesHolders: true)
+        exchange.restartFromZero(photo, failing: bob, now: 0, wall: wallAt(0))
+        #expect(exchange.isWanted(photo) && !exchange.isPhotoOnly(photo))
+        _ = exchange.recordWant(
+            photo, now: 1, wall: wallAt(1), author: dave, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
+        #expect(!exchange.isPhotoOnly(photo))
+    }
+
+    @Test func aRefusedPhotoWantLeavesAStandingEchoAlone() {
+        // `want` returns before `recordWant` for a photo want of a hash refused this session (`BlobExchange.kt:289`).
+        var exchange = BlobExchange(queriesHolders: true)
+        exchange.refusePhoto(photo)
+        _ = exchange.recordWant(photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: carol, reach: .asked(pull: 3, until: nil))
+        _ = exchange.recordWant(
+            photo, now: 1, wall: wallAt(1), author: dave, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
+        #expect(!exchange.isPhotoOnly(photo) && exchange.isEcho(photo), "still carol's echo, at the attachment's ceiling")
     }
 
     @Test func anAttachmentWantIgnoresBothSignals() {
@@ -106,6 +168,25 @@ import Testing
         #expect(step(&exchange, linked, at: now + 1).query.isEmpty)
     }
 
+    @Test func aHolderPassedOverThatAsksForTheHashIsNotAskedAgain() {
+        var exchange = exchange(author: dave)
+        let linked = capable(bob)
+        _ = step(&exchange, linked, at: 0)
+        answer(&exchange, bob, size: 4000, at: 100)
+        #expect(step(&exchange, linked, at: 100).asks == [BlobExchange.Ask(to: bob, line: .fetch)])
+        #expect(exchange.overPhotoCeiling(photo, from: bob) == [bob])
+        // Bob asks us for the hash himself: an ask is no want of ours, so the ceiling stands (`BlobExchange.kt:2211`).
+        _ = exchange.recordWant(photo, now: 200, wall: wallAt(200), author: nil, via: nil, asker: bob, reach: .asked(pull: 3, until: nil))
+        #expect(exchange.isPhotoOnly(photo))
+        var now: Int64 = 200
+        for _ in 0..<3 {
+            now += 60_000
+            let plan = step(&exchange, linked, at: now)
+            #expect(plan.query.isEmpty && plan.asks.isEmpty, "a new cycle at each re-offer, his ask cleared, leaves him out")
+        }
+        #expect(exchange.isPhotoOnly(photo))
+    }
+
     @Test func aPassedOverHolderIsAskedAgainOnceTheWantIsNoLongerPhotoOnly() {
         var exchange = exchange(author: dave)
         let linked = capable(bob)
@@ -113,6 +194,53 @@ import Testing
         _ = exchange.overPhotoCeiling(photo, from: bob)
         _ = exchange.recordWant(photo, now: 1, wall: wallAt(1), author: nil, via: nil, asker: nil, reach: .own(until: nil, rederived: true))
         #expect(step(&exchange, linked, at: 60_000).query == [bob], "the attachment's limit: its copy fits")
+        _ = exchange.recordWant(photo, now: 2, wall: wallAt(2), author: nil, via: nil, asker: carol, reach: .asked(pull: 3, until: nil))
+        #expect(!exchange.isPhotoOnly(photo), "an ask after it restores nothing")
+    }
+
+    @Test func aMarkedHolderIsNotAskedAgainByTheReaskRoundOrANewWantButAnAttachmentWantLiftsTheCeiling() {
+        // BlobHolderQueryTest's, by name (knit-next `a0b52f865`).
+        var exchange = BlobExchange(queriesHolders: true)
+        exchange.photoRefusals.mark(photo, holder: bob) // its stream passed the ceiling earlier this session
+        let own = BlobExchange.Reach.own(until: nil, rederived: false)
+        _ = exchange.recordWant(photo, now: 0, wall: wallAt(0), author: carol, via: nil, asker: nil, reach: own, kind: .photo)
+        let linked = capable(bob)
+        var plans = [step(&exchange, linked, at: 0), step(&exchange, linked, at: 60_000)]
+        _ = exchange.recordWant(photo, now: 60_001, wall: wallAt(60_001), author: carol, via: nil, asker: nil, reach: own, kind: .photo)
+        plans.append(step(&exchange, linked, at: 120_000))
+        #expect(plans.allSatisfy { $0.query.isEmpty && $0.asks.isEmpty }, "never queried, never asked")
+        #expect(exchange.isWanted(photo), "the want stands for an unmarked holder")
+        _ = exchange.recordWant(photo, now: 120_001, wall: wallAt(120_001), author: carol, via: nil, asker: nil, reach: own)
+        #expect(!exchange.isPhotoOnly(photo))
+        #expect(step(&exchange, linked, at: 180_000).query == [bob], "the larger ceiling wins, marks and all")
+    }
+
+    @Test func aHolderPassedOverStaysPassedOverWhenTheSessionsBoundedMarkIsDropped() {
+        // BlobHolderQueryTest's, by name (knit-next `a0b52f865`): the want's own `passedOver` outlives the session's mark.
+        var exchange = BlobExchange(queriesHolders: true)
+        exchange.photoRefusals.mark(photo, holder: bob)
+        _ = exchange.recordWant(
+            photo, now: 0, wall: wallAt(0), author: carol, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
+        let linked = capable(bob)
+        #expect(step(&exchange, linked, at: 0).query.isEmpty)
+        for index in 0..<PhotoRefusals.maxEntries {
+            exchange.photoRefusals.mark(BlobHash(of: Array("other \(index)".utf8)), holder: dave)
+        }
+        #expect(!exchange.photoRefusals.isMarked(photo, holder: bob), "the session's bounded set dropped it")
+        for now: Int64 in [60_000, 120_000] {
+            let plan = step(&exchange, linked, at: now)
+            #expect(plan.query.isEmpty && plan.asks.isEmpty, "never queried, never asked, at \(now)")
+        }
+        #expect(exchange.counts.photosOverCeiling == 0, "the copy counts nothing: the mark did")
+    }
+
+    @Test func aWantPassesOverAtMostSixtyFourHolders() {
+        var exchange = exchange(author: dave)
+        let holders = (0...BlobExchange.maxPassedOver).map { TestPeer(seed: 10 + $0).nodeId }
+        for holder in holders {
+            _ = exchange.overPhotoCeiling(photo, from: holder)
+        }
+        #expect(exchange.wants[photo]?.passedOver == Set(holders.prefix(BlobExchange.maxPassedOver)))
     }
 
     // MARK: The author
@@ -164,5 +292,24 @@ import Testing
         // How many of `hashes` are marked against bob, and how many refused.
         func marked(_ refusals: PhotoRefusals) -> Int { hashes.count { refusals.isMarked($0, holder: bob) } }
         func refused(_ refusals: PhotoRefusals) -> Int { hashes.count { refusals.isRefused($0) } }
+    }
+}
+
+/// A newly passed-over holder's ask, apart from the suite's body for its length.
+extension BlobPhotoCeilingTests {
+    @Test func anEchoOurPhotoWantTouchesWithdrawsItsAskOnAMarkedHolder() {
+        // Kotlin's `passOver` withdraws a holder it newly passes over with our ask on it (`BlobExchange.kt:506-510`).
+        var exchange = BlobExchange(queriesHolders: true)
+        _ = exchange.recordWant(photo, now: 0, wall: wallAt(0), author: nil, via: nil, asker: carol, reach: .asked(pull: 3, until: nil))
+        let linked = capable(bob, carol)
+        _ = step(&exchange, linked, at: 0)
+        answer(&exchange, bob, size: 4000, at: 100)
+        #expect(step(&exchange, linked, at: 100).asks == [BlobExchange.Ask(to: bob, line: .fetch)], "the echo asks bob")
+        exchange.photoRefusals.mark(photo, holder: bob) // an earlier photo want of the hash passed bob over
+        _ = exchange.recordWant(
+            photo, now: 200, wall: wallAt(200), author: dave, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
+        let plan = step(&exchange, linked, at: 200)
+        #expect(plan.cancels == [bob], "its ask on bob is withdrawn")
+        #expect(step(&exchange, linked, at: 300).cancels.isEmpty, "once")
     }
 }
