@@ -8,8 +8,9 @@ topics: [custody, convergence, security, keys, blobs]
 
 # ADR 2026-10.r88m — custody refuses a profile whose signed bytes exceed 8 KiB
 
-Status: Accepted (2026-10-30). Mirrors knit-next ADR 2026-10.jgeg (`27359aa10` on knit-next's `fix/profile-door-cap`,
-ahead of the pin `e63f15f4`; knit-next #234), a paired change shipped in the same release (knit-ios #22). It has three
+Status: Accepted (2026-10-30). Mirrors knit-next ADR 2026-10.jgeg (`a0b52f865`, merged to knit-next's `main` from
+`fix/profile-door-cap`, ahead of the pin `e63f15f4`; knit-next #234), a paired change shipped in the same release
+(knit-ios #22). It has three
 parts: custody's cap, below; the engine's door, the stored-proof sweep and the summed counter, under "The door"; and the
 profile photo's ceiling, under "The photo ceiling". Amends ADR 2026-10.6n48, whose "still open" list named this cap, and
 ADR 2026-10.nh55, which left peers' photos as they were.
