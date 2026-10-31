@@ -38,4 +38,5 @@ final class RefusingPeerReads: PeerStore {
         held.recordProfileFrame(frame, of: nodeId, sentAt: sentAt)
     }
     func profileFrame(of nodeId: NodeId) -> WireEnvelope? { held.profileFrame(of: nodeId) }
+    func deleteProfileFrames(longerThan maxSignedBytes: Int) -> Int { held.deleteProfileFrames(longerThan: maxSignedBytes) }
 }

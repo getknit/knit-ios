@@ -74,6 +74,11 @@ A node carries frames for people who are not in range yet. This is store-and-for
   honest frame either side builds reaches the cap (the sizes are in the ADR), so only a hostile frame is refused. It
   is still delivered and relayed, but never back-filled, and a group or ratchet replay that reads custody never finds
   it.
+- **A profile cap, checked second** (ADR 2026-10.r88m, knit-next #234): a profile whose `signed` is longer than 8,192
+  bytes (`maxProfileSignedBytes`) is refused, right after the byte cap and before every other refusal, for every
+  origin. `sig` doesn't count, exactly the cap is kept, and other types are untouched. A profile over both caps is
+  refused as oversize. The sweep also deletes every profile row over the cap, a live delete like the byte cap's. The
+  largest honest profile is 949 bytes here and 1,017 on Android.
 - **Quotas**, counted over live rows only, applied in this order (`ForwardRepository.insertAndTrim`):
   - 200 per sender
   - 200 per group
@@ -186,7 +191,10 @@ publish it honestly.
   first, since it is their oldest frame, and the TTL takes a departed sender's up to 12 h before their last
   posts. Before the store, a restarted carrier served backlogs nobody could read until they expired, and a
   keyreq for them found nobody to answer it. The rows start empty after an upgrade, so a pin made before one
-  gets its proof only when that peer's profile next arrives.
+  gets its proof only when that peer's profile next arrives. The local sweep deletes a proof whose `signed` is
+  longer than the profile cap (8,192 bytes, ADR 2026-10.r88m) and keeps the pin, which is then in the state a
+  contact card's pin is: no proof to serve until a profile under the cap arrives. The cache in memory holds at
+  most 1,024 proofs and refills from the store.
 
 ## Profiles
 
@@ -213,7 +221,8 @@ publish it honestly.
 - **Two stores apply them:** `MemoryCustodyStore` for the Linux peer and the tests, and `SQLCustodyStore`
   (`KnitStoreSQL`) for the app. Both run `CustodyRules` over their live rows and the same `CustodyStoreTests`
   (ADR 2026-09.nyya), and both replay knit-next's `vectors/custody-v1.json` (`CustodyVectorTests`).
-- **Both admit a frame through `CustodyRules.admission`:** over the byte cap, then dead on arrival, then past the
+- **Both admit a frame through `CustodyRules.admission`:** over the byte cap, then a profile over its cap
+  (`isOversizeProfile`, which the memory sweep runs too), then dead on arrival, then past the
   future window, then the group gate (`carriesGroup`, which reads `GroupId.derive`, so `KnitStore` depends on
   `KnitCrypto`). `store` answers a `CustodyStoreResult`, with three fields:
   - `held`: the frame is in custody after its own write, Android's `kept` and the vector's;
@@ -224,7 +233,10 @@ publish it honestly.
   then the new one, so "held" alone would leave the cue stale. A roster refusal is counted (`groupCustodyRefused` in
   `stats`, Android's name) and logged as `custody refused <id> from <sender>: roster of <group> is not its own`. A
   byte-cap refusal is counted as `custodyOversizeRefused` (in `stats` too, Android's name) and logged
-  with the id, the type and the byte count. The roster counter doesn't move for a frame that is both.
+  with the id, the type and the byte count. The roster counter doesn't move for a frame that is both. A profile-cap
+  refusal is counted in `CustodySync.profileOversizeRefusedCount` and logged with the id and the byte count; the engine
+  adds its door's count for `profileOversizeRefused`. The engine reads the cap from `CustodyStore.limits`, so the two
+  never differ.
 - **Ids compare by their bytes** (`ExactKey`), never by Swift's `String` equality (ADR 2026-09.jc2x). That
   includes the sender and group buckets and the ids an eviction removes. The SQL store keeps every id as a
   UTF-8 `BLOB`, which SQLite orders exactly as BINARY orders text, and reads it back with every byte. Before

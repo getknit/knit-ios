@@ -244,6 +244,54 @@ import Testing
         #expect(CustodyRules.admission(of: try sized(2048, dead), now: 1_756_200_000_000, limits: tight) == .refused(.deadOnArrival))
     }
 
+    // MARK: The profile cap
+
+    @Test func theProfileCapIsEightKibibytes() {
+        #expect(CustodyLimits().maxProfileSignedBytes == 8192, "the contract's 8 KiB, Android's fast and LoRa frame ceiling")
+    }
+
+    @Test func aProfileAtTheProfileCapIsAdmittedAndOneByteOverIsRefused() throws {
+        let profile = envelope(sentAt: 10, type: .profile)
+        let atCap = try sized(limits.maxProfileSignedBytes, profile)
+        #expect(CustodyRules.admission(of: atCap, now: 10, limits: limits) == .admitted(expiresAt: 10 + 86_400_000))
+        let over = try sized(limits.maxProfileSignedBytes + 1, profile)
+        #expect(CustodyRules.admission(of: over, now: 10, limits: limits) == .refused(.profileOversize))
+        #expect(CustodyRules.isOversizeProfile(type: .profile, signedCount: limits.maxProfileSignedBytes + 1, limits: limits))
+        #expect(!CustodyRules.isOversizeProfile(type: .profile, signedCount: limits.maxProfileSignedBytes, limits: limits))
+    }
+
+    @Test func everyOtherTypeOfTheSameSizeIsAdmitted() throws {
+        let size = limits.maxProfileSignedBytes + 1
+        for type in [FrameType.chat, .receipt, .reaction, .groupUpdate] {
+            let frame = try sized(size, envelope(sentAt: 10, recipient: "b", type: type))
+            #expect(CustodyRules.admission(of: frame, now: 10, limits: limits) == .admitted(expiresAt: 10 + 86_400_000), "\(type)")
+            #expect(!CustodyRules.isOversizeProfile(type: type, signedCount: size, limits: limits))
+        }
+    }
+
+    @Test func aProfileOverBothCapsIsOversize() throws {
+        // The byte cap comes first, so such a profile is counted once, as oversize, and the profile counter does not move.
+        let tight = CustodyLimits(maxSignedBytes: 2048, maxProfileSignedBytes: 1024)
+        let profile = envelope(sentAt: 10, type: .profile)
+        #expect(CustodyRules.admission(of: try sized(2049, profile), now: 10, limits: tight) == .refused(.oversize))
+        #expect(CustodyRules.admission(of: try sized(2048, profile), now: 10, limits: tight) == .refused(.profileOversize))
+        #expect(CustodyRules.admission(of: try sized(1024, profile), now: 10, limits: tight) == .admitted(expiresAt: 10 + 86_400_000))
+    }
+
+    @Test func theProfileCapComesBeforeTheClock() throws {
+        let tight = CustodyLimits(maxProfileSignedBytes: 1024)
+        var dead = envelope(sentAt: 0, type: .profile)
+        #expect(CustodyRules.admission(of: try sized(1025, dead), now: 1_756_200_000_000, limits: tight) == .refused(.profileOversize))
+        dead.sentAt = 10 + 300_001
+        #expect(CustodyRules.admission(of: try sized(1025, dead), now: 10, limits: tight) == .refused(.profileOversize))
+    }
+
+    @Test func theProfileCapDoesNotCountTheSignature() throws {
+        var frame = try sized(limits.maxProfileSignedBytes, envelope(sentAt: 10, type: .profile))
+        frame.sig = [UInt8](repeating: 7, count: 64)
+        #expect(CustodyRules.admission(of: frame, now: 10, limits: limits) == .admitted(expiresAt: 10 + 86_400_000))
+    }
+
     @Test func expiresAtIsComputedForARefusedFrameToo() {
         var ahead = envelope(sentAt: 10 + 300_001, recipient: "b")
         #expect(CustodyRules.expiresAt(of: ahead, limits: limits) == 10 + 300_001 + 86_400_000)

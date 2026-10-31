@@ -269,8 +269,7 @@ extension LinkManager {
             }
             return [.digest(ids, from: peer)]
         case .fileHeader:
-            fileHeader(record.payload, from: peer, on: id, now: now)
-            return []
+            return fileHeader(record.payload, from: peer, on: id, now: now)
         case .fileChunk:
             return fileChunk(record.payload, from: peer, on: id, now: now)
         case .fileEnd:

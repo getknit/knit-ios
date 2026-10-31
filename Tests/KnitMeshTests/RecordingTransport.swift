@@ -36,9 +36,11 @@ final class RecordingTransport: MeshTransport {
     private(set) var digests: [(ids: [String], to: NodeId)] = []
     /// Every file streamed, in order. A file to a peer that is not a neighbour goes nowhere, as on a link.
     private(set) var files: [SentFile] = []
-    /// The attachments the engine last said to keep, and of those the ones a cut would leave a prefix of.
+    /// The attachments the engine last said to keep, of those the ones a cut would leave a prefix of, and the ones kept
+    /// only to the photo's ceiling.
     private(set) var accepted: Set<BlobHash> = []
     private(set) var resumable: Set<BlobHash> = []
+    private(set) var photoOnly: Set<BlobHash> = []
     /// Every `acceptFiles` call, in order: what it accepted and what it made resumable.
     private(set) var acceptCalls: [(keys: Set<BlobHash>, resumable: Set<BlobHash>)] = []
     /// How many files a link would say wait on each neighbour's link, as a test sets it.
@@ -120,9 +122,10 @@ final class RecordingTransport: MeshTransport {
         return true
     }
 
-    func acceptFiles(_ keys: Set<BlobHash>, resumable: Set<BlobHash>) {
+    func acceptFiles(_ keys: Set<BlobHash>, resumable: Set<BlobHash>, photoOnly: Set<BlobHash>) {
         accepted = keys
         self.resumable = resumable
+        self.photoOnly = photoOnly
         acceptCalls.append((keys, resumable))
     }
 

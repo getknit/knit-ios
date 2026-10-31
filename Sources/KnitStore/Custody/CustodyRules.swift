@@ -70,17 +70,22 @@ public enum CustodyRules {
 
     /// Whether custody takes a frame, and when it ends if so (`ForwardRepository.store`, `ForwardRepository.kt:79-132`
     /// at knit-next `ce56fec6e`, knit-next ADR 2026-10.mqzv). The refusals come in Kotlin's order: a `signed` longer
-    /// than ``CustodyLimits/maxSignedBytes``, then dead on arrival, then past the future window, then a group frame
-    /// whose roster is not its own (``carriesGroup(_:from:)``, knit-next ADR 2026-10.7mqm). Each is a function of the
-    /// frame and `now` alone, so every node refuses alike, and it binds every origin, our own frames included. The
-    /// order decides only which reason is counted: an oversize frame naming a foreign roster is
-    /// ``CustodyRefusal/oversize``, and the roster counter does not move. Both stores call it before they write, so
-    /// neither can skip the gate, and a refusal writes and evicts nothing.
+    /// than ``CustodyLimits/maxSignedBytes``, then a profile whose `signed` is longer than
+    /// ``CustodyLimits/maxProfileSignedBytes`` (``isOversizeProfile(type:signedCount:limits:)``), then dead on arrival,
+    /// then past the future window, then a group frame whose roster is not its own (``carriesGroup(_:from:)``, knit-next
+    /// ADR 2026-10.7mqm). Each is a function of the frame and `now` alone, so every node refuses alike, and it binds every
+    /// origin, our own frames included. The order decides only which reason is counted: an oversize frame naming a foreign
+    /// roster is ``CustodyRefusal/oversize``, and the roster counter does not move; a profile over both caps is
+    /// ``CustodyRefusal/oversize`` too. Both stores call it before they write, so neither can skip the gate, and a refusal
+    /// writes and evicts nothing.
     ///
-    /// The byte cap counts ``CarriedFrame/signed`` alone, never `sig`, and keeps a frame of exactly the cap.
+    /// Both caps count ``CarriedFrame/signed`` alone, never `sig`, and keep a frame of exactly the cap.
     public static func admission(of frame: CarriedFrame, now: Int64, limits: CustodyLimits) -> Admission {
         guard frame.signed.count <= limits.maxSignedBytes else {
             return .refused(.oversize)
+        }
+        guard !isOversizeProfile(type: frame.envelope.type, signedCount: frame.signed.count, limits: limits) else {
+            return .refused(.profileOversize)
         }
         let envelope = frame.envelope
         let timed = timing(of: envelope, now: now, limits: limits)
@@ -91,6 +96,14 @@ public enum CustodyRules {
             return .refused(.foreignRoster)
         }
         return timed
+    }
+
+    /// Whether a frame of `type` with `signedCount` bytes of `signed` is a profile longer than
+    /// ``CustodyLimits/maxProfileSignedBytes``: what admission refuses and the sweep deletes, so both read one rule. A
+    /// function of the frame's own bytes, so every node that runs it keeps the same profiles, and none can grow past the
+    /// cap in any store, however many senders mint one.
+    public static func isOversizeProfile(type: FrameType, signedCount: Int, limits: CustodyLimits) -> Bool {
+        type == .profile && signedCount > limits.maxProfileSignedBytes
     }
 
     /// What ``admission(of:now:limits:)`` decides.
@@ -216,12 +229,16 @@ public enum CustodyRules {
     }
 }
 
-/// Why custody did not take a frame. Only ``oversize`` (`custodyOversizeRefused`) and ``foreignRoster``
-/// (`groupCustodyRefused`) are counted; none is a drop, since the frame is still delivered and relayed.
+/// Why custody did not take a frame. Only ``oversize`` (`custodyOversizeRefused`), ``profileOversize``
+/// (`profileOversizeRefused`) and ``foreignRoster`` (`groupCustodyRefused`) are counted; none is a drop, since the frame is
+/// still delivered and relayed.
 public enum CustodyRefusal: Sendable, Equatable {
     /// Its `signed` bytes are longer than ``CustodyLimits/maxSignedBytes`` (knit-next #227). Checked first, so it is the
-    /// reason given whatever else the frame fails.
+    /// reason given whatever else the frame fails, a profile over both caps included.
     case oversize
+    /// A profile whose `signed` bytes are longer than ``CustodyLimits/maxProfileSignedBytes``. Checked second, so it is
+    /// the reason given whatever else a profile under the byte cap fails.
+    case profileOversize
     /// Past its frame-global expiry already: a skewed peer re-serving what every node has swept, or a `sentAt` of 0.
     case deadOnArrival
     /// Dated more than ``WireProtocol/maxFutureSkewMilliseconds`` ahead of the store's clock.

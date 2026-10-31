@@ -17,8 +17,10 @@ import Testing
     @Test func aSkippedKeyRequestIsAnsweredAtTheRequestersNextReAskAndItsParkedFramesDeliver() throws {
         let lab = PipeLab()
         let wall = lab.clock.wallMilliseconds()
-        let holder = lab.node(1)
-        let requester = lab.node(2)
+        // Both with the profile cap lifted (ADR 2026-10.r88m): the budget counts bytes, so a profile past a whole burst
+        // stands for the many in-cap answers that would drain it.
+        let holder = lab.node(1, custodyLimits: MeshEngineKeyBudgetTests.liftedProfileCap)
+        let requester = lab.node(2, custodyLimits: MeshEngineKeyBudgetTests.liftedProfileCap)
         let sender = TestPeer(seed: 30)
         let large = [TestPeer(seed: 31), TestPeer(seed: 33)]
         let elsewhere = TestPeer(seed: 32)

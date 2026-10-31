@@ -6,6 +6,10 @@ import KnitWire
 /// plus a TTL. An implementation applies ``CustodyRules`` on every ``store(_:origin:now:)``, and every read
 /// sees live frames only.
 public protocol CustodyStore: AnyObject, Sendable {
+    /// The limits every rule here runs under. The engine reads ``CustodyLimits/maxProfileSignedBytes`` from here for the
+    /// profiles it refuses before reading them, so the door and custody always bound the same frames.
+    var limits: CustodyLimits { get }
+
     /// Takes `frame` into custody and trims every bucket it lands in to its quota, after ``CustodyRules/admission(of:now:limits:)``
     /// admits it. Answers whether the frame is held after its own write, which the trims may have undone, and whether
     /// custody changed (`ForwardStore.store` at knit-next `e0cbb842a`). A frame whose id a row already holds is left as it
@@ -36,12 +40,14 @@ public protocol CustodyStore: AnyObject, Sendable {
     /// Drops `id`, if held.
     func remove(_ id: String)
 
-    /// Drops every frame past its expiry, and every frame whose `signed` is longer than
-    /// ``CustodyLimits/maxSignedBytes``, and answers how many (`ForwardRepository.sweepExpired` at knit-next
-    /// `ce56fec6e`). The expiry delete is pure storage housekeeping: expired frames were already invisible to every
-    /// read. The oversize delete can move the live set: it reclaims what a build without the byte cap stored. It is a
-    /// function of the row alone, so every upgraded node deletes the same rows, and once those are gone it finds
-    /// nothing. Until a node's first sweep after the upgrade, such a row still counts toward the quotas.
+    /// Drops every frame past its expiry, every frame whose `signed` is longer than ``CustodyLimits/maxSignedBytes``, and
+    /// every profile whose `signed` is longer than ``CustodyLimits/maxProfileSignedBytes``
+    /// (``CustodyRules/isOversizeProfile(type:signedCount:limits:)``), and answers how many, each row counted once
+    /// (`ForwardRepository.sweepExpired` at knit-next `ce56fec6e`). The expiry delete is pure storage housekeeping:
+    /// expired frames were already invisible to every read. The two size deletes can move the live set: they reclaim what
+    /// a build without either cap stored. Each is a function of the row alone, so every upgraded node deletes the same
+    /// rows, and once those are gone it finds nothing. Until a node's first sweep after the upgrade, such a row still
+    /// counts toward the quotas.
     @discardableResult
     func sweepExpired(now: Int64) -> Int
 }

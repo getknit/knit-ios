@@ -94,11 +94,19 @@ public protocol PeerStore: AnyObject, Sendable {
     /// Keeps `frame`, the signed `profile` frame `nodeId`'s key was just pinned from, as the proof of that key this
     /// node hands on (`PeerRepository.recordProfileFrame`, knit-next ADR 2026-09.g64k). A copy already held that is
     /// stamped `sentAt` or later stays, so the newest publish wins in any arrival order. The peer picks the stamp,
-    /// so the caller clamps it first.
+    /// so the caller clamps it first. It is kept as long as its pin, unless it is longer than custody's profile cap, which
+    /// the sweep deletes while the pin stays (``deleteProfileFrames(longerThan:)``).
     func recordProfileFrame(_ frame: WireEnvelope, of nodeId: NodeId, sentAt: Int64)
 
     /// `nodeId`'s kept proof of key, its signed bytes verbatim in a point-to-point wrapper, or `nil`.
     func profileFrame(of nodeId: NodeId) -> WireEnvelope?
+
+    /// Deletes every kept proof of key whose `signed` is longer than `maxSignedBytes`, custody's profile cap, which a build
+    /// without that cap kept, and answers how many (ADR 2026-10.r88m). The pins stay: a pin is only its key, and the key
+    /// it holds stays valid. Such a pin then holds no proof to hand on, as a contact card's pin holds none, until its
+    /// sender's next profile under the cap arrives. A function of the row alone, so it finds nothing once they are gone.
+    @discardableResult
+    func deleteProfileFrames(longerThan maxSignedBytes: Int) -> Int
 }
 
 /// A ``PeerStore`` in memory, safe to share across threads.
@@ -138,6 +146,14 @@ public final class MemoryPeerStore: PeerStore {
 
     public func profileFrame(of nodeId: NodeId) -> WireEnvelope? {
         profiles.withLock { $0[nodeId]?.frame }
+    }
+
+    public func deleteProfileFrames(longerThan maxSignedBytes: Int) -> Int {
+        profiles.withLock { profiles in
+            let before = profiles.count
+            profiles = profiles.filter { $0.value.frame.signed.count <= maxSignedBytes }
+            return before - profiles.count
+        }
     }
 }
 

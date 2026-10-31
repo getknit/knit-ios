@@ -51,6 +51,10 @@ public struct BlobCounts: Sendable, Equatable {
     /// Asks for a held blob not queued because ``BlobExchange/maxWaitingServes`` files already wait on the asker's link
     /// (knit-ios #20). The asker asks again at its floor.
     public var servesRefused: Int
+    /// Holders whose copy of a blob wanted only as a profile photo streamed past the photo's ceiling or claimed a size over
+    /// it, each passed over for that blob this session, or the blob refused when the holder was its author (ADR
+    /// 2026-10.r88m).
+    public var photosOverCeiling: Int
 
     /// Bundles the counts.
     public init(
@@ -74,7 +78,8 @@ public struct BlobCounts: Sendable, Equatable {
         splicesRefused: Int = 0,
         echoFetchesHeld: Int = 0,
         echoFilesRefused: Int = 0,
-        servesRefused: Int = 0
+        servesRefused: Int = 0,
+        photosOverCeiling: Int = 0
     ) {
         self.queriesSent = queriesSent
         self.queriesAnswered = queriesAnswered
@@ -97,5 +102,6 @@ public struct BlobCounts: Sendable, Equatable {
         self.echoFetchesHeld = echoFetchesHeld
         self.echoFilesRefused = echoFilesRefused
         self.servesRefused = servesRefused
+        self.photosOverCeiling = photosOverCeiling
     }
 }

@@ -1,66 +1,11 @@
 import KnitCrypto
 import KnitStore
-public import KnitWire
+import KnitWire
 
-/// Blobs: asking for them, serving them, taking them in, and our own photo (`BlobExchange.kt`,
+/// Blobs: asking for them, serving them and taking them in (`BlobExchange.kt`,
 /// `MeshManager.rewantMissingBlobs` and `sendAvatarIfNeeded`, `InboundPipeline.onAvatarReceived` and `storeProfileRow`
 /// in knit-next; ADR 2026-10.nh55).
 extension MeshEngine {
-    /// The type our photo is stored and pushed as (`AVATAR_MIME`, `MeshManager.kt:3248`).
-    static let avatarMime = "image/jpeg"
-
-    // MARK: Our photo
-
-    /// Sets our photo, or clears it with `nil`, and floods the profile that names it (`ProfileViewModel.saveAvatar`,
-    /// then `MeshManager.broadcastProfile`). The bytes go into the blob store under their hash, the version and the
-    /// publish stamp move as for any edit, and the photo goes to every neighbour after the profile. The photo it
-    /// replaces goes once nothing names it.
-    ///
-    /// With the ratchet's switch on, our sealed profile goes to our confirmed sessions only once the push is queued on
-    /// every link, as Kotlin's `broadcastProfile` pushes before `watchProfileChanges` runs `broadcastSealedProfile`
-    /// (`MeshManager.kt:2787`, `:2687-2688`, at knit-next `cbf2a487`). A link sends a file behind the frames written before
-    /// it, so on a link with no file streaming each neighbour has the push's header before a sealed copy names the photo's
-    /// hash in the clear, which an Android carrier would otherwise want and query for while our push sat queued
-    /// (`InboundPipeline.onCarriedFrame`). Behind a file already streaming, the push waits for that file's END while the
-    /// sealed copy goes between its chunks, as on Android, and the carrier's query is answered SENDING from the queue.
-    public func setAvatar(_ jpeg: [UInt8]?) {
-        let hash = jpeg.map { BlobHash(of: $0) }
-        let replaced = stores.ownProfile.load().avatarHash
-        guard hash != replaced else {
-            return
-        }
-        if let jpeg, let hash {
-            stores.blobs.insert(jpeg, hash: hash, mime: Self.avatarMime, storedAt: clock.wallMilliseconds())
-        }
-        publishEdit(of: stores.ownProfile.load()) { $0.avatarHash = hash }
-        for peer in neighborIds {
-            pushAvatar(to: peer)
-        }
-        broadcastSealedProfile()
-        if let replaced {
-            releaseBlob(replaced)
-        }
-    }
-
-    /// Pushes our photo to a neighbour (`MeshManager.sendAvatarIfNeeded`): once per neighbour per photo, as kind
-    /// AVATAR. Android counts a push the moment it hands it over and never tries again. Here it counts once its END
-    /// is out (``fileSent(_:to:)``), so a link that died mid-push pushes again at the next link-up.
-    func pushAvatar(to peer: NodeId) {
-        guard let hash = stores.ownProfile.load().avatarHash, avatarPushes[peer] != hash,
-            let file = outboundFile(hash, kind: .avatar, from: nil)
-        else {
-            return
-        }
-        _ = transport.sendFile(file, to: peer)
-    }
-
-    /// A file we streamed left the radio whole.
-    public func fileSent(_ hash: BlobHash, to peer: NodeId) {
-        if hash == stores.ownProfile.load().avatarHash {
-            avatarPushes[peer] = hash
-        }
-    }
-
     // MARK: Asking
 
     /// Wants `hash` (`BlobExchange.want`) and takes its first step: a query of the neighbours that can answer one, or
@@ -70,19 +15,28 @@ extension MeshEngine {
     /// ``BlobExchange/Reach/asked(pull:until:)`` for an asker's. Answers whether it is wanted: a blob held, or on its way
     /// in, is not. An echo the want set would turn away (``BlobExchange/echoRefusal(_:)``) never gets here: the one caller
     /// that passes an asker, ``serveOrWant(_:to:mayPark:reached:)``, declines it first, and ``makeRoom(for:asker:)`` leaves the room it found.
-    /// A want of ours for an echo whose bytes are already on their way makes it ours (``promoteArriving(_:)``).
+    /// A want of ours for an echo whose bytes are already on their way makes it ours (``promoteArriving(_:)``). `kind`
+    /// ``BlobExchange/WantKind/photo`` is a peer's profile photo alone, kept to its ceiling, and never wanted again once
+    /// refused this session (``BlobExchange/overPhotoCeiling(_:from:)``).
     @discardableResult
-    func wantBlob(_ hash: BlobHash, author: NodeId?, via: NodeId?, asker: NodeId?, reach: BlobExchange.Reach) -> Bool {
+    func wantBlob(
+        _ hash: BlobHash, author: NodeId?, via: NodeId?, asker: NodeId?, reach: BlobExchange.Reach,
+        // Every site's kind but a profile photo's, cleartext or sealed, which passes `.photo`.
+        kind: BlobExchange.WantKind = .attachment // swiftlint:disable:this discouraged_default_parameter
+    ) -> Bool {
         guard !isBlobOnItsWayOrHeld(hash) else {
             if asker == nil {
                 promoteArriving(hash)
             }
             return false
         }
+        if asker == nil, kind == .photo, isRefusedPhoto(hash) {
+            return false
+        }
         let now = clock.monotonicMilliseconds()
         let wall = clock.wallMilliseconds()
         makeRoom(for: hash, asker: asker)
-        note(blobExchange.recordWant(hash, now: now, wall: wall, author: author, via: via, asker: asker, reach: reach))
+        note(blobExchange.recordWant(hash, now: now, wall: wall, author: author, via: via, asker: asker, reach: reach, kind: kind))
         withdrawEvicted()
         stepBlob(hash, among: blobCandidates(), now: now, wall: wall)
         flushBlobQueries()
@@ -103,8 +57,13 @@ extension MeshEngine {
                 promoteArriving(want.hash)
                 continue
             }
+            if want.kind == .photo, isRefusedPhoto(want.hash) {
+                continue
+            }
             makeRoom(for: want.hash, asker: nil)
-            note(blobExchange.recordWant(want.hash, now: now, wall: wall, author: want.author, via: nil, asker: nil, reach: want.reach))
+            note(
+                blobExchange.recordWant(
+                    want.hash, now: now, wall: wall, author: want.author, via: nil, asker: nil, reach: want.reach, kind: want.kind))
             withdrawEvicted()
             stepBlob(want.hash, among: candidates, now: now, wall: wall)
         }
@@ -203,18 +162,17 @@ extension MeshEngine {
         }
     }
 
-    /// Tells the links which attachments to keep as they stream in, the blobs wanted, and which of those leave a prefix
-    /// kept when cut, our own (knit-ios #20). Sent when either changes: a want of ours that takes over an echo changes no
-    /// key wanted, and only makes it resumable.
+    /// Tells the links which attachments to keep as they stream in, the blobs wanted, which of those leave a prefix kept
+    /// when cut, our own (knit-ios #20), and which are kept only to the photo's ceiling, those wanted only as a profile
+    /// photo. Sent when any changes: a want of ours that takes over an echo changes no key wanted, and only makes it
+    /// resumable, and a row's want of a photo's hash changes only its limit.
     func syncAcceptedFiles() {
-        let wanted = Set(blobExchange.wanted)
-        let own = blobExchange.ownWanted
-        guard wanted != acceptedFiles || own != resumableFiles else {
+        let now = AcceptedFiles(keys: Set(blobExchange.wanted), resumable: blobExchange.ownWanted, photoOnly: blobExchange.photoOnlyWanted)
+        guard now != acceptedFiles else {
             return
         }
-        acceptedFiles = wanted
-        resumableFiles = own
-        transport.acceptFiles(wanted, resumable: own)
+        acceptedFiles = now
+        transport.acceptFiles(now.keys, resumable: now.resumable, photoOnly: now.photoOnly)
     }
 
     // MARK: Serving
@@ -343,10 +301,20 @@ extension MeshEngine {
                 reject(file, "is not the photo its pusher's profile names")
                 return
             }
+            // The link stops a push at the ceiling; this holds whatever link brought it (ADR 2026-10.r88m).
+            guard file.bytes.count <= FileIntake.maxAvatarBytes else {
+                reject(file, "is over the photo's ceiling")
+                return
+            }
         case .attachment:
             // Never what a carried frame names: this port pulls no carried frame's photo (ADR 2026-10.ym9y).
             guard wanted || named.contains(file.hash) else {
                 reject(file, "was not asked for")
+                return
+            }
+            // Wanted only as a photo, and past its ceiling: the link keeps none, so this holds whatever link brought it.
+            if blobExchange.isPhotoOnly(file.hash), file.bytes.count > FileIntake.maxAvatarBytes {
+                refuseOversizePhoto(file)
                 return
             }
         }
@@ -369,7 +337,7 @@ extension MeshEngine {
         }
         withdrawAsks(file.hash, from: blobExchange.obtained(file.hash, from: file.from))
         syncAcceptedFiles()
-        adoptAvatar(file.hash)
+        adoptAvatar(file.hash, landedAsEcho: echo)
         notePlainHash(file.hash)
         if stores.messages.attachmentHashes().contains(file.hash) {
             events.append(.attachmentArrived(file.hash))
@@ -382,9 +350,20 @@ extension MeshEngine {
     }
 
     /// Shows `hash` as the photo of every peer whose newest profile advertises it, now that its bytes are held
-    /// (`resolveAvatarHash`, `InboundPipeline.kt:3302-3311`). The photo each replaces goes once nothing names it.
-    func adoptAvatar(_ hash: BlobHash) {
-        for var peer in stores.peers.allPeers() where peer.advertisedAvatarHash == hash && peer.avatarHash != hash {
+    /// (`resolveAvatarHash`, `InboundPipeline.kt:3302-3311`). The photo each replaces goes once nothing names it. Bytes
+    /// over the photo's ceiling, held because a message names them too, are never shown as a face, and are declined as a
+    /// photo (ADR 2026-10.r88m).
+    func adoptAvatar(_ hash: BlobHash, landedAsEcho: Bool) {
+        let advertisers = stores.peers.allPeers().filter { $0.advertisedAvatarHash == hash && $0.avatarHash != hash }
+        guard !advertisers.isEmpty else {
+            return
+        }
+        guard isAdoptablePhoto(hash) else {
+            // An echo's bytes stay for its asker, who is served them at its next ask: the 30-minute sweep takes them after.
+            declinePhoto(hash, releasing: !landedAsEcho)
+            return
+        }
+        for var peer in advertisers {
             let replaced = peer.avatarHash
             peer.avatarHash = hash
             stores.peers.upsert(peer)

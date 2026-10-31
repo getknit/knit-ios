@@ -5,7 +5,12 @@
 /// - **A header** starts a file. One that arrives mid-file drops the partial file first (`closeRx`, `:405`), and one
 ///   that does not decode leaves the file's chunks unread (`:404-410`).
 /// - **A chunk** joins the file being kept. One with no file is ignored (`:428`), and one that takes the file past
-///   its limit drops it, so its later chunks are ignored and its END yields nothing (`abortRx`, `:430-433`).
+///   its limit drops it, so its later chunks are ignored and its END yields nothing (`abortRx`, `:430-433`). Past the
+///   limit its owner gave, that is ``Event/overLimit(_:)``; past the room alone, ``Event/abandoned(_:)``.
+/// - **A header declaring too much** for a limit below ``maxFileBytes`` (a pushed or fetched profile photo's,
+///   ``maxAvatarBytes``) is refused at once as ``Event/overLimit(_:)``: the whole blob it declares, a resumed stream's
+///   offset and tail together, could never be kept. An attachment's limit is Android's ceiling, which no header is
+///   refused for, as Android's `begin` refuses none by its size (`FileIntake.kt`, its declared size "never a bound").
 /// - **An END** finishes the file being kept. One with no file does nothing (`:444-458`).
 /// - **The key** must be 64 lowercase hex characters (`:488`). Android writes the chunks of a malformed key to disk
 ///   and rejects the file at its END. This intake refuses the file at its header instead, which ends the same way
@@ -32,6 +37,11 @@
 public struct FileIntake: Sendable {
     /// Android's ceiling on one incoming file, `MAX_INCOMING_FILE_BYTES` (`FramedLink.kt:539`): 8 MiB and 64 KiB.
     public static let maxFileBytes = 8_454_144
+    /// The ceiling on a profile photo, pushed or fetched: 1 MiB (`MAX_AVATAR_BYTES` beside `MAX_INCOMING_FILE_BYTES` in
+    /// Android's `FileIntake.kt`, knit-next #234). Both platforms encode their own photo at 256 pixels, quality 90, far
+    /// below it, so only a photo no honest build makes passes it. The link keeps a pushed AVATAR, and an ATTACHMENT fetched
+    /// only as a profile photo, to it; the engine adopts no held photo past it.
+    public static let maxAvatarBytes = 1_048_576
     /// The shortest gap between two resumes of one key on one link (`RESUME_WINDOW_MS`, `FileIntake.kt:354`, knit-next
     /// #161): `BlobExchange.ROUND_MS`, the serve memo. An honest holder sends one at most once a round, a cut closes the
     /// link and the next has an intake of its own, and a failed splice is asked for again from byte 0, a whole file.
@@ -46,8 +56,12 @@ public struct FileIntake: Sendable {
         case skipped(FileHeader?)
         /// A header that resumes a cut transfer, refused before its prefix was read, and why. Its chunks are dropped.
         case refused(FileHeader, Refusal)
-        /// A kept file dropped before its END, for passing its limit or being cut off by another header.
+        /// A kept file dropped before its END, for passing the room the owner had for it or being cut off by another header.
         case abandoned(FileHeader)
+        /// A file dropped for passing the limit its owner gave at its header: a kept one whose chunks went past it, or a
+        /// header whose declared whole blob is over a limit below ``maxFileBytes``. Its chunks are read on as a skipped
+        /// file's, and its END yields nothing. The owner learns which file, from whom, passed what it would keep.
+        case overLimit(FileHeader)
         /// A kept file, whole, and the byte its stream started at: 0, or the kept prefix it was spliced onto.
         case finished(FileHeader, BlobHash, [UInt8], resumedFrom: Int)
     }
@@ -213,6 +227,10 @@ public struct FileIntake: Sendable {
             return events + [.skipped(decoded)]
         }
         let cap = min(most, Self.maxFileBytes)
+        if Self.declares(header, from: offset, over: cap) {
+            state = .skipping(Self.skipped(header, key, from: offset))
+            return events + [.overLimit(header)]
+        }
         guard offset != 0 else {
             state = .keeping(Kept(header: header, key: key, limit: cap, from: 0, basedOn: nil, bytes: []))
             return events + [.begun(header)]
@@ -226,6 +244,16 @@ public struct FileIntake: Sendable {
         resumedAt[key] = now
         state = .keeping(Kept(header: header, key: key, limit: cap, from: offset, basedOn: kept.basedOn, bytes: kept.bytes))
         return events + [.begun(header)]
+    }
+
+    /// Whether `header` declares a whole blob, from `from`, over `limit`, a limit below ``maxFileBytes``: its size alone,
+    /// or a resumed stream's offset and tail together. Each part is compared before the sum, so no claim traps, and a
+    /// negative size claims nothing. Never for the attachment's limit, Android's ceiling, which `begin` does not check.
+    private static func declares(_ header: FileHeader, from: Int, over limit: Int) -> Bool {
+        guard limit < maxFileBytes, let size = header.size, size >= 0, from >= 0 else {
+            return false
+        }
+        return size > limit || from > limit || from + size > limit
     }
 
     /// Why a resumed header is refused before the owner is asked: one no attachment's, or with an offset outside
@@ -268,7 +296,8 @@ public struct FileIntake: Sendable {
             var counted = kept.reading
             counted.bytes = read
             state = .skipping(read <= Self.maxFileBytes ? counted : nil)
-            return .abandoned(kept.header)
+            // The owner's limit is what bound, not the room every link shares: the file itself is too large.
+            return read > kept.limit ? .overLimit(kept.header) : .abandoned(kept.header)
         }
         // Released first so the append grows the one buffer in place, not a copy of it.
         state = .idle

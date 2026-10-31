@@ -144,8 +144,9 @@ import Testing
     }
 
     @Test func aKeyRequestNamingManyLargeProfilesIsAnsweredWithinTheBudgetAndTheRestOnRefill() throws {
-        // Twenty pinned profiles of about 20 KiB, 400 KiB in all, past one neighbour's 256 KiB burst (ADR 2026-10.f5zs).
-        let fixture = EngineFixture(alice)
+        // Twenty pinned profiles of about 20 KiB, 400 KiB in all, past one neighbour's 256 KiB burst (ADR 2026-10.f5zs), the
+        // profile cap lifted so each stands for several in-cap answers' bytes (ADR 2026-10.r88m).
+        let fixture = EngineFixture(alice, stores: .inMemory(custodyLimits: MeshEngineKeyBudgetTests.liftedProfileCap))
         fixture.link(carol)
         try fixture.pin(carol)
         let owners = (10..<30).map { TestPeer(seed: $0) }
@@ -168,6 +169,33 @@ import Testing
         #expect(fixture.transport.written(.profile).isEmpty, "nothing more until the debt is repaid")
         fixture.clock.advance(Int64(KeyExchange.answerBurstBytes / KeyExchange.answerRefillBytesPerSecond) * 1000)
         fixture.deliver(try carol.keyRequest(for: rest.map(\.nodeId), id: frameIdOf("req-many-3")), from: carol)
+        #expect(Set(fixture.transport.written(.profile).map(\.envelope.senderId)) == Set(rest.map(\.nodeId.string)), "the rest on refill")
+    }
+
+    @Test func aKeyRequestNamingManyProfilesInsideTheCapIsAnsweredWithinTheBudgetAndTheRestOnRefill() throws {
+        // Forty pinned profiles of about 7.5 KiB, each inside the 8 KiB profile cap (ADR 2026-10.r88m), 300 KiB in all,
+        // past one neighbour's 256 KiB burst: the byte budget binds on frames production still carries.
+        let fixture = EngineFixture(alice)
+        fixture.link(carol)
+        try fixture.pin(carol)
+        let owners = (40..<80).map { TestPeer(seed: $0) }
+        for owner in owners {
+            let frame = try owner.profile(status: String(repeating: "s", count: 7200), publishedAt: EngineFixture.start)
+            #expect(frame.wire.signed.count <= CustodyLimits().maxProfileSignedBytes)
+            fixture.deliver(frame, from: owner)
+        }
+        #expect(owners.allSatisfy { fixture.stores.peers.peer($0.nodeId) != nil }, "every one pinned, inside the door's cap")
+        fixture.transport.clear()
+        fixture.deliver(try carol.keyRequest(for: owners.map(\.nodeId), id: frameIdOf("req-cap-1")), from: carol)
+        let first = fixture.transport.written(.profile)
+        let bytes = first.map(\.wire.encoded.count)
+        #expect(!first.isEmpty && first.count < owners.count, "\(first.count) of \(owners.count) served")
+        #expect(bytes.dropLast().reduce(0, +) < KeyExchange.answerBurstBytes && bytes.reduce(0, +) >= KeyExchange.answerBurstBytes)
+        let served = Set(first.map(\.envelope.senderId))
+        let rest = owners.filter { !served.contains($0.nodeId.string) }
+        fixture.clock.advance(Int64(KeyExchange.answerBurstBytes / KeyExchange.answerRefillBytesPerSecond) * 1000)
+        fixture.transport.clear()
+        fixture.deliver(try carol.keyRequest(for: rest.map(\.nodeId), id: frameIdOf("req-cap-2")), from: carol)
         #expect(Set(fixture.transport.written(.profile).map(\.envelope.senderId)) == Set(rest.map(\.nodeId.string)), "the rest on refill")
     }
 

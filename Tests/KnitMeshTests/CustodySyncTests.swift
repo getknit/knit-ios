@@ -77,6 +77,32 @@ import Testing
         #expect(sync.oversizeRefusedCount == 1 && sync.groupRefusedCount == 1)
     }
 
+    @Test func aProfileOverTheProfileCapIsCountedApartAndLogged() {
+        let store = MemoryCustodyStore(limits: CustodyLimits(maxSignedBytes: 4096, maxProfileSignedBytes: 1024))
+        let log = RecordingLog()
+        var sync = CustodySync(log: log)
+        let relayed = sync.carry(frame("prof-relayed", type: .profile, payloadBytes: 1100), in: store, now: now) { true }
+        let own = sync.carryOwn(frame("prof-own", type: .profile, payloadBytes: 1100), in: store, now: now)
+        let chat = sync.carry(frame("chat", to: bob, payloadBytes: 1100), in: store, now: now) { true }
+        #expect(!relayed && !own && chat, "a chat of the same size is carried")
+        #expect(store.liveIds(now: now) == ["chat"])
+        #expect(sync.profileOversizeRefusedCount == 2)
+        #expect(sync.oversizeRefusedCount == 0 && sync.groupRefusedCount == 0)
+        let lines = log.all.filter { $0.contains("signed bytes over the profile cap") }
+        #expect(lines.count == 2)
+        #expect(lines.first?.hasPrefix("debug custody refused prof-rel (profile): ") == true, "the id truncated, the type, the length")
+        #expect(!(lines.first?.contains("*") ?? true), "never the payload")
+    }
+
+    @Test func aProfileOverBothCapsMovesOnlyTheOversizeCounter() {
+        let store = MemoryCustodyStore(limits: CustodyLimits(maxSignedBytes: 2048, maxProfileSignedBytes: 1024))
+        var sync = CustodySync()
+        let carried = sync.carry(frame("prof-big", type: .profile, payloadBytes: 2100), in: store, now: now) { true }
+        #expect(!carried)
+        #expect(sync.oversizeRefusedCount == 1)
+        #expect(sync.profileOversizeRefusedCount == 0, "the byte cap comes first")
+    }
+
     @Test func aHeldFrameIsNotAuthenticatedAgain() {
         let store = MemoryCustodyStore()
         var sync = CustodySync()

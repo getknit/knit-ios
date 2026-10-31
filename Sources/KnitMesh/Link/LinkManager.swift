@@ -37,6 +37,10 @@ public final class LinkManager: MeshTransport {
         case fileProgress(FileProgress)
         /// A file we streamed left the radio whole, its END included (``sendFile(_:to:)``).
         case fileSent(BlobHash, to: NodeId)
+        /// A file streaming in from a neighbour passed the limit kept for it, or its header declared more
+        /// (``FileIntake/Event/overLimit(_:)``): nothing of it is kept, and the rest of its stream is read past. The
+        /// engine passes over that neighbour for a profile photo (``MeshEngine/fileOverLimit(_:from:)``).
+        case fileOverLimit(BlobHash, from: NodeId)
     }
 
     enum Role: Equatable {
@@ -119,10 +123,8 @@ public final class LinkManager: MeshTransport {
     var arrivalClocks: [ChannelID: ArrivalClock] = [:]
     /// Each live link's outgoing files: the one streaming and those waiting behind it.
     var feeds: [ChannelID: FileFeed] = [:]
-    /// The attachments the engine wants kept when they stream in, ours and those it fetches for an asker
-    /// (``acceptFiles(_:resumable:)``), and of those its own, the only ones a cut leaves a prefix of (knit-ios #20).
-    var acceptedFileKeys: Set<BlobHash> = []
-    var resumableFileKeys: Set<BlobHash> = []
+    /// The attachments the engine wants kept when they stream in (``acceptFiles(_:resumable:photoOnly:)``).
+    var fileKeys = AcceptedFileKeys()
     /// Whole files past their END that the engine has not taken yet (``fileTaken(from:hash:)``), still on their way.
     var landingFiles: Set<LandingFile> = []
     /// Files that finished streaming outside ``handle(_:)`` and ``advance()``, handed over by the next of either.

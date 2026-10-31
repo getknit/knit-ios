@@ -14,7 +14,8 @@ import KnitWire
 /// the bytes its signature covers.
 public final class SQLCustodyStore: CustodyStore {
     private let database: KnitDatabase
-    private let limits: CustodyLimits
+    /// The limits every rule here runs under, fixed for the store's life.
+    public let limits: CustodyLimits
 
     /// The custody table in `database`, with knit-next's limits unless told otherwise.
     public init(_ database: KnitDatabase, limits: CustodyLimits = CustodyLimits()) {
@@ -133,16 +134,18 @@ public final class SQLCustodyStore: CustodyStore {
         }
     }
 
-    /// One delete for the expired rows and the oversize ones (`ForwardDao.deleteExpired` and `deleteLongerThan` at
-    /// knit-next `ce56fec6e`), each row counted once. `signed` is a `BLOB` in a `STRICT` table, so `length` counts its
-    /// bytes, as Room's column does. On a database error it answers 0 and deletes nothing, and the next sweep tries
-    /// again.
+    /// One delete for the expired rows, the oversize ones and the profiles over their cap (`ForwardDao.deleteExpired` and
+    /// `deleteLongerThan` at knit-next `ce56fec6e`), each row counted once. `signed` is a `BLOB` in a `STRICT` table, so
+    /// `length` counts its bytes, as Room's column does. `type` is a `BLOB` too, written as its UTF-8 bytes, so the
+    /// profile's type is bound the same way: a text literal would never equal it, and the delete would find nothing. The
+    /// clause is ``CustodyRules/isOversizeProfile(type:signedCount:limits:)`` in SQL. On a database error it answers 0 and
+    /// deletes nothing, and the next sweep tries again.
     @discardableResult
     public func sweepExpired(now: Int64) -> Int {
         database.write(or: 0) { db in
             try db.execute(
-                sql: "DELETE FROM forward_store WHERE expiresAt < ? OR length(signed) > ?",
-                arguments: [now, limits.maxSignedBytes]
+                sql: "DELETE FROM forward_store WHERE expiresAt < ? OR length(signed) > ? OR (type = ? AND length(signed) > ?)",
+                arguments: [now, limits.maxSignedBytes, StoredText.bytes(FrameType.profile.rawValue), limits.maxProfileSignedBytes]
             )
             return db.changesCount
         }

@@ -12,7 +12,15 @@ extension MeshEngine {
 
     /// Delivers one first-seen frame (`InboundPipeline.onDeliver`): verify it, carry it, then hand it to its
     /// type's handler. A frame that fails verification is not carried or shown, and the router still relays it.
+    ///
+    /// A profile whose `signed` is longer than custody's profile cap is refused first, before its payload is decoded for
+    /// its key (``refusesOversizeProfile(_:)``, ADR 2026-10.r88m): it is not verified, carried, pinned, kept as a proof,
+    /// cached or applied, asks for no key and parks nothing, and the router still relays it. Every profile comes through
+    /// here, flooded or as a key request's or a digest round's point-to-point answer; none is ever parked.
     func deliver(_ frame: InboundFrame) {
+        guard !refusesOversizeProfile(frame) else {
+            return
+        }
         guard verify(frame) else {
             return
         }

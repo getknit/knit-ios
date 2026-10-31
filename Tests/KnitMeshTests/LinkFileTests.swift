@@ -64,7 +64,7 @@ import Testing
         configuration.maxAvatarFileBytes = 4
         let rig = LinkRig(local: LinkRig.high, configuration: configuration)
         _ = rig.accept(LinkRig.low, on: channel)
-        #expect(rig.handle(.received(channel, records(.avatar, bytes(5)))).isEmpty)
+        #expect(rig.handle(.received(channel, records(.avatar, bytes(5)))) == [.fileOverLimit(BlobHash(of: bytes(5)), from: LinkRig.low)])
         #expect(rig.links.filesRefused == 1)
     }
 

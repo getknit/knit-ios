@@ -50,7 +50,8 @@ extension MeshEngine {
     /// wait for the profile or age out; here they land, which is safe because the key is the one the id derives from.
     /// What waits for the profile still waits, as on Android: our `pendingKey` messages, which then go with the ratchet
     /// if the profile carries it, and an answer owed to an init of theirs, which needs their prekey. No proof frame is
-    /// kept, since there is none, so neither ``KeyExchange/serveKey(_:)`` nor custody can hand this key on.
+    /// kept, since there is none, so neither ``KeyExchange/serveKey(_:)`` nor custody can hand this key on, as for a pin
+    /// whose proof the sweep deleted for being over custody's profile cap (``PeerStore/deleteProfileFrames(longerThan:)``).
     ///
     /// Not a store unit, and never called from inside one: ``PeerStore/upsert(_:)`` reports no error, so the row is read
     /// back, and a pin that did not land answers ``ContactAdded/failed`` with nothing sent.

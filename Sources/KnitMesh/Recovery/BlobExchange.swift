@@ -129,6 +129,9 @@ internal struct BlobExchange: Sendable {
     /// How long each neighbour's latest answer took to come back (`answerRtt`, knit-next #140): our own outgoing backlog
     /// on that link, which every wait on it is stretched by.
     var roundTrips = AnswerRoundTrips()
+    /// The holders passed over for a profile photo this session (``overPhotoCeiling(_:from:)``), and the photos a held copy
+    /// over the ceiling refused (``refusePhoto(_:)``).
+    var photoRefusals = PhotoRefusals()
 
     /// Books for a node that queries holders before asking, or, with `queriesHolders` off, asks blind.
     init(queriesHolders: Bool) {
@@ -147,56 +150,6 @@ internal struct BlobExchange: Sendable {
     }
 
     // MARK: Wants
-
-    /// Wants `hash`, or refreshes the want and fills in the hints it lacked (`recordWant`). `author` and `via` rank the
-    /// neighbours that cannot be queried; `asker` is a neighbour we are pulling it for, which this cycle neither queries
-    /// nor asks, and `reach` the budget and deadline the want is recorded with (knit-next ADR 2026-10.2drc). Answers the
-    /// log lines it owes.
-    ///
-    /// A new want with no `asker` is our own, and one with an `asker` an echo made for it (``Origin``, knit-ios #20). A full
-    /// set drops an echo of the asker holding the most (``admit(_:)``), so no echo ever costs a want of ours; a new echo
-    /// that would is not recorded (``echoRefusal(_:)``), and the caller counts and logs it. Android drops the oldest want
-    /// whoever made it (`BlobExchange.kt`'s `MAX_FETCHING`).
-    ///
-    /// A new want takes `reach` as it is. A want of our own (no `asker`) is a root, re-derived every time: it is refreshed,
-    /// takes the whole budget back, and takes the deadline when its caller read every row naming the hash
-    /// (``Reach/rederived``) or names one, so a caller that read nothing keeps the one the re-arm set. A neighbour's ask
-    /// refreshes it only as ``noteAsker(_:_:_:now:wall:)`` allows. `wall` is the wall clock, which the deadline is read
-    /// against when the ask opens the next cycle. It takes seven parameters, where Kotlin's takes eight: this port has no
-    /// fast-only flags, and has the wall clock instead.
-    mutating func recordWant( // swiftlint:disable:this function_parameter_count
-        _ hash: BlobHash, now: Int64, wall: Int64, author: NodeId?, via: NodeId?, asker: NodeId?, reach: Reach
-    ) -> [String] {
-        guard var want = wants[hash] else {
-            if asker != nil, echoRefusal(hash) != nil {
-                return []
-            }
-            var made = Want(hash: hash, at: now, author: author, via: via, puller: asker)
-            made.budget = reach.budget
-            made.until = reach.until
-            admit(made)
-            return []
-        }
-        if asker == nil {
-            // Refreshed in place: the order is when it was first wanted, as in Android's insertion-ordered map. No longer
-            // on every recorded want (knit-next ADR 2026-10.2drc): an ask refreshing it is what let echoes keep it alive.
-            // An echo a want of ours names is ours from now on (knit-ios #20).
-            want.origin = .own
-            want.wantedAt = now
-            want.budget = Self.pullBudget
-            if reach.rederived || reach.until != nil {
-                want.until = reach.until
-            }
-        }
-        want.author = want.author ?? author
-        want.via = want.via ?? via
-        var notes: [String] = []
-        if let asker {
-            notes = noteAsker(&want, asker, reach, now: now, wall: wall)
-        }
-        wants[hash] = want
-        return notes
-    }
 
     /// Stops wanting `hash`, now held (`clearFetching`, then `withdrawAsks`), and answers the neighbours asked for it whose
     /// ask still stands, but `from`, whose link brought it. Each is owed a `blobcancel` (knit-next ADR 2026-10.nsr7), so a

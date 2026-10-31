@@ -73,6 +73,8 @@ final class PipeNode {
                 engine.fileProgress(progress)
             case .fileSent(let hash, let peer):
                 engine.fileSent(hash, to: peer)
+            case .fileOverLimit(let hash, let peer):
+                engine.fileOverLimit(hash, from: peer)
             }
         }
         if links.takeFeedsChanged() {
@@ -168,13 +170,11 @@ final class LinkPipe {
     /// When set, what this node writes waits on its radio, unread, as on a link whose air is slow: nothing it writes
     /// crosses, and no FILE record it writes is reported written, until this is cleared.
     var holding: PipeNode?
-    /// When set, what this node writes leaves its radio but the far side never reads it, as on a link whose reader
-    /// stalled: each FILE record is reported written at once, and nothing crosses until this is cleared. So a feed runs
-    /// on into the air where ``holding`` stops it after one chunk.
+    /// When set, what this node writes leaves its radio but the far side never reads it, as on a stalled reader: each FILE
+    /// record is reported written at once, nothing crosses until cleared, so a feed runs on where ``holding`` stops it.
     var unread: PipeNode?
     /// When set, what the node writes crosses this many ms after the pipe first sees it, each FILE record reported written
-    /// at once, as on a link whose round trip is long: a feed's window grows to cover it. ``unread`` then stops even what
-    /// is under way.
+    /// at once, as on a long round trip: a feed's window grows to cover it. ``unread`` then stops even what is under way.
     var delay: (node: PipeNode, milliseconds: Int64)?
 
     /// Links `dialer` and `answerer` on `channel`, each side its own channel number: the answerer accepts and reads the

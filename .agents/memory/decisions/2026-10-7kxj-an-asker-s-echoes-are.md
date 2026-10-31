@@ -87,7 +87,7 @@ and Android needs no change.
      insert already wrote.
    - **`releaseDeletedPhotos` is gone.** It read outside a unit, and the tick now covers a deleted message's photo once
      its frame leaves custody (ADR 2026-10.u7cq).
-4. **Only a want of ours keeps a cut prefix.** `MeshTransport.acceptFiles(_:resumable:)` hands the links the wanted set
+4. **Only a want of ours keeps a cut prefix.** `MeshTransport.acceptFiles(_:resumable:photoOnly:)` hands the links the wanted set
    and the subset that is ours. The engine sends it whenever either set changes, so a promotion reaches the link.
    `keepCutFile` keeps a prefix only for a key that is resumable at the moment of the cut. The header gate, the prefix
    read and the splice still read the wanted set, so an echo's re-ask that names an offset still splices onto any

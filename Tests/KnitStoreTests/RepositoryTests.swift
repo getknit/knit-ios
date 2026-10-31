@@ -160,6 +160,23 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
     }
 
     @Test(arguments: kinds)
+    func theSweepDeletesAProofOfKeyOverTheProfileCapAndKeepsThePin(kind: RepositoryKind) throws {
+        // A proof a build without the profile cap kept (ADR 2026-10.r88m): only `signed` counts, exactly the cap stays.
+        let store = try kind.make().peers
+        let pin = PeerRecord(nodeId: bob, name: "", status: "", publicKey: "key", updatedAt: 8)
+        store.upsert(pin)
+        // A `sig` past the cap counts for nothing.
+        let sig = [UInt8](repeating: 9, count: 64)
+        store.recordProfileFrame(WireEnvelope(sig: sig, signed: [UInt8](repeating: 1, count: 9)), of: bob, sentAt: 1)
+        store.recordProfileFrame(WireEnvelope(sig: sig, signed: [UInt8](repeating: 2, count: 8)), of: alice, sentAt: 1)
+        #expect(store.deleteProfileFrames(longerThan: 8) == 1)
+        #expect(store.profileFrame(of: bob) == nil)
+        #expect(store.profileFrame(of: alice)?.signed.count == 8, "exactly the cap is kept")
+        #expect(store.peer(bob) == pin, "the pin stays")
+        #expect(store.deleteProfileFrames(longerThan: 8) == 0, "nothing left to find")
+    }
+
+    @Test(arguments: kinds)
     func aMessageIsStoredOnceAndReadInOrder(kind: RepositoryKind) throws {
         let store = try kind.make().messages
         #expect(store.insertIfAbsent(message("m2", from: bob, to: alice, sentAt: 5)))

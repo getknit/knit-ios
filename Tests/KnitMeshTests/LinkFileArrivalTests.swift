@@ -105,10 +105,15 @@ import Testing
         _ = rig.accept(LinkRig.low, on: channel)
         let avatar = bytes(4096, seed: 5)
         let hash = BlobHash(of: avatar)
-        _ = rig.handle(.received(channel, header(avatar, kind: .avatar)))
-        #expect(rig.links.arrivingFiles == [hash: reading(avatar, 0, of: 4096)], "a peer's own photo is kept unasked")
+        // No size declared, so it is refused only once its bytes pass the limit, not at its header.
+        _ = rig.handle(.received(channel, header(avatar, kind: .avatar, size: .some(nil))))
+        #expect(rig.links.arrivingFiles == [hash: reading(avatar, 0, of: nil)], "a peer's own photo is kept unasked")
         let reports = rig.handle(.received(channel, chunk(avatar[0..<2048])))
-        #expect(reports == [.fileProgress(FileProgress(from: LinkRig.low, hash: hash, held: 2048, milliseconds: 0))])
+        #expect(
+            reports == [
+                .fileOverLimit(hash, from: LinkRig.low),
+                .fileProgress(FileProgress(from: LinkRig.low, hash: hash, held: 2048, milliseconds: 0)),
+            ])
         #expect(rig.links.arrivingFiles.isEmpty, "past its limit, no longer kept")
         #expect(rig.links.filesRefused == 1)
         expectWithinArriving(rig, "abandoned")

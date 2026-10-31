@@ -13,7 +13,8 @@ import Testing
 /// The clamps: a body of ``TextLimits/message`` UTF-16 units, each a three-byte character, the worst UTF-8 costs a unit; a
 /// quote of ``MessageReply/snippetLimit`` units under a name of ``TextLimits/displayName``; a photo; a group of
 /// ``GroupInfo/maxMembers``, every other member mentioned under the longest name; a sealed tick batch of
-/// ``AckSync/maxBatchAcks`` ids; a profile at the name and status limits. A room post's mentions are bounded by the chips its
+/// ``AckSync/maxBatchAcks`` ids; a profile at the name and status limits, which also stays under
+/// ``CustodyLimits/maxProfileSignedBytes``. A room post's mentions are bounded by the chips its
 /// body holds (``MessageMention/carried(_:in:)``), so the room's worst is the shortest chip, `@a `, repeated to the clamp,
 /// each naming someone else.
 @Suite struct CustodyHeadroomTests {
@@ -84,6 +85,10 @@ import Testing
             #expect(size < cap, "\(kind): \(size) signed bytes")
         }
         #expect(sizes.count == 8, "every kind measured: \(sizes)")
+        // The profile cap binds our own profile too, and the engine refuses a longer one before reading it, so ours at its
+        // limits, with a photo, prekey and every capability, stays under it with room to spare.
+        let profile = try #require(sizes["cleartext profile"])
+        #expect(profile <= CustodyLimits().maxProfileSignedBytes, "cleartext profile: \(profile) signed bytes")
     }
 
     /// The first DM of a session, which carries its init, and a group message to the most members, with its seed DMs.

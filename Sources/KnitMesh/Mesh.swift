@@ -301,9 +301,6 @@ public actor Mesh {
     /// Times seeking began (``LinkManager/seekSpells``).
     public var seekSpells: Int { links.seekSpells }
 
-    /// Group frames custody refused because their roster is not their own (``MeshEngine/groupCustodyRefused``).
-    public var groupCustodyRefused: Int { engine.groupCustodyRefused }
-
     /// What the router has done so far.
     public var routerCounters: Router.Counters { engine.routerCounters }
 
@@ -370,10 +367,6 @@ public actor Mesh {
 }
 
 extension Mesh {
-    /// Frames custody refused because their `signed` is longer than its byte cap (``MeshEngine/custodyOversizeRefused``),
-    /// the counterpart of ``groupCustodyRefused``.
-    public var custodyOversizeRefused: Int { engine.custodyOversizeRefused }
-
     /// Hands each link event to the engine, in order.
     private func apply(_ linkEvents: [LinkManager.Event]) {
         for event in linkEvents {
@@ -392,6 +385,8 @@ extension Mesh {
                 engine.fileProgress(progress)
             case .fileSent(let hash, let peer):
                 engine.fileSent(hash, to: peer)
+            case .fileOverLimit(let hash, let peer):
+                engine.fileOverLimit(hash, from: peer)
             }
         }
     }

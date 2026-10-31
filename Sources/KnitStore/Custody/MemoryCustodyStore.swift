@@ -32,8 +32,8 @@ public final class MemoryCustodyStore: CustodyStore {
 
     /// The limits every rule here runs under. Settable only by a test, which stands for the SQL store reopened by a newer
     /// build: rows stored under looser limits, then swept under the current ones, as an upgrade meets a row a build without
-    /// the byte cap kept (knit-next #227).
-    var limits: CustodyLimits {
+    /// the byte cap or the profile cap kept (knit-next #227).
+    public internal(set) var limits: CustodyLimits {
         get { state.withLock { $0.limits } }
         set { state.withLock { $0.limits = newValue } }
     }
@@ -118,13 +118,16 @@ public final class MemoryCustodyStore: CustodyStore {
         state.withLock { $0.rows[ExactKey(id)] = nil }
     }
 
-    /// Drops the expired rows and the oversize ones (`ForwardDao.deleteExpired` and `deleteLongerThan` at
-    /// knit-next `ce56fec6e`) in one pass, each row counted once.
+    /// Drops the expired rows, the oversize ones and the profiles over their cap (`ForwardDao.deleteExpired` and
+    /// `deleteLongerThan` at knit-next `ce56fec6e`) in one pass, each row counted once.
     @discardableResult
     public func sweepExpired(now: Int64) -> Int {
         state.withLock { state in
-            let cap = state.limits.maxSignedBytes
-            let swept = state.rows.filter { $0.value.entry.expiresAt < now || $0.value.frame.signed.count > cap }.keys
+            let current = state.limits
+            let swept = state.rows.filter { _, row in
+                row.entry.expiresAt < now || row.frame.signed.count > current.maxSignedBytes
+                    || CustodyRules.isOversizeProfile(type: row.frame.envelope.type, signedCount: row.frame.signed.count, limits: current)
+            }.keys
             for key in swept {
                 state.rows[key] = nil
             }

@@ -51,10 +51,8 @@ public final class MeshEngine {
     var blobExchange: BlobExchange
     /// The kept prefixes of cut attachments, the link manager's own store (``Mesh``): asked with, and dropped (knit-ios #2).
     let partials: any PartialBlobStore
-    /// The attachments the links were last told to keep as they stream in, and of those our own, which a cut leaves a
-    /// prefix of (``syncAcceptedFiles()``).
-    var acceptedFiles: Set<BlobHash> = []
-    var resumableFiles: Set<BlobHash> = []
+    /// The attachments the links were last told to keep as they stream in (``syncAcceptedFiles()``).
+    var acceptedFiles = AcceptedFiles()
     /// The photo each neighbour has had from us whole, this run (``pushAvatar(to:)``).
     var avatarPushes: [NodeId: BlobHash] = [:]
     var ackSync = AckSync()
@@ -85,6 +83,8 @@ public final class MeshEngine {
     /// Whole files dropped here: their bytes did not match their hash, a pushed photo was not the one its pusher's
     /// profile names, or nothing wanted them.
     public internal(set) var filesRejected = 0
+    /// Profiles refused before they were read, their `signed` over custody's profile cap (``refusesOversizeProfile(_:)``).
+    var profileDoorRefused = 0
 
     struct Timers {
         var reoffer: Int64
@@ -130,7 +130,10 @@ public final class MeshEngine {
         router = Router(configuration: configuration.router)
         blobExchange = BlobExchange(queriesHolders: configuration.queriesBlobHolders)
         self.partials = partials
-        keyExchange = KeyExchange { [peers = stores.peers] in peers.profileFrame(of: $0) }
+        // A proof a build without the profile cap kept is never cached or served, whatever runs first (ADR 2026-10.r88m).
+        keyExchange = KeyExchange { [peers = stores.peers, custody = stores.custody] peer in
+            peers.profileFrame(of: peer).flatMap { kept in kept.signed.count > custody.limits.maxProfileSignedBytes ? nil : kept }
+        }
     }
 
     /// This node's id.
@@ -138,13 +141,6 @@ public final class MeshEngine {
 
     /// What the router has done so far.
     public var routerCounters: Router.Counters { router.counters }
-
-    /// Group frames custody refused because their roster is not their own (knit-next ADR 2026-10.7mqm).
-    public var groupCustodyRefused: Int { custody.groupRefusedCount }
-
-    /// Frames custody refused because their `signed` is longer than its byte cap (knit-next #227). Each was still delivered
-    /// and relayed.
-    public var custodyOversizeRefused: Int { custody.oversizeRefusedCount }
 
     /// What the blob holder query has done so far (knit-next ADR 2026-10.6e5t).
     public var blobCounts: BlobCounts { blobExchange.counts }
@@ -192,6 +188,8 @@ public final class MeshEngine {
     /// forgets deleted messages no carrier can still hold, opens again the ratchet DMs to us custody holds with no row,
     /// delivers group chats custody holds and our threads lack, and starts the timers. Idempotent.
     public func start() {
+        // Every start is a new session, the Mesh's after a stop too: its photo refusals rested on the links it had.
+        forgetPhotoRefusals()
         guard !isStarted else {
             return
         }

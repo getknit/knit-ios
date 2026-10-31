@@ -118,6 +118,7 @@ import Testing
         #expect(status["seekSpells"] as? Int == 0)
         #expect(status["groupCustodyRefused"] as? Int == 0, "Android's name for custody's group gate refusals")
         #expect(status["custodyOversizeRefused"] as? Int == 0, "Android's name for custody's byte cap refusals")
+        #expect(status["profileOversizeRefused"] as? Int == 0, "Android's name for the profile cap's refusals, door and custody")
     }
 
     @Test func statusSaysWhenTheLinksSeek() async throws {

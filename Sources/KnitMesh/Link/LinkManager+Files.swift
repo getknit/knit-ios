@@ -18,6 +18,15 @@ internal struct ArrivalClock {
     }
 }
 
+/// The attachments the engine wants kept when they stream in, ours and those it fetches for an asker; of those its own,
+/// the only ones a cut leaves a prefix of (knit-ios #20); and of those the ones wanted only as a profile photo, kept to
+/// ``LinkManager/Configuration/maxAvatarFileBytes`` (ADR 2026-10.r88m).
+internal struct AcceptedFileKeys {
+    var accepted: Set<BlobHash> = []
+    var resumable: Set<BlobHash> = []
+    var photoOnly: Set<BlobHash> = []
+}
+
 /// A whole file past its END that the engine has not taken yet, by the neighbour whose link carried it.
 internal struct LandingFile: Hashable {
     var from: NodeId
@@ -28,7 +37,9 @@ internal struct LandingFile: Hashable {
 ///
 /// **In,** each link's file passes through a ``FileIntake``, which applies Android's receiver rules. A peer's own AVATAR
 /// push is kept up to ``Configuration/maxAvatarFileBytes``. An ATTACHMENT is kept only when the engine asked for its
-/// hash (``acceptFiles(_:resumable:)``), up to Android's 8 MiB and 64 KiB, and leaves a prefix kept when cut only when the
+/// hash (``acceptFiles(_:resumable:photoOnly:)``), up to Android's 8 MiB and 64 KiB, or the photo's ceiling when it is
+/// wanted only as a profile photo; a file past its limit is handed to the engine as ``Event/fileOverLimit(_:from:)``, with
+/// the neighbour that sent it. An ATTACHMENT leaves a prefix kept when cut only when the
 /// engine wants it of its own, and partial files on every link together stay within
 /// ``Configuration/maxBufferedFileBytes``. A whole file goes to the engine, which checks its hash. How much of a file is
 /// in goes to the engine too, kept or skipped, which tells the sender (knit-next ADR 2026-10.nsr7): on every chunk that
@@ -167,10 +178,10 @@ extension LinkManager {
     }
 
     /// The attachments to keep as they stream in: the blobs the engine wants. Of those, `resumable`, the engine's own
-    /// wants, leave a prefix kept when their link is cut (``keepCutFile(on:now:)``, knit-ios #20).
-    public func acceptFiles(_ keys: Set<BlobHash>, resumable: Set<BlobHash>) {
-        acceptedFileKeys = keys
-        resumableFileKeys = resumable
+    /// wants, leave a prefix kept when their link is cut (``keepCutFile(on:now:)``, knit-ios #20), and `photoOnly`, those
+    /// wanted only as a profile photo, are kept to ``Configuration/maxAvatarFileBytes`` rather than Android's ceiling.
+    public func acceptFiles(_ keys: Set<BlobHash>, resumable: Set<BlobHash>, photoOnly: Set<BlobHash> = []) {
+        fileKeys = AcceptedFileKeys(accepted: keys, resumable: resumable, photoOnly: photoOnly)
     }
 
     /// How many files wait on `peer`'s link behind the one streaming, 0 when unlinked.
@@ -187,10 +198,11 @@ extension LinkManager {
 
     /// A header on `id`. One that resumes a cut transfer is spliced onto the prefix ``partials`` kept, read only once the
     /// intake's gates pass and the room every link's partial files share holds it (knit-ios #2).
-    func fileHeader(_ payload: [UInt8], from peer: NodeId, on id: ChannelID, now: Int64) {
+    func fileHeader(_ payload: [UInt8], from peer: NodeId, on id: ChannelID, now: Int64) -> [Event] {
         // Stamped at every header, kept or not, as Android's is.
         arrivalClocks[id] = ArrivalClock(peer: peer, startedAt: now)
-        let accepted = acceptedFileKeys
+        let accepted = fileKeys.accepted
+        let photoOnly = fileKeys.photoOnly
         let avatarLimit = configuration.maxAvatarFileBytes
         let others = intakes.reduce(0) { $1.key == id ? $0 : $0 + $1.value.bufferedBytes }
         let partials = partials
@@ -202,27 +214,25 @@ extension LinkManager {
                 case .avatar:
                     avatarLimit
                 case .attachment:
-                    accepted.contains(key) ? FileIntake.maxFileBytes : nil
+                    accepted.contains(key) ? (photoOnly.contains(key) ? avatarLimit : FileIntake.maxFileBytes) : nil
                 }
             },
             prefix: { key, offset in partials.open(key, offset: offset).map { ($0.bytes, $0.epoch) } },
             now: now
         )
-        for event in events {
-            note(event, on: id)
-        }
+        return events.flatMap { note($0, from: peer, on: id) }
     }
 
     /// The link `id` was cut mid-file (`FileIntake.cut`, `FileIntake.kt:232-243`): an attachment being kept goes to
     /// ``partials`` as a prefix the next ask resumes from, which keeps it only if it is the longest held and was not
     /// spliced onto a prefix dropped since. Anything else is dropped. Which teardowns cut and which drop is the caller's.
     ///
-    /// Only for a key the engine wants of its own as the link is cut (``resumableFileKeys``, knit-ios #20). Android keeps
+    /// Only for a key the engine wants of its own as the link is cut (``AcceptedFileKeys/resumable``, knit-ios #20). Android keeps
     /// any cut attachment, so a peer that has us fetch eight hashes for it and cuts each stream past 16 KiB evicts every
     /// prefix of ours from the eight the store keeps; an echo's cut stream is dropped here instead, and its next ask starts
     /// from byte 0.
     func keepCutFile(on id: ChannelID, now: Int64) {
-        guard let cut = intakes[id]?.cut(), resumableFileKeys.contains(cut.key) else {
+        guard let cut = intakes[id]?.cut(), fileKeys.resumable.contains(cut.key) else {
             return
         }
         partials.keep(cut.key, bytes: cut.bytes, basedOn: cut.basedOn, now: now)
@@ -233,10 +243,8 @@ extension LinkManager {
             return []
         }
         let others = intakes.reduce(0) { $1.key == id ? $0 : $0 + $1.value.bufferedBytes }
-        if let event = intakes[id]?.chunk(payload, room: configuration.maxBufferedFileBytes - others) {
-            note(event, on: id)
-        }
-        return fileProgress(from: peer, on: id, now: now)
+        let over = intakes[id]?.chunk(payload, room: configuration.maxBufferedFileBytes - others).map { note($0, from: peer, on: id) } ?? []
+        return over + fileProgress(from: peer, on: id, now: now)
     }
 
     /// How much of the file streaming in on `id` has been read, kept or skipped, after the chunk is in, so a stall reports
@@ -314,9 +322,10 @@ extension LinkManager {
         return [.file(InboundFile(from: peer, kind: header.kind, hash: key, mime: header.mime, bytes: bytes, resumedFrom: resumedFrom))]
     }
 
-    /// Counts and logs a file the intake dropped, and a resume it took. A file begun streams on, and a finished one
-    /// reaches the engine from ``fileEnd(from:on:)``.
-    private func note(_ event: FileIntake.Event, on id: ChannelID) {
+    /// Counts and logs a file the intake dropped, and a resume it took, and answers what the engine is owed of it: a file
+    /// past its limit, with the neighbour that sent it. A file begun streams on, and a finished one reaches the engine from
+    /// ``fileEnd(from:on:)``.
+    private func note(_ event: FileIntake.Event, from peer: NodeId, on id: ChannelID) -> [Event] {
         switch event {
         case .skipped(let header):
             filesRefused += 1
@@ -330,6 +339,14 @@ extension LinkManager {
         case .abandoned(let header):
             filesRefused += 1
             log.log(.info, "link \(id) file \(Self.shown(header.key)) dropped before its end")
+        case .overLimit(let header):
+            filesRefused += 1
+            // The abandon's words, with the reason appended, so a grep for the line still finds it.
+            log.log(.info, "link \(id) file \(Self.shown(header.key)) dropped before its end: over its limit")
+            // A header always names a well-formed key before the owner's limit is read, so this always reports.
+            if let key = BlobHash(header.key) {
+                return [.fileOverLimit(key, from: peer)]
+            }
         case .begun(let header), .finished(let header, _, _, _):
             // A finished file comes through ``fileEnd(from:on:)``, never here.
             if let offset = header.offset, offset > 0 {
@@ -338,6 +355,7 @@ extension LinkManager {
                 log.log(.info, "link \(id) file \(Self.shown(header.key)) resumed at \(offset)")
             }
         }
+        return []
     }
 
     /// A refused resume's reason, in Android's words where it has them (`FileIntake.kt:149`).

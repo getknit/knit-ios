@@ -169,7 +169,7 @@ final class CapturingTransport: MeshTransport {
 
     var feedingLoad: Int { 0 }
 
-    func acceptFiles(_: Set<BlobHash>, resumable _: Set<BlobHash>) {
+    func acceptFiles(_: Set<BlobHash>, resumable _: Set<BlobHash>, photoOnly _: Set<BlobHash>) {
         // Nothing streams in here.
     }
 

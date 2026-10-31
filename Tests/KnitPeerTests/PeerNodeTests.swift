@@ -45,7 +45,7 @@ import Testing
         #expect(
             blobs.keys.sorted() == [
                 "answersIgnored", "answersTaken", "asksParked", "blindAsks", "cancelsSent", "cancelsTaken", "confirms",
-                "echoFetchesHeld", "echoFilesRefused", "echoesDeclined", "fallbacks", "fetches", "progressSent",
+                "echoFetchesHeld", "echoFilesRefused", "echoesDeclined", "fallbacks", "fetches", "photosOverCeiling", "progressSent",
                 "progressTaken", "pullThroughs", "pullsWithheld", "queriesAnswered", "queriesRefused", "queriesSent",
                 "servesRefused", "splicesRefused",
             ])

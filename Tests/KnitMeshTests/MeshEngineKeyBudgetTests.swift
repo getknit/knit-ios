@@ -18,8 +18,12 @@ import Testing
         fixture.transport.written(.profile).filter { $0.to == peer.nodeId && !$0.wire.relay }
     }
 
+    /// Production's custody limits with the profile cap lifted (ADR 2026-10.r88m): the budget counts bytes, so one profile
+    /// past a whole burst stands for the many in-cap answers that would drain it.
+    static let liftedProfileCap = CustodyLimits(maxProfileSignedBytes: .max)
+
     @Test func aWanterInDebtIsNotServedWhenItsKeyPinsAndIsServedOnRefill() throws {
-        let fixture = EngineFixture(alice)
+        let fixture = EngineFixture(alice, stores: .inMemory(custodyLimits: Self.liftedProfileCap))
         fixture.link(carol, dave)
         try fixture.pin(carol)
         // Bob's profile of 300 KiB, past Carol's whole burst.
@@ -44,7 +48,7 @@ import Testing
     }
 
     @Test func aKeyRequestSkipsAndDoesNotChargeAProfileTheLinkAlreadyCarried() throws {
-        let fixture = EngineFixture(alice)
+        let fixture = EngineFixture(alice, stores: .inMemory(custodyLimits: Self.liftedProfileCap))
         fixture.link(carol)
         try fixture.pin(carol)
         let large = try bob.profile(status: String(repeating: "s", count: 300 * 1024), publishedAt: EngineFixture.start)

@@ -101,8 +101,10 @@ public protocol MeshTransport: AnyObject {
     /// fetches for an asker alike. Any other ATTACHMENT file is dropped as it streams by. A peer's own AVATAR push is kept
     /// whatever this says. Of those, `resumable` are the blobs wanted of our own, the only ones whose stream leaves a
     /// prefix kept when its link is cut (knit-ios #20), so an asker's cut streams never evict ours from the few kept.
-    /// Whether a header resumes onto a prefix already kept still reads `keys` alone.
-    func acceptFiles(_ keys: Set<BlobHash>, resumable: Set<BlobHash>)
+    /// Whether a header resumes onto a prefix already kept still reads `keys` alone. Of `keys`, `photoOnly` are the blobs
+    /// wanted only as a profile photo, kept to the photo's ceiling (``FileIntake/maxAvatarBytes``) rather than the
+    /// attachment's: a file past it is reported, with its sender, and never kept.
+    func acceptFiles(_ keys: Set<BlobHash>, resumable: Set<BlobHash>, photoOnly: Set<BlobHash>)
 
     /// How many files wait on `peer`'s link behind the one streaming to it, if any: 0 when unlinked. A serve is not queued
     /// past ``BlobExchange/maxWaitingServes`` of them (knit-ios #20).

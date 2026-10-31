@@ -69,6 +69,10 @@ extension BlobExchange {
         var origin: Origin
         /// Whether this cycle already counted and logged a fetch held back by the echo budget.
         var fetchHeld = false
+        /// Whether only a profile photo of ours names the blob, so its bytes are kept to the photo's ceiling and a holder
+        /// past it is passed over (``BlobExchange/overPhotoCeiling(_:from:)``). Set only when the want is made, and cleared
+        /// for its life by any other record of it: this port's alone, as Android's is its own plumbing.
+        var photoOnly = false
 
         init(hash: BlobHash, at: Int64, author: NodeId?, via: NodeId?, puller: NodeId?) {
             self.hash = hash

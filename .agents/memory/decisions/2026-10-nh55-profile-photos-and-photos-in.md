@@ -85,3 +85,7 @@ Two choices differ from Android's on purpose:
 bound: a sender's newest 8 and, of those, the newest 32 of all strangers. The room's attachment types follow Android's
 `RoomAttachments`: a picture, a link card or a video. A request's photos wait for accept. Peers' advertised photos are
 unchanged (knit-ios #22).
+
+**Amended 2026-10-30, by ADR 2026-10.r88m (knit-ios #22):** peers' photos now have a ceiling of 1 MiB, pushed or
+fetched. A fetch made only for a profile photo keeps a holder's copy to it, a holder past it is passed over for that hash
+for the session, and the photo's author's copy over it refuses the hash. A held photo over it is never shown as a face.

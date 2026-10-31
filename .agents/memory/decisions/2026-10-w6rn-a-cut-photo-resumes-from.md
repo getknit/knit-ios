@@ -178,7 +178,7 @@ The alternatives:
   (knit/knit-next#216). A Settings Stop mid-photo is still owed.
 
 **Amended 2026-10-27, by ADR 2026-10.7kxj (knit-ios #20):** a link teardown now keeps a cut prefix only for a want of
-our own. `MeshTransport.acceptFiles(_:resumable:)` names those beside the wanted set, and `keepCutFile` reads it at the
+our own. `MeshTransport.acceptFiles(_:resumable:photoOnly:)` names those beside the wanted set, and `keepCutFile` reads it at the
 cut. Eight echo streams cut past 16 KiB can no longer evict our prefixes. A resumed header for a key that is wanted but
 not ours still splices onto any prefix held. This differs from Android on purpose: knit-next's `FileIntake.cut` keeps
 any cut attachment (`FileIntake.kt:232-243` at `4408e0fca`). An echo's stream from its holder now restarts from byte 0

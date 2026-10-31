@@ -74,6 +74,8 @@ public struct VectorFrame: Codable, Sendable, Equatable {
     public let version: Int64?
     /// What a ratchet seal carries and opens to (phase P7b).
     public let sealed: VectorSealed?
+    /// The length of the frame's `signed`, where the entry pins it: the profile cap's edge frames (ADR 2026-10.r88m).
+    public let signedBytes: Int?
     /// The encoded `WireEnvelope`, as hex.
     public let wire: String
 
@@ -89,6 +91,7 @@ public struct VectorFrame: Codable, Sendable, Equatable {
         capabilities: Int64? = nil,
         version: Int64? = nil,
         sealed: VectorSealed? = nil,
+        signedBytes: Int? = nil,
         wire: String
     ) {
         self.sender = sender
@@ -101,6 +104,7 @@ public struct VectorFrame: Codable, Sendable, Equatable {
         self.capabilities = capabilities
         self.version = version
         self.sealed = sealed
+        self.signedBytes = signedBytes
         self.wire = wire
     }
 
@@ -117,6 +121,7 @@ public struct VectorFrame: Codable, Sendable, Equatable {
             capabilities: capabilities,
             version: version,
             sealed: sealed,
+            signedBytes: signedBytes,
             wire: wire
         )
     }
@@ -219,7 +224,8 @@ public enum KeyedVectors {
         public let identities: [String: VectorIdentity]
         /// Their safety number.
         public let safetyNumber: VectorSafetyNumber
-        /// `aliceProfile`, `aliceRoomPost` and `aliceDmToBob`.
+        /// `aliceProfile`, `aliceRoomPost` and `aliceDmToBob`, and the profile cap's edge, `aliceProfileAtCap` and
+        /// `aliceProfileOverCap`.
         public let frames: [String: VectorFrame]
         /// The link vectors.
         public let link: VectorLink

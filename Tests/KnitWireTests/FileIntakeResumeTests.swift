@@ -134,7 +134,7 @@ import Testing
         var intake = FileIntake()
         _ = resume(&intake, store, offset: near, size: 100)
         let resumed = FileHeader(kind: .attachment, key: key, mime: "image/jpeg", size: 100, offset: near)
-        #expect(intake.chunk([UInt8](repeating: 0, count: 20)) == .abandoned(resumed))
+        #expect(intake.chunk([UInt8](repeating: 0, count: 20)) == .overLimit(resumed), "the ceiling is the owner's limit here")
         #expect(intake.arriving == nil)
         #expect(intake.end() == nil)
     }

@@ -31,6 +31,8 @@ public enum CustodyVectors {
         public let maxFutureSkewMs: Int64
         /// The byte cap on a frame's `signed` (knit-next ADR 2026-10.mqzv).
         public let maxSignedBytes: Int
+        /// The cap on a profile's `signed` (knit-next ADR 2026-10.jgeg, ADR 2026-10.r88m).
+        public let maxProfileSignedBytes: Int
     }
 
     /// One store and what it must answer.

@@ -60,6 +60,22 @@ import Testing
         #expect(profile.capabilities == 0x9)
     }
 
+    /// The profile cap's edge (ADR 2026-10.r88m): Alice's profile padded in `status` to exactly the cap and one byte past
+    /// it. Both decode, re-encode exactly and verify like any frame; the cap is the engine's and custody's to apply.
+    @Test(arguments: ["aliceProfileAtCap", "aliceProfileOverCap"])
+    func alicesProfilesAtTheCapsEdgeReencodeExactly(name: String) throws {
+        let alice = try identity("alice")
+        let entry = try frame(name)
+        let wire = try WireEnvelope(decoding: hexBytes(entry.wire))
+        #expect(wire.signed.count == entry.signedBytes, "the vector's own length")
+        let relay = try relay(of: entry, from: alice)
+        #expect(relay.type == .profile)
+        let profile = try ProfileContent(decoding: relay.payload)
+        #expect(profile.encoded == relay.payload)
+        #expect(profile.pubKey == alice.bundle.encoded)
+        #expect(profile.status.allSatisfy { $0 == "x" }, "padded in status")
+    }
+
     @Test func alicesRoomPostCarriesItsBody() throws {
         let alice = try identity("alice")
         let frame = try frame("aliceRoomPost")

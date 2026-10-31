@@ -7,7 +7,8 @@ public import KnitWire
 ///
 /// `peer_profiles` holds the signed frame each pin came from, in a table of its own as knit-next keeps it. Nothing
 /// in this port deletes a pin yet. A door that does must delete its `peer_profiles` row too, as knit-next's sweeps
-/// do, so the proof never outlives the pin it proves.
+/// do, so the proof never outlives the pin it proves. A proof can go before its pin: the sweep deletes one longer than
+/// custody's profile cap (``deleteProfileFrames(longerThan:)``, ADR 2026-10.r88m), and the pin stays.
 public final class SQLPeerStore: PeerStore {
     /// Every column of a peer, in the order ``upsert(_:)`` binds them. `INSERT OR REPLACE` writes a whole row, so a
     /// column missing here would be nulled by every write: the photo hashes and the prekey are here for that reason.
@@ -81,6 +82,14 @@ public final class SQLPeerStore: PeerStore {
                 sql: "SELECT signed, sig FROM peer_profiles WHERE nodeId = ?",
                 arguments: [StoredText.bytes(nodeId.string)]
             ).map { WireEnvelope(relay: false, sig: try $0.bytes("sig"), signed: try $0.bytes("signed")) }
+        }
+    }
+
+    public func deleteProfileFrames(longerThan maxSignedBytes: Int) -> Int {
+        // `signed` is a BLOB in a STRICT table, so `length` counts its bytes, as the custody sweep's byte cap does.
+        database.write(or: 0) { db in
+            try db.execute(sql: "DELETE FROM peer_profiles WHERE length(signed) > ?", arguments: [maxSignedBytes])
+            return db.changesCount
         }
     }
 

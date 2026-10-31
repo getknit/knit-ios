@@ -34,11 +34,13 @@ extension BlobExchange {
         }
     }
 
-    /// A want of our own the re-arm makes (`wantAll`'s pair and its deadline): the blob, its author, and its reach.
+    /// A want of our own the re-arm makes (`wantAll`'s pair and its deadline): the blob, its author, its reach, and
+    /// whether only a peer's profile photo names it (``WantKind``).
     struct OwnWant: Sendable, Equatable {
         var hash: BlobHash
         var author: NodeId?
         var reach: Reach
+        var kind: WantKind = .attachment
     }
 
     /// The budget a want made for an ask that allowed `pull` has (`budgetOf`): one hop less, an ask no newer than this

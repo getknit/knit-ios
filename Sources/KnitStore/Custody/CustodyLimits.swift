@@ -23,8 +23,15 @@ public struct CustodyLimits: Sendable, Equatable {
     /// With it the row cap bounds what custody holds on disk and re-serves: 1000 rows of 60 KiB, where any size went
     /// before. No honest build of either platform authors a longer frame.
     public var maxSignedBytes: Int
+    /// The longest `signed` custody carries for a profile frame, in bytes: 8 KiB. A longer profile is refused, and the sweep
+    /// deletes one a build without this cap stored. Only `signed` is counted, never `sig`, as for ``maxSignedBytes``, which
+    /// binds first, so a profile over both is refused as oversize. The largest profile an honest build authors is 949 bytes
+    /// of `signed` here and 1,017 on Android, so the cap leaves room for every field both send, and it equals Android's
+    /// frame ceiling on its fast and LoRa links. The engine refuses the same profiles before it reads them, and it reads this
+    /// value from the store, so a rig that lowers one lowers both.
+    public var maxProfileSignedBytes: Int
 
-    /// knit-next's values unless told otherwise: 24 h, 6 h, 1000, 200, 200, 200 and 61,440 bytes.
+    /// knit-next's values unless told otherwise: 24 h, 6 h, 1000, 200, 200, 200, 61,440 bytes and 8,192 bytes.
     public init(
         ttlMilliseconds: Int64 = 86_400_000,
         roomChatTTLMilliseconds: Int64 = 21_600_000,
@@ -32,7 +39,8 @@ public struct CustodyLimits: Sendable, Equatable {
         maxPerSender: Int = 200,
         maxPerGroup: Int = 200,
         maxRoomChat: Int = 200,
-        maxSignedBytes: Int = 61_440
+        maxSignedBytes: Int = 61_440,
+        maxProfileSignedBytes: Int = 8192
     ) {
         self.ttlMilliseconds = ttlMilliseconds
         self.roomChatTTLMilliseconds = roomChatTTLMilliseconds
@@ -41,5 +49,6 @@ public struct CustodyLimits: Sendable, Equatable {
         self.maxPerGroup = maxPerGroup
         self.maxRoomChat = maxRoomChat
         self.maxSignedBytes = maxSignedBytes
+        self.maxProfileSignedBytes = maxProfileSignedBytes
     }
 }

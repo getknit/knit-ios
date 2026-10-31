@@ -13,6 +13,10 @@ import Testing
     /// a round's budget. A frame past the whole budget is over the cap, which both engines here refuse.
     private static let largeProfileBytes = 60_000
 
+    /// Custody's limits on both phones that hold the large profile: production's, with the profile cap (ADR 2026-10.r88m)
+    /// lifted to the byte cap, so the large profile still stands for a frame near the byte cap.
+    private static let limits = CustodyLimits(maxProfileSignedBytes: CustodyLimits().maxSignedBytes)
+
     /// A frame as custody keeps it.
     private static func carried(_ frame: TestFrame) -> CarriedFrame {
         CarriedFrame(envelope: frame.envelope, sig: frame.wire.sig, signed: frame.wire.signed)
@@ -100,12 +104,12 @@ import Testing
     @Test func aNewcomerFacingAFullCustodyConvergesInCappedRounds() throws {
         let lab = PipeLab()
         let wall = lab.clock.wallMilliseconds()
-        let holder = lab.node(1)
+        let holder = lab.node(1, custodyLimits: Self.limits)
         try Self.fillFull(holder, wall: wall)
         #expect(holder.stores.custody.liveIds(now: wall).count == 1000)
         let missing = Self.owed(by: holder, wall: wall).count
         let groups = Set((0..<400).map { frameIdOf("group-\($0)") })
-        let newcomer = lab.node(2)
+        let newcomer = lab.node(2, custodyLimits: Self.limits)
         let pipe = lab.link(holder, newcomer)
         let converged = lab.run(step: 1000, limit: 900_000) {
             let now = lab.clock.wallMilliseconds()
@@ -132,9 +136,9 @@ import Testing
     @Test func aFloodOfEmptyDigestsBuysTwoRoundsThenOneEveryThirtySeconds() throws {
         let lab = PipeLab()
         let wall = lab.clock.wallMilliseconds()
-        let holder = lab.node(1)
+        let holder = lab.node(1, custodyLimits: Self.limits)
         try Self.fillFull(holder, wall: wall)
-        let newcomer = lab.node(2)
+        let newcomer = lab.node(2, custodyLimits: Self.limits)
         let pipe = lab.link(holder, newcomer)
         let empty = try #require(LinkRecord(.digest, payload: LinkJSON.digestPayload(ids: [])).encoded)
         for _ in 0..<90 {

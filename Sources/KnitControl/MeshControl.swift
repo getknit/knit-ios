@@ -307,6 +307,8 @@ public actor MeshControl {
             "groupCustodyRefused": .int(Int64(await mesh.groupCustodyRefused)),
             // Android's word too (`MeshMetrics.custodyOversizeRefused`): frames custody refused for their size.
             "custodyOversizeRefused": .int(Int64(await mesh.custodyOversizeRefused)),
+            // One name on both phones (ADR 2026-10.r88m): profiles refused for their size, at the door and by custody.
+            "profileOversizeRefused": .int(Int64(await mesh.profileOversizeRefused)),
             "dropped": .object(Dictionary(dropped) { first, _ in first }),
             "files": ControlLines.describe(await mesh.files),
             "blobs": ControlLines.describe(await mesh.blobs),

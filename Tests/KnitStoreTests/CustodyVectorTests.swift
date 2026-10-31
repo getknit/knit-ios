@@ -19,12 +19,13 @@ import Testing
             maxPerSender: stated.maxPerSender,
             maxPerGroup: stated.maxPerGroup,
             maxRoomChat: stated.maxBroadcast,
-            maxSignedBytes: stated.maxSignedBytes
+            maxSignedBytes: stated.maxSignedBytes,
+            maxProfileSignedBytes: stated.maxProfileSignedBytes
         )
     }
 
-    /// The step's frame as `CustodyVectorTest.frameOf` builds it: a chat whose body is `bodyLength` "x"s (empty when absent),
-    /// unsigned, its group's founder the first member.
+    /// The step's frame as `CustodyVectorTest.frameOf` builds it: of its type, a chat payload whose body is `bodyLength` "x"s
+    /// (empty when absent), a profile's too, since custody never decodes one, unsigned, its group's founder the first member.
     private static func carried(_ frame: CustodyVectors.Frame) -> CarriedFrame {
         let group = frame.group.map { roster in
             GroupInfo(id: roster.id, members: roster.members, createdBy: roster.members.first ?? "", departed: roster.departed)
@@ -43,7 +44,7 @@ import Testing
 
     @Test func theFileStatesTheSameFutureWindow() {
         #expect(Self.file.limits.maxFutureSkewMs == WireProtocol.maxFutureSkewMilliseconds)
-        #expect(Self.file.steps.count == 30)
+        #expect(Self.file.steps.count == 33)
     }
 
     @Test(arguments: CustodyStoreKind.allCases)

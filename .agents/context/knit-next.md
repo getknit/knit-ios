@@ -449,6 +449,14 @@ Kotlin wins.
     a group's name is cleaned where it shows. Its new `vectors/name-key-v1.json` was copied with `sync-vectors.py
     --only name-key-v1.json` from `7439fd9cc`. Android's rename line for a peer compares the cleaned old name; this
     port writes none. The wire is unchanged.
+    And `27359aa10` on knit-next's `fix/profile-door-cap`, not yet merged (its ADR 2026-10.jgeg, knit-next #234,
+    knit-ios #22, ADR 2026-10.r88m): a cleartext profile whose `signed` is longer than 8,192 bytes is refused at the
+    door, ahead of verify, custody and every write, and custody refuses and sweeps it too. Each side's local sweep
+    deletes a stored proof of key over the cap and keeps the pin. A profile photo over 1 MiB is never fetched past
+    the ceiling or shown as a face: a holder that streams or claims more is passed over for that photo for the
+    session, and a held one is cleared. Its `vectors/custody-v1.json` (33 steps, a 1,024-byte rig profile cap) and
+    `vectors/keyed-v1.json` (`aliceProfileAtCap`, `aliceProfileOverCap`) were copied with `sync-vectors.py --only`
+    from `27359aa10`, unchanged since `dc806674d`. The wire is unchanged.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e63f15f4`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

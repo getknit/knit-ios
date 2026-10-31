@@ -21,7 +21,7 @@ public struct CustodySync: Sendable {
     /// 2026-09.adpz).
     private var earlyReceipts: SeenSet
 
-    /// Where a refused oversize or group frame is noted, at `.debug`: the engine's log, or none.
+    /// Where a refused oversize frame, profile or group frame is noted, at `.debug`: the engine's log, or none.
     private let log: (any KnitLog)?
 
     /// Custody bookkeeping with knit-next's tombstone window unless told otherwise, noting oversize and group frames custody
@@ -48,12 +48,19 @@ public struct CustodySync: Sendable {
     /// each was still delivered and relayed. Our own count too, since the cap binds them.
     public private(set) var oversizeRefusedCount = 0
 
+    /// Profiles custody refused because their `signed` is longer than its profile cap (``CustodyRefusal/profileOversize``,
+    /// ``CustodyLimits/maxProfileSignedBytes``), custody's part of `profileOversizeRefused`. A profile over the byte cap
+    /// too is counted in ``oversizeRefusedCount`` alone. Custody's refusal stops nothing but custody. Our own count too,
+    /// since the cap binds them.
+    public private(set) var profileOversizeRefusedCount = 0
+
     /// Takes a relayed frame into custody (`ForwardSync.onSeen`) if `authenticate` says so, and answers whether custody
     /// changed, which is what re-reads the advert's digest cue.
     ///
     /// Only custodial types are carried, never an id already held or tombstoned, nor a DM whose recipient's receipt
-    /// came first. The store applies the byte cap, the TTL and the quotas, and refuses a frame whose `signed` is over
-    /// the cap, one that is dead on arrival or dated too far ahead, or a group frame whose roster is not its own. A refusal
+    /// came first. The store applies the byte cap, the profile cap, the TTL and the quotas, and refuses a frame whose
+    /// `signed` is over the cap, a profile whose `signed` is over its own, one that is dead on arrival or dated too far
+    /// ahead, or a group frame whose roster is not its own. A refusal
     /// stops nothing but custody: the caller delivers and relays without reading the answer. Times are on the wall clock.
     ///
     /// "Changed" is not "held": a frame its own write evicted changed custody and is not held (``CustodyStoreResult``).
@@ -76,10 +83,10 @@ public struct CustodySync: Sendable {
         return noted(store.store(frame, origin: .own, now: now), for: frame)
     }
 
-    /// Counts and logs an oversize or a roster refusal (`ForwardRepository.store`'s, in Android's words), and answers whether
-    /// custody changed. No other refusal is counted here: the dead and the future-dated are the clock's, and a failed write
-    /// is the database's, which reports it. An oversize frame is counted as that alone, whatever its roster, as Android's
-    /// cap comes first. The line names the id, the type and the length, never the payload.
+    /// Counts and logs an oversize, a profile-oversize or a roster refusal (`ForwardRepository.store`'s, in Android's words),
+    /// and answers whether custody changed. No other refusal is counted here: the dead and the future-dated are the clock's,
+    /// and a failed write is the database's, which reports it. An oversize frame is counted as that alone, whatever its type
+    /// or roster, as Android's byte cap comes first. The line names the id, the type and the length, never the payload.
     private mutating func noted(_ result: CustodyStoreResult, for frame: CarriedFrame) -> Bool {
         let envelope = frame.envelope
         switch result.refusal {
@@ -89,6 +96,13 @@ public struct CustodySync: Sendable {
                 .debug,
                 "custody refused \(envelope.id.prefix(Self.idCharacters)) (\(envelope.type.rawValue)): "
                     + "\(frame.signed.count) signed bytes over the cap"
+            )
+        case .profileOversize:
+            profileOversizeRefusedCount += 1
+            log?.log(
+                .debug,
+                "custody refused \(envelope.id.prefix(Self.idCharacters)) (\(envelope.type.rawValue)): "
+                    + "\(frame.signed.count) signed bytes over the profile cap"
             )
         case .foreignRoster:
             groupRefusedCount += 1
@@ -107,7 +121,7 @@ public struct CustodySync: Sendable {
     }
 
     /// How much of a frame or node id the log line names (`ID_CHARS`): enough to find it in a dump.
-    private static let idCharacters = 8
+    static let idCharacters = 8
 
     /// The most frames one reply round serves (ADR 2026-10.f5zs). Android serves every frame a digest omits at once
     /// (`ForwardSync.kt:136-163` at knit-next `e63f15f4`), so an empty digest of 15 bytes bought the whole custody; the

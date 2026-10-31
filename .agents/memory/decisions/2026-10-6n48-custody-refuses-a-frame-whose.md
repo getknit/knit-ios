@@ -95,6 +95,7 @@ The worst case falls from about 500 MB to 1,000 × 60 KiB, about 60 MiB.
 - Still open: the replays read whole rows (paging them is knit-next #227 option 3, and so is `carriedBlobs()` and
   KnitControl's `custody` command), and a door cap on profile frames (knit-next #234, knit-ios #22), which will sit
   below this one.
+  (Amended 2026-10-30: custody's half of that cap is ADR 2026-10.r88m, 8,192 bytes, checked right after this one.)
 - **The trap:** a composer check looks like the place for this. No honest frame reaches the cap, and the rule is
   custody's admission, which every node applies to the same bytes. A composer limit would bind only this port's
   frames.

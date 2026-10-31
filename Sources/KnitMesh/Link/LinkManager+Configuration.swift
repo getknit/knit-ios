@@ -1,3 +1,5 @@
+public import KnitWire
+
 /// The link layer's tunables, apart from the manager so that its body stays the state machine itself.
 extension LinkManager {
     /// The link layer's tunables.
@@ -54,8 +56,9 @@ extension LinkManager {
         /// peer's HELLO carries ``Capabilities/blobHave``, and whether a file streaming in is reported at the window's
         /// cadence: Android's `BLE_FEED_WINDOW`. Off, files go at the pace and are reported every two seconds.
         public var feedWindow: Bool
-        /// The most of a peer's own AVATAR push to keep. Android's photos are 256-pixel JPEGs of a few tens of KiB and
-        /// it caps none but the 8 MiB file (ADR 2026-10.nh55), so this only stops a peer filling memory with a "photo".
+        /// The most of a peer's own AVATAR push to keep, and of an ATTACHMENT fetched only as a profile photo
+        /// (``acceptFiles(_:resumable:photoOnly:)``): ``FileIntake/maxAvatarBytes`` unless a test says otherwise. Both
+        /// platforms' photos are 256-pixel JPEGs of a few tens of KiB, so only a photo no honest build makes reaches it.
         public var maxAvatarFileBytes: Int
         /// The most bytes of partial files kept at once across every link, so six links each streaming 8 MiB cannot
         /// hold 48 MiB in a suspended app.
@@ -85,7 +88,7 @@ extension LinkManager {
             fileChunkBytes: Int = 16_384,
             filePaceBudgetBytesPerSecond: Int64 = 4096,
             feedWindow: Bool = true,
-            maxAvatarFileBytes: Int = 1_048_576,
+            maxAvatarFileBytes: Int = FileIntake.maxAvatarBytes,
             maxBufferedFileBytes: Int = 16_777_216,
             promotion: PromotionPolicy.Configuration = PromotionPolicy.Configuration(),
             backoff: ConnectBackoff.Configuration = ConnectBackoff.Configuration(),

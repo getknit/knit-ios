@@ -172,7 +172,10 @@ extension MeshEngine {
 
     /// The photo a sealed profile leaves its sender with, by the rule a cleartext one meets (`photoFrom`, and
     /// `resolveAvatarHash`, `InboundPipeline.kt:3992-4001`): the hash it advertises, and the photo shown, which follows it
-    /// once its bytes are held and otherwise stays. None clears both, and a hash that is not one leaves the shown photo.
+    /// once its bytes are held, no larger than the photo's ceiling (``isAdoptablePhoto(_:)``, ADR 2026-10.r88m), and
+    /// otherwise stays. None clears both, and a hash that is not one leaves the shown photo. Held bytes over the ceiling are
+    /// only left unshown here, inside the unit, where a release does nothing: ``followPresentation(_:of:)`` declines them
+    /// once it commits.
     private func photo(advertised text: String?, over existing: PeerRecord) -> (advertised: BlobHash?, shown: BlobHash?) {
         guard let text else {
             return (nil, nil)
@@ -180,18 +183,18 @@ extension MeshEngine {
         guard let hash = BlobHash(text) else {
             return (nil, existing.avatarHash)
         }
-        return (hash, stores.blobs.contains(hash) ? hash : existing.avatarHash)
+        return (hash, isAdoptablePhoto(hash) ? hash : existing.avatarHash)
     }
 
     /// After the commit, what a moved presentation earns, as a cleartext profile's does (``handleProfile(_:_:)``): the
-    /// peer is announced, a photo it advertises and we lack is asked of someone other than a linked sender, who pushes its
-    /// own, and the photo it replaced is let go.
+    /// peer is announced, a photo it advertises and does not show is declined when its held bytes are over the photo's
+    /// ceiling, and otherwise asked of someone other than a linked sender, who pushes its own, under that ceiling
+    /// (``followAdvertisedPhoto(_:of:)``), and the photo it replaced is let go.
     private func followPresentation(_ presentation: RatchetArrival.Presentation, of sender: NodeId) {
         events.append(.peerUpdated(sender))
         let after = presentation.after
-        if let advertised = after.advertisedAvatarHash, after.avatarHash != advertised, !transport.isLinked(sender) {
-            // A want of our own that read no row: it keeps a deadline a re-arm set (knit-next ADR 2026-10.2drc).
-            wantBlob(advertised, author: sender, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
+        if let advertised = after.advertisedAvatarHash, after.avatarHash != advertised {
+            followAdvertisedPhoto(advertised, of: sender)
         }
         if let replaced = presentation.before.avatarHash, replaced != after.avatarHash {
             releaseBlob(replaced)

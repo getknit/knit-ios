@@ -25,6 +25,10 @@ extension MeshEngine {
     /// the field streams only the rest, and one that does not sends the whole file, which lands as it always has. With
     /// nothing kept the offset is left out, so a plain ask is the bytes it always was.
     func blobRequest(_ hash: BlobHash, pull: Int, until: Int64?) -> WireEnvelope {
+        // A photo-only want never resumes past the photo's ceiling: such a prefix goes, and the ask is from byte 0.
+        if blobExchange.isPhotoOnly(hash), partials.length(hash) > FileIntake.maxAvatarBytes {
+            partials.drop(hash)
+        }
         let kept = partials.length(hash)
         let content = BlobRequestContent(hash: hash.string, offset: kept > 0 ? Int64(kept) : nil, pull: pull, until: until)
         return unsignedPointToPoint(.blobRequest, id: newFrameId(), payload: content.encoded)
@@ -133,6 +137,8 @@ extension MeshEngine {
         let latency = recorded.latency.map { " in \($0) ms" } ?? ""
         let items = recorded.touched.map(BlobExchange.label).joined(separator: ", ")
         log.log(.debug, "mesh blob answer ← \(frame.from)\(id)\(latency): \(items) load=\(answer.load ?? 0)")
+        // A photo-only want passes over a holder whose claimed size is over the photo's ceiling before asking it.
+        notePhotoClaims(recorded.touched, from: frame.from)
         let wall = clock.wallMilliseconds()
         let candidates = blobCandidates()
         var stepped = Set<BlobHash>()

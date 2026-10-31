@@ -14,7 +14,8 @@ public import KnitWire
 /// it: a digest reply sends a key ahead of a backlog its reader could not otherwise verify.
 ///
 /// Every key here is an unauthenticated sender id, so everything is bounded: 256 wanted ids and 256 relayed
-/// wants, oldest first, a 30-second cooldown per id, and 128 ids per request each way. What a neighbour is served,
+/// wants, oldest first, 1,024 cached profiles, the least recently used first, a 30-second cooldown per id, and 128 ids per
+/// request each way. What a neighbour is served,
 /// on request or when a key it waited for pins, draws on its byte budget (``KeyAnswerBudget``, ADR 2026-10.f5zs);
 /// a digest round's keys ahead (``serveKey(_:)``) are that round's to bound. This type is bookkeeping only: the
 /// engine builds, signs and sends the requests it asks for. Times are on the monotonic clock.
@@ -37,6 +38,9 @@ public struct KeyExchange: Sendable {
     public static let answerRefillBytesPerSecond = Int(KeyAnswerBudget.refillBytesPerSecond)
     /// The most neighbours whose answer budgets are remembered.
     public static let maxAnswerPeers = KeyAnswerBudget.maxPeers
+    /// The most signed profiles cached; past it the least recently used is dropped, and read back from the pin store when
+    /// next served. This port's own bound: Android's cache has none (`KeyExchange.kt:70` at knit-next `e63f15f4`).
+    public static let maxCachedProfiles = 1024
 
     /// What an inbound request asks of the engine.
     public struct Answer: Sendable, Equatable {
@@ -51,9 +55,10 @@ public struct KeyExchange: Sendable {
         public var crossed = 0
     }
 
-    /// Every pinned peer's verbatim signed profile, to serve on request: each one pinned since launch, and each one
-    /// read from the pin store since. Unbounded: each entry cost a self-certifying pin.
-    private var cache: [NodeId: WireEnvelope] = [:]
+    /// Pinned peers' verbatim signed profiles, to serve on request: those pinned or served most recently, at most
+    /// ``maxCachedProfiles``. A pin is self-certifying but costs a sender nothing more than a profile frame, so the cache is
+    /// bounded like everything else here; one dropped is read back from the pin store on its next miss (``serveKey(_:)``).
+    private var cache = ProfileCache(capacity: maxCachedProfiles)
     /// The pin store's copy of a pinned peer's signed profile, read on a cache miss only.
     private let storedProfile: @Sendable (NodeId) -> WireEnvelope?
     /// Wanted ids, oldest first, each with when it was last broadcast.
@@ -75,18 +80,21 @@ public struct KeyExchange: Sendable {
     /// The ids still wanted, oldest first.
     public var missingIds: [NodeId] { missing.map(\.id) }
 
-    /// The signed profiles cached.
+    /// The signed profiles cached, at most ``maxCachedProfiles``.
     public var cachedProfileCount: Int { cache.count }
 
-    /// The cached signed profile of `nodeId`, if pinned.
+    /// The cached signed profile of `nodeId`, if pinned and still cached. A read only: it leaves the cache's order as it is.
     public func cachedProfile(of nodeId: NodeId) -> WireEnvelope? {
-        cache[nodeId]
+        cache.peek(nodeId)
     }
 
     /// We dropped a frame from `nodeId` for want of its key. Remembers it, and answers whether to ask every
-    /// neighbour now: not for ourselves, not for a key we hold, and not again inside the cooldown.
+    /// neighbour now: not for ourselves, not for a key we hold, and not again inside the cooldown. "Held" is the cache, as
+    /// Android's `cache.containsKey`. The engine calls this only for a sender whose signed profile we lack: no key, or a
+    /// contact card's pin with no proof (``MeshEngine/requestKey(_:)``). Neither was ever in the cache, so one the cache
+    /// dropped never reaches it, as none did after a restart emptied the cache.
     public mutating func want(_ nodeId: NodeId, me: NodeId, now: Int64) -> Bool {
-        guard nodeId != me, cache[nodeId] == nil else {
+        guard nodeId != me, !cache.contains(nodeId) else {
             return false
         }
         if let index = missing.firstIndex(where: { $0.id == nodeId }) {
@@ -139,15 +147,16 @@ public struct KeyExchange: Sendable {
     }
 
     /// The key of `nodeId`, its signed profile in the point-to-point wrapper it is served in, if we hold one: the
-    /// cache, else the pin store, cached on the way out (`KeyExchange.serveKey` and `profileFor`).
+    /// cache, else the pin store, cached on the way out (`KeyExchange.serveKey` and `profileFor`). Either way it becomes
+    /// the most recently used, so the profiles asked for most stay cached.
     public mutating func serveKey(_ nodeId: NodeId) -> WireEnvelope? {
-        if let held = cache[nodeId] {
+        if let held = cache.use(nodeId) {
             return Self.served(held)
         }
         guard let kept = storedProfile(nodeId) else {
             return nil
         }
-        cache[nodeId] = kept
+        cache.set(kept, for: nodeId)
         return Self.served(kept)
     }
 
@@ -159,7 +168,7 @@ public struct KeyExchange: Sendable {
     public mutating func onProfilePinned(
         _ nodeId: NodeId, wire: WireEnvelope, now: Int64, crossed: (String, NodeId) -> Bool = { _, _ in false }
     ) -> Set<NodeId> {
-        cache[nodeId] = wire
+        cache.set(wire, for: nodeId)
         missing.removeAll { $0.id == nodeId }
         guard let index = wanters.firstIndex(where: { $0.id == nodeId }) else {
             return []

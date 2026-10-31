@@ -27,15 +27,18 @@ extension MeshEngine {
         }
     }
 
-    /// Expired and oversize custody (knit-next #227), the room's and the message requests' retention (`sweepLocalStorage`),
-    /// parked frames, stale key wants, aged-out ticks, reactions left with no message and stale kept prefixes
-    /// (`MeshManager.sweepExpired`), then the ratchet frames whose unit failed, opened again from the copies kept, and last
-    /// the blobs nothing names that are older than an echo's life (knit-ios #20), which weighs the echo budget anew.
+    /// Expired and oversize custody (knit-next #227), custodied profiles and kept proofs of key over the profile cap (ADR
+    /// 2026-10.r88m), the room's and the message requests' retention (`sweepLocalStorage`), parked frames, stale key wants,
+    /// aged-out ticks, reactions left with no message and stale kept prefixes (`MeshManager.sweepExpired`), then the
+    /// ratchet frames whose unit failed, opened again from the copies kept, and last the blobs nothing names that are older
+    /// than an echo's life (knit-ios #20), which weighs the echo budget anew.
     func sweep() {
         let now = clock.monotonicMilliseconds()
         if stores.custody.sweepExpired(now: clock.wallMilliseconds()) > 0 {
             noteCustodyChanged()
         }
+        // A proof of key a build without the profile cap kept; the pin stays (ADR 2026-10.r88m).
+        stores.peers.deleteProfileFrames(longerThan: stores.custody.limits.maxProfileSignedBytes)
         // Before the orphan reactions, which then take a trimmed message's, and before the blobs, which then take its photo
         // once nothing names it (knit-ios #21).
         sweepRetention()
@@ -51,6 +54,8 @@ extension MeshEngine {
         // The kept prefixes past their hour, and those whose blob came some other way (`MeshManager.kt:2777`). A store
         // error reads as not held, which keeps the prefix to its hour.
         partials.sweep(now: now) { stores.blobs.contains($0) }
+        // A face adopted before the photo's ceiling, over it, is cleared and let go (ADR 2026-10.r88m).
+        clearOversizePhotos()
         replayFailedRatchetOpens()
         sweepUnnamedBlobs(storedBefore: clock.wallMilliseconds() - BlobExchange.wantMilliseconds)
     }
@@ -96,7 +101,11 @@ extension MeshEngine {
                 // A photo has no deadline, unless a message's row names the same blob. A message request's row is no
                 // reason to lift or set one: its rows fold to none taken, which keeps the deadline the want had.
                 let reach = carried.contains(advertised) ? PullThroughGate.reach(rows[advertised] ?? []) : .own(until: nil, rederived: true)
-                wanted.append(BlobExchange.OwnWant(hash: advertised, author: peer.nodeId, reach: reach))
+                // A photo alone keeps the photo's ceiling; one a row this pass takes also names keeps the attachment's
+                // (ADR 2026-10.r88m). Only the rows taken: a message request's, or a room post outside the bound, is no
+                // row the collector names, so it would fetch an over-ceiling photo at 8 MiB only to let it go again.
+                let kind: BlobExchange.WantKind = rows[advertised] != nil ? .attachment : .photo
+                wanted.append(BlobExchange.OwnWant(hash: advertised, author: peer.nodeId, reach: reach, kind: kind))
             }
         }
         for (hash, named) in rows.sorted(by: { $0.key < $1.key }) where missing.contains(hash) {
@@ -121,10 +130,12 @@ extension MeshEngine {
         blobsTheRowsName().union(carriedBlobs())
     }
 
-    /// Every blob the rows name: our photo, each peer's photo, shown or advertised, every photo a message in an accepted
-    /// thread carries, a stranger's room photo only inside the room's bound (``rowsTaken(_:fetching:)``, knit-ios #21), and
-    /// a deleted message's photo while our custody carries its frame (ADR 2026-10.u7cq). A message request's photo is named
-    /// by none of them, so bytes an echo brought for it count toward the echo budget and go on the sweep.
+    /// Every blob the rows name: our photo, each peer's photo, shown or advertised, unless it is refused as a photo this
+    /// session or its held bytes are over the photo's ceiling (``peerPhotoNamesBlob(_:)``, ADR 2026-10.r88m), every photo a
+    /// message in an accepted thread carries, a stranger's room photo only inside the room's bound
+    /// (``rowsTaken(_:fetching:)``, knit-ios #21), and a deleted message's photo while our custody carries its frame (ADR
+    /// 2026-10.u7cq). A message request's photo is named by none of them, so bytes an echo brought for it count toward the
+    /// echo budget and go on the sweep.
     ///
     /// Every read here is the caller's, made anew on each call: a sweep reads it inside its store unit, where a failed
     /// read fails the unit and removes nothing, since outside one it would read as no thread accepted.
@@ -137,11 +148,8 @@ extension MeshEngine {
             named.insert(own)
         }
         for peer in stores.peers.allPeers() {
-            if let shown = peer.avatarHash {
-                named.insert(shown)
-            }
-            if let advertised = peer.advertisedAvatarHash {
-                named.insert(advertised)
+            for photo in [peer.avatarHash, peer.advertisedAvatarHash].compactMap(\.self) where peerPhotoNamesBlob(photo) {
+                named.insert(photo)
             }
         }
         return named

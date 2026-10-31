@@ -83,7 +83,7 @@ import Testing
         var intake = FileIntake()
         _ = intake.header(header()) { _, _ in 4 }
         #expect(intake.chunk([1, 2, 3, 4]) == nil)
-        #expect(intake.chunk([5]) == .abandoned(FileHeader(kind: .attachment, key: key, mime: "image/jpeg")))
+        #expect(intake.chunk([5]) == .overLimit(FileHeader(kind: .attachment, key: key, mime: "image/jpeg")), "its owner's limit bound")
         #expect(intake.arriving == nil)
         #expect(intake.chunk([6]) == nil)
         #expect(intake.reading == FileIntake.Reading(key: try #require(BlobHash(key)), bytes: 6, total: nil), "read on, not kept")
@@ -95,7 +95,7 @@ import Testing
         var intake = FileIntake()
         _ = intake.header(header(), limit: keepAll)
         #expect(intake.chunk([UInt8](repeating: 0, count: FileIntake.maxFileBytes)) == nil)
-        #expect(intake.chunk([0]) == .abandoned(FileHeader(kind: .attachment, key: key, mime: "image/jpeg")))
+        #expect(intake.chunk([0]) == .overLimit(FileHeader(kind: .attachment, key: key, mime: "image/jpeg")))
         #expect(intake.reading == nil, "Android aborts it there, and reports nothing more")
         #expect(intake.isStreaming, "the link is still held to its END")
         #expect(FileIntake.maxFileBytes == 8_454_144)

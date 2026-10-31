@@ -155,7 +155,8 @@ internal enum ControlLines {
     /// blind asks and pulls they led to. Then the progress reports and withdrawals sent and taken (knit-next ADR
     /// 2026-10.nsr7), the echoes declined and pulls withheld (knit-next ADR 2026-10.2drc), and the spliced files that failed
     /// their hash (`splicesRefused`, knit-ios #2). Last, the echoes' fetches held back and files refused for the echo budget,
-    /// and the serves not queued behind a full link (`echoFetchesHeld`, `echoFilesRefused`, `servesRefused`, knit-ios #20).
+    /// and the serves not queued behind a full link (`echoFetchesHeld`, `echoFilesRefused`, `servesRefused`, knit-ios #20),
+    /// and the holders passed over for a profile photo past its ceiling (`photosOverCeiling`, ADR 2026-10.r88m).
     static func describe(_ blobs: BlobCounts) -> JSONValue {
         [
             "queriesSent": .int(Int64(blobs.queriesSent)),
@@ -179,6 +180,7 @@ internal enum ControlLines {
             "echoFetchesHeld": .int(Int64(blobs.echoFetchesHeld)),
             "echoFilesRefused": .int(Int64(blobs.echoFilesRefused)),
             "servesRefused": .int(Int64(blobs.servesRefused)),
+            "photosOverCeiling": .int(Int64(blobs.photosOverCeiling)),
         ]
     }
 

@@ -183,7 +183,9 @@ extension MeshEngine {
     /// The photo a newer profile leaves a peer with (`storeProfileRow` and `resolveAvatarHash`,
     /// `InboundPipeline.kt:3186-3207` and `:3302-3326`): the hash it advertises, and the photo shown, which follows that
     /// hash once its bytes are held and otherwise stays as it was. A profile with no photo clears both. A hash that is
-    /// not one can never be fetched, so the photo shown stays, as on Android, where its bytes are never local.
+    /// not one can never be fetched, so the photo shown stays, as on Android, where its bytes are never local. Held bytes
+    /// over the photo's ceiling are never adopted (``isAdoptablePhoto(_:)``, ADR 2026-10.r88m): the photo shown stays, and
+    /// ``handleProfile(_:_:)`` declines them.
     func photoFrom(_ content: ProfileContent, existing: PeerRecord?) -> (advertised: BlobHash?, shown: BlobHash?) {
         guard let text = content.avatarHash else {
             return (nil, nil)
@@ -191,7 +193,20 @@ extension MeshEngine {
         guard let hash = BlobHash(text) else {
             return (nil, existing?.avatarHash)
         }
-        return (hash, stores.blobs.contains(hash) ? hash : existing?.avatarHash)
+        return (hash, isAdoptablePhoto(hash) ? hash : existing?.avatarHash)
+    }
+
+    /// A photo `sender`'s newer profile advertises and does not show yet, cleartext or sealed. Held but over the photo's
+    /// ceiling, it is refused and let go (ADR 2026-10.r88m), so the want asks nobody for it. Otherwise it is wanted, unless
+    /// `sender` is linked and pushes it: a want of our own that read no row, keeping a deadline a re-arm set (knit-next ADR
+    /// 2026-10.2drc), and of a photo alone, so kept to the photo's ceiling. Outside a store unit only, as the release is.
+    func followAdvertisedPhoto(_ advertised: BlobHash, of sender: NodeId) {
+        if isOverPhotoCeiling(advertised) {
+            declinePhoto(advertised)
+        }
+        if !transport.isLinked(sender) {
+            wantBlob(advertised, author: sender, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
+        }
     }
 
     /// Marks a pinned peer verified, or not, once the user has compared safety numbers (`PeerRepository.setVerified`).
@@ -263,9 +278,8 @@ extension MeshEngine {
         // its own photo right behind its profile, so only someone else's is asked for now; a push that never came is asked
         // for at the next re-offer.
         if !stalePresentation {
-            if let advertised = record.advertisedAvatarHash, record.avatarHash != advertised, !transport.isLinked(sender) {
-                // A want of our own that read no row: it keeps a deadline a re-arm set (knit-next ADR 2026-10.2drc).
-                wantBlob(advertised, author: sender, via: nil, asker: nil, reach: .own(until: nil, rederived: false))
+            if let advertised = record.advertisedAvatarHash, record.avatarHash != advertised {
+                followAdvertisedPhoto(advertised, of: sender)
             }
             if let replaced = existing?.avatarHash, replaced != record.avatarHash {
                 releaseBlob(replaced)
