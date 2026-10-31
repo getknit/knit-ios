@@ -35,4 +35,15 @@ import Testing
         #expect(PeerCommand.usage.contains("[--flood BYTES_PER_SECOND]"))
         #expect(PeerCommand.usage.contains("--flood is for trials too"))
     }
+
+    /// `--lying`: the five lying commands take only with it, and every lie starts unset (`door-cap-lying-peers`).
+    @Test func thePeerLiesOnlyWhenATrialAsks() throws {
+        #expect(try run([]).lying == false, "the lying commands are refused unless a trial asks")
+        #expect(try run(["--lying"]).lying)
+        #expect(try run(["run", "--lying", "--flood", "1"]).lying, "beside the other trial switches")
+        #expect(throws: UsageError.missingValue("--flood")) { try run(["--flood", "--lying"]) }
+        #expect(throws: UsageError.repeated("--lying")) { try run(["--lying", "--lying"]) }
+        #expect(PeerCommand.usage.contains("[--lying]"))
+        #expect(PeerCommand.usage.contains("--lying is for trials too"))
+    }
 }

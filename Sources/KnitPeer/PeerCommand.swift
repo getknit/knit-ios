@@ -8,7 +8,7 @@ public import KnitWire
 ///           [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
 ///           [--log debug|info|warning|off] [--rssi-floor DBM] [--never-sight NODE_ID[,NODE_ID…]]
 ///           [--no-gatt-payload] [--gatt-reads | --no-gatt-reads] [--feed window|pace] [--ratchet | --no-ratchet]
-///           [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND]
+///           [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
 /// knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
 ///                [--advertise android|ios] [--instance NAME | --state DIR]
@@ -42,7 +42,7 @@ public enum PeerCommand: Equatable, Sendable {
                 [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
                 [--log debug|info|warning|off] [--rssi-floor DBM] [--receive-mtu BYTES] [--send-mtu BYTES]
                 [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload] [--gatt-reads | --no-gatt-reads]
-                [--feed window|pace] [--ratchet | --no-ratchet] [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND]
+                [--feed window|pace] [--ratchet | --no-ratchet] [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
             knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
@@ -58,6 +58,7 @@ public enum PeerCommand: Equatable, Sendable {
         --stop-reading-after is for trials: that many seconds after it starts, the peer stops reading its channels.
         --flood is for trials too: while linked, the peer writes that many bytes a second of undecodable frames to
         every link, as a neighbour flooding it would, holding back while its own queue to that link is full.
+        --lying is for trials too: only with it do lie-blobhas, junk, advertise-photo, pad-profile and ask-blob take.
         `stranger` is a test stimulus that never links: it advertises the 0xFE30
         UUID as a device that is not Knit's, registering its advert afresh every --rotate seconds.
         """
@@ -72,7 +73,7 @@ public enum PeerCommand: Equatable, Sendable {
         }
         var flags = try Flags(
             parsing: rest,
-            switches: ["--shared-adapter", "--no-gatt-payload", "--gatt-reads", "--no-gatt-reads", "--ratchet", "--no-ratchet"])
+            switches: ["--shared-adapter", "--no-gatt-payload", "--gatt-reads", "--no-gatt-reads", "--ratchet", "--no-ratchet", "--lying"])
         switch verb {
         case nil, "run":
             let options = try RunOptions(flags: &flags, environment: environment)
@@ -161,6 +162,8 @@ public struct RunOptions: Equatable, Sendable {
     /// Bytes a second of undecodable FRAME records written to every live link, a trial's switch (`--flood`); `nil`
     /// writes none (ADR 2026-10.f5zs, rule 6).
     public var floodBytesPerSecond: Int?
+    /// Whether the lying commands take, a trial's switch (`--lying`, `door-cap-lying-peers`); every lie starts unset.
+    public var lying = false
     static let profiles = ["android", "ios"]
     static let feeds = ["window", "pace"]
     static let logLevels = ["debug", "info", "warning", "off"]
@@ -205,6 +208,7 @@ public struct RunOptions: Equatable, Sendable {
         ratchet = !ratchetOff
         stopReadingAfterSeconds = try Self.stopReadingAfter(flags.take("--stop-reading-after"))
         floodBytesPerSecond = try Self.flood(flags.take("--flood"))
+        lying = flags.take(switch: "--lying")
     }
 
     /// Options as given, for tests and callers that build them.

@@ -146,19 +146,40 @@ import Foundation
                 fail("cannot load the prekeys in \(options.stateDirectory): \(error)")
             }
             // The profile's file joins the memory stores' unit, which puts it back with them when a unit is undone.
-            let stores = MeshStores.inMemory(ownProfileStore: state.profileStore())
+            let stores: MeshStores
+            let nodeRadio: any Radio
+            let lying: PeerLyingParts?
+            if options.lying {
+                // Outermost, over the host's radio and any flood; the profile's store wrapped before the memory stores, so
+                // their unit checkpoints it through the wrapper (`PeerLyingParts.wrapping`).
+                let wrapped = PeerLyingParts.wrapping(
+                    radio,
+                    profileStore: state.profileStore(),
+                    localId: identity.keys.nodeId,
+                    stateDirectory: state.directory,
+                    random: SystemRandomNumberGenerator(),
+                    log: log
+                )
+                (lying, stores, nodeRadio) = (wrapped.parts, wrapped.stores, wrapped.parts.radio)
+                log.log(.info, "lying: the lying commands take, a trial's switch (--lying); every lie starts unset")
+            } else {
+                (lying, stores, nodeRadio) = (nil, MeshStores.inMemory(ownProfileStore: state.profileStore()), radio)
+            }
             return PeerNode(
                 identity: identity.keys,
                 prekeys: prekeys,
                 ratchet: options.ratchet,
                 stores: stores,
-                radio: radio,
+                radio: nodeRadio,
                 radioProfile: host.profile,
                 clock: SystemClock(),
                 random: SystemRandomNumberGenerator(),
                 linkConfiguration: links,
                 log: log,
                 avatarPath: state.avatarPath,
+                // Every start, with --lying or not, publishes an honest profile over a lie the last run left set.
+                stateDirectory: state.directory,
+                lying: lying,
                 output: Lines.output.write
             )
         }

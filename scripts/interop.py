@@ -361,8 +361,11 @@ class Peer(Node):
         gatt_payload: bool = True,
         gatt_reads: bool | None = None,
         ratchet: bool = True,
+        lying: bool = False,
     ) -> None:
         super().__init__()
+        # knit-peer's lying switches (`run --lying`, linux-peer.md "Lying on purpose"): off unless a door-cap trial asks.
+        self.lying = lying
         # knit-peer's forward-secrecy ratchet (ADR 2026-10.5sk9): on by default, as in the app, and passed as `--ratchet`;
         # False passes `--no-ratchet`, a peer from before the ratchet.
         self.ratchet = ratchet
@@ -394,6 +397,8 @@ class Peer(Node):
         if self.gatt_reads is not None:
             arguments.append("--gatt-reads" if self.gatt_reads else "--no-gatt-reads")
         arguments.append("--ratchet" if self.ratchet else "--no-ratchet")
+        if self.lying:
+            arguments.append("--lying")
         if ON_MAC:
             # The adapter and the MTU knobs are BlueZ's; CoreBluetooth has one radio and picks its own MTU.
             command = on_mac("run", arguments)

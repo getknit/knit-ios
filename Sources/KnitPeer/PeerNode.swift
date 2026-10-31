@@ -15,11 +15,17 @@ public actor PeerNode {
     private let control: MeshControl
     private let output: @Sendable (String) -> Void
     private let avatarPath: String?
+    private let stateDirectory: String?
+    private let lies: PeerLies?
+    private let log: any KnitLog
     private var forwarding: Task<Void, Never>?
 
     /// A node for `identity` on `radio`, with the ratchet prekeys `prekeys` (``PeerState/loadPrekeys(for:)``), or none,
     /// and the ratchet's switch at `ratchet` (on unless `--no-ratchet`), which publishes the newest prekey only when
-    /// `prekeys` keeps one. Nothing runs until ``start(name:)``.
+    /// `prekeys` keeps one. `stateDirectory`, when given, is where a profile lie left set by the last run is found at the
+    /// start (``ProfileLies/recoverAtStart(stateDirectory:mesh:stores:log:)``), `--lying` or not. `lying` is what `--lying`
+    /// wraps, which `stores` and `radio` must already be built over (``PeerLyingParts/wrapping(_:profileStore:localId:stateDirectory:random:log:)``);
+    /// without it the five lying commands are refused. Nothing runs until ``start(name:)``.
     @preconcurrency
     public init(
         identity: IdentityKeys,
@@ -33,12 +39,16 @@ public actor PeerNode {
         linkConfiguration: LinkManager.Configuration = LinkManager.Configuration(),
         log: any KnitLog,
         avatarPath: String? = nil,
+        stateDirectory: String? = nil,
+        lying: PeerLyingParts? = nil,
         output: @escaping @Sendable (String) -> Void
     ) {
         nodeId = identity.nodeId
         self.stores = stores
         self.output = output
         self.avatarPath = avatarPath
+        self.stateDirectory = stateDirectory
+        self.log = log
         mesh = Mesh(
             identity: identity,
             prekeys: prekeys,
@@ -60,6 +70,19 @@ public actor PeerNode {
             details: ["radioProfile": .string(radioProfile)],
             keepAvatar: avatarPath.map { path in { @Sendable jpeg in Self.keep(jpeg, at: path) } }
         )
+        lies = lying.map { [mesh] parts in
+            let profile = ProfileLies(
+                mesh: mesh,
+                stores: stores,
+                profile: parts.profile,
+                blobs: parts.blobs,
+                identity: identity,
+                clock: clock,
+                stateDirectory: parts.stateDirectory,
+                log: log
+            )
+            return PeerLies(parts: parts, profile: profile)
+        }
     }
 
     /// Writes our photo to `path`, or removes it once cleared.
@@ -99,11 +122,24 @@ public actor PeerNode {
         }
         restoreAvatar()
         await mesh.start()
+        await recoverFromLies()
         let own = stores.ownProfile.load()
         if let name, name != own.name {
             await mesh.updateProfile(name: name, status: own.status, openToChat: own.openToChat)
         }
         output(control.ready)
+    }
+
+    /// Publishes an honest profile over a lie the last run left set, if it did: before `ready`, `--lying` or not.
+    private func recoverFromLies() async {
+        guard let stateDirectory else {
+            return
+        }
+        do {
+            try await ProfileLies.recoverAtStart(stateDirectory: stateDirectory, mesh: mesh, stores: stores, log: log)
+        } catch {
+            log.log(.warning, "lying: no honest profile published over the last run's lie: \(error)")
+        }
     }
 
     /// Stops the mesh and the event reports.
@@ -113,14 +149,47 @@ public actor PeerNode {
         forwarding = nil
     }
 
-    /// Answers one control line, and whether to keep reading: `false` after `quit`, which stops the node first.
+    /// Answers one control line, and whether to keep reading: `false` after `quit`, which stops the node first. The lying
+    /// commands are answered here, before ``MeshControl``, and `status` gains `lying`, `null` without `--lying`.
     @discardableResult
     public func handle(_ line: String) async -> Bool {
+        let head = PeerLies.Head.parse(line)
+        if let head, PeerLies.names.contains(head.cmd) {
+            output(await lyingReply(to: line, head: head))
+            return true
+        }
         let reply = await control.handle(line)
         if reply.quits {
             await stop()
         }
-        output(reply.line)
+        var text = reply.line
+        if head?.cmd == "status", text.hasSuffix("}") {
+            let lying = await lies?.status() ?? .null
+            text = String(text.dropLast()) + #","lying":"# + lying.line + "}"
+        }
+        output(text)
         return !reply.quits
+    }
+
+    private func lyingReply(to line: String, head: PeerLies.Head) async -> String {
+        var reply: [String: JSONValue]
+        if let lies, let request = PeerLies.Request.parse(line) {
+            switch await lies.answer(request) {
+            case .success(let fields):
+                reply = fields
+                reply["ok"] = true
+            case .failure(let refusal):
+                reply = ["ok": false, "error": .string(refusal.message)]
+            }
+        } else if lies == nil {
+            reply = ["ok": false, "error": .string(PeerLies.refusal)]
+        } else {
+            reply = ["ok": false, "error": .string("not a valid \(head.cmd) command")]
+        }
+        reply["reply"] = .string(head.cmd)
+        if let tag = head.tag {
+            reply["tag"] = .string(tag)
+        }
+        return JSONValue.object(reply).line
     }
 }

@@ -143,6 +143,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | `knit-peer run … --rssi-floor -100 --receive-mtu 247 --send-mtu 8192` | development knobs: a promotion floor below Android's −90 dBm, the L2CAP receive MTU (65535 by default), and the largest SDU written (247 by default, never above what the peer offers or 8192) |
 | `knit-peer run … --feed window\|pace` | the file feed's A/B switch (ADR 2026-10.xwjc): `window`, the default, clocks a file to a peer that reports by its reports and reports a file coming in at the window's cadence; `pace` feeds at the 4 KiB/s budget and reports every 2 s, as Android's `…debug.LINKTUNE --es feed pace` does |
 | `knit-peer run … --ratchet\|--no-ratchet` | the forward-secrecy ratchet's switch (ADR 2026-10.5sk9, ADR 2026-10.b4yk), on by default since the flip: the peer keeps its prekeys beside its identity, publishes the newest with the ratchet's bits (`0x15F`) in its profile, and seals and opens DMs and the group form with the ratchet. `--no-ratchet` makes it a v1 peer: its profile is `0xF` with no prekey, though its HELLO and advert still carry `0x15F`. `--ratchet` names the default; the two together are refused. `interop.py`'s `Peer(ratchet=False)` passes `--no-ratchet` |
+| `knit-peer run … --lying` | the door-cap trial's lying switches, off unless given: five control commands that lie about a profile photo and our profile ("Lying on purpose") |
 | `knit-peer run … --never-sight NODE_ID[,NODE_ID…] --no-gatt-payload` | test switches, BlueZ only: never report those nodes as sighted, so the peer never dials them and admits their dials unsighted; and, in the `ios` profile, serve the doorbell without the payload characteristic, so a phone that reads payloads (A3) files the peer as a stranger and never sights it |
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing, and links a node that advertises only the UUID just long enough to read its payload; `--advertise` also shows the advert |
 | `knit-peer stranger [--payload none\|forged] [--rotate 20] [--seconds 1800]` | a test stimulus for knit-next #154, BlueZ only (knit-ios #3): advertises the `0xFE30` UUID as a device that is not Knit's, and registers the advert afresh every `--rotate` seconds. With LE privacy on its adapter it advertises from a resolvable private address, which changes on the controller's RPA timeout; a registration alone does not change it on the dongles ("What the stranger trial showed"). `none` serves the doorbell alone, so a reader files a stranger. `forged` serves a valid payload naming `zzzzzzzzzzzzzzzzzzzzzzzzzy`, the highest node id, which no phone dials. It hangs up on any dialer before a HELLO, so it never links |
@@ -346,6 +347,50 @@ Its posts carry knit-next's audit keys (`soak …` and `burst …`), so that rep
 can purge them from the fleet afterwards; running it drives every phone. `status` and `report` read a run's
 directory while it runs, and `report` checks it against item 11: crashes, why each link ended, custody, the
 footprint, memory, and tick and DM delivery by phase.
+
+## Lying on purpose
+
+`knit-peer run --lying` turns knit-peer into a neighbour that lies about a profile photo and about its own profile, so
+the photo ceiling and the profile door of ADR 2026-10.r88m can be tried on air (the `door-cap-lying-peers` order).
+Without the flag nothing is wrapped and the peer is the honest one. With it, five control commands set the lies, each
+undone the same way, and nothing lies until one is set.
+
+**None of it is in a Knit app build.** The lies live in the `KnitPeer` module, which only `knit-peer` and
+`KnitPeerTests` depend on, and the app's debug bridge speaks `KnitControl`, which names none of the commands.
+`KnitPeerIsolationTests` checks both, and that the `Knit` product's target closure never reaches `KnitPeer`.
+
+| Command | Set | Clear | What goes out |
+| --- | --- | --- | --- |
+| `lie-blobhas` | `{"hash":H,"size":N}` | `{"hash":H,"clear":true}` | each `blobhas` answer naming H claims `have` at N bytes, held or not (a `sending` answer keeps its state and ETA); hashes nobody asked about are never added |
+| `junk` | `{"hash":H,"bytes":N,"declare":D}` | `{"hash":H,"clear":true}` | H reads as held, N bytes of junk fixed by the hash and offset, so the engine's own feed streams them; H's ATTACHMENT header declares D bytes, or no size when `declare` is left out |
+| `advertise-photo` | `{"hash":H}` | `{"clear":true}` | an ordinary profile edit naming H as our photo, cleartext and sealed; H is withheld from our own reads, so a copy we hold is never pushed or served |
+| `pad-profile` | `{"signedBytes":N}` | `{"clear":true}` | our profile signed once with its status padded to exactly N bytes of `signed`, a fresh stamp and version, written on every link once our HELLO and theirs have crossed, and on each new link while set |
+| `ask-blob` | `{"hash":H,"peer":P}` | (once) | one plain unsigned `blobreq` for H on P's link, shaped as the engine's own, which our engine never learns of |
+
+- **Replies** carry `ok` and the whole `lying` state; `pad-profile` adds the forged `id` and how many links it was
+  `written` on, and `ask-blob` says whether the ask was `sent` (queued for P's link). Without `--lying` each answers
+  `{"ok":false,"error":"lying switches need knit-peer run --lying"}`.
+- **`status.lying`** is `null` without the flag, and otherwise the switches and their counts:
+  `{advertisedPhoto, blobhas:{H:N}, junk:{H:{bytes,declare}}, paddedProfile:{id,signedBytes}, counts:{blobhasRewritten,
+  junkHeadersRewritten, junkBytesServed, advertisedPhotoPushed, forgedProfilesWritten:{node:n}, blobAsksSent:{node:n}}}`.
+  `blobAsksSent` is the oracle for an ask that went out; `advertisedPhotoPushed` should stay 0.
+- **Every lie logs** at `.info` with `lying:` in front, when set, cleared and each time it fires.
+- **A profile lie ends at the next start at the latest.** While `advertise-photo` or `pad-profile` is set, a
+  `lying-profile` marker sits in the state directory. A start that finds it, with `--lying` or without, publishes an
+  honest edit at a version and stamp above the lie before `ready`, then removes the marker. A forge is refused unless
+  our version is behind the clock, and clearing one always edits, so no receiver is left on a forged profile.
+- **What the liar does to itself:** with `junk` set, its own sweep reads the junk size, clears that photo from the
+  owner's row on the liar and lets the real copy go for the session. A forge that comes back by relay lands in the
+  liar's custody, and an echoed 8,193-byte forge moves the liar's own `profileOversizeRefused`. Read counters on the
+  receiver only.
+
+`scripts/door_cap.py` runs the order's five cases against one receiver: `--device iphone --other <adb serial>`, or the
+other way round. Peer A on dongle A lies, peer B on dongle B is the photo's honest owner, and the iPhone's `deny-link`
+keeps the other phone off the receiver. Each case starts B on a fresh photo, so no earlier mark applies, and they run
+in the order 1, 5, 3, 4, 2: case 5 needs A passed over, case 3 restarts A so it never held the photo, and case 2's junk
+leaves A declining that photo. Each prints `PASS` or `FAIL` with its evidence, and the run keeps its logs and
+`results.json` under `.build/door-cap/<start>/`. It needs the go-ahead for both phones and both dongles, and every
+other Knit phone out of range.
 
 ## What P4 found
 
