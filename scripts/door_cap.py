@@ -103,7 +103,7 @@ class IPhoneReceiver(Receiver):
 
     def peer(self, node: str) -> dict | None:
         for row in self.ios.command(cmd="peers", timeout=30).get("peers", []):
-            if row.get("nodeId") == node:
+            if row.get("peer") == node:
                 return {key: row.get(key) for key in ("avatarHash", "advertisedAvatarHash", "status", "name")}
         return {}
 
@@ -156,7 +156,7 @@ class Fence:
         self.peer = peer
         self.name = name
         self.allowed: set[str] = set()
-        self.refused: set[str] = set()
+        self.refused: set[str] = set(peer.refuse)
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         threading.Thread(target=self._keep, daemon=True).start()
@@ -204,11 +204,14 @@ class Trial:
         self.receiver: Receiver = (
             IPhoneReceiver(self.ios, self.out) if arguments.device == "iphone" else AndroidReceiver(self.android, self.out)
         )
+        # Both phones are refused from each peer's `ready` line, before either side's dwell can end, and a step lets the
+        # receiver in only when it means to: a fence's first sweep, three seconds in, came too late (2026-10-31).
+        phones = {self.ios.node_id, self.android_id}
         self.a = interop.Peer(
-            "android", "door-cap A", set(), "debug", None, instance="doorcap-a", log_path=self.out / "peer-a.log", lying=True
+            "android", "door-cap A", phones, "debug", None, instance="doorcap-a", log_path=self.out / "peer-a.log", lying=True
         )
         self.b = interop.Peer(
-            "android", "door-cap B", set(), "debug", None, instance="doorcap-b", adapter=interop.hci0(), log_path=self.out / "peer-b.log"
+            "android", "door-cap B", phones, "debug", None, instance="doorcap-b", adapter=interop.hci0(), log_path=self.out / "peer-b.log"
         )
         self.fence_a: Fence | None = None
         self.fence_b: Fence | None = None
@@ -221,6 +224,9 @@ class Trial:
         self.ios.command(cmd="deny-link", peer=self.android_id)
         self.start_a()
         self.b.start()
+        # A runs on the photo-less profile a liar needs: a photo of its own, kept in its state from an earlier trial,
+        # would be pushed to the receiver at every link-up and muddy the photo counters.
+        say("A's own photo cleared", reply=self.a.command(cmd="avatar", clear=True, timeout=30))
         WATCHED.update({self.a.node_id, self.b.node_id})
         self.fence_b = Fence(self.b, "b")
         say("set up", receiver=self.receiver.label, receiverId=self.receiver.node_id, a=self.a.node_id, b=self.b.node_id, out=str(self.out))
@@ -278,7 +284,7 @@ class Trial:
     def a_holds_bs_photo(self, photo: str, timeout: float = 300) -> bool:
         def holds() -> bool | None:
             for row in self.a.command(cmd="peers").get("peers", []):
-                if row.get("nodeId") == self.b.node_id and row.get("avatarHash") == photo:
+                if row.get("peer") == self.b.node_id and row.get("avatarHash") == photo:
                     return True
             return None
 
