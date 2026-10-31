@@ -300,8 +300,10 @@ past the ceiling under a header that declared no size was cut on a chunk and kep
 bytes was refused at the door with the link kept, and one of 8,192 pinned with its status cut to 100 characters. A
 passed-over holder's own `blobreq` left the ceiling in place. A peer advertising someone else's photo was passed over on
 the iPhone; on Android it is never asked, since Android leaves a linked author's photo to its push
-(`InboundPipeline.kt:4086-4096`). Two counts differ from Android's and are fixed apart: this port moves
+(`InboundPipeline.kt:4086-4096`). Two counts differed from Android's at `c8e9f60`: this port moved
 `photosOverCeiling` for each signal from one holder, a size claim and then a stream's header, where Android counts the
-holder once; and it counts an AVATAR push cut at its header. A receiver whose first frames to a new neighbour wait
+holder once; and it passed over and counted the author of an AVATAR push cut at its header. `78a6a72` and `010c2d8`
+fixed both, and a second trial on `010c2d8` showed it on the iPhone: the cut push marked nobody and counted nothing, and
+a size claim followed by a crossing stream's header counted its holder once. A receiver whose first frames to a new neighbour wait
 behind its link-up backlog asks it blind after the query wait, so that ask can cross a lie on air. A real holder then
 serves the honest bytes, which the trial avoids by having the liar hold junk.
