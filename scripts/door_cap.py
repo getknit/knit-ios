@@ -334,6 +334,9 @@ class Trial:
         short = photo[:12]
         return {
             "queriesAnswered": sum(1 for line in lines if line.startswith("mesh blob has →") and receiver in line),
+            # Queries naming the photo: an answer lists a held hash by its first 8 characters, as junk and the real photo
+            # both are; one A does not hold is answered without it, and the lie's own line counts that one.
+            "queriesForPhoto": sum(1 for line in lines if line.startswith("mesh blob has →") and receiver in line and photo[:8] in line),
             "asksForPhoto": [line for line in lines if line.startswith("mesh blobreq") and short in line and receiver in line],
             "lies": [line for line in lines if line.startswith("lying:") and (short in line or photo[:8] in line)],
         }
@@ -440,18 +443,27 @@ class Trial:
         photo, before = self.stage_liar("case 1")
         mark = self.a.log_mark()
         passed_over = self.wait_counter(before, "photosOverCeiling", 300)
+        # "Never asked again" counts from the pass-over on: an ask that crossed the lie on air, sent before its answer
+        # landed (a blind ask after the receiver's query wait), is evidence of the race, not of a re-ask (2026-10-31).
+        after_mark = self.a.log_mark()
         rewritten = self.lying().get("counts", {}).get("blobhasRewritten")
         time.sleep(REWANT_SECONDS)
         after_rewants = self.receiver.counters()
         rewritten_after = self.lying().get("counts", {}).get("blobhasRewritten")
         a_saw = self.asks_seen(self.a, mark, photo)
+        a_after = self.asks_seen(self.a, after_mark, photo)
         signal = self.pass_over_signal(a_saw)
         b = self.finish_with_b(photo)
         after = self.receiver.counters()
         a_links = self.fence_a.links() if self.fence_a else set()
         self.a.command(cmd="junk", hash=photo, clear=True)
         once = (passed_over["photosOverCeiling"] or 0) - (before["photosOverCeiling"] or 0) == 1
-        quiet = rewritten == rewritten_after and not a_saw["asksForPhoto"] and after_rewants["photosOverCeiling"] == passed_over["photosOverCeiling"]
+        quiet = (
+            rewritten == rewritten_after
+            and not a_after["asksForPhoto"]
+            and not a_after["queriesForPhoto"]
+            and after_rewants["photosOverCeiling"] == passed_over["photosOverCeiling"]
+        )
         shown = b["bLinked"] and (b["bFace"] is None or (b["bFace"] or {}).get("avatarHash") == photo)
         held = self.receiver.node_id in a_links
         self.record(
@@ -465,6 +477,7 @@ class Trial:
             passedOverOnce=once,
             passOver=signal,
             neverAskedAgain=quiet,
+            aSawAfterPassOver=a_after,
             fromB=shown,
             linkToAHeld=held,
             aSaw=a_saw,
@@ -523,8 +536,10 @@ class Trial:
         if not self.link(self.fence_a, self.receiver.node_id, self.receiver.link_seconds):
             raise RuntimeError("A never linked the receiver")
         passed_over = self.wait_counter(before, "photosOverCeiling", 300)
+        after_mark = self.a.log_mark()
         time.sleep(REWANT_SECONDS)
         a_saw = self.asks_seen(self.a, mark, photo)
+        a_after = self.asks_seen(self.a, after_mark, photo)
         b = self.finish_with_b(photo)
         a_row = self.receiver.peer(self.a.node_id)
         lies = self.lying()
@@ -536,13 +551,14 @@ class Trial:
         shown = b["bLinked"] and (b["bFace"] is None or (b["bFace"] or {}).get("avatarHash") == photo)
         self.record(
             "3 fake advertiser",
-            once and not a_saw["asksForPhoto"] and shown and not pushed,
+            once and not a_after["asksForPhoto"] and shown and not pushed,
             photo=photo,
             before=before,
             afterPassOver=passed_over,
             after=after,
             passedOverOnce=once,
             advertisedPhotoPushed=pushed,
+            aSawAfterPassOver=a_after,
             aRowOnceHeld=a_row,
             aSaw=a_saw,
             receiverLines=self.passed_over_lines(photo)[-10:],
@@ -602,8 +618,10 @@ class Trial:
         photo, before = self.stage_liar("case 2", junk=True)
         mark = self.a.log_mark()
         passed_over = self.wait_counter(before, "photosOverCeiling", 420)
+        after_mark = self.a.log_mark()
         time.sleep(REWANT_SECONDS)
         a_saw = self.asks_seen(self.a, mark, photo)
+        a_after = self.asks_seen(self.a, after_mark, photo)
         lies = self.lying()
         b = self.finish_with_b(photo)
         after = self.receiver.counters()
@@ -615,13 +633,14 @@ class Trial:
         shown = b["bLinked"] and (b["bFace"] is None or (b["bFace"] or {}).get("avatarHash") == photo)
         self.record(
             "2 junk under the hash",
-            once and served > 0 and len(a_saw["asksForPhoto"]) <= 1 and shown and held,
+            once and served > 0 and not a_after["asksForPhoto"] and shown and held,
             photo=photo,
             before=before,
             afterPassOver=passed_over,
             after=after,
             passedOverOnce=once,
             junkBytesServed=served,
+            aSawAfterPassOver=a_after,
             junkHeadersRewritten=lies.get("counts", {}).get("junkHeadersRewritten"),
             linkToAHeld=held,
             aSaw=a_saw,
