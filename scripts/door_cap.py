@@ -228,11 +228,19 @@ class Trial:
         # Both phones are refused from each peer's `ready` line, before either side's dwell can end, and a step lets the
         # receiver in only when it means to: a fence's first sweep, three seconds in, came too late (2026-10-31).
         phones = {self.ios.node_id, self.android_id}
+        # An Android receiver dials a peer whose id sorts below its own, and backs off each dial a pass refuses for minutes
+        # on end, so a peer it may link only late in a case was never dialed in time (2026-10-31). Against one, A and B are
+        # fresh identities above its id, so they dial it themselves the moment a step lets them.
+        instances = ("doorcap-a", "doorcap-b")
+        if isinstance(self.receiver, AndroidReceiver):
+            instances = ("doorcap-a-above", "doorcap-b-above")
+            for instance in instances:
+                say("keygen", instance=instance, nodeId=interop._keygen(instance, "--above", self.receiver.node_id))
         self.a = interop.Peer(
-            "android", "door-cap A", phones, "debug", None, instance="doorcap-a", log_path=self.out / "peer-a.log", lying=True
+            "android", "door-cap A", phones, "debug", None, instance=instances[0], log_path=self.out / "peer-a.log", lying=True
         )
         self.b = interop.Peer(
-            "android", "door-cap B", phones, "debug", None, instance="doorcap-b", adapter=interop.hci0(), log_path=self.out / "peer-b.log"
+            "android", "door-cap B", phones, "debug", None, instance=instances[1], adapter=interop.hci0(), log_path=self.out / "peer-b.log"
         )
         self.fence_a: Fence | None = None
         self.fence_b: Fence | None = None
