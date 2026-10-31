@@ -444,6 +444,92 @@ class Trial:
             "bSaw": self.asks_seen(self.b, mark_b, photo),
         }
 
+    def iphone_lines(self, *words: str) -> list[str]:
+        """The iPhone's log messages carrying every one of `words`. Read with a pattern, not as JSON: a line whose
+        message escapes a character the parser refuses would be skipped (2026-10-31)."""
+        if not isinstance(self.receiver, IPhoneReceiver):
+            return []
+        found = []
+        for line in self.receiver.path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if all(word in line for word in words):
+                start = line.find('"message":"')
+                found.append(line[start + 11 : line.find('","ms"', start)] if start >= 0 else line)
+        return found
+
+    def case_push(self) -> None:
+        """A photo over the ceiling, pushed at link-up by its own author while the receiver wants it as a photo: the link
+        cuts it at its header, and the push passes nobody over and counts nothing (knit-ios `78a6a72`,
+        ios-avatar-push-mark). The want comes first, from A's profile relayed by B, so it stands when A's push lands; A
+        is then still queried or asked for the photo at the next re-offer, and its honest answer's size passes it over
+        once, as any holder's would."""
+        assert self.fence_a and self.fence_b
+        self.isolate()
+        jpeg = interop._noise_frame(f"door-cap push {time.time()}", 1600, 1600)
+        say("A's photo", reply=self.a.command(cmd="avatar", jpeg=base64.b64encode(jpeg).decode(), timeout=60))
+        photo = self.a.command(cmd="status")["avatarHash"]
+        say("A's oversize photo", hash=photo, bytes=len(jpeg))
+        self.fence_a.allow({self.b.node_id})
+        self.fence_b.allow({self.a.node_id})
+        if not self.link(self.fence_a, self.b.node_id):
+            raise RuntimeError("A and B never linked")
+        self.fence_b.allow({self.a.node_id, self.receiver.node_id})
+        if not self.link(self.fence_b, self.receiver.node_id, self.receiver.link_seconds):
+            raise RuntimeError("B never linked the receiver")
+
+        def wants() -> dict | None:
+            row = self.receiver.peer(self.a.node_id) or {}
+            return row if row.get("advertisedAvatarHash") == photo else None
+
+        try:
+            interop.poll(wants, 300, 10)
+        except TimeoutError as error:
+            raise RuntimeError("the receiver never took A's profile naming the photo") from error
+        # B leaves the receiver before A comes, so no pull-through of A's photo by B ever reaches it.
+        self.fence_b.allow({self.a.node_id})
+        try:
+            interop.poll(lambda: self.receiver.node_id not in self.fence_b.links() or None, 120, 5)
+        except TimeoutError as error:
+            raise RuntimeError("B never left the receiver") from error
+        before = self.receiver.counters()
+        mark = self.a.log_mark()
+        self.fence_a.allow({self.b.node_id, self.receiver.node_id})
+        if not self.link(self.fence_a, self.receiver.node_id, self.receiver.link_seconds):
+            raise RuntimeError("A never linked the receiver")
+        try:
+            cut = interop.poll(lambda: self.iphone_lines(photo[:12], "over its limit", "AVATAR") or None, 120, 5)
+        except TimeoutError:
+            cut = []
+        after_push = self.receiver.counters()
+        passed_at_push = self.iphone_lines("blob photo", photo[:8], self.a.node_id, "passed over")
+        cancels_at_push = self.iphone_lines("blob cancel", photo[:8], self.a.node_id)
+        time.sleep(90)
+        lines = self.a.log_since(mark)
+        asked_again = [
+            line
+            for line in lines
+            if self.receiver.node_id in line
+            and ((line.startswith("mesh blob has") and photo[:8] in line) or (line.startswith("mesh blobreq") and photo[:12] in line))
+        ]
+        after = self.receiver.counters()
+        self.a.command(cmd="avatar", clear=True, timeout=30)
+        pushed = (after_push["photosOverCeiling"] or 0) - (before["photosOverCeiling"] or 0)
+        self.record(
+            "push: an over-ceiling AVATAR push marks and counts nothing",
+            bool(cut) and pushed == 0 and not passed_at_push and not cancels_at_push and bool(asked_again),
+            expected="PASS on knit-ios 010c2d8 (78a6a72); before it the push passed A over and counted",
+            photo=photo,
+            bytes=len(jpeg),
+            before=before,
+            afterPush=after_push,
+            after=after,
+            cutAtHeader=cut[-3:],
+            passedOverAtPush=passed_at_push,
+            cancelsAtPush=cancels_at_push,
+            aAskedAgain=asked_again[:6],
+            passedOverAfter=self.iphone_lines("blob photo", photo[:8], "passed over"),
+            note="an honest answer's size after the re-offer passes A over once, as any holder's: counted in `after`",
+        )
+
     def case_1(self) -> None:
         photo, before = self.stage_liar("case 1")
         mark = self.a.log_mark()
@@ -474,6 +560,8 @@ class Trial:
         self.record(
             "1 lying size",
             once and quiet and shown and held,
+            expected="pOC +1 for A even when the size claim and a crossing header both reach it (knit-ios 010c2d8, once per want)",
+            passedOverLines=self.iphone_lines("blob photo", photo[:8], "passed over"),
             note="A holds junk under the photo at the lied size, never the real bytes, so its blobhas claims that size",
             photo=photo,
             before=before,
@@ -518,6 +606,7 @@ class Trial:
             afterPassOver=passed_over,
             afterAsk=after_ask,
             passOver=signal,
+            passedOverLines=self.iphone_lines("blob photo", photo[:8], "passed over"),
             askQueued=ask.get("sent"),
             asksWritten=asks_sent,
             blobhasRewrittenBefore=rewritten,
@@ -654,7 +743,7 @@ class Trial:
         )
 
 
-CASES = {"1": "case_1", "5": "case_5", "3": "case_3", "4": "case_4", "2": "case_2"}
+CASES = {"push": "case_push", "1": "case_1", "5": "case_5", "3": "case_3", "4": "case_4", "2": "case_2"}
 
 
 def main() -> int:
@@ -662,7 +751,7 @@ def main() -> int:
     parser.add_argument("--device", required=True, help="the receiver: `iphone`, or an approved Android phone's adb serial")
     parser.add_argument("--other", required=True, help="the other phone, kept off the receiver: `iphone` or an adb serial")
     parser.add_argument("--iphone-host", default=None, help="reach the iPhone's bridge over Wi-Fi at this address")
-    parser.add_argument("--cases", default="1,5,3,4,2", help="which cases to run, in this order")
+    parser.add_argument("--cases", default="1,5,3,4,2", help="which cases to run, in this order; `push` is the cut-off push's")
     arguments = parser.parse_args()
     if "iphone" not in (arguments.device, arguments.other) or arguments.device == arguments.other:
         parser.error("one of --device and --other is `iphone`, and the other an adb serial")
