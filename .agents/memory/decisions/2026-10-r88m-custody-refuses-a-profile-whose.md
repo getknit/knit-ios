@@ -19,6 +19,12 @@ Amended 2026-10-31 (knit-ios `fix/ios-photo-ask-ceiling`, paired change `ios-pho
 (`BlobExchange.kt:2211`, `:2233-2253`), `want`'s refusal check (`:289`) and `Want.passedOver` (`:491-521`, `:3002`): a
 neighbour's ask never lifts the ceiling, our photo want on an echo makes it photo-only, and a want remembers the holders
 it passed over. Before, any ask cleared the flag, so a holder passed over could lift it by asking us for the hash.
+Amended 2026-10-31 (knit-ios `fix/ios-avatar-push-mark`, paired change `ios-avatar-push-mark`, iOS alone moving):
+"The photo ceiling" Decisions 2 and 5 now port knit-next `a0b52f865`'s `ceilingOf` and `refuseOver`
+(`FileIntake.kt:344-363`, `:388-398`): only an ATTACHMENT kept under a photo-only want's ceiling at its header passes
+its sender over. Before, a pushed AVATAR cut off at the ceiling marked its pusher whenever a photo-only want of the same
+hash stood: trial run 20261031-021140 saw a 1,429,545-byte leftover photo pushed at link-up cut at its header, and
+`photosOverCeiling` went from 0 to 1 with no ask made.
 
 **Context:** a profile is the one frame every node pins, caches and serves to anyone who asks for its sender's key. Its
 size was bounded only by custody's 60 KiB byte cap (ADR 2026-10.6n48) and the link's record size, so each pinned sender
@@ -147,9 +153,17 @@ fetched at most once per holder per session.
 2. **The link reports a file past its limit.** `FileIntake.Event.overLimit` is raised only when the limit the owner gave
    binds: on a chunk, or at a header whose declared whole blob (offset and size, each compared before the sum) is over a
    limit below `maxFileBytes`. A file the shared room cut short, or another header cut off, stays `.abandoned`, and
-   names no holder. An attachment is never refused at its header, as Android's `begin` refuses none. The link hands
-   `LinkManager.Event.fileOverLimit(hash, from:)` to the engine with the link's own node id. The log keeps its line and
-   appends `: over its limit`.
+   names no holder. An attachment is never refused at its header, as Android's `begin` refuses none. Whether passing
+   the limit marks the sender is decided once, at the header, beside the limit (`LinkManager`'s `IntakeCeiling`,
+   Kotlin's `Ceiling` from `ceilingOf`, `FileIntake.kt:344-363` at knit-next `a0b52f865`): only an ATTACHMENT in
+   `acceptFiles`' `photoOnly` set as its header is read, under a ceiling below `maxFileBytes`, marks. A pushed AVATAR
+   never does, nor does an attachment under Android's ceiling, and a want made photo-only or widened mid-stream does
+   not change what a stream already begun means. For a stream that marks, the link hands
+   `LinkManager.Event.fileOverLimit(hash, from:)` to the engine with the link's own node id; for any other it hands
+   nothing (`refuseOver` returns before `markHolder` when `!limit.marks`, `:388-398`). Every one is dropped and counted
+   in `filesRefused`. The log keeps its line and appends `: over its limit`, then Android's facts (`overCeiling`,
+   `:372-386`): `link <id> file <key12> dropped before its end: over its limit of <n>B, <KIND> <size|?>B[ from <off>]
+   from <peer>`.
 3. **A want's kind.** `wantBlob` and `OwnWant` take a `BlobExchange.WantKind`. A want of ours of `.photo` is
    `Want.photoOnly`; any other want of ours of the same hash (a row's want, an attachment) clears it for the want's
    life, so the larger limit wins. A neighbour's ask (an echo, or an ask on our want) never moves it, or a holder passed
@@ -166,8 +180,9 @@ fetched at most once per holder per session.
    the cleartext profile's `followAdvertisedPhoto`.
 4. **The links keep a photo-only want to the ceiling.** `MeshTransport.acceptFiles` takes a third set, `photoOnly`,
    kept to `maxAvatarFileBytes`; `syncAcceptedFiles` sends it whenever any of the three sets moves.
-5. **Holder-keyed refusal, Android's shape.** A holder whose stream passes the ceiling, or whose `blobhas` claims a
-   size over it, for a photo-only want: (hash, holder) is marked for the session in `PhotoRefusals`, the holder joins the
+5. **Holder-keyed refusal, Android's shape.** A holder whose stream for the want passes the ceiling (an ATTACHMENT
+   the link kept under the photo-only ceiling at its header, Decision 2), or whose `blobhas` claims a size over it, for
+   a photo-only want: (hash, holder) is marked for the session in `PhotoRefusals`, the holder joins the
    cycle's failed holders, a standing ask on it is withdrawn, and every later step, re-want and new want leaves it out of
    its queries, asks and pulls (`BlobExchange.askable`). Each want also keeps the holders it passed over, at most 64
    (`Want.passedOver`, `BlobExchange.maxPassedOver`; Kotlin's `passOver` and `MAX_PASSED_OVER`, `BlobExchange.kt:491-521`
@@ -179,7 +194,9 @@ fetched at most once per holder per session.
    `PhotoRefusals` keeps at most 1,024 pairs and 1,024 refused hashes, the oldest dropped first, and the engine forgets
    both at every start, the `Mesh`'s after a stop included. A relink under the same node id stays marked. Counted in
    `BlobCounts.photosOverCeiling`, `photosOverCeiling` in `status`, and logged as
-   `blob photo <hash8>… from <holder> <why>: passed over`.
+   `blob photo <hash8>… from <holder> <why>: passed over`. A pushed AVATAR cut off at the ceiling is none of these: it
+   answers no want, so it marks nobody, withdraws no ask (no `blobcancel`), steps no want and moves no count, even with
+   a photo-only want of the same hash standing (contract `ios-avatar-push-mark`).
 6. **No resume past the ceiling.** A photo-only want's `blobreq` never names an offset past the ceiling: such a prefix
    is dropped and the ask is from byte 0.
 7. **Adoption is the backstop.** `isAdoptablePhoto` reads `size(of:)`, false when unread or over the ceiling.
@@ -222,6 +239,12 @@ fetched at most once per holder per session.
 - A file's limit is fixed at its header. When a want of the same hash as an attachment arrives while a photo-only copy
   is streaming, that stream is still cut at 1 MiB, its `fileOverLimit` is ignored (the want is no longer photo-only, so
   nobody is passed over), and the holder is asked again at its floor: one extra fetch, as on Android.
+- **A pushed AVATAR's cut-off steps no want.** A photo-only want the push met waits for a timer it armed earlier or for
+  the 60 s re-offer, and nothing is stranded: the pusher is still asked at the want's own pace. Android does the same:
+  the header skip (`FileIntake.kt:155-156`) and the chunk abort (`:222-226`) both call `refuseOver`, which returns at
+  `:396` (`if (!limit.marks) return`), and `skip()` and `abort()` send nothing to `BlobExchange`. Even a marking cut only
+  records `partials.markHolder`, which `passOver` reads at the next step (`BlobExchange.kt:491-520`). This port steps a
+  marked want at once (`MeshEngine.overPhotoCeiling`), as before.
 - Group photos and message attachments keep their ceilings. Block behaviour is unchanged.
 
 **Headroom:**
@@ -232,8 +255,11 @@ fetched at most once per holder per session.
 | Own photo, 256 px, quality 90 (ceiling 1,048,576) | 79,162 (noise, macOS ImageIO with `DeviceImageCodec`'s parameters; not on device) | 54,775 |
 
 **Kept true by** `FileIntakeLimitTests` (the header and chunk cases, the room's abandon), `LinkFilePhotoCeilingTests`
-(a photo-only fetch past the ceiling reported once with nothing landed, a push refused at its header, the shared room
-reporting nobody), `BlobPhotoCeilingTests` (the flag, an ask that never lifts it, our photo want on an echo, a promoted echo and a fresh
+(a photo-only fetch past the ceiling reported once with nothing landed, a push refused at its header naming nobody,
+Kotlin's `aPushedAvatarOneByteOverThePhotoCeilingKeepsNothingAndOneAtItIsKept` and
+`anAvatarHeaderDeclaringMoreThanThePhotoCeilingIsSkipped` under a standing photo-only want, the mark read at the header
+both ways, the shared room reporting nobody), `MeshEngineAvatarPushMarkTests` (a push past the ceiling through a real
+link marking, withdrawing and stepping nothing while the fetch's own stream still passes the holder over), `BlobPhotoCeilingTests` (the flag, an ask that never lifts it, our photo want on an echo, a promoted echo and a fresh
 want from zero, a refused photo want leaving an echo alone, both signals, the author passed over like any holder, a
 passed-over holder that asks, the want's own passed-over set outliving the session's mark and its 64 bound, a held
 copy's refusal, the bound), `MeshEngineAvatarCeilingRowsTests` (a message request's row never makes the photo an attachment, an in-ceiling

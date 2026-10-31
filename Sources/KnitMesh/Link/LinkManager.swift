@@ -37,9 +37,11 @@ public final class LinkManager: MeshTransport {
         case fileProgress(FileProgress)
         /// A file we streamed left the radio whole, its END included (``sendFile(_:to:)``).
         case fileSent(BlobHash, to: NodeId)
-        /// A file streaming in from a neighbour passed the limit kept for it, or its header declared more
-        /// (``FileIntake/Event/overLimit(_:)``): nothing of it is kept, and the rest of its stream is read past. The
-        /// engine passes over that neighbour for a profile photo (``MeshEngine/fileOverLimit(_:from:)``).
+        /// An ATTACHMENT streaming in from a neighbour, kept at its header under a photo-only want's ceiling, passed it,
+        /// or its header declared more (``FileIntake/Event/overLimit(_:)``, ``IntakeCeiling``): nothing of it is kept,
+        /// and the rest of its stream is read past. The engine passes over that neighbour for a profile photo
+        /// (``MeshEngine/fileOverLimit(_:from:)``). A pushed AVATAR, or an attachment under Android's ceiling, cut off
+        /// the same way raises nothing (`refuseOver`, knit-next `FileIntake.kt:388-398` at `a0b52f865`).
         case fileOverLimit(BlobHash, from: NodeId)
     }
 

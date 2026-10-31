@@ -10,6 +10,9 @@ internal struct ArrivalClock {
     var reportedAt: Int64
     var reportedBytes: Int64 = -1
     var trailingAt: Int64?
+    /// The ceiling the file was kept under, read at its header, and whether passing it marks the peer
+    /// (``IntakeCeiling``); `nil` for a file the intake never asked about.
+    var ceiling: IntakeCeiling?
 
     init(peer: NodeId, startedAt: Int64) {
         self.peer = peer
@@ -38,8 +41,10 @@ internal struct LandingFile: Hashable {
 /// **In,** each link's file passes through a ``FileIntake``, which applies Android's receiver rules. A peer's own AVATAR
 /// push is kept up to ``Configuration/maxAvatarFileBytes``. An ATTACHMENT is kept only when the engine asked for its
 /// hash (``acceptFiles(_:resumable:photoOnly:)``), up to Android's 8 MiB and 64 KiB, or the photo's ceiling when it is
-/// wanted only as a profile photo; a file past its limit is handed to the engine as ``Event/fileOverLimit(_:from:)``, with
-/// the neighbour that sent it. An ATTACHMENT leaves a prefix kept when cut only when the
+/// wanted only as a profile photo. Every file past its limit is dropped and counted, but only an ATTACHMENT kept under a
+/// photo-only want's ceiling at its header (``IntakeCeiling``) is handed to the engine as ``Event/fileOverLimit(_:from:)``,
+/// with the neighbour that sent it (`refuseOver`, knit-next `FileIntake.kt:388-398` at `a0b52f865`): a pushed AVATAR
+/// passes nobody over. An ATTACHMENT leaves a prefix kept when cut only when the
 /// engine wants it of its own, and partial files on every link together stay within
 /// ``Configuration/maxBufferedFileBytes``. A whole file goes to the engine, which checks its hash. How much of a file is
 /// in goes to the engine too, kept or skipped, which tells the sender (knit-next ADR 2026-10.nsr7): on every chunk that
@@ -206,20 +211,20 @@ extension LinkManager {
         let avatarLimit = configuration.maxAvatarFileBytes
         let others = intakes.reduce(0) { $1.key == id ? $0 : $0 + $1.value.bufferedBytes }
         let partials = partials
+        // Read once, as the intake asks for the limit, and kept for the stream: whether passing it marks (`ceilingOf`).
+        var ceiling: IntakeCeiling?
         let events = intakes[id, default: FileIntake()].header(
             payload,
             room: configuration.maxBufferedFileBytes - others,
             limit: { header, key in
-                switch header.kind {
-                case .avatar:
-                    avatarLimit
-                case .attachment:
-                    accepted.contains(key) ? (photoOnly.contains(key) ? avatarLimit : FileIntake.maxFileBytes) : nil
-                }
+                ceiling = Self.ceiling(of: header.kind, key, accepted: accepted, photoOnly: photoOnly, avatarLimit: avatarLimit)
+                return ceiling?.bytes
             },
             prefix: { key, offset in partials.open(key, offset: offset).map { ($0.bytes, $0.epoch) } },
             now: now
         )
+        // Replaced at every header with the clock, so a file the intake never asked about keeps no ceiling of the last.
+        arrivalClocks[id]?.ceiling = ceiling
         return events.flatMap { note($0, from: peer, on: id) }
     }
 
@@ -323,8 +328,8 @@ extension LinkManager {
     }
 
     /// Counts and logs a file the intake dropped, and a resume it took, and answers what the engine is owed of it: a file
-    /// past its limit, with the neighbour that sent it. A file begun streams on, and a finished one reaches the engine from
-    /// ``fileEnd(from:on:)``.
+    /// past a ceiling that marks (``IntakeCeiling``), with the neighbour that sent it. A file begun streams on, and a
+    /// finished one reaches the engine from ``fileEnd(from:on:)``.
     private func note(_ event: FileIntake.Event, from peer: NodeId, on id: ChannelID) -> [Event] {
         switch event {
         case .skipped(let header):
@@ -341,10 +346,13 @@ extension LinkManager {
             log.log(.info, "link \(id) file \(Self.shown(header.key)) dropped before its end")
         case .overLimit(let header):
             filesRefused += 1
-            // The abandon's words, with the reason appended, so a grep for the line still finds it.
-            log.log(.info, "link \(id) file \(Self.shown(header.key)) dropped before its end: over its limit")
-            // A header always names a well-formed key before the owner's limit is read, so this always reports.
-            if let key = BlobHash(header.key) {
+            let ceiling = arrivalClocks[id]?.ceiling
+            let why = Self.overLimit(header, ceiling, from: peer)
+            log.log(.info, "link \(id) file \(Self.shown(header.key)) dropped before its end: \(why)")
+            // Only a stream kept under a photo-only want's ceiling at its header names its sender (`refuseOver`,
+            // `FileIntake.kt:388-398`): a pushed AVATAR, or an attachment under Android's ceiling, passes nobody over.
+            // A header always names a well-formed key before the owner's limit is read.
+            if ceiling?.marks == true, let key = BlobHash(header.key) {
                 return [.fileOverLimit(key, from: peer)]
             }
         case .begun(let header), .finished(let header, _, _, _):

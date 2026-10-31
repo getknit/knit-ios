@@ -361,9 +361,11 @@ Files cross a link as Android's do (ADR 2026-10.h6zz).
   - A peer's own AVATAR push is kept up to 1 MiB, and an ATTACHMENT only when the engine asked for its hash.
   - An ATTACHMENT the engine wants only as a profile photo (`acceptFiles`' `photoOnly` set) is kept to 1 MiB too,
     `FileIntake.maxAvatarBytes`, where any other keeps Android's 8 MiB and 64 KiB. A header declaring a whole blob over
-    a limit below that ceiling is refused at once. A file past its own limit, at the header or on a chunk, raises
-    `fileOverLimit` with the hash and the link's node id, so the engine passes over that holder for the photo. A file
-    the shared 16 MiB room cut short raises nothing and names no holder (ADR 2026-10.r88m).
+    a limit below that ceiling is refused at once. A file past its own limit, at the header or on a chunk, is dropped
+    and counted. Only an ATTACHMENT kept under the photo-only ceiling at its header then raises `fileOverLimit` with
+    the hash and the link's node id, so the engine passes over that holder for the photo. A pushed AVATAR past it
+    names nobody (`IntakeCeiling`, decided at the header as Android's `ceilingOf` is). A file the shared 16 MiB room
+    cut short raises nothing and names no holder (ADR 2026-10.r88m).
   - Partial files on all links together stay under 16 MiB.
   - A teardown cuts an ATTACHMENT that is streaming in and keeps its bytes as a prefix for the next ask to name. That
     covers a closed link, a stale link replaced, and a radio that goes off, resets or loses permission. A

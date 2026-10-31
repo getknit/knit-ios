@@ -51,6 +51,22 @@ import Testing
         #expect(file.bytes == photo && file.resumedFrom == 20_000)
     }
 
+    /// A resumed stream for a photo-only want whose whole blob passes the photo's ceiling is refused at its header and
+    /// names its sender, as Kotlin's `overCeiling` does for a resume under a marking ceiling (knit-next `FileIntake.kt:372-386`
+    /// at `a0b52f865`), and the line says where it resumed.
+    @Test func aResumedPhotoOnlyStreamPastTheCeilingNamesItsSenderAndWhereItResumed() {
+        var configuration = LinkManager.Configuration()
+        configuration.maxAvatarFileBytes = 30_000
+        let rig = LinkRig(local: LinkRig.high, configuration: configuration)
+        _ = rig.accept(LinkRig.low, on: channel)
+        rig.links.acceptFiles([hash], resumable: [hash], photoOnly: [hash])
+        rig.links.partials.keep(hash, bytes: Array(photo[..<20_000]), basedOn: nil, now: 1000)
+        let events = rig.handle(.received(channel, header(offset: 20_000, size: 20_000)))
+        #expect(events.contains(.fileOverLimit(hash, from: LinkRig.low)))
+        #expect(rig.links.filesRefused == 1)
+        #expect(rig.log.all.contains { $0.contains("over its limit of 30000B, ATTACHMENT 20000B from 20000 from \(LinkRig.low)") })
+    }
+
     @Test func aResumedStreamReadsReportsAndTimesFromItsPrefix() throws {
         let rig = LinkRig(local: LinkRig.high)
         _ = rig.accept(LinkRig.low, on: channel)
