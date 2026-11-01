@@ -69,10 +69,10 @@ extension MeshEngine {
             log.log(.warning, "mesh refused a contact card for pinned \(peer): its key differs")
             return .mismatch(peer)
         }
-        if source == .link, unblock {
-            self.unblock(peer)
-        }
-        var record = existing ?? PeerRecord(nodeId: peer, name: "", status: "", publicKey: card.bundle, updatedAt: 0)
+        // The unblock re-applies the profile held for them, so the row is read again after it: one built from the read
+        // above would write back the name and photo the block held.
+        let held = source == .link && unblock ? unblocking(peer) ?? existing : existing
+        var record = held ?? PeerRecord(nodeId: peer, name: "", status: "", publicKey: card.bundle, updatedAt: 0)
         switch source {
         case .scan:
             record.verified = true
@@ -81,7 +81,7 @@ extension MeshEngine {
                 record.name = card.name
             }
         }
-        if record != existing {
+        if record != held {
             stores.peers.upsert(record)
         }
         guard let landed = stores.peers.peer(peer), landed.publicKey.utf8.elementsEqual(card.bundle.utf8),
@@ -93,7 +93,7 @@ extension MeshEngine {
         if source == .link {
             accept(peer.string)
         }
-        _ = continueBlock(of: peer, deviceTag: landed.deviceTag)
+        hideBlockedPhotos(of: continueBlock(of: peer, deviceTag: landed.deviceTag) ? [peer] : [])
         events.append(.peerUpdated(peer))
         log.log(.info, "mesh pinned \(peer) from a contact card")
         // Replay skips the router: each was admitted, and its relay scheduled, when it first arrived.
@@ -108,6 +108,12 @@ extension MeshEngine {
             wantAcceptedPhotos()
         }
         return .added(peer)
+    }
+
+    /// Unblocks `peer` for a contact link that asked to, and answers their row as the unblock left it.
+    private func unblocking(_ peer: NodeId) -> PeerRecord? {
+        unblock(peer)
+        return stores.peers.peer(peer)
     }
 
     /// Our own contact card in its three forms (`ContactCards.mint`): our bundle, the name our profile carries, and the

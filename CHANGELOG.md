@@ -104,6 +104,8 @@ document:
 
 ### Changed
 
+- When you block someone, you keep seeing the name and status they had at the time, their photo turns into
+  their initial, and Knit stops downloading it. Unblock them and their latest name and photo come back.
 - A reply's quote now shows the answered message's words as your iPhone has them, under the name you know
   its author by. When your iPhone lacks that message, the quote says so, and one that doesn't match shows as
   unavailable.

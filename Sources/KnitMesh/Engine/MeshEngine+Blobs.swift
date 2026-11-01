@@ -280,6 +280,10 @@ extension MeshEngine {
     /// A file wanted only as an echo, which no row names, is weighed against the echo budget at its measured size before
     /// it is stored, and refused when it does not fit (``refuseEchoFile(_:)``, knit-ios #20): the links keep any file
     /// wanted, so a peer can stream one for an echo it was never asked for. One stored adds its size to the budget.
+    ///
+    /// A photo pushed by someone blocked is taken as an attachment is, kept only when wanted or named (knit-ios #37): their
+    /// row names it no more (``blobsTheRowsName()``), so a push of their own photo alone is refused, and one kept is never
+    /// shown on their row (``adoptAvatar(_:landedAsEcho:)``).
     public func receiveFile(_ file: InboundFile) {
         defer { transport.fileTaken(from: file.from, hash: file.hash) }
         guard BlobHash(of: file.bytes) == file.hash else {
@@ -292,25 +296,18 @@ extension MeshEngine {
         // What the rows name, read once and only when it decides something: a file not wanted, or wanted as an echo.
         let wanted = blobExchange.isWanted(file.hash)
         let echo = blobExchange.isEcho(file.hash)
-        let named = file.kind == .attachment && (!wanted || echo) ? blobsTheRowsName() : []
+        let blockedPush = file.kind == .avatar && isBlocked(file.from)
+        let asAttachment = file.kind == .attachment || blockedPush
+        let named = asAttachment && (!wanted || echo) ? blobsTheRowsName() : []
         switch file.kind {
-        case .avatar:
-            // The HELLO that names the pusher is unauthenticated, so a push proves nothing alone. Android writes the
-            // profile ahead of the push on one link (`MeshManager.kt:2562-2563`), so an honest push always matches.
-            // Android adopts any push at once (`pointPeerAtAvatar`); this port adopts only a match (ADR 2026-10.nh55).
-            guard stores.peers.peer(file.from)?.advertisedAvatarHash == file.hash else {
-                reject(file, "is not the photo its pusher's profile names")
+        case .avatar where !blockedPush:
+            guard takesPush(file) else {
                 return
             }
-            // The link stops a push at the ceiling; this holds whatever link brought it (ADR 2026-10.r88m).
-            guard file.bytes.count <= FileIntake.maxAvatarBytes else {
-                reject(file, "is over the photo's ceiling")
-                return
-            }
-        case .attachment:
+        case .avatar, .attachment:
             // Never what a carried frame names: this port pulls no carried frame's photo (ADR 2026-10.ym9y).
             guard wanted || named.contains(file.hash) else {
-                reject(file, "was not asked for")
+                reject(file, blockedPush ? "is from someone blocked" : "was not asked for")
                 return
             }
             // Wanted only as a photo, and past its ceiling: the link keeps none, so this holds whatever link brought it.
@@ -323,7 +320,7 @@ extension MeshEngine {
         // read outside a store unit, so a failed read names nothing, and a file a row does name can be refused once while
         // the budget is full. That is the worst of it: the refused memo gates echoes alone, and the next 60 s re-offer
         // wants the blob as ours from the rows, which a cut, a landing and the budget then treat as ours.
-        let echoOnly = file.kind == .attachment && echo && !named.contains(file.hash)
+        let echoOnly = asAttachment && echo && !named.contains(file.hash)
         if echoOnly, !echoBudgetFits(Int64(file.bytes.count), excluding: file.hash) {
             refuseEchoFile(file)
             return
@@ -345,6 +342,23 @@ extension MeshEngine {
         }
     }
 
+    /// Whether a pushed photo is its pusher's, and within the photo's ceiling, or else rejected.
+    private func takesPush(_ file: InboundFile) -> Bool {
+        // The HELLO that names the pusher is unauthenticated, so a push proves nothing alone. Android writes the profile
+        // ahead of the push on one link (`MeshManager.kt:2562-2563`), so an honest push always matches. Android adopts any
+        // push at once (`pointPeerAtAvatar`); this port adopts only a match (ADR 2026-10.nh55).
+        guard stores.peers.peer(file.from)?.advertisedAvatarHash == file.hash else {
+            reject(file, "is not the photo its pusher's profile names")
+            return false
+        }
+        // The link stops a push at the ceiling; this holds whatever link brought it (ADR 2026-10.r88m).
+        guard file.bytes.count <= FileIntake.maxAvatarBytes else {
+            reject(file, "is over the photo's ceiling")
+            return false
+        }
+        return true
+    }
+
     func reject(_ file: InboundFile, _ reason: String) {
         filesRejected += 1
         log.log(.info, "mesh file \(LinkManager.shown(file.hash.string)) from \(file.from) \(reason); dropped")
@@ -353,9 +367,13 @@ extension MeshEngine {
     /// Shows `hash` as the photo of every peer whose newest profile advertises it, now that its bytes are held
     /// (`resolveAvatarHash`, `InboundPipeline.kt:3302-3311`). The photo each replaces goes once nothing names it. Bytes
     /// over the photo's ceiling, held because a message names them too, are never shown as a face, and are declined as a
-    /// photo (ADR 2026-10.r88m).
+    /// photo (ADR 2026-10.r88m). A blocked person's row is never shown it (knit-ios #37): bytes wanted before the block, or
+    /// kept for something else, land with their face left as their initial, and an unblock shows them (``restoreFace(of:)``).
     func adoptAvatar(_ hash: BlobHash, landedAsEcho: Bool) {
-        let advertisers = stores.peers.allPeers().filter { $0.advertisedAvatarHash == hash && $0.avatarHash != hash }
+        let blocked = stores.blocks.blockedNodeIds()
+        let advertisers = stores.peers.allPeers().filter { peer in
+            peer.advertisedAvatarHash == hash && peer.avatarHash != hash && !blocked.contains(peer.nodeId)
+        }
         guard !advertisers.isEmpty else {
             return
         }

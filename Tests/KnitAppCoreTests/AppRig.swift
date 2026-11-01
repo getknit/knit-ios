@@ -234,6 +234,7 @@ final class FakeMesh: MeshService {
     func block(_ peer: NodeId) {
         state.withLock { $0.calls.blocked.append("block \(peer)") }
         stores.blocks.block(peer, deviceTag: stores.peers.peer(peer)?.deviceTag)
+        clearFace(of: peer)
     }
 
     func unblock(_ peer: NodeId) {

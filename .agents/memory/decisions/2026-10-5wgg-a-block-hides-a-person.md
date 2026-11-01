@@ -40,11 +40,12 @@ block list out of everything but delivery:
   start-up group replay meet it too. `dropBlocked` ticks as `ackBlockedRoomChat` does and counts the frame under
   `DropReason.blocked`. Beyond the gate, `reconcile` refuses a blocked sender's roster and the first frame of a group
   a blocked person made (`groupFrameRefused`), and `handleGroupLeave` ignores a blocked member's leave.
-- **Device tags:** `handleProfile` runs `continueBlock` after the upsert and before the waiting DMs go out and the
-  parked frames land, so a re-keyed phone's early frames meet the block. `flushPending` holds a DM to someone
-  blocked, as `flushPendingFor` does.
-- **Untouched:** `isCarriable`, the custody carry, key requests, receipts, the relay and profiles. A blocked person's
-  key still pins and their photo is still fetched, and only their messages' photos are not.
+- **Device tags:** `handleProfile` runs `continueBlock` before the waiting DMs go out and the parked frames land, so a
+  re-keyed phone's early frames meet the block. Since ADR 2026-11.y793 it runs before the row is written too, so that
+  phone presents nothing. `flushPending` holds a DM to someone blocked, as `flushPendingFor` does.
+- **Untouched:** `isCarriable`, the custody carry, key requests, receipts and the relay. A blocked person's profile
+  still pins, is kept as the proof of key and moves their prekey. Since ADR 2026-11.y793 it no longer moves their
+  name, status or photo, their face is cleared at the block, and their photo is neither fetched nor kept.
 - **The screens:** `ThreadTable` reads thread heads without blocked senders (`threadHeads(excludingSenders:)`), drops
   a blocked person's DM, and leaves blocked senders out of the group-accept rule. `ChatModel` hides their rows, and
   New message leaves them out. Block is on the profile, a DM request's row (a swipe) and its thread's request bar.
@@ -72,7 +73,8 @@ block list out of everything but delivery:
   the list says an unblock brings back what came before it.
 - **A DM to a blocker never ticks.** Its sender's copy waits in every carrier's custody until its TTL, as on Android.
 - **No report.** Android has none either, despite `docs/IOS_PORT_REVIEW.md` there. Rule 1.2 still wants one.
-- **Blocked people stay in groups:** on the roster and in the faces, sealed to like everyone else.
+- **Blocked people stay in groups:** on the roster and in the faces, sealed to like everyone else. Their face there is
+  their initial, under the name they had at the block (ADR 2026-11.y793).
 - **The trap:** a per-node input in `isCarriable` or anything custody reads (a block, a setting, a verdict) makes this
   node's digest differ from everyone's for as long as the input stands, as bts9 found. A local decision belongs on
   the delivery path.

@@ -196,15 +196,18 @@ extension MeshEngine {
         return (hash, isAdoptablePhoto(hash) ? hash : existing?.avatarHash)
     }
 
-    /// A photo `sender`'s newer profile advertises and does not show yet, cleartext or sealed. Held but over the photo's
-    /// ceiling, it is refused and let go (ADR 2026-10.r88m), so the want asks nobody for it. Otherwise it is wanted, unless
-    /// `sender` is linked and pushes it: a want of our own that read no row, keeping a deadline a re-arm set (knit-next ADR
-    /// 2026-10.2drc), and of a photo alone, so kept to the photo's ceiling. Outside a store unit only, as the release is.
-    func followAdvertisedPhoto(_ advertised: BlobHash, of sender: NodeId) {
+    /// A photo `sender`'s newer profile advertises and does not show yet, cleartext or sealed, never a blocked sender's
+    /// (knit-ios #37). Held over the photo's ceiling, it is refused and let go (ADR 2026-10.r88m), so the want asks nobody.
+    /// Otherwise it is wanted, of a linked sender, who pushes its own, only when `askingLinked`: our own want, reading no row,
+    /// keeping a re-arm's deadline (knit-next ADR 2026-10.2drc), of a photo alone, so kept to its ceiling. Outside a unit only.
+    func followAdvertisedPhoto(_ advertised: BlobHash, of sender: NodeId, askingLinked: Bool) {
+        guard !isBlocked(sender) else {
+            return
+        }
         if isOverPhotoCeiling(advertised) {
             declinePhoto(advertised)
         }
-        if !transport.isLinked(sender) {
+        if askingLinked || !transport.isLinked(sender) {
             wantBlob(advertised, author: sender, via: nil, asker: nil, reach: .own(until: nil, rederived: false), kind: .photo)
         }
     }
@@ -236,16 +239,17 @@ extension MeshEngine {
         }
     }
 
-    /// A verified profile (`InboundPipeline.handleProfile` and `storeProfileRow`, `InboundPipeline.kt:3159-3345`). Its
-    /// key pins only if it derives to the sender, which ``verify(_:)`` checked, and a pinned key never changes. Two
-    /// watermarks order what it changes, each on the profile's version clamped to five minutes past our clock: the
-    /// presentation follows ``PeerRecord/updatedAt``, and the prekey ``PeerRecord/prekeyProfileAt``. A sealed profile
-    /// update (phase P5a) moves the presentation and carries no prekey, so a cleartext profile older on the first can
-    /// still be newer on the second, and its prekey must land (knit-next ADR 020's fix). A profile older on both changes
-    /// nothing. Once the key pins, our DMs that waited for it go out, the frame is kept as the key's proof, neighbours that
-    /// asked us for it are served, and frames parked for it are delivered. All of it runs whatever the ratchet's switch
-    /// says, since none of it puts anything of the ratchet's on air (ADR 2026-10.5sk9), but for the answer an init of the
-    /// peer's is owed, which goes with the switch on once the profile pins the bits and a prekey (phase P5e).
+    /// A verified profile (`InboundPipeline.handleProfile` and `storeProfileRow`, `InboundPipeline.kt:3159-3345`). Its key
+    /// pins only if it derives to the sender, which ``verify(_:)`` checked, and a pinned key never changes. Two watermarks
+    /// order what it changes, each on the profile's version clamped to five minutes past our clock: the presentation follows
+    /// ``PeerRecord/updatedAt``, and the prekey ``PeerRecord/prekeyProfileAt``. A sealed profile update (phase P5a) moves the
+    /// presentation and carries no prekey, so a cleartext profile older on the first can still be newer on the second, and
+    /// its prekey must land (knit-next ADR 020's fix). A profile older on both changes nothing. A blocked sender's writes no
+    /// presentation and wants no photo (knit-ios #37). Once the key pins, our DMs that waited for it go out, the frame is
+    /// kept as the key's proof, neighbours that asked us for it are served, and frames parked for it are delivered. All of it
+    /// runs whatever the ratchet's switch says, since none of it puts anything of the ratchet's on air (ADR 2026-10.5sk9),
+    /// but for the answer an init of the peer's is owed, which goes with the switch on once the profile pins the bits and a
+    /// prekey (phase P5e).
     func handleProfile(_ wire: WireEnvelope, _ envelope: RelayEnvelope) {
         // Our own profile coming back is not a peer to pin.
         guard let sender = NodeId(envelope.senderId), sender != nodeId,
@@ -265,21 +269,23 @@ extension MeshEngine {
             log.log(.warning, "mesh refused a key change for pinned \(sender)")
             return
         }
+        // Before the row, the waiting DMs and the parked frames, so a re-keyed phone's first profile meets the block too.
+        let continued = continueBlock(of: sender, deviceTag: content.deviceTag)
+        let blocked = continued || isBlocked(sender)
         // A first profile starts from an empty row, both watermarks at 0, as `PeerEntity(senderId)` does (`:3301`).
         let base = existing ?? PeerRecord(nodeId: sender, name: "", status: "", publicKey: key, updatedAt: 0)
-        let record = profileRecord(content, onto: base, version: version, stale: (stalePresentation, stalePrekey))
+        let record = profileRecord(content, onto: base, version: version, stale: (stalePresentation, stalePrekey), blocked: blocked)
         stores.peers.upsert(record)
-        // Before the waiting DMs go out and the parked frames land, so both meet a block that followed new keys. It runs
-        // first, so it runs every time.
-        if continueBlock(of: sender, deviceTag: content.deviceTag) || record != existing {
+        if continued || record != existing {
             events.append(.peerUpdated(sender))
         }
+        hideBlockedPhotos(of: continued ? [sender] : []) // A block just followed new keys: hide the face, as a block does.
         // The photo moves with the presentation alone (`applyPresentationFollowUps`, `:1259-1272`). A linked peer pushes
         // its own photo right behind its profile, so only someone else's is asked for now; a push that never came is asked
         // for at the next re-offer.
-        if !stalePresentation {
+        if !stalePresentation, !blocked {
             if let advertised = record.advertisedAvatarHash, record.avatarHash != advertised {
-                followAdvertisedPhoto(advertised, of: sender)
+                followAdvertisedPhoto(advertised, of: sender, askingLinked: false)
             }
             if let replaced = existing?.avatarHash, replaced != record.avatarHash {
                 releaseBlob(replaced)
@@ -315,26 +321,21 @@ extension MeshEngine {
     }
 
     /// The row a profile leaves its sender with, from `base`, the row held or a fresh one under the profile's key
-    /// (`storeProfileRow`, `:3285-3343`), each field on its own watermark. The name, status, photo and open-to-chat move
-    /// only when the profile is not older than ``PeerRecord/updatedAt``, which never moves back. The prekey moves only when
-    /// it is not older than ``PeerRecord/prekeyProfileAt``: a verified one is pinned, and an absent or bad one clears the
-    /// pin, since the peer stopped serving it. The device tag, protocol version and capabilities follow any profile that
-    /// reaches here, as Android's do (`:3310-3318`): one older on the presentation's watermark is still the newest
-    /// cleartext profile on the prekey's, and the bits and the prekey ride it together.
+    /// (`storeProfileRow`, `:3285-3343`), each field on its own watermark. The name, status, photo and open-to-chat move only
+    /// when the profile is not older than ``PeerRecord/updatedAt``, which never moves back, and the sender is not `blocked`,
+    /// whose row keeps what it showed while its watermark moves (knit-ios #37). The prekey moves only when it is not older
+    /// than ``PeerRecord/prekeyProfileAt``: a verified one is pinned, and an absent or bad one clears the pin, since the peer
+    /// stopped serving it. The device tag, protocol version and capabilities follow any profile that reaches here, as
+    /// Android's do (`:3310-3318`): one older on the presentation's watermark is still the newest cleartext profile on the
+    /// prekey's, and the bits and the prekey ride it together.
     private func profileRecord(
         _ content: ProfileContent,
         onto base: PeerRecord,
         version: Int64,
-        stale: (presentation: Bool, prekey: Bool)
+        stale: (presentation: Bool, prekey: Bool),
+        blocked: Bool
     ) -> PeerRecord {
-        var record = base
-        if !stale.presentation {
-            // Cleaned to one line and cut (knit-next #228). The signed frame stays as it came, in `recordProfileFrame`.
-            record.name = TextLimits.cleanReceived(content.name, limit: TextLimits.displayName)
-            record.status = TextLimits.cleanReceived(content.status, limit: TextLimits.status)
-            record.openToChat = content.openToChat
-            (record.advertisedAvatarHash, record.avatarHash) = photoFrom(content, existing: base)
-        }
+        var record = stale.presentation || blocked ? base : presentation(of: content, onto: base)
         record.deviceTag = content.deviceTag ?? base.deviceTag
         record.protocolVersion = content.protoVersion ?? base.protocolVersion
         record.capabilities = content.capabilities ?? base.capabilities
@@ -344,6 +345,37 @@ extension MeshEngine {
             record.prekeyProfileAt = version
         }
         return record
+    }
+
+    /// `row` with the presentation `content` carries, the one writer of a cleartext profile's, as it lands or on unblock: the
+    /// name and status cleaned to one line and cut (knit-next #228), open-to-chat, and the photo.
+    private func presentation(of content: ProfileContent, onto row: PeerRecord) -> PeerRecord {
+        var record = row
+        record.name = TextLimits.cleanReceived(content.name, limit: TextLimits.displayName)
+        record.status = TextLimits.cleanReceived(content.status, limit: TextLimits.status)
+        record.openToChat = content.openToChat
+        (record.advertisedAvatarHash, record.avatarHash) = photoFrom(content, existing: row)
+        return record
+    }
+
+    /// Re-applies the presentation of `peer`'s kept proof-of-key profile once a block that hid it is lifted (contract §5 of
+    /// `block-hides-profile`): from `peer`, under its pinned key byte for byte, ordered as one that lands, so an equal
+    /// version applies. No delivery: nothing carried, counted, flushed, released or wanted. Answers whether the row moved.
+    func reapplyHeldProfile(of peer: NodeId) -> Bool {
+        guard let frame = stores.peers.profileFrame(of: peer),
+            let envelope = try? RelayEnvelope(decoding: frame.signed), envelope.type == .profile, NodeId(envelope.senderId) == peer,
+            let content = try? ProfileContent(decoding: envelope.payload), let key = content.pubKey,
+            let row = stores.peers.peer(peer), row.publicKey.utf8.elementsEqual(key.utf8),
+            clampFuture(content.version ?? envelope.sentAt) >= row.updatedAt
+        else {
+            return false
+        }
+        let record = presentation(of: content, onto: row)
+        if record != row {
+            stores.peers.upsert(record)
+            events.append(.peerUpdated(peer))
+        }
+        return record != row
     }
 
     /// The profile's prekey, or `nil` for none: its signature must verify against `peer`'s key, the one in the same

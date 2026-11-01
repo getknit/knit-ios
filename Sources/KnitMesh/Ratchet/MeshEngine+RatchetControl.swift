@@ -189,12 +189,12 @@ extension MeshEngine {
     /// After the commit, what a moved presentation earns, as a cleartext profile's does (``handleProfile(_:_:)``): the
     /// peer is announced, a photo it advertises and does not show is declined when its held bytes are over the photo's
     /// ceiling, and otherwise asked of someone other than a linked sender, who pushes its own, under that ceiling
-    /// (``followAdvertisedPhoto(_:of:)``), and the photo it replaced is let go.
+    /// (``followAdvertisedPhoto(_:of:askingLinked:)``), and the photo it replaced is let go.
     private func followPresentation(_ presentation: RatchetArrival.Presentation, of sender: NodeId) {
         events.append(.peerUpdated(sender))
         let after = presentation.after
         if let advertised = after.advertisedAvatarHash, after.avatarHash != advertised {
-            followAdvertisedPhoto(advertised, of: sender)
+            followAdvertisedPhoto(advertised, of: sender, askingLinked: false)
         }
         if let replaced = presentation.before.avatarHash, replaced != after.avatarHash {
             releaseBlob(replaced)

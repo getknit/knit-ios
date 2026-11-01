@@ -155,7 +155,8 @@ extension MeshEngine {
     /// stranger's newest would stand its 30 minutes, be stepped at every re-offer and land, so a flood posted oldest first
     /// would be fetched whole and crowd our other wants out of the set.
     ///
-    /// An echo is an asker's, and a peer's advertised photo is wanted as a photo, so neither is touched. Nor is a want
+    /// An echo is an asker's, and a peer's advertised photo is wanted as a photo, so neither is touched, but a blocked
+    /// person's, which is no longer wanted as theirs (``withdrawBlockedPhotos()``, knit-ios #37). Nor is a want
     /// whose bytes are already arriving: the copy is on the link already, and once landed, nothing names it and the
     /// sweep removes it. The rows and who the user knows are read in one store unit, and nothing is withdrawn unless it
     /// commits: outside one a failed read knows nobody, and every contact's room photo would read as a stranger's.
@@ -163,7 +164,8 @@ extension MeshEngine {
         let unit = stores.transactor.atomically { () -> [BlobHash]? in
             let all = stores.messages.allAttachmentRows()
             let taken = rowsTaken(all, fetching: true)
-            let advertised = Set(stores.peers.allPeers().compactMap(\.advertisedAvatarHash))
+            let blocked = stores.blocks.blockedNodeIds()
+            let advertised = Set(stores.peers.allPeers().filter { !blocked.contains($0.nodeId) }.compactMap(\.advertisedAvatarHash))
             return all.filter { hash, rows in
                 taken[hash] == nil && rows.contains { $0.conversationId == Conversations.nearby }
                     && blobExchange.wants[hash]?.origin == .own && !advertised.contains(hash)

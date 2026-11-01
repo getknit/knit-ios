@@ -262,7 +262,9 @@ fetched at most once per holder per session.
   `:396` (`if (!limit.marks) return`), and `skip()` and `abort()` send nothing to `BlobExchange`. Even a marking cut only
   records `partials.markHolder`, which `passOver` reads at the next step (`BlobExchange.kt:491-520`). This port steps a
   marked want at once (`MeshEngine.overPhotoCeiling`), as before.
-- Group photos and message attachments keep their ceilings. Block behaviour is unchanged.
+- Group photos and message attachments keep their ceilings. The ceiling's own block behaviour is unchanged. Since
+  ADR 2026-11.y793 a block clears the person's photo and stops its fetch, and the ceiling's sweeps may clear a blocked
+  row's photo too.
 
 **Headroom:**
 

@@ -54,8 +54,10 @@ extension MeshEngine {
         // The kept prefixes past their hour, and those whose blob came some other way (`MeshManager.kt:2777`). A store
         // error reads as not held, which keeps the prefix to its hour.
         partials.sweep(now: now) { stores.blobs.contains($0) }
-        // A face adopted before the photo's ceiling, over it, is cleared and let go (ADR 2026-10.r88m).
+        // A face adopted before the photo's ceiling, over it, is cleared and let go (ADR 2026-10.r88m). A blocked person's
+        // face is cleared too, however the block was written, so its bytes go below once past the cutoff (knit-ios #37).
         clearOversizePhotos()
+        hideBlockedPhotos(of: stores.blocks.blockedNodeIds())
         replayFailedRatchetOpens()
         sweepUnnamedBlobs(storedBefore: clock.wallMilliseconds() - BlobExchange.wantMilliseconds)
     }
@@ -86,17 +88,23 @@ extension MeshEngine {
     /// becomes its author, and a want of ours for a room photo the bound now leaves out is withdrawn. Android wants every
     /// row's (`MeshManager.kt` `rewantMissingBlobs`).
     ///
+    /// A blocked person's photo is never wanted for their row (knit-ios #37), and a want of ours an older pass made for it
+    /// is withdrawn first (``withdrawBlockedPhotos()``). The block list is read once, outside a store unit: a failed read
+    /// blocks nobody, which wants their photo as before the block, until the next pass.
+    ///
     /// Each is a want of our own, and its deadline is re-derived from the rows that name it (`wantAll`'s `until`,
     /// `PullThroughGate`, knit-next ADR 2026-10.2drc): a DM's custody window from its latest row, none for a group's or a
     /// room's, and none for a photo. A read of the rows that fails answers none, so nothing is wanted from them until the
     /// next pass, and a photo a message also names keeps the deadline it had, so a failed read never lifts a DM's.
     func rewantMissingBlobs(sparing: Set<NodeId>) {
         withdrawLeftOutRoomPhotos()
+        withdrawBlockedPhotos()
+        let blocked = stores.blocks.blockedNodeIds()
         let rows = rowsTaken(stores.messages.allAttachmentRows(), fetching: true)
         let missing = Set(rows.keys).subtracting(stores.blobs.held(among: Set(rows.keys)))
         let carried = stores.messages.attachmentHashes()
         var wanted: [BlobExchange.OwnWant] = []
-        for peer in stores.peers.allPeers() where !sparing.contains(peer.nodeId) {
+        for peer in stores.peers.allPeers() where !sparing.contains(peer.nodeId) && !blocked.contains(peer.nodeId) {
             if let advertised = peer.advertisedAvatarHash, !stores.blobs.contains(advertised) {
                 // A photo has no deadline, unless a message's row names the same blob. A message request's row is no
                 // reason to lift or set one: its rows fold to none taken, which keeps the deadline the want had.
@@ -135,10 +143,14 @@ extension MeshEngine {
     /// message in an accepted thread carries, a stranger's room photo only inside the room's bound
     /// (``rowsTaken(_:fetching:)``, knit-ios #21), and a deleted message's photo while our custody carries its frame (ADR
     /// 2026-10.u7cq). A message request's photo is named by none of them, so bytes an echo brought for it count toward the
-    /// echo budget and go on the sweep.
+    /// echo budget and go on the sweep. Nor is a blocked person's photo by their row (knit-ios #37): bytes held for it count
+    /// toward the echo budget and go by the sweep unless something else names them, and a file of it is not taken in
+    /// unwanted.
     ///
-    /// Every read here is the caller's, made anew on each call: a sweep reads it inside its store unit, where a failed
-    /// read fails the unit and removes nothing, since outside one it would read as no thread accepted.
+    /// Every read here is the caller's, made anew on each call: the sweep, ``releaseBlob(_:)``, the echo budget's measure
+    /// and a deleted message's release read it inside their store unit, where a failed read, the block list's included,
+    /// fails the unit and removes nothing, since outside one it would read as no thread accepted and nobody blocked.
+    /// ``receiveFile(_:)`` reads it outside one, where a failed read names less, or more for a blocked row's photo.
     func blobsTheRowsName() -> Set<BlobHash> {
         var named = Set(rowsTaken(stores.messages.allAttachmentRows(), fetching: false).keys)
         for deleted in stores.messages.deletedAttachments() where stores.custody.contains(deleted.id) {
@@ -147,7 +159,8 @@ extension MeshEngine {
         if let own = stores.ownProfile.load().avatarHash {
             named.insert(own)
         }
-        for peer in stores.peers.allPeers() {
+        let blocked = stores.blocks.blockedNodeIds()
+        for peer in stores.peers.allPeers() where !blocked.contains(peer.nodeId) {
             for photo in [peer.avatarHash, peer.advertisedAvatarHash].compactMap(\.self) where peerPhotoNamesBlob(photo) {
                 named.insert(photo)
             }

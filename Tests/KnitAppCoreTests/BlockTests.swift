@@ -1,4 +1,5 @@
 import Foundation
+import KnitCrypto
 import KnitMesh
 import KnitStore
 import KnitWire
@@ -130,6 +131,30 @@ import Testing
         #expect(!profile.state.isBlocked)
         await PeerProfileModel(nodeId: rig.me, session: rig.session).setBlocked(true)
         #expect(rig.mesh.calls.blocked == ["block \(sam.nodeId)", "unblock \(sam.nodeId)"], "never ourselves")
+    }
+
+    @Test func aBlockKeepsTheirNameAndShowsTheirInitial() async {
+        // knit-ios #37: the name they had at the block stays on their profile, in the Blocked list and in a group, and
+        // their face is their initial from then on.
+        let rig = AppRig()
+        let photo = BlobHash(of: Array("Sam at the gate".utf8))
+        var record = sam.record(name: "Sam", status: "At the north gate")
+        record.avatarHash = photo
+        record.advertisedAvatarHash = photo
+        rig.stores.peers.upsert(record)
+        await rig.session.handle(.peerUpdated(sam.nodeId))
+        let group = await rig.group([sam, priya], createdBy: priya)
+        let profile = PeerProfileModel(nodeId: sam.nodeId, session: rig.session)
+        #expect(profile.state.face.photo == photo)
+
+        await profile.setBlocked(true)
+        let initial = Face.person(sam.nodeId.string, name: "Sam", photo: nil)
+        #expect(profile.state.title == "Sam" && profile.state.status == "At the north gate")
+        #expect(profile.state.face == initial)
+        #expect(BlockedModel(session: rig.session).rows == [BlockedRow(id: sam.nodeId, title: "Sam", face: initial)])
+        #expect(rig.session.directory.face(forMember: sam.nodeId.string) == initial, "a group's faces show the initial too")
+        #expect(rig.session.directory.label(for: sam.nodeId).text == "Sam")
+        #expect(rig.stores.groups.group(group.id)?.members.contains(sam.nodeId.string) == true)
     }
 
     @Test func theBlockedListNamesEveryoneByNameAndUnblocks() async {

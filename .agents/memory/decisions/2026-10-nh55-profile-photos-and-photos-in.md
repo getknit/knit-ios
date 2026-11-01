@@ -32,7 +32,8 @@ photos carried (`.agents/context/linux-peer.md`).
 **Decision:** on 2026-10-03 the maintainer asked for all of it, in this order:
 
 1. **Blob transfer and profile photos,** as one milestone: FILE records both ways, `blobreq` both asked and
-   answered, our own photo published and pushed, and every peer's photo shown wherever that person appears.
+   answered, our own photo published and pushed, and every peer's photo shown wherever that person appears. A
+   blocked person's is not: since ADR 2026-11.y793 a block clears it and stops its fetch.
 2. **Photos in chats, both ways,** in Nearby, DMs and groups. They are sealed in DMs and groups as Android seals
    them (`AttachmentCrypto.kt`), and travel in the clear in Nearby, as Android sends them there.
 3. **Group photos shown, never set,** with Android's split between the decided photo and the shown one (knit-next

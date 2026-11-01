@@ -121,7 +121,9 @@ explicit direction.** Update this file in the change that ships an item.
   - **The mesh for the app:** it reports the radio's state, stops and starts again on the same radio, marks a
     peer verified, and stores list each thread's newest message.
   - **Block (2026-10-03):** presentation only, as on Android: a blocked person's messages stop at delivery and are
-    still carried, relayed and ticked (ADR 2026-10.5wgg).
+    still carried, relayed and ticked (ADR 2026-10.5wgg). Since 2026-11-01 their name, status and photo stay as they
+    were at the block, their face is their initial, and their photo is not fetched; an unblock brings their newest
+    profile back (ADR 2026-11.y793, knit-ios #37).
   - **Delete (2026-10-04):** a message from its bubble's menu, a chat or request from its swipe, and Nearby cleared,
     all local as on Android. Unlike Android, a deleted message is remembered until no carrier can re-serve it, and a
     delete never turns an accepted thread into a request (ADR 2026-10.u7cq).

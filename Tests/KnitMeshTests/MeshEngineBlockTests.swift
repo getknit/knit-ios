@@ -126,8 +126,8 @@ import Testing
         #expect(restarted.stores.messages.message(frameIdOf("gm-1"))?.body == "During")
     }
 
-    @Test func aBlockedSendersPhotoIsNotFetchedButTheirProfilePhotoIs() throws {
-        // A blocked message never reaches `wantBlob`; a profile is never gated (`InboundPipeline.kt:1180-1183`).
+    @Test func aBlockedSendersPhotoIsNotFetchedNorTheirProfilePhoto() throws {
+        // A blocked message never reaches `wantBlob`, and a blocked profile's presentation is never written (knit-ios #37).
         let fixture = EngineFixture(alice)
         fixture.link(carol)
         try fixture.pin(bob)
@@ -141,9 +141,8 @@ import Testing
         #expect(fixture.transport.written(.blobRequest).isEmpty)
         let face = BlobHash(of: Array("a face".utf8))
         fixture.deliver(try bob.profile(version: start + 1, publishedAt: start + 1, avatarHash: face.string), from: carol)
-        let asked = fixture.transport.written(.blobRequest)
-        #expect(try asked.map { try BlobRequestContent(decoding: $0.envelope.payload).hash } == [face.string])
-        #expect(fixture.stores.peers.peer(bob.nodeId)?.advertisedAvatarHash == face)
+        #expect(fixture.transport.written(.blobRequest).isEmpty)
+        #expect(fixture.stores.peers.peer(bob.nodeId)?.advertisedAvatarHash == nil)
     }
 
     @Test func aParkedFrameFromABlockedSenderMeetsTheBlockWhenItsKeyPins() throws {

@@ -60,4 +60,13 @@ extension FakeMesh {
     func ownContactLink() -> ContactCard.Links? {
         keys.flatMap { ContactCard.encode($0, name: stores.ownProfile.load().name, issuedAt: clock) }
     }
+
+    /// Clears the photo `peer` shows, as the engine's block does: their name and the photo they advertise stay
+    /// (knit-ios #37).
+    func clearFace(of peer: NodeId) {
+        if var record = stores.peers.peer(peer), record.avatarHash != nil {
+            record.avatarHash = nil
+            stores.peers.upsert(record)
+        }
+    }
 }

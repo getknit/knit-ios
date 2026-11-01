@@ -182,6 +182,21 @@ import Testing
         #expect(fixture.engine.dropped[.blocked] == 1)
     }
 
+    @Test func aBlockedPeersSealedProfileDiesAtTheBlockedGate() throws {
+        // A block hides a new name as it hides a message (knit-ios #37): the sealed profile never opens, so nothing moves.
+        let (fixture, android) = try rig()
+        let prekey = try fixture.ourPrekey()
+        let before = try #require(fixture.stores.peers.peer(alice.nodeId))
+        fixture.engine.block(alice.nodeId)
+        _ = fixture.engine.drainEvents()
+        let update = ProfilePayload(name: "Renamed", status: "while blocked", version: now + 1)
+        let control = MessageContent(body: "", ctl: MessageContent.Control.profile, pr: update)
+        fixture.deliver(try android.dm(control, to: me, prekey: prekey, id: frameIdOf("ctl-bp"), sentAt: now), from: android)
+        #expect(fixture.engine.dropped[.blocked] == 1)
+        #expect(fixture.stores.peers.peer(alice.nodeId) == before)
+        #expect(!fixture.engine.drainEvents().contains(.peerUpdated(alice.nodeId)))
+    }
+
     @Test func aV3DmOpensWithItsCompactContent() throws {
         let (fixture, android) = try rig()
         let prekey = try fixture.ourPrekey()
