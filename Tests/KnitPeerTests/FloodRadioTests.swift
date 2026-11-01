@@ -15,8 +15,11 @@ import Testing
         let inner = PeerRadio()
         let flood = FloodRadio(wrapping: inner, bytesPerSecond: 10_000)
         flood.tick(milliseconds: 1000)
-        #expect(flood.floodedBytes == 0, "no HELLO yet")
+        #expect(flood.floodedBytes == 0, "no link yet")
         flood.heardHello(from: node, on: channel)
+        flood.tick(milliseconds: 1000)
+        #expect(flood.floodedBytes == 0, "a HELLO alone is no link: its PROOF may still be to come")
+        flood.linkUp(node, on: channel)
         flood.tick(milliseconds: 1000)
         let records = inner.records(on: channel)
         #expect(!records.isEmpty)
@@ -31,7 +34,7 @@ import Testing
     @Test func theJunkNeverDecodes() throws {
         let inner = PeerRadio()
         let flood = FloodRadio(wrapping: inner, bytesPerSecond: 3)
-        flood.heardHello(from: node, on: channel)
+        flood.linkUp(node, on: channel)
         flood.tick(milliseconds: 1000)
         flood.tick(milliseconds: 2000)
         let records = inner.records(on: channel)
@@ -47,7 +50,7 @@ import Testing
     @Test func aRecordBeingWrittenInSlicesIsNeverCut() throws {
         let inner = PeerRadio()
         let flood = FloodRadio(wrapping: inner, bytesPerSecond: 10_000)
-        flood.heardHello(from: node, on: channel)
+        flood.linkUp(node, on: channel)
         let profile = try #require(LinkRecord(.frame, payload: [UInt8](repeating: 7, count: 20_000)).encoded)
         flood.write(Array(profile[0..<8192]), to: channel)
         flood.tick(milliseconds: 100)
@@ -65,7 +68,7 @@ import Testing
     @Test func aFullQueueHoldsTheFloodBack() {
         let inner = PeerRadio()
         let flood = FloodRadio(wrapping: inner, bytesPerSecond: 10_000)
-        flood.heardHello(from: node, on: channel)
+        flood.linkUp(node, on: channel)
         inner.setQueued(FloodRadio.heldBackBytes, on: channel)
         flood.tick(milliseconds: 5000)
         #expect(flood.floodedBytes == 0)
@@ -80,7 +83,7 @@ import Testing
         flood.consumed(42, on: channel)
         #expect(inner.consumed(on: channel) == 42, "a wrapper that kept it would leave the channel paused")
         inner.emit(.accepted(channel))
-        flood.heardHello(from: node, on: channel)
+        flood.linkUp(node, on: channel)
         inner.emit(.closed(channel))
         var events: [RadioEvent] = []
         for await event in flood.events {
@@ -118,7 +121,7 @@ import Testing
     @Test func aStopForgetsEveryLinkButKeepsTheCount() {
         let inner = PeerRadio()
         let flood = FloodRadio(wrapping: inner, bytesPerSecond: 10_000)
-        flood.heardHello(from: node, on: channel)
+        flood.linkUp(node, on: channel)
         flood.tick(milliseconds: 1000)
         let flooded = flood.floodedBytes
         #expect(flooded > 0)
@@ -133,7 +136,7 @@ import Testing
     @Test func aWriteShorterThanAHeaderHoldsNothingBack() {
         let inner = PeerRadio()
         let flood = FloodRadio(wrapping: inner, bytesPerSecond: 10_000)
-        flood.heardHello(from: node, on: channel)
+        flood.linkUp(node, on: channel)
         flood.write([1, 0, 0], to: channel)
         flood.tick(milliseconds: 100)
         #expect(flood.floodedBytes > 0, "it reads as a whole write, not as the start of a record still to come")

@@ -163,6 +163,8 @@ These only ever grow. A value is never reused, even after it is retired.
   | `0x020` | `FAST_COMPACT` | `0x800` | `DIRECT_TRANSFER` |
   | `0x1000` | `DOORBELL` | `0x2000` | `BLOB_HAVE` |
   | `0x4000` | `CALL` | `0x8000` | `WALKIE` |
+  | `0x10000` | `LORA_DIRECT` | `0x20000` | `INET_LINK` |
+  | `0x40000` | `LINK_PROOF` | | |
 
   `DOORBELL` and `BLOB_HAVE` sit above the advert's 8 bits and are read from the HELLO alone. Android sends `0x2FFF`
   since `403cd861`, and `0xFFF` before it; it never claims `DOORBELL`. `CALL` and `WALKIE` ride its signed profile
@@ -170,6 +172,13 @@ These only ever grow. A value is never reused, even after it is retired.
   HELLO still reads `0x2FFF`. This port claims neither, so Android offers an iPhone no call. Only the signed profile copy gates anything, and only at send time: `RATCHET`
   (with a prekey) picks v2 DMs, `CRYPTO_V3` picks v3, `INLINE_ACK`, `FILES`, `LINK_PREVIEW` and
   `DIRECT_TRANSFER` gate features. The rest are diagnostic.
+
+  `LORA_DIRECT` and `INET_LINK` are Android's, and this port names neither. `LINK_PROOF` (ADR 2026-11.hpmt, knit-next
+  ADR 2026-11.264w) is in `Capabilities.local`, so the HELLO reads `4215f` (`4315f` with the doorbell) and the signed
+  profile `0x4015F` or `0x4000F`. It is read twice: from the HELLO, to decide whether a link runs the proof exchange,
+  and from the signed profile, whose copy makes a peer proof-capable. A HELLO carrying it carries a fourth field,
+  `n<32 lowercase hex>`, a fresh nonce, and a link where both HELLOs carry it exchanges tag-8 `PROOF` records before it
+  registers (`ble-transport.md`, "The handshake").
 
 ## Signatures, ids and clocks
 
@@ -232,7 +241,7 @@ photos in chats the same day (ADR 2026-10.6cas), the blob holder query on 2026-1
 | `receipt`, `relay = true`, `sentAt` set | our DM acks | yes: ✓✓ on our DMs |
 | `receipt`, `relay = false`, no `sentAt` | room and group ticks over the link | yes: Android's room and group ticks to us |
 | `keyreq` (`relay = false`, signed) | when a sender's key is missing | answer with cached signed profiles |
-| `blobreq` (unsigned, `relay = false`, `sentAt` 0, no `offset`, the want's `pull` and `until`) | to the best holder a query found, or blind: the author, then the hop the frame came from, then every other neighbour once a 5 s grace is up; a cycle at most every 45 s, on a link-up or the 60 s tick (knit-next ADRs 2026-10.f7gg and 2026-10.6e5t) | serve it if held, as FILE records of kind ATTACHMENT, the whole file whatever `offset` says; otherwise want it with one hop less of its `pull`, never asking the asker back that cycle, unless that leaves less than none or its `until` has passed; never flood it (ADR 2026-10.ym9y, ADR 2026-10.8hek) |
+| `blobreq` (unsigned, `relay = false`, `sentAt` 0, no `offset`, the want's `pull` and `until`) | to the best holder a query found, or blind: the author, then the hop the frame came from, then every other neighbour once a 5 s grace is up; a cycle at most every 45 s, on a link-up or the 60 s tick (knit-next ADRs 2026-10.f7gg and 2026-10.6e5t) | serve it if held, as FILE records of kind ATTACHMENT, the whole file whatever `offset` says; otherwise want it with one hop less of its `pull`, never asking the asker back that cycle, unless that leaves less than none or its `until` has passed; taken only from the link that carried it when its sender is that link's peer, as the other four blob-control types are (`blobControlNotFromLink`); never flood it (ADR 2026-10.ym9y, ADR 2026-10.8hek) |
 | `blobhave` (unsigned, `relay = false`, `sentAt` 0, ≤ 32 hashes) | in every build, the app's and knit-peer's (`MeshConfiguration.queriesBlobHolders`, ADR 2026-10.m9uq's amendment of 2026-10-09): to each neighbour whose HELLO carries `CAP_BLOB_HAVE`, one frame per neighbour per step | answer every one, from the link that carried it and only when its sender is that link's peer, within 16 a burst and one a second; never flood it |
 | `blobhas` (unsigned, `relay = false`, `sentAt` 0) | the answer: NONE, HAVE with the size, SENDING, or FETCHING per hash, our `load` and the query's `re`; never an `eta` | taken only from a neighbour queried this cycle for a hash it names; a state this build does not know is never HAVE; a SENDING `eta` holds the ask on that holder until then plus 30 s, the `eta` taken as at most 15 min (ADR 2026-10.ds45) |
 | `blobprog` (unsigned, `relay = false`, `sentAt` 0, `BlobProgressContent`: hash, held, ms) | while a file streams in, kept or skipped, to its sender: on every chunk that brings 2 KiB, at least every 500 ms, and once more 500 ms after chunks no report carried; every 2 s with the window off. Only when that link's HELLO carries `CAP_BLOB_HAVE`, an iPhone included (knit-next ADR 2026-10.nsr7, ADR 2026-10.xwjc) | counted, from the link that carried it and only when its sender is that link's peer; it clocks the window of the file we feed that peer (`FeedWindow`, ADR 2026-10.xwjc); never flood it (ADR 2026-10.ds45) |

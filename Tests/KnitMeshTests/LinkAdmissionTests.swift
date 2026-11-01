@@ -16,7 +16,7 @@ import Testing
         let rig = LinkRig(local: high)
         let events = rig.accept(low, on: ChannelID(100))
         #expect(events == [.up(Neighbor(nodeId: low, protocolVersion: 1, capabilities: 0xFFF))])
-        #expect(rig.radio.records(on: ChannelID(100)) == [LinkRig.ourHello(high)])
+        #expect(LinkRig.isOurHello(rig.radio.records(on: ChannelID(100)), high))
     }
 
     @Test func aSightedLargerDialerIsAdmitted() {

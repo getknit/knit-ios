@@ -110,3 +110,8 @@ meters no digest, caps no round, and its link writer is `Channel.UNLIMITED`. One
   - rule 5: `KeyExchangeTests`, `MeshEngineKeyBudgetTests` and `LinkPipeKeyBudgetTests`;
   - rule 6: `InboxCreditsTests` and `BlueZChannelTests`;
   - on the Mac: `L2CAPLinkTests`, for the bound, the level and the credit over bound streams.
+
+**Amended 2026-11-01, for the link proof (ADR 2026-11.hpmt):** the meters keyed by the HELLO's node id (rule 1's
+digests, rule 5's keyreq bucket) are keyed by a proven id on a link where both sides carry `CAP_LINK_PROOF`. There, a
+node claiming an honest peer's id can no longer empty that peer's buckets: its claim is refused or fails its proof
+before anything is metered. Toward a peer that can't prove itself, the consequence above still holds.

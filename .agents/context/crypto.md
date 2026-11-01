@@ -198,6 +198,33 @@ and asks for the key; from a scan it pins verified and sends nothing. Either way
 row, so a pinned peer's prekey and capabilities survive a re-import, and it releases the frames parked for
 that sender, which Kotlin leaves for the profile. A DM sent before the profile arrives goes v1.
 
+## A link's proof of its node id
+
+```text
+transcript = "knit/link/v1/proof" ‖ role(1) ‖ u32be(len hD) ‖ hD ‖ u32be(len hR) ‖ hR
+role       = 0x01 the signer dialed | 0x02 it answered
+PROOF      = sigPub(32) ‖ hpkePub(32) ‖ Ed25519(IK_sign, transcript)          (128 bytes, link record tag 8)
+```
+
+The `link-hello-proof` contract (knit-next #232, knit-ios #25), ported as `LinkProof`: each side of a link signs both
+HELLO payloads as they crossed, the dialer's first whoever signs, each carrying a 16-byte nonce from
+`LinkProof.freshNonce()`, never from the mesh's injected generator. Like a card, the proof certifies itself: the id the
+HELLO claimed must derive from the bundle rebuilt from the two keys. `LinkProof.verify` checks the length, then the id,
+then the signature, and answers `.length`, `.idMismatch` or `.badSignature`; once the length is right an invalid point
+can only fail the signature. Which step refuses a non-canonical key or an S at or past L differs between CryptoKit and
+swift-crypto, so no test pins it. The transcript starts `k`, a CBOR text head, so it never reads as a frame's signed
+map, and its label shares no prefix with the card's or the signed prekey's.
+
+`CAP_LINK_PROOF` (`0x40000`) rides `Capabilities.local`, so the HELLO and every profile we sign carry it. A peer's
+signed profile carrying it makes that peer one every link claiming its id must prove; the row gaining it tells the
+transport (`MeshTransport.peerProvesItself`, contract R4). So the bit cannot be taken back by an older frame:
+
+- a peer's stored capabilities are written only from a profile no older than its presentation (`profileRecord`), where
+  until then a profile fresh only on the prekey's watermark wrote them;
+- at start, a profile whose capabilities differ from those its last publish recorded (`OwnProfile.capabilities`,
+  schema v21), or records none, is published again as an edit (`republishIfCapabilitiesChanged`), so every profile we
+  signed before is strictly older. A never-edited profile is republished at version 0 instead, as the prekey's is.
+
 ## Alias
 
 A blank display name shows an alias. With `d = SHA-256(UTF-8("knit-alias-v2:" + nodeId))`, token t is
@@ -234,6 +261,7 @@ Swift must count `utf16`, not `Character`s.
 | `AttachmentCrypto` | `AttachmentCrypto.seal(_:)`, `.open(_:key:)`, and `BlobHash(of:)` for the blob's name |
 | `Conversations.groupIdFor` | `GroupId.derive(_:)` |
 | `SafetyNumber`, `Alias`, `DeviceTag` | the same names |
+| `LinkProof`, `LinkProver` (knit-next #232, not yet merged) | `LinkProof`: `transcript`, `payload(keys:…)`, `verify`, `freshNonce` |
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
 | `ContactCard` (its `Body` and `Signed`), `ContactCards.mint`, `ContactImporter.import` and `AddContactViewModel.onScanned`'s pins, `MeshManager.importContact` less the intro | `ContactCard` (`parse`, `looksLikeCard`, `encode`), KnitWire's `ContactCardBody` and `ContactCardSigned`, `MeshEngine.addContact` and `ownContactLink` (ADR 2026-10.tpr5) |
 | `RatchetEngine` | `RatchetEngine`: `initiate`, `seal`, `open`, over `SessionState`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
@@ -1002,7 +1030,8 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     custodied and never counted toward a reset (`InboundPipeline.kt:592-598`, `:1739-1768`).
 - **Android reads these bits from the pinned profile alone** (`CryptoScheme.kt:11-13`). That is why the dark phases
   could carry them on a Debug build's profile while the HELLO and the advert stayed `0xF`, and why the profile is what
-  the switch gates: off, it carries neither the bits nor a prekey (P8).
+  the switch gates: off, it carries neither the bits nor a prekey (P8), only `local` without them (`0x4000F` since
+  knit-ios #25).
 
 ### What this port leaves out
 

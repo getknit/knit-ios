@@ -20,7 +20,8 @@ public actor Mesh {
 
     /// The engine, reached by this actor's extensions in other files (`Mesh+Ratchet.swift`).
     let engine: MeshEngine
-    private let links: LinkManager
+    /// The links, reached by this actor's extensions in other files (`Mesh+LinkProof.swift`).
+    let links: LinkManager
     /// The kept prefixes of cut attachments, which the links and the engine share (knit-ios #2), purged at every start and
     /// stop: they belong to one session's transfers (`MeshManager.kt:997-998`).
     private let partials: any PartialBlobStore
@@ -56,13 +57,14 @@ public actor Mesh {
         let shared = partials ?? MemoryPartialBlobStore { line in log.log(.info, "mesh \(line)") }
         self.partials = shared
         let linkManager = LinkManager(
-            localId: identity.nodeId,
+            identity: identity,
             radio: radio,
             clock: clock,
             random: random,
             configuration: linkConfiguration,
             log: log,
-            partials: shared
+            partials: shared,
+            profileCarriesProof: Self.profileCarriesProof(in: stores.peers)
         )
         links = linkManager
         engine = MeshEngine(

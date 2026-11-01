@@ -6647,6 +6647,11 @@ IOS_CHANNEL_ENDINGS = [
     # ADR 2026-10.f5zs: the far end stopped reading, past the outbox's 4 MiB bound or for 120 s of running time.
     (re.compile(r"^ble (ch\d+) stopped reading"), lambda _: "ours: stopped reading, past the outbox bound"),
     (re.compile(r"^link (ch\d+) write stalled for (\d+) ms"), lambda m: f"ours: write stalled for {m[2]} ms"),
+    # knit-ios #25: an unproven link claiming an id that proved itself on another link, or whose signed profile now says it
+    # proves itself, is closed; a link whose proof failed never came up, so it has no `link down` to explain.
+    (re.compile(r"^link (ch\d+) displaced: \S+ proved itself on ch\d+$"), lambda _: "displaced: its id proved itself"),
+    (re.compile(r"^link (ch\d+) closed: \S+ proves itself$"), lambda _: "closed: its id proves itself"),
+    (re.compile(r"^link (ch\d+) proof failed for \S+: (.*)"), lambda m: f"proof failed: {m[2][:40]}"),
 ]
 
 

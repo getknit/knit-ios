@@ -37,7 +37,7 @@ import Testing
         fixture.deliver(cancel(from: bob, photoHash.string, id: frameIdOf("cancel-1")), from: bob)
         #expect(fixture.transport.withdrawn.map(\.to) == [bob.nodeId], "another sender's claim is not taken")
         #expect(fixture.engine.blobExchange.counts.cancelsTaken == 1)
-        #expect(fixture.engine.dropped.isEmpty)
+        #expect(fixture.engine.dropped == [.blobControlNotFromLink: 1], "carol's claim over bob's link, counted (contract §8)")
         #expect(fixture.transport.written.isEmpty, "unsigned by design, so no key is asked for, and never relayed")
         let shown = photoHash.string.prefix(BlobExchange.shownHashCharacters)
         #expect(

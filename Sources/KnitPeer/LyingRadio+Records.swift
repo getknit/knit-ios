@@ -48,7 +48,7 @@ internal enum LyingRecords {
     }
 
     /// A record's tag and its whole length, header included, read from the start of `bytes`, or `nil` when `bytes` is
-    /// shorter than a header or its tag is none of the seven.
+    /// shorter than a header or its tag is none of the eight.
     static func header(of bytes: [UInt8]) -> (tag: LinkRecord.Tag, total: Int)? {
         guard bytes.count >= LinkRecord.headerBytes, let tag = LinkRecord.Tag(rawValue: bytes[0]) else {
             return nil

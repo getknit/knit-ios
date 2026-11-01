@@ -63,6 +63,30 @@ import Testing
         #expect(ask["ok"] as? Bool == true && ask["sent"] as? Bool == false && ask["id"] is NSNull, "no link to it")
     }
 
+    /// The link-proof trial's impostor (`link-hello-proof`, T4 and T5): set, shown in `status`'s `lying`, refused for an id
+    /// that is not one, and cleared back to honest.
+    @Test func theImpostorSetsShowsInStatusAndClears() async throws {
+        let rig = try LyingTrialRig()
+        defer { rig.remove() }
+        await rig.start()
+        let honest = try #require(try await rig.lying()["impostor"] as? [String: Any])
+        #expect(honest["legacy"] as? Bool == false && honest["claim"] is NSNull && honest["dial"] is NSNull)
+        let claimed = rig.receiverKeys.nodeId.string
+        let set = try await rig.send(#"{"cmd":"impostor","legacy":true,"claim":"\#(claimed)","dial":"\#(claimed)","tag":"i"}"#)
+        #expect(set["ok"] as? Bool == true && set["reply"] as? String == "impostor" && set["tag"] as? String == "i")
+        let shown = try #require(try await rig.lying()["impostor"] as? [String: Any])
+        #expect(shown["legacy"] as? Bool == true && shown["claim"] as? String == claimed && shown["dial"] as? String == claimed)
+        for line in [#"{"cmd":"impostor","claim":"x"}"#, #"{"cmd":"impostor","dial":"x"}"#] {
+            let reply = try await rig.send(line)
+            #expect(reply["ok"] as? Bool == false && reply["error"] as? String == "not a node id: x", "\(line)")
+        }
+        let kept = try #require(try await rig.lying()["impostor"] as? [String: Any])
+        #expect(kept["legacy"] as? Bool == true && kept["claim"] as? String == claimed, "nothing half set")
+        _ = try await rig.send(#"{"cmd":"impostor","clear":true}"#)
+        let cleared = try #require(try await rig.lying()["impostor"] as? [String: Any])
+        #expect(cleared["legacy"] as? Bool == false && cleared["claim"] is NSNull && cleared["dial"] is NSNull)
+    }
+
     @Test func aBadLyingLineIsAnsweredWithWhy() async throws {
         let rig = try LyingTrialRig()
         defer { rig.remove() }

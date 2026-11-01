@@ -21,6 +21,7 @@ final class FakeRadio: Radio {
         case closed(ChannelID)
         case rang(ChannelID)
         case heardHello(NodeId, ChannelID)
+        case linkUp(NodeId, ChannelID)
         case sought(Bool)
     }
 
@@ -33,6 +34,7 @@ final class FakeRadio: Radio {
         var closed: [ChannelID] = []
         var rings: [ChannelID] = []
         var hellos: [HeardHello] = []
+        var ups: [HeardHello] = []
         var seeks: [Bool] = []
         var levels: [ChannelID: OutboxLevel] = [:]
         var consumed: [Consumed] = []
@@ -73,6 +75,8 @@ final class FakeRadio: Radio {
     var rings: [ChannelID] { state.withLock { $0.rings } }
     /// Every HELLO the link manager said it read, in order.
     var hellos: [HeardHello] { state.withLock { $0.hellos } }
+    /// Every link the link manager said it registered (``Radio/linkUp(_:on:)``), in order.
+    var linkUps: [HeardHello] { state.withLock { $0.ups } }
     /// Every change of seeking asked, in order.
     var seeks: [Bool] { state.withLock { $0.seeks } }
 
@@ -151,6 +155,11 @@ final class FakeRadio: Radio {
     func heardHello(from node: NodeId, on channel: ChannelID) {
         state.withLock { $0.hellos.append(HeardHello(node: node, channel: channel)) }
         recorder.yield(.heardHello(node, channel))
+    }
+
+    func linkUp(_ node: NodeId, on channel: ChannelID) {
+        state.withLock { $0.ups.append(HeardHello(node: node, channel: channel)) }
+        recorder.yield(.linkUp(node, channel))
     }
 
     /// What a test said waits on `channel` and has left it; empty unless set (``setLevel(_:on:)``).

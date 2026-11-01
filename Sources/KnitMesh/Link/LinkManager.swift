@@ -1,3 +1,4 @@
+public import KnitCrypto
 public import KnitStore
 public import KnitWire
 
@@ -12,6 +13,10 @@ public import KnitWire
 /// dial it: that is how a cross-dial is broken. A dialer we never sighted is admitted whatever the order, since
 /// it may be an iPhone we cannot see. A second link from a linked peer is refused, unless we never sighted the
 /// dialer: then it is the peer's fresh link replacing one that died on its side, and the old one is closed.
+///
+/// **Who is who.** When both HELLOs carry ``Capabilities/linkProof``, each side proves the id its HELLO claims before the
+/// link registers, and a proven link displaces unproven ones claiming its id; an id known to prove itself is refused
+/// unproven (``LinkClaims``, `LinkManager+LinkProof.swift`). A build from before the proof links unproven, as before.
 ///
 /// **Links are keyed by channel, not by node id.** On Android, closing a replaced link tore down its replacement
 /// (`BluetoothMeshTransport.kt:787` and `:806`); here a channel's teardown touches only itself.
@@ -45,47 +50,6 @@ public final class LinkManager: MeshTransport {
         case fileOverLimit(BlobHash, from: NodeId)
     }
 
-    enum Role: Equatable {
-        /// We dialed, expecting this peer to answer.
-        case dialer(NodeId)
-        /// The peer dialed us.
-        case responder
-    }
-
-    enum Stage: Equatable {
-        /// A dial not yet open.
-        case connecting
-        /// Open, waiting for the other side's HELLO.
-        case awaitingHello
-        /// Registered to this peer: frames flow.
-        case live(NodeId)
-    }
-
-    /// A registered link.
-    struct LiveLink {
-        let channel: ChannelID
-        let neighbor: Neighbor
-        let since: Int64
-        /// Whether the peer has been sighted since the link came up; a dialer we dial always has.
-        var sighted: Bool
-        /// Whether the peer has been heard through service data while linked, or was when the link came up: an advert
-        /// with a digest cue. A GATT payload carries none, by ADR 2026-09.xzpt's shared law, so a peer only ever heard
-        /// that way, or never heard, looks like an iPhone (``isExemptFromStallClose(_:)``). Sticky for the link.
-        var heardServiceData = false
-    }
-
-    struct Channel {
-        let role: Role
-        var stage: Stage
-        var reader = LinkRecordReader()
-        /// What the channel carried lately, for the warning if a record fails to parse.
-        var trace = LinkTrace()
-        /// When the dial or HELLO times out.
-        var deadline: Int64?
-        /// Whether that deadline was put off once already, having passed while iOS had the app suspended.
-        var putOff = false
-    }
-
     struct Backoff {
         var streak: Int
         var nextAt: Int64
@@ -99,6 +63,16 @@ public final class LinkManager: MeshTransport {
 
     /// This node.
     public let localId: NodeId
+    /// Signs our side of a link's proof with this node's identity key, the one ``localId`` derives from (``LinkProof``), or
+    /// answers `nil` when the key will not sign: a failed proof, with nothing written. No valid key fails, so only a test
+    /// sets this.
+    var signProof: (LinkProof.Role, [UInt8], [UInt8]) -> [UInt8]?
+    /// Who must prove the id a HELLO claims, and the proofs' counts (``LinkClaims``).
+    var claims: LinkClaims
+    /// The links ``peerProvesItself(_:)`` closed, handed over ahead of whatever the next public entry answers.
+    var deferredDowns: [Event] = []
+    /// knit-peer's impostor, a trial's switch the app never sets (``Impostor``).
+    public var impostor = Impostor()
     let radio: any Radio
     let clock: any MeshClock
     let configuration: Configuration
@@ -200,17 +174,23 @@ public final class LinkManager: MeshTransport {
     /// The frame ids the open channels have carried, either way (``LinkCrossings``).
     public var crossingCount: Int { crossings.count }
 
-    /// A link manager for `localId` over `radio`, keeping cut attachments' prefixes in `partials`.
+    /// A link manager for `identity`'s node over `radio`, keeping cut attachments' prefixes in `partials`. Whether a peer's
+    /// stored profile carries ``Capabilities/linkProof`` comes from `profileCarriesProof` (``LinkClaims``).
     public init(
-        localId: NodeId,
+        identity: IdentityKeys,
         radio: any Radio,
         clock: any MeshClock,
         random: some RandomNumberGenerator,
         configuration: Configuration = Configuration(),
         log: any KnitLog = SilentLog(),
-        partials: any PartialBlobStore = MemoryPartialBlobStore()
+        partials: any PartialBlobStore = MemoryPartialBlobStore(),
+        profileCarriesProof: @escaping (NodeId) -> Bool = { _ in false }
     ) {
-        self.localId = localId
+        localId = identity.nodeId
+        signProof = { signer, dialerHello, responderHello in
+            try? LinkProof.payload(keys: identity, signer: signer, dialerHello: dialerHello, responderHello: responderHello)
+        }
+        claims = LinkClaims(profileCarriesProof: profileCarriesProof)
         self.radio = radio
         self.clock = clock
         self.random = random
@@ -274,7 +254,7 @@ public final class LinkManager: MeshTransport {
         guard running else {
             return []
         }
-        let events = forgetEverything(keepingCuts: false)
+        let events = takeDeferredDowns() + forgetEverything(keepingCuts: false)
         running = false
         radio.stop()
         return events + reconsiderSeeking(now: clock.monotonicMilliseconds())
@@ -296,11 +276,15 @@ public final class LinkManager: MeshTransport {
         presence.snapshots(now: clock.monotonicMilliseconds())
     }
 
-    /// When ``advance()`` next has work, on the monotonic clock: a dial or HELLO timing out, the advert, a doorbell, a
-    /// backoff running out, a dwell or a head start ending between a peer's adverts, a file's next chunk, a trailing
-    /// report, or the next look at the live links' writes (``WriteStallWatch``).
+    /// When ``advance()`` next has work, on the monotonic clock: a dial, HELLO or PROOF timing out, the advert, a doorbell,
+    /// a backoff running out, a dwell or a head start ending between a peer's adverts, a file's next chunk, a trailing
+    /// report, the next look at the live links' writes (``WriteStallWatch``), or now, while links closed outside an entry
+    /// wait to be handed over (``peerProvesItself(_:)``).
     public var nextDeadline: Int64? {
         let now = clock.monotonicMilliseconds()
+        guard deferredDowns.isEmpty else {
+            return now
+        }
         let backoffDue = backoffs.values.map(\.nextAt).filter { $0 > now }.min()
         let ringDue = doorbells.values.compactMap(\.due).min()
         let fileDue = finishedFiles.isEmpty ? feeds.values.compactMap(\.due).min() : now
@@ -313,7 +297,7 @@ public final class LinkManager: MeshTransport {
     /// Handles what the radio reported, and answers what the mesh needs to know.
     public func handle(_ event: RadioEvent) -> [Event] {
         let now = clock.monotonicMilliseconds()
-        return respond(to: event, now: now) + reconsiderSeeking(now: now) + takeFinishedFiles()
+        return takeDeferredDowns() + respond(to: event, now: now) + reconsiderSeeking(now: now) + takeFinishedFiles()
     }
 
     private func respond(to event: RadioEvent, now: Int64) -> [Event] {
@@ -357,6 +341,10 @@ public final class LinkManager: MeshTransport {
         case .received(let id, let bytes):
             return receive(bytes, on: id, now: now)
         case .closed(let id):
+            if let channel = channels[id], case .awaitingProof(let pending) = channel.stage {
+                // The peer hung up where its PROOF belonged.
+                proofFailed(on: id, for: pending.peer, why: "eof")
+            }
             return retire(id, backingOff: true, now: now) + promote(now: now)
         case .rung:
             return heardRing(now: now)
@@ -365,18 +353,23 @@ public final class LinkManager: MeshTransport {
         }
     }
 
-    /// Times out dials and HELLOs, re-advertises a settled cue, rings doorbells that are due, feeds files, sends the
+    /// Times out dials, HELLOs and PROOFs, re-advertises a settled cue, rings doorbells that are due, feeds files, sends the
     /// trailing reports that are due, and dials peers whose backoff has run out or whose dwell has just ended.
     public func advance() -> [Event] {
         let now = clock.monotonicMilliseconds()
-        var events: [Event] = []
+        var events = takeDeferredDowns()
         let expired = channels.filter { $0.value.deadline.map { now >= $0 } ?? false }.map(\.key).sorted(by: Self.inOrder)
         for id in expired {
             if putOffLateDeadline(of: id, now: now) {
                 continue
             }
             let dialed = channels[id]?.role != .responder
-            log.log(.info, "link \(id) timed out")
+            if let channel = channels[id], case .awaitingProof(let pending) = channel.stage {
+                // Never `timed out`, which the harness reads as a missed HELLO.
+                proofFailed(on: id, for: pending.peer, why: "timeout")
+            } else {
+                log.log(.info, "link \(id) timed out")
+            }
             events += retire(id, backingOff: dialed, now: now)
         }
         if let due = advertDue, now >= due {

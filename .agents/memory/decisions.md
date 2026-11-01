@@ -110,4 +110,5 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-10.k99b](decisions/2026-10-k99b-a-lookalike-or-invisible-name.md) | A lookalike or invisible name gets a discriminator, and received names are cleaned | interop, text |
 | [2026-10.r88m](decisions/2026-10-r88m-custody-refuses-a-profile-whose.md) | custody refuses a profile whose signed bytes exceed 8 KiB | custody, convergence, security, keys, blobs |
 | [2026-10.x246](decisions/2026-10-x246-a-received-quote-is-checked.md) | A received quote is checked against the original it names | messages, moderation, interop, ui |
+| [2026-11.hpmt](decisions/2026-11-hpmt-a-link-proves-the-node.md) | A link proves the node id its HELLO claims | ble, crypto, security, interop |
 | [2026-11.y793](decisions/2026-11-y793-a-block-also-holds-a.md) | A block also holds a person's profile and photo | moderation, privacy, ui |

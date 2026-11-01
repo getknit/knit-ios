@@ -66,9 +66,10 @@ extension LinkManager {
         return wait.map { now + $0 }
     }
 
-    /// Peers linked, or being dialed.
+    /// Peers linked, being dialed, or proving themselves on a link they dialed, so that seeking does not dial a peer whose
+    /// proof is on its way.
     var busy: Set<NodeId> {
-        Set(liveLinks.map(\.neighbor.nodeId)).union(dialing.keys)
+        Set(liveLinks.map(\.neighbor.nodeId)).union(dialing.keys).union(provingDialers)
     }
 
     /// The sighted peers promotion may pick: ours to dial, any while seeking (``dialsWhateverTheOrder``), or a flagged
@@ -81,7 +82,7 @@ extension LinkManager {
             guard !busy.contains(snapshot.nodeId), !refused.contains(snapshot.nodeId) else {
                 return nil
             }
-            if anyOrder || weDial(snapshot.nodeId, flags: snapshot.advert.flags) {
+            if anyOrder || weDial(snapshot.nodeId, flags: snapshot.advert.flags) || impostor.dials == snapshot.nodeId {
                 return snapshot
             }
             return isHeadStartCandidate(snapshot) && !headStartOpen ? withHeadStart(snapshot) : nil
@@ -127,7 +128,9 @@ extension LinkManager {
     public func refuse(_ peer: NodeId) -> [Event] {
         refused.insert(peer)
         let now = clock.monotonicMilliseconds()
-        let theirs = channels.filter { $0.value.stage == .live(peer) || $0.value.role == .dialer(peer) }
+        let theirs = channels.filter { entry in
+            entry.value.stage == .live(peer) || entry.value.role == .dialer(peer) || Self.awaitsProof(of: peer, entry.value)
+        }
         return theirs.keys.sorted(by: Self.inOrder).flatMap { retire($0, backingOff: false, now: now) } + reconsiderSeeking(now: now)
     }
 
@@ -156,6 +159,9 @@ extension LinkManager {
                 // Android throws on an unknown tag or a bad length and drops the link; so do we, and say what came.
                 if let channel = channels[id] {
                     log.log(.warning, "link \(id) sent a bad record: \(error) \(channel.trace.explain(channel.reader))")
+                    if case .awaitingProof(let pending) = channel.stage {
+                        proofFailed(on: id, for: pending.peer, why: "record")
+                    }
                 }
                 // Dropped, not kept, unlike Android's every close: a stack that mangles multi-packet SDUs (the Moto G,
                 // `cb440a6`, `04a927b`; tags 87 and 54 on A4, `af87ba4`) appends corrupt bytes before the framing
@@ -171,6 +177,10 @@ extension LinkManager {
                 events += retire(id, backingOff: true, now: now)
             case .awaitingHello:
                 events += handleHello(record, on: id, role: role, now: now)
+            case .awaitingProof(let pending):
+                // Re-read for the next record: once the proof verifies, what came behind it in the same read is the live
+                // link's, handled after `.up`.
+                events += handleProof(record, pending, on: id, role: role, now: now)
             case .live(let peer):
                 events += dispatch(record, from: peer, on: id, now: now)
             }
@@ -191,58 +201,106 @@ extension LinkManager {
             guard let hello, NodeId(hello.nodeId) == expected else {
                 return retire(id, backingOff: true, now: now) + promote(now: now)
             }
-            return register(id, hello: hello, peer: expected, sighted: true, now: now)
+            return answered(id, hello: hello, payload: record.payload, peer: expected, now: now)
         case .responder:
             guard let hello else {
                 return retire(id, backingOff: false, now: now)
             }
-            return admit(id, hello: hello, now: now)
+            return admit(id, hello: hello, payload: record.payload, now: now)
         }
     }
 
-    /// A dialer's HELLO: the responder's rule (`superviseAccepted`, with A1).
-    func admit(_ id: ChannelID, hello: Hello, now: Int64) -> [Event] {
+    /// A dialer's HELLO, `payload` as it crossed: the responder's rule (`superviseAccepted`, with A1), and the proof's
+    /// (the `link-hello-proof` contract, §5 and §7). The proof's checks come first, so a claim R1 refuses is counted even
+    /// where today's rules would refuse it too. A dialer that proves itself is answered with our HELLO and PROOF, and
+    /// registered only once its own PROOF verifies; a link it would replace stays up until then, and stays if it fails.
+    func admit(_ id: ChannelID, hello: Hello, payload: [UInt8], now: Int64) -> [Event] {
         guard let dialer = NodeId(hello.nodeId), dialer != localId, !refused.contains(dialer) else {
             return retire(id, backingOff: false, now: now)
         }
-        let sighting = presence.isPresent(dialer, now: now) ? presence.advert(of: dialer) : nil
-        if let sighting, weDial(dialer, flags: sighting.flags) {
-            log.log(.info, "link refused \(dialer): we dial it")
+        let verdict = judgeClaim(hello, claiming: dialer)
+        switch verdict {
+        case .failed(let why):
+            proofFailed(on: id, for: dialer, why: why)
             return retire(id, backingOff: false, now: now)
+        case .refused:
+            refuseClaim(dialer)
+            return retire(id, backingOff: false, now: now)
+        case .proves, .legacy:
+            break
+        }
+        let proves = verdict == .proves
+        let sighting = presence.isPresent(dialer, now: now) ? presence.advert(of: dialer) : nil
+        let sighted = sighting != nil
+        let held = liveLinks.first { $0.neighbor.nodeId == dialer }
+        if let refusal = admissionRefusal(dialer, proves: proves, sighting: sighting, held: held, now: now) {
+            log.log(.info, "link refused \(dialer): \(refusal)")
+            return retire(id, backingOff: false, now: now)
+        }
+        let claim = Claim(peer: dialer, hello: hello, sighted: sighted)
+        guard !proves else {
+            let pending = PendingProof(claim: claim, dialerHello: payload, responderHello: ourHello().payload, displacing: held?.channel)
+            return answerWithProof(id, pending, now: now)
         }
         var events: [Event] = []
-        if let existing = liveLinks.first(where: { $0.neighbor.nodeId == dialer }) {
-            guard sighting == nil else {
-                log.log(.info, "link refused \(dialer): already linked")
-                return retire(id, backingOff: false, now: now)
-            }
-            guard now - existing.since >= configuration.replaceMinHoldMilliseconds else {
-                log.log(.info, "link refused \(dialer): its link is too young to replace")
-                return retire(id, backingOff: false, now: now)
-            }
-            log.log(.info, "link \(dialer) replaced its stale link \(existing.channel) with \(id)")
+        if let held {
+            log.log(.info, "link \(dialer) replaced its stale link \(held.channel) with \(id)")
             // Its cut attachment is kept here, before the new link registers, so an ask crossing the new link resumes.
-            events += retire(existing.channel, backingOff: false, now: now)
+            events += retire(held.channel, backingOff: false, now: now)
         }
         writeHello(on: id)
-        return events + register(id, hello: hello, peer: dialer, sighted: sighting != nil, now: now)
+        return events + register(id, claim, proven: false, now: now)
     }
 
-    func register(_ id: ChannelID, hello: Hello, peer: NodeId, sighted: Bool, now: Int64) -> [Event] {
-        if liveChannel(to: peer) != nil {
-            // Our dial landed while the peer's own link to us was already up: keep the older one.
+    /// Why today's rules refuse a dialer the proof's checks let through, or `nil` to admit it. A dialer that proves itself
+    /// is not turned away only because an unproven link claims its id (R3): the cross-dial, "already linked" and "too
+    /// young" refusals pass it over, and the proof, once it verifies, displaces that link. Against a proven held link today's
+    /// rules stand (R2); an unproven dialer never gets this far against one, since R1 refused it.
+    func admissionRefusal(_ dialer: NodeId, proves: Bool, sighting: AdvertPayload?, held: LiveLink?, now: Int64) -> String? {
+        if proves, let held, !held.proven {
+            return nil
+        }
+        if let sighting, weDial(dialer, flags: sighting.flags) {
+            return "we dial it"
+        }
+        guard let held else {
+            return nil
+        }
+        if sighting != nil {
+            return "already linked"
+        }
+        if now - held.since < configuration.replaceMinHoldMilliseconds {
+            return "its link is too young to replace"
+        }
+        // An unproven dialer never meets a proven held link here: R1 refused it, since that link makes the id proof-capable.
+        return nil
+    }
+
+    /// Registers the link on `id` to `claim`'s peer, `proven` when its PROOF verified, unless a link to that peer is up.
+    func register(_ id: ChannelID, _ claim: Claim, proven: Bool, now: Int64) -> [Event] {
+        let peer = claim.peer
+        if liveChannel(to: peer) != nil || refused.contains(peer) {
+            // Our dial landed while the peer's own link to us was already up: keep the older one. A proof displaced any
+            // unproven link before it came here (``proved(_:_:now:)``), so this keeps a link as proven as the new one.
             return retire(id, backingOff: false, now: now)
         }
-        let neighbor = Neighbor(nodeId: peer, protocolVersion: hello.version, capabilities: hello.capabilities)
+        let neighbor = Neighbor(nodeId: peer, protocolVersion: claim.hello.version, capabilities: claim.hello.capabilities)
         channels[id]?.stage = .live(peer)
         channels[id]?.deadline = nil
-        var link = LiveLink(channel: id, neighbor: neighbor, since: now, sighted: sighted)
+        var link = LiveLink(channel: id, neighbor: neighbor, since: now, sighted: claim.sighted)
         link.heardServiceData = presence.isPresent(peer, now: now) && presence.advert(of: peer).map(Self.isServiceData) == true
+        link.proven = proven
         liveLinks.append(link)
         stallWatch.watch(id, written: radio.outboxLevel(on: id).writtenBytes, now: now)
         dialing[peer] = nil
         backoffs[peer] = nil
         crossings.forget(link: id)
+        if proven {
+            claims.proved(peer)
+            // Here, not where the PROOF verified, so it names only a link that registers, right before its `link up`.
+            log.log(.info, "link \(peer) proved itself on \(id)")
+        }
+        radio.linkUp(peer, on: id)
         log.log(.info, "link up \(peer) on \(id)")
         return [.up(neighbor)] + promote(now: now)
     }
@@ -274,8 +332,8 @@ extension LinkManager {
             return fileChunk(record.payload, from: peer, on: id, now: now)
         case .fileEnd:
             return fileEnd(from: peer, on: id)
-        case .keepalive, .hello:
-            // A stray HELLO after the handshake means nothing, and a keepalive's arrival is all it says.
+        case .keepalive, .hello, .proof:
+            // A stray HELLO or PROOF after the handshake means nothing, and a keepalive's arrival is all it says.
             return []
         }
     }

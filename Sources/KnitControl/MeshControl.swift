@@ -314,6 +314,10 @@ public actor MeshControl {
             "blobs": ControlLines.describe(await mesh.blobs),
             "rings": .int(Int64(await mesh.rings)),
             "rung": .int(Int64(await mesh.ringsHeard)),
+            // One name each on both phones (the `link-hello-proof` contract, §9).
+            "linksProven": .int(Int64(await mesh.linksProven)),
+            "linkProofFailed": .int(Int64(await mesh.linkProofFailed)),
+            "linkClaimRefused": .int(Int64(await mesh.linkClaimRefused)),
             "seeking": .bool(await mesh.isSeeking),
             "seekWakes": .int(Int64(await mesh.seekWakes)),
             "seekSpells": .int(Int64(await mesh.seekSpells)),

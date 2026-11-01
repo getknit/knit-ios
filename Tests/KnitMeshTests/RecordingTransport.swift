@@ -70,6 +70,8 @@ final class RecordingTransport: MeshTransport {
     var rates: [NodeId: Int64] = [:]
     /// How long each neighbour's stream to us has left, as a test sets it.
     var arrivingLeft: [NodeId: Int64] = [:]
+    /// Every peer the engine said now proves itself, its stored profile having gained the link-proof bit, in order.
+    private(set) var provesItself: [NodeId] = []
 
     func send(_ wire: WireEnvelope, to peer: NodeId?) {
         guard let envelope = try? RelayEnvelope(decoding: wire.signed) else {
@@ -131,6 +133,10 @@ final class RecordingTransport: MeshTransport {
 
     func filesWaiting(to peer: NodeId) -> Int {
         waiting[peer] ?? 0
+    }
+
+    func peerProvesItself(_ peer: NodeId) {
+        provesItself.append(peer)
     }
 
     func fileTaken(from peer: NodeId, hash: BlobHash) {

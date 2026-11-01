@@ -95,11 +95,13 @@ bytes. The tags:
 | 3 | `FILE_CHUNK` | raw bytes, 2 to 16 KiB from Android (2 KiB on a Coded link); a file over 8 MiB + 64 KiB is aborted |
 | 4 | `FILE_END` | empty |
 | 5 | `KEEPALIVE` | empty; since knit-next ADR 2026-10.697m, Android writes one at link-up on a link whose HELLO lacks `CAP_DOORBELL`, answers one there, and probes with it. On a doorbell link it sends none and ignores one. It may write one between a file's chunks (`FramedLink.sendKeepalive`, #203), which this port ignores like any other. This port never writes one (`interop.md`) |
-| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|2fff`; the caps may carry `CAP_DOORBELL` (`0x1000`) and `CAP_BLOB_HAVE` (`0x2000`), which no advert can |
+| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|2fff`; the caps may carry `CAP_DOORBELL` (`0x1000`) and `CAP_BLOB_HAVE` (`0x2000`), which no advert can. A build that proves its id adds `CAP_LINK_PROOF` (`0x40000`) and a fourth field, `n` and 16 fresh bytes in 32 lowercase hex digits (the `link-hello-proof` contract, §2) |
 | 7 | `DIGEST` | UTF-8 JSON `{"ids":[…]}` |
+| 8 | `PROOF` | `sigPub (32) ‖ hpkePub (32) ‖ signature (64)`, exactly 128 bytes: the signer's identity-key signature over both HELLOs (the contract, §3 and §4). Written only to a peer whose HELLO carries `CAP_LINK_PROOF` |
 
 - **An unknown tag, a bad length or a truncated record throws on Android and drops the link.** Never send
-  a tag outside 1..7.
+  a tag outside 1..8, and 8 only to a peer whose HELLO carries `CAP_LINK_PROOF`: Android v2.10.1 and earlier know only
+  1..7.
 - A `FRAME` that does not decode is counted and skipped, and the link stays up. Frames and digests may
   interleave with file chunks.
 - Only one file streams each way at a time. A new `FILE_HEADER` discards a partial file.
@@ -142,8 +144,37 @@ else -> Replace
 `seen` is presence's sighting. For a dialer whose HELLO carries `CAP_DOORBELL`, and whose claim Android's own evidence
 backs (`doorbellTrusted`), it also needs a sighting in the last 12 s (AND-3, below). `atCap` is a debug link cap, always
 false in release. A refusal closes without replying. Otherwise it replies with its own HELLO, and the dialer checks that the reply's node id matches
-the advert it dialed. There is no negotiation, no identity proof and no key exchange at this layer. Bytes
-after the HELLO belong to the frame loop, and Android may send frames right after its reply.
+the advert it dialed. There is no negotiation and no key exchange at this layer. Bytes after the HELLO belong to
+the frame loop, and Android may send frames right after its reply, unless both HELLOs carry `CAP_LINK_PROOF`.
+
+**The link's proof** (knit-next ADR 2026-11.264w, knit-next #232, knit-ios #25; the `link-hello-proof` contract). When
+both HELLOs carry `CAP_LINK_PROOF`, each side proves the id its HELLO claims before either registers the link:
+
+1. The dialer writes its HELLO with the bit and a fresh nonce.
+2. The responder admits it as before, with the claim rules below first, then writes its reply and its `PROOF` in one
+   write, and writes nothing more until the dialer's `PROOF` verifies, within the 5 s HELLO timeout.
+3. The dialer checks the reply's id, verifies the responder's `PROOF`, writes its own, and registers the peer.
+4. The responder verifies the dialer's `PROOF`, which must be the first record after its reply, and registers it.
+
+Each `PROOF` signs `"knit/link/v1/proof" ‖ role ‖ u32be(len) ‖ dialer's HELLO ‖ u32be(len) ‖ responder's HELLO`, the role
+`0x01` for the dialer's and `0x02` for the responder's, over the payloads exactly as they crossed (`LinkProof` in
+KnitCrypto). Its keys must hash to the id the signer's HELLO named. A missing, misplaced, malformed or wrong `PROOF`, or a
+HELLO carrying the bit without a valid nonce, fails the proof: the link closes with nothing registered, the dialer backs
+off, and the side that found it counts `linkProofFailed`. Link-up work keyed on the peer's id waits for registration, so
+a proven link comes up one half round trip later.
+
+A HELLO without the bit links unproven, as before, which is what Android v2.10.1 and earlier send. Who must prove:
+
+- **R1.** An id is proof-capable when its stored signed profile carries `CAP_LINK_PROOF`, or a link proved it this run.
+  An unproven HELLO claiming one is refused, before any of today's refusals, and counts `linkClaimRefused`.
+- **R2.** A proven link is replaced only by a link that proves the same id, under today's sighting and 30 s rules.
+- **R3.** A proof displaces every live unproven link claiming its id, whatever that link's age or sighting. A dialer
+  that proves itself is not refused only because such a link is held; the held link closes only once the proof
+  verifies, and stays if it fails.
+- **R4.** When a stored profile gains the bit, every live unproven link claiming that id closes.
+
+What the proof does not bind is the radio channel: a node in range of both peers can relay a proven handshake end to end
+(the contract, §10).
 
 Node ids compare as Kotlin strings, which for `[a-z2-7]` is ASCII order: the digits `2`–`7` sort before
 `a`–`z`. Compare the 26-character strings, never the raw 16 bytes.
@@ -162,7 +193,7 @@ Since knit-next `99fbcad1` (#199, an amendment to its ADR 2026-10.9qr4), Android
 canonical: 26 lowercase base32 characters that round-trip through 16 bytes (`Protocol.kt:210-212`). On its own dial it
 closes the link and counts a `HANDSHAKE` failure, which bumps the backoff. As responder it just closes. This port
 already refuses the same ids the same way, through `NodeId(_:)`: the dialer retires with a backoff
-(`LinkManager+Admission.swift:188`), and the responder retires without one (`:202`). It only ever sends
+(`LinkManager+Admission.swift:202`), and the responder retires without one (`:218`). It only ever sends
 `localId.string`, which is canonical.
 
 ### After link-up
@@ -341,10 +372,24 @@ no payload left alone for ten minutes. A payload serves the address's adverts un
 channel opens, a HELLO there names another node, or the address goes unheard for a minute of scanning while nothing
 links it. Those three rules are shared law with A3 (ADR 2026-09.xzpt, amended 2026-09-29).
 
-The HELLO adds `CAP_BLOB_HAVE` (`0x2000`) to this build's `0x15F` always, since every build answers a holder query
-(knit-next ADR 2026-10.6e5t), reading `215f`. It adds `CAP_DOORBELL` (`0x1000`) too, reading `315f`, only when the
+The HELLO adds `CAP_BLOB_HAVE` (`0x2000`) to this build's `0x4015F` always, since every build answers a holder query
+(knit-next ADR 2026-10.6e5t), reading `4215f`. It adds `CAP_DOORBELL` (`0x1000`) too, reading `4315f`, only when the
 radio serves the doorbell (`Radio.servesDoorbell`): `KnitBLE`, and knit-peer's `ios` profile. The `android` profile,
-like Android, serves no GATT and never sends it. The link manager rings after every frame it writes except `typing`,
+like Android, serves no GATT and never sends it. Each HELLO ends with a nonce fresh for the connection, from the system's
+secure source, never the mesh's seedable generator.
+
+`LinkManager+LinkProof.swift` runs the link's proof (the handshake, above). Its state is a channel stage,
+`awaitingProof`, with its own 5 s deadline and its own put-off for a deadline that passed in suspension, and
+`LinkClaims`, which answers who must prove: the stored profile's bit, through `Mesh`, or the up to 1,024 ids proven this
+run. `peerProvesItself` is R4: the engine calls it once a stored profile gains the bit, the unproven links claiming the
+id close at once, and their `.down` events lead the next entry's events, so a proof under the same id yields `.down`
+then `.up`, and the engine runs the real peer's link-up afresh. `Radio.linkUp` tells a radio when a link registered;
+`KnitBLE` and `KnitBlueZ` need nothing from it, and knit-peer's `--flood` and `--lying` wrappers write only from there.
+The lines: `link <id> proved itself on chN`, `link chN proof failed for <id>: <reason>`, `link refused <id>: an unproven
+claim to a node that proves itself`, `link chM displaced: <id> proved itself on chN` and `link chM closed: <id> proves
+itself`. An R2 replacement keeps `link <id> replaced its stale link chM with chN`. None names a key or a signature.
+
+The link manager rings after every frame it writes except `typing`,
 `blobreq`, `blobhave`, `blobhas`, `blobprog`, `blobcancel` and `keyreq`, as Android does, so both platforms wake an
 iPhone equally often (ADR 2026-09.khjj).
 

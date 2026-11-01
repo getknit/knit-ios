@@ -3,7 +3,8 @@ import KnitWire
 import Testing
 
 /// knit-next's link vectors (`keyed-v1.json`): the HELLO, DIGEST and FILE_HEADER records, the custody fingerprint
-/// and the advert, which a peer reads before any frame.
+/// and the advert, which a peer reads before any frame, and the two HELLOs of a proven link. The proof records replay in
+/// KnitCryptoTests' `LinkProofVectorTests`, since verifying them needs KnitCrypto.
 @Suite struct LinkVectorTests {
     private let link = KeyedVectors.file.link
 
@@ -17,6 +18,27 @@ import Testing
         #expect(ours.payload == Array(link.hello.payload.utf8))
         let record = try #require(LinkRecord(.hello, payload: ours.payload).encoded)
         #expect(Hex.encode(record) == link.hello.record)
+    }
+
+    /// A proven link's two HELLOs (`link-hello-proof`, §2): Alice dials Bob, her nonce `00..0f` and his `10..1f`, both at
+    /// caps `40009`, the vector's own capabilities with ``Capabilities/linkProof`` added. Each parses to its fields and
+    /// re-encodes to the bytes that crossed, so the payloads both sides sign are the same.
+    @Test(arguments: [("helloProofDialer", "alice", 0), ("helloProofReply", "bob", 16)])
+    func aProvenLinksHellosParseAndReencodeExactly(entry: String, sender: String, firstNonceByte: Int) throws {
+        let vector = entry == "helloProofDialer" ? link.helloProofDialer : link.helloProofReply
+        let identity = try #require(KeyedVectors.file.identities[sender])
+        let bytes = Array(vector.payload.utf8)
+        let hello = Hello(payload: bytes)
+        let nonce = (firstNonceByte..<firstNonceByte + Hello.nonceByteCount).map { UInt8($0) }
+        #expect(hello.nodeId == identity.nodeId)
+        #expect(hello.version == WireProtocol.version)
+        #expect(hello.capabilities == Capabilities(rawValue: 0x40009))
+        #expect(hello.capabilities.contains(.linkProof))
+        #expect(hello.nonce == nonce)
+        let ours = Hello(nodeId: identity.nodeId, capabilities: Capabilities(rawValue: 0x40009), nonce: nonce)
+        #expect(ours.payload == bytes)
+        let record = try #require(LinkRecord(.hello, payload: ours.payload).encoded)
+        #expect(Hex.encode(record) == vector.record)
     }
 
     /// The digest is JSON from kotlinx's encoder; ours must write the same bytes, not just equivalent JSON.

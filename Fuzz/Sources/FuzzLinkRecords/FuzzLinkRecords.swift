@@ -1,8 +1,11 @@
+import KnitCrypto
 import KnitWire
 
 /// Arbitrary bytes as a link's byte stream, delivered in chunks the input chooses, then every record parsed
 /// the way a link session will: HELLO, digest and file-header JSON, frames down to their payloads, and the FILE
-/// records through a ``FileIntake``, as the link manager feeds them (ADR 2026-10.nh55). A KEEPALIVE stands for the link
+/// records through a ``FileIntake``, as the link manager feeds them (ADR 2026-10.nh55). A PROOF is checked as each side
+/// checks its peer's (``LinkProof/verify(_:claimedId:signer:dialerHello:responderHello:)``, ADR 2026-11.hpmt), against
+/// the latest two HELLOs, as dialer then responder, for the id the latest one names. A KEEPALIVE stands for the link
 /// being cut: the file being kept goes to a memory of kept prefixes, the next link gets a fresh intake, and a resumed
 /// header reads its prefix back from that memory (knit-ios #2).
 @_cdecl("LLVMFuzzerTestOneInput")
@@ -47,6 +50,8 @@ private struct FuzzLinkRecords {
     var intake = FileIntake()
     var kept: [BlobHash: [UInt8]] = [:]
     var now: Int64 = 0
+    /// The latest two HELLO payloads, the newest last: a PROOF's transcript, as dialer then responder.
+    var hellos: [[UInt8]] = [[], []]
 }
 
 private func parse(_ record: LinkRecord, into session: inout FuzzLinkRecords) {
@@ -54,6 +59,15 @@ private func parse(_ record: LinkRecord, into session: inout FuzzLinkRecords) {
     switch record.tag {
     case .hello:
         _ = Hello(payload: record.payload)
+        session.hellos = [session.hellos[1], record.payload]
+    case .proof:
+        guard let claimed = NodeId(Hello(payload: session.hellos[1]).nodeId) else {
+            return
+        }
+        for signer in [LinkProof.Role.dialer, .responder] {
+            _ = LinkProof.verify(
+                record.payload, claimedId: claimed, signer: signer, dialerHello: session.hellos[0], responderHello: session.hellos[1])
+        }
     case .digest:
         _ = LinkJSON.digestIds(from: record.payload)
     case .fileHeader:

@@ -5,6 +5,7 @@ import KnitStore
 import KnitTestSupport
 import KnitWire
 import Testing
+
 @testable import KnitMesh
 
 /// `--lying`'s radio injects the padded profile and the one-shot ask only between records, never ahead of our HELLO, once
@@ -19,8 +20,11 @@ import Testing
                 radio.write(hello(local), to: channel)
                 #expect(inner.records(on: channel).count == 1, "nothing before the peer's HELLO")
                 radio.heardHello(from: peer, on: channel)
+                #expect(inner.records(on: channel).count == 1, "nothing between the HELLOs and the link's registration")
+                radio.linkUp(peer, on: channel)
             } else {
                 radio.heardHello(from: peer, on: channel)
+                radio.linkUp(peer, on: channel)
                 #expect(inner.records(on: channel).isEmpty, "nothing before our HELLO")
                 radio.write(hello(local), to: channel)
             }
@@ -71,7 +75,7 @@ import Testing
         let notReady = ChannelID(12)
         dialed(radio, toPeer, peer: peer)
         accepted(radio, toOther, peer: other)
-        radio.heardHello(from: peer, on: notReady)
+        radio.linkUp(peer, on: notReady)
         #expect(radio.askBlob(photo, of: fixtureNodeId(9)) == nil)
         let id = try #require(radio.askBlob(photo, of: peer))
         let records = inner.records(on: toPeer)
@@ -109,15 +113,15 @@ import Testing
     // MARK: Through a link manager
 
     @Test func aRealLinkManagerWritesItsHelloBeforeTheForgeOnALinkItDialedAndOneItAccepted() throws {
-        let ids = [identity(1).nodeId, identity(2).nodeId].sorted()
+        let keys = [identity(1), identity(2)].sorted { $0.nodeId < $1.nodeId }
         // The larger id dials (`LinkManager.weDial`).
-        let (us, them) = (ids[1], ids[0])
+        let (us, them) = (keys[1].nodeId, keys[0].nodeId)
         for dials in [true, false] {
             let inner = CallRadio(dialing: ChannelID(40))
             let radio = LyingRadio(wrapping: inner, localId: us, profile: nil, random: CountingGenerator())
             radio.setPaddedProfile(forge())
             let clock = HandClock()
-            let links = LinkManager(localId: us, radio: radio, clock: clock, random: CountingGenerator())
+            let links = LinkManager(identity: keys[1], radio: radio, clock: clock, random: CountingGenerator())
             links.start()
             let id: ChannelID
             if dials {
@@ -140,5 +144,36 @@ import Testing
             #expect(records.first.map { Hello(payload: $0.payload).nodeId } == us.string, "our HELLO first")
             #expect(records.dropFirst().first.flatMap { try? WireEnvelope(decoding: $0.payload) } == forge().wire, "the forge next")
         }
+    }
+
+    /// `--lying` over `--flood`, under a real link manager, on a link that proves itself: nothing is written between our
+    /// reply and the dialer's PROOF, the reply and our PROOF pass through in the one write they came in, and the flood and
+    /// the forge start once the link registered (``Radio/linkUp(_:on:)``).
+    @Test func neitherTheFloodNorTheForgeWritesBetweenAHelloAndAProof() throws {
+        let keys = [identity(1), identity(2)].sorted { $0.nodeId < $1.nodeId }
+        let (us, them) = (keys[1], keys[0])
+        let inner = PeerRadio()
+        let flood = FloodRadio(wrapping: inner, bytesPerSecond: 10_000)
+        let radio = LyingRadio(wrapping: flood, localId: us.nodeId, profile: nil, random: CountingGenerator())
+        radio.setPaddedProfile(forge())
+        let links = LinkManager(identity: us, radio: radio, clock: HandClock(), random: CountingGenerator())
+        links.start()
+        let id = ChannelID(41)
+        _ = links.handle(.accepted(id))
+        let hello = Hello(nodeId: them.nodeId.string, capabilities: Capabilities.local.union(.blobHave), nonce: LinkProof.freshNonce())
+        _ = links.handle(.received(id, record(.hello, hello.payload)))
+        flood.tick(milliseconds: 1000)
+        #expect(inner.records(on: id).map(\.tag) == [.hello, .proof], "nothing behind our PROOF before the dialer's")
+        #expect(flood.floodedBytes == 0)
+        let reply = try #require(inner.records(on: id).first?.payload)
+        let proof = try LinkProof.payload(keys: them, signer: .dialer, dialerHello: hello.payload, responderHello: reply)
+        _ = links.handle(.received(id, record(.proof, proof)))
+        #expect(links.neighbors.map(\.nodeId) == [them.nodeId])
+        flood.tick(milliseconds: 1000)
+        let records = inner.records(on: id)
+        #expect(records.count > 3)
+        #expect(records.prefix(3).map(\.tag) == [.hello, .proof, .frame])
+        #expect(try WireEnvelope(decoding: records[2].payload) == forge().wire, "the forge first, once the link is up")
+        #expect(flood.floodedBytes > 0, "then the flood")
     }
 }

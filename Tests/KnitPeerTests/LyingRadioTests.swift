@@ -21,7 +21,7 @@ import Testing
             .fileHeader, LinkJSON.fileHeaderPayload(FileHeader(kind: .attachment, key: photo.string, mime: "image/jpeg", size: 9)))
         var expected: [CallRadio.Call] = []
         dialed(radio, channel, peer: peer)
-        expected += [.write(channel, hello(local)), .heard(peer, channel)]
+        expected += [.write(channel, hello(local)), .heard(peer, channel), .up(peer, channel)]
         for slice in slices(big) {
             radio.write(slice, to: channel)
             expected.append(.write(channel, slice))

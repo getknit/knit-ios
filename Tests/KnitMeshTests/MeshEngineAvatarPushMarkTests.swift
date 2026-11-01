@@ -54,7 +54,8 @@ import Testing
         let node = PipeNode(alice, clock: clock, seed: 7)
         node.start()
         node.apply(node.links.handle(.accepted(channel)))
-        let hello = Hello(nodeId: bob.nodeId.string, capabilities: Capabilities.local.union(.blobHave)).payload
+        // Bob's HELLO as a build from before the link's proof writes it, so the link registers on it alone.
+        let hello = Hello(nodeId: bob.nodeId.string, capabilities: Capabilities.local.union(.blobHave).subtracting(.linkProof)).payload
         node.receive(LinkRecord(.hello, payload: hello).encoded ?? [], on: channel)
         node.receive(frame(try dave.profile(publishedAt: EngineFixture.start, avatarHash: photo.string)), on: channel)
         #expect(node.engine.blobExchange.isPhotoOnly(photo))

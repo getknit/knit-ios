@@ -466,6 +466,21 @@ Kotlin wins.
     the held frame in the row's own transaction and re-reads the block list after it (`settleBlockMovedMidProfile`),
     a race this port cannot have: the engine handles a profile with no suspension point inside the `Mesh` actor. No
     vector moved, and the wire is unchanged.
+    And `a0c4eec98` on knit-next's `fix/link-hello-proof`, not yet merged (its ADR 2026-11.264w, knit-next #232,
+    knit-ios #25, ADR 2026-11.hpmt), a paired change led by Android: a link proves the node id its HELLO claims.
+    `CAP_LINK_PROOF` (`0x40000`) rides the HELLO and the signed profile, the HELLO gains a nonce as its fourth field,
+    and two nodes that both carry the bit exchange tag-8 `PROOF` records (both raw keys and an identity signature over
+    both HELLOs) before the link registers. An unproven claim to an id that proves itself is refused, a proof displaces
+    unproven links claiming its id, capabilities follow the presentation version only, and a node whose capabilities
+    changed republishes as an edit at start. Blob control is taken only from its link's own id. Its
+    `vectors/keyed-v1.json` (`link`: `helloProofDialer`, `helloProofReply`, both transcripts, `proofDialer`,
+    `proofResponder`, `proofRejects`) was copied with `sync-vectors.py --only keyed-v1.json` from `a0c4eec98`, which
+    also brings the top-level `linkKeys` (knit-next `aac6ee180`, the direct-link lane's keys), additive and unread here.
+    `ios-emitted-v1.json` gains Carol's two proofs, at caps `40009`. Three Android-local choices need nothing here: its signing choke
+    point bumps a profile whose caps changed (this port signs nothing before its start-time check), it re-checks a
+    claim after putting a link in its table (this port's admission and registration are one synchronous step in the
+    `Mesh` actor), and it re-runs an id's link-up after a displacement (this port's `.down` then `.up` does). The wire
+    change is additive.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e63f15f4`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

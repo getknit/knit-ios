@@ -359,3 +359,23 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
         #expect(MemoryOwnProfileStore(OwnProfile(name: "Seeded")).load().name == "Seeded")
     }
 }
+
+extension RepositoryTests {
+    /// The capabilities our last profile carried are what a start compares against (knit-ios #25): a store that dropped
+    /// them would republish as an edit at every start, and one that kept a stale set would never republish a new bit.
+    @Test(arguments: kinds)
+    func theCapabilitiesOurProfileCarriedRoundTrip(kind: RepositoryKind) throws {
+        let store = try kind.make().ownProfile
+        #expect(store.load().capabilities == nil, "nothing recorded before a publish")
+        var profile = OwnProfile(name: "Alice", version: 7, publishedAt: 9, prekeyId: 1, capabilities: Capabilities.local)
+        store.save(profile)
+        #expect(store.load() == profile)
+        #expect(store.load().capabilities?.rawValue == 0x4015F)
+        profile.capabilities = Capabilities.local.subtracting(.ratchetSuite)
+        store.save(profile)
+        #expect(store.load().capabilities?.rawValue == 0x4000F)
+        profile.capabilities = nil
+        store.save(profile)
+        #expect(store.load().capabilities == nil)
+    }
+}

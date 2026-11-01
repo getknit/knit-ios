@@ -97,4 +97,9 @@ public enum DropReason: Sendable, Hashable, CaseIterable {
     /// A store failed inside the unit a ratchet frame's open commits in: nothing was delivered or acknowledged, and the
     /// copy that failed is opened again at the next sweep (ADR 2026-10.5sk9).
     case storeRefused
+    /// A blob request, holder query, holder answer, progress report or withdrawal that did not come point to point from
+    /// the neighbour whose link carried it: its sender id is not the link's, or it is marked to be relayed
+    /// (`BLOB_CONTROL_NOT_FROM_LINK`). Blob control is unsigned, so it is attributed only to that neighbour, as its
+    /// sender, and is never carried or relayed.
+    case blobControlNotFromLink
 }

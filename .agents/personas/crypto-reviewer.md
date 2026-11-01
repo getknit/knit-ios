@@ -288,9 +288,9 @@ each one guards (`.agents/context/crypto.md`, "The ratchet").
 19. **A switch that gates what we advertise but not what we seal.** Every Android build since 2.3.0 advertises
     `CAP_RATCHET` with a prekey, and Android starts a session just to seal a receipt (`InboundPipeline.kt:2904-2948`).
     A dark iPhone that read only the peer's bits would start one-sided sessions with every Android peer, which would
-    still exist at the flip. Since the flip (ADR 2026-10.b4yk) the HELLO and the advert carry `0x15F` whatever the
-    switch says, and the switch gates the signed profile alone: off, or with no prekey kept, it is `0xF` with no
-    prekey; on, the bits and the prekey ride together. Every toggle republishes under a new stamp, with a version
+    still exist at the flip. Since the flip (ADR 2026-10.b4yk) the HELLO and the advert carry `local` (`0x4015F` since
+    knit-ios #25) whatever the switch says, and the switch gates the signed profile alone: off, or with no prekey kept, it
+    is `0x4000F` with no prekey; on, the bits and the prekey ride together. Every toggle republishes under a new stamp, with a version
     bump once the profile has been edited (a never-edited profile stays at version 0, so no peer takes its blank
     name; ADR 2026-10.5sk9, amended).
 
@@ -394,9 +394,11 @@ a commit that touched your paths, and hands that next pass the delta since this 
 These are sourced. Cite them by their ADR or section, and treat anything not here or in an ADR as a claim to
 verify.
 
-- **What goes on air.** This port advertises `0x15F` in the HELLO and the advert, and in the signed profile beside
-  our prekey, so Android 2.3 and later seals the ratchet toward it. With the switch off, or no prekey kept, the
-  profile says `0xF` and Android seals v1 (ADR 2026-10.b4yk). v1 still goes toward a peer without the ratchet and to
+- **What goes on air.** This port advertises `0x4015F` in the HELLO, its low byte in the advert, and the same in the
+  signed profile beside our prekey, so Android 2.3 and later seals the ratchet toward it. With the switch off, or no
+  prekey kept, the profile says `0x4000F` and Android seals v1 (ADR 2026-10.b4yk). `CAP_LINK_PROOF` (`0x40000`) rides
+  every profile we sign, and a peer's capabilities are written only from a profile no older than its presentation
+  (knit-ios #25). v1 still goes toward a peer without the ratchet and to
   any group with one in it (ADR 2026-09.n393).
 - **The ratchet's floors and bounds** are the receiver's, the same in every build in the field (`crypto.md`,
   "Sessions"). `establishedAt` is our clock exactly when we initiated; the skew tolerance is five minutes, and past
@@ -439,7 +441,7 @@ One line per invariant, with the ADR to read. Not exhaustive and not authoritati
 - **Store unit** (ADR 2026-10.5sk9, P4a). The ratchet's state commits with what it carries or nothing does; any
   store error fails the unit except a blob's file error; only the outermost `.committed` releases post-commit work.
 - **The switch** (ADR 2026-10.5sk9, ADR 2026-10.b4yk). On by default in the app and knit-peer. Off, the signed
-  profile is the pre-ratchet bytes (`0xF`, no prekey) while the HELLO and the advert keep `0x15F`; on, the bits and the
+  profile is the pre-ratchet bytes but for the link-proof bit (`0x4000F`, no prekey) while the HELLO keeps `0x4015F`; on, the bits and the
   prekey ride the profile together; every toggle republishes under a new stamp, with a version bump once the profile
   has been edited.
 - **DM sessions** (`crypto.md`, "Lifecycle"; knit-next ADRs 016, 023 and 027). The smaller node id wins a race; a

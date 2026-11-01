@@ -13,10 +13,11 @@ import Testing
 /// door-cap trial's two ends, with both link managers in the path (`door-cap-lying-peers`). Built without `lying`, the
 /// node runs as `knit-peer run` does, unwrapped.
 ///
-/// The link is made by handing the receiver a HELLO from the liar on a channel it accepted, then the receiver's HELLO to
-/// the liar on one the liar accepted: each admits the other as a dialer it never sighted, and the receiver takes the
-/// liar's own HELLO, which follows, as the stray one it is. The liar's timers never fire (its monotonic clock stands
-/// still); the receiver's fire when a test moves its clock and calls ``rewant()``.
+/// The link is made by playing the liar as the dialer of a channel the receiver accepted, then the receiver as the dialer
+/// of one the liar accepted, each proving its id with its own keys (``dialProving(as:on:deliver:written:)``): each admits
+/// the other as a dialer it never sighted, and takes the other's reply and PROOF, which follow on the pump, as the strays
+/// they are on a live link. The liar's timers never fire (its monotonic clock stands still); the receiver's fire when a
+/// test moves its clock and calls ``rewant()``.
 final class LyingTrialRig {
     static let liarChannel = ChannelID(7)
     static let receiverChannel = ChannelID(8)
@@ -100,10 +101,22 @@ final class LyingTrialRig {
 
     /// Links the two ends and waits until each has the other as a neighbour.
     func link() async throws {
-        await receiver.process(.accepted(Self.receiverChannel))
-        let hello = Hello(nodeId: keys.nodeId.string, capabilities: Capabilities.local.union(.blobHave))
-        await receiver.process(.received(Self.receiverChannel, record(.hello, hello.payload)))
-        inner.emit(.accepted(Self.liarChannel))
+        let (mesh, meshRadio, liarRadio) = (receiver, receiverRadio, inner)
+        try await dialProving(
+            as: keys,
+            on: Self.receiverChannel,
+            deliver: { event in await mesh.process(event) },
+            written: { meshRadio.records(on: Self.receiverChannel) }
+        )
+        try await dialProving(
+            as: receiverKeys,
+            on: Self.liarChannel,
+            deliver: { event in liarRadio.emit(event) },
+            written: { liarRadio.records(on: Self.liarChannel) }
+        )
+        // The liar hears its radio on its own task: nothing crosses to it before its proof has verified.
+        let liarLinked = await waitUntil { self.lines.objects.contains { $0["event"] as? String == "link" && $0["up"] as? Bool == true } }
+        try #require(liarLinked, "the liar registered the receiver")
         let linked = await exchange {
             let theirs = await self.receiver.neighbors.contains { $0.nodeId == self.keys.nodeId }
             return theirs && self.lines.objects.contains { $0["event"] as? String == "link" && $0["up"] as? Bool == true }

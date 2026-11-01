@@ -75,7 +75,7 @@ import Testing
         )
     }
 
-    @Test func aQueryMarkedForRelayOrNamingAnotherSenderIsNeitherAnsweredNorFlooded() {
+    @Test func aQueryMarkedForRelayOrNamingAnotherSenderIsDroppedNeitherAnsweredNorFlooded() {
         let fixture = EngineFixture(alice)
         holding(fixture)
         fixture.link(bob, carol)
@@ -85,6 +85,9 @@ import Testing
         fixture.advance(1000)
         #expect(fixture.transport.written(.blobHas).isEmpty)
         #expect(fixture.transport.written.allSatisfy { ![frameIdOf("q-relay"), frameIdOf("q-claimed")].contains($0.envelope.id) })
+        #expect(fixture.engine.dropped == [.blobControlNotFromLink: 2], "counted, contract §8")
+        #expect(fixture.engine.blobExchange.counts.queriesAnswered == 0 && fixture.engine.blobExchange.counts.queriesRefused == 0)
+        #expect(fixture.transport.files.isEmpty)
     }
 
     @Test func aNeighbourGetsSixteenAnswersInABurst() {
@@ -98,7 +101,7 @@ import Testing
         #expect(fixture.engine.blobExchange.counts.queriesRefused == 1)
     }
 
-    @Test func aMalformedOrEmptyQueryAndAnAnswerFromElsewhereAreDroppedQuietly() {
+    @Test func aMalformedOrEmptyQueryAndAnAnswerFromElsewhereAreDropped() {
         let fixture = EngineFixture(alice)
         fixture.link(bob)
         fixture.transport.clear()
@@ -109,6 +112,7 @@ import Testing
         fixture.deliver(bob.blobHas([BlobHasItem(hash: photoHash.string, state: .have)], re: "q-never"), from: bob)
         #expect(fixture.transport.written(.blobHas).isEmpty && fixture.transport.written(.blobRequest).isEmpty)
         #expect(fixture.engine.dropped[.undecodable] == 2)
+        #expect(fixture.engine.dropped[.blobControlNotFromLink] == 1, "carol's answer over bob's link")
         #expect(fixture.engine.blobExchange.counts.answersIgnored == 1, "only the one from its own link was read")
     }
 

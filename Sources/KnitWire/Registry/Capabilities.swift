@@ -1,7 +1,8 @@
 /// Protocol capability bits (`Protocol.CAP_*` in knit-next).
 ///
-/// The signed copy in `ProfileContent.capabilities` is the one that gates behaviour, and only at send time.
-/// The advert's low byte and the HELLO's hex copy are routing hints. A bit is a promise: advertise only what
+/// The signed copy in `ProfileContent.capabilities` is the one that gates behaviour: at send time, and for ``linkProof``
+/// at a link's admission. The advert's low byte and the HELLO's hex copy are routing hints, but for ``linkProof``, whose
+/// HELLO copy decides whether a link runs the proof that then covers both HELLOs. A bit is a promise: advertise only what
 /// this build implements (`.agents/rules/interop.md`).
 public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerLiteral {
     /// End-to-end encrypted DMs. Diagnostic only.
@@ -36,18 +37,27 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     /// asker would wait out an answer that never comes. Read from the HELLO only, never from a pinned profile, and sent
     /// only there: every build answers, so every HELLO claims it, and it is above the advert's 8 bits.
     public static let blobHave: Self = 0x2000
+    /// This node proves on every link the node id its HELLO claims, by signing both HELLOs with its identity key
+    /// (`Protocol.CAP_LINK_PROOF`, knit-next #232, knit-ios #25), and refuses an unsigned claim to the id of a peer it knows
+    /// can prove itself. Read from two places: from a peer's signed profile, which makes that peer one a link must prove,
+    /// since a profile carries the peer's own signature and no one else can strip the bit; and from a HELLO, which decides
+    /// whether this link runs the exchange. Above the advert's 8 bits, so never there. `0x10000` and `0x20000` are
+    /// Android's other planes', unnamed here.
+    public static let linkProof: Self = 0x40000
 
     /// What this build advertises: end-to-end DMs, groups, reactions and store-and-forward, with the ratchet's three bits,
-    /// ``ratchet``, ``inlineAck`` and ``cryptoV3`` (`0x15F`, ADR 2026-09.n393, ADR 2026-10.ehe6, ADR 2026-10.5sk9). Android
-    /// reads the reactions bit for diagnostics only, and the ratchet's from our signed profile alone
-    /// (`CryptoScheme.kt:11-13`), which carries them only beside our prekey with the ratchet's switch on
+    /// ``ratchet``, ``inlineAck`` and ``cryptoV3``, and ``linkProof`` (`0x4015F`, ADR 2026-09.n393, ADR 2026-10.ehe6, ADR
+    /// 2026-10.5sk9, knit-ios #25). Android reads the reactions bit for diagnostics only, and the ratchet's from our signed
+    /// profile alone (`CryptoScheme.kt:11-13`), which carries them only beside our prekey with the ratchet's switch on
     /// (`MeshConfiguration.capabilities`); the HELLO and the advert carry this set whatever the switch says, as hints
-    /// nothing seals by. Never ``fastCompact`` or ``frameTranscode``, which are fast-plane encodings this port has no
-    /// plane for, and never ``doorbell`` or ``blobHave``: those are the link's to claim, in the HELLO alone.
-    public static let local: Self = [.endToEnd, .groups, .reactions, .storeForward, .ratchet, .inlineAck, .cryptoV3]
+    /// nothing seals by. ``linkProof`` rides the signed profile whatever the switch says, since a peer reads it there to
+    /// know this node must prove its id. Never ``fastCompact`` or ``frameTranscode``, which are fast-plane encodings this
+    /// port has no plane for, and never ``doorbell`` or ``blobHave``: those are the link's to claim, in the HELLO alone.
+    public static let local: Self = [.endToEnd, .groups, .reactions, .storeForward, .ratchet, .inlineAck, .cryptoV3, .linkProof]
 
     /// The ratchet's bits: what our signed profile drops with the switch off or no prekey kept, so it reads as it did
-    /// before the ratchet (`0xF`), since `CAP_RATCHET` promises a published prekey (`MeshManager.kt:2963-2979`).
+    /// before the ratchet but for ``linkProof`` (`0x4000F`), since `CAP_RATCHET` promises a published prekey
+    /// (`MeshManager.kt:2963-2979`).
     public static let ratchetSuite: Self = [.ratchet, .inlineAck, .cryptoV3]
 
     /// The bit field, a Kotlin `Long`.
@@ -64,7 +74,7 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     }
 
     /// The bits in lowercase hexadecimal with no leading zeros, as the HELLO carries them
-    /// (Kotlin's `Long.toString(16)`): `fff` for Android, `15f` for us.
+    /// (Kotlin's `Long.toString(16)`): `fff` for Android, `4015f` for us.
     public var hex: String { String(rawValue, radix: Self.hexRadix) }
 
     private static let hexRadix = 16

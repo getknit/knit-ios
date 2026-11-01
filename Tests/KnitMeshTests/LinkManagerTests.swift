@@ -164,7 +164,7 @@ import Testing
         rig.sightToPromotion(low)
         let id = try #require(rig.radio.dials.first?.channel)
         _ = rig.handle(.connected(id))
-        #expect(rig.radio.records(on: id) == [LinkRig.ourHello(high)])
+        #expect(LinkRig.isOurHello(rig.radio.records(on: id), high))
         let events = rig.handle(.received(id, LinkRig.helloRecord(low)))
         #expect(events == [.up(Neighbor(nodeId: low, protocolVersion: 1, capabilities: 0xFFF))])
         #expect(rig.links.neighbors.map(\.nodeId) == [low])

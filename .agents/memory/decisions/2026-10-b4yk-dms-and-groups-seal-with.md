@@ -79,3 +79,9 @@ would then need an edit to keep testing what it names.
   - reading `PRAGMA secure_delete` once on the iPhone (ADR 2026-09.nyya).
 
 Supersedes ADR 2026-09.qsd9. Amends ADR 2026-09.n393 and ADR 2026-10.ehe6.
+
+**Amended 2026-11-01, for the link proof (ADR 2026-11.hpmt):** `Capabilities.local` gains `CAP_LINK_PROOF`
+(`0x40000`). What goes on air is now the HELLO's `4215f`, or `4315f` with the doorbell, each followed by a nonce, and the
+signed profile's `0x4015F`, or `0x4000F` with the switch off or no prekey kept. The advert's low byte stays `5f`. This
+port now reads two more of a HELLO's bits: `CAP_DOORBELL` (`LinkManager+WriteStall.swift`) and `CAP_LINK_PROOF`. The
+ratchet's three bits are still read from the signed profile alone, and the switch still gates only them.

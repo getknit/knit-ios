@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitMesh
 import KnitStore
 import KnitTestSupport
@@ -6,16 +7,33 @@ import Testing
 
 /// A link manager on a fake radio and a hand-moved clock.
 struct LinkRig {
-    /// Three ids in a known order: the larger dials, as on Android.
-    static let ids = [fixtureNodeId(1), fixtureNodeId(2), fixtureNodeId(3)].sorted()
+    /// Three identities in a known order of their ids: the larger dials, as on Android. Each id derives from its keys, so
+    /// a link between rigs proves itself.
+    static let identities = [TestPeer(seed: 1), TestPeer(seed: 2), TestPeer(seed: 3)].map(\.keys).sorted { $0.nodeId < $1.nodeId }
+    static let ids = identities.map(\.nodeId)
     static let low = ids[0]
     static let middle = ids[1]
     static let high = ids[2]
+
+    /// The keys behind one of ``ids``.
+    static func keys(of node: NodeId) -> IdentityKeys {
+        guard let keys = identities.first(where: { $0.nodeId == node }) else {
+            fatalError("\(node) is none of the rig's three")
+        }
+        return keys
+    }
+
+    /// The ids whose stored profile the manager is told carries ``Capabilities/linkProof``.
+    final class ProofProfiles {
+        var ids: Set<NodeId> = []
+    }
 
     let radio: FakeRadio
     let clock: ManualClock
     let log: RecordingLog
     let links: LinkManager
+    /// What the store would say of each id's profile: empty unless a test fills it.
+    let proofProfiles = ProofProfiles()
 
     init(
         local: NodeId,
@@ -36,19 +54,25 @@ struct LinkRig {
             reportsFileWrites: reportsFileWrites
         )
         clock = ManualClock(wall: 1_756_200_000_000, monotonic: 1000)
+        let profiles = proofProfiles
         links = LinkManager(
-            localId: local,
+            identity: Self.keys(of: local),
             radio: radio,
             clock: clock,
             random: SeededGenerator(seed: 3),
             configuration: configuration,
             log: log,
             partials: partials
-        )
+        ) { profiles.ids.contains($0) }
         links.start()
         if background {
             _ = links.setInBackground(true)
         }
+    }
+
+    /// Whether the manager logged `line` at the info level.
+    func said(_ line: String) -> Bool {
+        log.all.contains("info \(line)")
     }
 
     func handle(_ event: RadioEvent) -> [LinkManager.Event] {
@@ -135,6 +159,49 @@ struct LinkRig {
         LinkRecord(.hello, payload: Hello(nodeId: peer.string, capabilities: capabilities).payload).encoded ?? []
     }
 
+    /// A HELLO from `peer` that proves itself: the bit, and a fresh nonce unless one is given.
+    static func provingHello(_ peer: NodeId, nonce: [UInt8] = LinkProof.freshNonce()) -> Hello {
+        Hello(nodeId: peer.string, capabilities: Capabilities.local.union(.blobHave), nonce: nonce)
+    }
+
+    /// The PROOF record `keys` writes as `signer` for a link whose HELLOs crossed as these payloads.
+    static func proofRecord(
+        _ keys: IdentityKeys, as signer: LinkProof.Role, dialerHello: [UInt8], responderHello: [UInt8]
+    ) throws -> [UInt8] {
+        let payload = try LinkProof.payload(keys: keys, signer: signer, dialerHello: dialerHello, responderHello: responderHello)
+        return LinkRecord(.proof, payload: payload).encoded ?? []
+    }
+
+    /// A peer dials us on `id` with a HELLO that proves itself; answers the HELLO's payload, and what the manager said.
+    func acceptProving(_ peer: NodeId, on id: ChannelID, nonce: [UInt8] = LinkProof.freshNonce()) -> (
+        hello: [UInt8], events: [LinkManager.Event]
+    ) {
+        let hello = Self.provingHello(peer, nonce: nonce).payload
+        _ = handle(.accepted(id))
+        return (hello, handle(.received(id, LinkRecord(.hello, payload: hello).encoded ?? [])))
+    }
+
+    /// The payload of the first HELLO we wrote on `id`.
+    func ourHelloPayload(on id: ChannelID) -> [UInt8]? {
+        radio.records(on: id).first { $0.tag == .hello }?.payload
+    }
+
+    /// Finishes a proving peer's dial of us on `id`: its PROOF, by `keys` (the peer's own unless given), over the HELLO it
+    /// sent and the reply we wrote.
+    func proveDialer(_ peer: NodeId, on id: ChannelID, hello: [UInt8], keys: IdentityKeys? = nil) throws -> [LinkManager.Event] {
+        let reply = try #require(ourHelloPayload(on: id))
+        return handle(
+            .received(id, try Self.proofRecord(keys ?? Self.keys(of: peer), as: .dialer, dialerHello: hello, responderHello: reply)))
+    }
+
+    /// A proving peer accepts our dial on `id`: its reply HELLO and its PROOF in one read, over the HELLO we wrote.
+    func answerProving(_ peer: NodeId, on id: ChannelID) throws -> (reply: [UInt8], events: [LinkManager.Event]) {
+        let ours = try #require(ourHelloPayload(on: id))
+        let reply = Self.provingHello(peer).payload
+        let proof = try Self.proofRecord(Self.keys(of: peer), as: .responder, dialerHello: ours, responderHello: reply)
+        return (reply, handle(.received(id, (LinkRecord(.hello, payload: reply).encoded ?? []) + proof)))
+    }
+
     static func frameRecord(_ wire: WireEnvelope) -> [UInt8] {
         LinkRecord(.frame, payload: wire.encoded).encoded ?? []
     }
@@ -156,9 +223,12 @@ struct LinkRig {
         return WireEnvelope(sig: Array(repeating: sig, count: 64), signed: envelope.encoded)
     }
 
-    /// The HELLO this node sends: caps `215f`, since it answers holder queries, or `315f` when its radio serves a
-    /// doorbell too.
-    static func ourHello(_ local: NodeId, servesDoorbell: Bool = false) -> LinkRecord {
-        LinkRecord(.hello, payload: Array("\(local)|1|\(servesDoorbell ? "315f" : "215f")".utf8))
+    /// Whether `records` is the HELLO this node sends, alone: caps `4215f`, since it answers holder queries and proves its
+    /// id, or `4315f` when its radio serves a doorbell too, then a fresh nonce, whose bytes are random.
+    static func isOurHello(_ records: [LinkRecord], _ local: NodeId, servesDoorbell: Bool = false) -> Bool {
+        guard records.count == 1, let record = records.first, record.tag == .hello, let nonce = Hello(payload: record.payload).nonce else {
+            return false
+        }
+        return record.payload == Array("\(local)|1|\(servesDoorbell ? "4315f" : "4215f")|n\(Hex.encode(nonce))".utf8)
     }
 }

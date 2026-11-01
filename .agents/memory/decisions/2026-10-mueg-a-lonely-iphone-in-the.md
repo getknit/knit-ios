@@ -83,3 +83,8 @@ Two alternatives were weighed:
   the budget. `MeshControlTests` pins the `seeking`, `seekWakes` and `seekSpells` status fields. `interop.py
   iphone-seek` checks the whole path on hardware: `--mode drop` ends a link under a locked iPhone, `--mode relink`
   restarts the far side, and `--mode budget` counts the wakes.
+
+**Amended 2026-11-01, for the link proof (ADR 2026-11.hpmt):** a handshake can now have two timed stages, the HELLO
+and then the PROOF, and a late deadline is put off once per stage, not once per channel, as a dial's already was from
+`connecting` to its HELLO. Each stage's deadline is 5 s, so a link that comes up under suspension can take 5 s plus 3 s
+of running time per stage. A seek-wake dial needs one more half round trip before its link registers.

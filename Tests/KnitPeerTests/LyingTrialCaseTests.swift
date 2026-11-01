@@ -186,15 +186,15 @@ import Testing
         #expect(rig.liarFrames.filter { $0.envelope.id == id }.count == 1, "once per channel")
         #expect(await rig.receiver.profileOversizeRefused == 0, "at the cap, taken")
 
-        // The link comes back on a new channel: the forge goes again, after our HELLO.
+        // The link comes back on a new channel: the forge goes again, after our HELLO and our PROOF, once the receiver's
+        // proof verified.
         rig.inner.emit(.closed(LyingTrialRig.liarChannel))
         let next = ChannelID(17)
-        rig.inner.emit(.accepted(next))
-        rig.inner.emit(.received(next, record(.hello, Hello(nodeId: rig.receiverKeys.nodeId.string, capabilities: 0x215F).payload)))
-        #expect(await waitUntil { rig.inner.records(on: next).count >= 2 })
+        try await dialProving(as: rig.receiverKeys, on: next, deliver: { rig.inner.emit($0) }, written: { rig.inner.records(on: next) })
+        #expect(await waitUntil { rig.inner.records(on: next).count >= 3 })
         let records = rig.inner.records(on: next)
-        #expect(records.first?.tag == .hello)
-        let forged = records.dropFirst().first.flatMap { try? WireEnvelope(decoding: $0.payload) }
+        #expect(records.prefix(2).map(\.tag) == [.hello, .proof])
+        let forged = records.dropFirst(2).first.flatMap { try? WireEnvelope(decoding: $0.payload) }
         #expect(forged.flatMap { try? RelayEnvelope(decoding: $0.signed) }?.id == id, "the forge next")
         let first = rig.liarFrames.first { $0.envelope.id == id }?.wire
         #expect(forged != nil && forged == first, "signed once: the same bytes on every channel")

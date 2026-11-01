@@ -15,11 +15,11 @@ public import KnitWire
 /// - **Injection**: the padded profile (``setPaddedProfile(_:)``) is written once on each ready channel, and the one-shot
 ///   ask (``askBlob(_:of:)``) once on the named peer's, each between two of the link manager's records, then rung.
 ///
-/// A channel is ready once our own HELLO has been written on it and ``heardHello(from:on:)`` has named its peer, whichever
-/// comes second: the dialer writes first and the responder answers, and an end that reads anything but a HELLO first
-/// drops the link (`LinkManager.handleHello`, `LinkManager+Admission.swift:181-201`; knit-next `LinkHandshake.readHello`,
-/// `LinkHandshake.kt:45-49` at the pin `e63f15f4`). Nothing is injected before our HELLO, on a link the peer dialed or
-/// one it accepted.
+/// A channel is ready once our own HELLO has been written on it and ``linkUp(_:on:)`` has named its peer, whichever comes
+/// second: the dialer writes first and the responder answers, an end that reads anything but a HELLO first drops the
+/// link, and on a link that proves itself an end that reads anything but a PROOF where the PROOF belongs fails it
+/// (`LinkManager.handleHello` and `handleProof`; knit-next `LinkHandshake.dial` and `answer`). The link manager says
+/// `linkUp` only after both proofs crossed, so nothing is injected before our HELLO, nor between a HELLO and a PROOF.
 ///
 /// The link manager cuts a FRAME record into slices of up to 8 KiB, and hands DIGEST and FILE records over whole. The
 /// radio tracks where each record ends, as ``FloodRadio`` does. While a rewrite could apply, it holds a FRAME's slices
@@ -181,9 +181,13 @@ public final class LyingRadio: Radio {
         inner.ring(channel)
     }
 
-    /// The peer named itself: once our HELLO is out too, the channel is ready, and what waits is injected.
     public func heardHello(from node: NodeId, on channel: ChannelID) {
         inner.heardHello(from: node, on: channel)
+    }
+
+    /// The link is the peer's: once our HELLO is out too, the channel is ready, and what waits is injected.
+    public func linkUp(_ node: NodeId, on channel: ChannelID) {
+        inner.linkUp(node, on: channel)
         let effects = state.withLock { state -> Effects in
             var effects = Effects()
             guard !state.closed.contains(channel) else {

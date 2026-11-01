@@ -81,7 +81,7 @@ public actor PeerNode {
                 stateDirectory: parts.stateDirectory,
                 log: log
             )
-            return PeerLies(parts: parts, profile: profile)
+            return PeerLies(parts: parts, profile: profile, mesh: mesh)
         }
     }
 

@@ -47,6 +47,26 @@ extension SchemaTests {
         )
     }
 
+    @Test func v21KeepsOurProfileAndRecordsNoCapabilities() throws {
+        // No build before v21 recorded what its profile carried (knit-ios #25): the row reads none, which the next start
+        // takes for a change and publishes again as an edit.
+        let queue = try DatabaseQueue()
+        try Schema.migrator.migrate(queue, upTo: "v20")
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO own_profile (slot, name, status, openToChat, version, publishedAt, prekeyId)
+                    VALUES (0, ?, ?, 1, 5, 6, 2)
+                    """,
+                arguments: [StoredText.bytes("Me"), StoredText.bytes("here")]
+            )
+        }
+        try Schema.migrator.migrate(queue)
+        let store = SQLOwnProfileStore(try KnitDatabase(writer: queue, failures: recordFailure))
+        #expect(store.load() == OwnProfile(name: "Me", status: "here", openToChat: true, version: 5, publishedAt: 6, prekeyId: 2))
+        #expect(store.load().capabilities == nil)
+    }
+
     @Test func theQuoteQueriesUseTheirPartialIndexes() throws {
         let database = try KnitDatabase.inMemory(failures: recordFailure)
         try database.writer.read { db in

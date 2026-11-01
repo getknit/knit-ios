@@ -204,6 +204,18 @@ import Testing
         #expect(seals.originated == [["a1", "a2"], ["b1"]] && ledger.nextBatchDue == nil)
     }
 
+    @Test func aSweepKeepsAHoldsNewerTicksAndDropsAHoldItEmpties() {
+        var ledger = AckSync()
+        let seals = LedgerSeals(capable: [author, other], seals: true, originates: true)
+        _ = ledger.owe("r1", author: author, escalatable: false, me: me, linked: [], now: 0, seals: seals)
+        _ = ledger.owe("o1", author: other, escalatable: false, me: me, linked: [], now: 0, seals: seals)
+        _ = ledger.owe("r2", author: author, escalatable: false, me: me, linked: [], now: 3_600_000, seals: seals)
+        #expect(ledger.ridingFor(author) == 2 && ledger.ridingFor(other) == 1)
+        ledger.sweep(now: AckSync.owedMilliseconds + 1)
+        #expect(ledger.ridingFor(author) == 1, "the newer tick stays in its hold")
+        #expect(ledger.ridingFor(other) == 0, "a hold the sweep empties goes")
+    }
+
     @Test func aRoomTickNeverEscalatesHoweverLongItWaits() {
         // knit-next ADR 2026-09.aa27: the room may not cost a custody row, so its hold never originates.
         var ledger = AckSync()

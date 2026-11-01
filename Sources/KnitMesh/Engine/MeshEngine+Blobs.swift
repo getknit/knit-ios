@@ -179,9 +179,13 @@ extension MeshEngine {
     // MARK: Serving
 
     /// A neighbour's blob request (`BlobExchange.onRequest`): serve the blob if held, and otherwise want it, so the
-    /// asker's next ask finds it here. The asker is the neighbour whose link carried the request, never the sender
-    /// the unsigned frame names. The log says what became of each request.
+    /// asker's next ask finds it here. The asker is the neighbour whose link carried it, taken only as the unsigned
+    /// frame's sender, unrelayed (``takesBlobControl(_:)``, contract §8), as Android has sent every `blobreq` since
+    /// v2.0.0 (`BlobExchange.blobRequest`). The log says what became of each request.
     func handleBlobRequest(_ frame: InboundFrame) {
+        guard takesBlobControl(frame) else {
+            return
+        }
         guard let request = try? BlobRequestContent(decoding: frame.envelope.payload), let hash = BlobHash(request.hash) else {
             drop(.undecodable, frame.envelope)
             return

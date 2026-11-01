@@ -26,7 +26,10 @@ public final class SQLOwnProfileStore: OwnProfileStore {
             guard
                 let row = try Row.fetchOne(
                     db,
-                    sql: "SELECT name, status, openToChat, version, publishedAt, avatarHash, prekeyId FROM own_profile WHERE slot = 0"
+                    sql: """
+                        SELECT name, status, openToChat, version, publishedAt, avatarHash, prekeyId, capabilities
+                        FROM own_profile WHERE slot = 0
+                        """
                 )
             else {
                 return OwnProfile()
@@ -38,23 +41,25 @@ public final class SQLOwnProfileStore: OwnProfileStore {
                 version: try row.decode(Int64.self, forColumn: "version"),
                 publishedAt: try row.decode(Int64.self, forColumn: "publishedAt"),
                 avatarHash: try row.optionalBlobHash("avatarHash"),
-                prekeyId: try row.decode(Int?.self, forColumn: "prekeyId")
+                prekeyId: try row.decode(Int?.self, forColumn: "prekeyId"),
+                capabilities: try row.decode(Int64?.self, forColumn: "capabilities").map(Capabilities.init(rawValue:))
             )
         }
     }
 
     /// Writes the whole row. `INSERT OR REPLACE` nulls any column it does not name, so every column is named here,
-    /// the photo's and the prekey's included: a republish that left one out would drop it.
+    /// the photo's, the prekey's and the capabilities' included: a republish that left one out would drop it.
     public func save(_ profile: OwnProfile) {
         database.write(or: ()) { db in
             try db.execute(
                 sql: """
-                    INSERT OR REPLACE INTO own_profile (slot, name, status, openToChat, version, publishedAt, avatarHash, prekeyId)
-                    VALUES (0, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO own_profile
+                        (slot, name, status, openToChat, version, publishedAt, avatarHash, prekeyId, capabilities)
+                    VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                 arguments: [
                     StoredText.bytes(profile.name), StoredText.bytes(profile.status), profile.openToChat, profile.version,
-                    profile.publishedAt, StoredText.bytes(profile.avatarHash?.string), profile.prekeyId,
+                    profile.publishedAt, StoredText.bytes(profile.avatarHash?.string), profile.prekeyId, profile.capabilities?.rawValue,
                 ]
             )
         }

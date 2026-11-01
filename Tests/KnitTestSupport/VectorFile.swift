@@ -141,14 +141,49 @@ public struct VectorSafetyNumber: Codable, Sendable, Equatable {
     }
 }
 
-/// knit-next's link vectors: the HELLO, DIGEST and FILE_HEADER records, the custody fingerprint and an advert. The
-/// headers are a whole photo's and the rest of a cut one's, which answers a `blobreq` naming an offset (knit-next ADR
-/// 2026-10.wtyc).
+/// knit-next's link vectors: the HELLO, DIGEST and FILE_HEADER records, the custody fingerprint, an advert, and a link
+/// proof (`link-hello-proof`, knit-next ADR 2026-11.264w). The headers are a whole photo's and the rest of a cut one's,
+/// which answers a `blobreq` naming an offset (knit-next ADR 2026-10.wtyc).
 public struct VectorLink: Decodable, Sendable {
-    /// A HELLO record and its text payload.
-    public struct Hello: Decodable, Sendable {
-        /// `nodeId|version|capsHex`.
+    /// A HELLO record and its text payload. This port's emitted link proofs carry their HELLOs in the same shape.
+    public struct Hello: Codable, Sendable, Equatable {
+        /// `nodeId|version|capsHex`, then `|n<nonce>` from a build that proves its id.
         public let payload: String
+        /// The whole record, as hex.
+        public let record: String
+
+        /// Makes an entry.
+        public init(payload: String, record: String) {
+            self.payload = payload
+            self.record = record
+        }
+    }
+
+    /// The bytes one side of a proven link signs (`LinkProof.transcript`).
+    public struct Transcript: Decodable, Sendable {
+        /// The keyed identity that signs it.
+        public let signer: String
+        /// The signer's role byte: 1 when it dialed, 2 when it answered.
+        public let role: UInt8
+        /// The transcript, as hex.
+        public let hex: String
+    }
+
+    /// A PROOF record (tag 8): the signer's two raw public keys, then its signature. Tink signed it, so Android rebuilds it
+    /// byte for byte; this port checks the header and keys and verifies the signature.
+    public struct Proof: Decodable, Sendable {
+        /// The keyed identity that signed it.
+        public let signer: String
+        /// The whole record, as hex.
+        public let record: String
+    }
+
+    /// A PROOF record that must fail.
+    public struct ProofReject: Decodable, Sendable {
+        /// What it is checked as: `<identity>, <role>, <transcript entry>`.
+        public let checkedAs: String
+        /// Why it must fail, in words.
+        public let reason: String
         /// The whole record, as hex.
         public let record: String
     }
@@ -213,6 +248,21 @@ public struct VectorLink: Decodable, Sendable {
     public let fileHeaderResumed: FileHeader
     /// The advert.
     public let advert: Advert
+    /// Alice's HELLO dialing Bob, with the bit and her nonce `00..0f`.
+    public let helloProofDialer: Hello
+    /// Bob's reply, with his nonce `10..1f`.
+    public let helloProofReply: Hello
+    /// What Alice signs as the dialer.
+    public let proofTranscriptDialer: Transcript
+    /// What Bob signs as the responder.
+    public let proofTranscriptResponder: Transcript
+    /// Alice's PROOF.
+    public let proofDialer: Proof
+    /// Bob's PROOF.
+    public let proofResponder: Proof
+    /// Records that must fail against the dialer's transcript, by name: `wrongRole`, `otherResponderNonce`, `idMismatch`
+    /// and `short`.
+    public let proofRejects: [String: ProofReject]
 }
 
 /// knit-next's keyed vectors, `vectors/keyed-v1.json`: identities, Alice's signed frames and her DM to Bob, and
@@ -251,17 +301,20 @@ public struct EmittedVectors: Codable, Sendable, Equatable {
     public let frames: [String: VectorFrame]
     /// What a reader needs to open Carol's ratchet frames (phase P7b); absent before it.
     public let ratchet: EmittedRatchet?
+    /// Carol's link proofs (`link-hello-proof`); absent before it.
+    public let link: EmittedLink?
 
     /// Makes the file's content.
     public init(
         about: String, identities: [String: VectorIdentity], safetyNumber: VectorSafetyNumber, frames: [String: VectorFrame],
-        ratchet: EmittedRatchet? = nil
+        ratchet: EmittedRatchet? = nil, link: EmittedLink? = nil
     ) {
         self.about = about
         self.identities = identities
         self.safetyNumber = safetyNumber
         self.frames = frames
         self.ratchet = ratchet
+        self.link = link
     }
 
     /// The committed file, or `nil` before it has been written.
@@ -270,5 +323,60 @@ public struct EmittedVectors: Codable, Sendable, Equatable {
             return nil
         }
         return VectorFile.read(fileName, as: Self.self)
+    }
+}
+
+/// Carol's link proofs in `ios-emitted-v1.json` (`link-hello-proof`): one as the dialer and one as the responder, each
+/// with both HELLOs as they crossed, so knit-next's `IosEmittedVectorTest` can verify them with Tink and check that each
+/// fails under the other role.
+public struct EmittedLink: Codable, Sendable, Equatable {
+    /// What the section is, for a reader who opens it cold.
+    public let about: String
+    /// Carol dials Alice, Carol's nonce `20..2f` and Alice's `30..3f`: Carol's dialer PROOF.
+    public let carolDialsAlice: EmittedLinkProof
+    /// Alice dials Carol, Alice's nonce `30..3f` and Carol's `20..2f`: Carol's responder PROOF.
+    public let aliceDialsCarol: EmittedLinkProof
+
+    /// Makes the section.
+    public init(about: String, carolDialsAlice: EmittedLinkProof, aliceDialsCarol: EmittedLinkProof) {
+        self.about = about
+        self.carolDialsAlice = carolDialsAlice
+        self.aliceDialsCarol = aliceDialsCarol
+    }
+}
+
+/// One link's proof by Carol: who dialed, both HELLOs, the transcript she signed and her PROOF record.
+public struct EmittedLinkProof: Codable, Sendable, Equatable {
+    /// The identity that dialed: `carol` or `alice`.
+    public let dialer: String
+    /// The identity that answered.
+    public let responder: String
+    /// The identity whose PROOF this is: always `carol`.
+    public let signer: String
+    /// The signer's role byte: 1 when it dialed, 2 when it answered.
+    public let role: UInt8
+    /// The dialer's HELLO.
+    public let helloDialer: VectorLink.Hello
+    /// The responder's reply HELLO.
+    public let helloResponder: VectorLink.Hello
+    /// The signed transcript, as hex.
+    public let transcript: String
+    /// The PROOF record (tag 8), as hex: header, Carol's two raw keys, her signature. CryptoKit's signature is randomized,
+    /// so verify it; never compare it.
+    public let proof: String
+
+    /// Makes an entry.
+    public init(
+        dialer: String, responder: String, signer: String, role: UInt8, helloDialer: VectorLink.Hello,
+        helloResponder: VectorLink.Hello, transcript: String, proof: String
+    ) {
+        self.dialer = dialer
+        self.responder = responder
+        self.signer = signer
+        self.role = role
+        self.helloDialer = helloDialer
+        self.helloResponder = helloResponder
+        self.transcript = transcript
+        self.proof = proof
     }
 }

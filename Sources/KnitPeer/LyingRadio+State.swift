@@ -11,7 +11,7 @@ extension LyingRadio {
         /// The slices of a record held for a rewrite, and the bytes of it still to come.
         var held: [[UInt8]] = []
         var heldLeft = 0
-        /// Whether our HELLO went out, and whom the peer's named.
+        /// Whether our HELLO went out, and whom the link manager registered the link to.
         var wroteHello = false
         var peer: NodeId?
         /// When the channel became ready, in the order channels do: the newest to a peer takes its asks.
@@ -63,7 +63,7 @@ extension LyingRadio {
     }
 
     /// The first slice of a record: held when `holding` says its tag might be rewritten, and otherwise written, a HELLO
-    /// marked as ours. A slice shorter than a header, or with no tag of the seven, is a whole write, as the flood reads one.
+    /// marked as ours. A slice shorter than a header, or with no tag of the eight, is a whole write, as the flood reads one.
     func begin(_ bytes: [UInt8], of link: inout Link, on channel: ChannelID, holding: (LinkRecord.Tag) -> Bool) {
         guard let head = LyingRecords.header(of: bytes) else {
             inner.write(bytes, to: channel)

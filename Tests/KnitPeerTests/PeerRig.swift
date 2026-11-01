@@ -178,6 +178,10 @@ final class CapturingTransport: MeshTransport {
         0
     }
 
+    func peerProvesItself(_: NodeId) {
+        // No link here to close.
+    }
+
     func fileTaken(from _: NodeId, hash _: BlobHash) {
         // Nothing streams in here.
     }
@@ -269,6 +273,27 @@ func record(_ tag: LinkRecord.Tag, _ payload: [UInt8]) -> [UInt8] {
     LinkRecord(tag, payload: payload).encoded ?? []
 }
 
+/// Plays the dialer of a link on `channel` of a node that accepts it, proving `keys`'s id as an upgraded build does (the
+/// `link-hello-proof` contract, §5): our HELLO with the bit and a fresh nonce, then, once the node's reply and PROOF are
+/// written, our own PROOF over both HELLOs. `deliver` hands the node a radio event, and `written` reads back the records it
+/// wrote on the channel, those written before the dial included. The node then registers the link as proven.
+func dialProving(
+    as keys: IdentityKeys, on channel: ChannelID, deliver: (RadioEvent) async -> Void, written: () -> [LinkRecord]
+) async throws {
+    let before = written().count
+    let hello = Hello(nodeId: keys.nodeId.string, capabilities: Capabilities.local.union(.blobHave), nonce: LinkProof.freshNonce())
+    await deliver(.accepted(channel))
+    await deliver(.received(channel, record(.hello, hello.payload)))
+    let answered = await waitUntil {
+        let tags = written().dropFirst(before).map(\.tag)
+        return tags.contains(.hello) && tags.contains(.proof)
+    }
+    try #require(answered, "the node answered with its HELLO and its PROOF")
+    let reply = try #require(written().dropFirst(before).first { $0.tag == .hello })
+    let proof = try LinkProof.payload(keys: keys, signer: .dialer, dialerHello: hello.payload, responderHello: reply.payload)
+    await deliver(.received(channel, record(.proof, proof)))
+}
+
 /// A node under test on a ``PeerRadio``, and a second engine that plays the far end of one link.
 struct PeerRig {
     static let channel = ChannelID(7)
@@ -325,11 +350,10 @@ struct PeerRig {
         return try #require(reply)
     }
 
-    /// Links the far node as a dialer we never sighted, and waits for the link event: the `count`th, for a link
-    /// made again.
+    /// Links the far node as a dialer we never sighted, proving its id as an upgraded build's would, and waits for the link
+    /// event: the `count`th, for a link made again.
     func link(count: Int = 1) async throws {
-        radio.emit(.accepted(Self.channel))
-        radio.emit(.received(Self.channel, record(.hello, Hello(nodeId: far.nodeId.string, capabilities: 0xFFF).payload)))
+        try await dialProving(as: far, on: Self.channel, deliver: { radio.emit($0) }, written: { radio.records(on: Self.channel) })
         _ = try #require(await lines.nth(count) { $0["event"] as? String == "link" && $0["up"] as? Bool == true })
     }
 

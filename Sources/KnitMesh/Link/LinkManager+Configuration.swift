@@ -19,8 +19,8 @@ extension LinkManager {
         /// What a link scores once its peer, sighted during the link, has left presence: shed first, as on Android.
         public var absentLinkRssi: Double
         /// How old a held link must be before a second dial from the same unsighted peer may replace it
-        /// (A1's `REPLACE_MIN_HOLD_MS`). The HELLO is unauthenticated, so this bounds how often a device that
-        /// claims the peer's id can cut its link.
+        /// (A1's `REPLACE_MIN_HOLD_MS`). An unproven HELLO is unauthenticated, so this bounds how often a device that
+        /// claims the id of a peer that cannot prove itself can cut its link. A proven link is replaced only by a proof.
         public var replaceMinHoldMilliseconds: Int64
         /// How often a link's doorbell rings, at most, while frames go out on it. A ring wakes a suspended iPhone for
         /// about 9 s (iOS 27), so ringing at most every 5 s, and once more after the last frame of a burst, has every

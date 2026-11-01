@@ -31,8 +31,7 @@ import Testing
         holding(fixture)
         fixture.link(bob, carol)
         fixture.transport.clear()
-        // The unsigned sender says carol; the request came over bob's link, so bob is the asker.
-        fixture.deliver(carol.blobRequest(for: photoHash.string, id: frameIdOf("breq-1")), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1")), from: bob)
         #expect(fixture.transport.files == [SentFile(kind: .attachment, hash: photoHash, mime: "image/png", bytes: photo, to: bob.nodeId)])
         #expect(!fixture.stores.custody.contains(frameIdOf("breq-1")), "never carried")
         #expect(fixture.transport.written.isEmpty, "never relayed")
@@ -41,13 +40,36 @@ import Testing
             fixture.log.all.contains("debug mesh blobreq \(photoHash.string.prefix(12)) from \(bob.nodeId): serving \(photo.count) bytes"))
     }
 
-    @Test func aRequestMarkedForRelayIsStillNeverFlooded() {
+    @Test func aRequestNamingAnotherSenderOrMarkedForRelayIsDroppedAndNeverServed() {
+        // Contract §8: blob control is taken only from the neighbour whose link carried it, as its sender.
+        let fixture = EngineFixture(alice)
+        holding(fixture)
+        fixture.link(bob, carol)
+        fixture.transport.clear()
+        fixture.deliver(carol.blobRequest(for: photoHash.string, id: frameIdOf("breq-claimed")), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-relay"), relay: true), from: bob)
+        fixture.advance(1000)
+        #expect(fixture.transport.files.isEmpty, "neither served")
+        #expect(fixture.engine.dropped == [.blobControlNotFromLink: 2])
+        #expect(fixture.transport.written.allSatisfy { ![frameIdOf("breq-claimed"), frameIdOf("breq-relay")].contains($0.envelope.id) })
+        #expect(answers(fixture).isEmpty, "neither reached the serve")
+        // Nothing was stamped: bob's own ask over its own link is served at once.
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-honest")), from: bob)
+        #expect(fixture.transport.files == [SentFile(kind: .attachment, hash: photoHash, mime: "image/png", bytes: photo, to: bob.nodeId)])
+        #expect(fixture.engine.dropped == [.blobControlNotFromLink: 2])
+    }
+
+    @Test func aRequestNamingAnotherSenderOrMarkedForRelayMakesNoWant() {
         let fixture = EngineFixture(alice)
         fixture.link(bob, carol)
         fixture.transport.clear()
-        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-1"), relay: true), from: bob)
-        fixture.advance(1000)
-        #expect(fixture.transport.written.allSatisfy { $0.envelope.id != frameIdOf("breq-1") })
+        fixture.deliver(carol.blobRequest(for: photoHash.string, id: frameIdOf("breq-claimed"), pull: 3), from: bob)
+        fixture.deliver(bob.blobRequest(for: photoHash.string, id: frameIdOf("breq-relay"), relay: true, pull: 3), from: bob)
+        fixture.advance(BlobExchange.firstAskGraceMilliseconds)
+        #expect(fixture.engine.dropped == [.blobControlNotFromLink: 2])
+        #expect(fixture.engine.blobExchange.wanted.isEmpty, "no echo")
+        #expect(fixture.transport.accepted.isEmpty)
+        #expect(fixture.transport.written(.blobRequest).isEmpty && fixture.transport.written(.blobHave).isEmpty, "nobody asked")
     }
 
     @Test func aSecondAskInsideTheMemoOrWhileACopyIsOnTheLinkServesNothing() {

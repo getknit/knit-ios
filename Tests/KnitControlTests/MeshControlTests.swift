@@ -119,6 +119,10 @@ import Testing
         #expect(status["groupCustodyRefused"] as? Int == 0, "Android's name for custody's group gate refusals")
         #expect(status["custodyOversizeRefused"] as? Int == 0, "Android's name for custody's byte cap refusals")
         #expect(status["profileOversizeRefused"] as? Int == 0, "Android's name for the profile cap's refusals, door and custody")
+        // The link proof's three, one name each on both phones (the `link-hello-proof` contract, §9).
+        #expect(status["linksProven"] as? Int == 0)
+        #expect(status["linkProofFailed"] as? Int == 0)
+        #expect(status["linkClaimRefused"] as? Int == 0)
     }
 
     @Test func statusSaysWhenTheLinksSeek() async throws {

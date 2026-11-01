@@ -35,7 +35,7 @@ extension MeshEngine {
         change(&own)
         own.version = max(now, own.version + 1)
         own.publishedAt = max(now, own.publishedAt + 1)
-        stores.ownProfile.save(own)
+        savePublished(own)
         if let frame = ownProfile() {
             originate(frame)
         }
@@ -55,10 +55,10 @@ extension MeshEngine {
 
     /// Saves `own` under a fresh publish stamp and signs it into custody, its version as it is, so no receiver's
     /// watermark moves.
-    private func republish(_ own: OwnProfile, now: Int64) {
+    func republish(_ own: OwnProfile, now: Int64) {
         var own = own
         own.publishedAt = max(now, own.publishedAt + 1)
-        stores.ownProfile.save(own)
+        savePublished(own)
         _ = ownProfile()
     }
 
@@ -142,10 +142,10 @@ extension MeshEngine {
     ///
     /// The ratchet's bits and our prekey ride together, with the switch on and the prekey this publish names still kept
     /// (`MeshManager.kt:2963-2979`): `CAP_RATCHET` promises a published prekey, and every Android build that claims it
-    /// carries one. Otherwise the profile is byte for byte what it was before the ratchet (ADR 2026-10.5sk9).
+    /// carries one. Otherwise the profile is what it was before the ratchet but for the link-proof bit (ADR 2026-10.5sk9).
     func currentProfileEnvelope() -> RelayEnvelope {
         let own = stores.ownProfile.load()
-        let prekey = configuration.ratchet ? own.prekeyId.flatMap { prekeyRing?.prekey(id: $0) } : nil
+        let prekey = publishedPrekey(of: own)
         let content = ProfileContent(
             name: TextLimits.truncated(TextLimits.normalizeSingleLine(own.name), toUTF16: TextLimits.displayName),
             status: TextLimits.truncated(TextLimits.normalizeSingleLine(own.status), toUTF16: TextLimits.status),
@@ -153,7 +153,7 @@ extension MeshEngine {
             pubKey: identity.bundle.encoded,
             deviceTag: deviceTag,
             protoVersion: WireProtocol.version,
-            capabilities: (prekey == nil ? Capabilities.local.subtracting(.ratchetSuite) : configuration.capabilities).rawValue,
+            capabilities: publishedCapabilities(of: own).rawValue,
             prekey: prekey?.info,
             version: own.version,
             openToChat: own.openToChat
@@ -275,7 +275,7 @@ extension MeshEngine {
         // A first profile starts from an empty row, both watermarks at 0, as `PeerEntity(senderId)` does (`:3301`).
         let base = existing ?? PeerRecord(nodeId: sender, name: "", status: "", publicKey: key, updatedAt: 0)
         let record = profileRecord(content, onto: base, version: version, stale: (stalePresentation, stalePrekey), blocked: blocked)
-        stores.peers.upsert(record)
+        writeProfileRow(record, was: existing)
         if continued || record != existing {
             events.append(.peerUpdated(sender))
         }
@@ -325,9 +325,9 @@ extension MeshEngine {
     /// when the profile is not older than ``PeerRecord/updatedAt``, which never moves back, and the sender is not `blocked`,
     /// whose row keeps what it showed while its watermark moves (knit-ios #37). The prekey moves only when it is not older
     /// than ``PeerRecord/prekeyProfileAt``: a verified one is pinned, and an absent or bad one clears the pin, since the peer
-    /// stopped serving it. The device tag, protocol version and capabilities follow any profile that reaches here, as
-    /// Android's do (`:3310-3318`): one older on the presentation's watermark is still the newest cleartext profile on the
-    /// prekey's, and the bits and the prekey ride it together.
+    /// stopped serving it. The device tag and protocol version follow any profile that reaches here (`:3310-3318`), and the
+    /// capabilities the presentation's watermark, blocked or not (knit-ios #25): a node edits when they change
+    /// (``republishIfCapabilitiesChanged()``), so an older profile is from before and must not take a bit back.
     private func profileRecord(
         _ content: ProfileContent,
         onto base: PeerRecord,
@@ -338,7 +338,7 @@ extension MeshEngine {
         var record = stale.presentation || blocked ? base : presentation(of: content, onto: base)
         record.deviceTag = content.deviceTag ?? base.deviceTag
         record.protocolVersion = content.protoVersion ?? base.protocolVersion
-        record.capabilities = content.capabilities ?? base.capabilities
+        record.capabilities = stale.presentation ? base.capabilities : content.capabilities ?? base.capabilities
         record.updatedAt = max(base.updatedAt, version)
         if !stale.prekey {
             record.prekey = verifiedPrekey(content, of: base)

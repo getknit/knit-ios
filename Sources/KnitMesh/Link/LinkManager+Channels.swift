@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitWire
 
 /// Closing channels, backing off, advertising and writing.
@@ -44,7 +45,8 @@ extension LinkManager {
             liveLinks.removeAll { $0.channel == id }
             events.append(.down(linked))
             log.log(.info, "link down \(linked) on \(id)")
-        case .connecting, .awaitingHello:
+        case .connecting, .awaitingHello, .awaitingProof:
+            // Nothing was registered, so nothing goes down: a dial that fails its proof is a failed dial.
             if case .dialer(let dialed) = channel.role {
                 peer = dialed
                 if dialing[dialed] == id {
@@ -107,18 +109,31 @@ extension LinkManager {
         radio.advertise(payload)
     }
 
-    /// Writes our HELLO: this build's capabilities, plus the bits that are the link's to claim. `CAP_BLOB_HAVE` always,
-    /// since every build answers a holder query and Android reads the bit from the link alone (knit-next ADR
-    /// 2026-10.6e5t), and `CAP_DOORBELL` when the radio serves one, so Android rings it (knit-next ADR 2026-09.dqvb).
-    /// Neither goes anywhere else: not in the advert, and not in the signed profile.
+    /// Writes our HELLO (``ourHello()``), and keeps its payload on the channel for the link's proof.
     func writeHello(on id: ChannelID) {
+        let payload = ourHello().payload
+        channels[id]?.wroteHello = payload
+        if let record = LinkRecord(.hello, payload: payload).encoded {
+            write(record, on: id)
+        }
+    }
+
+    /// Our HELLO for one connection: this build's capabilities, plus the bits that are the link's to claim.
+    /// `CAP_BLOB_HAVE` always, since every build answers a holder query and Android reads the bit from the link alone
+    /// (knit-next ADR 2026-10.6e5t), and `CAP_DOORBELL` when the radio serves one, so Android rings it (knit-next ADR
+    /// 2026-09.dqvb). Neither goes anywhere else: not in the advert, and not in the signed profile. With
+    /// ``Capabilities/linkProof``, which ``Capabilities/local`` carries, comes a nonce fresh for this connection from the
+    /// system's secure source, never the injected generator a test seeds (the `link-hello-proof` contract, §2).
+    func ourHello() -> Hello {
         var capabilities = Capabilities.local.union(.blobHave)
         if radio.servesDoorbell {
             capabilities.insert(.doorbell)
         }
-        if let record = LinkRecord(.hello, payload: Hello(nodeId: localId.string, capabilities: capabilities).payload).encoded {
-            write(record, on: id)
+        if !provesLinks {
+            capabilities.remove(.linkProof)
         }
+        let nonce = capabilities.contains(.linkProof) ? LinkProof.freshNonce() : nil
+        return Hello(nodeId: (impostor.claimedId ?? localId).string, capabilities: capabilities, nonce: nonce)
     }
 
     /// Writes a record in slices of at most ``Configuration/maxWriteBytes``.

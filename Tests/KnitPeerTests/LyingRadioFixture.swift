@@ -46,16 +46,18 @@ extension LyingRadioFixture {
         return LyingRadio.Forge(wire: WireEnvelope(relay: true, sig: [UInt8](repeating: 1, count: 64), signed: envelope.encoded), id: id)
     }
 
-    /// Brings `channel` up as the dialer does: our HELLO first, then the peer's named.
+    /// Brings `channel` up as the dialer does: our HELLO first, then the peer's named, then the link registered.
     func dialed(_ radio: LyingRadio, _ channel: ChannelID, peer: NodeId) {
         radio.write(hello(local), to: channel)
         radio.heardHello(from: peer, on: channel)
+        radio.linkUp(peer, on: channel)
     }
 
-    /// Brings `channel` up as the responder does: the peer's HELLO named first, then ours.
+    /// Brings `channel` up as the responder does: the peer's HELLO named first, then ours, then the link registered.
     func accepted(_ radio: LyingRadio, _ channel: ChannelID, peer: NodeId) {
         radio.heardHello(from: peer, on: channel)
         radio.write(hello(local), to: channel)
+        radio.linkUp(peer, on: channel)
     }
 }
 
@@ -110,6 +112,7 @@ final class CallRadio: Radio {
         case file(ChannelID, [UInt8])
         case ring(ChannelID)
         case heard(NodeId, ChannelID)
+        case up(NodeId, ChannelID)
         case close(ChannelID)
         case advertise(AdvertPayload)
         case seek(Bool)
@@ -213,5 +216,9 @@ final class CallRadio: Radio {
 
     func heardHello(from node: NodeId, on channel: ChannelID) {
         record(.heard(node, channel))
+    }
+
+    func linkUp(_ node: NodeId, on channel: ChannelID) {
+        record(.up(node, channel))
     }
 }

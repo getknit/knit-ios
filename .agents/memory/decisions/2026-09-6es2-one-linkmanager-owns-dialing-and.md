@@ -101,3 +101,10 @@ Android's `WRITE_STALL_MS` (`LinkSilence.kt:35-37`, `:389` at `e63f15f4`). It ba
 reads nothing by design. Knit's own suspension never counts: a late check, a ring and coming to the front each
 re-stamp the baselines. The link manager also meters a peer's digests now, a burst of 2 and then one per 30 s, keyed
 by node id. `LinkWriteStallTests`, `WriteStallWatchTests` and `LinkDigestBudgetTests` pin both.
+
+**Amended 2026-11-01, for the link proof (ADR 2026-11.hpmt, knit-next ADR 2026-11.264w):** the HELLO is no longer
+taken on trust between phones that both carry `CAP_LINK_PROOF`. Each proves the id its HELLO names before the link
+registers, an unproven claim to an id known to prove itself is refused, and a proof displaces an unproven link
+claiming its id. These admission rules stand for links where neither side proves, so the consequences above still hold
+toward Android v2.10.1 and earlier, and for an id we hold no profile for until it proves itself. A proven link is
+replaced only by a link that proves the same id, under the same sighting and 30 s rules.

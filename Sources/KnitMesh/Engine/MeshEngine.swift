@@ -183,10 +183,11 @@ public final class MeshEngine {
     }
 
     /// Starts the node (`MeshManager.seedOwnProfileCustody`): seeds our sealed profile's dedupe, brings our prekey in step
-    /// with the ring and the switch, republishes our profile if its stamp is stale, puts it in custody, settles the quote
-    /// backlog after it as Android does (`MeshManager.kt:1050`), sweeps what expired while we were down, the ratchet's too,
-    /// forgets deleted messages no carrier can still hold, opens again the ratchet DMs to us custody holds with no row,
-    /// delivers group chats custody holds and our threads lack, and starts the timers. Idempotent.
+    /// with the ring and the switch, republishes our profile as an edit if its capabilities changed, else if its stamp is
+    /// stale, puts it in custody, settles the quote backlog after it as Android does (`MeshManager.kt:1050`), sweeps what
+    /// expired while we were down, the ratchet's too, forgets deleted messages no carrier can still hold, opens again the
+    /// ratchet DMs to us custody holds with no row, delivers group chats custody holds and our threads lack, and starts the
+    /// timers. Idempotent.
     public func start() {
         // Every start is a new session, the Mesh's after a stop too: its photo refusals rested on the links it had.
         forgetPhotoRefusals()
@@ -198,6 +199,7 @@ public final class MeshEngine {
         // Before anything signs our profile, so the frame custody seeds already carries a due prekey
         // (`MeshManager.kt:2548-2551`).
         syncPrekey(atStart: true)
+        republishIfCapabilitiesChanged()
         republishIfStale()
         _ = ownProfile()
         settleQuoteBacklog()

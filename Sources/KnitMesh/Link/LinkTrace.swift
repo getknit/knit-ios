@@ -35,17 +35,19 @@ internal struct LinkTrace {
     /// A whole record came off the channel.
     mutating func parsed(_ record: LinkRecord) {
         records = Array((records + [(record.tag, record.payload.count)]).suffix(Self.keptRecords))
-        tail = Array(record.payload.suffix(Self.tailBytes))
+        // Not a PROOF's, nor a HELLO's that carries a nonce: their ends are a signature and a nonce, which no log line
+        // carries (the link proof's §9). A legacy HELLO's tail stays, for a reader that lost its place after one (`af87ba4`).
+        let secret = record.tag == .proof || (record.tag == .hello && Hello(payload: record.payload).nonce != nil)
+        tail = secret ? [] : Array(record.payload.suffix(Self.tailBytes))
     }
 
     /// Where the bad record starts, its first bytes as hex and as text, what came before it, and the latest reads.
     func explain(_ reader: LinkRecordReader) -> String {
         let next = reader.upcoming(Self.shownBytes)
         let text = String(next.map { Self.printable.contains($0) ? Character(Unicode.Scalar($0)) : "." })
+        let ending = tail.isEmpty ? "" : " ending \(Hex.encode(tail))"
         let before =
-            records.isEmpty
-            ? "no record before it"
-            : "after " + records.map { "\($0.tag) \($0.bytes)" }.joined(separator: ", ") + " ending \(Hex.encode(tail))"
+            records.isEmpty ? "no record before it" : "after " + records.map { "\($0.tag) \($0.bytes)" }.joined(separator: ", ") + ending
         let latest = reads.map(String.init).joined(separator: ", ")
         return "at byte \(reader.consumed) of \(bytesRead); next \(Hex.encode(next)) \"\(text)\"; \(before); reads \(latest)"
     }

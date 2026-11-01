@@ -109,6 +109,13 @@ public protocol MeshTransport: AnyObject {
     /// How many files wait on `peer`'s link behind the one streaming to it, if any: 0 when unlinked. A serve is not queued
     /// past ``BlobExchange/maxWaitingServes`` of them (knit-ios #20).
     func filesWaiting(to peer: NodeId) -> Int
+
+    /// `peer`'s stored profile has just gained ``Capabilities/linkProof``, under `peer`'s own signature (contract R4,
+    /// knit-ios #25; `LinkClaims.profileCapabilities` in knit-next). From now on a link claiming `peer`'s id must prove it,
+    /// so every live link claiming it that has not is closed. Called once per gain, after the row is written; a profile
+    /// that keeps the bit, or lacks it, calls nothing. No default: a transport that forgets it would leave a claim the
+    /// signed profile refutes standing.
+    func peerProvesItself(_ peer: NodeId)
 }
 
 /// A file to stream on a link: its header's fields, its size, and a reader for its bytes, so a file waiting behind

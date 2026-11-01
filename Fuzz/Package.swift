@@ -15,7 +15,10 @@ let package = Package(
     ],
     targets: [
         .executableTarget(name: "FuzzCBOR", dependencies: [.product(name: "KnitWire", package: "knit-ios")]),
-        .executableTarget(name: "FuzzLinkRecords", dependencies: [.product(name: "KnitWire", package: "knit-ios")]),
+        .executableTarget(
+            name: "FuzzLinkRecords",
+            dependencies: [.product(name: "KnitCrypto", package: "knit-ios"), .product(name: "KnitWire", package: "knit-ios")]
+        ),
         .executableTarget(name: "FuzzAdvert", dependencies: [.product(name: "KnitWire", package: "knit-ios")]),
         .executableTarget(name: "FuzzExiflessJPEG", dependencies: [.product(name: "KnitWire", package: "knit-ios")]),
         .executableTarget(

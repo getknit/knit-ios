@@ -54,8 +54,9 @@ import Testing
 
     @Test func anUnknownTagEndsTheLinkAsAndroidDoes() {
         var reader = LinkRecordReader()
-        reader.append([0x08, 0, 0, 0, 0])
-        #expect(throws: LinkRecordError.unknownTag(8)) {
+        // Tag 8 is the PROOF since the link's proof (knit-ios #25); 9 is the first a build of today does not know.
+        reader.append([0x09, 0, 0, 0, 0])
+        #expect(throws: LinkRecordError.unknownTag(9)) {
             try reader.next()
         }
         var zero = LinkRecordReader()
@@ -113,21 +114,21 @@ import Testing
     }
 
     @Test func helloCarriesOurCapabilitiesAsLowercaseHex() {
-        #expect(Hello(nodeId: nodeA).payload == Array("\(nodeA)|1|15f".utf8))
-        #expect(
-            Capabilities.local.hex == "15f",
-            "end-to-end, groups, reactions and store-and-forward (ADR 2026-10.ehe6), and the ratchet's three (ADR 2026-10.5sk9)")
-        #expect(Capabilities.local.subtracting(.ratchetSuite).hex == "f", "what a profile signs with the switch off")
+        #expect(Hello(nodeId: nodeA).payload == Array("\(nodeA)|1|4015f".utf8))
+        // End-to-end, groups, reactions and store-and-forward (ADR 2026-10.ehe6), the ratchet's three (ADR 2026-10.5sk9),
+        // and the link's proof (knit-ios #25).
+        #expect(Capabilities.local.hex == "4015f")
+        #expect(Capabilities.local.subtracting(.ratchetSuite).hex == "4000f", "what a profile signs with the switch off")
         #expect(Capabilities.ratchetSuite.rawValue == 0x150)
         #expect(Capabilities(rawValue: 0xFFF).hex == "fff")
     }
 
     @Test func theBlobHaveBitIsPinnedAndKeptOutOfWhatWeSign() {
         // `Protocol.CAP_BLOB_HAVE` (knit-next ADR 2026-10.6e5t): the link manager adds it to every HELLO, and nothing
-        // signed carries it, so the profile keeps `0x15F` or `0xF`, and the emitted vectors their literals.
+        // signed carries it, so the profile keeps `0x4015F` or `0x4000F`, and the emitted vectors their literals.
         #expect(Capabilities.blobHave.rawValue == 0x2000)
         #expect(!Capabilities.local.contains(.blobHave))
-        #expect(Capabilities.local.union(.blobHave).hex == "215f")
+        #expect(Capabilities.local.union(.blobHave).hex == "4215f")
         #expect(Hello(payload: Array("\(nodeA)|1|2fff".utf8)).capabilities.contains(.blobHave), "Android since 403cd861")
         #expect(!Hello(payload: Array("\(nodeA)|1|fff".utf8)).capabilities.contains(.blobHave), "Android before it")
     }
@@ -136,7 +137,7 @@ import Testing
         // `Protocol.CAP_DOORBELL`: the radio adds it to the HELLO, and this build never advertises it anywhere else.
         #expect(Capabilities.doorbell.rawValue == 0x1000)
         #expect(!Capabilities.local.contains(.doorbell))
-        #expect(Capabilities.local.union(.doorbell).hex == "115f")
+        #expect(Capabilities.local.union(.doorbell).hex == "4115f")
         #expect(
             Hello(payload: Array("\(nodeA)|1|100f".utf8)).capabilities == [.endToEnd, .groups, .reactions, .storeForward, .doorbell])
         #expect(
@@ -341,5 +342,54 @@ extension LinkTests {
         #expect(
             LinkJSON.fileHeader(from: Array(largest.utf8))
                 == FileHeader(kind: .attachment, key: "k", mime: "image/jpeg", size: .max, offset: 1))
+    }
+}
+
+extension LinkTests {
+    @Test func theLinkProofBitIsPinnedAndOurs() {
+        // `Protocol.CAP_LINK_PROOF` (knit-next #232, knit-ios #25): in the HELLO and in every profile we sign, the switch on
+        // or off, and above the advert's 8 bits.
+        #expect(Capabilities.linkProof.rawValue == 0x40000)
+        #expect(Capabilities.local.contains(.linkProof))
+        #expect(Capabilities.local.subtracting(.ratchetSuite).contains(.linkProof))
+        #expect(Capabilities.linkProof.rawValue & 0xFF == 0)
+    }
+
+    /// The PROOF is tag 8, behind the same header as every record (the `link-hello-proof` contract, §3).
+    @Test func theProofIsTagEight() throws {
+        let payload = [UInt8](repeating: 7, count: 128)
+        let encoded = try #require(LinkRecord(.proof, payload: payload).encoded)
+        #expect(Array(encoded.prefix(LinkRecord.headerBytes)) == [0x08, 0, 0, 0, 0x80])
+        var reader = LinkRecordReader()
+        reader.append(encoded)
+        #expect(try reader.next() == LinkRecord(.proof, payload: payload))
+    }
+
+    /// The HELLO's fourth field, `n` and 32 lowercase hex digits (contract §2, `Protocol.hello` and `Protocol.parse`).
+    @Test func aHelloCarriesItsNonceAsTheFourthField() {
+        let nonce = Array(UInt8(0)..<16)
+        let hello = Hello(nodeId: nodeA, capabilities: Capabilities(rawValue: 0x40009), nonce: nonce)
+        #expect(hello.payload == Array("\(nodeA)|1|40009|n000102030405060708090a0b0c0d0e0f".utf8), "the contract's Alice")
+        #expect(Hello(payload: hello.payload) == hello, "it parses back")
+        #expect(Hello(payload: hello.payload).payload == hello.payload, "and round-trips byte for byte")
+        #expect(Hello(nodeId: nodeA, capabilities: 0x15F).payload == Array("\(nodeA)|1|15f".utf8), "no nonce, no field")
+    }
+
+    @Test func aFourthFieldOfAnyOtherShapeIsNoNonce() {
+        let digits = "000102030405060708090a0b0c0d0e0f"
+        let short = String(digits.dropLast())
+        let malformed: [String] = [
+            "n\(digits.uppercased())", "n\(short)", "n\(digits)0", "\(digits)0", "x\(digits.dropFirst())", "n\(short)g", "n", "",
+            "N\(digits)", "n\(digits.dropLast(2))é",
+        ]
+        for field in malformed {
+            let parsed = Hello(payload: Array("\(nodeA)|1|4215f|\(field)".utf8))
+            #expect(parsed.nonce == nil, "\(field)")
+            #expect(parsed.capabilities.rawValue == 0x4215F && parsed.nodeId == nodeA, "the rest still reads")
+        }
+        #expect(Hello(payload: Array("\(nodeA)|1|4215f".utf8)).nonce == nil, "no field at all")
+        let later = Hello(payload: Array("\(nodeA)|1|4215f|n\(digits)|future|stuff".utf8))
+        #expect(later.nonce == Array(UInt8(0)..<16), "fields past the nonce are ignored")
+        #expect(Hello(payload: Array("\(nodeA)|1|4215f|future|n\(digits)".utf8)).nonce == nil, "the nonce is the fourth field or none")
     }
 }

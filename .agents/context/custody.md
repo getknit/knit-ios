@@ -253,8 +253,11 @@ publish it honestly.
   meanwhile; the engine here is synchronous (ADR 2026-09.gq84), so it checks once.
 - **Where the iPhone otherwise differs from Android, all of it delivery-side, none of it custody:**
   - a cleartext DM or group message is dropped, not shown;
-  - a `blobreq` is never flooded, even one marked `relay = true`, where Android would flood it; it is answered or
-    asked onward as Android's `BlobExchange` does (ADR 2026-10.ym9y);
+  - a `blobreq` is never flooded, even one marked `relay = true`, where an Android build before knit-next
+    `link-hello-proof` would flood it. Both platforms now take every blob-control type, `blobreq` included, only
+    from the neighbour whose link carried it, under that neighbour's id, and drop any other as
+    `blobControlNotFromLink` (Android's `BLOB_CONTROL_NOT_FROM_LINK`). A taken one is answered or asked onward as
+    Android's `BlobExchange` does (ADR 2026-10.ym9y, amended 2026-11-01);
   - receipts and ticks take the sealed form toward an author who can read one, as Android's do (phase P5d; on by
     default since the flip, ADR 2026-10.b4yk); with the switch off (a Debug build's `-ratchet off`, knit-peer's
     `--no-ratchet`) every receipt and tick, room or group, is cleartext, a ratchet DM's receipt included;

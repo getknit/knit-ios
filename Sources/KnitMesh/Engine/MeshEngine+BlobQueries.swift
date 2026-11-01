@@ -5,11 +5,24 @@ import KnitWire
 /// progress report a file's receiver sends its sender under the same bit (`onFileProgress` and `onProgressReport`,
 /// knit-next ADR 2026-10.nsr7).
 extension MeshEngine {
-    /// Whether a holder query, its answer or a progress report came point to point from the neighbour whose link carried
-    /// it, the only way any is taken (`InboundPipeline.kt:316`, `:587`). None is signed, so its sender id is a claim,
-    /// checked here against the link, and one marked to be relayed is no query of anyone's.
-    private func isFromItsLink(_ frame: InboundFrame) -> Bool {
+    /// Whether a blob request, a holder query, its answer, a progress report or a withdrawal came point to point from the
+    /// neighbour whose link carried it, the only way any is taken (`InboundPipeline.kt:316`, `:587`; contract §8 of the
+    /// link-proof paired change). None is signed, so its sender id is a claim, checked here against the link, and one
+    /// marked to be relayed is no one's: blob control is attributed only to the neighbour whose link carried it, as its
+    /// sender.
+    func isFromItsLink(_ frame: InboundFrame) -> Bool {
         !frame.wire.relay && NodeId(frame.envelope.senderId) == frame.from
+    }
+
+    /// Whether `frame`, one of the five unsigned blob-control types, is taken (``isFromItsLink(_:)``). One that is not
+    /// is dropped and counted under ``DropReason/blobControlNotFromLink`` (Android's `BLOB_CONTROL_NOT_FROM_LINK`),
+    /// before its payload is read, so nothing it names is served, wanted, answered or stamped.
+    func takesBlobControl(_ frame: InboundFrame) -> Bool {
+        guard isFromItsLink(frame) else {
+            drop(.blobControlNotFromLink, frame.envelope)
+            return false
+        }
+        return true
     }
 
     /// An unsigned, point-to-point frame (`unsignedPointToPoint`): our id as its sender, `relay = false` so no router
@@ -72,7 +85,7 @@ extension MeshEngine {
     ///
     /// A query is not an ask: nothing is served, wanted or stamped, and each neighbour's budget bounds an unsigned flood.
     func handleBlobHave(_ frame: InboundFrame) {
-        guard isFromItsLink(frame) else {
+        guard takesBlobControl(frame) else {
             return
         }
         guard let query = try? BlobHaveContent(decoding: frame.envelope.payload) else {
@@ -121,7 +134,7 @@ extension MeshEngine {
     /// A neighbour answered a query of ours (`onHaveAnswer`, `BlobExchange.kt:791-808`). The hashes it counted for take
     /// their next step at once, so a late answer still counts.
     func handleBlobHas(_ frame: InboundFrame) {
-        guard isFromItsLink(frame) else {
+        guard takesBlobControl(frame) else {
             return
         }
         guard let answer = try? BlobHasContent(decoding: frame.envelope.payload) else {
@@ -183,7 +196,7 @@ extension MeshEngine {
     /// that feed (knit-next ADR 2026-10.nsr7): they are judged on the next pass. It is taken only from the link's own
     /// peer, as a holder query is, and its sender's key is never asked for.
     func handleBlobProgress(_ frame: InboundFrame) {
-        guard isFromItsLink(frame) else {
+        guard takesBlobControl(frame) else {
             return
         }
         guard let report = try? BlobProgressContent(decoding: frame.envelope.payload) else {
@@ -230,7 +243,7 @@ extension MeshEngine {
     /// asked for. Every one taken is logged, a withdrawal of nothing queued too, so a device run
     /// can tell one that came too late from one that never came.
     func handleBlobCancel(_ frame: InboundFrame) {
-        guard isFromItsLink(frame) else {
+        guard takesBlobControl(frame) else {
             return
         }
         guard let cancel = try? BlobCancelContent(decoding: frame.envelope.payload) else {

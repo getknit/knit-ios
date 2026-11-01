@@ -33,12 +33,16 @@ import Testing
         radio.write(hello(local), to: channel)
         radio.write(lie, to: channel)
         radio.heardHello(from: peer, on: channel)
-        #expect(inner.calls == [.close(channel), .write(channel, hello(local)), .write(channel, lie), .heard(peer, channel)])
+        radio.linkUp(peer, on: channel)
+        #expect(
+            inner.calls == [
+                .close(channel), .write(channel, hello(local)), .write(channel, lie), .heard(peer, channel), .up(peer, channel),
+            ])
         #expect(radio.readyChannels.isEmpty && radio.counts.blobhasRewritten == 0, "nothing tracked, nothing rewritten")
 
         #expect(radio.setPaddedProfile(forge()) == 0)
         #expect(radio.askBlob(photo, of: peer) == nil)
-        #expect(inner.calls.count == 4 && radio.counts == LyingRadio.Counts(), "nothing injected")
+        #expect(inner.calls.count == 5 && radio.counts == LyingRadio.Counts(), "nothing injected")
     }
 
     /// While our profile advertises another's photo, a FILE header written through `write` is held until whole: the

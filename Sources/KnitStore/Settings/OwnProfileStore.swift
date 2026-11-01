@@ -23,6 +23,12 @@ public struct OwnProfile: Sendable, Equatable {
     /// and moves the version too once the profile has been edited. Android reads its newest prekey at each signing
     /// instead (`MeshManager.kt:2963-2965`).
     public var prekeyId: Int?
+    /// The capabilities the publish under ``publishedAt`` carries, or `nil` when none are recorded: a profile saved by a
+    /// build before this field, or never published (`SettingsStore.ownProfileCapabilities` in knit-next, knit-ios #25). A
+    /// start whose profile would carry other capabilities, or finds none recorded, publishes again as an edit, so the first
+    /// profile with a new bit is strictly newer than every one without it, and a peer's row, whose capabilities follow its
+    /// presentation's version, cannot be taken back by an older frame.
+    public var capabilities: Capabilities?
 
     /// A profile; the defaults are a fresh identity's, nothing set and nothing published.
     public init(
@@ -32,7 +38,8 @@ public struct OwnProfile: Sendable, Equatable {
         version: Int64 = 0,
         publishedAt: Int64 = 0,
         avatarHash: BlobHash? = nil,
-        prekeyId: Int? = nil
+        prekeyId: Int? = nil,
+        capabilities: Capabilities? = nil
     ) {
         self.name = name
         self.status = status
@@ -41,6 +48,7 @@ public struct OwnProfile: Sendable, Equatable {
         self.publishedAt = publishedAt
         self.avatarHash = avatarHash
         self.prekeyId = prekeyId
+        self.capabilities = capabilities
     }
 }
 

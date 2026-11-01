@@ -162,6 +162,10 @@ private final class ServingTransport: MeshTransport {
         0
     }
 
+    func peerProvesItself(_: NodeId) {
+        // No link here to close.
+    }
+
     func fileTaken(from _: NodeId, hash _: BlobHash) {
         // Nothing streams in here.
     }

@@ -48,7 +48,7 @@ extension Copy {
                     value: "Dropped: key change refused",
                     comment: "A drop counter"
                 )
-            case .cleartextGroup, .rosterRefused, .blocked, .reactionRefused:
+            case .cleartextGroup, .rosterRefused, .blocked, .reactionRefused, .blobControlNotFromLink:
                 laterReason(reason)
             case .ratchetNoSession, .ratchetEpochGone, .ratchetDuplicate, .ratchetBadHeader, .ratchetAeadFail, .storeRefused:
                 ratchetReason(reason)
@@ -139,7 +139,7 @@ extension Copy {
             }
         }
 
-        /// The labels for the drops groups, blocking and reactions brought.
+        /// The labels for the drops groups, blocking, reactions and the attachment exchange brought.
         private static func laterReason(_ reason: DropReason) -> String {
             switch reason {
             case .cleartextGroup:
@@ -162,6 +162,13 @@ extension Copy {
                     bundle: .main,
                     value: "Dropped: reaction that isn't an emoji",
                     comment: "A drop counter: a reaction whose text is not a single emoji, still passed on for others but not shown"
+                )
+            case .blobControlNotFromLink:
+                NSLocalizedString(
+                    "diagnostics.drop.blob-control-not-from-link",
+                    bundle: .main,
+                    value: "Dropped: attachment transfer message not sent directly",
+                    comment: "A drop counter: an attachment request, query, reply, progress or withdrawal not sent directly by its sender"
                 )
             default:
                 NSLocalizedString(

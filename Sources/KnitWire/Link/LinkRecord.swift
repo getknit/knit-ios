@@ -14,10 +14,14 @@ public struct LinkRecord: Sendable, Equatable {
         /// It never does either on a doorbell link (knit-next ADR 2026-10.697m). This port never writes one: after a
         /// single keepalive, Android expects an answer to each of its probes and closes the link when none comes.
         case keepalive = 5
-        /// The handshake: `nodeId|version|capsHex`.
+        /// The handshake: `nodeId|version|capsHex`, and `|n<nonce>` from a build that proves its id.
         case hello = 6
         /// A custody digest: JSON `{"ids":[…]}`.
         case digest = 7
+        /// The proof of the id a HELLO claimed: `sigPub (32) ‖ hpkePub (32) ‖ signature (64)` over both HELLOs (`LinkProof`
+        /// in KnitCrypto; the `link-hello-proof` contract, §3). Written only to a peer whose HELLO carries
+        /// ``Capabilities/linkProof``: every build before it throws on the tag and drops the link.
+        case proof = 8
     }
 
     /// The largest payload either side accepts (`MAX_PAYLOAD_BYTES`).
@@ -55,7 +59,7 @@ public struct LinkRecord: Sendable, Equatable {
 /// Why a link's byte stream is no longer a sequence of records. Android throws on each of these and drops
 /// the link, and so does the link session.
 public enum LinkRecordError: Error, Sendable, Equatable {
-    /// A tag outside 1 to 7.
+    /// A tag outside 1 to 8.
     case unknownTag(UInt8)
     /// A length outside 0 to ``LinkRecord/maxPayloadBytes``.
     case lengthOutOfRange(UInt32)

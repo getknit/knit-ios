@@ -6,7 +6,7 @@ public import KnitWire
 
 /// What `knit-peer run --lying` wraps, a trial's switch (`door-cap-lying-peers`, ADR 2026-10.r88m): the radio, the blob
 /// store and our own profile's store, each honest until a control command sets one of its lies. ``PeerNode`` takes them
-/// and answers the five commands; a node without them refuses each one.
+/// and answers the six commands; a node without them refuses each one.
 public struct PeerLyingParts: Sendable {
     /// The radio, outermost over the host's and any flood.
     public let radio: LyingRadio
@@ -43,18 +43,20 @@ public struct PeerLyingParts: Sendable {
     }
 }
 
-/// The five lying commands, answered by ``PeerNode`` ahead of ``MeshControl``, which never hears of them:
+/// The six lying commands, answered by ``PeerNode`` ahead of ``MeshControl``, which never hears of them:
 ///
 /// - `{"cmd":"lie-blobhas","hash":H,"size":N}`, `{"cmd":"lie-blobhas","hash":H,"clear":true}`
 /// - `{"cmd":"junk","hash":H,"bytes":N,"declare":D}` (`declare` optional), `{"cmd":"junk","hash":H,"clear":true}`
 /// - `{"cmd":"advertise-photo","hash":H}`, `{"cmd":"advertise-photo","clear":true}`
 /// - `{"cmd":"pad-profile","signedBytes":N}`, `{"cmd":"pad-profile","clear":true}`
 /// - `{"cmd":"ask-blob","hash":H,"peer":NODE}`, a one-shot
+/// - `{"cmd":"impostor","legacy":B,"claim":NODE,"dial":NODE}` (each optional), `{"cmd":"impostor","clear":true}`: the link
+///   manager's ``LinkManager/Impostor``, for the links that open from then on (the `link-hello-proof` trial's T4 and T5)
 ///
 /// Each reply carries `lying`, what ``status()`` answers, beside its own fields.
 internal final class PeerLies: Sendable {
     /// The commands' names.
-    static let names: Set<String> = ["lie-blobhas", "junk", "advertise-photo", "pad-profile", "ask-blob"]
+    static let names: Set<String> = ["lie-blobhas", "junk", "advertise-photo", "pad-profile", "ask-blob", "impostor"]
     /// What each answers on a node run without `--lying`.
     static let refusal = "lying switches need knit-peer run --lying"
 
@@ -78,6 +80,9 @@ internal final class PeerLies: Sendable {
         var signedBytes: Int?
         var peer: String?
         var clear: Bool? // swiftlint:disable:this discouraged_optional_boolean
+        var legacy: Bool? // swiftlint:disable:this discouraged_optional_boolean
+        var claim: String?
+        var dial: String?
 
         /// The line's fields, or `nil` when it is not an object of them.
         static func parse(_ line: String) -> Self? {
@@ -102,10 +107,12 @@ internal final class PeerLies: Sendable {
 
     let parts: PeerLyingParts
     let profile: ProfileLies
+    let mesh: Mesh
 
-    init(parts: PeerLyingParts, profile: ProfileLies) {
+    init(parts: PeerLyingParts, profile: ProfileLies, mesh: Mesh) {
         self.parts = parts
         self.profile = profile
+        self.mesh = mesh
     }
 
     /// The reply's fields for `request`, `lying` among them, or why it did not take.
@@ -121,6 +128,8 @@ internal final class PeerLies: Sendable {
                 fields = try await advertisePhoto(request)
             case "pad-profile":
                 fields = try await padProfile(request)
+            case "impostor":
+                fields = try await impostor(request)
             default:
                 fields = try askBlob(request)
             }
@@ -145,7 +154,11 @@ internal final class PeerLies: Sendable {
             ]
         }
         let padded = await profile.paddedProfile
+        let impostor = await mesh.impostor
         return [
+            "impostor": [
+                "legacy": .bool(impostor.legacy), "claim": .text(impostor.claimedId?.string), "dial": .text(impostor.dials?.string),
+            ],
             "blobhas": .object(parts.radio.blobHasLies.reduce(into: [:]) { $0[$1.key.string] = .int($1.value) }),
             "junk": .object(junk),
             "advertisedPhoto": .text(parts.profile.advertisedPhoto?.string),
@@ -223,6 +236,26 @@ internal final class PeerLies: Sendable {
         let forged = try await profile.pad(signedBytes: signedBytes)
         let written = parts.radio.setPaddedProfile(LyingRadio.Forge(wire: forged.wire, id: forged.id))
         return ["id": .string(forged.id), "signedBytes": .int(Int64(forged.signedBytes)), "written": .int(Int64(written))]
+    }
+
+    /// Sets the link manager's impostor, or clears it back to honest: a legacy HELLO, a claimed id, a peer dialed whatever
+    /// the order. What is not given is honest.
+    private func impostor(_ request: Request) async throws(Refusal) -> [String: JSONValue] {
+        var impostor = LinkManager.Impostor()
+        if !request.clears {
+            impostor.legacy = request.legacy ?? false
+            impostor.claimedId = try request.claim.map { text throws(Refusal) in try Self.node(text) }
+            impostor.dials = try request.dial.map { text throws(Refusal) in try Self.node(text) }
+        }
+        await mesh.setImpostor(impostor)
+        return [:]
+    }
+
+    private static func node(_ text: String) throws(Refusal) -> NodeId {
+        guard let node = NodeId(text) else {
+            throw Refusal(message: "not a node id: \(text)")
+        }
+        return node
     }
 
     private func askBlob(_ request: Request) throws(Refusal) -> [String: JSONValue] {

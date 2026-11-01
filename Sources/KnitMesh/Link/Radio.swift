@@ -156,8 +156,14 @@ public protocol Radio: AnyObject, Sendable {
     /// The HELLO on `channel` named `node`: the dialer's on a channel we accepted, or the reply on one we dialed. A
     /// radio that read a GATT payload for the address at the channel's other end forgets it when it names another
     /// node, since a new node took that address (``GattPayloads/helloNamed(_:at:)``). A refusal carries no HELLO, so
-    /// it never comes here.
+    /// it never comes here. Called for every HELLO that parses, whatever becomes of the link: a claim refused and a proof
+    /// that fails included. ``linkUp(_:on:)`` says when the link is the peer's.
     func heardHello(from node: NodeId, on channel: ChannelID)
+
+    /// The link on `channel` registered to `node`: its HELLO checked out and, when both HELLOs carry
+    /// ``Capabilities/linkProof``, its PROOF verified (the `link-hello-proof` contract, §5). From here the link manager
+    /// writes frames on it. Called once per link, before the engine hears of it.
+    func linkUp(_ node: NodeId, on channel: ChannelID)
 
     /// Whether to seek peers while the app is in the background, where iOS may suspend it: scan for the `0xFE30` UUID
     /// alone, which iOS keeps running there and which resumes the app at each match, instead of a scan for every advert,
@@ -199,6 +205,12 @@ extension Radio {
     /// Keeps nothing: a radio that reads no GATT payloads has none to forget.
     public func heardHello(from _: NodeId, on _: ChannelID) {
         // A radio that reads GATT payloads implements this.
+    }
+
+    /// Does nothing: a radio moves bytes, and which node a link belongs to is the link manager's (payload rule 3 holds on a
+    /// channel). knit-peer's wrappers write on a link from here.
+    public func linkUp(_: NodeId, on _: ChannelID) {
+        // KnitBLE and KnitBlueZ need nothing here.
     }
 
     /// Seeks nothing: a radio whose app iOS never suspends hears every advert anyway.

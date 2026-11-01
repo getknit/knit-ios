@@ -113,7 +113,8 @@ explicitly. The commits are the evidence that each one bit this codebase.
    Evidence: fa87bac (a post and a DM waited 393 s behind about ten queued 20 KB digests; `linux-peer.md`, "Why
    the frames were late").
 5. **A stream that loses its place.** A link is a byte stream of `[tag][len][payload]` records. An unknown tag
-   drops the link, and a tag outside 1..7 is never written (`.agents/rules/interop.md`). A peer's stack can mangle a
+   drops the link, and a tag outside 1..8 is never written, 8 only to a peer whose HELLO carries `CAP_LINK_PROOF`
+   (`.agents/rules/interop.md`). A peer's stack can mangle a
    large SDU. Evidence: cb440a6 and 04a927b (the Moto G lost every multi-packet SDU after the profile and logged
    `unknown record type 0`, so the default send MTU became 247), af87ba4 (`LinkTrace`, added after tags 87 and 54
    dropped the first two A4 links; the cause is still unknown, "What A4 showed").
@@ -199,7 +200,8 @@ Then two checks that are not shapes:
   text. A cross-platform constant changing at all is a finding, unless the brief made it a paired change
   (`.agents/rules/paired-change.md`): the `0xFE30` service and the payload and doorbell UUIDs, `AdvertPayload`'s
   layout and flag bits, the HELLO as the only home of `CAP_DOORBELL` and `CAP_BLOB_HAVE`, the frames that skip a
-  ring, `GattPayloads`' rules, the promotion numbers (below), and link record tags 1..7.
+  ring, `GattPayloads`' rules, the promotion numbers (below), link record tags 1..8, and the HELLO's nonce field and the
+  link's proof (`LinkProof`'s transcript, the PROOF's layout, `CAP_LINK_PROOF`).
 - **Which radio runs it.** `KnitBLE` compiles to an empty module on Linux, so your run verifies none of it; say
   so. A rule added to one radio that the other also needs (a forget rule, a doorbell write, a disconnect) is a
   finding unless the change says why only one has it.
@@ -307,8 +309,10 @@ verify. `linux-peer.md` is `.agents/context/linux-peer.md`.
   9803512).
 - **Address rotation is harmless** to the link manager, because everything keys on node id or channel. It is not
   harmless to bluetoothd's device objects (shape 16).
-- **A HELLO is unauthenticated.** Anyone can claim a node id, but frames stay signed, so the worst case is a cut
-  link and a false "nearby".
+- **A HELLO alone is unauthenticated.** When both HELLOs carry `CAP_LINK_PROOF`, each side signs both, nonces
+  included, and the link registers only once the peer's PROOF verifies; an id whose signed profile carries the bit, or
+  that proved itself this run, is refused unproven (the `link-hello-proof` contract; `LinkManager+LinkProof.swift`). A
+  build from before the proof (Android v2.10.1 and earlier) still links unproven, and anyone can claim its id.
 
 ## Invariant digest
 

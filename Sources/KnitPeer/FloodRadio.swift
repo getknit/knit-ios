@@ -9,11 +9,13 @@ public import KnitWire
 /// rule 6).
 ///
 /// Everything else passes through to the radio it wraps, ``Radio/consumed(_:on:)`` included: a wrapper that kept that to
-/// itself would leave every channel paused at its credit. A link counts as live from the HELLO the link manager reports
-/// (``Radio/heardHello(from:on:)``) until the channel closes or its dial fails. The link manager cuts a record into
-/// slices of up to 8 KiB, so a junk record goes in only between two of its records, never between the slices of one, and
-/// is small enough to need no cutting itself. It holds back on a link while ``heldBackBytes`` wait there unwritten, so
-/// a far end that pushes back never brings the peer's own queue to its 4 MiB bound.
+/// itself would leave every channel paused at its credit. A link counts as live from the link manager's word that it
+/// registered (``Radio/linkUp(_:on:)``), after its proof when it runs one, until the channel closes or its dial fails.
+/// Never from its HELLO: a junk record between a HELLO and the PROOF behind it would fail the far end's proof. The link
+/// manager cuts a record into slices of up to 8 KiB, so a junk record goes in only between two of its records, never
+/// between the slices of one, and is small enough to need no cutting itself. It holds back on a link while
+/// ``heldBackBytes`` wait there unwritten, so a far end that pushes back never brings the peer's own queue to its 4 MiB
+/// bound.
 public final class FloodRadio: Radio {
     /// The largest junk record's payload, half the link manager's 8 KiB write.
     public static let recordPayloadBytes = 4096
@@ -161,10 +163,14 @@ public final class FloodRadio: Radio {
         inner.ring(channel)
     }
 
-    /// The link is up: the flood writes to it from the next tick.
     public func heardHello(from node: NodeId, on channel: ChannelID) {
-        state.withLock { _ = $0.linked.insert(channel) }
         inner.heardHello(from: node, on: channel)
+    }
+
+    /// The link is up: the flood writes to it from the next tick.
+    public func linkUp(_ node: NodeId, on channel: ChannelID) {
+        state.withLock { _ = $0.linked.insert(channel) }
+        inner.linkUp(node, on: channel)
     }
 
     public func seekPeers(_ seeking: Bool) {

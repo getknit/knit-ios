@@ -127,7 +127,9 @@ import Testing
         #expect(peer.name == "Sealed" && peer.status == "away" && peer.openToChat, "the presentation stays as the newer update left it")
         #expect(peer.avatarHash == photo && peer.advertisedAvatarHash == photo)
         #expect(peer.updatedAt == 20, "never moved back")
-        #expect(peer.capabilities == 0x15F, "the bits ride the cleartext profile with the prekey, as Android takes them")
+        #expect(
+            peer.capabilities == 0xF,
+            "the capabilities follow the presentation's watermark, as knit-next's `InboundPipeline` writes them since #232")
         #expect(fixture.stores.peers.profileFrame(of: bob.nodeId) != nil)
         #expect(fixture.transport.written(.blobRequest).isEmpty, "no photo is asked for on a presentation that did not move")
     }

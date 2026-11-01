@@ -85,3 +85,10 @@ the next start. The 600 s sweep removes a blob that nothing names, that nothing 
 least 30 minutes ago, through the start sweep's own predicate, read inside a store unit. An echo also has a byte cost
 now. What we hold for others stays within 128 MiB, a full want set evicts from the asker holding the most echoes, and an
 echo never costs a want of ours.
+
+**Amended 2026-11-01, with the link proof (ADR 2026-11.hpmt, knit-next ADR 2026-11.264w):** a `blobreq` is taken only as the other four blob-control
+types already were: from the neighbour whose link carried it, when its sender id is that neighbour's and it is not
+marked `relay = true`. Any other is dropped and counted under `DropReason.blobControlNotFromLink` (Android's
+`BLOB_CONTROL_NOT_FROM_LINK`), as are the other four, which until now were dropped uncounted. Every build of either
+platform sends all five with its own id and `relay = false`, so nothing honest changes. The serve still goes to the
+link's neighbour, now also the frame's sender.

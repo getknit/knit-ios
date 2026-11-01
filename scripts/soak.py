@@ -467,6 +467,10 @@ def link_endings(log: Path) -> tuple[list[dict], Counter]:
         # radio's link manager closes a link whose writes stall for 120 s.
         (re.compile(r"^ble (ch\d+) stopped reading"), lambda _: "ours: stopped reading"),
         (re.compile(r"^link (ch\d+) write stalled for (\d+) ms"), lambda m: f"ours: write stalled for {m[2]} ms"),
+        # knit-ios #25: the link's proof. An unproven link claiming an id that proves itself is closed for it.
+        (re.compile(r"^link (ch\d+) displaced: \S+ proved itself on ch\d+$"), lambda _: "displaced: its id proved itself"),
+        (re.compile(r"^link (ch\d+) closed: \S+ proves itself$"), lambda _: "closed: its id proves itself"),
+        (re.compile(r"^link (ch\d+) proof failed for \S+: (.*)"), lambda m: f"proof failed: {m[2][:40]}"),
     ]
     down = re.compile(r"^link down (\S+) on (ch\d+)$")
     sighted = re.compile(r"^bluez (dev_\S+) changed")

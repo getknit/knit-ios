@@ -66,6 +66,9 @@ public final class FileOwnProfileStore: OwnProfileStore {
         var avatarHash: String?
         /// The ratchet prekey the publish carries; absent in a file from before prekeys, or when it carries none.
         var prekeyId: Int?
+        /// The capabilities the publish carries; absent in a file from before they were recorded, which a start reads as a
+        /// change and publishes again as an edit.
+        var capabilities: Int64?
     }
 
     private static let fileMode = 0o600
@@ -89,7 +92,8 @@ public final class FileOwnProfileStore: OwnProfileStore {
                 version: saved.version,
                 publishedAt: saved.publishedAt,
                 avatarHash: saved.avatarHash.flatMap(BlobHash.init),
-                prekeyId: saved.prekeyId
+                prekeyId: saved.prekeyId,
+                capabilities: saved.capabilities.map(Capabilities.init(rawValue:))
             )
         }
         cached = Lock(profile ?? OwnProfile())
@@ -114,7 +118,8 @@ public final class FileOwnProfileStore: OwnProfileStore {
             version: profile.version,
             publishedAt: profile.publishedAt,
             avatarHash: profile.avatarHash?.string,
-            prekeyId: profile.prekeyId
+            prekeyId: profile.prekeyId,
+            capabilities: profile.capabilities?.rawValue
         )
         do {
             let encoder = JSONEncoder()
