@@ -9,10 +9,11 @@ topics: [ble, crypto, security, interop]
 # ADR 2026-11.hpmt — A link proves the node id its HELLO claims
 
 Status: Accepted (2026-11-01). Mirrors knit-next ADR 2026-11.264w (knit-next #232), a paired change
-(`link-hello-proof`, knit-ios #25) led by Android, mirrored ahead of the pin from knit-next's `fix/link-hello-proof`
-(`.agents/context/knit-next.md`). Amends ADR 2026-09.6es2, whose consequences took the HELLO's id on trust, ADR
-2026-10.b4yk, whose on-air line said `0x15F`, ADR 2026-10.f5zs, whose meters key on the link's id, and ADR
-2026-10.mueg, whose late deadline is put off once per handshake stage now.
+(`link-hello-proof`, knit-ios #25) led by Android, mirrored ahead of the pin from knit-next `c3a191834` and
+`fe919013e`, merged to its `main` from `fix/link-hello-proof` (`.agents/context/knit-next.md`). Amends ADR
+2026-09.6es2, whose consequences took the HELLO's id on trust, ADR 2026-10.b4yk, whose on-air line said `0x15F`, ADR
+2026-10.f5zs, whose meters key on the link's id, and ADR 2026-10.mueg, whose late deadline is put off once per
+handshake stage now.
 
 **Context:** a link's identity was the node id its HELLO named, `nodeId|version|capsHex`, and nothing checked it. ADR
 2026-09.6es2 accepted that because every frame is signed. But much of what the link manager and the engine do is keyed
