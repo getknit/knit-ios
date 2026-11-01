@@ -8,9 +8,10 @@ topics: [moderation, privacy, ui]
 
 # ADR 2026-11.y793 — A block also holds a person's profile and photo
 
-Status: Accepted (2026-11-01). Mirrors knit-next ADR 2026-11.nsbf (knit-next #249, option 1), a paired change
-(`block-hides-profile`, knit-ios #37) led by Android. Amends ADR 2026-10.5wgg, whose "Untouched" list named profiles,
-and ADR 2026-10.r88m and ADR 2026-10.nh55, which said a block left peers' photos alone.
+Status: Accepted (2026-11-01). Mirrors knit-next ADR 2026-11.nsbf (knit-next #249, option 1; `20520d63f` on its
+`fix/block-hides-profile`, mirrored ahead of the pin), a paired change (`block-hides-profile`, knit-ios #37) led by
+Android. Amends ADR 2026-10.5wgg, whose "Untouched" list named profiles, and ADR 2026-10.r88m and ADR 2026-10.nh55,
+which said a block left peers' photos alone.
 
 **Context:** a block hid a person's messages, and their profile kept updating. Their new name, status and photo
 showed wherever their row is drawn: their profile, group member lists, mentions and quotes, and the Blocked list.
@@ -73,8 +74,9 @@ serve and relay the same frames, so custody converges as before (ADR 2026-10.5wg
 - Their face becomes their initial at the block, even if they never change their photo.
 - They get no notice for anything they changed while blocked. The iPhone writes no rename or new-photo lines anyway.
 - An unblock with no frame held, or with a frame older than the row's presentation, keeps the name and status the row
-  had until their next profile. Honest phones republish theirs every 12 hours, the iPhone from
-  `republishIfStale` and Android from its own (knit-next ADR 2026-11.nsbf records where).
+  had until their next profile. Honest phones republish theirs every 12 hours: the iPhone from `republishIfStale`
+  (`MeshEngine+Profiles.swift`), Android from `PROFILE_REPUBLISH_MS` (`MeshManager.kt:5130` at knit-next `20520d63f`,
+  checked from its heal and its heartbeat).
 - Two edge cases differ from Android on unblock, both because Android keeps no durable advertised hash: its
   `advertisedAvatars` is in memory, and it restores the face from the held frame's hash instead.
   - With no frame held, the iPhone restores the face from before the block; Android shows the monogram until their

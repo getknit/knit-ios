@@ -459,6 +459,13 @@ Kotlin wins.
     `vectors/keyed-v1.json` (`aliceProfileAtCap`, `aliceProfileOverCap`) were copied with `sync-vectors.py --only`
     from `a0b52f865`, merged to knit-next's `main` from `fix/profile-door-cap` (`295e54dca`, `d97cfd36b`, `a0b52f865`),
     unchanged since `295e54dca`. The wire is unchanged.
+    And `20520d63f` on knit-next's `fix/block-hides-profile`, not yet merged (its ADR 2026-11.nsbf, knit-next #249,
+    knit-ios #37, ADR 2026-11.y793): a blocked person's profile still pins, is kept as the proof of key and moves
+    their prekey, but their name, status and photo stay as they were at the block, their face is cleared, and their
+    photo is neither fetched nor kept. An unblock re-applies the held frame and brings the face back. Android records
+    the held frame in the row's own transaction and re-reads the block list after it (`settleBlockMovedMidProfile`),
+    a race this port cannot have: the engine handles a profile with no suspension point inside the `Mesh` actor. No
+    vector moved, and the wire is unchanged.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e63f15f4`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
