@@ -40,7 +40,8 @@
         }
     }
 
-    /// The launch's stage: waiting for the first unlock, onboarding, or the app.
+    /// The launch's stage: waiting for the first unlock, onboarding, or the app, with the sample chats over it while they're
+    /// open (ADR 2026-11.pydf).
     internal struct RootView: View {
         let launch: Launch
 
@@ -48,8 +49,20 @@
             switch launch.stage {
             case .waiting(let reason):
                 WaitingView(reason: reason) { launch.begin(.retry) }
-            case .ready(let environment):
-                ReadyView(environment: environment, launch: launch)
+            case .ready(let live):
+                let environment = launch.sample ?? live
+                let open = launch.sample != nil
+                // Above the app, not in a `safeAreaInset`: that insets a NavigationStack's content and leaves its bar at the top,
+                // where the banner covers the back button, and with it the way out of every thread.
+                VStack(spacing: 0) {
+                    if open {
+                        SampleBanner(leave: launch.closeSample)
+                    }
+                    // A view of its own for each environment, so neither sees the other's onboarding or navigation.
+                    ReadyView(environment: environment, launch: launch, isSample: open)
+                        .id(ObjectIdentifier(environment))
+                }
+                .environment(\.sampleChats, SampleChats(isOpen: open) { launch.openSample() })
             }
         }
     }
@@ -88,11 +101,14 @@
     private struct ReadyView: View {
         let environment: AppEnvironment
         let launch: Launch
+        /// Whether `environment` is the sample chats.
+        let isSample: Bool
         @State private var onboarding: OnboardingModel
 
-        init(environment: AppEnvironment, launch: Launch) {
+        init(environment: AppEnvironment, launch: Launch, isSample: Bool) {
             self.environment = environment
             self.launch = launch
+            self.isSample = isSample
             _onboarding = State(
                 initialValue: OnboardingModel(
                     session: environment.session, preferences: environment.preferences, permission: environment.notifier)
@@ -102,7 +118,7 @@
         var body: some View {
             Group {
                 if onboarding.isFinished, onboarding.acceptedTerms {
-                    MainView(environment: environment, launch: launch)
+                    MainView(environment: environment, launch: launch, takesRequests: !isSample)
                 } else if onboarding.isFinished {
                     NavigationStack {
                         TermsPage(model: onboarding)
@@ -121,6 +137,9 @@
     private struct MainView: View {
         let environment: AppEnvironment
         let launch: Launch
+        /// Whether a link or a notification opens here. Each belongs to the live app, whose MainView takes it once it's back:
+        /// a contact opened in the sample chats would land in their stores and be lost with them (ADR 2026-11.pydf).
+        let takesRequests: Bool
         @State private var path: [Route] = []
         /// Whether New message is up.
         @State private var composing = false
@@ -144,7 +163,7 @@
             }
             // A contact link opened from outside Knit, once onboarding is done, as Android's inbox waits for it.
             .onChange(of: launch.requestedContactLink, initial: true) { _, link in
-                if let link {
+                if takesRequests, let link {
                     composing = false
                     path = [.addContact(link)]
                     launch.requestedContactLink = nil
@@ -152,14 +171,14 @@
             }
             // A notification's thread would open under the sheet, so the sheet goes first.
             .onChange(of: launch.requestedConversation, initial: true) { _, conversation in
-                if let conversation {
+                if takesRequests, let conversation {
                     composing = false
                     path = [.chat(conversation)]
                     launch.requestedConversation = nil
                 }
             }
             .onChange(of: launch.requestedRequests, initial: true) { _, requested in
-                if requested {
+                if takesRequests, requested {
                     composing = false
                     path = [.requests]
                     launch.requestedRequests = false

@@ -17,8 +17,9 @@
     /// iPhone's radio has a scan probe (``ScanProbeCommand``); `storage`, since only the app keeps its identity in the
     /// Keychain and its database under Data Protection (``StorageCommand``); `photos`, since only the app decodes them
     /// (``PhotosCommand``); `screen`, since only the app runs the content filter's model (``ScreenCommand``); the
-    /// `record-` commands, since only the app has ReplayKit (``RecordCommand``, ADR 2026-10.x2cq); and `crash-now`,
-    /// `hang-now` and `crash-reports`, since only the app saves MetricKit's reports (``CrashCommand``, ADR 2026-10.qhsv).
+    /// `record-` commands, since only the app has ReplayKit (``RecordCommand``, ADR 2026-10.x2cq); `crash-now`, `hang-now`
+    /// and `crash-reports`, since only the app saves MetricKit's reports (``CrashCommand``, ADR 2026-10.qhsv); and `sample`,
+    /// since only the launch holds the sample chats (``SampleCommand``, ADR 2026-11.pydf).
     /// Each `status` carries `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its
     /// memory grow.
     @MainActor
@@ -27,6 +28,8 @@
 
         private let listener: BridgeListener
         private let wifi: WiFiGate
+        /// The way to the sample chats, which the launch fills in.
+        let sample = SampleDoor()
 
         /// A bridge to `mesh`, driven through `session`, which it also taps for events, to `radio`'s scan probe, to
         /// `storage`, which a demo has none of, to the photos threads draw and what `screening` hides of them, and to the
@@ -57,6 +60,7 @@
             }
             let gate = WiFiGate(log: log, defaults: .standard)
             let takes = BridgeRecorder.start(clock: clock)
+            let door = sample
             let channel = BridgeListener(log: log) {
                 control.ready
             } answer: { line, origin in
@@ -83,6 +87,9 @@
                 }
                 if let ask = CrashCommand.parse(line) {
                     return (await ask.answer(.live), false)
+                }
+                if let ask = SampleCommand.parse(line) {
+                    return (await ask.answer(door), false)
                 }
                 let reply = await control.handle(line)
                 return (reply.line, reply.quits)

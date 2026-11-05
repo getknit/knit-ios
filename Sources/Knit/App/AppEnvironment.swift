@@ -9,9 +9,10 @@
     import KnitWire
     import UIKit
 
-    /// Everything a running app holds, built once per launch: the identity, the stores, the radio, the mesh and the
-    /// session every screen reads (the composition root). `-seedDemo` builds the same thing over seeded stores in
-    /// memory and a radio that goes nowhere.
+    /// Everything a running app holds: the identity, the stores, the radio, the mesh and the session every screen reads (the
+    /// composition root). A launch builds one, the live one, which lasts as long as the process. `-seedDemo` builds the same
+    /// thing over seeded stores in memory and a radio that goes nowhere, and so do the sample chats, beside the live one,
+    /// for as long as they stay open (ADR 2026-11.pydf).
     @MainActor
     internal final class AppEnvironment {
         let session: AppSession
@@ -27,9 +28,9 @@
         /// (ADR 2026-10.rpmq).
         let screening: PhotoScreening
         /// The filter's photo model, which lets go of its memory when Knit leaves the front; a demo's has none to let go.
-        private let model: DevicePhotoClassifier?
+        let model: DevicePhotoClassifier?
         /// The filter's text model, which lets go soon after its last message in the background; a demo's has none.
-        private let textModel: DeviceTextClassifier?
+        let textModel: DeviceTextClassifier?
         /// What Choose photo picks under `-demoPhoto`: a demo photo, since the system's picker is out of a UI test's
         /// reach. `nil` opens the photo library.
         let demoPhoto: Data?
@@ -54,6 +55,10 @@
         /// cannot overtake the one before it.
         private let phases = AsyncStream<Bool>.makeStream()
         private var listening: Task<Void, Never>?
+        /// The mesh's first start, which ``close()`` waits for: a stop that overtook it would leave the mesh running.
+        private var starting: Task<Void, Never>?
+        /// The scene's mesh, in a demo or the sample chats, which ``close()`` ends.
+        private var demoMesh: DemoMesh?
         #if DEBUG
             /// The debug bridge, which a computer reaches over USB, or over Wi-Fi on a network pinned over USB.
             private var bridge: Bridge?
@@ -117,7 +122,7 @@
                 bridge?.start()
             #endif
             if preferences.hasOnboarded {
-                Task { await running.start() }
+                starting = Task { await running.start() }
             }
             shareWake = shares.flatMap(ShareContainer.start)
             if let demoNotification {
@@ -207,7 +212,7 @@
         }
 
         /// What an environment is made from.
-        private struct Parts {
+        struct Parts {
             let identity: IdentityKeys
             /// The ratchet prekeys kept beside the identity; a demo keeps none.
             var prekeys: PrekeyRing?
@@ -232,6 +237,9 @@
             var shareInbox: ShareInbox?
             /// Where cut attachments' prefixes are kept: on disk beside the blobs in a live launch, in memory otherwise.
             var partials: (any PartialBlobStore)?
+            /// Whether this is the sample chats, which run beside the live environment (ADR 2026-11.pydf): they take no
+            /// device tag, post no notification, set no badge and open no debug bridge, each of which is the live one's.
+            var isSample = false
             #if DEBUG
                 /// What the debug bridge's `storage` reply reads, which only a live launch has.
                 var storage: StorageReport?
@@ -239,7 +247,7 @@
         }
 
         /// The app's session over `service`, which reads words with the text classifier and photos' sizes with ImageIO.
-        private static func session(_ parts: Parts, over service: any MeshService, notifying alerts: LocalNotifier) -> AppSession {
+        private static func session(_ parts: Parts, over service: any MeshService, notifying alerts: LocalNotifier?) -> AppSession {
             AppSession(
                 identity: OwnIdentity(bundle: parts.identity.bundle),
                 stores: parts.stores,
@@ -251,12 +259,12 @@
             )
         }
 
-        private static func compose(_ parts: Parts, ratchet: Bool, replace: IdentityReplacer?) -> AppEnvironment {
+        static func compose(_ parts: Parts, ratchet: Bool, replace: IdentityReplacer?) -> AppEnvironment {
             let clock = SystemClock()
             let node = Mesh(
                 identity: parts.identity,
                 prekeys: parts.prekeys,
-                deviceTag: DeviceTag.derive(UIDevice.current.identifierForVendor?.uuidString),
+                deviceTag: parts.isSample ? nil : DeviceTag.derive(UIDevice.current.identifierForVendor?.uuidString),
                 stores: parts.stores,
                 radio: parts.radio,
                 clock: clock,
@@ -271,8 +279,9 @@
             )
             let alerts = LocalNotifier()
             let shows = !parts.staging.isEmpty || parts.director != nil
-            let service: any MeshService = shows ? DemoMesh(node, staging: parts.staging, director: parts.director) : node
-            let app = session(parts, over: service, notifying: alerts)
+            let shown = shows ? DemoMesh(node, staging: parts.staging, director: parts.director) : nil
+            let service: any MeshService = shown ?? node as any MeshService
+            let app = session(parts, over: service, notifying: parts.isSample ? nil : alerts)
             app.director = parts.director
             let environment = AppEnvironment(
                 session: app,
@@ -288,10 +297,21 @@
                 shareInbox: parts.shareInbox,
                 replaceIdentity: replace
             )
+            environment.demoMesh = shown
             #if DEBUG
-                environment.bridge = Bridge(
-                    session: app,
-                    mesh: node,
+                if !parts.isSample {
+                    environment.bridge = bridge(of: environment, parts, mesh: node, clock: clock)
+                }
+            #endif
+            return environment
+        }
+
+        #if DEBUG
+            /// The debug bridge of `environment`, which only the live environment or a demo opens.
+            private static func bridge(of environment: AppEnvironment, _ parts: Parts, mesh: Mesh, clock: SystemClock) -> Bridge {
+                Bridge(
+                    session: environment.session,
+                    mesh: mesh,
                     radio: environment.radio,
                     bundle: parts.identity.bundle,
                     clock: clock,
@@ -303,68 +323,40 @@
                     classifier: parts.classifier,
                     textClassifier: parts.textClassifier
                 )
-            #endif
-            return environment
-        }
+            }
+        #endif
     }
 
     // Apart from the class only to keep its body inside the lint's length.
     extension AppEnvironment {
         #if DEBUG
-            private static func demo(_ options: LaunchOptions) throws -> AppEnvironment {
-                guard let identity = DemoSeed.identity else {
-                    throw SecretStoreError.unavailable("the demo identity")
-                }
-                let clock = SystemClock()
-                let log = UnifiedLog(clock: clock)
-                // `scripts/check.sh release` fails when a release build holds this line: it would mean the demo ships.
-                log.log(.info, "running the demo on seeded stores in memory")
-                let stores = MeshStores.inMemory()
-                // A photo the scene's filter flags is made once, so the bytes the filter knows are the ones every post of
-                // it carries (ADR 2026-10.yddp).
-                let flagged = Dictionary(
-                    uniqueKeysWithValues: options.demoScene.flaggedPhotos.compactMap { picture in
-                        DemoPictures.chatPhoto(picture).map { (picture, $0) }
+            /// Gives the debug bridge `launch`'s way to the sample chats (``SampleCommand``).
+            func offerSample(_ launch: Launch) {
+                bridge?.sample.isOpen = { [weak launch] in launch?.sample != nil }
+                bridge?.sample.set = { [weak launch] open in
+                    if open {
+                        launch?.openSample()
+                    } else {
+                        launch?.closeSample()
                     }
-                )
-                let snap: @Sendable (DemoSnapshot) -> [UInt8]? = { picture in flagged[picture] ?? DemoPictures.chatPhoto(picture) }
-                DemoSeed.populate(
-                    stores,
-                    me: identity.nodeId,
-                    now: clock.wallMilliseconds(),
-                    scene: options.demoScene,
-                    face: DemoPictures.profilePhoto,
-                    snap: snap
-                )
-                var parts = Parts(
-                    identity: identity,
-                    stores: stores,
-                    radio: DemoRadio(state: options.demoRadio),
-                    log: log,
-                    preferences: MemoryPreferences(
-                        hasOnboarded: !options.demoOnboarding, acceptedTerms: options.demoOnboarding ? 0 : Terms.version
-                    ),
-                    classifier: DemoPhotoClassifier(flagsEverything: options.demoSensitive, flagging: Set(flagged.values)),
-                    textClassifier: DemoTextClassifier(
-                        flagsEverything: options.demoSensitive, flagging: options.demoScene.flaggedWords
-                    ),
-                    staging: DemoSeed.staging(in: options.demoScene),
-                    director: DemoDirector(
-                        scene: options.demoScene,
-                        stores: stores,
-                        me: identity.nodeId,
-                        snap: snap,
-                        now: { clock.wallMilliseconds() },
-                        wait: { milliseconds in try? await Task.sleep(for: .milliseconds(milliseconds)) }
-                    ),
-                    camera: options.demoCamera.map(DemoCamera.init),
-                    demoPhoto: options.demoPhoto ? DemoPictures.picked(moving: options.demoPhotoMoves) : nil,
-                    notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
-                )
-                parts.shareInbox = options.demoShare.map(ShareContainer.demoInbox)
-                return compose(parts, ratchet: false, replace: nil) // A demo keeps no prekeys and reaches no one.
+                }
             }
         #endif
+
+        /// Ends the sample chats' environment, which closes while Knit runs on (ADR 2026-11.pydf): the mesh stops, the session
+        /// stops listening, and the director's task, which holds the scene's mesh, ends with it. The live environment never
+        /// comes here: it lasts as long as the process.
+        func close() {
+            let started = starting
+            let running = session
+            listening?.cancel()
+            phases.continuation.finish()
+            demoMesh?.end()
+            Task {
+                await started?.value
+                await running.stop()
+            }
+        }
 
         /// Knit went to the background, where iOS may suspend it, or came back. Control Center or an alert over Knit is
         /// neither: Knit is still on screen, and Android still finds it. Going posts `-demoNotification`'s notification.

@@ -58,8 +58,9 @@ ladder, not the first.
    largest, where it keeps a screenshot of every screen. The Simulator has no scanner, so the scan walk reaches the
    scanner's refused and failed states through `-demoCamera` (ADR 2026-10.65xx). The system's photo picker runs
    outside Knit, so the photo walks pick a demo photo through `-demoPhoto`, on the `marketing` scene, whose
-   people wear faces and whose post by the fire carries a photo (ADR 2026-10.sepc, ADR 2026-10.6cas). The faces and
-   photos are files in `App/DemoMedia/`, which only a debug build bundles (ADR 2026-10.2acj). Nothing
+   people wear faces and whose post by the fire carries a photo (ADR 2026-10.sepc, ADR 2026-10.6cas). The faces are
+   files in `App/DemoMedia/`, which only a debug build bundles (ADR 2026-10.2acj), and the photos are in
+   `App/SampleMedia/`, which every build bundles for the sample chats (ADR 2026-11.pydf). Nothing
    reaches the demo's radio, so the notification walk has `-demoNotification` post the room's notification as Knit
    goes to the background, then taps its banner on the home screen. The tap reaches Knit in the background, as one
    on the lock screen does, which is where Knit used to abort. `AuditPolicy` names what the audit

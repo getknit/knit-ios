@@ -690,8 +690,7 @@ explicit direction.** Update this file in the change that ships an item.
   in chats are in flight (ADR 2026-10.nh55), reactions are in with a fixed six (ADR 2026-10.ehe6), quoted replies are
   in, in every thread (ADR 2026-10.mn29), and so are typing indicators, Android's row at a thread's foot (ADR
   2026-10.29z9), and mentions, with Android's chips and an alert of their own (ADR 2026-10.nbhj). `interop.py
-  iphone-reply`, `iphone-typing` and `iphone-mention` have yet to run against a phone, and `iphone-mention` waits on
-  A8.
+  iphone-reply` and `iphone-typing` ran against a phone on 2026-11-05. `iphone-mention` still waits on A8.
 - **Search, drafts and backups.** Search has its place already: a `.searchable` on the chat list's stack, which iOS 26
   puts at the bottom on the iPhone, with Android's sections for results (Chats, People, Messages; ADR 2026-10.5waw).
 - **Moderation and report.** App Store rule 1.2 requires them before a store build. Block is in (ADR 2026-10.5wgg),

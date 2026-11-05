@@ -119,8 +119,7 @@ final class KnitUITests: XCTestCase {
         try walkRadioStates()
     }
 
-    /// Every walk again at the largest accessibility size: the audit's Dynamic Type check, which the default walks skip,
-    /// is this.
+    /// Every walk again at the largest accessibility size: the audit's Dynamic Type check, which the default walks skip.
     func testEveryScreenAtTheLargestTextSize() throws {
         size = .largest
         try walkEveryScreen()
@@ -139,6 +138,7 @@ final class KnitUITests: XCTestCase {
     private func walkEveryScreen() throws {
         try walkOnboarding()
         try walkGettingStarted()
+        try walkSampleChats()
         try walkRoom()
         try walkBoundary()
         try walkDirect()

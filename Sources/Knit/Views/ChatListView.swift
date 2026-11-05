@@ -236,10 +236,12 @@
         }
     }
 
-    /// The first-run card: Knit's mark, what to do first, and the way into the room, on a gray card.
+    /// The first-run card: Knit's mark, what to do first, the way into the room, and the sample chats for someone with
+    /// nobody nearby yet (ADR 2026-11.pydf), on a gray card.
     private struct GettingStartedCard: View {
         @ScaledMetric(relativeTo: .headline) private var mark = Layout.markInline
         @Environment(\.openRoute) private var openRoute
+        @Environment(\.sampleChats) private var sample
 
         var body: some View {
             VStack(alignment: .leading, spacing: Layout.small) {
@@ -260,6 +262,9 @@
                 }
                 .prominentButton()
                 .accessibilityIdentifier(AccessibilityID.chatListGettingStarted)
+                Button(Copy.Sample.open, action: sample.open)
+                    .secondaryButton()
+                    .accessibilityIdentifier(AccessibilityID.chatListTrySample)
             }
             .padding(Layout.large)
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -8,7 +8,8 @@ topics: [build, signing, ci, store]
 
 # ADR 2026-10.8cy5 — A store build is a Release archive that the Mac checks, signs and uploads
 
-Status: Accepted (2026-10-03); the export answer superseded by ADR 2026-10.nwt2 (2026-10-11)
+Status: Accepted (2026-10-03); the export answer superseded by ADR 2026-10.nwt2 (2026-10-11); "no way into the demo"
+narrowed by ADR 2026-11.pydf (2026-11-05)
 
 **Context:** nothing had built Knit in Release before 2026-10-03, and the first Release build compiled with the demo
 still reachable. `Launch` read `-seedDemo` and the `-demo…` flags from the process's arguments in any build, and
@@ -88,3 +89,9 @@ three markers were in the Debug build's `Knit.debug.dylib` and none was in the R
 switch is now on when no choice is given, so a release build runs with it on. `compose` takes the switch with no
 default, so no build path can fall back to off by omission. The kept `debug.launch.ratchet` key stays debug-only, and
 `scripts/check.sh release` still fails a release build that holds it.
+
+**Amended 2026-11-05 (ADR 2026-11.pydf):** a store build now has a way into sample chats, because App Review's 2.1(a)
+message asked for a demo mode and ruled out video. It is a button, not a launch argument: a release build still reads
+no argument, and `-seedDemo`, its flags and `make`'s demo branch stay debug-only. "The demo's data still ships,
+unreachable" no longer holds for `DemoSeed`, `DemoMesh`, `DemoDirector` or the `sample` scene, which are live code.
+`check_release_app` keeps its three markers, so none of them may be copied into `AppEnvironment.sample(beside:)`.

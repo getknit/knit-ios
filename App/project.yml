@@ -44,9 +44,13 @@ targets:
         buildPhase: resources
       - path: Models/Slurs.txt
         buildPhase: resources
-      # The demo's faces and photos (ADR 2026-10.2acj), copied whole as Knit.app/DemoMedia for DemoPictures. Debug only:
-      # Release's EXCLUDED_SOURCE_FILE_NAMES leaves it out, and `check.sh release` fails if it lands.
+      # The demo's faces (ADR 2026-10.2acj), copied whole as Knit.app/DemoMedia for DemoPictures. Debug only: Release's
+      # EXCLUDED_SOURCE_FILE_NAMES leaves it out, and `check.sh release` fails if it lands.
       - path: DemoMedia
+        type: folder
+        buildPhase: resources
+      # The photos the sample chats and the demo show, in every build (ADR 2026-11.pydf): `check.sh xcode` fails without them.
+      - path: SampleMedia
         type: folder
         buildPhase: resources
     dependencies:
@@ -69,7 +73,7 @@ targets:
         # The generated plist takes its version keys from these two, over App/Info.plist's. Keep them equal to
         # its CFBundleShortVersionString and CFBundleVersion; `check.sh xcode` fails when they differ.
         MARKETING_VERSION: 1.0.0
-        CURRENT_PROJECT_VERSION: "5"
+        CURRENT_PROJECT_VERSION: "6"
         # iPhone only (ADR 2026-10.kedu). An iPad runs it in iPhone compatibility mode.
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
@@ -92,7 +96,7 @@ targets:
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: app.getknit.knit
           KNIT_APP_GROUP: group.app.getknit.knit
-          # The demo's pictures are licensed for the demo, and nothing in a store build reads them (ADR 2026-10.2acj).
+          # The demo's faces are licensed for the demo, and nothing in a store build reads them (ADR 2026-10.2acj).
           EXCLUDED_SOURCE_FILE_NAMES: DemoMedia
   # The Simulator's UI tests and accessibility audit (`scripts/check.sh uitest`). The sources live under Tests/ so
   # both linters see them, and AccessibilityID.swift and its extension come straight from KnitAppCore, so the ids

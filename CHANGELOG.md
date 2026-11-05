@@ -101,6 +101,8 @@ document:
   Reactions and delivery ticks are sealed too, while older phones keep the earlier encryption.
 - When Knit crashes or stops responding, Settings › Diagnostics saves a report on your iPhone. Copy it, share
   it or open a GitHub bug form filled in from it, and nothing leaves the phone unless you send it.
+- Try sample chats, on the chat list's first-run card and in Settings, shows Knit with made-up people when
+  nobody's nearby. A banner stays above them, and nothing you send there reaches anyone.
 
 ### Changed
 

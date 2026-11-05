@@ -2,8 +2,8 @@
     import KnitAppCore
     import SwiftUI
 
-    /// Settings: the profile row, Stop and Start, notifications, the people blocked with Report a problem and the terms, About,
-    /// Support Knit and Diagnostics (MVP item 10),
+    /// Settings: the profile row, Stop and Start, notifications, the people blocked with Report a problem and the terms, the
+    /// sample chats, About, Support Knit and Diagnostics (MVP item 10),
     /// each row after a glyph, as Signal lists its settings (ADR 2026-10.5waw).
     internal struct SettingsView: View {
         @State private var model: SettingsModel
@@ -28,6 +28,7 @@
                 if let screening {
                     ContentFilterSection(screening: screening)
                 }
+                SampleSection()
                 AboutSection()
             }
             .navigationTitle(Copy.Settings.title)
@@ -62,6 +63,25 @@
                 .accessibilityIdentifier(AccessibilityID.settingsTerms)
             } footer: {
                 SectionNote(Copy.Settings.safetyFooter(AbuseReport.address))
+            }
+        }
+    }
+
+    /// The way into the sample chats, which anyone can reach at any time (ADR 2026-11.pydf). Inside them the banner's Leave
+    /// takes its place.
+    private struct SampleSection: View {
+        @Environment(\.sampleChats) private var sample
+
+        var body: some View {
+            if !sample.isOpen {
+                Section {
+                    Button(action: sample.open) {
+                        RowLabel(Copy.Sample.open, symbol: "bubble.left.and.bubble.right")
+                    }
+                    .accessibilityIdentifier(AccessibilityID.settingsTrySample)
+                } footer: {
+                    SectionNote(Copy.Sample.settingsFooter)
+                }
             }
         }
     }

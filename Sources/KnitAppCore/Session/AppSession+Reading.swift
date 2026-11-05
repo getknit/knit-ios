@@ -21,6 +21,12 @@ extension AppSession {
         }
     }
 
+    /// No thread of this session is on screen any more, whichever one was: the sample chats cover the app (ADR 2026-11.pydf).
+    /// A thread left visible would keep its new messages read and quiet, with nobody looking at them.
+    public func hideThreads() {
+        visible = nil
+    }
+
     /// The app came to the front or left it. Coming back to a thread still on screen takes back what it posted
     /// meanwhile, as Android's `ON_RESUME` does (`ChatViewModel.onChatForeground`): the user is reading it, and a
     /// notification left behind would make the thread's next one a quiet replacement.

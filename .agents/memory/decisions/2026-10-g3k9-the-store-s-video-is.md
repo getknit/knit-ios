@@ -64,6 +64,6 @@ start-up and per device; the marks replace that.
 - **It checks nothing.** No CI job runs it. The script is checked on Linux by
   `theTrailersDirectorPlaysItsScriptThroughTheRoom`, through a real mesh, session and room, and `KnitTrailer` fails
   when a post it waits for never appears.
-- **The guards:** `DemoDirectorTests` (`onlyAScriptedSceneHasADirector` and the playback test), `check.sh xcode`,
+- **The guards:** `DemoDirectorTests` (`onlyASceneWithAScriptOrAnswersHasADirector` and the playback test), `check.sh xcode`,
   which builds the `KnitShots` scheme and so `KnitTrailer`, and `check.sh release`, which fails if the demo reaches a
   release build (ADR 2026-10.8cy5). `check.sh shots` runs the `KnitShots` class alone, so it never films.

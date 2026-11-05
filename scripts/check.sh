@@ -278,13 +278,19 @@ PY
 	# A Debug build keeps the app's code in Knit.debug.dylib, and Knit is a launcher for it.
 	if [ -f "$app/Knit.debug.dylib" ]; then
 		check_delegates "$app/Knit.debug.dylib"
-		# A debug build carries the demo's faces and photos, every one App/DemoMedia holds (ADR 2026-10.2acj).
+		# A debug build carries the demo's faces, every one App/DemoMedia holds (ADR 2026-10.2acj).
 		if [ "$(find "$app/DemoMedia" -name '*.jpg' 2>/dev/null | wc -l)" -ne "$(find App/DemoMedia -name '*.jpg' | wc -l)" ]; then
-			echo "$app lacks App/DemoMedia's pictures: the demo would show initials and no photos" >&2
+			echo "$app lacks App/DemoMedia's pictures: the demo would show initials" >&2
 			return 1
 		fi
 	else
 		check_delegates "$app/Knit"
+	fi
+	# Every build carries the sample chats' photos (ADR 2026-11.pydf). Without them the room's flagged photo is an empty
+	# post, and App Review, who reach the sample through it, find nothing for the filter to hide.
+	if [ "$(find "$app/SampleMedia" -name '*.jpg' 2>/dev/null | wc -l)" -ne "$(find App/SampleMedia -name '*.jpg' | wc -l)" ]; then
+		echo "$app lacks App/SampleMedia's photos: the sample chats would show none" >&2
+		return 1
 	fi
 	# The content filter's photo model, compiled (ADR 2026-10.rpmq). Without it every photo goes through and nothing says
 	# so; its float16 weights come to about 8.6 MB.
@@ -323,9 +329,9 @@ check_release_app() {
 			return 1
 		fi
 	done
-	# The demo's faces and photos are a debug build's alone (ADR 2026-10.2acj).
+	# The demo's faces are a debug build's alone (ADR 2026-10.2acj): their licence doesn't reach a store build.
 	if [ -e "$app/DemoMedia" ]; then
-		echo "$app holds DemoMedia, the demo's pictures, which only a debug build bundles" >&2
+		echo "$app holds DemoMedia, the demo's faces, which only a debug build bundles" >&2
 		return 1
 	fi
 	python3 - "$app" <<'PY'

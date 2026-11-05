@@ -6,17 +6,17 @@ import Testing
 
 @testable import KnitAppCore
 
-/// The scripted scenes' director (ADR 2026-10.g3k9, ADR 2026-10.yddp): only the trailer and App Review's clips have a
-/// script, and each plays through a real mesh, session and room, the trailer typing the user's part into the composer
-/// and the block clip waiting for the user's report.
+/// The scripted scenes' director (ADR 2026-10.g3k9, ADR 2026-10.yddp): the trailer and App Review's clips have a script,
+/// and each plays through a real mesh, session and room, the trailer typing the user's part into the composer and the
+/// block clip waiting for the user's report. The sample chats' director only answers (`SampleChatsTests`).
 @MainActor
 @Suite(.timeLimit(.minutes(1))) struct DemoDirectorTests {
-    @Test func onlyAScriptedSceneHasADirector() throws {
+    @Test func onlyASceneWithAScriptOrAnswersHasADirector() throws {
         let identity = try #require(DemoSeed.identity)
         let scenes = DemoScene.allCases.filter { scene in
             Self.director(of: scene, over: MeshStores.inMemory(), me: identity.nodeId) != nil
         }
-        #expect(scenes == [.trailer, .block, .filter])
+        #expect(scenes == [.trailer, .block, .filter, .sample])
         #expect(LaunchOptions(arguments: ["-seedDemo", "-demoScene", "trailer"]).demoScene == .trailer)
     }
 

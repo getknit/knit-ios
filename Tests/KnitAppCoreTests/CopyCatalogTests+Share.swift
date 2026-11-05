@@ -12,4 +12,9 @@ extension CopyCatalogTests {
             Copy.Share.held(.closed),
         ]
     }
+
+    /// The sample chats' strings, apart for the same reason.
+    static var sampleStrings: [String] {
+        [Copy.Sample.open, Copy.Sample.banner, Copy.Sample.leave, Copy.Sample.leaveLabel, Copy.Sample.settingsFooter]
+    }
 }

@@ -11,8 +11,8 @@ public enum DemoPortrait: String, Sendable, CaseIterable {
     case river = "face-river"
 }
 
-/// A photo of a place, which a message in the demo carries and Choose photo picks: a licensed photograph, which only a
-/// debug build bundles, named its raw value (ADR 2026-10.2acj).
+/// A photo of a place, which a message in the demo or the sample chats carries and Choose photo picks: a licensed
+/// photograph, which every build bundles for the sample chats, named its raw value (ADR 2026-10.2acj, ADR 2026-11.pydf).
 public enum DemoSnapshot: String, Sendable, CaseIterable {
     /// Peaks in silhouette at dusk.
     case summit = "photo-summit"
@@ -58,6 +58,9 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// that declared no size, each ringed as its bytes come in (ADR 2026-10.y9qh): for the walk and the shots that draw a
     /// photo arriving.
     case photoArriving = "photo-arriving"
+    /// The sample chats anyone can open, in a store build too (ADR 2026-11.pydf): the marketing scene's people and
+    /// threads, with a stranger whose posts show report, block and the filter, and answers for what the user sends.
+    case sample = "sample"
 
     /// Who and what the scene seeds.
     var cast: DemoCast {
@@ -78,6 +81,8 @@ public enum DemoScene: String, Sendable, CaseIterable {
             .filter
         case .photoArriving:
             .photoArriving
+        case .sample:
+            .sample
         }
     }
 
@@ -89,6 +94,12 @@ public enum DemoScene: String, Sendable, CaseIterable {
     /// The photos the demo's photo filter flags in this scene, beyond `-demoSensitive`'s everything.
     public var flaggedPhotos: Set<DemoSnapshot> {
         cast.flaggedPhotos
+    }
+
+    /// Everything anyone in this scene says, which ``SampleTextClassifier`` answers for itself: only what the user types
+    /// goes to the bundled model.
+    public var words: Set<String> {
+        Set(cast.lines.map(\.body)).union(cast.answers).union(cast.flaggedWords)
     }
 }
 
@@ -205,6 +216,10 @@ internal struct DemoCast {
     var flaggedWords: Set<String> = []
     /// The photos the demo's photo filter flags, for the same.
     var flaggedPhotos: Set<DemoSnapshot> = []
+    /// What the scene's people say back to the user, in turn, for a scene that answers (ADR 2026-11.pydf).
+    var answers: [String] = []
+    /// Who answers in the room, in turn.
+    var answerers: [Slot] = []
 
     static let thumbs = "\u{1F44D}"
     static let heart = "\u{2764}\u{FE0F}"

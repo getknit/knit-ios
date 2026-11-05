@@ -46,6 +46,10 @@
         }
 
         private(set) var stage = Stage.waiting("")
+        /// The sample chats while they're open (ADR 2026-11.pydf), drawn over `stage`'s environment, which runs on under them:
+        /// its radio, its links and its notifications don't change. Nothing keeps them, so every launch comes up live,
+        /// a relaunch to restore Bluetooth among them.
+        private(set) var sample: AppEnvironment?
         /// A thread a tapped notification asked for, until the screens take it.
         var requestedConversation: String?
         /// Whether a tapped notification asked for the message requests.
@@ -94,14 +98,38 @@
                 let environment = try AppEnvironment.make(Self.options(), launch: history.started(by: trigger), crashes: crashes)
                 stage = .ready(environment)
                 environment.run()
+                #if DEBUG
+                    environment.offerSample(self)
+                #endif
             } catch {
                 history.waited = history.waited ?? "\(error)"
                 stage = .waiting("\(error)")
             }
         }
 
-        /// A tapped notification: open its thread, or the requests when it names none.
+        /// Opens the sample chats over the running app, from the first-run card or Settings, neither of which sits over a
+        /// thread. Everyone agrees to the terms first, here as everywhere (ADR 2026-10.cgm3): App Review checks it, so a new way
+        /// in can't skip them by accident.
+        func openSample() {
+            guard case .ready(let live) = stage, sample == nil, live.preferences.acceptedTerms >= Terms.version else {
+                return
+            }
+            let environment = AppEnvironment.sample(beside: live)
+            live.session.hideThreads()
+            sample = environment
+            environment.run()
+        }
+
+        /// Closes the sample chats, and with them all they held. The live screens come back.
+        func closeSample() {
+            sample?.close()
+            sample = nil
+        }
+
+        /// A tapped notification: open its thread, or the requests when it names none. Only the live session posts one, so
+        /// its thread is the live app's: the sample chats close first.
         func open(conversation: String?) {
+            closeSample()
             if let conversation {
                 requestedConversation = conversation
             } else {
@@ -115,6 +143,7 @@
         func open(url: URL) {
             let text = url.absoluteString
             if AddContactModel.isContactLink(text) {
+                closeSample()
                 requestedContactLink = text
             }
         }
@@ -146,12 +175,18 @@
             }
             let session = environment.session
             Task { await session.setActive(active) }
+            // The sample's session hears it too, so an answer that lands behind Knit counts as unread. Its mesh hears nothing
+            // of the background: it has no links to seek, and its seeking lines would read as the live one's (ADR 2026-11.pydf).
+            if let front = sample?.session {
+                Task { await front.setActive(active) }
+            }
             if active {
                 environment.foregrounded()
                 // At the front a contact link the share sheet left can open Add contact (ADR 2026-10.z7a8).
                 if let shares = environment.shares {
                     Task {
                         if let link = await shares.drain(atFront: true) {
+                            closeSample()
                             requestedContactLink = link
                         }
                     }

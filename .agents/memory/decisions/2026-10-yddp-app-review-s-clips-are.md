@@ -76,6 +76,6 @@ The two-phone video in the review notes is still filmed on real phones, because 
 - **It checks nothing.** No CI job runs `clips`. `check.sh xcode` builds the `KnitShots` scheme, so `KnitClips`
   compiles, and a clip's test fails when a step it waits for never comes.
 - **The guards:**
-  - `DemoDirectorTests`, through a real mesh and session: `onlyAScriptedSceneHasADirector`, the block clip's playback
+  - `DemoDirectorTests`, through a real mesh and session: `onlyASceneWithAScriptOrAnswersHasADirector`, the block clip's playback
     test, and the filter clip's, which checks that only the named words and bytes are flagged.
   - `check.sh release`, which fails if the demo reaches a store build (ADR 2026-10.8cy5).

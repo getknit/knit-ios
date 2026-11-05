@@ -1855,6 +1855,50 @@ in `.build/and3/`.
 - **The ordering check was skipped.** It needs a knit-peer link that stops being heard while it stays up, and
   knit-peer cannot stop advertising under a held link.
 
+## What build 6's lab run showed
+
+On 2026-11-05, with the go-ahead, a Debug build of 1.0.0 (6) ran on the iPhone 12 against the Pixel 8, nobody at either
+phone. It carries the sample chats (ADR 2026-11.pydf) and everything on `main` since build 5.
+
+| Suite | Steps | Failed | Why |
+| --- | --- | --- | --- |
+| `iphone` | 21 | 0 | |
+| `iphone-peer` | 21 | 0 | |
+| `iphone-relay` | 17 | 0 | |
+| `iphone-group` | 36 | 0 | |
+| `iphone-photos` | 18 | 0 | |
+| `iphone-react` | 18 | 0 | |
+| `iphone-reply` | 16 | 0 | |
+| `iphone-block` | 11 | 0 | |
+| `iphone-contact` | 7 | 0 | |
+| `iphone-delete` | 13 | 0 | |
+| `iphone-soak`, 15 minutes with `--extras` | 14 | 0 | |
+| `iphone-ratchet` | 38 | 1 | `group-form-both-sides`, on a pair that had run it before |
+| `iphone-typing` | 12 | 1 | `group-iphone-cue-shows`, on a group the phone never accepted |
+| `iphone-mention` | 10 | 7 | The phone's bridge has no A8, so nothing was tested |
+| `iphone-resume` | 31, then 28 | 1, then 1 | Each direction resumed in one of the two runs |
+| `android-keeps-iphone` | 23, then 15 twice | 2, 2, 1 | `held` passed; `redial` below |
+
+Four of those failures read like bugs and are not. Each took a trial to tell apart:
+
+- **A rerun can't adopt a seed twice.** A group's id comes from its members, so `iphone-ratchet` lands the same pair in
+  the same group every run. `groupSeedsAdopted` moves only the first time. The group held an earlier run's messages.
+- **Android drops a cue for a group it hasn't accepted.** `InboundPipeline.handleTyping` checks `isAccepted`, and
+  `iphone-typing`'s group has a ghost and no history. One line sent through the bridge didn't accept it. In a group both
+  phones had written in, the cue showed in 0.6 to 1.5 s, both ways. `MeshEngine.handleTyping` has no such check, so
+  an iPhone shows a cue in a thread it hasn't accepted, which Android doesn't.
+- **A carrier can serve the tail.** A fifth phone in range took the cut photo and served the rest, 591,317 bytes from
+  97,305. `iphone-resume` reads the phone's serve line alone, so it reported a failure. Refuse the fifth phone with the
+  bridge's `deny-link`, or `--quiet` it. `out-cut` also failed once when the phone's network adb log stopped.
+- **`redial` needs the iPhone lonely, and it varies.** With the fifth phone linked, the iPhone never seeks. With it
+  refused, one run got no dial in 150 s, and the next logged `link seeking on (background, no links)` and had its dial
+  judged 17 s after the shed. That one failed the step the other way round: the dial came so soon the phone still counted
+  the iPhone as sighted.
+
+The sample chats held up on the same phones. Over a live link, a DM arrived and a post left while they were open, a
+notification showed over them, they survived the background, a relaunch came up live, and 20 rounds of opening and
+leaving left the memory Knit may use flat. No crash or hang was saved, and no phone's Knit restarted.
+
 ## What the stranger trial showed
 
 On 2026-10-12, with the go-ahead, `android-strangers` ran on the Pixel 7 against a knit-next build with #154

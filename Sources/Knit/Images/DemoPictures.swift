@@ -5,12 +5,14 @@
     import KnitAppCore
     import UniformTypeIdentifiers
 
-    /// The demo's faces and photos, read from `DemoMedia` in the app's bundle, which only a debug build carries (ADR
-    /// 2026-10.2acj), and encoded as a profile photo or a chat's photo is. Each is cropped to fill the size it is
-    /// wanted at, about its middle. Without the folder, as in a release build, there is no picture to give.
+    /// The demo's faces, read from `DemoMedia` in the app's bundle, which only a debug build carries (ADR 2026-10.2acj), and
+    /// the photos, read from `SampleMedia`, which every build carries for the sample chats (ADR 2026-11.pydf), each encoded
+    /// as a profile photo or a chat's photo is. Each is cropped to fill the size it is wanted at, about its middle. Without
+    /// its folder, as for a face in a release build, there is no picture to give.
     internal enum DemoPictures {
-        /// The folder in the app's bundle, as `App/project.yml` names it.
-        private static let folder = "DemoMedia"
+        /// The folders in the app's bundle, as `App/project.yml` names them.
+        private static let faces = "DemoMedia"
+        private static let photos = "SampleMedia"
         /// The picture `-demoPhoto` hands the cropper and the composer: taller than wide, as a phone held upright takes it.
         /// The cropper has somewhere to pan, and a photo sent from the composer stands as tall as its bubble lets it, the
         /// most a photo grows once it decodes.
@@ -31,12 +33,12 @@
 
         /// `portrait` as a profile photo.
         static func profilePhoto(_ portrait: DemoPortrait) -> [UInt8]? {
-            jpeg(of: portrait.rawValue, width: ProfilePhoto.side, height: ProfilePhoto.side, quality: ProfilePhoto.quality)
+            jpeg(of: portrait.rawValue, in: faces, width: ProfilePhoto.side, height: ProfilePhoto.side, quality: ProfilePhoto.quality)
         }
 
         /// `picture` as a photo a message carries.
         static func chatPhoto(_ picture: DemoSnapshot) -> [UInt8]? {
-            jpeg(of: picture.rawValue, width: snapshot.width, height: snapshot.height, quality: ChatPhoto.imageIOQuality)
+            jpeg(of: picture.rawValue, in: photos, width: snapshot.width, height: snapshot.height, quality: ChatPhoto.imageIOQuality)
         }
 
         /// The picture Choose photo and Add photo pick under `-demoPhoto`, or the GIF they pick under `-demoPhoto gif`.
@@ -45,13 +47,13 @@
         }
 
         private static func pickedPhoto() -> Data? {
-            jpeg(of: picked.rawValue, width: pick.width, height: pick.height, quality: ProfilePhoto.quality).map { Data($0) }
+            jpeg(of: picked.rawValue, in: photos, width: pick.width, height: pick.height, quality: ProfilePhoto.quality).map { Data($0) }
         }
 
         /// The picture Add photo picks under `-demoPhoto gif`: a GIF that moves, written by ImageIO, so a UI test can watch
         /// one play in a thread (ADR 2026-10.ytvx).
         private static func pickedGIF() -> Data? {
-            let frames = reel.compactMap { filled($0.rawValue, width: reelFrame.width, height: reelFrame.height) }
+            let frames = reel.compactMap { filled($0.rawValue, in: photos, width: reelFrame.width, height: reelFrame.height) }
             let output = NSMutableData()
             guard frames.count == reel.count,
                 let destination = CGImageDestinationCreateWithData(output, UTType.gif.identifier as CFString, frames.count, nil)
@@ -67,12 +69,12 @@
             return CGImageDestinationFinalize(destination) ? output as Data : nil
         }
 
-        private static func jpeg(of name: String, width: Int, height: Int, quality: Double) -> [UInt8]? {
-            filled(name, width: width, height: height).flatMap { DeviceImageCodec.jpeg($0, quality: quality) }
+        private static func jpeg(of name: String, in folder: String, width: Int, height: Int, quality: Double) -> [UInt8]? {
+            filled(name, in: folder, width: width, height: height).flatMap { DeviceImageCodec.jpeg($0, quality: quality) }
         }
 
-        /// The bundled picture `name`, scaled to cover `width` by `height` and cropped about its middle to fit.
-        private static func filled(_ name: String, width: Int, height: Int) -> CGImage? {
+        /// The picture `name` in the bundle's `folder`, scaled to cover `width` by `height` and cropped about its middle to fit.
+        private static func filled(_ name: String, in folder: String, width: Int, height: Int) -> CGImage? {
             guard let url = Bundle.main.url(forResource: name, withExtension: "jpg", subdirectory: folder),
                 let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                 let image = CGImageSourceCreateImageAtIndex(source, 0, nil),

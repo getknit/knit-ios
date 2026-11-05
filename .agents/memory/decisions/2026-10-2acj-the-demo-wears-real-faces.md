@@ -8,7 +8,7 @@ topics: [app, store, ui, testing]
 
 # ADR 2026-10.2acj — The demo wears real faces and photos that only a debug build bundles
 
-Status: Accepted (2026-10-09)
+Status: Accepted (2026-10-09); the photos' debug-only rule narrowed by ADR 2026-11.pydf (2026-11-05)
 
 **Context:** the `marketing` scene is what the store's screenshots, its video and the creative assets show. Its faces
 and photos were painted at launch, a sky and a few shapes, so that no photograph shipped in the app (ADR 2026-10.sepc).
@@ -49,3 +49,8 @@ only, so the pictures would need a second way there.
   for a hidden photo.
 - **The guards:** `PhotoTests` (every face, and the photo in the room, both DMs and the group), `check_release_app`,
   `check_xcode_app`, and `NoticesSyncTests` for the packages beside them.
+
+**Amended 2026-11-05 (ADR 2026-11.pydf):** the six Unsplash photos moved to `App/SampleMedia/`, which every build
+bundles for the sample chats. The faces stay in `App/DemoMedia/`, debug only, for the licence reason above.
+`check_xcode_app` now fails any build without `App/SampleMedia`'s photos, and `check_release_app` still fails one that
+holds `DemoMedia`.

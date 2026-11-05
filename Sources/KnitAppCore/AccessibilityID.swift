@@ -28,6 +28,12 @@ public enum AccessibilityID {
     public static let chatListStatus = "chat_list_status"
     /// The first-run card's button, which opens the room.
     public static let chatListGettingStarted = "chat_list_getting_started"
+    /// The first-run card's way into the sample chats. Android has no tag here, nor for the other sample ids.
+    public static let chatListTrySample = "chat_list_try_sample"
+    /// The banner over the sample chats, which says they are samples.
+    public static let sampleBanner = "sample_banner"
+    /// The banner's Leave.
+    public static let sampleLeave = "sample_leave"
     /// The status line's words, `chat_list_status_<state>`: the identifier names the state, so a test reads it without
     /// reading the words. Android has no tag here, nor for the line's two buttons below.
     public static func chatListStatus(_ state: StatusState) -> String {
@@ -286,6 +292,8 @@ public enum AccessibilityID {
     public static let settingsProfileRow = "settings_profile_row"
     /// Settings' Stop or Start button.
     public static let settingsMesh = "settings_mesh"
+    /// Settings' way into the sample chats.
+    public static let settingsTrySample = "settings_try_sample"
     /// Settings' way to About, Android's `settings_menu_about`.
     public static let settingsAbout = "settings_menu_about"
     /// Settings' way to Diagnostics.

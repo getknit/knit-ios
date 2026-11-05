@@ -203,6 +203,10 @@ listens, and `wifi-unpin` (with `"all":true` for every network) undoes a pin. Ev
 and restarts still need the cable. Keep the phone on 5 GHz Wi-Fi for runs that time the BLE link, since 2.4 GHz
 Wi-Fi shares the phone's radio with Bluetooth.
 
+`{"cmd":"sample","action":"open"}`, or `"close"`, opens or closes the sample chats as their buttons do, and with no
+`action` it says where they stand (ADR 2026-11.pydf). The rest of the bridge stays the live session's, so a script can
+check the live mesh under them while the screen shows the sample.
+
 The bridge records the screen for knit-next's demo film (ADR 2026-10.x2cq), with ReplayKit's in-app recorder:
 only Knit's own screens, and the microphone unless `"mic":false`. Every reply echoes `tag`, and a refusal carries
 `"ok":false`, a `code` and an `error`.

@@ -3,8 +3,8 @@ public import KnitMesh
 import KnitStore
 public import KnitWire
 
-/// A radio that reports one state and goes nowhere: `-seedDemo`'s transport. It never sights, dials or accepts, so
-/// what the demo sends waits in custody.
+/// A radio that reports one state and goes nowhere: `-seedDemo`'s transport, and the sample chats' in every build (ADR
+/// 2026-11.pydf). It never sights, dials or accepts, so what the demo sends waits in custody.
 public final class DemoRadio: Radio {
     /// The demo's radio advertises like an iPhone.
     public let advertisesServiceData = false
@@ -67,7 +67,8 @@ public enum DemoSeed {
         scene.cast.linked.compactMap { keys($0)?.nodeId }
     }
 
-    /// Who `scene` shows typing where, which only ``DemoMesh`` makes true, as it does the links.
+    /// Who `scene` shows typing where, which only ``DemoMesh`` makes true, as it does the links. A group's id here comes from
+    /// the demo's fixed identity, so a scene on another identity, as the sample chats are, can't stage typists in its group.
     public static func typing(in scene: DemoScene) -> [String: [NodeId]] {
         let cast = scene.cast
         let groupId = cast.group.map { group in GroupId.derive((group.members + [.me]).compactMap { keys($0)?.nodeId.string }) }
@@ -347,7 +348,7 @@ public enum DemoSeed {
         }
     }
 
-    /// `slot`'s node id, the same every launch: this device's for `.me`.
+    /// `slot`'s node id, the same every launch: the demo's own for `.me`, which the sample chats' new identity is not.
     static func nodeId(_ slot: DemoCast.Slot) -> NodeId? {
         keys(slot)?.nodeId
     }

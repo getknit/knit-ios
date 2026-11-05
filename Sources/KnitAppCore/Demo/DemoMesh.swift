@@ -21,8 +21,8 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     private let director: DemoDirector?
     private let continuation: AsyncStream<MeshEvent>.Continuation
     private let pump: Task<Void, Never>
-    /// The director's performance, once the mesh has started.
-    private let performance = Lock<Task<Void, Never>?>(nil)
+    /// The director's performance.
+    private let performance = Lock(Performance.waiting)
     /// The mesh's events, with every change of the radio's state or the links answered by the links shown now.
     public let events: AsyncStream<MeshEvent>
 
@@ -66,9 +66,7 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
     }
 
     deinit {
-        pump.cancel()
-        performance.withLock { $0?.cancel() }
-        continuation.finish()
+        end()
     }
 
     /// `linked` while `mesh` runs with the radio on, since a stopped mesh or a radio that cannot run links nobody.
@@ -169,9 +167,9 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
         guard let director else {
             return
         }
-        performance.withLock { playing in
-            if playing == nil {
-                playing = Task { [self] in await director.play(on: self) }
+        performance.withLock { state in
+            if case .waiting = state {
+                state = .playing(Task { [self] in await director.play(on: self) })
             }
         }
     }
@@ -185,6 +183,20 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
         }
     }
 
+    /// Ends the director's performance and these events, for the sample chats, which close while Knit runs on (ADR
+    /// 2026-11.pydf). The performance holds this mesh, so without this it would outlive them. A start still on its way
+    /// finds it ended and plays nothing.
+    public func end() {
+        performance.withLock { state in
+            if case .playing(let task) = state {
+                task.cancel()
+            }
+            state = .ended
+        }
+        pump.cancel()
+        continuation.finish()
+    }
+
     /// Posts to the Nearby room, where nobody hears it but the director.
     public func postToRoom(
         _ text: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
@@ -196,11 +208,15 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
         return posted
     }
 
-    /// Sends a DM, which waits in custody.
+    /// Sends a DM, which waits in custody and which the director hears.
     public func sendDirectMessage(
         _ text: String, to recipient: NodeId, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
     ) async -> MessageRecord? {
-        await mesh.sendDirectMessage(text, to: recipient, photo: photo, replyTo: replyTo, mentions: mentions)
+        let sent = await mesh.sendDirectMessage(text, to: recipient, photo: photo, replyTo: replyTo, mentions: mentions)
+        if let sent {
+            director?.heard(sent)
+        }
+        return sent
     }
 
     /// A picture the demo already holds, as the mesh finds it.
@@ -218,11 +234,15 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
         await mesh.createGroup(with: others)
     }
 
-    /// Sends a group message, which waits in custody.
+    /// Sends a group message, which waits in custody and which the director hears.
     public func sendGroupMessage(
         _ text: String, to groupId: String, photo: OutgoingPhoto?, replyTo: MessageReply?, mentions: [MessageMention]
     ) async -> MessageRecord? {
-        await mesh.sendGroupMessage(text, to: groupId, photo: photo, replyTo: replyTo, mentions: mentions)
+        let sent = await mesh.sendGroupMessage(text, to: groupId, photo: photo, replyTo: replyTo, mentions: mentions)
+        if let sent {
+            director?.heard(sent)
+        }
+        return sent
     }
 
     /// Renames a group.
@@ -274,7 +294,7 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
         await mesh.addContact(card, from: source, unblock: unblock)
     }
 
-    /// Our contact link, signed by the demo's identity.
+    /// Our contact link, signed by this scene's identity: the demo's fixed one, or the sample chats' own.
     public func ownContactLink() async -> ContactCard.Links? {
         await mesh.ownContactLink()
     }
@@ -292,6 +312,13 @@ public final class DemoMesh: MeshService, DemoDirector.Stage {
 }
 
 extension DemoMesh {
+    /// Where the director's performance stands: the first start begins it, and ``end()`` stops it for good.
+    private enum Performance {
+        case waiting
+        case playing(Task<Void, Never>)
+        case ended
+    }
+
     /// What a scene shows that the demo's radio cannot make true: who is linked, who is typing where, and which photos are
     /// on their way.
     public struct Staging: Sendable {
