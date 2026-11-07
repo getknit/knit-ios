@@ -29,8 +29,8 @@ public enum PromotionPolicy {
 
     /// Links to open and links to close, this tick.
     public struct Decision: Sendable, Equatable {
-        /// Peers to dial, strongest first.
-        public var promote: [NodeId]
+        /// Peers to dial, strongest first, by the key their sighting is kept under.
+        public var promote: [SightingKey]
         /// Links to close, weakest first.
         public var evict: [NodeId]
     }
@@ -77,7 +77,7 @@ public enum PromotionPolicy {
     public static func decide(
         candidates: [PresenceTracker.Snapshot],
         links: [LinkSnapshot],
-        backoff: Set<NodeId>,
+        backoff: Set<SightingKey>,
         configuration: Configuration = Configuration()
     ) -> Decision {
         let promotable = stableSorted(candidates.filter { isPromotable($0, backoff: backoff, configuration: configuration) }) { lhs, rhs in
@@ -90,15 +90,15 @@ public enum PromotionPolicy {
         // Shed a strict overflow first, such as inbound links accepted past the budget, weakest first.
         let overflow = max(0, links.count - configuration.maxLinks)
         var evict = evictable.prefix(overflow).map(\.nodeId)
-        var promote: [NodeId] = []
+        var promote: [SightingKey] = []
         let free = configuration.maxLinks - (links.count - evict.count)
         if free > 0 {
-            promote = promotable.prefix(free).map(\.nodeId)
+            promote = promotable.prefix(free).map(\.key)
         } else if let weakest = evictable.dropFirst(overflow).first, let best = promotable.first {
             // At the budget, replace the weakest link only when the best candidate clearly beats it, so RSSI
             // jitter cannot ping-pong a link.
             if best.smoothedRssi >= weakest.smoothedRssi + configuration.rssiHysteresis {
-                promote = [best.nodeId]
+                promote = [best.key]
                 evict.append(weakest.nodeId)
             }
         }
@@ -119,22 +119,22 @@ public enum PromotionPolicy {
     /// later restarted it.
     public static func untilDwellEnds(
         candidates: [PresenceTracker.Snapshot],
-        backoff: Set<NodeId>,
+        backoff: Set<SightingKey>,
         configuration: Configuration = Configuration()
     ) -> Int64? {
         candidates.compactMap { candidate -> Int64? in
             let wait = configuration.dwellMilliseconds - candidate.dwellMilliseconds
             let heardThen = candidate.lastSeenAgoMilliseconds + wait <= configuration.heardWithinMilliseconds
-            let eligible = candidate.smoothedRssi >= configuration.rssiFloor && !backoff.contains(candidate.nodeId)
+            let eligible = candidate.smoothedRssi >= configuration.rssiFloor && !backoff.contains(candidate.key)
             return wait > 0 && heardThen && eligible ? wait : nil
         }
         .min()
     }
 
     /// Close enough, present long enough, heard lately, and not backing off.
-    static func isPromotable(_ candidate: PresenceTracker.Snapshot, backoff: Set<NodeId>, configuration: Configuration) -> Bool {
+    static func isPromotable(_ candidate: PresenceTracker.Snapshot, backoff: Set<SightingKey>, configuration: Configuration) -> Bool {
         candidate.smoothedRssi >= configuration.rssiFloor && candidate.dwellMilliseconds >= configuration.dwellMilliseconds
-            && candidate.lastSeenAgoMilliseconds <= configuration.heardWithinMilliseconds && !backoff.contains(candidate.nodeId)
+            && candidate.lastSeenAgoMilliseconds <= configuration.heardWithinMilliseconds && !backoff.contains(candidate.key)
     }
 
     private static func stableSorted<Element>(_ elements: [Element], by areInIncreasingOrder: (Element, Element) -> Bool) -> [Element] {

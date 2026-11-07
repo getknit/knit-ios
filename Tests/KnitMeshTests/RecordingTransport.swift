@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitMesh
 import KnitWire
 
@@ -23,6 +24,8 @@ struct FedCopy {
 
 /// A transport that records every write.
 final class RecordingTransport: MeshTransport {
+    /// Every listing ``listPresenceKeys(_:)`` was handed.
+    var presenceKeyListings: [[NodeId: [PresenceKey]]] = []
     /// One write, a frame or a file.
     enum Write {
         case frame(Written)
@@ -137,6 +140,10 @@ final class RecordingTransport: MeshTransport {
 
     func peerProvesItself(_ peer: NodeId) {
         provesItself.append(peer)
+    }
+
+    func listPresenceKeys(_ listing: [NodeId: [PresenceKey]]) {
+        presenceKeyListings.append(listing)
     }
 
     func fileTaken(from peer: NodeId, hash: BlobHash) {

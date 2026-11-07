@@ -2,8 +2,9 @@ import KnitControl
 public import KnitMesh
 public import KnitWire
 
-/// What `knit-peer scan` heard: every Knit node in range, by node id, with its strongest signal. A node is reported
-/// the first time it is heard, and all of them again at the end.
+/// What `knit-peer scan` heard: every Knit node in range, by advertised form, with its strongest signal. A node is
+/// reported the first time it is heard, and all of them again at the end. A blinding Android's tag is reported under a
+/// handle, `~zzzz…<n>`, numbered for the scan, never as the tag (ADR 2026-11.sv5t), its flags saying it is blinded.
 public struct ScanReport: Sendable {
     private struct Heard: Sendable {
         var advert: AdvertPayload
@@ -12,7 +13,15 @@ public struct ScanReport: Sendable {
         var count: Int
     }
 
-    private var heard: [NodeId: Heard] = [:]
+    /// An advertised form: a clear id and a tag of the same bytes are two.
+    private struct Form: Hashable, Sendable {
+        let advertised: NodeId
+        let blinded: Bool
+    }
+
+    private var heard: [Form: Heard] = [:]
+    /// Each tag's handle number, in the order heard.
+    private var handles: [NodeId: Int] = [:]
     private let own: NodeId?
 
     /// A report that leaves out `own`, the node the scan advertises as, if any.
@@ -22,9 +31,8 @@ public struct ScanReport: Sendable {
 
     /// Takes one sighting, and answers the event line when it is a node not heard before.
     public mutating func take(_ sighting: RadioSighting) -> String? {
-        // The advertised form: a blinding Android's tag reports as a node of its own, its flags saying so (ADR 2026-11.sv5t).
-        let node = sighting.advert.advertised
-        guard node != own else {
+        let node = Form(advertised: sighting.advert.advertised, blinded: sighting.advert.blinded)
+        guard node.blinded || node.advertised != own else {
             return nil
         }
         if var known = heard[node] {
@@ -37,20 +45,26 @@ public struct ScanReport: Sendable {
         }
         let entry = Heard(advert: sighting.advert, address: sighting.address, strongest: sighting.rssi, count: 1)
         heard[node] = entry
-        var fields = Self.fields(node, entry)
+        if node.blinded {
+            handles[node.advertised] = handles.count
+        }
+        var fields = fields(node, entry)
         fields["event"] = "sighted"
         return JSONValue.object(fields).line
     }
 
-    /// The closing reply: every node heard, in node id order.
+    /// The closing reply: every node heard, clear ids in node id order, then tags in the order heard.
     public var summary: String {
-        let nodes = heard.sorted { $0.key < $1.key }.map { JSONValue.object(Self.fields($0.key, $0.value)) }
+        let clear = heard.filter { !$0.key.blinded }.sorted { $0.key.advertised < $1.key.advertised }
+        let tags = heard.filter(\.key.blinded).sorted { (handles[$0.key.advertised] ?? 0) < (handles[$1.key.advertised] ?? 0) }
+        let nodes = (clear + tags).map { JSONValue.object(fields($0.key, $0.value)) }
         return JSONValue.object(["reply": "scan", "ok": true, "nodes": .array(nodes)]).line
     }
 
-    private static func fields(_ node: NodeId, _ heard: Heard) -> [String: JSONValue] {
-        [
-            "peer": .string(node.string),
+    private func fields(_ node: Form, _ heard: Heard) -> [String: JSONValue] {
+        let peer = node.blinded ? "~zzzz…\(handles[node.advertised] ?? 0)" : node.advertised.string
+        return [
+            "peer": .string(peer),
             "address": .string(heard.address.rawValue),
             "rssi": .int(Int64(heard.strongest)),
             "adverts": .int(Int64(heard.count)),

@@ -194,6 +194,10 @@ extension LinkManager {
     /// unproven link claiming the id (R3, R4), so their `.down` events come before this `.up`, and the engine runs the real
     /// peer's link-up afresh.
     func proved(_ id: ChannelID, _ pending: PendingProof, now: Int64) -> [Event] {
+        let role = channels[id]?.role
+        if case .dialer(let target) = role, target.expected == nil {
+            return provedTagDial(id, target, pending, now: now)
+        }
         let peer = pending.peer
         var events: [Event] = []
         let replaced = pending.displacing.flatMap { held in liveLinks.first { $0.channel == held && $0.proven } }

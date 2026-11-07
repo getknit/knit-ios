@@ -85,15 +85,16 @@ ownerNodeId ‖ u64be(slot) ‖ u8(restart))`, a slot being 15 minutes of wall c
 Coded sets on a fresh PSM, the old one accepting for 30 s more. Only a debug build writes tags today
 (`BuildConfig.BLIND_ADVERT`, and the bridge's `ADVERT` switch, on by default since `b66cfa828`), and only on a controller
 with extended advertising; release N airs its id and ships the readers and the keys, and release N+1, which turns writing
-on, waits on the iOS reader. This port reads the bit and resolves no tag yet (ADR 2026-11.sv5t; knit-next.md, "Owed
-here"). `AdvertPayload` keeps bytes 1–16 as `advertised`, says `blinded`, and drops a blinded payload whose bytes lack the
-prefix (`AdvertForm.hasTagPrefix`); a clear payload is an id whatever its bytes. `AdvertPayload(gattValue:)` makes a
-blinded GATT value a stranger's in both radios, as Android's reader does (`BleGattPayloadReader.kt:87-89`). Until forms
-resolve, the link manager still keys a tag as a peer, so each tag a neighbour airs is a separate sighting that nothing
-prunes but `forgetEverything` (`LinkManager.swift:319-331`), about 96 a day per blinding neighbour, and a blinded
-advert's zeroed digest cue reads as a GATT payload's (`LinkManager+WriteStall.swift`, `isServiceData`). Its PSM is read
-per advertised form, never cached per address (`LinkManager+Admission.swift:100`), which the reader must keep across a
-tag change.
+on, waits on the iOS reader. This port reads tags (ADR 2026-11.sv5t; knit-next.md, "Owed here"). `AdvertPayload` keeps
+bytes 1–16 as `advertised`, says `blinded`, and drops a blinded payload whose bytes lack the prefix
+(`AdvertForm.hasTagPrefix`); a clear payload is an id whatever its bytes. `AdvertPayload(gattValue:)` makes a blinded GATT
+value a stranger's in both radios, as Android's reader does (`BleGattPayloadReader.kt:87-89`). The link manager resolves
+each blinded sighting (`AdvertAliases`: a contact's key, then a proven link's claim, then a dialer's hint) and keeps it
+under the resolved id or, unresolved, under a handle printed `~zzzz…<n>` (`FormKeys`, at most 512, a handle a live dial key
+names never evicted). Presence, addresses, the dwell and the backoff follow that key (`SightingKey`), so a rotation never
+makes a new peer of a contact; a dial reads the PSM of the sighting it dials. Every dial to a blinded advert is a tag dial,
+booked on the handle and the address (`DialKey`), writing `a` = the tag; it requires a proof and takes the proven id. A
+blinded advert counts as service data (`isServiceData`). `sightings()` shows resolved and linked peers only.
 
 The bit first meant the opposite. `FLAG_NO_AWARE` (`9552995d`, `438ffc72`, both in the pin) was set for "won't run
 Aware", and a clear bit made a candidate. It never shipped in a release and lived on knit-next's `main` only from
@@ -304,7 +305,9 @@ radio.
   seeking dial (`LinkManager+Seeking.swift:50`) both dial it. Android refuses a dialer whose HELLO lacks
   `CAP_BLIND_ADVERT` before anything else, writes no HELLO and closes (`BleAdmissionPolicy.kt:115`), logs `bt refused
   client <id> (… blind=legacy)` and boosts its scan for 60 s, at most once per five minutes and once per half hour per
-  id. The iPhone retires the dial with a backoff, whose streak starts again at each new tag. In front, the Pixel dials the
+  id. The iPhone retires the dial with a backoff on the tag's handle and address, whose streak also grows on the address
+  across new tags while they resolve to nobody. Until `CAP_BLIND_ADVERT` joins `Capabilities.local` (phase 4 of ADR
+  2026-11.sv5t), every such dial is refused this way. In front, the Pixel dials the
   iPhone's clear advert itself (`AdvertOrder.kt:100`), so the pair links; a backgrounded iPhone with no link never
   links to one. `interop.py` turns a driven Pixel's switch off for its runs (`ClearAdverts`).
 - **With companion change A3, Android sees a foreground iPhone** (knit-next ADR 2026-09.kwq2, merged in the pin; behind `BLE_GATT_PEERS`,

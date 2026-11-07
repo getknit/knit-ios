@@ -40,7 +40,7 @@ import Testing
         #expect(rig.radio.records(on: id).map(\.tag) == [.hello], "our HELLO, and no PROOF")
         #expect(rig.radio.closed == [id])
         #expect(counts(rig) == [0, 1, 0])
-        #expect(rig.links.backoffs[low] != nil)
+        #expect(rig.links.backoffs[.peer(.node(low))] != nil)
         #expect(rig.said("link \(id) proof failed for \(low): unsigned"))
     }
 
@@ -54,7 +54,7 @@ import Testing
         #expect(rig.handle(.received(id, reply)).isEmpty)
         #expect(rig.radio.closed == [id])
         #expect(counts(rig) == [0, 1, 0])
-        #expect(rig.links.backoffs[low] != nil)
+        #expect(rig.links.backoffs[.peer(.node(low))] != nil)
         #expect(rig.said("link \(id) proof failed for \(low): nonce"))
     }
 

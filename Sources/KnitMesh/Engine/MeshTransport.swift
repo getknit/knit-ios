@@ -1,3 +1,4 @@
+public import KnitCrypto
 public import KnitWire
 
 /// A peer this node holds a live link to (`Peer` in knit-next's `MeshTransport.kt`).
@@ -116,6 +117,11 @@ public protocol MeshTransport: AnyObject {
     /// that keeps the bit, or lacks it, calls nothing. No default: a transport that forgets it would leave a claim the
     /// signed profile refutes standing.
     func peerProvesItself(_ peer: NodeId)
+
+    /// The direct contacts' presence keys, newest first, at most three each, the whole listing each time (ADR 2026-11.sv5t):
+    /// the keys a radio resolves a contact's blinded advert by. A contact missing from a listing is unlisted at once. No
+    /// default, as ``peerProvesItself(_:)`` has none: a transport that forgot it would never recognise a blinding contact.
+    func listPresenceKeys(_ listing: [NodeId: [PresenceKey]])
 }
 
 /// A file to stream on a link: its header's fields, its size, and a reader for its bytes, so a file waiting behind

@@ -110,7 +110,17 @@ cost an iPhone a refused or link-replacing dial at every rotation of every linke
 - **Unresolved forms are not shown.** Diagnostics, `links` and `status.sighted` list resolved and linked peers only.
   Counters report the rest.
 
-**What keeps it true** (to be filled in as each phase lands): `BlindVectorTests` and `BlindTagVectorTests` over
-`keyed-v1.json`'s `blind` section; `BlindTagTests`; `TypedKeysTests` (#43); the ports of `AdvertOrderTest`, `ExpectedTagTableTest`,
-`AdvertAliasesTest`, `KeyChurnLimiterTest` and BlindReaderTest's Sybil and held-dial cases; `BlindLinkTests`;
-`PresenceKeyPolicyTests`; the two-engine key test; and the device trial.
+**What keeps it true** (to be filled in as each phase lands):
+
+- the wire: `BlindVectorTests` and `BlindTagVectorTests` over `keyed-v1.json`'s `blind` section, `BlindWireTests`,
+  `BlindTagTests`, `TypedKeysTests` (#43), `LinkTagNextTests` (tag 9 read past, never written), and
+  `BlueZGattRetryTests.aCharacteristicThatHoldsABlindedPayloadIsAStranger`;
+- the pure link types, ported case for case from their Kotlin tests: `AdvertOrderTests` and `ResponderOrderTests`,
+  `ExpectedTagTableTests`, `AdvertAliasesTests`, `AdvertAliasesClaimTests`, `AdvertAliasesBoundTests`,
+  `KeyChurnLimiterTests`, `BlindSightingsTests`, `HeldStreaksTests` and `DialKeysTests`;
+- the wiring, on a scripted blinding Android (`BlindingPeer`): `BlindLinkTests` (the tag dial, `RefuseLegacy`, the
+  backoff's 10/20/40/80/160 s, the tag flood, `TAG_NEXT`'s newest-of-a-read, the hint rule, the safety net),
+  `BlindReaderTests` (BlindReaderTest's Sybil and held-dial cases, `HeldStreaks`, keys across the window's edges and
+  skewed clocks, and the key seam through `Mesh`), and `BlindLinkScoreTests` (a hint taken before registration's
+  promotion, a blinding link's score after an unannounced rotation, a crossing that books nothing);
+- `PresenceKeyPolicyTests`, the two-engine key test, and the device trial.

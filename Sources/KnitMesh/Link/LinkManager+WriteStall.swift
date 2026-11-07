@@ -64,8 +64,9 @@ extension LinkManager {
         return link.neighbor.capabilities.contains(.doorbell) && !link.heardServiceData
     }
 
-    /// Whether `advert` came as service data rather than a GATT payload: it carries a digest cue (ADR 2026-09.xzpt).
+    /// Whether `advert` came as service data rather than a GATT payload: it carries a digest cue (ADR 2026-09.xzpt), or it
+    /// is blinded, which no GATT payload can be and whose writer zeroes the cue (ADR 2026-11.sv5t).
     static func isServiceData(_ advert: AdvertPayload) -> Bool {
-        advert.digestCue != 0
+        advert.digestCue != 0 || advert.blinded
     }
 }

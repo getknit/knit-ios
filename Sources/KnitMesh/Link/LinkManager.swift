@@ -85,12 +85,31 @@ public final class LinkManager: MeshTransport {
     var channels: [ChannelID: Channel] = [:]
     /// The registered links, one per peer, in the order they came up.
     var liveLinks: [LiveLink] = []
-    var dialing: [NodeId: ChannelID] = [:]
+    /// Dials in flight, by the key each is booked under (``DialKey``).
+    var dialing: [DialKey: ChannelID] = [:]
     /// Peers refused both ways (``refuse(_:)``).
     var refused: Set<NodeId> = []
     var presence: PresenceTracker
-    var addresses: [NodeId: RadioAddress] = [:]
-    var backoffs: [NodeId: Backoff] = [:]
+    /// Where each sighting was last heard, by the key it is kept under, pruned with presence.
+    var addresses: [SightingKey: RadioAddress] = [:]
+    /// Backoffs by what they were booked under: a peer's own key, a dial key, an address or a handle streak.
+    var backoffs: [DialKey: Backoff] = [:]
+    /// Resolves blinded adverts (``AdvertAliases``), keyed by the links its claims and hints came on.
+    var aliases: AdvertAliases<ChannelID>
+    /// The handles of the tags heard (``FormKeys``).
+    var formKeys = FormKeys()
+    /// The tags and addresses whose tag dial proved another id than a key names (``ReplayMarks``).
+    var replayMarks = ReplayMarks()
+    /// Bounds a contact's key churn between ``listPresenceKeys(_:)`` and the resolver (``KeyChurnLimiter``).
+    var keyLimiter = KeyChurnLimiter()
+    /// The keys a held link's refused dials earned (``HeldStreaks``).
+    var heldStreaks = HeldStreaks<ChannelID>()
+    /// Each live proven link we dialed at a tag, by the dial key it was dialed under (``DialKeys/heldDial(_:proven:)``).
+    var heldDials: [ChannelID: DialKey] = [:]
+    /// The newest `TAG_NEXT` each link sent in the read being handled, taken once the read's records drain.
+    var tagNextHeld: [ChannelID: NodeId] = [:]
+    /// The reader's own counts, beside ``AdvertAliases/counters``.
+    var blindCounts = BlindCounts()
     var doorbells: [ChannelID: Doorbell] = [:]
     /// Each live link's incoming file, kept apart from ``channels`` so that reading a channel never copies a file's
     /// bytes.
@@ -130,16 +149,6 @@ public final class LinkManager: MeshTransport {
     var stallWatch = WriteStallWatch(configuration: WriteStallWatch.Configuration(lateMilliseconds: suspendedLatenessMilliseconds))
     /// The wakes the current spell of seeking has spent.
     var spell = SeekSpell()
-
-    /// The live channel to `peer`, if linked.
-    func liveChannel(to peer: NodeId) -> ChannelID? {
-        liveLinks.first { $0.neighbor.nodeId == peer }?.channel
-    }
-
-    /// Channels in the order the radio opened them.
-    static func inOrder(_ lhs: ChannelID, _ rhs: ChannelID) -> Bool {
-        lhs.rawValue < rhs.rawValue
-    }
 
     /// Frames dropped because they did not decode; the link stays up, as on Android.
     public internal(set) var undecodableFrames = 0
@@ -198,6 +207,7 @@ public final class LinkManager: MeshTransport {
         self.log = log
         self.partials = partials
         presence = PresenceTracker(configuration: configuration.presence)
+        aliases = AdvertAliases(now: { [clock] in clock.monotonicMilliseconds() }, wall: { [clock] in clock.wallMilliseconds() })
     }
 
     // MARK: MeshTransport
@@ -271,9 +281,10 @@ public final class LinkManager: MeshTransport {
         }
     }
 
-    /// Every sighted peer, for the UI's nearby count and diagnostics.
+    /// Every sighted peer, for the UI's nearby count and diagnostics: resolved and linked peers only, so no tag ever
+    /// becomes a peer row or a Diagnostics line (ADR 2026-11.sv5t). Counters report the rest (``aliasCounters``).
     public func sightings() -> [PresenceTracker.Snapshot] {
-        presence.snapshots(now: clock.monotonicMilliseconds())
+        presence.snapshots(now: clock.monotonicMilliseconds()).filter { $0.key.nodeId != nil }
     }
 
     /// When ``advance()`` next has work, on the monotonic clock: a dial, HELLO or PROOF timing out, the advert, a doorbell,
@@ -288,7 +299,8 @@ public final class LinkManager: MeshTransport {
         let backoffDue = backoffs.values.map(\.nextAt).filter { $0 > now }.min()
         let ringDue = doorbells.values.compactMap(\.due).min()
         let fileDue = finishedFiles.isEmpty ? feeds.values.compactMap(\.due).min() : now
-        let due = [advertDue, backoffDue, ringDue, dwellDue(now: now), fileDue, trailingReportDue, stallWatch.due].compactMap(\.self)
+        let due = [advertDue, backoffDue, ringDue, dwellDue(now: now), fileDue, trailingReportDue, stallWatch.due, blindDue(now: now)]
+            .compactMap(\.self)
         return (channels.values.compactMap(\.deadline) + due).min()
     }
 
@@ -317,12 +329,12 @@ public final class LinkManager: MeshTransport {
             advertiseNow()
             return []
         case .sighted(let sighting):
-            guard sighting.advert.advertised != localId else {
+            guard let key = sightingKey(of: sighting) else {
                 return []
             }
-            presence.record(PresenceTracker.Sighting(advert: sighting.advert, rssi: sighting.rssi), now: now)
-            addresses[sighting.advert.advertised] = sighting.address
-            for index in liveLinks.indices where liveLinks[index].neighbor.nodeId == sighting.advert.advertised {
+            presence.record(PresenceTracker.Sighting(advert: sighting.advert, rssi: sighting.rssi), as: key, now: now)
+            addresses[key] = sighting.address
+            for index in liveLinks.indices where SightingKey.node(liveLinks[index].neighbor.nodeId) == key {
                 liveLinks[index].sighted = true
                 liveLinks[index].heardServiceData = liveLinks[index].heardServiceData || Self.isServiceData(sighting.advert)
             }
@@ -377,6 +389,7 @@ public final class LinkManager: MeshTransport {
             advertiseNow()
         }
         ringDue(now: now)
+        advanceBlind(now: now)
         events += checkWriteStalls(now: now)
         events += reportTrailing(now: now)
         events += feedDueFiles(now: now)

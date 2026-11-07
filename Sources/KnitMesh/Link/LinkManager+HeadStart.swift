@@ -24,23 +24,28 @@ extension LinkManager {
         radio.servesDoorbell && !inBackground
     }
 
-    /// Whether `peer`, advertising `flags`, is one this node waits on for a head start before dialing it: its id sorts
-    /// above ours, as an ASCII string, and its advert says it reads GATT payloads, so the order has it dial us.
-    func takesHeadStart(_ peer: NodeId, flags: UInt8) -> Bool {
-        localId < peer && flags & AdvertPayload.dialsGattPeersFlag != 0
+    /// Whether a peer advertising `form` and `flags` is one this node waits on for a head start before dialing it: the
+    /// order has it dial us, and its advert says it reads GATT payloads (ADR 2026-10.6eyf, amended by ADR 2026-11.sv5t).
+    /// For a clear peer that is today's "its id sorts above ours"; a flagged blinded peer always takes one, since a clear
+    /// phone never dials a tag by the order.
+    func takesHeadStart(_ form: AdvertOrder.Form, flags: UInt8) -> Bool {
+        !AdvertOrder.iDial(mine.current, form) && flags & AdvertPayload.dialsGattPeersFlag != 0
     }
 
     /// Whether `snapshot` is a peer promotion considers only for its head start: one the order says waits, at a moment
     /// when this node gives head starts and is not seeking, where every peer is dialed whatever the order.
     func isHeadStartCandidate(_ snapshot: PresenceTracker.Snapshot) -> Bool {
-        givesHeadStart && !dialsWhateverTheOrder && takesHeadStart(snapshot.nodeId, flags: snapshot.advert.flags)
+        givesHeadStart && !dialsWhateverTheOrder && takesHeadStart(.of(snapshot.advert), flags: snapshot.advert.flags)
     }
 
-    /// Whether a head-start dial is open. Derived, not kept, as Android's `lonelyDialInFlight` is: at the front the
-    /// order never dials a flagged peer above us, so a dial to one is the head start's.
+    /// Whether a head-start dial is open: read from the kind each dial recorded when it began, never inferred from the
+    /// order (Android's `DialPlan.DialKind`), so a tag dial's end leaves no head start stuck open.
     var headStartDialInFlight: Bool {
-        dialing.keys.contains { peer in
-            presence.advert(of: peer).map { takesHeadStart(peer, flags: $0.flags) } ?? false
+        dialing.values.contains { id in
+            if case .dialer(let target) = channels[id]?.role {
+                return target.record.kind == .headStart
+            }
+            return false
         }
     }
 
@@ -57,22 +62,23 @@ extension LinkManager {
     /// open. `promote` can dial several peers in one tick, and a head-start dial is one at a time.
     func keepingOneHeadStart(
         _ candidates: [PresenceTracker.Snapshot],
-        backoff: Set<NodeId>,
+        backoff: Set<SightingKey>,
         configuration promotion: PromotionPolicy.Configuration
     ) -> [PresenceTracker.Snapshot] {
         let ready = candidates.filter { candidate in
             isHeadStartCandidate(candidate) && PromotionPolicy.isPromotable(candidate, backoff: backoff, configuration: promotion)
         }
         // `max` keeps the first of equals, as the policy's stable sort does.
-        let strongest = ready.max { lhs, rhs in lhs.smoothedRssi < rhs.smoothedRssi }?.nodeId
-        return candidates.filter { !isHeadStartCandidate($0) || $0.nodeId == strongest }
+        let strongest = ready.max { lhs, rhs in lhs.smoothedRssi < rhs.smoothedRssi }?.key
+        return candidates.filter { !isHeadStartCandidate($0) || $0.key == strongest }
     }
 
     /// Logs a head-start dial, before the dial's own line, with the peer's whole dwell and its smoothed RSSI.
-    /// `candidate` is the peer as promotion saw it (``withHeadStart(_:)``).
+    /// `candidate` is the peer as promotion saw it (``withHeadStart(_:)``). A clear peer's line names its id, byte for byte
+    /// the harness's `HEAD_START_LINE`; a tag's names its handle.
     func logHeadStartDial(_ candidate: PresenceTracker.Snapshot) {
         let dwell = candidate.dwellMilliseconds + configuration.headStartMilliseconds
         let rssi = Int(candidate.smoothedRssi.rounded())
-        log.log(.info, "link head start over for \(candidate.nodeId) (dwell=\(dwell)ms rssi=\(rssi)dBm)")
+        log.log(.info, "link head start over for \(candidate.key) (dwell=\(dwell)ms rssi=\(rssi)dBm)")
     }
 }

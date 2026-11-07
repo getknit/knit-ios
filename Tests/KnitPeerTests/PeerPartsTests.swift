@@ -156,4 +156,16 @@ import Testing
         #expect(summary.contains(#""capabilities":"ff""#))
         #expect(!summary.contains(own.string))
     }
+
+    /// A blinding Android's tag is reported under a handle, never as the tag, and apart from a clear id of the same bytes
+    /// (ADR 2026-11.sv5t).
+    @Test func aScanReportsATagUnderAHandle() throws {
+        var report = ScanReport(own: fixtureNodeId(1))
+        let tag = try #require(NodeId(bytes: [0xCE, 0x73, 0x94] + [UInt8](repeating: 0x2C, count: 13)))
+        let blinded = AdvertPayload(capabilities: 0xFF, nodeId: tag, digestCue: 0, psm: 0x80, flags: AdvertPayload.blindedFlag)
+        let taken = report.take(RadioSighting(address: RadioAddress("/dev_t"), advert: blinded, rssi: -70))
+        let line = try #require(taken)
+        #expect(line.contains(#""peer":"~zzzz…0""#))
+        #expect(!line.contains(tag.string) && !report.summary.contains(tag.string))
+    }
 }

@@ -182,6 +182,10 @@ final class CapturingTransport: MeshTransport {
         // No link here to close.
     }
 
+    func listPresenceKeys(_: [NodeId: [PresenceKey]]) {
+        // No radio here to resolve a tag.
+    }
+
     func fileTaken(from _: NodeId, hash _: BlobHash) {
         // Nothing streams in here.
     }

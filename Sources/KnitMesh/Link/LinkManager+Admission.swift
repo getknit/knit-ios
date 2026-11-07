@@ -4,109 +4,20 @@ public import KnitWire
 extension LinkManager {
     // MARK: Dialing
 
-    /// Whether we dial `peer` rather than wait for it to dial us.
-    func weDial(_ peer: NodeId, flags: UInt8) -> Bool {
-        guard localId < peer else {
-            return true
-        }
-        let peerFindsUs = radio.advertisesServiceData || flags & AdvertPayload.dialsGattPeersFlag != 0
-        return !peerFindsUs
+    /// This node's advertised forms: clear for good, since this port never blinds (ADR 2026-11.sv5t).
+    var mine: AdvertOrder.Mine { .clear(localId) }
+
+    /// Whether we dial a peer advertising `form` with `flags` rather than wait for it to dial us: the order on advertised
+    /// forms (``AdvertOrder/iDial(_:_:)``), or ADR 2026-09.6es2's exception, a radio without service data dialing a peer
+    /// that reads no GATT payload whatever the order. For a clear peer this is today's `peer < localId || !peerFindsUs`;
+    /// a clear phone never dials a blinded advert by the order, so a blinded one is dialed only by the exception.
+    func weDial(_ form: AdvertOrder.Form, flags: UInt8) -> Bool {
+        AdvertOrder.iDial(mine.current, form) || !peerFindsUs(flags: flags)
     }
 
-    /// Runs the promotion policy over what is sighted and linked, and acts on it (`driveConnections`).
-    func promote(now: Int64) -> [Event] {
-        guard running else {
-            return []
-        }
-        let snapshots = presence.snapshots(now: now)
-        let present = Set(snapshots.map(\.nodeId))
-        // A peer that left, and whose window has passed, starts fresh when it returns.
-        let occupied = busy
-        backoffs = backoffs.filter { now < $0.value.nextAt || present.contains($0.key) || occupied.contains($0.key) }
-        let links = liveLinks.map { link in
-            let node = link.neighbor.nodeId
-            let rssi = presence.smoothedRssi(of: node) ?? (link.sighted ? configuration.absentLinkRssi : configuration.unsightedLinkRssi)
-            return PromotionPolicy.LinkSnapshot(nodeId: node, smoothedRssi: rssi, ageMilliseconds: now - link.since)
-        }
-        let backoff = backingOff(now: now)
-        let promotion = promotionConfiguration
-        let pool = keepingOneHeadStart(candidates(snapshots, busy: occupied), backoff: backoff, configuration: promotion)
-        // At most one, by keepingOneHeadStart.
-        let headStart = pool.first(where: isHeadStartCandidate)
-        let decision = PromotionPolicy.decide(
-            candidates: pool,
-            links: links,
-            backoff: backoff,
-            configuration: promotion
-        )
-        var events: [Event] = []
-        for node in decision.evict {
-            if let id = liveChannel(to: node) {
-                log.log(.info, "link evicting \(node)")
-                events += retire(id, backingOff: false, now: now)
-            }
-        }
-        for node in decision.promote {
-            dial(node, headStart: headStart?.nodeId == node ? headStart : nil, now: now)
-        }
-        return events
-    }
-
-    /// When a sighted peer's dwell ends between its adverts, so that promotion runs then instead of at its next advert
-    /// (``PromotionPolicy/untilDwellEnds(candidates:backoff:configuration:)``). A head-start peer's dwell counts its
-    /// head start, so this is also when that ends. A peer backing off waits for its backoff's own deadline, and the
-    /// promotion that runs then asks again.
-    func dwellDue(now: Int64) -> Int64? {
-        let snapshots = presence.present(now: now)
-        let wait = PromotionPolicy.untilDwellEnds(
-            candidates: candidates(snapshots, busy: busy),
-            backoff: backingOff(now: now),
-            configuration: promotionConfiguration
-        )
-        return wait.map { now + $0 }
-    }
-
-    /// Peers linked, being dialed, or proving themselves on a link they dialed, so that seeking does not dial a peer whose
-    /// proof is on its way.
-    var busy: Set<NodeId> {
-        Set(liveLinks.map(\.neighbor.nodeId)).union(dialing.keys).union(provingDialers)
-    }
-
-    /// The sighted peers promotion may pick: ours to dial, any while seeking (``dialsWhateverTheOrder``), or a flagged
-    /// peer above us once its head start ends (``isHeadStartCandidate(_:)``), not `busy`, and not refused. A head-start
-    /// peer's dwell counts its head start less, and none is a candidate while a head-start dial is open.
-    func candidates(_ snapshots: [PresenceTracker.Snapshot], busy: Set<NodeId>) -> [PresenceTracker.Snapshot] {
-        let anyOrder = dialsWhateverTheOrder
-        let headStartOpen = headStartDialInFlight
-        return snapshots.compactMap { snapshot in
-            guard !busy.contains(snapshot.nodeId), !refused.contains(snapshot.nodeId) else {
-                return nil
-            }
-            if anyOrder || weDial(snapshot.nodeId, flags: snapshot.advert.flags) || impostor.dials == snapshot.nodeId {
-                return snapshot
-            }
-            return isHeadStartCandidate(snapshot) && !headStartOpen ? withHeadStart(snapshot) : nil
-        }
-    }
-
-    /// Peers whose backoff has not run out.
-    func backingOff(now: Int64) -> Set<NodeId> {
-        Set(backoffs.filter { now < $0.value.nextAt }.keys)
-    }
-
-    /// Dials `peer`, logging the head-start line first when `headStart` is the peer as promotion saw it.
-    func dial(_ peer: NodeId, headStart: PresenceTracker.Snapshot?, now: Int64) {
-        // A PSM of 0 means the peer's listener is not open; Android never advertises one.
-        guard let address = addresses[peer], let advert = presence.advert(of: peer), advert.psm != 0 else {
-            return
-        }
-        if let headStart {
-            logHeadStartDial(headStart)
-        }
-        let id = radio.dial(address, psm: advert.psm)
-        channels[id] = Channel(role: .dialer(peer), stage: .connecting, deadline: now + configuration.connectTimeoutMilliseconds)
-        dialing[peer] = id
-        log.log(.info, "link dialing \(peer) on \(id)")
+    /// Whether a peer advertising `flags` can find us: we advertise service data, or it reads GATT payloads.
+    func peerFindsUs(flags: UInt8) -> Bool {
+        radio.advertisesServiceData || flags & AdvertPayload.dialsGattPeersFlag != 0
     }
 
     /// A dial opened: send our HELLO first, then wait for the reply (`LinkHandshake.writeHello`).
@@ -129,7 +40,7 @@ extension LinkManager {
         refused.insert(peer)
         let now = clock.monotonicMilliseconds()
         let theirs = channels.filter { entry in
-            entry.value.stage == .live(peer) || entry.value.role == .dialer(peer) || Self.awaitsProof(of: peer, entry.value)
+            entry.value.stage == .live(peer) || Self.dials(peer, entry.value) || Self.awaitsProof(of: peer, entry.value)
         }
         return theirs.keys.sorted(by: Self.inOrder).flatMap { retire($0, backingOff: false, now: now) } + reconsiderSeeking(now: now)
     }
@@ -139,6 +50,14 @@ extension LinkManager {
         refused.remove(peer)
         let now = clock.monotonicMilliseconds()
         return promote(now: now) + reconsiderSeeking(now: now)
+    }
+
+    /// Whether `channel` is a clear dial to `peer`.
+    static func dials(_ peer: NodeId, _ channel: Channel) -> Bool {
+        if case .dialer(let target) = channel.role {
+            return target.expected == peer
+        }
+        return false
     }
 
     // MARK: Records
@@ -185,20 +104,24 @@ extension LinkManager {
                 events += dispatch(record, from: peer, on: id, now: now)
             }
         }
+        takeTagNext(on: id)
         return events
     }
 
     func handleHello(_ record: LinkRecord, on id: ChannelID, role: Role, now: Int64) -> [Event] {
         let hello = record.tag == .hello ? Hello(payload: record.payload) : nil
+        if case .dialer(let target) = role, target.expected == nil {
+            return answeredTag(id, target, hello: hello, payload: record.payload, now: now)
+        }
         // Whatever becomes of the link, the node at that address said who it is, which may retire a payload the radio
         // read for another (the payload lifetime's rule 2).
         if let named = hello.flatMap({ NodeId($0.nodeId) }) {
             radio.heardHello(from: named, on: id)
         }
         switch role {
-        case .dialer(let expected):
+        case .dialer(let target):
             // The link's identity is what the peer says over the socket, and it must be the peer we dialed.
-            guard let hello, NodeId(hello.nodeId) == expected else {
+            guard let hello, let expected = target.expected, NodeId(hello.nodeId) == expected else {
                 return retire(id, backingOff: true, now: now) + promote(now: now)
             }
             return answered(id, hello: hello, payload: record.payload, peer: expected, now: now)
@@ -230,16 +153,18 @@ extension LinkManager {
             break
         }
         let proves = verdict == .proves
+        // Sighted by any attribution: a clear advert, or a tag a key, claim or hint resolved to the dialer.
         let sighting = presence.isPresent(dialer, now: now) ? presence.advert(of: dialer) : nil
         let sighted = sighting != nil
         let held = liveLinks.first { $0.neighbor.nodeId == dialer }
-        if let refusal = admissionRefusal(dialer, proves: proves, sighting: sighting, held: held, now: now) {
+        if let refusal = admissionRefusal(hello, proves: proves, sighting: sighting, held: held, now: now) {
             log.log(.info, "link refused \(dialer): \(refusal)")
             return retire(id, backingOff: false, now: now)
         }
         let claim = Claim(peer: dialer, hello: hello, sighted: sighted)
         guard !proves else {
-            let pending = PendingProof(claim: claim, dialerHello: payload, responderHello: ourHello().payload, displacing: held?.channel)
+            let pending = PendingProof(
+                claim: claim, dialerHello: payload, responderHello: ourHello(addressing: nil).payload, displacing: held?.channel)
             return answerWithProof(id, pending, now: now)
         }
         var events: [Event] = []
@@ -256,11 +181,20 @@ extension LinkManager {
     /// is not turned away only because an unproven link claims its id (R3): the cross-dial, "already linked" and "too
     /// young" refusals pass it over, and the proof, once it verifies, displaces that link. Against a proven held link today's
     /// rules stand (R2); an unproven dialer never gets this far against one, since R1 refused it.
-    func admissionRefusal(_ dialer: NodeId, proves: Bool, sighting: AdvertPayload?, held: LiveLink?, now: Int64) -> String? {
+    ///
+    /// "We dial it" is judged on advertised forms (`BleAdmissionPolicy.outOfOrder`): the dialer's `t` and `a` count only
+    /// when its HELLO offers a proof (``AdvertOrder/honours(offersProof:proven:late:)``; this port registers a proving
+    /// dialer only after its proof, so the late pass reads the same), so a blinding Android whose real id sorts below ours
+    /// is admitted even when a key sights it. The iPhone writes no `t` and has no held-link or legacy row: both are a
+    /// blinding phone's.
+    func admissionRefusal(_ hello: Hello, proves: Bool, sighting: AdvertPayload?, held: LiveLink?, now: Int64) -> String? {
+        let dialer = NodeId(hello.nodeId) ?? localId
         if proves, let held, !held.proven {
             return nil
         }
-        if let sighting, weDial(dialer, flags: sighting.flags) {
+        let honoured = AdvertOrder.honours(offersProof: proves, proven: false, late: false)
+        let outOfOrder = AdvertOrder.outOfOrder(mine, dialer: dialer, told: hello.told, addressed: hello.addressed, honoured: honoured)
+        if let sighting, outOfOrder || !peerFindsUs(flags: sighting.flags) {
             return "we dial it"
         }
         guard let held else {
@@ -290,15 +224,30 @@ extension LinkManager {
         var link = LiveLink(channel: id, neighbor: neighbor, since: now, sighted: claim.sighted)
         link.heardServiceData = presence.isPresent(peer, now: now) && presence.advert(of: peer).map(Self.isServiceData) == true
         link.proven = proven
+        link.blinds = claim.hello.told.flatMap(NodeId.init(bytes:)).map { $0 != peer } ?? false
         liveLinks.append(link)
         stallWatch.watch(id, written: radio.outboxLevel(on: id).writtenBytes, now: now)
-        dialing[peer] = nil
-        backoffs[peer] = nil
+        if case .dialer(let target) = channels[id]?.role {
+            if dialing[target.key] == id {
+                dialing[target.key] = nil
+            }
+            // A proven dial resets every streak its failures were booked under, as Android's accepted dial does.
+            for key in target.failureKeys {
+                backoffs[key] = nil
+            }
+        }
+        backoffs[.peer(.node(peer))] = nil
         crossings.forget(link: id)
         if proven {
             claims.proved(peer)
             // Here, not where the PROOF verified, so it names only a link that registers, right before its `link up`.
             log.log(.info, "link \(peer) proved itself on \(id)")
+        }
+        if proven, channels[id]?.role == .responder {
+            // A proven dialer's `t` is a hint for this link (`onAnswered`), taken once the link is the one registered under
+            // its id (``BlindSightings/current(registered:link:)``) and before this registration's own promotion, which
+            // would otherwise find the dialer's own tag held off by nothing and dial the phone that just linked to us.
+            aliases.onAnswered(id, told: claim.hello.told.flatMap(NodeId.init(bytes:)), provenId: peer)
         }
         radio.linkUp(peer, on: id)
         log.log(.info, "link up \(peer) on \(id)")
@@ -332,10 +281,13 @@ extension LinkManager {
             return fileChunk(record.payload, from: peer, on: id, now: now)
         case .fileEnd:
             return fileEnd(from: peer, on: id)
-        case .keepalive, .hello, .proof, .tagNext:
-            // A stray HELLO or PROOF after the handshake means nothing, and a keepalive's arrival is all it says. A TAG_NEXT
-            // is read past for now (ADR 2026-11.sv5t): the claim it makes is learned once forms resolve. Android sends it
-            // only to a HELLO carrying `CAP_BLIND_ADVERT`, which ours lacks.
+        case .tagNext:
+            // Held until the read's records drain, so only the newest of a backlog reaches the resolver (``takeTagNext(on:)``).
+            // A record of another length dropped the link in the reader.
+            tagNextHeld[id] = NodeId(bytes: record.payload)
+            return []
+        case .keepalive, .hello, .proof:
+            // A stray HELLO or PROOF after the handshake means nothing, and a keepalive's arrival is all it says.
             return []
         }
     }

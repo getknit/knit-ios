@@ -229,6 +229,8 @@ struct LinkRig {
         guard records.count == 1, let record = records.first, record.tag == .hello, let nonce = Hello(payload: record.payload).nonce else {
             return false
         }
-        return record.payload == Array("\(local)|1|\(servesDoorbell ? "4315f" : "4215f")|n\(Hex.encode(nonce))".utf8)
+        // A dial's HELLO names the form it dialed (`a`, ADR 2026-11.sv5t); an answer names none.
+        let addressed = Hello(payload: record.payload).addressed.map { "|a\(Hex.encode($0))" } ?? ""
+        return record.payload == Array("\(local)|1|\(servesDoorbell ? "4315f" : "4215f")|n\(Hex.encode(nonce))\(addressed)".utf8)
     }
 }

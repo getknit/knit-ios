@@ -140,6 +140,20 @@ internal enum ControlLines {
         ]
     }
 
+    /// What the blinded-advert reader did (ADR 2026-11.sv5t), counts only: never a tag, a key or a handle.
+    static func describe(_ aliases: LinkManager.AliasCounters) -> JSONValue {
+        [
+            "tagsHeard": .int(Int64(aliases.tagsHeard)), "resolvedByKey": .int(Int64(aliases.resolvedByKey)),
+            "resolvedByClaim": .int(Int64(aliases.resolvedByClaim)), "resolvedByHint": .int(Int64(aliases.resolvedByHint)),
+            "unresolvedForms": .int(Int64(aliases.unresolvedForms)), "formsEvicted": .int(Int64(aliases.formsEvicted)),
+            "tagDials": .int(Int64(aliases.tagDials)), "tagDialsProven": .int(Int64(aliases.tagDialsProven)),
+            "claimsRecorded": .int(Int64(aliases.claimsRecorded)), "claimsDropped": .int(Int64(aliases.claimsDropped)),
+            "claimsVoided": .int(Int64(aliases.claimsVoided)), "keyProofMismatches": .int(Int64(aliases.keyProofMismatches)),
+            "tagNextTaken": .int(Int64(aliases.tagNextTaken)), "tagNextRefused": .int(Int64(aliases.tagNextRefused)),
+            "contacts": .int(Int64(aliases.contacts)), "expectedTags": .int(Int64(aliases.expectedTags)),
+        ]
+    }
+
     /// What the links did with FILE records: whole files in, files dropped as they streamed, files out, and of those the
     /// ones that streamed only a resuming asker's tail (knit-next ADR 2026-10.wtyc), and the files in whose stream was
     /// spliced onto a prefix we kept (knit-ios #2).

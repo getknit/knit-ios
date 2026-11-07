@@ -33,35 +33,60 @@ extension LinkManager {
             // A copy cut off holds nobody parked behind it.
             noteFeedsChanged()
         }
+        // Every channel's end, whatever closed it: the resolver's entries for the link lapse from here (`onLinkEnded`).
+        aliases.onLinkEnded(id)
+        heldDials[id] = nil
+        tagNextHeld[id] = nil
         var events: [Event] = []
-        var peer: NodeId?
+        var booked: [DialKey] = []
         switch channel.stage {
         case .live(let linked):
-            peer = linked
-            if let link = liveLinks.first(where: { $0.channel == id }), now - link.since >= configuration.seekSpellResetMilliseconds {
-                // A link that held gives the next spell of seeking every wake; one that flapped leaves the count as it was.
-                spell = SeekSpell()
-            }
-            liveLinks.removeAll { $0.channel == id }
+            booked = [.peer(.node(linked))]
+            endLink(id, now: now)
             events.append(.down(linked))
             log.log(.info, "link down \(linked) on \(id)")
         case .connecting, .awaitingHello, .awaitingProof:
             // Nothing was registered, so nothing goes down: a dial that fails its proof is a failed dial.
-            if case .dialer(let dialed) = channel.role {
-                peer = dialed
-                if dialing[dialed] == id {
-                    dialing[dialed] = nil
+            if case .dialer(let target) = channel.role {
+                if dialing[target.key] == id {
+                    dialing[target.key] = nil
+                }
+                // A dial its own peer's crossing link made fail is no failure to back off from; one that began with the
+                // peer already held is an ordinary refusal and backs off (`DialKeys.linkedNow`, hj4a's amendment).
+                let linked = Set(liveLinks.map { SightingKey.node($0.neighbor.nodeId) })
+                booked = DialKeys.linkedNow(target.record, dialKey: target.key, linked: linked) ? [] : target.failureKeys
+                if backingOff {
+                    heldStreaks.dialFailed(target.record, dialKey: target.key) { key in key.nodeId.flatMap(liveChannel(to:)) }
                 }
             }
         }
-        if backingOff, let peer {
-            bumpBackoff(peer, now: now)
+        if backingOff {
+            for key in booked {
+                bumpBackoff(key, now: now)
+            }
         }
         return events
     }
 
-    /// A failed dial, or a link that died, lengthens the peer's wait (`bumpBackoffLocked`).
-    func bumpBackoff(_ peer: NodeId, now: Int64) {
+    /// A live link on `id` ended: the next spell of seeking, and the backoffs its refused dials earned (hj4a's amendment).
+    func endLink(_ id: ChannelID, now: Int64) {
+        if let link = liveLinks.first(where: { $0.channel == id }) {
+            if now - link.since >= configuration.seekSpellResetMilliseconds {
+                // A link that held gives the next spell of seeking every wake; one that flapped leaves the count as it was.
+                spell = SeekSpell()
+            }
+            // The dials refused while it was held earned no wait for the relink after it.
+            for key in heldStreaks.ended(id, heldMilliseconds: now - link.since) {
+                backoffs[key] = nil
+            }
+        }
+        liveLinks.removeAll { $0.channel == id }
+    }
+
+    /// A failed dial, or a link that died, lengthens the wait under `peer` (`bumpBackoffLocked`). A tag dial's failure is
+    /// booked on its dial key, and while unresolved on its address and handle (``DialTarget/failureKeys``), never on the id
+    /// its reply named.
+    func bumpBackoff(_ peer: DialKey, now: Int64) {
         let streak = (backoffs[peer]?.streak ?? 0) + 1
         let delay = ConnectBackoff.delay(afterStreak: streak, random: unitDraw(), configuration: configuration.backoff)
         backoffs[peer] = Backoff(streak: streak, nextAt: now + delay)
@@ -85,6 +110,10 @@ extension LinkManager {
         presence = PresenceTracker(configuration: configuration.presence)
         addresses.removeAll()
         backoffs.removeAll()
+        formKeys.clear()
+        heldDials.removeAll()
+        heldStreaks.clear()
+        replayMarks.clear()
         psm = nil
         advertised = nil
         advertDue = nil
@@ -109,9 +138,14 @@ extension LinkManager {
         radio.advertise(payload)
     }
 
-    /// Writes our HELLO (``ourHello()``), and keeps its payload on the channel for the link's proof.
+    /// Writes our HELLO (``ourHello(addressing:)``), and keeps its payload on the channel for the link's proof. A dialer's
+    /// names the form it dialed (`a`), as every Android build writes it (`BluetoothMeshTransport.kt:3819-3837`).
     func writeHello(on id: ChannelID) {
-        let payload = ourHello().payload
+        var dialed: AdvertOrder.Form?
+        if case .dialer(let target) = channels[id]?.role {
+            dialed = target.form
+        }
+        let payload = ourHello(addressing: dialed).payload
         channels[id]?.wroteHello = payload
         if let record = LinkRecord(.hello, payload: payload).encoded {
             write(record, on: id)
@@ -124,8 +158,15 @@ extension LinkManager {
     /// 2026-09.dqvb). Neither goes anywhere else: not in the advert, and not in the signed profile. With
     /// ``Capabilities/linkProof``, which ``Capabilities/local`` carries, comes a nonce fresh for this connection from the
     /// system's secure source, never the injected generator a test seeds (the `link-hello-proof` contract, §2).
-    func ourHello() -> Hello {
+    ///
+    /// A dial's HELLO carries `a`, the form `addressing` names, after the nonce; never `t`, since this port airs no tag.
+    /// ``Configuration/claimsBlindAdvert``, a test's seam until phase 4 puts the bit in ``Capabilities/local``, adds
+    /// ``Capabilities/blindAdvert`` here alone.
+    func ourHello(addressing: AdvertOrder.Form?) -> Hello {
         var capabilities = Capabilities.local.union(.blobHave)
+        if configuration.claimsBlindAdvert {
+            capabilities.insert(.blindAdvert)
+        }
         if radio.servesDoorbell {
             capabilities.insert(.doorbell)
         }
@@ -133,7 +174,8 @@ extension LinkManager {
             capabilities.remove(.linkProof)
         }
         let nonce = capabilities.contains(.linkProof) ? LinkProof.freshNonce() : nil
-        return Hello(nodeId: (impostor.claimedId ?? localId).string, capabilities: capabilities, nonce: nonce)
+        let addressed = nonce == nil ? nil : addressing?.advertised.bytes
+        return Hello(nodeId: (impostor.claimedId ?? localId).string, capabilities: capabilities, nonce: nonce, addressed: addressed)
     }
 
     /// Writes a record in slices of at most ``Configuration/maxWriteBytes``.

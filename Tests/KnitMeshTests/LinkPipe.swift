@@ -185,8 +185,15 @@ final class LinkPipe {
         let dialed = ChannelID(channel)
         sides = [Side(node: dialer, channel: dialed), Side(node: answerer, channel: ChannelID(channel + 1))]
         let now = clock.monotonicMilliseconds()
-        dialer.links.channels[dialed] = LinkManager.Channel(role: .dialer(answerer.nodeId), stage: .connecting, deadline: now)
-        dialer.links.dialing[answerer.nodeId] = dialed
+        let peer = SightingKey.node(answerer.nodeId)
+        let target = LinkManager.DialTarget(
+            key: .peer(peer),
+            form: .clear(answerer.nodeId),
+            address: RadioAddress("pipe"),
+            record: DialRecord(kind: .ordinary, peerKey: peer, linkedAtStart: false)
+        )
+        dialer.links.channels[dialed] = LinkManager.Channel(role: .dialer(target), stage: .connecting, deadline: now)
+        dialer.links.dialing[target.key] = dialed
         dialer.apply(dialer.links.handle(.connected(dialed)))
         answerer.apply(answerer.links.handle(.accepted(ChannelID(channel + 1))))
     }

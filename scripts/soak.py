@@ -66,6 +66,9 @@ CURRENT = ROOT / ".build" / "soak" / "current"
 # Node ids are base32, and compare as ASCII: a `zz` prefix sorts above all but one id in 1024, so a phone that
 # arrives mid-run is almost surely below the peer too, and the peer dials it.
 TOP = "zz" + "a" * 24
+# FLAG_BLINDED, bit 3 of the advert's flags byte: bytes 1–16 are a rotating tag, not a node id (knit-next ADR
+# 2026-11.xp6d), which the scan reports under a `~zzzz…<n>` handle. A tag names no phone to DM or sort against.
+BLINDED = 0x08
 ANSWER_SECONDS = 20
 RESTART_SECONDS = 10
 # Android's overall custody cap; the room and each sender get 200 of it (.agents/context/custody.md).
@@ -385,11 +388,14 @@ class Soak:
         shutil.copy2(PEER, binary)
         nodes = scan(binary, self.arguments.scan_seconds)
         node_id = keygen(binary)
-        self.phones = {node["peer"] for node in nodes}
-        above = sorted(node["peer"] for node in nodes if node["peer"] > node_id)
+        # A blinding phone's advert carries a tag, never its id, so it is no phone to DM and sorts against nothing.
+        phones = [node for node in nodes if not node.get("flags", 0) & BLINDED]
+        self.phones = {node["peer"] for node in phones}
+        above = sorted(node["peer"] for node in phones if node["peer"] > node_id)
         record = {"started": wall_ms(), "nodeId": node_id, "commit": git_head(), "settings": vars(self.arguments), "inRange": nodes}
         (self.out / "run.json").write_text(json.dumps(record, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
-        print(json.dumps({"soak": str(self.out), "nodeId": node_id, "inRange": sorted(self.phones), "above": above}), flush=True)
+        summary = {"soak": str(self.out), "nodeId": node_id, "inRange": sorted(self.phones), "above": above, "blinded": len(nodes) - len(phones)}
+        print(json.dumps(summary), flush=True)
         self.start_peer()
         self.started = time.monotonic()
         end = self.started + self.arguments.hours * 3600

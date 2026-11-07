@@ -3,8 +3,8 @@ import KnitWire
 /// A channel's role and stage, and the registered link it becomes: the handshake's state, apart from the manager's body.
 extension LinkManager {
     enum Role: Equatable {
-        /// We dialed, expecting this peer to answer.
-        case dialer(NodeId)
+        /// We dialed this target.
+        case dialer(DialTarget)
         /// The peer dialed us.
         case responder
     }
@@ -20,6 +20,43 @@ extension LinkManager {
         case awaitingProof(PendingProof)
         /// Registered to this peer: frames flow.
         case live(NodeId)
+    }
+
+    /// What a dial went to (`Role.dialer(NodeId)` before forms resolved, ADR 2026-11.sv5t): the form it dialed, the key it
+    /// is booked under, where, and why. A clear dial expects the advert's id back; a tag dial expects no id, requires a
+    /// proof, and takes the proven one (`LinkHandshake.dialTag`, `LinkHandshake.kt:134-154`).
+    struct DialTarget: Equatable {
+        /// The key the dial, its in-flight slot and its backoff are booked under.
+        let key: DialKey
+        /// The form dialed, which our HELLO's `a` names.
+        let form: AdvertOrder.Form
+        /// Where it was dialed.
+        let address: RadioAddress
+        /// Why, and whom the sighting was attributed to then.
+        let record: DialRecord
+
+        /// The id a clear dial expects back; `nil` for a tag dial, which expects none.
+        var expected: NodeId? { form.blinded ? nil : form.advertised }
+
+        /// A tag dial's handle.
+        var handle: FormHandle? {
+            if case .tag(let handle, _) = key {
+                return handle
+            }
+            return nil
+        }
+
+        /// Whether the sighting dialed resolved to nobody, so a failure also backs off its address and its handle.
+        var unresolved: Bool { record.peerKey.nodeId == nil }
+
+        /// Every key a failure of this dial is booked under: the dial key, and while unresolved its address and handle
+        /// streaks; never the id a reply named (`LinkHandshake.dialTag`'s KDoc, `:128-131`).
+        var failureKeys: [DialKey] {
+            [key] + [DialKeys.addressKey(key, unresolved: unresolved), DialKeys.handleKey(key, unresolved: unresolved)].compactMap(\.self)
+        }
+
+        /// What the logs name: the id for a clear dial, the handle for a tag dial, never a tag or an address.
+        var shown: String { handle?.description ?? form.advertised.string }
     }
 
     /// Who a HELLO said the peer is: what registering the link needs.
@@ -47,6 +84,16 @@ extension LinkManager {
         var peer: NodeId { claim.peer }
     }
 
+    /// The live channel to `peer`, if linked.
+    func liveChannel(to peer: NodeId) -> ChannelID? {
+        liveLinks.first { $0.neighbor.nodeId == peer }?.channel
+    }
+
+    /// Channels in the order the radio opened them.
+    static func inOrder(_ lhs: ChannelID, _ rhs: ChannelID) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
     /// A registered link.
     struct LiveLink {
         let channel: ChannelID
@@ -61,6 +108,10 @@ extension LinkManager {
         /// Whether the peer proved the id its HELLO claimed on this link (contract §5). Only a proven link replaces a
         /// proven one (R2), and a proven link displaces any unproven one claiming its id (R3).
         var proven = false
+        /// Whether the peer's HELLO told a tag (`t`): it blinds, so its sightings come under tags that rotate, and a rotation
+        /// nobody announced leaves the link with no attributed sighting. Such a link scores as never sighted rather than
+        /// lost (``LinkManager/linkRssi(_:)``).
+        var blinds = false
     }
 
     struct Channel {

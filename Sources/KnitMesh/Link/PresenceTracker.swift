@@ -4,8 +4,9 @@ public import KnitWire
 /// the peer has stayed in range, and how long ago it was last seen. The promotion policy reads it to pick whom
 /// to link, and the UI reads it for the peer count.
 ///
-/// Identity is the advertised node id, never a radio address, so a rotated Bluetooth address lands as a new
-/// sighting of the same peer. Every method takes the time, in milliseconds on the monotonic clock.
+/// Identity is a ``SightingKey``, never a radio address, so a rotated Bluetooth address lands as a new sighting of the
+/// same peer: a clear advert's node id, a blinded one's resolved id, or an unresolved tag's handle (ADR 2026-11.sv5t).
+/// Every method takes the time, in milliseconds on the monotonic clock.
 public struct PresenceTracker: Sendable {
     /// One scan hit: the advert and its signal strength.
     public struct Sighting: Sendable, Equatable {
@@ -25,6 +26,8 @@ public struct PresenceTracker: Sendable {
     public struct Snapshot: Sendable, Equatable {
         /// The latest advert.
         public var advert: AdvertPayload
+        /// The key the sighting is kept under: the node id, or an unresolved tag's handle. Every per-peer rule reads this.
+        public var key: SightingKey
         /// The smoothed RSSI, in dBm.
         public var smoothedRssi: Double
         /// How long the peer has been in range without a gap.
@@ -32,13 +35,20 @@ public struct PresenceTracker: Sendable {
         /// How long ago it was last seen.
         public var lastSeenAgoMilliseconds: Int64
 
-        /// The peer's advertised form (``AdvertPayload/advertised``), keyed as its node id until forms resolve
-        /// (ADR 2026-11.sv5t): a blinding peer's tag is a peer of its own here, as it was before the flag was read.
-        public var nodeId: NodeId { advert.advertised }
+        /// The peer's node id. ``LinkManager/sightings()`` publishes resolved peers only, so outside the link manager this
+        /// is always the key's id; an unresolved form's snapshot, which never leaves it, answers its advertised bytes.
+        public var nodeId: NodeId { key.nodeId ?? advert.advertised }
 
-        /// Makes a snapshot.
-        public init(advert: AdvertPayload, smoothedRssi: Double, dwellMilliseconds: Int64, lastSeenAgoMilliseconds: Int64) {
+        /// Makes a snapshot, kept under `key`, a clear advert's id unless told otherwise.
+        public init(
+            advert: AdvertPayload,
+            key: SightingKey? = nil,
+            smoothedRssi: Double,
+            dwellMilliseconds: Int64,
+            lastSeenAgoMilliseconds: Int64
+        ) {
             self.advert = advert
+            self.key = key ?? .node(advert.advertised)
             self.smoothedRssi = smoothedRssi
             self.dwellMilliseconds = dwellMilliseconds
             self.lastSeenAgoMilliseconds = lastSeenAgoMilliseconds
@@ -70,16 +80,20 @@ public struct PresenceTracker: Sendable {
     }
 
     private let configuration: Configuration
-    private var entries: [NodeId: Entry] = [:]
+    private var entries: [SightingKey: Entry] = [:]
 
     /// A tracker with knit-next's tunables unless told otherwise.
     public init(configuration: Configuration = Configuration()) {
         self.configuration = configuration
     }
 
-    /// Records a sighting.
+    /// Records a sighting of a clear advert, under its node id.
     public mutating func record(_ sighting: Sighting, now: Int64) {
-        let nodeId = sighting.advert.advertised
+        record(sighting, as: .node(sighting.advert.advertised), now: now)
+    }
+
+    /// Records a sighting under `key`.
+    public mutating func record(_ sighting: Sighting, as nodeId: SightingKey, now: Int64) {
         guard var entry = entries[nodeId], now - entry.lastSeenAt <= configuration.gapResetMilliseconds else {
             // A new peer, or one back after a gap: restart the dwell clock and reseed the RSSI rather than
             // averaging across the gap.
@@ -102,10 +116,11 @@ public struct PresenceTracker: Sendable {
     /// Every peer seen within the linger window, as ``snapshots(now:)`` answers, without dropping the rest: for a
     /// question asked without changing anything, such as when the link layer next has work.
     public func present(now: Int64) -> [Snapshot] {
-        entries.values.filter { now - $0.lastSeenAt <= configuration.lingerMilliseconds }
-            .map { entry in
+        entries.filter { now - $0.value.lastSeenAt <= configuration.lingerMilliseconds }
+            .map { key, entry in
                 Snapshot(
                     advert: entry.advert,
+                    key: key,
                     smoothedRssi: entry.smoothedRssi,
                     dwellMilliseconds: now - entry.firstSeenAt,
                     lastSeenAgoMilliseconds: now - entry.lastSeenAt
@@ -115,13 +130,23 @@ public struct PresenceTracker: Sendable {
 
     /// The advert last seen from `nodeId`, for its PSM and flags, or `nil` if unknown.
     public func advert(of nodeId: NodeId) -> AdvertPayload? {
-        entries[nodeId]?.advert
+        advert(of: .node(nodeId))
+    }
+
+    /// The advert last seen under `key`, or `nil` if unknown.
+    public func advert(of key: SightingKey) -> AdvertPayload? {
+        entries[key]?.advert
     }
 
     /// Whether `nodeId` was seen within the linger window: whether this node has sighted it, for the link
     /// layer's admission rule.
     public func isPresent(_ nodeId: NodeId, now: Int64) -> Bool {
-        guard let entry = entries[nodeId] else {
+        isPresent(.node(nodeId), now: now)
+    }
+
+    /// Whether something was seen under `key` within the linger window.
+    public func isPresent(_ key: SightingKey, now: Int64) -> Bool {
+        guard let entry = entries[key] else {
             return false
         }
         return now - entry.lastSeenAt <= configuration.lingerMilliseconds
@@ -129,11 +154,40 @@ public struct PresenceTracker: Sendable {
 
     /// `nodeId`'s smoothed RSSI, or `nil` if unseen.
     public func smoothedRssi(of nodeId: NodeId) -> Double? {
-        entries[nodeId]?.smoothedRssi
+        entries[.node(nodeId)]?.smoothedRssi
     }
 
     /// Forgets `nodeId`.
     public mutating func forget(_ nodeId: NodeId) {
-        entries[nodeId] = nil
+        forget(.node(nodeId))
+    }
+
+    /// Forgets what was seen under `key`.
+    public mutating func forget(_ key: SightingKey) {
+        entries[key] = nil
+    }
+
+    /// Forgets every entry but `key`'s whose latest advert is the blinded `tag`: a tag attributed afresh (a key that
+    /// arrived after a claim, a claim voided) leaves no stale entry under the id it was attributed to before, which would
+    /// be dialed as a second peer at the same address. Answers the keys forgotten.
+    public mutating func forgetOthers(airing tag: NodeId, except key: SightingKey) -> [SightingKey] {
+        let stale = entries.filter { $0.key != key && $0.value.advert.blinded && $0.value.advert.advertised == tag }.map(\.key)
+        for gone in stale {
+            entries[gone] = nil
+        }
+        return stale
+    }
+
+    /// Moves what was seen under `from` to `to`, its dwell and smoothed RSSI with it: a tag a key resolved, or one our own
+    /// dial proved, keeps the history its handle gathered (``BlindSightings/History/carry``). When `to` already has an
+    /// entry, the one first seen earlier stands, and `from` goes either way.
+    public mutating func move(_ from: SightingKey, to: SightingKey) {
+        guard let moved = entries.removeValue(forKey: from) else {
+            return
+        }
+        if let held = entries[to], held.firstSeenAt <= moved.firstSeenAt {
+            return
+        }
+        entries[to] = moved
     }
 }

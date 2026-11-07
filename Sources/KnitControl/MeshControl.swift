@@ -318,6 +318,7 @@ public actor MeshControl {
             "linksProven": .int(Int64(await mesh.linksProven)),
             "linkProofFailed": .int(Int64(await mesh.linkProofFailed)),
             "linkClaimRefused": .int(Int64(await mesh.linkClaimRefused)),
+            "aliases": ControlLines.describe(await mesh.aliasCounters),
             "seeking": .bool(await mesh.isSeeking),
             "seekWakes": .int(Int64(await mesh.seekWakes)),
             "seekSpells": .int(Int64(await mesh.seekSpells)),

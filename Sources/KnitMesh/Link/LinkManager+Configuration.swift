@@ -69,6 +69,10 @@ extension LinkManager {
         public var backoff: ConnectBackoff.Configuration
         /// How sightings smooth and linger.
         public var presence: PresenceTracker.Configuration
+        /// A test's seam until phase 4 of ADR 2026-11.sv5t: puts ``Capabilities/blindAdvert`` in our HELLO only, so a scripted
+        /// blinding peer's `RefuseLegacy` (`BleAdmissionPolicy.kt:115`) can be met. Phase 4 removes it once
+        /// ``Capabilities/local`` carries the bit. The app never sets it.
+        public var claimsBlindAdvert: Bool
 
         /// knit-next's values unless told otherwise.
         public init(
@@ -92,7 +96,8 @@ extension LinkManager {
             maxBufferedFileBytes: Int = 16_777_216,
             promotion: PromotionPolicy.Configuration = PromotionPolicy.Configuration(),
             backoff: ConnectBackoff.Configuration = ConnectBackoff.Configuration(),
-            presence: PresenceTracker.Configuration = PresenceTracker.Configuration()
+            presence: PresenceTracker.Configuration = PresenceTracker.Configuration(),
+            claimsBlindAdvert: Bool = false
         ) {
             self.helloTimeoutMilliseconds = helloTimeoutMilliseconds
             self.connectTimeoutMilliseconds = connectTimeoutMilliseconds
@@ -115,6 +120,7 @@ extension LinkManager {
             self.promotion = promotion
             self.backoff = backoff
             self.presence = presence
+            self.claimsBlindAdvert = claimsBlindAdvert
         }
     }
 }

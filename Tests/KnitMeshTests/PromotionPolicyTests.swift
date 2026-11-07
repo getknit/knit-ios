@@ -34,28 +34,30 @@ import Testing
         PromotionPolicy.decide(
             candidates: candidates,
             links: links,
-            backoff: Set(backoff.map(fixtureNodeId)),
+            backoff: Set(backoff.map { SightingKey.node(fixtureNodeId($0)) }),
             configuration: configuration
         )
     }
 
     private func ids(_ seeds: [Int]) -> [NodeId] { seeds.map(fixtureNodeId) }
 
+    private func keys(_ seeds: [Int]) -> [SightingKey] { seeds.map { .node(fixtureNodeId($0)) } }
+
     @Test func freeSlotsFillStrongestFirst() {
         let decision = decide([candidate(1, rssi: -70), candidate(2, rssi: -50), candidate(3, rssi: -60)])
-        #expect(decision.promote == ids([2, 3, 1]))
+        #expect(decision.promote == keys([2, 3, 1]))
         #expect(decision.evict.isEmpty)
     }
 
     @Test func theRssiFloorAndDwellGatePromotion() {
         let decision = decide([candidate(1, rssi: -85), candidate(2, rssi: -50, dwell: 5000), candidate(3, rssi: -55)])
-        #expect(decision.promote == ids([3]), "only the close peer that stayed promotes")
+        #expect(decision.promote == keys([3]), "only the close peer that stayed promotes")
     }
 
     @Test func aPeerQuietForMoreThanTwelveSecondsIsSkipped() {
         // This port's rule, not Android's (ADR 2026-09.6es2, amended 2026-09-29 and 2026-10-02).
         let decision = decide([candidate(1, rssi: -50, quiet: 12_001), candidate(2, rssi: -60, quiet: 12_000)])
-        #expect(decision.promote == ids([2]))
+        #expect(decision.promote == keys([2]))
     }
 
     @Test func theWaitIsForTheSoonestDwellToEnd() {
@@ -65,7 +67,8 @@ import Testing
 
     @Test func noWaitForAPeerThatWillNotBePromotableWhenItsDwellEnds() {
         func wait(_ candidate: PresenceTracker.Snapshot, backoff: Set<Int> = []) -> Int64? {
-            PromotionPolicy.untilDwellEnds(candidates: [candidate], backoff: Set(backoff.map(fixtureNodeId)), configuration: configuration)
+            PromotionPolicy.untilDwellEnds(
+                candidates: [candidate], backoff: Set(backoff.map { SightingKey.node(fixtureNodeId($0)) }), configuration: configuration)
         }
         #expect(wait(candidate(1, rssi: -50, dwell: 4000, quiet: 4000)) == 8000, "12 s quiet by then still counts as heard")
         let shorter = PromotionPolicy.Configuration(heardWithinMilliseconds: 8000)
@@ -78,17 +81,17 @@ import Testing
     }
 
     @Test func backedOffPeersAreSkipped() {
-        #expect(decide([candidate(1, rssi: -50), candidate(2, rssi: -55)], backoff: [1]).promote == ids([2]))
+        #expect(decide([candidate(1, rssi: -50), candidate(2, rssi: -55)], backoff: [1]).promote == keys([2]))
     }
 
     @Test func theBudgetCapsPromotions() {
         let decision = decide([candidate(1, rssi: -50), candidate(2, rssi: -55), candidate(3, rssi: -60), candidate(4, rssi: -65)])
-        #expect(decision.promote == ids([1, 2, 3]))
+        #expect(decision.promote == keys([1, 2, 3]))
     }
 
     @Test func tiesKeepTheirOrder() {
         let decision = decide([candidate(4, rssi: -60), candidate(2, rssi: -60), candidate(9, rssi: -60)])
-        #expect(decision.promote == ids([4, 2, 9]))
+        #expect(decision.promote == keys([4, 2, 9]))
     }
 
     @Test func atTheBudgetASlightlyStrongerCandidateWaits() {
@@ -98,7 +101,7 @@ import Testing
 
     @Test func atTheBudgetAClearlyStrongerCandidateReplacesTheWeakestLink() {
         let decision = decide([candidate(9, rssi: -55)], links: [link(1, rssi: -60), link(2, rssi: -65), link(3, rssi: -74)])
-        #expect(decision.promote == ids([9]))
+        #expect(decision.promote == keys([9]))
         #expect(decision.evict == ids([3]))
     }
 
