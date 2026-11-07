@@ -225,6 +225,24 @@ transport (`MeshTransport.peerProvesItself`, contract R4). So the bit cannot be 
   schema v21), or records none, is published again as an edit (`republishIfCapabilitiesChanged`), so every profile we
   signed before is strictly older. A never-edited profile is republished at version 0 instead, as the prekey's is.
 
+## A blinded advert's tag
+
+```text
+m   = HMAC-SHA256(presenceKey, "knit/advert/v1/slot" (19) ‖ owner (16 raw) ‖ u64be(slot) ‖ u8(restart))   (44 bytes)
+tag = CE 73 (90 | m[0] >> 4) ‖ m[1…13]                                                                 (16 bytes)
+```
+
+knit-next's `BlindTag` (ADR 2026-11.xp6d and its owner-bound amendment; ADR 2026-11.sv5t), ported as `BlindTag`. A slot
+is 15 minutes of wall clock, floored (`slotOf`), four restarts per slot, and a reader's window is its own clock's slot
+−32 to +2, 35 slots and 140 tags per key (`window`). The owner is the node id the key is filed under, the signed sender
+of the ctl 11 that delivered it, so a key re-sent as someone else's gives that sender's tags, never the owner's. This
+port mints no tag, so the API is total: `BlindTag.Expected(key:owner:)` takes a `PresenceKey` (32 bytes, or none) and
+answers `nil` for an owner that is not 16 bytes or a restart outside 0..<4, and computes each tag whole with
+`HMAC<SHA256>.authenticationCode(for:using:)`. The prefix check is KnitWire's `AdvertForm.hasTagPrefix`. Nothing prints
+a key, a MAC or a tag: `PresenceKey`, `BlindTag.Expected`, `BlindTag.Slotted` and KnitWire's `PresenceKeyPayload` hide
+them from `description`, `debugDescription` and their mirrors. `BlindTagVectorTests` replays `keyed-v1.json`'s `blind`
+section.
+
 ## Alias
 
 A blank display name shows an alias. With `d = SHA-256(UTF-8("knit-alias-v2:" + nodeId))`, token t is

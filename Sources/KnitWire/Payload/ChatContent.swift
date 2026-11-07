@@ -52,14 +52,17 @@ public struct ChatContent: CBORRepresentable, Equatable {
         // Wrapped as kotlinx wraps every `Long`: `isCarriable` decodes every chat frame, as Android's `canCarry` does, so
         // a size Android reads must never refuse the frame here (`InboundPipeline.kt:2320-2329` at `e63f15f4`).
         attachmentSize = try fields.nullable("attachmentSize", .int64)
-        // The last four keys Android types and this build does not model (`Wire.kt:231-250` at `e63f15f4`): each is read
+        // The last six keys Android types and this build does not model (`Wire.kt:244-271` at `cad69c77b`): each is read
         // and dropped, so a value Android's `canCarry` refuses is refused here too, and the two carry the same posts
-        // (knit-ios #14). `"s"`, the styles, is a defaulted byte string, so `null` and `A0` fail it; its contents are never
-        // read, since `StyleSpans.unpack` never throws (`StyleSpans.kt:128-145`).
+        // (knit-ios #14, #43). `"s"`, the styles, is a defaulted byte string, so `null` and `A0` fail it; its contents are
+        // never read, since `StyleSpans.unpack` never throws (`StyleSpans.kt:128-145`). `"l"` and `"r"`, the declared
+        // languages, are `Int?`: a text value or one past what `decodeInt` admits refuses the post, and a negative one reads.
         _ = try fields.nullable("video", .checked(as: VideoInfo.self))
         _ = try fields.nullable("attachmentName", .text)
         _ = try fields.nullable("attachmentKey", .text)
         _ = try fields.optional("s", .bytes)
+        _ = try fields.nullable("l", .int32)
+        _ = try fields.nullable("r", .int32)
     }
 
     /// The content as an item, defaults omitted.

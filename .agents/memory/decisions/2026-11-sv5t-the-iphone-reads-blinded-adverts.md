@@ -110,7 +110,7 @@ cost an iPhone a refused or link-replacing dial at every rotation of every linke
 - **Unresolved forms are not shown.** Diagnostics, `links` and `status.sighted` list resolved and linked peers only.
   Counters report the rest.
 
-**What keeps it true** (to be filled in as each phase lands): `BlindVectorTests` over `keyed-v1.json`'s `blind`
-section; `BlindTagTests`; `TypedKeysTests` (#43); the ports of `AdvertOrderTest`, `ExpectedTagTableTest`,
+**What keeps it true** (to be filled in as each phase lands): `BlindVectorTests` and `BlindTagVectorTests` over
+`keyed-v1.json`'s `blind` section; `BlindTagTests`; `TypedKeysTests` (#43); the ports of `AdvertOrderTest`, `ExpectedTagTableTest`,
 `AdvertAliasesTest`, `KeyChurnLimiterTest` and BlindReaderTest's Sybil and held-dial cases; `BlindLinkTests`;
 `PresenceKeyPolicyTests`; the two-engine key test; and the device trial.

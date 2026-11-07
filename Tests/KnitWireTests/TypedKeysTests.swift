@@ -5,12 +5,13 @@ import Testing
 /// Every key Android types and this build does not model is checked as kotlinx types it (knit-ios #14): Android's honest
 /// bytes still decode, and the same bytes with one value of the wrong type fail, in both the named and the compact
 /// layout, as Android's `canCarry` and its open refuse them (`Wire.kt`, `MessageContent.kt` and `MessageContentV2.kt` at
-/// knit-next `e63f15f4`).
+/// knit-next `e63f15f4`). The declared languages, a transfer's `md` and ctl 11's `pk` (knit-ios #42, #43, at `cad69c77b`) are
+/// `TypedKeysTests+Cad69c77b.swift`'s.
 @Suite struct TypedKeysTests {
-    private func vector(_ name: String) throws -> CBOR { try CBOR.decode(GoldenVectors.bytes(name)) }
+    func vector(_ name: String) throws -> CBOR { try CBOR.decode(GoldenVectors.bytes(name)) }
 
     /// A value of every kind but `kind`'s, none of them `null` or `A0`, which a nullable key reads as absent.
-    private func wrongKinds(besides kind: String) -> [CBOR] {
+    func wrongKinds(besides kind: String) -> [CBOR] {
         let all: [String: CBOR] = [
             "text": .text("x"), "bytes": .bytes([1]), "int": .unsigned(1), "bool": .bool(true),
             "map": .map([CBOR.Entry(key: .text("q"), value: .unsigned(1))]),

@@ -12,8 +12,10 @@ extension MessageContent {
         }
     }
 
-    /// The signaling of a direct Wi-Fi transfer (`TransferPayload`, `Wire.kt:868-880` at knit-next `e63f15f4`), the shape
-    /// ``MessageContent/xf`` must have: an `id` and a `phase`, the rest nullable.
+    /// The signaling of a direct Wi-Fi transfer (`TransferPayload`, `Wire.kt:938-950` at knit-next `cad69c77b`), the shape
+    /// ``MessageContent/xf`` must have: an `id` and a `phase`, the rest nullable. `md`, the translation models' pins
+    /// (knit-next ADR 2026-11.ejn8, `0219a1a46`), is a `List<Long>?`, so a list holding anything but integers fails it
+    /// (knit-ios #43).
     struct TransferPayload: CBORShape {
         init(cbor: CBOR) throws(WireDecodingError) {
             let fields = try CBORFields(cbor, type: "TransferPayload")
@@ -27,6 +29,7 @@ extension MessageContent {
             _ = try fields.nullable("port", .int32)
             _ = try fields.nullable("key", .text)
             _ = try fields.nullable("reason", .int32)
+            _ = try fields.nullable("md", .int64s)
         }
     }
 

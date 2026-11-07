@@ -22,10 +22,10 @@ knit-next uses kotlinx-serialization-cbor 1.12.0 (1.11.0 before `97e1747f`) with
 
 Decoding is looser than any encoder. Since knit-ios #14, KnitWire reads every field the way kotlinx does, so both
 platforms refuse and carry the same frames, apart from the gaps the last item names (`Decoder.kt` in the 1.12.0
-sources). Three fields typed since the pin are not checked here yet (knit-next.md, "Owed here"): a chat's declared
-languages, `lang` and `reads` (`Int?` in `ChatContent`, `MessageContent` and `MessageContentV2`'s labels 18 and 19,
-knit-next `e427941fd`), so an iPhone carries a room post whose `lang` is text and Android refuses it; a transfer's `md`
-(`List<Long>?`, `0219a1a46`); and ctl 11's `pk`.
+sources). That includes the fields Android typed at `cad69c77b` (knit-ios #42, #43): a chat's declared languages,
+`lang` and `reads` (`Int?` under `"l"` and `"r"` in `ChatContent` and `MessageContent`, labels 18 and 19 in
+`MessageContentV2`), read and dropped; a transfer's `md` (`List<Long>?`), checked and dropped; and ctl 11's `pk`
+(`PresenceKeyPayload`), typed.
 
 - **A nullable field is null** when its value is the byte `F6` or the single byte `A0`. An empty map written any other
   way (`B8 00`, `BF FF`) goes to the field's own decoder, which fails unless the field's type has no required field.
@@ -155,8 +155,10 @@ These only ever grow. A value is never reused, even after it is retired.
   | 10 | call (`CTL_CALL`, only toward a profile carrying `CALL`) |
   | 11 | presence key (`CTL_PRESENCE_KEY`, knit-next ADR 2026-11.xp6d; named form only, the plaintext padded to 128 bytes, its map under `pk` naming `g`, `k`, `ng`, `nk` and `p`), only point to point over a proven link, `relay = false`, toward a peer carrying `BLIND_ADVERT` |
 
-  An unknown value is a silent no-op. This port reads ctl 11 as one (`messageContentPresenceKey` in `wire-v1.json`), and
-  Android sends it none.
+  An unknown value is a silent no-op. This port decodes ctl 11's `pk` as kotlinx does (`PresenceKeyPayload`: `g` and
+  `k` required, `ng`, `nk` and `p` nullable, a wrong kind failing the whole content), keeps it named-only
+  (`MessageContentV2.encode` refuses it), never sends one, and acts on none yet; Android sends it none until this port
+  claims `BLIND_ADVERT`.
 - **`EncEnvelope.v`:** 1 is static keys, 2 is the epoch ratchet, and 3 is the compact ratchet. An envelope
   version we cannot open is dropped locally, counted, and still relayed and carried.
 - **Capabilities** (a Long in `ProfileContent.capabilities`, the low byte in the advert, hex in HELLO):

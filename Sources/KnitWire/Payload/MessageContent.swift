@@ -4,12 +4,12 @@
 /// A message with a non-nil ``ctl`` is machinery (a receipt, a reaction, a key or profile update): it is never
 /// rendered, notified or acknowledged.
 ///
-/// Every key kotlinx types is read as kotlinx reads it (`MessageContent.kt:48-112` at knit-next `e63f15f4`), so a
-/// plaintext Android drops as `DECRYPT_FAILED` fails to decode here too, before the open commits (knit-ios #14). The
-/// group-key and profile payloads (``gk``, ``pr``) are modelled. The transfer payload (``xf``) is checked against
-/// Android's `TransferPayload` and kept as an undecoded item, because this build carries it but never reads it (ADR
-/// 2026-10.5sk9). A short video (`video`), a call (`cl`), a scope's spool config (`sc`) and the body's styles (`"s"`)
-/// are checked and dropped, since this build has none of them.
+/// Every key kotlinx types is read as kotlinx reads it (`MessageContent.kt:51-130` at knit-next `cad69c77b`), so a
+/// plaintext Android drops as `DECRYPT_FAILED` fails to decode here too, before the open commits (knit-ios #14, #43). The
+/// group-key, profile and presence-key payloads (``gk``, ``pr``, ``pk``) are modelled. The transfer payload (``xf``) is
+/// checked against Android's `TransferPayload` and kept as an undecoded item, because this build carries it but never
+/// reads it (ADR 2026-10.5sk9). A short video (`video`), a call (`cl`), a scope's spool config (`sc`), the body's styles
+/// (`"s"`) and its declared languages (`"l"`, `"r"`) are checked and dropped, since this build has none of them.
 public struct MessageContent: CBORRepresentable, Equatable {
     /// Control codes (`MessageContent.CTL_*`). An unknown code is a silent no-op.
     public enum Control {
@@ -29,6 +29,9 @@ public struct MessageContent: CBORRepresentable, Equatable {
         public static let profile = 8
         /// A Wi-Fi Direct transfer offer or answer.
         public static let transfer = 9
+        /// A contact's presence keys, in ``MessageContent/pk`` (`CTL_PRESENCE_KEY`, `MessageContent.kt:216`; knit-next ADR
+        /// 2026-11.xp6d). Received only: this port sends none (ADR 2026-11.sv5t).
+        public static let presenceKey = 11
     }
 
     /// The plaintext layout version, always 1 and never written.
@@ -66,6 +69,9 @@ public struct MessageContent: CBORRepresentable, Equatable {
     public var acks: [String]?
     /// A transfer payload, kept as received once it reads as Android's `TransferPayload`.
     public var xf: CBOR?
+    /// A contact's presence keys, for ``Control/presenceKey``. Named layout only: ``MessageContentV2`` has no label for
+    /// it.
+    public var pk: PresenceKeyPayload?
 
     /// Makes plaintext content; only ``body`` is required.
     public init(
@@ -84,7 +90,8 @@ public struct MessageContent: CBORRepresentable, Equatable {
         rp: ReactionContent? = nil,
         pr: ProfilePayload? = nil,
         acks: [String]? = nil,
-        xf: CBOR? = nil
+        xf: CBOR? = nil,
+        pk: PresenceKeyPayload? = nil
     ) {
         self.version = version
         self.body = body
@@ -102,6 +109,7 @@ public struct MessageContent: CBORRepresentable, Equatable {
         self.pr = pr
         self.acks = acks
         self.xf = xf
+        self.pk = pk
     }
 
     /// Reads plaintext content from a decoded item.
@@ -126,8 +134,13 @@ public struct MessageContent: CBORRepresentable, Equatable {
         xf = try fields.nullable("xf", .checked(as: TransferPayload.self))
         _ = try fields.nullable("cl", .checked(as: CallPayload.self))
         _ = try fields.nullable("sc", .checked(as: ScopeConfigPayload.self))
-        // The styles: a defaulted byte string, so `null` and `A0` fail it (`MessageContent.kt:104-111`).
+        pk = try fields.nullable("pk", .object(PresenceKeyPayload.self))
+        // The styles: a defaulted byte string, so `null` and `A0` fail it (`MessageContent.kt:110-116`).
         _ = try fields.optional("s", .bytes)
+        // The declared languages, `Int?` (`MessageContent.kt:117-129`): a text value or one past what `decodeInt` admits
+        // fails the content, and a negative one reads. Dropped, since this build translates nothing (knit-ios #43).
+        _ = try fields.nullable("l", .int32)
+        _ = try fields.nullable("r", .int32)
     }
 
     /// The content as an item, defaults omitted.
@@ -149,6 +162,9 @@ public struct MessageContent: CBORRepresentable, Equatable {
         writer.object("pr", optional: pr)
         writer.texts("acks", optional: acks)
         writer.raw("xf", optional: xf)
+        // After `xf`, where kotlinx writes it: `cl` and `sc` come between, and this build writes neither
+        // (`MessageContent.kt:100-108`).
+        writer.object("pk", optional: pk)
         return writer.cbor
     }
 

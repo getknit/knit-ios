@@ -93,12 +93,104 @@ public struct VectorBlind: Decodable, Sendable {
         public let record: String
     }
 
+    /// The bytes one side of the tagged link signs (`LinkProof.transcript`). The role is the entry's name.
+    public struct Transcript: Decodable, Sendable {
+        /// The keyed identity that signs it.
+        public let signer: String
+        /// The transcript, as hex.
+        public let hex: String
+    }
+
+    /// A PROOF record (tag 8) of the tagged link.
+    public struct Proof: Decodable, Sendable {
+        /// The keyed identity that signed it.
+        public let signer: String
+        /// The whole record, as hex.
+        public let record: String
+    }
+
+    /// Bob's reply with its `t` rewritten, which his proof must not cover.
+    public struct ToldRewritten: Decodable, Sendable {
+        /// What it is checked as, in words.
+        public let checkedAs: String
+        /// The rewritten reply's payload, as text.
+        public let payload: String
+        /// The name of the PROOF entry checked against it.
+        public let record: String
+        /// Why it must fail.
+        public let reason: String
+    }
+
     /// The tagged link: Alice, blinding, dials Bob's tag. Its proofs are KnitCrypto's to replay.
     public struct Link: Decodable, Sendable {
         /// Alice's HELLO, with `t` and `a`.
         public let helloTaggedDialer: LinkHello
         /// Bob's reply, with `t`.
         public let helloTaggedReply: LinkHello
+        /// What Alice signs as the dialer.
+        public let proofTranscriptDialer: Transcript
+        /// What Bob signs as the responder.
+        public let proofTranscriptResponder: Transcript
+        /// Alice's PROOF.
+        public let proofDialer: Proof
+        /// Bob's PROOF.
+        public let proofResponder: Proof
+        /// Bob's reply rewritten after he signed it.
+        public let toldRewritten: ToldRewritten
+    }
+
+    /// One tag: the key and owner it is under, the MAC's input and output, and the tag.
+    public struct Tag: Decodable, Sendable {
+        /// The name in ``VectorBlind/presenceKeys`` of the key.
+        public let key: String
+        /// The keyed identity the tag is bound to.
+        public let owner: String
+        /// That identity's node id as 16 raw bytes, as hex.
+        public let ownerId: String
+        /// The slot.
+        public let slot: Int64
+        /// The restart index.
+        public let restart: Int
+        /// The 44-byte MAC message, as hex.
+        public let macInput: String
+        /// The HMAC-SHA256, as hex.
+        public let mac: String
+        /// The tag, as hex.
+        public let tag: String
+        /// The tag read as a node id.
+        public let asNodeId: String
+    }
+
+    /// One `slotOf` case.
+    public struct SlotCase: Decodable, Sendable {
+        /// The wall clock, in milliseconds.
+        public let wallMs: Int64
+        /// Its slot.
+        public let slot: Int64
+    }
+
+    /// A reader's window at one wall-clock time.
+    public struct Window: Decodable, Sendable {
+        /// The wall clock, in milliseconds.
+        public let wallMs: Int64
+        /// The first slot resolved.
+        public let from: Int64
+        /// The last slot resolved.
+        public let to: Int64
+    }
+
+    /// The derivation's constants.
+    public struct Constants: Decodable, Sendable {
+        /// The MAC's label.
+        public let label: String
+        /// A slot's length, in milliseconds.
+        public let slotMs: Int64
+        /// Restart indices per slot.
+        public let restarts: Int
+        /// Slots resolved before the current one.
+        public let windowPastSlots: Int64
+        /// Slots resolved after the current one.
+        public let windowAheadSlots: Int64
     }
 
     /// `hasPrefix` cases by name.
@@ -112,5 +204,16 @@ public struct VectorBlind: Decodable, Sendable {
     /// The tagged link.
     public let link: Link
 
-    // MARK: KnitCrypto's half (`tags`, `slotOf`, `window`, `presenceKeys`, the link's transcripts and proofs) goes here.
+    // MARK: KnitCrypto's half
+
+    /// Each keyed identity's presence key, as hex, by name.
+    public let presenceKeys: [String: String]
+    /// The constants.
+    public let constants: Constants
+    /// The `slotOf` cases.
+    public let slotOf: [SlotCase]
+    /// The window.
+    public let window: Window
+    /// The tags by name.
+    public let tags: [String: Tag]
 }

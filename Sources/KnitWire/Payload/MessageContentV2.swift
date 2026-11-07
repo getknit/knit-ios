@@ -7,13 +7,14 @@
 /// **Canonical or not at all** (`:31-39`). ``encode(_:)`` answers `nil` for content it cannot carry exactly, and the
 /// seal site then takes the named layout under v2 (``MessageContent/sealBytes(v3:)``), so this codec never loses or
 /// changes a frame. That covers an id, hash or key whose bytes do not re-encode to the same text, any
-/// ``MessageContent/gk`` or ``MessageContent/xf``, and a ``MessageContent/version`` other than 1 (`:53-60`,
-/// `:102-108`).
+/// ``MessageContent/gk``, ``MessageContent/xf`` or ``MessageContent/pk``, and a ``MessageContent/version`` other than 1
+/// (`:53-60`, `:102-108`).
 ///
 /// Decoding follows kotlinx's `compactCbor` (`Crypto.kt:111-119`): unknown labels are skipped, the reserved 12 (`pad`)
 /// and 13 (`gk`) included (`:157-163`), and a text key reads as the property it names. A short video (label 16), the
-/// body's styles (17) and a profile's supporter badges (`pr`'s 8) are checked as kotlinx types them and dropped, since
-/// this build has none of them, so a plaintext Android drops as `DECRYPT_FAILED` fails here too (knit-ios #14).
+/// body's styles (17), its declared languages (18 and 19) and a profile's supporter badges (`pr`'s 8) are checked as
+/// kotlinx types them and dropped, since this build has none of them, so a plaintext Android drops as `DECRYPT_FAILED`
+/// fails here too (knit-ios #14, #43).
 ///
 /// Kotlin also repairs an attachment's name at this boundary (`MessageContent.normalized()`, `MessageContent.kt:95-99`).
 /// This port's named decoder does not, so neither does this one: the two decoders agree, and delivery clips the name.
@@ -23,9 +24,11 @@ public enum MessageContentV2 {
     /// The highest compact layout version this build reads; a higher one decodes to nothing (`MAX_SUPPORTED`, `:50`).
     public static let maxSupportedVersion = 1
 
-    /// `content` in the compact layout, or `nil` when part of it has no canonical raw form (`encodeOrNull`, `:53-60`).
+    /// `content` in the compact layout, or `nil` when part of it has no canonical raw form or no label here
+    /// (`encodeOrNull`, `:53-60`). A presence key has none, as Android's `hasNamedOnlyPayload` says (`:71`), so ctl 11
+    /// always takes the named layout.
     public static func encode(_ content: MessageContent) -> [UInt8]? {
-        guard content.version == MessageContent.currentVersion, content.gk == nil, content.xf == nil,
+        guard content.version == MessageContent.currentVersion, content.gk == nil, content.xf == nil, content.pk == nil,
             let wire = try? Wire(content)
         else {
             return nil
@@ -84,6 +87,8 @@ private enum WireLabel: UInt64, CBORLabel {
     case attachmentSize = 15
     case video = 16
     case st = 17
+    case lang = 18
+    case reads = 19
 }
 
 /// `MentionV2`'s labels (`:202-209`).
@@ -171,6 +176,9 @@ private struct Wire: CBORRepresentable {
         attachmentSize = try fields.nullable(.attachmentSize, .int64)
         _ = try fields.nullable(.video, .checked(as: MessageContentV2.VideoV2.self))
         _ = try fields.nullable(.st, .bytes)
+        // The declared languages, `Int?` (`:232-235`), dropped as the named layout drops them.
+        _ = try fields.nullable(.lang, .int32)
+        _ = try fields.nullable(.reads, .int32)
     }
 
     /// The layout as kotlinx writes it: labels in declaration order, defaults left out. Label 0 never appears, because

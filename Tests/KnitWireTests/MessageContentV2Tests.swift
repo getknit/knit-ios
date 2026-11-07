@@ -97,6 +97,13 @@ import Testing
         #expect(MessageContentV2.encode(transfer) == nil, "a direct-transfer ctl")
         #expect(transfer.sealBytes(v3: true).scheme == EncEnvelope.Version.ratchet)
         #expect(MessageContentV2.encode(MessageContent(version: 2, body: "")) == nil, "a foreign content version")
+        // A presence key has no label here, as Android's `hasNamedOnlyPayload` says (`MessageContentV2.kt:71`).
+        let presence = MessageContent(
+            body: "", ctl: MessageContent.Control.presenceKey, pk: PresenceKeyPayload(generation: 1, key: fixtureBytes(32, seed: 17)))
+        #expect(MessageContentV2.encode(presence) == nil, "a presence-key ctl")
+        #expect(presence.sealBytes(v3: true).scheme == EncEnvelope.Version.ratchet)
+        #expect(try MessageContent(decoding: presence.sealBytes(v3: true).plaintext) == presence)
+        #expect(MessageContentV2.encode(MessageContent(body: "", ctl: MessageContent.Control.presenceKey)) != nil, "the ctl alone")
         // And the seam every seal site uses falls back to the named layout instead of losing the frame.
         let fallback = MessageContent(body: "", ctl: 5, ack: uuid).sealBytes(v3: true)
         #expect(fallback.scheme == EncEnvelope.Version.ratchet)

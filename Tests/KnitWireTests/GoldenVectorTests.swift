@@ -28,9 +28,9 @@ import Testing
     /// `chatContentVideo` now drops only its `video`: its `attachmentSize` is modelled since knit-ios #7, and is checked in
     /// ``ChatContentSizeTests``. A blob request's `pull` and `until` are modelled since ADR 2026-10.8hek, and are typed
     /// fixtures below. The commons posts only round-trip, since only a spool carries one (knit-ios #11). At `cad69c77b`:
-    /// a chat's declared languages (`lang`, `reads`; knit-next `e427941fd`), dropped here, and a presence key's ctl 11
-    /// (knit-next ADR 2026-11.xp6d), read as an unknown ctl. A direct link's `LinkSignal` only round-trips, since only a
-    /// spool's signal lane carries one.
+    /// a chat's declared languages (`lang`, `reads`; knit-next `e427941fd`), typed and dropped here (knit-ios #43). A
+    /// presence key's ctl 11 (knit-next ADR 2026-11.xp6d) is modelled since knit-ios #42, and is a typed fixture below. A
+    /// direct link's `LinkSignal` only round-trips, since only a spool's signal lane carries one.
     @Test func whatThisBuildDoesNotModelStillDecodes() throws {
         #expect(try BlobRequestContent(decoding: GoldenVectors.bytes("blobReqContentFastOnly")) == BlobRequestContent(hash: "h1"))
         #expect(try ProfilePayload(decoding: GoldenVectors.bytes("profilePayloadBadges")).name == "Ann")
@@ -53,8 +53,23 @@ import Testing
         #expect(try ChatContent(decoding: GoldenVectors.bytes("chatContentLang")) == ChatContent(body: "hola"))
         #expect(try MessageContent(decoding: GoldenVectors.bytes("messageContentLang")) == MessageContent(body: "hola"))
         #expect(MessageContentV2.decode(GoldenVectors.bytes("messageContentV2Lang")) == MessageContent(body: "hola"))
+    }
+
+    /// Both ctl 11 fixtures decode to a typed ``PresenceKeyPayload``, padded to 128 bytes with or without the next pair
+    /// (`GoldenVectorTest.kt:715-722` at knit-next `cad69c77b`); their re-encoding is ``typedFixtureEncodesToItsPinnedBytes(fixture:)``'s.
+    @Test func bothPresenceKeyFixturesDecodeTyped() throws {
+        let current = try MessageContent(decoding: GoldenVectors.bytes("messageContentPresenceKey"))
+        #expect(current.ctl == MessageContent.Control.presenceKey)
+        let pk = try #require(current.pk)
+        #expect(pk.generation == 1_793_577_600_000 && pk.key == fixtureBytes(32, seed: 17))
+        #expect(pk.nextGeneration == nil && pk.nextKey == nil)
+        let next = try #require(try MessageContent(decoding: GoldenVectors.bytes("messageContentPresenceKeyNext")).pk)
+        #expect(next.generation == 1_793_577_600_000 && next.nextGeneration == 1_793_577_600_001)
+        #expect(next.nextKey == fixtureBytes(32, seed: 18))
         for name in ["messageContentPresenceKey", "messageContentPresenceKeyNext"] {
-            #expect(try MessageContent(decoding: GoldenVectors.bytes(name)).ctl == 11, "\(name)")
+            let pinned = GoldenVectors.bytes(name)
+            #expect(pinned.count == 128, "\(name)")
+            #expect(try MessageContent(decoding: pinned).encoded == pinned, "\(name)")
         }
     }
 
@@ -140,7 +155,28 @@ private func profile(
     )
 }
 
+/// The presence keys' generation (`PRESENCE_GENERATION`, 2026-11-02T00:00:00Z, in `GoldenVectorTest`).
+private let presenceGeneration: Int64 = 1_793_577_600_000
+
+/// ctl 11 with one key, padded by 61 zero bytes to 128.
+private let presenceKey = PresenceKeyPayload(
+    generation: presenceGeneration,
+    key: fixtureBytes(32, seed: 17),
+    pad: [UInt8](repeating: 0, count: 61)
+)
+
+/// ctl 11 with the next pair too, padded by 13 zero bytes to 128.
+private let presenceKeyNext = PresenceKeyPayload(
+    generation: presenceGeneration,
+    key: fixtureBytes(32, seed: 17),
+    nextGeneration: presenceGeneration + 1,
+    nextKey: fixtureBytes(32, seed: 18),
+    pad: [UInt8](repeating: 0, count: 13)
+)
+
 let typedFixtures: [TypedFixture] = [
+    TypedFixture("messageContentPresenceKey", MessageContent(body: "", ctl: MessageContent.Control.presenceKey, pk: presenceKey)),
+    TypedFixture("messageContentPresenceKeyNext", MessageContent(body: "", ctl: MessageContent.Control.presenceKey, pk: presenceKeyNext)),
     TypedFixture(
         "wireEnvelope",
         WireEnvelope(ttl: 7, hops: 3, relay: false, sig: fixtureBytes(64, seed: 1), signed: fixtureBytes(8, seed: 2))

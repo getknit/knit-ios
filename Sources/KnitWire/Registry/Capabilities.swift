@@ -41,9 +41,16 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     /// (`Protocol.CAP_LINK_PROOF`, knit-next #232, knit-ios #25), and refuses an unsigned claim to the id of a peer it knows
     /// can prove itself. Read from two places: from a peer's signed profile, which makes that peer one a link must prove,
     /// since a profile carries the peer's own signature and no one else can strip the bit; and from a HELLO, which decides
-    /// whether this link runs the exchange. Above the advert's 8 bits, so never there. `0x10000` and `0x20000` are
-    /// Android's other planes', unnamed here.
+    /// whether this link runs the exchange. Above the advert's 8 bits, so never there. `0x10000` (`LORA_DIRECT`) and
+    /// `0x20000` (`INET_LINK`) are Android's LoRa and internet links, which this port has neither of, unnamed here.
     public static let linkProof: Self = 0x40000
+    /// "I read tags" (`Protocol.CAP_BLIND_ADVERT`, `Protocol.kt:218-227` at knit-next `cad69c77b`; knit-next ADR
+    /// 2026-11.xp6d; ADR 2026-11.sv5t): this node resolves a blinded advert's rotating tag, dials one, and reads a
+    /// HELLO's `t` and `a`. It says nothing of writing tags. Android reads it from a peer's HELLO or pinned profile to send
+    /// that peer `TAG_NEXT` (link record tag 9) and its presence keys (ctl 11), and while it blinds refuses a dialer whose
+    /// HELLO lacks it. Not in ``local`` until tag 9 and ctl 11 both read here: Android does not resend a ctl 11 a peer
+    /// dropped until its next generation, root or restart. Above the advert's 8 bits, so never there.
+    public static let blindAdvert: Self = 0x80000
 
     /// What this build advertises: end-to-end DMs, groups, reactions and store-and-forward, with the ratchet's three bits,
     /// ``ratchet``, ``inlineAck`` and ``cryptoV3``, and ``linkProof`` (`0x4015F`, ADR 2026-09.n393, ADR 2026-10.ehe6, ADR

@@ -180,6 +180,27 @@ extension FieldKind where Value == Int64 {
     }
 }
 
+extension FieldKind where Value == [Int64] {
+    /// A list of Kotlin `Long`s (`List<Long>`), each element read under its own tags as ``int64`` reads it, so `null` or
+    /// any other kind in the list fails it.
+    static var int64s: Self {
+        Self { item in
+            guard case .array(let items) = item else {
+                return nil
+            }
+            var values: [Int64] = []
+            values.reserveCapacity(items.count)
+            for element in items {
+                guard let value = wrappedInteger(element.untagged) else {
+                    return nil
+                }
+                values.append(value)
+            }
+            return values
+        }
+    }
+}
+
 extension FieldKind where Value == Bool {
     /// `true` or `false`.
     static var bool: Self {
