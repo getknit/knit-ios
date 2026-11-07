@@ -432,17 +432,20 @@ Kotlin wins.
     fixtures added to `wire-v1.json`, with its `languageRegistry`, and a `blind` section to `keyed-v1.json`, none moved;
     Android's database at v32). Read on 2026-11-07, and the merged code checked at `cad69c77b`. Today's iPhone handles
     everything these commits put on the air (`ble-transport.md`, "What this means for an iPhone"):
+    - **Mirrored here:** the blinded advert's reader and the receive half of its presence keys (knit-next ADR
+      2026-11.xp6d and its five amendments, #285, `c9c70c28b` to `07dde9bc1`, with `b9ba39596` and `bf2472969`'s
+      held-dial key), on `feat/blind-reader` under ADR 2026-11.sv5t (knit-ios #42, with #43). The wire is read
+      (`FLAG_BLINDED`, a prefixless blinded advert dropped and a blinded GATT payload a stranger; the HELLO's `t` and
+      `a`; `TAG_NEXT`, tag 9; ctl 11's `pk`, typed). Tags resolve through direct contacts' keys over the window, then
+      claims, then hints; every dial to a blinded advert is a tag dial that takes the proven id; `TAG_NEXT` and ctl 11
+      are acted on; and `Capabilities.local` claims `CAP_BLIND_ADVERT`, the reader Android's release N+1 waits on. Its
+      device trials are owed (ADR 2026-11.sv5t). The restore's link-owed reset (`228520ea7`, `REMARK_OWN`) arrives here
+      as any ctl 1 does.
     - **Owed here:**
-      - **The blinded advert** (knit-next ADR 2026-11.xp6d and its five amendments, #285, `c9c70c28b` to `07dde9bc1`,
-        with `b9ba39596` and `bf2472969`'s held-dial key), being mirrored on `feat/blind-reader` under ADR
-        2026-11.sv5t (knit-ios #42). The wire is read: `FLAG_BLINDED` (a prefixless blinded advert dropped, a blinded
-        GATT payload a stranger), the HELLO's `t` and `a`, `TAG_NEXT` (tag 9, read past on a live link), and ctl 11's
-        `pk`, typed. KnitCrypto derives the owner-bound tag (`BlindTag`, `PresenceKey`), and `Capabilities.blindAdvert`
-        is named but not in `local`. Still owed: resolving tags through the expected-tag table, the tag dial, acting on
-        `TAG_NEXT`, storing the presence keys received over ctl 11, and claiming `CAP_BLIND_ADVERT`. The writer, and sending keys of our own, wait
-        for an iOS ADR of their own. Android's release N+1, which turns writing on, waits on the iOS reader. Never claim
-        `CAP_BLIND_ADVERT` before reading tag 9 and ctl 11 (`ble-transport.md`, "The link"). The restore's link-owed
-        reset (`228520ea7`, `REMARK_OWN`) arrives here as any ctl 1 does; its marker goes with the key side.
+      - **The blinded advert's writer** (knit-ios #42's rest; knit-next's `NEXT_WIRE_BREAK.md` item 13): airing a tag,
+        writing `t` and `TAG_NEXT`, and minting, rotating and sending presence keys of our own, with `REMARK_OWN`'s
+        marker and the generation number's backup rule. They wait for an iOS ADR of their own: CoreBluetooth gives no
+        advertising sets and no say in the address's rotation, and an iPhone's id rides its GATT payload.
       - **Wire decoding** (knit-ios #14's parity): `lang` and `reads` (`e427941fd`, `8d078afe5`), a transfer's `md`
         (`0219a1a46`) and ctl 11's `pk` are typed here as on Android since knit-ios #43 (`wire-format.md`). The `link`
         frame type (`aac6ee180`) is never flooded and spends no key request there; here it is unknown (`wire-format.md`,

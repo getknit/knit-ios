@@ -80,3 +80,13 @@ that never dials the iPhone (`interop.py iphone-peer --release-android`).
   `300f` HELLO, a radio without a doorbell, an unflagged peer, a larger-id iPhone, seeking, and admission.
   `LinkManagerTests`' `theSmallerIdWaitsOutTheHeadStartOfAPeerThatCanSeeIt` pins both halves of the wait.
   `PeerOptionsTests` pins the switch.
+
+**Amended 2026-11-07, for blinded adverts (ADR 2026-11.sv5t):** the rule reads forms
+(`LinkManager.takesHeadStart`): a flagged peer the order leaves to dial us, `!AdvertOrder.iDial(clear(us), form)`,
+which for a clear peer is the old "its id sorts above ours". A blinding phone dials every clear advert, so a flagged
+peer whose advert is blinded gets the head start too, and the dial that ends it is a tag dial, which must prove its
+peer (ADR 2026-11.hpmt). A sighting attributed to an id we hold a link to, by its key, a claim or a hint, is busy, so a
+linked phone's new tag draws no head start. The head-start line names the id of a clear or key-resolved peer and the
+handle (`~zzzz…<n>`) of an unresolved one; `interop.py --keep-blind iphone` ties a handle to its phone by the iPhone's
+`link <handle> proved <id>` line, and counts such links with `--links` against a reader. Guards: `BlindLinkTests`'
+head-start cases, and `test_interop.py`'s `HeadStartLineTest` and `BlindDialedByTest`.

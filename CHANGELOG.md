@@ -103,6 +103,9 @@ document:
   it or open a GitHub bug form filled in from it, and nothing leaves the phone unless you send it.
 - Try sample chats, on the chat list's first-run card and in Settings, shows Knit with made-up people when
   nobody's nearby. A banner stays above them, and nothing you send there reaches anyone.
+- Your iPhone keeps linking with Android phones once they stop broadcasting who they are over Bluetooth,
+  just as it does with any other phone, and still recognizes your contacts among them before they connect.
+  Your iPhone's own Bluetooth signal names it, as before.
 
 ### Changed
 

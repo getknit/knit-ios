@@ -123,6 +123,14 @@ the bit was clear only because nothing set it. Nothing named it either, so a lat
 something else, and Android would have read that as "runs Wi-Fi Aware". From 2026-10-24 to 2026-10-27, knit-next's
 `main` gave the bit the opposite meaning (`FLAG_NO_AWARE`), which never shipped (`.agents/context/ble-transport.md`).
 
+**Amended 2026-11-07, for blinded adverts (ADR 2026-11.sv5t, knit-next ADR 2026-11.xp6d): a GATT payload with
+`FLAG_BLINDED` (`0x08`) is a stranger.** No port serves one, so both radios read it as no payload
+(`AdvertPayload(gattValue:)` answers `nil`), as Android's `BleGattPayloadReader` does. `writtenFlags(dialsGattPeers:)`
+never sets bit 3, so this port's advert and payload always carry its id: the iPhone stays a clear phone, and the
+writer that would blind its payload with its advert waits for an iOS ADR of its own (knit-next's `NEXT_WIRE_BREAK.md`
+item 13). `BlueZGattRetryTests.aCharacteristicThatHoldsABlindedPayloadIsAStranger` and `LinkTests`'
+`theFlagsThisPortWritesNeverSetTheAwareBit` pin both.
+
 **Consequences / limits:**
 
 - **Cross-platform law.** The UUID is law once A3 ships. Change it only together with knit-next.

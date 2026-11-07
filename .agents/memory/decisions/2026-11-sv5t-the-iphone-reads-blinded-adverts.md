@@ -8,7 +8,7 @@ topics: [ble, mesh, privacy, wire, crypto]
 
 # ADR 2026-11.sv5t — The iPhone reads blinded adverts
 
-Status: Proposed (2026-11-07). Mirrors the reader half of knit-next ADR 2026-11.xp6d and its five amendments
+Status: Accepted (2026-11-07). Mirrors the reader half of knit-next ADR 2026-11.xp6d and its five amendments
 (knit-next #285), at the pin `cad69c77b`; knit-ios #42, with #43 folded in. Android leads and has merged, so no vector
 moves here.
 Amends ADR 2026-09.6es2 (who dials is judged on advertised forms), ADR 2026-10.6eyf (the head start toward a blinded
@@ -38,9 +38,9 @@ and no say in the address's rotation, and the iPhone's id rides its GATT payload
   `LinkRecord` reads tag 9, `TAG_NEXT`, exactly 16 bytes, and nothing here writes it. `BlindTag` derives tags in
   KnitCrypto. ctl 11's `pk` is typed as kotlinx types it, with #43's `lang`, `reads` and `md`.
 - **Resolving a form** ports `AdvertAliases`, `ExpectedTagTable`, `FormKeys`, `DialKeys` and `KeyChurnLimiter` with
-  their constants: own tags (none here), direct contacts' expected tags over the window (the last 8 hours of slots and
-  the next half hour, every restart), then claims learned on proven links (a tag dial's proof, `TAG_NEXT`), then hints
-  (a dialer's `t`). An unresolved form is held under a handle, `~zzzz…<n>`, which is also what every log line prints.
+  their constants, less Kotlin's own-tag step, since this port airs no tag (the writer's ADR brings it back): direct
+  contacts' expected tags over the window (the last 8 hours of slots and the next half hour, every restart), then
+  claims learned on proven links (a tag dial's proof, `TAG_NEXT`), then hints (a dialer's `t`). An unresolved form is held under a handle, `~zzzz…<n>`, which is also what every log line prints.
   Presence, addresses, the PSM and backoff follow the resolved id or the handle, so a rotation never makes a new peer
   of a contact and never leaves a stale PSM.
 - **Who dials.** The iPhone is clear, so `AdvertOrder.iDial` never sends it to a blinded advert. Its own overrides
@@ -122,14 +122,18 @@ cost an iPhone a refused or link-replacing dial at every rotation of every linke
 - the wire: `BlindVectorTests` and `BlindTagVectorTests` over `keyed-v1.json`'s `blind` section, `BlindWireTests`,
   `BlindTagTests`, `TypedKeysTests` (#43), `LinkTagNextTests` (tag 9 read past, never written), and
   `BlueZGattRetryTests.aCharacteristicThatHoldsABlindedPayloadIsAStranger`;
-- the pure link types, ported case for case from their Kotlin tests: `AdvertOrderTests` and `ResponderOrderTests`,
+- the pure link types, ported case for case from their Kotlin tests but for the own-tag and lonely-dial cases, which
+  this port has no code for: `AdvertOrderTests` and `ResponderOrderTests`,
   `ExpectedTagTableTests`, `AdvertAliasesTests`, `AdvertAliasesClaimTests`, `AdvertAliasesBoundTests`,
-  `KeyChurnLimiterTests`, `BlindSightingsTests`, `HeldStreaksTests` and `DialKeysTests`;
+  `KeyChurnLimiterTests`, `BlindSightingsTests`, `HeldStreaksTests` and `DialKeysTests`, with `AdvertAliasesKeyTests`
+  and `DeadlineHeapTests` for the paths the Kotlin tests leave unrun;
 - the wiring, on a scripted blinding Android (`BlindingPeer`): `BlindLinkTests` (the tag dial, `RefuseLegacy`, the
   backoff's 10/20/40/80/160 s, the tag flood, `TAG_NEXT`'s newest-of-a-read, the hint rule, the safety net),
   `BlindReaderTests` (BlindReaderTest's Sybil and held-dial cases, `HeldStreaks`, keys across the window's edges and
-  skewed clocks, and the key seam through `Mesh`), and `BlindLinkScoreTests` (a hint taken before registration's
-  promotion, a blinding link's score after an unannounced rotation, a crossing that books nothing);
+  skewed clocks, and a key stored for a contact reaching the link manager through `Mesh`), `BlindLinkScoreTests` (a
+  hint taken before registration's promotion, a blinding link's score after an unannounced rotation, a crossing that
+  books nothing), and `BlindLinkAttributionTests` (a tag dial displacing an unproven claimant, a blinded advert
+  without the prefix, a replayer's proven dial, seeking past a dialer still proving itself);
 - the presence keys' receive side: `PresenceKeyPolicyTests` (`PresenceKeyPolicyTest`'s receive cases), `OpenedUnderTests`
   (the era each rung commits), `DirectContactsTests`, `PresenceKeyStoreTests` over both stores with a failed unit,
   `SchemaTests`' v22 pin and migration, `MeshEnginePresenceKeyTests` (a contact's key listed, a stranger's held unlisted

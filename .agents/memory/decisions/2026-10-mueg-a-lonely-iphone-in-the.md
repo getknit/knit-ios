@@ -88,3 +88,12 @@ Two alternatives were weighed:
 and then the PROOF, and a late deadline is put off once per stage, not once per channel, as a dial's already was from
 `connecting` to its HELLO. Each stage's deadline is 5 s, so a link that comes up under suspension can take 5 s plus 3 s
 of running time per stage. A seek-wake dial needs one more half round trip before its link registers.
+
+**Amended 2026-11-07, for blinded adverts (ADR 2026-11.sv5t):** seeking dials a blinded advert as it dials any other,
+and that dial is a tag dial: its HELLO carries `a` = the tag, the reply must prove itself (ADR 2026-11.hpmt), and the
+link takes the id it proved. A failed tag dial backs off the tag's handle and address, never the id its reply named.
+A blinding Android admits a seeking iPhone as an unsighted dialer now that its HELLO carries `CAP_BLIND_ADVERT`; before
+the bit it refused every such dial (`RefuseLegacy`), so a locked iPhone with no link never reached a blinding phone.
+The trial is `interop.py --keep-blind iphone-seek --far phone --mode relink` against a blinding Pixel, with no other
+blinding phone in range: the harness denies every node its scan hears but the far side, and its scan drops tags, so a
+second blinding phone goes undenied and the seek may link it instead.

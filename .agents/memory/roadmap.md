@@ -508,13 +508,18 @@ explicit direction.** Update this file in the change that ships an item.
   here"), filed as knit-ios #42 to #50; the floored reset was already #38. Today's iPhone handles everything Android
   airs at it, so none of this is urgent. Each goes to its plane's owner and reviewer:
   - **Bluetooth and crypto, together** (`bluetooth-owner`, `crypto-owner`; knit-ios #42): knit-next ADR 2026-11.xp6d, the blinded
-    advert, starting with the reader and the presence keys, which Android's release N+1 waits on. The writer needs an
-    iOS ADR of its own: CoreBluetooth gives no advertising sets and no say in the address's rotation, and an iPhone's id
-    rides its GATT payload. Before it starts: who an iPhone's direct contacts are without Remove contact, and what the
-    generation number's backup rule means while `knit.sqlite` stays out of backups.
-  - **Wire and crypto** (`crypto-owner`): type `lang`, `reads`, `md` and `pk` as kotlinx does (#43), and add the `link`
-    frame type, never flooded and spending no key request (#44); the once-per-era receipt re-seal (knit-next #176, the
-    item below; #48), the race loser's reclaim (4mjm, #49) and the floored reset (sfms, #38).
+    advert. The reader and the receive half of the presence keys, which Android's release N+1 waits on, are done on
+    `feat/blind-reader` (ADR 2026-11.sv5t, 2026-11-07), and their device trials are owed: the ADR lists them, and
+    `interop.py --keep-blind iphone` and `iphone-seek` judge them. Who an iPhone's direct contacts are is settled there
+    (`Acquaintances` less blocks; only a block shrinks the set). The writer needs an iOS ADR of its own: CoreBluetooth
+    gives no advertising sets and no say in the address's rotation, and an iPhone's id rides its GATT payload. It takes
+    our own presence keys with it, and the generation number's backup rule while `knit.sqlite` stays out of backups.
+    One cost the reader's review left: a suspended iPhone keeps only the newest `TAG_NEXT` of a read, which can swap a
+    stranger's link once (ADR 2026-11.sv5t, "A locked hour's announcements").
+  - **Wire and crypto** (`crypto-owner`): type `lang`, `reads`, `md` and `pk` as kotlinx does (#43, done with the
+    reader), and add the `link` frame type, never flooded and spending no key request (#44); the once-per-era receipt
+    re-seal (knit-next #176, the item below; #48), the race loser's reclaim (4mjm, #49) and the floored reset (sfms,
+    #38).
   - **Blobs** (`blobs-owner`): the file feed's report clamp (`85f80c22a`, #45), group frames served to any peer (hr9f,
     #46, which should close #35), the member-first serve across every conversation (`c39177b66`) and qu98's echo door;
     and a judgment on 4ckq's face re-want (#47).

@@ -123,3 +123,12 @@ the question is which link a neighbour is on, and only the link can answer it.
 - `MeshControlTests`: the counters.
 - `LinkVectorTests` replays knit-next's `keyed-v1.json` `link` entries, and `EmittedVectorTests` emits Carol's two
   proofs, which knit-next's `IosEmittedVectorTest` verifies.
+
+**Amended 2026-11-07, for blinded adverts (ADR 2026-11.sv5t, knit-next ADR 2026-11.xp6d):** a dial to a blinded
+advert expects no id and requires a proof. A reply naming us fails; one without `CAP_LINK_PROOF`, or with the bit and
+no nonce, fails as `unproven` or `nonce`; otherwise its PROOF is verified against the reply's own id, and the link
+registers under that proven id, R1 to R4 unchanged. The radio hears nothing of an unproven reply (`heardHello`). A
+dialer's HELLO names the form it dialed (`a`, on every dial here, the id on a clear one), and a blinding responder's
+HELLO names its current tag (`t`). The proof covers both HELLOs as the bytes that crossed, so neither field can be
+rewritten (`keyed-v1.json`'s `blind.link.toldRewritten`). The bit values move with `CAP_BLIND_ADVERT`: the HELLO reads `c215f`
+(`c315f` with the doorbell) and the signed profile `0xC015F`, or `0xC000F` without the ratchet's prekey.

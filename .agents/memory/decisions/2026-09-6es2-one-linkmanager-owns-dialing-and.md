@@ -108,3 +108,15 @@ registers, an unproven claim to an id known to prove itself is refused, and a pr
 claiming its id. These admission rules stand for links where neither side proves, so the consequences above still hold
 toward Android v2.10.1 and earlier, and for an id we hold no profile for until it proves itself. A proven link is
 replaced only by a link that proves the same id, under the same sighting and 30 s rules.
+
+**Amended 2026-11-07, for blinded adverts (ADR 2026-11.sv5t, knit-next ADR 2026-11.xp6d):** an advert can carry a
+rotating tag in place of the id (`FLAG_BLINDED`), so who dials is read off the advertised forms, by Android's
+`AdvertOrder.iDial`. The iPhone is clear, so the order never sends it to a blinded advert: a blinding phone dials
+every advert that carries an id. This ADR's exception holds on forms, so a radio without service data still dials a
+blinded peer that reads no GATT payload. That dial, like every dial to a blinded advert, is a tag dial: its HELLO
+carries `a` = the tag, its reply must prove itself (ADR 2026-11.hpmt), and the link registers under the id it proved.
+Dials in flight and backoff are booked on a dial key, a clear advert's id or a tag's handle and address, never on the
+id a tag dial's reply named. The responder's order check reads a proof-offering dialer's `t`, so a blinding Android
+whose id sorts below ours is admitted. A sighting attributed to an id we hold a link to is never dialed, and a tag
+dial that proves an id we already hold a proven link to keeps the new link and retires the old one, as Android's
+responder replaces.

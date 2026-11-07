@@ -113,9 +113,9 @@ explicitly. The commits are the evidence that each one bit this codebase.
    Evidence: fa87bac (a post and a DM waited 393 s behind about ten queued 20 KB digests; `linux-peer.md`, "Why
    the frames were late").
 5. **A stream that loses its place.** A link is a byte stream of `[tag][len][payload]` records. An unknown tag
-   drops the link, and a tag outside 1..8 is never written, 8 only to a peer whose HELLO carries `CAP_LINK_PROOF`
-   (`.agents/rules/interop.md`). A peer's stack can mangle a
-   large SDU. Evidence: cb440a6 and 04a927b (the Moto G lost every multi-packet SDU after the profile and logged
+   drops the link, and a tag outside 1..8 is never written (9, `TAG_NEXT`, is read and never written), 8 only to a
+   peer whose HELLO carries `CAP_LINK_PROOF` (`.agents/rules/interop.md`). A peer's stack can mangle a large SDU.
+   Evidence: cb440a6 and 04a927b (the Moto G lost every multi-packet SDU after the profile and logged
    `unknown record type 0`, so the default send MTU became 247), af87ba4 (`LinkTrace`, added after tags 87 and 54
    dropped the first two A4 links; the cause is still unknown, "What A4 showed").
 6. **A wake that costs the phone its sleep.** Each filtered-scan match and each ring resumes a suspended Knit for
@@ -200,8 +200,8 @@ Then two checks that are not shapes:
   text. A cross-platform constant changing at all is a finding, unless the brief made it a paired change
   (`.agents/rules/paired-change.md`): the `0xFE30` service and the payload and doorbell UUIDs, `AdvertPayload`'s
   layout and flag bits, the HELLO as the only home of `CAP_DOORBELL` and `CAP_BLOB_HAVE`, the frames that skip a
-  ring, `GattPayloads`' rules, the promotion numbers (below), link record tags 1..8, and the HELLO's nonce field and the
-  link's proof (`LinkProof`'s transcript, the PROOF's layout, `CAP_LINK_PROOF`).
+  ring, `GattPayloads`' rules, the promotion numbers (below), link record tags 1..9 (9 read only), and the HELLO's
+  nonce field and the link's proof (`LinkProof`'s transcript, the PROOF's layout, `CAP_LINK_PROOF`).
 - **Which radio runs it.** `KnitBLE` compiles to an empty module on Linux, so your run verifies none of it; say
   so. A rule added to one radio that the other also needs (a forget rule, a doorbell write, a disconnect) is a
   finding unless the change says why only one has it.
