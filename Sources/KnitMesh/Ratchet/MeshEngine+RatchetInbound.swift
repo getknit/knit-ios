@@ -71,8 +71,7 @@ extension MeshEngine {
                 if let initial = frame.header.initial, opened.delta.session.peerInitEphPub == initial.eph {
                     anchored = initial.eph
                 }
-                let content = RatchetInbound.content(of: opened.plaintext, v3: v3)
-                decided = directArrival(content, envelope, from: sender, route: route, parksSeeds: parksSeeds)
+                decided = directArrival(OpenedContent(opened, v3: v3), envelope, from: sender, route: route, parksSeeds: parksSeeds)
                 guard case .arrival(let arrival) = decided else {
                     return nil
                 }
@@ -207,13 +206,13 @@ extension MeshEngine {
         }
     }
 
-    /// What a DM ratchet frame that opened as `content` comes to inside its open's unit (`decryptAndDeliverV2`'s peek,
+    /// What a DM ratchet frame that opened as `opened` comes to inside its open's unit (`decryptAndDeliverV2`'s peek,
     /// `InboundPipeline.kt:1043-1058`): what it applies, or why the open is abandoned with its chain index unspent.
     private func directArrival(
-        _ content: MessageContent?, _ envelope: RelayEnvelope, from sender: NodeId, route: RatchetInbound.Route, parksSeeds: Bool
+        _ opened: OpenedContent, _ envelope: RelayEnvelope, from sender: NodeId, route: RatchetInbound.Route, parksSeeds: Bool
     ) -> DirectArrival {
         // Will not decode, or is newer than this build reads: dropped before the commit (`:1043-1052`).
-        guard let content else {
+        guard let content = opened.content else {
             return .refused(.cannotOpen)
         }
         // An unsigned frame is a tick or nothing (`unsignedButNotATick`, `:1761-1768`): a signature stripped off a captured
@@ -226,7 +225,7 @@ extension MeshEngine {
         if parksSeeds, let seeds = GroupRatchetInbound.seeds(in: content), waitsForRoster(seeds, from: sender) {
             return .awaitsRoster(seeds)
         }
-        return .arrival(arrival(of: content, envelope, from: sender, origin: route.origin))
+        return .arrival(arrival(of: content, envelope, from: sender, origin: route.origin, under: opened.under))
     }
 
     /// Whether `seeds` from `sender` must wait for a roster, read inside the open's unit, so a store that cannot answer fails
@@ -364,6 +363,18 @@ private struct DirectOpen {
     let sender: NodeId
     let route: RatchetInbound.Route
     let now: Int64
+}
+
+/// What a DM ratchet frame opened to inside its open's unit: its plaintext read, or `nil` when it will not decode or is newer
+/// than this build reads, and the era the open committed, read from the open's own delta (``OpenedUnder``).
+private struct OpenedContent {
+    let content: MessageContent?
+    let under: OpenedUnder
+
+    init(_ opened: RatchetEngine.OpenOutcome.Opened, v3: Bool) {
+        content = RatchetInbound.content(of: opened.plaintext, v3: v3)
+        under = OpenedUnder(opened.delta)
+    }
 }
 
 /// What a DM ratchet frame that opened comes to inside its open's unit.

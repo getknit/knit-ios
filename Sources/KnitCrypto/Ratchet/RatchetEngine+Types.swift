@@ -320,5 +320,19 @@ extension RatchetEngine {
         public let consumedSkippedTag: Int64?
         /// Whether a root change was adopted: drop every receive chain and skipped key held for the peer first.
         public let purgePeerRecvState: Bool
+        /// The tag of the root candidate the frame opened under (`openedRootTag`, `RatchetEngine.kt:523`, `:901`): set on
+        /// every rung, a skipped key's, a live chain's and a fresh derivation's alike, so no caller falls back to reading
+        /// the session's root as the one that opened it. A ctl that files what it carries by era reads it with
+        /// ``openedUnderActiveRoot`` (the presence key, ADR 2026-11.sv5t).
+        public let openedRootTag: Int64
+
+        /// Whether the frame opened under the root the session holds once this open commits
+        /// (`RatchetSessions.OpenedUnder`, `RatchetSessions.kt:290-292` at knit-next `cad69c77b`; the pz9g predicate):
+        /// true for a fresh session, an adopted replacement or race, and for a skipped key or live chain under that root;
+        /// false for a drain under `prevRoot` or a late read under a race's other root. It is not the era effects of
+        /// ``Ladder``'s `touch`: a skipped-key or live-chain open under the active root is active here and moves no era there.
+        public var openedUnderActiveRoot: Bool {
+            openedRootTag == RatchetCrypto.rootTag(session.root)
+        }
     }
 }

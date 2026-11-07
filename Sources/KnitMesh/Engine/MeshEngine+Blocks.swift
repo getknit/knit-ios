@@ -18,7 +18,11 @@ extension MeshEngine {
         guard peer != nodeId else {
             return
         }
-        stores.blocks.block(peer, deviceTag: stores.peers.peer(peer)?.deviceTag)
+        let tag = stores.peers.peer(peer)?.deviceTag
+        stores.blocks.block(peer, deviceTag: tag)
+        // Unlisted at once, and their presence keys deleted at the next listing (ADR 2026-11.sv5t).
+        unlistBlocked(peer, deviceTag: tag)
+        notePresenceKeyInputsChanged()
         hideBlockedPhotos(of: [peer])
     }
 
@@ -35,6 +39,7 @@ extension MeshEngine {
         let tag = stores.peers.peer(peer)?.deviceTag
         let wasBlocked = isBlocked(peer) || tag.map(stores.blocks.isBlocked(deviceTag:)) == true
         stores.blocks.unblock(peer, deviceTag: tag)
+        notePresenceKeyInputsChanged()
         guard wasBlocked else {
             return
         }
@@ -161,6 +166,8 @@ extension MeshEngine {
             return false
         }
         stores.blocks.block(sender, deviceTag: deviceTag)
+        unlistBlocked(sender, deviceTag: deviceTag)
+        notePresenceKeyInputsChanged()
         log.log(.info, "mesh blocked \(sender), whose device tag is blocked")
         return true
     }

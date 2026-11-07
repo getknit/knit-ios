@@ -79,7 +79,8 @@ extension RatchetEngine {
                 recvEpoch: touched,
                 skippedInserts: [],
                 consumedSkippedTag: candidate.tag,
-                purgePeerRecvState: false
+                purgePeerRecvState: false,
+                openedRootTag: candidate.tag
             )
             return OpenOutcome.Opened(plaintext: plaintext, delta: delta)
         }
@@ -171,7 +172,8 @@ extension RatchetEngine {
                 ),
                 skippedInserts: skipped,
                 consumedSkippedTag: nil,
-                purgePeerRecvState: resolved.purge
+                purgePeerRecvState: resolved.purge,
+                openedRootTag: rootTag
             )
             return OpenOutcome.Opened(plaintext: plaintext, delta: delta)
         }

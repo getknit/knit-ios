@@ -63,6 +63,8 @@ extension MeshEngine {
         guard recipient != nodeId, let body = Self.messageBody(text, photo: photo), let attachment = sealing(photo, at: sentAt) else {
             return nil
         }
+        // A thread written in makes a direct contact (ADR 2026-11.sv5t).
+        defer { notePresenceKeyInputsChanged() }
         let id = newFrameId()
         var record = MessageRecord(
             id: id,
@@ -91,6 +93,7 @@ extension MeshEngine {
     /// are, are fetched from their authors now (``wantAcceptedPhotos()``, knit-ios #21).
     public func accept(_ conversationId: String) {
         stores.conversations.accept(conversationId)
+        notePresenceKeyInputsChanged()
         wantAcceptedPhotos()
     }
 

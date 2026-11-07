@@ -1,6 +1,6 @@
-public import KnitCrypto
+import KnitCrypto
 import KnitStore
-public import KnitWire
+import KnitWire
 
 /// The link's proof of the id its HELLO claims, as the mesh sees it (the `link-hello-proof` contract; knit-ios #25).
 extension Mesh {
@@ -34,8 +34,9 @@ extension Mesh {
     public var aliasCounters: LinkManager.AliasCounters { links.aliasCounters }
 
     /// The direct contacts' presence keys, for the radio to resolve their blinded adverts by
-    /// (``LinkManager/listPresenceKeys(_:)``): the seam the presence keys' receive side feeds.
-    public func listPresenceKeys(_ listing: [NodeId: [PresenceKey]]) {
+    /// (``LinkManager/listPresenceKeys(_:)``), for the tests that drive the link manager's half alone. Internal: in the app
+    /// only the engine's feed lists keys (``MeshEngine/feedPresenceKeys()``), from the store, the direct contacts and blocks.
+    func listPresenceKeys(_ listing: [NodeId: [PresenceKey]]) {
         links.listPresenceKeys(listing)
         // The limiter's release and the window's first slot edge are deadlines the timer must aim at now (ADR 2026-09.gq84).
         settle()

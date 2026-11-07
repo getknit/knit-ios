@@ -123,4 +123,10 @@ cost an iPhone a refused or link-replacing dial at every rotation of every linke
   `BlindReaderTests` (BlindReaderTest's Sybil and held-dial cases, `HeldStreaks`, keys across the window's edges and
   skewed clocks, and the key seam through `Mesh`), and `BlindLinkScoreTests` (a hint taken before registration's
   promotion, a blinding link's score after an unannounced rotation, a crossing that books nothing);
-- `PresenceKeyPolicyTests`, the two-engine key test, and the device trial.
+- the presence keys' receive side: `PresenceKeyPolicyTests` (`PresenceKeyPolicyTest`'s receive cases), `OpenedUnderTests`
+  (the era each rung commits), `DirectContactsTests`, `PresenceKeyStoreTests` over both stores with a failed unit,
+  `SchemaTests`' v22 pin and migration, `MeshEnginePresenceKeyTests` (a contact's key listed, a stranger's held unlisted
+  until accepted, refusals that still advance the chain, a block's and a first pass's deletes with no line, the carrier,
+  a failed unit's replay, a failed read that deletes and lists nothing), `MeshEnginePresenceKeyEraTests` (a reset's lower
+  generation replaces, the old root's late frames drain), `MeshPresenceKeyTests` (the key through the actor to the link
+  manager, a tag resolved by key), and the device trial.

@@ -101,6 +101,7 @@ import Testing
             blobs: memory.blobs,
             ratchet: memory.ratchet,
             groupRatchet: memory.groupRatchet,
+            presenceKeys: memory.presenceKeys,
             transactor: memory.transactor
         )
         let fixture = linked(stores: stores)

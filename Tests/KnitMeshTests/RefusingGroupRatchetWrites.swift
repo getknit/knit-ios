@@ -113,6 +113,7 @@ extension StoreKind {
             blobs: base.blobs,
             ratchet: base.ratchet,
             groupRatchet: refusing,
+            presenceKeys: base.presenceKeys,
             transactor: base.transactor
         )
         return (stores, refusing)

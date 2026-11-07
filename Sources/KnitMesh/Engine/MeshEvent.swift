@@ -102,4 +102,8 @@ public enum DropReason: Sendable, Hashable, CaseIterable {
     /// (`BLOB_CONTROL_NOT_FROM_LINK`). Blob control is unsigned, so it is attributed only to that neighbour, as its
     /// sender, and is never carried or relayed.
     case blobControlNotFromLink
+    /// A ctl 11 whose presence keys were refused (`PRESENCE_KEY_REFUSED`, ADR 2026-11.sv5t): malformed, from a sender with no
+    /// peer row or from ourselves, a generation held under the same era with other bytes, or one older than every key held.
+    /// The frame's chain still advanced, and it never counts toward a session reset.
+    case presenceKeyRefused
 }

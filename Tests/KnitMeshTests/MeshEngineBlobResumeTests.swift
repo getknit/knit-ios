@@ -167,6 +167,7 @@ import Testing
             blobs: RefusingBlobStore(),
             ratchet: base.ratchet,
             groupRatchet: base.groupRatchet,
+            presenceKeys: base.presenceKeys,
             transactor: base.transactor
         )
         let fixture = EngineFixture(alice, stores: stores)

@@ -672,6 +672,7 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 | 8 | profile | `pr{name, status, avatarHash?, version, openToChat, loraNode?, loraKey?, badges?}`, no prekey | handle and send, presentation only; `badges` dropped (knit-ios #10) |
 | 9 | transfer | `xf`, only toward `CAP_DIRECT_TRANSFER` | unknown here |
 | 10 | call | `cl`, only toward a profile carrying `CAP_CALL` (knit-next ADR 2026-10.3tee) | unknown here |
+| 11 | presence key | `pk{g, k, ng?, nk?, p?}`, point to point, padded to 128 bytes, named layout only (knit-next ADR 2026-11.xp6d) | handle, never send (ADR 2026-11.sv5t): "Presence keys", below |
 
 - **A ctl is machinery:** never stored as a message, notified or acknowledged.
 - **An unknown code** still commits the chain advance and does nothing else (`InboundPipeline.kt:1191-1196`).
@@ -684,6 +685,20 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 - **Inline acks** (`CAP_INLINE_ACK`): up to four `acks` ride a plain sealed DM to an author whose profile has
   `0x40`, and are applied in the same commit as the message (`InboundPipeline.kt:1088-1116`). This port sends room
   ticks alone this way, on a DM's first seal, since it has no DM coalescer (phase P5d).
+
+- **Presence keys** (ctl 11, ADR 2026-11.sv5t; knit-next `PresenceKeyPolicy.kt`, `InboundPipeline.kt:1959-1995` at
+  `cad69c77b`). Applied at every origin inside the DM open's unit, from any sender with a peer row who is not us, with no
+  contact, relay or link check: the listing is the gate. `PresenceKeyPolicy.receive` files them by the era the open
+  committed, `OpenDelta.openedRootTag` and `openedUnderActiveRoot` (Kotlin's `OpenedUnder`, the pz9g predicate), never a
+  later read of the session: an active-root open under another tag replaces what is held, a drain is ordered against the
+  held keys under their own tag and never starts an era, and the three newest generations stay. A refusal (`MALFORMED`,
+  `UNKNOWN_SENDER`, `CONFLICT`, `OLDER`) is `DropReason.presenceKeyRefused`, commits the chain's advance, and never feeds
+  the reset heuristic. KnitStore's `PresenceKeyStore` keeps them (`MemoryPresenceKeyStore`, KnitStoreSQL's
+  `SQLPresenceKeyStore`, schema v22's `peer_presence_keys`). `MeshEngine.feedPresenceKeys`, which `Mesh.settle` runs when
+  its revision moved, reads the direct contacts (`DirectContacts`: `Acquaintances` with blocks applied, DM-kind ids
+  parsed with `NodeId(_:)`), deletes leavers' keys (at a session's first pass every non-contact's) and lists the rest
+  through `MeshTransport.listPresenceKeys`, all in one store unit, doing nothing unless it commits. The sweeps count
+  (`PresenceKeyCounts.leavers`) and never log; no line, status or diagnostic carries a key or a tag.
 
 ### Which scheme a send takes
 

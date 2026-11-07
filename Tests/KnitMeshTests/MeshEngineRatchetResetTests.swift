@@ -216,6 +216,7 @@ extension MeshStores {
             blobs: blobs,
             ratchet: ratchet,
             groupRatchet: groupRatchet,
+            presenceKeys: presenceKeys,
             transactor: transactor
         )
     }

@@ -70,6 +70,7 @@ public final class LyingBlobStore: BlobStore {
             blobs: lying,
             ratchet: base.ratchet,
             groupRatchet: base.groupRatchet,
+            presenceKeys: base.presenceKeys,
             transactor: base.transactor
         )
         return (stores, lying)

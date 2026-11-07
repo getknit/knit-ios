@@ -16,7 +16,7 @@ import Testing
     /// The migrations every earlier build has run, in order.
     private static let frozen = [
         "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19",
-        "v20", "v21",
+        "v20", "v21", "v22",
     ]
 
     @Test func migrationsOnlyEverGrowAtTheEnd() {
@@ -59,7 +59,8 @@ import Testing
                 "accepted_conversations", "blobs", "blocked_device_tags", "blocked_nodes", "deleted_messages", "forward_store",
                 "group_key_sends", "group_members", "group_recv_chains", "group_send_chains", "group_skipped_keys", "groups",
                 "messages", "own_profile",
-                "peer_profiles", "peers", "ratchet_local_epochs", "ratchet_recv_epochs", "ratchet_sessions", "ratchet_skipped_keys",
+                "peer_presence_keys", "peer_profiles", "peers", "ratchet_local_epochs", "ratchet_recv_epochs", "ratchet_sessions",
+                "ratchet_skipped_keys",
                 "reactions",
             ])
         let loose = tables.filter { !$0.strict }.map(\.name)
@@ -225,6 +226,7 @@ enum SchemaPins {
         ("v19", v19),
         ("v20", v20),
         ("v21", v21),
+        ("v22", v22),
     ]
 
     /// Every table, index and trigger this app made, sorted, with the statement SQLite keeps for it. GRDB's own

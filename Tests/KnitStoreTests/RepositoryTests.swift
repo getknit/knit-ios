@@ -22,6 +22,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
         var custody: any CustodyStore
         var ratchet: any RatchetStore
         var groupRatchet: any GroupRatchetStore
+        var presenceKeys: any PresenceKeyStore
         var transactor: any StoreTransactor
     }
 
@@ -48,6 +49,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
             let custody = MemoryCustodyStore()
             let ratchet = MemoryRatchetStore()
             let groupRatchet = MemoryGroupRatchetStore()
+            let presenceKeys = MemoryPresenceKeyStore()
             return Stores(
                 peers: peers,
                 messages: messages,
@@ -58,8 +60,9 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
                 custody: custody,
                 ratchet: ratchet,
                 groupRatchet: groupRatchet,
+                presenceKeys: presenceKeys,
                 transactor: MemoryTransactor(stores: [
-                    peers, messages, conversations, blocks, groups, ownProfile, custody, ratchet, groupRatchet,
+                    peers, messages, conversations, blocks, groups, ownProfile, custody, ratchet, groupRatchet, presenceKeys,
                 ])
             )
         case .sql:
@@ -74,6 +77,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
                 custody: SQLCustodyStore(database),
                 ratchet: SQLRatchetStore(database),
                 groupRatchet: SQLGroupRatchetStore(database),
+                presenceKeys: SQLPresenceKeyStore(database),
                 transactor: database
             )
         }

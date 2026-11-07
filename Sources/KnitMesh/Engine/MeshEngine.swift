@@ -36,6 +36,8 @@ public final class MeshEngine {
     var presentation = RatchetPresentationState()
     /// The second pass each peer's reset owes its re-seal, in memory (knit-next ADR 2026-10.dmgw).
     var resetReseal = ResetReseal()
+    /// What the presence key feed keeps between listings, and its counts (ADR 2026-11.sv5t, ``feedPresenceKeys()``).
+    var presenceKeyFeed = PresenceKeyFeed()
     let transport: any MeshTransport
     let clock: any MeshClock
     let configuration: MeshConfiguration
@@ -182,12 +184,11 @@ public final class MeshEngine {
             .compactMap(\.self).min()
     }
 
-    /// Starts the node (`MeshManager.seedOwnProfileCustody`): seeds our sealed profile's dedupe, brings our prekey in step
-    /// with the ring and the switch, republishes our profile as an edit if its capabilities changed, else if its stamp is
-    /// stale, puts it in custody, settles the quote backlog after it as Android does (`MeshManager.kt:1050`), sweeps what
-    /// expired while we were down, the ratchet's too, forgets deleted messages no carrier can still hold, opens again the
-    /// ratchet DMs to us custody holds with no row, delivers group chats custody holds and our threads lack, and starts the
-    /// timers. Idempotent.
+    /// Starts the node (`MeshManager.seedOwnProfileCustody`): seeds our sealed profile's dedupe, brings our prekey in step with the
+    /// ring and the switch, republishes our profile as an edit if its capabilities changed, else if its stamp is stale, puts it in
+    /// custody, settles the quote backlog after it as Android does (`MeshManager.kt:1050`), sweeps what expired while we were down,
+    /// the ratchet's too, forgets deleted messages no carrier can still hold, opens again the ratchet DMs to us custody holds with no
+    /// row, delivers group chats custody holds and our threads lack, and starts the timers. Idempotent.
     public func start() {
         // Every start is a new session, the Mesh's after a stop too: its photo refusals rested on the links it had.
         forgetPhotoRefusals()
@@ -231,10 +232,9 @@ public final class MeshEngine {
 
     // MARK: Links
 
-    /// A link to `neighbor` came up (`MeshManager.watchNeighbors`): push our profile and our photo, step the blobs we
-    /// lack, send our digest, ask for the keys we lack, and send the ticks we owe it. A neighbour that links again holds
-    /// no ask or query of ours, since one sent before may have died with the old link, so every fetch is open to it
-    /// again first (`BlobExchange.linked`).
+    /// A link to `neighbor` came up (`MeshManager.watchNeighbors`): push our profile and our photo, step the blobs we lack, send our
+    /// digest, ask for the keys we lack, and send the ticks we owe it. A neighbour that links again holds no ask or query of ours,
+    /// since one sent before may have died with the old link, so every fetch is open to it again first (`BlobExchange.linked`).
     public func linkUp(_ neighbor: Neighbor) {
         let peer = neighbor.nodeId
         pushProfile(to: peer)

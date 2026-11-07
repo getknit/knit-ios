@@ -48,7 +48,7 @@ extension Copy {
                     value: "Dropped: key change refused",
                     comment: "A drop counter"
                 )
-            case .cleartextGroup, .rosterRefused, .blocked, .reactionRefused, .blobControlNotFromLink:
+            case .cleartextGroup, .rosterRefused, .blocked, .reactionRefused, .blobControlNotFromLink, .presenceKeyRefused:
                 laterReason(reason)
             case .ratchetNoSession, .ratchetEpochGone, .ratchetDuplicate, .ratchetBadHeader, .ratchetAeadFail, .storeRefused:
                 ratchetReason(reason)
@@ -162,6 +162,13 @@ extension Copy {
                     bundle: .main,
                     value: "Dropped: reaction that isn't an emoji",
                     comment: "A drop counter: a reaction whose text is not a single emoji, still passed on for others but not shown"
+                )
+            case .presenceKeyRefused:
+                NSLocalizedString(
+                    "diagnostics.drop.presence-key-refused",
+                    bundle: .main,
+                    value: "Dropped: presence key refused",
+                    comment: "A drop counter: a key a phone sent to be recognised nearby, refused as malformed, unknown or out of order"
                 )
             case .blobControlNotFromLink:
                 NSLocalizedString(

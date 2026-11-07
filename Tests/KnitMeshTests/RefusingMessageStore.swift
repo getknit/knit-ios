@@ -214,27 +214,7 @@ enum StoreKind: CaseIterable, Sendable {
     ) throws -> RefusingStores {
         switch self {
         case .memory:
-            let memory = MeshStores.inMemory(custodyLimits: custodyLimits)
-            let transactor = memory.transactor as? MemoryTransactor
-            let refuse: @Sendable () -> Void = { transactor?.failCurrentUnit() }
-            let messages = RefusingMessageStore(memory.messages, refuse: refuse)
-            let ratchet = RefusingRatchetWrites(memory.ratchet, refuse: refuse)
-            let peers = RefusingPeerReads(memory.peers, refuse: refuse)
-            let conversations = RefusingConversationReads(memory.conversations, refuse: refuse)
-            let stores = MeshStores(
-                custody: memory.custody,
-                peers: peers,
-                messages: messages,
-                conversations: conversations,
-                blocks: memory.blocks,
-                groups: memory.groups,
-                ownProfile: memory.ownProfile,
-                blobs: memory.blobs,
-                ratchet: ratchet,
-                groupRatchet: memory.groupRatchet,
-                transactor: memory.transactor
-            )
-            return RefusingStores(stores: stores, messages: messages, ratchet: ratchet, peers: peers, conversations: conversations)
+            return Self.refusingMemory(custodyLimits: custodyLimits)
         case .sql:
             let database = try KnitDatabase.inMemory(failures: failures)
             let groups = SQLGroupStore(database)
@@ -258,10 +238,37 @@ enum StoreKind: CaseIterable, Sendable {
                 blobs: try SQLBlobStore(database, directory: blobs),
                 ratchet: ratchet,
                 groupRatchet: SQLGroupRatchetStore(database),
+                presenceKeys: SQLPresenceKeyStore(database),
                 transactor: database
             )
             return RefusingStores(stores: stores, messages: messages, ratchet: ratchet, peers: peers, conversations: conversations)
         }
+    }
+
+    /// ``refusingStores(blobs:failures:custodyLimits:)``'s memory stores, under one ``MemoryTransactor`` that a refusal fails.
+    private static func refusingMemory(custodyLimits: CustodyLimits) -> RefusingStores {
+        let memory = MeshStores.inMemory(custodyLimits: custodyLimits)
+        let transactor = memory.transactor as? MemoryTransactor
+        let refuse: @Sendable () -> Void = { transactor?.failCurrentUnit() }
+        let messages = RefusingMessageStore(memory.messages, refuse: refuse)
+        let ratchet = RefusingRatchetWrites(memory.ratchet, refuse: refuse)
+        let peers = RefusingPeerReads(memory.peers, refuse: refuse)
+        let conversations = RefusingConversationReads(memory.conversations, refuse: refuse)
+        let stores = MeshStores(
+            custody: memory.custody,
+            peers: peers,
+            messages: messages,
+            conversations: conversations,
+            blocks: memory.blocks,
+            groups: memory.groups,
+            ownProfile: memory.ownProfile,
+            blobs: memory.blobs,
+            ratchet: ratchet,
+            groupRatchet: memory.groupRatchet,
+            presenceKeys: memory.presenceKeys,
+            transactor: memory.transactor
+        )
+        return RefusingStores(stores: stores, messages: messages, ratchet: ratchet, peers: peers, conversations: conversations)
     }
 }
 

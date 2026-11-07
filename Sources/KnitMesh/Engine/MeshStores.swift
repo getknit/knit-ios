@@ -28,6 +28,9 @@ public struct MeshStores: Sendable {
     /// The group form's chains, skipped keys and seed outbox (ADR 2026-10.5sk9, phase P6a1), which ``GroupRatchetSessions``
     /// alone writes, inside ``transactor``'s units. Nothing reads or writes it with the switch off.
     public let groupRatchet: any GroupRatchetStore
+    /// The presence keys peers handed us over ctl 11 (ADR 2026-11.sv5t), which a DM ratchet open writes inside its own unit
+    /// and the presence key feed reads and prunes inside one of its own (``MeshEngine/feedPresenceKeys()``).
+    public let presenceKeys: any PresenceKeyStore
     /// The store unit a ratchet change commits in with everything it carries, or not at all (ADR 2026-10.5sk9): the
     /// database itself under the SQL stores, or a ``MemoryTransactor`` over the memory ones.
     public let transactor: any StoreTransactor
@@ -44,6 +47,7 @@ public struct MeshStores: Sendable {
         blobs: any BlobStore,
         ratchet: any RatchetStore,
         groupRatchet: any GroupRatchetStore,
+        presenceKeys: any PresenceKeyStore,
         transactor: any StoreTransactor
     ) {
         self.custody = custody
@@ -56,6 +60,7 @@ public struct MeshStores: Sendable {
         self.blobs = blobs
         self.ratchet = ratchet
         self.groupRatchet = groupRatchet
+        self.presenceKeys = presenceKeys
         self.transactor = transactor
     }
 
@@ -79,6 +84,7 @@ public struct MeshStores: Sendable {
         let memoryBlobs = MemoryBlobStore()
         let memoryRatchet = MemoryRatchetStore()
         let memoryGroupRatchet = MemoryGroupRatchetStore()
+        let memoryPresenceKeys = MemoryPresenceKeyStore()
         return Self(
             custody: memoryCustody,
             peers: memoryPeers,
@@ -90,9 +96,10 @@ public struct MeshStores: Sendable {
             blobs: memoryBlobs,
             ratchet: memoryRatchet,
             groupRatchet: memoryGroupRatchet,
+            presenceKeys: memoryPresenceKeys,
             transactor: MemoryTransactor(stores: [
                 memoryCustody, memoryPeers, memoryMessages, memoryConversations, memoryBlocks, memoryGroups, ownProfileStore, memoryBlobs,
-                memoryRatchet, memoryGroupRatchet,
+                memoryRatchet, memoryGroupRatchet, memoryPresenceKeys,
             ])
         )
     }

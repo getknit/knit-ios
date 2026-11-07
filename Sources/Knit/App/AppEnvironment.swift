@@ -184,6 +184,7 @@
                     database, directory: directory.appending(path: SQLBlobStore.directoryName, directoryHint: .isDirectory)),
                 ratchet: SQLRatchetStore(database),
                 groupRatchet: SQLGroupRatchetStore(database),
+                presenceKeys: SQLPresenceKeyStore(database),
                 transactor: database // The store unit is the database itself, under every SQL store above (ADR 2026-10.5sk9).
             )
             let defaults = DefaultsPreferences()

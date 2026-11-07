@@ -93,6 +93,8 @@ extension MeshEngine {
         if source == .link {
             accept(peer.string)
         }
+        // A scan's verify makes a direct contact as a link's accept does (ADR 2026-11.sv5t).
+        notePresenceKeyInputsChanged()
         hideBlockedPhotos(of: continueBlock(of: peer, deviceTag: landed.deviceTag) ? [peer] : [])
         events.append(.peerUpdated(peer))
         log.log(.info, "mesh pinned \(peer) from a contact card")

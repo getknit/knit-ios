@@ -179,6 +179,7 @@ extension MeshEngineIdentityTests {
             blobs: counted,
             ratchet: base.ratchet,
             groupRatchet: base.groupRatchet,
+            presenceKeys: base.presenceKeys,
             transactor: base.transactor
         )
         let fixture = EngineFixture(parts.alice, stores: stores)

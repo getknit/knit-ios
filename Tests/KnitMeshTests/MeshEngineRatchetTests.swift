@@ -136,6 +136,7 @@ import Testing
             blobs: memory.blobs,
             ratchet: refusing,
             groupRatchet: memory.groupRatchet,
+            presenceKeys: memory.presenceKeys,
             transactor: refusing.transactor
         )
         let fixture = ratchetEngine(stores: stores)

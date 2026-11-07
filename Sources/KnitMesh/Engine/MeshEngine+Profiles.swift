@@ -118,9 +118,8 @@ extension MeshEngine {
         publishEdit(of: own) { $0.prekeyId = wanted }
     }
 
-    /// Our profile frame for the current publish stamp (`MeshManager.ownProfile`): the carried copy when custody
-    /// holds one, else the copy signed earlier, else a fresh signing that goes into custody now. One id, one set of
-    /// bytes.
+    /// Our profile frame for the current publish stamp (`MeshManager.ownProfile`): the carried copy when custody holds one,
+    /// else the copy signed earlier, else a fresh signing that goes into custody now. One id, one set of bytes.
     func ownProfile() -> SignedFrame? {
         let envelope = currentProfileEnvelope()
         if let held = stores.custody.frame(envelope.id, now: clock.wallMilliseconds()) {
@@ -233,6 +232,7 @@ extension MeshEngine {
         }
         record.verified = verified
         stores.peers.upsert(record)
+        notePresenceKeyInputsChanged()
         events.append(.peerUpdated(peer))
         if verified {
             wantAcceptedPhotos()

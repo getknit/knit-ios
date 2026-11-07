@@ -101,6 +101,8 @@ public actor Mesh {
         isRunning = true
         // Before anything asks or links: a prefix from before is no transfer of this session's.
         partials.purge()
+        // A new session of the presence keys: its first listing deletes every non-contact's keys (ADR 2026-11.sv5t).
+        engine.startPresenceKeySession()
         engine.start()
         links.start()
         if eventLoop == nil {
@@ -269,6 +271,9 @@ public actor Mesh {
     /// Why frames were dropped so far.
     public var dropped: [DropReason: Int] { engine.dropped }
 
+    /// What the presence keys' receive side did so far (ADR 2026-11.sv5t).
+    public var presenceKeyCounts: PresenceKeyCounts { engine.presenceKeyCounts }
+
     /// Who is typing where now (``MeshEngine/typingNow``).
     public var typing: [String: [NodeId]] { engine.typingNow }
 
@@ -319,6 +324,8 @@ public actor Mesh {
             advertisedRevision = engine.custodyRevision
             links.updateDigestCue(engine.digestCue)
         }
+        // Before the timer is aimed: a listing's limiter release and first slot edge are deadlines too (ADR 2026-11.sv5t).
+        engine.feedPresenceKeys()
         schedule()
     }
 

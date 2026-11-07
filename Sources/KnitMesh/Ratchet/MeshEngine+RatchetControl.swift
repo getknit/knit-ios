@@ -24,6 +24,8 @@ extension MeshEngine {
     /// - a group key (2): its seeds adopted into the group form's store, joined to this unit, when the roster admits the
     ///   sender (phase P6a2, ``adoptGroupSeeds(_:from:)``), the ack and the custody replay after the commit;
     /// - a group key's ack (4): the seed outbox's row moved (``recordSeedAck(_:from:)``);
+    /// - a presence key (11): its keys filed for the sender by era (``applyPresenceKey(_:from:under:)``), counted after the
+    ///   commit;
     /// - a key request (3): nothing beyond the chain's advance; at its first verdict, once the unit commits, our current
     ///   seeds go to the requester, floored (phase P6b, ``redistributeGroupKey(in:to:)``, `:1339-1341`);
     /// - every code this build does not know: nothing beyond the chain's advance, which still commits, as Kotlin does with
@@ -43,8 +45,13 @@ extension MeshEngine {
     /// again higher and outrank a newer one. Only one whose first verdict never committed is lost that way, as it is in
     /// Kotlin, which re-opens nothing from its own custody. Nor does it re-seal for a reset: that reset's first verdict,
     /// if it had one, came before the restart and re-sealed then, and the replay meets it again for a day.
+    ///
+    /// A presence key (11) applies at every origin, inside the unit, filed under the era the open committed (`under`,
+    /// ``applyPresenceKey(_:from:under:)``): its verdict goes by the sender's own generations and the root's tag, never a
+    /// stamp of ours, so one opened again changes nothing. A refusal never abandons the open, and the chain still advances.
     func arrival(
-        of content: MessageContent, _ envelope: RelayEnvelope, from sender: NodeId, origin: RatchetInbound.Origin
+        of content: MessageContent, _ envelope: RelayEnvelope, from sender: NodeId, origin: RatchetInbound.Origin,
+        under: OpenedUnder
     ) -> RatchetArrival {
         var arrival = RatchetArrival()
         guard let ctl = content.ctl else {
@@ -66,6 +73,10 @@ extension MeshEngine {
         case MessageContent.Control.groupKeyRequest where origin == .firstVerdict:
             // Answered after the commit, never from the start's replay, whose request was answered before the restart.
             arrival.keyRequest = content.gk?.groupId
+        case MessageContent.Control.presenceKey:
+            // Never fed to the reset heuristic, and counted only once the unit commits (`applyCtlInTxn`'s arm,
+            // `InboundPipeline.kt:1941-1943` at knit-next `cad69c77b`).
+            arrival.presenceKey = applyPresenceKey(content.pk, from: sender, under: under)
         case MessageContent.Control.sessionReset where origin == .firstVerdict:
             // However its open went: a root adopted, a race won or lost, or a marker under the session held
             // (`InboundPipeline.kt:1313-1324`). The re-seal is a send, so it waits for the commit.
@@ -92,6 +103,9 @@ extension MeshEngine {
         }
         if arrival.refusedReaction {
             drop(.reactionRefused, envelope)
+        }
+        if let verdict = arrival.presenceKey {
+            notePresenceKey(verdict, envelope)
         }
         if let presentation = arrival.presentation {
             followPresentation(presentation, of: sender)
@@ -230,6 +244,9 @@ internal struct RatchetArrival {
     var keyRequest: String?
     /// The seeds a group key adopted, joined to the unit, whose floor settles and whose ack goes once it commits.
     var seeds: SeedAdoption?
+    /// What a presence key did to the keys held for its sender, to count once the unit commits; `nil` for any other frame
+    /// and for a ctl 11 that carries no key.
+    var presenceKey: PresenceKeyPolicy.Verdict?
 }
 
 /// What one `CTL_GROUP_KEY` adopted inside its DM's unit (phase P6a2), for after that unit commits.
