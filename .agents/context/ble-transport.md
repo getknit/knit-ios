@@ -62,7 +62,7 @@ There is no local name, no UUID list and no scan response, which is 31 bytes on 
 | 1 | 16 | node id as raw bytes (the 26-character base32 id, decoded) |
 | 17 | 4 | digest cue: the low 32 bits of the custody FNV fold, big-endian; nothing on BLE reads it |
 | 21 | 2 | L2CAP PSM, big-endian, assigned by the stack when the server opens |
-| 23 | 1 | BLE-local flags: bit 0 is `FLAG_SIDE_CHANNEL`, set while the side channel runs; bit 1 is `FLAG_DIALS_GATT_PEERS`, set while the GATT reader runs (A3); both are on in release since knit-next `713b29d6`. Bit 2 is `FLAG_AWARE` (below); bits 3–7 are reserved |
+| 23 | 1 | BLE-local flags: bit 0 is `FLAG_SIDE_CHANNEL`, set while the side channel runs; bit 1 is `FLAG_DIALS_GATT_PEERS`, set while the GATT reader runs (A3); both are on in release since knit-next `713b29d6`. Bit 2 is `FLAG_AWARE` (below); bit 3 is `FLAG_BLINDED` (below); bits 4–7 are reserved |
 
 A payload shorter than 23 bytes is dropped, exactly 23 reads the flags as 0, and anything past 24 is
 ignored. There is no version byte: the UUID implies the version. `0xFE30` sits in the SIG member block and
@@ -77,6 +77,18 @@ dormant Wi-Fi Aware plane (`AwareCandidateTracker.kt:63-70`). A GATT-payload sig
 a link whose HELLO carries `CAP_DOORBELL`. No radio here runs Wi-Fi Aware, so `AdvertPayload.awareFlag` reserves the
 bit, and neither the Linux peer's service data nor the iPhone's GATT payload ever sets it. A clear bit wakes nobody,
 so the Linux peer leaves nearby Pixels' Wi-Fi Aware asleep.
+
+`FLAG_BLINDED` (`0x08`, knit-next ADR 2026-11.xp6d, #285, in the pin since `cad69c77b`) says bytes 1–16 are a tag, not
+the node id: the `zzzz` prefix (bits 0–19 `11001` four times) and 108 bits of `HMAC-SHA256(presenceKey, label ‖
+ownerNodeId ‖ u64be(slot) ‖ u8(restart))`, a slot being 15 minutes of wall clock (`BlindTag.kt`; the `blind` section of
+`keyed-v1.json`). A blinding phone zeroes the digest cue, and at each slot edge and bring-up starts fresh presence and
+Coded sets on a fresh PSM, the old one accepting for 30 s more. Only a debug build writes tags today
+(`BuildConfig.BLIND_ADVERT`, and the bridge's `ADVERT` switch, on by default since `b66cfa828`), and only on a controller
+with extended advertising; release N airs its id and ships the readers and the keys, and release N+1, which turns writing
+on, waits on the iOS reader. This port reads no tag yet (knit-next.md, "Owed here"). `AdvertPayload` parses one as a
+`NodeId` and keeps the flags byte, so each tag a neighbour airs is a separate sighting that nothing prunes but
+`forgetEverything` (`LinkManager.swift:319-331`), about 96 a day per blinding neighbour. Its PSM is read per advertised
+id, never cached per address (`LinkManager+Admission.swift:100`), which the reader must keep across a tag change.
 
 The bit first meant the opposite. `FLAG_NO_AWARE` (`9552995d`, `438ffc72`, both in the pin) was set for "won't run
 Aware", and a clear bit made a candidate. It never shipped in a release and lived on knit-next's `main` only from
@@ -95,13 +107,15 @@ bytes. The tags:
 | 3 | `FILE_CHUNK` | raw bytes, 2 to 16 KiB from Android (2 KiB on a Coded link); a file over 8 MiB + 64 KiB is aborted |
 | 4 | `FILE_END` | empty |
 | 5 | `KEEPALIVE` | empty; since knit-next ADR 2026-10.697m, Android writes one at link-up on a link whose HELLO lacks `CAP_DOORBELL`, answers one there, and probes with it. On a doorbell link it sends none and ignores one. It may write one between a file's chunks (`FramedLink.sendKeepalive`, #203), which this port ignores like any other. This port never writes one (`interop.md`) |
-| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|2fff`; the caps may carry `CAP_DOORBELL` (`0x1000`) and `CAP_BLOB_HAVE` (`0x2000`), which no advert can. A build that proves its id adds `CAP_LINK_PROOF` (`0x40000`) and a fourth field, `n` and 16 fresh bytes in 32 lowercase hex digits (the `link-hello-proof` contract, §2) |
+| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|2fff`; the caps may carry `CAP_DOORBELL` (`0x1000`) and `CAP_BLOB_HAVE` (`0x2000`), which no advert can. A build that proves its id adds `CAP_LINK_PROOF` (`0x40000`) and a fourth field, `n` and 16 fresh bytes in 32 lowercase hex digits (the `link-hello-proof` contract, §2). Since knit-next ADR 2026-11.xp6d two fields may follow the nonce: `t<32 hex>`, the form the sender airs (only while it blinds), and `a<32 hex>`, the form a dialer dialed (every Android build writes it, an iPhone's id included); `Hello` ignores both, and the proof signs the payloads as they crossed |
 | 7 | `DIGEST` | UTF-8 JSON `{"ids":[…]}` |
 | 8 | `PROOF` | `sigPub (32) ‖ hpkePub (32) ‖ signature (64)`, exactly 128 bytes: the signer's identity-key signature over both HELLOs (the contract, §3 and §4). Written only to a peer whose HELLO carries `CAP_LINK_PROOF` |
+| 9 | `TAG_NEXT` | the sender's next advertised tag, exactly 16 bytes (knit-next ADR 2026-11.xp6d, `LinkFraming.kt:72`): 3.5 minutes before a rotation, after one nobody was told of, and as the held link's resend. Android writes it only to a proven link whose HELLO carries `CAP_BLIND_ADVERT` (`0x80000`, `TagNextSends.kt:101-105`), so never to this port, which throws on it (`LinkRecord.swift:106-107`) |
 
 - **An unknown tag, a bad length or a truncated record throws on Android and drops the link.** Never send
   a tag outside 1..8, and 8 only to a peer whose HELLO carries `CAP_LINK_PROOF`: Android v2.10.1 and earlier know only
-  1..7.
+  1..7. Never advertise `CAP_BLIND_ADVERT` before `LinkRecordReader` reads tag 9: Android gates both `TAG_NEXT` and the
+  presence key's ctl 11 on that bit alone.
 - A `FRAME` that does not decode is counted and skipped, and the link stays up. Frames and digests may
   interleave with file chunks.
 - Only one file streams each way at a time. A new `FILE_HEADER` discards a partial file.
@@ -280,6 +294,14 @@ radio.
   sees Android.
 - **So the iPhone dials Android, and Android's responder refuses it** unless the iPhone's id sorts higher.
   Companion change A1 accepts a dialer Android never sighted, so every pair links.
+- **A blinding Android dials the iPhone, and refuses the iPhone's dials** (knit-next ADR 2026-11.xp6d). A tag sorts
+  above the iPhone's id, so the ordinary dial waits, but the head-start dial (`LinkManager+HeadStart.swift:29-36`) and the
+  seeking dial (`LinkManager+Seeking.swift:50`) both dial it. Android refuses a dialer whose HELLO lacks
+  `CAP_BLIND_ADVERT` before anything else, writes no HELLO and closes (`BleAdmissionPolicy.kt:115`), logs `bt refused
+  client <id> (… blind=legacy)` and boosts its scan for 60 s, at most once per five minutes and once per half hour per
+  id. The iPhone retires the dial with a backoff, whose streak starts again at each new tag. In front, the Pixel dials the
+  iPhone's clear advert itself (`AdvertOrder.kt:100`), so the pair links; a backgrounded iPhone with no link never
+  links to one. `interop.py` turns a driven Pixel's switch off for its runs (`ClearAdverts`).
 - **With companion change A3, Android sees a foreground iPhone** (knit-next ADR 2026-09.kwq2, merged in the pin; behind `BLE_GATT_PEERS`,
   on in release since knit-next `713b29d6`, ahead of its device trial). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
   of an advert that lists only the UUID, on `GattPayloads`' rules, sights the iPhone with it, and dials it when its

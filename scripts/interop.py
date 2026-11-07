@@ -86,6 +86,11 @@ crash reports and a restart.
 
 Driving a physical phone needs the maintainer's go-ahead for the session (.agents/rules/devices.md). Nothing here
 installs or launches anything: it wakes the phone, asks its bridge to scan, send and report, and reads the answers.
+Every phone a run names (`--device`, `--second-device`, `--quiet`, `--quiet-phone`) airs its node id for the run: a
+debug build since knit-next `b66cfa828` airs a rotating tag instead (ADR 2026-11.xp6d), and every judgment here reads
+advertised ids. The run turns the bridge's `ADVERT` switch off and puts it back when it ends, a Ctrl-C or a SIGTERM
+included; `--keep-blind`, before the command, leaves it as the build has it. A scan leaves out the tags other phones air,
+and says how many it heard: such a phone dials every peer, so clear its advert too or take it away.
 `iphone` also brings Knit forward at the phone's Requests screen and taps Accept there, through uiautomator.
 `relay` and `group` also run a second peer on hci0, and `iphone-relay`, `iphone-group`, `iphone-peer` and
 `iphone-soak --peer` run their one peer there.
@@ -126,6 +131,7 @@ import time
 import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
+from typing import Self
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -284,6 +290,84 @@ class Phone:
 
     def tap(self, point: tuple[int, int]) -> None:
         self.shell(f"input tap {point[0]} {point[1]}")
+
+    def advert(self, **extras: bool) -> dict | None:
+        """The bridge's `ADVERT` (knit-next ADR 2026-11.xp6d, its step-6 amendment): the blinded advert's switch and what
+        is on the air, or None from a build before it, whose advert always carries its node id. `blind=` stores the
+        switch and `clear=True` puts the build's default back; the reply then says whether the air caught up
+        (`applied`, else `why`)."""
+        try:
+            return self.bridge("ADVERT", **extras)
+        except RuntimeError as error:
+            # A build without the action completes the broadcast with no data; a phone adb cannot reach says nothing.
+            if "no bridge reply" in str(error) and "Broadcast completed" in str(error):
+                return None
+            raise
+
+
+class ClearAdverts:
+    """Puts each phone's Bluetooth advert back to its node id for the run, and restores the switch after, whatever the
+    run did. Since knit-next `b66cfa828` a debug build airs a rotating tag in bytes 1–16 instead of its id (ADR
+    2026-11.xp6d), and an iPhone build before the iOS reader dials a tag only to be refused. This script judges dials,
+    orders and scans by advertised ids, so a phone it drives must air its own. `--keep-blind` leaves the adverts alone:
+    only `iphone` judges a blinding phone's links, and the rest still expect ids.
+
+    A switch the phone already holds off (`switch.stored` false, left there by an earlier harness) stays off, and a
+    phone whose transport is down stores the switch for its next start (`why: transport not running`)."""
+
+    # What a store answers when the air did not change and need not have: the switch waits for the next start or
+    # bring-up, or this build or controller never blinds.
+    SETTLED = frozenset({"transport not running", "radio down", "no extended advertising", "no mark store", "build"})
+
+    def __init__(self, phones: list[Phone], keep: bool = False) -> None:
+        self.phones = phones
+        self.keep = keep
+        self.restore: list[tuple[Phone, bool | None]] = []
+
+    def __enter__(self) -> Self:
+        try:
+            for phone in [] if self.keep else self.phones:
+                reply = phone.advert()
+                if reply is None:
+                    continue
+                stored = (reply.get("switch") or {}).get("stored")
+                if stored is False and not reply.get("blinding"):
+                    continue
+                self.restore.append((phone, stored))
+                self._store(phone, blind=False)
+                print(json.dumps({"advert": phone.serial, "blind": False, "stored": stored}), flush=True)
+        except BaseException:
+            # The phones already turned off are put back before the error goes up.
+            self.__exit__()
+            raise
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        for phone, stored in reversed(self.restore):
+            try:
+                reply = phone.advert(clear=True) if stored is None else phone.advert(blind=stored)
+                print(json.dumps({"advert": phone.serial, "restored": stored, "applied": (reply or {}).get("applied")}), flush=True)
+            except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
+                # One phone gone from adb must not keep the others' switches off; this one needs it by hand.
+                print(json.dumps({"advert": phone.serial, "restored": None, "error": str(error)[:200]}), flush=True)
+
+    def _store(self, phone: Phone, blind: bool) -> None:
+        """Stores the switch and waits for the air, trying once more when a rotation was mid-install (`pending`) or the
+        bridge's own wait of about 6 s ran out (`timeout`)."""
+        for attempt in range(2):
+            reply = phone.advert(blind=blind) or {}
+            if reply.get("applied") or reply.get("why") in self.SETTLED:
+                return
+            if attempt == 0:
+                time.sleep(3)
+        raise RuntimeError(f"{phone.serial}'s advert did not go clear: {reply}")
+
+
+def driven_phones(arguments: argparse.Namespace) -> list[Phone]:
+    """Every Android phone the run names, by its adb serial, the phones it pauses or caps included."""
+    serials = [getattr(arguments, "device", None), getattr(arguments, "second_device", None)]
+    serials += [*getattr(arguments, "quiet", []), *getattr(arguments, "quiet_phone", [])]
+    return [Phone(serial) for serial in dict.fromkeys(serial for serial in serials if serial)]
 
 
 class Node:
@@ -632,8 +716,19 @@ def in_range(seconds: int = 20, adapter: list[str] | None = None) -> dict[str, d
     # a link it left up keeps hci1 from advertising (`android-reads`' `hci1-idle`).
     with open(ROOT / ".build" / "interop-scan.log", "a", encoding="utf-8") as log:
         log.write(result.stderr)
-    summary = json.loads(result.stdout.strip().splitlines()[-1])
-    return {node["peer"]: node for node in summary["nodes"]}
+    heard, blinded = ids_heard(json.loads(result.stdout.strip().splitlines()[-1])["nodes"])
+    if blinded:
+        note = "phones in range air tags and dial every peer: clear them with ADVERT --ez blind false, or take them away"
+        print(json.dumps({"note": note, "blinded": blinded}), flush=True)
+    return heard
+
+
+def ids_heard(nodes: list[dict]) -> tuple[dict[str, dict], int]:
+    """A scan's nodes by the id each advertised, and how many adverts it left out for carrying a tag. A blinding
+    phone's bytes 1–16 are a tag no HELLO names, so no peer can refuse it by them and no id sorts against it, and such a
+    phone dials every advert that carries an id, a peer's included (knit-next ADR 2026-11.xp6d)."""
+    blinded = [node for node in nodes if node.get("flags", 0) & BLINDED]
+    return {node["peer"]: node for node in nodes if node not in blinded}, len(blinded)
 
 
 def others_in_range(phone_id: str, seconds: int = 20) -> set[str]:
@@ -644,6 +739,8 @@ def others_in_range(phone_id: str, seconds: int = 20) -> set[str]:
 # FLAG_DIALS_GATT_PEERS, bit 1 of the advert's flags byte: the node reads GATT payloads, so it can find a node that
 # advertises only the 0xFE30 UUID, and such a node waits for it to dial (ADR 2026-09.xzpt).
 DIALS_GATT_PEERS = 0x02
+# FLAG_BLINDED, bit 3: bytes 1–16 are a rotating tag, not the node id (knit-next ADR 2026-11.xp6d).
+BLINDED = 0x08
 # The low byte of the capabilities this port advertises, as the scan spells it: 0x5F since the ratchet (`0x15F`, whose
 # `cryptoV3` sits above the byte, ADR 2026-10.5sk9), 0xF from a build before it (ADR 2026-10.ehe6), 0xB from one before
 # reactions (ADR 2026-09.n393), and 0x9 from one before groups, which phones and peers may still run. The advert keeps
@@ -811,7 +908,12 @@ def iphone(arguments: argparse.Namespace) -> int:
     the first link from there, as MVP item 2 does. A link the phone dialed is checked and reported, and not counted.
     The iPhone's own log, over USB, shows each head-start line. `--wake screen` keeps an open phone's screen on
     without nudging its scans, and `--wake none` never wakes the phone, so that a screen-off phone keeps its own
-    scan cadence."""
+    scan cadence.
+
+    With `--keep-blind`, a phone that airs a tag (knit-next ADR 2026-11.xp6d) is judged by its own order: it dials the
+    iPhone whatever the ids say, which its `ADVERT` reply shows (`iDial`, `dialedByMe`), and refuses an iPhone build
+    before the iOS reader without a reply. Each refusal it logs ` blind=legacy` is counted, not failed. The run skips
+    the 5 s supervision checks and `--links`, which judge links the iPhone dialed."""
     phone = Phone(arguments.device)
     phone.wakes = arguments.wake
     ios = IPhone(arguments.udid, arguments.host)
@@ -824,7 +926,10 @@ def iphone(arguments: argparse.Namespace) -> int:
     # Android's thread for the iPhone holds nothing yet, so no Accept, verified key or reply of the phone's makes it
     # accepted (`Conversations.isAccepted`), and the iPhone's first DM is a request.
     fresh = not phone.state(ios.node_id).get("messages")
-    order = "iphone-above" if ios.node_id > phone_id else "iphone-below"
+    # A phone that airs a tag dials every advert carrying an id, and refuses an iPhone's dial while the iPhone lacks
+    # CAP_BLIND_ADVERT (knit-next ADR 2026-11.xp6d), whatever the ids' order: only with `--keep-blind`.
+    blinding = bool((phone.advert() or {}).get("blinding"))
+    order = "phone-blinds" if blinding else "iphone-above" if ios.node_id > phone_id else "iphone-below"
     above = order == "iphone-above"
     tally: list[dict] = []
     head_starts: list[dict] = []
@@ -840,13 +945,15 @@ def iphone(arguments: argparse.Namespace) -> int:
                 "order": order,
                 "fresh": fresh,
                 "wakes": phone.wakes,
+                **({"skipped": ["link-balanced", "relink-balanced", "links"]} if blinding else {}),
             }
         )
     )
     phone.shell("logcat -c")
+    dialed_by = (lambda: _blind_dialed_by(phone, ios)) if blinding else (lambda: _dialed_by(phone, ios, phone_id, order))
     try:
         run.step("link", lambda: _ios_linked(ios, phone, phone_id))
-        run.step("dialer", lambda: _dialed_by(phone, ios, phone_id, order))
+        run.step("dialer", dialed_by)
         run.step("profile-on-iphone", lambda: _ios_pinned(ios, phone_id, phone_name))
         run.step("profile-on-phone", lambda: _phone_pinned(phone, ios))
         body = f"interop room from iphone {nonce}"
@@ -875,12 +982,15 @@ def iphone(arguments: argparse.Namespace) -> int:
             sent = ios.command(cmd="dm", to=phone_id, text=body)
             run.step("dm-iphone-reply-delivered", lambda: _delivered(ios, sent, 30))
         head_start = not above
-        step = run.step("link-balanced", lambda: _balanced(phone, ios.node_id, tally, fresh=False, head_start=head_start))
+        # A blinding phone dials the iPhone, so no link is the iPhone's to put back at 5 s, and none is a head start.
+        step = None
+        if not blinding:
+            step = run.step("link-balanced", lambda: _balanced(phone, ios.node_id, tally, fresh=False, head_start=head_start))
         balanced = step is not None
         if not arguments.skip_offline:
             phone.shell("logcat -c")
             _offline(run, ios, phone, phone_id, nonce)
-            run.step("relink-dialer", lambda: _dialed_by(phone, ios, phone_id, order))
+            run.step("relink-dialer", dialed_by)
             if balanced:
                 # The doorbell lookup and the put-back come seconds after the link: judge it once it has held.
                 ups = ios.lines(lambda line: _link(line, phone_id))
@@ -935,6 +1045,30 @@ def _dialed_by(phone: Phone, ios: IPhone, phone_id: str, order: str) -> dict:
             # The phone had not dialed by the end of the iPhone's head start (interop-audit finding AND-2).
             return {"dialer": dialer, "outcome": "head start", **detail}
         raise RuntimeError(f"the {dialer} dialed; with the phone's flags at {flags} the {expected} should have: {ends[-2:]}")
+    return {"dialer": dialer, **detail}
+
+
+def _blind_dialed_by(phone: Phone, ios: IPhone) -> dict:
+    """Which side dialed the link between a phone that airs a tag and the iPhone, from the phone's `ADVERT`: the
+    expected dialer is the phone's pre-link order against the iPhone's advert (`peers[].iDial`, knit-next
+    `AdvertOrder.iDial`), and the observed one its link's `dialedByMe`. A blinding phone dials an advert that carries an
+    id, so it should dial. Each iPhone dial it refused for lacking CAP_BLIND_ADVERT, logged ` blind=legacy` on its `bt
+    refused client` line (`BleAdmissionPolicy.Verdict.RefuseLegacy`), is an iPhone build before the iOS reader dialing
+    the phone's tag at its head start or while seeking: reported, never failed."""
+    reply = phone.advert() or {}
+    if not reply.get("blinding"):
+        raise Inconclusive(f"the phone stopped airing a tag: form={reply.get('form')}")
+    sighting = next((peer for peer in reply.get("peers", []) if peer.get("peer") == ios.node_id), {})
+    link = next((link for link in reply.get("links", []) if link.get("nodeId") == ios.node_id), None)
+    expected = None if "iDial" not in sighting else "phone" if sighting["iDial"] else "iphone"
+    prefix = f"bt refused client {ios.node_id} "
+    refused = [line for line in _phone_lines(phone) if line.startswith(prefix) and " blind=legacy" in line]
+    detail = {"expected": expected, "legacyRefusals": len(refused), "tagAware": (link or {}).get("tagAware")}
+    if link is None:
+        raise RuntimeError(f"the phone reports no link to the iPhone: {[entry.get('nodeId') for entry in reply.get('links', [])]}")
+    dialer = "phone" if link.get("dialedByMe") else "iphone"
+    if expected not in (None, dialer):
+        raise RuntimeError(f"the {dialer} dialed, and the phone's order said the {expected} should: {detail}")
     return {"dialer": dialer, **detail}
 
 
@@ -7555,6 +7689,11 @@ def _not_declined(reply: dict) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--keep-blind",
+        action="store_true",
+        help="leave each phone's blinded advert as its build airs it (knit-next ADR 2026-11.xp6d); only `iphone` judges such a run",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("check", "refusal", "replace", "soak", "relay", "iphone-relay", "group", "iphone-group", "ratchet", "ratchet-group"):
         sub = commands.add_parser(name)
@@ -7809,6 +7948,14 @@ def main() -> int:
         parser.error("--far phone needs --device")
     if arguments.command == "android-reads" and arguments.links > 1 and arguments.order != "peer-above":
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
+    # A SIGTERM ends the run through its `finally`s, as Ctrl-C does, so every phone's advert switch is put back.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    with ClearAdverts(driven_phones(arguments), keep=arguments.keep_blind):
+        return dispatch(arguments)
+
+
+def dispatch(arguments: argparse.Namespace) -> int:
+    """Runs the command `main` parsed."""
     if arguments.command in (
         "iphone", "iphone-wake", "android-keeps-iphone", "iphone-reboot", "iphone-photos", "iphone-resume", "iphone-block",
         "iphone-contact", "iphone-delete",

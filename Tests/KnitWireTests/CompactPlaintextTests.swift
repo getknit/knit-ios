@@ -20,10 +20,12 @@ import Testing
 
     // MARK: The nine fixtures
 
-    /// Every compact fixture but the three for fields this build does not model, a profile's supporter badges, a short
-    /// video and a message's formatting, which ``GoldenVectorTests`` decodes.
+    /// Every compact fixture but the four for fields this build does not model, a profile's supporter badges, a short
+    /// video, a message's formatting and its declared languages, which ``GoldenVectorTests`` decodes.
     @Test func everyCompactFixtureIsHere() {
-        let unmodeled: Set = ["messageContentV2ProfileBadges", "messageContentV2Video", "messageContentV2Styles"]
+        let unmodeled: Set = [
+            "messageContentV2ProfileBadges", "messageContentV2Video", "messageContentV2Styles", "messageContentV2Lang",
+        ]
         let compact = Set(GoldenVectors.names.filter { $0.hasPrefix("messageContentV2") })
         #expect(Set(compactFixtures.keys) == compact.subtracting(unmodeled))
         #expect(compactFixtures.count == 9)

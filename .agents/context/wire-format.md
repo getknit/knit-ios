@@ -22,7 +22,10 @@ knit-next uses kotlinx-serialization-cbor 1.12.0 (1.11.0 before `97e1747f`) with
 
 Decoding is looser than any encoder. Since knit-ios #14, KnitWire reads every field the way kotlinx does, so both
 platforms refuse and carry the same frames, apart from the gaps the last item names (`Decoder.kt` in the 1.12.0
-sources):
+sources). Three fields typed since the pin are not checked here yet (knit-next.md, "Owed here"): a chat's declared
+languages, `lang` and `reads` (`Int?` in `ChatContent`, `MessageContent` and `MessageContentV2`'s labels 18 and 19,
+knit-next `e427941fd`), so an iPhone carries a room post whose `lang` is text and Android refuses it; a transfer's `md`
+(`List<Long>?`, `0219a1a46`); and ctl 11's `pk`.
 
 - **A nullable field is null** when its value is the byte `F6` or the single byte `A0`. An empty map written any other
   way (`B8 00`, `BF FF`) goes to the field's own decoder, which fails unless the field's type has no required field.
@@ -129,8 +132,11 @@ thinned.
 These only ever grow. A value is never reused, even after it is retired.
 
 - **Frame types are strings:** `chat`, `groupupdate`, `groupleave`, `profile`, `receipt`, `reaction`,
-  `blobreq`, `blobhave`, `blobhas`, `blobprog`, `blobcancel`, `keyreq`, `typing`, `commons`, `talk`. `meshpost` is
-  burned.
+  `blobreq`, `blobhave`, `blobhas`, `blobprog`, `blobcancel`, `keyreq`, `typing`, `commons`, `talk`, `link`.
+  `meshpost` is burned. `link` (knit-next `aac6ee180`, `Wire.kt:104`) is a direct Internet link's signal, which only a
+  spool's signal lane carries: Android never floods one whatever its envelope says (`MeshRouter.kt:214`) and spends no
+  key request on one (`NO_KEY_REQUEST_TYPES`). This port has no `.link` yet, so a re-wrapped copy would pass the relay
+  gate (`MeshEngine.swift:285`) and could spend a key request (knit-next.md, "Owed here").
   - `isReplayable` covers chat, reaction, receipt, groupupdate and groupleave.
   - `isCustodial` is `isReplayable` plus `profile`.
 - **`MessageContent.ctl`:**
@@ -147,8 +153,10 @@ These only ever grow. A value is never reused, even after it is retired.
   | 8 | profile |
   | 9 | transfer |
   | 10 | call (`CTL_CALL`, only toward a profile carrying `CALL`) |
+  | 11 | presence key (`CTL_PRESENCE_KEY`, knit-next ADR 2026-11.xp6d; named form only, the plaintext padded to 128 bytes, its map under `pk` naming `g`, `k`, `ng`, `nk` and `p`), only point to point over a proven link, `relay = false`, toward a peer carrying `BLIND_ADVERT` |
 
-  An unknown value is a silent no-op.
+  An unknown value is a silent no-op. This port reads ctl 11 as one (`messageContentPresenceKey` in `wire-v1.json`), and
+  Android sends it none.
 - **`EncEnvelope.v`:** 1 is static keys, 2 is the epoch ratchet, and 3 is the compact ratchet. An envelope
   version we cannot open is dropped locally, counted, and still relayed and carried.
 - **Capabilities** (a Long in `ProfileContent.capabilities`, the low byte in the advert, hex in HELLO):
@@ -164,7 +172,7 @@ These only ever grow. A value is never reused, even after it is retired.
   | `0x1000` | `DOORBELL` | `0x2000` | `BLOB_HAVE` |
   | `0x4000` | `CALL` | `0x8000` | `WALKIE` |
   | `0x10000` | `LORA_DIRECT` | `0x20000` | `INET_LINK` |
-  | `0x40000` | `LINK_PROOF` | | |
+  | `0x40000` | `LINK_PROOF` | `0x80000` | `BLIND_ADVERT` |
 
   `DOORBELL` and `BLOB_HAVE` sit above the advert's 8 bits and are read from the HELLO alone. Android sends `0x2FFF`
   since `403cd861`, and `0xFFF` before it; it never claims `DOORBELL`. `CALL` and `WALKIE` ride its signed profile
@@ -179,6 +187,11 @@ These only ever grow. A value is never reused, even after it is retired.
   and from the signed profile, whose copy makes a peer proof-capable. A HELLO carrying it carries a fourth field,
   `n<32 lowercase hex>`, a fresh nonce, and a link where both HELLOs carry it exchanges tag-8 `PROOF` records before it
   registers (`ble-transport.md`, "The handshake").
+
+  `BLIND_ADVERT` (knit-next ADR 2026-11.xp6d) says "I read tags": Android's HELLO and every signed profile carry it
+  since `0285a5c8b`, and no privacy decision rests on it. Android sends `TAG_NEXT` (record tag 9) and ctl 11 only to a
+  peer carrying it, and while it blinds refuses a dialer whose HELLO lacks it. This port claims it only with the reader
+  (`ble-transport.md`, "The advert").
 
 ## Signatures, ids and clocks
 

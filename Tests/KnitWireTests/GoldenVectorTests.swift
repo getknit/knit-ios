@@ -15,9 +15,9 @@ import Testing
         #expect(item.encoded == bytes, "\(name) did not re-encode to its pinned bytes")
     }
 
-    @Test func thereAreEightyFiveVectors() {
+    @Test func thereAreNinetyThreeVectors() {
         // A new fixture in knit-next needs a typed test here when this build models its type.
-        #expect(GoldenVectors.names.count == 85)
+        #expect(GoldenVectors.names.count == 93)
     }
 
     /// knit-next's fixtures for what this build does not model yet, taken at `9c3d487b`: calls (knit-next ADR
@@ -27,7 +27,10 @@ import Testing
     /// frame is read, never refused, and one Android refuses is refused here too (knit-ios #14, ``TypedKeysTests``).
     /// `chatContentVideo` now drops only its `video`: its `attachmentSize` is modelled since knit-ios #7, and is checked in
     /// ``ChatContentSizeTests``. A blob request's `pull` and `until` are modelled since ADR 2026-10.8hek, and are typed
-    /// fixtures below. The commons posts only round-trip, since only a spool carries one (knit-ios #11).
+    /// fixtures below. The commons posts only round-trip, since only a spool carries one (knit-ios #11). At `cad69c77b`:
+    /// a chat's declared languages (`lang`, `reads`; knit-next `e427941fd`), dropped here, and a presence key's ctl 11
+    /// (knit-next ADR 2026-11.xp6d), read as an unknown ctl. A direct link's `LinkSignal` only round-trips, since only a
+    /// spool's signal lane carries one.
     @Test func whatThisBuildDoesNotModelStillDecodes() throws {
         #expect(try BlobRequestContent(decoding: GoldenVectors.bytes("blobReqContentFastOnly")) == BlobRequestContent(hash: "h1"))
         #expect(try ProfilePayload(decoding: GoldenVectors.bytes("profilePayloadBadges")).name == "Ann")
@@ -46,6 +49,12 @@ import Testing
         #expect(MessageContentV2.decode(GoldenVectors.bytes("messageContentV2Styles")) == MessageContent(body: styled.body))
         for name in ["messageContentScopeConfigDm", "messageContentScopeConfigGroup"] {
             #expect(try MessageContent(decoding: GoldenVectors.bytes(name)).ctl == 7, "\(name)")
+        }
+        #expect(try ChatContent(decoding: GoldenVectors.bytes("chatContentLang")) == ChatContent(body: "hola"))
+        #expect(try MessageContent(decoding: GoldenVectors.bytes("messageContentLang")) == MessageContent(body: "hola"))
+        #expect(MessageContentV2.decode(GoldenVectors.bytes("messageContentV2Lang")) == MessageContent(body: "hola"))
+        for name in ["messageContentPresenceKey", "messageContentPresenceKeyNext"] {
+            #expect(try MessageContent(decoding: GoldenVectors.bytes(name)).ctl == 11, "\(name)")
         }
     }
 

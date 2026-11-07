@@ -5,11 +5,13 @@ without Pillow."""
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import io
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -259,6 +261,136 @@ class RunTest(unittest.TestCase):
         self.assertEqual((run.steps, run.failed, run.inconclusive), (2, 1, 1))
         self.assertEqual((run.results[0]["ok"], run.results[0]["inconclusive"], run.results[0]["reason"]), (None, True, "no cut: nothing kept"))
         self.assertIs(run.results[1]["ok"], False)
+
+
+class FakeAdvertPhone:
+    """A phone's `ADVERT` bridge action: `replies` answers each call in turn, and `calls` keeps the extras each sent."""
+
+    def __init__(self, serial: str, replies: list[dict | None]) -> None:
+        self.serial = serial
+        self.replies = replies
+        self.calls: list[dict] = []
+
+    def advert(self, **extras: bool) -> dict | None:
+        self.calls.append(extras)
+        return self.replies.pop(0)
+
+
+def advert(stored: bool | None, blinding: bool) -> dict:
+    """An `ADVERT` read, as knit-next's `DebugBridgeReceiver` shapes the fields the guard reads."""
+    return {"switch": {"value": blinding, "stored": stored}, "blinding": blinding, "form": "tag" if blinding else "clear"}
+
+
+class AdvertReadTest(unittest.TestCase):
+    def phone(self, error: str) -> interop.Phone:
+        phone = interop.Phone("p9")
+        phone.bridge = mock.Mock(side_effect=RuntimeError(error))
+        return phone
+
+    def test_a_build_without_the_action_reads_as_none_and_a_silent_phone_raises(self) -> None:
+        old_build = "no bridge reply to ADVERT: Broadcasting: Intent { … }\nBroadcast completed: result=0"
+        self.assertIsNone(self.phone(old_build).advert())
+        with self.assertRaises(RuntimeError):
+            self.phone("no bridge reply to ADVERT: ").advert()
+
+
+class ClearAdvertsTest(unittest.TestCase):
+    def run_guard(self, phones: list[FakeAdvertPhone], body=None, keep: bool = False) -> None:
+        quiet = contextlib.redirect_stdout(io.StringIO())
+        with quiet, mock.patch.object(interop.time, "sleep"), interop.ClearAdverts(phones, keep=keep):
+            if body:
+                body()
+
+    def test_a_default_switch_goes_off_for_the_run_and_back_to_the_default(self) -> None:
+        phone = FakeAdvertPhone("p9", [advert(None, True), {"applied": True}, {"applied": True}])
+        self.run_guard([phone])
+        self.assertEqual(phone.calls, [{}, {"blind": False}, {"clear": True}])
+
+    def test_a_switch_stored_on_is_stored_on_again(self) -> None:
+        phone = FakeAdvertPhone("p9", [advert(True, True), {"applied": True}, {"applied": True}])
+        self.run_guard([phone])
+        self.assertEqual(phone.calls[-1], {"blind": True})
+
+    def test_a_switch_already_off_and_a_build_without_the_action_are_left_alone(self) -> None:
+        off = FakeAdvertPhone("p3", [advert(False, False)])
+        old = FakeAdvertPhone("p7", [None])
+        self.run_guard([off, old])
+        self.assertEqual(off.calls, [{}])
+        self.assertEqual(old.calls, [{}])
+
+    def test_a_failing_run_still_puts_the_switch_back(self) -> None:
+        phone = FakeAdvertPhone("p9", [advert(None, True), {"applied": True}, {"applied": True}])
+
+        def fails() -> None:
+            raise RuntimeError("a step blew up")
+
+        with self.assertRaises(RuntimeError):
+            self.run_guard([phone], fails)
+        self.assertEqual(phone.calls[-1], {"clear": True})
+
+    def test_a_phone_that_will_not_go_clear_ends_the_run_with_the_earlier_phones_put_back(self) -> None:
+        first = FakeAdvertPhone("p8", [advert(None, True), {"applied": True}, {"applied": True}])
+        timeout = {"applied": False, "why": "timeout"}
+        stuck = FakeAdvertPhone("p9", [advert(None, True), timeout, timeout, {"applied": True}])
+        with self.assertRaises(RuntimeError):
+            self.run_guard([first, stuck])
+        self.assertEqual(first.calls[-1], {"clear": True})
+        self.assertEqual(stuck.calls[-1], {"clear": True})
+
+    def test_a_pending_rotation_is_waited_out_once_and_a_stopped_transport_only_stores(self) -> None:
+        held = {"applied": False, "why": "pending"}
+        pending = FakeAdvertPhone("p8", [advert(None, True), held, {"applied": True}, {"applied": True}])
+        stopped = FakeAdvertPhone("p9", [advert(None, True), {"applied": False, "why": "transport not running"}, {"applied": True}])
+        self.run_guard([pending, stopped])
+        self.assertEqual(pending.calls, [{}, {"blind": False}, {"blind": False}, {"clear": True}])
+        self.assertEqual(stopped.calls, [{}, {"blind": False}, {"clear": True}])
+
+    def test_keep_blind_reads_nothing_and_changes_nothing(self) -> None:
+        phone = FakeAdvertPhone("p9", [])
+        self.run_guard([phone], keep=True)
+        self.assertEqual(phone.calls, [])
+
+
+class BlindDialedByTest(unittest.TestCase):
+    """`iphone --keep-blind`'s dialer check, read off a blinding phone's `ADVERT` and its log."""
+
+    ios = mock.Mock(node_id=IPHONE)
+    refused = f"bt refused client {IPHONE} (sighted=true codedOnly=false heldAgeMs=null atCap=false blind=legacy)"
+
+    def judge(self, reply: dict, lines: list[str]) -> dict:
+        phone = FakeAdvertPhone("p9", [reply])
+        with mock.patch.object(interop, "_phone_lines", return_value=lines):
+            return interop._blind_dialed_by(phone, self.ios)
+
+    def blinding(self, i_dial: bool, dialed_by_me: bool) -> dict:
+        return {
+            "blinding": True,
+            "peers": [{"peer": IPHONE, "iDial": i_dial}],
+            "links": [{"nodeId": IPHONE, "dialedByMe": dialed_by_me, "tagAware": False}],
+        }
+
+    def test_the_phone_dials_as_its_order_says_and_the_iphones_refused_dials_are_counted(self) -> None:
+        result = self.judge(self.blinding(i_dial=True, dialed_by_me=True), [self.refused, self.refused, "bt state links=1"])
+        self.assertEqual(result["dialer"], "phone")
+        self.assertEqual(result["legacyRefusals"], 2)
+
+    def test_a_link_the_order_did_not_call_for_fails(self) -> None:
+        with self.assertRaises(RuntimeError):
+            self.judge(self.blinding(i_dial=True, dialed_by_me=False), [])
+
+    def test_no_link_fails_and_a_phone_gone_clear_is_inconclusive(self) -> None:
+        with self.assertRaises(RuntimeError):
+            self.judge({"blinding": True, "peers": [], "links": []}, [])
+        with self.assertRaises(interop.Inconclusive):
+            self.judge({"blinding": False, "form": "clear"}, [])
+
+
+class ScanIdsTest(unittest.TestCase):
+    def test_a_blinded_advert_is_counted_and_left_out(self) -> None:
+        nodes = [{"peer": PHONE, "flags": 0x02}, {"peer": "zzzz" + "a" * 22, "flags": interop.BLINDED | 0x02}, {"peer": IPHONE}]
+        heard, blinded = interop.ids_heard(nodes)
+        self.assertEqual(set(heard), {PHONE, IPHONE})
+        self.assertEqual(blinded, 1)
 
 
 @unittest.skipUnless(importlib.util.find_spec("PIL"), "the noise picture needs Pillow")

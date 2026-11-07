@@ -9,8 +9,9 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`, `v2.8.0` is `45e09f19`, `v2.9.0` is `3286edd8`, and `v2.10.0` is
   `20696bad`. The port started from HEAD `02051b64`, five test-only commits after `v2.7.0`, on 2026-09-25.
-- **The pin is `e63f15f4`,** knit-next's `main` on 2026-10-25, moved to take in what this port had mirrored ahead of
-  the last one. Every commit since `5f521cb9` was read for it, and "Since then" below says what each means here.
+- **The pin is `cad69c77b`,** knit-next's `main` on 2026-11-07, moved to take in what this port had mirrored ahead of
+  the last one and to read knit-next ADR 2026-11.xp6d (#285) before porting it. Every commit since `e63f15f4` was read
+  for it, and "Since then" below says what each means here.
   `sync-vectors.py --check` needs a checkout at the pin, since a later one may carry vectors this port has not taken.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
@@ -205,7 +206,7 @@ Kotlin wins.
         after a week (ADR 2026-10.k8ge);
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
-  - **Since then** (396 commits, releases `v2.9.0` and `v2.10.0` among them; 24 fixtures added to `wire-v1.json` and
+  - **Up to `e63f15f4`** (the previous pin; 396 commits, releases `v2.9.0` and `v2.10.0` among them; 24 fixtures added to `wire-v1.json` and
     `ratchet-v1.json` new, none moved). Read on 2026-10-25, and the merged code checked at `e63f15f4`:
     - **Owed here.** j67x's rule can bite between honest phones, and the last needs a failed database write.
       `FLAG_NO_AWARE` (knit-ios #16) was owed here too, until `808472a3` turned it around past the pin ("Mirrored
@@ -426,13 +427,69 @@ Kotlin wins.
         low-power mode, offline translation, voice-note transcription, short video re-encoding and screening, the
         supporter badge's production key, the field log, the developer view, Wear watch faces, pt-BR, notifications,
         the debug bridge, tooling and tests.
-  - **Mirrored ahead of the pin:** `eccabcd72`'s `RoomAttachments` (its ADR 2026-10.79j9): a room post's attachment
+  - **Since then** (282 commits to `cad69c77b`; `v2.11.0-alpha.1` to `alpha.3` cut on `main` at `acf23d69d`,
+    `1dbeec9d2` and `2d61c0ecd`, and the hotfixes `v2.10.1` and `v2.10.2` recorded by `c15f2cacf` and `0cecd38bb`; eight
+    fixtures added to `wire-v1.json`, with its `languageRegistry`, and a `blind` section to `keyed-v1.json`, none moved;
+    Android's database at v32). Read on 2026-11-07, and the merged code checked at `cad69c77b`. Today's iPhone handles
+    everything these commits put on the air (`ble-transport.md`, "What this means for an iPhone"):
+    - **Owed here:**
+      - **The blinded advert** (knit-next ADR 2026-11.xp6d and its five amendments, #285, `c9c70c28b` to `07dde9bc1`,
+        with `b9ba39596` and `bf2472969`'s held-dial key), all of it: reading `FLAG_BLINDED` tags through the
+        owner-bound `BlindTag` and the expected-tag table, the HELLO's `t` and `a`, the tag dial, `TAG_NEXT` (tag 9) and
+        `CAP_BLIND_ADVERT`, the presence keys over ctl 11 to direct contacts, and the writer. Android's release N+1,
+        which turns writing on, waits on the iOS reader. Never claim `CAP_BLIND_ADVERT` before reading tag 9
+        (`ble-transport.md`, "The link"). The restore's link-owed reset (`228520ea7`, `REMARK_OWN`) arrives here as any
+        ctl 1 does; its marker goes with the key side.
+      - **Wire decoding** (knit-ios #14's parity): `lang` and `reads` (`e427941fd`, `8d078afe5`), a transfer's `md`
+        (`0219a1a46`) and ctl 11's `pk` are typed on Android and unchecked here (`wire-format.md`). The `link` frame type
+        (`aac6ee180`) is never flooded and spends no key request there; here it is unknown (`wire-format.md`,
+        "Registries").
+      - **The file feed** (`85f80c22a`, #149, #158): Android clamps a `blobprog` report's held count between the
+        stream's offset and the bytes written, and caps each rate sample at the ceiling (`FeedMeter.kt:193`, `:201`);
+        `FeedWindow` resets and refreshes `heardAt` only when a report lands a new whole chunk (`FeedWindow.kt:237`,
+        `:239`). `FeedMeter.swift:174-188` takes the count raw, and `FeedWindow.swift:202-204` always refreshes, so a
+        peer repeating one count holds the window shut and an inflated one poisons the rate.
+      - **Custody and blobs:** group frames served to any peer (`9f53dc34f`, its ADR 2026-10.hr9f; `custody.md`); the
+        member-first serve reading every conversation that names a blob (`c39177b66`, `BlobExchange.addresseesAcross`),
+        where `MeshEngine+BlobParking.swift:100-108` reads the earliest row's one; and the echo door of `905aa6370` (its
+        ADR 2026-11.qu98): a carrier's pull-through ask for a hash only held request rows name is declined
+        (`BlobExchange.kt:197`), where `MeshEngine+Blobs.swift:206-218` fetches it within the echo budget. qu98's other
+        two doors are held here already (knit-ios #21). Not settled: `81e49a22b` (its ADR 2026-11.4ckq) re-wants at most
+        64 faces, contacts first, fetch-only, and keeps over-ceiling refusals across restarts; this port re-wants every
+        advertised photo each pass (`MeshEngine+Passes.swift:99-118`) with the pull budget and keeps refusals per
+        session. For `blobs-owner` to judge.
+      - **The ratchet** (`crypto.md`): a sealed DM receipt re-sealed only once per era (`afdd37204`, its ADR
+        2026-10.8hn6, #176, the iOS half the roadmap waits on; `9dfe9f626` keys its ledger by author and DM id, worth
+        taking); the race loser's reclaim (`d9993ed51`, its ADR 2026-10.4mjm); and the floored reset held and opened
+        again (`57b2a85c6`, its ADR 2026-11.sfms).
+      - **A typing cue in a request** (`ba26a7904`): Android drops one in a conversation that is still a message request
+        (`InboundPipeline.kt:809`), and `MeshEngine+Typing.swift:37` does not. Its typing-indicators switch is product
+        scope.
+    - **Already here:** blob traffic marked for relay (`015fff823`, refused before it is read by
+      `MeshEngine+BlobQueries.swift:13-24` and never flooded; only the counter's name differs); a same-radio
+      displacement counted as a refused claim (`6c3764f4d`); the hj4a amendment of 2026-11-06 and `bf2472969` for clear
+      ids, since every failed dial backs off and no dial begins to an id held (`LinkManager+Channels.swift:57-60`,
+      `LinkManager+Admission.swift:71-73`); and the capability bits, which `Capabilities` keeps whole: `CALL`, `WALKIE`,
+      `LORA_DIRECT`, `INET_LINK` (moved to `0x20000` by `3e435dc7a`), `LINK_PROOF` and `BLIND_ADVERT`. Android's
+      check-then-write races (`2c39b2a56`, `4e06a6c41`), cancellation (`05b7c6ba2`) and orphan sweep (`a10394ee3`) have
+      no counterpart in the `Mesh` actor.
+    - **Nothing to mirror:** direct Internet links (`41e52bab4`, `aac6ee180` to `b26e4ced4`, `14ba47003`, `f8fa57c71`,
+      `555a3ead9`, `2b7f78812`, ADR a5yj; `linkSignal*` only round-trip here), LoRa (`b0e777f87`, `927eeba98` and
+      the board work, `lora-direct-v1.json`, which `sync-vectors.py` does not copy), calls and walkie, translation and
+      its models, i18n and emoji, Wear, the spool (`0f8049cb8`, `18ac2f0b8`, `50f0e3a69`), Wi-Fi Aware (`263c771d2`,
+      `a79382f1e`), pinned messages (`42e8d6bf0`, `02c699301`), Android's UI, settings, demo, diagnostics, share and
+      video, the debug bridge (`ADVERT`, `ADVERT_ROTATE`, `SCAN`, `KEYS`; `interop.py` reads `ADVERT`), and the lab,
+      tests, CI, builds, releases and agents. `NEXT_WIRE_BREAK.md` gains items 13 (finish blinding, the Wi-Fi Aware SSI
+      and this port's GATT payload with it) and 14 (`relay` outside the signature, which this port's envelope shares),
+      and item 4 notes custody's group filter gone.
+  - **Mirrored ahead of the last pin, merged since, and checked again at `cad69c77b`,** each unchanged since the commit
+    cited, or moved only by a commit above: `eccabcd72`'s `RoomAttachments` (its ADR 2026-10.79j9): a room post's attachment
     that is not a picture, a link card or a video is left off the row, and a post that is nothing else keeps none
     (`RoomAttachments.swift`, ADR 2026-10.vzem, knit-ios #21). The frame and the wire are unchanged.
     And `e0cbb842a` (its ADR 2026-10.7mqm, knit-ios #18, ADR 2026-10.9e7g): the custody cap evicts from the largest
     sender, and custody refuses a group frame whose roster does not derive to its id or name its sender. Its
     `vectors/custody-v1.json` was copied with `sync-vectors.py --only custody-v1.json` from `820187443e`, where the
-    file is unchanged since `e0cbb842a`. `015fff823`, blob traffic marked for relay, is not mirrored.
+    file is unchanged since `e0cbb842a`. `015fff823`, blob traffic marked for relay, was already this port's rule ("Already here", above).
     And `808472a3` (GitHub #44, the 2026-10-27 amendment of its ADR 2026-10.2t49, knit-ios #16): advert bit 2,
     `FLAG_NO_AWARE` at the pin (`9552995d`, `438ffc72`), becomes `FLAG_AWARE` with the opposite meaning, "count on my
     Wi-Fi Aware now". `AdvertPayload.awareFlag` reserves it, and no advert this port writes sets it
@@ -442,7 +499,7 @@ Kotlin wins.
     every other refusal, and the sweep deletes the rows over the cap. Its `vectors/custody-v1.json` (30 steps, a
     2,048-byte rig cap) was copied with `sync-vectors.py --only custody-v1.json` from `ce56fec6e`. The wire is
     unchanged.
-    And `7439fd9cc` on knit-next's `fix/name-confusables`, not yet merged (its ADR 2026-10.2kfr, knit-next #228,
+    And `7439fd9cc`, merged unchanged from knit-next's `fix/name-confusables` (its ADR 2026-10.2kfr, knit-next #228,
     knit-ios #30, ADR 2026-10.k99b): `NameKey` folds 73 Latin, Greek and Cyrillic lookalikes and I/l to i, and
     drops marks, default-ignorables and U+2800, so a lookalike or invisible name gets a discriminator. A received
     profile's name and status are cleaned of controls and bidi overrides at store (`TextLimits.cleanReceived`), and
@@ -483,7 +540,7 @@ Kotlin wins.
     `Mesh` actor), and it re-runs an id's link-up after a displacement (this port's `.down` then `.up` does). The wire
     change is additive.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `e63f15f4`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `cad69c77b`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 

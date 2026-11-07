@@ -122,8 +122,11 @@ A node carries frames for people who are not in range yet. This is store-and-for
 
 - At link-up and every 60 s, each side sends a `DIGEST` record listing every live custody id.
 - On receiving the peer's `DIGEST`, Android pushes every live frame the list omits (`ForwardSync.kt:136-163`). Each
-  goes out as a fresh `WireEnvelope` with `ttl = 8` and `hops = 0`, with `sig` and `signed` copied verbatim. Group
-  frames go only to roster members.
+  goes out as a fresh `WireEnvelope` with `ttl = 8` and `hops = 0`, with `sig` and `signed` copied verbatim. Since
+  knit-next `9f53dc34f` (its ADR 2026-10.hr9f, #176, #235) a group's frames go to any peer whose digest lacks them, as
+  every other frame does (`ForwardSync.kt:186`): a non-member's per-sender bucket otherwise drifted from the members'
+  and re-served frames they had evicted. This port still serves a group frame only to a roster member
+  (`CustodySync.swift:213-219`), which is owed (knit-next.md, "Owed here").
 - **This port answers in capped rounds** (ADR 2026-10.f5zs), its own rule and not a custody constant. A peer's
   digests are metered, a burst of 2 and then one per 30 s, and the rest are dropped. A round picks from
   `CustodyStore.liveIndex`, which decodes nothing: profiles first, then newest received first, minus the digest's ids

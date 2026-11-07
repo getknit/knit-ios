@@ -557,6 +557,11 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   - The loser adopts the winner's root.
   - The winner stays unconfirmed, keeps sealing against the loser's SPK, and reads the loser's root read-only.
   - The loser's late opening DM gets a read-only candidate and is never anchored (#83).
+  - Since knit-next `d9993ed51` (its ADR 2026-10.4mjm, #189) the loser stamps its own abandoned init
+    (`prevRootOwnInitAt`, `RatchetEngine.kt:816`) and moves back onto it when the peer answers under it
+    (`reclaimsPrevRoot`, `:935-949`), so a race and then a restore no longer split the pair onto two roots. This
+    port's `resolveRace` keeps no stamp and reclaims nothing (`RatchetEngine+Resolve.swift:69`), which is owed
+    (knit-next.md, "Owed here").
 - **An open that holds the era** is this port's own (`OpenContext.allowEraChange`, phase P5a), for the start's replay
   out of our own custody: an init the session has not resolved neither races nor replaces it, flagged or not, and the
   frame reads under the roots held, the read-only remnant included. With no session, an init still establishes one.
@@ -601,6 +606,11 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   - **Re-root:** a fresh init flagged `FLAG_RESET`, numbering again from 1.
   - **Mark:** flag our own init that is still unanswered.
   - **Decline:** inside the peer's 60 s floor.
+  - Since knit-next `57b2a85c6` (its ADR 2026-11.sfms, amending qerd, #251) a reset the receiver's replacement floor
+    refuses is held (`RESET_FLOORED`, `FlooredResets.kt`, `InboundPipeline.kt:2678-2732`) and opened again when the
+    floor ends, and a sender declines every cause but after-wipe for a minute after a replacement answer
+    (`replacedAt`, `RatchetSessions.kt:305`, `:708`). This port has neither, and exempts an on-demand reset
+    (`RatchetResetPolicy.swift:134-139`): owed. sfms says "knit-ios has no DM ratchet", which is stale.
 
   A reset is always v2, with the plaintext `{"body": "", "ctl": 1}`.
 - **After a reset we receive,** we re-seal our unacked DMs of the last 24 h under their original id and `sentAt`,
@@ -1064,7 +1074,7 @@ knit-next #174, fixed in `458c2eee`, and this port follows the fix from phase P7
 ### Vectors
 
 `wire-v1.json` pins only the ratchet's shapes. The keyed answers come from companion change A9:
-knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` at the pin, `e63f15f4`; its bytes last moved in
+knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` at each pin, last at `cad69c77b`; its bytes last moved in
 `3e3e044c` (`.agents/context/knit-next.md`). Since `1b5e72fa` an initiator's state holds the
 prekey its init names as `peerBasePub` at `peerBaseEpoch` 0 (#174); no frame byte moved. Each section serves one phase:
 

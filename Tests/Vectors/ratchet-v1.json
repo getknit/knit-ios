@@ -2,7 +2,7 @@
   "source": {
     "repository": "knit-next",
     "path": "vectors/ratchet-v1.json",
-    "commit": "e63f15f4da8d3476ee8a9102185299879a448510",
+    "commit": "cad69c77bcc88ff499e6056185e0eae04dcca384",
     "uncommitted": false,
     "sha256": "11e8864cc7abe57bf34da67f409928da1d548c551c2d6cbbd6e25db1456a5217"
   },
