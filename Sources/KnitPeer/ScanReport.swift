@@ -22,7 +22,8 @@ public struct ScanReport: Sendable {
 
     /// Takes one sighting, and answers the event line when it is a node not heard before.
     public mutating func take(_ sighting: RadioSighting) -> String? {
-        let node = sighting.advert.nodeId
+        // The advertised form: a blinding Android's tag reports as a node of its own, its flags saying so (ADR 2026-11.sv5t).
+        let node = sighting.advert.advertised
         guard node != own else {
             return nil
         }

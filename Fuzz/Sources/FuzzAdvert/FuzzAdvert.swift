@@ -8,6 +8,11 @@ public func fuzzAdvert(_ data: UnsafePointer<UInt8>, _ count: Int) -> CInt {
     if let advert = AdvertPayload(serviceData: bytes), bytes.count == AdvertPayload.size {
         precondition(advert.bytes == bytes, "a full advert did not round-trip")
     }
+    let advert = AdvertPayload(serviceData: bytes)
+    if let advert, advert.blinded {
+        precondition(AdvertForm.hasTagPrefix(advert.advertised.bytes), "a blinded advert parsed without the tag prefix")
+    }
+    precondition((AdvertPayload(gattValue: bytes) != nil) == (advert.map { !$0.blinded } ?? false), "a GATT value read a tag")
     // Lossy on purpose: every input becomes some string, replacement characters included.
     // swiftlint:disable:next optional_data_string_conversion
     let text = String(decoding: bytes, as: UTF8.self)

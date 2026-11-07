@@ -94,6 +94,9 @@ private func parse(_ record: LinkRecord, into session: inout FuzzLinkRecords) {
         _ = try? ProfileContent(decoding: envelope.payload)
         _ = try? ReceiptContent(decoding: envelope.payload)
         _ = try? BlobRequestContent(decoding: envelope.payload)
+    case .tagNext:
+        // Its length is the reader's to check; the 16 bytes are an advertised form, read the way a sighting is.
+        _ = NodeId(bytes: record.payload)
     case .keepalive:
         if let cut = session.intake.cut(), cut.bytes.count > session.kept[cut.key]?.count ?? 0 {
             session.kept[cut.key] = cut.bytes

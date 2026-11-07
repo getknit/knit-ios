@@ -239,7 +239,7 @@
         func sight(_ path: String) {
             guard isUp, let device = devices[path], let rssi = device.rssi,
                 let advert = device.advert ?? gattPayload(of: device, now: Monotonic.milliseconds()),
-                !configuration.neverSighted.contains(advert.nodeId)
+                !configuration.neverSighted.contains(advert.advertised)
             else {
                 return
             }

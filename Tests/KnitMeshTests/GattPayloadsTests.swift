@@ -52,7 +52,7 @@ import Testing
     @Test func aHelloNamingAnotherNodeForgetsThePayloadAndTheSameNodeKeepsIt() {
         let reads = Reads()
         read(reads, Self.phone, now: 0)
-        #expect(!reads.helloNamed(Self.payload.nodeId, at: Self.phone))
+        #expect(!reads.helloNamed(Self.payload.advertised, at: Self.phone))
         #expect(!reads.helloNamed(fixtureNodeId(3), at: Self.other), "nothing read there")
         #expect(reads.state.payload(of: Self.phone) == Self.payload)
         #expect(reads.helloNamed(fixtureNodeId(3), at: Self.phone))

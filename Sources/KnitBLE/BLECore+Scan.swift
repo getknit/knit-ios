@@ -183,7 +183,7 @@
             public func probeReport() async -> ScanProbe {
                 await withCheckedContinuation { continuation in
                     core.onQueue { core in
-                        core.probe.learn { uuid in core.gatt.payload(of: RadioAddress(uuid.uuidString))?.nodeId.string }
+                        core.probe.learn { uuid in core.gatt.payload(of: RadioAddress(uuid.uuidString))?.advertised.string }
                         continuation.resume(returning: core.probe)
                     }
                 }
@@ -194,7 +194,7 @@
             /// Records an advert the probe's scan matched.
             func probeSaw(_ peripheral: CBPeripheral, _ advertisement: [String: Any], rssi: Int) {
                 let address = RadioAddress(peripheral.identifier.uuidString)
-                let node = (BLEAdvert.payload(advertisement) ?? gatt.payload(of: address))?.nodeId.string
+                let node = (BLEAdvert.payload(advertisement) ?? gatt.payload(of: address))?.advertised.string
                 let now = clock.wallMilliseconds()
                 if let line = probe.saw(peripheral.identifier, advertisement, node: node, rssi: rssi, now: now) {
                     log.log(.info, line)

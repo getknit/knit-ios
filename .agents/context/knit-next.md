@@ -434,12 +434,14 @@ Kotlin wins.
     everything these commits put on the air (`ble-transport.md`, "What this means for an iPhone"):
     - **Owed here:**
       - **The blinded advert** (knit-next ADR 2026-11.xp6d and its five amendments, #285, `c9c70c28b` to `07dde9bc1`,
-        with `b9ba39596` and `bf2472969`'s held-dial key), all of it: reading `FLAG_BLINDED` tags through the
-        owner-bound `BlindTag` and the expected-tag table, the HELLO's `t` and `a`, the tag dial, `TAG_NEXT` (tag 9) and
-        `CAP_BLIND_ADVERT`, the presence keys over ctl 11 to direct contacts, and the writer. Android's release N+1,
-        which turns writing on, waits on the iOS reader. Never claim `CAP_BLIND_ADVERT` before reading tag 9
-        (`ble-transport.md`, "The link"). The restore's link-owed reset (`228520ea7`, `REMARK_OWN`) arrives here as any
-        ctl 1 does; its marker goes with the key side.
+        with `b9ba39596` and `bf2472969`'s held-dial key), being mirrored on `feat/blind-reader` under ADR
+        2026-11.sv5t (knit-ios #42). The wire is read: `FLAG_BLINDED` (a prefixless blinded advert dropped, a blinded
+        GATT payload a stranger), the HELLO's `t` and `a`, and `TAG_NEXT` (tag 9, read past on a live link). Still owed:
+        resolving tags through the owner-bound `BlindTag` and the expected-tag table, the tag dial, acting on `TAG_NEXT`,
+        the presence keys received over ctl 11, and `CAP_BLIND_ADVERT`. The writer, and sending keys of our own, wait
+        for an iOS ADR of their own. Android's release N+1, which turns writing on, waits on the iOS reader. Never claim
+        `CAP_BLIND_ADVERT` before reading tag 9 and ctl 11 (`ble-transport.md`, "The link"). The restore's link-owed
+        reset (`228520ea7`, `REMARK_OWN`) arrives here as any ctl 1 does; its marker goes with the key side.
       - **Wire decoding** (knit-ios #14's parity): `lang` and `reads` (`e427941fd`, `8d078afe5`), a transfer's `md`
         (`0219a1a46`) and ctl 11's `pk` are typed on Android and unchecked here (`wire-format.md`). The `link` frame type
         (`aac6ee180`) is never flooded and spends no key request there; here it is unknown (`wire-format.md`,

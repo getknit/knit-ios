@@ -279,6 +279,8 @@ public enum KeyedVectors {
         public let frames: [String: VectorFrame]
         /// The link vectors.
         public let link: VectorLink
+        /// Blinded adverts' vectors.
+        public let blind: VectorBlind
     }
 
     /// The file, read once.

@@ -16,6 +16,7 @@ import Testing
             LinkRecord(.keepalive),
             LinkRecord(.hello, payload: Hello(nodeId: nodeA).payload),
             LinkRecord(.digest, payload: LinkJSON.digestPayload(ids: ["x", "y"])),
+            LinkRecord(.tagNext, payload: [UInt8](repeating: 0xCE, count: LinkRecord.tagNextBytes)),
         ]
         var reader = LinkRecordReader()
         reader.append(records.flatMap { $0.encoded ?? [] })
@@ -54,9 +55,10 @@ import Testing
 
     @Test func anUnknownTagEndsTheLinkAsAndroidDoes() {
         var reader = LinkRecordReader()
-        // Tag 8 is the PROOF since the link's proof (knit-ios #25); 9 is the first a build of today does not know.
-        reader.append([0x09, 0, 0, 0, 0])
-        #expect(throws: LinkRecordError.unknownTag(9)) {
+        // Tag 9 is the TAG_NEXT since blinded adverts (knit-next ADR 2026-11.xp6d); 10 is the first a build of today does not
+        // know (`LinkFramingTest.theTagAfterTagNextIsStillUnknownAndThrows`).
+        reader.append([0x0A, 0, 0, 0, 0])
+        #expect(throws: LinkRecordError.unknownTag(10)) {
             try reader.next()
         }
         var zero = LinkRecordReader()
@@ -247,7 +249,8 @@ import Testing
         let full = AdvertPayload(capabilities: Capabilities(rawValue: 0x1), nodeId: node, digestCue: 7, psm: 200).bytes
         // A 23-byte advert predates the flags byte: same fields, flags 0.
         let older = try #require(AdvertPayload(serviceData: Array(full.prefix(AdvertPayload.minimumSize))))
-        #expect(older.nodeId == node)
+        #expect(older.advertised == node)
+        #expect(!older.blinded, "23 bytes read the flags as 0")
         #expect(older.flags == 0)
         // Bytes past 24 are ignored.
         let forward = try #require(AdvertPayload(serviceData: full + [0xAA, 0xBB]))
@@ -268,12 +271,13 @@ import Testing
         #expect(AdvertPayload(serviceData: flagged.bytes)?.flags == AdvertPayload.dialsGattPeersFlag)
     }
 
-    /// The flags this port writes never claim Android's side channel or its Wi-Fi Aware (knit-next `808472a3`,
-    /// `BleAdvertPayload.kt:74-86`), and the initializer's default, which knit-peer's `scan` and `stranger` adverts
+    /// The flags this port writes never claim Android's side channel, its Wi-Fi Aware or a tag (knit-next `cad69c77b`,
+    /// `BleAdvertPayload.kt:95-104`), and the initializer's default, which knit-peer's `scan` and `stranger` adverts
     /// take, claims nothing either.
     @Test func theFlagsThisPortWritesNeverSetTheAwareBit() throws {
         #expect(AdvertPayload.writtenFlags(dialsGattPeers: true) == AdvertPayload.dialsGattPeersFlag)
         #expect(AdvertPayload.writtenFlags(dialsGattPeers: false) == 0)
+        #expect([true, false].allSatisfy { AdvertPayload.writtenFlags(dialsGattPeers: $0) & AdvertPayload.blindedFlag == 0 })
         let node = try #require(NodeId(nodeA))
         #expect(AdvertPayload(capabilities: .local, nodeId: node, digestCue: 0, psm: 0x80).flags == 0)
     }
@@ -389,7 +393,8 @@ extension LinkTests {
         }
         #expect(Hello(payload: Array("\(nodeA)|1|4215f".utf8)).nonce == nil, "no field at all")
         let later = Hello(payload: Array("\(nodeA)|1|4215f|n\(digits)|future|stuff".utf8))
-        #expect(later.nonce == Array(UInt8(0)..<16), "fields past the nonce are ignored")
+        #expect(later.nonce == Array(UInt8(0)..<16), "fields past the nonce leave it")
+        #expect(later.told == nil && later.addressed == nil, "and are no forms")
         #expect(Hello(payload: Array("\(nodeA)|1|4215f|future|n\(digits)".utf8)).nonce == nil, "the nonce is the fourth field or none")
     }
 }

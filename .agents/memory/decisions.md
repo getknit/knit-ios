@@ -113,3 +113,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-11.hpmt](decisions/2026-11-hpmt-a-link-proves-the-node.md) | A link proves the node id its HELLO claims | ble, crypto, security, interop |
 | [2026-11.y793](decisions/2026-11-y793-a-block-also-holds-a.md) | A block also holds a person's profile and photo | moderation, privacy, ui |
 | [2026-11.pydf](decisions/2026-11-pydf-a-store-build-opens-sample.md) | A store build opens sample chats anyone can try | store, app, ui, moderation |
+| [2026-11.sv5t](decisions/2026-11-sv5t-the-iphone-reads-blinded-adverts.md) | The iPhone reads blinded adverts | ble, mesh, privacy, wire, crypto |

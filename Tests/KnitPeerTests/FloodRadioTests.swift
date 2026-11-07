@@ -174,7 +174,7 @@ private final class RecordingRadio: Radio {
     }
 
     func advertise(_ payload: AdvertPayload) {
-        record("advertise \(payload.nodeId)")
+        record("advertise \(payload.advertised)")
     }
 
     func dial(_ address: RadioAddress, psm: UInt16) -> ChannelID {

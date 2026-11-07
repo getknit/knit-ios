@@ -317,12 +317,12 @@ public final class LinkManager: MeshTransport {
             advertiseNow()
             return []
         case .sighted(let sighting):
-            guard sighting.advert.nodeId != localId else {
+            guard sighting.advert.advertised != localId else {
                 return []
             }
             presence.record(PresenceTracker.Sighting(advert: sighting.advert, rssi: sighting.rssi), now: now)
-            addresses[sighting.advert.nodeId] = sighting.address
-            for index in liveLinks.indices where liveLinks[index].neighbor.nodeId == sighting.advert.nodeId {
+            addresses[sighting.advert.advertised] = sighting.address
+            for index in liveLinks.indices where liveLinks[index].neighbor.nodeId == sighting.advert.advertised {
                 liveLinks[index].sighted = true
                 liveLinks[index].heardServiceData = liveLinks[index].heardServiceData || Self.isServiceData(sighting.advert)
             }

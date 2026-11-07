@@ -85,10 +85,15 @@ ownerNodeId ‖ u64be(slot) ‖ u8(restart))`, a slot being 15 minutes of wall c
 Coded sets on a fresh PSM, the old one accepting for 30 s more. Only a debug build writes tags today
 (`BuildConfig.BLIND_ADVERT`, and the bridge's `ADVERT` switch, on by default since `b66cfa828`), and only on a controller
 with extended advertising; release N airs its id and ships the readers and the keys, and release N+1, which turns writing
-on, waits on the iOS reader. This port reads no tag yet (knit-next.md, "Owed here"). `AdvertPayload` parses one as a
-`NodeId` and keeps the flags byte, so each tag a neighbour airs is a separate sighting that nothing prunes but
-`forgetEverything` (`LinkManager.swift:319-331`), about 96 a day per blinding neighbour. Its PSM is read per advertised
-id, never cached per address (`LinkManager+Admission.swift:100`), which the reader must keep across a tag change.
+on, waits on the iOS reader. This port reads the bit and resolves no tag yet (ADR 2026-11.sv5t; knit-next.md, "Owed
+here"). `AdvertPayload` keeps bytes 1–16 as `advertised`, says `blinded`, and drops a blinded payload whose bytes lack the
+prefix (`AdvertForm.hasTagPrefix`); a clear payload is an id whatever its bytes. `AdvertPayload(gattValue:)` makes a
+blinded GATT value a stranger's in both radios, as Android's reader does (`BleGattPayloadReader.kt:87-89`). Until forms
+resolve, the link manager still keys a tag as a peer, so each tag a neighbour airs is a separate sighting that nothing
+prunes but `forgetEverything` (`LinkManager.swift:319-331`), about 96 a day per blinding neighbour, and a blinded
+advert's zeroed digest cue reads as a GATT payload's (`LinkManager+WriteStall.swift`, `isServiceData`). Its PSM is read
+per advertised form, never cached per address (`LinkManager+Admission.swift:100`), which the reader must keep across a
+tag change.
 
 The bit first meant the opposite. `FLAG_NO_AWARE` (`9552995d`, `438ffc72`, both in the pin) was set for "won't run
 Aware", and a clear bit made a candidate. It never shipped in a release and lived on knit-next's `main` only from
@@ -107,13 +112,13 @@ bytes. The tags:
 | 3 | `FILE_CHUNK` | raw bytes, 2 to 16 KiB from Android (2 KiB on a Coded link); a file over 8 MiB + 64 KiB is aborted |
 | 4 | `FILE_END` | empty |
 | 5 | `KEEPALIVE` | empty; since knit-next ADR 2026-10.697m, Android writes one at link-up on a link whose HELLO lacks `CAP_DOORBELL`, answers one there, and probes with it. On a doorbell link it sends none and ignores one. It may write one between a file's chunks (`FramedLink.sendKeepalive`, #203), which this port ignores like any other. This port never writes one (`interop.md`) |
-| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|2fff`; the caps may carry `CAP_DOORBELL` (`0x1000`) and `CAP_BLOB_HAVE` (`0x2000`), which no advert can. A build that proves its id adds `CAP_LINK_PROOF` (`0x40000`) and a fourth field, `n` and 16 fresh bytes in 32 lowercase hex digits (the `link-hello-proof` contract, §2). Since knit-next ADR 2026-11.xp6d two fields may follow the nonce: `t<32 hex>`, the form the sender airs (only while it blinds), and `a<32 hex>`, the form a dialer dialed (every Android build writes it, an iPhone's id included); `Hello` ignores both, and the proof signs the payloads as they crossed |
+| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|2fff`; the caps may carry `CAP_DOORBELL` (`0x1000`) and `CAP_BLOB_HAVE` (`0x2000`), which no advert can. A build that proves its id adds `CAP_LINK_PROOF` (`0x40000`) and a fourth field, `n` and 16 fresh bytes in 32 lowercase hex digits (the `link-hello-proof` contract, §2). Since knit-next ADR 2026-11.xp6d two fields may follow the nonce: `t<32 hex>`, the form the sender airs (only while it blinds), and `a<32 hex>`, the form a dialer dialed (every Android build writes it, an iPhone's id included). `Hello` reads both behind a valid nonce, in any order, a letter appearing twice being absent, and writes `a` only when given one, never `t`; the proof signs the payloads as they crossed |
 | 7 | `DIGEST` | UTF-8 JSON `{"ids":[…]}` |
 | 8 | `PROOF` | `sigPub (32) ‖ hpkePub (32) ‖ signature (64)`, exactly 128 bytes: the signer's identity-key signature over both HELLOs (the contract, §3 and §4). Written only to a peer whose HELLO carries `CAP_LINK_PROOF` |
-| 9 | `TAG_NEXT` | the sender's next advertised tag, exactly 16 bytes (knit-next ADR 2026-11.xp6d, `LinkFraming.kt:72`): 3.5 minutes before a rotation, after one nobody was told of, and as the held link's resend. Android writes it only to a proven link whose HELLO carries `CAP_BLIND_ADVERT` (`0x80000`, `TagNextSends.kt:101-105`), so never to this port, which throws on it (`LinkRecord.swift:106-107`) |
+| 9 | `TAG_NEXT` | the sender's next advertised tag, exactly 16 bytes (knit-next ADR 2026-11.xp6d, `LinkFraming.kt:72`): 3.5 minutes before a rotation, after one nobody was told of, and as the held link's resend. Android writes it only to a proven link whose HELLO carries `CAP_BLIND_ADVERT` (`0x80000`, `TagNextSends.kt:101-105`), so never to this port, which reads one of exactly 16 bytes past on a live link, throws on any other length from the header alone (`LinkRecordError.badLength`), and never writes one |
 
 - **An unknown tag, a bad length or a truncated record throws on Android and drops the link.** Never send
-  a tag outside 1..8, and 8 only to a peer whose HELLO carries `CAP_LINK_PROOF`: Android v2.10.1 and earlier know only
+  a tag outside 1..8 (9 is read, never written), and 8 only to a peer whose HELLO carries `CAP_LINK_PROOF`: Android v2.10.1 and earlier know only
   1..7. Never advertise `CAP_BLIND_ADVERT` before `LinkRecordReader` reads tag 9: Android gates both `TAG_NEXT` and the
   presence key's ctl 11 on that bit alone.
 - A `FRAME` that does not decode is counted and skipped, and the link stays up. Frames and digests may

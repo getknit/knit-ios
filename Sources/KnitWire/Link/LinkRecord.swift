@@ -22,12 +22,19 @@ public struct LinkRecord: Sendable, Equatable {
         /// in KnitCrypto; the `link-hello-proof` contract, §3). Written only to a peer whose HELLO carries
         /// ``Capabilities/linkProof``: every build before it throws on the tag and drops the link.
         case proof = 8
+        /// The sender's next advertised tag: exactly ``LinkRecord/tagNextBytes``, the advert bytes 1–16 it airs after its
+        /// next rotation (`Type.TAG_NEXT`, `LinkFraming.kt:65-72` at knit-next `cad69c77b`; knit-next ADR 2026-11.xp6d).
+        /// Android writes it only to a proven link whose HELLO carries `CAP_BLIND_ADVERT` (`TagNextSends.kt:101-105`), and
+        /// every build before it throws on the tag and drops the link. This port reads it and never writes it: it airs no tag.
+        case tagNext = 9
     }
 
     /// The largest payload either side accepts (`MAX_PAYLOAD_BYTES`).
     public static let maxPayloadBytes = 524_288 // 512 KiB
     /// The header: one tag byte and a four-byte length.
     public static let headerBytes = 5
+    /// A ``Tag/tagNext`` record's one length (`TAG_NEXT_BYTES`, `LinkFraming.kt:107`); any other is a framing error.
+    public static let tagNextBytes = 16
 
     /// The record's type.
     public var tag: Tag
@@ -59,10 +66,13 @@ public struct LinkRecord: Sendable, Equatable {
 /// Why a link's byte stream is no longer a sequence of records. Android throws on each of these and drops
 /// the link, and so does the link session.
 public enum LinkRecordError: Error, Sendable, Equatable {
-    /// A tag outside 1 to 8.
+    /// A tag outside 1 to 9.
     case unknownTag(UInt8)
     /// A length outside 0 to ``LinkRecord/maxPayloadBytes``.
     case lengthOutOfRange(UInt32)
+    /// A fixed-size record of another length: a ``LinkRecord/Tag/tagNext`` that is not ``LinkRecord/tagNextBytes`` long, a
+    /// desynced or hostile stream as an out-of-range length is (`LinkFraming.read`, `LinkFraming.kt:149-150`).
+    case badLength(tag: UInt8, length: UInt32)
 }
 
 /// Splits a link's incoming bytes into records, however the radio chunked them.
@@ -112,6 +122,10 @@ public struct LinkRecordReader: Sendable {
         }
         guard length <= LinkRecord.maxPayloadBytes else {
             throw .lengthOutOfRange(length)
+        }
+        // From the header alone, before waiting for a payload that may never come, as Android checks right after it.
+        guard tag != .tagNext || length == LinkRecord.tagNextBytes else {
+            throw .badLength(tag: tag.rawValue, length: length)
         }
         let end = start + LinkRecord.headerBytes + Int(length)
         guard buffer.count >= end else {

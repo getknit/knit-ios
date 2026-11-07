@@ -201,7 +201,8 @@ import Testing
     @Test func anUnknownRecordTagDropsTheLinkAsAndroidDoes() {
         let rig = LinkRig(local: high)
         _ = rig.accept(low, on: ChannelID(100))
-        let events = rig.handle(.received(ChannelID(100), [9, 0, 0, 0, 0]))
+        // 9 is TAG_NEXT since knit-next ADR 2026-11.xp6d; 10 is the first tag no build knows.
+        let events = rig.handle(.received(ChannelID(100), [10, 0, 0, 0, 0]))
         #expect(events == [.down(low)])
         #expect(rig.radio.closed == [ChannelID(100)])
     }

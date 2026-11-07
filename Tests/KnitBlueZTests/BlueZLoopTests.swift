@@ -193,7 +193,7 @@
         }
 
         @Test func aNodeNeverSightedIsNeverReported() throws {
-            let rig = try LoopRig(neverSighted: [LoopRig.advert().nodeId])
+            let rig = try LoopRig(neverSighted: [LoopRig.advert().advertised])
             rig.start()
             try rig.fake.add(device: LoopRig.peerPath, FakeBlueZ.device(address: LoopRig.peerAddress, advert: LoopRig.advert()))
             try rig.fake.change(LoopRig.peerPath, interface: BlueZ.deviceInterface, .properties([("RSSI", .int16(-70))]))

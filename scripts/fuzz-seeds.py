@@ -26,6 +26,8 @@ FRAME_TAG = 1
 FILE_HEADER_TAG, FILE_CHUNK_TAG, FILE_END_TAG, KEEPALIVE_TAG = 2, 3, 4, 5
 CHUNK_BYTE = 7
 ADVERT = "ff294213fa67091e03c2f2ae8d071b9d6700000000008100"
+# keyed-v1.json's blind.advert.blinded: a tag in bytes 1-16 and FLAG_BLINDED (knit-next ADR 2026-11.xp6d).
+BLINDED_ADVERT = "09ce739614ce56f79934b596a624f70cf00000000000830c"
 NODE_ID = b"ffbbh6thbepahqxsv2gqog45m4"
 CARD_ID = "4cgq2pnhh6p3j3afwsue3chrpi"
 CARD_BUNDLE = "omZzaWdQdWJYIOQDCZjP1a0XI8Fp+VaqC564YZtZkr1hLCr0KOvHn43wZ2hwa2VQdWJYIHPnmXHJEQApcjYyqAtwe/T2LBJXYzRuHocY1sDcw6o6"
@@ -70,6 +72,7 @@ def main() -> int:
         (out / "FuzzLinkRecords" / f"file-{kind.lower()}").write_bytes(bytes([CHUNK_BYTE]) + file_records(kind, size))
     (out / "FuzzLinkRecords" / "file-resumed").write_bytes(bytes([CHUNK_BYTE]) + resumed_records(6000, 4096))
     (out / "FuzzAdvert" / "advert").write_bytes(bytes.fromhex(ADVERT))
+    (out / "FuzzAdvert" / "advert-blinded").write_bytes(bytes.fromhex(BLINDED_ADVERT))
     (out / "FuzzAdvert" / "node-id").write_bytes(NODE_ID)
     cards = {
         "card-full": FULL_CARD,

@@ -32,8 +32,9 @@ public struct PresenceTracker: Sendable {
         /// How long ago it was last seen.
         public var lastSeenAgoMilliseconds: Int64
 
-        /// The peer's node id.
-        public var nodeId: NodeId { advert.nodeId }
+        /// The peer's advertised form (``AdvertPayload/advertised``), keyed as its node id until forms resolve
+        /// (ADR 2026-11.sv5t): a blinding peer's tag is a peer of its own here, as it was before the flag was read.
+        public var nodeId: NodeId { advert.advertised }
 
         /// Makes a snapshot.
         public init(advert: AdvertPayload, smoothedRssi: Double, dwellMilliseconds: Int64, lastSeenAgoMilliseconds: Int64) {
@@ -78,7 +79,7 @@ public struct PresenceTracker: Sendable {
 
     /// Records a sighting.
     public mutating func record(_ sighting: Sighting, now: Int64) {
-        let nodeId = sighting.advert.nodeId
+        let nodeId = sighting.advert.advertised
         guard var entry = entries[nodeId], now - entry.lastSeenAt <= configuration.gapResetMilliseconds else {
             // A new peer, or one back after a gap: restart the dwell clock and reseed the RSSI rather than
             // averaging across the gap.

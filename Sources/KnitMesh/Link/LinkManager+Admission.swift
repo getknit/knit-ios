@@ -332,8 +332,10 @@ extension LinkManager {
             return fileChunk(record.payload, from: peer, on: id, now: now)
         case .fileEnd:
             return fileEnd(from: peer, on: id)
-        case .keepalive, .hello, .proof:
-            // A stray HELLO or PROOF after the handshake means nothing, and a keepalive's arrival is all it says.
+        case .keepalive, .hello, .proof, .tagNext:
+            // A stray HELLO or PROOF after the handshake means nothing, and a keepalive's arrival is all it says. A TAG_NEXT
+            // is read past for now (ADR 2026-11.sv5t): the claim it makes is learned once forms resolve. Android sends it
+            // only to a HELLO carrying `CAP_BLIND_ADVERT`, which ours lacks.
             return []
         }
     }

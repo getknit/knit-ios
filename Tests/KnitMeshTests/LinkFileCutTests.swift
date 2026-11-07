@@ -71,7 +71,7 @@ import Testing
     @Test func aBadRecordKeepsNothing() {
         let rig = rig()
         streaming(rig, on: channel)
-        #expect(rig.handle(.received(channel, [9, 0, 0, 0, 0])) == [.down(LinkRig.low)])
+        #expect(rig.handle(.received(channel, [10, 0, 0, 0, 0])) == [.down(LinkRig.low)])
         #expect(rig.log.all.contains { $0.hasPrefix("warning link \(channel) sent a bad record") })
         #expect(rig.links.partials.length(hash) == 0, "a mangled SDU may already be among the bytes")
         #expect(partialLines(rig).isEmpty)

@@ -22,7 +22,8 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
 - **Send a full DIGEST at link-up and every 60 s.** Android back-fills only in answer to one.
 - **Never write a link record tag outside 1..8, and 8 (`PROOF`) only to a peer whose HELLO carries `CAP_LINK_PROOF`.**
   Every build drops the link on an unknown tag, and Android v2.10.1 and earlier know only 1..7 (the `link-hello-proof`
-  contract, §3; knit-ios #25).
+  contract, §3; knit-ios #25). Tag 9 (`TAG_NEXT`) is read, exactly 16 bytes, and never written: this port airs no tag
+  (knit-next ADR 2026-11.xp6d; ADR 2026-11.sv5t).
 - **Advertise only what is implemented.** This build sends capabilities `0x4015F`: E2E, GROUPS, REACTIONS,
   STORE_FORWARD, RATCHET, INLINE_ACK, CRYPTO_V3 and LINK_PROOF (ADR 2026-10.b4yk; knit-ios #25). Builds before the
   link's proof sent `0x15F`, builds before the ratchet `0xF` (ADR

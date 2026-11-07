@@ -4,13 +4,13 @@
 /// | Offset | Size | Field |
 /// | --- | --- | --- |
 /// | 0 | 1 | capabilities, low byte |
-/// | 1 | 16 | node id, raw |
+/// | 1 | 16 | advertised form, raw: the node id, or a rotating tag when ``blinded`` |
 /// | 17 | 4 | digest cue, big-endian |
 /// | 21 | 2 | L2CAP PSM, big-endian |
 /// | 23 | 1 | BLE-local flags (optional on the wire) |
 ///
-/// Byte 23 holds bit 0 ``sideChannelFlag``, bit 1 ``dialsGattPeersFlag`` and bit 2 ``awareFlag``; bits 3-7 are
-/// reserved (0), and a parser tests only the bits it knows, so a new bit is additive.
+/// Byte 23 holds bit 0 ``sideChannelFlag``, bit 1 ``dialsGattPeersFlag``, bit 2 ``awareFlag`` and bit 3 ``blindedFlag``;
+/// bits 4-7 are reserved (0), and a parser tests only the bits it knows, so a new bit is additive.
 public struct AdvertPayload: Sendable, Equatable {
     /// The shortest payload a scanner accepts: everything but the flags byte.
     public static let minimumSize = 23
@@ -33,6 +33,11 @@ public struct AdvertPayload: Sendable, Equatable {
     /// (``writtenFlags(dialsGattPeers:)``, for knit-peer's service data and the iPhone's GATT payload alike), and
     /// nothing here reads it. The codec keeps it, so a parsed Android advert round-trips.
     public static let awareFlag: UInt8 = 0x04
+    /// Bit 3: Android's `FLAG_BLINDED` (knit-next ADR 2026-11.xp6d, `BleAdvertPayload.kt:88` at `cad69c77b`). Set, bytes
+    /// 1–16 are a rotating tag (``AdvertForm/hasTagPrefix(_:)``), not the advertiser's node id, and nothing may key them
+    /// as one. This port reads the bit and never writes it (``writtenFlags(dialsGattPeers:)``): the iPhone and the Linux
+    /// peer air their ids (ADR 2026-11.sv5t).
+    public static let blindedFlag: UInt8 = 0x08
 
     /// The 16-bit service UUID under which Android puts the payload in its advert's service data, and under which
     /// a node that cannot advertise service data (an iPhone) lists a GATT service instead.
@@ -46,9 +51,10 @@ public struct AdvertPayload: Sendable, Equatable {
 
     /// The flags byte this port advertises, mirroring Kotlin's `flags(sideLive:gattPeers:aware:)`
     /// (`BleAdvertPayload.kt:74-86` at knit-next `808472a3`) with its other two inputs always false: no side channel
-    /// runs here, so ``sideChannelFlag`` stays clear, and no Wi-Fi Aware does, so ``awareFlag`` stays clear.
-    /// ``dialsGattPeersFlag`` is set only while the radio reads GATT payloads (`Radio.dialsGattPeers`), so it never
-    /// claims a read it cannot make.
+    /// runs here, so ``sideChannelFlag`` stays clear, and no Wi-Fi Aware does, so ``awareFlag`` stays clear. This port never
+    /// blinds (ADR 2026-11.sv5t), so ``blindedFlag`` stays clear too: Kotlin's fourth input, `blinded`, is always false
+    /// here (`BleAdvertPayload.kt:95-104` at `cad69c77b`). ``dialsGattPeersFlag`` is set only while the radio reads GATT
+    /// payloads (`Radio.dialsGattPeers`), so it never claims a read it cannot make.
     public static func writtenFlags(dialsGattPeers: Bool) -> UInt8 {
         dialsGattPeers ? dialsGattPeersFlag : 0
     }
@@ -57,8 +63,9 @@ public struct AdvertPayload: Sendable, Equatable {
 
     /// The capability bits' low byte.
     public var capabilities: UInt8
-    /// The advertiser's node id.
-    public var nodeId: NodeId
+    /// Bytes 1–16 as aired: the advertiser's node id when the advert is clear, a rotating tag when it is ``blinded``
+    /// (knit-next ADR 2026-11.xp6d). `NodeId`-shaped either way, so read ``blinded`` before treating it as an id.
+    public var advertised: NodeId
     /// The low 32 bits of the advertiser's custody fold. Nothing on Bluetooth reads it.
     public var digestCue: UInt32
     /// The L2CAP PSM to dial.
@@ -66,28 +73,59 @@ public struct AdvertPayload: Sendable, Equatable {
     /// The BLE-local flags byte.
     public var flags: UInt8
 
-    /// Makes a payload from full capabilities, keeping their low byte.
+    /// Whether bytes 1–16 are a tag, not a node id (``blindedFlag``; Kotlin's `Parsed.blinded`).
+    public var blinded: Bool { flags & Self.blindedFlag != 0 }
+
+    /// Makes a payload from full capabilities, keeping their low byte. Every advert this port writes airs its own id, so the
+    /// parameter is a node id; ``advertised`` holds it.
     public init(capabilities: Capabilities, nodeId: NodeId, digestCue: UInt32, psm: UInt16, flags: UInt8 = 0) {
         self.capabilities = UInt8(capabilities.rawValue & Self.capabilitiesMask)
-        self.nodeId = nodeId
+        self.advertised = nodeId
         self.digestCue = digestCue
         self.psm = psm
         self.flags = flags
     }
 
-    /// Parses Service Data the way Android does: shorter than 23 bytes is not a Knit advert, exactly 23 reads
-    /// the flags as 0, and bytes past 24 are ignored.
+    /// Parses Service Data the way Android does (`BleAdvertPayload.parse`, `BleAdvertPayload.kt:175-187` at `cad69c77b`):
+    /// shorter than 23 bytes is not a Knit advert, exactly 23 reads the flags as 0, and bytes past 24 are ignored. A
+    /// payload whose flags carry ``blindedFlag`` over bytes 1–16 that lack the tag prefix is not one either, and is dropped
+    /// before anything is computed (`isMalformedBlinded`, `:193-197`). Without the bit, bytes 1–16 are an id whatever they
+    /// hold, a tag's prefix included.
     public init?(serviceData bytes: [UInt8]) {
-        guard bytes.count >= Self.minimumSize, let parsedId = NodeId(bytes: Array(bytes[1...NodeId.byteCount])) else {
+        guard bytes.count >= Self.minimumSize, !Self.isMalformedBlinded(bytes) else {
+            return nil
+        }
+        guard let parsedForm = NodeId(bytes: Array(bytes[1...NodeId.byteCount])) else {
             return nil
         }
         let cueStart = 1 + NodeId.byteCount
         let psmStart = cueStart + MemoryLayout<UInt32>.size
         capabilities = bytes[0]
-        nodeId = parsedId
+        advertised = parsedForm
         digestCue = bytes[cueStart..<psmStart].reduce(0) { $0 << UInt8.bitWidth | UInt32($1) }
         psm = bytes[psmStart..<Self.minimumSize].reduce(0) { $0 << UInt8.bitWidth | UInt16($1) }
         flags = bytes.count > Self.minimumSize ? bytes[Self.minimumSize] : 0
+    }
+
+    /// Parses a peer's GATT characteristic value: what ``init(serviceData:)`` reads, except that a ``blinded`` payload is
+    /// nil too. No port serves a blinded payload, and its tag would never match the HELLO's id, so the payload would be
+    /// forgotten and read again at every dial (`BleGattPayloadReader.kt:87-89` at `cad69c77b`). Nil sends both radios down
+    /// their "serves no Knit payload" path, so a tag read over GATT is never logged nor sighted.
+    public init?(gattValue bytes: [UInt8]) {
+        guard let payload = Self(serviceData: bytes), !payload.blinded else {
+            return nil
+        }
+        self = payload
+    }
+
+    /// Whether `bytes` are long enough to carry the flags byte, it says ``blindedFlag``, and bytes 1–16 lack the tag prefix
+    /// (`BleAdvertPayload.isMalformedBlinded`, `BleAdvertPayload.kt:193-197` at `cad69c77b`). A 23-byte payload has no flags
+    /// byte, so it is never blinded.
+    private static func isMalformedBlinded(_ bytes: [UInt8]) -> Bool {
+        guard bytes.count > minimumSize, bytes[minimumSize] & blindedFlag != 0 else {
+            return false
+        }
+        return !AdvertForm.hasTagPrefix(Array(bytes[1...NodeId.byteCount]))
     }
 
     /// What the GATT characteristic serves: the same 24 bytes with the digest cue at 0. Nothing on Bluetooth reads
@@ -102,7 +140,7 @@ public struct AdvertPayload: Sendable, Equatable {
     public var bytes: [UInt8] {
         var output: [UInt8] = [capabilities]
         output.reserveCapacity(Self.size)
-        output += nodeId.bytes
+        output += advertised.bytes
         for shift in stride(from: UInt32.bitWidth - UInt8.bitWidth, through: 0, by: -UInt8.bitWidth) {
             output.append(UInt8(truncatingIfNeeded: digestCue >> UInt32(shift)))
         }

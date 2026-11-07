@@ -187,11 +187,12 @@
                 failGattRead(path, "its characteristic did not read: \(error)", now: now)
                 return
             }
-            guard let payload = value.flatMap(AdvertPayload.init(serviceData:)) else {
+            // A blinded value is no payload either, so no tag is ever logged nor sighted from GATT (ADR 2026-11.sv5t).
+            guard let payload = value.flatMap(AdvertPayload.init(gattValue:)) else {
                 failGattRead(path, "its characteristic holds no payload", outcome: .stranger, now: now)
                 return
             }
-            log.log(.info, "bluez read \(payload.nodeId) on PSM \(payload.psm) from \(Self.deviceName(path)) over GATT")
+            log.log(.info, "bluez read \(payload.advertised) on PSM \(payload.psm) from \(Self.deviceName(path)) over GATT")
             endGattRead(path, .read(payload), now: now)
             sight(path)
         }

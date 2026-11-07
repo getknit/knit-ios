@@ -139,7 +139,7 @@ public struct GattPayloads: Sendable {
     /// Rule 2: the HELLO on a link to `address` named `node`, the dialer's on a link we accepted or the reply on one we
     /// dialed. A payload there that names another node is forgotten, and the answer says whether one was.
     public mutating func helloNamed(_ node: NodeId, at address: RadioAddress) -> Bool {
-        guard let payload = payloads[address], payload.nodeId != node else {
+        guard let payload = payloads[address], payload.advertised != node else {
             return false
         }
         forget(address)

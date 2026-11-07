@@ -342,11 +342,12 @@
                 finishGattRead(uuid, .failed)
                 return
             }
-            guard let advert = characteristic.value.flatMap({ AdvertPayload(serviceData: Array($0)) }) else {
+            // A blinded value is no payload either, so no tag is ever logged nor sighted from GATT (ADR 2026-11.sv5t).
+            guard let advert = characteristic.value.flatMap({ AdvertPayload(gattValue: Array($0)) }) else {
                 finishGattRead(uuid, .stranger)
                 return
             }
-            log.log(.info, "ble read \(advert.nodeId) on PSM \(advert.psm) from \(uuid) over GATT")
+            log.log(.info, "ble read \(advert.advertised) on PSM \(advert.psm) from \(uuid) over GATT")
             let strength = strengths[uuid] ?? Int(LinkManager.Configuration().unsightedLinkRssi)
             emit(.sighted(RadioSighting(address: RadioAddress(uuid.uuidString), advert: advert, rssi: strength)))
             gatt.finish(RadioAddress(uuid.uuidString), .read(advert), now: clock.monotonicMilliseconds())
