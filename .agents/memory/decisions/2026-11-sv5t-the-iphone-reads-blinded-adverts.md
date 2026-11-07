@@ -91,6 +91,13 @@ cost an iPhone a refused or link-replacing dial at every rotation of every linke
 - **A peer that missed its announcement.** A rotation the iPhone heard of from nobody, with the peer held, leaves the
   new tag unattributed; a dial to it is refused, or replaces the link once (the safety net). Until the bit ships, every
   rotation is one: Android sends `TAG_NEXT` only to a peer carrying it.
+- **A locked hour's announcements.** Android writes `TAG_NEXT` without ringing the doorbell, so a suspended iPhone reads
+  a backlog of them at its next run and keeps only the newest of the read. Back at the front in the last few minutes of a
+  slot (a quarter to a third of the time), that is the next slot's announcement, and the one for the tag on air is
+  dropped: a stranger's current tag stays unattributed (a contact resolves by key). The head start, or 6es2's exception
+  toward an unflagged phone, then dials it once, Android replaces its link, and the safety net retires ours: one link
+  swap per such wake. Keeping the newest announcement per slot, each applied by Android's `TagNextSends.appliesAt`
+  against the wall clock at read time, would close it.
 - **Before the bit.** While Android blinds it refuses, first and with no reply, every dialer whose HELLO lacks
   `CAP_BLIND_ADVERT` (`RefuseLegacy`), so no build of this change links to a blinding phone by its own dial until the bit
   joins `Capabilities.local`.
@@ -129,4 +136,9 @@ cost an iPhone a refused or link-replacing dial at every rotation of every linke
   until accepted, refusals that still advance the chain, a block's and a first pass's deletes with no line, the carrier,
   a failed unit's replay, a failed read that deletes and lists nothing), `MeshEnginePresenceKeyEraTests` (a reset's lower
   generation replaces, the old root's late frames drain), `MeshPresenceKeyTests` (the key through the actor to the link
-  manager, a tag resolved by key), and the device trial.
+  manager, a tag resolved by key), and the device trial;
+- the bit: `BlindWireTests.theBlindAdvertBitIsPinnedAndOurs` (`0x80000` in `Capabilities.local`, the HELLO's `c215f`),
+  `LinkTests`' HELLO and profile pins (`c015f`, `c000f` with no prekey), `LinkImpostorTests` and `LinkPipeProofTests`
+  (the legacy impostor's `215f` drops it with `LINK_PROOF`), and `MeshControlTests.statusCarriesTheDetails` (`status.capabilities`, the harness's way to tell a
+  reader); `test_interop.py`'s `BlindDialedByTest` and `HeadStartLineTest` (a reader meets no ` blind=legacy`
+  refusal, its HELLO carries the bit, and its own tag dial shows its `proved` line).

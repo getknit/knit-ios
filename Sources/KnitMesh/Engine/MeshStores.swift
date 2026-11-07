@@ -143,8 +143,9 @@ public struct MeshConfiguration: Sendable {
     /// own; without one, as in knit-peer and the tests, such a quote carries no words, and a photo reads as one.
     public var quoteLabel: @Sendable (MessageAttachment) -> String?
 
-    /// What our signed profile advertises while it carries our prekey: ``Capabilities/local`` (`0x4015F`) with the switch
-    /// on, and without ``Capabilities/ratchetSuite`` (`0x4000F`) with it off. ``Capabilities/linkProof`` rides either way.
+    /// What our signed profile advertises while it carries our prekey: ``Capabilities/local`` (`0xC015F`) with the switch
+    /// on, and without ``Capabilities/ratchetSuite`` (`0xC000F`) with it off. ``Capabilities/linkProof`` and
+    /// ``Capabilities/blindAdvert`` ride either way.
     public var capabilities: Capabilities {
         ratchet ? .local : Capabilities.local.subtracting(.ratchetSuite)
     }

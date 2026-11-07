@@ -184,16 +184,17 @@ These only ever grow. A value is never reused, even after it is retired.
   `DIRECT_TRANSFER` gate features. The rest are diagnostic.
 
   `LORA_DIRECT` and `INET_LINK` are Android's, and this port names neither. `LINK_PROOF` (ADR 2026-11.hpmt, knit-next
-  ADR 2026-11.264w) is in `Capabilities.local`, so the HELLO reads `4215f` (`4315f` with the doorbell) and the signed
-  profile `0x4015F` or `0x4000F`. It is read twice: from the HELLO, to decide whether a link runs the proof exchange,
+  ADR 2026-11.264w) is in `Capabilities.local`, so the HELLO reads `c215f` (`c315f` with the doorbell) and the signed
+  profile `0xC015F` or `0xC000F`. It is read twice: from the HELLO, to decide whether a link runs the proof exchange,
   and from the signed profile, whose copy makes a peer proof-capable. A HELLO carrying it carries a fourth field,
   `n<32 lowercase hex>`, a fresh nonce, and a link where both HELLOs carry it exchanges tag-8 `PROOF` records before it
   registers (`ble-transport.md`, "The handshake").
 
   `BLIND_ADVERT` (knit-next ADR 2026-11.xp6d) says "I read tags": Android's HELLO and every signed profile carry it
   since `0285a5c8b`, and no privacy decision rests on it. Android sends `TAG_NEXT` (record tag 9) and ctl 11 only to a
-  peer carrying it, and while it blinds refuses a dialer whose HELLO lacks it. This port claims it only with the reader
-  (`ble-transport.md`, "The advert").
+  peer carrying it, and while it blinds refuses a dialer whose HELLO lacks it. This port claims it in
+  `Capabilities.local`, so in every HELLO and every profile it signs, since the reader landed: tag 9 and ctl 11 both
+  read here (ADR 2026-11.sv5t; `ble-transport.md`, "The advert"). Builds before it sent `4215f` and `0x4015F`.
 
 ## Signatures, ids and clocks
 

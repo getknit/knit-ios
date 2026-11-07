@@ -24,4 +24,14 @@ extension MeshControl {
         }
         return ["links": .array(links), "sightings": .array(sightings)]
     }
+
+    /// Refuses or permits links with `peer`, as `deny-link` and `allow-link` ask.
+    func setLinks(with peer: NodeId, allowed: Bool) async -> [String: JSONValue] {
+        if allowed {
+            await mesh.permitLinks(with: peer)
+        } else {
+            await mesh.refuseLinks(with: peer)
+        }
+        return ["peer": .string(peer.string)]
+    }
 }

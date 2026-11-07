@@ -48,23 +48,26 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     /// 2026-11.xp6d; ADR 2026-11.sv5t): this node resolves a blinded advert's rotating tag, dials one, and reads a
     /// HELLO's `t` and `a`. It says nothing of writing tags. Android reads it from a peer's HELLO or pinned profile to send
     /// that peer `TAG_NEXT` (link record tag 9) and its presence keys (ctl 11), and while it blinds refuses a dialer whose
-    /// HELLO lacks it. Not in ``local`` until tag 9 and ctl 11 both read here: Android does not resend a ctl 11 a peer
+    /// HELLO lacks it. In ``local`` only since tag 9 and ctl 11 both read here: Android does not resend a ctl 11 a peer
     /// dropped until its next generation, root or restart. Above the advert's 8 bits, so never there.
     public static let blindAdvert: Self = 0x80000
 
     /// What this build advertises: end-to-end DMs, groups, reactions and store-and-forward, with the ratchet's three bits,
-    /// ``ratchet``, ``inlineAck`` and ``cryptoV3``, and ``linkProof`` (`0x4015F`, ADR 2026-09.n393, ADR 2026-10.ehe6, ADR
-    /// 2026-10.5sk9, knit-ios #25). Android reads the reactions bit for diagnostics only, and the ratchet's from our signed
-    /// profile alone (`CryptoScheme.kt:11-13`), which carries them only beside our prekey with the ratchet's switch on
-    /// (`MeshConfiguration.capabilities`); the HELLO and the advert carry this set whatever the switch says, as hints
-    /// nothing seals by. ``linkProof`` rides the signed profile whatever the switch says, since a peer reads it there to
-    /// know this node must prove its id. Never ``fastCompact`` or ``frameTranscode``, which are fast-plane encodings this
-    /// port has no plane for, and never ``doorbell`` or ``blobHave``: those are the link's to claim, in the HELLO alone.
-    public static let local: Self = [.endToEnd, .groups, .reactions, .storeForward, .ratchet, .inlineAck, .cryptoV3, .linkProof]
+    /// ``ratchet``, ``inlineAck`` and ``cryptoV3``, ``linkProof`` and ``blindAdvert`` (`0xC015F`, ADR 2026-09.n393, ADR
+    /// 2026-10.ehe6, ADR 2026-10.5sk9, knit-ios #25, ADR 2026-11.sv5t). Android reads the reactions bit for diagnostics
+    /// only, and the ratchet's from our signed profile alone (`CryptoScheme.kt:11-13`), which carries them only beside our
+    /// prekey with the ratchet's switch on (`MeshConfiguration.capabilities`); the HELLO and the advert carry this set
+    /// whatever the switch says, as hints nothing seals by. ``linkProof`` and ``blindAdvert`` ride the signed profile
+    /// whatever the switch says: a peer reads the first there to know this node must prove its id, and the second to hand
+    /// it presence keys. Never ``fastCompact`` or ``frameTranscode``, which are fast-plane encodings this port has no plane
+    /// for, and never ``doorbell`` or ``blobHave``: those are the link's to claim, in the HELLO alone.
+    public static let local: Self = [
+        .endToEnd, .groups, .reactions, .storeForward, .ratchet, .inlineAck, .cryptoV3, .linkProof, .blindAdvert,
+    ]
 
     /// The ratchet's bits: what our signed profile drops with the switch off or no prekey kept, so it reads as it did
-    /// before the ratchet but for ``linkProof`` (`0x4000F`), since `CAP_RATCHET` promises a published prekey
-    /// (`MeshManager.kt:2963-2979`).
+    /// before the ratchet but for ``linkProof`` and ``blindAdvert`` (`0xC000F`), since `CAP_RATCHET` promises a published
+    /// prekey (`MeshManager.kt:2963-2979`).
     public static let ratchetSuite: Self = [.ratchet, .inlineAck, .cryptoV3]
 
     /// The bit field, a Kotlin `Long`.
@@ -81,7 +84,7 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     }
 
     /// The bits in lowercase hexadecimal with no leading zeros, as the HELLO carries them
-    /// (Kotlin's `Long.toString(16)`): `fff` for Android, `4015f` for us.
+    /// (Kotlin's `Long.toString(16)`): `fff` for Android, `c015f` for us.
     public var hex: String { String(rawValue, radix: Self.hexRadix) }
 
     private static let hexRadix = 16

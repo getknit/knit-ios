@@ -25,7 +25,7 @@ import Testing
     @Test func aNameAlreadyPublishedIsNotPublishedAgain() async {
         let rig = PeerRig()
         // What this build's profile carries with the switch off, recorded, so the start's capability check moves nothing.
-        rig.stores.ownProfile.save(OwnProfile(name: "Near", version: 3, publishedAt: 3, capabilities: 0x4000F))
+        rig.stores.ownProfile.save(OwnProfile(name: "Near", version: 3, publishedAt: 3, capabilities: 0xC000F))
         await rig.node.start(name: "Near")
         #expect(rig.stores.ownProfile.load().version == 3)
     }
@@ -125,7 +125,7 @@ import Testing
         let links = try await rig.send(#"{"cmd":"links"}"#)
         let linked = try #require(links["links"] as? [[String: Any]])
         #expect(linked.first?["peer"] as? String == rig.far.nodeId.string)
-        #expect(linked.first?["capabilities"] as? String == "4215f", "an upgraded far end's HELLO")
+        #expect(linked.first?["capabilities"] as? String == "c215f", "an upgraded far end's HELLO")
         #expect((links["sightings"] as? [Any])?.isEmpty == true)
         let deny = try await rig.send(#"{"cmd":"deny-link","peer":"\#(rig.far.nodeId)"}"#)
         #expect(deny["ok"] as? Bool == true)

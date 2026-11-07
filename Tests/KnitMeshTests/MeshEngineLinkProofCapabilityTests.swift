@@ -164,11 +164,11 @@ import Testing
         let fixture = EngineFixture(me, stores: stores)
         let own = stores.ownProfile.load()
         #expect(own.version == now && own.publishedAt == now, "an edit: a new version and a new stamp")
-        #expect(own.capabilities?.rawValue == 0x4000F, "the switch is off, so no ratchet bits, and the link-proof bit")
+        #expect(own.capabilities?.rawValue == 0xC000F, "the switch is off, so no ratchet bits, and the link-proof bit")
         #expect(own.name == "Me", "nothing presented moved")
         let (envelope, content) = try ourProfile(fixture)
-        #expect(envelope.id == "profile-\(me.nodeId)-\(now)" && content.version == now && content.capabilities == 0x4000F)
-        #expect(fixture.log.all.contains("info mesh republished our profile: its capabilities are now 4000f"))
+        #expect(envelope.id == "profile-\(me.nodeId)-\(now)" && content.version == now && content.capabilities == 0xC000F)
+        #expect(fixture.log.all.contains("info mesh republished our profile: its capabilities are now c000f"))
         let flooded = fixture.transport.written(.profile)
         #expect(flooded.count == 1 && flooded.first?.envelope.id == envelope.id)
 
@@ -182,12 +182,12 @@ import Testing
         let earlier = now - 60_000
         let stores = MeshStores.inMemory(ownProfile: OwnProfile(name: "Me", version: 5, publishedAt: earlier, capabilities: 0xF))
         _ = EngineFixture(me, stores: stores)
-        #expect(stores.ownProfile.load().version == now && stores.ownProfile.load().capabilities?.rawValue == 0x4000F)
+        #expect(stores.ownProfile.load().version == now && stores.ownProfile.load().capabilities?.rawValue == 0xC000F)
     }
 
     @Test func recordedCapabilitiesThatMatchPublishNothing() {
         let earlier = now - 60_000
-        let own = OwnProfile(name: "Me", version: 5, publishedAt: earlier, capabilities: 0x4000F)
+        let own = OwnProfile(name: "Me", version: 5, publishedAt: earlier, capabilities: 0xC000F)
         let stores = MeshStores.inMemory(ownProfile: own)
         let fixture = EngineFixture(me, stores: stores)
         #expect(stores.ownProfile.load() == own)
@@ -203,9 +203,9 @@ import Testing
         let stores = MeshStores.inMemory(ownProfile: own)
         let fixture = EngineFixture(me, stores: stores, configuration: MeshConfiguration(ratchet: true), prekeys: minting)
         let after = stores.ownProfile.load()
-        #expect(after.version == now && after.prekeyId == 1 && after.capabilities?.rawValue == 0x4015F)
+        #expect(after.version == now && after.prekeyId == 1 && after.capabilities?.rawValue == 0xC015F)
         let (_, content) = try ourProfile(fixture)
-        #expect(content.capabilities == 0x4015F && content.prekey?.id == 1)
+        #expect(content.capabilities == 0xC015F && content.prekey?.id == 1)
     }
 
     @Test func aProfileNeverEditedIsRepublishedAtVersionZero() {
@@ -213,20 +213,20 @@ import Testing
         let stores = MeshStores.inMemory()
         _ = EngineFixture(me, stores: stores)
         let own = stores.ownProfile.load()
-        #expect(own.version == 0 && own.publishedAt == now && own.capabilities?.rawValue == 0x4000F)
+        #expect(own.version == 0 && own.publishedAt == now && own.capabilities?.rawValue == 0xC000F)
     }
 
     @Test func everyEditAndRepublishRecordsWhatItCarries() {
         let stores = MeshStores.inMemory()
         let fixture = EngineFixture(me, stores: stores)
         fixture.engine.updateProfile(name: "Me", status: "", openToChat: false)
-        #expect(stores.ownProfile.load().capabilities?.rawValue == 0x4000F)
+        #expect(stores.ownProfile.load().capabilities?.rawValue == 0xC000F)
         var stale = stores.ownProfile.load()
         stale.capabilities = nil
         stores.ownProfile.save(stale)
         fixture.advance(MeshConfiguration().republishMilliseconds + 1000)
         #expect(stores.ownProfile.load().publishedAt > stale.publishedAt, "the 12-hour republish")
-        #expect(stores.ownProfile.load().capabilities?.rawValue == 0x4000F)
+        #expect(stores.ownProfile.load().capabilities?.rawValue == 0xC000F)
     }
 
     // MARK: Two engines: the upgrade, a re-served old frame, and the peer's row
@@ -242,10 +242,10 @@ import Testing
         theirs.deliver(first, from: dave)
         #expect(theirs.stores.peers.peer(me.nodeId)?.capabilities == 0xF)
         theirs.deliver(TestFrame(wire: edit.wire, envelope: edit.envelope), from: me)
-        #expect(theirs.stores.peers.peer(me.nodeId)?.capabilities == 0x4000F)
+        #expect(theirs.stores.peers.peer(me.nodeId)?.capabilities == 0xC000F)
         #expect(theirs.transport.provesItself == [me.nodeId])
         theirs.deliver(second, from: dave)
-        #expect(theirs.stores.peers.peer(me.nodeId)?.capabilities == 0x4000F, "strictly older, so the bit stays")
+        #expect(theirs.stores.peers.peer(me.nodeId)?.capabilities == 0xC000F, "strictly older, so the bit stays")
         #expect(theirs.transport.provesItself == [me.nodeId])
     }
 }

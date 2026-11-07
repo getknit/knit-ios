@@ -120,8 +120,8 @@ bytes. The tags:
 
 - **An unknown tag, a bad length or a truncated record throws on Android and drops the link.** Never send
   a tag outside 1..8 (9 is read, never written), and 8 only to a peer whose HELLO carries `CAP_LINK_PROOF`: Android v2.10.1 and earlier know only
-  1..7. Never advertise `CAP_BLIND_ADVERT` before `LinkRecordReader` reads tag 9: Android gates both `TAG_NEXT` and the
-  presence key's ctl 11 on that bit alone.
+  1..7. `CAP_BLIND_ADVERT` is advertised only because `LinkRecordReader` reads tag 9 and ctl 11 reads too: Android gates
+  both `TAG_NEXT` and the presence key's ctl 11 on that bit alone (ADR 2026-11.sv5t).
 - A `FRAME` that does not decode is counted and skipped, and the link stays up. Frames and digests may
   interleave with file chunks.
 - Only one file streams each way at a time. A new `FILE_HEADER` discards a partial file.
@@ -300,16 +300,18 @@ radio.
   sees Android.
 - **So the iPhone dials Android, and Android's responder refuses it** unless the iPhone's id sorts higher.
   Companion change A1 accepts a dialer Android never sighted, so every pair links.
-- **A blinding Android dials the iPhone, and refuses the iPhone's dials** (knit-next ADR 2026-11.xp6d). A tag sorts
-  above the iPhone's id, so the ordinary dial waits, but the head-start dial (`LinkManager+HeadStart.swift:29-36`) and the
-  seeking dial (`LinkManager+Seeking.swift:50`) both dial it. Android refuses a dialer whose HELLO lacks
-  `CAP_BLIND_ADVERT` before anything else, writes no HELLO and closes (`BleAdmissionPolicy.kt:115`), logs `bt refused
-  client <id> (… blind=legacy)` and boosts its scan for 60 s, at most once per five minutes and once per half hour per
-  id. The iPhone retires the dial with a backoff on the tag's handle and address, whose streak also grows on the address
-  across new tags while they resolve to nobody. Until `CAP_BLIND_ADVERT` joins `Capabilities.local` (phase 4 of ADR
-  2026-11.sv5t), every such dial is refused this way. In front, the Pixel dials the
-  iPhone's clear advert itself (`AdvertOrder.kt:100`), so the pair links; a backgrounded iPhone with no link never
-  links to one. `interop.py` turns a driven Pixel's switch off for its runs (`ClearAdverts`).
+- **A blinding Android dials the iPhone, and the iPhone tag-dials it when it must** (knit-next ADR 2026-11.xp6d, ADR
+  2026-11.sv5t). A clear phone never dials a blinded advert by the order (`AdvertOrder.iDial`), so in front the Pixel
+  dials the iPhone's clear advert itself (`AdvertOrder.kt:100`). The iPhone's own overrides still dial a tag: the head
+  start toward a flagged Pixel that has not dialed within 24 s, a Pixel that reads no GATT payload (ADR 2026-09.6es2's
+  exception), and seeking, so a backgrounded iPhone with no link links to a blinding phone. Each is a tag dial carrying
+  `a` = the tag and `CAP_BLIND_ADVERT`, which takes the proven id. Android refuses a dialer whose HELLO lacks the bit
+  before anything else, writes no HELLO and closes (`BleAdmissionPolicy.kt:115`), logs `bt refused client <id> (…
+  blind=legacy)` and boosts its scan for 60 s, at most once per five minutes and once per half hour per id: an iPhone
+  build from before the reader meets that, and its dial backs off on the tag's handle and address. A dial to a tag the
+  iPhone attributes to a linked id is never made, a hint's included (the iPhone's own rule, since Android's held-link
+  row never fires on a `CAP_DOORBELL` link). `interop.py` turns a driven Pixel's switch off for its runs
+  (`ClearAdverts`) unless `--keep-blind`.
 - **With companion change A3, Android sees a foreground iPhone** (knit-next ADR 2026-09.kwq2, merged in the pin; behind `BLE_GATT_PEERS`,
   on in release since knit-next `713b29d6`, ahead of its device trial). A second scan filter matches the `0xFE30` UUID. Android reads the GATT payload
   of an advert that lists only the UUID, on `GattPayloads`' rules, sights the iPhone with it, and dials it when its
@@ -402,8 +404,8 @@ no payload left alone for ten minutes. A payload serves the address's adverts un
 channel opens, a HELLO there names another node, or the address goes unheard for a minute of scanning while nothing
 links it. Those three rules are shared law with A3 (ADR 2026-09.xzpt, amended 2026-09-29).
 
-The HELLO adds `CAP_BLOB_HAVE` (`0x2000`) to this build's `0x4015F` always, since every build answers a holder query
-(knit-next ADR 2026-10.6e5t), reading `4215f`. It adds `CAP_DOORBELL` (`0x1000`) too, reading `4315f`, only when the
+The HELLO adds `CAP_BLOB_HAVE` (`0x2000`) to this build's `0xC015F` always, since every build answers a holder query
+(knit-next ADR 2026-10.6e5t), reading `c215f`. It adds `CAP_DOORBELL` (`0x1000`) too, reading `c315f`, only when the
 radio serves the doorbell (`Radio.servesDoorbell`): `KnitBLE`, and knit-peer's `ios` profile. The `android` profile,
 like Android, serves no GATT and never sends it. Each HELLO ends with a nonce fresh for the connection, from the system's
 secure source, never the mesh's seedable generator.

@@ -46,10 +46,10 @@ import Testing
         #expect(rig.links.sightings().map(\.nodeId) == [low])
     }
 
-    /// `RefuseLegacy`: until phase 4 a blinding phone refuses, with no reply, a dialer whose HELLO lacks the bit. The
-    /// failure is the tag's and the address's, never the id's.
+    /// `RefuseLegacy`: a blinding phone refuses, with no reply, a dialer whose HELLO lacks the bit, as a build from before
+    /// the reader sends. The failure is the tag's and the address's, never the id's.
     @Test func aTagDialFailsWithoutTheBitAndLinksWithIt() throws {
-        let rig = LinkRig.iPhone(claimsBlindAdvert: false)
+        let rig = LinkRig.iPhone(withholdsBlindAdvert: true)
         let peer = BlindingPeer(low)
         let tag = peer.tag(wall: rig.clock.wallMilliseconds())
         rig.hear(peer.sighting(tag), for: 24_000)
@@ -61,7 +61,7 @@ import Testing
         let booked = Set(rig.links.backoffs.keys)
         #expect(booked == [.tag(handle, peer.address), .address(peer.address), .peer(.form(handle))])
         #expect(rig.links.backoffs[.peer(.node(low))] == nil)
-        let claiming = LinkRig.iPhone(claimsBlindAdvert: true)
+        let claiming = LinkRig.iPhone()
         _ = try linkByTag(claiming, peer, tag: peer.tag(wall: claiming.clock.wallMilliseconds()))
         #expect(claiming.links.neighbors.map(\.nodeId) == [low])
     }
@@ -103,6 +103,8 @@ import Testing
     @Test func aTagRefusedFiveTimesBacksOffDoublingEachTime() throws {
         var configuration = LinkManager.Configuration()
         configuration.backoff = ConnectBackoff.Configuration(jitterFraction: 0)
+        // Withheld, so the blinding peer refuses every dial as legacy (`RefuseLegacy`).
+        configuration.withholdsBlindAdvert = true
         let rig = LinkRig(local: high, advertisesServiceData: false, servesDoorbell: true, configuration: configuration)
         // Unflagged: it reads no GATT payload, so the iPhone dials it on the ordinary dwell, whatever the order.
         let peer = BlindingPeer(low, flags: 0)
@@ -175,7 +177,8 @@ import Testing
     /// A `TAG_NEXT` on a link whose HELLO lacks ``Capabilities/blindAdvert`` is dropped and counted.
     @Test func aTagNextFromAPeerWithoutTheBitIsRefused() throws {
         let rig = LinkRig.iPhone()
-        let (hello, _) = rig.acceptProving(LinkRig.middle, on: ChannelID(100))
+        let withoutTheBit = Capabilities.local.union(.blobHave).subtracting(.blindAdvert)
+        let (hello, _) = rig.acceptProving(LinkRig.middle, on: ChannelID(100), capabilities: withoutTheBit)
         _ = try rig.proveDialer(LinkRig.middle, on: ChannelID(100), hello: hello)
         #expect(rig.links.neighbors.count == 1)
         _ = rig.handle(.received(ChannelID(100), BlindingPeer.tagNext(BlindingPeer(low).tag(wall: rig.clock.wallMilliseconds()))))

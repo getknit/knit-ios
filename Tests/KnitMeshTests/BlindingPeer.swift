@@ -77,9 +77,9 @@ struct BlindingPeer {
 
 extension LinkRig {
     /// An iPhone: no service data, a GATT reader that serves the doorbell.
-    static func iPhone(_ local: NodeId = high, background: Bool = false, claimsBlindAdvert: Bool = true) -> LinkRig {
+    static func iPhone(_ local: NodeId = high, background: Bool = false, withholdsBlindAdvert: Bool = false) -> LinkRig {
         var configuration = LinkManager.Configuration()
-        configuration.claimsBlindAdvert = claimsBlindAdvert
+        configuration.withholdsBlindAdvert = withholdsBlindAdvert
         return LinkRig(
             local: local, advertisesServiceData: false, servesDoorbell: true, background: background, configuration: configuration)
     }

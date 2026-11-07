@@ -106,7 +106,7 @@ extension LockedOwnProfileStore: Checkpointing {
             #expect(pinned.prekey == fresh.info)
             #expect(pinned.prekeyProfileAt == onboarding)
             #expect(pinned.updatedAt == onboarding)
-            #expect(pinned.capabilities == 0x4015F)
+            #expect(pinned.capabilities == 0xC015F)
         }
     }
 

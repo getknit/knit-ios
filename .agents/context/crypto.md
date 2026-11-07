@@ -1073,8 +1073,8 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     custodied and never counted toward a reset (`InboundPipeline.kt:592-598`, `:1739-1768`).
 - **Android reads these bits from the pinned profile alone** (`CryptoScheme.kt:11-13`). That is why the dark phases
   could carry them on a Debug build's profile while the HELLO and the advert stayed `0xF`, and why the profile is what
-  the switch gates: off, it carries neither the bits nor a prekey (P8), only `local` without them (`0x4000F` since
-  knit-ios #25).
+  the switch gates: off, it carries neither the bits nor a prekey (P8), only `local` without them (`0xC000F` since
+  ADR 2026-11.sv5t, `0x4000F` from knit-ios #25 until then).
 
 ### What this port leaves out
 

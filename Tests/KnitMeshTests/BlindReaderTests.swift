@@ -180,7 +180,7 @@ import Testing
     /// off; once that link ends past 15 s the streak goes, and sooner it stands.
     @Test(arguments: [false, true])
     func aDialRefusedWhileItsPeerWasHeldBacksOffAndTheLinksEndClearsItOnlyPast15s(heldLong: Bool) throws {
-        let rig = LinkRig.iPhone(claimsBlindAdvert: false)
+        let rig = LinkRig.iPhone(withholdsBlindAdvert: true)
         let peer = BlindingPeer(LinkRig.low, flags: 0)
         let tag = peer.tag(wall: rig.clock.wallMilliseconds())
         _ = rig.accept(low, on: ChannelID(100))

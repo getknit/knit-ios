@@ -32,7 +32,6 @@ import Testing
     @Test func aBlindingPeersLinkWithNoAttributedSightingScoresAsNeverSighted() throws {
         var configuration = LinkManager.Configuration()
         configuration.promotion.maxLinks = 1
-        configuration.claimsBlindAdvert = true
         let rig = LinkRig(local: high, advertisesServiceData: false, servesDoorbell: true, configuration: configuration)
         let peer = BlindingPeer(low)
         let wall = rig.clock.wallMilliseconds()

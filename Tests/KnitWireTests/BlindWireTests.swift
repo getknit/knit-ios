@@ -7,6 +7,16 @@ import Testing
 @Suite struct BlindWireTests {
     private let nodeA = "ffbbh6thbepahqxsv2gqog45m4"
 
+    @Test func theBlindAdvertBitIsPinnedAndOurs() {
+        // `Protocol.CAP_BLIND_ADVERT` (knit-next ADR 2026-11.xp6d, ADR 2026-11.sv5t): "I read tags", in the HELLO and in
+        // every profile we sign, the switch on or off, so Android sends `TAG_NEXT` and ctl 11; above the advert's 8 bits.
+        #expect(Capabilities.blindAdvert.rawValue == 0x80000)
+        #expect(Capabilities.local.contains(.blindAdvert))
+        #expect(Capabilities.local.subtracting(.ratchetSuite).contains(.blindAdvert))
+        #expect(Capabilities.blindAdvert.rawValue & 0xFF == 0)
+        #expect(Hello(nodeId: nodeA).capabilities.contains(.blindAdvert))
+    }
+
     /// Tag 9 carries exactly 16 bytes (`LinkFramingTest.aTagNextRecordRoundTripsUnderTagNine`).
     @Test func aTagNextRecordReadsUnderTagNine() throws {
         let tag = (0..<UInt8(LinkRecord.tagNextBytes)).map { 0xC0 + $0 }

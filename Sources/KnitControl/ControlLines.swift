@@ -154,6 +154,11 @@ internal enum ControlLines {
         ]
     }
 
+    /// What the presence keys' receive side did (ADR 2026-11.sv5t), counts only: never a key, a peer or a time.
+    static func describe(_ keys: PresenceKeyCounts) -> JSONValue {
+        ["stored": .int(Int64(keys.stored)), "replaced": .int(Int64(keys.replaced)), "leavers": .int(Int64(keys.leavers))]
+    }
+
     /// What the links did with FILE records: whole files in, files dropped as they streamed, files out, and of those the
     /// ones that streamed only a resuming asker's tail (knit-next ADR 2026-10.wtyc), and the files in whose stream was
     /// spliced onto a prefix we kept (knit-ios #2).

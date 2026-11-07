@@ -319,6 +319,10 @@ public actor MeshControl {
             "linkProofFailed": .int(Int64(await mesh.linkProofFailed)),
             "linkClaimRefused": .int(Int64(await mesh.linkClaimRefused)),
             "aliases": ControlLines.describe(await mesh.aliasCounters),
+            "presenceKeys": ControlLines.describe(await mesh.presenceKeyCounts),
+            // This build's own bits (`Capabilities.local`, lowercase hex), before what a HELLO adds or knit-peer's legacy
+            // impostor drops: a harness reads `CAP_BLIND_ADVERT` here to know the iPhone reads tags (ADR 2026-11.sv5t).
+            "capabilities": .string(Capabilities.local.hex),
             "seeking": .bool(await mesh.isSeeking),
             "seekWakes": .int(Int64(await mesh.seekWakes)),
             "seekSpells": .int(Int64(await mesh.seekSpells)),
@@ -332,7 +336,6 @@ public actor MeshControl {
 
 /// The answers that read or change one thing each, kept apart from the actor's body.
 extension MeshControl {
-    /// Refuses or permits links with `peer`, as `deny-link` and `allow-link` ask.
     /// Every pinned peer, in node id order, each saying whether we blocked them.
     private func peers() -> [String: JSONValue] {
         let peers = stores.peers.allPeers().sorted { $0.nodeId < $1.nodeId }
@@ -346,15 +349,6 @@ extension MeshControl {
             await actions.block(peer)
         } else {
             await actions.unblock(peer)
-        }
-        return ["peer": .string(peer.string)]
-    }
-
-    private func setLinks(with peer: NodeId, allowed: Bool) async -> [String: JSONValue] {
-        if allowed {
-            await mesh.permitLinks(with: peer)
-        } else {
-            await mesh.refuseLinks(with: peer)
         }
         return ["peer": .string(peer.string)]
     }

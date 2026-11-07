@@ -123,6 +123,12 @@ import Testing
         #expect(status["linksProven"] as? Int == 0)
         #expect(status["linkProofFailed"] as? Int == 0)
         #expect(status["linkClaimRefused"] as? Int == 0)
+        // The bits the harness reads to know the build reads tags, and the presence keys' counts (ADR 2026-11.sv5t).
+        #expect(status["capabilities"] as? String == "c015f")
+        let keys = try #require(status["presenceKeys"] as? [String: Any])
+        #expect(keys["stored"] as? Int == 0)
+        #expect(keys["replaced"] as? Int == 0)
+        #expect(keys["leavers"] as? Int == 0)
     }
 
     @Test func statusSaysWhenTheLinksSeek() async throws {

@@ -10,7 +10,10 @@ import importlib.util
 import io
 import os
 import sys
+import tempfile
+import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -351,23 +354,76 @@ class ClearAdvertsTest(unittest.TestCase):
         self.assertEqual(phone.calls, [])
 
 
+class FakeKnitLog:
+    """Knit's log over USB as `IPhoneLog` leaves it: a file of JSON lines, each with its wall-clock `ms`."""
+
+    def __init__(self, messages: list[str], ago: float = 0) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.path = Path(self.directory.name) / "knit.log"
+        ms = int((time.time() - ago) * 1000)
+        self.path.write_text("".join(f'syslog: {{"ms": {ms}, "message": "{line}"}}\n' for line in messages))
+        self.file = mock.Mock()
+
+    def close(self) -> None:
+        self.directory.cleanup()
+
+
 class BlindDialedByTest(unittest.TestCase):
-    """`iphone --keep-blind`'s dialer check, read off a blinding phone's `ADVERT` and its log."""
+    """`iphone --keep-blind`'s dialer check, read off a blinding phone's `ADVERT` and its log, and the iPhone's own log."""
 
     ios = mock.Mock(node_id=IPHONE)
     refused = f"bt refused client {IPHONE} (sighted=true codedOnly=false heldAgeMs=null atCap=false blind=legacy)"
+    accepted = f"bt accepted client {IPHONE} (sighted=true)"
+    proved = f"link ~zzzz…7 proved {PHONE} on ch12"
 
-    def judge(self, reply: dict, lines: list[str]) -> dict:
+    def judge(self, reply: dict, lines: list[str], reader: bool = False, knit: list[str] | None = None, ago: float = 0) -> dict:
         phone = FakeAdvertPhone("p9", [reply])
+        log = FakeKnitLog(knit, ago=ago) if knit is not None else None
+        if log:
+            self.addCleanup(log.close)
         with mock.patch.object(interop, "_phone_lines", return_value=lines):
-            return interop._blind_dialed_by(phone, self.ios)
+            return interop._blind_dialed_by(phone, self.ios, phone_id=PHONE, knit=log, since=time.time() - 60, reader=reader)
 
-    def blinding(self, i_dial: bool, dialed_by_me: bool) -> dict:
+    def blinding(self, i_dial: bool, dialed_by_me: bool, tag_aware: bool = False) -> dict:
         return {
             "blinding": True,
             "peers": [{"peer": IPHONE, "iDial": i_dial}],
-            "links": [{"nodeId": IPHONE, "dialedByMe": dialed_by_me, "tagAware": False}],
+            "links": [{"nodeId": IPHONE, "dialedByMe": dialed_by_me, "tagAware": tag_aware}],
         }
+
+    def test_a_reader_dialed_by_the_phone_passes_with_the_bit_and_no_refusal(self) -> None:
+        result = self.judge(self.blinding(i_dial=True, dialed_by_me=True, tag_aware=True), ["bt state links=1"], reader=True)
+        self.assertEqual((result["dialer"], result["legacyRefusals"], result["tagAware"]), ("phone", 0, True))
+
+    def test_a_reader_fails_on_one_legacy_refusal_or_a_hello_without_the_bit(self) -> None:
+        with self.assertRaises(RuntimeError):
+            self.judge(self.blinding(i_dial=True, dialed_by_me=True, tag_aware=True), [self.refused], reader=True)
+        with self.assertRaises(RuntimeError):
+            self.judge(self.blinding(i_dial=True, dialed_by_me=True, tag_aware=False), [], reader=True)
+
+    def test_a_readers_own_dial_is_a_tag_dial_with_its_proved_line(self) -> None:
+        reply = self.blinding(i_dial=True, dialed_by_me=False, tag_aware=True)
+        result = self.judge(reply, [self.accepted], reader=True, knit=["link head start over for ~zzzz…7 (dwell=12000ms)", self.proved])
+        self.assertEqual((result["dialer"], result["outcome"], result["line"]), ("iphone", "tag dial", self.proved))
+
+    @mock.patch.object(interop, "PROVED_LINE_WAIT", 0)
+    def test_a_fresh_tag_dial_without_its_proved_line_fails_and_one_from_before_the_log_is_reported(self) -> None:
+        reply = self.blinding(i_dial=True, dialed_by_me=False, tag_aware=True)
+        with self.assertRaises(RuntimeError):
+            self.judge(reply, [self.accepted], reader=True, knit=[f"link ~zzzz…7 proved {IPHONE} on ch3"])
+        result = self.judge(reply, [], reader=True, knit=[])
+        self.assertEqual((result["outcome"], result["line"]), ("tag dial", None))
+
+    @mock.patch.object(interop, "PROVED_LINE_WAIT", 0)
+    def test_a_relinks_tag_dial_cannot_borrow_the_first_links_proved_line(self) -> None:
+        # The line came 120 s ago, before the relink's clear 60 s ago.
+        with self.assertRaises(RuntimeError):
+            reply = self.blinding(i_dial=True, dialed_by_me=False, tag_aware=True)
+            self.judge(reply, [self.accepted], reader=True, knit=[self.proved], ago=120)
+
+    def test_a_build_before_the_reader_never_links_by_its_own_dial(self) -> None:
+        with self.assertRaises(RuntimeError):
+            self.judge(self.blinding(i_dial=True, dialed_by_me=False), [self.accepted], knit=[self.proved])
 
     def test_the_phone_dials_as_its_order_says_and_the_iphones_refused_dials_are_counted(self) -> None:
         result = self.judge(self.blinding(i_dial=True, dialed_by_me=True), [self.refused, self.refused, "bt state links=1"])
@@ -383,6 +439,27 @@ class BlindDialedByTest(unittest.TestCase):
             self.judge({"blinding": True, "peers": [], "links": []}, [])
         with self.assertRaises(interop.Inconclusive):
             self.judge({"blinding": False, "form": "clear"}, [])
+
+
+class HeadStartLineTest(unittest.TestCase):
+    """The iPhone's head-start line toward a phone, by its id or, toward a tag, by a handle a proved line ties to it."""
+
+    def line(self, messages: list[str], blinded: bool) -> str | None:
+        log = FakeKnitLog(messages)
+        self.addCleanup(log.close)
+        return interop._head_start_line(log, PHONE, time.time() - 60, blinded=blinded)
+
+    def test_a_clear_or_resolved_peers_line_names_its_id(self) -> None:
+        line = f"link head start over for {PHONE} (dwell=12000ms rssi=-60dBm)"
+        self.assertEqual(self.line([line], blinded=False), line)
+        self.assertEqual(self.line([line], blinded=True), line)
+
+    def test_a_tags_line_is_found_by_the_handle_its_proved_line_names(self) -> None:
+        start = "link head start over for ~zzzz…12 (dwell=12000ms rssi=-60dBm)"
+        other = "link head start over for ~zzzz…1 (dwell=12000ms rssi=-60dBm)"
+        self.assertEqual(self.line([other, start, f"link ~zzzz…12 proved {PHONE} on ch4"], blinded=True), start)
+        self.assertIsNone(self.line([start, f"link ~zzzz…12 proved {IPHONE} on ch4"], blinded=True))
+        self.assertIsNone(self.line([start, f"link ~zzzz…12 proved {PHONE} on ch4"], blinded=False))
 
 
 class ScanIdsTest(unittest.TestCase):

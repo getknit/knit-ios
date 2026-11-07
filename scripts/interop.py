@@ -741,6 +741,8 @@ def others_in_range(phone_id: str, seconds: int = 20) -> set[str]:
 DIALS_GATT_PEERS = 0x02
 # FLAG_BLINDED, bit 3: bytes 1–16 are a rotating tag, not the node id (knit-next ADR 2026-11.xp6d).
 BLINDED = 0x08
+# CAP_BLIND_ADVERT, "I read tags": in an iPhone build's status `capabilities` since its reader (ADR 2026-11.sv5t).
+BLIND_ADVERT = 0x80000
 # The low byte of the capabilities this port advertises, as the scan spells it: 0x5F since the ratchet (`0x15F`, whose
 # `cryptoV3` sits above the byte, ADR 2026-10.5sk9), 0xF from a build before it (ADR 2026-10.ehe6), 0xB from one before
 # reactions (ADR 2026-09.n393), and 0x9 from one before groups, which phones and peers may still run. The advert keeps
@@ -911,9 +913,14 @@ def iphone(arguments: argparse.Namespace) -> int:
     scan cadence.
 
     With `--keep-blind`, a phone that airs a tag (knit-next ADR 2026-11.xp6d) is judged by its own order: it dials the
-    iPhone whatever the ids say, which its `ADVERT` reply shows (`iDial`, `dialedByMe`), and refuses an iPhone build
-    before the iOS reader without a reply. Each refusal it logs ` blind=legacy` is counted, not failed. The run skips
-    the 5 s supervision checks and `--links`, which judge links the iPhone dialed."""
+    iPhone whatever the ids say, which its `ADVERT` reply shows (`iDial`, `dialedByMe`). An iPhone build before the iOS
+    reader cannot link by its own dial, since the phone refuses it with no reply and logs ` blind=legacy`, which is
+    counted, not failed, and `--links`, which counts head starts, is skipped. A reader iPhone (`CAP_BLIND_ADVERT` in its
+    status `capabilities`, ADR 2026-11.sv5t) still tag-dials the phone by its own rules (the head start, a phone that
+    reads no GATT payload, seeking): such a link is reported as a tag dial, must find the doorbell and end at 5 s like
+    any head start, and `--links` counts it, its head-start line naming the phone's id, or the tag's handle that its
+    `link <handle> proved <id>` line ties to the phone. Against a reader, a single ` blind=legacy` refusal fails, and so
+    does a link whose HELLO the phone says carried no `CAP_BLIND_ADVERT`."""
     phone = Phone(arguments.device)
     phone.wakes = arguments.wake
     ios = IPhone(arguments.udid, arguments.host)
@@ -929,6 +936,7 @@ def iphone(arguments: argparse.Namespace) -> int:
     # A phone that airs a tag dials every advert carrying an id, and refuses an iPhone's dial while the iPhone lacks
     # CAP_BLIND_ADVERT (knit-next ADR 2026-11.xp6d), whatever the ids' order: only with `--keep-blind`.
     blinding = bool((phone.advert() or {}).get("blinding"))
+    reader = blinding and _reads_tags(ios)
     order = "phone-blinds" if blinding else "iphone-above" if ios.node_id > phone_id else "iphone-below"
     above = order == "iphone-above"
     tally: list[dict] = []
@@ -945,12 +953,19 @@ def iphone(arguments: argparse.Namespace) -> int:
                 "order": order,
                 "fresh": fresh,
                 "wakes": phone.wakes,
-                **({"skipped": ["link-balanced", "relink-balanced", "links"]} if blinding else {}),
+                **({"readsTags": reader} if blinding else {}),
+                **({"skipped": ["links"]} if blinding and not reader else {}),
             }
         )
     )
     phone.shell("logcat -c")
-    dialed_by = (lambda: _blind_dialed_by(phone, ios)) if blinding else (lambda: _dialed_by(phone, ios, phone_id, order))
+    cleared = time.time()
+
+    def dialed_by() -> dict:
+        if blinding:
+            return _blind_dialed_by(phone, ios, phone_id=phone_id, knit=knit, since=cleared, reader=reader)
+        return _dialed_by(phone, ios, phone_id, order)
+
     try:
         run.step("link", lambda: _ios_linked(ios, phone, phone_id))
         run.step("dialer", dialed_by)
@@ -982,13 +997,14 @@ def iphone(arguments: argparse.Namespace) -> int:
             sent = ios.command(cmd="dm", to=phone_id, text=body)
             run.step("dm-iphone-reply-delivered", lambda: _delivered(ios, sent, 30))
         head_start = not above
-        # A blinding phone dials the iPhone, so no link is the iPhone's to put back at 5 s, and none is a head start.
-        step = None
-        if not blinding:
-            step = run.step("link-balanced", lambda: _balanced(phone, ios.node_id, tally, fresh=False, head_start=head_start))
+        # Toward a phone that airs a tag, as below a flagged one, the phone dials, and a link it accepted is the iPhone's
+        # head start: a reader's tag dial, judged the same.
+        step = run.step("link-balanced", lambda: _balanced(phone, ios.node_id, tally, fresh=False, head_start=head_start))
         balanced = step is not None
         if not arguments.skip_offline:
             phone.shell("logcat -c")
+            # The relink's tag dial must show a line of its own, not the first link's.
+            cleared = time.time()
             _offline(run, ios, phone, phone_id, nonce)
             run.step("relink-dialer", dialed_by)
             if balanced:
@@ -1001,8 +1017,9 @@ def iphone(arguments: argparse.Namespace) -> int:
         run.step("custody-converges", lambda: _converges(ios, phone, 420))
         if balanced and above:
             _relinks(run, ios, phone, phone_id, arguments.links, arguments.hold, 180, tally)
-        elif balanced and arguments.links > 1:
-            _head_start_relinks(run, ios, phone, phone_id, arguments, tally, head_starts, knit)
+        elif balanced and arguments.links > 1 and (reader or not blinding):
+            # A build before the reader has no head start to a tag to count: the phone refuses every one as legacy.
+            _head_start_relinks(run, ios, phone, phone_id, arguments, tally, head_starts, knit, blinded=blinding)
     finally:
         ios.stop()
         if knit:
@@ -1048,13 +1065,21 @@ def _dialed_by(phone: Phone, ios: IPhone, phone_id: str, order: str) -> dict:
     return {"dialer": dialer, **detail}
 
 
-def _blind_dialed_by(phone: Phone, ios: IPhone) -> dict:
+def _blind_dialed_by(
+    phone: Phone, ios: IPhone, phone_id: str | None = None, knit=None, since: float = 0.0, reader: bool = False
+) -> dict:
     """Which side dialed the link between a phone that airs a tag and the iPhone, from the phone's `ADVERT`: the
     expected dialer is the phone's pre-link order against the iPhone's advert (`peers[].iDial`, knit-next
     `AdvertOrder.iDial`), and the observed one its link's `dialedByMe`. A blinding phone dials an advert that carries an
     id, so it should dial. Each iPhone dial it refused for lacking CAP_BLIND_ADVERT, logged ` blind=legacy` on its `bt
     refused client` line (`BleAdmissionPolicy.Verdict.RefuseLegacy`), is an iPhone build before the iOS reader dialing
-    the phone's tag at its head start or while seeking: reported, never failed."""
+    the phone's tag at its head start or while seeking: reported, never failed.
+
+    A `reader` iPhone (ADR 2026-11.sv5t) must meet no such refusal, and the phone's link must say its HELLO carried the
+    bit (`tagAware`). It may dial the phone itself by its own rules, the head start among them, where the order leaves
+    the dial to the phone: that link is a tag dial, reported as `_dialed_by` reports a head start, with the iPhone's
+    `link <handle> proved <id>` line. While the iPhone's log is being read, a link the phone's log shows it accepted
+    must have that line."""
     reply = phone.advert() or {}
     if not reply.get("blinding"):
         raise Inconclusive(f"the phone stopped airing a tag: form={reply.get('form')}")
@@ -1066,10 +1091,33 @@ def _blind_dialed_by(phone: Phone, ios: IPhone) -> dict:
     detail = {"expected": expected, "legacyRefusals": len(refused), "tagAware": (link or {}).get("tagAware")}
     if link is None:
         raise RuntimeError(f"the phone reports no link to the iPhone: {[entry.get('nodeId') for entry in reply.get('links', [])]}")
+    if reader and refused:
+        raise RuntimeError(f"the iPhone reads tags, yet the phone refused its dial as legacy: {detail}")
+    if reader and not detail["tagAware"]:
+        raise RuntimeError(f"the iPhone reads tags, yet the phone says its HELLO lacked CAP_BLIND_ADVERT: {detail}")
     dialer = "phone" if link.get("dialedByMe") else "iphone"
     if expected not in (None, dialer):
+        if reader and dialer == "iphone":
+            line = _tag_dial_proved(knit, phone_id, since) if phone_id else None
+            # A link that came up before the phone's log was cleared left no line on either side to find.
+            if knit is not None and line is None and _last_dialer(phone, ios.node_id) == "iphone":
+                try:
+                    # The USB log can trail the link by the relay's delay.
+                    line = poll(lambda: _tag_dial_proved(knit, phone_id, since), PROVED_LINE_WAIT, every=1)
+                except TimeoutError:
+                    raise RuntimeError(f"the iPhone dialed the phone with no `link <handle> proved` line in its log: {detail}") from None
+            return {"dialer": dialer, "outcome": "tag dial", "line": line, **detail}
         raise RuntimeError(f"the {dialer} dialed, and the phone's order said the {expected} should: {detail}")
     return {"dialer": dialer, **detail}
+
+
+def _reads_tags(ios: IPhone) -> bool:
+    """Whether the iPhone's build claims CAP_BLIND_ADVERT, read off its status `capabilities` (ADR 2026-11.sv5t); a
+    build from before the field reads as one that does not."""
+    try:
+        return int(str(ios.command(cmd="status").get("capabilities", "0")), 16) & BLIND_ADVERT != 0
+    except ValueError:
+        return False
 
 
 def _offline(run: Run, ios: IPhone, other: Phone | Peer, other_id: str, nonce: str) -> None:
@@ -2913,8 +2961,9 @@ def _balanced(phone: Phone, node: str, tally: list[dict], fresh: bool = True, he
     have come up since the clear; without, one already up when the log was cleared, which left no lines, passes
     unseen.
 
-    With `head_start`, the iPhone sorts below the phone, so a link the phone accepted is a head-start dial (interop-audit
-    finding AND-2), and one whose lookup found no doorbell fails: only that lookup asks for 5 s. A link the phone
+    With `head_start`, the phone's order leaves the dial to it, since the iPhone sorts below it or it airs a tag, so a
+    link the phone accepted is a head-start dial (interop-audit finding AND-2), a reader iPhone's tag dial toward a tag
+    (ADR 2026-11.sv5t), and one whose lookup found no doorbell fails: only that lookup asks for 5 s. A link the phone
     dialed fails too if its last timeout is under 5 s."""
     links = _conn_params(phone, node)
     if fresh:
@@ -3028,9 +3077,18 @@ def _link_after(central: Node, phone: Phone, phone_id: str, since: float, timeou
 
 
 def _head_start_relinks(
-    run: Run, ios: IPhone, phone: Phone, phone_id: str, arguments: argparse.Namespace, tally: list[dict], head_starts: list[dict], knit
+    run: Run,
+    ios: IPhone,
+    phone: Phone,
+    phone_id: str,
+    arguments: argparse.Namespace,
+    tally: list[dict],
+    head_starts: list[dict],
+    knit,
+    blinded: bool = False,
 ) -> None:
-    """With the iPhone below the phone, more link-ups until `--links` head-start links have found the doorbell, or twice
+    """With the iPhone below the phone, or beside one that airs a tag, more link-ups until `--links` head-start links
+    have found the doorbell, or twice
     that many link-ups have come. Each time the iPhone's mesh stops for `--away` seconds, long enough for the phone's
     sighting of it to linger out (90 s, `BlePresenceTracker.kt:274`), then starts, and the first link from there is
     timed, as MVP item 2 times it. Whoever dialed, the link must hold `--hold` seconds and pass `_balanced`. Each link
@@ -3055,7 +3113,7 @@ def _head_start_relinks(
             return
         time.sleep(max(0.0, started + link["seconds"] + arguments.hold - time.monotonic()))
         dialer = _last_dialer(phone, ios.node_id)
-        line = _head_start_line(knit, phone_id, wall)
+        line = _head_start_line(knit, phone_id, wall, blinded=blinded)
         entry = {"seconds": link["seconds"], "withinThirtySeconds": link["withinThirtySeconds"], "dialer": dialer, "line": line}
         head_starts.append(entry)
 
@@ -3094,13 +3152,44 @@ def _iphone_log(ios: IPhone, name: str):
         return None
 
 
-def _head_start_line(knit, peer: str, since: float) -> str | None:
-    """The iPhone's head-start line for `peer` logged since `since`, on the wall clock, if its log is being read."""
+def _head_start_line(knit, peer: str, since: float, blinded: bool = False) -> str | None:
+    """The iPhone's head-start line for `peer` logged since `since`, on the wall clock, if its log is being read. A
+    blinded peer's line names its tag's handle, never its id (ADR 2026-11.sv5t), so with `blinded` it is the line for a
+    handle the iPhone's `link <handle> proved <peer>` line, since `since`, ties to the peer."""
+    if knit is None:
+        return None
+    knit.file.flush()
+    entries = [entry for entry in IPhoneLog.entries(knit.path) if entry.get("ms", 0) / 1000 >= since - 1]
+    names = {peer}
+    if blinded:
+        names |= {handle for entry in entries if (handle := _proved_handle(entry["message"], peer))}
+    for entry in entries:
+        # The name, then a space: `~zzzz…1` is no match for `~zzzz…12`.
+        if any(f"{HEAD_START_LINE}{name} " in entry["message"] for name in names):
+            return entry["message"]
+    return None
+
+
+# The line the iPhone's link manager logs when a tag dial's proof registers its link (`LinkManager+Blind.swift`): the
+# dial's handle, never its tag, then the id the peer proved (ADR 2026-11.sv5t).
+PROVED_LINE = re.compile(r"\blink (~zzzz…\d+) proved (\S+) on ")
+# How long a fresh tag dial's `proved` line may trail its link in the USB log, in seconds.
+PROVED_LINE_WAIT = 5
+
+
+def _proved_handle(message: str, peer: str) -> str | None:
+    """The handle in `message` when it is the iPhone's line for a tag dial that proved `peer`."""
+    match = PROVED_LINE.search(message)
+    return match.group(1) if match and match.group(2) == peer else None
+
+
+def _tag_dial_proved(knit, peer: str, since: float) -> str | None:
+    """The iPhone's line for a tag dial that proved `peer` since `since`, on the wall clock, if its log is being read."""
     if knit is None:
         return None
     knit.file.flush()
     for entry in IPhoneLog.entries(knit.path):
-        if f"{HEAD_START_LINE}{peer}" in entry["message"] and entry.get("ms", 0) / 1000 >= since - 1:
+        if _proved_handle(entry["message"], peer) and entry.get("ms", 0) / 1000 >= since - 1:
             return entry["message"]
     return None
 

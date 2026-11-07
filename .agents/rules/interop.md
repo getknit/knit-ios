@@ -24,19 +24,22 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   Every build drops the link on an unknown tag, and Android v2.10.1 and earlier know only 1..7 (the `link-hello-proof`
   contract, §3; knit-ios #25). Tag 9 (`TAG_NEXT`) is read, exactly 16 bytes, and never written: this port airs no tag
   (knit-next ADR 2026-11.xp6d; ADR 2026-11.sv5t).
-- **Advertise only what is implemented.** This build sends capabilities `0x4015F`: E2E, GROUPS, REACTIONS,
-  STORE_FORWARD, RATCHET, INLINE_ACK, CRYPTO_V3 and LINK_PROOF (ADR 2026-10.b4yk; knit-ios #25). Builds before the
-  link's proof sent `0x15F`, builds before the ratchet `0xF` (ADR
+- **Advertise only what is implemented.** This build sends capabilities `0xC015F`: E2E, GROUPS, REACTIONS,
+  STORE_FORWARD, RATCHET, INLINE_ACK, CRYPTO_V3, LINK_PROOF and BLIND_ADVERT (ADR 2026-10.b4yk; knit-ios #25; ADR
+  2026-11.sv5t). Builds before the reader sent `0x4015F`, builds before the link's proof `0x15F`, builds before the
+  ratchet `0xF` (ADR
   2026-10.ehe6), builds before reactions `0xB` (ADR 2026-09.n393), and the MVP `0x9`. `CAP_RATCHET` promises v2 DMs,
   the group form, their ctl codes and resets; `CAP_INLINE_ACK` and `CAP_CRYPTO_V3` promise what
   `.agents/context/crypto.md` lists under "The promise behind the bits". The three go together
   (`Capabilities.ratchetSuite`), and the signed profile carries them only beside our prekey: with the switch off,
-  or no prekey kept, the profile says `0x4000F`. Android reads them from the profile alone. `CAP_LINK_PROOF`
+  or no prekey kept, the profile says `0xC000F`. Android reads them from the profile alone. `CAP_LINK_PROOF`
   (`0x40000`) rides the HELLO and every profile we sign, the switch on or off: a peer reads it from our signed profile
-  to know a link claiming our id must prove it, and from the HELLO to run the proof. Every start whose profile would
+  to know a link claiming our id must prove it, and from the HELLO to run the proof. `CAP_BLIND_ADVERT` (`0x80000`)
+  rides both too: it promises that tag 9 and ctl 11 read here, and Android sends `TAG_NEXT` and its presence keys to a
+  peer whose HELLO or pinned profile carries it (ADR 2026-11.sv5t). Every start whose profile would
   carry other capabilities than its last publish recorded republishes it as an edit, so no older profile of ours can
   take a bit back where a peer holds it (the `link-hello-proof` contract, §7).
-- **`CAP_DOORBELL` (`0x1000`) lives in the HELLO alone.** The HELLO adds it, reading `4315f`, when the radio
+- **`CAP_DOORBELL` (`0x1000`) lives in the HELLO alone.** The HELLO adds it, reading `c315f`, when the radio
   serves the doorbell (`Radio.servesDoorbell`). Nothing else ever advertises it: not `Capabilities.local`, not the
   signed profile, not the advert, and never the Linux peer's `android` profile, which serves no GATT.
 - **Never write a `KEEPALIVE` (tag 5) unless the link answers Android's.** Android closes a silent link to any peer
@@ -44,7 +47,7 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   and from then on Android closes it after about 150 to 210 s with no byte in. A sender has to answer each keepalive
   with one of its own, except one that crosses its own unanswered announce or probe. Today no radio here writes one
   (`LinkAdmissionTests`), so the Linux peer's `android` profile, the only link without the bit, is never probed.
-- **`CAP_BLOB_HAVE` (`0x2000`) lives in the HELLO alone too.** Every HELLO carries it, reading `4215f`, because
+- **`CAP_BLOB_HAVE` (`0x2000`) lives in the HELLO alone too.** Every HELLO carries it, reading `c215f`, because
   every build answers a `blobhave` (knit-next ADR 2026-10.6e5t). Android reads it from the link only, so it stays
   out of `Capabilities.local`, the signed profile and the emitted vectors. Answering is never gated; only asking is
   (`MeshConfiguration.queriesBlobHolders`). A file's progress report, `blobprog`, and an asker's withdrawal,

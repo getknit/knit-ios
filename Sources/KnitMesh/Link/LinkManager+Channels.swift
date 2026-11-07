@@ -160,18 +160,20 @@ extension LinkManager {
     /// system's secure source, never the injected generator a test seeds (the `link-hello-proof` contract, §2).
     ///
     /// A dial's HELLO carries `a`, the form `addressing` names, after the nonce; never `t`, since this port airs no tag.
-    /// ``Configuration/claimsBlindAdvert``, a test's seam until phase 4 puts the bit in ``Capabilities/local``, adds
-    /// ``Capabilities/blindAdvert`` here alone.
+    /// ``Capabilities/blindAdvert`` comes with ``Capabilities/local``; ``Configuration/withholdsBlindAdvert``, a test's
+    /// seam, takes it out of this HELLO alone, as a build from before the reader would send.
     func ourHello(addressing: AdvertOrder.Form?) -> Hello {
         var capabilities = Capabilities.local.union(.blobHave)
-        if configuration.claimsBlindAdvert {
-            capabilities.insert(.blindAdvert)
+        if configuration.withholdsBlindAdvert {
+            capabilities.remove(.blindAdvert)
         }
         if radio.servesDoorbell {
             capabilities.insert(.doorbell)
         }
         if !provesLinks {
+            // knit-peer's legacy impostor stands in for Android v2.10.1, which had neither bit.
             capabilities.remove(.linkProof)
+            capabilities.remove(.blindAdvert)
         }
         let nonce = capabilities.contains(.linkProof) ? LinkProof.freshNonce() : nil
         let addressed = nonce == nil ? nil : addressing?.advertised.bytes

@@ -521,7 +521,9 @@ explicit direction.** Update this file in the change that ships an item.
   - **Mesh:** a typing cue dropped in a request thread (`ba26a7904`, #50).
   - **The lab harness** (done here, 2026-11-07): `interop.py` turns each driven Pixel's `ADVERT` switch off for its
     runs and restores it, drops tags from its scans, and with `--keep-blind` judges `iphone`'s dialer by the Pixel's
-    `iDial`, counting the ` blind=legacy` refusals of the iPhone's dials.
+    `iDial`, counting the ` blind=legacy` refusals of a pre-reader iPhone's dials. Against a reader (`CAP_BLIND_ADVERT`
+    in its `status.capabilities`, ADR 2026-11.sv5t) one such refusal fails, so does a link whose HELLO lacked the bit,
+    and the iPhone's own tag dials are judged as head starts.
 - **What the pin move to `e63f15f4` found owed** (2026-10-25; `.agents/context/knit-next.md`, "Up to `e63f15f4`", "Owed
   here"), filed as knit-ios #13 to #17. The decoder and typed-field ones show only with a sender's buggy or hostile
   bytes; j67x's rule can bite between honest phones. Each goes to its plane's owner and reviewer:
