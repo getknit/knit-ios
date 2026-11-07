@@ -505,20 +505,20 @@ explicit direction.** Update this file in the change that ships an item.
   `main`, and knit-next recorded the runs in its ADR 2026-10.9utz (`.agents/context/linux-peer.md`, "What the
   Meshtastic radio showed"). Done on Android's side.
 - **What the pin move to `cad69c77b` found owed** (2026-11-07; `.agents/context/knit-next.md`, "Since then", "Owed
-  here"), not yet filed. Today's iPhone handles everything Android airs at it, so none of this is urgent. Each goes to
-  its plane's owner and reviewer:
-  - **Bluetooth and crypto, together** (`bluetooth-owner`, `crypto-owner`): knit-next ADR 2026-11.xp6d, the blinded
+  here"), filed as knit-ios #42 to #50; the floored reset was already #38. Today's iPhone handles everything Android
+  airs at it, so none of this is urgent. Each goes to its plane's owner and reviewer:
+  - **Bluetooth and crypto, together** (`bluetooth-owner`, `crypto-owner`; knit-ios #42): knit-next ADR 2026-11.xp6d, the blinded
     advert, starting with the reader and the presence keys, which Android's release N+1 waits on. The writer needs an
     iOS ADR of its own: CoreBluetooth gives no advertising sets and no say in the address's rotation, and an iPhone's id
     rides its GATT payload. Before it starts: who an iPhone's direct contacts are without Remove contact, and what the
     generation number's backup rule means while `knit.sqlite` stays out of backups.
-  - **Wire and crypto** (`crypto-owner`): type `lang`, `reads`, `md` and `pk` as kotlinx does, and add the `link` frame
-    type, never flooded and spending no key request; the once-per-era receipt re-seal (#176, the item below), the race
-    loser's reclaim (4mjm) and the floored reset (sfms).
-  - **Blobs** (`blobs-owner`): the file feed's report clamp (`85f80c22a`), group frames served to any peer (hr9f), the
-    member-first serve across every conversation (`c39177b66`) and qu98's echo door; and a judgment on 4ckq's face
-    re-want.
-  - **Mesh:** a typing cue dropped in a request thread (`ba26a7904`).
+  - **Wire and crypto** (`crypto-owner`): type `lang`, `reads`, `md` and `pk` as kotlinx does (#43), and add the `link`
+    frame type, never flooded and spending no key request (#44); the once-per-era receipt re-seal (knit-next #176, the
+    item below; #48), the race loser's reclaim (4mjm, #49) and the floored reset (sfms, #38).
+  - **Blobs** (`blobs-owner`): the file feed's report clamp (`85f80c22a`, #45), group frames served to any peer (hr9f,
+    #46, which should close #35), the member-first serve across every conversation (`c39177b66`) and qu98's echo door;
+    and a judgment on 4ckq's face re-want (#47).
+  - **Mesh:** a typing cue dropped in a request thread (`ba26a7904`, #50).
   - **The lab harness** (done here, 2026-11-07): `interop.py` turns each driven Pixel's `ADVERT` switch off for its
     runs and restores it, drops tags from its scans, and with `--keep-blind` judges `iphone`'s dialer by the Pixel's
     `iDial`, counting the ` blind=legacy` refusals of the iPhone's dials.
