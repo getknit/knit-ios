@@ -9,8 +9,8 @@ import Testing
 extension TypedKeysTests {
     /// What `decodeInt` reads: `1A FFFFFFFF` truncates to −1, a negative value reads, and 2³² and `1B 8000000000000000` are
     /// past what it admits.
-    private static let readableInts: [CBOR] = [.unsigned(0xFFFF_FFFF), .negative(4), .unsigned(0), .null, .map([])]
-    private static let refusedInts: [CBOR] = [.unsigned(1 << 32), .unsigned(1 << 63), .text("es"), .bytes([1]), .bool(true)]
+    private static var readableInts: [CBOR] { [.unsigned(0xFFFF_FFFF), .negative(4), .unsigned(0), .null, .map([])] }
+    private static var refusedInts: [CBOR] { [.unsigned(1 << 32), .unsigned(1 << 63), .text("es"), .bytes([1]), .bool(true)] }
 
     // MARK: The declared languages
 

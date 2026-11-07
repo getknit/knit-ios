@@ -68,3 +68,13 @@ final class BlindClocks {
         AdvertAliases(now: { [weak self] in self?.now ?? 0 }, wall: { [weak self] in self?.wall ?? 0 }, configuration: configuration)
     }
 }
+
+extension AdvertAliases.Resolution {
+    /// The answer, if there is one: production matches `.resolved(let answer)`, so the tests read it here.
+    var answer: AdvertAliases.Answer? {
+        if case .resolved(let answer) = self {
+            return answer
+        }
+        return nil
+    }
+}

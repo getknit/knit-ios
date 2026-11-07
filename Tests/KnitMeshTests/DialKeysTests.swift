@@ -47,6 +47,26 @@ import Testing
         #expect(read([]).isEmpty)
     }
 
+    /// Every key prints as the harness reads it and no tag: an id, a handle with its address, `?` for none, and an address
+    /// streak (`DialKeys.kt`'s strings, here one case each).
+    @Test func everyDialKeyPrintsItsIdOrHandleAndNeverATag() {
+        #expect(String(describing: DialKey.peer(.node(bob))) == bob.string, "a clear dial's key is the id the harness reads")
+        #expect(String(describing: DialKey.peer(.form(handle))) == "~zzzz…7")
+        #expect(String(describing: DialKey.tag(handle, nil)) == "~zzzz…7@?")
+        #expect(String(describing: DialKey.address(here)) == "@AA")
+    }
+
+    /// A sighting whose handle has gone has no dial key, so no backoff on its address holds it off; it is dialable again
+    /// once heard again (`backedOff`, `:92-104`).
+    @Test func aSightingWithoutADialKeyIsNeverReadAsBackingOff() {
+        let unresolved = SightingKey.form(handle)
+        let gone = SightingKey.form(FormHandle(number: 8))
+        let read = DialKeys.backedOff(sighted: [gone, unresolved], active: [.address(here)]) { key in
+            key == unresolved ? .tag(handle, here) : nil
+        }
+        #expect(read == [unresolved])
+    }
+
     @Test func aHeldLinkHoldsOffOnlyItsOwnProvenTagDial() {
         let dial = DialKey.tag(handle, here)
         #expect(DialKeys.heldDial(dial, proven: true) == dial)

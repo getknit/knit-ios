@@ -66,9 +66,10 @@ import Testing
         #expect(claiming.links.neighbors.map(\.nodeId) == [low])
     }
 
-    /// A reply naming us, one without the proof's bit, and one whose PROOF another key signed each fail, booked on the dial
+    /// A reply naming us, one without the proof's bit, one whose PROOF another key signed, a first record that is no HELLO,
+    /// and one with the bit but no nonce each fail (`LinkHandshake.dialTag`, `LinkHandshake.kt:134-154`), booked on the dial
     /// key and the address, never on the id the reply named.
-    @Test(arguments: [0, 1, 2])
+    @Test(arguments: [0, 1, 2, 3, 4])
     func aBadReplyFailsTheTagDialOnTheTagAndTheAddress(kind: Int) throws {
         let rig = LinkRig.iPhone()
         let peer = BlindingPeer(low)
@@ -83,6 +84,10 @@ import Testing
             reply = required(LinkRecord(.hello, payload: LinkRig.provingHello(high).payload).encoded)
         case 1:
             reply = LinkRig.helloRecord(low)
+        case 3:
+            reply = BlindingPeer.tagNext(tag)
+        case 4:
+            reply = required(LinkRecord(.hello, payload: Hello(nodeId: low.string, capabilities: Capabilities.local).payload).encoded)
         default:
             let hello = peer.hello(told: tag)
             let forged = try LinkRig.proofRecord(LinkRig.keys(of: LinkRig.middle), as: .responder, dialerHello: ours, responderHello: hello)
@@ -96,6 +101,7 @@ import Testing
         #expect(rig.links.backoffs[.address(peer.address)]?.streak == 1)
         #expect(rig.links.backoffs[.peer(.node(low))] == nil && rig.links.backoffs[.peer(.node(high))] == nil)
         #expect(rig.said("link \(dial.channel) proof failed for \(low): unproven") == (kind == 1))
+        #expect(rig.said("link \(dial.channel) proof failed for \(low): nonce") == (kind == 4))
     }
 
     /// Design-pass finding 1: a refusing phone's tag backs off 10, 20, 40, 80 and 160 s, its streak growing on the dial key

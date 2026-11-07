@@ -89,15 +89,25 @@ extension LinkManager {
     var busy: Set<SightingKey> {
         var keys = Set(liveLinks.map { SightingKey.node($0.neighbor.nodeId) })
         keys.formUnion(provingDialers.map(SightingKey.node))
-        for id in dialing.values {
-            if case .dialer(let target) = channels[id]?.role {
-                keys.insert(target.record.peerKey)
-                if let expected = target.expected {
-                    keys.insert(.node(expected))
-                }
+        for target in dialTargets {
+            keys.insert(target.record.peerKey)
+            if let expected = target.expected {
+                keys.insert(.node(expected))
             }
         }
         return keys
+    }
+
+    /// The targets of the dials in flight: every ``dialing`` entry's channel, which ``dial(_:headStart:now:)`` opens as a
+    /// dialer's and which leaves ``dialing`` when it closes.
+    var dialTargets: [DialTarget] {
+        var targets: [DialTarget] = []
+        for id in dialing.values {
+            if case .dialer(let target) = channels[id]?.role {
+                targets.append(target)
+            }
+        }
+        return targets
     }
 
     /// The sighted peers promotion may pick: ours to dial (``weDial(_:flags:)``), any while seeking
@@ -113,13 +123,7 @@ extension LinkManager {
         let occupied = busy
         let live = Set(liveLinks.map(\.neighbor.nodeId))
         let proven = Set(liveLinks.filter(\.proven).map(\.neighbor.nodeId))
-        let attributedDials = Set(
-            dialing.values.compactMap { id -> SightingKey? in
-                if case .dialer(let target) = channels[id]?.role {
-                    return target.record.peerKey
-                }
-                return nil
-            })
+        let attributedDials = Set(dialTargets.map(\.record.peerKey))
         return snapshots.compactMap { snapshot in
             if let id = snapshot.key.nodeId, refused.contains(id) {
                 return nil
@@ -147,7 +151,11 @@ extension LinkManager {
     /// off the sighting it dialed.
     func backingOff(_ snapshots: [PresenceTracker.Snapshot], now: Int64) -> Set<SightingKey> {
         let active = Set(backoffs.filter { now < $0.value.nextAt }.keys)
-        let byKey = Dictionary(snapshots.map { ($0.key, $0) }) { first, _ in first }
+        // The presence tracker keeps one entry per key, so each key names one snapshot.
+        var byKey: [SightingKey: PresenceTracker.Snapshot] = [:]
+        for snapshot in snapshots where byKey[snapshot.key] == nil {
+            byKey[snapshot.key] = snapshot
+        }
         return DialKeys.backedOff(sighted: snapshots.map(\.key), active: active) { key in byKey[key].flatMap(dialKey(of:)) }
     }
 
@@ -155,20 +163,16 @@ extension LinkManager {
     /// it. A dial to a blinded advert is a tag dial, booked on its handle and address whether or not a key resolves it
     /// (ADR 2026-11.sv5t), and reads the PSM of the sighting it dials: never one cached per address across a tag change.
     func dial(_ key: SightingKey, headStart: PresenceTracker.Snapshot?, now: Int64) {
-        // A PSM of 0 means the peer's listener is not open; Android never advertises one.
-        guard let address = addresses[key], let advert = presence.advert(of: key), advert.psm != 0 else {
+        // A PSM of 0 means the peer's listener is not open; Android never advertises one. A blinded form's handle stands:
+        // promotion picked it through its dial key, and nothing lets a handle go between.
+        guard let address = addresses[key], let advert = presence.advert(of: key), advert.psm != 0,
+            let dialKey = DialKeys.dialKey(form: .of(advert), key: key, address: address, handle: { formKeys.existing($0) })
+        else {
             return
         }
         let form = AdvertOrder.Form.of(advert)
-        let dialKey: DialKey
         if form.blinded {
-            guard let handle = formKeys.existing(form.advertised) else {
-                return
-            }
-            dialKey = .tag(handle, address)
             blindCounts.tagDials += 1
-        } else {
-            dialKey = .peer(key)
         }
         if let headStart {
             logHeadStartDial(headStart)

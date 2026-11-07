@@ -159,26 +159,25 @@ extension AdvertAliases {
 
     /// Records `nodeId`'s claim to `tag` on `link`, replacing the link's and the id's other claim; `dialProven` when a dial
     /// of ours to this very tag proved `nodeId` (`record`, `:757-774`).
+    ///
+    /// Kotlin's `record` also lifts a void unproven claimants made, and voids the tag against a rival id's claim. Neither
+    /// can meet a claim here, so this port leaves both out:
+    /// - a claim our dial proved is recorded only after ``onDialProved(_:provenId:)`` settled the same tag
+    ///   (``settleRivals(_:provenId:now:)``): every rival that no dial of ours proved is voided as a liar, the void they made
+    ///   is lifted, and a rival our own dial proved voids the tag here, so a void still standing is one our dials made;
+    /// - an announced tag never stands beside another id's claim, since ``holdPending(_:provenId:tag:now:)`` voids one
+    ///   announced against a claim, and a dial's settling voids an announcement another id made.
+    ///
+    /// `tag` is always a tag: the dialed one, or an announced one ``onTagNext(_:provenId:tag:)`` checked.
     func record(_ link: L, tag: NodeId, nodeId: NodeId, now: Int64, dialProven: Bool) -> ClaimOutcome {
-        guard Self.isTag(tag), !isOwn(tag) else {
-            return ignored()
-        }
-        if let standing = voided[tag] {
-            // Only our own dial lifts a void, and only one unproven claimants made.
-            guard dialProven, !standing.dialProven else {
-                return contested()
-            }
-            liftVoid(tag, standing, provenId: nodeId)
+        if voided[tag] != nil {
+            return contested()
         }
         if let keyId = keyAnswer(tag) {
             return agreement(keyId, nodeId)
         }
         let claim = Claim(link: link, nodeId: nodeId, expiresAt: now + configuration.claimLifetimeMilliseconds, dialProven: dialProven)
-        guard let rival = claims[tag], rival.nodeId != nodeId else {
-            return place(claim, tag)
-        }
-        void(tag, now: now, dialProven: claim.dialProven && rival.dialProven, claimants: [rival, claim], incoming: 1)
-        return .contested
+        return place(claim, tag)
     }
 
     /// Places a claim the rules let through: the link's and the id's other claim go first. When the table is full, the
@@ -264,10 +263,6 @@ extension AdvertAliases {
         }
         counts.claimsDropped += 1
         return .contradicted
-    }
-
-    func isOwn(_ tag: NodeId) -> Bool {
-        tag == ownCurrent || tag == ownPrevious
     }
 
     func ignored() -> ClaimOutcome {

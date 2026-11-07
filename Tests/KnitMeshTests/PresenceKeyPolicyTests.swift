@@ -133,6 +133,14 @@ import Testing
             PresenceKeyPolicy.receive(held: held, frame: Self.offered([(5, 5)]), openedTag: Self.tagA, active: true) == .refused(.older))
     }
 
+    /// A refusal prints Android's name for it, which its refused line carries (`Refusal`, `PresenceKeyPolicy.kt:264-276`;
+    /// `notePresenceKey`'s `refused: ${verdict.why}`, `InboundPipeline.kt:1990`). `UNKNOWN_SENDER` never reaches the line
+    /// from a frame here (``MeshEnginePresenceKeyTests``), so its name is pinned beside the rest.
+    @Test func everyRefusalPrintsAndroidsName() {
+        let refusals: [PresenceKeyPolicy.Refusal] = [.malformed, .unknownSender, .conflict, .older]
+        #expect(refusals.map { "\($0)" } == ["MALFORMED", "UNKNOWN_SENDER", "CONFLICT", "OLDER"])
+    }
+
     /// Nothing the policy holds prints a key.
     @Test func noVerdictPrintsAKey() {
         let verdict = PresenceKeyPolicy.receive(held: [], frame: Self.offered([(7, 1)]), openedTag: Self.tagA, active: true)

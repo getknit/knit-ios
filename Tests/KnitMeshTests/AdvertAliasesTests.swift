@@ -47,17 +47,8 @@ import Testing
         aliases.setKeys([alice: ContactKey(current: aliceKey)])
         #expect(aliases.resolve(blinded(bob)) == .malformed)
         #expect(aliases.counters.malformed == 1)
-    }
-
-    @Test mutating func myOwnTagsAreOwn() {
-        let aliases = aliases()
-        let mine = fixture.key()
-        let current = tagUnder(mine)
-        let previous = tagUnder(mine, restart: 1)
-        aliases.setKeys([alice: ContactKey(current: aliceKey)])
-        aliases.setOwnTags(current: current, previous: previous)
-        #expect(aliases.resolve(blinded(current)) == .own)
-        #expect(aliases.resolve(blinded(previous)) == .own)
+        #expect(aliases.standing(bob) == nil, "nor does it stand for anyone when a dial is decided")
+        #expect(aliases.counters.malformed == 1, "a decide-time read counts nothing")
     }
 
     @Test mutating func aContactResolvesOnItsFirstSightingAndAFloodCostsNoHmacs() {

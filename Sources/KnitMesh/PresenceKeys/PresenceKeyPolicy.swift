@@ -95,15 +95,15 @@ internal enum PresenceKeyPolicy {
     /// The result keeps the ``peerGenerations`` newest.
     static func receive(held: [HeldPresenceKey], frame: [Offered], openedTag: Int64, active: Bool) -> Verdict {
         let underOpened = trim(frame.map { HeldPresenceKey(generation: $0.generation, key: $0.key, rootTag: openedTag) })
-        guard let heldTag = held.first?.rootTag else {
+        // Both are `nil` exactly when nothing is held, as Kotlin's `held.isEmpty()` guard before its `minOf` (`:330-343`).
+        guard let heldTag = held.first?.rootTag, let lowest = held.map(\.generation).min() else {
             return .store(rows: underOpened, replaced: false, added: frame.count)
         }
         let sameEra = held.allSatisfy { $0.rootTag == openedTag }
         if !sameEra, active {
             return .store(rows: underOpened, replaced: true, added: frame.count)
         }
-        // The same era, or a drain ordered against what is held: the held keys' own tag either way.
-        let lowest = held.map(\.generation).min() ?? 0
+        // The same era, or a drain ordered against what is held (below `lowest` is `OLDER`): the held keys' own tag either way.
         var added: [HeldPresenceKey] = []
         for offered in frame {
             if let same = held.first(where: { $0.generation == offered.generation }) {

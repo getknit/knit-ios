@@ -76,8 +76,6 @@ extension AdvertAliases {
     enum Resolution: Hashable {
         /// An id, and where it came from.
         case resolved(Answer)
-        /// One of my own tags.
-        case own
         /// No contact's expected tag, claim or hint names it.
         case unresolved
         /// Marked blinded, but the bytes lack the tag prefix.
@@ -86,14 +84,6 @@ extension AdvertAliases {
         /// `nodeId` from `source`.
         static func resolved(_ nodeId: NodeId, _ source: Source) -> Self {
             .resolved(Answer(nodeId: nodeId, source: source))
-        }
-
-        /// The answer, if there is one.
-        var answer: Answer? {
-            if case .resolved(let answer) = self {
-                return answer
-            }
-            return nil
         }
     }
 

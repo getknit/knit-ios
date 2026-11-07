@@ -157,11 +157,11 @@ extension LinkManager {
         let sighting = presence.isPresent(dialer, now: now) ? presence.advert(of: dialer) : nil
         let sighted = sighting != nil
         let held = liveLinks.first { $0.neighbor.nodeId == dialer }
-        if let refusal = admissionRefusal(hello, proves: proves, sighting: sighting, held: held, now: now) {
+        let claim = Claim(peer: dialer, hello: hello, sighted: sighted)
+        if let refusal = admissionRefusal(claim, proves: proves, sighting: sighting, held: held, now: now) {
             log.log(.info, "link refused \(dialer): \(refusal)")
             return retire(id, backingOff: false, now: now)
         }
-        let claim = Claim(peer: dialer, hello: hello, sighted: sighted)
         guard !proves else {
             let pending = PendingProof(
                 claim: claim, dialerHello: payload, responderHello: ourHello(addressing: nil).payload, displacing: held?.channel)
@@ -187,13 +187,13 @@ extension LinkManager {
     /// dialer only after its proof, so the late pass reads the same), so a blinding Android whose real id sorts below ours
     /// is admitted even when a key sights it. The iPhone writes no `t` and has no held-link or legacy row: both are a
     /// blinding phone's.
-    func admissionRefusal(_ hello: Hello, proves: Bool, sighting: AdvertPayload?, held: LiveLink?, now: Int64) -> String? {
-        let dialer = NodeId(hello.nodeId) ?? localId
+    func admissionRefusal(_ claim: Claim, proves: Bool, sighting: AdvertPayload?, held: LiveLink?, now: Int64) -> String? {
+        let hello = claim.hello
         if proves, let held, !held.proven {
             return nil
         }
         let honoured = AdvertOrder.honours(offersProof: proves, proven: false, late: false)
-        let outOfOrder = AdvertOrder.outOfOrder(mine, dialer: dialer, told: hello.told, addressed: hello.addressed, honoured: honoured)
+        let outOfOrder = AdvertOrder.outOfOrder(mine, dialer: claim.peer, told: hello.told, addressed: hello.addressed, honoured: honoured)
         if let sighting, outOfOrder || !peerFindsUs(flags: sighting.flags) {
             return "we dial it"
         }

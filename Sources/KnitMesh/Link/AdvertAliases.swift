@@ -1,19 +1,19 @@
-import KnitCrypto
 import KnitWire
 
 /// Resolves an advertised form (``AdvertOrder/Form``) to a node id (knit-next ADR 2026-11.xp6d, #285; `AdvertAliases.kt` at
-/// `cad69c77b`; ADR 2026-11.sv5t). A clear advert is its own id. A blinded one names a ``BlindTag``, resolved in this order
+/// `cad69c77b`; ADR 2026-11.sv5t). A clear advert is its own id. A blinded one names a `BlindTag`, resolved in this order
 /// (`resolve`, `:363-382`):
 ///
 /// 1. **Malformed** first: bytes without the tag prefix (``AdvertForm/hasTagPrefix(_:)``).
-/// 2. **Own:** my current or previous tag (``setOwnTags(current:previous:)``). This port airs no tag, so it never sets one;
-///    the rule stays.
-/// 3. **Direct contacts' expected tags** (``setKeys(_:)``, ``ExpectedTagTable``): every contact key's tags over the window
+/// 2. **Direct contacts' expected tags** (``setKeys(_:)``, ``ExpectedTagTable``): every contact key's tags over the window
 ///    of this phone's wall clock, so a heard tag resolves with one hash lookup and an unknown one, a flood included, costs
 ///    a miss and nothing else.
-/// 4. **Link claims** (``onDialed(_:dialed:told:provenId:)``, ``onTagNext(_:provenId:tag:)``): a tag a proven link told us
+/// 3. **Link claims** (``onDialed(_:dialed:told:provenId:)``, ``onTagNext(_:provenId:tag:)``): a tag a proven link told us
 ///    is its own.
-/// 5. **Hints** (``onAnswered(_:told:provenId:)``): a tag a dialer's HELLO told us is its own.
+/// 4. **Hints** (``onAnswered(_:told:provenId:)``): a tag a dialer's HELLO told us is its own.
+///
+/// Kotlin checks my own current and previous tags second; this port airs no tag, so it has none, and the writer's ADR brings
+/// them back as `AdvertAliases.kt` has them. My own clear advert is dropped by id in ``LinkManager``'s sightings.
 ///
 /// **Claims** (Kotlin's KDoc, `:27-59`, has the full reasoning):
 /// - a link holds at most one claim, and so does a node id; a newer one replaces it;
@@ -40,8 +40,6 @@ internal final class AdvertAliases<L: Hashable> {
     let nowClock: () -> Int64
     let wallClock: () -> Int64
     let configuration: Configuration
-    var ownCurrent: NodeId?
-    var ownPrevious: NodeId?
     let table: ExpectedTagTable
     var claims: [NodeId: Claim] = [:]
     var pending: [NodeId: Claim] = [:]
@@ -64,12 +62,6 @@ internal final class AdvertAliases<L: Hashable> {
         wallClock = wall
         self.configuration = configuration
         table = ExpectedTagTable(previousKeyMaxMilliseconds: configuration.previousKeyMaxMilliseconds)
-    }
-
-    /// My own advertised tags, so my own advert, heard back or claimed by another, is never taken for a peer.
-    func setOwnTags(current: NodeId?, previous: NodeId?) {
-        ownCurrent = current
-        ownPrevious = previous
     }
 
     /// The direct contacts' presence keys, replacing the whole set (``ContactKey``'s rules). Only a contact whose keys
@@ -96,9 +88,6 @@ internal final class AdvertAliases<L: Hashable> {
         }
         let now = nowClock()
         expire(now)
-        if isOwn(tag) {
-            return .own
-        }
         if let keyId = keyAnswer(tag) {
             dropContradicted(tag, keyId)
             counts.resolvedByKey += 1
@@ -150,7 +139,7 @@ internal final class AdvertAliases<L: Hashable> {
         let now = nowClock()
         expire(now)
         heldLinks.insert(link)
-        guard let tag = told, tag != provenId, !isOwn(tag), Self.isTag(tag) else {
+        guard let tag = told, tag != provenId, Self.isTag(tag) else {
             return ignored()
         }
         if voided[tag] != nil {
@@ -192,7 +181,7 @@ internal final class AdvertAliases<L: Hashable> {
         let now = nowClock()
         expire(now)
         heldLinks.insert(link)
-        guard Self.isTag(tag), !isOwn(tag) else {
+        guard Self.isTag(tag) else {
             return ignored()
         }
         guard tagNextAllowed(link, now: now) else {
@@ -212,7 +201,7 @@ internal final class AdvertAliases<L: Hashable> {
     /// for none. Counts nothing and promotes no announced tag, so a decision read many times a second leaves the
     /// counters and the tables as the sightings left them.
     func standing(_ tag: NodeId) -> Answer? {
-        guard Self.isTag(tag), !isOwn(tag) else {
+        guard Self.isTag(tag) else {
             return nil
         }
         expire(nowClock())

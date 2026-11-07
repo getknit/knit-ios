@@ -79,6 +79,11 @@ internal final class ExpectedTagTable {
             self.key = key
             expected = BlindTag.Expected(key: key, owner: owner)
         }
+
+        /// Whether its cap has passed at `now`; a key with no cap never lapses.
+        func lapsed(at now: Int64) -> Bool {
+            (untilMilliseconds ?? .max) <= now
+        }
     }
 
     private final class Contact {
@@ -160,10 +165,11 @@ internal final class ExpectedTagTable {
         window = next
         for contact in contacts.values {
             for generation in contact.generations {
-                for slot in generation.bySlot.keys where !next.contains(slot) {
-                    dropSlot(generation, slot)
+                for (slot, forms) in generation.bySlot where !next.contains(slot) {
+                    generation.bySlot[slot] = nil
+                    drop(forms, of: generation)
                 }
-                for slot in next where !(held?.contains(slot) ?? false) {
+                for slot in next where held?.contains(slot) != true {
                     slotSteps += 1
                     listSlot(contact, generation, slot)
                 }
@@ -177,7 +183,7 @@ internal final class ExpectedTagTable {
             return
         }
         for contact in contacts.values {
-            let due = contact.generations.filter { ($0.untilMilliseconds ?? .max) <= now }
+            let due = contact.generations.filter { $0.lapsed(at: now) }
             guard !due.isEmpty else {
                 continue
             }
@@ -188,7 +194,7 @@ internal final class ExpectedTagTable {
                     contact.retired.append(generation.key)
                 }
             }
-            contact.generations.removeAll { ($0.untilMilliseconds ?? .max) <= now }
+            contact.generations.removeAll { $0.lapsed(at: now) }
         }
         nextLapse = earliestLapse()
     }
@@ -242,10 +248,13 @@ internal final class ExpectedTagTable {
             unlistGeneration(generation)
         }
         contact.generations = kept
-        for generation in kept where generation.bySlot.isEmpty {
-            builds += 1
-            for slot in window.map(Array.init) ?? [] {
-                listSlot(contact, generation, slot)
+        // `setKeys(_:now:wall:)` slides first, so the window is always set here.
+        if let window {
+            for generation in kept where generation.bySlot.isEmpty {
+                builds += 1
+                for slot in window {
+                    listSlot(contact, generation, slot)
+                }
             }
         }
     }
@@ -264,17 +273,15 @@ internal final class ExpectedTagTable {
             replaced = newest
         }
         let still = generations.filter { generation in
-            generation !== replaced && generation.lingering && absent(generation) && (generation.untilMilliseconds ?? .max) > now
+            generation !== replaced && generation.lingering && absent(generation) && !generation.lapsed(at: now)
         }
         return (replaced.map { [$0] } ?? []) + still
     }
 
+    /// Lists `slot`'s four forms: never none, since the owner is a ``NodeId`` and so always the 16 bytes a tag binds.
     private func listSlot(_ contact: Contact, _ generation: Generation, _ slot: Int64) {
         let forms = generation.expected.tags(slots: slot...slot).compactMap { NodeId(bytes: $0.tag) }
         tagsComputed += forms.count
-        guard !forms.isEmpty else {
-            return
-        }
         generation.bySlot[slot] = forms
         let entry = Entry(contact: contact, generation: generation)
         for form in forms {
@@ -282,16 +289,19 @@ internal final class ExpectedTagTable {
         }
     }
 
-    private func dropSlot(_ generation: Generation, _ slot: Int64) {
-        for form in generation.bySlot.removeValue(forKey: slot) ?? [] where table[form]?.generation === generation {
+    /// Unlists `forms`, a slot `generation` listed and no longer holds.
+    private func drop(_ forms: [NodeId], of generation: Generation) {
+        for form in forms where table[form]?.generation === generation {
             // A form a later listing won (the 2⁻¹⁰⁸ accident) stays that listing's.
             table[form] = nil
         }
     }
 
     private func unlistGeneration(_ generation: Generation) {
-        for slot in Array(generation.bySlot.keys) {
-            dropSlot(generation, slot)
+        let slots = generation.bySlot
+        generation.bySlot = [:]
+        for forms in slots.values {
+            drop(forms, of: generation)
         }
     }
 

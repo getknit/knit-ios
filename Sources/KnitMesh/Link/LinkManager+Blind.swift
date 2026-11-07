@@ -88,7 +88,7 @@ extension LinkManager {
 
     // MARK: Sightings
 
-    /// The key a sighting is kept under, or `nil` to drop it: our own advert, our own tag, a malformed one, or a replay.
+    /// The key a sighting is kept under, or `nil` to drop it: our own advert, a malformed one, or a replay.
     /// Resolving a blinded form mints its handle here, the one place a handle is minted, and forgets the entries of the one
     /// the cap let go.
     func sightingKey(of sighting: RadioSighting) -> SightingKey? {
@@ -98,7 +98,7 @@ extension LinkManager {
         }
         let tag = advert.advertised
         let resolution = aliases.resolve(.of(advert))
-        if resolution == .own || resolution == .malformed {
+        if resolution == .malformed {
             return nil
         }
         blindCounts.tagsHeard += 1
@@ -160,29 +160,17 @@ extension LinkManager {
     /// Whether a live link holds off a dial to a blinded `snapshot` now, read when the dial is decided: our own held proven
     /// dial to the same tag at the same address (``DialKeys/dialHeld(blinded:held:dialKey:)``), or the answer the tag
     /// resolves to now, by key while its id holds a proven link, by claim while the claimant's link is the one held, and
-    /// by hint while the hint's own link is held (ADR 2026-11.sv5t's departure). An unresolved form is held off by
-    /// nothing else. One lookup, at decide time, so an answer that went stale since the sighting is never read.
+    /// by hint while the hint's own link is held (ADR 2026-11.sv5t's departure; ``BlindSightings/suppressor(of:)``). An
+    /// unresolved form is held off by nothing else. One lookup, at decide time, so an answer that went stale since the
+    /// sighting is never read. Promotion asks it of a blinded sighting only (``candidates(_:)``).
     func isHeldOff(_ snapshot: PresenceTracker.Snapshot, live: Set<NodeId>, proven: Set<NodeId>) -> Bool {
-        guard snapshot.advert.blinded else {
-            return false
-        }
         if DialKeys.dialHeld(blinded: true, held: Set(heldDials.values), dialKey: { dialKey(of: snapshot) }) {
             return true
         }
         guard let answer = aliases.standing(snapshot.advert.advertised) else {
             return false
         }
-        let suppressor: Suppressor<ChannelID>
-        switch answer.source {
-        case .key:
-            suppressor = .proven
-        case .claim:
-            suppressor = answer.claimant.map(Suppressor.claim) ?? .never
-        case .hint:
-            suppressor = answer.claimant.map(Suppressor.hint) ?? .never
-        case .clear:
-            suppressor = .linked
-        }
+        let suppressor: Suppressor<ChannelID> = BlindSightings.suppressor(of: answer)
         return suppressor.suppressed(id: answer.nodeId, linked: live, proven: proven) { self.liveChannel(to: $0) }
     }
 

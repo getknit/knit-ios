@@ -148,6 +148,33 @@ import Testing
         #expect(open.entriesEvicted > 0)
     }
 
+    /// Kotlin's bound above, with live claims and announcements under the stale deadlines: the queue rebuilt from the
+    /// tables keeps every live entry's expiry, so each still lapses on time once its link ends.
+    @Test mutating func aRebuiltDeadlineQueueStillLapsesEveryLiveEntry() {
+        let aliases = aliases()
+        let claimed = freshTag()
+        #expect(aliases.onDialed("l0", dialed: blinded(claimed), told: claimed, provenId: alice) == .recorded)
+        // Bob announces from 300 links in turn: each replaces his last announcement and leaves a stale deadline.
+        var announced = claimed
+        for index in 1...300 {
+            announced = freshTag()
+            #expect(aliases.onTagNext("l\(index)", provenId: bob, tag: announced) == .pending)
+        }
+        let live = aliases.counters
+        #expect(live.claims == 1 && live.pending == 1)
+        #expect(live.deadlines <= 4 * (live.claims + live.pending) + 256, "rebuilt: \(live.deadlines)")
+        #expect(live.deadlines < 300)
+        for index in 0...300 {
+            aliases.onLinkEnded("l\(index)")
+        }
+        clocks.now += Aliases.Configuration().claimLifetimeMilliseconds - 1
+        #expect(aliases.standing(claimed) == Aliases.Answer(nodeId: alice, source: .claim))
+        clocks.now += 1
+        #expect(aliases.standing(claimed) == nil)
+        #expect(aliases.counters.claims == 0 && aliases.counters.pending == 0, "both lapsed on time")
+        #expect(aliases.resolve(blinded(announced)) == .unresolved)
+    }
+
     @Test mutating func ourDialLiftsAVoidThatUnprovenClaimantsMade() {
         let aliases = aliases()
         let strangersId = BlindFixture.id("stranger")

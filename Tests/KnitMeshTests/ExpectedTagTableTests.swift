@@ -184,4 +184,28 @@ import Testing
         table.setKeys([bob: Self.list([next])], now: now + 20_000, wall: wall)
         #expect(table.lookup(form(bobKey, slot), now: now) == nil, "dropped by the store: unlisted at once")
     }
+
+    /// A lapse reaches only the contact whose older key's cap has passed: another contact's keys, under no cap, stand.
+    @Test mutating func aLapseDropsOnlyTheKeyWhoseCapPassedAndLeavesOtherContactsListed() {
+        let previous = fixture.key()
+        let table = ExpectedTagTable(previousKeyMaxMilliseconds: Self.week)
+        table.setKeys([bob: Self.list([bobKey, previous]), carol: ContactKey(current: carolKey)], now: now, wall: wall)
+        #expect(table.lookup(form(bobKey, slot), now: now)?.current == true, "a hit under Bob's newest caps his previous")
+        table.lapse(now: now + Self.week)
+        #expect(table.lookup(form(previous, slot), now: now + Self.week) == nil)
+        #expect(table.lookup(form(carolKey, slot, owner: carol), now: now + Self.week)?.nodeId == carol, "Carol's key stands")
+        #expect(table.contactCount == 2)
+        #expect(table.count == 2 * BlindFixture.windowSlots * BlindTag.restarts)
+    }
+
+    /// Kotlin's `ContactKey` requires a key (`require(keys.isNotEmpty())`, `AdvertAliases.kt:139-159`): the store's list
+    /// with none makes no contact, so a listing that names a contact with no keys lists nothing for it.
+    @Test func aContactWithNoKeysIsNotListed() {
+        #expect(ContactKey(keys: []) == nil)
+        let table = ExpectedTagTable(previousKeyMaxMilliseconds: Self.week)
+        let listing: [NodeId: [PresenceKey]] = [bob: [], carol: [carolKey]]
+        table.setKeys(listing.compactMapValues(ContactKey.init(keys:)), now: now, wall: wall)
+        #expect(table.contactCount == 1)
+        #expect(table.lookup(form(carolKey, slot, owner: carol), now: now)?.nodeId == carol)
+    }
 }

@@ -134,4 +134,40 @@ import Testing
         #expect(limiter.offer([:], now: interval + 1) != nil)
         #expect(limiter.offer([bob: keys(1)], now: interval + 2) == nil)
     }
+
+    /// `apply`'s first two rows (`KeyChurnLimiter.kt`, `apply`): the listing held, offered again, stays held as it was and
+    /// lists nothing; a held gain the store takes back, the listing applied offered again, is coalesced away.
+    @Test mutating func aHeldGainOfferedAgainStaysHeldAndOneTakenBackIsCoalescedAway() {
+        var limiter = KeyChurnLimiter()
+        let listed = keys(1)
+        let gained = keys(1) + listed
+        #expect(limiter.offer([bob: listed], now: 0) != nil)
+        #expect(limiter.offer([bob: gained], now: 1000) == nil, "a gain inside the interval: held")
+        #expect(limiter.offer([bob: gained], now: 2000) == nil, "offered again: still held, nothing to list")
+        #expect(limiter.held == 1 && limiter.coalesced == 0)
+        #expect(limiter.nextDueAt() == KeyChurnLimiter.minIntervalMilliseconds, "its wait unchanged")
+        #expect(limiter.offer([bob: listed], now: 3000) == nil, "taken back: what is listed already")
+        #expect(limiter.coalesced == 1)
+        #expect(limiter.nextDueAt() == nil, "nothing held")
+        #expect(limiter.release(now: KeyChurnLimiter.minIntervalMilliseconds) == nil, "the taken-back gain never applies")
+    }
+
+    /// `dueAt` keeps the newest `dailyCap` gains only, so the cap rolls: once a gain past the cap applies, the next waits a
+    /// day from the oldest gain kept, not from the first gain ever.
+    @Test mutating func theDailyCapRollsFromTheOldestGainItKeeps() {
+        let day: Int64 = 1_000_000
+        var limiter = KeyChurnLimiter(minIntervalMilliseconds: 1, dailyCap: 3, dayMilliseconds: day)
+        var listed: [PresenceKey] = []
+        for now: Int64 in [0, 10, 20] {
+            listed = keys(1) + listed
+            #expect(limiter.offer([bob: listed], now: now) != nil)
+        }
+        listed = keys(1) + listed
+        #expect(limiter.offer([bob: listed], now: 30) == nil, "the fourth gain waits a day from the first")
+        #expect(limiter.release(now: day)?[bob] == listed)
+        listed = keys(1) + listed
+        #expect(limiter.offer([bob: listed], now: day + 1) == nil, "the gains at 10, 20 and a day are the three kept")
+        #expect(limiter.nextDueAt() == 10 + day)
+        #expect(limiter.release(now: 10 + day)?[bob] == listed)
+    }
 }

@@ -80,12 +80,6 @@ internal enum AdvertOrder {
         return theirs.advertised < mine.advertised
     }
 
-    /// Whether a lonely dial (knit-next ADR 2026-09.hj4a) may go to `theirs`: only a peer the ordinary order leaves to dial
-    /// me (`lonelyMayDial`, `:105-113`). Unused here, kept beside its rule.
-    static func lonelyMayDial(_ mine: Form, _ theirs: Form) -> Bool {
-        mine.advertised != theirs.advertised && !iDial(mine, theirs)
-    }
-
     /// The form of mine a dialer's HELLO `a` names (`dialed`, ``Hello/addressed``), honoured only when it is my `current` or
     /// `previous` advertised form; `nil` when absent or neither (`dialedForm`, `:133-143`).
     static func dialedForm(current: Form, previous: Form?, dialed: NodeId?) -> Form? {

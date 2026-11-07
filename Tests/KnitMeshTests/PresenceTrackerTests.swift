@@ -1,7 +1,8 @@
-import KnitMesh
 import KnitTestSupport
 import KnitWire
 import Testing
+
+@testable import KnitMesh
 
 /// Smoothed RSSI, dwell and linger, ported from knit-next's `BlePresenceTrackerTest`. `#expect` cannot call a
 /// mutating method, so snapshots are taken first.
@@ -79,5 +80,35 @@ import Testing
         #expect(tracker.smoothedRssi(of: fixtureNodeId(2)) == -70)
         tracker.forget(fixtureNodeId(2))
         #expect(tracker.advert(of: fixtureNodeId(2)) == nil)
+    }
+
+    /// An unresolved tag is kept under its handle (ADR 2026-11.sv5t); its snapshot, which never leaves the link manager,
+    /// answers the advertised bytes for an id, and a resolved one its key's.
+    @Test func aSnapshotUnderAHandleAnswersItsAdvertisedForm() throws {
+        var tracker = PresenceTracker()
+        let handle = SightingKey.form(FormHandle(number: 4))
+        tracker.record(sighting(1, rssi: -50), as: handle, now: 0)
+        tracker.record(sighting(2, rssi: -50), as: .node(fixtureNodeId(3)), now: 0)
+        let snapshots = tracker.snapshots(now: 0)
+        #expect(try #require(snapshots.first { $0.key == handle }).nodeId == fixtureNodeId(1))
+        #expect(try #require(snapshots.first { $0.key != handle }).nodeId == fixtureNodeId(3))
+    }
+
+    /// `BlindReaderTest.aFormsHistoryCarriesToTheIdItResolvesTo`'s tracker half: a handle's history moves to the id it
+    /// resolved to, except that an entry the id already had, first seen earlier, stands; the handle's goes either way.
+    @Test func aMovedHistoryNeverReplacesAnEarlierOneUnderTheId() throws {
+        var tracker = PresenceTracker()
+        let handle = SightingKey.form(FormHandle(number: 0))
+        let id = fixtureNodeId(1)
+        tracker.record(sighting(1, rssi: -40), as: handle, now: 0)
+        tracker.move(handle, to: .node(id))
+        #expect(tracker.snapshots(now: 5000).map(\.dwellMilliseconds) == [5000], "carried, with its dwell")
+        tracker.record(sighting(1, rssi: -90), as: handle, now: 5000)
+        tracker.move(handle, to: .node(id))
+        let snapshot = try #require(tracker.snapshots(now: 5000).first)
+        #expect(tracker.snapshots(now: 5000).count == 1, "the handle's entry went")
+        #expect(snapshot.key == .node(id) && snapshot.dwellMilliseconds == 5000, "the id's earlier entry stands")
+        #expect(snapshot.smoothedRssi == -40)
+        #expect(!tracker.isPresent(handle, now: 5000))
     }
 }

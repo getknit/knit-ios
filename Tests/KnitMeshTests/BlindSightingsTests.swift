@@ -82,8 +82,23 @@ import Testing
         #expect(!BlindSightings.current(registered: "another", link: "live"), "a replacement under the same id is another link")
     }
 
-    @Test func myOwnTagAndAMalformedOneAttributeNothing() {
-        #expect(attribute(.own) == nil)
+    /// A clear answer lands under its id in place and is held off by any link (`attribute`'s clear row); the resolver
+    /// gives one to a clear advert only, which the reader keeps under its id without asking.
+    @Test func aClearAnswerLandsInPlaceAndAnyLinkHoldsItOff() {
+        #expect(attribute(answer(.clear)) == Attribution(key: .node(bbb), suppressor: .linked, history: .inPlace, full: true))
+    }
+
+    /// The sighting and the decide-time read take what may hold off a dial from one place, row for row.
+    @Test func theSuppressorIsTheSameAtTheSightingAndAtTheDial() {
+        for source in [AdvertAliases<String>.Source.key, .claim, .hint, .clear] {
+            for claimant in [nil, "link"] {
+                let resolved = answer(source, claimant: claimant)
+                #expect(attribute(resolved)?.suppressor == resolved.answer.map(BlindSightings.suppressor(of:)))
+            }
+        }
+    }
+
+    @Test func aMalformedTagAttributesNothing() {
         #expect(attribute(.malformed) == nil)
     }
 

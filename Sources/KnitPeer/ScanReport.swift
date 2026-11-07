@@ -11,6 +11,8 @@ public struct ScanReport: Sendable {
         var address: RadioAddress
         var strongest: Int
         var count: Int
+        /// A tag's handle number, in the order tags were heard; read for a tag only.
+        let handle: Int
     }
 
     /// An advertised form: a clear id and a tag of the same bytes are two.
@@ -20,8 +22,8 @@ public struct ScanReport: Sendable {
     }
 
     private var heard: [Form: Heard] = [:]
-    /// Each tag's handle number, in the order heard.
-    private var handles: [NodeId: Int] = [:]
+    /// Tags heard so far: the next tag's handle number.
+    private var tagsHeard = 0
     private let own: NodeId?
 
     /// A report that leaves out `own`, the node the scan advertises as, if any.
@@ -43,10 +45,10 @@ public struct ScanReport: Sendable {
             heard[node] = known
             return nil
         }
-        let entry = Heard(advert: sighting.advert, address: sighting.address, strongest: sighting.rssi, count: 1)
+        let entry = Heard(advert: sighting.advert, address: sighting.address, strongest: sighting.rssi, count: 1, handle: tagsHeard)
         heard[node] = entry
         if node.blinded {
-            handles[node.advertised] = handles.count
+            tagsHeard += 1
         }
         var fields = fields(node, entry)
         fields["event"] = "sighted"
@@ -56,13 +58,13 @@ public struct ScanReport: Sendable {
     /// The closing reply: every node heard, clear ids in node id order, then tags in the order heard.
     public var summary: String {
         let clear = heard.filter { !$0.key.blinded }.sorted { $0.key.advertised < $1.key.advertised }
-        let tags = heard.filter(\.key.blinded).sorted { (handles[$0.key.advertised] ?? 0) < (handles[$1.key.advertised] ?? 0) }
+        let tags = heard.filter(\.key.blinded).sorted { $0.value.handle < $1.value.handle }
         let nodes = (clear + tags).map { JSONValue.object(fields($0.key, $0.value)) }
         return JSONValue.object(["reply": "scan", "ok": true, "nodes": .array(nodes)]).line
     }
 
     private func fields(_ node: Form, _ heard: Heard) -> [String: JSONValue] {
-        let peer = node.blinded ? "~zzzz…\(handles[node.advertised] ?? 0)" : node.advertised.string
+        let peer = node.blinded ? "~zzzz…\(heard.handle)" : node.advertised.string
         return [
             "peer": .string(peer),
             "address": .string(heard.address.rawValue),

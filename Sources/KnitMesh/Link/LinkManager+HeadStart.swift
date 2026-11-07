@@ -41,12 +41,7 @@ extension LinkManager {
     /// Whether a head-start dial is open: read from the kind each dial recorded when it began, never inferred from the
     /// order (Android's `DialPlan.DialKind`), so a tag dial's end leaves no head start stuck open.
     var headStartDialInFlight: Bool {
-        dialing.values.contains { id in
-            if case .dialer(let target) = channels[id]?.role {
-                return target.record.kind == .headStart
-            }
-            return false
-        }
+        dialTargets.contains { $0.record.kind == .headStart }
     }
 
     /// `snapshot` as promotion should see a head-start peer: its dwell counts the head start less, so the ordinary

@@ -102,6 +102,8 @@ import Testing
         #expect(aliases.onTagNext("l4", provenId: bob, tag: tag) == .contested)
         #expect(aliases.resolve(blinded(tag)) == .unresolved)
         #expect(aliases.counters.claimsVoided == 4)
+        #expect(aliases.onAnswered("l6", told: tag, provenId: bob) == .contested, "nor is a dialer's hint held for it")
+        #expect(aliases.counters.hints == 0)
         clocks.now += Aliases.Configuration().claimLifetimeMilliseconds
         #expect(
             aliases.onDialed("l5", dialed: blinded(tag), told: tag, provenId: alice) == .recorded, "the void lasts as long as the tag could"
@@ -148,6 +150,22 @@ import Testing
         #expect(Aliases.Configuration().claimLifetimeMilliseconds == 990_000)
     }
 
+    /// Kotlin's case above for the announced table: a tag a link announced and that was never heard lapses one claim
+    /// lifetime after the link ends, unpromoted.
+    @Test mutating func anAnnouncementNeverHeardLapsesAClaimLifetimeAfterItsLinkEnds() {
+        let aliases = aliases()
+        let next = freshTag()
+        #expect(aliases.onTagNext("l1", provenId: alice, tag: next) == .pending)
+        aliases.onLinkEnded("l1")
+        clocks.now += Aliases.Configuration().claimLifetimeMilliseconds - 1
+        #expect(aliases.standing(next) == nil, "announced, it answers nothing until heard")
+        #expect(aliases.counters.pending == 1)
+        clocks.now += 1
+        #expect(aliases.standing(next) == nil)
+        #expect(aliases.counters.pending == 0, "lapsed, never promoted")
+        #expect(aliases.resolve(blinded(next)) == .unresolved)
+    }
+
     @Test mutating func anHonestHintResolvesAndWantsNoDial() {
         let aliases = aliases()
         let (mine, alices) = twoTags()
@@ -192,6 +210,20 @@ import Testing
         #expect(!aliases.onDialProved(.clear(alice), provenId: alice), "a clear dial proves nothing about a tag")
     }
 
+    /// Kotlin's case above, with the liar's announcement: the proof that voids its hint takes every entry it made,
+    /// announced tags included (`voidLiar`).
+    @Test mutating func aLiarsProofVoidsItsAnnouncedTagsWithItsClaims() {
+        let aliases = aliases()
+        let alices = freshTag()
+        let mallorys = freshTag()
+        #expect(aliases.onTagNext("l0", provenId: mallory, tag: mallorys) == .pending)
+        #expect(aliases.onAnswered("l1", told: alices, provenId: mallory) == .hinted)
+        #expect(aliases.onDialed("l2", dialed: blinded(alices), told: alices, provenId: alice) == .recorded)
+        #expect(aliases.counters.pending == 0, "the liar's announcement went with its hint")
+        #expect(aliases.counters.claimsVoided == 2)
+        #expect(aliases.resolve(blinded(mallorys)) == .unresolved, "heard later, it names nobody")
+    }
+
     @Test mutating func twoDialsToOneTagProvingTwoIdsAreAContestNotALie() {
         let aliases = aliases()
         let tag = freshTag()
@@ -221,12 +253,13 @@ import Testing
         #expect(aliases.resolve(blinded(old)) == .unresolved)
     }
 
-    @Test mutating func myOwnTagIsNeverAClaim() {
+    /// A `t` or a `TAG_NEXT` carrying no tag's prefix names nothing: a told form that differs from the tag dialed goes the
+    /// rotation edge's way, and is ignored there.
+    @Test mutating func aToldOrAnnouncedFormThatIsNoTagIsNeverAClaim() {
         let aliases = aliases()
-        let mine = freshTag()
-        aliases.setOwnTags(current: mine, previous: nil)
-        #expect(aliases.onDialed("l1", dialed: blinded(mine), told: mine, provenId: mallory) == .ignored)
-        #expect(aliases.onTagNext("l1", provenId: mallory, tag: mine) == .ignored)
-        #expect(aliases.resolve(blinded(mine)) == .own)
+        let tag = freshTag()
+        #expect(aliases.onDialed("l1", dialed: blinded(tag), told: bob, provenId: alice) == .ignored)
+        #expect(aliases.onTagNext("l1", provenId: alice, tag: bob) == .ignored)
+        #expect(aliases.resolve(blinded(tag)) == .unresolved && aliases.counters.pending == 0)
     }
 }

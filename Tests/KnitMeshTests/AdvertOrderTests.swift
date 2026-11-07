@@ -196,26 +196,13 @@ import Testing
         #expect(Form.fromHello(abc, told: tag.bytes) == Form(advertised: tag, blinded: true))
     }
 
-    @Test mutating func theLonelyDialGoesOnlyWhereTheOrderLeavesTheDialToThePeer() {
-        for _ in 0..<Self.pairs {
-            for first in [Build.reader, .writer] {
-                for second in Build.allCases {
-                    let one = phone(first)
-                    let other = phone(second)
-                    #expect(!one.dials(other.current) == AdvertOrder.lonelyMayDial(one.current, other.current))
-                }
-            }
-        }
-        let abc = Form.clear(BlindFixture.form("abc"))
-        #expect(!AdvertOrder.lonelyMayDial(abc, abc), "never my own form")
+    /// A reader's dial to a writer's tag, Android's lonely dial (knit-next ADR 2026-09.hj4a) among them: a writer that
+    /// sights the reader refuses it, judged on `a` and `t`, and its own ordinary dial is on the way.
+    @Test mutating func aWriterRefusesAReadersDialToItsTagAndDialsTheReaderItself() {
         let reader = phone(.reader)
         let writer = phone(.writer)
-        #expect(AdvertOrder.lonelyMayDial(reader.current, writer.current), "a lonely reader dials a writer by tag")
-        // As for every lonely dial: a responder that sights the dialer refuses it, judged on `a` and `t`, and its own
-        // ordinary dial is on the way.
         #expect(!Self.lands(reader, writer, seen: writer.current), "a writer that sights the reader refuses it")
         #expect(writer.dials(reader.current) && Self.lands(writer, reader, seen: reader.current), "and dials it itself")
-        #expect(!AdvertOrder.lonelyMayDial(writer.current, reader.current), "a writer already dials a reader")
     }
 
     @Test mutating func aShippedBuildsLonelyDialPicksAWritersTagAndFails() {
@@ -232,14 +219,11 @@ import Testing
             let clear = Form.clear(id())
             // Ordinary dial: every clear advert, whatever the id order (a tag sorts above them all).
             #expect(AdvertOrder.iDial(mine.current, clear))
-            // Lonely dial: never to a clear advert (I dial those anyway).
-            #expect(!AdvertOrder.lonelyMayDial(mine.current, clear))
             // The responder: a clear dialer is one I should have dialed.
             #expect(AdvertOrder.responderShouldHaveDialed(current: mine.current, previous: mine.previous, dialed: nil, dialer: clear))
-            // Two blinded adverts: exactly one side dials, the larger tag; the lonely dial only toward the larger one.
+            // Two blinded adverts: exactly one side dials, the larger tag.
             let theirs = Form(advertised: tag(), blinded: true)
             #expect(AdvertOrder.iDial(mine.current, theirs) != AdvertOrder.iDial(theirs, mine.current))
-            #expect(!AdvertOrder.iDial(mine.current, theirs) == AdvertOrder.lonelyMayDial(mine.current, theirs))
         }
         // A dial made against my previous tag is judged as the dialer saw it.
         let previous = try #require(mine.previous)

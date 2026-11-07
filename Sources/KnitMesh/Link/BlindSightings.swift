@@ -51,7 +51,7 @@ internal enum Suppressor<L: Hashable>: Hashable {
 ///   dwell or RSSI. It suppresses a dial only while its claimant's own link is the one held under the id.
 /// - **A hint** attributes from then on, for presence and RSSI. Here it also suppresses a dial while the hint's own link is
 ///   held (``Suppressor/hint(_:)``), where Android's suppresses nothing.
-/// - **My own tag**, and a malformed one, attribute nothing.
+/// - **A malformed tag** attributes nothing.
 ///
 /// Pure.
 internal enum BlindSightings {
@@ -81,25 +81,39 @@ internal enum BlindSightings {
     /// the sighting's tag and address are a replay (``ReplayMarks``). `nil` drops the sighting (`attribute`, `:62-79`).
     static func attribute<L: Hashable>(_ resolution: AdvertAliases<L>.Resolution, handle: FormHandle, replayed: Bool) -> Attribution<L>? {
         switch resolution {
-        case .own, .malformed:
+        case .malformed:
             return nil
         case .unresolved:
             return Attribution(key: .form(handle), suppressor: .never, history: .inPlace, full: true)
         case .resolved(let answer):
+            let suppressor = suppressor(of: answer)
             switch answer.source {
             case .key:
-                return replayed ? nil : Attribution(key: .node(answer.nodeId), suppressor: .proven, history: .carry, full: true)
+                return replayed ? nil : Attribution(key: .node(answer.nodeId), suppressor: suppressor, history: .carry, full: true)
             case .claim:
-                // Only while the claimant's own link is the one held under the id, read when the dial is decided.
-                let suppressor = answer.claimant.map(Suppressor.claim) ?? .never
                 return Attribution(key: .node(answer.nodeId), suppressor: suppressor, history: .drop, full: true)
             case .hint:
-                // This port's departure: only while the hint's own link is held (ADR 2026-11.sv5t).
-                let suppressor = answer.claimant.map(Suppressor.hint) ?? .never
                 return Attribution(key: .node(answer.nodeId), suppressor: suppressor, history: .drop, full: false)
             case .clear:
-                return Attribution(key: .node(answer.nodeId), suppressor: .linked, history: .inPlace, full: true)
+                return Attribution(key: .node(answer.nodeId), suppressor: suppressor, history: .inPlace, full: true)
             }
+        }
+    }
+
+    /// What may hold off a dial on `answer`: a key's only through a proven link; a claim's only while the claimant's own
+    /// link is the one held under the id, and a hint's only while the hint's own link is (this port's departure, ADR
+    /// 2026-11.sv5t), nothing for either without its link; a clear advert's through any link. The sighting's attribution
+    /// and the decide-time read (``LinkManager/isHeldOff(_:live:proven:)``) share it, so the two never disagree.
+    static func suppressor<L: Hashable>(of answer: AdvertAliases<L>.Answer) -> Suppressor<L> {
+        switch answer.source {
+        case .key:
+            .proven
+        case .claim:
+            answer.claimant.map(Suppressor.claim) ?? .never
+        case .hint:
+            answer.claimant.map(Suppressor.hint) ?? .never
+        case .clear:
+            .linked
         }
     }
 

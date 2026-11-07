@@ -160,6 +160,57 @@ import Testing
         #expect(listed(fixture)?.isEmpty == true)
     }
 
+    /// A block covers the device tag the contact's row carries (`isBlocked(deviceTag:)`): every listed contact whose row
+    /// carries it, such as the same person under keys they made again, is unlisted at once, before any feed, and their keys
+    /// go at the next listing, while a contact under another tag stays listed. `DirectContactsTest.aBlockOutranksEverySignal`'s
+    /// `blockedByTag` case (`DirectContactsTest.kt:66-71` at knit-next `cad69c77b`), through the listing.
+    @Test func aBlockByDeviceTagUnlistsEveryRowCarryingItAndDeletesTheirKeys() throws {
+        let (fixture, android) = try rig()
+        let rekeyed = try AndroidPeer(TestPeer(seed: 4))
+        let other = try AndroidPeer(carol)
+        for peer in [rekeyed, other] {
+            try fixture.pin(peer)
+            fixture.engine.accept(peer.peer.nodeId.string)
+        }
+        let tag = "a1b2c3d4e5f60718"
+        for (peer, deviceTag) in [(alice, tag), (rekeyed.peer, tag), (carol, "0f0e0d0c0b0a0908")] {
+            var row = try #require(fixture.stores.peers.peer(peer.nodeId))
+            row.deviceTag = deviceTag
+            fixture.stores.peers.upsert(row)
+        }
+        fixture.deliver(try keyFrame(android, [(now, Self.key(1))], fixture, id: "pk-a"), from: android)
+        fixture.deliver(try keyFrame(rekeyed, [(now, Self.key(2))], fixture, id: "pk-r"), from: rekeyed)
+        fixture.deliver(try keyFrame(other, [(now, Self.key(3))], fixture, id: "pk-c"), from: other)
+        #expect(listed(fixture).map { Set($0.keys) } == Set([alice, rekeyed.peer, carol].map(\.nodeId)))
+        let listings = fixture.transport.presenceKeyListings.count
+        fixture.engine.block(alice.nodeId)
+        #expect(fixture.transport.presenceKeyListings.count == listings + 1, "unlisted at once")
+        #expect(fixture.transport.presenceKeyListings.last?.mapValues { $0.map(\.bytes) } == [carol.nodeId: [Self.key(3)]])
+        #expect(fixture.stores.blocks.isBlocked(deviceTag: tag) && !fixture.engine.isBlocked(rekeyed.peer.nodeId))
+        #expect(listed(fixture) == [carol.nodeId: [Self.key(3)]])
+        #expect(fixture.stores.presenceKeys.peersWithKeys() == [carol.nodeId])
+        #expect(fixture.engine.presenceKeyCounts.leavers == 2)
+    }
+
+    /// A block of someone the last listing does not name, by id or by a device tag no listed row carries, pushes no
+    /// listing: there is nothing to unlist at once (the radio's `KeyChurnLimiter` sees no change), and the contacts listed
+    /// stay listed.
+    @Test func aBlockOfSomeoneUnlistedPushesNoListing() throws {
+        let (fixture, android) = try rig()
+        let stranger = try AndroidPeer(carol)
+        try fixture.pin(stranger)
+        var row = try #require(fixture.stores.peers.peer(carol.nodeId))
+        row.deviceTag = "0f0e0d0c0b0a0908"
+        fixture.stores.peers.upsert(row)
+        fixture.deliver(try keyFrame(android, [(now, Self.key(1))], fixture, id: "pk-a"), from: android)
+        #expect(listed(fixture) == [alice.nodeId: [Self.key(1)]])
+        let listings = fixture.transport.presenceKeyListings.count
+        fixture.engine.block(carol.nodeId)
+        fixture.engine.block(TestPeer(seed: 5).nodeId)
+        #expect(fixture.transport.presenceKeyListings.count == listings, "nothing to unlist")
+        #expect(listed(fixture) == [alice.nodeId: [Self.key(1)]])
+    }
+
     /// A session's first pass deletes every non-contact's keys (`dropLeavers`, `before == null`), and nothing else.
     @Test func aSessionsFirstPassDeletesEveryNonContactsKeys() throws {
         let stores = MeshStores.inMemory()

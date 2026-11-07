@@ -168,4 +168,26 @@ import Testing
         #expect(line.contains(#""peer":"~zzzz…0""#))
         #expect(!line.contains(tag.string) && !report.summary.contains(tag.string))
     }
+
+    /// The summary lists clear ids in node id order, then tags in the order heard, each under the handle it was first
+    /// reported with; a clear id with a tag's bytes is a node of its own (ADR 2026-11.sv5t).
+    @Test func aScanSumsUpClearIdsInIdOrderThenTagsInTheOrderHeard() throws {
+        var report = ScanReport(own: fixtureNodeId(1))
+        let first = try #require(NodeId(bytes: [0xCE, 0x73, 0x94] + [UInt8](repeating: 0x2C, count: 13)))
+        let second = try #require(NodeId(bytes: [0xCE, 0x73, 0x94] + [UInt8](repeating: 0x01, count: 13)))
+        let sorted = [fixtureNodeId(3), fixtureNodeId(2)].sorted()
+        let heard: [(NodeId, UInt8)] = [
+            (second, AdvertPayload.blindedFlag), (sorted[1], 0), (first, AdvertPayload.blindedFlag), (sorted[0], 0),
+        ]
+        for (index, (advertised, flags)) in heard.enumerated() {
+            let advert = AdvertPayload(capabilities: 0xFF, nodeId: advertised, digestCue: 0, psm: 0x80, flags: flags)
+            #expect(report.take(RadioSighting(address: RadioAddress("/dev_\(index)"), advert: advert, rssi: -70)) != nil)
+        }
+        let clearTwin = AdvertPayload(capabilities: 0xFF, nodeId: second, digestCue: 0, psm: 0x80, flags: 0)
+        #expect(report.take(RadioSighting(address: RadioAddress("/dev_c"), advert: clearTwin, rssi: -70)) != nil, "a node of its own")
+        let peers = report.summary.split(separator: "\"peer\":\"").dropFirst().map { $0.prefix { $0 != "\"" } }
+        let clear = [sorted[0], sorted[1], second].sorted().map(\.string)
+        #expect(peers == (clear + ["~zzzz…0", "~zzzz…1"]).map { Substring($0) })
+        #expect(report.summary.contains(#""address":"/dev_0""#) && report.summary.contains(#""address":"/dev_2""#))
+    }
 }

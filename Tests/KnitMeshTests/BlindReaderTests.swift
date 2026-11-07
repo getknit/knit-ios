@@ -1,4 +1,5 @@
 import KnitCrypto
+import KnitStore
 import KnitWire
 import Testing
 
@@ -244,9 +245,9 @@ import Testing
 }
 
 extension MeshTests {
-    /// The seam phase 3 drives: a key handed to the actor reaches the radio's resolver, so the contact's tag resolves from
-    /// its first sighting (ADR 2026-11.sv5t); and a gain the key limiter holds applies when its minute ends by the timer
-    /// alone, the timer re-aimed at it when the listing came (ADR 2026-09.gq84).
+    /// The seam phase 3 drives: a contact's stored key, listed by the engine's feed at the settle after an entry, reaches the
+    /// radio's resolver, so the contact's tag resolves from its first sighting (ADR 2026-11.sv5t); and a gain the key limiter
+    /// holds applies when its minute ends by the timer alone, the timer re-aimed at it when the listing came (ADR 2026-09.gq84).
     @Test func aPresenceKeyListedThroughTheMeshResolvesATag() async {
         let rig = rig()
         await rig.mesh.start()
@@ -254,14 +255,17 @@ extension MeshTests {
         let wall = rig.clock.wallMilliseconds()
         rig.clock.advance((BlindTag.slotOf(wallMilliseconds: wall) + 1) * BlindTag.slotMilliseconds - wall + 1)
         let peer = BlindingPeer(bob.nodeId)
-        await rig.mesh.listPresenceKeys([bob.nodeId: [peer.key]])
+        rig.stores.presenceKeys.replaceKeys(of: bob.nodeId, with: [held(peer, generation: 1)], now: 1)
+        await rig.mesh.accept(bob.nodeId.string)
         await rig.mesh.process(.sighted(peer.sighting(peer.tag(wall: rig.clock.wallMilliseconds()))))
         #expect(await rig.mesh.sightings.map(\.nodeId) == [bob.nodeId])
         #expect(await rig.mesh.aliasCounters.resolvedByKey == 1)
         // A second key inside the minute is held; the timer that releases it is aimed at the minute's end.
         let next = BlindingPeer(bob.nodeId, keyByte: 9)
         let due = rig.clock.monotonicMilliseconds() + KeyChurnLimiter.minIntervalMilliseconds
-        await rig.mesh.listPresenceKeys([bob.nodeId: [next.key, peer.key]])
+        rig.stores.presenceKeys.replaceKeys(of: bob.nodeId, with: [held(next, generation: 2), held(peer, generation: 1)], now: 2)
+        // Any entry the feed's inputs moved under lists again; an accept's is the plainest.
+        await rig.mesh.accept(bob.nodeId.string)
         await rig.clock.parked(until: due)
         rig.clock.advance(KeyChurnLimiter.minIntervalMilliseconds)
         var released = false
@@ -271,5 +275,9 @@ extension MeshTests {
             released = await rig.mesh.aliasCounters.resolvedByKey == 2
         }
         #expect(released, "the held key applied by the timer alone")
+    }
+
+    private func held(_ peer: BlindingPeer, generation: Int64) -> HeldPresenceKey {
+        HeldPresenceKey(generation: generation, key: peer.key, rootTag: 1)
     }
 }

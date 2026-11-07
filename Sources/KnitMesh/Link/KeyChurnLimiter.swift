@@ -34,11 +34,13 @@ internal struct KeyChurnLimiter {
         var listedAt: Int64?
     }
 
-    /// What a contact that left held: its gains, the keys applied when it left, and when it was last listed.
+    /// What a contact that left held: its gains, the keys applied when it left, and when it was last listed. A contact in
+    /// the listing has always been listed once (a first listing with nothing before it is due at once), and its last
+    /// listing is never older than its last gain, so `listedAt` alone dates it.
     private struct Departed {
         let gains: [Int64]
         let keys: [PresenceKey]
-        let listedAt: Int64?
+        let listedAt: Int64
     }
 
     private let minInterval: Int64
@@ -67,22 +69,17 @@ internal struct KeyChurnLimiter {
     /// The store's whole listing at `now`. Answers the listing to hand the resolver now, or `nil` when nothing it holds
     /// changed (every gain held).
     mutating func offer(_ listing: [NodeId: [PresenceKey]], now: Int64) -> [NodeId: [PresenceKey]]? {
-        departed = departed.filter { _, gone in
-            guard let last = gone.listedAt ?? gone.gains.last else {
-                return false
-            }
-            return now - last < day
-        }
+        departed = departed.filter { now - $0.value.listedAt < day }
         let leaving = contacts.keys.filter { listing[$0] == nil }
         for id in leaving {
-            if let state = contacts.removeValue(forKey: id) {
-                departed[id] = Departed(gains: state.gains, keys: state.applied, listedAt: state.listedAt)
+            if let state = contacts.removeValue(forKey: id), let listedAt = state.listedAt {
+                departed[id] = Departed(gains: state.gains, keys: state.applied, listedAt: listedAt)
             }
         }
         var changed = !leaving.isEmpty
         for (id, keys) in listing {
             // A contact new to the listing gains as any other does, against what it gained before it left.
-            let moved = contacts[id] == nil ? firstListing(id, keys, now: now) : apply(id, keys, now: now)
+            let moved = if let state = contacts[id] { apply(id, state, keys, now: now) } else { firstListing(id, keys, now: now) }
             changed = moved || changed
         }
         return changed ? applied : nil
@@ -142,10 +139,8 @@ internal struct KeyChurnLimiter {
         return false
     }
 
-    private mutating func apply(_ id: NodeId, _ keys: [PresenceKey], now: Int64) -> Bool {
-        guard var state = contacts[id] else {
-            return false
-        }
+    private mutating func apply(_ id: NodeId, _ current: State, _ keys: [PresenceKey], now: Int64) -> Bool {
+        var state = current
         defer { contacts[id] = state }
         if state.applied == keys {
             if state.pending != nil {
@@ -201,7 +196,10 @@ internal struct KeyChurnLimiter {
         if state.pendingRelist {
             return interval
         }
-        let daily = state.gains.count >= cap ? (state.gains.first ?? .min) + day : Int64.min
+        var daily = Int64.min
+        if state.gains.count >= cap, let first = state.gains.first {
+            daily = first + day
+        }
         return max(interval, daily)
     }
 

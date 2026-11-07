@@ -1,4 +1,3 @@
-import KnitCrypto
 import KnitStore
 import KnitWire
 
@@ -32,13 +31,4 @@ extension Mesh {
 
     /// What the blinded-advert reader did, counts only (``LinkManager/aliasCounters``, ADR 2026-11.sv5t).
     public var aliasCounters: LinkManager.AliasCounters { links.aliasCounters }
-
-    /// The direct contacts' presence keys, for the radio to resolve their blinded adverts by
-    /// (``LinkManager/listPresenceKeys(_:)``), for the tests that drive the link manager's half alone. Internal: in the app
-    /// only the engine's feed lists keys (``MeshEngine/feedPresenceKeys()``), from the store, the direct contacts and blocks.
-    func listPresenceKeys(_ listing: [NodeId: [PresenceKey]]) {
-        links.listPresenceKeys(listing)
-        // The limiter's release and the window's first slot edge are deadlines the timer must aim at now (ADR 2026-09.gq84).
-        settle()
-    }
 }
