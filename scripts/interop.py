@@ -3024,7 +3024,7 @@ def _failed_updates(events: list[dict]) -> list[dict]:
     return failed
 
 
-def _counted(tally: list[dict]) -> int:
+def _doorbell_links(tally: list[dict]) -> int:
     """The links in `tally` that count toward `--links`: those the phone took from the central, whose lookup found the
     doorbell."""
     return sum(1 for link in tally if link["doorbellFound"] and link["accepted"] is not False)
@@ -3038,7 +3038,7 @@ def _relinks(run: Run, central: Node, phone: Phone, phone_id: str, want: int, ho
     fails ends the loop."""
     node = central.node_id
     attempt = 1
-    while _counted(tally) < want and attempt < 2 * want:
+    while _doorbell_links(tally) < want and attempt < 2 * want:
         attempt += 1
         label = f"relink-{attempt}"
         phone.shell("logcat -c")
@@ -3059,8 +3059,8 @@ def _relinks(run: Run, central: Node, phone: Phone, phone_id: str, want: int, ho
         # The first link that fails stops the run, so its logs are fresh when someone looks.
         if run.step(f"{label}-balanced", lambda: {**_balanced(phone, node, tally), **_phone_held(phone, node), "heldSeconds": hold}) is None:
             return
-    if _counted(tally) < want:
-        run.step("links-counted", lambda: _fail(f"{_counted(tally)} of {want} links found the doorbell in {attempt} link-ups"))
+    if _doorbell_links(tally) < want:
+        run.step("links-counted", lambda: _fail(f"{_doorbell_links(tally)} of {want} links found the doorbell in {attempt} link-ups"))
 
 
 def _link_after(central: Node, phone: Phone, phone_id: str, since: float, timeout: float) -> dict:
@@ -3097,7 +3097,7 @@ def _head_start_relinks(
 
     def counted() -> int:
         # `--count any` counts every link-up that passed, whoever dialed, as an open phone's run does.
-        return len(head_starts) if arguments.count == "any" else _counted(tally)
+        return len(head_starts) if arguments.count == "any" else _doorbell_links(tally)
 
     attempt = 0
     while counted() < want and attempt < 2 * want:

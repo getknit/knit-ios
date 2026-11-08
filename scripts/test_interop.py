@@ -5,6 +5,8 @@ without Pillow."""
 
 from __future__ import annotations
 
+import ast
+import collections
 import contextlib
 import importlib.util
 import io
@@ -486,6 +488,28 @@ class NoisePictureTest(unittest.TestCase):
         from PIL import Image  # noqa: PLC0415 - only this test needs it
 
         self.assertEqual(Image.open(io.BytesIO(interop._noise_jpeg("test"))).size, (320, 240))
+
+
+class TopLevelNamesTest(unittest.TestCase):
+    """A second `def` of a module-level name silently replaces the first for every caller, as the ratchet's `_counted`
+    once replaced the link counter and crashed every `--links` run."""
+
+    def test_no_script_defines_a_top_level_name_twice(self) -> None:
+        for script in sorted(Path(interop.__file__).parent.glob("*.py")):
+            tree = ast.parse(script.read_text(encoding="utf-8"))
+            kinds = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+            names = collections.Counter(node.name for node in tree.body if isinstance(node, kinds))
+            with self.subTest(script=script.name):
+                self.assertEqual({name: count for name, count in names.items() if count > 1}, {})
+
+    def test_doorbell_links_counts_found_links_the_phone_took(self) -> None:
+        tally = [
+            {"doorbellFound": True, "accepted": None},
+            {"doorbellFound": True, "accepted": False},
+            {"doorbellFound": False, "accepted": True},
+            {"doorbellFound": True, "accepted": True},
+        ]
+        self.assertEqual(interop._doorbell_links(tally), 2)
 
 
 if __name__ == "__main__":
