@@ -1972,3 +1972,44 @@ Pixel's `BLECAP 0` cut it five seconds into the stream. The run passed every ste
   its redials until each had gone 12 s without hearing it. That took the Pixel 3 56 s, the Pixel 8 87 s and the
   Pixel 9, the closest, 14 min (knit/knit-next#216).
 - **Still owed by hand:** a Settings Stop mid-photo, which should keep nothing.
+
+## What the blinded-advert reader showed
+
+On 2026-11-07 the iPhone 12 (iOS 27.0.1) ran `feat/blind-reader` (ADR 2026-11.sv5t), at `1d6affd` and then with
+`5951cbb`, beside two Pixels on knit-next debug builds (2.11.0-alpha.3, installed that morning) that air rotating tags
+(knit-next ADR 2026-11.xp6d). The Pixel 9 counts the iPhone as a direct contact; the Pixel 3 does not. The Pixel 7, the
+Pixel 8 and a moto aired their ids. The maintainer gave the session's go-ahead, and nothing wiped a phone's data. A run
+that wanted one pair alone denied the other phones with the iPhone's `deny-link`, and Knit went to the background
+through `devicectl`, never a lock.
+
+| Trial | What it showed |
+| --- | --- |
+| knit-peer (`android`, dongle A, a fresh identity) beside both blinding Pixels | Both dialed it, and it dialed no tag. Across the 14:15 edge it took a `TAG_NEXT` from each, none refused, with no redial. Dongle B's scan report named the tags `~zzzz…0` and `~zzzz…1`, never a whole tag. Neither Pixel logged ` blind=legacy`. |
+| The install | `v22` ran, with no `storeRefused`. Status `capabilities` read `c015f`, the HELLO `c315f`. |
+| Key delivery | The Pixel 9 sent its keys over the first link that carried the iPhone's new bit, and the iPhone stored three (`presenceKeys.stored`). It listed them only once the run's DM made the Pixel its direct contact (`aliases.contacts` 0 to 1, 280 expected tags). |
+| `--keep-blind iphone --links 3`, the Pixel's screen on | MVP items 2 to 6 passed, with no ` blind=legacy`. The open Pixel dialed every link-up first, each ending at 5 s, so none counted as a head start: an open phone's run wants `--count any`. |
+| The same, screen off (`--wake none`) | 29 steps passed. Three of the four link-ups were the iPhone's head-start tag dials, each logging `link ~zzzz…N proved <id>` and ending at 5 s after one 720 ms put-back. |
+| The Pixel 9 denied, so unlinked | Resolved by key alone through a Knit restart (its new advert at first sight), a Bluetooth toggle (6 s after it came back) and the 15:15 edge (1 s after). `resolvedByClaim` and `resolvedByHint` stayed put, and no sighting showed a tag. The Pixel 3, with no key, stayed an unresolved handle. |
+| The Pixel 9 at `BLECAP` 0 | It refused each dial `atCap=true`. The iPhone's dials came 50, 98, 71 and 92 s apart, none inside its 10, 20, 40 and 80 s backoff. |
+| `ADVERT_ROTATE`, linked | Each rotation was announced (`tagNextTaken` +1), with no redial, and the links held. A second rotation of the Pixel 3 inside two minutes was refused `throttled`, so this cannot make the unannounced rotation the design pass's trial (c) wants. |
+| The 16:00 edge, both Pixels linked | No link line for two minutes around it, and `tagNextTaken` +2. |
+| Knit in the background from 16:02 to 16:31 | The Pixel 3's link held through two edges and the iPhone took both announcements. Back at the front it dialed no Pixel 3 handle. The Pixel 9's link dropped at 16:07 (below), and the iPhone's own head-start tag dial relinked it 46 s after the front. |
+| `--keep-blind iphone-seek --far phone --mode relink`, the Pixel 3 aired clear | 9 steps passed. In the background with no link, the iPhone tag-dialed the restarted Pixel 9 on its second wake of eight and linked 17.4 s after the drop, and the DM arrived. |
+
+- **A refused tag was redialed at every advert (`1d6affd`).** With the Pixel 3 denied, each mesh start brought a
+  head-start tag dial to its unresolved tag 24 s in, then another every 1 to 3 s until the mesh stopped: bursts of 11,
+  20, 31 and 12 dials. Each proved the refused id and closed with no line and no backoff. `5951cbb` closes such a dial
+  before our PROOF and marks its dial key. On that build three restarts and an edge cost one dial, logged `link ~zzzz…9
+  proved refused <id>`, and the Pixel logged `bt refused client … (proof=eof)` and no link. After `allow-link` the
+  Pixel linked 24 s later. Only the bridge's and knit-peer's `deny-link` reach this path.
+- **The Pixel 9 dropped every link at once, twice.** At 15:51 and 16:07, screen off, it logged `bt link down … (eof)`
+  for the iPhone and its other phones together, and the iPhone and the Pixel 3 saw a plain end. After the first, the
+  Pixel redialed the iPhone itself 4 min 14 s later, its screen-off scan cadence, while the iPhone heard it at −84 dBm
+  too seldom to build a head start's dwell.
+- **#16's check, half done.** The Pixel 3 left knit-peer out of `awareNear=` and `awareHeard=`, but it was not dormant
+  (`NANDORM` `stayReason` "cue targets", from the other phones' Wi-Fi Aware), so "no `aware awake: SIGHTING` for it" is
+  still owed, with the other Aware phones away.
+- **`interop.py`'s `--links` had crashed since `c332e65`.** A second `_counted` replaced the link counter; `5a414fe`
+  renamed it.
+- **Still owed:** trial (c), the stale-link replace after a rotation the Pixel does not announce, which needs a way to
+  make one; and a 20-minute knit-peer run of `5951cbb` with a blinding Pixel denied.
