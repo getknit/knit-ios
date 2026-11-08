@@ -112,6 +112,7 @@ extension LinkManager {
         backoffs.removeAll()
         formKeys.clear()
         heldDials.removeAll()
+        refusedDials.removeAll()
         heldStreaks.clear()
         replayMarks.clear()
         psm = nil

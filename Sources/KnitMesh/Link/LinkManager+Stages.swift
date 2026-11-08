@@ -39,12 +39,7 @@ extension LinkManager {
         var expected: NodeId? { form.blinded ? nil : form.advertised }
 
         /// A tag dial's handle.
-        var handle: FormHandle? {
-            if case .tag(let handle, _) = key {
-                return handle
-            }
-            return nil
-        }
+        var handle: FormHandle? { key.tagHandle }
 
         /// Whether the sighting dialed resolved to nobody, so a failure also backs off its address and its handle.
         var unresolved: Bool { record.peerKey.nodeId == nil }

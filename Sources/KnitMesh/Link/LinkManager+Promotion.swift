@@ -3,6 +3,12 @@ import KnitWire
 /// Promotion: whom the link manager dials, read over what is sighted and linked, and where each dial is booked (ADR
 /// 2026-09.6es2, amended by ADR 2026-11.sv5t for blinded adverts).
 extension LinkManager {
+    /// Every sighted peer, for the UI's nearby count and diagnostics: resolved and linked peers only, so no tag ever
+    /// becomes a peer row or a Diagnostics line (ADR 2026-11.sv5t). Counters report the rest (``aliasCounters``).
+    public func sightings() -> [PresenceTracker.Snapshot] {
+        presence.snapshots(now: clock.monotonicMilliseconds()).filter { $0.key.nodeId != nil }
+    }
+
     /// Runs the promotion policy over what is sighted and linked, and acts on it (`driveConnections`).
     func promote(now: Int64) -> [Event] {
         guard running else {
@@ -51,14 +57,17 @@ extension LinkManager {
 
     /// Drops the backoffs and addresses nothing holds: a backoff whose window has passed and that no present sighting, dial
     /// or link names, so a peer that left starts fresh when it returns, and an address no present sighting is kept under
-    /// (design-pass finding 1: every key a present snapshot carries, its dial key, its address and its handle streak).
+    /// (design-pass finding 1: every key a present snapshot carries, its dial key, its address and its handle streak). A
+    /// refused tag dial's mark (``refusedDials``) goes once no present sighting's dial key names it.
     func pruneWithPresence(_ snapshots: [PresenceTracker.Snapshot], now: Int64) {
         var kept = Set(dialing.keys).union(liveLinks.map { DialKey.peer(.node($0.neighbor.nodeId)) })
         kept.formUnion(busy.map(DialKey.peer))
+        var sightedDials = Set<DialKey>()
         for snapshot in snapshots {
             kept.insert(.peer(snapshot.key))
             if let dial = dialKey(of: snapshot) {
                 kept.insert(dial)
+                sightedDials.insert(dial)
                 let unresolved = snapshot.key.nodeId == nil
                 kept.formUnion(
                     [DialKeys.addressKey(dial, unresolved: unresolved), DialKeys.handleKey(dial, unresolved: unresolved)].compactMap(\.self)
@@ -68,6 +77,8 @@ extension LinkManager {
         backoffs = backoffs.filter { now < $0.value.nextAt || kept.contains($0.key) }
         let present = Set(snapshots.map(\.key))
         addresses = addresses.filter { present.contains($0.key) }
+        // A refused tag that went quiet costs one dial when it is heard again.
+        refusedDials = refusedDials.filter { sightedDials.contains($0.key) }
     }
 
     /// When a sighted peer's dwell ends between its adverts, so that promotion runs then instead of at its next advert
@@ -115,7 +126,8 @@ extension LinkManager {
     /// (``isHeadStartCandidate(_:)``), and not refused. A clear sighting is passed over while its id is linked, dialed or
     /// proving. A blinded one is passed over while its own dial key is in flight, the id it is attributed to is being dialed
     /// or proving, or a live link holds it off (``isHeldOff(_:live:proven:)``), all read now, never frozen at the sighting.
-    /// An unresolved form cannot be refused by id (knit-peer's `deny-link`), since it names none. A head-start peer's dwell
+    /// An unresolved form names no id to refuse (knit-peer's `deny-link`) until a dial to it proves one: the tag at that
+    /// address is passed over from then on while the id stays refused (``refusedDials``). A head-start peer's dwell
     /// counts its head start less, and none is a candidate while a head-start dial is open.
     func candidates(_ snapshots: [PresenceTracker.Snapshot]) -> [PresenceTracker.Snapshot] {
         let anyOrder = dialsWhateverTheOrder
@@ -129,7 +141,7 @@ extension LinkManager {
                 return nil
             }
             if snapshot.advert.blinded {
-                guard let dial = dialKey(of: snapshot), dialing[dial] == nil, !attributedDials.contains(snapshot.key),
+                guard let dial = dialKey(of: snapshot), dialing[dial] == nil, !provedRefused(dial), !attributedDials.contains(snapshot.key),
                     !provingDialers.contains(where: { SightingKey.node($0) == snapshot.key }),
                     !isHeldOff(snapshot, live: live, proven: proven)
                 else {

@@ -149,6 +149,7 @@ extension LinkManager {
     func forgetHandle(_ handle: FormHandle) {
         presence.forget(.form(handle))
         addresses[.form(handle)] = nil
+        refusedDials = refusedDials.filter { $0.key.tagHandle != handle }
     }
 
     /// The key a dial to `snapshot` is booked under: its id when clear, its tag's handle and address when blinded, or `nil`
@@ -201,9 +202,9 @@ extension LinkManager {
     /// Our tag dial proved `pending.peer`. The safety net first (ADR 2026-11.sv5t): a proven link already held under that
     /// id is retired, as Android's responder replaces in that case, so the engine sees `.down` then `.up`; any unproven
     /// link claiming the id is displaced as R3 has it. Then the resolver hears the dial (`onDialed`, which runs
-    /// `onDialProved` first) only when this link is the one that registers; a refused id hears only `onDialProved`
-    /// (`BluetoothMeshTransport.kt:3889-3897`). The handle's history moves to the id unless a key names the tag another
-    /// id's (a replay), and the held-dial key is written before the link registers.
+    /// `onDialProved` first). A refused id never comes here: ``handleProof(_:_:on:role:now:)`` closes its dial before our
+    /// PROOF (``refusedTagDial(_:_:_:now:)``). The handle's history moves to the id unless a key names the tag another id's
+    /// (a replay), and the held-dial key is written before the link registers.
     func provedTagDial(_ id: ChannelID, _ target: DialTarget, _ pending: PendingProof, now: Int64) -> [Event] {
         let peer = pending.peer
         var events: [Event] = []
@@ -219,10 +220,6 @@ extension LinkManager {
             events += retire(channel, backingOff: false, now: now)
         }
         let mismatches = aliases.keyProofMismatchCount
-        guard !refused.contains(peer) else {
-            aliases.onDialProved(target.form, provenId: peer)
-            return events + retire(id, backingOff: false, now: now)
-        }
         let told = pending.claim.hello.told.flatMap(NodeId.init(bytes:))
         aliases.onDialed(id, dialed: target.form, told: told, provenId: peer)
         if aliases.keyProofMismatchCount > mismatches {
@@ -237,6 +234,32 @@ extension LinkManager {
         blindCounts.tagDialsProven += 1
         log.log(.info, "link \(target.shown) proved \(peer) on \(id)")
         return events + register(id, pending.claim, proven: true, now: now)
+    }
+
+    /// Our tag dial's responder proved `pending.peer`, an id this node refuses (``refuse(_:)``, knit-peer's `deny-link`):
+    /// closed before our PROOF, so the peer registers nothing either. The resolver hears only the proof (`onDialProved`),
+    /// and a replay is still marked (`onTagDialed`, `BluetoothMeshTransport.kt:3889-3899` at `cad69c77b`). Nothing backs
+    /// off, since the refusal is our policy and no failure of the peer's, and a backoff would outlive ``permit(_:)``;
+    /// instead the dial key is marked (``refusedDials``), so the tag at that address is not dialed again while the id is
+    /// refused, until the tag goes 90 s unheard or the cap lets its handle go. The lab iPhone on `1d6affd` redialed such
+    /// a tag at every advert, 1 to 3 s apart, with no line between.
+    func refusedTagDial(_ id: ChannelID, _ target: DialTarget, _ pending: PendingProof, now: Int64) -> [Event] {
+        let peer = pending.peer
+        let mismatches = aliases.keyProofMismatchCount
+        aliases.onDialProved(target.form, provenId: peer)
+        if aliases.keyProofMismatchCount > mismatches {
+            replayMarks.mark(target.form.advertised, at: target.address)
+        }
+        refusedDials[target.key] = peer
+        log.log(.info, "link \(target.shown) proved refused \(peer) on \(id)")
+        // A peer waiting for the head-start slot this dial held is dialed now, not at its next advert; the mark keeps
+        // this tag out.
+        return retire(id, backingOff: false, now: now) + promote(now: now)
+    }
+
+    /// Whether a dial under `dialKey` once proved an id still refused (``refusedTagDial(_:_:_:now:)``).
+    func provedRefused(_ dialKey: DialKey) -> Bool {
+        refusedDials[dialKey].map(refused.contains) == true
     }
 
     // MARK: TAG_NEXT

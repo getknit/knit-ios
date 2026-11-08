@@ -106,6 +106,9 @@ public final class LinkManager: MeshTransport {
     var heldStreaks = HeldStreaks<ChannelID>()
     /// Each live proven link we dialed at a tag, by the dial key it was dialed under (``DialKeys/heldDial(_:proven:)``).
     var heldDials: [ChannelID: DialKey] = [:]
+    /// Each tag dial key whose dial proved a refused id, and that id (``refusedTagDial(_:_:_:now:)``): promotion passes the
+    /// tag at that address over while the id stays refused. Pruned with presence, and with its handle.
+    var refusedDials: [DialKey: NodeId] = [:]
     /// The newest `TAG_NEXT` each link sent in the read being handled, taken once the read's records drain.
     var tagNextHeld: [ChannelID: NodeId] = [:]
     /// The reader's own counts, beside ``AdvertAliases/counters``.
@@ -279,12 +282,6 @@ public final class LinkManager: MeshTransport {
         if advertDue == nil {
             advertDue = clock.monotonicMilliseconds() + configuration.advertDebounceMilliseconds
         }
-    }
-
-    /// Every sighted peer, for the UI's nearby count and diagnostics: resolved and linked peers only, so no tag ever
-    /// becomes a peer row or a Diagnostics line (ADR 2026-11.sv5t). Counters report the rest (``aliasCounters``).
-    public func sightings() -> [PresenceTracker.Snapshot] {
-        presence.snapshots(now: clock.monotonicMilliseconds()).filter { $0.key.nodeId != nil }
     }
 
     /// When ``advance()`` next has work, on the monotonic clock: a dial, HELLO or PROOF timing out, the advert, a doorbell,

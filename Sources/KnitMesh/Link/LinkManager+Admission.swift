@@ -33,9 +33,12 @@ extension LinkManager {
 
     // MARK: Refusals
 
-    /// Refuses every link with `peer`, both ways, until ``permit(_:)``: closes its live link and any dial to it,
-    /// never dials it, and closes its HELLO when it dials us. A rig's tool for forcing a line of nodes that could
-    /// all hear each other (knit-peer's `deny-link`). Answers the link that went down.
+    /// Refuses every link with `peer`, both ways, until ``permit(_:)``: closes its live link and any dial to it, never
+    /// dials it, and closes its HELLO when it dials us. An unresolved tag names no id, so it is dialed until a dial to it
+    /// proves `peer`; that dial closes before our PROOF, and the tag at that address is not dialed again while `peer` stays
+    /// refused (``refusedTagDial(_:_:_:now:)``): one dial per rotation, address and start, and one more after 90 s
+    /// unheard. A rig's tool for forcing a line of nodes that could all hear each other (knit-peer's `deny-link`).
+    /// Answers the link that went down.
     public func refuse(_ peer: NodeId) -> [Event] {
         refused.insert(peer)
         let now = clock.monotonicMilliseconds()
@@ -48,6 +51,7 @@ extension LinkManager {
     /// Lets `peer` link again, and dials it now if the promotion rules say so.
     public func permit(_ peer: NodeId) -> [Event] {
         refused.remove(peer)
+        refusedDials = refusedDials.filter { $0.value != peer }
         let now = clock.monotonicMilliseconds()
         return promote(now: now) + reconsiderSeeking(now: now)
     }

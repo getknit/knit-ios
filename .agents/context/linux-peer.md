@@ -177,8 +177,9 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   under knit-peer, and one whose "@" and name the `text` doesn't carry is dropped, as the composer drops it (ADR
   2026-10.nbhj),
   `accept` (`conv`), `name` (`name`, `status`, `openToChat`), `avatar` (`jpeg` as base64, a `path` the
-  answering side reads, or `clear`; ADR 2026-10.nh55), `deny-link` and `allow-link` (`peer`), `block` and
-  `unblock` (`peer`; a blocked peer's frames are still carried, relayed and ticked, and `status`'s `dropped` counts
+  answering side reads, or `clear`; ADR 2026-10.nh55), `deny-link` and `allow-link` (`peer`; a denied
+  phone's unresolved tag costs one dial per rotation, address and start (and one more after 90 s unheard), which
+  proves the id and closes before our PROOF, ADR 2026-11.sv5t), `block` and `unblock` (`peer`; a blocked peer's frames are still carried, relayed and ticked, and `status`'s `dropped` counts
   what stopped at delivery under `blocked`, ADR 2026-10.5wgg),
   `digest` (live custody ids and their fingerprint), `custody` (every live frame, and for a sealed chat who it is
   wrapped to, its seal's `v` and whether it is the ratchet's `groupForm`), `messages` (`conv`, `limit`; each message carries its `kind`, 0 for a message and Android's

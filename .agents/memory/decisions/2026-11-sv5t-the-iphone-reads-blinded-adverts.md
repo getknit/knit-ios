@@ -48,6 +48,12 @@ and no say in the address's rotation, and the iPhone's id rides its GATT payload
   so we dial it), ADR 2026-10.6eyf's head start (a flagged peer that would dial us, given 24 s first) and seeking, which
   dials whatever the order. A tag dial carries `a` = the tag, expects no id, requires a proof, and takes the proven id.
   Its failure is booked on the tag and the address, never on the id the reply named.
+  **Amended 2026-11-07:** a tag dial whose responder proves an id this node refuses (knit-peer's `deny-link`) is closed
+  before our PROOF, so neither side registers a link, and books no backoff, since the refusal is our policy and a
+  streak would outlive `allow-link`. Its `.tag(handle, address)` key is marked instead, and that tag at that address is
+  not dialed again while the id stays refused: one dial per rotation, address and mesh start, and one more after the
+  tag goes 90 s unheard or the cap lets its handle go. The lab iPhone on `1d6affd` redialed such a tag at every
+  advert, 1 to 3 s apart.
 - **The responder** honours a proof-offering dialer's `t` and `a` in its order check, so a blinding Android whose real
   id sorts below ours is admitted. It records the dialer's `t` as a hint for the link. The iPhone has no responder rows
   of its own: Android's held-link row is inert while a phone's own form is clear, and the legacy-dialer row is the

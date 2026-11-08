@@ -16,6 +16,14 @@ internal enum DialKey: Hashable, Sendable, CustomStringConvertible {
     /// airer that changes its tag every few seconds from one address, each tag a new dial key, still backs off.
     case address(RadioAddress)
 
+    /// A tag dial key's handle; `nil` for any other key.
+    var tagHandle: FormHandle? {
+        if case .tag(let handle, _) = self {
+            return handle
+        }
+        return nil
+    }
+
     /// Redacted by construction: a handle, never a tag, and an address only as the radio's opaque handle.
     var description: String {
         switch self {
