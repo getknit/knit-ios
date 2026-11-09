@@ -49,21 +49,38 @@
                 configuration.stopReadingAfterMilliseconds = Int64(seconds) * Self.millisecondsPerSecond
                 log.log(.info, "reading no channel after \(seconds) s, so writes to this peer stall: a trial's switch")
             }
-            let receiveMTU = options.receiveMTU.flatMap(UInt16.init(exactly:))
-            let sendMTU = options.sendMTU.flatMap(UInt16.init(exactly:))
-            if receiveMTU != nil || sendMTU != nil {
-                configuration.sockets = L2CAPSockets(
-                    adapter: selection.address,
-                    receiveMTU: receiveMTU ?? L2CAPSockets.largestReceiveMTU,
-                    sendMTU: sendMTU ?? L2CAPSockets.defaultSendMTU
-                )
-                let offered = receiveMTU.map(String.init) ?? "the default"
-                let written = sendMTU ?? L2CAPSockets.defaultSendMTU
-                log.log(.info, "channels offer a receive MTU of \(offered) and write at most \(written)")
-            }
+            Self.applySockets(options, to: &configuration, on: selection, log: log)
             blueZ = BlueZRadio(configuration: configuration)
             radio = blueZ
             profile = chosen.name
+        }
+
+        /// The sockets' knobs and the seal's trial switches (`--receive-mtu`, `--send-mtu`, `--psm`, `--flip-sealed-bit`).
+        private static func applySockets(
+            _ options: RunOptions, to configuration: inout BlueZRadio.Configuration, on selection: AdapterSelection, log: any KnitLog
+        ) {
+            if options.flipsSealedBit {
+                configuration.flipsSealedBit = true
+                log.log(.info, "flipping a bit in each link's first sealed frame after link-up: a trial's switch")
+            }
+            let receiveMTU = options.receiveMTU.flatMap(UInt16.init(exactly:))
+            let sendMTU = options.sendMTU.flatMap(UInt16.init(exactly:))
+            let listenPSM = options.listenPSM.flatMap(UInt16.init(exactly:))
+            if let listenPSM {
+                log.log(.info, "listening on PSM \(listenPSM), a trial's switch (--psm)")
+            }
+            guard receiveMTU != nil || sendMTU != nil || listenPSM != nil else {
+                return
+            }
+            configuration.sockets = L2CAPSockets(
+                adapter: selection.address,
+                receiveMTU: receiveMTU ?? L2CAPSockets.largestReceiveMTU,
+                sendMTU: sendMTU ?? L2CAPSockets.defaultSendMTU,
+                listenPSM: listenPSM
+            )
+            let offered = receiveMTU.map(String.init) ?? "the default"
+            let written = sendMTU ?? L2CAPSockets.defaultSendMTU
+            log.log(.info, "channels offer a receive MTU of \(offered) and write at most \(written)")
         }
 
         func shutdown() async {

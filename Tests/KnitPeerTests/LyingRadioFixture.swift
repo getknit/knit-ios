@@ -114,6 +114,9 @@ final class CallRadio: Radio {
         case heard(NodeId, ChannelID)
         case up(NodeId, ChannelID)
         case close(ChannelID)
+        case keyShare(ChannelID, [UInt8], sealed: Bool)
+        case sealed(ChannelID)
+        case noReply(RadioAddress)
         case advertise(AdvertPayload)
         case seek(Bool)
     }
@@ -208,6 +211,18 @@ final class CallRadio: Radio {
 
     func close(_ channel: ChannelID) {
         record(.close(channel))
+    }
+
+    func writeKeyShare(_ record: [UInt8], sealer: LinkSealer?, to channel: ChannelID) {
+        self.record(.keyShare(channel, record, sealed: sealer != nil))
+    }
+
+    func seal(_ channel: ChannelID, with _: LinkSealer) {
+        record(.sealed(channel))
+    }
+
+    func dialGotNoReply(at address: RadioAddress) {
+        record(.noReply(address))
     }
 
     func ring(_ channel: ChannelID) {

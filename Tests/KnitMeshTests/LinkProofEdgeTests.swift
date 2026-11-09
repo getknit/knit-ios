@@ -19,7 +19,7 @@ import Testing
     /// A responder whose key will not sign fails the proof before its one write, so the dialer reads nothing.
     @Test func aResponderWhoseKeyWillNotSignWritesNothing() {
         let rig = LinkRig(local: high)
-        rig.links.signProof = { _, _, _ in nil }
+        rig.links.signProof = { _, _, _, _ in nil }
         let id = ChannelID(100)
         #expect(rig.acceptProving(low, on: id).events.isEmpty)
         #expect(rig.radio.records(on: id).isEmpty, "no reply and no PROOF")
@@ -34,7 +34,7 @@ import Testing
         rig.sightToPromotion(low)
         let id = try #require(rig.radio.dials.first?.channel)
         _ = rig.handle(.connected(id))
-        rig.links.signProof = { _, _, _ in nil }
+        rig.links.signProof = { _, _, _, _ in nil }
         let (_, events) = try rig.answerProving(low, on: id)
         #expect(events.isEmpty, "nothing registers")
         #expect(rig.radio.records(on: id).map(\.tag) == [.hello], "our HELLO, and no PROOF")

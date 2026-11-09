@@ -67,7 +67,8 @@ let package = Package(
 
         // Platform-free protocol core (Linux + Apple).
         .target(name: "KnitWire", swiftSettings: pure),
-        .target(name: "KnitCrypto", dependencies: ["KnitWire", crypto], swiftSettings: pure),
+        // KnitSync for the lock a sealed link's counters advance under (`LinkSealer`, `LinkOpener`).
+        .target(name: "KnitCrypto", dependencies: ["KnitSync", "KnitWire", crypto], swiftSettings: pure),
         // KnitCrypto for the custody group gate's `GroupId.derive` (knit-next ADR 2026-10.7mqm); both stay platform-free.
         .target(name: "KnitStore", dependencies: ["KnitSync", "KnitWire", "KnitCrypto"], swiftSettings: pure),
         // The app's store: the KnitStore protocols on SQLite through GRDB, and the store unit they commit in, whose state

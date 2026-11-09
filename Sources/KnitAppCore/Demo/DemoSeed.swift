@@ -49,6 +49,14 @@ public final class DemoRadio: Radio {
         // No channel is ever open.
     }
 
+    public func writeKeyShare(_: [UInt8], sealer _: LinkSealer?, to _: ChannelID) {
+        // No channel is ever open.
+    }
+
+    public func seal(_: ChannelID, with _: LinkSealer) {
+        // No channel is ever open.
+    }
+
     public func close(_: ChannelID) {
         // No channel is ever open.
     }

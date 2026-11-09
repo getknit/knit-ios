@@ -159,3 +159,10 @@ cost an iPhone a refused or link-replacing dial at every rotation of every linke
   (the legacy impostor's `215f` drops it with `LINK_PROOF`), and `MeshControlTests.statusCarriesTheDetails` (`status.capabilities`, the harness's way to tell a
   reader); `test_interop.py`'s `BlindDialedByTest` and `HeadStartLineTest` (a reader meets no ` blind=legacy`
   refusal, its HELLO carries the bit, and its own tag dial shows its `proved` line).
+
+**Amended 2026-11-09, for knit-ios #51 (ADR 2026-11.6zhj, knit-next ADR 2026-11.8mhs):** `FLAG_LINK_SEAL` (`0x10`)
+rides both advert forms: Android sets it in the clear form and the blinded form alike, and a tag dial to a blinded
+advert carrying it opens sealed, as a clear dial does. This port reads it from either. A future iOS writer that blinds
+its GATT payload (knit-next's `NEXT_WIRE_BREAK.md` item 13) would hide the flag from today's readers, which read
+nothing from a blinded payload, so that design has to carry the flag some other way. The HELLO and profile pins move
+to `1c015f` and `0x1C000F`; the legacy impostor's HELLO still reads `215f`, dropping `LINK_SEAL` with `LINK_PROOF`.

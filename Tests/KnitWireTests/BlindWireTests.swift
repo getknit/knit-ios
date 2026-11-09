@@ -107,12 +107,12 @@ import Testing
     /// The flag is set exactly when bytes 1–16 are a tag (ADR 2026-11.prsp), beside `FLAG_DIALS_GATT_PEERS` when the radio
     /// reads GATT payloads, and never the side channel's bit or Wi-Fi Aware's (`BleAdvertPayload.kt:95-104` at `cad69c77b`).
     @Test func theBlindedFlagIsWrittenExactlyWithATag() {
-        #expect(AdvertPayload.writtenFlags(dialsGattPeers: false, blinded: true) == AdvertPayload.blindedFlag)
+        #expect(AdvertPayload.writtenFlags(dialsGattPeers: false, blinded: true, seals: false) == AdvertPayload.blindedFlag)
         let both = AdvertPayload.dialsGattPeersFlag | AdvertPayload.blindedFlag
-        #expect(AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true) == both)
+        #expect(AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true, seals: false) == both)
         let unclaimed = AdvertPayload.sideChannelFlag | AdvertPayload.awareFlag
         for gatt in [true, false] {
-            #expect([true, false].allSatisfy { AdvertPayload.writtenFlags(dialsGattPeers: gatt, blinded: $0) & unclaimed == 0 })
+            #expect([true, false].allSatisfy { AdvertPayload.writtenFlags(dialsGattPeers: gatt, blinded: $0, seals: false) & unclaimed == 0 })
         }
     }
 

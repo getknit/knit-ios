@@ -87,7 +87,9 @@ import Testing
         case 3:
             reply = BlindingPeer.tagNext(tag)
         case 4:
-            reply = required(LinkRecord(.hello, payload: Hello(nodeId: low.string, capabilities: Capabilities.local).payload).encoded)
+            reply = required(
+                LinkRecord(.hello, payload: Hello(nodeId: low.string, capabilities: Capabilities.local.subtracting(.linkSeal)).payload)
+                    .encoded)
         default:
             let hello = peer.hello(told: tag)
             let forged = try LinkRig.proofRecord(LinkRig.keys(of: LinkRig.middle), as: .responder, dialerHello: ours, responderHello: hello)
@@ -183,7 +185,7 @@ import Testing
     /// A `TAG_NEXT` on a link whose HELLO lacks ``Capabilities/blindAdvert`` is dropped and counted.
     @Test func aTagNextFromAPeerWithoutTheBitIsRefused() throws {
         let rig = LinkRig.iPhone()
-        let withoutTheBit = Capabilities.local.union(.blobHave).subtracting(.blindAdvert)
+        let withoutTheBit = LinkRig.provingCapabilities.subtracting(.blindAdvert)
         let (hello, _) = rig.acceptProving(LinkRig.middle, on: ChannelID(100), capabilities: withoutTheBit)
         _ = try rig.proveDialer(LinkRig.middle, on: ChannelID(100), hello: hello)
         #expect(rig.links.neighbors.count == 1)

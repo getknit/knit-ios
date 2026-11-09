@@ -33,7 +33,7 @@ import Testing
             advertised: aired.form.advertised,
             digestCue: aired.form.blinded ? 0 : 0x1234,
             psm: aired.psm,
-            flags: AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: aired.form.blinded)
+            flags: AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: aired.form.blinded, seals: false)
         )
     }
 
@@ -95,7 +95,7 @@ import Testing
                 advertised: Self.me,
                 digestCue: 0,
                 psm: aired.psm,
-                flags: AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true)
+                flags: AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true, seals: false)
             )
         }
         #expect(!push(fromId))
@@ -122,7 +122,7 @@ import Testing
                 advertised: Self.me,
                 digestCue: 0,
                 psm: aired.psm,
-                flags: AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true)
+                flags: AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true, seals: false)
             )
         }
         #expect(!push(tagged), "the id under the flag")

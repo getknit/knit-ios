@@ -47,7 +47,7 @@ extension LinkManager {
             proofFailed(on: id, for: pending.peer, why: "eof")
         case .live(let peer):
             relinkWindow.radioClosed(peer, proven: liveLinks.contains { $0.channel == id && $0.proven }, now: now)
-        case .connecting, .awaitingHello:
+        case .connecting, .awaitingKeyShare, .awaitingHello:
             break
         }
     }

@@ -9,6 +9,13 @@ final class PipeLab {
     private(set) var pipes: [LinkPipe] = []
     private var nodes: [PipeNode] = []
     private var nextChannel: UInt64 = 10
+    /// Whether the lab's links open sealed unless a link says otherwise (``LinkPipe/sealed``).
+    let sealed: Bool
+
+    /// A lab whose links open sealed, or plain with both nodes' seal off.
+    init(sealed: Bool = false) {
+        self.sealed = sealed
+    }
 
     /// A started phone for `seed`, its custody under `custodyLimits`.
     func node(_ seed: Int, custodyLimits: CustodyLimits = CustodyLimits()) -> PipeNode {
@@ -20,12 +27,12 @@ final class PipeLab {
 
     @discardableResult
     func link(_ dialer: PipeNode, _ answerer: PipeNode, cutAfter: Int? = nil, holding: PipeNode? = nil) -> LinkPipe {
-        let pipe = LinkPipe(dialer, answerer, channel: nextChannel, clock: clock)
+        let pipe = LinkPipe(dialer, answerer, channel: nextChannel, clock: clock, sealed: sealed)
         pipe.cutAfter = cutAfter
         nextChannel += 2
         pipes.append(pipe)
         // The handshake crosses first, its proofs and what came behind them, whatever is held after: a pass a leg.
-        _ = (0..<8).first { _ in pipe.isLinked || !pipe.pumpOnce() }
+        _ = (0..<12).first { _ in pipe.isLinked || !pipe.pumpOnce() }
         pipe.holding = holding
         pump()
         return pipe

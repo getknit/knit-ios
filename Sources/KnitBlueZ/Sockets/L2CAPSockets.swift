@@ -28,17 +28,23 @@
         public let receiveMTU: UInt16
         /// The largest SDU to write, below what the peer offers and never above 8 KiB.
         public let sendMTU: UInt16
+        /// The LE dynamic PSM to listen on, or `nil` for the kernel's first free one, which is the same at every start
+        /// (knit-peer's `--psm`, a trial's switch: the `link-seal` contract, revision 2).
+        public let listenPSM: UInt16?
 
-        /// Sockets on the adapter with `adapter`'s address, offering `receiveMTU` and writing SDUs of at most
-        /// `sendMTU`.
-        public init(adapter: BluetoothAddress, receiveMTU: UInt16 = largestReceiveMTU, sendMTU: UInt16 = defaultSendMTU) {
+        /// Sockets on the adapter with `adapter`'s address, offering `receiveMTU`, writing SDUs of at most `sendMTU`, and
+        /// listening on `listenPSM` when given.
+        public init(
+            adapter: BluetoothAddress, receiveMTU: UInt16 = largestReceiveMTU, sendMTU: UInt16 = defaultSendMTU, listenPSM: UInt16? = nil
+        ) {
             self.adapter = adapter
             self.receiveMTU = receiveMTU
             self.sendMTU = sendMTU
+            self.listenPSM = listenPSM
         }
 
         public func listen() throws(SocketError) -> ListeningSocket {
-            let descriptor = try Self.open(on: adapter, receiveMTU: receiveMTU)
+            let descriptor = try Self.open(on: adapter, receiveMTU: receiveMTU, psm: listenPSM ?? 0)
             do throws(SocketError) {
                 guard Glibc.listen(descriptor, Self.backlog) == 0 else {
                     throw SocketError(call: "listen", code: errno)
@@ -97,13 +103,13 @@
         }
 
         /// A non-blocking LE socket bound to the adapter, at low security, offering the large receive MTU.
-        private static func open(on adapter: BluetoothAddress, receiveMTU: UInt16) throws(SocketError) -> Int32 {
+        private static func open(on adapter: BluetoothAddress, receiveMTU: UInt16, psm: UInt16 = 0) throws(SocketError) -> Int32 {
             let kind = Int32(SOCK_SEQPACKET.rawValue) | Int32(SOCK_NONBLOCK.rawValue) | Int32(SOCK_CLOEXEC.rawValue)
             let descriptor = socket(KNIT_AF_BLUETOOTH, kind, KNIT_BTPROTO_L2CAP)
             guard descriptor >= 0 else {
                 throw SocketError(call: "socket", code: errno)
             }
-            var local = address(adapter, type: KNIT_BDADDR_LE_PUBLIC, psm: 0)
+            var local = address(adapter, type: KNIT_BDADDR_LE_PUBLIC, psm: psm)
             let bound = withUnsafePointer(to: &local) { pointer in
                 pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(descriptor, $0, addressLength) }
             }

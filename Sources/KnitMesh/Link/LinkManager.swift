@@ -20,6 +20,10 @@ public import KnitWire
 /// link registers, and a proven link displaces unproven ones claiming its id; an id known to prove itself is refused
 /// unproven (``LinkClaims``, `LinkManager+LinkProof.swift`). A build from before the proof links unproven, as before.
 ///
+/// **What a listener reads.** A dial to an advert carrying `FLAG_LINK_SEAL` opens with an ephemeral key exchange, and
+/// everything after it rides AES-GCM frames, the proof signing both keys; a plain link between two sealing builds is
+/// refused (`LinkManager+Seal.swift`). Links with builds before the seal stay plain.
+///
 /// **Links are keyed by channel, not by node id.** On Android, closing a replaced link tore down its replacement
 /// (`BluetoothMeshTransport.kt:787` and `:806`); here a channel's teardown touches only itself.
 ///
@@ -65,16 +69,23 @@ public final class LinkManager: MeshTransport {
 
     /// This node.
     public let localId: NodeId
-    /// Signs our side of a link's proof with this node's identity key, the one ``localId`` derives from (``LinkProof``), or
-    /// answers `nil` when the key will not sign: a failed proof, with nothing written. No valid key fails, so only a test
-    /// sets this.
-    var signProof: (LinkProof.Role, [UInt8], [UInt8]) -> [UInt8]?
+    /// Signs our side of a link's proof, on a link opened in the given form, with this node's identity key, the one
+    /// ``localId`` derives from (``LinkProof``), or answers `nil` when the key will not sign: a failed proof, with nothing
+    /// written. No valid key fails, so only a test sets this.
+    var signProof: (LinkProof.Form, LinkProof.Role, [UInt8], [UInt8]) -> [UInt8]?
     /// Who must prove the id a HELLO claims, and the proofs' counts (``LinkClaims``).
     var claims: LinkClaims
     /// The links ``peerProvesItself(_:)`` closed, handed over ahead of whatever the next public entry answers.
     var deferredDowns: [Event] = []
-    /// knit-peer's impostor, a trial's switch the app never sets (``Impostor``).
-    public var impostor = Impostor()
+    /// Makes our ephemeral X25519 key for one sealed connection, fresh each time from the system's secure generator
+    /// (``LinkSeal/Ephemeral/init()``), never the injected `random` a test seeds: a key a test could predict is a link
+    /// anyone could read. A test's seam, as ``signProof`` is.
+    var makeEphemeral: () -> LinkSeal.Ephemeral = { LinkSeal.Ephemeral() }
+    /// knit-peer's impostor, a trial's switch the app never sets (``Impostor``). The advert follows it, since a legacy
+    /// impostor's carries no `FLAG_LINK_SEAL`.
+    public var impostor = Impostor() { didSet { advertiseNow() } }
+    /// knit-peer's seal switch, a trial's the app never sets (``SealSwitch``). The advert follows it.
+    public var sealSwitch = SealSwitch.on { didSet { advertiseNow() } }
     let radio: any Radio
     let clock: any MeshClock
     let configuration: Configuration
@@ -158,6 +169,8 @@ public final class LinkManager: MeshTransport {
     /// The wakes the current spell of seeking has spent.
     var spell = SeekSpell()
 
+    /// The seal's counts (``SealCounts``).
+    var sealCounts = SealCounts()
     /// Frames dropped because they did not decode; the link stays up, as on Android.
     public internal(set) var undecodableFrames = 0
     /// Digests dropped because their peer was over its budget (``digestBudget``, ADR 2026-10.f5zs); the link stays up.
@@ -204,8 +217,8 @@ public final class LinkManager: MeshTransport {
         profileCarriesProof: @escaping (NodeId) -> Bool = { _ in false }
     ) {
         localId = identity.nodeId
-        signProof = { signer, dialerHello, responderHello in
-            try? LinkProof.payload(keys: identity, signer: signer, dialerHello: dialerHello, responderHello: responderHello)
+        signProof = { form, signer, dialerHello, responderHello in
+            try? LinkProof.payload(keys: identity, form: form, signer: signer, dialerHello: dialerHello, responderHello: responderHello)
         }
         claims = LinkClaims(profileCarriesProof: profileCarriesProof)
         self.radio = radio
@@ -358,42 +371,13 @@ public final class LinkManager: MeshTransport {
             return receive(bytes, on: id, now: now)
         case .closed(let id):
             radioClosed(id, now: now)
+            // An end of stream is never a failed seal: where a KEY_SHARE belongs too, it is the no-reply refusal it was.
+            noteNoReply(on: id)
             return retire(id, backingOff: true, now: now) + promote(now: now)
         case .rung:
             return heardRing(now: now)
         case .wroteFileRecord(let id):
             return fileRecordWritten(on: id, now: now)
         }
-    }
-
-    /// Times out dials, HELLOs and PROOFs, re-advertises a settled cue, rings doorbells that are due, feeds files, sends the
-    /// trailing reports that are due, and dials peers whose backoff has run out or whose dwell has just ended.
-    public func advance() -> [Event] {
-        let now = clock.monotonicMilliseconds()
-        var events = takeDeferredDowns()
-        let expired = channels.filter { $0.value.deadline.map { now >= $0 } ?? false }.map(\.key).sorted(by: Self.inOrder)
-        for id in expired {
-            if putOffLateDeadline(of: id, now: now) {
-                continue
-            }
-            let dialed = channels[id]?.role != .responder
-            if let channel = channels[id], case .awaitingProof(let pending) = channel.stage {
-                // Never `timed out`, which the harness reads as a missed HELLO.
-                proofFailed(on: id, for: pending.peer, why: "timeout")
-            } else {
-                log.log(.info, "link \(id) timed out")
-            }
-            events += retire(id, backingOff: dialed, now: now)
-        }
-        if let due = advertDue, now >= due {
-            advertDue = nil
-            advertiseNow()
-        }
-        ringDue(now: now)
-        advanceBlind(now: now)
-        events += checkWriteStalls(now: now)
-        events += reportTrailing(now: now)
-        events += feedDueFiles(now: now)
-        return events + promote(now: now) + reconsiderSeeking(now: now)
     }
 }

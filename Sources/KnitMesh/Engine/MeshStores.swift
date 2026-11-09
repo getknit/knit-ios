@@ -136,9 +136,10 @@ public struct MeshConfiguration: Sendable {
     /// the default tests start from, and through a debug build's `-ratchet off` or the peer's `--no-ratchet`. On, our signed
     /// profile carries our prekey and ``capabilities``' three ratchet bits, kept and rotated in the identity's store, and
     /// DMs and groups seal and open with the ratchet toward peers whose profiles claim it. Off, the profile is what it was
-    /// before the ratchet but for ``Capabilities/linkProof``, and nothing seals with it. The HELLO and the advert carry
-    /// ``Capabilities/local`` either way, since Android reads these bits from the pinned profile alone
-    /// (`CryptoScheme.kt:11-13`). Taking peers' prekeys runs either way, since it sends nothing.
+    /// before the ratchet but for ``Capabilities/linkProof``, ``Capabilities/blindAdvert`` and ``Capabilities/linkSeal``, and
+    /// nothing seals with it. The HELLO and the advert carry ``Capabilities/local`` either way, since Android reads these
+    /// bits from the pinned profile alone (`CryptoScheme.kt:11-13`). Taking peers' prekeys runs either way, since it sends
+    /// nothing.
     public var ratchet: Bool
     /// Whether this build draws a link's preview card (ADR 2026-11.hcvg): on in a debug build of the app until the
     /// maintainer approves link previews for the store, and off in a release build, knit-peer and the tests. On, our
@@ -160,9 +161,10 @@ public struct MeshConfiguration: Sendable {
     /// own; without one, as in knit-peer and the tests, such a quote carries no words, and a photo reads as one.
     public var quoteLabel: @Sendable (MessageAttachment) -> String?
 
-    /// What our signed profile advertises while it carries our prekey: ``Capabilities/local`` (`0xC015F`) with the switch
-    /// on, and without ``Capabilities/ratchetSuite`` (`0xC000F`) with it off. ``Capabilities/linkProof`` and
-    /// ``Capabilities/blindAdvert`` ride either way, and so do ``drawnCapabilities``'s bits: `0xC055F` in a debug build.
+    /// What our signed profile advertises while it carries our prekey: ``Capabilities/local`` (`0x1C015F`) with the switch
+    /// on, and without ``Capabilities/ratchetSuite`` (`0x1C000F`) with it off. ``Capabilities/linkProof``,
+    /// ``Capabilities/blindAdvert`` and ``Capabilities/linkSeal`` ride either way, and so do ``drawnCapabilities``'s bits:
+    /// `0x1C055F` in a debug build.
     public var capabilities: Capabilities {
         (ratchet ? .local : Capabilities.local.subtracting(.ratchetSuite)).union(drawnCapabilities)
     }

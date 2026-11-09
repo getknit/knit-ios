@@ -2476,6 +2476,9 @@ def android_reads(arguments: argparse.Namespace) -> int:
 def android_forgets(arguments: argparse.Namespace) -> int:
     """The payload lifetime's three forget rules on an Android phone (ADR 2026-09.xzpt, amended 2026-09-29; knit-next
     ADR 2026-09.kwq2), each seen once through the phone's `bt gatt forget <address> (dial|hello <node>|quiet)` line.
+    A sealing build also logs `(seal)` for the link-seal contract's one-shot forget (ADR 2026-11.6zhj): a plain dial
+    whose HELLO claimed `CAP_LINK_SEAL` drew no reply from a payload without `FLAG_LINK_SEAL`. No stage here asks for
+    it, but a stage that waits for any forget (`hello-accepted-clears`) can be met by one.
     Every knit-peer on hci1 has the adapter's one public address, so each restart under a new identity is a node taking
     a reused address. The stages run in order on one phone, each from a fresh identity:
 
@@ -7392,6 +7395,8 @@ IOS_CHANNEL_ENDINGS = [
     # the doorbell up afresh; a trial's lever, never a fault of either end.
     (re.compile(r"^link (ch\d+) closed: the advert flipped to "), lambda _: "flipped: the advert's switch"),
     (re.compile(r"^link (ch\d+) proof failed for \S+: (.*)"), lambda m: f"proof failed: {m[2][:40]}"),
+    # The `link-seal` contract, §4: bytes that arrived on a sealed link and were wrong; never an end or a timeout.
+    (re.compile(r"^link (ch\d+) seal failed for \S+: (.*)"), lambda m: f"seal failed: {m[2][:40]}"),
 ]
 
 

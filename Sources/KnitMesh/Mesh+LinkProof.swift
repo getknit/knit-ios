@@ -9,6 +9,22 @@ extension Mesh {
     public var linkProofFailed: Int { links.linkProofFailed }
     /// Unproven claims refused, and unproven links closed, for ids that prove themselves (``LinkManager/linkClaimRefused``).
     public var linkClaimRefused: Int { links.linkClaimRefused }
+    /// Links registered after a sealed exchange (``LinkManager/linksSealed``; the `link-seal` contract, §9).
+    public var linksSealed: Int { links.linksSealed }
+    /// Failed seals, during the handshake or on a live link (``LinkManager/linkSealFailed``).
+    public var linkSealFailed: Int { links.linkSealFailed }
+    /// Plain links refused between two sealing builds (``LinkManager/linkSealRefused``).
+    public var linkSealRefused: Int { links.linkSealRefused }
+
+    /// knit-peer's seal switch as set (``setSealSwitch(_:)``).
+    public var sealSwitch: LinkManager.SealSwitch { links.sealSwitch }
+
+    /// Sets knit-peer's seal switch (``LinkManager/SealSwitch``), a trial's the app never sets. It applies to the links that
+    /// open from now on, and to the advert at once.
+    public func setSealSwitch(_ sealSwitch: LinkManager.SealSwitch) {
+        links.sealSwitch = sealSwitch
+        settle()
+    }
 
     /// knit-peer's impostor as set (``setImpostor(_:)``).
     public var impostor: LinkManager.Impostor { links.impostor }

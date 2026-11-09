@@ -9,8 +9,10 @@
 /// | 21 | 2 | L2CAP PSM, big-endian |
 /// | 23 | 1 | BLE-local flags (optional on the wire) |
 ///
-/// Byte 23 holds bit 0 ``sideChannelFlag``, bit 1 ``dialsGattPeersFlag``, bit 2 ``awareFlag`` and bit 3 ``blindedFlag``;
-/// bits 4-7 are reserved (0), and a parser tests only the bits it knows, so a new bit is additive.
+/// Byte 23 holds bit 0 ``sideChannelFlag``, bit 1 ``dialsGattPeersFlag``, bit 2 ``awareFlag``, bit 3 ``blindedFlag`` and
+/// bit 4 ``linkSealFlag``; bits 5-7 are reserved (0), and a parser tests only the bits it knows, so a new bit is additive.
+/// Bits 0-3 are facts about the radio; bit 4 is a fact about the build, the one the HELLO's ``Capabilities/linkSeal``
+/// carries, which the advert's low capability byte has no room for (the `link-seal` contract, §1).
 public struct AdvertPayload: Sendable, Equatable {
     /// The shortest payload a scanner accepts: everything but the flags byte.
     public static let minimumSize = 23
@@ -30,15 +32,20 @@ public struct AdvertPayload: Sendable, Equatable {
     /// makes a peer an Aware candidate only from a service-data sighting with the bit set, and a GATT-payload sighting
     /// never makes one (`AwareCandidateTracker.kt:63-70` and `:79`, called at `BluetoothMeshTransport.kt:2295`).
     /// No radio here runs Wi-Fi Aware, so the bit is reserved: no advert this port writes sets it
-    /// (``writtenFlags(dialsGattPeers:blinded:)``, for knit-peer's service data and the iPhone's GATT payload alike), and
+    /// (``writtenFlags(dialsGattPeers:blinded:seals:)``, for knit-peer's service data and the iPhone's GATT payload alike), and
     /// nothing here reads it. The codec keeps it, so a parsed Android advert round-trips.
     public static let awareFlag: UInt8 = 0x04
     /// Bit 3: Android's `FLAG_BLINDED` (knit-next ADR 2026-11.xp6d, `BleAdvertPayload.kt:88` at `cad69c77b`). Set, bytes
     /// 1–16 are a rotating tag (``AdvertForm/hasTagPrefix(_:)``), not the advertiser's node id, and nothing may key them
     /// as one. This port reads it (ADR 2026-11.sv5t), and sets it on the iPhone's GATT payload while the iPhone blinds
-    /// (``writtenFlags(dialsGattPeers:blinded:)``; ADR 2026-11.prsp): mandatory whenever bytes 1–16 are a tag, since a build
-    /// at the pin reads a tag without it as a node id and dials it into `WrongPeer`.
+    /// (``writtenFlags(dialsGattPeers:blinded:seals:)``; ADR 2026-11.prsp): mandatory whenever bytes 1–16 are a tag, since a
+    /// build at the pin reads a tag without it as a node id and dials it into `WrongPeer`.
     public static let blindedFlag: UInt8 = 0x08
+    /// Bit 4: Android's `FLAG_LINK_SEAL` (the `link-seal` contract, §1; knit-next #286). Set exactly when the advertiser's
+    /// HELLO carries ``Capabilities/linkSeal``, so a dialer opens a link to it with a `KEY_SHARE` (§2): the advert dialed
+    /// from decides the form, and nothing else does. Unauthenticated, which is why a plain link whose two HELLOs carry the
+    /// bit is refused (§7). A 23-byte payload has no flags byte, so it reads the flag clear.
+    public static let linkSealFlag: UInt8 = 0x10
 
     /// The 16-bit service UUID under which Android puts the payload in its advert's service data, and under which
     /// a node that cannot advertise service data (an iPhone) lists a GATT service instead.
@@ -55,8 +62,11 @@ public struct AdvertPayload: Sendable, Equatable {
     /// here, so ``sideChannelFlag`` stays clear, and no Wi-Fi Aware does, so ``awareFlag`` stays clear.
     /// ``dialsGattPeersFlag`` is set only while the radio reads GATT payloads (`Radio.dialsGattPeers`), so it never claims a
     /// read it cannot make, and ``blindedFlag`` exactly when bytes 1–16 are a tag (`blinded`, ADR 2026-11.prsp).
-    public static func writtenFlags(dialsGattPeers: Bool, blinded: Bool) -> UInt8 {
-        (dialsGattPeers ? dialsGattPeersFlag : 0) | (blinded ? blindedFlag : 0)
+    /// ``linkSealFlag`` is set exactly when the HELLO this node would write carries ``Capabilities/linkSeal`` (`seals`; the
+    /// `link-seal` contract, §1), in the clear form and the blinded form alike, so knit-peer's switches that take the bit
+    /// out, or strip the flag alone, clear it here too.
+    public static func writtenFlags(dialsGattPeers: Bool, blinded: Bool, seals: Bool) -> UInt8 {
+        (dialsGattPeers ? dialsGattPeersFlag : 0) | (blinded ? blindedFlag : 0) | (seals ? linkSealFlag : 0)
     }
 
     private static let capabilitiesMask: Int64 = 0xFF
@@ -75,6 +85,10 @@ public struct AdvertPayload: Sendable, Equatable {
 
     /// Whether bytes 1–16 are a tag, not a node id (``blindedFlag``; Kotlin's `Parsed.blinded`).
     public var blinded: Bool { flags & Self.blindedFlag != 0 }
+
+    /// Whether the advertiser seals links, so a dial to it opens with a `KEY_SHARE` (``linkSealFlag``; the `link-seal`
+    /// contract, §2).
+    public var seals: Bool { flags & Self.linkSealFlag != 0 }
 
     /// Makes a payload from full capabilities, keeping their low byte, airing `nodeId` in the clear; ``advertised`` holds it.
     public init(capabilities: Capabilities, nodeId: NodeId, digestCue: UInt32, psm: UInt16, flags: UInt8 = 0) {

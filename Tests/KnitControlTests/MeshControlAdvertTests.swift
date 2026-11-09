@@ -372,6 +372,14 @@ private final class AdvertRadio: Radio, Sendable {
         // Nowhere to write.
     }
 
+    func writeKeyShare(_: [UInt8], sealer _: LinkSealer?, to _: ChannelID) {
+        // Nowhere to write.
+    }
+
+    func seal(_: ChannelID, with _: LinkSealer) {
+        // Nowhere to write.
+    }
+
     func close(_: ChannelID) {
         // Nothing open.
     }

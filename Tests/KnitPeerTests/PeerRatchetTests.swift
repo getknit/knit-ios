@@ -9,7 +9,7 @@ import Testing
 
 /// `knit-peer`'s ratchet (ADR 2026-10.5sk9, phases P5b and P8): the switch is parsed, on unless `--no-ratchet`, `main`
 /// loads the prekey ring kept beside the identity, and the profile the peer publishes carries the prekey and the ratchet's
-/// bits, `0xC015F`. Off, the profile is the pre-ratchet `0xF` with the link-proof and blind-advert bits, `0xC000F`, and no prekey.
+/// bits, `0x1C015F`. Off, the profile is the pre-ratchet `0xF` with the link-proof and blind-advert bits, `0x1C000F`, and no prekey.
 @Suite struct PeerRatchetTests {
     private let home = ["HOME": "/home/tester"]
 
@@ -88,7 +88,7 @@ import Testing
     @Test func withTheSwitchThePeersProfileCarriesItsPrekeyAndTheRatchetsBits() async throws {
         let run = try await published(ratchet: true)
         defer { try? FileManager.default.removeItem(atPath: run.directory) }
-        #expect(run.pinned.capabilities == 0xC015F)
+        #expect(run.pinned.capabilities == 0x1C015F)
         let prekey = try #require(run.pinned.prekey, "the profile carries the prekey")
         #expect(PeerPrekey(verifying: prekey, signedBy: identity(1).bundle) != nil)
         #expect(try run.state.loadPrekeys(for: identity(1)).newest?.id == prekey.id, "minted at start, and kept beside the identity")
@@ -98,7 +98,7 @@ import Testing
     @Test func withoutTheSwitchThePeersProfileIsTodays() async throws {
         let run = try await published(ratchet: false)
         defer { try? FileManager.default.removeItem(atPath: run.directory) }
-        #expect(run.pinned.capabilities == 0xC000F && run.pinned.prekey == nil)
+        #expect(run.pinned.capabilities == 0x1C000F && run.pinned.prekey == nil)
         #expect(try run.state.loadPrekeys(for: identity(1)).prekeys.isEmpty, "nothing minted")
     }
 }

@@ -20,6 +20,16 @@
             log.log(.info, "ble forgetting the GATT payload of \(uuid): its HELLO named \(node)")
         }
 
+        /// Our plain dial to `address`, whose HELLO carried the seal's bit, got no reply: a clear payload there without
+        /// `FLAG_LINK_SEAL` goes, once, so the next dial reads it afresh and may open sealed (``GattPayloads/noReply(at:)``;
+        /// the `link-seal` contract, §7, revision 1). The same line as the other rules, so the harness reads it as one.
+        func dialGotNoReply(at address: RadioAddress) {
+            guard gatt.noReply(at: address) else {
+                return
+            }
+            log.log(.info, "ble forgetting the GATT payload of \(address.rawValue): a plain dial to it got no reply")
+        }
+
         /// Forgets the payloads of the addresses unheard for a minute of scanning, bar those a link, a dial or the
         /// read holds (rule 3).
         func forgetQuietPayloads() {

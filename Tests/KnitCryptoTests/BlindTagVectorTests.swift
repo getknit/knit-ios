@@ -122,8 +122,8 @@ import Testing
     @Test func bothTranscriptsAreRebuiltByteForByte() {
         let link = blind.link
         #expect(link.proofTranscriptDialer.signer == "alice" && link.proofTranscriptResponder.signer == "bob")
-        let dialer = LinkProof.transcript(signer: .dialer, dialerHello: dialerHello, responderHello: responderHello)
-        let responder = LinkProof.transcript(signer: .responder, dialerHello: dialerHello, responderHello: responderHello)
+        let dialer = LinkProof.transcript(form: .plain, signer: .dialer, dialerHello: dialerHello, responderHello: responderHello)
+        let responder = LinkProof.transcript(form: .plain, signer: .responder, dialerHello: dialerHello, responderHello: responderHello)
         #expect(Hex.encode(dialer) == link.proofTranscriptDialer.hex)
         #expect(Hex.encode(responder) == link.proofTranscriptResponder.hex)
     }
@@ -138,11 +138,11 @@ import Testing
         let payload = try proofPayload(vector.record)
         #expect(Array(payload.prefix(LinkProof.keysByteCount)) == signer.bundle.signingKey + signer.bundle.agreementKey)
         let outcome = LinkProof.verify(
-            payload, claimedId: signer.nodeId, signer: role, dialerHello: dialerHello, responderHello: responderHello)
+            payload, claimedId: signer.nodeId, form: .plain, signer: role, dialerHello: dialerHello, responderHello: responderHello)
         #expect(outcome == .proven(signer.bundle))
         let other: LinkProof.Role = role == .dialer ? .responder : .dialer
         let reflected = LinkProof.verify(
-            payload, claimedId: signer.nodeId, signer: other, dialerHello: dialerHello, responderHello: responderHello)
+            payload, claimedId: signer.nodeId, form: .plain, signer: other, dialerHello: dialerHello, responderHello: responderHello)
         #expect(reflected == .failed(.badSignature))
     }
 
@@ -155,7 +155,12 @@ import Testing
         let bob = try identity("bob")
         let payload = try proofPayload(blind.link.proofResponder.record)
         let outcome = LinkProof.verify(
-            payload, claimedId: bob.nodeId, signer: .responder, dialerHello: dialerHello, responderHello: Array(rewritten.payload.utf8))
+            payload,
+            claimedId: bob.nodeId,
+            form: .plain,
+            signer: .responder,
+            dialerHello: dialerHello,
+            responderHello: Array(rewritten.payload.utf8))
         #expect(outcome == .failed(.badSignature), "\(rewritten.reason)")
     }
 }

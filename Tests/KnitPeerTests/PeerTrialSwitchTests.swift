@@ -46,4 +46,19 @@ import Testing
         #expect(PeerCommand.usage.contains("[--lying]"))
         #expect(PeerCommand.usage.contains("--lying is for trials too"))
     }
+
+    /// The seal's switches (the `link-seal` contract's T5 and T6): honest unless asked, and a PSM only from the dynamic range.
+    @Test func theSealSwitchesChangeNothingUnlessAsked() throws {
+        let plain = try run([])
+        #expect(plain.sealSwitch == "on" && !plain.flipsSealedBit && plain.listenPSM == nil)
+        for name in ["on", "off", "downgrade", "plain-reply"] {
+            #expect(try run(["--seal", name]).sealSwitch == name)
+        }
+        #expect(throws: UsageError.self) { try run(["--seal", "maybe"]) }
+        #expect(try run(["--flip-sealed-bit"]).flipsSealedBit)
+        #expect(try run(["--psm", "200"]).listenPSM == 200)
+        #expect(throws: UsageError.invalid(flag: "--psm", value: "127")) { try run(["--psm", "127"]) }
+        #expect(throws: UsageError.invalid(flag: "--psm", value: "256")) { try run(["--psm", "256"]) }
+        #expect(PeerCommand.usage.contains("[--seal on|off|downgrade|plain-reply] [--flip-sealed-bit] [--psm PSM]"))
+    }
 }

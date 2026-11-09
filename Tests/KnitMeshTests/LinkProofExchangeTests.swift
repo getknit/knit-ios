@@ -10,7 +10,7 @@ import Testing
     private let low = LinkRig.low
     private let middle = LinkRig.middle
     private let high = LinkRig.high
-    private let proving = Neighbor(nodeId: LinkRig.low, protocolVersion: 1, capabilities: Capabilities.local.union(.blobHave))
+    private let proving = Neighbor(nodeId: LinkRig.low, protocolVersion: 1, capabilities: LinkRig.provingCapabilities)
 
     private func counts(_ rig: LinkRig) -> [Int] {
         [rig.links.linksProven, rig.links.linkProofFailed, rig.links.linkClaimRefused]
@@ -29,7 +29,8 @@ import Testing
         #expect(records.map(\.tag) == [.hello, .proof])
         let reply = try #require(records.first?.payload)
         #expect(LinkRig.isOurHello([records[0]], high))
-        let ours = LinkProof.verify(records[1].payload, claimedId: high, signer: .responder, dialerHello: hello, responderHello: reply)
+        let ours = LinkProof.verify(
+            records[1].payload, claimedId: high, form: .plain, signer: .responder, dialerHello: hello, responderHello: reply)
         #expect(ours == .proven(LinkRig.keys(of: high).bundle), "our proof signs both HELLOs as they crossed")
         #expect(rig.radio.hellos.map(\.node) == [low], "the HELLO was heard")
         #expect(rig.radio.linkUps.isEmpty)
@@ -75,7 +76,8 @@ import Testing
         let records = rig.radio.records(on: id)
         #expect(records.map(\.tag) == [.hello, .proof])
         let ours = try #require(rig.ourHelloPayload(on: id))
-        let proof = LinkProof.verify(records[1].payload, claimedId: high, signer: .dialer, dialerHello: ours, responderHello: reply)
+        let proof = LinkProof.verify(
+            records[1].payload, claimedId: high, form: .plain, signer: .dialer, dialerHello: ours, responderHello: reply)
         #expect(proof == .proven(LinkRig.keys(of: high).bundle))
         #expect(counts(rig) == [1, 0, 0])
     }
@@ -155,7 +157,7 @@ import Testing
 
     @Test func aHelloCarryingTheBitWithoutANonceFailsTheProofUnanswered() {
         let rig = LinkRig(local: high)
-        let events = rig.accept(low, on: ChannelID(100), capabilities: Capabilities.local.union(.blobHave))
+        let events = rig.accept(low, on: ChannelID(100), capabilities: LinkRig.provingCapabilities)
         expectFailed(rig, on: ChannelID(100), claiming: low, why: "nonce", events: events)
         #expect(rig.radio.records(on: ChannelID(100)).isEmpty, "no reply")
     }
@@ -172,18 +174,20 @@ import Testing
         let why: String
         switch shape {
         case "wrong role":
-            payload = try LinkProof.payload(keys: alice, signer: .responder, dialerHello: hello, responderHello: reply)
+            payload = try LinkProof.payload(keys: alice, form: .plain, signer: .responder, dialerHello: hello, responderHello: reply)
             why = "bad signature"
         case "other nonce":
             var other = Hello(payload: reply)
             other.nonce = [UInt8](repeating: 0xFF, count: Hello.nonceByteCount)
-            payload = try LinkProof.payload(keys: alice, signer: .dialer, dialerHello: hello, responderHello: other.payload)
+            payload = try LinkProof.payload(keys: alice, form: .plain, signer: .dialer, dialerHello: hello, responderHello: other.payload)
             why = "bad signature"
         case "other keys":
-            payload = try LinkProof.payload(keys: LinkRig.keys(of: middle), signer: .dialer, dialerHello: hello, responderHello: reply)
+            payload = try LinkProof.payload(
+                keys: LinkRig.keys(of: middle), form: .plain, signer: .dialer, dialerHello: hello, responderHello: reply)
             why = "id mismatch"
         default:
-            payload = Array(try LinkProof.payload(keys: alice, signer: .dialer, dialerHello: hello, responderHello: reply).dropLast())
+            payload = Array(
+                try LinkProof.payload(keys: alice, form: .plain, signer: .dialer, dialerHello: hello, responderHello: reply).dropLast())
             why = "length"
         }
         let events = rig.handle(.received(id, LinkRecord(.proof, payload: payload).encoded ?? []))

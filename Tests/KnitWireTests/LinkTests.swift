@@ -55,10 +55,10 @@ import Testing
 
     @Test func anUnknownTagEndsTheLinkAsAndroidDoes() {
         var reader = LinkRecordReader()
-        // Tag 9 is the TAG_NEXT since blinded adverts (knit-next ADR 2026-11.xp6d); 10 is the first a build of today does not
-        // know (`LinkFramingTest.theTagAfterTagNextIsStillUnknownAndThrows`).
-        reader.append([0x0A, 0, 0, 0, 0])
-        #expect(throws: LinkRecordError.unknownTag(10)) {
+        // Tag 9 is the TAG_NEXT since blinded adverts (knit-next ADR 2026-11.xp6d), 10 and 11 the KEY_SHARE and SEALED since
+        // the seal (the `link-seal` contract, §3); 12 is the first a build of today does not know.
+        reader.append([0x0C, 0, 0, 0, 0])
+        #expect(throws: LinkRecordError.unknownTag(12)) {
             try reader.next()
         }
         var zero = LinkRecordReader()
@@ -116,21 +116,21 @@ import Testing
     }
 
     @Test func helloCarriesOurCapabilitiesAsLowercaseHex() {
-        #expect(Hello(nodeId: nodeA).payload == Array("\(nodeA)|1|c015f".utf8))
+        #expect(Hello(nodeId: nodeA).payload == Array("\(nodeA)|1|1c015f".utf8))
         // End-to-end, groups, reactions and store-and-forward (ADR 2026-10.ehe6), the ratchet's three (ADR 2026-10.5sk9),
-        // the link's proof (knit-ios #25), and reading tags (ADR 2026-11.sv5t).
-        #expect(Capabilities.local.hex == "c015f")
-        #expect(Capabilities.local.subtracting(.ratchetSuite).hex == "c000f", "what a profile signs with the switch off")
+        // the link's proof (knit-ios #25), reading tags (ADR 2026-11.sv5t), and sealing links (knit-next #286).
+        #expect(Capabilities.local.hex == "1c015f")
+        #expect(Capabilities.local.subtracting(.ratchetSuite).hex == "1c000f", "what a profile signs with the switch off")
         #expect(Capabilities.ratchetSuite.rawValue == 0x150)
         #expect(Capabilities(rawValue: 0xFFF).hex == "fff")
     }
 
     @Test func theBlobHaveBitIsPinnedAndKeptOutOfWhatWeSign() {
         // `Protocol.CAP_BLOB_HAVE` (knit-next ADR 2026-10.6e5t): the link manager adds it to every HELLO, and nothing
-        // signed carries it, so the profile keeps `0xC015F` or `0xC000F`, and the emitted vectors their literals.
+        // signed carries it, so the profile keeps `0x1C015F` or `0x1C000F`, and the emitted vectors their literals.
         #expect(Capabilities.blobHave.rawValue == 0x2000)
         #expect(!Capabilities.local.contains(.blobHave))
-        #expect(Capabilities.local.union(.blobHave).hex == "c215f")
+        #expect(Capabilities.local.union(.blobHave).hex == "1c215f")
         #expect(Hello(payload: Array("\(nodeA)|1|2fff".utf8)).capabilities.contains(.blobHave), "Android since 403cd861")
         #expect(!Hello(payload: Array("\(nodeA)|1|fff".utf8)).capabilities.contains(.blobHave), "Android before it")
     }
@@ -139,7 +139,7 @@ import Testing
         // `Protocol.CAP_DOORBELL`: the radio adds it to the HELLO, and this build never advertises it anywhere else.
         #expect(Capabilities.doorbell.rawValue == 0x1000)
         #expect(!Capabilities.local.contains(.doorbell))
-        #expect(Capabilities.local.union(.doorbell).hex == "c115f")
+        #expect(Capabilities.local.union(.doorbell).hex == "1c115f")
         #expect(
             Hello(payload: Array("\(nodeA)|1|100f".utf8)).capabilities == [.endToEnd, .groups, .reactions, .storeForward, .doorbell])
         #expect(
@@ -275,9 +275,12 @@ import Testing
     /// `BleAdvertPayload.kt:95-104`), nor a tag over a clear payload (`BlindWireTests` has the blinded ones), and the
     /// initializer's default, which knit-peer's `scan` and `stranger` adverts take, claims nothing either.
     @Test func theFlagsThisPortWritesNeverSetTheAwareBit() throws {
-        #expect(AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: false) == AdvertPayload.dialsGattPeersFlag)
-        #expect(AdvertPayload.writtenFlags(dialsGattPeers: false, blinded: false) == 0)
-        #expect([true, false].allSatisfy { AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: $0) & AdvertPayload.awareFlag == 0 })
+        #expect(AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: false, seals: false) == AdvertPayload.dialsGattPeersFlag)
+        #expect(AdvertPayload.writtenFlags(dialsGattPeers: false, blinded: false, seals: false) == 0)
+        #expect(AdvertPayload.writtenFlags(dialsGattPeers: false, blinded: false, seals: true) == AdvertPayload.linkSealFlag)
+        let never = AdvertPayload.sideChannelFlag | AdvertPayload.awareFlag
+        let inputs = [true, false]
+        #expect(inputs.allSatisfy { blinded in inputs.allSatisfy { AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: blinded, seals: $0) & never == 0 } }, "bits 0 and 2")
         let node = try #require(NodeId(nodeA))
         #expect(AdvertPayload(capabilities: .local, nodeId: node, digestCue: 0, psm: 0x80).flags == 0)
     }

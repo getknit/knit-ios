@@ -28,6 +28,15 @@ public struct LinkRecord: Sendable, Equatable {
         /// every build before it throws on the tag and drops the link. This port reads it, and writes it on the same terms
         /// only while it blinds (`TagNextSends`; ADR 2026-11.prsp).
         case tagNext = 9
+        /// The sender's ephemeral X25519 public key: exactly ``LinkRecord/keyShareBytes``, and the first record each side
+        /// writes on a link opened in the sealed form (`KEY_SHARE`; the `link-seal` contract, §3 and §4; knit-next #286).
+        /// Written only to a peer whose advert carries `FLAG_LINK_SEAL`: every build before the seal throws on the tag and
+        /// drops the link. Anywhere but where the exchange expects it, the link manager drops the link.
+        case keyShare = 10
+        /// One AEAD frame of a sealed link: `ciphertext ‖ tag`, ``LinkRecord/sealedPayloadBytes`` long, whose plaintexts,
+        /// in order, are the link's records (`SEALED`; the `link-seal` contract, §3 and §5). Every record after the
+        /// `KEY_SHARE`s rides in these, and only on a link opened in the sealed form.
+        case sealed = 11
     }
 
     /// The largest payload either side accepts (`MAX_PAYLOAD_BYTES`).
@@ -36,6 +45,12 @@ public struct LinkRecord: Sendable, Equatable {
     public static let headerBytes = 5
     /// A ``Tag/tagNext`` record's one length (`TAG_NEXT_BYTES`, `LinkFraming.kt:107`); any other is a framing error.
     public static let tagNextBytes = 16
+    /// A ``Tag/keyShare`` record's one length: a raw X25519 public key (the `link-seal` contract, §3). Any other is a
+    /// framing error, read from the header.
+    public static let keyShareBytes = 32
+    /// A ``Tag/sealed`` record's lengths: 1 to 65,536 bytes of plaintext and the 16-byte tag (the `link-seal` contract,
+    /// §3). Any other is a framing error, read from the header before the payload is waited for.
+    public static let sealedPayloadBytes = 17...65_552
 
     /// The record's type.
     public var tag: Tag
@@ -67,12 +82,14 @@ public struct LinkRecord: Sendable, Equatable {
 /// Why a link's byte stream is no longer a sequence of records. Android throws on each of these and drops
 /// the link, and so does the link session.
 public enum LinkRecordError: Error, Sendable, Equatable {
-    /// A tag outside 1 to 9.
+    /// A tag outside 1 to 11.
     case unknownTag(UInt8)
     /// A length outside 0 to ``LinkRecord/maxPayloadBytes``.
     case lengthOutOfRange(UInt32)
     /// A fixed-size record of another length: a ``LinkRecord/Tag/tagNext`` that is not ``LinkRecord/tagNextBytes`` long, a
-    /// desynced or hostile stream as an out-of-range length is (`LinkFraming.read`, `LinkFraming.kt:149-150`).
+    /// desynced or hostile stream as an out-of-range length is (`LinkFraming.read`, `LinkFraming.kt:149-150`). So is a
+    /// ``LinkRecord/Tag/keyShare`` that is not ``LinkRecord/keyShareBytes`` long, or a ``LinkRecord/Tag/sealed`` outside
+    /// ``LinkRecord/sealedPayloadBytes`` (the `link-seal` contract, §3).
     case badLength(tag: UInt8, length: UInt32)
 }
 
@@ -125,7 +142,7 @@ public struct LinkRecordReader: Sendable {
             throw .lengthOutOfRange(length)
         }
         // From the header alone, before waiting for a payload that may never come, as Android checks right after it.
-        guard tag != .tagNext || length == LinkRecord.tagNextBytes else {
+        guard Self.fits(tag, length) else {
             throw .badLength(tag: tag.rawValue, length: length)
         }
         let end = start + LinkRecord.headerBytes + Int(length)
@@ -137,6 +154,20 @@ public struct LinkRecordReader: Sendable {
         start = end
         compact()
         return record
+    }
+
+    /// Whether a record tagged `tag` may be `length` bytes long: the fixed-size tags take one length, a frame its range.
+    private static func fits(_ tag: LinkRecord.Tag, _ length: UInt32) -> Bool {
+        switch tag {
+        case .tagNext:
+            length == LinkRecord.tagNextBytes
+        case .keyShare:
+            length == LinkRecord.keyShareBytes
+        case .sealed:
+            LinkRecord.sealedPayloadBytes.contains(Int(length))
+        default:
+            true
+        }
     }
 
     /// Drops consumed bytes once they are most of the buffer, so appends stay cheap.

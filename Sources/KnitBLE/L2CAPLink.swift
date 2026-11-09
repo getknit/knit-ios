@@ -1,6 +1,7 @@
 #if canImport(CoreBluetooth)
     import CoreBluetooth
     import Foundation
+    import KnitCrypto
     import KnitMesh
 
     /// The one thread every L2CAP stream runs on (`.agents/context/architecture.md`): a run loop that stays up with
@@ -38,7 +39,12 @@
 
     /// One L2CAP channel's two streams, read as one byte stream in 64 KiB gulps and written in order. Everything
     /// here runs on the ``StreamThread``; the radio reaches it only through ``write(_:)``, ``writeDigest(_:)``,
-    /// ``writeFileRecord(_:)`` and ``close()``.
+    /// ``writeFileRecord(_:)``, ``writeKeyShare(_:sealer:)``, ``seal(with:)`` and ``close()``.
+    ///
+    /// On a sealed link the outbox seals each frame as it leaves the queue (``LinkOutbox/next(atMost:)``), on this thread,
+    /// in the order of the writes handed to it; the sealer reaches it through the same ``StreamThread/perform(_:)`` queue
+    /// as the writes, so no write is sealed or held out of turn. A frame is at most ``writeSize`` bytes, one stream write.
+    /// A seal that fails closes the link and reports its end, as an overfull one does.
     ///
     /// The channel object is held for the link's whole life: CoreBluetooth closes a channel whose last reference goes.
     /// The link reads and writes only its streams, so tests run it over a bound stream pair instead.
@@ -291,7 +297,7 @@
         }
 
         private func drain() {
-            guard isOpen, let output else {
+            guard isOpen, !isClosed, let output else {
                 return
             }
             while output.hasSpaceAvailable, let next = outbox.next(atMost: Self.writeSize) {
@@ -301,14 +307,22 @@
                     log.log(.debug, "ble \(id) write of \(chunk.count) returned \(count)")
                     break
                 }
-                let finishedFileRecord = outbox.wrote(count)
-                levels.wrote(count, on: id)
+                // Plaintext, so the levels count what the link manager handed over (``LinkOutbox/Written``).
+                let written = outbox.wrote(count)
+                levels.wrote(written.plaintextBytes, on: id)
                 log.log(.debug, "ble \(id) wrote \(count), \(outbox.queuedBytes) waiting")
-                if finishedFileRecord {
+                if written.finishedFileRecord {
                     wroteFileRecord()
                 }
             }
-            if outbox.isEmpty {
+            guard !outbox.sealFailed else {
+                // Never anything plain after the KEY_SHARE: the link closes, and the link manager retires it.
+                log.log(.warning, "ble \(id) could not seal; closing it")
+                shutDown()
+                ended()
+                return
+            }
+            if outbox.isEmpty || outbox.awaitsSealer {
                 isWaiting = false
             } else if !isWaiting {
                 isWaiting = true
@@ -329,6 +343,37 @@
                 stream.remove(from: .current, forMode: .default)
             }
             outbox.removeAll()
+        }
+    }
+
+    // MARK: The seal
+
+    extension L2CAPLink {
+        /// Writes our `KEY_SHARE` after everything written before, and holds what follows until a sealer is there
+        /// (``LinkOutbox/appendKeyShare(_:)``): a responder's comes with it, in the same block, a dialer's later.
+        func writeKeyShare(_ record: [UInt8], sealer: LinkSealer?) {
+            thread.perform { [self] in
+                guard !isClosed else {
+                    return
+                }
+                outbox.appendKeyShare(record)
+                if let sealer {
+                    outbox.seal(with: sealer, frameBytes: Self.writeSize)
+                }
+                drainWithinBound()
+            }
+        }
+
+        /// Seals everything after our `KEY_SHARE` under `sealer` from here (``LinkOutbox/seal(with:frameBytes:)``), and
+        /// writes what was held for it.
+        func seal(with sealer: LinkSealer) {
+            thread.perform { [self] in
+                guard !isClosed else {
+                    return
+                }
+                outbox.seal(with: sealer, frameBytes: Self.writeSize)
+                drainWithinBound()
+            }
         }
     }
 #endif

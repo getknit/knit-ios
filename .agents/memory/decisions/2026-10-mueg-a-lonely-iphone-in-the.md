@@ -97,3 +97,10 @@ the bit it refused every such dial (`RefuseLegacy`), so a locked iPhone with no 
 The trial is `interop.py --keep-blind iphone-seek --far phone --mode relink` against a blinding Pixel, with no other
 blinding phone in range: the harness denies every node its scan hears but the far side, and its scan drops tags, so a
 second blinding phone goes undenied and the seek may link it instead.
+
+**Amended 2026-11-09, for knit-ios #51 (ADR 2026-11.6zhj):** a sealed handshake has one more timed stage. The dialer
+waits for the responder's `KEY_SHARE` (`awaitingKeyShare`) before its HELLO, and a responder that took a `KEY_SHARE`
+re-arms its deadline and put-off for the sealed HELLO. So a sealed dialer has four waits a suspension can put off once
+each (connect, `KEY_SHARE`, HELLO, PROOF) and a responder three, each with its own 5 s deadline. A seek-wake dial needs
+one more round trip before its link registers. A dialer whose responder says nothing where its `KEY_SHARE` belongs
+logs `link chN got no key share from <shown>`, never `timed out`, and counts no failed seal.

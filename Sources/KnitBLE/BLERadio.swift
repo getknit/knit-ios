@@ -25,7 +25,7 @@
         let core: BLECore
         /// Every channel's queued and written bytes, counted here as each write is handed over and on the stream thread as
         /// each byte goes out, so the link manager reads them without a hop to the queue (ADR 2026-10.f5zs).
-        private let levels: OutboxLevels
+        let levels: OutboxLevels
         /// Every channel's bytes delivered and not yet processed, counted on the stream thread as each read is delivered and
         /// here as `Mesh` reports it processed, so neither waits on the other (ADR 2026-10.f5zs, rule 6).
         private let credits: InboxCredits

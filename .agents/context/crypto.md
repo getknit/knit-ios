@@ -225,6 +225,42 @@ transport (`MeshTransport.peerProvesItself`, contract R4). So the bit cannot be 
   schema v21), or records none, is published again as an edit (`republishIfCapabilitiesChanged`), so every profile we
   signed before is strictly older. A never-edited profile is republished at version 0 instead, as the prekey's is.
 
+### The sealed form
+
+```text
+ss    = X25519(own ephemeral, peer's KEY_SHARE)                                (all zeros refused: a low-order point)
+kD2R  = HKDF-SHA256(ikm = ss, salt = eD ‖ eR, "knit/link/v1/seal/d2r", 32)      kR2D likewise with ".../r2d"
+frame = [0x0B][u32be len][AES-256-GCM(k, 00000000 ‖ u64be(n), aad = the 5 header bytes)]    len 17…65,552
+v2    = "knit/link/v2/proof" ‖ role(1) ‖ eD(32) ‖ eR(32) ‖ u32be(len hD) ‖ hD ‖ u32be(len hR) ‖ hR
+```
+
+The `link-seal` contract (knit-next #286, knit-next ADR 2026-11.8mhs; knit-ios #51, ADR 2026-11.6zhj, which closes
+knit-ios #39 for sealed links), ported as `LinkSeal`. Each side of a link opened in the
+sealed form writes a fresh ephemeral X25519 key from the system's generator (`LinkSeal.Ephemeral()`), never the mesh's
+injected one, as its first record (`KEY_SHARE`, tag 10). `LinkSeal.derive` takes the ephemeral's private half once,
+whatever the outcome, and answers a `Session` or a failed seal (`keyShareLength`, `lowOrderPoint`, `spent`). The dialer
+seals with `kD2R` and opens with `kR2D`; the responder the reverse. The counter `n` is implicit and per direction, from
+0, so a dropped, replayed, reordered or injected frame fails to open; neither side passes frame 2^48. `LinkSealer` and
+`LinkOpener` are `Sendable` classes whose counter advances under `KnitSync`'s `Lock`, so even a shared reference never
+seals two frames under one nonce, and the first failure poisons either half for good. On a sealed link the PROOF signs
+the v2 transcript (`LinkProof.Form.sealed(shares)`); the form is how the channel opened, never what a HELLO claims, and
+a v1 signature never verifies as v2 nor the reverse. Nothing prints a key: the ephemeral, the session and both halves
+show only their type name in `description`, `debugDescription` and their mirrors.
+
+`CAP_LINK_SEAL` (`0x100000`) rides `Capabilities.local` beside `CAP_LINK_PROOF`, so the HELLO and every profile we sign
+carry it; the profile's copy is informational. The advert carries it as `FLAG_LINK_SEAL` (`0x10`) in its flags byte.
+
+Where the halves live: the link manager keeps the opener on the channel and hands the sealer to the radio, whose shared
+`LinkOutbox` seals each entry as it leaves the queue, once per frame, caching the ciphertext across partial writes, so
+the digest swap of ADR 2026-09.3ch7 acts on plaintext and the counter follows socket order (`ble-transport.md`, "In
+this port"). A refusing sealer fails the outbox; the link closes and nothing goes out plain.
+
+What it guarantees, scoped as the contract's revision 3 has it: a listener sees two public keys, then ciphertext, sizes
+and timing; a relay can't sit in the middle of a sealed link or write into it; and between phones that hold each
+other's profile, or have proven each other this run, it can't downgrade the link, since stripping `CAP_LINK_SEAL` from a
+proving HELLO breaks the v2 PROOF and R1 refuses a bit-less claim to a proof-capable id. At a first meeting it can still
+pose as an old build to both phones and read the plain, unproven link that results, until R4 closes it.
+
 ## A blinded advert's tag
 
 ```text
@@ -279,7 +315,8 @@ Swift must count `utf16`, not `Character`s.
 | `AttachmentCrypto` | `AttachmentCrypto.seal(_:)`, `.open(_:key:)`, and `BlobHash(of:)` for the blob's name |
 | `Conversations.groupIdFor` | `GroupId.derive(_:)` |
 | `SafetyNumber`, `Alias`, `DeviceTag` | the same names |
-| `LinkProof`, `LinkProver` (knit-next #232, not yet merged) | `LinkProof`: `transcript`, `payload(keys:…)`, `verify`, `freshNonce` |
+| `LinkProof`, `LinkProver` (knit-next #232) | `LinkProof`: `transcript`, `payload(keys:…)`, `verify`, each over a `LinkProof.Form`, and `freshNonce` |
+| `LinkKeys`, the sealed link's key exchange and frames (knit-next #286) | `LinkSeal`: `Ephemeral`, `KeyShares`, `derive(_:peerShare:role:)` into a `Session`; `LinkSealer.seal(_:)`, `LinkOpener.open(sealedPayload:)` |
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
 | `ContactCard` (its `Body` and `Signed`), `ContactCards.mint`, `ContactImporter.import` and `AddContactViewModel.onScanned`'s pins, `MeshManager.importContact` less the intro | `ContactCard` (`parse`, `looksLikeCard`, `encode`), KnitWire's `ContactCardBody` and `ContactCardSigned`, `MeshEngine.addContact` and `ownContactLink` (ADR 2026-10.tpr5) |
 | `RatchetEngine` | `RatchetEngine`: `initiate`, `seal`, `open`, over `SessionState`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
@@ -1092,10 +1129,10 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
     custodied and never counted toward a reset (`InboundPipeline.kt:592-598`, `:1739-1768`).
 - **Android reads these bits from the pinned profile alone** (`CryptoScheme.kt:11-13`). That is why the dark phases
   could carry them on a Debug build's profile while the HELLO and the advert stayed `0xF`, and why the profile is what
-  the switch gates: off, it carries neither the bits nor a prekey (P8), only `local` without them (`0xC000F` since
-  ADR 2026-11.sv5t, `0x4000F` from knit-ios #25 until then). The bits for what the build draws
-  (`MeshConfiguration.drawnCapabilities`, `CAP_LINK_PREVIEW` in a debug build, ADR 2026-11.hcvg) ride the profile
-  either way, so a debug build signs `0xC055F` with the prekey and `0xC040F` without.
+  the switch gates: off, it carries neither the bits nor a prekey (P8), only `local` without them (`0x1C000F` since
+  knit-next #286, `0xC000F` from ADR 2026-11.sv5t, `0x4000F` from knit-ios #25 until then). The bits for what the build
+  draws (`MeshConfiguration.drawnCapabilities`, `CAP_LINK_PREVIEW` in a debug build, ADR 2026-11.hcvg) ride the profile
+  either way, so a debug build signs `0x1C055F` with the prekey and `0x1C040F` without.
 
 ### What this port leaves out
 

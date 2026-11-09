@@ -42,7 +42,8 @@ import Testing
     @Test func aDigestPartlyWrittenIsNeverRewrittenAndTheNextQueuesBehindIt() throws {
         var outbox = LinkOutbox()
         outbox.offerDigest([0xA1, 0xA2, 0xA3, 0xA4])
-        let first = try #require(outbox.next(atMost: 2))
+        let peeked = outbox.next(atMost: 2)
+        let first = try #require(peeked)
         outbox.wrote(first.count)
         let replaced = outbox.offerDigest([0xB1])
         #expect(!replaced, "the first is already going out, so the newer one is a record of its own")
@@ -83,7 +84,8 @@ import Testing
         #expect(outbox.queuedBytes == 13)
         outbox.offerDigest([UInt8](repeating: 0, count: 4))
         #expect(outbox.queuedBytes == 7)
-        let next = try #require(outbox.next(atMost: 2))
+        let peeked = outbox.next(atMost: 2)
+        let next = try #require(peeked)
         outbox.wrote(next.count)
         #expect(outbox.queuedBytes == 5)
         outbox.removeAll()
@@ -109,7 +111,7 @@ import Testing
         outbox.append(live)
         var reports: [Bool] = []
         while let next = outbox.next(atMost: 2) {
-            reports.append(outbox.wrote(next.count))
+            reports.append(outbox.wrote(next.count).finishedFileRecord)
         }
         #expect(reports == [false, false, true, false, false], "five bytes in twos, then the frame's three")
         #expect(outbox.queuedBytes == 0)
@@ -128,7 +130,7 @@ import Testing
         outbox.appendFileRecord([])
         #expect(outbox.isEmpty)
         let reported = outbox.wrote(1)
-        #expect(!reported)
+        #expect(!reported.finishedFileRecord)
     }
 
     /// Past four MiB waiting the far end has stopped reading, and both radios close the channel (ADR 2026-10.f5zs).

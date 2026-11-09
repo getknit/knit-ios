@@ -323,6 +323,10 @@ public actor MeshControl {
             "linksProven": .int(Int64(await mesh.linksProven)),
             "linkProofFailed": .int(Int64(await mesh.linkProofFailed)),
             "linkClaimRefused": .int(Int64(await mesh.linkClaimRefused)),
+            // One name each on both phones (the `link-seal` contract, §9).
+            "linksSealed": .int(Int64(await mesh.linksSealed)),
+            "linkSealFailed": .int(Int64(await mesh.linkSealFailed)),
+            "linkSealRefused": .int(Int64(await mesh.linkSealRefused)),
             "aliases": ControlLines.describe(await mesh.aliasCounters),
             "presenceKeys": ControlLines.describe(await mesh.presenceKeyCounts),
             // This build's own bits (`Capabilities.local`, lowercase hex), before what a HELLO adds or knit-peer's legacy

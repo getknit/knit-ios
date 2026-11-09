@@ -1,5 +1,6 @@
 #if os(Linux)
     import Glibc
+    import KnitCrypto
     import KnitMesh
     import KnitWire
 
@@ -166,6 +167,57 @@
             flushWithinBound(id)
         }
 
+        /// The seal's commands (``RadioCommand/writeKeyShare(_:_:_:)`` and the three after it), in order with the writes.
+        func performSealing(_ command: RadioCommand) {
+            switch command {
+            case .writeKeyShare(let id, let record, let sealer):
+                enqueueKeyShare(record, sealer: sealer, on: id)
+            case .seal(let id, let sealer):
+                seal(id, with: sealer)
+            case .linkUp(let id):
+                armBitFlip(on: id)
+            case .dialGotNoReply(let address):
+                gattNoReply(address)
+            default:
+                break
+            }
+        }
+
+        /// Queues our `KEY_SHARE`, holding what follows it until a sealer is there, which a responder hands over with it
+        /// (``LinkOutbox/appendKeyShare(_:)``). A frame may span several SDUs: the far end reads a byte stream.
+        func enqueueKeyShare(_ record: [UInt8], sealer: LinkSealer?, on id: ChannelID) {
+            guard var channel = channels[id] else {
+                return
+            }
+            channel.outbox.appendKeyShare(record)
+            if let sealer {
+                channel.outbox.seal(with: sealer)
+            }
+            channels[id] = channel
+            flushWithinBound(id)
+        }
+
+        /// Seals everything after our `KEY_SHARE` from here, and writes what was held for it.
+        func seal(_ id: ChannelID, with sealer: LinkSealer) {
+            guard var channel = channels[id] else {
+                return
+            }
+            channel.outbox.seal(with: sealer)
+            channels[id] = channel
+            flushWithinBound(id)
+        }
+
+        /// The trial's bit flip (``Configuration/flipsSealedBit``): the next sealed frame on the link that just registered
+        /// goes out with one bit flipped past its header. A plain link never seals one, so it is never touched.
+        func armBitFlip(on id: ChannelID) {
+            guard configuration.flipsSealedBit, var channel = channels[id] else {
+                return
+            }
+            channel.outbox.corruptNextSealedFrame()
+            channels[id] = channel
+            log.log(.warning, "bluez \(id) will flip a bit in its next sealed frame, for a trial (--flip-sealed-bit)")
+        }
+
         /// Closes a channel whose peer stopped reading (``LinkOutbox/isOverfull``), and otherwise writes what it can.
         private func flushWithinBound(_ id: ChannelID) {
             guard let channel = channels[id] else {
@@ -179,15 +231,28 @@
             flush(id)
         }
 
-        /// Writes queued bytes, one SDU of at most the channel's limit at a time, until the socket would block.
+        /// Writes queued bytes, one SDU of at most the channel's limit at a time, until the socket would block. On a sealed
+        /// link the outbox seals a frame as it hands its first SDU over, so the channel is stored back after every turn, a
+        /// would-block's included: a frame sealed and not written is offered again as it was, never sealed twice. A seal that
+        /// fails closes the channel.
         private func flush(_ id: ChannelID) {
-            while var channel = channels[id], !channel.connecting, let chunk = channel.outbox.next(atMost: channel.limit) {
+            while var channel = channels[id], !channel.connecting {
+                let next = channel.outbox.next(atMost: channel.limit)
+                channels[id] = channel
+                guard let chunk = next else {
+                    if channel.outbox.sealFailed {
+                        log.log(.warning, "bluez \(id) could not seal; closing it")
+                        closeChannel(id)
+                    }
+                    return
+                }
                 switch Descriptor.write(channel.descriptor, chunk) {
                 case .wrote(let count):
-                    let finishedFileRecord = channel.outbox.wrote(count)
+                    // Plaintext, so the levels count what the link manager handed over (``LinkOutbox/Written``).
+                    let written = channel.outbox.wrote(count)
                     channels[id] = channel
-                    mailbox.levels.wrote(count, on: id)
-                    if finishedFileRecord {
+                    mailbox.levels.wrote(written.plaintextBytes, on: id)
+                    if written.finishedFileRecord {
                         emit(.wroteFileRecord(id))
                     }
                 case .wouldBlock:

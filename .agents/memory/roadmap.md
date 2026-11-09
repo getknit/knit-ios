@@ -504,6 +504,12 @@ explicit direction.** Update this file in the change that ships an item.
   that, and with the Coded mode off the Pixel's stack then refused no enable at all. Both commits are on knit-next's
   `main`, and knit-next recorded the runs in its ADR 2026-10.9utz (`.agents/context/linux-peer.md`, "What the
   Meshtastic radio showed"). Done on Android's side.
+- **A link seals everything after an ephemeral key exchange** (paired change `link-seal`, knit-ios #51 and #39,
+  knit-next #286 and #274; ADR 2026-11.6zhj, mirroring knit-next ADR 2026-11.8mhs). Two sealing builds run an X25519
+  exchange, then every record rides AES-256-GCM, and the PROOF signs both ephemeral keys, so a relay can't sit in the
+  middle of a sealed link. That closes #39 for every sealed link. At a first meeting a relay can still pose as an old
+  build to both phones (hpmt's profile-less claim). On `feat/link-seal`, 2026-11-09. The contract's device trials
+  T4-T6 are owed.
 - **What the pin move to `cad69c77b` found owed** (2026-11-07; `.agents/context/knit-next.md`, "Since then", "Owed
   here"), filed as knit-ios #42 to #50; the floored reset was already #38. Today's iPhone handles everything Android
   airs at it, so none of this is urgent. Each goes to its plane's owner and reviewer:

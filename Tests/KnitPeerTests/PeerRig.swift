@@ -36,6 +36,8 @@ final class PeerRadio: Radio {
         var started = false
         var stopped = false
         var writes: [ChannelID: [UInt8]] = [:]
+        /// Each channel's queue, drained whole at every write, so a sealed link seals through the real outbox.
+        var outboxes: [ChannelID: LinkOutbox] = [:]
         var closed: [ChannelID] = []
         var consumed: [ChannelID: Int] = [:]
         var queued: [ChannelID: Int] = [:]
@@ -90,7 +92,30 @@ final class PeerRadio: Radio {
     }
 
     func write(_ bytes: [UInt8], to channel: ChannelID) {
-        state.withLock { $0.writes[channel, default: []] += bytes }
+        queue(on: channel) { $0.append(bytes) }
+    }
+
+    func writeKeyShare(_ record: [UInt8], sealer: LinkSealer?, to channel: ChannelID) {
+        queue(on: channel) { outbox in
+            outbox.appendKeyShare(record)
+            if let sealer {
+                outbox.seal(with: sealer)
+            }
+        }
+    }
+
+    func seal(_ channel: ChannelID, with sealer: LinkSealer) {
+        queue(on: channel) { $0.seal(with: sealer) }
+    }
+
+    /// Queues on `channel`'s outbox and keeps what drains from it.
+    private func queue(on channel: ChannelID, _ change: (inout LinkOutbox) -> Void) {
+        state.withLock { state in
+            var outbox = state.outboxes[channel] ?? LinkOutbox()
+            change(&outbox)
+            state.writes[channel, default: []] += outbox.drain().bytes
+            state.outboxes[channel] = outbox
+        }
     }
 
     func close(_ channel: ChannelID) {
@@ -285,27 +310,6 @@ struct CountingGenerator: RandomNumberGenerator, Sendable {
 /// A link record's bytes.
 func record(_ tag: LinkRecord.Tag, _ payload: [UInt8]) -> [UInt8] {
     LinkRecord(tag, payload: payload).encoded ?? []
-}
-
-/// Plays the dialer of a link on `channel` of a node that accepts it, proving `keys`'s id as an upgraded build does (the
-/// `link-hello-proof` contract, §5): our HELLO with the bit and a fresh nonce, then, once the node's reply and PROOF are
-/// written, our own PROOF over both HELLOs. `deliver` hands the node a radio event, and `written` reads back the records it
-/// wrote on the channel, those written before the dial included. The node then registers the link as proven.
-func dialProving(
-    as keys: IdentityKeys, on channel: ChannelID, deliver: (RadioEvent) async -> Void, written: () -> [LinkRecord]
-) async throws {
-    let before = written().count
-    let hello = Hello(nodeId: keys.nodeId.string, capabilities: Capabilities.local.union(.blobHave), nonce: LinkProof.freshNonce())
-    await deliver(.accepted(channel))
-    await deliver(.received(channel, record(.hello, hello.payload)))
-    let answered = await waitUntil {
-        let tags = written().dropFirst(before).map(\.tag)
-        return tags.contains(.hello) && tags.contains(.proof)
-    }
-    try #require(answered, "the node answered with its HELLO and its PROOF")
-    let reply = try #require(written().dropFirst(before).first { $0.tag == .hello })
-    let proof = try LinkProof.payload(keys: keys, signer: .dialer, dialerHello: hello.payload, responderHello: reply.payload)
-    await deliver(.received(channel, record(.proof, proof)))
 }
 
 /// A node under test on a ``PeerRadio``, and a second engine that plays the far end of one link.

@@ -6,7 +6,7 @@ public import KnitWire
 /// KnitBlueZ read on the same rules and only the reading itself differs (ADR 2026-09.xzpt).
 ///
 /// - **Once per address, while it holds.** The value changes only with the peer's PSM, so what one read found is the
-///   payload of every advert from that address until the radio forgets it, which it does when any of three things
+///   payload of every advert from that address until the radio forgets it, which it does when any of five things
 ///   happens (the paired change `gatt-peers`' payload lifetime, knit-next ADR 2026-09.kwq2):
 ///   1. A dial to the address fails before its channel opens: a peer that restarted listens on a new PSM.
 ///   2. A HELLO on a link to the address names another node (``helloNamed(_:told:announced:at:)``): a new node took the
@@ -25,6 +25,14 @@ public import KnitWire
 ///      ``Configuration/blindedEdgeSlackMilliseconds`` past the edge (an announced rotation's 30 s and 5 s more), so a writer
 ///      has rotated before the read again, even one whose announcement came late or whose clock runs a little behind, and
 ///      spreads the readers of one writer.
+///   5. A plain dial to the address whose HELLO carried ``Capabilities/linkSeal`` got no reply, and the payload is clear
+///      and lacks `FLAG_LINK_SEAL` (``noReply(at:)``; the `link-seal` contract, §7, revision 1): its owner may have
+///      upgraded since the read, and a sealing build refuses a plain dial from one before it replies, so only a fresh read
+///      lets the next dial open sealed. Once per address: busy, suspended and already-linked iPhones give no reply all the
+///      time, and a payload read afresh that still lacks the flag is kept until another rule forgets the address or a read
+///      finds the flag. A payload that carries the flag is never forgotten this way (revision 2): a no-reply sealed dial
+///      says nothing about the flag. Nor is a blinded one (the `blind-gatt-reads` contract, §6, Android's
+///      `forgetUnsealed`): it rotates and rule 4 forgets it every slot anyway.
 ///
 ///   One case stays open: a node that changes identity at an address that never goes quiet, where the old node sorts
 ///   above us and the new one below a peer that waits to be dialed. Nobody dials, so it lasts until the address
@@ -106,6 +114,8 @@ public struct GattPayloads: Sendable {
     private var retryAt: [RadioAddress: Int64] = [:]
     /// When each address was last heard, on the scan clock.
     private var lastHeard: [RadioAddress: Int64] = [:]
+    /// The addresses rule 5 forgot once (``noReply(at:)``), until a read finds the flag there or another rule forgets them.
+    private var forgotForNoReply: Set<RadioAddress> = []
     /// Scan time run up before the scan now running, and when that scan started on the monotonic clock.
     private var scannedBefore: Int64 = 0
     private var scanningSince: Int64?
@@ -151,6 +161,9 @@ public struct GattPayloads: Sendable {
                 let edge = (BlindTag.slotOf(wallMilliseconds: wall) + 1) * BlindTag.slotMilliseconds
                 blindedSpans[address] = (wall, edge + configuration.blindedEdgeSlackMilliseconds + jitter())
             }
+            if payload.seals {
+                forgotForNoReply.remove(address)
+            }
         case .failed:
             retryAt[address] = now + configuration.retryMilliseconds
         case .stranger:
@@ -170,6 +183,7 @@ public struct GattPayloads: Sendable {
         payloads[address] = nil
         retryAt[address] = nil
         blindedSpans[address] = nil
+        forgotForNoReply.remove(address)
     }
 
     // MARK: The payload's lifetime
@@ -221,6 +235,19 @@ public struct GattPayloads: Sendable {
         return Int64(mixed % span)
     }
 
+    /// Rule 5: our plain dial to `address`, whose HELLO carried ``Capabilities/linkSeal``, got no reply. A payload there
+    /// that is clear and lacks `FLAG_LINK_SEAL` is forgotten, once per address, and the answer says whether one was; a
+    /// blinded payload never is (the `blind-gatt-reads` contract, §6). The mark stays until a read there finds the flag or
+    /// another rule forgets the address, so a peer that never upgraded costs one extra read, not one per dial.
+    public mutating func noReply(at address: RadioAddress) -> Bool {
+        guard let payload = payloads[address], !payload.blinded, !payload.seals, !forgotForNoReply.contains(address) else {
+            return false
+        }
+        forget(address)
+        forgotForNoReply.insert(address)
+        return true
+    }
+
     /// The scan started at `now`, so time counts towards quiet again.
     public mutating func scanStarted(now: Int64) {
         if scanningSince == nil {
@@ -260,6 +287,7 @@ public struct GattPayloads: Sendable {
         var forgotten: [RadioAddress] = []
         for address in quiet.sorted(by: { $0.rawValue < $1.rawValue }) {
             lastHeard[address] = nil
+            forgotForNoReply.remove(address)
             if payloads[address] != nil {
                 forget(address)
                 forgotten.append(address)

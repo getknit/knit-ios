@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitWire
 
 /// A channel's role and stage, and the registered link it becomes: the handshake's state, apart from the manager's body.
@@ -12,6 +13,10 @@ extension LinkManager {
     enum Stage: Equatable {
         /// A dial not yet open.
         case connecting
+        /// Our sealed dial is open and our `KEY_SHARE` written: the responder's must be the next record (the `link-seal`
+        /// contract, §4, step 3), within its own deadline and with its own put-off. The ephemeral key waits on the channel
+        /// (``Channel/ephemeral``), never here.
+        case awaitingKeyShare
         /// Open, waiting for the other side's HELLO.
         case awaitingHello
         /// Both HELLOs carry ``Capabilities/linkProof``, and the peer's PROOF must be the next record (the
@@ -52,6 +57,11 @@ extension LinkManager {
 
         /// What the logs name: the id for a clear dial, the handle for a tag dial, never a tag or an address.
         var shown: String { handle?.description ?? form.advertised.string }
+
+        /// Whether the advert dialed carried `FLAG_LINK_SEAL`, so the dial opens with a `KEY_SHARE` (the `link-seal`
+        /// contract, §2). Copied from that advert when the dial is made, and from nothing else: not the profile, not an
+        /// earlier link.
+        var seals = false
     }
 
     /// Who a HELLO said the peer is: what registering the link needs.
@@ -125,6 +135,11 @@ extension LinkManager {
         var putOff = false
         /// Our HELLO's payload as we wrote it on this channel, which the transcript signs.
         var wroteHello: [UInt8]?
+        /// Our X25519 key while a sealed dial waits for the responder's `KEY_SHARE`, dropped once it derives. Never in
+        /// ``Stage``, which is compared and copied.
+        var ephemeral: LinkSeal.Ephemeral?
+        /// What a channel opened in the sealed form reads with, from the exchange on; `nil` on a plain one.
+        var seal: SealedReads?
 
         /// Whether the channel carries a registered link.
         var isLive: Bool {
@@ -133,5 +148,18 @@ extension LinkManager {
             }
             return false
         }
+
+        /// How the channel opened, which the proof's transcript follows (``LinkProof/Form``): never a HELLO's bits.
+        var form: LinkProof.Form { seal.map { .sealed($0.shares) } ?? .plain }
+    }
+
+    /// A sealed channel's reading side: the opener for the frames, and the reader that splits their plaintext into the
+    /// link's records, however the frames cut them (the `link-seal` contract, §5). The sending side is the radio's
+    /// (``Radio/seal(_:with:)``).
+    struct SealedReads {
+        /// Both `KEY_SHARE`s, which the PROOF's transcript binds.
+        let shares: LinkSeal.KeyShares
+        let opener: LinkOpener
+        var inner = LinkRecordReader()
     }
 }

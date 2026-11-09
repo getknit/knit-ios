@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitMesh
 import KnitSync
 import KnitWire
@@ -38,6 +39,14 @@ import Testing
             writes.withLock { $0.append(bytes) }
         }
 
+        func writeKeyShare(_ record: [UInt8], sealer _: LinkSealer?, to _: ChannelID) {
+            writes.withLock { $0.append(record) }
+        }
+
+        func seal(_: ChannelID, with _: LinkSealer) {
+            // Nothing open to seal.
+        }
+
         func close(_: ChannelID) {
             // Nothing open.
         }
@@ -57,5 +66,12 @@ import Testing
         radio.consumed(1 << 20, on: ChannelID(4))
         #expect(bare.written.isEmpty, "a report writes nothing")
         #expect(radio.outboxLevel(on: ChannelID(4)) == OutboxLevel())
+    }
+
+    @Test func aRadioThatReadsNoGattPayloadTakesANoReplyQuietly() {
+        let bare = BareRadio()
+        let radio: any Radio = bare
+        radio.dialGotNoReply(at: RadioAddress("addr"))
+        #expect(bare.written.isEmpty, "a no-reply writes nothing")
     }
 }

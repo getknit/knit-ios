@@ -27,6 +27,28 @@ import Testing
         #expect(pipe.frames.contains { $0.from == bob.nodeId && $0.type == .profile })
     }
 
+    /// Two sealing builds link sealed (the `link-seal` contract, §4): KEY_SHAREs, then only frames, sealed by each radio's
+    /// own outbox, both proofs under the v2 transcript, and frames crossing as on a plain link.
+    @Test func twoSealingBuildsLinkSealedAndFramesCross() throws {
+        let lab = PipeLab(sealed: true)
+        let alice = lab.node(1)
+        let bob = lab.node(2)
+        let pipe = lab.link(alice, bob)
+        #expect(pipe.isLinked)
+        #expect([alice, bob].map(\.links.linksSealed) == [1, 1])
+        #expect([alice, bob].map(\.links.linksProven) == [1, 1])
+        #expect([alice, bob].map { $0.links.linkSealFailed + $0.links.linkSealRefused + $0.links.linkProofFailed } == [0, 0])
+        for node in [alice, bob] {
+            let channel = try #require(pipe.channel(of: node))
+            let tags = node.radio.records(on: channel).map(\.tag)
+            #expect(tags.first == .keyShare)
+            #expect(tags.dropFirst().allSatisfy { $0 == .sealed }, "nothing but frames after the KEY_SHARE")
+        }
+        // Each side's link-up push, profile and digest, crossed inside the seal.
+        let profiles = lab.run(limit: 5000) { alice.stores.peers.peer(bob.nodeId) != nil && bob.stores.peers.peer(alice.nodeId) != nil }
+        #expect(profiles, "each side's profile crossed sealed")
+    }
+
     /// A manager shaped like a build from before the proof links unproven, and is never written a PROOF. Its signed profile
     /// still carries the bit here, as this build's engine signs it, so the far end closes the link once that profile lands
     /// (R4); a real v2.10.1 profile carries none, and its link stays.

@@ -26,10 +26,11 @@
             }
             let blueZSwitches =
                 !options.neverSighted.isEmpty || !options.servesGattPayload || options.gattReads == .off
-                || options.stopReadingAfterSeconds != nil
+                || options.stopReadingAfterSeconds != nil || options.flipsSealedBit || options.listenPSM != nil
             if blueZSwitches {
                 throw .unsupported(
-                    "--never-sight, --no-gatt-payload, --no-gatt-reads and --stop-reading-after: they are BlueZ's test switches")
+                    "--never-sight, --no-gatt-payload, --no-gatt-reads, --stop-reading-after, --flip-sealed-bit and --psm: "
+                        + "they are BlueZ's test switches")
             }
             bluetooth = BLERadio(log: log)
             radio = bluetooth

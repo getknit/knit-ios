@@ -10,7 +10,8 @@ import Testing
 /// joined by ``LinkPipe``s, the cuts real teardowns (knit-next ADR 2026-10.wtyc, knit-ios #2). Ports the intent of
 /// `AttachmentResumeLabTest`, sized to blobs-reviewer's three scenarios of the design pass: two holders and two cuts, a
 /// bad prefix, and a relink inside the serve memo. The oracles are the pipes: the headers and asks that crossed, and the
-/// FILE_CHUNK bytes carried.
+/// FILE_CHUNK bytes carried. Every link here opens sealed (the `link-seal` contract, §4), so the files, the cuts and the
+/// resumes run inside frames.
 @Suite struct LinkPipeResumeTests {
     private static let pictureBytes = 1_000_000
     /// The most one cut may cost on the air: a record, which the asker keeps anyway.
@@ -45,7 +46,7 @@ import Testing
     }
 
     @Test func aPictureCutTwiceIsFinishedByTwoHoldersWithoutResendingAByte() {
-        let lab = PipeLab()
+        let lab = PipeLab(sealed: true)
         let alice = lab.node(1)
         let bob = lab.node(2)
         let carol = lab.node(3)
@@ -82,7 +83,7 @@ import Testing
     }
 
     @Test func aBadPrefixsSpliceIsRefusedAndTheOtherHolderSendsTheWholeFileInsideOneCycle() {
-        let lab = PipeLab()
+        let lab = PipeLab(sealed: true)
         let alice = lab.node(1)
         let bob = lab.node(2)
         let carol = lab.node(3)
@@ -112,7 +113,7 @@ import Testing
     }
 
     @Test func aRelinkInsideTheServeMemoResumesAtItsFloorWithNoSecondCopyBeforeIt() {
-        let lab = PipeLab()
+        let lab = PipeLab(sealed: true)
         let alice = lab.node(1)
         let bob = lab.node(2)
         bob.hold(picture)

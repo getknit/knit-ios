@@ -121,6 +121,16 @@
             log.log(.info, "bluez forgetting the GATT payload of \(Self.deviceName(path)): its HELLO named \(node)")
         }
 
+        /// Our plain dial to the device at `address`, whose HELLO carried the seal's bit, got no reply: a payload there
+        /// without `FLAG_LINK_SEAL` goes, once, so the next advert reads it afresh (``GattPayloads/noReply(at:)``; the
+        /// `link-seal` contract, §7, revision 1).
+        func gattNoReply(_ address: RadioAddress) {
+            guard gatt.noReply(at: address) else {
+                return
+            }
+            log.log(.info, "bluez forgetting the GATT payload of \(Self.deviceName(address.rawValue)): a plain dial to it got no reply")
+        }
+
         /// Forgets the payloads of the addresses unheard for a minute of scanning, bar those a channel or a read holds
         /// (the payload lifetime's rule 3).
         func forgetQuietPayloads(now: Int64) {

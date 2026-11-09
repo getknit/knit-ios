@@ -1,104 +1,10 @@
-import KnitCrypto
 import KnitStore
 import KnitTestSupport
 import KnitWire
 import Testing
 
+@testable import KnitCrypto
 @testable import KnitMesh
-
-/// One phone in a ``LinkPipe`` lab: an engine and its link manager on a ``FakeRadio`` that reports file writes, sharing one
-/// kept-prefix store as ``Mesh`` makes them, and driven the way ``Mesh`` drives them, synchronously. Synchronous rather
-/// than through the actor: a lab of three phones is then one deterministic loop on one manual clock, with no timer
-/// tasks to race the steps.
-final class PipeNode {
-    let peer: TestPeer
-    let radio = FakeRadio(advertisesServiceData: false, reportsFileWrites: true)
-    let stores: MeshStores
-    let log = RecordingLog()
-    let partials: MemoryPartialBlobStore
-    let links: LinkManager
-    let engine: MeshEngine
-
-    init(_ peer: TestPeer, clock: ManualClock, seed: UInt64, custodyLimits: CustodyLimits = CustodyLimits()) {
-        self.peer = peer
-        stores = MeshStores.inMemory(custodyLimits: custodyLimits)
-        let recording = log
-        partials = MemoryPartialBlobStore { line in recording.log(.info, line) }
-        links = LinkManager(
-            identity: peer.keys,
-            radio: radio,
-            clock: clock,
-            random: SeededGenerator(seed: seed),
-            log: log,
-            partials: partials
-        )
-        engine = MeshEngine(
-            identity: peer.keys,
-            prekeys: nil,
-            deviceTag: nil,
-            stores: stores,
-            transport: links,
-            clock: clock,
-            random: SeededGenerator(seed: seed + 100),
-            configuration: MeshConfiguration(queriesBlobHolders: true),
-            log: log,
-            ratchetEngine: RatchetEngine(),
-            groupRatchetEngine: GroupRatchetEngine(),
-            partials: partials
-        )
-    }
-
-    var nodeId: NodeId { peer.nodeId }
-
-    func start() {
-        engine.start()
-        links.start()
-    }
-
-    /// Hands the link manager's events to the engine in order, then the feeds' edge, as ``Mesh`` settles.
-    func apply(_ events: [LinkManager.Event]) {
-        for event in events {
-            switch event {
-            case .up(let neighbor):
-                engine.linkUp(neighbor)
-            case .down(let nodeId):
-                engine.linkDown(nodeId)
-            case .frame(let frame):
-                engine.receive(frame)
-            case .digest(let ids, let from):
-                engine.receiveDigest(ids, from: from)
-            case .file(let file):
-                engine.receiveFile(file)
-            case .fileProgress(let progress):
-                engine.fileProgress(progress)
-            case .fileSent(let hash, let peer):
-                engine.fileSent(hash, to: peer)
-            case .fileOverLimit(let hash, let peer):
-                engine.fileOverLimit(hash, from: peer)
-            }
-        }
-        if links.takeFeedsChanged() {
-            engine.fileFeedsChanged()
-        }
-    }
-
-    /// Hands `bytes` read on `channel` to the link manager, then reports them processed to the radio, as ``Mesh`` does.
-    func receive(_ bytes: [UInt8], on channel: ChannelID) {
-        apply(links.handle(.received(channel, bytes)))
-        radio.consumed(bytes.count, on: channel)
-    }
-
-    func fireDueTimers() {
-        apply(links.advance())
-        engine.advance()
-        apply([])
-    }
-
-    /// Holds `bytes` as the blob they hash to.
-    func hold(_ bytes: [UInt8]) {
-        stores.blobs.insert(bytes, hash: BlobHash(of: bytes), mime: "image/jpeg", storedAt: EngineFixture.start)
-    }
-}
 
 /// One link between two ``PipeNode``s: the bytes each radio writes are read back as records and handed to the other, record
 /// by record, with the radio's report of each FILE record as it crosses. It records what it carried, and can be cut after
@@ -154,6 +60,9 @@ final class LinkPipe {
         var deliveredFileRecords = 0
         // Records read off the side's radio that have not crossed yet, under ``LinkPipe/delay``, each with when it may.
         var inFlight: [InFlight] = []
+        // On a sealed pipe: the opener for what this side writes, and the records its frames' plaintext holds.
+        var opener: LinkOpener?
+        var inner = LinkRecordReader()
     }
 
     private var sides: [Side]
@@ -167,6 +76,8 @@ final class LinkPipe {
     private(set) var asks: [Ask] = []
     /// Every FRAME record it carried, either way, its envelope decoded.
     private(set) var frames: [Frame] = []
+    /// Every DIGEST record it carried, either way: who sent it and how many ids it listed.
+    private(set) var digests: [(from: NodeId, ids: Int)] = []
     /// When set, what this node writes waits on its radio, unread, as on a link whose air is slow: nothing it writes
     /// crosses, and no FILE record it writes is reported written, until this is cleared.
     var holding: PipeNode?
@@ -177,20 +88,51 @@ final class LinkPipe {
     /// at once, as on a long round trip: a feed's window grows to cover it. ``unread`` then stops even what is under way.
     var delay: (node: PipeNode, milliseconds: Int64)?
 
+    /// Whether the link opened sealed. A sealed pipe carries each side's outer records, KEY_SHAREs and frames, as the radio
+    /// wrote them, and reads inside them with keys of its own: both nodes make their ephemeral keys from scalars the pipe
+    /// knows (``LinkManager/makeEphemeral``), so it derives the same sessions and opens every frame in order. Its records,
+    /// serves, asks, file reports, holds and cuts are then a plain pipe's; ``unread``, ``delay`` and ``inject(_:from:)`` are
+    /// a plain pipe's alone.
+    let sealed: Bool
+
     /// Links `dialer` and `answerer` on `channel`, each side its own channel number: the dialer's dial opens, as though
     /// promotion had made it, and writes its HELLO; the answerer accepts. The handshake crosses at the next pump: the HELLO,
     /// the answer and its PROOF, then the dialer's PROOF, so each side registers the other only once its proof verified.
-    init(_ dialer: PipeNode, _ answerer: PipeNode, channel: UInt64, clock: ManualClock) {
+    ///
+    /// A plain pipe, the default, reads every record that crosses, so both nodes run with the seal switched off, as Android
+    /// v2.11.0 does: two sealing builds refuse a plain link (the `link-seal` contract, §7). A `sealed` pipe dials as an advert
+    /// carrying `FLAG_LINK_SEAL` makes it: KEY_SHAREs, then frames, sealed by each radio's own outbox.
+    init(_ dialer: PipeNode, _ answerer: PipeNode, channel: UInt64, clock: ManualClock, sealed: Bool = false) {
         self.clock = clock
+        self.sealed = sealed
+        if !sealed {
+            dialer.links.sealSwitch = .off
+            answerer.links.sealSwitch = .off
+        }
         let dialed = ChannelID(channel)
         sides = [Side(node: dialer, channel: dialed), Side(node: answerer, channel: ChannelID(channel + 1))]
+        if sealed {
+            let scalars = Self.scalars(channel)
+            dialer.links.makeEphemeral = { required(LinkSeal.Ephemeral(scalar: scalars.dialer)) }
+            answerer.links.makeEphemeral = { required(LinkSeal.Ephemeral(scalar: scalars.responder)) }
+            let dialerShare = required(LinkSeal.Ephemeral(scalar: scalars.dialer)).keyShare
+            let responderShare = required(LinkSeal.Ephemeral(scalar: scalars.responder)).keyShare
+            // The responder's session opens what the dialer writes, and the dialer's what the responder writes.
+            sides[0].opener = try? LinkSeal.derive(
+                required(LinkSeal.Ephemeral(scalar: scalars.responder)), peerShare: dialerShare, role: .responder
+            ).opener
+            sides[1].opener = try? LinkSeal.derive(
+                required(LinkSeal.Ephemeral(scalar: scalars.dialer)), peerShare: responderShare, role: .dialer
+            ).opener
+        }
         let now = clock.monotonicMilliseconds()
         let peer = SightingKey.node(answerer.nodeId)
         let target = LinkManager.DialTarget(
             key: .peer(peer),
             form: .clear(answerer.nodeId),
             address: RadioAddress("pipe"),
-            record: DialRecord(kind: .ordinary, peerKey: peer, linkedAtStart: false)
+            record: DialRecord(kind: .ordinary, peerKey: peer, linkedAtStart: false),
+            seals: sealed
         )
         dialer.links.channels[dialed] = LinkManager.Channel(role: .dialer(target), stage: .connecting, deadline: now)
         dialer.links.dialing[target.key] = dialed
@@ -202,6 +144,9 @@ final class LinkPipe {
     func pumpOnce() -> Bool {
         guard isUp else {
             return false
+        }
+        if sealed {
+            return pumpSealed()
         }
         var moved = false
         let now = clock.monotonicMilliseconds()
@@ -238,9 +183,19 @@ final class LinkPipe {
     }
 
     private func deliver(_ record: LinkRecord, from index: Int) {
+        sides[1 - index].node.receive(record.encoded ?? [], on: sides[1 - index].channel)
+        noteCrossed(record, from: index)
+    }
+
+    /// Logs `record`, which crossed from side `index`, reports a FILE record written to its sender, and cuts the pipe once
+    /// enough FILE_CHUNK bytes crossed.
+    private func noteCrossed(_ record: LinkRecord, from index: Int) {
         let sender = sides[index]
         let receiver = sides[1 - index]
         let now = clock.monotonicMilliseconds()
+        if record.tag == .digest {
+            digests.append((sender.node.nodeId, LinkJSON.digestIds(from: record.payload)?.count ?? 0))
+        }
         if record.tag == .fileHeader, let header = LinkJSON.fileHeader(from: record.payload), let hash = BlobHash(header.key) {
             serves.append(Serve(from: sender.node.nodeId, to: receiver.node.nodeId, hash: hash, offset: header.offset, at: now))
         }
@@ -250,7 +205,6 @@ final class LinkPipe {
         if record.tag == .frame, let ask = Self.ask(in: record.payload) {
             asks.append(Ask(from: sender.node.nodeId, to: receiver.node.nodeId, hash: ask.hash, offset: ask.offset, at: now))
         }
-        receiver.node.receive(record.encoded ?? [], on: receiver.channel)
         guard [.fileHeader, .fileChunk, .fileEnd].contains(record.tag) else {
             return
         }
@@ -346,5 +300,41 @@ final class LinkPipe {
         for side in sides {
             side.node.apply(side.node.links.handle(.closed(side.channel)))
         }
+    }
+}
+
+extension LinkPipe {
+    /// Two fixed X25519 scalars for the pipe on `channel`, one per role.
+    private static func scalars(_ channel: UInt64) -> (dialer: [UInt8], responder: [UInt8]) {
+        let base = UInt8(truncatingIfNeeded: channel)
+        return ((0..<32).map { 0x40 &+ base &+ UInt8($0) }, (0..<32).map { 0xA0 &+ base &+ UInt8($0) })
+    }
+
+    /// Carries each side's outer records across as the radio wrote them, frame by frame, and logs what each frame's
+    /// plaintext finished, as a plain pipe logs its records.
+    func pumpSealed() -> Bool {
+        var moved = false
+        for index in sides.indices where sides[index].node !== holding {
+            let writes = sides[index].node.radio.writes(on: sides[index].channel)
+            if sides[index].read < writes.count {
+                for write in writes[sides[index].read...] {
+                    sides[index].reader.append(write[...])
+                }
+                sides[index].read = writes.count
+            }
+            while isUp, let outer = try? sides[index].reader.next() {
+                moved = true
+                let receiver = sides[1 - index]
+                receiver.node.receive(outer.encoded ?? [], on: receiver.channel)
+                guard outer.tag == .sealed, let plaintext = sides[index].opener?.open(sealedPayload: outer.payload) else {
+                    continue
+                }
+                sides[index].inner.append(plaintext)
+                while isUp, let record = try? sides[index].inner.next() {
+                    noteCrossed(record, from: index)
+                }
+            }
+        }
+        return moved
     }
 }

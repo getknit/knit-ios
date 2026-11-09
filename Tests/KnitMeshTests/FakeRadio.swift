@@ -1,9 +1,14 @@
+import KnitCrypto
 import KnitMesh
 import KnitSync
 import KnitWire
 
 /// A radio that records what the link manager asks of it, reports whatever the test emits, and streams its own
 /// activity so an async test can await a write rather than sleep for one.
+///
+/// Each channel's writes go through a real ``LinkOutbox``, drained whole at every call, so what ``writes(on:)`` holds is
+/// what a radio would put on the air: the same bytes as handed over on a plain link, and `KEY_SHARE` then `SEALED` frames
+/// on a sealed one, sealed by the outbox's own code. A write held for the sealer shows once the sealer comes.
 final class FakeRadio: Radio {
     struct Dial: Equatable {
         var address: RadioAddress
@@ -18,11 +23,14 @@ final class FakeRadio: Radio {
         case wrote(ChannelID, [UInt8])
         case wroteDigest(ChannelID, [UInt8])
         case wroteFileRecord(ChannelID, [UInt8])
+        case wroteKeyShare(ChannelID, [UInt8], sealed: Bool)
+        case sealed(ChannelID)
         case closed(ChannelID)
         case rang(ChannelID)
         case heardHello(NodeId, ChannelID)
         case linkUp(NodeId, ChannelID)
         case sought(Bool)
+        case noReply(RadioAddress)
     }
 
     private struct State {
@@ -31,6 +39,9 @@ final class FakeRadio: Radio {
         var advertised: [AdvertPayload] = []
         var dials: [Dial] = []
         var writes: [ChannelID: [[UInt8]]] = [:]
+        var outboxes: [ChannelID: LinkOutbox] = [:]
+        var held: Set<ChannelID> = []
+        var noReplies: [RadioAddress] = []
         var closed: [ChannelID] = []
         var rings: [ChannelID] = []
         var hellos: [HeardHello] = []
@@ -79,6 +90,8 @@ final class FakeRadio: Radio {
     var linkUps: [HeardHello] { state.withLock { $0.ups } }
     /// Every change of seeking asked, in order.
     var seeks: [Bool] { state.withLock { $0.seeks } }
+    /// Every address a plain dial got no reply from (``Radio/dialGotNoReply(at:)``), in order.
+    var noReplies: [RadioAddress] { state.withLock { $0.noReplies } }
 
     /// Every delivery reported processed (``Radio/consumed(_:on:)``), in order.
     var consumed: [Consumed] { state.withLock { $0.consumed } }
@@ -134,21 +147,72 @@ final class FakeRadio: Radio {
     }
 
     func write(_ bytes: [UInt8], to channel: ChannelID) {
-        state.withLock { $0.writes[channel, default: []].append(bytes) }
+        queue(on: channel) { $0.append(bytes) }
         recorder.yield(.wrote(channel, bytes))
     }
 
-    /// Records the digest as one write, the way it came: a real radio's ``LinkOutbox`` is tested on its own.
+    /// Records the digest as one write, the way it came, drained at once: the digest slot is tested on ``LinkOutbox`` itself.
     func writeDigest(_ record: [UInt8], to channel: ChannelID) {
-        state.withLock { $0.writes[channel, default: []].append(record) }
+        queue(on: channel) { _ = $0.offerDigest(record) }
         recorder.yield(.wroteDigest(channel, record))
     }
 
     /// Records the FILE record as one write. A test that made the radio report writes reports each one out itself,
     /// with ``emit(_:)``.
     func writeFileRecord(_ record: [UInt8], to channel: ChannelID) {
-        state.withLock { $0.writes[channel, default: []].append(record) }
+        queue(on: channel) { $0.appendFileRecord(record) }
         recorder.yield(.wroteFileRecord(channel, record))
+    }
+
+    func writeKeyShare(_ record: [UInt8], sealer: LinkSealer?, to channel: ChannelID) {
+        queue(on: channel) { outbox in
+            outbox.appendKeyShare(record)
+            if let sealer {
+                outbox.seal(with: sealer)
+            }
+        }
+        recorder.yield(.wroteKeyShare(channel, record, sealed: sealer != nil))
+    }
+
+    func seal(_ channel: ChannelID, with sealer: LinkSealer) {
+        queue(on: channel) { $0.seal(with: sealer) }
+        recorder.yield(.sealed(channel))
+    }
+
+    func dialGotNoReply(at address: RadioAddress) {
+        state.withLock { $0.noReplies.append(address) }
+        recorder.yield(.noReply(address))
+    }
+
+    /// Holds what is written on `channel` in its outbox, as a socket with no room does, until ``release(_:)``: there a newer
+    /// digest takes a waiting one's place.
+    func hold(_ channel: ChannelID) {
+        state.withLock { _ = $0.held.insert(channel) }
+    }
+
+    /// Writes what ``hold(_:)`` kept, as one write.
+    func release(_ channel: ChannelID) {
+        state.withLock { _ = $0.held.remove(channel) }
+        queue(on: channel) { _ in
+            // Nothing new: the drain is the point.
+        }
+    }
+
+    /// Queues on `channel`'s outbox, then drains it whole as one write, if anything may leave and the channel is not held.
+    private func queue(on channel: ChannelID, _ change: (inout LinkOutbox) -> Void) {
+        state.withLock { state in
+            var outbox = state.outboxes[channel] ?? LinkOutbox()
+            change(&outbox)
+            guard !state.held.contains(channel) else {
+                state.outboxes[channel] = outbox
+                return
+            }
+            let drained = outbox.drain().bytes
+            state.outboxes[channel] = outbox
+            if !drained.isEmpty {
+                state.writes[channel, default: []].append(drained)
+            }
+        }
     }
 
     func close(_ channel: ChannelID) {

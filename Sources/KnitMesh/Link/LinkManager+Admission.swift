@@ -17,15 +17,18 @@ extension LinkManager {
         radio.advertisesServiceData || flags & AdvertPayload.dialsGattPeersFlag != 0
     }
 
-    /// A dial opened: send our HELLO first, then wait for the reply (`LinkHandshake.writeHello`).
+    /// A dial opened: send our HELLO first, then wait for the reply (`LinkHandshake.writeHello`), or, when the advert
+    /// dialed carries `FLAG_LINK_SEAL`, our `KEY_SHARE` first (``openSealed(_:now:)``; the `link-seal` contract, §2).
     func connected(_ id: ChannelID, now: Int64) {
         guard let channel = channels[id], channel.stage == .connecting else {
             return
         }
+        if case .dialer(let target) = channel.role, target.seals, dialsSealed {
+            openSealed(id, now: now)
+            return
+        }
         writeHello(on: id)
-        channels[id]?.stage = .awaitingHello
-        channels[id]?.deadline = now + configuration.helloTimeoutMilliseconds
-        channels[id]?.putOff = false
+        enterStage(.awaitingHello, on: id, now: now)
     }
 
     // MARK: Refusals
@@ -75,11 +78,17 @@ extension LinkManager {
         }
         var events: [Event] = []
         // The role and stage only, never the whole channel: a copy of its reader would copy the buffer each record.
-        while let (role, stage) = channels[id].map({ ($0.role, $0.stage) }) {
+        while let (role, stage, sealed) = channels[id].map({ ($0.role, $0.stage, $0.seal != nil) }) {
             let record: LinkRecord?
             do {
                 record = try channels[id]?.reader.next()
             } catch {
+                if sealed || stage == .awaitingKeyShare || opensWithBadKeyShare(error, role: role, stage: stage) {
+                    // Bytes that arrived and were wrong where only a KEY_SHARE or a frame may be: a failed seal, which says
+                    // where, never what (`link-seal` §4).
+                    let at = channels[id]?.reader.consumed ?? 0
+                    return events + sealFailed(on: id, why: "record \(error) at byte \(at)", now: now)
+                }
                 // Android throws on an unknown tag or a bad length and drops the link; so do we, and say what came.
                 if let channel = channels[id] {
                     log.log(.warning, "link \(id) sent a bad record: \(error) \(channel.trace.explain(channel.reader))")
@@ -96,21 +105,35 @@ extension LinkManager {
                 break
             }
             channels[id]?.trace.parsed(record)
-            switch stage {
-            case .connecting:
-                events += retire(id, backingOff: true, now: now)
-            case .awaitingHello:
-                events += handleHello(record, on: id, role: role, now: now)
-            case .awaitingProof(let pending):
-                // Re-read for the next record: once the proof verifies, what came behind it in the same read is the live
-                // link's, handled after `.up`.
-                events += handleProof(record, pending, on: id, role: role, now: now)
-            case .live(let peer):
-                events += dispatch(record, from: peer, on: id, now: now)
-            }
+            events += sealed ? openFrame(record, on: id, now: now) : handlePlain(record, on: id, role: role, stage: stage, now: now)
         }
         takeTagNext(on: id)
         return events
+    }
+
+    /// One record off a plain channel, at `stage`: the record a stage expects, the sealed form's opening `KEY_SHARE` on a
+    /// responder, or a stray `KEY_SHARE` or frame, which drops the link as a bad record does (`link-seal` §3).
+    func handlePlain(_ record: LinkRecord, on id: ChannelID, role: Role, stage: Stage, now: Int64) -> [Event] {
+        switch stage {
+        case .connecting:
+            return retire(id, backingOff: true, now: now)
+        case .awaitingKeyShare:
+            return keyShareArrived(record, on: id, now: now)
+        case .awaitingHello where record.tag == .keyShare && role == .responder:
+            // The dialer opened in the sealed form (`link-seal` §4, step 2).
+            return answerKeyShare(record, on: id, now: now)
+        case .awaitingHello where record.tag == .keyShare || record.tag == .sealed,
+            .awaitingProof where record.tag == .keyShare || record.tag == .sealed:
+            return strayRecord(record, on: id, now: now)
+        case .awaitingHello:
+            return handleHello(record, on: id, role: role, now: now)
+        case .awaitingProof(let pending):
+            // Re-read for the next record: once the proof verifies, what came behind it in the same read is the live
+            // link's, handled after `.up`.
+            return handleProof(record, pending, on: id, role: role, now: now)
+        case .live(let peer):
+            return dispatch(record, from: peer, on: id, now: now)
+        }
     }
 
     func handleHello(_ record: LinkRecord, on id: ChannelID, role: Role, now: Int64) -> [Event] {
@@ -145,6 +168,11 @@ extension LinkManager {
     func admit(_ id: ChannelID, hello: Hello, payload: [UInt8], now: Int64) -> [Event] {
         guard let dialer = NodeId(hello.nodeId), dialer != localId, !refused.contains(dialer) else {
             return retire(id, backingOff: false, now: now)
+        }
+        // Before R1 and today's refusals, so the link counts once (`link-seal` §7). knit-peer's `downgrade` leaves it to
+        // the far end's dialer.
+        if sealSwitch.refusesPlainAsResponder, refusesPlainLink(id, ours: claimsSeal, theirs: hello) {
+            return sealRefused(id, claiming: dialer.string, backingOff: false, now: now)
         }
         if AdvertOrder.refusesLegacy(mine, readsTags: hello.capabilities.contains(.blindAdvert)) {
             // `RefuseLegacy` (`BleAdmissionPolicy.kt:115`), first and with no reply: it dialed a tag it cannot have meant.
@@ -291,6 +319,9 @@ extension LinkManager {
         }
         backoffs[.peer(.node(peer))] = nil
         crossings.forget(link: id)
+        if channels[id]?.seal != nil {
+            sealCounts.linksSealed += 1
+        }
         if proven {
             claims.proved(peer)
             relinkWindow.relinked(peer)
@@ -351,6 +382,9 @@ extension LinkManager {
         case .keepalive, .hello, .proof:
             // A stray HELLO or PROOF after the handshake means nothing, and a keepalive's arrival is all it says.
             return []
+        case .keyShare, .sealed:
+            // Never inside a seal, which fails first, and never on a plain link: the link drops as on an unknown tag.
+            return strayRecord(record, on: id, now: now)
         }
     }
 }

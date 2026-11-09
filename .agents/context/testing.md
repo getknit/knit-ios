@@ -41,6 +41,11 @@ ladder, not the first.
      from an engine and its `LinkManager` on `FakeRadio`s, on one `ManualClock`. Each pipe keeps one channel per
      side for its life, records the headers, asks and chunk bytes that cross it, and can cut itself after N bytes,
      so `LinkPipeResumeTests` runs a cut photo's resume on both sides of each link (ADR 2026-10.w6rn).
+     `PipeLab(sealed: true)` runs its links sealed (ADR 2026-11.6zhj): it fixes both nodes' ephemeral keys through
+     `makeEphemeral`, derives the same sessions, and opens every frame to keep its record log, so `LinkPipeSealTests`
+     and `LinkPipeResumeTests` cross photos, digests and cuts inside the seal. `unread`, `delay` and `inject` stay
+     plain-only. `FakeRadio.hold(_:)` and `release(_:)` back its real `LinkOutbox` up, so a queued digest can be
+     replaced.
 6. **Fuzzing.** Every parser that reads bytes off the radio has a libFuzzer harness in `Fuzz/`. A crash is
    a finding by construction; its input joins the corpus once the fix lands.
 7. **The Linux peer, without a radio.** `KnitBlueZTests` runs the BlueZ radio against a fake BlueZ on a

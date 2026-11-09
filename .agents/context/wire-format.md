@@ -175,6 +175,7 @@ These only ever grow. A value is never reused, even after it is retired.
   | `0x4000` | `CALL` | `0x8000` | `WALKIE` |
   | `0x10000` | `LORA_DIRECT` | `0x20000` | `INET_LINK` |
   | `0x40000` | `LINK_PROOF` | `0x80000` | `BLIND_ADVERT` |
+  | `0x100000` | `LINK_SEAL` | | |
 
   `DOORBELL` and `BLOB_HAVE` sit above the advert's 8 bits and are read from the HELLO alone. Android sends `0x2FFF`
   since `403cd861`, and `0xFFF` before it; it never claims `DOORBELL`. `CALL` and `WALKIE` ride its signed profile
@@ -184,8 +185,8 @@ These only ever grow. A value is never reused, even after it is retired.
   `DIRECT_TRANSFER` gate features. The rest are diagnostic.
 
   `LORA_DIRECT` and `INET_LINK` are Android's, and this port names neither. `LINK_PROOF` (ADR 2026-11.hpmt, knit-next
-  ADR 2026-11.264w) is in `Capabilities.local`, so the HELLO reads `c215f` (`c315f` with the doorbell) and the signed
-  profile `0xC015F` or `0xC000F` (`0xC055F` or `0xC040F` in a debug build with link previews, which signs
+  ADR 2026-11.264w) is in `Capabilities.local`, so the HELLO reads `1c215f` (`1c315f` with the doorbell) and the signed
+  profile `0x1C015F` or `0x1C000F` (`0x1C055F` or `0x1C040F` in a debug build with link previews, which signs
   `CAP_LINK_PREVIEW` too; ADR 2026-11.hcvg). It is read twice: from the HELLO, to decide whether a link runs the proof exchange,
   and from the signed profile, whose copy makes a peer proof-capable. A HELLO carrying it carries a fourth field,
   `n<32 lowercase hex>`, a fresh nonce, and a link where both HELLOs carry it exchanges tag-8 `PROOF` records before it
@@ -196,6 +197,20 @@ These only ever grow. A value is never reused, even after it is retired.
   peer carrying it, and while it blinds refuses a dialer whose HELLO lacks it. This port claims it in
   `Capabilities.local`, so in every HELLO and every profile it signs, since the reader landed: tag 9 and ctl 11 both
   read here (ADR 2026-11.sv5t; `ble-transport.md`, "The advert"). Builds before it sent `4215f` and `0x4015F`.
+
+  `LINK_SEAL` (`0x100000`, knit-next ADR 2026-11.8mhs, ADR 2026-11.6zhj, knit-ios #51) rides only beside `LINK_PROOF`,
+  in the HELLO and every signed profile. The HELLO's copy is the one that counts: a plain-form link whose two HELLOs
+  both carry it is refused (`linkSealRefused`). The profile's copy is informational. Above the advert's 8 bits, it rides
+  the advert as the flags byte's `FLAG_LINK_SEAL` (`0x10`, bit 4 of byte 23), set exactly when the HELLO carries the
+  bit, in service data and the iPhone's GATT value alike. A dialer opens sealed only toward an advert carrying the
+  flag. Builds before it sent `c215f` and `0xC015F`.
+
+  A sealed link opens with two records no older build knows, so they cross only on a link opened in the sealed form:
+  tag 10 `KEY_SHARE`, exactly 32 bytes (an ephemeral X25519 public key), and tag 11 `SEALED`, one AES-256-GCM frame
+  `[0x0B][u32be len][ct ‖ tag16]` with `len` 17 to 65,552. Both lengths are checked from the header. Tag 12 is unknown.
+  The keys come from HKDF-SHA256 over the X25519 secret with `salt = eD ‖ eR` and info `knit/link/v1/seal/d2r` or
+  `knit/link/v1/seal/r2d`; the PROOF on a sealed link signs `knit/link/v2/proof ‖ role ‖ eD ‖ eR ‖ u32be(len hD) ‖ hD
+  ‖ u32be(len hR) ‖ hR` (`ble-transport.md`, "The sealed form"; `crypto.md`, "The sealed form").
 
 ## Signatures, ids and clocks
 

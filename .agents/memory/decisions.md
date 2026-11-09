@@ -119,3 +119,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-11.w5ew](decisions/2026-11-w5ew-a-web-address-in-a.md) | A web address in a message opens on a tap | messages, ui, interop |
 | [2026-11.hcvg](decisions/2026-11-hcvg-a-link-s-card-is.md) | A link's card is fetched by its sender, in debug builds until approved | messages, ui, network, interop, blobs |
 | [2026-11.prsp](decisions/2026-11-prsp-the-iphone-airs-a-rotating.md) | The iPhone airs a rotating tag and sends its own presence keys | ble, mesh, privacy, wire, crypto |
+| [2026-11.6zhj](decisions/2026-11-6zhj-a-link-seals-everything-after.md) | A link seals everything after an ephemeral key exchange | ble, crypto, security, interop |

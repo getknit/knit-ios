@@ -48,7 +48,7 @@ extension LinkManager {
             endLink(id, now: now)
             events.append(.down(linked))
             log.log(.info, "link down \(linked) on \(id)")
-        case .connecting, .awaitingHello, .awaitingProof:
+        case .connecting, .awaitingKeyShare, .awaitingHello, .awaitingProof:
             // Nothing was registered, so nothing goes down: a dial that fails its proof is a failed dial.
             if case .dialer(let target) = channel.role {
                 if dialing[target.key] == id {
@@ -163,18 +163,7 @@ extension LinkManager {
     /// ``Configuration/withholdsBlindAdvert``, a test's seam, takes it out of this HELLO alone, as a build from before the
     /// reader would send.
     func ourHello(addressing: AdvertOrder.Form?) -> Hello {
-        var capabilities = Capabilities.local.union(.blobHave)
-        if configuration.withholdsBlindAdvert {
-            capabilities.remove(.blindAdvert)
-        }
-        if radio.servesDoorbell {
-            capabilities.insert(.doorbell)
-        }
-        if !provesLinks {
-            // knit-peer's legacy impostor stands in for Android v2.10.1, which had neither bit.
-            capabilities.remove(.linkProof)
-            capabilities.remove(.blindAdvert)
-        }
+        let capabilities = helloCapabilities()
         let nonce = capabilities.contains(.linkProof) ? LinkProof.freshNonce() : nil
         let current = mine.current
         let told = nonce != nil && current.blinded ? current.advertised.bytes : nil
@@ -183,11 +172,36 @@ extension LinkManager {
             nodeId: (impostor.claimedId ?? localId).string, capabilities: capabilities, nonce: nonce, told: told, addressed: addressed)
     }
 
-    /// Writes a record in slices of at most ``Configuration/maxWriteBytes``.
+    /// The capabilities our HELLO carries (``ourHello(addressing:)``), which the advert's `FLAG_LINK_SEAL` follows too.
+    /// knit-peer's seal switch `off` takes ``Capabilities/linkSeal`` out, as a build from before the seal would send.
+    func helloCapabilities() -> Capabilities {
+        var capabilities = Capabilities.local.union(.blobHave)
+        if configuration.withholdsBlindAdvert {
+            capabilities.remove(.blindAdvert)
+        }
+        if radio.servesDoorbell {
+            capabilities.insert(.doorbell)
+        }
+        if !provesLinks {
+            // knit-peer's legacy impostor stands in for Android v2.10.1, which had none of these bits. The seal's goes with
+            // the proof's, since a build carries it only beside it (the `link-seal` contract, §1).
+            capabilities.remove(.linkProof)
+            capabilities.remove(.blindAdvert)
+            capabilities.remove(.linkSeal)
+        }
+        if !sealSwitch.claimsBit {
+            capabilities.remove(.linkSeal)
+        }
+        return capabilities
+    }
+
+    /// Writes a record in slices of at most ``Configuration/maxWriteBytes``, or on a sealed link that less a frame's
+    /// overhead, so each slice is one frame of at most ``Configuration/maxWriteBytes`` and one write of the radio's.
     func write(_ record: [UInt8], on id: ChannelID) {
+        let slice = channels[id]?.seal == nil ? configuration.maxWriteBytes : max(1, configuration.maxWriteBytes - LinkSealer.overheadBytes)
         var start = 0
         while start < record.count {
-            let end = min(start + configuration.maxWriteBytes, record.count)
+            let end = min(start + slice, record.count)
             radio.write(Array(record[start..<end]), to: id)
             start = end
         }

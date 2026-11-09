@@ -1,3 +1,4 @@
+public import KnitCrypto
 public import KnitMesh
 import KnitSync
 public import KnitWire
@@ -161,6 +162,18 @@ public final class LyingRadio: Radio {
         apply(effects)
     }
 
+    /// Passes our `KEY_SHARE` on under the lock, as a write. The radio sits above the seal: what it rewrites and injects is
+    /// plaintext, which the radio below seals in order with the link manager's records, so every lie still reaches the far
+    /// end's link manager on a sealed link, and nothing it writes lands between the `KEY_SHARE` and the HELLO behind it.
+    public func writeKeyShare(_ record: [UInt8], sealer: LinkSealer?, to channel: ChannelID) {
+        state.withLock { _ in inner.writeKeyShare(record, sealer: sealer, to: channel) }
+    }
+
+    /// Passes the sealer on under the lock, so it lands in order with the writes around it.
+    public func seal(_ channel: ChannelID, with sealer: LinkSealer) {
+        state.withLock { _ in inner.seal(channel, with: sealer) }
+    }
+
     public func close(_ channel: ChannelID) {
         state.withLock { state in
             state.links[channel] = nil
@@ -183,6 +196,10 @@ public final class LyingRadio: Radio {
 
     public func heardHello(from node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID) {
         inner.heardHello(from: node, told: told, announced: announced, on: channel)
+    }
+
+    public func dialGotNoReply(at address: RadioAddress) {
+        inner.dialGotNoReply(at: address)
     }
 
     /// The link is the peer's: once our HELLO is out too, the channel is ready, and what waits is injected.

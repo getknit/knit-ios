@@ -1,3 +1,4 @@
+public import KnitCrypto
 public import KnitMesh
 import KnitSync
 public import KnitWire
@@ -146,6 +147,18 @@ public final class FloodRadio: Radio {
         state.withLock { _ in inner.writeFileRecord(record, to: channel) }
     }
 
+    /// Passes our `KEY_SHARE` on under the flood's lock, as a write. The flood sits above the seal: a link counts as live
+    /// only once it registers, after the exchange, and from then on the radio below seals its junk in order with the
+    /// honest records, so the far end opens it and counts it undecodable as on a plain link.
+    public func writeKeyShare(_ record: [UInt8], sealer: LinkSealer?, to channel: ChannelID) {
+        state.withLock { _ in inner.writeKeyShare(record, sealer: sealer, to: channel) }
+    }
+
+    /// Passes the sealer on under the flood's lock, so it lands in order with the writes around it.
+    public func seal(_ channel: ChannelID, with sealer: LinkSealer) {
+        state.withLock { _ in inner.seal(channel, with: sealer) }
+    }
+
     public func close(_ channel: ChannelID) {
         state.withLock { Self.forget(channel, in: &$0) }
         inner.close(channel)
@@ -165,6 +178,10 @@ public final class FloodRadio: Radio {
 
     public func heardHello(from node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID) {
         inner.heardHello(from: node, told: told, announced: announced, on: channel)
+    }
+
+    public func dialGotNoReply(at address: RadioAddress) {
+        inner.dialGotNoReply(at: address)
     }
 
     /// The link is up: the flood writes to it from the next tick.

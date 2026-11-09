@@ -111,6 +111,9 @@ document:
 - Your iPhone now gives each contact a private key that will let their phone recognize yours once Knit stops
   showing your ID to Bluetooth scanners. Only people you've accepted, verified or written to get one, and
   blocking someone gives everyone else a new key.
+- Bluetooth connections between phones on this version, or on the matching Knit for Android update, are
+  encrypted, so a radio listening nearby can't read what crosses them, such as who messages whom (knit-next
+  #286). Connections with older Android versions stay unencrypted, as before.
 
 ### Changed
 

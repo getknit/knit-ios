@@ -14,8 +14,9 @@ and toward an iPhone no MTU request of its own: only an Android peer's boosted l
 - **Peripheral:** a connectable advert and an L2CAP server (`listenUsingInsecureL2capChannel`).
 - **Central:** a scanner and an L2CAP client (`createInsecureL2capChannel(psm)`).
 
-Channels are LE credit-based and insecure: no pairing, no bonding, no link encryption. CoreBluetooth's
-equivalents are `publishL2CAPChannel(withEncryption: false)` and `CBPeripheral.openL2CAPChannel(_:)`.
+Channels are LE credit-based and insecure: no pairing, no bonding, no link-layer encryption. CoreBluetooth's
+equivalents are `publishL2CAPChannel(withEncryption: false)` and `CBPeripheral.openL2CAPChannel(_:)`. Between two
+builds that seal, the records ride an AES-256-GCM seal of their own above L2CAP ("The sealed form", below).
 
 Companion change A4 (knit-next `c3191717`, its ADR 2026-09.dqvb, in the pin) makes Android a
 GATT client toward one kind of peer: one whose HELLO carries `CAP_DOORBELL` (`0x1000`), which says the peer serves
@@ -122,10 +123,14 @@ bytes. The tags:
 | 7 | `DIGEST` | UTF-8 JSON `{"ids":[…]}` |
 | 8 | `PROOF` | `sigPub (32) ‖ hpkePub (32) ‖ signature (64)`, exactly 128 bytes: the signer's identity-key signature over both HELLOs (the contract, §3 and §4). Written only to a peer whose HELLO carries `CAP_LINK_PROOF` |
 | 9 | `TAG_NEXT` | the sender's next advertised tag, exactly 16 bytes (knit-next ADR 2026-11.xp6d, `LinkFraming.kt:72`): 3.5 minutes before a rotation, after one nobody was told of, and as the held link's resend. Android writes it only to a proven link whose HELLO carries `CAP_BLIND_ADVERT` (`0x80000`, `TagNextSends.kt:101-105`). This port reads one of exactly 16 bytes past on a live link, throws on any other length from the header alone (`LinkRecordError.badLength`), and writes one on the same terms only while it blinds (ADR 2026-11.prsp) |
+| 10 | `KEY_SHARE` | exactly 32 bytes, the sender's ephemeral X25519 public key, fresh for each connection attempt; each side's first record on a sealed link, and only there (the `link-seal` contract, §3). The length is checked from the header |
+| 11 | `SEALED` | one AES-256-GCM frame, `ciphertext ‖ tag(16)`, `len` 17 to 65,552 (a plaintext of 1 to 65,536 bytes), checked from the header; the AAD is the 5 header bytes. Every record after the KEY_SHAREs rides inside these frames |
 
-- **An unknown tag, a bad length or a truncated record throws on Android and drops the link.** Never send
-  a tag outside 1..9 (9 only while blinding, to a proven link whose HELLO carries `CAP_BLIND_ADVERT`), and 8 only to a peer whose HELLO carries `CAP_LINK_PROOF`: Android v2.10.1 and earlier know only
-  1..7. `CAP_BLIND_ADVERT` is advertised only because `LinkRecordReader` reads tag 9 and ctl 11 reads too: Android gates
+- **An unknown tag, a bad length or a truncated record throws on Android and drops the link.** Never write a tag
+  outside 1..11; 8 only to a HELLO carrying `CAP_LINK_PROOF`; 9 only while blinding, to a proven link whose HELLO
+  carries `CAP_BLIND_ADVERT`; 10 and 11 only on a link opened in the sealed form. Android v2.10.1 and earlier know only
+  1..7, and v2.11.0 only 1..8. Tag 12 is unknown. On a plain link a tag 10 or 11 drops the link as an unknown tag did
+  before, and inside the seal an inner 10 or 11 is a failed seal. `CAP_BLIND_ADVERT` is advertised only because `LinkRecordReader` reads tag 9 and ctl 11 reads too: Android gates
   both `TAG_NEXT` and the presence key's ctl 11 on that bit alone (ADR 2026-11.sv5t).
 - A `FRAME` that does not decode is counted and skipped, and the link stays up. Frames and digests may
   interleave with file chunks.
@@ -169,7 +174,8 @@ else -> Replace
 `seen` is presence's sighting. For a dialer whose HELLO carries `CAP_DOORBELL`, and whose claim Android's own evidence
 backs (`doorbellTrusted`), it also needs a sighting in the last 12 s (AND-3, below). `atCap` is a debug link cap, always
 false in release. A refusal closes without replying. Otherwise it replies with its own HELLO, and the dialer checks that the reply's node id matches
-the advert it dialed. There is no negotiation and no key exchange at this layer. Bytes after the HELLO belong to
+the advert it dialed. On a plain link there is no negotiation and no key exchange at this layer; a sealed link runs
+one first ("The sealed form", below). Bytes after the HELLO belong to
 the frame loop, and Android may send frames right after its reply, unless both HELLOs carry `CAP_LINK_PROOF`.
 
 **The link's proof** (knit-next ADR 2026-11.264w, knit-next #232, knit-ios #25; the `link-hello-proof` contract). When
@@ -198,8 +204,51 @@ A HELLO without the bit links unproven, as before, which is what Android v2.10.1
   verifies, and stays if it fails.
 - **R4.** When a stored profile gains the bit, every live unproven link claiming that id closes.
 
-What the proof does not bind is the radio channel: a node in range of both peers can relay a proven handshake end to end
-(the contract, §10).
+On a plain link the proof does not bind the radio channel: a node in range of both peers can relay a proven handshake
+end to end (the contract, §10). A sealed link closes that ("The sealed form").
+
+### The sealed form
+
+Knit-next ADR 2026-11.8mhs, knit-next #286 option 1, ADR 2026-11.6zhj, knit-ios #51; the `link-seal` contract. A build
+that seals carries `CAP_LINK_SEAL` (`0x100000`) beside `CAP_LINK_PROOF` in its HELLO, and `FLAG_LINK_SEAL` (`0x10`) in
+every advert it writes: service data, and the iPhone's GATT value. The dialer opens sealed exactly when the advert it
+dials from carries the flag, tag dials included. Nothing else decides: not the profile, not earlier links.
+
+1. The dialer writes its `KEY_SHARE` and nothing else until it has read the responder's, within 5 s.
+2. The responder reads the first record. A `KEY_SHARE`: it writes its own at once, before any admission decision,
+   derives the keys, and every byte it writes or reads from then on is a `SEALED` frame. A plain `HELLO`: today's path,
+   plus the refusal below. Anything else closes, as before.
+3. The dialer derives the keys and writes its HELLO sealed. hpmt's exchange then runs unchanged inside the seal, each
+   wait with its own 5 s deadline, except that both sealed HELLOs must carry `CAP_LINK_PROOF`, `CAP_LINK_SEAL` and a
+   valid nonce, and each PROOF signs the v2 transcript. A sealed link is always a proven link. A refusal still closes
+   without a reply HELLO, after the responder's `KEY_SHARE`.
+
+The keys: `ss = X25519(own ephemeral, peer's)`, refused when the peer's key is low-order or `ss` is all zero; then
+HKDF-SHA256 with `ikm = ss`, `salt = eD ‖ eR`, info `knit/link/v1/seal/d2r` and `knit/link/v1/seal/r2d`, 32 bytes. The
+dialer seals with d2r and opens with r2d. The nonce is `00 00 00 00 ‖ u64be(n)`, `n` counting the frames a side has
+written, implicit at the reader; a side closes rather than seal frame 2^48. The plaintexts, in order, are exactly the
+record stream a plain link carries, and frame boundaries mean nothing. The PROOF signs `"knit/link/v2/proof" ‖ role ‖
+eD ‖ eR ‖ u32be(len hD) ‖ hD ‖ u32be(len hR) ‖ hR`; a v1 signature never verifies sealed, nor v2 plain.
+
+- **No plain link between two sealing builds.** On a link opened plain, the responder refuses before replying when the
+  dialer's HELLO carries `CAP_LINK_SEAL` and its own would, and the dialer refuses after the reply when both did, with
+  no PROOF and a backoff. This runs before R1, and counts `linkSealRefused`.
+- **A failed seal** counts only bytes that arrived and were wrong: another record where the responder's `KEY_SHARE`
+  belongs, a bad or low-order `KEY_SHARE`, any record but `SEALED` after the exchange, a frame out of range or that
+  fails to open (a reordered, replayed, dropped or tampered frame), an inner tag 10 or 11, a first inner record that
+  isn't a HELLO, or a sealed HELLO without both bits and a nonce. It closes the link, backs a dialer off, and counts
+  `linkSealFailed`. An EOF or a timeout is never a failed seal (the contract's revision 1): it is the no-reply refusal it
+  always was. So a `KEY_SHARE` header whose length isn't 32 is a failed seal on either role (a responder that doesn't
+  seal reads it as a bad record only), and one that says 32 but is cut short by an EOF is a no-reply, uncounted, as
+  Android counts both. A PROOF failure inside the seal counts `linkProofFailed` only.
+- **What it guarantees.** A listener that only listens sees two random public keys, then ciphertext, sizes and timing.
+  A relay can't sit in the middle of a sealed link, and an injected or reordered record closes it. Between phones that
+  hold each other's profile, or have proven each other this run, a relay can't downgrade the link either: stripping
+  the bit from a proving HELLO breaks the PROOF, and stripping the flag gets no link. **At a first meeting it can still
+  pose as an old build to both phones** (revision 3): it strips the flag and rewrites both HELLOs to v2.10.x shape, so
+  the link comes up plain and unproven and readable, until R4 closes it once either profile reaches the other.
+- **What it doesn't cover.** Links with Android v2.10.x and v2.11.0 stay plain. Sizes and timing show. The advert, the
+  GATT payload and the doorbell write stay outside the seal. A phone that links on purpose still learns the node id.
 
 Node ids compare as Kotlin strings, which for `[a-z2-7]` is ASCII order: the digits `2`–`7` sort before
 `a`–`z`. Compare the 26-character strings, never the raw 16 bytes.
@@ -416,17 +465,22 @@ a dial that follows, ours or the peer's, rides it. A payload serves the address'
 channel opens, a HELLO there names another node, or the address goes unheard for a minute of scanning while nothing
 links it. Those three rules are shared law with A3 (ADR 2026-09.xzpt, amended 2026-09-29). A blinded payload is compared by
 its tag in rule 2, and adds a fourth: it goes at the first slot edge after its read, with jitter (ADR 2026-11.prsp, which
-companion change A11 mirrors).
+companion change A11 mirrors). A fifth came with the seal (`GattPayloads.noReply(at:)`, the `link-seal` contract's
+revision 1): a plain dial made from a clear payload that lacked `FLAG_LINK_SEAL`, whose HELLO carried `CAP_LINK_SEAL`
+and that ended with no reply, forgets that payload once per address, so the next dial reads it fresh
+(`Radio.dialGotNoReply(at:)`, by address, since both radios drop the channel's address before `.closed`). A payload that
+carried the flag is never forgotten this way (revision 2): busy, suspended and already-linked iPhones give no reply all
+the time. Nor is a blinded one, which rule 4 forgets every slot anyway (the `blind-gatt-reads` contract, §6).
 
-The HELLO adds `CAP_BLOB_HAVE` (`0x2000`) to this build's `0xC015F` always, since every build answers a holder query
-(knit-next ADR 2026-10.6e5t), reading `c215f`. It adds `CAP_DOORBELL` (`0x1000`) too, reading `c315f`, only when the
+The HELLO adds `CAP_BLOB_HAVE` (`0x2000`) to this build's `0x1C015F` always, since every build answers a holder query
+(knit-next ADR 2026-10.6e5t), reading `1c215f`. It adds `CAP_DOORBELL` (`0x1000`) too, reading `1c315f`, only when the
 radio serves the doorbell (`Radio.servesDoorbell`): `KnitBLE`, and knit-peer's `ios` profile. The `android` profile,
 like Android, serves no GATT and never sends it. Each HELLO ends with a nonce fresh for the connection, from the system's
 secure source, never the mesh's seedable generator.
 
 `LinkManager+LinkProof.swift` runs the link's proof (the handshake, above). Its state is a channel stage,
 `awaitingProof`, with its own 5 s deadline and its own put-off for a deadline that passed in suspension, and
-`LinkClaims`, which answers who must prove: the stored profile's bit, through `Mesh`, or the up to 1,024 ids proven this
+`LinkClaims`, which answers who must prove: the stored profile's bit, through `Mesh`, or the up to 4,096 ids proven this
 run. `peerProvesItself` is R4: the engine calls it once a stored profile gains the bit, the unproven links claiming the
 id close at once, and their `.down` events lead the next entry's events, so a proof under the same id yields `.down`
 then `.up`, and the engine runs the real peer's link-up afresh. `Radio.linkUp` tells a radio when a link registered;
@@ -434,6 +488,29 @@ then `.up`, and the engine runs the real peer's link-up afresh. `Radio.linkUp` t
 The lines: `link <id> proved itself on chN`, `link chN proof failed for <id>: <reason>`, `link refused <id>: an unproven
 claim to a node that proves itself`, `link chM displaced: <id> proved itself on chN` and `link chM closed: <id> proves
 itself`. An R2 replacement keeps `link <id> replaced its stale link chM with chN`. None names a key or a signature.
+
+`LinkManager+Seal.swift` runs the sealed form (ADR 2026-11.6zhj). The dialer waits in a stage of its own,
+`awaitingKeyShare`, with its own 5 s deadline and put-off; a responder that took a `KEY_SHARE` re-arms its deadline and
+put-off for the sealed HELLO. So a sealed dialer has four waits a suspension can put off (connect, KEY_SHARE, HELLO,
+PROOF) and a responder three. The ephemeral key comes from `LinkManager.makeEphemeral`, the system's secure generator.
+The opener and an inner `LinkRecordReader` live on the channel; the sealer goes to the radio:
+
+- **The seal sits in the shared `LinkOutbox`, as each entry leaves the queue.** `Radio.writeKeyShare(_:sealer:to:)`
+  queues the responder's `KEY_SHARE` and installs its sealer in one call; the dialer queues its `KEY_SHARE` the same
+  way and installs the sealer with `Radio.seal(_:with:)` once it has derived. Both are requirements with no default,
+  so no radio or wrapper can drop the sealer and write plain. Behind a `KEY_SHARE` the outbox holds everything until
+  the sealer arrives. `next(atMost:)` seals one frame of at most `maxWriteBytes - 21` plaintext (8,171 bytes) once,
+  caches it and slices it by the write limit, so a partial or refused write is offered again, never sealed twice. A
+  sealer that refuses fails the outbox and the radio closes the channel; nothing is ever written plain after the
+  `KEY_SHARE`. Levels, the 4 MiB bound and `wroteFileRecord` stay in plaintext bytes. `offerDigest` swaps only an entry
+  not yet sealed, so ADR 2026-09.3ch7's digest slot keeps working and the counter follows socket order.
+- `LinkTrace` sees only ciphertext and sizes on a sealed channel; no plaintext from a sealed link reaches a log.
+- The lines: `link chN got no key share from <shown>` for a dialer whose responder said nothing (never `timed out`,
+  which the harness reads as a HELLO timeout), `link chN seal failed for <shown>: <why>` (`(dialer)` before a
+  responder knows the id; `IOS_CHANNEL_ENDINGS` and the soak's `link_endings` read it), and `link refused <id>: a plain
+  link between two sealing builds`. None names a key, a nonce or plaintext.
+- The counters `linksSealed`, `linkSealFailed` and `linkSealRefused` sit on `LinkManager`, `Mesh` and `MeshControl`'s
+  status, under the names Android reports. A sealed link counts `linksProven` too.
 
 The link manager rings after every frame it writes except `typing`,
 `blobreq`, `blobhave`, `blobhas`, `blobprog`, `blobcancel` and `keyreq`, as Android does, so both platforms wake an
@@ -520,7 +597,8 @@ ignored. The payload is served only while the listener is published on its PSM, 
 off (`linux-peer.md`, "What the restart trial showed"). Each channel's streams run on one run-loop thread, read in
 64 KiB gulps and written 8 KiB at a time. A channel stops reading once 256 KiB it delivered wait unprocessed by `Mesh`
 (`InboxCredits`), and the radio restarts the read itself below half, since the stream sends no new
-`hasBytesAvailable` until something reads (ADR 2026-10.f5zs). The writes stop at 4 MiB queued (`LinkOutbox`).
+`hasBytesAvailable` until something reads (ADR 2026-10.f5zs). The writes stop at 4 MiB queued (`LinkOutbox`). `writeKeyShare` and `seal` go `onQueue` and
+then `thread.perform`, the same FIFO path as every write, so the sealer lands in order.
 The managers carry restoration identifiers. A restored connection is dropped, since its channels did not
 survive, but only once the central is powered on: CoreBluetooth refuses the command earlier, and a connection
 left up kept every dial to that phone waiting. It first ran on an iPhone 12 on 2026-09-26

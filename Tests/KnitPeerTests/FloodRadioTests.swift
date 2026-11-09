@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitMesh
 import KnitPeer
 import KnitSync
@@ -192,6 +193,18 @@ private final class RecordingRadio: Radio {
 
     func writeFileRecord(_ record: [UInt8], to channel: ChannelID) {
         self.record("file \(channel) \(record.count)")
+    }
+
+    func writeKeyShare(_ record: [UInt8], sealer: LinkSealer?, to channel: ChannelID) {
+        self.record("keyshare \(channel) \(record.count) \(sealer != nil)")
+    }
+
+    func seal(_ channel: ChannelID, with _: LinkSealer) {
+        record("seal \(channel)")
+    }
+
+    func dialGotNoReply(at address: RadioAddress) {
+        record("noreply \(address.rawValue)")
     }
 
     func close(_ channel: ChannelID) {

@@ -46,8 +46,9 @@ Touch one only as far as the brief says, and say so in the report, since the hoo
   and report it;
 - a cross-platform constant: the `0xFE30` service, the payload and doorbell UUIDs, `AdvertPayload`'s layout and
   flag bits, the HELLO as the only home of `CAP_DOORBELL` and `CAP_BLOB_HAVE`, the frames that skip a ring,
-  `GattPayloads`' rules, the promotion numbers in the reviewer's digest, link record tags 1..8, and the HELLO's nonce
-  and the link's proof (`CAP_LINK_PROOF`, the PROOF's layout, `LinkProof`'s transcript). Changing one is
+  `GattPayloads`' rules, the promotion numbers in the reviewer's digest, link record tags 1..11, and the HELLO's nonce
+  and the link's proof (`CAP_LINK_PROOF`, the PROOF's layout, `LinkProof`'s transcripts), and the seal
+  (`CAP_LINK_SEAL`, `FLAG_LINK_SEAL`, `LinkSeal`'s labels and frame layout). Changing one is
   a paired change (`.agents/rules/paired-change.md`), and the Android half is never yours;
 - the `Radio` protocol's shape or the `MeshTransport` interface. Propose a change in your report instead;
 - `CHANGELOG.md`, git history (commit, stash, reset, checkout, branch), knit-next, another session, and any phone

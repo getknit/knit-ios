@@ -194,7 +194,8 @@ extension LinkManager {
         let kind: DialRecord.Kind = headStart != nil ? .headStart : weDial(form, flags: advert.flags) ? .ordinary : .seeking
         let linkedAtStart = key.nodeId.map { liveChannel(to: $0) != nil } ?? false
         let record = DialRecord(kind: kind, peerKey: key, linkedAtStart: linkedAtStart)
-        let target = DialTarget(key: dialKey, form: form, address: address, record: record)
+        // The advert dialed decides the form, a tag's alike, and nothing else does (`link-seal` §2).
+        let target = DialTarget(key: dialKey, form: form, address: address, record: record, seals: advert.seals)
         let id = radio.dial(address, psm: advert.psm)
         channels[id] = Channel(role: .dialer(target), stage: .connecting, deadline: now + configuration.connectTimeoutMilliseconds)
         dialing[dialKey] = id

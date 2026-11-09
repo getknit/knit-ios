@@ -105,7 +105,7 @@ explicitly. The commits are the evidence that each one bit this codebase.
 3. **State kept for the wrong lifetime, or keyed too loosely.** A GATT payload outlives the node behind its
    address, a disconnect the app caused looks like a failed dial, and a late event keyed by node id lands on the
    link that replaced the one it meant. Links are keyed by channel, never by node id (architecture.md, "Seams"),
-   and a payload is forgotten only by `GattPayloads`' three rules. Evidence: 360324e (the iPhone took its own
+   and a payload is forgotten only by `GattPayloads`' four rules. Evidence: 360324e (the iPhone took its own
    cancel after a read for a failed dial and re-read the same peer every 5 to 30 s), 17b1f4c (a payload kept for
    good at a reused public address sighted each later peer as the old one).
 4. **A writer that queues what goes stale.** A link holds at most one queued digest, and a radio writes from its
@@ -113,9 +113,10 @@ explicitly. The commits are the evidence that each one bit this codebase.
    Evidence: fa87bac (a post and a DM waited 393 s behind about ten queued 20 KB digests; `linux-peer.md`, "Why
    the frames were late").
 5. **A stream that loses its place.** A link is a byte stream of `[tag][len][payload]` records. An unknown tag
-   drops the link, and a tag outside 1..9 is never written (9, `TAG_NEXT`, only while blinding, to a proven link whose
-   HELLO carries `CAP_BLIND_ADVERT`), 8 only to a
-   peer whose HELLO carries `CAP_LINK_PROOF` (`.agents/rules/interop.md`). A peer's stack can mangle a large SDU.
+   drops the link, and a tag outside 1..11 is never written (9, `TAG_NEXT`, only while blinding, to a proven link whose
+   HELLO carries `CAP_BLIND_ADVERT`), 8 only to a peer whose HELLO carries `CAP_LINK_PROOF`, 10 and 11 only on a link
+   opened in the sealed form (`.agents/rules/interop.md`). On a sealed link a mangled SDU fails the AEAD and drops a
+   live link, where a plain one lost only the frame that would not decode. A peer's stack can mangle a large SDU.
    Evidence: cb440a6 and 04a927b (the Moto G lost every multi-packet SDU after the profile and logged
    `unknown record type 0`, so the default send MTU became 247), af87ba4 (`LinkTrace`, added after tags 87 and 54
    dropped the first two A4 links; the cause is still unknown, "What A4 showed").
@@ -201,8 +202,9 @@ Then two checks that are not shapes:
   text. A cross-platform constant changing at all is a finding, unless the brief made it a paired change
   (`.agents/rules/paired-change.md`): the `0xFE30` service and the payload and doorbell UUIDs, `AdvertPayload`'s
   layout and flag bits, the HELLO as the only home of `CAP_DOORBELL` and `CAP_BLOB_HAVE`, the frames that skip a
-  ring, `GattPayloads`' rules, the promotion numbers (below), link record tags 1..9 (9 written only while blinding), and the HELLO's
-  nonce field and the link's proof (`LinkProof`'s transcript, the PROOF's layout, `CAP_LINK_PROOF`).
+  ring, `GattPayloads`' rules, the promotion numbers (below), link record tags 1..11 (9 written only while blinding, 10 and 11 sealed links only), and the HELLO's
+  nonce field and the link's proof (`LinkProof`'s transcripts, the PROOF's layout, `CAP_LINK_PROOF`), and the seal
+  (`CAP_LINK_SEAL`, `FLAG_LINK_SEAL`, `LinkSeal`'s labels and frame layout).
 - **Which radio runs it.** `KnitBLE` compiles to an empty module on Linux, so your run verifies none of it; say
   so. A rule added to one radio that the other also needs (a forget rule, a doorbell write, a disconnect) is a
   finding unless the change says why only one has it.
@@ -331,7 +333,9 @@ One line per invariant, with the ADR to read. Not exhaustive and not authoritati
   digest cue zeroed. A reader reads one peer at a time, retries a failed read after 30 s, and leaves a device that
   serves none for ten minutes. A payload is forgotten only on a dial that fails before its channel opens, a HELLO
   naming another node (for a blinded payload, neither the HELLO's `t` nor the tag that node announced), a minute unheard
-  while nothing links the address, or, blinded, the first slot edge after its read (ADR 2026-11.prsp). `FLAG_DIALS_GATT_PEERS` is set only
+  while nothing links the address, blinded, the first slot edge after its read (ADR 2026-11.prsp), or (rule 5, ADR
+  2026-11.6zhj) once after a plain dial whose HELLO carried `CAP_LINK_SEAL` got no reply and the clear payload lacked
+  `FLAG_LINK_SEAL`; a flagged or blinded payload is never forgotten that way. `FLAG_DIALS_GATT_PEERS` is set only
   when `Radio.dialsGattPeers`.
 - **Doorbell** (ADR 2026-09.khjj). The HELLO carries `CAP_DOORBELL` only when `Radio.servesDoorbell`. The manager
   rings after every frame it writes except `typing`, `blobreq`, `blobhave`, `blobhas`, `blobprog`, `blobcancel` and

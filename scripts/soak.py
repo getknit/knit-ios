@@ -480,6 +480,8 @@ def link_endings(log: Path) -> tuple[list[dict], Counter]:
         # the doorbell up afresh; a trial's lever, never a fault of either end.
         (re.compile(r"^link (ch\d+) closed: the advert flipped to "), lambda _: "flipped: the advert's switch"),
         (re.compile(r"^link (ch\d+) proof failed for \S+: (.*)"), lambda m: f"proof failed: {m[2][:40]}"),
+        # The `link-seal` contract, §4: bytes that arrived on a sealed link and were wrong; never an end or a timeout.
+        (re.compile(r"^link (ch\d+) seal failed for \S+: (.*)"), lambda m: f"seal failed: {m[2][:40]}"),
     ]
     down = re.compile(r"^link down (\S+) on (ch\d+)$")
     sighted = re.compile(r"^bluez (dev_\S+) changed")

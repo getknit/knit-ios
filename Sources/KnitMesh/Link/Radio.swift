@@ -1,3 +1,4 @@
+public import KnitCrypto
 public import KnitWire
 
 /// An L2CAP channel on the radio, dialed or accepted. The radio assigns ids and never reuses one.
@@ -133,6 +134,20 @@ public protocol Radio: AnyObject, Sendable {
     /// writes of its own size, and reports ``RadioEvent/wroteFileRecord(_:)`` once its last byte is out.
     func writeFileRecord(_ record: [UInt8], to channel: ChannelID)
 
+    /// Writes our whole `KEY_SHARE` record on an open channel, after everything written before, and holds whatever is
+    /// written after it until `sealer`, or a later ``seal(_:with:)``, is there to seal it (the `link-seal` contract, §4):
+    /// no byte after our `KEY_SHARE` leaves in the clear. A responder hands its sealer over with the record, in one call; a
+    /// dialer, which has no keys until the responder's `KEY_SHARE` comes back, passes `nil` and hands it over then. A radio
+    /// queues it in its ``LinkOutbox`` with ``LinkOutbox/appendKeyShare(_:)``, in order with its writes. No default: a radio
+    /// that took it as a plain write would leak every record behind it.
+    func writeKeyShare(_ record: [UInt8], sealer: LinkSealer?, to channel: ChannelID)
+
+    /// From now on everything written on `channel` after our `KEY_SHARE` leaves in `SEALED` frames under `sealer`, sealed
+    /// as each frame leaves the channel's queue (``LinkOutbox/seal(with:frameBytes:)``), in order with the writes before
+    /// it. Any seal that fails closes the channel; nothing is ever written plain after the `KEY_SHARE`. No default, as
+    /// ``writeKeyShare(_:sealer:to:)`` has none.
+    func seal(_ channel: ChannelID, with sealer: LinkSealer)
+
     /// Closes a channel.
     func close(_ channel: ChannelID)
 
@@ -161,6 +176,14 @@ public protocol Radio: AnyObject, Sendable {
     /// an id or from a dialer, whatever becomes of the link: a claim refused and a proof that fails included. A tag dial's
     /// reply comes here only once its proof verified. ``linkUp(_:on:)`` says when the link is the peer's.
     func heardHello(from node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID)
+
+    /// Our plain dial to `address`, whose HELLO carried ``Capabilities/linkSeal``, ended with no reply: the far end closed
+    /// or said nothing within the HELLO's deadline. A radio that read the address's GATT payload forgets it, once, when
+    /// it lacks the advert's `FLAG_LINK_SEAL`, since a peer that upgraded since the read refuses a plain dial from a
+    /// sealing build before it replies, and the next dial must read the payload afresh to open sealed
+    /// (``GattPayloads/noReply(at:)``; the `link-seal` contract, §7, revision 1). Keyed by the address dialed, not the
+    /// channel: the radio has forgotten a channel it reported closed.
+    func dialGotNoReply(at address: RadioAddress)
 
     /// The link on `channel` registered to `node`: its HELLO checked out and, when both HELLOs carry
     /// ``Capabilities/linkProof``, its PROOF verified (the `link-hello-proof` contract, §5). From here the link manager
@@ -206,6 +229,11 @@ extension Radio {
 
     /// Keeps nothing: a radio that reads no GATT payloads has none to forget.
     public func heardHello(from _: NodeId, told _: NodeId?, announced _: NodeId?, on _: ChannelID) {
+        // A radio that reads GATT payloads implements this.
+    }
+
+    /// Keeps nothing: a radio that reads no GATT payloads has none to forget.
+    public func dialGotNoReply(at _: RadioAddress) {
         // A radio that reads GATT payloads implements this.
     }
 

@@ -376,10 +376,10 @@ extension RepositoryTests {
         var profile = OwnProfile(name: "Alice", version: 7, publishedAt: 9, prekeyId: 1, capabilities: Capabilities.local)
         store.save(profile)
         #expect(store.load() == profile)
-        #expect(store.load().capabilities?.rawValue == 0xC015F)
+        #expect(store.load().capabilities?.rawValue == 0x1C015F)
         profile.capabilities = Capabilities.local.subtracting(.ratchetSuite)
         store.save(profile)
-        #expect(store.load().capabilities?.rawValue == 0xC000F)
+        #expect(store.load().capabilities?.rawValue == 0x1C000F)
         profile.capabilities = nil
         store.save(profile)
         #expect(store.load().capabilities == nil)

@@ -33,7 +33,7 @@
 
         private static func blinded(_ byte: UInt8) throws -> AdvertPayload {
             let tag = try #require(NodeId(bytes: [0xCE, 0x73, 0x96] + [UInt8](repeating: byte, count: 13)))
-            let flags = AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true)
+            let flags = AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true, seals: false)
             return AdvertPayload(capabilities: .local, advertised: tag, digestCue: 0, psm: UnixSockets.psm, flags: flags)
         }
 

@@ -159,9 +159,14 @@ struct LinkRig {
         LinkRecord(.hello, payload: Hello(nodeId: peer.string, capabilities: capabilities).payload).encoded ?? []
     }
 
+    /// What Android v2.11.0's HELLO carries, as this build's does but for ``Capabilities/linkSeal``: it proves, and links
+    /// plain. A plain link whose two HELLOs carry the seal's bit is refused (the `link-seal` contract, §7), so a peer this
+    /// rig plays by hand on a plain link is this shape unless a test says otherwise.
+    static let provingCapabilities = Capabilities.local.union(.blobHave).subtracting(.linkSeal)
+
     /// A HELLO from `peer` that proves itself: the bit, and a fresh nonce unless one is given.
     static func provingHello(
-        _ peer: NodeId, nonce: [UInt8] = LinkProof.freshNonce(), capabilities: Capabilities = Capabilities.local.union(.blobHave)
+        _ peer: NodeId, nonce: [UInt8] = LinkProof.freshNonce(), capabilities: Capabilities = provingCapabilities
     ) -> Hello {
         Hello(nodeId: peer.string, capabilities: capabilities, nonce: nonce)
     }
@@ -170,14 +175,15 @@ struct LinkRig {
     static func proofRecord(
         _ keys: IdentityKeys, as signer: LinkProof.Role, dialerHello: [UInt8], responderHello: [UInt8]
     ) throws -> [UInt8] {
-        let payload = try LinkProof.payload(keys: keys, signer: signer, dialerHello: dialerHello, responderHello: responderHello)
+        let payload = try LinkProof.payload(
+            keys: keys, form: .plain, signer: signer, dialerHello: dialerHello, responderHello: responderHello)
         return LinkRecord(.proof, payload: payload).encoded ?? []
     }
 
     /// A peer dials us on `id` with a HELLO that proves itself; answers the HELLO's payload, and what the manager said.
     func acceptProving(
         _ peer: NodeId, on id: ChannelID, nonce: [UInt8] = LinkProof.freshNonce(),
-        capabilities: Capabilities = Capabilities.local.union(.blobHave)
+        capabilities: Capabilities = provingCapabilities
     ) -> (hello: [UInt8], events: [LinkManager.Event]) {
         let hello = Self.provingHello(peer, nonce: nonce, capabilities: capabilities).payload
         _ = handle(.accepted(id))
@@ -226,14 +232,14 @@ struct LinkRig {
         return WireEnvelope(sig: Array(repeating: sig, count: 64), signed: envelope.encoded)
     }
 
-    /// Whether `records` is the HELLO this node sends, alone: caps `c215f`, since it answers holder queries, proves its id
-    /// and reads tags, or `c315f` when its radio serves a doorbell too, then a fresh nonce, whose bytes are random.
+    /// Whether `records` is the HELLO this node sends, alone: caps `1c215f`, since it answers holder queries, proves its id,
+    /// reads tags and seals links, or `1c315f` when its radio serves a doorbell too, then a fresh nonce, whose bytes are random.
     static func isOurHello(_ records: [LinkRecord], _ local: NodeId, servesDoorbell: Bool = false) -> Bool {
         guard records.count == 1, let record = records.first, record.tag == .hello, let nonce = Hello(payload: record.payload).nonce else {
             return false
         }
         // A dial's HELLO names the form it dialed (`a`, ADR 2026-11.sv5t); an answer names none.
         let addressed = Hello(payload: record.payload).addressed.map { "|a\(Hex.encode($0))" } ?? ""
-        return record.payload == Array("\(local)|1|\(servesDoorbell ? "c315f" : "c215f")|n\(Hex.encode(nonce))\(addressed)".utf8)
+        return record.payload == Array("\(local)|1|\(servesDoorbell ? "1c315f" : "1c215f")|n\(Hex.encode(nonce))\(addressed)".utf8)
     }
 }

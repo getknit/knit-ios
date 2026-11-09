@@ -131,6 +131,18 @@ writer that would blind its payload with its advert waits for an iOS ADR of its 
 item 13). `BlueZGattRetryTests.aCharacteristicThatHoldsABlindedPayloadIsAStranger` and `LinkTests`'
 `theFlagsThisPortWritesNeverSetTheAwareBit` pin both.
 
+**Amended 2026-11-09, for knit-ios #51 (ADR 2026-11.6zhj, knit-next ADR 2026-11.8mhs): bit 4 of the flags byte is
+`FLAG_LINK_SEAL` (`0x10`).** A build sets it in every advert it writes exactly when its HELLO carries `CAP_LINK_SEAL`,
+and a dialer opens a link sealed only toward an advert carrying it. `writtenFlags(dialsGattPeers:blinded:seals:)` sets it, in the clear form and the blinded
+form alike, so it
+reaches the GATT value and knit-peer's service data alike. The capability byte is full, so Android learns that an
+iPhone seals only from this flag in its GATT payload: anything that kept `writtenFlags` from reaching the GATT value
+would leave every Pixel dialing the iPhone plain. A 23-byte payload reads it as absent. `GattPayloads` gains a
+forget rule with it (`noReply(at:)`, rule 5, after ADR 2026-11.prsp's slot edge): a plain dial made from a clear payload
+that lacked the flag, whose HELLO carried the bit and that got no reply, forgets the payload once per address, so the
+next dial reads it fresh. A payload that carried the flag is never forgotten that way, and neither is a blinded one
+(the `blind-gatt-reads` contract, §6). `LinkSealWireTests` and `GattPayloadsTests` pin both.
+
 **Amended 2026-11-11, for the iPhone's address change (ADR 2026-09.6es2, amended the same day): KnitBlueZ gives a read
 20 s.** iOS ends a link when the same device connects to it again, so the Linux peer's read of an iPhone's new address
 costs it its link to that iPhone. bluetoothd then discovers the iPhone's whole database before the payload, about 200

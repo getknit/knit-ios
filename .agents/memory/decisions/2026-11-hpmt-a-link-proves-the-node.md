@@ -133,3 +133,17 @@ HELLO names its current tag (`t`). The proof covers both HELLOs as the bytes tha
 rewritten (`keyed-v1.json`'s `blind.link.toldRewritten`). The bit values move with `CAP_BLIND_ADVERT`: the HELLO reads `c215f`
 (`c315f` with the doorbell) and the signed profile `0xC015F`, or `0xC000F` without the ratchet's prekey. (Amended
 2026-11-10: a debug build with link previews signs `CAP_LINK_PREVIEW` too, `0xC055F` or `0xC040F`; ADR 2026-11.hcvg.)
+
+**Amended 2026-11-09, for knit-ios #51 (ADR 2026-11.6zhj):** between two builds that seal, the follow-up this ADR
+named has landed, as an ephemeral X25519 exchange and an AES-256-GCM seal rather than a MAC. The proof runs unchanged
+inside the seal, but signs a v2 transcript that binds both ephemeral keys (`knit/link/v2/proof`), so "A relayed
+handshake is not prevented" no longer holds for a sealed link: a relay can neither compute the keys nor swap its own
+in without breaking a signature, and an injected or reordered record closes the link. Between phones that hold each
+other's profile, or have proven each other this run, it can't downgrade a link to plain either, since stripping the
+seal's bit from a proving HELLO breaks the PROOF and R1 refuses a bit-less claim. At a first meeting a relay can still
+pose as an old build to both phones and read the plain, unproven link that results, which is this ADR's profile-less
+claim; links with Android v2.10.x and v2.11.0 stay relayable as before. The suspension risk gains a stage: a sealed
+dial waits for the responder's `KEY_SHARE` before its HELLO, so an iPhone suspended mid-handshake has one more window
+to lose the link in. The bit values move with `CAP_LINK_SEAL`: the HELLO reads `1c215f` (`1c315f` with the doorbell)
+and the signed profile `0x1C015F`, or `0x1C000F` without the ratchet's prekey (`0x1C055F` or `0x1C040F` in a
+debug build with link previews).

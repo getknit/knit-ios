@@ -89,6 +89,10 @@ import Foundation
             let (radio, flood) = flooding(host.radio, options, log: log)
             let node = makeNode(options, host: host, radio: radio, links: links, log: log)
             let signals = stopOnSignals(node, host)
+            if let seal = LinkManager.SealSwitch(rawValue: options.sealSwitch), seal != .on {
+                await node.setSealSwitch(seal)
+                log.log(.info, "seal switch \(seal.rawValue): a trial's switch (--seal)")
+            }
             await node.start(name: options.name)
             for await line in StandardInput.lines() where !line.isEmpty {
                 guard await node.handle(line) else {

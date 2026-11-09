@@ -1,11 +1,12 @@
 #if os(Linux)
     import Glibc
+    import KnitCrypto
     import KnitMesh
     import KnitWire
     import KnitSync
 
     /// What the radio's callers ask of its thread.
-    internal enum RadioCommand: Equatable, Sendable {
+    internal enum RadioCommand: Sendable {
         case start
         case stop
         case advertise(AdvertPayload)
@@ -13,6 +14,14 @@
         case write(ChannelID, [UInt8])
         case writeDigest(ChannelID, [UInt8])
         case writeFileRecord(ChannelID, [UInt8])
+        /// Our `KEY_SHARE`, and a responder's sealer with it (``Radio/writeKeyShare(_:sealer:to:)``).
+        case writeKeyShare(ChannelID, [UInt8], LinkSealer?)
+        /// A dialer's sealer, once the responder's `KEY_SHARE` came back (``Radio/seal(_:with:)``).
+        case seal(ChannelID, LinkSealer)
+        /// The link registered (``Radio/linkUp(_:on:)``): the bit flip's switch arms here.
+        case linkUp(ChannelID)
+        /// Our plain dial to this address got no reply (``Radio/dialGotNoReply(at:)``).
+        case dialGotNoReply(RadioAddress)
         case close(ChannelID)
         case ring(ChannelID)
         case heardHello(ChannelID, NodeId, told: NodeId?, announced: NodeId?)
@@ -69,7 +78,8 @@
         /// Queues `command` and wakes the loop. A full pipe already holds a wake-up, so a failed write loses nothing.
         func post(_ command: RadioCommand) {
             switch command {
-            case .write(let id, let bytes), .writeDigest(let id, let bytes), .writeFileRecord(let id, let bytes):
+            case .write(let id, let bytes), .writeDigest(let id, let bytes), .writeFileRecord(let id, let bytes),
+                .writeKeyShare(let id, let bytes, _):
                 levels.queued(bytes.count, on: id)
             default:
                 break

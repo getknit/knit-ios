@@ -247,7 +247,7 @@ Launch arguments, set in the scheme on the Mac (P7):
   no argument, always runs with it on. A debug build keeps a choice for every launch after it that names none, iOS's
   own and the device tests' included; `-ratchet` with no value or another value changes nothing. `-ratchet off` is for
   a v1 trial, with the go-ahead. Turning it off republishes the profile without the bits and the prekey, and the HELLO
-  and the advert keep `0xC015F`.
+  and the advert keep `0x1C015F`.
   - Knit is nearly always running already: iOS starts it by itself after every install, and `check.sh devicetest`
     reopens it. A running Knit reads no argument, since `devicectl` only brings it forward, so give every
     `-ratchet on` and every `-ratchet off` `--terminate-existing`, with the arguments after `--`:

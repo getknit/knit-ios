@@ -123,8 +123,12 @@ import Testing
         #expect(status["linksProven"] as? Int == 0)
         #expect(status["linkProofFailed"] as? Int == 0)
         #expect(status["linkClaimRefused"] as? Int == 0)
+        // The seal's three, one name each on both phones (the `link-seal` contract, §9).
+        #expect(status["linksSealed"] as? Int == 0)
+        #expect(status["linkSealFailed"] as? Int == 0)
+        #expect(status["linkSealRefused"] as? Int == 0)
         // The bits the harness reads to know the build reads tags, and the presence keys' counts (ADR 2026-11.sv5t).
-        #expect(status["capabilities"] as? String == "c015f")
+        #expect(status["capabilities"] as? String == "1c015f")
         let keys = try #require(status["presenceKeys"] as? [String: Any])
         #expect(keys["stored"] as? Int == 0)
         #expect(keys["replaced"] as? Int == 0)
@@ -335,6 +339,14 @@ private final class QuietRadio: Radio {
 
     func dial(_: RadioAddress, psm _: UInt16) -> ChannelID {
         ChannelID(1)
+    }
+
+    func writeKeyShare(_: [UInt8], sealer _: LinkSealer?, to _: ChannelID) {
+        // Nothing reads it.
+    }
+
+    func seal(_: ChannelID, with _: LinkSealer) {
+        // Nothing reads it.
     }
 
     func write(_: [UInt8], to _: ChannelID) {

@@ -190,6 +190,10 @@ extension LinkManager {
             log.log(.info, "link \(id) tag dial to \(target.shown) reached a node naming us")
             return retire(id, backingOff: true, now: now) + promote(now: now)
         }
+        // A plain tag dial comes only here, so §7 runs here too, before the proof's checks (`link-seal` §7).
+        if refusesPlainLink(id, ours: wroteSeal(on: id), theirs: hello) {
+            return sealRefused(id, claiming: named.string, backingOff: true, now: now)
+        }
         guard provesLinks, hello.capabilities.contains(.linkProof), hello.nonce != nil, let ours = channels[id]?.wroteHello else {
             proofFailed(on: id, for: named, why: hello.capabilities.contains(.linkProof) && provesLinks ? "nonce" : "unproven")
             return retire(id, backingOff: true, now: now) + promote(now: now)

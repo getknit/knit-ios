@@ -16,15 +16,16 @@ import Testing
         #expect(rig.radio.started)
         _ = rig.handle(.listening(psm: 0x81))
         let advert = rig.radio.advertised.last
-        let expected = AdvertPayload(capabilities: .local, nodeId: high, digestCue: 0, psm: 0x81, flags: AdvertPayload.dialsGattPeersFlag)
-        #expect(advert == expected)
+        let flags = AdvertPayload.dialsGattPeersFlag | AdvertPayload.linkSealFlag
+        // Our HELLO carries the seal's bit, so the advert carries its flag (`link-seal` §1).
+        #expect(advert == AdvertPayload(capabilities: .local, nodeId: high, digestCue: 0, psm: 0x81, flags: flags))
         #expect(advert?.capabilities == 0x5F, "the low byte of `0x15F`: `cryptoV3` sits above the advert's 8 bits")
     }
 
     @Test func aRadioThatCannotReadGATTPayloadsLeavesTheFlagClear() {
         let rig = LinkRig(local: high, dialsGattPeers: false)
         _ = rig.handle(.listening(psm: 0x81))
-        #expect(rig.radio.advertised.last?.flags == 0)
+        #expect(rig.radio.advertised.last?.flags == AdvertPayload.linkSealFlag, "the seal's flag alone")
     }
 
     /// No radio here runs Wi-Fi Aware, so no advert this port writes may claim it: Android counts a peer as an Aware
@@ -40,7 +41,7 @@ import Testing
         #expect(flags.count == 3)
         #expect(flags.allSatisfy { $0 & AdvertPayload.awareFlag == 0 }, "\(flags)")
         #expect(flags.allSatisfy { $0 & AdvertPayload.sideChannelFlag == 0 }, "\(flags)")
-        #expect(flags.allSatisfy { $0 == (dialsGattPeers ? AdvertPayload.dialsGattPeersFlag : 0) }, "\(flags)")
+        #expect(flags.allSatisfy { $0 == (dialsGattPeers ? AdvertPayload.dialsGattPeersFlag : 0) | AdvertPayload.linkSealFlag }, "\(flags)")
         #expect(rig.radio.advertised.allSatisfy { $0.gattValue[AdvertPayload.minimumSize] & AdvertPayload.awareFlag == 0 })
     }
 

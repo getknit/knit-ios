@@ -11,7 +11,7 @@ import Testing
     private let low = LinkRig.low
     private let middle = LinkRig.middle
     private let high = LinkRig.high
-    private let proving = Neighbor(nodeId: LinkRig.low, protocolVersion: 1, capabilities: Capabilities.local.union(.blobHave))
+    private let proving = Neighbor(nodeId: LinkRig.low, protocolVersion: 1, capabilities: LinkRig.provingCapabilities)
     private let legacy = Neighbor(nodeId: LinkRig.low, protocolVersion: 1, capabilities: 0xFFF)
 
     private func counts(_ rig: LinkRig) -> [Int] {
@@ -161,7 +161,7 @@ import Testing
         _ = rig.handle(.connected(id))
         let events = try rig.answerProving(high, on: id).events
         #expect(
-            events == [.down(high), .up(Neighbor(nodeId: high, protocolVersion: 1, capabilities: Capabilities.local.union(.blobHave)))])
+            events == [.down(high), .up(Neighbor(nodeId: high, protocolVersion: 1, capabilities: LinkRig.provingCapabilities))])
         #expect(rig.radio.closed == [ChannelID(100)])
         #expect(counts(rig) == [1, 0, 1])
     }

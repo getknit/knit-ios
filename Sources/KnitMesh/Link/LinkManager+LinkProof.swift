@@ -10,9 +10,14 @@ public import KnitWire
 /// the peer's PROOF verified: nothing that keys on the peer's id runs before. A peer whose HELLO lacks the bit (Android
 /// v2.10.1 and earlier) links unproven, as before, unless its id is one that proves itself (R1).
 ///
-/// The proof binds the id to the key that signed this link's two HELLOs. It does not bind the radio channel: a link a
-/// third node relays end to end still proves, which only a key derived from the handshake and a MAC on every record would
-/// stop (contract §10).
+/// The proof binds the id to the key that signed this link's two HELLOs. On a plain link it does not bind the radio channel:
+/// a link a third node relays end to end still proves (contract §10). A sealed link's does: its PROOF signs both ephemeral
+/// keys, and every record rides frames under keys only the two ends hold (``LinkProof/Form/sealed(_:)``,
+/// `LinkManager+Seal.swift`), so that caveat holds for plain links. Those are links with builds before the seal, and one
+/// more case (the `link-seal` contract, §7, revision 3): at a first meeting, a relay that strips the advert's flag and
+/// rewrites both HELLOs as v2.10.x's poses as an old build to both phones, and reads the plain, unproven link that
+/// results until R4 closes it. No downgrade is possible between phones that hold each other's profile carrying the
+/// proof's bit, or that proved each other this session: R1 refuses the unproven claim.
 extension LinkManager {
     /// knit-peer's impostor, a trial's switch the app never sets: what a build from before the proof, or a node claiming
     /// another's id, puts on the wire, so that a phone's refusals can be watched on air (the contract's T4 and T5).
@@ -130,6 +135,10 @@ extension LinkManager {
     /// The reply to our dial, `payload` as it crossed, already checked to name `peer`. A reply with the bit makes its PROOF
     /// the next record; one without links unproven, unless the id proves itself.
     func answered(_ id: ChannelID, hello: Hello, payload: [UInt8], peer: NodeId, now: Int64) -> [Event] {
+        // Before R1, so the link counts once (`link-seal` §7): no PROOF of ours, and a backoff.
+        if refusesPlainLink(id, ours: wroteSeal(on: id), theirs: hello) {
+            return sealRefused(id, claiming: peer.string, backingOff: true, now: now)
+        }
         switch judgeClaim(hello, claiming: peer) {
         case .failed(let why):
             proofFailed(on: id, for: peer, why: why)
@@ -153,7 +162,7 @@ extension LinkManager {
     /// in one write, then writes nothing until its PROOF verifies.
     func answerWithProof(_ id: ChannelID, _ pending: PendingProof, now: Int64) -> [Event] {
         channels[id]?.wroteHello = pending.responderHello
-        guard let proof = signedProof(as: .responder, dialerHello: pending.dialerHello, responderHello: pending.responderHello),
+        guard let proof = signedProof(as: .responder, pending, on: id),
             let helloRecord = LinkRecord(.hello, payload: pending.responderHello).encoded
         else {
             proofFailed(on: id, for: pending.peer, why: "unsigned")
@@ -165,9 +174,18 @@ extension LinkManager {
         return []
     }
 
-    /// Our PROOF record as `signer`, or `nil` when the key would not sign. Signed once per link: each signature differs.
-    func signedProof(as signer: LinkProof.Role, dialerHello: [UInt8], responderHello: [UInt8]) -> [UInt8]? {
-        signProof(signer, dialerHello, responderHello).flatMap { LinkRecord(.proof, payload: $0).encoded }
+    /// Our PROOF record as `signer` for `pending`'s HELLOs on `id`, in the form the channel opened in, or `nil` when the key
+    /// would not sign. Signed once per link: each signature differs.
+    func signedProof(as signer: LinkProof.Role, _ pending: PendingProof, on id: ChannelID) -> [UInt8]? {
+        guard let form = channels[id]?.form else {
+            return nil
+        }
+        return signProof(form, signer, pending.dialerHello, pending.responderHello).flatMap { LinkRecord(.proof, payload: $0).encoded }
+    }
+
+    /// Whether the HELLO we wrote on `id` carried ``Capabilities/linkSeal``.
+    func wroteSeal(on id: ChannelID) -> Bool {
+        channels[id]?.wroteHello.map { Hello(payload: $0).capabilities.contains(.linkSeal) } ?? false
     }
 
     /// Waits for the peer's PROOF: one more stage of the handshake, with its own deadline and its own put-off.
@@ -182,7 +200,7 @@ extension LinkManager {
     /// A tag dial whose responder proved a refused id closes before our PROOF (``refusedTagDial(_:_:_:now:)``).
     func handleProof(_ record: LinkRecord, _ pending: PendingProof, on id: ChannelID, role: Role, now: Int64) -> [Event] {
         let dialed = role != .responder
-        var failure = Self.proofFailure(record, pending, signer: dialed ? .responder : .dialer)
+        var failure = Self.proofFailure(record, pending, form: channels[id]?.form ?? .plain, signer: dialed ? .responder : .dialer)
         if failure == nil, case .dialer(let target) = role, target.expected == nil, refused.contains(pending.peer) {
             return refusedTagDial(id, target, pending, now: now)
         }
@@ -196,14 +214,16 @@ extension LinkManager {
         return proved(id, pending, now: now)
     }
 
-    /// Why `record` is not the PROOF of `pending.peer` as `signer`, or `nil` when it is. Never the keys or the signature.
-    static func proofFailure(_ record: LinkRecord, _ pending: PendingProof, signer: LinkProof.Role) -> String? {
+    /// Why `record` is not the PROOF of `pending.peer` as `signer` on a link opened in `form`, or `nil` when it is. Never the
+    /// keys or the signature. `form` is the channel's, so a v1 signature never verifies on a sealed link (`link-seal` §6).
+    static func proofFailure(_ record: LinkRecord, _ pending: PendingProof, form: LinkProof.Form, signer: LinkProof.Role) -> String? {
         guard record.tag == .proof else {
             return "record"
         }
         let outcome = LinkProof.verify(
             record.payload,
             claimedId: pending.peer,
+            form: form,
             signer: signer,
             dialerHello: pending.dialerHello,
             responderHello: pending.responderHello
@@ -218,7 +238,7 @@ extension LinkManager {
 
     /// Writes our PROOF as `signer` on `id`, or answers why not.
     func writeProof(as signer: LinkProof.Role, _ pending: PendingProof, on id: ChannelID) -> String? {
-        guard let proof = signedProof(as: signer, dialerHello: pending.dialerHello, responderHello: pending.responderHello) else {
+        guard let proof = signedProof(as: signer, pending, on: id) else {
             return "unsigned"
         }
         write(proof, on: id)

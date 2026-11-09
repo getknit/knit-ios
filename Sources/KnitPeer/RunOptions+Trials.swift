@@ -1,5 +1,23 @@
 /// The run's switches for device trials, apart from `PeerCommand.swift` to keep its length in bounds.
 extension RunOptions {
+    /// What `--seal` takes: the link manager's seal switches, by name.
+    static let sealSwitches = ["on", "off", "downgrade", "plain-reply"]
+    /// The LE dynamic PSMs `--psm` takes, which a process may bind without privilege.
+    static let dynamicPSMs = 0x80...0xFF
+
+    /// `--psm PSM`, or `nil` when not given: the listener binds it, so a trial that switches `--seal` gives a fresh one
+    /// and a phone holding the GATT payload from before fails at connect and reads it again (the `link-seal` contract,
+    /// revision 2).
+    static func psm(_ text: String?) throws(UsageError) -> Int? {
+        guard let text else {
+            return nil
+        }
+        guard let psm = Int(text), dynamicPSMs.contains(psm) else {
+            throw .invalid(flag: "--psm", value: text)
+        }
+        return psm
+    }
+
     /// The longest `--stop-reading-after` taken: a day.
     static let longestStopReadingAfter = 86_400
 

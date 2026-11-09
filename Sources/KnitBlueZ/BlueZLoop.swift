@@ -129,7 +129,8 @@
             }
             let reading = readsChannels(now: Monotonic.milliseconds())
             for (id, channel) in channels.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
-                let writing = channel.connecting || !channel.outbox.isEmpty
+                // Not while what waits is held for the sealer: the socket's space would wake the loop on every turn.
+                let writing = channel.connecting || (!channel.outbox.isEmpty && !channel.outbox.awaitsSealer)
                 polled.append(.channel(id))
                 // A channel at its credit is not polled for input: what its peer sends waits in the socket, and L2CAP's
                 // credits hold the peer back. A hang-up or an error still comes, since `poll` reports those unasked.
@@ -209,6 +210,8 @@
                 enqueueDigest(record, on: id)
             case .writeFileRecord(let id, let record):
                 enqueueFileRecord(record, on: id)
+            case .writeKeyShare, .seal, .linkUp, .dialGotNoReply:
+                performSealing(command)
             case .close(let id):
                 closeChannel(id)
             case .ring(let id):
@@ -351,6 +354,8 @@
             /// How long after the loop starts it stops reading its channels, or `nil` to read them always
             /// (``BlueZRadio/Configuration/stopReadingAfterMilliseconds``).
             var stopReadingAfterMilliseconds: Int64?
+            /// Whether to flip a bit in each link's first sealed frame after it registers (``BlueZRadio/Configuration/flipsSealedBit``).
+            var flipsSealedBit = false
 
             /// The shared pacing (`GattPayloads.Configuration`), but a read may take 20 s, not 12. Under BlueZ a read's
             /// services resolved 10.1 and 13.05 s after it began, at two of the iPhone's address changes, and the payload's

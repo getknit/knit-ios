@@ -37,7 +37,7 @@ struct BlindingPeer {
 
     /// A HELLO from this phone, its `t` and `a` written as Android writes them after the nonce.
     func hello(told: NodeId?, addressed: NodeId? = nil, nonce: [UInt8] = LinkProof.freshNonce()) -> [UInt8] {
-        let caps = Capabilities.local.union(.blobHave).union(.blindAdvert)
+        let caps = LinkRig.provingCapabilities.union(.blindAdvert)
         var fields = ["\(id)", "1", caps.hex, "n\(Hex.encode(nonce))"]
         if let told {
             fields.append("t\(Hex.encode(told.bytes))")

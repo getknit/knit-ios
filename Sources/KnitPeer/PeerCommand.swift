@@ -9,6 +9,7 @@ public import KnitWire
 ///           [--log debug|info|warning|off] [--rssi-floor DBM] [--never-sight NODE_ID[,NODE_ID…]]
 ///           [--no-gatt-payload] [--gatt-reads | --no-gatt-reads] [--feed window|pace] [--ratchet | --no-ratchet]
 ///           [--no-presence-keys] [--blind] [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
+///           [--seal on|off|downgrade|plain-reply] [--flip-sealed-bit] [--psm PSM]
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
 /// knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
 ///                [--advertise android|ios] [--instance NAME | --state DIR]
@@ -44,6 +45,7 @@ public enum PeerCommand: Equatable, Sendable {
                 [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload] [--gatt-reads | --no-gatt-reads]
                 [--feed window|pace] [--ratchet | --no-ratchet] [--no-presence-keys] [--blind]
                 [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
+                [--seal on|off|downgrade|plain-reply] [--flip-sealed-bit] [--psm PSM]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
             knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
@@ -65,6 +67,10 @@ public enum PeerCommand: Equatable, Sendable {
         --flood is for trials too: while linked, the peer writes that many bytes a second of undecodable frames to
         every link, as a neighbour flooding it would, holding back while its own queue to that link is full.
         --lying is for trials too: only with it do lie-blobhas, junk, advertise-photo, pad-profile and ask-blob take.
+        --seal is for trials too: off seals nothing, as Android v2.11.0; downgrade strips the advert's flag and keeps the
+        HELLO's bit; plain-reply answers a sealed dial with a plain HELLO. --flip-sealed-bit flips one bit in each link's
+        first sealed frame after it comes up. --psm listens on that LE PSM (128 to 255) instead of the kernel's: give a
+        fresh one each time --seal changes, so a phone holding the old GATT payload fails its dial and reads it again.
         `stranger` is a test stimulus that never links: it advertises the 0xFE30
         UUID as a device that is not Knit's, registering its advert afresh every --rotate seconds.
         """
@@ -83,6 +89,7 @@ public enum PeerCommand: Equatable, Sendable {
                 "--shared-adapter", "--no-gatt-payload", "--gatt-reads", "--no-gatt-reads", "--ratchet", "--no-ratchet",
                 "--no-presence-keys", "--blind",
                 "--lying",
+                "--flip-sealed-bit",
             ])
         switch verb {
         case nil, "run":
@@ -183,6 +190,13 @@ public struct RunOptions: Equatable, Sendable {
     public var floodBytesPerSecond: Int?
     /// Whether the lying commands take, a trial's switch (`--lying`, `door-cap-lying-peers`); every lie starts unset.
     public var lying = false
+    /// The link manager's seal switch, a trial's (`--seal`; the `link-seal` contract's T5 and T6): `on` unless told.
+    public var sealSwitch = "on"
+    /// Whether the radio flips a bit in each link's first sealed frame after link-up, a trial's switch
+    /// (`--flip-sealed-bit`, BlueZ only).
+    public var flipsSealedBit = false
+    /// The LE PSM to listen on, or `nil` for the kernel's (`--psm`, BlueZ only).
+    public var listenPSM: Int?
     static let profiles = ["android", "ios"]
     static let feeds = ["window", "pace"]
     static let logLevels = ["debug", "info", "warning", "off"]
@@ -230,6 +244,9 @@ public struct RunOptions: Equatable, Sendable {
         stopReadingAfterSeconds = try Self.stopReadingAfter(flags.take("--stop-reading-after"))
         floodBytesPerSecond = try Self.flood(flags.take("--flood"))
         lying = flags.take(switch: "--lying")
+        sealSwitch = try flags.take("--seal", oneOf: Self.sealSwitches) ?? sealSwitch
+        flipsSealedBit = flags.take(switch: "--flip-sealed-bit")
+        listenPSM = try Self.psm(flags.take("--psm"))
     }
 
     /// Options as given, for tests and callers that build them.
@@ -304,80 +321,5 @@ public struct KeygenOptions: Equatable, Sendable {
             throw .invalid(flag: flag, value: text)
         }
         return parsed
-    }
-}
-
-/// Whether knit-peer reads GATT payloads, and so sets `FLAG_DIALS_GATT_PEERS` (`--gatt-reads`, `--no-gatt-reads`).
-public enum GattReads: Equatable, Sendable {
-    /// As the radio profile does: the `ios` profile reads, and the `android` profile does not.
-    case asProfile
-    /// Reads, whatever the profile.
-    case on
-    /// Reads nothing, whatever the profile.
-    case off
-}
-
-/// Why the arguments did not parse.
-public enum UsageError: Error, Equatable, Sendable {
-    /// Not `run`, `keygen` or `help`.
-    case unknownCommand(String)
-    /// A flag this command does not take.
-    case unknownFlag(String)
-    /// A flag with no value after it.
-    case missingValue(String)
-    /// A value a flag does not accept.
-    case invalid(flag: String, value: String)
-    /// A flag given twice.
-    case repeated(String)
-    /// Something required that was not given.
-    case missing(String)
-}
-
-/// The `--flag value` pairs and the valueless `switches`, taken one by one so that whatever is left over is an error.
-internal struct Flags {
-    private var values: [String: String] = [:]
-
-    init(parsing arguments: ArraySlice<String>, switches: Set<String>) throws(UsageError) {
-        var rest = arguments
-        while let flag = rest.popFirst() {
-            guard flag.hasPrefix("--") else {
-                throw .unknownFlag(flag)
-            }
-            var value = ""
-            if !switches.contains(flag) {
-                guard let next = rest.popFirst(), !next.hasPrefix("--") else {
-                    throw .missingValue(flag)
-                }
-                value = next
-            }
-            guard values.updateValue(value, forKey: flag) == nil else {
-                throw .repeated(flag)
-            }
-        }
-    }
-
-    mutating func take(_ flag: String) -> String? {
-        values.removeValue(forKey: flag)
-    }
-
-    /// Whether the switch `flag` was given.
-    mutating func take(switch flag: String) -> Bool {
-        values.removeValue(forKey: flag) != nil
-    }
-
-    mutating func take(_ flag: String, oneOf allowed: [String]) throws(UsageError) -> String? {
-        guard let value = values.removeValue(forKey: flag) else {
-            return nil
-        }
-        guard allowed.contains(value) else {
-            throw .invalid(flag: flag, value: value)
-        }
-        return value
-    }
-
-    func finish() throws(UsageError) {
-        if let flag = values.keys.min() {
-            throw .unknownFlag(flag)
-        }
     }
 }

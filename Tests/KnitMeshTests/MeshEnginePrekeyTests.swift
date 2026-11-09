@@ -16,8 +16,8 @@ import Testing
     private let heal: Int64 = 900_000
 
     /// Our profile with the switch off, signed at a fixed stamp, as the engine wrote it before the ratchet's switch
-    /// existed but for the link-proof and blind-advert bits, which every profile we sign carries (`0xC000F`, knit-ios #25,
-    /// ADR 2026-11.sv5t): these are the
+    /// existed but for the link-proof, blind-advert and link-seal bits, which every profile we sign carries (`0x1C000F`,
+    /// knit-ios #25, ADR 2026-11.sv5t, knit-next #286): these are the
     /// bytes that must not move.
     private let profileBeforeTheSwitch =
         "a564747970656770726f66696c65626964783070726f66696c652d736a6b6832376864376e61326e663735756e6264366b6d72636d2d"
@@ -26,7 +26,7 @@ import Testing
         + "7978706f6d5a7a6157645164574a59494f5144435a6a5031613058493846702b56617143353634595a745a6b7231684c4372304b4f76"
         + "486e3433775a3268776132565164574a5949425732435a4f4754656c7569674572414e5375577967666b583564446e6232704e69726a"
         + "7450344d6167616964657669636554616770303031313232333334343535363637376c70726f746f56657273696f6e016c6361706162"
-        + "696c69746965731a000c000f6776657273696f6e076a6f70656e546f43686174f5"
+        + "696c69746965731a001c000f6776657273696f6e076a6f70656e546f43686174f5"
 
     /// Alice's ring over a store that holds her identity, with prekeys minted at `minted`, and the store.
     private func ring(minted: [Int64] = []) throws -> (PrekeyRing, KeptSecretStore) {
@@ -52,16 +52,16 @@ import Testing
 
     @Test func theSwitchAddsTheRatchetsThreeBitsToTheProfileAlone() {
         #expect(MeshConfiguration().ratchet == false, "a test starts from the build before the ratchet")
-        #expect(MeshConfiguration().capabilities.rawValue == 0xC000F)
+        #expect(MeshConfiguration().capabilities.rawValue == 0x1C000F)
         #expect(MeshConfiguration().capabilities == Capabilities.local.subtracting([.ratchet, .inlineAck, .cryptoV3]))
-        #expect(ratchetOn.capabilities.rawValue == 0xC015F)
+        #expect(ratchetOn.capabilities.rawValue == 0x1C015F)
         #expect(ratchetOn.capabilities == .local, "the HELLO and the advert carry the build's set either way")
     }
 
     @Test func withTheSwitchOffOurProfileIsTheBytesItWasAndNothingIsMinted() throws {
         let stamp = EngineFixture.start - 1000
         // Its capabilities recorded as this build signs them, so the start's capability check moves nothing either.
-        let own = OwnProfile(name: "Alice", status: "around", openToChat: true, version: 7, publishedAt: stamp, capabilities: 0xC000F)
+        let own = OwnProfile(name: "Alice", status: "around", openToChat: true, version: 7, publishedAt: stamp, capabilities: 0x1C000F)
         let (ring, store) = try ring(minted: [stamp])
         let before = store.contents
         let fixture = EngineFixture(alice, stores: .inMemory(ownProfile: own), prekeys: ring)
@@ -82,7 +82,7 @@ import Testing
         #expect(own.version == 0, "never edited, so the first prekey rides a republish, and no empty name goes out as an edit")
         #expect(own.publishedAt == EngineFixture.start)
         let content = try ourProfile(fixture)
-        #expect(content.capabilities == 0xC015F)
+        #expect(content.capabilities == 0x1C015F)
         let prekey = try #require(content.prekey)
         #expect(prekey.id == 1)
         #expect(PeerPrekey(verifying: prekey, signedBy: alice.keys.bundle)?.publicKey == prekey.pub)
@@ -102,7 +102,7 @@ import Testing
         #expect(after.publishedAt == EngineFixture.start, "a new stamp, so no copy of the old payload takes its id")
         let content = try ourProfile(fixture)
         #expect(content.prekey == nil)
-        #expect(content.capabilities == 0xC000F)
+        #expect(content.capabilities == 0x1C000F)
         #expect(try kept(store) == [1])
     }
 
@@ -181,19 +181,19 @@ import Testing
         #expect(fixture.stores.ownProfile.load().prekeyId == nil)
         let content = try ourProfile(fixture)
         #expect(content.prekey == nil)
-        #expect(content.capabilities == 0xC000F, "the bits and the prekey ride together, or neither does")
+        #expect(content.capabilities == 0x1C000F, "the bits and the prekey ride together, or neither does")
         #expect(fixture.log.all.contains { $0.hasPrefix("warning mesh kept no new prekey") })
         store.refusesWrites = false
         fixture.advance(heal)
         #expect(fixture.stores.ownProfile.load().prekeyId == 1)
-        #expect(try ourProfile(fixture).capabilities == 0xC015F)
+        #expect(try ourProfile(fixture).capabilities == 0x1C015F)
     }
 
     @Test func withNoRingTheSwitchPublishesNoPrekeyAndNoBits() throws {
         let fixture = EngineFixture(alice, configuration: ratchetOn)
         let content = try ourProfile(fixture)
         #expect(content.prekey == nil)
-        #expect(content.capabilities == 0xC000F)
+        #expect(content.capabilities == 0x1C000F)
         #expect(fixture.stores.ownProfile.load().prekeyId == nil)
     }
 
@@ -209,7 +209,7 @@ import Testing
         let pinned = try #require(theirs.stores.peers.peer(alice.nodeId))
         #expect(pinned.prekey == published)
         #expect(pinned.prekey != nil)
-        #expect(pinned.capabilities == 0xC015F)
+        #expect(pinned.capabilities == 0x1C015F)
         #expect(pinned.prekeyProfileAt == ours.stores.ownProfile.load().version)
         // Alice starts again with her switch off, her profile still never edited: a new stamp with no prekey, which Bob
         // takes at version 0, and his pin clears. The frame that carried the bits is not pushed again.
@@ -221,7 +221,7 @@ import Testing
         let cleared = try #require(theirs.stores.peers.peer(alice.nodeId))
         #expect(cleared.prekey == nil)
         #expect(cleared.prekeyProfileAt == off.stores.ownProfile.load().version)
-        #expect(cleared.capabilities == 0xC000F)
+        #expect(cleared.capabilities == 0x1C000F)
     }
 
     @Test func aRingAnotherIdentitySignsIsNotThisNodes() throws {

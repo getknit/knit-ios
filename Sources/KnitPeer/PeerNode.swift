@@ -111,6 +111,11 @@ public actor PeerNode {
         stores.blobs.insert([UInt8](data), hash: hash, mime: "image/jpeg", storedAt: 0)
     }
 
+    /// Sets the link manager's seal switch (`--seal`), a trial's, before ``start(name:)``: so the first advert carries it.
+    public func setSealSwitch(_ sealSwitch: LinkManager.SealSwitch) async {
+        await mesh.setSealSwitch(sealSwitch)
+    }
+
     /// Starts the mesh, publishes `name` if it is new, and reports `ready`.
     public func start(name: String?) async {
         guard forwarding == nil else {

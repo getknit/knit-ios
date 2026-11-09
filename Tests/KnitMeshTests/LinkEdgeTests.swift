@@ -120,9 +120,9 @@ import Testing
     @Test func aBadFirstRecordSaysNothingCameBeforeIt() throws {
         let rig = LinkRig(local: high)
         _ = rig.handle(.accepted(ChannelID(200)))
-        _ = rig.handle(.received(ChannelID(200), [10, 0, 0, 0, 0]))
+        _ = rig.handle(.received(ChannelID(200), [12, 0, 0, 0, 0]))
         let line = try #require(rig.log.all.first { $0.hasPrefix("warning link ch200 sent a bad record") })
-        #expect(line.hasSuffix("unknownTag(10) at byte 0 of 5; next 0a00000000 \".....\"; no record before it; reads 5"))
+        #expect(line.hasSuffix("unknownTag(12) at byte 0 of 5; next 0c00000000 \".....\"; no record before it; reads 5"))
     }
 
     @Test func refusalsAndReplacementsAreLogged() {

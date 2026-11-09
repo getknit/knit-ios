@@ -20,7 +20,7 @@
             let rig = try Self.reading()
             rig.start()
             let tag = try #require(NodeId(bytes: [0xCE, 0x73, 0x96] + [UInt8](repeating: 0x5A, count: 13)))
-            let flags = AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true)
+            let flags = AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true, seals: false)
             let blinded = AdvertPayload(capabilities: 0x9, advertised: tag, digestCue: 0, psm: UnixSockets.psm, flags: flags)
             rig.fake.remoteGatt[LoopRig.peerPath] = FakeBlueZ.RemoteGatt(value: blinded.gattValue)
             try rig.fake.add(device: LoopRig.peerPath, LoopRig.uuidOnlyDevice())

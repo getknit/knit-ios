@@ -32,7 +32,7 @@ enum EmittedLinkProofs {
         var dialerBytes: [UInt8] { helloDialer.payload }
         var responderBytes: [UInt8] { helloResponder.payload }
         var transcript: [UInt8] {
-            LinkProof.transcript(signer: role, dialerHello: dialerBytes, responderHello: responderBytes)
+            LinkProof.transcript(form: .plain, signer: role, dialerHello: dialerBytes, responderHello: responderBytes)
         }
     }
 
@@ -83,6 +83,7 @@ enum EmittedLinkProofs {
         let outcome = LinkProof.verify(
             proof.payload,
             claimedId: carol.nodeId,
+            form: .plain,
             signer: link.role,
             dialerHello: link.dialerBytes,
             responderHello: link.responderBytes)
@@ -92,7 +93,7 @@ enum EmittedLinkProofs {
     /// A fresh entry for `link`, Carol signing once.
     static func entry(_ link: Case, carol: IdentityKeys) throws -> EmittedLinkProof? {
         let payload = try LinkProof.payload(
-            keys: carol, signer: link.role, dialerHello: link.dialerBytes, responderHello: link.responderBytes)
+            keys: carol, form: .plain, signer: link.role, dialerHello: link.dialerBytes, responderHello: link.responderBytes)
         guard let record = LinkRecord(.proof, payload: payload).encoded, let dialer = helloEntry(link.helloDialer),
             let responder = helloEntry(link.helloResponder)
         else {

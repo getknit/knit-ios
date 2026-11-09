@@ -1,7 +1,8 @@
 #if canImport(CoreBluetooth)
     import CoreBluetooth
     import Foundation
-    import KnitMesh
+    public import KnitCrypto
+    public import KnitMesh
     import KnitWire
 
     // MARK: Links and the connections under them
@@ -69,6 +70,22 @@
                 return
             }
             link.writeFileRecord(record)
+        }
+
+        func writeKeyShare(_ record: [UInt8], sealer: LinkSealer?, to channel: ChannelID) {
+            guard let link = links[channel] else {
+                log.log(.debug, "ble dropped a key share for \(channel), which has no link")
+                return
+            }
+            link.writeKeyShare(record, sealer: sealer)
+        }
+
+        func seal(_ channel: ChannelID, with sealer: LinkSealer) {
+            guard let link = links[channel] else {
+                log.log(.debug, "ble dropped a sealer for \(channel), which has no link")
+                return
+            }
+            link.seal(with: sealer)
         }
 
         /// Starts a link over an open channel, dialed or accepted, once its opening is reported.
@@ -175,6 +192,27 @@
             if failed {
                 gatt.forget(RadioAddress(uuid.uuidString))
             }
+        }
+    }
+
+    // MARK: The seal, on the radio
+
+    extension BLERadio {
+        /// Queued in order with the writes, on the CoreBluetooth queue and then the stream thread, where the link's outbox
+        /// holds what follows until a sealer is there (``L2CAPLink/writeKeyShare(_:sealer:)``).
+        public func writeKeyShare(_ record: [UInt8], sealer: LinkSealer?, to channel: ChannelID) {
+            levels.queued(record.count, on: channel)
+            core.onQueue { $0.writeKeyShare(record, sealer: sealer, to: channel) }
+        }
+
+        /// Through the same two queues as the writes, so it lands in order with them (``L2CAPLink/seal(with:)``).
+        public func seal(_ channel: ChannelID, with sealer: LinkSealer) {
+            core.onQueue { $0.seal(channel, with: sealer) }
+        }
+
+        /// On the CoreBluetooth queue, where the GATT payloads are kept (``BLECore/dialGotNoReply(at:)``).
+        public func dialGotNoReply(at address: RadioAddress) {
+            core.onQueue { $0.dialGotNoReply(at: address) }
         }
     }
 #endif

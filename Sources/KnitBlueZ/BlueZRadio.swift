@@ -1,5 +1,6 @@
 #if os(Linux)
     import Foundation
+    public import KnitCrypto
     public import KnitMesh
     public import KnitWire
 
@@ -38,6 +39,11 @@
             /// A trial's switch (`knit-peer --stop-reading-after`): the far end's writes then stall, which is what its
             /// overfull bound and its link manager's stall close are tested against (ADR 2026-10.f5zs).
             public var stopReadingAfterMilliseconds: Int64?
+            /// Whether to flip one bit in the first sealed frame written on each link after it registers, a trial's switch
+            /// (`knit-peer --flip-sealed-bit`; the `link-seal` contract's T6): past the frame's header, so the far end still
+            /// reads a frame, fails to open it, counts a failed seal and closes the link. Here, below knit-peer's wrappers,
+            /// since ciphertext exists only in the radio's outbox (``LinkOutbox/corruptNextSealedFrame()``).
+            public var flipsSealedBit = false
             /// Where channels come from.
             public var sockets: any SocketProvider
             /// Where D-Bus objects of this process live.
@@ -64,6 +70,7 @@
                 configuration.neverSighted = neverSighted
                 configuration.rotateAdvertMilliseconds = rotateAdvertMilliseconds
                 configuration.stopReadingAfterMilliseconds = stopReadingAfterMilliseconds
+                configuration.flipsSealedBit = flipsSealedBit
                 return configuration
             }
         }
@@ -129,6 +136,14 @@
             mailbox.post(.writeDigest(channel, record))
         }
 
+        public func writeKeyShare(_ record: [UInt8], sealer: LinkSealer?, to channel: ChannelID) {
+            mailbox.post(.writeKeyShare(channel, record, sealer))
+        }
+
+        public func seal(_ channel: ChannelID, with sealer: LinkSealer) {
+            mailbox.post(.seal(channel, sealer))
+        }
+
         /// The loop reports each FILE record's last byte out of the channel's queue, so a file never fills it.
         public var reportsFileWrites: Bool { true }
 
@@ -157,6 +172,15 @@
 
         public func heardHello(from node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID) {
             mailbox.post(.heardHello(channel, node, told: told, announced: announced))
+        }
+
+        public func dialGotNoReply(at address: RadioAddress) {
+            mailbox.post(.dialGotNoReply(address))
+        }
+
+        /// Arms the bit flip on the link, when the trial's switch asks (``Configuration/flipsSealedBit``).
+        public func linkUp(_: NodeId, on channel: ChannelID) {
+            mailbox.post(.linkUp(channel))
         }
 
         /// Stops, withdraws the advert and the GATT application from BlueZ, closes the bus, and waits for the

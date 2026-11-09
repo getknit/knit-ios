@@ -2,7 +2,8 @@
 ///
 /// The signed copy in `ProfileContent.capabilities` is the one that gates behaviour: at send time, and for ``linkProof``
 /// at a link's admission. The advert's low byte and the HELLO's hex copy are routing hints, but for ``linkProof``, whose
-/// HELLO copy decides whether a link runs the proof that then covers both HELLOs. A bit is a promise: advertise only what
+/// HELLO copy decides whether a link runs the proof that then covers both HELLOs, and ``linkSeal``, whose HELLO copy on
+/// both ends refuses a plain link. A bit is a promise: advertise only what
 /// this build implements (`.agents/rules/interop.md`).
 public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerLiteral {
     /// End-to-end encrypted DMs. Diagnostic only.
@@ -51,23 +52,33 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     /// HELLO lacks it. In ``local`` only since tag 9 and ctl 11 both read here: Android does not resend a ctl 11 a peer
     /// dropped until its next generation, root or restart. Above the advert's 8 bits, so never there.
     public static let blindAdvert: Self = 0x80000
+    /// "I seal links" (`Protocol.CAP_LINK_SEAL`; the `link-seal` contract, §1; knit-next #286): this node answers a link
+    /// opened with a `KEY_SHARE` (link record tag 10) with its own, and from then on reads and writes only `SEALED` frames
+    /// (tag 11) under keys from that exchange, and its PROOF signs both ephemeral keys (``LinkProof``'s v2 transcript). A
+    /// build carries it only together with ``linkProof``, since a sealed link is always a proven one. Read from the HELLO,
+    /// where the PROOF covers it: a link opened in the plain form whose two HELLOs both carry it is refused, so a relay
+    /// that strips the advert's flag gets no link rather than a plain one (§7). Above the advert's 8 bits, so the advert
+    /// carries it as a bit of its flags byte instead (`AdvertPayload`'s `FLAG_LINK_SEAL`, `0x10`), and that flag alone
+    /// decides which form a dial opens with (§2). The signed profile's copy is informational: nothing decides from it.
+    public static let linkSeal: Self = 0x100000
 
     /// What this build advertises: end-to-end DMs, groups, reactions and store-and-forward, with the ratchet's three bits,
-    /// ``ratchet``, ``inlineAck`` and ``cryptoV3``, ``linkProof`` and ``blindAdvert`` (`0xC015F`, ADR 2026-09.n393, ADR
-    /// 2026-10.ehe6, ADR 2026-10.5sk9, knit-ios #25, ADR 2026-11.sv5t). Android reads the reactions bit for diagnostics
-    /// only, and the ratchet's from our signed profile alone (`CryptoScheme.kt:11-13`), which carries them only beside our
-    /// prekey with the ratchet's switch on (`MeshConfiguration.capabilities`); the HELLO and the advert carry this set
-    /// whatever the switch says, as hints nothing seals by. ``linkProof`` and ``blindAdvert`` ride the signed profile
-    /// whatever the switch says: a peer reads the first there to know this node must prove its id, and the second to hand
-    /// it presence keys. Never ``fastCompact`` or ``frameTranscode``, which are fast-plane encodings this port has no plane
-    /// for, and never ``doorbell`` or ``blobHave``: those are the link's to claim, in the HELLO alone.
+    /// ``ratchet``, ``inlineAck`` and ``cryptoV3``, ``linkProof``, ``blindAdvert`` and ``linkSeal`` (`0x1C015F`, ADR
+    /// 2026-09.n393, ADR 2026-10.ehe6, ADR 2026-10.5sk9, knit-ios #25, ADR 2026-11.sv5t, knit-next #286). Android reads the
+    /// reactions bit for diagnostics only, and the ratchet's from our signed profile alone (`CryptoScheme.kt:11-13`), which
+    /// carries them only beside our prekey with the ratchet's switch on (`MeshConfiguration.capabilities`); the HELLO and
+    /// the advert carry this set whatever the switch says, as hints nothing seals by. ``linkProof``, ``blindAdvert`` and
+    /// ``linkSeal`` ride the signed profile whatever the switch says: a peer reads the first there to know this node must
+    /// prove its id, the second to hand it presence keys, and the third for information alone. Never ``fastCompact`` or
+    /// ``frameTranscode``, which are fast-plane encodings this port has no plane for, and never ``doorbell`` or
+    /// ``blobHave``: those are the link's to claim, in the HELLO alone.
     public static let local: Self = [
-        .endToEnd, .groups, .reactions, .storeForward, .ratchet, .inlineAck, .cryptoV3, .linkProof, .blindAdvert,
+        .endToEnd, .groups, .reactions, .storeForward, .ratchet, .inlineAck, .cryptoV3, .linkProof, .blindAdvert, .linkSeal,
     ]
 
     /// The ratchet's bits: what our signed profile drops with the switch off or no prekey kept, so it reads as it did
-    /// before the ratchet but for ``linkProof`` and ``blindAdvert`` (`0xC000F`), since `CAP_RATCHET` promises a published
-    /// prekey (`MeshManager.kt:2963-2979`).
+    /// before the ratchet but for ``linkProof``, ``blindAdvert`` and ``linkSeal`` (`0x1C000F`), since `CAP_RATCHET` promises
+    /// a published prekey (`MeshManager.kt:2963-2979`).
     public static let ratchetSuite: Self = [.ratchet, .inlineAck, .cryptoV3]
 
     /// The bit field, a Kotlin `Long`.
@@ -84,7 +95,7 @@ public struct Capabilities: OptionSet, Hashable, Sendable, ExpressibleByIntegerL
     }
 
     /// The bits in lowercase hexadecimal with no leading zeros, as the HELLO carries them
-    /// (Kotlin's `Long.toString(16)`): `fff` for Android, `c015f` for us.
+    /// (Kotlin's `Long.toString(16)`): `fff` for Android, `1c015f` for us.
     public var hex: String { String(rawValue, radix: Self.hexRadix) }
 
     private static let hexRadix = 16

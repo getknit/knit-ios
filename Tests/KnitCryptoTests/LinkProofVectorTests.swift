@@ -39,7 +39,7 @@ import Testing
         let role = try Self.role(vector.role)
         #expect(role == (entry == "proofTranscriptDialer" ? .dialer : .responder))
         #expect(vector.signer == (role == .dialer ? "alice" : "bob"))
-        let ours = LinkProof.transcript(signer: role, dialerHello: dialerHello, responderHello: responderHello)
+        let ours = LinkProof.transcript(form: .plain, signer: role, dialerHello: dialerHello, responderHello: responderHello)
         #expect(Hex.encode(ours) == vector.hex)
     }
 
@@ -55,11 +55,11 @@ import Testing
         #expect(payload.count == LinkProof.payloadByteCount)
         #expect(Array(payload.prefix(LinkProof.keysByteCount)) == signer.bundle.signingKey + signer.bundle.agreementKey)
         let outcome = LinkProof.verify(
-            payload, claimedId: signer.nodeId, signer: role, dialerHello: dialerHello, responderHello: responderHello)
+            payload, claimedId: signer.nodeId, form: .plain, signer: role, dialerHello: dialerHello, responderHello: responderHello)
         #expect(outcome == .proven(signer.bundle))
         let other: LinkProof.Role = role == .dialer ? .responder : .dialer
         let reflected = LinkProof.verify(
-            payload, claimedId: signer.nodeId, signer: other, dialerHello: dialerHello, responderHello: responderHello)
+            payload, claimedId: signer.nodeId, form: .plain, signer: other, dialerHello: dialerHello, responderHello: responderHello)
         #expect(reflected == .failed(.badSignature))
     }
 
@@ -89,10 +89,12 @@ import Testing
         let transcript = try #require(
             ["proofTranscriptDialer": link.proofTranscriptDialer, "proofTranscriptResponder": link.proofTranscriptResponder][parts[2]])
         #expect(transcript.role == role.rawValue, "the role checked is the transcript's")
-        #expect(Hex.encode(LinkProof.transcript(signer: role, dialerHello: dialerHello, responderHello: responderHello)) == transcript.hex)
+        #expect(
+            Hex.encode(LinkProof.transcript(form: .plain, signer: role, dialerHello: dialerHello, responderHello: responderHello))
+                == transcript.hex)
         let payload = try Self.proofPayload(reject.record)
         let outcome = LinkProof.verify(
-            payload, claimedId: claimed.nodeId, signer: role, dialerHello: dialerHello, responderHello: responderHello)
+            payload, claimedId: claimed.nodeId, form: .plain, signer: role, dialerHello: dialerHello, responderHello: responderHello)
         #expect(outcome == .failed(expected), "\(name): \(reject.reason)")
     }
 
@@ -102,7 +104,7 @@ import Testing
         let payload = try Self.proofPayload(try #require(link.proofRejects["idMismatch"]).record)
         #expect(Array(payload.prefix(LinkProof.keysByteCount)) == bob.bundle.signingKey + bob.bundle.agreementKey)
         let outcome = LinkProof.verify(
-            payload, claimedId: bob.nodeId, signer: .dialer, dialerHello: dialerHello, responderHello: responderHello)
+            payload, claimedId: bob.nodeId, form: .plain, signer: .dialer, dialerHello: dialerHello, responderHello: responderHello)
         #expect(outcome == .proven(bob.bundle))
     }
 }

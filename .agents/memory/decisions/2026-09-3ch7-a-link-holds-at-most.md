@@ -62,3 +62,11 @@ no longer holds: it reads that level for the write-stall close and for `MeshTran
 a digest's reply round while the link has half a round unwritten. The digest slot is unchanged, and a digest that
 takes another's place hands its bytes back to the count. `LinkOutboxTests`, `BlueZOutboxTests`, `BlueZChannelTests`
 and `L2CAPLinkTests` pin the bound and the level.
+
+**Amended 2026-11-09, for knit-ios #51 (ADR 2026-11.6zhj):** on a sealed link the outbox also seals. Each entry is
+sealed as it leaves the queue, once per frame, and the ciphertext is kept across partial writes. The digest slot still
+works, because `offerDigest` swaps only an entry not yet sealed: a digest is fixed once its first frame is sealed, not
+once its first byte is written. A BlueZ write that would block right after sealing can therefore fix a digest with no
+byte out, letting at most one more stale digest queue behind it. Sealing above the outbox was the alternative, and it
+rules the swap out, since a swapped digest would need a nonce already used. Levels and the 4 MiB bound still
+count plaintext. `LinkOutboxSealTests` and `BlueZOutboxTests` pin a digest swapped behind a backed-up sealed socket.

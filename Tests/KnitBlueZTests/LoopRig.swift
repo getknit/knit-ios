@@ -71,7 +71,8 @@
             servesGattPayload: Bool = true,
             neverSighted: Set<NodeId> = [],
             rotateAdvert: Int64? = nil,
-            stopReadingAfter: Int64? = nil
+            stopReadingAfter: Int64? = nil,
+            flipsSealedBit: Bool = false
         ) throws {
             fake = try FakeBlueZ()
             sockets = UnixSockets(
@@ -93,6 +94,7 @@
             configuration.neverSighted = neverSighted
             configuration.rotateAdvertMilliseconds = rotateAdvert
             configuration.stopReadingAfterMilliseconds = stopReadingAfter
+            configuration.flipsSealedBit = flipsSealedBit
             configuration.forgetQuietDevicesMilliseconds = quiet
             configuration.forgetSweepMilliseconds = min(quiet, 30_000) / 2
             let recorder = box

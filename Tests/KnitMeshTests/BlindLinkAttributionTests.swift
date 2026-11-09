@@ -16,7 +16,7 @@ import Testing
     @Test func aTagDialProvingAnIdDisplacesTheUnprovenLinkClaimingIt() throws {
         let rig = LinkRig.iPhone()
         let peer = BlindingPeer(low)
-        _ = rig.accept(low, on: ChannelID(100), capabilities: Capabilities.local.subtracting(.linkProof))
+        _ = rig.accept(low, on: ChannelID(100), capabilities: Capabilities.local.subtracting([.linkProof, .linkSeal]))
         #expect(rig.links.neighbors.map(\.nodeId) == [low], "a legacy claim, unproven")
         let tag = peer.tag(wall: rig.clock.wallMilliseconds())
         rig.hear(peer.sighting(tag), for: 24_000)

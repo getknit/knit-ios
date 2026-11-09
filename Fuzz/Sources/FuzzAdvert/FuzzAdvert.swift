@@ -21,7 +21,7 @@ public func fuzzAdvert(_ data: UnsafePointer<UInt8>, _ count: Int) -> CInt {
             advertised: advert.advertised,
             digestCue: 0,
             psm: advert.psm,
-            flags: AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: advert.blinded)
+            flags: AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: advert.blinded, seals: advert.seals)
         )
         precondition(AdvertPayload(gattValue: written.gattValue) == written, "a payload this port writes did not read back")
     }

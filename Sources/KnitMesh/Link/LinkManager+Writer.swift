@@ -199,7 +199,8 @@ extension LinkManager {
         return writer.isUp && !writer.pending && writer.aired?.form.blinded == true
     }
 
-    /// The payload a push hands the radio for `aired`: its form and PSM, its flags, and while blinded a zero cue.
+    /// The payload a push hands the radio for `aired`: its form and PSM, its flags (`FLAG_LINK_SEAL` in either form, the
+    /// `link-seal` contract, §1), and while blinded a zero cue.
     func payload(of aired: AdvertWriter.Aired) -> AdvertPayload {
         let blinded = aired.form.blinded
         return AdvertPayload(
@@ -207,7 +208,7 @@ extension LinkManager {
             advertised: aired.form.advertised,
             digestCue: blinded ? 0 : digestCue,
             psm: aired.psm,
-            flags: AdvertPayload.writtenFlags(dialsGattPeers: radio.dialsGattPeers, blinded: blinded)
+            flags: AdvertPayload.writtenFlags(dialsGattPeers: radio.dialsGattPeers, blinded: blinded, seals: advertisesSeal)
         )
     }
 

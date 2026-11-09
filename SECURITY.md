@@ -44,8 +44,11 @@ reports:
 - **Typing indicators are not encrypted.** They go only to phones linked directly to yours, and no phone passes them
   on. In a direct message that means the other person's phone alone; in Nearby or a group, every phone linked to yours,
   and a group's indicator says which group it's for.
-- **The Bluetooth link itself is not encrypted.** Trust comes from the signature Knit checks on every frame it
-  acts on, and from end-to-end encryption on direct and group messages, not from the radio.
+- **Bluetooth links are encrypted between up-to-date phones.** A link between two phones on this version, or
+  on the matching Knit for Android update, is encrypted, so a listener nearby sees only how much crosses it and
+  when. A link with an older Android phone isn't. Either way, your phone's Bluetooth signal still names it, and
+  any phone that connects learns who it is. Trust still comes from the signature Knit checks on every frame it
+  acts on, and from end-to-end encryption on direct and group messages.
 - **Direct messages flood the mesh.** Only the recipient can open one, but relaying phones can see who is
   writing to whom, and how often.
 - **Group messages travel with their group's name and member list in the clear,** so relaying phones can see
