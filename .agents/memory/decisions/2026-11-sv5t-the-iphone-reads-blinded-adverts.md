@@ -164,5 +164,5 @@ cost an iPhone a refused or link-replacing dial at every rotation of every linke
 rides both advert forms: Android sets it in the clear form and the blinded form alike, and a tag dial to a blinded
 advert carrying it opens sealed, as a clear dial does. This port reads it from either. A future iOS writer that blinds
 its GATT payload (knit-next's `NEXT_WIRE_BREAK.md` item 13) would hide the flag from today's readers, which read
-nothing from a blinded payload, so that design has to carry the flag some other way. The HELLO and profile pins move
-to `1c015f` and `0x1C000F`; the legacy impostor's HELLO still reads `215f`, dropping `LINK_SEAL` with `LINK_PROOF`.
+nothing from a blinded payload, so that design has to carry the flag some other way. The HELLO now reads `1c215f`
+(`1c315f` with the doorbell), and the signed profile `0x1C015F`, or `0x1C000F` with the ratchet off; the legacy impostor's HELLO still reads `215f`, dropping `LINK_SEAL` with `LINK_PROOF`.
