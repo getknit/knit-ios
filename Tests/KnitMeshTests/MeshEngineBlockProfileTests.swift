@@ -65,8 +65,9 @@ import Testing
     }
 
     /// Bob's newer profile at version 20, received while he is blocked: a dirty name, a new status, open to chat, a new
-    /// photo, a new tag, new bits and a prekey.
-    private func newerProfile() throws -> TestFrame {
+    /// photo, a new tag, new bits and `prekey`, or prekey 1. CryptoKit randomizes Ed25519, so on the Mac each mint of
+    /// prekey 1 is signed anew: a test that compares the row's prekey passes the one it compares with.
+    private func newerProfile(prekey: PrekeyInfo? = nil) throws -> TestFrame {
         try profile(
             of: bob,
             name: "Bob\nSmith\u{202E}evil",
@@ -77,7 +78,7 @@ import Testing
             avatarHash: newFace,
             deviceTag: "0f0e0d0c0b0a0908",
             capabilities: 0x15F,
-            prekey: try bob.prekey(id: 1)
+            prekey: try prekey ?? bob.prekey(id: 1)
         )
     }
 
@@ -87,7 +88,8 @@ import Testing
         let fixture = try blockingBob()
         let before = try #require(fixture.stores.peers.peer(bob.nodeId))
         #expect(before.name == "Bob" && before.avatarHash == nil, "the block turned the face to the initial")
-        let newer = try newerProfile()
+        let prekey = try bob.prekey(id: 1)
+        let newer = try newerProfile(prekey: prekey)
         fixture.deliver(newer, from: carol)
 
         let row = try #require(fixture.stores.peers.peer(bob.nodeId))
@@ -95,7 +97,7 @@ import Testing
         #expect(fixture.stores.peers.profileFrame(of: bob.nodeId)?.signed == newer.wire.signed, "kept as the key's proof")
         #expect(row.deviceTag == "0f0e0d0c0b0a0908")
         #expect(row.capabilities == 0x15F)
-        #expect(row.prekey == (try bob.prekey(id: 1)) && row.prekeyProfileAt == 20)
+        #expect(row.prekey == prekey && row.prekeyProfileAt == 20)
         #expect(row.updatedAt == 20, "the presentation's watermark still moves")
         #expect(row.name == "Bob" && row.status == "here" && !row.openToChat, "the presentation does not")
         #expect(row.advertisedAvatarHash == face && row.avatarHash == nil)

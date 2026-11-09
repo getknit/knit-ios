@@ -34,6 +34,7 @@ import Testing
         }
         #expect(ChatListModel(session: sample.session).status == .linked(3))
         listening.cancel()
+        sample.mesh.end()
     }
 
     /// Nothing made up may read as a promise: each answer names itself a sample, and none says someone is coming.

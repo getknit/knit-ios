@@ -81,8 +81,10 @@ import Testing
     }
 
     /// With the advertised photo still set, clearing the forge must rewrite the marker; with nothing left, the advertised
-    /// photo's clear must remove it. Either one that cannot fails, after the honest edit went out.
-    @Test func aMarkerThatCannotBeRewrittenOrRemovedFailsTheClear() async throws {
+    /// photo's clear must remove it. Either one that cannot fails, after the honest edit went out. Root writes through a
+    /// directory's mode, and CI's Docker jobs run as root: there the refusal is the sanitizer jobs' and the Mac's to check.
+    @Test(.disabled(if: geteuid() == 0, "root writes through a directory's mode"))
+    func aMarkerThatCannotBeRewrittenOrRemovedFailsTheClear() async throws {
         let rig = try LyingProfileRig()
         defer { rig.remove() }
         try await rig.start()
