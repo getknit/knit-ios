@@ -263,6 +263,8 @@ public struct VectorLink: Decodable, Sendable {
     /// Records that must fail against the dialer's transcript, by name: `wrongRole`, `otherResponderNonce`, `idMismatch`
     /// and `short`.
     public let proofRejects: [String: ProofReject]
+    /// A sealed link (`link-seal`, knit-next #286). Required: a file without it fails to decode, so its replay never skips.
+    public let seal: Seal
 }
 
 /// knit-next's keyed vectors, `vectors/keyed-v1.json`: identities, Alice's signed frames and her DM to Bob, and
@@ -338,12 +340,15 @@ public struct EmittedLink: Codable, Sendable, Equatable {
     public let carolDialsAlice: EmittedLinkProof
     /// Alice dials Carol, Alice's nonce `30..3f` and Carol's `20..2f`: Carol's responder PROOF.
     public let aliceDialsCarol: EmittedLinkProof
+    /// Carol's sealed links (`link-seal`); absent before it.
+    public let seal: EmittedLinkSeal?
 
     /// Makes the section.
-    public init(about: String, carolDialsAlice: EmittedLinkProof, aliceDialsCarol: EmittedLinkProof) {
+    public init(about: String, carolDialsAlice: EmittedLinkProof, aliceDialsCarol: EmittedLinkProof, seal: EmittedLinkSeal? = nil) {
         self.about = about
         self.carolDialsAlice = carolDialsAlice
         self.aliceDialsCarol = aliceDialsCarol
+        self.seal = seal
     }
 }
 

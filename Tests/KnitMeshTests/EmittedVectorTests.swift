@@ -6,7 +6,8 @@ import Testing
 /// What this port emits for knit-next to check (`ios-emitted-v1.json`): Carol's identity from fixed keys, her
 /// signed profile and room post, a v1 DM she seals to knit-next's Bob, their safety number, her group frames
 /// (``EmittedGroupFrames``), and her ratchet profile and the ratchet frames her mesh engine sends Bob and Alice
-/// (``EmittedRatchetFrames``, phase P7b), and her link proofs as dialer and responder (``EmittedLinkProofs``).
+/// (``EmittedRatchetFrames``, phase P7b), her link proofs as dialer and responder (``EmittedLinkProofs``), and her sealed
+/// links (``EmittedLinkSeals``).
 /// knit-next's `IosEmittedVectorTest` verifies each signature with Tink, re-encodes
 /// each frame with kotlinx, and opens the DMs as Bob. The suite lives beside the engine's fixtures, since Carol's engine
 /// makes her ratchet frames.
@@ -31,7 +32,8 @@ import Testing
         + "reaction and retraction, seeds for a group of the three, a group-form message and a group-form reaction, and "
         + "her presence keys in a ctl 11 padded to 128 bytes (ADR 2026-11.prsp); "
         + "ratchet says how to open them. Carol's link proofs as dialer and responder, under link, with every HELLO at "
-        + "caps 40009 (link-hello-proof). Written by knit-ios with KNIT_WRITE_VECTORS=1; IosEmittedVectorTest checks "
+        + "caps 40009 (link-hello-proof), and her sealed links as dialer and responder, under link.seal, with every HELLO "
+        + "at caps 140009 (link-seal). Written by knit-ios with KNIT_WRITE_VECTORS=1; IosEmittedVectorTest checks "
         + "it. See vectors/README.md."
     /// What a check says of a committed frame this build no longer sends.
     static let stale = "is not what this build sends; regenerate with KNIT_WRITE_VECTORS=1, then sync-vectors.py --export"

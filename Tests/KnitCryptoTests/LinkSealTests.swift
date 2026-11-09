@@ -9,10 +9,9 @@ import Testing
 /// HKDF built on HMAC alone, and each frame's nonce and AAD against a bare `AES.GCM.open`, so nothing here only checks the
 /// code against itself.
 ///
-/// knit-next's `link.seal` entries (`keyed-v1.json`, contract "Vectors") replay through the same seam once they are
-/// synced: ``LinkSeal/Ephemeral/init(scalar:)`` fixes each side's key, ``LinkSeal/Session``'s `shared`, `keyD2R` and
-/// `keyR2D` compare with the file's, and ``LinkSealer/init(key:counter:)`` rebuilds a frame at any counter
-/// (`skippedCounter`, `wrongDirection`).
+/// knit-next's `link.seal` entries (`keyed-v1.json`, contract "Vectors") replay through the same seam in
+/// `LinkSealVectorTests`: ``LinkSeal/Ephemeral/init(scalar:)`` fixes each side's key, ``LinkSeal/Session``'s `shared`,
+/// `keyD2R` and `keyR2D` compare with the file's, and ``LinkSealer/init(key:counter:)`` rebuilds a frame at any counter.
 @Suite struct LinkSealTests {
     private static let aliceScalar = (0x40...0x5F).map { UInt8($0) }
     private static let bobScalar = (0x60...0x7F).map { UInt8($0) }

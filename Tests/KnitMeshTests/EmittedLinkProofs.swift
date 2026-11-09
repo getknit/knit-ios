@@ -110,7 +110,8 @@ enum EmittedLinkProofs {
             proof: Hex.encode(record))
     }
 
-    /// The section, keeping each committed proof while it is still current.
+    /// The section, keeping each committed proof while it is still current, with Carol's sealed links
+    /// (``EmittedLinkSeals``) under `seal`.
     static func section(carol: IdentityKeys, alice: IdentityKeys, committed: EmittedLink?) throws -> EmittedLink? {
         var entries: [String: EmittedLinkProof] = [:]
         for link in cases(carol: carol, alice: alice) {
@@ -124,6 +125,10 @@ enum EmittedLinkProofs {
         guard let dialing = entries["carolDialsAlice"], let answering = entries["aliceDialsCarol"] else {
             return nil
         }
-        return EmittedLink(about: about, carolDialsAlice: dialing, aliceDialsCarol: answering)
+        return EmittedLink(
+            about: about,
+            carolDialsAlice: dialing,
+            aliceDialsCarol: answering,
+            seal: try EmittedLinkSeals.section(carol: carol, alice: alice, committed: committed?.seal))
     }
 }
