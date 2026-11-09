@@ -490,6 +490,12 @@ Kotlin wins.
       tests, CI, builds, releases and agents. `NEXT_WIRE_BREAK.md` gains items 13 (finish blinding, the Wi-Fi Aware SSI
       and this port's GATT payload with it) and 14 (`relay` outside the signature, which this port's envelope shares),
       and item 4 notes custody's group filter gone.
+  - **Mirrored ahead of the pin:** link encryption (knit-next ADR 2026-11.8mhs, #286 option 1, the paired change
+    `link-seal`), from knit-next's `feat/link-seal` at `554458ef9`, one commit on `d720192c5`, not yet on `main`. This
+    port's side is ADR 2026-11.6zhj (knit-ios #51): `CAP_LINK_SEAL`, `FLAG_LINK_SEAL`, tags 10 and 11, the v2 PROOF
+    transcript and the three seal counters. `keyed-v1.json` → `link.seal` is synced from that commit, and
+    `ios-emitted-v1.json` → `link.seal` is committed there as this port exported it. The pin moves only once that
+    commit, or its squash, lands on `main`.
   - **Mirrored ahead of the last pin, merged since, and checked again at `cad69c77b`,** each unchanged since the commit
     cited, or moved only by a commit above: `eccabcd72`'s `RoomAttachments` (its ADR 2026-10.79j9): a room post's attachment
     that is not a picture, a link card or a video is left off the row, and a post that is nothing else keeps none

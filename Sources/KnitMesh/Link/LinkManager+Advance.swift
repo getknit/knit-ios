@@ -28,13 +28,10 @@ extension LinkManager {
 
     /// Says why `id`'s deadline closes it, in the line its stage's harness reads, before it is retired.
     private func sayTimedOut(_ id: ChannelID) {
-        guard let channel = channels[id] else {
-            return
-        }
-        if case .awaitingProof(let pending) = channel.stage {
+        if case .awaitingProof(let pending)? = channels[id]?.stage {
             // Never `timed out`, which the harness reads as a missed HELLO.
             proofFailed(on: id, for: pending.peer, why: "timeout")
-        } else if channel.stage == .awaitingKeyShare, case .dialer(let target) = channel.role {
+        } else if channels[id]?.stage == .awaitingKeyShare, case .dialer(let target)? = channels[id]?.role {
             // Never `timed out` either, and never a failed seal: the no-reply refusal a missed HELLO is on a plain dial.
             log.log(.info, "link \(id) got no key share from \(target.shown)")
         } else {

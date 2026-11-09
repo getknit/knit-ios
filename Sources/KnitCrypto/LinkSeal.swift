@@ -140,12 +140,13 @@ public enum LinkSeal {
         /// The responder-to-dialer key, for the vectors alone.
         let responderToDialer: SymmetricKey
 
-        /// `ss`'s bytes (the vectors' `shared`).
-        var shared: [UInt8] { copiedBytes(sharedSecret) }
+        /// `ss`'s bytes (the vectors' `shared`). The vector tests alone read these three, through `@testable`, which
+        /// `swiftlint analyze` (Sources only) does not see.
+        var shared: [UInt8] { copiedBytes(sharedSecret) } // swiftlint:disable:this unused_declaration
         /// `kD2R`'s bytes (the vectors' `keyD2R`).
-        var keyD2R: [UInt8] { copiedBytes(dialerToResponder) }
+        var keyD2R: [UInt8] { copiedBytes(dialerToResponder) } // swiftlint:disable:this unused_declaration
         /// `kR2D`'s bytes (the vectors' `keyR2D`).
-        var keyR2D: [UInt8] { copiedBytes(responderToDialer) }
+        var keyR2D: [UInt8] { copiedBytes(responderToDialer) } // swiftlint:disable:this unused_declaration
 
         /// No key bytes.
         public var description: String { "LinkSeal.Session" }

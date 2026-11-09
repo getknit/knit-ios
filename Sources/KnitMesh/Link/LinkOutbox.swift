@@ -173,8 +173,9 @@ public struct LinkOutbox: Sendable {
     }
 
     /// knit-peer's `--flip-sealed-bit`, a trial's switch: flips one bit of the next sealed frame, past its header, so the
-    /// far end still reads a frame and fails to open it (the `link-seal` contract's T6). Nothing else calls it.
-    package mutating func corruptNextSealedFrame() {
+    /// far end still reads a frame and fails to open it (the `link-seal` contract's T6). Nothing else calls it. Its caller
+    /// is in KnitBlueZ, which `swiftlint analyze`, run one module at a time, does not see.
+    package mutating func corruptNextSealedFrame() { // swiftlint:disable:this unused_declaration
         corruptsNextFrame = true
     }
 

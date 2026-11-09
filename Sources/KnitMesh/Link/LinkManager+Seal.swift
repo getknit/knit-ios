@@ -91,11 +91,8 @@ extension LinkManager {
     /// comes (``Radio/writeKeyShare(_:sealer:to:)``), and waits for the responder's (§4, step 1).
     func openSealed(_ id: ChannelID, now: Int64) {
         let ephemeral = makeEphemeral()
-        guard let record = LinkRecord(.keyShare, payload: ephemeral.keyShare).encoded else {
-            return
-        }
         channels[id]?.ephemeral = ephemeral
-        radio.writeKeyShare(record, sealer: nil, to: id)
+        radio.writeKeyShare(Self.keyShareRecord(ephemeral), sealer: nil, to: id)
         enterStage(.awaitingKeyShare, on: id, now: now)
     }
 
@@ -103,11 +100,9 @@ extension LinkManager {
     /// refuses, fails the seal. Once derived, the sealer goes to the radio before our HELLO, which is the first record
     /// sealed, and the channel waits for the reply as a plain dial does.
     func keyShareArrived(_ record: LinkRecord, on id: ChannelID, now: Int64) -> [Event] {
-        guard record.tag == .keyShare else {
+        // `openSealed` keeps our key on the channel before it enters this stage, so only the record can be wrong here.
+        guard record.tag == .keyShare, let ephemeral = channels[id]?.ephemeral else {
             return sealFailed(on: id, why: "\(record.tag) where the key share belongs", now: now)
-        }
-        guard let ephemeral = channels[id]?.ephemeral else {
-            return sealFailed(on: id, why: "no key of ours", now: now)
         }
         channels[id]?.ephemeral = nil
         let session: LinkSeal.Session
@@ -145,11 +140,8 @@ extension LinkManager {
         } catch {
             return sealFailed(on: id, why: error.rawValue, now: now)
         }
-        guard let ours = LinkRecord(.keyShare, payload: ephemeral.keyShare).encoded else {
-            return sealFailed(on: id, why: "no key share of ours", now: now)
-        }
         channels[id]?.seal = SealedReads(shares: session.shares, opener: session.opener)
-        radio.writeKeyShare(ours, sealer: session.sealer, to: id)
+        radio.writeKeyShare(Self.keyShareRecord(ephemeral), sealer: session.sealer, to: id)
         enterStage(.awaitingHello, on: id, now: now)
         return []
     }
@@ -162,6 +154,11 @@ extension LinkManager {
             return false
         }
         return role == .responder && stage == .awaitingHello && provesLinks && sealSwitch.answersSealed
+    }
+
+    /// Our `KEY_SHARE` record: the 5-byte header and the 32-byte public key, a length no record limit can refuse.
+    static func keyShareRecord(_ ephemeral: LinkSeal.Ephemeral) -> [UInt8] {
+        [LinkRecord.Tag.keyShare.rawValue, 0, 0, 0, UInt8(LinkRecord.keyShareBytes)] + ephemeral.keyShare
     }
 
     // MARK: Reading a sealed channel
@@ -184,12 +181,14 @@ extension LinkManager {
     /// seal; the log names the tag, the sizes and the position, never a byte of plaintext.
     func readInner(on id: ChannelID, now: Int64) -> [Event] {
         var events: [Event] = []
-        while let (role, stage) = channels[id].map({ ($0.role, $0.stage) }), channels[id]?.seal != nil {
+        // Where the next inner record starts rides with the role and stage: a record that throws does not move it.
+        while let (role, stage, at) = channels[id].flatMap({ channel in
+            channel.seal.map { (channel.role, channel.stage, $0.inner.consumed) }
+        }) {
             let record: LinkRecord?
             do {
                 record = try channels[id]?.seal?.inner.next()
             } catch {
-                let at = channels[id]?.seal?.inner.consumed ?? 0
                 return events + sealFailed(on: id, why: "inner record \(error) at byte \(at)", now: now)
             }
             guard let record else {
@@ -199,18 +198,16 @@ extension LinkManager {
                 return events + sealFailed(on: id, why: "inner \(record.tag)", now: now)
             }
             switch stage {
-            case .connecting, .awaitingKeyShare:
-                // No channel holds a seal before its exchange.
-                return events + sealFailed(on: id, why: "inner \(record.tag) before the exchange", now: now)
-            case .awaitingHello:
-                if let why = Self.sealedHelloFailure(record) {
-                    return events + sealFailed(on: id, why: why, now: now)
-                }
-                events += handleHello(record, on: id, role: role, now: now)
             case .awaitingProof(let pending):
                 events += handleProof(record, pending, on: id, role: role, now: now)
             case .live(let peer):
                 events += dispatch(record, from: peer, on: id, now: now)
+            case .awaitingHello, .connecting, .awaitingKeyShare:
+                // Only `awaitingHello` holds a seal before the link proves: the exchange sets the seal and that stage at once.
+                if let why = Self.sealedHelloFailure(record) {
+                    return events + sealFailed(on: id, why: why, now: now)
+                }
+                events += handleHello(record, on: id, role: role, now: now)
             }
         }
         return events
@@ -238,38 +235,35 @@ extension LinkManager {
     /// not, and a live link goes down as a bad record takes it, its cut attachment dropped since its bytes are suspect.
     /// Never a key, a nonce or a byte of plaintext in the line.
     func sealFailed(on id: ChannelID, why: String, now: Int64) -> [Event] {
-        guard let channel = channels[id] else {
-            return []
-        }
-        sealCounts.linkSealFailed += 1
+        // Every caller holds the channel. One already gone would count nothing and retire nothing, but would still log
+        // the line and promote, so a caller after a retire must not come here.
+        let channel = channels[id]
+        sealCounts.linkSealFailed += channel == nil ? 0 : 1
         let shown: String
-        switch (channel.role, channel.stage) {
+        switch (channel?.role, channel?.stage) {
         case (_, .live(let peer)):
             shown = peer.string
         case (.dialer(let target), _):
             shown = target.shown
         case (.responder, .awaitingProof(let pending)):
             shown = pending.peer.string
-        case (.responder, _):
+        default:
             // No id yet: one word, so a harness reading `seal failed for \S+` still matches.
             shown = "(dialer)"
         }
         log.log(.info, "link \(id) seal failed for \(shown): \(why)")
-        if case .live = channel.stage {
+        if case .live? = channel?.stage {
             return retire(id, backingOff: true, keepingCut: false, now: now) + promote(now: now)
         }
-        let dialed = channel.role != .responder
+        let dialed = channel?.role != .responder
         return retire(id, backingOff: dialed, keepingCut: false, now: now) + (dialed ? promote(now: now) : [])
     }
 
     /// A `KEY_SHARE` or a frame on a plain link, or anywhere a plain stage reads one: the link drops as for a bad record,
     /// as every build before the seal drops it on the unknown tag. Knowing the tags loosens nothing (§3).
     func strayRecord(_ record: LinkRecord, on id: ChannelID, now: Int64) -> [Event] {
-        guard let channel = channels[id] else {
-            return []
-        }
         log.log(.warning, "link \(id) sent a bad record: \(record.tag) of \(record.payload.count) bytes on a plain link")
-        if case .awaitingProof(let pending) = channel.stage {
+        if case .awaitingProof(let pending)? = channels[id]?.stage {
             proofFailed(on: id, for: pending.peer, why: "record")
         }
         return retire(id, backingOff: true, keepingCut: false, now: now) + promote(now: now)

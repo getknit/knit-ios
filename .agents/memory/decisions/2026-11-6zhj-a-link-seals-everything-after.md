@@ -9,8 +9,8 @@ topics: [ble, crypto, security, interop]
 # ADR 2026-11.6zhj — A link seals everything after an ephemeral key exchange
 
 Status: Accepted (2026-11-09). Mirrors knit-next ADR 2026-11.8mhs (knit-next #286, option 1), a paired change
-(`link-seal`, knit-ios #51) led by Android, mirrored ahead of the pin from knit-next's `feat/link-seal`
-(`.agents/context/knit-next.md`). It closes knit-ios #39 for every sealed link. Amends ADR 2026-11.hpmt, ADR
+(`link-seal`, knit-ios #51) led by Android, mirrored ahead of the pin from knit-next's `feat/link-seal` at
+`554458ef9` (`.agents/context/knit-next.md`). It closes knit-ios #39 for every sealed link. Amends ADR 2026-11.hpmt, ADR
 2026-10.mueg, ADR 2026-09.xzpt, ADR 2026-11.sv5t and ADR 2026-09.3ch7.
 
 **Context:** every link record crossed insecure L2CAP in the clear. A radio in range read, without linking, the HELLO

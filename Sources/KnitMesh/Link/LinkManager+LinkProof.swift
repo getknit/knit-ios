@@ -177,15 +177,22 @@ extension LinkManager {
     /// Our PROOF record as `signer` for `pending`'s HELLOs on `id`, in the form the channel opened in, or `nil` when the key
     /// would not sign. Signed once per link: each signature differs.
     func signedProof(as signer: LinkProof.Role, _ pending: PendingProof, on id: ChannelID) -> [UInt8]? {
-        guard let form = channels[id]?.form else {
-            return nil
+        channels[id].flatMap { signProof($0.form, signer, pending.dialerHello, pending.responderHello) }
+            .flatMap { LinkRecord(.proof, payload: $0).encoded }
+    }
+
+    /// How `id` opened (``Channel/form``): sealed once its exchange ran, plain otherwise.
+    func form(of id: ChannelID) -> LinkProof.Form {
+        if let seal = channels[id]?.seal {
+            .sealed(seal.shares)
+        } else {
+            .plain
         }
-        return signProof(form, signer, pending.dialerHello, pending.responderHello).flatMap { LinkRecord(.proof, payload: $0).encoded }
     }
 
     /// Whether the HELLO we wrote on `id` carried ``Capabilities/linkSeal``.
     func wroteSeal(on id: ChannelID) -> Bool {
-        channels[id]?.wroteHello.map { Hello(payload: $0).capabilities.contains(.linkSeal) } ?? false
+        channels[id]?.wroteHello.map { Hello(payload: $0).capabilities.contains(.linkSeal) } == true
     }
 
     /// Waits for the peer's PROOF: one more stage of the handshake, with its own deadline and its own put-off.
@@ -200,7 +207,7 @@ extension LinkManager {
     /// A tag dial whose responder proved a refused id closes before our PROOF (``refusedTagDial(_:_:_:now:)``).
     func handleProof(_ record: LinkRecord, _ pending: PendingProof, on id: ChannelID, role: Role, now: Int64) -> [Event] {
         let dialed = role != .responder
-        var failure = Self.proofFailure(record, pending, form: channels[id]?.form ?? .plain, signer: dialed ? .responder : .dialer)
+        var failure = Self.proofFailure(record, pending, form: form(of: id), signer: dialed ? .responder : .dialer)
         if failure == nil, case .dialer(let target) = role, target.expected == nil, refused.contains(pending.peer) {
             return refusedTagDial(id, target, pending, now: now)
         }

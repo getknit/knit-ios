@@ -2,8 +2,8 @@
   "source": {
     "repository": "knit-next",
     "path": "vectors/keyed-v1.json",
-    "commit": "d720192c56c237358a33d33518185872e85201e0",
-    "uncommitted": true,
+    "commit": "554458ef996457e607a894485424f0f341d42723",
+    "uncommitted": false,
     "sha256": "891e17b098fcfc4ec04394edcfcc3dee14e4bc7c90cd6caa029b3516ebd314fd"
   },
   "about": "Keyed vectors: two fixed identities, the frames Alice signs, a v1 DM she seals to Bob, their safety number, the link records a peer reads, and the advert it reads first. aliceProfileAtCap and aliceProfileOverCap are her profile with its status padded so `signed` is exactly the profile cap (8,192 bytes) and one byte over: a receiver pins the first and refuses the second before decoding it. KeyedVectorTest checks them. See vectors/README.md.",

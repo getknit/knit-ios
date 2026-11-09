@@ -61,7 +61,7 @@ extension LinkManager {
         /// Whether the advert dialed carried `FLAG_LINK_SEAL`, so the dial opens with a `KEY_SHARE` (the `link-seal`
         /// contract, §2). Copied from that advert when the dial is made, and from nothing else: not the profile, not an
         /// earlier link.
-        var seals = false
+        let seals: Bool
     }
 
     /// Who a HELLO said the peer is: what registering the link needs.

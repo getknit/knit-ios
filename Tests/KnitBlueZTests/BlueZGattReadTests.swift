@@ -6,7 +6,7 @@
     import Testing
 
     /// The rig and helpers both GATT suites share.
-    private enum GattRig {
+    enum GattRig {
         static let peer = RadioAddress(LoopRig.peerPath)
         static let otherPeerAddress = "5A:00:00:00:00:4F"
         static let otherPeerPath = FakeBlueZ.adapter + "/dev_5A_00_00_00_00_4F"

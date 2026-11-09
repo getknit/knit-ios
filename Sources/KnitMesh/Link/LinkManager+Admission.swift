@@ -78,7 +78,8 @@ extension LinkManager {
         }
         var events: [Event] = []
         // The role and stage only, never the whole channel: a copy of its reader would copy the buffer each record.
-        while let (role, stage, sealed) = channels[id].map({ ($0.role, $0.stage, $0.seal != nil) }) {
+        // Where the next record starts rides along too: a record that throws does not move it.
+        while let (role, stage, sealed, at) = channels[id].map({ ($0.role, $0.stage, $0.seal != nil, $0.reader.consumed) }) {
             let record: LinkRecord?
             do {
                 record = try channels[id]?.reader.next()
@@ -86,7 +87,6 @@ extension LinkManager {
                 if sealed || stage == .awaitingKeyShare || opensWithBadKeyShare(error, role: role, stage: stage) {
                     // Bytes that arrived and were wrong where only a KEY_SHARE or a frame may be: a failed seal, which says
                     // where, never what (`link-seal` §4).
-                    let at = channels[id]?.reader.consumed ?? 0
                     return events + sealFailed(on: id, why: "record \(error) at byte \(at)", now: now)
                 }
                 // Android throws on an unknown tag or a bad length and drops the link; so do we, and say what came.

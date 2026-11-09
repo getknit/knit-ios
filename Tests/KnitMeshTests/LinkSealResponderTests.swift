@@ -84,4 +84,65 @@ import Testing
         #expect(rig.links.linkSealFailed == 0)
         #expect(rig.links.backoffs[.peer(.node(low))] != nil, "backed off as a refusal")
     }
+
+    /// A dialer's KEY_SHARE that the exchange refuses, the all-zero point, fails the seal before anything is written back.
+    @Test func aLowOrderKeyShareFromADialerFailsTheSealUnanswered() {
+        let rig = LinkRig(local: high)
+        let id = ChannelID(100)
+        _ = rig.handle(.accepted(id))
+        _ = rig.handle(.received(id, LinkRecord.bytes(.keyShare, [UInt8](repeating: 0, count: 32))))
+        #expect(rig.links.linkSealFailed == 1)
+        #expect(rig.radio.writes(on: id).isEmpty, "no KEY_SHARE of ours")
+        #expect(rig.said("link \(id) seal failed for (dialer): low-order point"))
+    }
+
+    /// An inner record the reader cannot frame fails the seal, naming where and never what.
+    @Test func anInnerRecordThatDoesNotFrameFailsTheSeal() throws {
+        let rig = LinkRig(local: high)
+        let id = ChannelID(100)
+        let far = SealedFarEnd(role: .dialer)
+        _ = rig.handle(.accepted(id))
+        _ = rig.handle(.received(id, far.keyShare))
+        try far.take(from: rig, on: id)
+        _ = rig.handle(.received(id, try far.seal([0x0C, 0, 0, 0, 0])))
+        #expect(rig.links.linkSealFailed == 1)
+        #expect(rig.said("link \(id) seal failed for (dialer): inner record unknownTag(12) at byte 0"))
+    }
+
+    /// A frame that fails to open where the dialer's PROOF belongs names the id its sealed HELLO claimed, and counts a failed
+    /// seal, not a failed proof.
+    @Test func aBadFrameWhereTheProofBelongsNamesTheClaimedId() throws {
+        let rig = LinkRig(local: high)
+        let id = ChannelID(100)
+        let far = SealedFarEnd(role: .dialer)
+        _ = rig.handle(.accepted(id))
+        _ = rig.handle(.received(id, far.keyShare))
+        try far.take(from: rig, on: id)
+        _ = rig.handle(.received(id, try far.seal(LinkRecord.bytes(.hello, SealedFarEnd.hello(low)))))
+        var frame = try far.seal(LinkRecord.bytes(.frame, [1, 2, 3]))
+        frame[LinkRecord.headerBytes] ^= 1
+        _ = rig.handle(.received(id, frame))
+        #expect([rig.links.linkSealFailed, rig.links.linkProofFailed] == [1, 0])
+        #expect(rig.log.all.contains { $0.hasPrefix("info link \(id) seal failed for \(low): ") })
+        #expect(rig.links.backoffs.isEmpty, "a responder does not back off")
+    }
+
+    /// On a plain link a KEY_SHARE where the reply belongs, or where the dialer's PROOF belongs, drops the link as a bad
+    /// record, the PROOF's place failing the proof as any other record there does; no seal is counted.
+    @Test func aKeyShareOnAPlainLinkMidHandshakeIsABadRecord() throws {
+        let dialer = LinkRig(local: high)
+        dialer.sightToPromotion(low)
+        let dialed = try #require(dialer.radio.dials.last?.channel)
+        _ = dialer.handle(.connected(dialed))
+        _ = dialer.handle(.received(dialed, SealedFarEnd(role: .responder).keyShare))
+        #expect(dialer.links.channels[dialed] == nil)
+        #expect(dialer.log.all.contains { $0.hasPrefix("warning link \(dialed) sent a bad record: keyShare") })
+        #expect([dialer.links.linkSealFailed, dialer.links.linkProofFailed] == [0, 0])
+        let responder = LinkRig(local: high)
+        let id = ChannelID(100)
+        _ = responder.acceptProving(low, on: id)
+        _ = responder.handle(.received(id, SealedFarEnd(role: .dialer).keyShare))
+        #expect(responder.links.channels[id] == nil)
+        #expect([responder.links.linkSealFailed, responder.links.linkProofFailed] == [0, 1])
+    }
 }
