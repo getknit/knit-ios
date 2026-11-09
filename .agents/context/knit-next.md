@@ -9,9 +9,10 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`, `v2.8.0` is `45e09f19`, `v2.9.0` is `3286edd8`, and `v2.10.0` is
   `20696bad`. The port started from HEAD `02051b64`, five test-only commits after `v2.7.0`, on 2026-09-25.
-- **The pin is `cad69c77b`,** knit-next's `main` on 2026-11-07, moved to take in what this port had mirrored ahead of
-  the last one and to read knit-next ADR 2026-11.xp6d (#285) before porting it. Every commit since `e63f15f4` was read
-  for it, and "Since then" below says what each means here.
+- **The pin is `5fdaf5da8`,** knit-next's local `main` on 2026-11-09, where link encryption merged (knit-next ADR
+  2026-11.8mhs, the paired change `link-seal`), not yet pushed: `origin/main` was still `e5bb97c43`. If `main` is rebased
+  before the push, the pin moves to the pushed commit. Every commit since `cad69c77b` was read for it, and "Since then"
+  below says what each means here.
   `sync-vectors.py --check` needs a checkout at the pin, since a later one may carry vectors this port has not taken.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
@@ -427,7 +428,7 @@ Kotlin wins.
         low-power mode, offline translation, voice-note transcription, short video re-encoding and screening, the
         supporter badge's production key, the field log, the developer view, Wear watch faces, pt-BR, notifications,
         the debug bridge, tooling and tests.
-  - **Since then** (282 commits to `cad69c77b`; `v2.11.0-alpha.1` to `alpha.3` cut on `main` at `acf23d69d`,
+  - **Up to `cad69c77b`** (the previous pin; 282 commits; `v2.11.0-alpha.1` to `alpha.3` cut on `main` at `acf23d69d`,
     `1dbeec9d2` and `2d61c0ecd`, and the hotfixes `v2.10.1` and `v2.10.2` recorded by `c15f2cacf` and `0cecd38bb`; eight
     fixtures added to `wire-v1.json`, with its `languageRegistry`, and a `blind` section to `keyed-v1.json`, none moved;
     Android's database at v32). Read on 2026-11-07, and the merged code checked at `cad69c77b`. Today's iPhone handles
@@ -490,12 +491,22 @@ Kotlin wins.
       tests, CI, builds, releases and agents. `NEXT_WIRE_BREAK.md` gains items 13 (finish blinding, the Wi-Fi Aware SSI
       and this port's GATT payload with it) and 14 (`relay` outside the signature, which this port's envelope shares),
       and item 4 notes custody's group filter gone.
-  - **Mirrored ahead of the pin:** link encryption (knit-next ADR 2026-11.8mhs, #286 option 1, the paired change
-    `link-seal`), from knit-next's `feat/link-seal` at `554458ef9`, one commit on `d720192c5`, not yet on `main`. This
-    port's side is ADR 2026-11.6zhj (knit-ios #51): `CAP_LINK_SEAL`, `FLAG_LINK_SEAL`, tags 10 and 11, the v2 PROOF
-    transcript and the three seal counters. `keyed-v1.json` → `link.seal` is synced from that commit, and
-    `ios-emitted-v1.json` → `link.seal` is committed there as this port exported it. The pin moves only once that
-    commit, or its squash, lands on `main`.
+  - **Since then** (17 commits to `5fdaf5da8`, on `main` as rewritten before the push; no vector moved but `keyed-v1.json`'s
+    `link.seal` section and `ios-emitted-v1.json`'s, both from the seal):
+    - **Mirrored here:** link encryption, `5fdaf5da8` (knit-next ADR 2026-11.8mhs, #286 option 1), whose patch is
+      `feat/link-seal`'s `554458ef9`, which this port mirrored ahead of the pin as ADR 2026-11.6zhj (knit-ios #51):
+      `CAP_LINK_SEAL`, `FLAG_LINK_SEAL`, tags 10 and 11, the v2 PROOF transcript and the three seal counters. The device
+      trials ran against `554458ef9` (`linux-peer.md`, "What the link-seal trial showed"). `ios-emitted-v1.json` →
+      `link.seal` is on `main` as this port exported it.
+    - **Owed here:** `5c3ceb290` (#309) forgets a tag's address after a tag dial over 1M times out (`DialTargets`,
+      `DialPlan.forgetsDialedAddress`), so a claim's address from before the peer's Bluetooth toggle stops drawing dials
+      that pause the scan. Clear and Coded dials forget nothing. Whether this port's tag dials keep such an address is
+      unchecked, and a parity question for the blinded-advert reader (ADR 2026-11.sv5t), not the seal.
+    - **Nothing to mirror:** `52ef781bf`, `341fbb482`, `acee8ebf5` and `e5bb97c43` (release features, F-Droid, the
+      2.11.0 changelog and the folded xp6d ADR, the rewritten copies of `7246f0f1e`, `0e120eb36`, `4f7abbbe1` and
+      `d720192c5`), `ea1ef397e` (#304 and #305 recorded as accepted
+      residuals in xp6d and hj4a), LoRa and debug-bridge fixes (`b592124c4`, `ea69b5bd0`), lab and test waits, the
+      call screen, the preview layout audit and its CI gate, and the Gradle 9.9.0 bump (`1bd227dd9`).
   - **Mirrored ahead of the last pin, merged since, and checked again at `cad69c77b`,** each unchanged since the commit
     cited, or moved only by a commit above: `eccabcd72`'s `RoomAttachments` (its ADR 2026-10.79j9): a room post's attachment
     that is not a picture, a link card or a video is left off the row, and a post that is nothing else keeps none
@@ -554,7 +565,7 @@ Kotlin wins.
     `Mesh` actor), and it re-runs an id's link-up after a displacement (this port's `.down` then `.up` does). The wire
     change is additive.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `cad69c77b`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5fdaf5da8`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 
