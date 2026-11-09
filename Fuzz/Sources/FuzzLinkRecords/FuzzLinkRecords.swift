@@ -4,8 +4,10 @@ import KnitWire
 /// Arbitrary bytes as a link's byte stream, delivered in chunks the input chooses, then every record parsed
 /// the way a link session will: HELLO, digest and file-header JSON, frames down to their payloads, and the FILE
 /// records through a ``FileIntake``, as the link manager feeds them (ADR 2026-10.nh55). A PROOF is checked as each side
-/// checks its peer's (``LinkProof/verify(_:claimedId:signer:dialerHello:responderHello:)``, ADR 2026-11.hpmt), against
-/// the latest two HELLOs, as dialer then responder, for the id the latest one names. A KEEPALIVE stands for the link
+/// checks its peer's (``LinkProof/verify(_:claimedId:form:signer:dialerHello:responderHello:)``, ADR 2026-11.hpmt),
+/// against the latest two HELLOs, as dialer then responder, for the id the latest one names, in the plain form and, once
+/// two KEY_SHAREs came, the sealed one (ADR 2026-11.6zhj). A KEY_SHARE is derived against, so its low-order refusal runs,
+/// and a SEALED frame is opened under the latest derived session's opener. A KEEPALIVE stands for the link
 /// being cut: the file being kept goes to a memory of kept prefixes, the next link gets a fresh intake, and a resumed
 /// header reads its prefix back from that memory (knit-ios #2).
 @_cdecl("LLVMFuzzerTestOneInput")
@@ -52,6 +54,10 @@ private struct FuzzLinkRecords {
     var now: Int64 = 0
     /// The latest two HELLO payloads, the newest last: a PROOF's transcript, as dialer then responder.
     var hellos: [[UInt8]] = [[], []]
+    /// The latest two KEY_SHARE payloads, the newest last: a sealed PROOF's shares, as dialer then responder.
+    var keyShares: [[UInt8]] = [[], []]
+    /// The opener of the session the latest KEY_SHARE derived, from a fresh ephemeral of ours.
+    var opener: LinkOpener?
 }
 
 private func parse(_ record: LinkRecord, into session: inout FuzzLinkRecords) {
@@ -61,13 +67,13 @@ private func parse(_ record: LinkRecord, into session: inout FuzzLinkRecords) {
         _ = Hello(payload: record.payload)
         session.hellos = [session.hellos[1], record.payload]
     case .proof:
-        guard let claimed = NodeId(Hello(payload: session.hellos[1]).nodeId) else {
-            return
-        }
-        for signer in [LinkProof.Role.dialer, .responder] {
-            _ = LinkProof.verify(
-                record.payload, claimedId: claimed, signer: signer, dialerHello: session.hellos[0], responderHello: session.hellos[1])
-        }
+        verifyProof(record.payload, session)
+    case .keyShare:
+        // Its length is the reader's to check; the 32 bytes are a peer's point, refused when low-order.
+        session.keyShares = [session.keyShares[1], record.payload]
+        session.opener = (try? LinkSeal.derive(LinkSeal.Ephemeral(), peerShare: record.payload, role: .dialer))?.opener
+    case .sealed:
+        _ = session.opener?.open(sealedPayload: record.payload)
     case .digest:
         _ = LinkJSON.digestIds(from: record.payload)
     case .fileHeader:
@@ -102,5 +108,27 @@ private func parse(_ record: LinkRecord, into session: inout FuzzLinkRecords) {
             session.kept[cut.key] = cut.bytes
         }
         session.intake = FileIntake()
+    }
+}
+
+/// Checks `payload` as each side checks its peer's PROOF, against the latest two HELLOs for the id the latest one names:
+/// in the plain form, and in the sealed one once two KEY_SHAREs came.
+private func verifyProof(_ payload: [UInt8], _ session: FuzzLinkRecords) {
+    guard let claimed = NodeId(Hello(payload: session.hellos[1]).nodeId) else {
+        return
+    }
+    let shares = LinkSeal.KeyShares(dialer: session.keyShares[0], responder: session.keyShares[1])
+    let forms: [LinkProof.Form] = [.plain] + (shares.map { [.sealed($0)] } ?? [])
+    for form in forms {
+        for signer in [LinkProof.Role.dialer, .responder] {
+            _ = LinkProof.verify(
+                payload,
+                claimedId: claimed,
+                form: form,
+                signer: signer,
+                dialerHello: session.hellos[0],
+                responderHello: session.hellos[1]
+            )
+        }
     }
 }
