@@ -509,7 +509,7 @@ explicit direction.** Update this file in the change that ships an item.
   exchange, then every record rides AES-256-GCM, and the PROOF signs both ephemeral keys, so a relay can't sit in the
   middle of a sealed link. That closes #39 for every sealed link. At a first meeting a relay can still pose as an old
   build to both phones (hpmt's profile-less claim). On `feat/link-seal`, 2026-11-09. The contract's device trials
-  T4-T6 are owed.
+  T4-T6 passed the same day (`.agents/context/linux-peer.md`, "What the link-seal trial showed").
 - **What the pin move to `cad69c77b` found owed** (2026-11-07; `.agents/context/knit-next.md`, "Since then", "Owed
   here"), filed as knit-ios #42 to #50; the floored reset was already #38. Today's iPhone handles everything Android
   airs at it, so none of this is urgent. Each goes to its plane's owner and reviewer:

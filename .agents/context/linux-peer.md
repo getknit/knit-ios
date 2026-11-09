@@ -2284,3 +2284,40 @@ clear`).
   held across a rotation would go to a handle from before it. Why Android does not subscribe to a peer it has not bonded
   with was not checked in its source.
 - **Still owed:** the knit-peer trials the dongle section lists, and everything A11 owes.
+
+## What the link-seal trial showed
+
+On 2026-11-09 the iPhone 12 ran `feat/link-seal` at `d2b55a1` (ADR 2026-11.6zhj), beside the Pixel 9 and a Pixel 3 with
+a fresh identity, both on knit-next's `feat/link-seal` at `554458ef9` with blinded adverts, and knit-peer on dongle A.
+The moto (v2.10.x) linked plain alongside. The maintainer gave the session's go-ahead, nothing wiped a phone's data, and
+the test messages were purged afterwards on all three phones.
+
+- **T4, phone to iPhone.** The Pixel 9 dialed the iPhone and the iPhone dialed the Pixel 3, and both links came up
+  sealed and proven, with no failed seal on any side. Android's `bt connect ok … durMs` read 771 ms sealed against 491 ms
+  plain before the upgrade for the Pixel 9, and 1,999 ms against 1,189 ms for the Pixel 3. The iPhone refused two plain
+  dials first (`linkSealRefused` 2): the Pixels still held its pre-seal GATT payload. The Pixel 3 logged
+  `bt gatt forget … (seal)`, the revision-1 rule, and its next dial sealed. `interop.py iphone-photos` crossed text and
+  photos both ways in the room, a DM and a group with each Pixel. Its four failed steps were the harness's own reads (a
+  network `adb logcat` timing out on the Pixel 9, and one window on the Pixel 3), and logcat shows every photo arrived.
+- **A backgrounded, seeking iPhone seals.** With Knit sent to Settings by `devicectl` and every peer but the Pixel 3
+  denied, the Pixel 3's Knit was force-stopped and restarted. The iPhone dialed it 15 s later from the background, the
+  link sealed, and photos flowed at once.
+- **T5, the capture.** A stream parser over `btmon -w` rebuilt each LE CoC channel per direction. With the seal on,
+  every stream opened with one 37-byte tag-10 `KEY_SHARE` and carried only tag 11 after it. No node id showed as text
+  anywhere, and none as raw bytes inside a channel: only in knit-peer's own clear advert and the iPhone's GATT payload,
+  which ADR 2026-11.6zhj leaves readable. With `--seal off` on a fresh PSM, the streams opened with the HELLO and PROOF,
+  the ids showed in clear, and the link came up plain and proven.
+- **T6, downgrade and tamper**, each run with a fresh identity and PSM:
+  - `--seal downgrade` above the iPhone: the iPhone refused its plain dials before replying (`linkSealRefused` +4 over
+    the retries), the Pixel 9 refused the bit-claiming reply to its own plain dial (`bt dial refused … (seal=plain)`),
+    and no link came up.
+  - `--seal plain-reply`: the iPhone's sealed dials met a plain HELLO and counted failed seals (+3), and the Pixel 9
+    logged `link seal failed: hello where a key share belongs`.
+  - `--flip-sealed-bit`: sealed links to the iPhone and the Pixel 3 closed 0.3 to 0.5 s after link-up, each counting
+    `linkSealFailed`.
+  - The legacy pose with `--lying` and `dial`: claiming the Pixel 9's id, whose profile the iPhone holds, R1 refused it
+    (`linkClaimRefused`). Claiming an id it held no profile for, the link came up plain and unproven (`215f`) with no
+    seal counter moving: the first-meeting residual.
+  - knit-peer averaged 0.2% CPU over a three-minute downgrade run.
+- **Not run on air:** a wrong-length `KEY_SHARE` toward the iPhone's responder. No knit-peer switch sends one, and
+  `LinkSealResponderTests` covers it.
