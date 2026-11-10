@@ -19,6 +19,8 @@ enum Walking {
     static let swipes = 8
     /// How near the window's middle a revealed element's own middle is drawn, as a share of the window's height.
     static let middle: CGFloat = 0.25
+    /// How often a wait looks again. `waitForExistence` first looks a second in, even for an element already there.
+    static let poll: TimeInterval = 0.1
 }
 
 @MainActor
@@ -44,12 +46,17 @@ extension XCUIApplication {
     @discardableResult
     func reveal(_ element: XCUIElement, _ what: String) throws -> XCUIElement {
         try windows.firstMatch.appear("the window")
-        // Down the screen first, then back up it: the control may be either side of where the screen was left.
-        for _ in 0..<Walking.swipes where !(element.exists && element.isHittable) {
+        // Down the screen first, then back up it: the control may be either side of where the screen was left. Each
+        // look is two queries, so the looking stops once it is in view.
+        var swipes = 0
+        while swipes < Walking.swipes, !(element.exists && element.isHittable) {
             swipeUp()
+            swipes += 1
         }
-        for _ in 0..<Walking.swipes where !(element.exists && element.isHittable) {
+        swipes = 0
+        while swipes < Walking.swipes, !(element.exists && element.isHittable) {
             swipeDown()
+            swipes += 1
         }
         let found = try element.appear(what)
         center(found)
@@ -85,11 +92,16 @@ extension XCUIApplication {
 
 @MainActor
 extension XCUIElement {
-    /// This element once it exists, or ``Missing`` naming `what` after `timeout`.
+    /// This element once it exists, or ``Missing`` naming `what` after `timeout`. It looks every ``Walking/poll``:
+    /// `waitForExistence` first looks a second in, and a run waits over a thousand times.
     @discardableResult
     func appear(_ what: String, timeout: TimeInterval = Walking.appears) throws -> XCUIElement {
-        guard waitForExistence(timeout: timeout) else {
-            throw Missing(what: what)
+        let deadline = Date.now.addingTimeInterval(timeout)
+        while !exists {
+            guard Date.now < deadline else {
+                throw Missing(what: what)
+            }
+            _ = XCTWaiter.wait(for: [XCTestExpectation(description: "the next look")], timeout: Walking.poll)
         }
         return self
     }

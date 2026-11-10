@@ -202,11 +202,14 @@ test:macos:
       junit: .build/xunit-swift-testing.xml
 
 test:ios:simulator:
-  # The UI tests and the accessibility audit on every MVP screen, at the default and the largest text size
-  # (ADR 2026-09.jcdx). The result bundle keeps the largest-size screenshots and each failing element's.
+  # The UI tests and the accessibility audit on every MVP screen, at the default and the largest text size and in dark
+  # mode (ADR 2026-09.jcdx). The result bundle keeps the largest-size screenshots and each failing element's.
   extends: .mac
   stage: test
   needs: []
+  # Advisory (ADR 2026-11.aykf): the walks take over half an hour on the Mac's one-job runner, so a finding is fixed
+  # after the merge rather than holding it. Read the warning on main before an upload.
+  allow_failure: true
   variables:
     GIT_CLEAN_FLAGS: -ffdx -e /.build-xcode/
   script:

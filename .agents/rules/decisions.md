@@ -19,7 +19,7 @@ growing an explanation, that explanation belongs in the ADR.
 | the deployment target, the bundle id or `App/Info.plist` | [ADR 2026-09.txqp](../memory/decisions/2026-09-txqp-ios-18-is-the-floor.md) |
 | the device family, `TARGETED_DEVICE_FAMILY`, or anything for the iPad | [ADR 2026-10.kedu](../memory/decisions/2026-10-kedu-knit-ships-for-iphone-only.md) |
 | a release build, `#if DEBUG`, the demo's launch arguments, `App/PrivacyInfo.xcprivacy`, the export-compliance key, `check.sh release`, `archive` or `upload`, or `release:testflight` | [ADR 2026-10.8cy5](../memory/decisions/2026-10-8cy5-a-store-build-is-a.md) |
-| a CI job's `allow_failure`, a disabled lint rule, a compiler setting, or coverage floors | [ADR 2026-09.jgs6](../memory/decisions/2026-09-jgs6-each-quality-gate-blocks-from.md) |
+| a CI job's `allow_failure`, a disabled lint rule, a compiler setting, or coverage floors | [ADR 2026-09.jgs6](../memory/decisions/2026-09-jgs6-each-quality-gate-blocks-from.md), [ADR 2026-11.aykf](../memory/decisions/2026-11-aykf-the-ui-walks-and-their.md) |
 | a persona in `.agents/personas/` or `.claude/agents/`, `rules/owners.md`, `rules/review-rounds.md`, `review-gate.sh` or `review-gate.conf` | [ADR 2026-10.zjmx](../memory/decisions/2026-10-zjmx-an-owner-writes-a-plane.md) |
 | `COPYING`, `APP-STORE-EXCEPTION.md`, or how contributions are licensed | [ADR 2026-09.5phg](../memory/decisions/2026-09-5phg-knit-for-ios-is-gpl.md) |
 | where the iPhone app builds, the `knit-local` runner, CI caches or artifacts | [ADR 2026-09.fkqb](../memory/decisions/2026-09-fkqb-the-mac-builds-every-iphone.md) |
@@ -99,7 +99,7 @@ growing an explanation, that explanation belongs in the ADR.
 | the share extension, the App Group or its entitlement, `ShareInbox`, `ShareManifest`, `ChatSnapshot`, `ShareDrain`, `ChatModel.adopt` or a seeded draft, or `Sources/KnitShare/` | [ADR 2026-10.z7a8](../memory/decisions/2026-10-z7a8-a-share-extension-hands-what.md) |
 | a string a person reads, `Copy`, `App/Info.plist`'s usage strings, or a view's text | [ADR 2026-09.ycza](../memory/decisions/2026-09-ycza-user-facing-copy-lives-in.md) |
 | `check.sh periphery`, a `verify:periphery` job, a `periphery:ignore`, or a Periphery finding | [ADR 2026-09.xgtz](../memory/decisions/2026-09-xgtz-periphery-blocks-on-the-mac.md) |
-| a view's colors, `Palette`, `KnitUITests`, `AuditPolicy`, `scripts/check.sh uitest`, or an accessibility audit finding | [ADR 2026-09.jcdx](../memory/decisions/2026-09-jcdx-the-accessibility-audit-blocks.md) |
+| a view's colors, `Palette`, `KnitUITests`, `AuditPolicy`, `scripts/check.sh uitest`, `test:ios:simulator`, or an accessibility audit finding | [ADR 2026-09.jcdx](../memory/decisions/2026-09-jcdx-the-accessibility-audit-blocks.md), [ADR 2026-11.aykf](../memory/decisions/2026-11-aykf-the-ui-walks-and-their.md) |
 | a view's look or layout, `Swatches`, `KnitMarkPath`, `KnitMark`, `View+Buttons.swift`, `InfoSheet`, Liquid Glass, the app icon, or where Search will go | [ADR 2026-10.5waw](../memory/decisions/2026-10-5waw-knit-s-ios-look.md) |
 | a thread's rows or scrolling, `MessageList`, `ThreadCollection`, `openRoute`, or a SwiftUI view drawn in a UIKit cell | [ADR 2026-10.pkbu](../memory/decisions/2026-10-pkbu-a-thread-is-a-uikit.md) |
 | `KnitDeviceTests`, the `KnitDevice` scheme, `scripts/check.sh devicetest`, `SystemApps`, or an id that names a state | [ADR 2026-09.63em](../memory/decisions/2026-09-63em-device-ui-tests-run-by.md) |

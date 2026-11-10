@@ -30,6 +30,9 @@ final class KnitUITests: XCTestCase {
     /// How often, and how many times, a moving element's frame is read until it holds still.
     private static let frameInterval: TimeInterval = 0.25
     private static let frameReads = 20
+    /// How long a screen gets to finish arriving before an audit reads its pixels: a keyboard rising, a sheet sliding, a
+    /// fade. The walks' waits return as soon as an element exists, and a screen read mid-arrival fails contrast.
+    private static let arrival: TimeInterval = 1
 
     private var size = TextSize.standard
     /// Whether the walk runs in dark mode.
@@ -252,6 +255,9 @@ final class KnitUITests: XCTestCase {
 
 // Out of the class, where SwiftLint asks every member to be private, so the walks in other files can launch and audit.
 extension KnitUITests {
+    /// The text size this walk runs at, as a screenshot's name gives it.
+    var sizeName: String { "\(size)" }
+
     /// Opens the first direct thread in the chat list: Sam's, whose key the demo pinned.
     func openDirect(in app: XCUIApplication) throws {
         let direct = app.buttons.matching(
@@ -304,6 +310,7 @@ extension KnitUITests {
     /// Audits what is on screen, and fails once with every issue found and the element it is about. The largest-size
     /// walk keeps a screenshot of every screen; a failing one keeps its own at either size.
     func audit(_ app: XCUIApplication, screen: String) {
+        _ = XCTWaiter.wait(for: [XCTestExpectation(description: "the screen to arrive")], timeout: Self.arrival)
         // A thread scrolls to its newest message as it opens, which at the largest sizes outlasts its appearing.
         if let last = app.scrollViews.firstMatch.staticTexts.allElementsBoundByIndex.last {
             settle(last)
@@ -349,51 +356,6 @@ extension KnitUITests {
             add(shot)
         }
         XCTAssert(issues.isEmpty, "\(label), \(issues.count) issues:\n" + issues.joined(separator: "\n"))
-    }
-}
-
-// MARK: Codes
-
-// The verify code's walk, apart from the rest for the same reason as New message's.
-extension KnitUITests {
-    /// The profile's code, audited, then its scanner in each state the Simulator can show: it has no scanner, and
-    /// `-demoCamera` stands in for a refused camera and for one that fails to start. Cancel says nothing.
-    private func walkScan() throws {
-        let cameras: [(arguments: [String], state: AccessibilityID.ScanState)] = [
-            ([], .unsupported),
-            (["-demoCamera", "denied"], .notAllowed),
-            (["-demoCamera", "allowed"], .unavailable),
-        ]
-        for (index, camera) in cameras.enumerated() {
-            let app = launch(camera.arguments)
-            try openDirect(in: app)
-            try app.appear(AccessibilityID.chatProfile).tap()
-            try app.appear(AccessibilityID.profileDetailsScreen)
-            // Scan their code sits under the code, so revealing it brings the whole code on screen; revealing the code
-            // itself stops once its top is, and the rest reads black below the screen's edge.
-            try app.reveal(AccessibilityID.profileDetailsScan)
-            if index == 0 {
-                // A form scrolled by a swipe is still moving as the swipe returns, and the audit would read it blank.
-                let code = app.element(AccessibilityID.profileDetailsCode)
-                settle(code)
-                let shot = XCTAttachment(screenshot: code.screenshot())
-                shot.name = "the profile's code (\(size))"
-                shot.lifetime = .keepAlways
-                add(shot)
-                audit(app, screen: AccessibilityID.profileDetailsCode)
-            }
-            // Again: the audit resizes the text in place, which leaves the form scrolled away from the button.
-            try app.reveal(AccessibilityID.profileDetailsScan).tap()
-            settle(try app.appear(AccessibilityID.scanScreen))
-            try audit(app, AccessibilityID.scanState(camera.state))
-            if camera.state == .notAllowed {
-                try app.buttons["Open Settings"].appear("the refusal's way to Settings")
-            }
-            app.buttons["Cancel"].tap()
-            XCTAssert(app.element(AccessibilityID.scanScreen).waitForNonExistence(timeout: Walking.appears), "Cancel left the scanner up")
-            XCTAssertFalse(app.alerts.firstMatch.exists, "a scan that read nothing says nothing")
-            app.terminate()
-        }
     }
 }
 

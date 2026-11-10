@@ -50,3 +50,7 @@ stays in CI.
 locally, and CI never sets it. Disabling a lint rule means a line with its reason in `.swiftlint.yml`. The
 guard is `.gitlab-ci.yml` itself: it carries no `allow_failure` beyond the named advisories, and every job
 runs a `scripts/check.sh` gate that is also run locally.
+
+**Amended 2026-11-09 (ADR 2026-11.aykf):** a fourth advisory, `test:ios:simulator`, the UI walks and their
+accessibility audit. They take over half an hour on the Mac's one-job runner, and their findings are fixed after the
+merge.

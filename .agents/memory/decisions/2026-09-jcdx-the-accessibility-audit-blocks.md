@@ -151,3 +151,8 @@ rather than only those the audit flagged.
 exempt from Knit's contrast check. It holds no text, only faces and the stitches, which rest dim between sweeps, so its
 darkest pixel depends on when the screenshot falls, and the check would fail at random. Every other check reads it,
 and its VoiceOver label says who is typing.
+
+**Amended 2026-11-09, the audit advises (ADR 2026-11.aykf):** `test:ios:simulator` carries `allow_failure: true`. The
+walks had grown to most of an hour on the Mac's one-job runner, so a finding is now fixed after the merge rather than
+holding it. The walks, the exemptions and the contrast check are unchanged. Each audit waits a second for its screen
+to finish arriving.
