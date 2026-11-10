@@ -94,6 +94,8 @@ document:
   you mention stand out in the message, and a message that mentions you gets a notification of its own.
 - Pick @everyone when you type @ in a group to mention every other member at once. Each of them sees the name
   stand out and gets a mention notification, on Android phones too.
+- Tap a web address in a message to open it, even one the sender started with www rather than https://. A Knit
+  contact link goes straight to Add contact instead of Safari.
 - Each chat in your list now shows how many messages you haven't read, and opening the chat clears the count.
   Knit's icon adds up your direct messages and groups, while Nearby keeps its count on its own row.
 - Direct and group messages now have forward secrecy between phones running Knit for iPhone or Knit for

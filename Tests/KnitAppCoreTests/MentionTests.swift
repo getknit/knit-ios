@@ -202,6 +202,19 @@ import Testing
         #expect(message.mentionSpans == [3..<11])
     }
 
+    /// A bubble makes the web addresses in its words links (ADR 2026-11.w5ew), beside the names they mention.
+    @Test func aMessageShowsWhereItsLinksSit() async throws {
+        let rig = AppRig()
+        rig.session.filtersContent = false
+        await rig.pin(sam, name: "Sam")
+        let ana = MessageMention(nodeId: rig.me.string, name: "Ana")
+        await rig.receive("@Ana see www.a.com.", from: sam.nodeId, mentions: [ana])
+        let thread = ChatModel(conversationId: Conversations.nearby, session: rig.session)
+        let message = try #require(thread.state.messages.first)
+        #expect(message.mentionSpans == [0..<4])
+        #expect(message.links == [MessageLink(range: 9..<18, url: "https://www.a.com")])
+    }
+
     // MARK: Notifications
 
     /// A message that mentions us posts under an id of its own in its thread, and the next ordinary one leaves it there.

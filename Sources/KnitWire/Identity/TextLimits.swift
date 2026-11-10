@@ -178,8 +178,9 @@ public enum TextLimits {
     /// Java's regex `\s` on ART, where `java.util.regex` is ICU and `\s` is Unicode White_Space (android-36.1
     /// `Pattern.java:178-179`), not the desktop JDK's ASCII `[ \t\n\x0B\f\r]`. It takes U+0085, which Kotlin's
     /// `isWhitespace` does not, and leaves out `\u{1C}`–`\u{1F}`, which it takes. Pinned to the set knit-next's
-    /// `ArtTextSemanticsTest` reads on ART.
-    static func isJavaRegexWhitespace(_ scalar: Unicode.Scalar) -> Bool {
+    /// `ArtTextSemanticsTest` reads on ART. Public for a message's links, which end where Android's regex ends them
+    /// (`findUrls`, `MentionText.kt`).
+    public static func isJavaRegexWhitespace(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar {
         case "\u{09}"..."\u{0D}", "\u{20}", "\u{85}", "\u{A0}", "\u{1680}", "\u{2000}"..."\u{200A}", "\u{2028}", "\u{2029}",
             "\u{202F}", "\u{205F}", "\u{3000}":

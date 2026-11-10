@@ -228,7 +228,8 @@ internal struct DemoCast {
     /// so Settings lists someone and his profile shows the badge. Our room post has a count above one, an emoji outside
     /// the six, and a heart from Jonas that his block hides; Sam's DM has ours, and a stranger's that a DM does not show.
     /// Priya's room post replies to ours, and ours in the group replies to hers and mentions her; the other Sam's room post
-    /// mentions Sam. Priya and Sam are typing in the room, and Jonas too, whom his block hides; Priya is typing in the
+    /// mentions Sam and carries a link, as does our last DM to Sam, so the walks of the room and the DM audit one in each
+    /// bubble (ADR 2026-11.w5ew). Priya and Sam are typing in the room, and Jonas too, whom his block hides; Priya is typing in the
     /// group.
     static let edgeCases = Self(
         people: [
@@ -240,14 +241,14 @@ internal struct DemoCast {
         ],
         lines: [
             Line(id: "room-1", from: .sam, to: nil, body: "Is anyone else at the festival without signal?"),
-            Line(id: "room-2", from: .otherSam, to: nil, body: "@Sam same here. Knit is the only thing working.", mentions: [.sam]),
+            Line(id: "room-2", from: .otherSam, to: nil, body: "@Sam same here. Map: https://festival.example/map", mentions: [.sam]),
             Line(id: "room-3", from: .me, to: nil, body: "Meet at the food trucks at 6?", delivered: true),
             Line(id: "room-4", from: .priya, to: nil, body: "On my way.", replyTo: "room-3", unread: true),
             Line(id: "group-1", from: .priya, to: nil, body: "Who's bringing the tent?", inGroup: true),
             Line(id: "group-2", from: .me, to: nil, body: "@Priya I've got it.", inGroup: true, replyTo: "group-1", mentions: [.priya]),
             Line(id: "dm-1", from: .me, to: .sam, body: "Which gate are you at?", delivered: true),
             Line(id: "dm-2", from: .sam, to: .me, body: "North gate, by the big tent."),
-            Line(id: "dm-3", from: .me, to: .sam, body: "Be there in 10."),
+            Line(id: "dm-3", from: .me, to: .sam, body: "Be there in 10. www.festival.example/gates"),
             Line(id: "request-1", from: .stranger, to: .me, body: "Hi! Are you the one with the blue tent?", unread: true),
         ],
         accepted: [.sam],

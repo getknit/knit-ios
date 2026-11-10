@@ -12,7 +12,8 @@
     /// 2026-10.u7cq, ADR 2026-10.f6kf). Where the thread
     /// takes reactions, the menu opens on the six, and VoiceOver offers each as an action (ADR 2026-10.ehe6). Where it takes
     /// replies, Reply leads the rest; a reply's quote sits above its photo and words, and takes the thread to the original
-    /// when the thread shows it (ADR 2026-10.mn29).
+    /// when the thread shows it (ADR 2026-10.mn29). A web address in the words opens on a tap, as on Android, and
+    /// VoiceOver offers each as an action of the row it is part of (ADR 2026-11.w5ew).
     internal struct MessageBubble: View {
         let message: ChatMessage
         /// Where it sits in its run.
@@ -39,6 +40,7 @@
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
         @Environment(\.openRoute) private var openRoute
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @Environment(\.openURL) private var openURL
 
         var body: some View {
             HStack(alignment: .bottom, spacing: Layout.small) {
@@ -85,6 +87,7 @@
                 if hidden == .flagged {
                     Button(Copy.Moderation.showMessage, action: reveal)
                 }
+                linkActions
                 if let photo {
                     if covered {
                         Button(Copy.Moderation.showPhoto, action: reveal)
@@ -110,6 +113,18 @@
         /// fade, in seconds (its 600 ms).
         private static let highlight = 0.22
         private static let fade = 0.6
+
+        /// VoiceOver's action for each web address in the words while they show. The row reads as one element, which keeps
+        /// VoiceOver from the links inside its words (ADR 2026-11.w5ew).
+        @ViewBuilder private var linkActions: some View {
+            if hidden == nil {
+                ForEach(Array(message.links.enumerated()), id: \.offset) { _, link in
+                    if let url = link.target {
+                        Button(Copy.Chat.openLink(link.written(in: message.body))) { openURL(url) }
+                    }
+                }
+            }
+        }
 
         /// The bubble's column, which a long press opens the menu over.
         private var column: some View {
@@ -249,8 +264,10 @@
                 if let hidden {
                     HiddenWordsView(hidden: hidden, shape: shape, reveal: reveal)
                 } else if !message.body.isEmpty {
-                    Text(MentionHighlight.body(message))
+                    Text(BubbleText.body(message))
                         .foregroundStyle(message.isMine ? AnyShapeStyle(Palette.onOwnBubble) : AnyShapeStyle(.primary))
+                        // A link draws in the tint, which on our coral would vanish: it takes the mention's color.
+                        .tint(BubbleText.linkColor(isMine: message.isMine))
                         .padding(.horizontal, Layout.medium)
                         .padding(.vertical, Layout.small)
                         .background(message.isMine ? Palette.ownBubble : Palette.incomingBubble, in: shape)
@@ -351,29 +368,6 @@
             }
             .font(.caption2)
             .foregroundStyle(Palette.secondaryText)
-        }
-    }
-
-    /// A bubble's words with the names its message mentions set semibold where the sender wrote them (ADR 2026-10.nbhj),
-    /// as Android's `highlightMentions` sets them: in ``Palette/mention`` in someone else's bubble, and in our own in the
-    /// bubble's own words' color, since nothing else reads on our coral. They are not buttons, as on Android, so VoiceOver
-    /// reads the words as written.
-    internal enum MentionHighlight {
-        static func body(_ message: ChatMessage) -> AttributedString {
-            var styled = AttributedString(message.body)
-            let units = message.body.utf16
-            for span in message.mentionSpans where span.upperBound <= units.count {
-                let lower = String.Index(utf16Offset: span.lowerBound, in: message.body)
-                let upper = String.Index(utf16Offset: span.upperBound, in: message.body)
-                guard let range = Range(lower..<upper, in: styled) else {
-                    continue
-                }
-                styled[range].font = .body.weight(.semibold)
-                if !message.isMine {
-                    styled[range].foregroundColor = Palette.mention
-                }
-            }
-            return styled
         }
     }
 #endif

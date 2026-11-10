@@ -38,20 +38,8 @@ public struct ChatMessage: Sendable, Equatable, Identifiable {
     public var quote: ChatQuote?
     /// Where the names it mentions sit in ``body``, in UTF-16 offsets, which the bubble sets apart (ADR 2026-10.nbhj).
     public var mentionSpans: [Range<Int>] = []
-}
-
-/// Why a thread keeps someone else's words out of sight while the content filter is on.
-public enum HiddenWords: Sendable, Equatable {
-    /// The filter flagged them, and a tap shows them.
-    case flagged
-    /// The filter has not read them yet, which takes a moment after they land; they show, or stay hidden, once it has.
-    case unscreened
-
-    /// Why `message`'s words are hidden, given that they are: unscreened while the filter has yet to read its words or
-    /// its quote's, so a tap shows neither, and flagged once it has read both (knit-next ADR 2026-10.gpa3).
-    init(_ message: MessageRecord) {
-        self = message.moderation == .waiting || message.quoteModeration == .waiting ? .unscreened : .flagged
-    }
+    /// The web addresses in ``body``, which the bubble makes links, as Android's does (ADR 2026-11.w5ew).
+    public var links: [MessageLink] = []
 }
 
 /// What a thread is.
@@ -393,7 +381,8 @@ public final class ChatModel {
             authorFace: named ? directory.face(for: message.senderId) : nil,
             attachment: photos.attachment(of: message),
             hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message) : nil,
-            mentionSpans: MentionText.spans(in: message.body, mentions: message.mentions)
+            mentionSpans: MentionText.spans(in: message.body, mentions: message.mentions),
+            links: LinkText.links(in: message.body)
         )
     }
 }

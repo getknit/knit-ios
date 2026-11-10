@@ -19,6 +19,20 @@ extension Copy {
                 "chat.copy", bundle: .main, value: "Copy", comment: "Chat: the bubble menu's action that copies the message's words")
         }
 
+        /// VoiceOver's action that opens a web address in a message, named by the address as the sender wrote it, since a
+        /// message can hold several (ADR 2026-11.w5ew).
+        public static func openLink(_ address: String) -> String {
+            format(
+                NSLocalizedString(
+                    "chat.link.open",
+                    bundle: .main,
+                    value: "Open %@",
+                    comment: "Chat: VoiceOver action that opens a web address in a message; %@ is the address as written"
+                ),
+                address
+            )
+        }
+
         /// A DM with nothing in it yet.
         public static func directEmpty(_ name: String) -> String {
             format(

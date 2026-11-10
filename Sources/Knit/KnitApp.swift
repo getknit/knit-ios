@@ -16,6 +16,18 @@
                 RootView(launch: delegate.launch)
                     .tint(Palette.accent)
                     .onOpenURL { url in delegate.launch.open(url: url) }
+                    // A contact link tapped in a message opens Add contact here, as one tapped in Messages does, rather
+                    // than Safari; every other address goes where iOS sends it (ADR 2026-11.w5ew).
+                    .environment(
+                        \.openURL,
+                        OpenURLAction { [launch = delegate.launch] url in
+                            guard AddContactModel.isContactLink(url.absoluteString) else {
+                                return .systemAction
+                            }
+                            launch.open(url: url)
+                            return .handled
+                        }
+                    )
             }
             .onChange(of: scenePhase) { _, phase in
                 delegate.launch.setActive(phase == .active)
