@@ -714,7 +714,9 @@ explicit direction.** Update this file in the change that ships an item.
 - **Message features:** files, and Android's full emoji picker for reactions. Voice notes are in a debug build, on par
   with Android's and held from the store until the maintainer approves them, since nothing screens speech (ADR
   2026-10.ue3y, whose limits list what opening the gate takes); `interop.py iphone-voice` and Android's tap-to-transcribe
-  (knit-next ADR 2026-10.am8d) are still to come. Profile photos and photos
+  (knit-next ADR 2026-10.am8d) are still to come. Link previews are coming the same way, in a debug build until
+  approved (ADR 2026-11.hcvg): the card's container is in, and the receive half (P2) and the send half (P3) are next.
+  Profile photos and photos
   in chats are in flight (ADR 2026-10.nh55), reactions are in with a fixed six (ADR 2026-10.ehe6), quoted replies are
   in, in every thread (ADR 2026-10.mn29), and so are typing indicators, Android's row at a thread's foot (ADR
   2026-10.29z9), and mentions, with Android's chips and an alert of their own (ADR 2026-10.nbhj). `interop.py

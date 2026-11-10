@@ -329,4 +329,17 @@ let typedFixtures: [TypedFixture] = [
             attachmentSize: 1_400_000
         )
     ),
+    // A link's preview card (`GoldenVectorTest.kt:609-619`): `v` always on the wire, and a text-only card with no
+    // picture bytes at all. Encoding to the pinned bytes is the proof Android reads the cards this build writes.
+    TypedFixture(
+        "linkPreviewBlob",
+        LinkPreviewBlob(
+            url: "https://example.com/a?b=1",
+            title: "Title",
+            description: "Desc",
+            image: fixtureBytes(8, seed: 12),
+            imageMime: "image/webp"
+        )
+    ),
+    TypedFixture("linkPreviewBlobTextOnly", LinkPreviewBlob(url: "https://example.com/", title: "Title")),
 ]

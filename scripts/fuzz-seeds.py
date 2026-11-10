@@ -9,7 +9,8 @@ by a KEEPALIVE, the harness's cut, then resumed from its offset under a header w
 FuzzAdvert gets a pinned advert and a node id, FuzzContactCard knit-next's two contact card vectors in their link forms
 and a verify code (docs/CONTACT_CARD.md §5), and FuzzExiflessJPEG small JPEGs carrying an orientation in a little-endian
 (II) and a big-endian (MM) EXIF, the two real EXIF blocks from knit-ios #12 (Knit for Android's and the one Photos wrote
-over it, as KnitTestSupport's JPEGFixture pins them), an XMP APP1 alone, and a trailer after EOI. `scripts/fuzz.sh` calls
+over it, as KnitTestSupport's JPEGFixture pins them), an XMP APP1 alone, and a trailer after EOI. FuzzLinkPreview gets
+knit-next's two link-preview card vectors and a few addresses a card's check must judge. `scripts/fuzz.sh` calls
 this into a scratch directory; the committed Fuzz/Corpus/ holds only inputs that once found a bug.
 """
 
@@ -61,7 +62,7 @@ def main() -> int:
         sys.exit(__doc__)
     out = Path(sys.argv[1])
     vectors = json.loads((ROOT / "Tests" / "Vectors" / "wire-v1.json").read_text(encoding="utf-8"))["vectors"]
-    for harness in ("FuzzCBOR", "FuzzLinkRecords", "FuzzAdvert", "FuzzContactCard", "FuzzExiflessJPEG"):
+    for harness in ("FuzzCBOR", "FuzzLinkRecords", "FuzzAdvert", "FuzzContactCard", "FuzzExiflessJPEG", "FuzzLinkPreview"):
         (out / harness).mkdir(parents=True, exist_ok=True)
     for name, hexed in vectors.items():
         item = bytes.fromhex(hexed)
@@ -92,6 +93,17 @@ def main() -> int:
     }
     for name, picture in pictures.items():
         (out / "FuzzExiflessJPEG" / name).write_bytes(picture)
+    for name in ("linkPreviewBlob", "linkPreviewBlobTextOnly"):
+        (out / "FuzzLinkPreview" / name).write_bytes(bytes.fromhex(vectors[name]))
+    addresses = {
+        "url-plain": "https://example.com/a?b=c#d",
+        "url-user-info": "https://bank.example@evil.example/",
+        "url-ipv4": "https://1.2.3.4:443/x",
+        "url-registry": "https://b\u00fccher.de/",
+        "url-escape": "https://example.com/a%2Fb?q=%zz",
+    }
+    for name, address in addresses.items():
+        (out / "FuzzLinkPreview" / name).write_bytes(address.encode())
     return 0
 
 

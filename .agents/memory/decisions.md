@@ -117,3 +117,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-11.sv5t](decisions/2026-11-sv5t-the-iphone-reads-blinded-adverts.md) | The iPhone reads blinded adverts | ble, mesh, privacy, wire, crypto |
 | [2026-11.aykf](decisions/2026-11-aykf-the-ui-walks-and-their.md) | The UI walks and their audit advise, not block | accessibility, testing, ci |
 | [2026-11.w5ew](decisions/2026-11-w5ew-a-web-address-in-a.md) | A web address in a message opens on a tap | messages, ui, interop |
+| [2026-11.hcvg](decisions/2026-11-hcvg-a-link-s-card-is.md) | A link's card is fetched by its sender, in debug builds until approved | messages, ui, network, interop, blobs |

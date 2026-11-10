@@ -25,5 +25,6 @@ let package = Package(
             name: "FuzzContactCard",
             dependencies: [.product(name: "KnitCrypto", package: "knit-ios"), .product(name: "KnitWire", package: "knit-ios")]
         ),
+        .executableTarget(name: "FuzzLinkPreview", dependencies: [.product(name: "KnitWire", package: "knit-ios")]),
     ]
 )

@@ -56,13 +56,13 @@ extension MessageReply {
             authorId: parent.senderId.string,
             author: authorName,
             snippet: snippet,
-            // A link's card reads as its text, not as an attachment (`LinkPreviewBlob.MIME`).
+            // A link's card reads as its text, not as an attachment (`LinkPreviewBlob`).
             hasAttachment: parent.attachment.map { $0.mime != MessageAttachment.linkCardType } ?? false
         )
     }
 }
 
 extension MessageAttachment {
-    /// The one type a link's preview card goes under (`LinkPreviewBlob.MIME` in knit-next).
-    public static let linkCardType = "application/vnd.knit.link-preview"
+    /// The one type a link's preview card goes under (``LinkPreviewBlob/mime``).
+    public static let linkCardType = LinkPreviewBlob.mime
 }

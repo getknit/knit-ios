@@ -58,7 +58,8 @@ are links, and the rule couldn't be tested on Linux.
 **Consequences / limits:**
 
 - **Opening a link leaves Knit for the web.** The browser, or the app iOS hands the address to, contacts the site.
-  Knit itself fetches nothing: link previews stay out of scope.
+  Knit itself fetches nothing: link previews stay out of scope. (Amended 2026-11-10: a debug build is getting
+  Android's link previews, fetched by the sender with a setting that is off by default; ADR 2026-11.hcvg.)
 - **Not links, as on Android:** an email address, a phone number, a bare domain without `www.`, `geo:`, `knit://` and
   `mailto:`. Words the content filter hides show no link until they are shown, and a reply's quote stays plain.
 - **Where this may differ from Android:** ICU's case folding takes a few letters besides ASCII, such as U+017F for
