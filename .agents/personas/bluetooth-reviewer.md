@@ -113,7 +113,8 @@ explicitly. The commits are the evidence that each one bit this codebase.
    Evidence: fa87bac (a post and a DM waited 393 s behind about ten queued 20 KB digests; `linux-peer.md`, "Why
    the frames were late").
 5. **A stream that loses its place.** A link is a byte stream of `[tag][len][payload]` records. An unknown tag
-   drops the link, and a tag outside 1..8 is never written (9, `TAG_NEXT`, is read and never written), 8 only to a
+   drops the link, and a tag outside 1..9 is never written (9, `TAG_NEXT`, only while blinding, to a proven link whose
+   HELLO carries `CAP_BLIND_ADVERT`), 8 only to a
    peer whose HELLO carries `CAP_LINK_PROOF` (`.agents/rules/interop.md`). A peer's stack can mangle a large SDU.
    Evidence: cb440a6 and 04a927b (the Moto G lost every multi-packet SDU after the profile and logged
    `unknown record type 0`, so the default send MTU became 247), af87ba4 (`LinkTrace`, added after tags 87 and 54
@@ -200,7 +201,7 @@ Then two checks that are not shapes:
   text. A cross-platform constant changing at all is a finding, unless the brief made it a paired change
   (`.agents/rules/paired-change.md`): the `0xFE30` service and the payload and doorbell UUIDs, `AdvertPayload`'s
   layout and flag bits, the HELLO as the only home of `CAP_DOORBELL` and `CAP_BLOB_HAVE`, the frames that skip a
-  ring, `GattPayloads`' rules, the promotion numbers (below), link record tags 1..9 (9 read only), and the HELLO's
+  ring, `GattPayloads`' rules, the promotion numbers (below), link record tags 1..9 (9 written only while blinding), and the HELLO's
   nonce field and the link's proof (`LinkProof`'s transcript, the PROOF's layout, `CAP_LINK_PROOF`).
 - **Which radio runs it.** `KnitBLE` compiles to an empty module on Linux, so your run verifies none of it; say
   so. A rule added to one radio that the other also needs (a forget rule, a doorbell write, a disconnect) is a
@@ -329,7 +330,8 @@ One line per invariant, with the ADR to read. Not exhaustive and not authoritati
 - **GATT payload** (ADR 2026-09.xzpt). A UUID-only node serves its payload as a read-only characteristic with the
   digest cue zeroed. A reader reads one peer at a time, retries a failed read after 30 s, and leaves a device that
   serves none for ten minutes. A payload is forgotten only on a dial that fails before its channel opens, a HELLO
-  naming another node, or a minute unheard while nothing links the address. `FLAG_DIALS_GATT_PEERS` is set only
+  naming another node (for a blinded payload, neither the HELLO's `t` nor the tag that node announced), a minute unheard
+  while nothing links the address, or, blinded, the first slot edge after its read (ADR 2026-11.prsp). `FLAG_DIALS_GATT_PEERS` is set only
   when `Radio.dialsGattPeers`.
 - **Doorbell** (ADR 2026-09.khjj). The HELLO carries `CAP_DOORBELL` only when `Radio.servesDoorbell`. The manager
   rings after every frame it writes except `typing`, `blobreq`, `blobhave`, `blobhas`, `blobprog`, `blobcancel` and

@@ -285,6 +285,11 @@ final class ManualClock: MeshClock {
         }
     }
 
+    /// Sets the wall clock alone, as a user or NTP does; the monotonic clock runs on undisturbed.
+    func setWall(_ wall: Int64) {
+        state.withLock { $0.wall = wall }
+    }
+
     func sleep(untilMonotonic deadline: Int64) async throws {
         let token = state.withLock { state in
             defer { state.nextToken += 1 }
@@ -364,21 +369,6 @@ final class ManualClock: MeshClock {
     /// How many sleepers wait, for a test that must know a timer is parked.
     var sleeperCount: Int {
         state.withLock { $0.sleepers.count }
-    }
-}
-
-/// A log that keeps every line, so a test can read what the mesh said and every message is built.
-final class RecordingLog: KnitLog {
-    private let lines = Lock<[String]>([])
-
-    func log(_ level: LogLevel, _ message: @autoclosure () -> String) {
-        let line = "\(level) \(message())"
-        lines.withLock { $0.append(line) }
-    }
-
-    /// Every line so far.
-    var all: [String] {
-        lines.withLock { $0 }
     }
 }
 

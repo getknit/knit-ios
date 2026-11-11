@@ -91,11 +91,15 @@ public final class SQLPresenceKeyStore: PresenceKeyStore {
         }
     }
 
-    public func mark(of generation: Int64) -> PresenceMark? {
-        database.read(or: nil) { db in
-            try Row.fetchOne(db, sql: "SELECT markSlot, markRestart FROM own_presence_keys WHERE generation = ?", arguments: [generation])
-                .flatMap(Self.mark)
+    public func mark(of generation: Int64) throws(PresenceMarkReadFailure) -> PresenceMark? {
+        let read: Result<PresenceMark?, PresenceMarkReadFailure> = database.read(or: .failure(PresenceMarkReadFailure())) { db in
+            .success(
+                try Row.fetchOne(
+                    db, sql: "SELECT markSlot, markRestart FROM own_presence_keys WHERE generation = ?", arguments: [generation]
+                )
+                .flatMap(Self.mark))
         }
+        return try read.get()
     }
 
     /// Writes the advertiser's mark durably against power loss, and only under the current key (`markStore`'s `write`,
@@ -106,8 +110,9 @@ public final class SQLPresenceKeyStore: PresenceKeyStore {
     ///    outside any transaction.
     /// 3. Then a transaction that reads the pragma back on the connection that will commit, and refuses unless it is 2
     ///    (FULL), and runs the conditional update, which lands only while `generation` is the newest activated key
-    ///    (`setCurrentMark`, `PresenceKeyDao.kt:45-60`): no row changed is a key a rotation demoted, refused, so nothing
-    ///    airs under a key a leaver holds. In WAL mode a FULL commit syncs the log, and every earlier commit with it.
+    ///    (`setCurrentMark`, `PresenceKeyDao.kt:45-60`) and the mark moves forward (``PresenceMark/moves(_:to:)``): no row
+    ///    changed is a key a rotation demoted, or a mark that would go back, refused, so nothing airs under a key a leaver
+    ///    holds and no pair aired is aired again. In WAL mode a FULL commit syncs the log, and every earlier commit with it.
     /// 4. Always, `PRAGMA synchronous=NORMAL` again, what the pool runs otherwise. A failure there is reported and swallowed:
     ///    the connection stays at FULL, slower and never unsafe.
     ///
@@ -136,8 +141,9 @@ public final class SQLPresenceKeyStore: PresenceKeyStore {
                         sql: """
                             UPDATE own_presence_keys SET markSlot = ?, markRestart = ? WHERE generation = ? AND activatedAt IS NOT NULL
                             AND generation = (SELECT MAX(generation) FROM own_presence_keys WHERE activatedAt IS NOT NULL)
+                            AND (markSlot IS NULL OR markSlot < ? OR (markSlot = ? AND COALESCE(markRestart, 0) < ?))
                             """,
-                        arguments: [mark.slot, mark.restart, generation]
+                        arguments: [mark.slot, mark.restart, generation, mark.slot, mark.slot, mark.restart]
                     )
                     guard db.changesCount == 1 else {
                         outcome = .refused

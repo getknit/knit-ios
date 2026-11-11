@@ -1,3 +1,4 @@
+import KnitCrypto
 public import KnitWire
 
 /// Whose GATT payload a radio reads, when, and what each read found. A radio that finds peers whose advert carries
@@ -8,11 +9,22 @@ public import KnitWire
 ///   payload of every advert from that address until the radio forgets it, which it does when any of three things
 ///   happens (the paired change `gatt-peers`' payload lifetime, knit-next ADR 2026-09.kwq2):
 ///   1. A dial to the address fails before its channel opens: a peer that restarted listens on a new PSM.
-///   2. A HELLO on a link to the address names another node (``helloNamed(_:at:)``): a new node took the address,
-///      as every knit-peer on one adapter does. A refusal carries no HELLO, and keeps the payload.
+///   2. A HELLO on a link to the address names another node (``helloNamed(_:told:announced:at:)``): a new node took the
+///      address, as every knit-peer on one adapter does. A refusal carries no HELLO, and keeps the payload. A blinded
+///      payload names a tag, not a node, so it is compared with the HELLO's `t` and the tag that node announced instead,
+///      and goes when neither is its tag: the node rotated since the read, or airs its id now (ADR 2026-11.prsp).
 ///   3. The address goes unheard for ``Configuration/quietMilliseconds`` of scanning while no link to it is up
 ///      (``forgetQuiet(now:linked:)``). Without it, a node above us at a reused address is never dialed, so rule 1
 ///      never fires, and a new node there is sighted as the old one for good.
+///
+///   4. It holds a blinded payload and the first slot edge after the read has passed, by up to
+///      ``Configuration/blindedEdgeJitterMilliseconds`` more, while no link to it is up (``forgetPastEdge(wall:linked:)``; ADR
+///      2026-11.prsp). A blinding node
+///      rotates its tag at the edge, and in the foreground, where its address is never quiet, rule 3 would keep the old tag
+///      until the system rotates the address. So each address costs at most one read per slot. The jitter starts
+///      ``Configuration/blindedEdgeSlackMilliseconds`` past the edge (an announced rotation's 30 s and 5 s more), so a writer
+///      has rotated before the read again, even one whose announcement came late or whose clock runs a little behind, and
+///      spreads the readers of one writer.
 ///
 ///   One case stays open: a node that changes identity at an address that never goes quiet, where the old node sorts
 ///   above us and the new one below a peer that waits to be dialed. Nobody dials, so it lasts until the address
@@ -37,18 +49,34 @@ public struct GattPayloads: Sendable {
         /// How long an address may go unheard, counting only time the scan runs, before its payload and its wait are
         /// forgotten, while no link to it is up.
         public var quietMilliseconds: Int64
+        /// How long past the slot edge a blinded payload is kept at least (rule 4).
+        public var blindedEdgeSlackMilliseconds: Int64
+        /// The spread of a blinded payload's forget past that, drawn per read (rule 4).
+        public var blindedEdgeJitterMilliseconds: Int64
 
-        /// Half a minute after a failure, ten minutes after a stranger, and a minute of quiet, unless told otherwise.
+        /// Rule 4's slack: an announced rotation lands at the later of the edge and its announcement plus
+        /// ``AdvertRotation/minLeadMilliseconds``, so a forget any sooner would read the old tag again and keep it a whole slot;
+        /// and ``writerClockSlackMilliseconds`` more for a writer whose clock runs a little behind.
+        public static let defaultBlindedEdgeSlackMilliseconds: Int64 = AdvertRotation.minLeadMilliseconds + writerClockSlackMilliseconds
+        /// How far behind a writer's clock may run and still have rotated before rule 4 reads it again.
+        public static let writerClockSlackMilliseconds: Int64 = 5000
+
+        /// Half a minute after a failure, ten minutes after a stranger, a minute of quiet, and a blinded payload forgotten
+        /// 35 to 65 s past its slot's edge, unless told otherwise.
         public init(
             readTimeoutMilliseconds: Int64 = 12_000,
             retryMilliseconds: Int64 = 30_000,
             strangerRetryMilliseconds: Int64 = 600_000,
-            quietMilliseconds: Int64 = 60_000
+            quietMilliseconds: Int64 = 60_000,
+            blindedEdgeSlackMilliseconds: Int64 = Self.defaultBlindedEdgeSlackMilliseconds,
+            blindedEdgeJitterMilliseconds: Int64 = 30_000
         ) {
             self.readTimeoutMilliseconds = readTimeoutMilliseconds
             self.retryMilliseconds = retryMilliseconds
             self.strangerRetryMilliseconds = strangerRetryMilliseconds
             self.quietMilliseconds = quietMilliseconds
+            self.blindedEdgeSlackMilliseconds = blindedEdgeSlackMilliseconds
+            self.blindedEdgeJitterMilliseconds = blindedEdgeJitterMilliseconds
         }
     }
 
@@ -81,10 +109,15 @@ public struct GattPayloads: Sendable {
     /// Scan time run up before the scan now running, and when that scan started on the monotonic clock.
     private var scannedBefore: Int64 = 0
     private var scanningSince: Int64?
+    /// Each blinded payload's read and forget, on the wall clock (rule 4).
+    private var blindedSpans: [RadioAddress: (readAt: Int64, until: Int64)] = [:]
+    /// The jitter's generator: SplitMix64 from the seed the radio drew.
+    private var jitterState: UInt64
 
-    /// Nothing read yet.
-    public init(configuration: Configuration = Configuration()) {
+    /// Nothing read yet. `jitterSeed` spreads rule 4's forgets; a radio draws it at random, so readers of one writer differ.
+    public init(configuration: Configuration = Configuration(), jitterSeed: UInt64 = 0) {
         self.configuration = configuration
+        jitterState = jitterSeed
     }
 
     /// The payload `address` served, if a read found one.
@@ -103,9 +136,9 @@ public struct GattPayloads: Sendable {
         return true
     }
 
-    /// The read of `address` ended. An outcome for any other address answers a read already given up on, and is
-    /// ignored.
-    public mutating func finish(_ address: RadioAddress, _ outcome: Outcome, now: Int64) {
+    /// The read of `address` ended, at `now` on the monotonic clock and `wall` on the wall clock, which times a blinded
+    /// payload's forget (rule 4). An outcome for any other address answers a read already given up on, and is ignored.
+    public mutating func finish(_ address: RadioAddress, _ outcome: Outcome, now: Int64, wall: Int64) {
         guard current?.address == address else {
             return
         }
@@ -114,6 +147,10 @@ public struct GattPayloads: Sendable {
         case .read(let payload):
             payloads[address] = payload
             lastHeard[address] = scanTime(now: now)
+            if payload.blinded {
+                let edge = (BlindTag.slotOf(wallMilliseconds: wall) + 1) * BlindTag.slotMilliseconds
+                blindedSpans[address] = (wall, edge + configuration.blindedEdgeSlackMilliseconds + jitter())
+            }
         case .failed:
             retryAt[address] = now + configuration.retryMilliseconds
         case .stranger:
@@ -132,18 +169,56 @@ public struct GattPayloads: Sendable {
     public mutating func forget(_ address: RadioAddress) {
         payloads[address] = nil
         retryAt[address] = nil
+        blindedSpans[address] = nil
     }
 
     // MARK: The payload's lifetime
 
     /// Rule 2: the HELLO on a link to `address` named `node`, the dialer's on a link we accepted or the reply on one we
-    /// dialed. A payload there that names another node is forgotten, and the answer says whether one was.
-    public mutating func helloNamed(_ node: NodeId, at address: RadioAddress) -> Bool {
-        guard let payload = payloads[address], payload.advertised != node else {
+    /// dialed, and told `told` (its `t`), and `announced` is the tag that node announced to us (`TAG_NEXT`) and we hold. A
+    /// clear payload there that names another node is forgotten; a blinded one whose tag is neither `told` nor `announced`
+    /// too. The answer says whether one was.
+    public mutating func helloNamed(_ node: NodeId, told: NodeId?, announced: NodeId?, at address: RadioAddress) -> Bool {
+        guard let payload = payloads[address] else {
+            return false
+        }
+        let names = payload.blinded ? [told, announced].contains(payload.advertised) : payload.advertised == node
+        guard !names else {
             return false
         }
         forget(address)
         return true
+    }
+
+    /// Rule 4: forgets every blinded payload whose slot edge, with its slack and jitter, has passed at `wall`, or that was
+    /// read at a later wall time than `wall` (the clock went back), and answers those, in order. An address in `linked`,
+    /// which a link or a read holds, keeps its payload, as rule 3 keeps one: the link's own claims attribute the tag it names
+    /// (`AdvertAliases`), and a radio reads no address a link holds, so the forget comes at the first check after the link
+    /// ends, and the next advert there is read again, once.
+    public mutating func forgetPastEdge(wall: Int64, linked: Set<RadioAddress>) -> [RadioAddress] {
+        let past = blindedSpans.filter { !linked.contains($0.key) && (wall >= $0.value.until || wall < $0.value.readAt) }.keys
+        let forgotten = past.sorted { $0.rawValue < $1.rawValue }
+        for address in forgotten {
+            forget(address)
+        }
+        return forgotten
+    }
+
+    /// SplitMix64's increment and mixing multipliers and shifts (Steele, Lea and Flood, 2014).
+    private static let splitMixGamma: UInt64 = 0x9E37_79B9_7F4A_7C15
+    private static let splitMixMultipliers: (UInt64, UInt64) = (0xBF58_476D_1CE4_E5B9, 0x94D0_49BB_1331_11EB)
+    private static let splitMixShifts: (UInt64, UInt64) = (30, 27)
+    private static let splitMixLastShift: UInt64 = 31
+
+    /// A draw in `0..<blindedEdgeJitterMilliseconds` (SplitMix64).
+    private mutating func jitter() -> Int64 {
+        let span = UInt64(max(1, configuration.blindedEdgeJitterMilliseconds))
+        jitterState &+= Self.splitMixGamma
+        var mixed = jitterState
+        mixed = (mixed ^ (mixed >> Self.splitMixShifts.0)) &* Self.splitMixMultipliers.0
+        mixed = (mixed ^ (mixed >> Self.splitMixShifts.1)) &* Self.splitMixMultipliers.1
+        mixed ^= mixed >> Self.splitMixLastShift
+        return Int64(mixed % span)
     }
 
     /// The scan started at `now`, so time counts towards quiet again.

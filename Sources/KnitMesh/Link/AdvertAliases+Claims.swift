@@ -170,6 +170,9 @@ extension AdvertAliases {
     ///
     /// `tag` is always a tag: the dialed one, or an announced one ``onTagNext(_:provenId:tag:)`` checked.
     func record(_ link: L, tag: NodeId, nodeId: NodeId, now: Int64, dialProven: Bool) -> ClaimOutcome {
+        if isOwn(tag) {
+            return ignored()
+        }
         if voided[tag] != nil {
             return contested()
         }

@@ -33,7 +33,7 @@ extension SchemaTests {
         keys.applyOwn(inserted: [row], updated: [], keep: [row.generation])
         #expect(keys.ownKeys() == [row])
         #expect(keys.writeMark(PresenceMark(slot: 11, restart: 1), of: row.generation) == .durable)
-        #expect(keys.mark(of: row.generation) == PresenceMark(slot: 11, restart: 1))
+        #expect(try keys.mark(of: row.generation) == PresenceMark(slot: 11, restart: 1))
     }
 
     @Test func anOwnKeyRowThatIsNotOneFailsTheReadRatherThanReadingAsNone() throws {
@@ -57,6 +57,31 @@ extension SchemaTests {
         #expect(failures.count == 2)
         let unit = database.atomically { () -> Int? in keys.ownKeys().count }
         #expect(unit == .failed)
+    }
+
+    /// A mark the store cannot read throws, never reading as "none" (`MarkStore.read`, `TagSchedule.kt:67-68` at knit-next
+    /// `cad69c77b`; ADR 2026-11.prsp): the advertiser would restart the generation at the slot's first restart and air a tag
+    /// again. A write after it that would move the mark back is refused.
+    @Test func aMarkThatWillNotReadThrowsAndAWriteNeverMovesItBack() throws {
+        let failures = Failures()
+        let database = try KnitDatabase.inMemory(failures: failures.record)
+        let keys = SQLPresenceKeyStore(database)
+        let row = try #require(
+            OwnPresenceKeyRecord(generation: 5, keyBytes: fixtureBytes(32, seed: 5), mintedAt: 1, activatedAt: 1, audience: [], mark: nil))
+        keys.applyOwn(inserted: [row], updated: [], keep: [5])
+        #expect(keys.writeMark(PresenceMark(slot: 9, restart: 2), of: 5) == .durable)
+        try database.writer.writeWithoutTransaction { db in
+            try db.execute(sql: "ALTER TABLE own_presence_keys RENAME TO own_presence_keys_away")
+        }
+        #expect(throws: PresenceMarkReadFailure()) {
+            try keys.mark(of: 5)
+        }
+        #expect(failures.count == 1)
+        try database.writer.writeWithoutTransaction { db in
+            try db.execute(sql: "ALTER TABLE own_presence_keys_away RENAME TO own_presence_keys")
+        }
+        #expect(keys.writeMark(PresenceMark(slot: 9, restart: 0), of: 5) == .refused, "what a reader of none would write")
+        #expect(try keys.mark(of: 5) == PresenceMark(slot: 9, restart: 2))
     }
 
     /// The mark's write leaves the connection at NORMAL, what the pool runs otherwise, whatever it came to.

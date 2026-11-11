@@ -25,6 +25,15 @@ import Testing
         #expect(watch.due == nil)
     }
 
+    @Test func aCheckIsLateOnlyPastItsLatenessAndNeverWithNoneDue() {
+        var watch = WriteStallWatch()
+        #expect(!watch.isLate(now: 1_000_000), "no check due")
+        watch.watch(link, written: 5, now: 0)
+        #expect(!watch.isLate(now: 30_000), "due, on time")
+        #expect(!watch.isLate(now: 31_000), "late by exactly the lateness")
+        #expect(watch.isLate(now: 31_001))
+    }
+
     @Test func aStillTotalWithBytesQueuedStallsAt120Seconds() {
         var watch = WriteStallWatch()
         watch.watch(link, written: 5, now: 0)

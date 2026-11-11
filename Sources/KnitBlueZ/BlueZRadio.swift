@@ -155,8 +155,8 @@
             mailbox.post(.ring(channel))
         }
 
-        public func heardHello(from node: NodeId, on channel: ChannelID) {
-            mailbox.post(.heardHello(channel, node))
+        public func heardHello(from node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID) {
+            mailbox.post(.heardHello(channel, node, told: told, announced: announced))
         }
 
         /// Stops, withdraws the advert and the GATT application from BlueZ, closes the bus, and waits for the

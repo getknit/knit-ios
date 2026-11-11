@@ -143,7 +143,12 @@ extension MeshEngine {
                 return PresenceKeyPolicy.hearsTagNext(peer, blocked: feed.blocked, departed: feed.departed)
             },
             askMarkPass: { [weak self] generation in self?.askPresenceMarkPass(generation) },
-            readMark: { [weak self] generation in self?.stores.presenceKeys.mark(of: generation) },
+            readMark: { [weak self] generation throws(PresenceMarkReadFailure) in
+                guard let self else {
+                    throw PresenceMarkReadFailure()
+                }
+                return try stores.presenceKeys.mark(of: generation)
+            },
             writeMark: { [weak self] mark, generation in self?.writePresenceMark(mark, of: generation) ?? .failed }
         )
     }

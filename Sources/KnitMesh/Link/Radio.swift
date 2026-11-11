@@ -153,12 +153,14 @@ public protocol Radio: AnyObject, Sendable {
     /// that cannot ring, or a peer without a doorbell, does nothing.
     func ring(_ channel: ChannelID)
 
-    /// The HELLO on `channel` named `node`: the dialer's on a channel we accepted, or the reply on one we dialed. A
-    /// radio that read a GATT payload for the address at the channel's other end forgets it when it names another
-    /// node, since a new node took that address (``GattPayloads/helloNamed(_:at:)``). A refusal carries no HELLO, so
-    /// it never comes here. Called for every HELLO that parses, whatever becomes of the link: a claim refused and a proof
-    /// that fails included. ``linkUp(_:on:)`` says when the link is the peer's.
-    func heardHello(from node: NodeId, on channel: ChannelID)
+    /// The HELLO on `channel` named `node` and told `told` (its `t`, the form that node airs, `nil` without one); `announced`
+    /// is the tag that node announced to us and we hold, if any. The dialer's on a channel we accepted, or the reply on one
+    /// we dialed. A radio that read a GATT payload for the address at the channel's other end forgets it when it names
+    /// another node, or, blinded, a tag that is neither `told` nor `announced` (``GattPayloads/helloNamed(_:told:announced:at:)``;
+    /// ADR 2026-11.prsp). A refusal carries no HELLO, so it never comes here. Called for every HELLO that parses on a dial to
+    /// an id or from a dialer, whatever becomes of the link: a claim refused and a proof that fails included. A tag dial's
+    /// reply comes here only once its proof verified. ``linkUp(_:on:)`` says when the link is the peer's.
+    func heardHello(from node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID)
 
     /// The link on `channel` registered to `node`: its HELLO checked out and, when both HELLOs carry
     /// ``Capabilities/linkProof``, its PROOF verified (the `link-hello-proof` contract, §5). From here the link manager
@@ -203,7 +205,7 @@ extension Radio {
     }
 
     /// Keeps nothing: a radio that reads no GATT payloads has none to forget.
-    public func heardHello(from _: NodeId, on _: ChannelID) {
+    public func heardHello(from _: NodeId, told _: NodeId?, announced _: NodeId?, on _: ChannelID) {
         // A radio that reads GATT payloads implements this.
     }
 

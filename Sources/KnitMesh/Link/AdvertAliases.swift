@@ -5,15 +5,17 @@ import KnitWire
 /// (`resolve`, `:363-382`):
 ///
 /// 1. **Malformed** first: bytes without the tag prefix (``AdvertForm/hasTagPrefix(_:)``).
-/// 2. **Direct contacts' expected tags** (``setKeys(_:)``, ``ExpectedTagTable``): every contact key's tags over the window
+/// 2. **Own:** my current or previous tag (``setOwnTags(current:previous:)``), heard back or claimed by another, is never a
+///    peer's (ADR 2026-11.prsp).
+/// 3. **Direct contacts' expected tags** (``setKeys(_:)``, ``ExpectedTagTable``): every contact key's tags over the window
 ///    of this phone's wall clock, so a heard tag resolves with one hash lookup and an unknown one, a flood included, costs
 ///    a miss and nothing else.
-/// 3. **Link claims** (``onDialed(_:dialed:told:provenId:)``, ``onTagNext(_:provenId:tag:)``): a tag a proven link told us
+/// 4. **Link claims** (``onDialed(_:dialed:told:provenId:)``, ``onTagNext(_:provenId:tag:)``): a tag a proven link told us
 ///    is its own.
-/// 4. **Hints** (``onAnswered(_:told:provenId:)``): a tag a dialer's HELLO told us is its own.
+/// 5. **Hints** (``onAnswered(_:told:provenId:)``): a tag a dialer's HELLO told us is its own.
 ///
-/// Kotlin checks my own current and previous tags second; this port airs no tag, so it has none, and the writer's ADR brings
-/// them back as `AdvertAliases.kt` has them. My own clear advert is dropped by id in ``LinkManager``'s sightings.
+/// My own tag is never a claim, a hint or an announcement either. My own clear advert is dropped by id in ``LinkManager``'s
+/// sightings.
 ///
 /// **Claims** (Kotlin's KDoc, `:27-59`, has the full reasoning):
 /// - a link holds at most one claim, and so does a node id; a newer one replaces it;
@@ -50,6 +52,9 @@ internal final class AdvertAliases<L: Hashable> {
     /// Links a handshake event named and ``onLinkEnded(_:)`` has not ended: their claims and announced tags never lapse.
     var heldLinks: Set<L> = []
     var counts = Counters()
+    /// My own tags, current and previous, while I blind (`ownCurrent`, `ownPrevious`, `:301-302`).
+    private var ownCurrent: NodeId?
+    private var ownPrevious: NodeId?
 
     /// A resolver reading `now` (the monotonic clock) for every expiry and `wall` for slots only.
     convenience init(now: @escaping () -> Int64, wall: @escaping () -> Int64) {
@@ -70,6 +75,18 @@ internal final class AdvertAliases<L: Hashable> {
         table.setKeys(contacts, now: nowClock(), wall: wallClock())
     }
 
+    /// My own advertised tags, so my own advert, heard back or claimed by another, is never taken for a peer (`setOwnTags`,
+    /// `:338-344`). `nil` for a form that is not a tag.
+    func setOwnTags(current: NodeId?, previous: NodeId?) {
+        ownCurrent = current
+        ownPrevious = previous
+    }
+
+    /// Whether `tag` is one of mine (`isOwn`, `:880`).
+    func isOwn(_ tag: NodeId) -> Bool {
+        tag == ownCurrent || tag == ownPrevious
+    }
+
     /// Moves the expected-tag window to the wall clock now. Every entry point does this first; the wiring also calls it at
     /// each slot edge, so the re-list runs then and not inside a sighting's resolve.
     func slide() {
@@ -88,6 +105,9 @@ internal final class AdvertAliases<L: Hashable> {
         }
         let now = nowClock()
         expire(now)
+        if isOwn(tag) {
+            return .own
+        }
         if let keyId = keyAnswer(tag) {
             dropContradicted(tag, keyId)
             counts.resolvedByKey += 1
@@ -139,7 +159,7 @@ internal final class AdvertAliases<L: Hashable> {
         let now = nowClock()
         expire(now)
         heldLinks.insert(link)
-        guard let tag = told, tag != provenId, Self.isTag(tag) else {
+        guard let tag = told, tag != provenId, !isOwn(tag), Self.isTag(tag) else {
             return ignored()
         }
         if voided[tag] != nil {
@@ -181,7 +201,7 @@ internal final class AdvertAliases<L: Hashable> {
         let now = nowClock()
         expire(now)
         heldLinks.insert(link)
-        guard Self.isTag(tag) else {
+        guard Self.isTag(tag), !isOwn(tag) else {
             return ignored()
         }
         guard tagNextAllowed(link, now: now) else {
@@ -216,6 +236,18 @@ internal final class AdvertAliases<L: Hashable> {
             return nil
         }
         return Answer(nodeId: hint.value.claim.nodeId, source: .hint, claimant: hint.key)
+    }
+
+    /// Whether `tag`, which `link` (proven as `provenId`) announced, still stands for it: held pending under that link,
+    /// claimed by it since it was heard, or what a contact's key already says of `provenId` (`stillAnnounced`, `:494-498`).
+    /// Read when the announced tag reaches its edge, before it becomes the link's form.
+    func stillAnnounced(_ link: L, provenId: NodeId, tag: NodeId) -> Bool {
+        pending[tag]?.link == link || claims[tag]?.link == link || keyAnswer(tag) == provenId
+    }
+
+    /// The tag `node` announced that we hold pending, if any: a GATT payload naming it is that node's (rule 2).
+    func announced(by node: NodeId) -> NodeId? {
+        pending.first { $0.value.nodeId == node }?.key
     }
 
     /// Whether any contact's keys are listed, so the window has a slot edge to slide at.

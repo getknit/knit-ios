@@ -25,7 +25,8 @@ public struct LinkRecord: Sendable, Equatable {
         /// The sender's next advertised tag: exactly ``LinkRecord/tagNextBytes``, the advert bytes 1–16 it airs after its
         /// next rotation (`Type.TAG_NEXT`, `LinkFraming.kt:65-72` at knit-next `cad69c77b`; knit-next ADR 2026-11.xp6d).
         /// Android writes it only to a proven link whose HELLO carries `CAP_BLIND_ADVERT` (`TagNextSends.kt:101-105`), and
-        /// every build before it throws on the tag and drops the link. This port reads it and never writes it: it airs no tag.
+        /// every build before it throws on the tag and drops the link. This port reads it, and writes it on the same terms
+        /// only while it blinds (`TagNextSends`; ADR 2026-11.prsp).
         case tagNext = 9
     }
 

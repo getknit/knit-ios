@@ -37,23 +37,25 @@ public struct Hello: Sendable, Equatable {
     /// nonce fails the link's proof; every other reader ignores the field, as every shipped build does.
     public var nonce: [UInt8]?
     /// The form the sender says it airs now (`t`, Kotlin's `PeerWire.told`): its advert's bytes 1–16, a tag while it blinds.
-    /// Only a parse sets it: this port never blinds, so no HELLO it writes carries `t` (ADR 2026-11.sv5t). Read before a
-    /// proof it is a hint at most; on a proven link it is the proven sender's claim, never proof it owns a tag.
-    public private(set) var told: [UInt8]?
+    /// This port writes it only while it blinds (ADR 2026-11.prsp), after the nonce and only with one. Read before a proof it
+    /// is a hint at most; on a proven link it is the proven sender's claim, never proof it owns a tag.
+    public var told: [UInt8]?
     /// The form a dialer says it dialed (`a`, Kotlin's `PeerWire.addressed`): the advert bytes 1–16 it read, ``formByteCount``
     /// bytes. Written after the nonce, and only with one.
     public var addressed: [UInt8]?
 
-    /// Makes a HELLO. A nonce is written only when given, and is meant to be ``nonceByteCount`` bytes; an addressed form only
-    /// beside a nonce, and is meant to be ``formByteCount`` bytes. There is no told form to give: this port never airs a tag.
+    /// Makes a HELLO. A nonce is written only when given, and is meant to be ``nonceByteCount`` bytes; a told and an addressed
+    /// form only beside a nonce, each meant to be ``formByteCount`` bytes. `told` is the tag this node airs, given only while it
+    /// blinds (`Protocol.hello(told, addressed)`, `Protocol.kt:261-276` at knit-next `cad69c77b`; ADR 2026-11.prsp).
     public init(
         nodeId: String, version: Int = WireProtocol.version, capabilities: Capabilities = .local, nonce: [UInt8]? = nil,
-        addressed: [UInt8]? = nil
+        told: [UInt8]? = nil, addressed: [UInt8]? = nil
     ) {
         self.nodeId = nodeId
         self.version = version
         self.capabilities = capabilities
         self.nonce = nonce
+        self.told = told
         self.addressed = addressed
     }
 
@@ -85,7 +87,10 @@ public struct Hello: Sendable, Equatable {
         var fields = [nodeId, String(version), capabilities.hex]
         if let nonce {
             fields.append(Self.noncePrefix + Hex.encode(nonce))
-            // `t` would go here, before `a` (`Protocol.hello`, `Protocol.kt:266-279`); this port never writes it.
+            // `t` before `a`, as `Protocol.hello` writes them (`Protocol.kt:266-279`).
+            if let told {
+                fields.append(Self.toldPrefix + Hex.encode(told))
+            }
             if let addressed {
                 fields.append(Self.addressedPrefix + Hex.encode(addressed))
             }

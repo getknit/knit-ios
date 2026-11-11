@@ -158,7 +158,10 @@ import Testing
         }
         let source = try #require(transport.presenceKeySource)
         #expect(source.ownKey() == nil && !source.hearsTagNext(alice.nodeId))
-        #expect(source.readMark(1) == nil && source.writeMark(PresenceMark(slot: 1, restart: 0), 1) == .failed)
+        #expect(throws: PresenceMarkReadFailure()) {
+            try source.readMark(1)
+        }
+        #expect(source.writeMark(PresenceMark(slot: 1, restart: 0), 1) == .failed)
         source.askMarkPass(1)
     }
 

@@ -15,7 +15,7 @@
         case writeFileRecord(ChannelID, [UInt8])
         case close(ChannelID)
         case ring(ChannelID)
-        case heardHello(ChannelID, NodeId)
+        case heardHello(ChannelID, NodeId, told: NodeId?, announced: NodeId?)
         /// A paused channel fell below half its credit (``Mailbox/consumed(_:on:)``), with this many bytes still
         /// unprocessed: the loop polls it for input again.
         case resumeReading(ChannelID, unprocessed: Int)

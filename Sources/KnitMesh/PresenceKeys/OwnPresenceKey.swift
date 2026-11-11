@@ -44,8 +44,9 @@ public struct PresenceKeySource {
     /// Asks for one pass of our keys, at most once per generation, as the advertiser does when its mark moves past the
     /// contact window's lead (`reconcile("mark")`).
     public let askMarkPass: (_ generation: Int64) -> Void
-    /// The advertiser's mark under our key `generation`, or `nil` with none.
-    public let readMark: (_ generation: Int64) -> PresenceMark?
+    /// The advertiser's mark under our key `generation`, or `nil` with none; throws when the store cannot answer, never
+    /// "none" (``KnitStore/PresenceMarkReadFailure``).
+    public let readMark: (_ generation: Int64) throws(PresenceMarkReadFailure) -> PresenceMark?
     /// Writes the advertiser's mark under our key `generation`, durably and only while it is the current key: only
     /// ``KnitStore/PresenceMarkWrite/durable`` lets a tag air.
     public let writeMark: (_ mark: PresenceMark, _ generation: Int64) -> PresenceMarkWrite
@@ -55,7 +56,7 @@ public struct PresenceKeySource {
         ownKey: @escaping () -> OwnPresenceKey?,
         hearsTagNext: @escaping (NodeId) -> Bool,
         askMarkPass: @escaping (Int64) -> Void,
-        readMark: @escaping (Int64) -> PresenceMark?,
+        readMark: @escaping (Int64) throws(PresenceMarkReadFailure) -> PresenceMark?,
         writeMark: @escaping (PresenceMark, Int64) -> PresenceMarkWrite
     ) {
         self.ownKey = ownKey

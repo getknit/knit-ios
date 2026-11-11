@@ -12,7 +12,19 @@ public func fuzzAdvert(_ data: UnsafePointer<UInt8>, _ count: Int) -> CInt {
     if let advert, advert.blinded {
         precondition(AdvertForm.hasTagPrefix(advert.advertised.bytes), "a blinded advert parsed without the tag prefix")
     }
-    precondition((AdvertPayload(gattValue: bytes) != nil) == (advert.map { !$0.blinded } ?? false), "a GATT value read a tag")
+    // A GATT value reads as service data does, a blinding iPhone's tag included (ADR 2026-11.prsp).
+    precondition(AdvertPayload(gattValue: bytes) == advert, "a GATT value read otherwise than service data")
+    if let advert {
+        precondition(!advert.blinded || advert.shownForm == "a tag", "a blinded form's log text named its tag")
+        let written = AdvertPayload(
+            capabilities: Capabilities(rawValue: Int64(advert.capabilities)),
+            advertised: advert.advertised,
+            digestCue: 0,
+            psm: advert.psm,
+            flags: AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: advert.blinded)
+        )
+        precondition(AdvertPayload(gattValue: written.gattValue) == written, "a payload this port writes did not read back")
+    }
     // Lossy on purpose: every input becomes some string, replacement characters included.
     // swiftlint:disable:next optional_data_string_conversion
     let text = String(decoding: bytes, as: UTF8.self)

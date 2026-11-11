@@ -178,26 +178,6 @@
             #expect(rig.log.all.contains { $0.contains("holds no payload") })
         }
 
-        /// No port serves a blinded payload, so one read over GATT is a stranger's: never sighted, its tag never logged, and
-        /// not read again at the next advert (`BleGattPayloadReader.kt:87-89` at knit-next `cad69c77b`; ADR 2026-11.sv5t).
-        @Test func aCharacteristicThatHoldsABlindedPayloadIsAStranger() throws {
-            let rig = try GattRig.reading()
-            rig.start()
-            let tag = try #require(NodeId(bytes: [0xCE, 0x73, 0x96] + [UInt8](repeating: 0x5A, count: 13)))
-            let flags = AdvertPayload.blindedFlag
-            let blinded = AdvertPayload(capabilities: 0x9, nodeId: tag, digestCue: 0, psm: UnixSockets.psm, flags: flags)
-            #expect(AdvertPayload(serviceData: blinded.gattValue) != nil, "as service data it would read")
-            rig.fake.remoteGatt[LoopRig.peerPath] = FakeBlueZ.RemoteGatt(value: blinded.gattValue)
-            try rig.fake.add(device: LoopRig.peerPath, LoopRig.uuidOnlyDevice())
-            rig.settle { rig.fake.disconnected == [LoopRig.peerPath] }
-            try GattRig.strength(-60, on: rig)
-            rig.turn()
-            #expect(rig.fake.connectRequests.count == 1, "a stranger waits out its retry")
-            #expect(GattRig.sightings(rig).isEmpty)
-            #expect(rig.log.all.contains { $0.contains("holds no payload") })
-            #expect(!rig.log.all.contains { $0.contains("bluez read ") || $0.contains(tag.string) }, "no read line, no tag")
-        }
-
         @Test func aCharacteristicThatWillNotReadDropsTheLink() throws {
             let rig = try GattRig.reading()
             rig.start()
@@ -369,10 +349,10 @@
             let remote = try RemoteEnd.dial(rig.sockets)
             rig.settle { rig.lastAccepted != nil }
             let id = try #require(rig.lastAccepted)
-            rig.post(.heardHello(id, LoopRig.advert().advertised))
+            rig.post(.heardHello(id, LoopRig.advert().advertised, told: nil, announced: nil))
             rig.turn()
             #expect(rig.loop.gatt.payload(of: GattRig.peer) == LoopRig.gattAdvert(), "the same node keeps it")
-            rig.post(.heardHello(id, fixtureNodeId(9)))
+            rig.post(.heardHello(id, fixtureNodeId(9), told: nil, announced: nil))
             rig.settle { rig.loop.gatt.payload(of: GattRig.peer) == nil }
             #expect(rig.log.all.contains { $0.contains("its HELLO named \(fixtureNodeId(9))") })
             remote.hangUp()

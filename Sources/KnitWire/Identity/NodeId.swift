@@ -22,6 +22,11 @@ public struct NodeId: Hashable, Sendable, Comparable, CustomStringConvertible {
         string = Base32.encode(bytes)
     }
 
+    /// The id for exactly 16 raw bytes, which the caller built to that length: a tag this module made.
+    init(sixteen bytes: [UInt8]) {
+        string = Base32.encode(bytes)
+    }
+
     /// The id for its text form, if that form is canonical.
     public init?(_ text: String) {
         guard text.utf8.count == Self.length, let decoded = Base32.decode(text), decoded.count == Self.byteCount,

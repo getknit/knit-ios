@@ -271,13 +271,13 @@ import Testing
         #expect(AdvertPayload(serviceData: flagged.bytes)?.flags == AdvertPayload.dialsGattPeersFlag)
     }
 
-    /// The flags this port writes never claim Android's side channel, its Wi-Fi Aware or a tag (knit-next `cad69c77b`,
-    /// `BleAdvertPayload.kt:95-104`), and the initializer's default, which knit-peer's `scan` and `stranger` adverts
-    /// take, claims nothing either.
+    /// The flags this port writes never claim Android's side channel or its Wi-Fi Aware (knit-next `cad69c77b`,
+    /// `BleAdvertPayload.kt:95-104`), nor a tag over a clear payload (`BlindWireTests` has the blinded ones), and the
+    /// initializer's default, which knit-peer's `scan` and `stranger` adverts take, claims nothing either.
     @Test func theFlagsThisPortWritesNeverSetTheAwareBit() throws {
-        #expect(AdvertPayload.writtenFlags(dialsGattPeers: true) == AdvertPayload.dialsGattPeersFlag)
-        #expect(AdvertPayload.writtenFlags(dialsGattPeers: false) == 0)
-        #expect([true, false].allSatisfy { AdvertPayload.writtenFlags(dialsGattPeers: $0) & AdvertPayload.blindedFlag == 0 })
+        #expect(AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: false) == AdvertPayload.dialsGattPeersFlag)
+        #expect(AdvertPayload.writtenFlags(dialsGattPeers: false, blinded: false) == 0)
+        #expect([true, false].allSatisfy { AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: $0) & AdvertPayload.awareFlag == 0 })
         let node = try #require(NodeId(nodeA))
         #expect(AdvertPayload(capabilities: .local, nodeId: node, digestCue: 0, psm: 0x80).flags == 0)
     }

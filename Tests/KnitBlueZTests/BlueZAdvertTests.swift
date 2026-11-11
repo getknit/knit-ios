@@ -41,7 +41,7 @@
         /// `FLAG_AWARE` (knit-next `808472a3`, `BleAdvertPayload.kt:64-72`), which no radio here may claim.
         @Test func theServiceDataCarriesTheWrittenFlagsAndNoAwareBit() throws {
             var payload = LoopRig.ours
-            payload.flags = AdvertPayload.writtenFlags(dialsGattPeers: true)
+            payload.flags = AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: false)
             let rig = try LoopRig()
             rig.startAdvertising(payload)
             let properties = try #require(rig.fake.registered.first.flatMap { rig.fake.advertisements[$0] })
@@ -52,7 +52,7 @@
 
         @Test func theGATTValueCarriesTheWrittenFlagsAndNoAwareBit() throws {
             var payload = LoopRig.ours
-            payload.flags = AdvertPayload.writtenFlags(dialsGattPeers: true)
+            payload.flags = AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: false)
             let rig = try LoopRig(profile: .ios)
             rig.startAdvertising(payload)
             try rig.fake.read(characteristic: rig.loop.application.characteristicPath)

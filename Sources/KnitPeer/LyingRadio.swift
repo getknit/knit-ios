@@ -181,8 +181,8 @@ public final class LyingRadio: Radio {
         inner.ring(channel)
     }
 
-    public func heardHello(from node: NodeId, on channel: ChannelID) {
-        inner.heardHello(from: node, on: channel)
+    public func heardHello(from node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID) {
+        inner.heardHello(from: node, told: told, announced: announced, on: channel)
     }
 
     /// The link is the peer's: once our HELLO is out too, the channel is ready, and what waits is injected.

@@ -87,14 +87,18 @@ Coded sets on a fresh PSM, the old one accepting for 30 s more. Only a debug bui
 with extended advertising; release N airs its id and ships the readers and the keys, and release N+1, which turns writing
 on, waits on the iOS reader. This port reads tags (ADR 2026-11.sv5t; knit-next.md, "Owed here"). `AdvertPayload` keeps
 bytes 1–16 as `advertised`, says `blinded`, and drops a blinded payload whose bytes lack the prefix
-(`AdvertForm.hasTagPrefix`); a clear payload is an id whatever its bytes. `AdvertPayload(gattValue:)` makes a blinded GATT
-value a stranger's in both radios, as Android's reader does (`BleGattPayloadReader.kt:87-89`). The link manager resolves
+(`AdvertForm.hasTagPrefix`); a clear payload is an id whatever its bytes. `AdvertPayload(gattValue:)` reads a blinded GATT
+value with the prefix as a blinded form in both radios, which a blinding iPhone serves (ADR 2026-11.prsp); Android's reader at
+the pin still makes it a stranger's (`BleGattPayloadReader.kt:87-89`) until companion change A11. The link manager resolves
 each blinded sighting (`AdvertAliases`: a contact's key, then a proven link's claim, then a dialer's hint) and keeps it
 under the resolved id or, unresolved, under a handle printed `~zzzz…<n>` (`FormKeys`, at most 512, a handle a live dial key
 names never evicted). Presence, addresses, the dwell and the backoff follow that key (`SightingKey`), so a rotation never
 makes a new peer of a contact; a dial reads the PSM of the sighting it dials. Every dial to a blinded advert is a tag dial,
-booked on the handle and the address (`DialKey`), writing `a` = the tag; it requires a proof and takes the proven id. A
-blinded advert counts as service data (`isServiceData`). `sightings()` shows resolved and linked peers only.
+booked on the handle and the address (`DialKey`), writing `a` = the tag; it requires a proof and takes the proven id. Only a
+nonzero digest cue marks an advert as service data (`isServiceData`): a blinding Android zeroes its cue, and a blinding
+iPhone's GATT payload is blinded too, so a blinded advert proves nothing either way, and counting one would cost a blinding
+iPhone's link its write-stall exemption while iOS holds it suspended (ADR 2026-11.prsp). `sightings()` shows resolved and
+linked peers only.
 
 The bit first meant the opposite. `FLAG_NO_AWARE` (`9552995d`, `438ffc72`, both in the pin) was set for "won't run
 Aware", and a clear bit made a candidate. It never shipped in a release and lived on knit-next's `main` only from
@@ -113,13 +117,13 @@ bytes. The tags:
 | 3 | `FILE_CHUNK` | raw bytes, 2 to 16 KiB from Android (2 KiB on a Coded link); a file over 8 MiB + 64 KiB is aborted |
 | 4 | `FILE_END` | empty |
 | 5 | `KEEPALIVE` | empty; since knit-next ADR 2026-10.697m, Android writes one at link-up on a link whose HELLO lacks `CAP_DOORBELL`, answers one there, and probes with it. On a doorbell link it sends none and ignores one. It may write one between a file's chunks (`FramedLink.sendKeepalive`, #203), which this port ignores like any other. This port never writes one (`interop.md`) |
-| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|2fff`; the caps may carry `CAP_DOORBELL` (`0x1000`) and `CAP_BLOB_HAVE` (`0x2000`), which no advert can. A build that proves its id adds `CAP_LINK_PROOF` (`0x40000`) and a fourth field, `n` and 16 fresh bytes in 32 lowercase hex digits (the `link-hello-proof` contract, §2). Since knit-next ADR 2026-11.xp6d two fields may follow the nonce: `t<32 hex>`, the form the sender airs (only while it blinds), and `a<32 hex>`, the form a dialer dialed (every Android build writes it, an iPhone's id included). `Hello` reads both behind a valid nonce, in any order, a letter appearing twice being absent, and writes `a` only when given one, never `t`; the proof signs the payloads as they crossed |
+| 6 | `HELLO` | UTF-8 `nodeId\|version\|capsHex`, for example `ffbbh6thbepahqxsv2gqog45m4\|1\|2fff`; the caps may carry `CAP_DOORBELL` (`0x1000`) and `CAP_BLOB_HAVE` (`0x2000`), which no advert can. A build that proves its id adds `CAP_LINK_PROOF` (`0x40000`) and a fourth field, `n` and 16 fresh bytes in 32 lowercase hex digits (the `link-hello-proof` contract, §2). Since knit-next ADR 2026-11.xp6d two fields may follow the nonce: `t<32 hex>`, the form the sender airs (only while it blinds), and `a<32 hex>`, the form a dialer dialed (every Android build writes it, an iPhone's id included). `Hello` reads both behind a valid nonce, in any order, a letter appearing twice being absent, and writes each only when given one, `t` before `a`; this port gives `t` only while it blinds (ADR 2026-11.prsp); the proof signs the payloads as they crossed |
 | 7 | `DIGEST` | UTF-8 JSON `{"ids":[…]}` |
 | 8 | `PROOF` | `sigPub (32) ‖ hpkePub (32) ‖ signature (64)`, exactly 128 bytes: the signer's identity-key signature over both HELLOs (the contract, §3 and §4). Written only to a peer whose HELLO carries `CAP_LINK_PROOF` |
-| 9 | `TAG_NEXT` | the sender's next advertised tag, exactly 16 bytes (knit-next ADR 2026-11.xp6d, `LinkFraming.kt:72`): 3.5 minutes before a rotation, after one nobody was told of, and as the held link's resend. Android writes it only to a proven link whose HELLO carries `CAP_BLIND_ADVERT` (`0x80000`, `TagNextSends.kt:101-105`), so never to this port, which reads one of exactly 16 bytes past on a live link, throws on any other length from the header alone (`LinkRecordError.badLength`), and never writes one |
+| 9 | `TAG_NEXT` | the sender's next advertised tag, exactly 16 bytes (knit-next ADR 2026-11.xp6d, `LinkFraming.kt:72`): 3.5 minutes before a rotation, after one nobody was told of, and as the held link's resend. Android writes it only to a proven link whose HELLO carries `CAP_BLIND_ADVERT` (`0x80000`, `TagNextSends.kt:101-105`). This port reads one of exactly 16 bytes past on a live link, throws on any other length from the header alone (`LinkRecordError.badLength`), and writes one on the same terms only while it blinds (ADR 2026-11.prsp) |
 
 - **An unknown tag, a bad length or a truncated record throws on Android and drops the link.** Never send
-  a tag outside 1..8 (9 is read, never written), and 8 only to a peer whose HELLO carries `CAP_LINK_PROOF`: Android v2.10.1 and earlier know only
+  a tag outside 1..9 (9 only while blinding, to a proven link whose HELLO carries `CAP_BLIND_ADVERT`), and 8 only to a peer whose HELLO carries `CAP_LINK_PROOF`: Android v2.10.1 and earlier know only
   1..7. `CAP_BLIND_ADVERT` is advertised only because `LinkRecordReader` reads tag 9 and ctl 11 reads too: Android gates
   both `TAG_NEXT` and the presence key's ctl 11 on that bit alone (ADR 2026-11.sv5t).
 - A `FRAME` that does not decode is counted and skipped, and the link stays up. Frames and digests may
@@ -402,7 +406,9 @@ primary `0xFE30` service, with the digest cue zeroed (ADR 2026-09.xzpt). A radio
 paces itself by `GattPayloads`: one peer at a time, a failed read tried again after 30 s, and a device that serves
 no payload left alone for ten minutes. A payload serves the address's adverts until a dial there fails before its
 channel opens, a HELLO there names another node, or the address goes unheard for a minute of scanning while nothing
-links it. Those three rules are shared law with A3 (ADR 2026-09.xzpt, amended 2026-09-29).
+links it. Those three rules are shared law with A3 (ADR 2026-09.xzpt, amended 2026-09-29). A blinded payload is compared by
+its tag in rule 2, and adds a fourth: it goes at the first slot edge after its read, with jitter (ADR 2026-11.prsp, which
+companion change A11 mirrors).
 
 The HELLO adds `CAP_BLOB_HAVE` (`0x2000`) to this build's `0xC015F` always, since every build answers a holder query
 (knit-next ADR 2026-10.6e5t), reading `c215f`. It adds `CAP_DOORBELL` (`0x1000`) too, reading `c315f`, only when the
@@ -457,6 +463,27 @@ Files cross a link as Android's do (ADR 2026-10.h6zz).
   - A `blobcancel` from the asker takes its copy off the link while that copy still waits behind another file. One
     already streaming goes on.
   - FILE records never ring a doorbell.
+
+The iPhone's writer (ADR 2026-11.prsp, Phase 2; `LinkManager+Writer.swift`, `+TagNext.swift`) airs a rotating tag in its
+GATT payload while `LinkManager.Configuration.blindsAdvert` holds and the runtime switch (`setBlinding`) is on; release
+passes false. One snapshot (`AdvertWriter`: the form on the air, the one before it and the PSM) is replaced whole at each
+rotation and every push builds from it, the payload carrying `FLAG_BLINDED` beside `FLAG_DIALS_GATT_PEERS` and a zero cue;
+`AdvertOrder.Mine` is read from it. The tag comes from `TagSchedule` (the mark per key generation, written durably and only
+forward through `PresenceKeySource.writeMark` before the tag airs; a random prefixed tag with no key, a mark that will not
+read or write, or past four bring-ups in a slot) through `TagChoice`. The slot turn (`AdvertRotation`) is a deadline the `Mesh` timer wakes for: the
+coming tag reserved and sent as `TAG_NEXT` 210 s before the edge, the rotation at the first wake at or after the later of the
+edge and the announcement plus 30 s, a late wake's rotation unannounced and its form sent once to each link; it never holds.
+Each bring-up (a `.listening` with nothing on the air), key change (taken at the next advance, never inside the engine's
+call) and flip rotates at once; a set clock (`NSSystemClockDidChange`, observed by `Mesh`) is read at once. `TAG_NEXT` is a
+link record in `LinkOutbox`'s order, never a ring, sent only to a proven link whose HELLO carried `CAP_BLIND_ADVERT` and whose
+peer `hearsTagNext`, at most once per link per two minutes, whenever a key is held (a random tag on the air included, as
+Android sends it). While blinding the HELLO carries
+`t`, a dialer whose HELLO lacks `CAP_BLIND_ADVERT` is refused first with no reply (`RefuseLegacy`; `LegacyDialerBoost` is not
+ported), and a dialer to which we hold a proven, non-doorbell, non-quiet link, and whose `a` names a tag of ours, is refused
+and, if it may hear our tag, resent it there (`RefuseHeld`; quiet is 90 s with no byte read, re-stamped at the front, a ring
+and a late write-stall check). `GattPayloads` compares a blinded payload with the HELLO's `t` or the tag that node announced (rule 2), and
+forgets one 35 to 65 s past the slot edge after its read while no link holds its address (rule 4). Counts only, never a
+dated line: `LinkManager.writerCounters`.
 
 `KnitBLE` is the iPhone's radio. Its central scans every advert with duplicates, or the `0xFE30` UUID alone while
 the link manager seeks (`Radio.seekPeers`, ADR 2026-10.mueg), takes

@@ -2,8 +2,8 @@ public import KnitCrypto
 public import KnitWire
 
 /// The blinded-advert reader (knit-next ADR 2026-11.xp6d's reader; ADR 2026-11.sv5t; knit-ios #42): resolving what a
-/// sighting names, the tag dial's proof, `TAG_NEXT`, and the contacts' presence keys. The iPhone reads tags and stays
-/// clear: its own form is `clear(localId)` for good, and it never writes `t` or tag 9.
+/// sighting names, the tag dial's proof, `TAG_NEXT`, and the contacts' presence keys. The writer, which airs our own tag, is
+/// `LinkManager+Writer.swift` (ADR 2026-11.prsp); our own tags, current and previous, resolve to nobody here.
 ///
 /// - **Sightings.** A clear advert is its own id. A blinded one is resolved (``AdvertAliases``) and kept under the key its
 ///   answer gives (``BlindSightings``): the resolved id, or its tag's handle (``FormKeys``). Every blinded form gets a
@@ -98,7 +98,7 @@ extension LinkManager {
         }
         let tag = advert.advertised
         let resolution = aliases.resolve(.of(advert))
-        if resolution == .malformed {
+        if resolution == .malformed || resolution == .own {
             return nil
         }
         blindCounts.tagsHeard += 1
@@ -221,6 +221,8 @@ extension LinkManager {
         }
         let mismatches = aliases.keyProofMismatchCount
         let told = pending.claim.hello.told.flatMap(NodeId.init(bytes:))
+        // Only now is the reply believed, so only now may it retire a payload read for another form (rule 2; ADR 2026-11.prsp).
+        radio.heardHello(from: peer, told: told, announced: aliases.announced(by: peer), on: id)
         aliases.onDialed(id, dialed: target.form, told: told, provenId: peer)
         if aliases.keyProofMismatchCount > mismatches {
             replayMarks.mark(target.form.advertised, at: target.address)
@@ -279,21 +281,28 @@ extension LinkManager {
             blindCounts.tagNextRefused += 1
             return
         }
-        switch aliases.onTagNext(id, provenId: link.neighbor.nodeId, tag: tag) {
+        let outcome = aliases.onTagNext(id, provenId: link.neighbor.nodeId, tag: tag)
+        switch outcome {
         case .rateLimited, .ignored:
             blindCounts.tagNextRefused += 1
         case .recorded, .pending, .hinted, .redundant, .contradicted, .contested, .full:
             blindCounts.tagNextTaken += 1
         }
+        noteLinkForm(id, tag: tag, outcome: outcome)
     }
 
     // MARK: Deadlines
 
-    /// When the reader next has work: the next slot edge while any contact's keys are listed (the window slides there, on
-    /// the wall clock converted to the monotonic one), and when the key limiter frees a held listing.
+    /// When the reader and the writer next have work, the wall clock's instants converted to the monotonic one: the next
+    /// slot edge while any contact's keys are listed (the window slides there), when the key limiter frees a held listing,
+    /// the slot turn's next step while we blind (``turnDue(now:wall:)``), a link's announced form reaching its edge, and now
+    /// while a key change waits to be taken.
     func blindDue(now: Int64) -> Int64? {
-        let edge: Int64? = aliases.listsKeys ? now + nextSlotEdge(wall: clock.wallMilliseconds()) : nil
-        return [edge, keyLimiter.nextDueAt()].compactMap(\.self).min()
+        let wall = clock.wallMilliseconds()
+        let edge: Int64? = aliases.listsKeys ? now + nextSlotEdge(wall: wall) : nil
+        let keyChange: Int64? = blindWriter.keyChangeDue ? now : nil
+        let form = blindWriter.notes.nextDue.map { now + max(0, $0 - wall) }
+        return [edge, keyLimiter.nextDueAt(), turnDue(now: now, wall: wall), keyChange, form].compactMap(\.self).min()
     }
 
     /// The wall-clock wait to the next slot edge, at least 1 ms.
@@ -302,7 +311,8 @@ extension LinkManager {
         return max(1, (slot + 1) * BlindTag.slotMilliseconds - wall)
     }
 
-    /// Slides the window and applies a key listing the limiter has freed.
+    /// Slides the window, applies a key listing the limiter has freed, takes a key change, runs the slot turn, and applies
+    /// the link forms whose edge has come.
     func advanceBlind(now: Int64) {
         if aliases.listsKeys {
             aliases.slide()
@@ -310,5 +320,8 @@ extension LinkManager {
         if let applied = keyLimiter.release(now: now) {
             applyKeys(applied)
         }
+        takeKeyChange()
+        advanceTurn()
+        applyDueLinkForms()
     }
 }

@@ -40,7 +40,7 @@ import Testing
         #expect((advert.flags & AdvertPayload.awareFlag != 0) == vector.parsed.aware)
         #expect(advert.flags == vector.flags)
         #expect(advert.bytes == serviceData, "it round-trips")
-        #expect(AdvertPayload(gattValue: serviceData) == nil, "no port serves it over GATT")
+        #expect(AdvertPayload(gattValue: serviceData) == advert, "a blinding iPhone serves it over GATT (ADR 2026-11.prsp)")
     }
 
     @Test func aBlindedAdvertWithoutTheTagPrefixIsNoAdvert() throws {

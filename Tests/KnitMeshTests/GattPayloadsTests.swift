@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitMesh
 import KnitTestSupport
 import KnitWire
@@ -21,8 +22,12 @@ import Testing
             state.begin(address, now: now)
         }
 
-        func helloNamed(_ node: NodeId, at address: RadioAddress) -> Bool {
-            state.helloNamed(node, at: address)
+        func helloNamed(_ node: NodeId, told: NodeId? = nil, announced: NodeId? = nil, at address: RadioAddress) -> Bool {
+            state.helloNamed(node, told: told, announced: announced, at: address)
+        }
+
+        func forgetPastEdge(wall: Int64, linked: Set<RadioAddress> = []) -> [RadioAddress] {
+            state.forgetPastEdge(wall: wall, linked: linked)
         }
 
         func forgetQuiet(now: Int64, linked: Set<RadioAddress>) -> [RadioAddress] {
@@ -46,7 +51,7 @@ import Testing
 
     private func read(_ reads: Reads, _ address: RadioAddress, _ payload: AdvertPayload = Self.payload, now: Int64) {
         #expect(reads.begin(address, now: now))
-        reads.state.finish(address, .read(payload), now: now)
+        reads.state.finish(address, .read(payload), now: now, wall: 0)
     }
 
     @Test func aHelloNamingAnotherNodeForgetsThePayloadAndTheSameNodeKeepsIt() {
@@ -110,7 +115,7 @@ import Testing
         let reads = Reads(GattPayloads.Configuration())
         reads.state.scanStarted(now: 0)
         #expect(reads.begin(Self.phone, now: 0))
-        reads.state.finish(Self.phone, .stranger, now: 0)
+        reads.state.finish(Self.phone, .stranger, now: 0, wall: 0)
         reads.state.heard(Self.phone, now: 0)
         #expect(reads.forgetQuiet(now: 60_000, linked: []).isEmpty, "no payload to forget")
         #expect(!reads.begin(Self.phone, now: 60_000), "its ten minutes stand")
@@ -121,7 +126,7 @@ import Testing
         reads.state.scanStarted(now: 0)
         reads.state.heard(Self.phone, now: 0)
         #expect(reads.begin(Self.phone, now: 0))
-        reads.state.finish(Self.phone, .read(Self.payload), now: 10_000)
+        reads.state.finish(Self.phone, .read(Self.payload), now: 10_000, wall: 0)
         #expect(reads.forgetQuiet(now: 69_999, linked: []).isEmpty)
         #expect(reads.forgetQuiet(now: 70_000, linked: []) == [Self.phone])
     }
@@ -132,7 +137,7 @@ import Testing
         #expect(reads.begin(Self.phone, now: 0))
         #expect(reads.state.current?.address == Self.phone)
         #expect(reads.state.current?.deadline == 100)
-        reads.state.finish(Self.phone, .read(Self.payload), now: 40)
+        reads.state.finish(Self.phone, .read(Self.payload), now: 40, wall: 0)
         #expect(reads.state.current == nil)
         #expect(reads.state.payload(of: Self.phone) == Self.payload)
         #expect(!reads.begin(Self.phone, now: 50), "read once")
@@ -142,17 +147,17 @@ import Testing
         let reads = Reads()
         #expect(reads.begin(Self.phone, now: 0))
         #expect(!reads.begin(Self.other, now: 10))
-        reads.state.finish(Self.phone, .failed, now: 20)
+        reads.state.finish(Self.phone, .failed, now: 20, wall: 0)
         #expect(reads.begin(Self.other, now: 30))
     }
 
     @Test func aFailedReadWaitsItsRetryAndAStrangerWaitsLonger() {
         let reads = Reads()
         #expect(reads.begin(Self.phone, now: 0))
-        reads.state.finish(Self.phone, .failed, now: 0)
+        reads.state.finish(Self.phone, .failed, now: 0, wall: 0)
         #expect(!reads.begin(Self.phone, now: 999))
         #expect(reads.begin(Self.phone, now: 1000))
-        reads.state.finish(Self.phone, .stranger, now: 1000)
+        reads.state.finish(Self.phone, .stranger, now: 1000, wall: 0)
         #expect(!reads.begin(Self.phone, now: 5999))
         #expect(reads.begin(Self.phone, now: 6000))
         #expect(reads.state.payload(of: Self.phone) == nil)
@@ -161,7 +166,7 @@ import Testing
     @Test func anOutcomeForAReadGivenUpOnIsIgnored() {
         let reads = Reads()
         #expect(reads.begin(Self.phone, now: 0))
-        reads.state.finish(Self.other, .read(Self.payload), now: 10)
+        reads.state.finish(Self.other, .read(Self.payload), now: 10, wall: 0)
         #expect(reads.state.current?.address == Self.phone)
         #expect(reads.state.payload(of: Self.other) == nil)
     }
@@ -177,11 +182,11 @@ import Testing
     @Test func aForgottenAddressIsReadAgainAtOnce() {
         let reads = Reads()
         #expect(reads.begin(Self.phone, now: 0))
-        reads.state.finish(Self.phone, .read(Self.payload), now: 0)
+        reads.state.finish(Self.phone, .read(Self.payload), now: 0, wall: 0)
         reads.state.forget(Self.phone)
         #expect(reads.state.payload(of: Self.phone) == nil)
         #expect(reads.begin(Self.phone, now: 1))
-        reads.state.finish(Self.phone, .stranger, now: 1)
+        reads.state.finish(Self.phone, .stranger, now: 1, wall: 0)
         reads.state.forget(Self.phone)
         #expect(reads.begin(Self.phone, now: 2), "forgetting ends the wait too")
     }
@@ -191,7 +196,100 @@ import Testing
         #expect(reads.begin(Self.phone, now: 0))
         reads.state.forget(Self.phone)
         #expect(reads.state.current?.address == Self.phone)
-        reads.state.finish(Self.phone, .read(Self.payload), now: 5)
+        reads.state.finish(Self.phone, .read(Self.payload), now: 5, wall: 0)
         #expect(reads.state.payload(of: Self.phone) == Self.payload)
+    }
+
+    // MARK: A blinded payload (ADR 2026-11.prsp)
+
+    private static let tag = AdvertForm.tag(prefixing: 7, 7)
+    private static let nextTag = AdvertForm.tag(prefixing: 8, 8)
+    private static let blinded = AdvertPayload(
+        capabilities: 0xFFF,
+        advertised: tag,
+        digestCue: 0,
+        psm: 0x81,
+        flags: AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true)
+    )
+    /// Mid-slot on the wall clock.
+    private static let wall: Int64 = 1_800_000_000_000
+    private static let edge = (BlindTag.slotOf(wallMilliseconds: wall) + 1) * BlindTag.slotMilliseconds
+
+    private func readBlinded(_ reads: Reads, wall: Int64 = Self.wall) {
+        #expect(reads.begin(Self.phone, now: 0))
+        reads.state.finish(Self.phone, .read(Self.blinded), now: 0, wall: wall)
+    }
+
+    @Test func aBlindedPayloadIsComparedWithTheHellosToldFormOrItsAnnouncedTagNeverTheId() {
+        let reads = Reads()
+        readBlinded(reads)
+        #expect(!reads.helloNamed(fixtureNodeId(2), told: Self.tag, at: Self.phone), "its `t` is the payload's tag")
+        #expect(!reads.helloNamed(fixtureNodeId(2), announced: Self.tag, at: Self.phone), "the tag it announced")
+        #expect(reads.state.payload(of: Self.phone) == Self.blinded)
+        #expect(reads.helloNamed(fixtureNodeId(2), told: Self.nextTag, at: Self.phone), "it rotated since the read")
+        #expect(reads.state.payload(of: Self.phone) == nil)
+        readBlinded(reads)
+        #expect(reads.helloNamed(Self.tag, at: Self.phone), "a HELLO with no `t` airs its id now, whatever it is called")
+    }
+
+    @Test func aClearPayloadIsStillComparedWithTheId() {
+        let reads = Reads()
+        read(reads, Self.phone, now: 0)
+        #expect(!reads.helloNamed(Self.payload.advertised, told: Self.tag, at: Self.phone), "the id it names, whatever the `t`")
+        #expect(reads.helloNamed(fixtureNodeId(3), told: Self.payload.advertised, at: Self.phone))
+    }
+
+    @Test func aBlindedPayloadIsForgottenPastItsSlotEdgeWithSlackAndJitter() {
+        let configuration = GattPayloads.Configuration()
+        #expect(configuration.blindedEdgeSlackMilliseconds == 35_000, "an announced rotation's 30 s, and 5 s")
+        #expect(GattPayloads.Configuration.defaultBlindedEdgeSlackMilliseconds == configuration.blindedEdgeSlackMilliseconds)
+        #expect(configuration.blindedEdgeJitterMilliseconds == 30_000)
+        let reads = Reads()
+        readBlinded(reads)
+        read(reads, Self.other, now: 0)
+        #expect(reads.forgetPastEdge(wall: Self.edge + 34_999).isEmpty, "the slack: an announced rotation may land 30 s late")
+        #expect(reads.forgetPastEdge(wall: Self.edge + 65_000) == [Self.phone], "by the jitter's end, once")
+        #expect(reads.state.payload(of: Self.phone) == nil)
+        #expect(reads.state.payload(of: Self.other) == Self.payload, "a clear payload is rule 3's alone")
+        #expect(reads.begin(Self.phone, now: 1), "read again at its next advert")
+    }
+
+    @Test func aBlindedPayloadReadBeforeTheClockWentBackIsForgotten() {
+        let reads = Reads()
+        readBlinded(reads)
+        #expect(reads.begin(Self.other, now: 0))
+        reads.state.finish(Self.other, .read(Self.blinded), now: 0, wall: Self.wall)
+        #expect(reads.forgetPastEdge(wall: Self.wall - 1) == [Self.other, Self.phone], "in order")
+    }
+
+    @Test func eachReadDrawsItsOwnJitterFromTheSeed() {
+        var forgets: Set<Int64> = []
+        for seed in UInt64(0)..<8 {
+            var state = GattPayloads(configuration: GattPayloads.Configuration(blindedEdgeSlackMilliseconds: 0), jitterSeed: seed)
+            let began = state.begin(Self.phone, now: 0)
+            #expect(began)
+            state.finish(Self.phone, .read(Self.blinded), now: 0, wall: Self.wall)
+            let forgotAt = stride(from: Self.edge, through: Self.edge + 30_000, by: 1000).first { wall in
+                !state.forgetPastEdge(wall: wall, linked: []).isEmpty
+            }
+            forgets.insert(forgotAt ?? -1)
+        }
+        #expect(!forgets.contains(-1), "every read is forgotten inside the jitter")
+        #expect(forgets.count > 1, "and not all at once")
+    }
+
+    @Test func aLinkedAddressKeepsItsBlindedPayloadUntilTheLinkEnds() {
+        let reads = Reads()
+        readBlinded(reads)
+        #expect(reads.forgetPastEdge(wall: Self.edge + 60_000, linked: [Self.phone]).isEmpty)
+        #expect(reads.state.payload(of: Self.phone) == Self.blinded)
+        #expect(reads.forgetPastEdge(wall: Self.edge + 65_000) == [Self.phone], "the first check after the link ends")
+    }
+
+    @Test func aForgottenBlindedPayloadTakesItsEdgeWithIt() {
+        let reads = Reads()
+        readBlinded(reads)
+        reads.state.forget(Self.phone)
+        #expect(reads.forgetPastEdge(wall: Self.edge + 60_000).isEmpty)
     }
 }

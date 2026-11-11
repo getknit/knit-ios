@@ -33,6 +33,8 @@ extension LinkManager {
             return []
         case .late(let milliseconds):
             log.log(.debug, "link write check ran \(milliseconds) ms late, so every link's stall count starts again")
+            // The same suspension read nothing either: a wake by a disconnect must not find every held link quiet.
+            restampReads(now: now)
             return []
         case .checked(let stalled):
             return stalled.flatMap { stall in
@@ -64,9 +66,11 @@ extension LinkManager {
         return link.neighbor.capabilities.contains(.doorbell) && !link.heardServiceData
     }
 
-    /// Whether `advert` came as service data rather than a GATT payload: it carries a digest cue (ADR 2026-09.xzpt), or it
-    /// is blinded, which no GATT payload can be and whose writer zeroes the cue (ADR 2026-11.sv5t).
+    /// Whether `advert` came as service data rather than a GATT payload: it carries a digest cue (ADR 2026-09.xzpt). A
+    /// blinded advert proves nothing either way: a blinding Android zeroes its cue, and a blinding iPhone serves a blinded
+    /// GATT payload (ADR 2026-11.prsp), whose link must stay exempt while iOS holds it suspended. A fork claiming
+    /// `CAP_DOORBELL` under a blinding Android's id cannot ride this: every build that blinds proves its id (R1).
     static func isServiceData(_ advert: AdvertPayload) -> Bool {
-        advert.digestCue != 0 || advert.blinded
+        advert.digestCue != 0
     }
 }

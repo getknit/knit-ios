@@ -366,8 +366,11 @@ final class RefusingPresenceKeys: PresenceKeyStore, @unchecked Sendable {
         held.applyOwn(inserted: inserted, updated: updated, keep: keep)
     }
 
-    func mark(of generation: Int64) -> PresenceMark? {
-        refusesReads ? nil : held.mark(of: generation)
+    func mark(of generation: Int64) throws(PresenceMarkReadFailure) -> PresenceMark? {
+        guard !refusesReads else {
+            throw PresenceMarkReadFailure()
+        }
+        return try held.mark(of: generation)
     }
 
     func writeMark(_ mark: PresenceMark, of generation: Int64) -> PresenceMarkWrite {

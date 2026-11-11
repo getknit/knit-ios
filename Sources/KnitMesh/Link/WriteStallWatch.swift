@@ -101,6 +101,12 @@ public struct WriteStallWatch: Sendable {
         }
     }
 
+    /// Whether the scheduled check is overdue at `now` by more than ``Configuration/lateMilliseconds``: the app was suspended
+    /// past it, and a radio event that resumed it may reach the link manager before the timer does. False with no check due.
+    public func isLate(now: Int64) -> Bool {
+        due.map { now - $0 > configuration.lateMilliseconds } ?? false
+    }
+
     /// Runs the check if one is due at `now`, reading each link's `level`. A link `exempt` says to leave alone takes a
     /// fresh baseline like one that moved, so it is never judged on time it spent exempt.
     public mutating func check(now: Int64, level: (ChannelID) -> OutboxLevel, exempt: (ChannelID) -> Bool) -> Check {

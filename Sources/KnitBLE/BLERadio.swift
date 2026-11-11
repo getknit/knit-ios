@@ -122,8 +122,8 @@
             core.onQueue { $0.ring(channel) }
         }
 
-        public func heardHello(from node: NodeId, on channel: ChannelID) {
-            core.onQueue { $0.heardHello(node, on: channel) }
+        public func heardHello(from node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID) {
+            core.onQueue { $0.heardHello(node, told: told, announced: announced, on: channel) }
         }
 
         public func seekPeers(_ seeking: Bool) {
@@ -195,7 +195,8 @@
         /// link's connection reaches `didDisconnectPeripheral` (``attach(_:to:)``).
         var attached: [ChannelID: UUID] = [:]
         var doorbells = Doorbells()
-        var gatt = GattPayloads()
+        /// Rule 4's jitter seeded at random, so readers of one writer read it again at different moments.
+        var gatt = GattPayloads(jitterSeed: UInt64.random(in: .min ... .max))
         var gattTarget: UUID?
         var gattReads = 0
         /// Whether the link manager seeks peers, so the scan asks for the `0xFE30` UUID alone (``seek(_:)``).

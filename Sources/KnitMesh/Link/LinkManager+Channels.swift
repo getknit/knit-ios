@@ -37,6 +37,9 @@ extension LinkManager {
         aliases.onLinkEnded(id)
         heldDials[id] = nil
         tagNextHeld[id] = nil
+        blindWriter.sends.forget(id)
+        blindWriter.notes.forget(id)
+        blindWriter.linkForms[id] = nil
         var events: [Event] = []
         var booked: [DialKey] = []
         switch channel.stage {
@@ -115,24 +118,17 @@ extension LinkManager {
         refusedDials.removeAll()
         heldStreaks.clear()
         replayMarks.clear()
-        psm = nil
         advertised = nil
         advertDue = nil
+        writerDown()
         return events
     }
 
+    /// Hands the radio the payload the aired snapshot makes now, when it differs from the last (``AdvertWriter/push(_:)``):
+    /// built from the snapshot's form and PSM, never from the node id while it blinds, and nothing while a rotation's tag is
+    /// pending or the radio is down.
     func advertiseNow() {
-        guard running, let psm else {
-            return
-        }
-        let payload = AdvertPayload(
-            capabilities: .local,
-            nodeId: localId,
-            digestCue: digestCue,
-            psm: psm,
-            flags: AdvertPayload.writtenFlags(dialsGattPeers: radio.dialsGattPeers)
-        )
-        guard payload != advertised else {
+        guard running, let payload = blindWriter.writer.push(payload(of:)), payload != advertised else {
             return
         }
         advertised = payload
@@ -160,9 +156,11 @@ extension LinkManager {
     /// ``Capabilities/linkProof``, which ``Capabilities/local`` carries, comes a nonce fresh for this connection from the
     /// system's secure source, never the injected generator a test seeds (the `link-hello-proof` contract, §2).
     ///
-    /// A dial's HELLO carries `a`, the form `addressing` names, after the nonce; never `t`, since this port airs no tag.
-    /// ``Capabilities/blindAdvert`` comes with ``Capabilities/local``; ``Configuration/withholdsBlindAdvert``, a test's
-    /// seam, takes it out of this HELLO alone, as a build from before the reader would send.
+    /// After the nonce, `t` names the tag we air while we blind, so a peer judges the order on the form it could have heard
+    /// (`toldForm`, `BluetoothMeshTransport.kt:3837` at `cad69c77b`; ADR 2026-11.prsp), and a dial's HELLO carries `a`, the
+    /// form `addressing` names. ``Capabilities/blindAdvert`` comes with ``Capabilities/local``;
+    /// ``Configuration/withholdsBlindAdvert``, a test's seam, takes it out of this HELLO alone, as a build from before the
+    /// reader would send.
     func ourHello(addressing: AdvertOrder.Form?) -> Hello {
         var capabilities = Capabilities.local.union(.blobHave)
         if configuration.withholdsBlindAdvert {
@@ -177,8 +175,11 @@ extension LinkManager {
             capabilities.remove(.blindAdvert)
         }
         let nonce = capabilities.contains(.linkProof) ? LinkProof.freshNonce() : nil
+        let current = mine.current
+        let told = nonce != nil && current.blinded ? current.advertised.bytes : nil
         let addressed = nonce == nil ? nil : addressing?.advertised.bytes
-        return Hello(nodeId: (impostor.claimedId ?? localId).string, capabilities: capabilities, nonce: nonce, addressed: addressed)
+        return Hello(
+            nodeId: (impostor.claimedId ?? localId).string, capabilities: capabilities, nonce: nonce, told: told, addressed: addressed)
     }
 
     /// Writes a record in slices of at most ``Configuration/maxWriteBytes``.

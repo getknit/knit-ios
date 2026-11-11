@@ -15,6 +15,22 @@ public enum AdvertForm {
     /// The prefix's last four bits, `1001`, in the split byte's high nibble.
     private static let prefix2High: UInt8 = 0x90
 
+    /// A tag no presence key derives: the prefix over the low 108 bits of `high` and `low`, big-endian, which a caller draws
+    /// at random (`TagSchedule.randomTag`, `TagSchedule.kt:180-186` at knit-next `cad69c77b`). It resolves to nobody.
+    public static func tag(prefixing high: UInt64, _ low: UInt64) -> NodeId {
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(tagByteCount)
+        for word in [high, low] {
+            for shift in stride(from: UInt64.bitWidth - UInt8.bitWidth, through: 0, by: -UInt8.bitWidth) {
+                bytes.append(UInt8(truncatingIfNeeded: word >> UInt64(shift)))
+            }
+        }
+        bytes[0] = prefix0
+        bytes[1] = prefix1
+        bytes[splitByte] = prefix2High | (bytes[splitByte] & ~highNibble)
+        return NodeId(sixteen: bytes)
+    }
+
     /// Whether `bytes` are ``tagByteCount`` long and carry a tag's 20 fixed bits: `CE 73 9_`. Says nothing about whose
     /// tag it is. Total. `BlindTag.hasPrefix`, `BlindTag.kt:131-135` at knit-next `cad69c77b`.
     public static func hasTagPrefix(_ bytes: [UInt8]) -> Bool {

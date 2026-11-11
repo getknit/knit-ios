@@ -58,24 +58,41 @@ import Testing
         let rows = try threeRows(store)
         let mark = PresenceMark(slot: 77, restart: 2)
         #expect(store.writeMark(mark, of: rows[1].generation) == .durable)
-        #expect(store.mark(of: rows[1].generation) == mark)
+        #expect(try store.mark(of: rows[1].generation) == mark)
         #expect(store.writeMark(mark, of: rows[0].generation) == .refused, "the previous key airs no more")
         #expect(store.writeMark(mark, of: rows[2].generation) == .refused, "the next key has not aired")
         #expect(store.writeMark(mark, of: now + 50) == .refused, "no such key")
-        #expect(store.mark(of: rows[0].generation) == nil && store.mark(of: rows[2].generation) == nil)
+        #expect(try store.mark(of: rows[0].generation) == nil && store.mark(of: rows[2].generation) == nil)
 
         var grown = rows[1]
         grown.audience.insert(fixtureNodeId(3))
         store.applyOwn(inserted: [], updated: [grown], keep: Set(rows.map(\.generation)))
-        #expect(store.mark(of: rows[1].generation) == mark, "a grow keeps the mark")
+        #expect(try store.mark(of: rows[1].generation) == mark, "a grow keeps the mark")
         #expect(store.ownKeys().first { $0.generation == rows[1].generation }?.audience.count == 3)
 
         // A fresh pair demotes the marked key: a mark under it now is refused, and its own mark stays where it was.
         let fresh = [try own(now + 10, activatedAt: now + 10, [alice]), try own(now + 11, activatedAt: nil, [alice])]
         store.applyOwn(inserted: fresh, updated: [], keep: [rows[1].generation, now + 10, now + 11])
         #expect(store.writeMark(PresenceMark(slot: 78, restart: 0), of: rows[1].generation) == .refused)
-        #expect(store.mark(of: rows[1].generation) == mark)
+        #expect(try store.mark(of: rows[1].generation) == mark)
         #expect(store.writeMark(PresenceMark(slot: 78, restart: 0), of: now + 10) == .durable)
+    }
+
+    /// A mark only moves forward (ADR 2026-11.prsp; the bluetooth review of Phase 2): a write at or below the mark held is
+    /// refused and leaves it, so an advertiser that took a failed read for "none" can never move it back over pairs it aired.
+    @Test(arguments: kinds)
+    func aMarkThatDoesNotMoveForwardIsRefused(kind: RepositoryKind) throws {
+        let store = try kind.make().presenceKeys
+        let rows = try threeRows(store)
+        let held = PresenceMark(slot: 77, restart: 2)
+        #expect(store.writeMark(held, of: rows[1].generation) == .durable)
+        for back in [held, PresenceMark(slot: 77, restart: 0), PresenceMark(slot: 76, restart: 3)] {
+            #expect(store.writeMark(back, of: rows[1].generation) == .refused)
+        }
+        #expect(try store.mark(of: rows[1].generation) == held)
+        #expect(store.writeMark(PresenceMark(slot: 77, restart: 3), of: rows[1].generation) == .durable, "the next restart")
+        #expect(store.writeMark(PresenceMark(slot: 78, restart: 0), of: rows[1].generation) == .durable, "a later slot")
+        #expect(try store.mark(of: rows[1].generation) == PresenceMark(slot: 78, restart: 0))
     }
 
     /// An update for a generation no longer held moves nothing, as SQL's `UPDATE` finds no row.
@@ -108,7 +125,7 @@ import Testing
             stores.presenceKeys.writeMark(PresenceMark(slot: 6, restart: 1), of: rows[1].generation)
         }
         #expect(unit == .committed(.insideUnit))
-        #expect(stores.presenceKeys.mark(of: rows[1].generation) == PresenceMark(slot: 5, restart: 0), "the mark as it was")
+        #expect(try stores.presenceKeys.mark(of: rows[1].generation) == PresenceMark(slot: 5, restart: 0), "the mark as it was")
     }
 
     @Test(arguments: kinds)

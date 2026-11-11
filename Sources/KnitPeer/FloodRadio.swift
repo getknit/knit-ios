@@ -163,8 +163,8 @@ public final class FloodRadio: Radio {
         inner.ring(channel)
     }
 
-    public func heardHello(from node: NodeId, on channel: ChannelID) {
-        inner.heardHello(from: node, on: channel)
+    public func heardHello(from node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID) {
+        inner.heardHello(from: node, told: told, announced: announced, on: channel)
     }
 
     /// The link is up: the flood writes to it from the next tick.

@@ -16,10 +16,11 @@ extension LinkManager {
     ]
 
     /// A peer rang this node's doorbell, which resumed the app if iOS had it suspended. The time it slept wrote nothing,
-    /// so every link's write-stall count starts again (``WriteStallWatch``). Answers no event.
+    /// so every link's write-stall count and quiet start again (``WriteStallWatch``, ``heldQuiet(_:now:)``). Answers no event.
     func heardRing(now: Int64) -> [Event] {
         ringsHeard += 1
         stallWatch.restamp(now: now)
+        restampReads(now: now)
         return []
     }
 

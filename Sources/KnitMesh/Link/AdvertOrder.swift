@@ -2,8 +2,9 @@ import KnitWire
 
 /// Who dials before a link exists, once a presence advert can name a rotating tag instead of the node id (knit-next ADR
 /// 2026-11.xp6d, `AdvertOrder.kt` at `cad69c77b`; ADR 2026-11.sv5t). It replaces every raw `localId > peer` the link
-/// manager reads to decide who dials, with this node's own form (``Mine``) as an input. This port never blinds, so its form
-/// is `clear(localId)` for good and every rule here reads the classic order against a clear advert.
+/// manager reads to decide who dials, with this node's own form (``Mine``) as an input. While the iPhone airs its id its form
+/// is `clear(localId)` and every rule here reads the classic order; while it blinds, ``Mine`` is the aired snapshot's current
+/// and previous forms (ADR 2026-11.prsp).
 ///
 /// The rule, from one phone's side (``iDial(_:_:)``):
 /// - **Equal forms never dial.** My own advert, or a tag that collides with mine.
@@ -52,13 +53,16 @@ internal enum AdvertOrder {
     }
 
     /// My own advertised forms, read as one snapshot by every role that judges order: ``current`` is what I air now,
-    /// ``previous`` what I aired before my last rotation (`AdvertOrder.Mine`, `:80-92`). This port holds
-    /// `Mine.clear(localId)` for good.
+    /// ``previous`` what I aired before my last rotation (`AdvertOrder.Mine`, `:80-92`), both from the one aired snapshot the
+    /// writer replaces whole (``AdvertWriter``), so no reader sees a current from one rotation beside a previous from another.
     struct Mine: Hashable, Sendable {
         /// What I air now.
         let current: Form
         /// What I aired before my last rotation, if any.
         let previous: Form?
+
+        /// Whether I air a tag now.
+        var blinded: Bool { current.blinded }
 
         /// A phone that airs its id: every pre-link role then reads the classic order.
         static func clear(_ nodeId: NodeId) -> Self {
@@ -128,5 +132,30 @@ internal enum AdvertOrder {
             dialed: dialed,
             dialer: .fromHello(dialer, told: tag?.bytes)
         )
+    }
+
+    /// The held-link row (`heldLinkRow`, `BleAdmissionPolicy.kt:170-181` at knit-next `cad69c77b`; ADR 2026-11.prsp's
+    /// `RefuseHeld`): a dialer whose proven link we already hold (`heldProven`) and whose honoured HELLO `a` names a **blinded**
+    /// form of mine, current or previous, missed my rotation. It is refused with no reply, and my tag goes to it over the held
+    /// link, so a dial and the duplicate it makes cannot close both links.
+    ///
+    /// Gated on a blinded form, never on any form of mine: every clear dial carries `a` = the dialed id, so a row on "a names
+    /// mine" would fire on every redial after a link died on the dialer's side only, and take ADR 2026-09.6es2's replace
+    /// away. So it never fires while I air my id and aired none before. A held link whose HELLO carried `CAP_DOORBELL`
+    /// never takes it (`heldDoorbell`: its peer may sleep with bytes queued), and nor does a quiet one (`heldQuiet`), so a
+    /// link dead on the dialer's side reaches the replace instead.
+    static func heldLinkRow( // swiftlint:disable:this function_parameter_count - the row's inputs, each a row's own source
+        _ mine: Mine, addressed: [UInt8]?, honoured: Bool, heldProven: Bool, heldQuiet: Bool, heldDoorbell: Bool
+    ) -> Bool {
+        let live = heldProven && !heldQuiet && !heldDoorbell
+        let dialed = addressed.flatMap(NodeId.init(bytes:))
+        return honoured && live && dialedForm(current: mine.current, previous: mine.previous, dialed: dialed)?.blinded == true
+    }
+
+    /// The blinding-only row (`RefuseLegacy`, `BleAdmissionPolicy.kt:115`): while I air a tag, a dialer whose HELLO lacks
+    /// `CAP_BLIND_ADVERT` dialed a form it cannot have meant and would fail at our reply, so it is refused first, with no
+    /// reply and no HELLO written.
+    static func refusesLegacy(_ mine: Mine, readsTags: Bool) -> Bool {
+        mine.blinded && !readsTags
     }
 }

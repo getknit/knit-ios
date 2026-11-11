@@ -80,6 +80,8 @@ extension AdvertAliases {
         case unresolved
         /// Marked blinded, but the bytes lack the tag prefix.
         case malformed
+        /// One of my own tags, current or previous (`Resolution.Own`, `:186-187`).
+        case own
 
         /// `nodeId` from `source`.
         static func resolved(_ nodeId: NodeId, _ source: Source) -> Self {

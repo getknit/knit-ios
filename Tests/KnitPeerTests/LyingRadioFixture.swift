@@ -49,13 +49,13 @@ extension LyingRadioFixture {
     /// Brings `channel` up as the dialer does: our HELLO first, then the peer's named, then the link registered.
     func dialed(_ radio: LyingRadio, _ channel: ChannelID, peer: NodeId) {
         radio.write(hello(local), to: channel)
-        radio.heardHello(from: peer, on: channel)
+        radio.heardHello(from: peer, told: nil, announced: nil, on: channel)
         radio.linkUp(peer, on: channel)
     }
 
     /// Brings `channel` up as the responder does: the peer's HELLO named first, then ours, then the link registered.
     func accepted(_ radio: LyingRadio, _ channel: ChannelID, peer: NodeId) {
-        radio.heardHello(from: peer, on: channel)
+        radio.heardHello(from: peer, told: nil, announced: nil, on: channel)
         radio.write(hello(local), to: channel)
         radio.linkUp(peer, on: channel)
     }
@@ -214,7 +214,7 @@ final class CallRadio: Radio {
         record(.ring(channel))
     }
 
-    func heardHello(from node: NodeId, on channel: ChannelID) {
+    func heardHello(from node: NodeId, told _: NodeId?, announced _: NodeId?, on channel: ChannelID) {
         record(.heard(node, channel))
     }
 

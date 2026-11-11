@@ -73,6 +73,14 @@ extension LinkManager {
         /// the reader would send, so a scripted blinding peer's `RefuseLegacy` (`BleAdmissionPolicy.kt:115`) can be met,
         /// as Android's lab withholds a capability (`MeshManager.withheldCapabilities`). The app never sets it.
         public var withholdsBlindAdvert: Bool
+        /// Whether this build may air a rotating tag instead of its id (Android's `BLIND_ADVERT`; ADR 2026-11.prsp): set only by
+        /// a debug build's factory, false in release, which then has no switch. While it holds, ``LinkManager/setBlinding(_:)``
+        /// turns it on and off at runtime, on until told otherwise.
+        public var blindsAdvert: Bool
+        /// The notification that says the wall clock was set, which `Mesh` hands the links as ``LinkManager/wallClockChanged()``:
+        /// `nil` for the system's `NSSystemClockDidChange`. A test names its own, so its post reaches no other mesh in the
+        /// process.
+        public var clockChangeName: String?
 
         /// knit-next's values unless told otherwise.
         public init(
@@ -97,7 +105,9 @@ extension LinkManager {
             promotion: PromotionPolicy.Configuration = PromotionPolicy.Configuration(),
             backoff: ConnectBackoff.Configuration = ConnectBackoff.Configuration(),
             presence: PresenceTracker.Configuration = PresenceTracker.Configuration(),
-            withholdsBlindAdvert: Bool = false
+            withholdsBlindAdvert: Bool = false,
+            blindsAdvert: Bool = false,
+            clockChangeName: String? = nil
         ) {
             self.helloTimeoutMilliseconds = helloTimeoutMilliseconds
             self.connectTimeoutMilliseconds = connectTimeoutMilliseconds
@@ -121,6 +131,8 @@ extension LinkManager {
             self.backoff = backoff
             self.presence = presence
             self.withholdsBlindAdvert = withholdsBlindAdvert
+            self.blindsAdvert = blindsAdvert
+            self.clockChangeName = clockChangeName
         }
     }
 }

@@ -258,10 +258,12 @@
 
         // MARK: Reading a GATT payload
 
-        /// The HELLO on `channel` named `node`: a payload read at its far end for another node goes, since a new node
-        /// took that address (the paired change `gatt-peers`' payload lifetime, rule 2).
-        func heardHello(_ node: NodeId, on channel: ChannelID) {
-            guard let uuid = peers[channel], gatt.helloNamed(node, at: RadioAddress(uuid.uuidString)) else {
+        /// The HELLO on `channel` named `node` and told `told`, `announced` being the tag that node announced: a payload read at
+        /// its far end for another node goes, since a new node took that address, and a blinded one for another tag goes, since
+        /// the node rotated (the paired change `gatt-peers`' payload lifetime, rule 2; ADR 2026-11.prsp).
+        func heardHello(_ node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID) {
+            guard let uuid = peers[channel], gatt.helloNamed(node, told: told, announced: announced, at: RadioAddress(uuid.uuidString))
+            else {
                 return
             }
             log.log(.info, "ble forgetting the GATT payload of \(uuid): its HELLO named \(node)")
@@ -274,6 +276,10 @@
             let linked = Set(held.map { RadioAddress($0.uuidString) })
             for address in gatt.forgetQuiet(now: clock.monotonicMilliseconds(), linked: linked) {
                 log.log(.info, "ble forgetting the GATT payload of \(address.rawValue): quiet for a minute of scanning")
+            }
+            // Rule 4: a blinded payload lasts its slot, so each address costs one read a slot (ADR 2026-11.prsp).
+            for address in gatt.forgetPastEdge(wall: clock.wallMilliseconds(), linked: linked) {
+                log.log(.info, "ble forgetting the GATT payload of \(address.rawValue): its slot ended")
             }
         }
 
@@ -342,15 +348,16 @@
                 finishGattRead(uuid, .failed)
                 return
             }
-            // A blinded value is no payload either, so no tag is ever logged nor sighted from GATT (ADR 2026-11.sv5t).
+            // A value flagged blinded without a tag's prefix is no payload; one with it is a blinding peer's form, logged without
+            // its tag (ADR 2026-11.prsp).
             guard let advert = characteristic.value.flatMap({ AdvertPayload(gattValue: Array($0)) }) else {
                 finishGattRead(uuid, .stranger)
                 return
             }
-            log.log(.info, "ble read \(advert.advertised) on PSM \(advert.psm) from \(uuid) over GATT")
+            log.log(.info, "ble read \(advert.shownForm) on PSM \(advert.psm) from \(uuid) over GATT")
             let strength = strengths[uuid] ?? Int(LinkManager.Configuration().unsightedLinkRssi)
             emit(.sighted(RadioSighting(address: RadioAddress(uuid.uuidString), advert: advert, rssi: strength)))
-            gatt.finish(RadioAddress(uuid.uuidString), .read(advert), now: clock.monotonicMilliseconds())
+            gatt.finish(RadioAddress(uuid.uuidString), .read(advert), now: clock.monotonicMilliseconds(), wall: clock.wallMilliseconds())
             gattTarget = nil
             // A seeking link manager dials on this sighting, and its dial reaches this queue a moment from now. Dropped
             // now, the connection's end would fail that dial (``failDials(on:)``), so it waits to see if one comes.
@@ -364,7 +371,7 @@
             guard gattTarget == uuid else {
                 return
             }
-            gatt.finish(RadioAddress(uuid.uuidString), outcome, now: clock.monotonicMilliseconds())
+            gatt.finish(RadioAddress(uuid.uuidString), outcome, now: clock.monotonicMilliseconds(), wall: clock.wallMilliseconds())
             gattTarget = nil
             releaseIfIdle(uuid)
         }

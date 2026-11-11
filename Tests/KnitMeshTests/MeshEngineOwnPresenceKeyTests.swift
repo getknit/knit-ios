@@ -271,7 +271,7 @@ import Testing
         fixture.engine.feedPresenceKeys()
         let source = try #require(fixture.transport.presenceKeySource)
         #expect(source.writeMark(PresenceMark(slot: 9, restart: 1), now) == .durable)
-        #expect(source.readMark(now) == PresenceMark(slot: 9, restart: 1))
+        #expect(try source.readMark(now) == PresenceMark(slot: 9, restart: 1))
         #expect(source.writeMark(PresenceMark(slot: 9, restart: 1), now + 1) == .refused, "the next key has not aired")
         let counts = fixture.engine.presenceKeyCounts
         #expect(counts.markWrites == 2 && counts.marksDurable == 1 && counts.markRefused == 1)

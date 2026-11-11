@@ -91,7 +91,7 @@ public final class MemoryPresenceKeyStore: PresenceKeyStore {
         }
         return held.withLock { held in
             let current = held.own.values.filter { $0.activatedAt != nil }.map(\.generation).max()
-            guard let row = held.own[generation], current == generation else {
+            guard let row = held.own[generation], current == generation, PresenceMark.moves(row.mark, to: mark) else {
                 return .refused
             }
             held.own[generation] = OwnPresenceKeyRecord(

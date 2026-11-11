@@ -89,10 +89,19 @@ final class FakeRadio: Radio {
         var channel: ChannelID
     }
 
-    /// A HELLO the link manager reported (``Radio/heardHello(from:on:)``).
+    /// A HELLO the link manager reported (``Radio/heardHello(from:told:announced:on:)``), and its forms; a link up names none.
     struct HeardHello: Equatable {
         var node: NodeId
         var channel: ChannelID
+        var told: NodeId?
+        var announced: NodeId?
+
+        init(node: NodeId, channel: ChannelID, told: NodeId? = nil, announced: NodeId? = nil) {
+            self.node = node
+            self.channel = channel
+            self.told = told
+            self.announced = announced
+        }
     }
 
     /// Reports `event`, as the radio would.
@@ -152,8 +161,8 @@ final class FakeRadio: Radio {
         recorder.yield(.rang(channel))
     }
 
-    func heardHello(from node: NodeId, on channel: ChannelID) {
-        state.withLock { $0.hellos.append(HeardHello(node: node, channel: channel)) }
+    func heardHello(from node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID) {
+        state.withLock { $0.hellos.append(HeardHello(node: node, channel: channel, told: told, announced: announced)) }
         recorder.yield(.heardHello(node, channel))
     }
 

@@ -113,6 +113,8 @@ public final class LinkManager: MeshTransport {
     var tagNextHeld: [ChannelID: NodeId] = [:]
     /// The reader's own counts, beside ``AdvertAliases/counters``.
     var blindCounts = BlindCounts()
+    /// The blinded advert's writer (`LinkManager+Writer.swift`).
+    lazy var blindWriter = BlindWriter(localId: localId)
     var doorbells: [ChannelID: Doorbell] = [:]
     /// Each live link's incoming file, kept apart from ``channels`` so that reading a channel never copies a file's
     /// bytes.
@@ -140,7 +142,6 @@ public final class LinkManager: MeshTransport {
     static let digestBurst = 2
     /// The digests a peer may sustain, one per 30 s: twice the honest 60 s re-offer (ADR 2026-10.f5zs).
     static let digestsPerMinute = 2
-    var psm: UInt16?
     var digestCue: UInt32 = 0
     var advertised: AdvertPayload?
     var advertDue: Int64?
@@ -257,6 +258,7 @@ public final class LinkManager: MeshTransport {
             return
         }
         running = true
+        blindWriter.sessionHadKey = false
         radio.start()
         // Nothing is linked at a start, so the promotion that seeking runs has no link to evict.
         _ = reconsiderSeeking(now: clock.monotonicMilliseconds())
@@ -286,8 +288,8 @@ public final class LinkManager: MeshTransport {
 
     /// When ``advance()`` next has work, on the monotonic clock: a dial, HELLO or PROOF timing out, the advert, a doorbell,
     /// a backoff running out, a dwell or a head start ending between a peer's adverts, a file's next chunk, a trailing
-    /// report, the next look at the live links' writes (``WriteStallWatch``), or now, while links closed outside an entry
-    /// wait to be handed over (``peerProvesItself(_:)``).
+    /// report, the next look at the live links' writes (``WriteStallWatch``), the blinded advert's reader and writer
+    /// (``blindDue(now:)``), or now, while links closed outside an entry wait to be handed over (``peerProvesItself(_:)``).
     public var nextDeadline: Int64? {
         let now = clock.monotonicMilliseconds()
         guard deferredDowns.isEmpty else {
@@ -306,7 +308,9 @@ public final class LinkManager: MeshTransport {
     /// Handles what the radio reported, and answers what the mesh needs to know.
     public func handle(_ event: RadioEvent) -> [Event] {
         let now = clock.monotonicMilliseconds()
-        return takeDeferredDowns() + respond(to: event, now: now) + reconsiderSeeking(now: now) + takeFinishedFiles()
+        // A wake's first event may beat the overdue timer: the late check's re-stamps come first, or a held link reads quiet.
+        let late = stallWatch.isLate(now: now) ? checkWriteStalls(now: now) : []
+        return takeDeferredDowns() + late + respond(to: event, now: now) + reconsiderSeeking(now: now) + takeFinishedFiles()
     }
 
     private func respond(to event: RadioEvent, now: Int64) -> [Event] {
@@ -322,8 +326,7 @@ public final class LinkManager: MeshTransport {
             spell = SeekSpell()
             return []
         case .listening(let psm):
-            self.psm = psm
-            advertiseNow()
+            listening(on: psm)
             return []
         case .sighted(let sighting):
             guard let key = sightingKey(of: sighting) else {

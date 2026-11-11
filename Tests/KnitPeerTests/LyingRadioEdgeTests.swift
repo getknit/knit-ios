@@ -32,7 +32,7 @@ import Testing
         let lie = record(.frame, answer().encoded)
         radio.write(hello(local), to: channel)
         radio.write(lie, to: channel)
-        radio.heardHello(from: peer, on: channel)
+        radio.heardHello(from: peer, told: nil, announced: nil, on: channel)
         radio.linkUp(peer, on: channel)
         #expect(
             inner.calls == [

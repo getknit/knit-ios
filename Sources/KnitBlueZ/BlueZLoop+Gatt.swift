@@ -95,10 +95,13 @@
             gatt.forget(address)
         }
 
-        /// The HELLO on channel `id` named `node`: a payload read at the channel's device for another node goes, since
-        /// a new node took the address (the payload lifetime's rule 2), and the next advert there reads it afresh.
-        func gattHeardHello(_ node: NodeId, on id: ChannelID) {
-            guard let path = channels[id]?.devicePath, gatt.helloNamed(node, at: RadioAddress(path)) else {
+        /// The HELLO on channel `id` named `node` and told `told`, `announced` being the tag that node announced: a payload read
+        /// at the channel's device for another node goes, since a new node took the address, and a blinded one for another
+        /// tag goes, since the node rotated (the payload lifetime's rule 2; ADR 2026-11.prsp), and the next advert there reads
+        /// it afresh.
+        func gattHeardHello(_ node: NodeId, told: NodeId?, announced: NodeId?, on id: ChannelID) {
+            guard let path = channels[id]?.devicePath, gatt.helloNamed(node, told: told, announced: announced, at: RadioAddress(path))
+            else {
                 return
             }
             log.log(.info, "bluez forgetting the GATT payload of \(Self.deviceName(path)): its HELLO named \(node)")
@@ -113,6 +116,10 @@
             }
             for address in gatt.forgetQuiet(now: now, linked: linked) {
                 log.log(.info, "bluez forgetting the GATT payload of \(Self.deviceName(address.rawValue)): quiet for a minute of scanning")
+            }
+            // Rule 4: a blinded payload lasts its slot, so each address costs one read a slot (ADR 2026-11.prsp).
+            for address in gatt.forgetPastEdge(wall: Wall.milliseconds(), linked: linked) {
+                log.log(.info, "bluez forgetting the GATT payload of \(Self.deviceName(address.rawValue)): its slot ended")
             }
         }
 
@@ -187,12 +194,13 @@
                 failGattRead(path, "its characteristic did not read: \(error)", now: now)
                 return
             }
-            // A blinded value is no payload either, so no tag is ever logged nor sighted from GATT (ADR 2026-11.sv5t).
+            // A value flagged blinded without a tag's prefix is no payload; one with it is a blinding peer's form, logged without
+            // its tag (ADR 2026-11.prsp).
             guard let payload = value.flatMap(AdvertPayload.init(gattValue:)) else {
                 failGattRead(path, "its characteristic holds no payload", outcome: .stranger, now: now)
                 return
             }
-            log.log(.info, "bluez read \(payload.advertised) on PSM \(payload.psm) from \(Self.deviceName(path)) over GATT")
+            log.log(.info, "bluez read \(payload.shownForm) on PSM \(payload.psm) from \(Self.deviceName(path)) over GATT")
             endGattRead(path, .read(payload), now: now)
             sight(path)
         }
@@ -204,7 +212,7 @@
 
         /// Records how the read ended, and drops the link it made unless a channel came to use it meanwhile.
         private func endGattRead(_ path: String, _ outcome: GattPayloads.Outcome, now: Int64) {
-            gatt.finish(RadioAddress(path), outcome, now: now)
+            gatt.finish(RadioAddress(path), outcome, now: now, wall: Wall.milliseconds())
             gattStage = nil
             if !linkInUse(path) {
                 dropLink(to: path, now: now)

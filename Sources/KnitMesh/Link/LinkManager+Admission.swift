@@ -4,9 +4,6 @@ public import KnitWire
 extension LinkManager {
     // MARK: Dialing
 
-    /// This node's advertised forms: clear for good, since this port never blinds (ADR 2026-11.sv5t).
-    var mine: AdvertOrder.Mine { .clear(localId) }
-
     /// Whether we dial a peer advertising `form` with `flags` rather than wait for it to dial us: the order on advertised
     /// forms (``AdvertOrder/iDial(_:_:)``), or ADR 2026-09.6es2's exception, a radio without service data dialing a peer
     /// that reads no GATT payload whatever the order. For a clear peer this is today's `peer < localId || !peerFindsUs`;
@@ -72,6 +69,10 @@ extension LinkManager {
         }
         channels[id]?.reader.append(bytes)
         channels[id]?.trace.read(bytes.count)
+        if let index = liveLinks.firstIndex(where: { $0.channel == id }) {
+            // What `RefuseHeld` reads as the held link answering (``heldQuiet(_:now:)``).
+            liveLinks[index].lastRead = now
+        }
         var events: [Event] = []
         // The role and stage only, never the whole channel: a copy of its reader would copy the buffer each record.
         while let (role, stage) = channels[id].map({ ($0.role, $0.stage) }) {
@@ -119,8 +120,8 @@ extension LinkManager {
         }
         // Whatever becomes of the link, the node at that address said who it is, which may retire a payload the radio
         // read for another (the payload lifetime's rule 2).
-        if let named = hello.flatMap({ NodeId($0.nodeId) }) {
-            radio.heardHello(from: named, on: id)
+        if let hello, let named = NodeId(hello.nodeId) {
+            radio.heardHello(from: named, told: hello.told.flatMap(NodeId.init(bytes:)), announced: aliases.announced(by: named), on: id)
         }
         switch role {
         case .dialer(let target):
@@ -145,6 +146,12 @@ extension LinkManager {
         guard let dialer = NodeId(hello.nodeId), dialer != localId, !refused.contains(dialer) else {
             return retire(id, backingOff: false, now: now)
         }
+        if AdvertOrder.refusesLegacy(mine, readsTags: hello.capabilities.contains(.blindAdvert)) {
+            // `RefuseLegacy` (`BleAdmissionPolicy.kt:115`), first and with no reply: it dialed a tag it cannot have meant.
+            blindWriter.counts.refusedLegacy += 1
+            log.log(.info, "link refused \(dialer): it reads no tags")
+            return retire(id, backingOff: false, now: now)
+        }
         let verdict = judgeClaim(hello, claiming: dialer)
         switch verdict {
         case .failed(let why):
@@ -162,6 +169,9 @@ extension LinkManager {
         let sighted = sighting != nil
         let held = liveLinks.first { $0.neighbor.nodeId == dialer }
         let claim = Claim(peer: dialer, hello: hello, sighted: sighted)
+        if let held, refusesHeld(hello, from: dialer, proves: proves, held: held, now: now) {
+            return retire(id, backingOff: false, now: now)
+        }
         if let refusal = admissionRefusal(claim, proves: proves, sighting: sighting, held: held, now: now) {
             log.log(.info, "link refused \(dialer): \(refusal)")
             return retire(id, backingOff: false, now: now)
@@ -189,8 +199,8 @@ extension LinkManager {
     /// "We dial it" is judged on advertised forms (`BleAdmissionPolicy.outOfOrder`): the dialer's `t` and `a` count only
     /// when its HELLO offers a proof (``AdvertOrder/honours(offersProof:proven:late:)``; this port registers a proving
     /// dialer only after its proof, so the late pass reads the same), so a blinding Android whose real id sorts below ours
-    /// is admitted even when a key sights it. The iPhone writes no `t` and has no held-link or legacy row: both are a
-    /// blinding phone's.
+    /// is admitted even when a key sights it. While we blind, our forms are the aired snapshot's, and two rows come first:
+    /// `RefuseLegacy` in ``admit(_:hello:payload:now:)`` and `RefuseHeld` (``refusesHeld(_:from:proves:held:now:)``).
     func admissionRefusal(_ claim: Claim, proves: Bool, sighting: AdvertPayload?, held: LiveLink?, now: Int64) -> String? {
         let hello = claim.hello
         if proves, let held, !held.proven {
@@ -214,6 +224,37 @@ extension LinkManager {
         return nil
     }
 
+    /// `RefuseHeld` (`heldLinkRow`, `BleAdmissionPolicy.kt:170-181`; `noteHeldRefusal`, `BluetoothMeshTransport.kt:4149-4178`):
+    /// a dialer whose proven link we hold, and whose honoured `a` names a blinded form of ours, current or previous, missed
+    /// our rotation. It is refused with no reply, and our tag goes to it over the held link instead (``TagNextSends``' resend
+    /// rules), so its dial and the duplicate cannot close both links. A dialer that may not hear our tag, blocked or departed
+    /// (``PresenceKeySource/hearsTagNext``), is refused all the same and sent nothing: its re-dials take this row with no
+    /// resend, bounded by its own no-reply backoff, until its held link ends (xp6d, step 5b's B2); let through, an unsighted
+    /// one would replace a held link 30 s old at each rotation. Never on a held link whose HELLO carried `CAP_DOORBELL`,
+    /// nor on a quiet one (``heldQuiet(_:now:)``), which a dial reaches the replace for. No probe, no keepalive: Android
+    /// exempts a doorbell link from its probe, and a probe would wake a suspended peer. Answers whether it refused.
+    func refusesHeld(_ hello: Hello, from dialer: NodeId, proves: Bool, held: LiveLink, now: Int64) -> Bool {
+        let honoured = AdvertOrder.honours(offersProof: proves, proven: false, late: false)
+        let row = AdvertOrder.heldLinkRow(
+            mine,
+            addressed: hello.addressed,
+            honoured: honoured,
+            heldProven: held.proven,
+            heldQuiet: heldQuiet(held, now: now),
+            heldDoorbell: held.neighbor.capabilities.contains(.doorbell)
+        )
+        guard row else {
+            return false
+        }
+        blindWriter.counts.refusedHeld += 1
+        log.log(.info, "link refused \(dialer): it holds a link here, so it hears our tag there")
+        let current = mine.current
+        if current.blinded {
+            sendForm(to: held, .resend, tag: current.advertised, wall: clock.wallMilliseconds())
+        }
+        return true
+    }
+
     /// Registers the link on `id` to `claim`'s peer, `proven` when its PROOF verified, unless a link to that peer is up.
     func register(_ id: ChannelID, _ claim: Claim, proven: Bool, now: Int64) -> [Event] {
         let peer = claim.peer
@@ -225,13 +266,14 @@ extension LinkManager {
         let neighbor = Neighbor(nodeId: peer, protocolVersion: claim.hello.version, capabilities: claim.hello.capabilities)
         channels[id]?.stage = .live(peer)
         channels[id]?.deadline = nil
-        var link = LiveLink(channel: id, neighbor: neighbor, since: now, sighted: claim.sighted)
+        var link = LiveLink(channel: id, neighbor: neighbor, since: now, sighted: claim.sighted, lastRead: now)
         link.heardServiceData = presence.isPresent(peer, now: now) && presence.advert(of: peer).map(Self.isServiceData) == true
         link.proven = proven
         link.blinds = claim.hello.told.flatMap(NodeId.init(bytes:)).map { $0 != peer } ?? false
         liveLinks.append(link)
         stallWatch.watch(id, written: radio.outboxLevel(on: id).writtenBytes, now: now)
         if case .dialer(let target) = channels[id]?.role {
+            blindWriter.linkForms[id] = target.form
             if dialing[target.key] == id {
                 dialing[target.key] = nil
             }
@@ -253,8 +295,16 @@ extension LinkManager {
             // would otherwise find the dialer's own tag held off by nothing and dial the phone that just linked to us.
             aliases.onAnswered(id, told: claim.hello.told.flatMap(NodeId.init(bytes:)), provenId: peer)
         }
+        if channels[id]?.role == .responder {
+            // The dialer's form as its HELLO tells it, its `t` honoured only on a proven link (`linkForms`).
+            let told = AdvertOrder.honours(offersProof: true, proven: proven, late: true) ? claim.hello.told : nil
+            blindWriter.linkForms[id] = .fromHello(peer, told: told)
+        }
         radio.linkUp(peer, on: id)
         log.log(.info, "link up \(peer) on \(id)")
+        if proven {
+            announceToNewLink(link)
+        }
         return [.up(neighbor)] + promote(now: now)
     }
 

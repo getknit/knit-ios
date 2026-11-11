@@ -29,6 +29,11 @@ CHUNK_BYTE = 7
 ADVERT = "ff294213fa67091e03c2f2ae8d071b9d6700000000008100"
 # keyed-v1.json's blind.advert.blinded: a tag in bytes 1-16 and FLAG_BLINDED (knit-next ADR 2026-11.xp6d).
 BLINDED_ADVERT = "09ce739614ce56f79934b596a624f70cf00000000000830c"
+# The same tag as a blinding iPhone serves it over GATT: the cue zeroed, FLAG_DIALS_GATT_PEERS and FLAG_BLINDED (ADR 2026-11.prsp).
+BLINDED_GATT_VALUE = "5fce739614ce56f79934b596a624f70cf00000000000c00a"
+TAG = bytes.fromhex("ce739614ce56f79934b596a624f70cf0")
+TAG_NEXT_TAG = 9
+HELLO_TAG = 6
 NODE_ID = b"ffbbh6thbepahqxsv2gqog45m4"
 CARD_ID = "4cgq2pnhh6p3j3afwsue3chrpi"
 CARD_BUNDLE = "omZzaWdQdWJYIOQDCZjP1a0XI8Fp+VaqC564YZtZkr1hLCr0KOvHn43wZ2hwa2VQdWJYIHPnmXHJEQApcjYyqAtwe/T2LBJXYzRuHocY1sDcw6o6"
@@ -89,6 +94,11 @@ def main() -> int:
     (out / "FuzzLinkRecords" / "file-resumed").write_bytes(bytes([CHUNK_BYTE]) + resumed_records(6000, 4096))
     (out / "FuzzAdvert" / "advert").write_bytes(bytes.fromhex(ADVERT))
     (out / "FuzzAdvert" / "advert-blinded").write_bytes(bytes.fromhex(BLINDED_ADVERT))
+    (out / "FuzzAdvert" / "gatt-blinded").write_bytes(bytes.fromhex(BLINDED_GATT_VALUE))
+    # A blinding HELLO telling its tag, then the TAG_NEXT it writes beside the digest (ADR 2026-11.prsp).
+    hello = f"{NODE_ID.decode()}|1|c315f|n{'00' * 16}|t{TAG.hex()}|a{TAG.hex()}".encode()
+    tag_next = bytes([HELLO_TAG]) + struct.pack(">I", len(hello)) + hello + bytes([TAG_NEXT_TAG]) + struct.pack(">I", len(TAG)) + TAG
+    (out / "FuzzLinkRecords" / "tag-next").write_bytes(bytes([CHUNK_BYTE]) + tag_next)
     (out / "FuzzAdvert" / "node-id").write_bytes(NODE_ID)
     cards = {
         "card-full": FULL_CARD,

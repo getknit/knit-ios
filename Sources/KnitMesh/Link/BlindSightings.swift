@@ -81,7 +81,7 @@ internal enum BlindSightings {
     /// the sighting's tag and address are a replay (``ReplayMarks``). `nil` drops the sighting (`attribute`, `:62-79`).
     static func attribute<L: Hashable>(_ resolution: AdvertAliases<L>.Resolution, handle: FormHandle, replayed: Bool) -> Attribution<L>? {
         switch resolution {
-        case .malformed:
+        case .malformed, .own:
             return nil
         case .unresolved:
             return Attribution(key: .form(handle), suppressor: .never, history: .inPlace, full: true)

@@ -95,7 +95,8 @@
                 credits.note(event)
                 emit(event)
             }
-            gatt = GattPayloads(configuration: configuration.gatt)
+            // Rule 4's jitter seeded at random, so readers of one writer read it again at different moments.
+            gatt = GattPayloads(configuration: configuration.gatt, jitterSeed: UInt64.random(in: .min ... .max))
             stopReadingAt = configuration.stopReadingAfterMilliseconds.map { Monotonic.milliseconds() + $0 }
         }
 
@@ -207,8 +208,8 @@
                 closeChannel(id)
             case .ring(let id):
                 ring(id, now: now)
-            case .heardHello(let id, let node):
-                gattHeardHello(node, on: id)
+            case .heardHello(let id, let node, let told, let announced):
+                gattHeardHello(node, told: told, announced: announced, on: id)
             case .resumeReading(let id, let unprocessed):
                 // The next turn polls the channel for input again, unless a trial stopped every read.
                 if channels[id] != nil {

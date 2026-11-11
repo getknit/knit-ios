@@ -30,13 +30,14 @@ public struct AdvertPayload: Sendable, Equatable {
     /// makes a peer an Aware candidate only from a service-data sighting with the bit set, and a GATT-payload sighting
     /// never makes one (`AwareCandidateTracker.kt:63-70` and `:79`, called at `BluetoothMeshTransport.kt:2295`).
     /// No radio here runs Wi-Fi Aware, so the bit is reserved: no advert this port writes sets it
-    /// (``writtenFlags(dialsGattPeers:)``, for knit-peer's service data and the iPhone's GATT payload alike), and
+    /// (``writtenFlags(dialsGattPeers:blinded:)``, for knit-peer's service data and the iPhone's GATT payload alike), and
     /// nothing here reads it. The codec keeps it, so a parsed Android advert round-trips.
     public static let awareFlag: UInt8 = 0x04
     /// Bit 3: Android's `FLAG_BLINDED` (knit-next ADR 2026-11.xp6d, `BleAdvertPayload.kt:88` at `cad69c77b`). Set, bytes
     /// 1–16 are a rotating tag (``AdvertForm/hasTagPrefix(_:)``), not the advertiser's node id, and nothing may key them
-    /// as one. This port reads the bit and never writes it (``writtenFlags(dialsGattPeers:)``): the iPhone and the Linux
-    /// peer air their ids (ADR 2026-11.sv5t).
+    /// as one. This port reads it (ADR 2026-11.sv5t), and sets it on the iPhone's GATT payload while the iPhone blinds
+    /// (``writtenFlags(dialsGattPeers:blinded:)``; ADR 2026-11.prsp): mandatory whenever bytes 1–16 are a tag, since a build
+    /// at the pin reads a tag without it as a node id and dials it into `WrongPeer`.
     public static let blindedFlag: UInt8 = 0x08
 
     /// The 16-bit service UUID under which Android puts the payload in its advert's service data, and under which
@@ -49,14 +50,13 @@ public struct AdvertPayload: Sendable, Equatable {
     /// an open link does not wake it, and a write does. The value means nothing. Minted by this port on 2026-09-27.
     public static let doorbellUUID = "f34c056b-5830-4243-a888-01f92f49e446"
 
-    /// The flags byte this port advertises, mirroring Kotlin's `flags(sideLive:gattPeers:aware:)`
-    /// (`BleAdvertPayload.kt:74-86` at knit-next `808472a3`) with its other two inputs always false: no side channel
-    /// runs here, so ``sideChannelFlag`` stays clear, and no Wi-Fi Aware does, so ``awareFlag`` stays clear. This port never
-    /// blinds (ADR 2026-11.sv5t), so ``blindedFlag`` stays clear too: Kotlin's fourth input, `blinded`, is always false
-    /// here (`BleAdvertPayload.kt:95-104` at `cad69c77b`). ``dialsGattPeersFlag`` is set only while the radio reads GATT
-    /// payloads (`Radio.dialsGattPeers`), so it never claims a read it cannot make.
-    public static func writtenFlags(dialsGattPeers: Bool) -> UInt8 {
-        dialsGattPeers ? dialsGattPeersFlag : 0
+    /// The flags byte this port advertises, mirroring Kotlin's `flags(sideLive:gattPeers:aware:blinded:)`
+    /// (`BleAdvertPayload.kt:95-104` at knit-next `cad69c77b`) with two of its inputs always false: no side channel runs
+    /// here, so ``sideChannelFlag`` stays clear, and no Wi-Fi Aware does, so ``awareFlag`` stays clear.
+    /// ``dialsGattPeersFlag`` is set only while the radio reads GATT payloads (`Radio.dialsGattPeers`), so it never claims a
+    /// read it cannot make, and ``blindedFlag`` exactly when bytes 1–16 are a tag (`blinded`, ADR 2026-11.prsp).
+    public static func writtenFlags(dialsGattPeers: Bool, blinded: Bool) -> UInt8 {
+        (dialsGattPeers ? dialsGattPeersFlag : 0) | (blinded ? blindedFlag : 0)
     }
 
     private static let capabilitiesMask: Int64 = 0xFF
@@ -76,14 +76,24 @@ public struct AdvertPayload: Sendable, Equatable {
     /// Whether bytes 1–16 are a tag, not a node id (``blindedFlag``; Kotlin's `Parsed.blinded`).
     public var blinded: Bool { flags & Self.blindedFlag != 0 }
 
-    /// Makes a payload from full capabilities, keeping their low byte. Every advert this port writes airs its own id, so the
-    /// parameter is a node id; ``advertised`` holds it.
+    /// Makes a payload from full capabilities, keeping their low byte, airing `nodeId` in the clear; ``advertised`` holds it.
     public init(capabilities: Capabilities, nodeId: NodeId, digestCue: UInt32, psm: UInt16, flags: UInt8 = 0) {
+        self.init(capabilities: capabilities, advertised: nodeId, digestCue: digestCue, psm: psm, flags: flags)
+    }
+
+    /// Makes a payload airing `advertised`: the node id, or a tag when `flags` carries ``blindedFlag`` (ADR 2026-11.prsp).
+    public init(capabilities: Capabilities, advertised: NodeId, digestCue: UInt32, psm: UInt16, flags: UInt8) {
         self.capabilities = UInt8(capabilities.rawValue & Self.capabilitiesMask)
-        self.advertised = nodeId
+        self.advertised = advertised
         self.digestCue = digestCue
         self.psm = psm
         self.flags = flags
+    }
+
+    /// What a log line may print of ``advertised``: the id of a clear payload, and never a tag's bytes, which a log would tie
+    /// to the address and the time it was read (ADR 2026-11.prsp, "Counts, never dated causes").
+    public var shownForm: String {
+        blinded ? "a tag" : advertised.string
     }
 
     /// Parses Service Data the way Android does (`BleAdvertPayload.parse`, `BleAdvertPayload.kt:175-187` at `cad69c77b`):
@@ -107,15 +117,13 @@ public struct AdvertPayload: Sendable, Equatable {
         flags = bytes.count > Self.minimumSize ? bytes[Self.minimumSize] : 0
     }
 
-    /// Parses a peer's GATT characteristic value: what ``init(serviceData:)`` reads, except that a ``blinded`` payload is
-    /// nil too. No port serves a blinded payload, and its tag would never match the HELLO's id, so the payload would be
-    /// forgotten and read again at every dial (`BleGattPayloadReader.kt:87-89` at `cad69c77b`). Nil sends both radios down
-    /// their "serves no Knit payload" path, so a tag read over GATT is never logged nor sighted.
+    /// Parses a peer's GATT characteristic value exactly as ``init(serviceData:)`` reads service data: a ``blinded`` payload
+    /// whose bytes 1–16 carry the tag prefix is a blinded form, which a blinding iPhone serves (ADR 2026-11.prsp), and one
+    /// flagged without the prefix is no payload, so both radios take their "serves no Knit payload" path. Android at
+    /// `cad69c77b` answers every blinded payload with a stranger (`BleGattPayloadReader.kt:86-88`); companion change A11
+    /// teaches it to read one as this does.
     public init?(gattValue bytes: [UInt8]) {
-        guard let payload = Self(serviceData: bytes), !payload.blinded else {
-            return nil
-        }
-        self = payload
+        self.init(serviceData: bytes)
     }
 
     /// Whether `bytes` are long enough to carry the flags byte, it says ``blindedFlag``, and bytes 1–16 lack the tag prefix

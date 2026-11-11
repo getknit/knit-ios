@@ -107,6 +107,9 @@ extension LinkManager {
         /// nobody announced leaves the link with no attributed sighting. Such a link scores as never sighted rather than
         /// lost (``LinkManager/linkRssi(_:)``).
         var blinds = false
+        /// When a byte last came in on the link, or Knit last ran again after a time it may have been suspended, whichever
+        /// is later: `RefuseHeld` passes over a link quiet for ``LinkManager/heldQuietMilliseconds`` (``LinkManager/heldQuiet(_:now:)``).
+        var lastRead: Int64
     }
 
     struct Channel {

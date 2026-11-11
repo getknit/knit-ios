@@ -104,4 +104,16 @@
             return Int64(now.tv_sec) * millisecondsPerSecond + Int64(now.tv_nsec) / nanosecondsPerMillisecond
         }
     }
+
+    /// The wall clock, which times a blinded GATT payload's forget at its slot edge (``GattPayloads``' rule 4).
+    internal enum Wall {
+        private static let millisecondsPerSecond: Int64 = 1000
+        private static let nanosecondsPerMillisecond: Int64 = 1_000_000
+
+        static func milliseconds() -> Int64 {
+            var now = timespec()
+            clock_gettime(CLOCK_REALTIME, &now)
+            return Int64(now.tv_sec) * millisecondsPerSecond + Int64(now.tv_nsec) / nanosecondsPerMillisecond
+        }
+    }
 #endif

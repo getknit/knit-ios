@@ -19,11 +19,11 @@ import Testing
             if dials {
                 radio.write(hello(local), to: channel)
                 #expect(inner.records(on: channel).count == 1, "nothing before the peer's HELLO")
-                radio.heardHello(from: peer, on: channel)
+                radio.heardHello(from: peer, told: nil, announced: nil, on: channel)
                 #expect(inner.records(on: channel).count == 1, "nothing between the HELLOs and the link's registration")
                 radio.linkUp(peer, on: channel)
             } else {
-                radio.heardHello(from: peer, on: channel)
+                radio.heardHello(from: peer, told: nil, announced: nil, on: channel)
                 radio.linkUp(peer, on: channel)
                 #expect(inner.records(on: channel).isEmpty, "nothing before our HELLO")
                 radio.write(hello(local), to: channel)

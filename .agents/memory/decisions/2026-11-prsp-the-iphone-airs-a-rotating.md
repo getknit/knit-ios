@@ -153,7 +153,9 @@ value survives while `knit.sqlite` stays out of backups. Four facts shape what t
     does for connections. Until `serve()` runs, a restored service still holds the last process's value, which may be
     the clear id from before a switch flip.
 - **Rotation** ports `TagSchedule` (the persisted high-water mark per generation, and a random prefixed tag when no
-  key or mark serves), `TagChoice` and `AdvertRotation`.
+  key or mark serves), `TagChoice` and `AdvertRotation`. A mark read that fails throws, as Kotlin's `MarkStore` does,
+  and the tag is random: read as "no mark", it would restart the generation at the slot's first index and air again,
+  from a new address, a tag already aired. The mark write moves only forward, a guard in both stores.
   - Rotation is announced: the coming slot's tag is reserved and sent as `TAG_NEXT` 210 s before the edge, and the
     rotation lands at the first wake at or after the later of the edge and reserve + 30 s.
   - A late wake rotates at once, unannounced, and the form just aired then goes once to each link.
@@ -161,13 +163,17 @@ value survives while `knit.sqlite` stays out of backups. Four facts shape what t
     Start, and Bluetooth toggles. Past four in one slot, `TagSchedule` airs random tags that no contact resolves until
     the edge. The trial counts bring-up rotations, and if relaunches turn out to be frequent, a restoration relaunch
     within the slot it left keeps its tag.
-  - The turn runs on `Mesh`'s scheduler from the wall clock, and is recomputed on `NSSystemClockDidChange`, which
-    Foundation posts on Linux too. `significantTimeChange` also fires at midnight, and only while Knit runs. A
+  - The turn runs on `Mesh`'s scheduler from the wall clock, and is recomputed on `NSSystemClockDidChange`.
+    `significantTimeChange` also fires at midnight, and only while Knit runs. Swift 6.4's Linux Foundation does not
+    declare the name, so there `Mesh` observes the raw string and only the tests post it. A
     suspended iPhone rotates at its first wake past the edge, so its tag can be as old as the suspension, as an Android
     in Doze keeps its tag until its first wake.
 - **The link.** While blinding, the HELLO carries `t`, the tag on the air. `TAG_NEXT` is a link record written beside
   the digest, so it never rings a doorbell. It goes only to a proven link whose HELLO carried `CAP_BLIND_ADVERT` and
-  whose peer is neither blocked nor departed, at most once per link per two minutes (`TagNextSends`, `LinkFormNotes`).
+  whose peer is neither blocked nor departed, at most once per link per two minutes (`TagNextSends`, `LinkFormNotes`),
+  and only while our own key is held. A random tag aired with a key held (a failed mark, a fifth bring-up in a slot)
+  is announced too, as Android announces it, so a linked peer attributes it by the link's claim instead of dialing it.
+  It resolves to nobody else, and the peer already holds our id.
   `AdvertAliases` gets back the own-tag resolve step that sv5t left out. `AdvertOrder`'s `Mine` becomes the snapshot's
   current and previous forms. `TAG_NEXT` waits in `LinkOutbox` first in, first out, as Android's
   `FramedLink.sendTagNext` does, so a back-fill can carry the 210 s lead past the edge. That is parity, and it is
@@ -196,8 +202,12 @@ value survives while `knit.sqlite` stays out of backups. Four facts shape what t
     advert, and seeking dials at the first sighting in the background. An old build reads a blinded payload as a
     stranger, so it can hardly find the iPhone to dial it.
   - `RefuseHeld` refuses a dialer whose proven link we already hold when its `a` names our tag, and resends our tag
-    over that link instead. It applies only when the dialer is neither blocked nor departed. It skips a held link that
-    is quiet (`heldQuiet`): no byte read for 90 s, counted only while the process runs, from the channel's read stamps.
+    over that link instead. Every such dialer is refused. The resend goes only to a peer that may hear our tag, so a
+    blocked or departed peer is refused with no resend, bounded by its own backoff until its held link ends, as xp6d
+    has it. Without the refusal, an unsighted excluded peer's proven re-dial over a held link 30 s old would replace it,
+    once per slot. The row skips a held link that is quiet (`heldQuiet`): no byte read for 90 s, counted only while the
+    process runs, from the channel's read stamps, and stamped afresh at the front, at a ring and wherever the stall
+    watch sees a late check (its own sign of a suspension).
     There is no probe and no keepalive: Android exempts a doorbell link from its own probe, and a probe would wake a
     suspended peer. A woken iPhone may judge the HELLO before it has read what queued while it slept, read a live link
     as quiet and replace it. That is one link swap, a bounded cost. Without `heldQuiet`, a held link dead on Android's
@@ -208,8 +218,9 @@ value survives while `knit.sqlite` stays out of backups. Four facts shape what t
     for that link, instead of the id. `Radio.heardHello(from:on:)` carries only the HELLO's id today, so `LinkManager`
     passes the `t` and the announced tag through it. The `ble forgetting the GATT payload of` line keeps its text,
     since harnesses read it.
-  - A fourth rule: a blinded payload is forgotten at the first slot edge after it was read, with jitter, so each
-    address costs at most one read per slot. Without it a reader in the foreground, where the address is never quiet,
+  - A fourth rule: a blinded payload is forgotten after the first slot edge since it was read, 35 to 65 s past it
+    (the 30 s minimum lead of an announced rotation plus 5 s, then up to 30 s of jitter), so each address costs at most
+    one read per slot and no reader re-reads a writer's old tag in the 30 s it may still air it. Without it a reader in the foreground, where the address is never quiet,
     keeps the old tag until iOS rotates the address. A pair whose forms straddle the old and new tag then waits for the
     head start or for seeking. A11 mirrors the rule.
 - **The bridge and the harness.** These exist only in a debug build:
@@ -304,3 +315,50 @@ the phase made that the text above leaves open:
 - The mark's `NORMAL` that fails to restore is reported to the database's failures, not counted in `status`.
 - `status.presenceKeys.ownGeneration` is a wall-clock millisecond value that dates our latest mint; it reaches only the
   debug bridge and knit-peer.
+
+Phase 2, the link-layer writer (draft, 2026-11-11): `TagScheduleTests`, `AdvertWriterTests` (with `TagChoice`),
+`AdvertRotationTests`, `TagNextSendsTests`, `BlindAdmissionRowTests`, `AdvertAliasesOwnTagTests`, `GattPayloadsTests`' blinded
+cases, `BlindWireTests`' `t` and flag cases, and on `LinkRig` `BlindWriterTests`, `BlindWriterTurnTests`,
+`BlindWriterAdmissionTests` and `BlindWriterPairTests`; `MeshBlindWriterTests` through the actor; `BlueZGattBlindedTests`
+replaces `BlueZGattRetryTests.aCharacteristicThatHoldsABlindedPayloadIsAStranger`, and `BlindWireTests`'
+`aGATTValueReadsABlindedFormWithItsPrefixOnly` replaces `aGATTValueIsNeverBlinded`. Choices the phase made that the text
+above leaves open, or where it departs from the Kotlin:
+
+- The gate is `LinkManager.Configuration.blindsAdvert` (the build may blind) and `setBlinding(_:)` (the runtime switch, on
+  until turned off). With either off, or no `PresenceKeySource` attached, the forms are clear and nothing here runs.
+- The turn never holds: Android holds a due rotation for a Coded fast window, a hunt, a dial of its own or an ACL edge's
+  settle, none of which an iPhone has. `RotationTurn`'s loop is a deadline the `Mesh` timer wakes for; with nothing
+  blinded on the air there is none.
+- Each `.listening` with nothing on the air is a bring-up. A `.listening` while the forms are up on another PSM re-points the
+  snapshot under the same forms, with no rotation.
+- A key change is held at once for the next tag and taken at the next advance, never inside `ownPresenceKeyChanged`, which
+  may come inside a store unit where `writeMark` answers `insideUnit`.
+- `TAG_NEXT` goes whenever a key is held, as Android's does (`BluetoothMeshTransport.kt:1626`): a random tag on the air (a
+  mark that will not read or write, a slot out of restarts) is sent too, so a linked reader attributes it to the link
+  rather than dial it. With no key held nothing is sent.
+- `RefuseHeld` refuses every dialer that meets the held-link row; only the resend is withheld from one `hearsTagNext`
+  excludes (xp6d, step 5b's B2), so an excluded peer's re-dials cannot replace a held link 30 s old at each rotation. Its
+  quiet is 90 s with no byte read on the held link, re-stamped when Knit comes to the front, when its doorbell rings, and
+  when `WriteStallWatch`'s check finds it fired late, its own sign of a suspension.
+- A mark read that fails throws (`PresenceMarkReadFailure`), never reading as "none", as Kotlin's `MarkStore.read` throws:
+  `TagSchedule` caches nothing for it and `TagChoice` airs a random tag (`markFailed`). Both stores write a mark only when
+  it moves forward (a later slot, or a later restart in the slot), answering `refused` otherwise, so no write can move it
+  back over pairs aired.
+- A blinded advert no longer counts as service data (`isServiceData`): a blinding iPhone's GATT payload is blinded, and its
+  link must keep the write-stall exemption while iOS holds it suspended. Every build that blinds proves its id, so no fork
+  can claim `CAP_DOORBELL` under a blinding Android's id.
+- `GattPayloads`' rule 4 forgets a blinded payload 35 to 65 s past the first slot edge after its read: a slack of
+  `AdvertRotation.minLeadMilliseconds` and 5 s, since an announced rotation lands at the later of the edge and its
+  announcement plus 30 s, and a reader sooner would keep the old tag a whole slot; the jitter is drawn per read from a seed
+  each radio draws at random. A link or a read holding the address keeps it, as rule 3 does, so it goes at the first check after the
+  link ends; a wall clock set below the read's forgets it. Rule 2 compares
+  a blinded payload with the HELLO's `t` or the tag that node announced; a tag dial's reply reaches the radio only once its
+  proof verified. A11 is to mirror both.
+- `NSSystemClockDidChange` is observed in `Mesh` (`Mesh+Clock.swift`), as the radio's events are, and handed to the links as
+  one more entry. Linux's Foundation does not declare the name, so there the observer listens for the raw name and nothing
+  posts it. `LinkManager.Configuration.clockChangeName` lets a test name a notification of its own, so its post reaches no other
+  mesh.
+- `TAG_NEXT` is written from `LinkManager+TagNext.swift`, not beside `sendDigest`, to keep `LinkManager.swift` inside its
+  length limit; it is a plain record behind whatever the link holds, counted when it waits.
+- `LinkFormNotes` keeps each link's announced form and applies it at its edge (a deadline), checked against
+  `AdvertAliases.stillAnnounced`; nothing reads the link's form yet but the debug bridge's `advert` (Phase 4).

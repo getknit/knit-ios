@@ -68,6 +68,25 @@ public struct PresenceMark: Sendable, Equatable {
         self.slot = slot
         self.restart = restart
     }
+
+    /// Whether writing `next` over `held` moves the mark forward: a later slot, or a later restart in the same one. A mark
+    /// only moves forward, so a writer that read none by mistake can never move it back over pairs it aired (ADR 2026-11.prsp).
+    public static func moves(_ held: Self?, to next: Self) -> Bool {
+        guard let held else {
+            return true
+        }
+        return next.slot > held.slot || (next.slot == held.slot && next.restart > held.restart)
+    }
+}
+
+/// The advertiser's mark could not be read (`TagSchedule.MarkStore.read` throws, `TagSchedule.kt:67-68` at knit-next
+/// `cad69c77b`): never taken as "no mark", which would restart the generation at the current slot's first restart and air a
+/// tag again (ADR 2026-11.prsp).
+public struct PresenceMarkReadFailure: Error, Equatable, Sendable {
+    /// A failed read.
+    public init() {
+        // Nothing to say beyond that it failed: the store reported the cause.
+    }
 }
 
 /// What a durable write of the advertiser's mark came to (`PresenceKeyRepository.markStore`'s `write`,

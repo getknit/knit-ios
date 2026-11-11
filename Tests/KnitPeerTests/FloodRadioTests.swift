@@ -16,7 +16,7 @@ import Testing
         let flood = FloodRadio(wrapping: inner, bytesPerSecond: 10_000)
         flood.tick(milliseconds: 1000)
         #expect(flood.floodedBytes == 0, "no link yet")
-        flood.heardHello(from: node, on: channel)
+        flood.heardHello(from: node, told: nil, announced: nil, on: channel)
         flood.tick(milliseconds: 1000)
         #expect(flood.floodedBytes == 0, "a HELLO alone is no link: its PROOF may still be to come")
         flood.linkUp(node, on: channel)

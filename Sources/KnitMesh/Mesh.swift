@@ -32,6 +32,8 @@ public actor Mesh {
     private var timer: Task<Void, Never>?
     private var scheduled: Int64?
     private var advertisedRevision = -1
+    /// What says the wall clock was set, and its observer while running (``wallClockChanged()``).
+    var clockWatch = ClockWatch()
 
     /// Whether the mesh is running: started, and not stopped since.
     public private(set) var isRunning = false
@@ -112,6 +114,7 @@ public actor Mesh {
                 }
             }
         }
+        observeClock()
         settle()
     }
 
@@ -124,6 +127,7 @@ public actor Mesh {
         timer?.cancel()
         timer = nil
         scheduled = nil
+        forgetClock()
         apply(links.stop())
         partials.purge()
         engine.forgetTyping()
@@ -366,7 +370,7 @@ public actor Mesh {
 
 extension Mesh {
     /// Hands each link event to the engine, in order.
-    private func apply(_ linkEvents: [LinkManager.Event]) {
+    func apply(_ linkEvents: [LinkManager.Event]) {
         for event in linkEvents {
             switch event {
             case .up(let neighbor):

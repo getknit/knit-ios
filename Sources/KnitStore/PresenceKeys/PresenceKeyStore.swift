@@ -95,7 +95,8 @@ public protocol PresenceKeyStore: AnyObject, Sendable {
     func applyOwn(inserted: [OwnPresenceKeyRecord], updated: [OwnPresenceKeyRecord], keep: Set<Int64>)
 
     /// The advertiser's mark under our key `generation`, or `nil` with none or no such key (`mark`, `PresenceKeyDao.kt:41-43`).
-    func mark(of generation: Int64) -> PresenceMark?
+    /// Throws when the store cannot answer, which is never "none" (``PresenceMarkReadFailure``).
+    func mark(of generation: Int64) throws(PresenceMarkReadFailure) -> PresenceMark?
 
     /// Writes `mark` under our key `generation` durably, and only while it is still the current key: activated, and the
     /// newest activated (`markStore`'s `write`, `PresenceKeyRepository.kt:184-251`; `setCurrentMark`,

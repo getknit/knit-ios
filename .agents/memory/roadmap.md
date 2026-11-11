@@ -540,8 +540,13 @@ explicit direction.** Update this file in the change that ships an item.
       - **Who dials.** `AdvertOrder.iDial` on forms, as for any blinded advert, with no rule of its own for a GATT
         source. So a clear Android leaves every dial to the blinding iPhone. The design pass of 2026-11.prsp may revise
         this for a suspended iPhone; any revision goes to both workers.
-      - **The payload's slot.** A blinded payload is forgotten at the first slot edge after it was read, with jitter,
-        so a reader never keeps a rotated tag past the edge, and each address costs at most one read per slot.
+      - **The payload's slot.** A blinded payload is forgotten after the first slot edge since it was read, 35 to 65 s
+        past it: the 30 s minimum lead of an announced rotation plus 5 s, then 0 to 30 s of jitter. A reader never keeps
+        a rotated tag past the edge, never re-reads the old tag in the 30 s a writer may still air it, and each address
+        costs at most one read per slot. The address a link holds is spared, and a clock set back below the read
+        forgets it (`GattPayloads.forgetPastEdge`).
+      - **Rule 2 on a blinded payload.** A HELLO forgets a blinded payload only when its `t`, or a tag announced on that
+        link, differs from the payload's tag.
       - **The doorbell.**
         - `doorbellTrusted`'s `sightedViaGatt` holds for a sighting held under a handle or resolved from a GATT tag.
         - `BleDoorbell.lookUp` treats a lookup that finds no `0xFE30` service within a few seconds of a services change
