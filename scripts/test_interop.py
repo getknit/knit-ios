@@ -681,11 +681,20 @@ class IPhoneRotateTest(unittest.TestCase):
             interop._no_match_by_order([{"message": "ble matched an added service by order, not identity: 3"}])
         phone = mock.Mock()
         with mock.patch.object(interop, "_phone_log", side_effect=lambda _, needle: [needle] if needle.startswith("bt ring") else []):
-            self.assertEqual(interop._rings_heard(entries, phone, IPHONE, 1)["heard"], 2)
+            self.assertEqual(interop._rings_heard(lambda: entries, phone, IPHONE, 1, 1)["heard"], 2)
             with self.assertRaises(RuntimeError):
-                interop._rings_heard(entries, phone, IPHONE, 2)
+                interop._rings_heard(lambda: entries, phone, IPHONE, 2, 2)
+            # Two rings decided while the doorbell lookup ran went as one write: heard.
+            self.assertEqual(interop._rings_heard(lambda: entries, phone, IPHONE, 1, 2)["peerRings"], 2)
+            # Rings decided but no write logged: the peer is not at debug, or the line moved.
+            with self.assertRaises(RuntimeError):
+                interop._rings_heard(lambda: entries, phone, IPHONE, 0, 1)
         with mock.patch.object(interop, "_phone_log", return_value=[]), self.assertRaises(interop.Inconclusive):
-            interop._rings_heard(entries, phone, IPHONE, 0)
+            interop._rings_heard(lambda: entries, phone, IPHONE, 0, 0)
+
+    def test_the_peers_doorbell_writes_are_its_ringing_lines_less_its_failures(self) -> None:
+        messages = ["bluez ringing dev_42_AC", "bluez rung by dev_42_AC", "bluez ringing dev_42_AC", "bluez could not ring dev_42_AC: gone"]
+        self.assertEqual(interop._doorbell_writes(messages), 1)
 
     def test_the_flip_line_is_no_fault_of_ours(self) -> None:
         message = "link ch4 closed: the advert flipped to a tag"

@@ -359,7 +359,10 @@ rotation sends its form to both links) and `announced`. After each, both the pho
 iPhone. From the iPhone's log over USB it checks each rotation's `ble serving the payload's service <serial>` and a `ble
 removed the payload's service <serial>`, that the doorbell's service kept its serial, that no `ble matched an added service
 by order, not identity` appeared (counting `ble looks again at the services of`), that the iPhone logged as many `ble rung by`
-lines as the phone's `bt ring` lines and the peer's rings together with no `bt doorbell absent`, and that both links held.
+lines as the phone's `bt ring` lines and the peer's doorbell writes together with no `bt doorbell absent`, and that both
+links held. The peer runs at debug for its writes (`bluez ringing`, less any `bluez could not ring`): rings that wait on
+one doorbell lookup go as one write, so its status `rings` can count more. The run stops when either link never comes up, since
+every check after it would pass with nothing to judge.
 The summary lists each rotation's serials, source and whether it aired a random tag. `--btmon PATH` captures dongle B's HCI
 traffic through `knit-hci b btmon` for the handles and any Service Changed indication, which the script does not read.
 
@@ -2100,8 +2103,8 @@ was left alone, and the guard put both phones' switches back after each run.
 - **`rings-heard` failed on a count, not a lost ring.** The iPhone logged `ble rung by` for all 29 of the Pixel's `bt
   ring` lines and for each of the peer's ten writes. The peer's status counted eleven: `LinkManager.rings` counts each
   ring it decides on, while BlueZ keeps the rings that wait on a doorbell lookup in a set and writes them once. The
-  link-up's ring and the first rotation's post waited out the 10 s settle together and went as one write. The run's
-  oracle has to count the peer's writes (`bluez ringing`, a debug line) instead.
+  link-up's ring and the first rotation's post waited out the 10 s settle together and went as one write. The check
+  now counts the peer's writes (`bluez ringing`, less any `bluez could not ring`), with the peer at debug.
 - **Forced rotations inside two minutes of an announcement tell nobody.** Rotations 2 to 8 ran 11 s apart with no
   `throttled`. The 14:15 slot's announcement was due at 14:11:30, and `TagNextSends` holds a `current` send that
   close to it (`beforeAnnounce`), so no link was sent a form and nothing throttled the next rotation. Rotation 9 waited
@@ -2111,7 +2114,24 @@ was left alone, and the guard put both phones' switches back after each run.
   `timeout@discover`. The peer's 24 s head start ran out before the phone read again, 38 to 44 s later, so the peer
   dialed. The branch leaves the head start alone, and first reads failed this way in A3's runs too ("What A3's gate
   showed").
-- **Still owed:** `iphone-wake`, a restoration relaunch and a cold launch with the switch on, the `rings-heard`
-  oracle, a Pixel HCI snoop for Service Changed, the plan's knit-peer trials (`RefuseLegacy` against a peer that
+- **The reruns with the new count (15:05 to 15:33).** `rings-heard` passed in both full runs: 26 phone rings and 13
+  writes heard of 14 decided, then 27 and 15. Neither run passed whole, for reasons the count does not touch:
+  - **The iPhone's link to the peer dropped once in each** (runs 2 and 5 of the day, on dongle B and then dongle A),
+    11.6 s and 31 s after a rotation. On dongle B, btmon shows the rotation's indications confirmed and BlueZ's
+    search ended by 14:34:19. The iPhone, the link's central, sent its last packet at 14:34:23.7. At 14:34:28.0 the
+    peer opened a connection to the iPhone's new random address to read its payload, and the old link timed out
+    half a second later (`Connection Timeout`, 5 s). On dongle A the peer failed a read of a new address 27 s before
+    its channel aborted (`errno 103`). Both drops came as the iPhone changed its address. The first run, which held,
+    may never have crossed one. Whether a clear iPhone drops the same way is not known.
+  - **After each relink the peer dialed the iPhone's tag again,** six times in 6 minutes the first time, every one
+    refused (`we dial it`) or timed out. The tag the old link claimed by `TAG_NEXT` keeps its claim for the claim
+    lifetime past the link's end. `AdvertAliases.standing` answers with a claim before a hint, and a claim holds a
+    dial off only while its own link is held, so the hint the new link's HELLO gave never counts. This is the
+    reader's rule, the same for a blinding Android behind a relink, and changing it is the Bluetooth plane's call.
+  - **Dongle B hung at 14:44:07** (`command 0x2043 tx timeout`, opcodes failing `-110`) and left the bus at 15:11
+    after failed resets, so the third run never linked the peer and a fourth could not start. It needs replugging.
+    `iphone-rotate` now stops when either link never comes up, and records `advertising` with each rotation.
+- **Still owed:** `iphone-wake`, a restoration relaunch and a cold launch with the switch on, `iphone-rotate` whole
+  with btmon across one of the iPhone's address changes, a Pixel HCI snoop for Service Changed, the plan's knit-peer trials (`RefuseLegacy` against a peer that
   withholds `CAP_BLIND_ADVERT`, and the iPhone beside a blinding knit-peer), which no run scripts yet, and everything
   A11 owes.

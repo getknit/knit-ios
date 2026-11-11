@@ -530,7 +530,8 @@ explicit direction.** Update this file in the change that ships an item.
       Phases 0 to 4 are committed (`edf12b8`, `1a2d9ff`, `032e57e`, `fc56ab2`, `6795964`). The phone-only trials passed on
       2026-11-11 (`.agents/context/linux-peer.md`, "What the blinded-advert writer showed"), and the dongle runs and
       btmon's handle check passed the same afternoon ("What the writer's dongle runs showed"). `iphone-wake`, a
-      restoration relaunch with the switch on and `iphone-rotate`'s ring count are still owed, then A11.
+      restoration relaunch with the switch on and a whole `iphone-rotate` across one of the iPhone's address
+      changes (its link to the peer dropped at one, twice) are still owed, then A11.
     - **A11 (Android reads a blinded GATT payload):** a paired change that iOS leads, knit-next's half of ADR
       2026-11.prsp. At `cad69c77b` and at knit-next's HEAD, `BleGattPayloadReader.kt:86-88` reads a payload carrying
       `FLAG_BLINDED` as `stranger(PHASE_BLINDED)`. So a blinding iPhone is never sighted, never resolved by a contact's

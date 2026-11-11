@@ -136,6 +136,7 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from typing import Self
 
@@ -2009,6 +2010,10 @@ REMOVED_PAYLOAD = re.compile(r"^ble removed the payload's service (\d+)$")
 MATCHED_BY_ORDER = "ble matched an added service by order"
 LOOKS_AGAIN = "ble looks again at the services of "
 RUNG_BY = "ble rung by "
+# knit-peer's own doorbell writes, a debug line, so `iphone-rotate` runs the peer at debug: BlueZ writes a ring that waits on
+# a doorbell lookup once however many were decided (`ringsWaiting`), so the peer's status `rings` can outnumber its writes.
+RINGING = "bluez ringing "
+COULD_NOT_RING = "bluez could not ring "
 
 
 def iphone_rotate(arguments: argparse.Namespace) -> int:
@@ -2023,7 +2028,8 @@ def iphone_rotate(arguments: argparse.Namespace) -> int:
     a random tag (`resolvable` false): past the slot's four restarts, which bring-ups share. The iPhone's log over USB is
     the oracle: each rotation's `ble serving the payload's service <serial>` and a `ble removed the payload's service`,
     no `ble matched an added service by order, not identity`, and as many `ble rung by` lines as the phone's `bt ring`
-    lines and the peer's rings together, with no `bt doorbell absent` on the phone. Every link must hold through every
+    lines and the peer's doorbell writes together (`bluez ringing`, less any `bluez could not ring`, a debug line, so the
+    peer runs at debug), with no `bt doorbell absent` on the phone. Every link must hold through every
     rotation. The doorbell's handle itself, and whether iOS indicates Service Changed, only btmon shows: `--btmon PATH`
     captures dongle B's HCI traffic there through knit-hci, which needs its sudoers line (scripts/knit-hci.sh)."""
     phone = Phone(arguments.device)
@@ -2043,18 +2049,24 @@ def iphone_rotate(arguments: argparse.Namespace) -> int:
         stop = threading.Event()
         kept_off: set[str] = set()
         threading.Thread(target=_keep_to, args=(ios, {phone_id, peer_id}, kept_off, stop, "iphone"), daemon=True).start()
-        peer = Peer("ios", f"knit-peer rotate {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-rotate", hci0(), gatt_reads=True)
+        peer = Peer("ios", f"knit-peer rotate {nonce}", others | {phone_id}, "debug", arguments.rssi_floor, "iphone-rotate", hci0(), gatt_reads=True)
         capture = _btmon("b", arguments.btmon) if arguments.btmon else None
         rotations: list[dict] = []
         try:
             first = run.step("iphone-blinds", lambda: _airs_tag(ios.advert() or {}))
             peer.start()
             threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
-            run.step("link-iphone-phone", lambda: _ios_linked(ios, phone, phone_id))
-            run.step("link-iphone-peer", lambda: _timed(lambda: peer.lines(lambda line: _link(line, ios.node_id)), 180))
+            to_phone = run.step("link-iphone-phone", lambda: _ios_linked(ios, phone, phone_id))
+            to_peer = run.step("link-iphone-peer", lambda: _timed(lambda: peer.lines(lambda line: _link(line, ios.node_id)), 180))
+            if to_phone is None or to_peer is None:
+                # Every check below judges rotations across both links, and one with no link to hold would pass empty.
+                gatt = (ios.advert() or {}).get("gatt") or {}
+                print(json.dumps({"stopped": "a link never came up", "advertising": gatt.get("advertising")}), flush=True)
+                return _rotate_summary(run, [])
             phone.shell("logcat -c")
             since = time.time()
             peer_rings = peer.command(cmd="status").get("rings", 0)
+            ring_mark = peer.log_mark()
             for index in range(arguments.rotations):
                 record = run.step(f"rotation-{index + 1}", lambda: _rotate_once(ios, arguments.rotate_wait))
                 if record:
@@ -2064,11 +2076,16 @@ def iphone_rotate(arguments: argparse.Namespace) -> int:
                 peer.command(cmd="room", text=f"{body} from the peer")
                 run.step(f"posts-cross-{index + 1}", lambda: _arrivals_after_rotation(ios, body, 60))
             peer_rings = peer.command(cmd="status").get("rings", 0) - peer_rings
-            entries = [entry for entry in IPhoneLog.entries(knit.path) if entry.get("ms", 0) >= since * 1000]
+            peer_rang = _doorbell_writes(peer.log_since(ring_mark))
+
+            def since_rotating() -> list[dict]:
+                return [entry for entry in IPhoneLog.entries(knit.path) if entry.get("ms", 0) >= since * 1000]
+
+            entries = since_rotating()
             run.step("doorbell-kept-its-service", lambda: _doorbell_kept(first or {}, rotations))
             run.step("payload-served-and-removed", lambda: _payloads_turned(entries, rotations))
             run.step("no-match-by-order", lambda: _no_match_by_order(entries))
-            run.step("rings-heard", lambda: _rings_heard(entries, phone, ios.node_id, peer_rings))
+            run.step("rings-heard", lambda: _rings_heard(since_rotating, phone, ios.node_id, peer_rang, peer_rings))
             run.step("links-held", lambda: _no_link_dropped(ios, {phone_id, peer_id}))
             run.step("peer-link-held", lambda: _no_link_dropped(peer, {ios.node_id}))
         finally:
@@ -2083,6 +2100,11 @@ def iphone_rotate(arguments: argparse.Namespace) -> int:
                     pass
             ios.stop()
             knit.stop()
+    return _rotate_summary(run, rotations)
+
+
+def _rotate_summary(run: Run, rotations: list[dict]) -> int:
+    """`iphone-rotate`'s summary line, naming the rotations that aired a random tag; the failed steps' count."""
     random_tags = [record["rotation"] for record in rotations if record.get("random")]
     summary = {"summary": "iphone-rotate", "steps": run.steps, "failed": run.failed, "rotations": rotations, "randomTags": random_tags}
     print(json.dumps(summary))
@@ -2123,6 +2145,7 @@ def _rotate_once(ios: IPhone, wait: float) -> dict:
         "restartsLeft": settled.get("restartsLeft"),
         "doorbell": gatt.get("doorbell"),
         "payload": gatt.get("payload"),
+        "advertising": gatt.get("advertising"),
         "waited": dict(waited),
     }
 
@@ -2172,18 +2195,27 @@ def _no_match_by_order(entries: list[dict]) -> dict:
     return {"looksAgain": sum(entry["message"].startswith(LOOKS_AGAIN) for entry in entries)}
 
 
-def _rings_heard(entries: list[dict], phone: Phone, ios_id: str, peer_rings: int) -> dict:
-    """Every ring the phone logged (`bt ring <iPhone>`) and the peer counted reached the iPhone as `ble rung by`, and the
-    phone never found the doorbell absent."""
-    heard = sum(entry["message"].startswith(RUNG_BY) for entry in entries)
+def _doorbell_writes(messages: list[str]) -> int:
+    """The doorbell writes knit-peer logged: each `bluez ringing`, less each `bluez could not ring`."""
+    return sum(message.startswith(RINGING) for message in messages) - sum(message.startswith(COULD_NOT_RING) for message in messages)
+
+
+def _rings_heard(entries: Callable[[], list[dict]], phone: Phone, ios_id: str, peer_rang: int, peer_rings: int) -> dict:
+    """Every ring the phone logged (`bt ring <iPhone>`) and the peer wrote (`peer_rang`) reached the iPhone as `ble rung
+    by`, and the phone never found the doorbell absent. The phone's log is read before the iPhone's, so a ring the phone
+    logs meanwhile is never counted as rung and not heard. `peer_rings`, the rings the peer decided, only shows: rings
+    that waited on the same doorbell lookup go as one write."""
     rung = len(_phone_log(phone, f"bt ring {ios_id}"))
     absent = [line for line in _phone_log(phone, "bt doorbell absent") if ios_id in line]
-    detail = {"phoneRings": rung, "peerRings": peer_rings, "heard": heard, "absent": len(absent)}
+    heard = sum(entry["message"].startswith(RUNG_BY) for entry in entries())
+    detail = {"phoneRings": rung, "peerWrites": peer_rang, "peerRings": peer_rings, "heard": heard, "absent": len(absent)}
     if absent:
         raise RuntimeError(f"the phone found the iPhone's doorbell absent: {detail}")
-    if rung + peer_rings == 0:
+    if peer_rings and not peer_rang:
+        raise RuntimeError(f"the peer rang but logged no `{RINGING.strip()}`: is it at debug, and the line unchanged? {detail}")
+    if rung + peer_rang == 0:
         raise Inconclusive("nobody rang the iPhone")
-    if heard < rung + peer_rings:
+    if heard < rung + peer_rang:
         raise RuntimeError(f"rings went unheard: {detail}")
     return detail
 
@@ -8446,7 +8478,6 @@ def main() -> int:
     ios_rotate.add_argument("--rotations", type=int, default=10, help="forced rotations of the iPhone's tag")
     ios_rotate.add_argument("--rotate-wait", type=float, default=300, help="seconds each rotation may wait out a refusal (a form's two minutes)")
     ios_rotate.add_argument("--btmon", default="", help="a btsnoop file for dongle B's HCI traffic, through knit-hci (sudo)")
-    ios_rotate.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
     ios_rotate.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     ios_forgets = commands.add_parser("iphone-forgets")
     ios_forgets.add_argument("--stages", default="dialed,quiet,accepted", help="which stages to run, comma-separated, in their fixed order")
