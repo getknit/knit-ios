@@ -57,12 +57,27 @@ MINIMAL_CARD = (
 )
 
 
+# Pages a sender's fetch might read, for FuzzOpenGraph: Open Graph tags with a relative picture, Twitter's alone, a title
+# alone in a script-laden head, a Latin-1 page that says so, and a redirect pair (a base, a newline, a reference).
+PAGES = {
+    "page-og": b"<html><head><meta property='og:title' content='A &amp; B'><meta property=og:description "
+    b"content=\"Desc\"><meta property='og:image' content='../img/a.jpg'></head></html>",
+    "page-twitter": b"<meta name=twitter:title content='T'><meta name='twitter:image' content='//cdn.example.com/x.png'>",
+    "page-title": b"<head><script>var s = '<title>no</title>';</script><!-- <meta property=og:title content=x> -->"
+    b"<title>  The &#8220;real&#x201D; one </title></head>",
+    "page-latin1": b"<meta charset=iso-8859-1><title>Caf\xe9</title>",
+    "page-bom": b"\xef\xbb\xbf<title>BOM</title>",
+    "redirect-pair": b"https://example.com/a/b/c?q\n../../d;p?y#f",
+}
+
 def main() -> int:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     out = Path(sys.argv[1])
     vectors = json.loads((ROOT / "Tests" / "Vectors" / "wire-v1.json").read_text(encoding="utf-8"))["vectors"]
-    for harness in ("FuzzCBOR", "FuzzLinkRecords", "FuzzAdvert", "FuzzContactCard", "FuzzExiflessJPEG", "FuzzLinkPreview"):
+    for harness in (
+        "FuzzCBOR", "FuzzLinkRecords", "FuzzAdvert", "FuzzContactCard", "FuzzExiflessJPEG", "FuzzLinkPreview", "FuzzOpenGraph"
+    ):
         (out / harness).mkdir(parents=True, exist_ok=True)
     for name, hexed in vectors.items():
         item = bytes.fromhex(hexed)
@@ -104,6 +119,8 @@ def main() -> int:
     }
     for name, address in addresses.items():
         (out / "FuzzLinkPreview" / name).write_bytes(address.encode())
+    for name, page in PAGES.items():
+        (out / "FuzzOpenGraph" / name).write_bytes(page)
     return 0
 
 

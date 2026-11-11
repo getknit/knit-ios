@@ -63,6 +63,8 @@ extension ChatModel {
     /// Takes the held photo out of the composer.
     public func removePhoto() {
         staged = nil
+        // The slot is free again: the draft's link may have a card to show.
+        linkComposer?.reconsider()
     }
 
     /// Whether a photo in the thread, or a voice note where this build plays them, is still on its way, so the thread

@@ -7,6 +7,7 @@
         private static let onboardedKey = "hasOnboarded"
         private static let filtersKey = "filtersContent"
         private static let termsKey = "acceptedTerms"
+        private static let linkPreviewsKey = "linkPreviews"
 
         // UserDefaults is thread-safe, as its documentation says; its declaration just isn't Sendable.
         nonisolated(unsafe) private let defaults = UserDefaults.standard
@@ -26,6 +27,12 @@
         var acceptedTerms: Int {
             get { defaults.integer(forKey: Self.termsKey) }
             set { defaults.set(newValue, forKey: Self.termsKey) }
+        }
+
+        /// Off, a key never written, until someone turns it on, as Android's `linkPreviewsEnabled` is (ADR 2026-11.hcvg).
+        var linkPreviews: Bool {
+            get { defaults.bool(forKey: Self.linkPreviewsKey) }
+            set { defaults.set(newValue, forKey: Self.linkPreviewsKey) }
         }
     }
 #endif

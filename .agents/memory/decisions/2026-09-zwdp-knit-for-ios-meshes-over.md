@@ -25,4 +25,6 @@ rules it out for a mesh that links strangers.
 **Consequences / limits:** every frame to or from an iPhone crosses a persistent L2CAP link, at Bluetooth's
 throughput, with no fast fan-out plane. The iPhone never advertises `CAP_FAST_COMPACT`, `CAP_FRAME_TRANSCODE`
 or `CAP_DIRECT_TRANSFER`. The other planes are listed as never-on-iOS in `.agents/memory/roadmap.md`; the
-capability rule in `.agents/rules/interop.md` is the check that keeps them out.
+capability rule in `.agents/rules/interop.md` is the check that keeps them out. (Amended 2026-11-10: a debug build
+fetches a link's preview card over the Internet when its sender turns the setting on, the app's first request over IP;
+it carries nothing of the mesh, which still meshes over Bluetooth alone. ADR 2026-11.hcvg.)

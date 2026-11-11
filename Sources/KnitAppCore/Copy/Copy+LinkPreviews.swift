@@ -37,6 +37,60 @@ extension Copy {
             )
         }
 
+        /// What the composer says while it fetches the draft's card (`chat_link_preview_loading`).
+        public static var loading: String {
+            NSLocalizedString(
+                "linkPreviews.loading",
+                bundle: .main,
+                value: "Loading preview…",
+                comment: "Chat composer: shown while Knit fetches a preview card for the link in the draft"
+            )
+        }
+
+        /// The card held in the composer, for VoiceOver (`chat_link_staged_desc`).
+        public static func staged(title: String, host: String) -> String {
+            format(
+                NSLocalizedString(
+                    "linkPreviews.staged",
+                    bundle: .main,
+                    value: "Link preview: %1$@, %2$@. Sends with your message.",
+                    comment: "Chat composer: VoiceOver's name for the preview card held for Send; %1$@ is the page's title, %2$@ the site"
+                ),
+                title,
+                host
+            )
+        }
+
+        /// The composer's cross on the card it holds.
+        public static var remove: String {
+            NSLocalizedString(
+                "linkPreviews.remove",
+                bundle: .main,
+                value: "Send without preview",
+                comment: "Chat composer: removes the preview card so the message goes with the link alone"
+            )
+        }
+
+        /// The setting's name (`settings_link_previews_title`).
+        public static var settingTitle: String {
+            NSLocalizedString(
+                "linkPreviews.setting.title", bundle: .main, value: "Link previews", comment: "Settings: the link previews toggle")
+        }
+
+        /// What the setting does, and who learns what when it is on (`settings_link_previews_subtitle`).
+        public static var settingFooter: String {
+            NSLocalizedString(
+                "linkPreviews.setting.footer",
+                bundle: .main,
+                value: """
+                    When your message has a link, Knit fetches the page's title, description and picture over the Internet \
+                    and sends them along, so the people you send it to see a preview without contacting the site. The site \
+                    sees your IP address.
+                    """,
+                comment: "Settings: below the link previews toggle; says the site sees the sender's IP address"
+            )
+        }
+
         /// VoiceOver's action that shows a hidden card.
         public static var show: String {
             NSLocalizedString(

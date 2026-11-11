@@ -85,7 +85,7 @@
             guard max(picked.width, picked.height) <= ChatAnimation.maxSourceSide,
                 let schedule = FrameSchedule(delays: PhotoDecoder.delays(of: picked.source, count: picked.frames)),
                 let first = PhotoDecoder.frame(picked.source, at: 0, side: ChatAnimation.side),
-                let canvas = Canvas(width: first.width, height: first.height),
+                let canvas = PictureCanvas(width: first.width, height: first.height, transparent: true),
                 let writer = AnimatedWebPWriter(width: first.width, height: first.height, quality: ChatAnimation.quality)
             else {
                 return nil
@@ -132,7 +132,7 @@
         /// source's own: a JPEG, or a lossy WebP when it has transparency, which a JPEG would fill in black.
         private static func still(_ picked: PhotoDecoder.Picked) -> Result<OutgoingPhoto, PhotoFailure> {
             guard let image = PhotoDecoder.frame(picked.source, at: 0, side: ChatPhoto.side),
-                let canvas = Canvas(width: image.width, height: image.height, transparent: hasAlpha(image))
+                let canvas = PictureCanvas(width: image.width, height: image.height, transparent: hasAlpha(image))
             else {
                 return .failure(.unreadable)
             }
@@ -174,7 +174,7 @@
 
     /// An sRGB drawing surface of one size, 8 bits a channel and rows packed, so its pixels can go to libwebp as they are.
     /// Opaque unless `transparent`, when its alpha is premultiplied, as `CGContext` keeps it.
-    private final class Canvas {
+    internal final class PictureCanvas {
         private static let bitsPerComponent = 8
         private static let channels = 4
 
@@ -183,7 +183,7 @@
         let transparent: Bool
         private let context: CGContext
 
-        init?(width: Int, height: Int, transparent: Bool = true) {
+        init?(width: Int, height: Int, transparent: Bool) {
             let alpha: CGImageAlphaInfo = transparent ? .premultipliedLast : .noneSkipLast
             guard let space = CGColorSpace(name: CGColorSpace.sRGB),
                 let drawing = CGContext(

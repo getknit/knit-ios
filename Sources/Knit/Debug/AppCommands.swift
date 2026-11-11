@@ -46,6 +46,9 @@
             if let ask = SampleCommand.parse(line) {
                 return await ask.answer(door)
             }
+            if let ask = LinkPreviewCommand.parse(line) {
+                return await ask.answer(session, screening: screening)
+            }
             return nil
         }
     }

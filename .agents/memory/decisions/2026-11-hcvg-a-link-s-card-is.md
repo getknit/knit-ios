@@ -64,11 +64,37 @@ maintainer approves them for the store (the maintainer's call, 2026-11-10). It i
   - **The bit.** `MeshConfiguration.linkPreviews` adds `0x400` to the signed profile, with or without a prekey:
     `0xC055F` with the ratchet's prekey, `0xC040F` without. The start-time republish (ADR 2026-11.hpmt) edits the
     profile when the bit comes or goes. `Capabilities.local`, which the HELLO and the advert send, never holds it.
-- **P3, the send half:**
-  - **The fetch:** sender-side and off by default. It uses Android's address, redirect, size and header rules over
-    URLSession.
-  - **The composer:** a staged card, and a send that waits up to 5 s for its card.
-  - **The setting** says the site sees the sender's IP address.
+- **P3, the send half** (`Sources/KnitAppCore/LinkPreviews/`, `Sources/Knit/LinkPreviews/`):
+  - **The rules are Android's, ported:** `PublicAddressPolicy`, `OpenGraphParser` and its charset sniff, and
+    `JavaURIResolution`, ART's `URI.resolve` with its departures from OpenJDK, which a picture's address and a
+    redirect resolve through. `JavaURIResolution` was checked against ART's own `URI.java` on 100,000 random pairs.
+  - **The fetch** (`PreviewWalk`):
+    - two GETs that send `User-Agent: WhatsApp/2` and an `Accept`, and nothing else;
+    - redirects walked by hand, 5 for a page and 3 for a picture, each `Location` normalized again;
+    - a page cut at 512 KiB, and a picture refused past 2 MiB, by its length and by count;
+    - a picture must sniff as JPEG, PNG, GIF or WebP;
+    - each hop's host resolved first, and refused whole on one address that isn't public, and the address the
+      transport connected to judged again after.
+  - **The transport** (`URLSessionTransport`): an ephemeral URLSession, made on the first fetch, with no cookie, cache,
+    credential or proxy. It never uses a route in Low Data Mode, and its timeouts are 10 s idle and 15 s a hop.
+    `getaddrinfo` resolves, and `NWPathMonitor` is the gate.
+  - **The service** (`LinkPreviewService`): the route first, then the page, then the picture, which fails alone. The
+    budget is 30 s, and the memo keeps 32 unscreened cards for 10 min. Only the room's card is screened here: words
+    that flag give no card, and a picture that flags is dropped.
+  - **The picture** (`CardPicture`): upright, at most 512 px, refused under 64. It is a JPEG at libjpeg's 80 (ImageIO's
+    0.51, measured on the Mac), or a WebP at 80 with transparency. Past 128 KiB it is tried again at 384 px and 70
+    (ImageIO's 0.43).
+  - **The composer** (`LinkComposer`):
+    - the draft's first eligible link, 600 ms after the draft rests, when the setting is on and the slot is free;
+    - only toward an audience that draws cards: the room, or every other member's pinned profile carrying `0x400`;
+    - a removed card's link and a link that gave none are not fetched again until the draft empties or is sent;
+    - a photo or a voice note held for Send hides the card, and it comes back when they go;
+    - Send waits up to 5 s for a card it doesn't hold, joining a fetch under way, so a shared link carries its card.
+  - **The setting** is off by default. It sits in Settings after Content filtering, and its footer says the site sees
+    the sender's IP address and the people it goes to see the card without contacting the site.
+  - **The bridge's `linkpreview`** fetches a card on a debug iPhone for a device check.
+  - **The fence:** every file in `Sources/Knit/LinkPreviews/` compiles into a debug build alone, `seam_url_loading`
+    keeps URLSession and URLRequest in that directory, and `seam_network` admits `Network` there and in the bridge.
 - **The release gate** follows voice notes (ADR 2026-10.ue3y). `KnitAppCore` holds no build condition: the session
   takes a bundle that only a debug build hands it, and `check_release_app` fails a release binary that holds its log
   line. A release build draws no card, sends none, shows no setting, and still sends `0xC015F`.
@@ -94,6 +120,23 @@ way, out of reach of the address and redirect rules, and what it reads from a pa
   moment after it first shows. Android's card waits for its decode the same way.
 - **Hidden words keep their card:** the card has its own verdict, so a message whose words the filter hides still
   shows a clean card, as on Android.
+- **DNS rebinding:** URLSession resolves a name itself, after `getaddrinfo` vetted it, so a name that answers with a
+  public address and then a private one can draw one request to the LAN. Its answer never reaches a card: the address
+  the transport connected to is judged again. Android binds its resolver to the connection and avoids even the request.
+  Closing it would take an `NWConnection` to the vetted address with a hand-written HTTP client.
+- **Gaps ported from Android's address rule:** an IPv4 address inside the local-use NAT64 prefix (`64:ff9b:1::/48`),
+  an IPv4-translated address and Teredo are judged public, as Android judges them. The documentation ranges are let
+  through too; none reaches a local network.
+- **`Accept-Language: *`:** CFNetwork adds the phone's languages when no value is set, where Android sends none. A
+  site may answer `*` with its default language.
+- **Where the composer departs from Android:** a draft whose link changes drops the card for the old link rather
+  than keeping it, and a link skipped offline is tried again at its next edit or at Send, where Android re-arms when
+  the route returns.
+- **Kotlin quirks, ported and pinned by tests:** a relative picture against a link with no path resolves to another
+  host (`https://example.comimg.jpg`), a `<meta` inside an earlier tag's quoted value is read as a tag, and the first
+  `<meta>` naming a charset decides it.
+- **Charsets:** the parser decodes UTF-8, UTF-16, US-ASCII, ISO-8859-1 and windows-1252 itself, and CFString reads the
+  rest by name; Linux knows only the five. A name is matched as ICU 74 matches it.
 - **Not built, as on Android:** a reader-side fetch, a receive toggle, and a card beside a photo.
 - **The store:** approving previews is a later decision. It covers the privacy manifest, App Review's notes, the
   changelog and the release marker.
@@ -113,7 +156,14 @@ way, out of reach of the address and redirect rules, and what it reads from a pa
   - `MeshEngineLinkPreviewCapabilityTests`, with a second engine reading the bit from its peer row;
   - `MeshEnginePhotoTests.aDMLinkCardIsWantedKeptAndAnnouncedLikeAPhoto`, since the engine's want and intake rules
     read no type;
-  - `check_release_app`'s marker, "link previews are on in this debug build".
+  - `check_release_app`'s marker, "link previews are on in this debug build";
+  - `PublicAddressPolicyTests`, `OpenGraphParserTests`, `JavaURIResolutionTests`, `PreviewWalkTests`,
+    `LinkPreviewServiceTests` and `ChatLinkPreviewTests`, every case of the Kotlin suites they port;
+  - `ImageIOTests`' card qualities, on the Mac;
+  - the `FuzzOpenGraph` harness.
 - **Owed on the iPhone:** a Pixel's DM, group message and Nearby post with a link each show their card, a flagged one
-  hides, a tap opens the page, VoiceOver reads the card in its row, and a release build sends `0xC015F`. The Linux
-  tests can't show these.
+  hides, a tap opens the page, VoiceOver reads the card in its row, and a release build sends `0xC015F`. The iPhone's
+  own DM, group message and Nearby post show their card on a Pixel, and a link shared from Safari carries its card.
+  `linkpreview` against real sites and a hostile server on the Mac's LAN (a redirect to `127.0.0.1`, a name resolving
+  to a LAN address, a page past 512 KiB, a picture past 2 MiB, an SVG, a page that stalls), and one request captured
+  to see its headers. The Linux tests can't show these.

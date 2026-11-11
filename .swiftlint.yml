@@ -114,10 +114,20 @@ custom_rules:
     message: Only the app's Keychain store imports Security.
     severity: error
   seam_network:
-    name: Network stays in the debug bridge
+    name: Network stays in the debug bridge and link previews
     regex: '^\s*(@\w+\s+)*(\w+\s+)?import\s+Network\b'
-    excluded: 'Sources/Knit/Debug/'
-    message: Only the app's debug bridge imports Network; Knit meshes over Bluetooth alone (ADR 2026-09.zwdp).
+    # The bridge listens on the debug build's port; link previews watch the route a sender's fetch takes (ADR 2026-11.hcvg).
+    excluded:
+      - 'Sources/Knit/Debug/'
+      - 'Sources/Knit/LinkPreviews/'
+    message: Only the app's debug bridge and link previews import Network; Knit meshes over Bluetooth alone (ADR 2026-09.zwdp).
+    severity: error
+  seam_url_loading:
+    name: URL loading stays in link previews
+    regex: '\b(URLSession|URLRequest)\b'
+    match_kinds: [identifier, typeidentifier]
+    excluded: 'Sources/Knit/LinkPreviews/'
+    message: Only the app's link previews load a URL, the sender's fetch (ADR 2026-11.hcvg); Knit meshes over Bluetooth (ADR 2026-09.zwdp).
     severity: error
   seam_codes:
     name: The QR frameworks stay in the app's Codes

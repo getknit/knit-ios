@@ -47,6 +47,13 @@ public final class AppSession {
             revision += 1
         }
     }
+    /// Whether the composer fetches a card for a link it holds, over the Internet, where the site sees this phone's address
+    /// (ADR 2026-11.hcvg): off until it is turned on, and only a build with link previews offers it.
+    public var sendsLinkPreviews: Bool {
+        didSet {
+            preferences.linkPreviews = sendsLinkPreviews
+        }
+    }
     /// What a message's words are checked with, sent or received; `nil` checks nothing.
     @ObservationIgnored public let textScreening: TextScreening?
     /// Reads a photo's upright size from its bytes without decoding it, or `nil` for bytes that are no photo. Without
@@ -97,6 +104,7 @@ public final class AppSession {
         linkCards = linkPreviews.map { _ in LinkCards { blobs.bytes(of: $0) } }
         self.preferences = preferences
         filtersContent = preferences.filtersContent
+        sendsLinkPreviews = preferences.linkPreviews
     }
 
     /// Everyone this device knows, labelled, as of the current revision.

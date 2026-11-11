@@ -42,5 +42,6 @@ extension ChatModel {
             session.voiceNotes?.playback.stop()
         }
         voice?.removeStaged()
+        linkComposer?.reconsider()
     }
 }

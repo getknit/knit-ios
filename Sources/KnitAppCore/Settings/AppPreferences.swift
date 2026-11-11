@@ -8,6 +8,9 @@ public protocol AppPreferences: AnyObject, Sendable {
     var filtersContent: Bool { get set }
     /// The version of ``Terms`` the user agreed to on this install, or 0 before they agreed to any (ADR 2026-10.cgm3).
     var acceptedTerms: Int { get set }
+    /// Whether the composer fetches a card for a link it holds: off until it is turned on (ADR 2026-11.hcvg). Only a
+    /// build with link previews offers it.
+    var linkPreviews: Bool { get set }
 }
 
 /// ``AppPreferences`` in memory.
@@ -15,12 +18,14 @@ public final class MemoryPreferences: AppPreferences {
     private let onboarded: Lock<Bool>
     private let filters: Lock<Bool>
     private let terms: Lock<Int>
+    private let previews: Lock<Bool>
 
-    /// Preferences starting from `hasOnboarded`, `filtersContent` and `acceptedTerms`.
-    public init(hasOnboarded: Bool = false, filtersContent: Bool = true, acceptedTerms: Int = 0) {
+    /// Preferences starting from `hasOnboarded`, `filtersContent`, `acceptedTerms` and `linkPreviews`.
+    public init(hasOnboarded: Bool = false, filtersContent: Bool = true, acceptedTerms: Int = 0, linkPreviews: Bool = false) {
         onboarded = Lock(hasOnboarded)
         filters = Lock(filtersContent)
         terms = Lock(acceptedTerms)
+        previews = Lock(linkPreviews)
     }
 
     public var hasOnboarded: Bool {
@@ -36,6 +41,11 @@ public final class MemoryPreferences: AppPreferences {
     public var acceptedTerms: Int {
         get { terms.withLock { $0 } }
         set { terms.withLock { $0 = newValue } }
+    }
+
+    public var linkPreviews: Bool {
+        get { previews.withLock { $0 } }
+        set { previews.withLock { $0 = newValue } }
     }
 }
 

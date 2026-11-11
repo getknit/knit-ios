@@ -398,8 +398,10 @@ verify.
   signed profile beside our prekey, so Android 2.3 and later seals the ratchet toward it. With the switch off, or no
   prekey kept, the profile says `0xC000F` and Android seals v1 (ADR 2026-10.b4yk). `CAP_LINK_PROOF` (`0x40000`) and
   `CAP_BLIND_ADVERT` (`0x80000`, ADR 2026-11.sv5t) ride every profile we sign, and a peer's capabilities are written
-  only from a profile no older than its presentation (knit-ios #25). v1 still goes toward a peer without the ratchet
-  and to any group with one in it (ADR 2026-09.n393).
+  only from a profile no older than its presentation (knit-ios #25). A debug build with link previews adds
+  `CAP_LINK_PREVIEW` (`0x400`) to the signed profile alone, prekey or none, so it signs `0xC055F` or `0xC040F`; the HELLO
+  and the advert never carry it, and a release build signs neither (ADR 2026-11.hcvg). v1 still goes toward a peer
+  without the ratchet and to any group with one in it (ADR 2026-09.n393).
 - **The ratchet's floors and bounds** are the receiver's, the same in every build in the field (`crypto.md`,
   "Sessions"). `establishedAt` is our clock exactly when we initiated; the skew tolerance is five minutes, and past
   48 h no tail survives anywhere (knit-next ADR 026).

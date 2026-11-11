@@ -31,7 +31,9 @@ iOS would leave the user to switch to Knit by hand, on 2026-10-21.
 
 - **The sheet** lists the chats, previews the share, takes an edit of the words and has Send, as Messages, Signal and
   WhatsApp do. Send writes the share to an App Group's inbox and closes the sheet. It takes text, one web URL (as
-  text, since iOS has no link previews) and one picture, still or moving. A Knit contact link goes to Add contact. Files,
+  text, since iOS has no link previews) and one picture, still or moving. (Amended 2026-11-10: with link previews on, a debug
+  build fetches the shared URL's card as it fetches a typed link's, and the drain's Send waits up to 5 s for it; ADR
+  2026-11.hcvg.) A Knit contact link goes to Add contact. Files,
   video and several pictures wait until the iPhone can send them.
 - **The App Group** is `group.app.getknit.knit` for the store id and `group.app.getknit.knit.dev` for the debug one, so
   the two builds never drain each other's shares. Under its `Share/` folder:

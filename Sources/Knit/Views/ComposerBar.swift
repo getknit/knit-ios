@@ -3,7 +3,7 @@
     import KnitAppCore
     import SwiftUI
 
-    /// The composer: the people an "@" offers, the quote it holds, the photo or voice note it holds, the field, what is
+    /// The composer: the people an "@" offers, the quote it holds, the photo, voice note or link's card it holds, the field, what is
     /// left near the limit, the mic in a build with voice notes, and Send, or Add photo while there is nothing to send
     /// (`SendAction` in knit-next). While a note records, the recording bar takes the field's place (knit-next ADR 034).
     /// From iOS 26 it sits in a glass panel (``SwiftUI/View/glassPanel()``), with the quote, the field and the count on
@@ -44,6 +44,13 @@
             }
             if let note = model.voice?.staged {
                 StagedVoiceView(staged: note, remove: model.removeVoice)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let card = model.stagedCard {
+                StagedCardView(staged: card, remove: model.removeCard)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if model.linkComposer?.isLoading == true, model.staged == nil, model.voice?.staged == nil {
+                LinkLoadingLine()
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let voice = model.voice, voice.failure == .tooShort {

@@ -5,46 +5,6 @@ public import KnitStore
 public import KnitWire
 public import Observation
 
-/// One message as a thread shows it.
-public struct ChatMessage: Sendable, Equatable, Identifiable {
-    /// The frame id.
-    public var id: String
-    /// The text.
-    public var body: String
-    /// When it was sent, by its author's clock.
-    public var sentAt: Int64
-    /// Whether we wrote it.
-    public var isMine: Bool
-    /// Who wrote it.
-    public var author: NodeId
-    /// The author's label, over someone else's message in the room or a group; `nil` in a DM, where the title says who.
-    public var authorLabel: String?
-    /// How far it got, when it is ours.
-    public var status: DeliveryStatus?
-    /// A status line's words, which the thread shows in place of a bubble; `nil` for a message.
-    public var notice: String?
-    /// The author's face, beside someone else's message in the room or a group; `nil` in a DM, for our own messages,
-    /// and for a status line.
-    public var authorFace: Face?
-    /// What the message carries beside its words, or `nil`.
-    public var attachment: ChatAttachment?
-    /// Why the content filter keeps its words out of sight, or `nil` while they show (ADR 2026-10.e4kz).
-    public var hiddenWords: HiddenWords?
-    /// The emoji people reacted with, each where it first appeared; empty for none and for a status line
-    /// (ADR 2026-10.ehe6).
-    public var reactions: [ReactionChip] = []
-    /// The message it replies to, as this phone checked the quote, or `nil` (ADR 2026-10.mn29, knit-next ADR 2026-10.gpa3).
-    /// Its words hide with the reply's, and a reply whose quoted words are flagged hides whole.
-    public var quote: ChatQuote?
-    /// Where the names it mentions sit in ``body``, in UTF-16 offsets, which the bubble sets apart (ADR 2026-10.nbhj).
-    public var mentionSpans: [Range<Int>] = []
-    /// The web addresses in ``body``, which the bubble makes links, as Android's does (ADR 2026-11.w5ew).
-    public var links: [MessageLink] = []
-    /// The preview card the sender fetched for one of ``links``, or `nil` (ADR 2026-11.hcvg). Only a build with link
-    /// previews draws one, once its blob is here and opens as a card describing a link the words hold.
-    public var card: LinkCard?
-}
-
 /// A thread's view model: its messages and status lines, the composer, and a request's Accept.
 @preconcurrency
 @MainActor
@@ -93,6 +53,9 @@ public final class ChatModel {
     /// The words are checked first, and the first check in a while waits for the model to load, so the screen shows it
     /// working. A tap meanwhile sends nothing more.
     public private(set) var isSending = false
+    /// The composer's link previews (ADR 2026-11.hcvg): a card fetched for the draft's link and held for Send, in a build
+    /// that sends cards; `nil` in any other.
+    @ObservationIgnored public private(set) var linkComposer: LinkComposer?
 
     /// The thread `conversationId` over `session`, making picked photos ready with `codec` and checking them with `screening`,
     /// with `draft` seeded in the composer, which cues no typing, as a share drained in the background must not (ADR 2026-10.z7a8).
@@ -105,6 +68,9 @@ public final class ChatModel {
         self.screening = screening
         voice = session.voiceNotes?.recorder()
         text = Composer.clamp(draft)
+        linkComposer = makeLinkComposer()
+        // A seeded draft, a link from the share sheet, is fetched for as a typed one is.
+        linkComposer?.draftChanged(text)
     }
 
     /// What the composer holds, cut at the limit as it is typed. Each change that leaves words in it tells the thread we
@@ -121,6 +87,7 @@ public final class ChatModel {
             }
             if changed {
                 cueTyping()
+                linkComposer?.draftChanged(typed)
             }
         }
     }
@@ -179,11 +146,14 @@ public final class ChatModel {
             wordsRefused = true
             return false
         }
-        let attachment = photo?.photo ?? note.map { OutgoingPhoto(bytes: $0.bytes, mime: VoiceAudio.mime) }
+        // Nothing else held: the draft's link may bring its card, waited for a moment (ADR 2026-11.hcvg).
+        let card = photo == nil && note == nil ? await linkComposer?.attachment(forSending: sending) : nil
+        let attachment = photo?.photo ?? note.map { OutgoingPhoto(bytes: $0.bytes, mime: VoiceAudio.mime) } ?? card
         guard await session.send(sending, photo: attachment, replyTo: reply?.reply, mentions: mentions, in: conversationId) != nil
         else {
             return false
         }
+        linkComposer?.sent()
         if text == sending {
             text = ""
             pendingMentions = []
@@ -271,6 +241,7 @@ public final class ChatModel {
         // A recording is kept for the composer's next visit, and a note playing here stops (`ChatViewModel.onCleared`).
         voice?.leave()
         session.voiceNotes?.playback.stop()
+        linkComposer?.leave()
     }
 
     private func build() -> (state: ChatState, audience: ReactionAudience) {

@@ -17,6 +17,14 @@ extension AccessibilityID {
     public static let chatLinkCard = "chat_link_card"
     /// A link's preview card the content filter hides until it is tapped (`chat_link_card_hidden`).
     public static let chatLinkCardHidden = "chat_link_card_hidden"
+    /// The card the composer holds for Send (`chat_link_staged`).
+    public static let chatLinkStaged = "chat_link_staged"
+    /// The composer's cross on the card it holds. Android has no tag here.
+    public static let chatRemoveLinkCard = "chat_link_staged_remove"
+    /// The composer's line while it fetches the draft's card. Android has no tag here.
+    public static let chatLinkLoading = "chat_link_loading"
+    /// Settings' link previews switch (`settings_link_previews`), in a build with link previews.
+    public static let settingsLinkPreviews = "settings_link_previews"
     /// The composer's mic (`chat_voice_record`).
     public static let chatVoiceRecord = "chat_voice_record"
     /// The bar in the field's place while a note records (`chat_voice_recording`).

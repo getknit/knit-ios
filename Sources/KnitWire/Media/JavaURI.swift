@@ -1,6 +1,6 @@
 /// What `java.net.URI`'s constructor finds in an address on ART (`URI.java`, android-37.2, the `Parser` class), or `nil`
-/// where it throws: the scheme, the raw user-info and the host, the three parts a link card's address is judged by
-/// (``LinkPreviewBlob/isSafeHttpURL(_:)``).
+/// where it throws. A link card's address is judged by the scheme, the raw user-info and the host
+/// (``LinkPreviewBlob/isSafeHttpURL(_:)``); a page's picture is resolved from every part (``JavaURIResolution``).
 ///
 /// It is a port, not a URL parser of our own, so the iPhone keeps and refuses the same card addresses Android does. It
 /// walks UTF-16 units as Java's `charAt` does, with Java's character classes (RFC 2396 plus Java's deviations: an empty
@@ -12,10 +12,23 @@
 internal struct JavaURI {
     /// The scheme as written, case kept, or `nil` for a relative reference.
     var scheme: String?
+    /// The raw authority after `//`, a server or a registry name, or `nil` for none. An empty one (`file:///a`) is none.
+    var authority: String?
     /// The raw user-info before an `@`, or `nil` when there is none. An empty one (`https://@host`) is not `nil`.
     var userInfo: String?
     /// The host as written, or `nil` for a registry-based or missing authority.
     var host: String?
+    /// The port as `Integer.parseInt` read it, so `:0443` is 443, or -1 for none (`https://host:/` has none).
+    var port = -1
+    /// The raw path, empty when there is none, or `nil` for an opaque URI (`mailto:a@b.example`), Java's `isOpaque()`.
+    /// Nothing reads an opaque URI's scheme-specific part: `resolve` hands one back whole, with its ``string``.
+    var path: String?
+    /// The raw query after `?`, or `nil` for none. An empty one (`?`) is not `nil`.
+    var query: String?
+    /// The raw fragment after `#`, or `nil` for none.
+    var fragment: String?
+    /// The text this was parsed from, which `toString()` hands back as it is, or `nil` for one that `resolve` built.
+    var string: String?
 
     /// `text` parsed as ART's `new URI(text)` parses it, or `nil` where that throws.
     init?(_ text: String) {
@@ -25,9 +38,13 @@ internal struct JavaURI {
         } catch {
             return nil
         }
-        scheme = parser.scheme
-        userInfo = parser.userInfo
-        host = parser.host
+        self = parser.uri
+        string = text
+    }
+
+    /// Java's `new URI()`, for the parser to fill in.
+    init() {
+        // Every part starts undefined: `nil`, and -1 for the port.
     }
 }
 
@@ -37,9 +54,8 @@ private struct Malformed: Error {}
 /// ART's `URI.Parser`, its methods kept under Java's names where they read the same.
 private struct Parser {
     let units: [UInt16]
-    var scheme: String?
-    var userInfo: String?
-    var host: String?
+    /// What the parser has found so far, the fields Java's `Parser` sets on its `URI`.
+    var uri = JavaURI()
 
     private var count: Int { units.count }
 
@@ -56,7 +72,7 @@ private struct Parser {
             }
             try checkChars(0, 1, .alpha)
             try checkChars(1, at, .scheme)
-            scheme = substring(0, at)
+            uri.scheme = substring(0, at)
             at += 1
             if self.at(at, count, "/") {
                 at = try parseHierarchical(at, count)
@@ -73,6 +89,7 @@ private struct Parser {
         }
         if self.at(at, count, "#") {
             try checkChars(at + 1, count, .uric)
+            uri.fragment = substring(at + 1, count)
             at = count
         }
         guard at >= count else {
@@ -94,11 +111,13 @@ private struct Parser {
         }
         let pathEnd = scan(at, end, error: "", stop: "?#")
         try checkChars(at, pathEnd, .path)
+        uri.path = substring(at, pathEnd)
         at = pathEnd
         if self.at(at, end, "?") {
             at += 1
             let queryEnd = scan(at, end, error: "", stop: "#")
             try checkChars(at, queryEnd, .uric)
+            uri.query = substring(at, queryEnd)
             at = queryEnd
         }
         return at
@@ -111,9 +130,8 @@ private struct Parser {
         let serverMask: JavaURIMask = scan(start, end, error: "", stop: "]") > start ? .serverPercent : .server
         let serverChars = try scan(start, end, serverMask) == end
         let registryChars = try scan(start, end, .registryName) == end
-        if registryChars, !serverChars {
-            return end
-        }
+        // Java first returns a registry name whose characters are no server's, which never happens: every registry
+        // character is a server character too.
         var parsed = start
         var failure: Malformed?
         if serverChars {
@@ -123,8 +141,9 @@ private struct Parser {
                     throw Malformed()
                 }
             } catch {
-                userInfo = nil
-                host = nil
+                uri.userInfo = nil
+                uri.host = nil
+                uri.port = -1
                 failure = error
                 parsed = start
             }
@@ -132,6 +151,8 @@ private struct Parser {
         if parsed < end, !registryChars {
             throw failure ?? Malformed()
         }
+        // Every way out that does not throw keeps the whole authority, a server's or a registry name.
+        uri.authority = substring(start, end)
         return end
     }
 
@@ -141,7 +162,7 @@ private struct Parser {
         let atSign = scan(at, end, error: "/?#", stop: "@")
         if atSign >= at, self.at(atSign, end, "@") {
             try checkChars(at, atSign, .userInfo)
-            userInfo = substring(at, atSign)
+            uri.userInfo = substring(at, atSign)
             at = atSign + 1
         }
         if self.at(at, end, "[") {
@@ -158,9 +179,10 @@ private struct Parser {
             if portEnd > at {
                 try checkChars(at, portEnd, .digit)
                 // Java's `Integer.parseInt`: past `Int32.max` it throws.
-                guard Int32(substring(at, portEnd)) != nil else {
+                guard let port = Int32(substring(at, portEnd)) else {
                     throw Malformed()
                 }
+                uri.port = Int(port)
                 at = portEnd
             }
         }
@@ -179,7 +201,7 @@ private struct Parser {
             at = -1
         }
         if at > start {
-            host = substring(start, at)
+            uri.host = substring(start, at)
         }
         return at
     }
@@ -256,7 +278,7 @@ private struct Parser {
         if lastLabel > start, !JavaURIMask.alpha.matches(units[lastLabel]) {
             throw Malformed()
         }
-        host = substring(start, at)
+        uri.host = substring(start, at)
         return at
     }
 }

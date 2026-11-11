@@ -9,6 +9,8 @@ extension ChatModel {
     public func adopt(_ share: ShareManifest, picture: Data?) async {
         text = Composer.clamp(share.text)
         selection = text.utf16.count..<text.utf16.count
+        // A shared link's card is fetched as a typed one's is (ADR 2026-11.hcvg).
+        linkComposer?.draftChanged(text)
         if share.hasPicture {
             await choosePhoto(picture)
         }

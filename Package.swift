@@ -53,6 +53,7 @@ let package = Package(
         // For the fuzz package in Fuzz/, which needs its own sanitizer flags. App/project.yml names `Knit` explicitly.
         .library(name: "KnitWire", targets: ["KnitWire"]),
         .library(name: "KnitCrypto", targets: ["KnitCrypto"]),
+        .library(name: "KnitAppCore", targets: ["KnitAppCore"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0"),

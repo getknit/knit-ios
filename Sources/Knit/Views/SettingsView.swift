@@ -7,11 +7,13 @@
     /// each row after a glyph, as Signal lists its settings (ADR 2026-10.5waw).
     internal struct SettingsView: View {
         @State private var model: SettingsModel
+        private let session: AppSession
         @Environment(\.scenePhase) private var scenePhase
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
 
         init(session: AppSession, permission: any NotificationPermission, about: AboutInfo) {
             _model = State(initialValue: SettingsModel(session: session, permission: permission, about: about))
+            self.session = session
         }
 
         var body: some View {
@@ -27,6 +29,9 @@
                 SafetySection()
                 if let screening {
                     ContentFilterSection(screening: screening)
+                }
+                if session.linkPreviews?.service != nil {
+                    LinkPreviewSection(session: session)
                 }
                 SampleSection()
                 AboutSection()

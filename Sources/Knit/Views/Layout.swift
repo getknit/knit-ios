@@ -116,6 +116,10 @@
         static let linkCardWidth: CGFloat = 220
         /// The height of a card's picture, which fills the card's width (`LINK_CARD_IMAGE_HEIGHT`).
         static let linkCardPicture: CGFloat = 120
+        /// The widest the card the composer holds stands (`StagedLinkTile`'s 260.dp).
+        static let stagedCardWidth: CGFloat = 260
+        /// The side of the card's picture the composer holds (its 48.dp).
+        static let stagedCardPicture: CGFloat = 48
         /// The side of the photo the composer holds.
         static let stagedPhoto: CGFloat = 72
         /// How long a missing photo's spinner turns, in seconds, before it settles to an hourglass

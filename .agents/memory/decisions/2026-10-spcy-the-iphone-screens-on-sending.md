@@ -34,7 +34,9 @@ refused on an iPhone and went out from Android (ADR 2026-10.8e2u).
   already hid a flagged message's words in notifications, the chat list and requests (ADR 2026-10.e4kz), which 9rh6
   added on Android.
 - **Not here:** group photos, link-preview cards, the Meshtastic room and commons. The iPhone sets no group photo and
-  sends no card, so nothing on those paths is screened on sending.
+  sends no card, so nothing on those paths is screened on sending. (Amended 2026-11-10: a debug build sends cards, and
+  a room's card is screened on sending as Android's is, its words as the room's and its picture as a photo; a DM's or a
+  group's is not. ADR 2026-11.hcvg.)
 
 **Consequences / limits:**
 

@@ -52,6 +52,15 @@
             #expect(plain > ChatPhoto.sharpestPassThrough, "ImageIO's own 0.85 is sharper than Android's 85")
         }
 
+        /// A card's picture is written at the ImageIO qualities whose tables read as Android's 80 and 70 (ADR 2026-11.hcvg).
+        @Test func aCardsPictureQualitiesReadAsAndroids() throws {
+            let pairs = [(CardPicture.imageIOQuality, CardPicture.quality), (CardPicture.retryImageIOQuality, CardPicture.retryQuality)]
+            for (imageIO, libjpeg) in pairs {
+                let read = try #require(try written(at: imageIO).quality)
+                #expect(abs(read - Int((libjpeg * 100).rounded())) <= 1, "ImageIO's \(imageIO) read as \(read)")
+            }
+        }
+
         @Test func whatTheAppWritesGoesAsItselfWhenPickedAgain() throws {
             let ours = try written(at: ChatPhoto.imageIOQuality)
             #expect(ours.isClean)
