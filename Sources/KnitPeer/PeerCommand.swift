@@ -8,7 +8,7 @@ public import KnitWire
 ///           [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
 ///           [--log debug|info|warning|off] [--rssi-floor DBM] [--never-sight NODE_ID[,NODE_ID…]]
 ///           [--no-gatt-payload] [--gatt-reads | --no-gatt-reads] [--feed window|pace] [--ratchet | --no-ratchet]
-///           [--no-presence-keys] [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
+///           [--no-presence-keys] [--blind] [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
 /// knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
 ///                [--advertise android|ios] [--instance NAME | --state DIR]
@@ -42,8 +42,8 @@ public enum PeerCommand: Equatable, Sendable {
                 [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
                 [--log debug|info|warning|off] [--rssi-floor DBM] [--receive-mtu BYTES] [--send-mtu BYTES]
                 [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload] [--gatt-reads | --no-gatt-reads]
-                [--feed window|pace] [--ratchet | --no-ratchet] [--no-presence-keys] [--stop-reading-after SECONDS]
-                [--flood BYTES_PER_SECOND] [--lying]
+                [--feed window|pace] [--ratchet | --no-ratchet] [--no-presence-keys] [--blind]
+                [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
             knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
@@ -58,6 +58,8 @@ public enum PeerCommand: Equatable, Sendable {
         identity; --no-ratchet runs the peer as a build from before it, and --ratchet, the default, is still taken.
         The peer mints its own presence keys and hands them to its linked contacts under the ratchet, as the app does;
         --no-presence-keys mints and sends none.
+        --blind airs a rotating tag in place of the node id, as a debug iPhone with its switch on does: the ios profile in
+        its GATT payload, the android profile in its service data.
         --stop-reading-after is for trials: that many seconds after it starts, the peer stops reading its channels.
         --flood is for trials too: while linked, the peer writes that many bytes a second of undecodable frames to
         every link, as a neighbour flooding it would, holding back while its own queue to that link is full.
@@ -78,7 +80,7 @@ public enum PeerCommand: Equatable, Sendable {
             parsing: rest,
             switches: [
                 "--shared-adapter", "--no-gatt-payload", "--gatt-reads", "--no-gatt-reads", "--ratchet", "--no-ratchet",
-                "--no-presence-keys",
+                "--no-presence-keys", "--blind",
                 "--lying",
             ])
         switch verb {
@@ -168,6 +170,11 @@ public struct RunOptions: Equatable, Sendable {
     /// 2026-11.prsp): by default, as in the app; `--no-presence-keys` turns it off. They are sealed by the ratchet, so with
     /// `--no-ratchet`, which keeps no prekeys and so no generation, none is minted either.
     public var presenceKeys = true
+    /// Whether the peer airs a rotating tag in place of its node id (`--blind`; ``LinkManager/Configuration/blindsAdvert``,
+    /// whose runtime switch starts on; ADR 2026-11.prsp): the `ios` profile serves it as a blinding iPhone's GATT payload,
+    /// with the advert's `FLAG_BLINDED`, and the `android` profile airs it as service data. Off by default, as in a release
+    /// build.
+    public var blind = false
     /// Seconds after start the radio stops reading its channels, a trial's switch (`--stop-reading-after`); `nil` never stops.
     public var stopReadingAfterSeconds: Int?
     /// Bytes a second of undecodable FRAME records written to every live link, a trial's switch (`--flood`); `nil`
@@ -218,6 +225,7 @@ public struct RunOptions: Equatable, Sendable {
         }
         ratchet = !ratchetOff
         presenceKeys = !flags.take(switch: "--no-presence-keys")
+        blind = flags.take(switch: "--blind")
         stopReadingAfterSeconds = try Self.stopReadingAfter(flags.take("--stop-reading-after"))
         floodBytesPerSecond = try Self.flood(flags.take("--flood"))
         lying = flags.take(switch: "--lying")
@@ -370,31 +378,5 @@ internal struct Flags {
         if let flag = values.keys.min() {
             throw .unknownFlag(flag)
         }
-    }
-}
-
-/// Where a peer keeps its state: `--state`, or `--instance` under `$XDG_STATE_HOME/knit-peer`
-/// (`~/.local/state/knit-peer` by default), so that two peers on one machine keep two identities.
-internal enum StateDirectory {
-    static func resolve(flags: inout Flags, environment: [String: String]) throws(UsageError) -> String {
-        let explicit = flags.take("--state")
-        let instance = flags.take("--instance")
-        if let explicit {
-            guard instance == nil else {
-                throw .invalid(flag: "--instance", value: "cannot go with --state")
-            }
-            return explicit
-        }
-        let name = instance ?? "default"
-        guard !name.isEmpty, !name.contains("/"), name != ".", name != ".." else {
-            throw .invalid(flag: "--instance", value: name)
-        }
-        if let state = environment["XDG_STATE_HOME"], state.hasPrefix("/") {
-            return state + "/knit-peer/" + name
-        }
-        guard let home = environment["HOME"], home.hasPrefix("/") else {
-            throw .missing("HOME, or --state")
-        }
-        return home + "/.local/state/knit-peer/" + name
     }
 }

@@ -60,9 +60,20 @@
                 log.log(.info, "ble restored the central with \(restored.count) connections")
             }
 
-            /// The services come back from the next advert.
-            func peripheralManager(_: CBPeripheralManager, willRestoreState _: [String: Any]) {
+            /// iOS relaunched Knit with the last process's services, which it keeps serving until they are removed, and which
+            /// may hold the clear id from before a switch flip. CoreBluetooth refuses the removal before the manager is
+            /// powered on, so the first power-on of the process removes them (``GattServing``), as ``dropRestored()`` drops
+            /// the connections. Two or more `0xFE30` services were a blinding process's, so the doorbell's service comes up
+            /// first again, before the listener is published (ADR 2026-11.prsp).
+            func peripheralManager(_: CBPeripheralManager, willRestoreState state: [String: Any]) {
+                let services = state[CBPeripheralManagerRestoredStateServicesKey] as? [CBMutableService] ?? []
+                let knit = services.filter { $0.uuid == Self.serviceUUID }.count
+                serving.restored(knitServices: knit)
                 log.log(.info, "ble restored the peripheral")
+                if knit > 1 {
+                    // Only a blinding process's services: a clear restoration logs as it did.
+                    log.log(.info, "ble restored \(knit) 0xFE30 services, to remove once powered on")
+                }
             }
         #endif
     }
@@ -70,13 +81,43 @@
     // MARK: The peripheral role
 
     extension BLECore {
+        /// A service was added, or refused. Matched to its step by the object CoreBluetooth hands back, or else to the oldest
+        /// add still owed an answer, since the manager answers in the order it was asked (``GattServing``). Advertising
+        /// starts once a payload is served, never at every add, and while blinding the doorbell's service publishes the
+        /// listener (ADR 2026-11.prsp).
         func peripheralManager(_ manager: CBPeripheralManager, didAdd service: CBService, error: (any Error)?) {
             if let error {
                 log.log(.warning, "ble could not serve \(service.uuid): \(error)")
-                servedValue = nil
+            }
+            guard let serial = awaitingAdd.first(where: { $0.value === service })?.key ?? oldestAwaited(),
+                let built = awaitingAdd.removeValue(forKey: serial)
+            else {
                 return
             }
-            manager.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [Self.serviceUUID]])
+            // `nil` for a service a stop, a power-off or a flip let go of, whose answer changes nothing.
+            let role = [serving.pending, serving.combined].compactMap(\.self).first { $0.serial == serial }?.role
+            if error == nil, let role {
+                served[serial] = built
+                if role != .combined {
+                    log.log(.info, "ble serving \(Self.describe(role)) \(serial)")
+                }
+            }
+            let steps = serving.added(serial, ok: error == nil, wanted: running ? servable : nil, now: clock.monotonicMilliseconds())
+            apply(steps, on: manager)
+            if running, reported == .on, role == .doorbell {
+                publishIfDue(on: manager)
+            }
+        }
+
+        /// The fallback when CoreBluetooth hands back another object than the one added: the oldest add still owed, after
+        /// dropping every answer older than the oldest the server waits on, which belongs to an add a removal overtook and
+        /// would shift every later match. Logged, since the probe expects identity to match every time.
+        private func oldestAwaited() -> UInt64? {
+            let owed = serving.oldestOwed
+            awaitingAdd = awaitingAdd.filter { entry in owed.map { entry.key >= $0 } ?? false }
+            let serial = awaitingAdd.keys.min()
+            log.log(.info, "ble matched an added service by order, not identity: \(serial.map { "\($0)" } ?? "none owed")")
+            return serial
         }
 
         func peripheralManagerDidStartAdvertising(_: CBPeripheralManager, error: (any Error)?) {
@@ -154,6 +195,7 @@
             manager.respond(to: first, withResult: .success)
             log.log(.info, "ble rung by \(first.central.identifier)")
             emit(.rung)
+            retryServing()
         }
 
         func peripheralManager(_: CBPeripheralManager, didOpen channel: CBL2CAPChannel?, error: (any Error)?) {
@@ -165,6 +207,7 @@
             emit(.accepted(id))
             adopt(channel, as: id, owner: nil)
             attach(id, to: channel.peer.identifier)
+            retryServing()
         }
     }
 
@@ -186,6 +229,7 @@
                     probeSaw(peripheral, advertisementData, rssi: strength)
                 }
             #endif
+            retryServing()
             if let advert = BLEAdvert.payload(advertisementData) {
                 emit(.sighted(RadioSighting(address: address, advert: advert, rssi: strength)))
             } else if BLEAdvert.listsService(advertisementData) {
@@ -209,6 +253,7 @@
             if gattTarget == peripheral.identifier {
                 peripheral.discoverServices([Self.serviceUUID])
             }
+            retryServing()
         }
 
         func centralManager(_: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: (any Error)?) {
@@ -254,89 +299,71 @@
             }
             emit(.connected(id))
             adopt(channel, as: id, owner: uuid)
+            // A doorbell missing this soon after the link opened may be on its way (``DoorbellLookup``).
+            doorbells.settlingSince[uuid] = clock.monotonicMilliseconds()
         }
 
         // MARK: Reading a GATT payload
 
-        /// The HELLO on `channel` named `node` and told `told`, `announced` being the tag that node announced: a payload read at
-        /// its far end for another node goes, since a new node took that address, and a blinded one for another tag goes, since
-        /// the node rotated (the paired change `gatt-peers`' payload lifetime, rule 2; ADR 2026-11.prsp).
-        func heardHello(_ node: NodeId, told: NodeId?, announced: NodeId?, on channel: ChannelID) {
-            guard let uuid = peers[channel], gatt.helloNamed(node, told: told, announced: announced, at: RadioAddress(uuid.uuidString))
-            else {
-                return
-            }
-            log.log(.info, "ble forgetting the GATT payload of \(uuid): its HELLO named \(node)")
-        }
-
-        /// Forgets the payloads of the addresses unheard for a minute of scanning, bar those a link, a dial or the
-        /// read holds (rule 3).
-        func forgetQuietPayloads() {
-            let held = Set(peers.values).union(dials.values.map(\.peripheral)).union([gattTarget].compactMap(\.self))
-            let linked = Set(held.map { RadioAddress($0.uuidString) })
-            for address in gatt.forgetQuiet(now: clock.monotonicMilliseconds(), linked: linked) {
-                log.log(.info, "ble forgetting the GATT payload of \(address.rawValue): quiet for a minute of scanning")
-            }
-            // Rule 4: a blinded payload lasts its slot, so each address costs one read a slot (ADR 2026-11.prsp).
-            for address in gatt.forgetPastEdge(wall: clock.wallMilliseconds(), linked: linked) {
-                log.log(.info, "ble forgetting the GATT payload of \(address.rawValue): its slot ended")
-            }
-        }
-
-        /// Connects a UUID-only peer to read its payload, when ``GattPayloads`` says one is due. The read's deadline
-        /// ends it whatever happens, and the connection goes once it is over unless a dial came to use it.
-        func beginGattRead(_ peripheral: CBPeripheral) {
-            let uuid = peripheral.identifier
-            let address = RadioAddress(uuid.uuidString)
-            guard let central, !inUse(uuid), gatt.begin(address, now: clock.monotonicMilliseconds()) else {
-                return
-            }
-            gattTarget = uuid
-            gattReads += 1
-            let number = gattReads
-            peripheral.delegate = self
-            log.log(.info, "ble reading the GATT payload of \(uuid)")
-            if peripheral.state == .connected {
-                peripheral.discoverServices([Self.serviceUUID])
-            } else {
-                central.connect(peripheral)
-            }
-            let timeout = gatt.configuration.readTimeoutMilliseconds
-            queue.asyncAfter(deadline: .now() + .milliseconds(Int(timeout))) { [weak self] in
-                guard let self, gattReads == number, gattTarget == uuid else {
-                    return
-                }
-                log.log(.info, "ble gave up the GATT payload of \(uuid) after \(timeout) ms")
-                finishGattRead(uuid, .failed)
-            }
-        }
-
+        /// The peer's `0xFE30` services, for the payload read and the doorbell lookup alike. A blinding iPhone serves two,
+        /// the doorbell's and the payload's, so each search asks every one of them for both characteristics and ends only
+        /// once all have answered (``GattSweep``; ADR 2026-11.prsp). Both characteristics every time, so whichever search's
+        /// discovery answers first, its answer holds what the other looks for too.
         func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: (any Error)?) {
-            guard gattTarget == peripheral.identifier else {
-                if doorbells.isLooking(peripheral.identifier) {
-                    doorbellServicesFound(peripheral, error: error)
+            let uuid = peripheral.identifier
+            let services = error == nil ? (peripheral.services ?? []).filter { $0.uuid == Self.serviceUUID } : []
+            let keys = services.map(ObjectIdentifier.init)
+            var searching = false
+            if gattTarget == uuid, case .services = gattStage {
+                if keys.isEmpty {
+                    finishGattRead(uuid, error == nil ? .stranger : .failed)
+                } else {
+                    gattStage = .characteristics(GattSweep(keys))
+                    searching = true
                 }
+            }
+            if doorbells.isLooking(uuid), doorbells.sweeps[uuid] == nil {
+                if keys.isEmpty {
+                    endDoorbellLookup(peripheral, found: nil, failed: error != nil)
+                } else {
+                    doorbells.sweeps[uuid] = GattSweep(keys)
+                    searching = true
+                }
+            }
+            guard searching else {
                 return
             }
-            guard error == nil, let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
-                finishGattRead(peripheral.identifier, error == nil ? .stranger : .failed)
-                return
+            for service in services {
+                peripheral.discoverCharacteristics([Self.characteristicUUID, Self.doorbellUUID], for: service)
             }
-            peripheral.discoverCharacteristics([Self.characteristicUUID, Self.doorbellUUID], for: service)
         }
 
         func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: (any Error)?) {
-            if doorbells.isLooking(peripheral.identifier) {
-                doorbellCharacteristicsFound(peripheral, in: service, error: error)
+            let uuid = peripheral.identifier
+            let key = ObjectIdentifier(service)
+            let held = error == nil ? service.characteristics ?? [] : []
+            if let ended = doorbells.sweeps[uuid]?.answered(key, found: held.first { $0.uuid == Self.doorbellUUID }, failed: error != nil) {
+                switch ended {
+                case .found(let doorbell):
+                    endDoorbellLookup(peripheral, found: doorbell, failed: false)
+                case .missing(let failed):
+                    endDoorbellLookup(peripheral, found: nil, failed: failed)
+                }
             }
-            guard gattTarget == peripheral.identifier else {
+            guard gattTarget == uuid, case .characteristics(var sweep) = gattStage else {
                 return
             }
-            guard error == nil, let characteristic = service.characteristics?.first(where: { $0.uuid == Self.characteristicUUID }) else {
-                finishGattRead(peripheral.identifier, error == nil ? .stranger : .failed)
+            let ended = sweep.answered(key, found: held.first { $0.uuid == Self.characteristicUUID }, failed: error != nil)
+            gattStage = .characteristics(sweep)
+            switch ended {
+            case .found(let characteristic):
+                gattStage = .value
+                peripheral.readValue(for: characteristic)
+            case .missing(let failed):
+                finishGattRead(uuid, failed ? .failed : .stranger)
+            case nil:
                 return
             }
-            peripheral.readValue(for: characteristic)
         }
 
         func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: (any Error)?) {
@@ -359,21 +386,12 @@
             emit(.sighted(RadioSighting(address: RadioAddress(uuid.uuidString), advert: advert, rssi: strength)))
             gatt.finish(RadioAddress(uuid.uuidString), .read(advert), now: clock.monotonicMilliseconds(), wall: clock.wallMilliseconds())
             gattTarget = nil
+            gattStage = nil
             // A seeking link manager dials on this sighting, and its dial reaches this queue a moment from now. Dropped
             // now, the connection's end would fail that dial (``failDials(on:)``), so it waits to see if one comes.
             queue.asyncAfter(deadline: .now() + .milliseconds(Self.readReleaseGraceMilliseconds)) { [weak self] in
                 self?.releaseIfIdle(uuid)
             }
-        }
-
-        /// Records how the read of `uuid` ended, and drops its connection unless something else uses it.
-        func finishGattRead(_ uuid: UUID, _ outcome: GattPayloads.Outcome) {
-            guard gattTarget == uuid else {
-                return
-            }
-            gatt.finish(RadioAddress(uuid.uuidString), outcome, now: clock.monotonicMilliseconds(), wall: clock.wallMilliseconds())
-            gattTarget = nil
-            releaseIfIdle(uuid)
         }
     }
 #endif

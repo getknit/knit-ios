@@ -76,6 +76,9 @@
         var doorbells: [String: Doorbell] = [:]
         var ringsWaiting: Set<String> = []
         var doorbellLookups: Set<String> = []
+        /// When BlueZ last resolved each linked device's services, or saw them change: a lookup that finds no doorbell
+        /// sooner after than ``DoorbellLookup/doorbellSettleMilliseconds`` tries again at the next ring.
+        var doorbellSettlingSince: [String: Int64] = [:]
 
         var listener: ListeningSocket?
         var channels: [ChannelID: Channel] = [:]

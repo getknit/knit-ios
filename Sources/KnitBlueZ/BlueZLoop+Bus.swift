@@ -38,6 +38,7 @@
             adapterPresent = false
             doorbells.removeAll()
             ringsWaiting.removeAll()
+            doorbellSettlingSince.removeAll()
             activeAdvert = nil
             pendingAdvert = nil
             gattRegistered = false
@@ -153,6 +154,12 @@
                 devices[path]?.heardAt = Monotonic.milliseconds()
                 sight(path)
             }
+            let knitService = interfaces.contains { interface in
+                interface.key == BlueZ.gattService && interface.value["UUID"]?.text?.lowercased() == AdvertPayload.serviceUUID
+            }
+            if knitService {
+                doorbellServiceAdded(path, now: Monotonic.milliseconds())
+            }
         }
 
         private func interfacesRemoved(_ message: BusMessage) {
@@ -169,6 +176,8 @@
                 devices[path] = nil
                 gattDeviceRemoved(path)
                 doorbellDeviceGone(path)
+            } else if names.contains(BlueZ.gattCharacteristic) || names.contains(BlueZ.gattService) {
+                doorbellObjectRemoved(path, now: Monotonic.milliseconds())
             }
         }
 

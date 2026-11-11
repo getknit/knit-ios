@@ -491,7 +491,15 @@ Android's `0xFE30` service data as a sighting, and reads the GATT payload of a p
 in its service list or its overflow area. A dial connects the peripheral and opens an L2CAP channel on the
 advertised PSM. Its peripheral publishes an insecure channel, serves the payload and advertises the UUID
 alone, and connects the far side of each channel it accepts as a peripheral too, so that a suspended Knit hears that
-link end through `didDisconnectPeripheral` (ADR 2026-10.mueg). A stop forgets the PSM at once, and a start
+link end through `didDisconnectPeripheral` (ADR 2026-10.mueg). Clear, it serves one combined `0xFE30` service, replaced
+whole at each new value. Blinding, it serves two (`GattServing`, ADR 2026-11.prsp): the doorbell's, added first and kept until
+a stop, a power-off or a flip, and the payload's, which each rotation adds anew before it removes the old one, so the
+doorbell's handle never moves and the L2CAP channel is never republished. Advertising starts once a payload is served. The
+first power-on of each process, and of each bring-up after a stop or power-off, stops advertising and removes every service
+first, so a restoration relaunch stops serving the last process's value. Both radios' readers search every `0xFE30` service
+for the payload and the doorbell (`GattSweep` in KnitBLE; `BlueZ.knitCharacteristic`), and a doorbell lookup that finds none
+within 10 s of the link's open, a services change or `ServicesResolved` tries again at the next ring (`DoorbellLookup`).
+A stop forgets the PSM at once, and a start
 publishes only once the stop's unpublish is answered, or after 5 s without an answer (`ListenerPublication`).
 Published while an unpublish was still unanswered, the iPhone 12 got 193 instead of 192, and the Pixels that dial it
 failed on the PSM they had read until they read it again. With nothing outstanding, iOS hands back 192. An answer can

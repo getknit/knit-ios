@@ -136,22 +136,51 @@ value survives while `knit.sqlite` stays out of backups. Four facts shape what t
 - **The aired form is the GATT payload.** While blinding, the payload carries `FLAG_BLINDED` with
   `FLAG_DIALS_GATT_PEERS`, bytes 1–16 hold the tag, and the cue is zero. The flag is mandatory: Android at the pin would
   read a tag without it as a node id and dial it into `WrongPeer`.
-  - **A rotation adds before it removes.** The doorbell is a characteristic of the same `0xFE30` service, so a
-    rotation never calls `removeAllServices`, which `stop()` alone keeps. It adds the new service, then removes the old
-    one by reference once `didAdd` lands.
-    - Every ring client marks a link "no doorbell" for its whole life when a lookup finds no service: KnitBLE's `.absent`,
-      KnitBlueZ's `BlueZLoop+Doorbell.swift:73`, and Android's `BleDoorbell.lookUp`. A remove-then-add at every slot
-      would let one lookup in the gap end every ring to a suspended iPhone on that link.
-    - For the same reason, a lookup that finds no `0xFE30` service within a few seconds of a services change is a
-      failure to retry, never `.absent`, in KnitBLE and KnitBlueZ, and in A11 for `BleDoorbell`.
+  - **While blinding, the doorbell and the payload live in two `0xFE30` services.** The doorbell service (D) holds the
+    doorbell characteristic alone. It is added first at each bring-up, before the L2CAP channel is published, and
+    removed only at `stop()`, at power-off or at a switch flip. The payload service (P) holds the payload characteristic
+    alone and is the one a rotation replaces: the new P is added, and the old P removed by reference once `didAdd`
+    lands. `removeAllServices` is kept for `stop()` and the first power-on after a restoration. A clear iPhone keeps
+    today's one combined service, because a pinned Android reads a clear payload only from the first `0xFE30` service.
+    - Why not one service rotated whole: every ring client looks the doorbell up once and then writes to that handle
+      with no response (Android's `BleDoorbell.write`, `WRITE_TYPE_NO_RESPONSE`; KnitBlueZ's `writeDoorbell`, a write
+      command). A rotation that moves the doorbell's handle loses every later ring on that link without a sign, so a
+      suspended iPhone hears nothing until it comes to the front, once per slot. Android learns of a services change
+      only from API 31 (`onServiceChanged`), and only if iOS indicates Service Changed to it. A doorbell service that
+      never rotates keeps its handle.
+    - Every reader searches every `0xFE30` service for the payload and for the doorbell: KnitBLE discovers the
+      characteristics of each before it ends a read or a lookup (KnitBlueZ already does), and A11 has Android do the
+      same. A pinned Android finds the doorbell in D at a stable handle, and reads the blinded payload as a stranger,
+      as it does today.
+    - A lookup that finds no doorbell within `doorbellSettleMilliseconds` (10 s on the monotonic clock) of the link's
+      open, of a services change (`didModifyServices`) or of BlueZ's `ServicesResolved` is a failure the next ring
+      retries, never `.absent`. Past the bound `.absent` stands, so an Android that serves no doorbell is not looked up
+      at every ring. KnitBLE forgets a doorbell only when the invalidated services include its own. KnitBlueZ also drops
+      a doorbell whose characteristic path BlueZ removes or whose write fails.
+    - If the iPhone refuses two primaries with one UUID (the probe checks), the fallback is one combined service removed
+      and re-added, and only if the probe shows the doorbell's handle comes back the same.
   - **The L2CAP channel is never republished at a rotation.** A republish has flipped the PSM between 192 and 193 and
     failed Android's dials for minutes (`bf171e6`), and every reader's cached PSM would fail once per rotation. iPhones
     mostly hold 192, so the PSM names little; it is a residual.
   - The value stays static, so bluetoothd answers reads while Knit is suspended. A dynamic value would wake Knit on
     every read, and like the doorbell, anyone in range could spend that.
   - **A restoration relaunch** removes the services it restored only once the radio is powered on, as `dropRestored`
-    does for connections. Until `serve()` runs, a restored service still holds the last process's value, which may be
-    the clear id from before a switch flip.
+    does for connections. Until then a restored service still holds the last process's value, which may be the clear id
+    from before a switch flip. The order: note the restored services in `willRestoreState`; at the first power-on of
+    the process, stop advertising and remove every service, once, keyed on a flag this process sets; when the radio
+    expects to blind, add D and publish the listener after D's `didAdd`; then `serve()` adds P with the snapshot's
+    value. A clear radio keeps today's order, publish then the combined service, since that service carries the PSM.
+    The radio expects to blind when its factory says so (`BLERadio(expectsBlinding:)`, set from the same switch as
+    `blindsAdvert`), when the layout it last served was split, or when a restoration returned two `0xFE30` services.
+  - Advertising starts once, at the first served payload's `didAdd` (the first P, which follows D, or the combined
+    service), never at every service's `didAdd`. Starting it at D's would let a reader connect while D stood alone,
+    find no payload, and file us as a stranger for ten minutes.
+  - **A reader may read the old P during a rotation's overlap.** For one `didAdd` round trip the server holds D, the
+    old P and the new P, and a reader keeps whichever payload answers first. A contact still resolves the old tag, which
+    sits inside its window of expected tags, and our responder honours a dial to our previous form (`dialedForm`). A
+    stranger holds the old tag until the next edge's rule 4, or until a HELLO's `t` forgets it (rule 2). The overlap is
+    milliseconds, so it is accepted.
+  - A failed `didAdd` of a new P keeps the old one and retries at the next radio event, not at the next slot.
 - **Rotation** ports `TagSchedule` (the persisted high-water mark per generation, and a random prefixed tag when no
   key or mark serves), `TagChoice` and `AdvertRotation`. A mark read that fails throws, as Kotlin's `MarkStore` does,
   and the tag is random: read as "no mark", it would restart the generation at the slot's first index and air again,
@@ -240,15 +269,26 @@ Four alternatives were considered:
   but gives no reason it cannot be additive. It is additive: a shipped Android reads a flagged blinded payload as a
   stranger and never misdials it, and A11 teaches the new ones to read it.
 
-**The Phase 3 probe settles what the design assumes of iOS** (dongle B's scan and btmon through `knit-hci`, a debug
-iPhone with the switch on, a Pixel on API 31 or later and an older one if the lab has it):
+**The Phase 3 probe settles what the design assumes of iOS.** Dongle B runs knit-peer's `ios` profile as a GATT client
+of the iPhone, with btmon through `knit-hci`; a debug iPhone has the switch on; a Pixel on API 31 or later (and one below
+it, if the lab has one) logs its HCI snoop. It checks:
 
-- whether a service add-and-remove or a stop and start of advertising changes the address (probably not, a residual);
-- whether the ATT handles stay put across a re-add, and whether Service Changed reaches Android, below API 31 and from
-  it, and an iOS central;
-- whether accepted channels survive a re-add;
+- that the iPhone takes a second `0xFE30` primary (`didAdd` with no error, two primaries in dongle B's discovery);
+- that D's doorbell handle stays the same across ten rotations, and P's handles before and after each;
+- whether Service Changed is indicated to dongle B and to the Pixel at each rotation;
+- that every Pixel `bt ring` after a rotation is matched by `ble rung by` on the backgrounded iPhone, with no `bt
+  doorbell absent`;
+- that accepted channels survive ten rotations;
+- the iPhone's address before and after each re-serve (probably unchanged, a residual);
 - whether an incoming L2CAP open resumes a suspended Knit;
-- what a restoration relaunch serves before `serve()` runs.
+- what a restoration relaunch serves before power-on, and how long D takes to come up;
+- that no `ble matched an added service by order, not identity` line appears across the rotations, a Settings Stop and
+  Start and a relaunch (if one does, the serials around it say whether iOS answers an add that a removal overtook);
+- that a rotation landing mid-search logs `ble looks again at the services of`, and a ring still lands within the
+  settle bound.
+
+What one iPhone cannot probe: KnitBLE as the client of a blinding iPhone, the `didModifyServices` path between two
+iPhones.
 
 **Consequences / limits:**
 
@@ -276,6 +316,8 @@ iPhone with the switch on, a Pixel on API 31 or later and an older one if the la
   delay from the low end in the background.
 - **One release log line already dates a block.** `MeshEngine+Blocks.swift:172` logs a block by device tag in every
   build, against xp6d's step-6 rule. It is outside this change and owed as a follow-up.
+- **knit-peer's `android` profile under `--blind`** airs the writer's payload as service data with `FLAG_BLINDED`, a lab
+  stand-in that no trial covers. A pinned Android reads it as a stranger and does not dial it.
 - **A new phone starts over.** The Keychain item does not migrate to a new device, and neither does the identity, so
   the new phone starts a new identity and generations restart with it.
 
@@ -362,3 +404,41 @@ above leaves open, or where it departs from the Kotlin:
   length limit; it is a plain record behind whatever the link holds, counted when it waits.
 - `LinkFormNotes` keeps each link's announced form and applies it at its edge (a deadline), checked against
   `AdvertAliases.stillAnnounced`; nothing reads the link's form yet but the debug bridge's `advert` (Phase 4).
+
+Phase 3, the radios (draft, 2026-11-11): `GattServingTests` and `GattServingBlindedTests` (the server's layout as steps),
+`GattSweepTests`, `DoorbellLookupTests`, `BlueZBlindLayoutTests`, and `PeerRatchetTests.blindingIsOffUnlessAsked`. KnitBLE's
+wiring compiles only on the Mac and is proven only by the probe. Choices the phase made that the text above leaves open:
+
+- The server's state is `GattServing`, a pure type in `KnitMesh/Link` whose steps `BLECore+Serving.swift` carries out; the
+  services are kept by serial, and a `didAdd` is matched to its service by the object CoreBluetooth hands back, or else to the
+  oldest add still owed an answer, after dropping every answer older than the oldest the server waits on (`oldestOwed`); the
+  fallback logs `ble matched an added service by order, not identity`, which the probe expects never to see. One split add is
+  in flight at a time. A clear form keeps the old code's steps exactly: stop
+  advertising, remove every service, add the combined one, advertise at its `didAdd`.
+- Advertising starts at the first P's `didAdd`, which follows D's, not at D's own: a reader that connected while D stood alone
+  would find no payload and leave the iPhone alone for ten minutes as a stranger.
+- The radio learns the form from the link manager's first advert, which follows `.listening`, so D comes before the publish
+  only when the radio expects to blind: `BLERadio(expectsBlinding:)`, which Phase 4's factory sets from the same persisted
+  switch as `blindsAdvert`; the layout this process last served (a stop and start, a power cycle); or a restoration that
+  handed back two or more `0xFE30` services. A restoration only ever upgrades to the split layout: one restored service says
+  only that the last process was clear, while the expectation reads the switch as it is now, and following the old process
+  would reopen the gap the expectation closes. The advert still decides the layout
+  served, so a clear advert under an expectation to blind rebuilds to the combined service. A radio that expected neither and
+  blinds publishes first and serves D, then P, at the first advert; a peer that dials a cached PSM in between meets the settle
+  bound. A restoration logs its services' count only when it was a blinding process's, so a clear restoration logs as before.
+- The first power-on's clear is armed again at every stop and power-off, when nothing of ours is served, so a power cycle
+  never adds beside services iOS kept.
+- A flip to clear takes the clear path, whose removal of every service takes D and P. A flip to blinding stops advertising and
+  removes the combined service by reference, after its `didAdd` if that is still owed.
+- A failed split add is tried again at the first ring, accepted channel, connection or advert at least a second later, never
+  in a loop at every advert.
+- KnitBLE asks every `0xFE30` service for both characteristics in every search, so whichever search's discovery answers
+  first holds what the other looks for (`GattSweep`). A lookup always lists the services itself, even beside a payload read.
+  It forgets a doorbell found absent at any services change. A lookup or a read whose search waits on an invalidated service,
+  or on the list, lists the services again (`GattSweep.waitsOnAny`), keeping the rings that wait: CoreBluetooth may never
+  answer a discovery asked of a service that went, and the lookup would otherwise hang for the connection's life.
+- KnitBlueZ's bound runs from `ServicesResolved`, from any GATT object BlueZ removes under the device and from any `0xFE30`
+  service it adds there; either also forgets a doorbell found absent.
+- knit-peer's `--blind` sets `blindsAdvert`, whose switch starts on. The `ios` profile answers each read with the advert of
+  the moment, so a rotation moves the value under one characteristic and re-registers only the advert; no Linux run moves a
+  handle. The `android` profile airs the tag as service data, with Android's flags.

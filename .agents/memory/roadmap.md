@@ -549,9 +549,14 @@ explicit direction.** Update this file in the change that ships an item.
         link, differs from the payload's tag.
       - **The doorbell.**
         - `doorbellTrusted`'s `sightedViaGatt` holds for a sighting held under a handle or resolved from a GATT tag.
-        - `BleDoorbell.lookUp` treats a lookup that finds no `0xFE30` service within a few seconds of a services change
-          as a failure to retry, never `absent`. A blinding iPhone adds its new service before it removes the old one at
-          each rotation, but `onServiceChanged` exists only from API 31, and a lookup can still land in that gap.
+        - **The layout while blinding.** A blinding iPhone serves two `0xFE30` services: one holding the doorbell alone,
+          added first and never rotated, and one holding the payload alone, which each rotation replaces (the new one
+          added before the old one is removed). A clear iPhone keeps one combined service. So `BleGattPayloadReader` and
+          `BleDoorbell` search every `0xFE30` service (`gatt.services.filter { it.uuid == FE30 }`), never only
+          `getService(UUID)`'s first.
+        - `BleDoorbell.lookUp` treats a lookup that finds no doorbell within `doorbellSettleMilliseconds` (10 s) of the
+          link's open or of `onServiceChanged` as a failure the next ring retries, never `absent`; past it `absent`
+          stands.
         - Android's held-link row and `LinkSilence`'s probe stay inert toward a link whose HELLO carries
           `CAP_DOORBELL`.
         - `dialHeld` keeps working toward such a link. Without it, a stranger iPhone in the foreground could draw the

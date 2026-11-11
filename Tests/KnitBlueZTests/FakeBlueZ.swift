@@ -25,6 +25,10 @@
             var readFails = false
             /// Whether it serves the doorbell beside the payload.
             var doorbell = false
+            /// Whether the doorbell sits in a `0xFE30` service of its own, as a blinding iPhone serves it.
+            var doorbellApart = false
+            /// Whether `WriteValue` fails, as it does for a characteristic that went.
+            var writeFails = false
         }
 
         /// A write to a remote characteristic.
@@ -220,7 +224,7 @@
                 objects.append(DBusEntry(key: .objectPath(path), value: Self.interfaces([(BlueZ.deviceInterface, properties)])))
             }
             for path in linked.sorted() {
-                objects += RemoteGattObjects.on(path, knit: remoteGatt[path]?.value != nil, doorbell: remoteGatt[path]?.doorbell == true)
+                objects += RemoteGattObjects.on(path, serving: remoteGatt[path])
             }
             return .dictionary(key: .objectPath, value: interfacesType, objects)
         }
@@ -231,58 +235,6 @@
                 value: .dictionary(key: .string, value: .variant),
                 pairs.map { DBusEntry(key: .string($0.0), value: $0.1) }
             )
-        }
-
-        // MARK: What BlueZ tells the radio
-
-        /// A device's properties, as BlueZ publishes them.
-        static func device(
-            address: String, random: Bool = true, rssi: Int16? = -55, advert: AdvertPayload?, uuids: [String] = []
-        ) -> DBusValue {
-            var pairs: [(String, DBusValue)] = [("Address", .string(address)), ("AddressType", .string(random ? "random" : "public"))]
-            if let rssi {
-                pairs.append(("RSSI", .int16(rssi)))
-            }
-            if let advert {
-                pairs.append(("ServiceData", .properties([(AdvertPayload.serviceUUID, .bytes(advert.bytes))])))
-            }
-            if !uuids.isEmpty {
-                pairs.append(("UUIDs", .strings(uuids)))
-            }
-            return .properties(pairs)
-        }
-
-        /// A device appears.
-        func add(device path: String, _ properties: DBusValue) throws {
-            try radio?.emit(
-                path: "/",
-                interface: BlueZ.objectManager,
-                member: "InterfacesAdded",
-                values: [.objectPath(path), Self.interfaces([(BlueZ.deviceInterface, properties)])]
-            )
-        }
-
-        /// Interfaces go from an object.
-        func remove(_ path: String, interfaces: [String]) throws {
-            try radio?.emit(
-                path: "/", interface: BlueZ.objectManager, member: "InterfacesRemoved", values: [.objectPath(path), .strings(interfaces)])
-        }
-
-        /// Properties change on an object.
-        func change(_ path: String, interface: String, _ properties: DBusValue, invalidated: [String] = []) throws {
-            try radio?.emit(
-                path: path,
-                interface: BlueZ.properties,
-                member: "PropertiesChanged",
-                values: [.string(interface), properties, .strings(invalidated)]
-            )
-        }
-
-        /// The adapter's power changes.
-        /// Turns the adapter on or off, keeping what is registered through it, as BlueZ 5.72 does.
-        func setPowered(_ on: Bool) throws {
-            powered = on
-            try change(Self.adapter, interface: BlueZ.adapterInterface, .properties([("Powered", .boolean(on))]))
         }
 
         /// Reads the GATT characteristic as a central would, from `offset`.
@@ -371,7 +323,7 @@
 
         private func writeValue(_ call: BusMessage, _ arguments: [DBusValue]) -> BusConnection.Answer {
             let path = call.path ?? ""
-            guard linked.contains(where: { path.hasPrefix($0 + "/") }) else {
+            guard let device = linked.first(where: { path.hasPrefix($0 + "/") }), remoteGatt[device]?.writeFails != true else {
                 return .error(name: "org.bluez.Error.Failed", message: "Not connected")
             }
             let type = arguments.dropFirst().first?["type"]?.text

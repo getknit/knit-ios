@@ -48,6 +48,18 @@ import Testing
         #expect(PeerCommand.usage.contains("[--no-presence-keys]"))
     }
 
+    /// The blinded advert's writer (ADR 2026-11.prsp): off unless `--blind`, as in a release build, and only for `run`.
+    @Test func blindingIsOffUnlessAsked() throws {
+        #expect(try !run([]).blind)
+        #expect(try run(["--blind"]).blind)
+        #expect(try run(["run", "--radio-profile", "ios", "--blind", "--no-presence-keys"]).blind)
+        #expect(throws: UsageError.repeated("--blind")) { try run(["--blind", "--blind"]) }
+        #expect(throws: UsageError.unknownFlag("--blind")) {
+            try PeerCommand.parse(["scan", "--blind"], environment: home)
+        }
+        #expect(PeerCommand.usage.contains("[--blind]"))
+    }
+
     /// What one run of the peer left: the profile a far engine pinned from it, and its state directory.
     private struct Published {
         let pinned: PeerRecord

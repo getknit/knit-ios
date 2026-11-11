@@ -75,6 +75,12 @@ import Foundation
                 log.log(.info, "promotion floor loosened to \(floor) dBm for development; Android's is -90")
             }
             links.feedWindow = options.feedWindow
+            // The writer's gate, whose runtime switch starts on: a rotation re-serves nothing on BlueZ, whose characteristic
+            // answers each read with the advert of the moment (ADR 2026-11.prsp).
+            links.blindsAdvert = options.blind
+            if options.blind {
+                log.log(.info, "airing a rotating tag in place of the node id (--blind)")
+            }
             if !options.feedWindow {
                 log.log(.info, "files paced and reported every 2 s, the window off for an A/B (--feed pace)")
             }

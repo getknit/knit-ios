@@ -30,8 +30,10 @@
         /// here as `Mesh` reports it processed, so neither waits on the other (ADR 2026-10.f5zs, rule 6).
         private let credits: InboxCredits
 
-        /// A radio that logs to `log`.
-        public init(log: any KnitLog = SilentLog()) {
+        /// A radio that logs to `log`. `expectsBlinding` brings the doorbell's service up before the listener at a cold
+        /// launch whose persisted switch blinds, before the link manager's first advert says so (``GattServing``; ADR
+        /// 2026-11.prsp). A restoration only ever upgrades it to the split layout, and the advert still decides.
+        public init(log: any KnitLog = SilentLog(), expectsBlinding: Bool = false) {
             let (stream, continuation) = AsyncStream<RadioEvent>.makeStream()
             let counted = OutboxLevels()
             let inbound = InboxCredits()
@@ -46,7 +48,8 @@
                 },
                 levels: counted,
                 credits: inbound,
-                log: log
+                log: log,
+                expectsBlinding: expectsBlinding
             )
         }
 
@@ -71,7 +74,7 @@
         }
 
         public func advertise(_ payload: AdvertPayload) {
-            core.onQueue { $0.advertise(payload.gattValue, psm: payload.psm) }
+            core.onQueue { $0.advertise(GattServing.Wanted(value: payload.gattValue, blinded: payload.blinded), psm: payload.psm) }
         }
 
         public func dial(_ address: RadioAddress, psm: UInt16) -> ChannelID {
@@ -198,6 +201,8 @@
         /// Rule 4's jitter seeded at random, so readers of one writer read it again at different moments.
         var gatt = GattPayloads(jitterSeed: UInt64.random(in: .min ... .max))
         var gattTarget: UUID?
+        /// How far the read of ``gattTarget`` has come: its search of every `0xFE30` service once their list came.
+        var gattStage: GattReadStage?
         var gattReads = 0
         /// Whether the link manager seeks peers, so the scan asks for the `0xFE30` UUID alone (``seek(_:)``).
         var seeking = false
@@ -207,15 +212,26 @@
         /// The L2CAP listener: what was asked of the peripheral manager and what it answered.
         var listener = ListenerPublication()
         /// What the link manager last asked to advertise, and its PSM: forgotten when the link manager forgets its advert.
-        var wantedValue: [UInt8]?
+        var wanted: GattServing.Wanted?
         var wantedPSM: UInt16?
-        var servedValue: [UInt8]?
+        /// What the GATT server holds and the next step toward what it should: one combined service while clear, the
+        /// doorbell's and the payload's while blinding (ADR 2026-11.prsp).
+        var serving: GattServing
+        /// The services asked for whose `didAdd` has not come, by ``GattServing/Service/serial``. Kept through a stop or a
+        /// power-off, so a late answer is still matched to its own service, which ``serving`` has let go of, and ignored.
+        var awaitingAdd: [UInt64: CBMutableService] = [:]
+        /// The services the server holds, by serial, which a removal names.
+        var served: [UInt64: CBMutableService] = [:]
         #if DEBUG
             var probe = ScanProbe()
         #endif
 
-        init(emit: @escaping @Sendable (RadioEvent) -> Void, levels: OutboxLevels, credits: InboxCredits, log: any KnitLog) {
+        init(
+            emit: @escaping @Sendable (RadioEvent) -> Void, levels: OutboxLevels, credits: InboxCredits, log: any KnitLog,
+            expectsBlinding: Bool
+        ) {
             self.emit = emit
+            serving = GattServing(expectsBlinding: expectsBlinding)
             self.levels = levels
             self.credits = credits
             self.log = log
@@ -264,6 +280,7 @@
                 peripheralManager.stopAdvertising()
                 peripheralManager.removeAllServices()
             }
+            forgetServices()
             // The next start publishes once this is answered, or its wait runs out (``ListenerPublication``). A manager
             // that is not powered on refuses the unpublish and never answers, so then the PSM is only forgotten.
             if let peripheralManager, peripheralManager.state == .poweredOn, let unpublish = listener.stop() {
@@ -271,11 +288,8 @@
             } else {
                 listener.forget()
             }
-            // The service is gone, so the next start serves it again. iOS hands back the same PSM, so the value does
-            // not change, and without this the iPhone came back serving neither its payload nor its doorbell.
-            servedValue = nil
             // The link manager forgets what it advertised at a stop, and advertises again once the listener reports.
-            wantedValue = nil
+            wanted = nil
             wantedPSM = nil
             forgetLinks()
             log.log(.info, "ble stopped")
@@ -293,10 +307,10 @@
                 central.stopScan()
                 scan(with: central)
             }
-            if listener.shouldPublish() {
-                peripheralManager.publishL2CAPChannel(withEncryption: false)
-            }
+            // Served first: the process's one clear of what a restoration handed back, and while blinding the doorbell's
+            // service, whose `didAdd` publishes (ADR 2026-11.prsp).
             serve()
+            publishIfDue(on: peripheralManager)
         }
 
         /// The state both managers agree on: any refusal or absence wins, then off, then on. A manager resetting (bluetoothd
@@ -325,9 +339,10 @@
                 scanning = nil
                 forgetLinks()
                 listener.poweredOff()
-                servedValue = nil
+                // A manager that goes off clears its services, and the next power-on serves them again.
+                forgetServices()
                 // The link manager forgets its advert too, and advertises again once the listener reports a PSM.
-                wantedValue = nil
+                wanted = nil
                 wantedPSM = nil
             }
             emit(.state(state))
@@ -353,45 +368,7 @@
             doorbells = Doorbells()
             gatt.cancel()
             gattTarget = nil
-        }
-
-        // MARK: The advert and its GATT payload
-
-        func advertise(_ value: [UInt8], psm: UInt16) {
-            wantedValue = value
-            wantedPSM = psm
-            serve()
-        }
-
-        /// Serves the wanted value from the `0xFE30` service, with the doorbell beside it, and advertises the UUID alone.
-        /// The value is static, so the service is replaced whenever it changes, which is only with the PSM.
-        /// Only while the listener is published on the value's PSM: an advert made from a `.listening` that predates a
-        /// stop, or a debounced one racing the radio going off, may arrive before the new publish lands. The publish's
-        /// answer serves it then, as the link manager sends no new advert for an unchanged PSM.
-        func serve() {
-            guard running, reported == .on, let peripheralManager, let value = wantedValue, value != servedValue,
-                let psm = listener.psm, psm == wantedPSM
-            else {
-                return
-            }
-            peripheralManager.stopAdvertising()
-            peripheralManager.removeAllServices()
-            let characteristic = CBMutableCharacteristic(
-                type: Self.characteristicUUID,
-                properties: [.read],
-                value: Data(value),
-                permissions: [.readable]
-            )
-            let doorbell = CBMutableCharacteristic(
-                type: Self.doorbellUUID,
-                properties: [.write, .writeWithoutResponse],
-                value: nil,
-                permissions: [.writeable]
-            )
-            let service = CBMutableService(type: Self.serviceUUID, primary: true)
-            service.characteristics = [characteristic, doorbell]
-            peripheralManager.add(service)
-            servedValue = value
+            gattStage = nil
         }
     }
 #endif
